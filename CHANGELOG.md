@@ -45,6 +45,23 @@ feature lands, **patch** = docs, fixes, scaffolding.
   right after `shape:` (`not recorded (pre-F117 spine)` / `not recorded` on an older archive or
   a provider with no `.model`), and `--all` gains `class`/`model` columns (`model` kept FULL,
   never truncated).
+- **Prompt-commit shape — a check, not convention** (PRD build-list #5, TODO #8, Q9 answered
+  by hamr 2026-08-25): a commit that changes a prompt register (a model-facing
+  system/strategy/instruction string a worker or judge reads) must now say, in its own
+  message, three labelled things — `Failure:` what caused the change, `Addresses:` what it
+  addresses, `Corrects:` what it corrects. `src/promptregisters.js` (`PROMPT_REGISTERS`,
+  `isPromptFile`, both exported from `bareloop`'s root) is the ONE inventory: 7 files carry
+  real prompt content (`src/authorscout.js`, `src/authorflow.js`, `src/judged.js`,
+  `src/cardauthor.js`, `src/readshim.js`, `src/tools.js`, `src/planrun.js`) — more than double
+  the 8 named consts a first grep found, once module-private consts and inline
+  template-literal prompt builders (`scoutPrompt()`, `cardCasesPrompt()`, `locatePrompt()`,
+  `strategyFor()`) are counted; the check is file-scoped precisely because a const-scoped one
+  would have silently missed those. Enforcement is LOCAL ONLY — wired into `npm test`
+  (`scripts/prompt-commit-check.mjs --range origin/main..HEAD`), never into any
+  `.github/workflows/*` file (ask-first, untouched); an unresolvable range (no `origin`, no
+  fetch) is a printed SKIP at exit 0, never a violation. Pure decision logic lives in
+  `scripts/promptcommitlib.mjs`, neither of which ships (`scripts/` is outside
+  `package.json`'s `files`).
 
 ## [0.14.0] — 2026-08-25
 

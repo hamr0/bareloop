@@ -2346,6 +2346,50 @@ const audit = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.par
 console.log(formatReplay(replayRun(spine, audit, { runId: 'mszcthk1' })));
 ```
 
+### `PROMPT_REGISTERS` / `isPromptFile(path)` — `src/promptregisters.js`, and the prompt-commit rule
+
+PRD build-list item 5 (TODO #8), Q9 answered (hamr, 2026-08-25): "a check". A commit that
+changes a **prompt register** — one of the model-facing system/strategy/instruction
+strings a worker or judge actually reads (`SCOUT_SYSTEM`, `AUTHOR_SYSTEM`,
+`PERSONA_TOOLS`, `READ_SHIM_STRATEGY`, and their neighbors — the full, verified list is
+`PROMPT_REGISTERS` in `src/promptregisters.js`) — must say, in its own message, three
+things: what failure caused the change, what it addresses, and what it corrects.
+Convention-only was rejected: doctrine already on record is "a frozen rule without a
+wired detector is prose." `isPromptFile(path)` is the pure predicate the check runs
+against; both are exported from `bareloop`'s root so the inventory has exactly one home.
+
+Enforcement is **local only** — wired into `npm test` (see `package.json`'s `test`
+script), never into `.github/workflows/*` (CI already runs `npm test`, so the rule is
+enforced there without an ask-first CI edit). The check itself lives outside the
+published package, at `scripts/prompt-commit-check.mjs` (pure decision logic in
+`scripts/promptcommitlib.mjs`, `scripts/` is not in `package.json`'s `files`, so none of
+this ships):
+
+```
+node scripts/prompt-commit-check.mjs --range origin/main..HEAD   # validates every commit
+                                                                    # in the range that
+                                                                    # touches a prompt file
+node scripts/prompt-commit-check.mjs --message-file .git/COMMIT_EDITMSG
+                                                                    # commit-msg hook mode:
+                                                                    # validates one message
+                                                                    # against staged files
+```
+
+A compliant message:
+
+```
+fix: tighten PERSONA_TOOLS
+
+Failure: worker read the arbiter spine after being told it was denied
+Addresses: PERSONA_TOOLS did not name the spine file explicitly
+Corrects: spells the denied paths from ARBITER_BOOK_STORES
+```
+
+A commit that touches no prompt-register file is passed without inspecting its message.
+An unresolvable `--range` (no such ref — a fresh clone with no `origin`, a detached
+checkout that never fetched) is a **skip**, printed and exited 0: a missing baseline is
+not a rule violation, never a red.
+
 
 ## Architecture
 

@@ -9277,3 +9277,91 @@ in the suite (checked every `'job-start'` occurrence across `tests/*.test.js`), 
 Suite: 2096 → 2114 (24 tests total in `tests/replay.test.js`, +2 in `tests/run.test.js`,
 across the whole build). `npm run typecheck` and `npm run build:types` both clean throughout
 every round.
+
+## F118
+
+**Prompt-commit shape built — a check, wired into `npm test`, enforcing local-only; the
+verified inventory came out to 7 files, not the 8 named consts a first grep found.**
+
+PRD TODO item 8 / build-list item 5. Q9 (hamr, 2026-08-25): "a check" — convention-only was
+rejected, on doctrine already on record: "a frozen rule without a wired detector is prose"
+(`docs/product/2026-08-23-agreed-build-list.md:187-189`). A commit that changes a **prompt
+register** (a model-facing system/strategy/instruction string a worker or judge actually
+reads) must now say, in its own message, three labelled things: `Failure:` what caused the
+change, `Addresses:` what it addresses, `Corrects:` what it corrects.
+
+### What was built
+
+`src/promptregisters.js` — `PROMPT_REGISTERS` (a frozen `{file, name}[]`) and a pure
+`isPromptFile(path)` predicate, both exported from `src/index.js`. This is the ONE place the
+inventory lives; both the check and `bareloop.context.md` point at it rather than
+re-deriving it. `scripts/prompt-commit-check.mjs` — pure Node, no deps, reads only (never
+edits a file, never touches git state beyond `rev-list`/`show`/`diff`/`diff-tree`), two
+modes: `--range <rev-range>` validates every commit in the range that touches a
+prompt-register file; `--message-file <path>` validates one message (a `commit-msg` hook
+shape) against the currently staged files. The pure decision logic (`validateCommitMessage`,
+`evaluateCommits`) lives in `scripts/promptcommitlib.mjs` so `tests/promptcommit.test.js`
+(15 tests) can exercise it on constructed inputs without shelling out to git or building a
+tmp repo. `package.json`'s `test` script becomes `node --test && node
+scripts/prompt-commit-check.mjs --range origin/main..HEAD`; an unresolvable range (no
+`origin` remote, a detached checkout that never fetched) prints a SKIPPED line and exits 0 —
+a missing baseline is not a violation, confirmed live with `--range nosuchref..HEAD`.
+
+### The verified inventory — 7 files, more than double the named-const count
+
+The brief's own grep named 8 exported consts across 7 files. Re-verifying against source
+(grepping every `src/*.js` for exported/module-level string consts that read as model-facing
+instruction text, separately for inline template-literal prompts built inside a function)
+confirmed the FILE list but not the const count: the same 7 files carry it, but 3 of them
+hold prompt content the first pass missed entirely.
+
+- `src/authorscout.js` — `SCOUT_SYSTEM`, `SCOUT_RECOVERY_PROMPT` (both named), plus
+  `scoutPrompt()` (203) — a template literal built inline, not a const, and the actual
+  survey prompt sent to the model.
+- `src/authorflow.js` — `AUTHOR_SYSTEM` (named), plus `REVISE_INSTRUCTION` (138),
+  `STRUCTURE_INSTRUCTION_TOOL` (150), `STRUCTURE_INSTRUCTION_TEXT` (152) — three more
+  exported consts the first grep's line-range didn't catch.
+- `src/judged.js` — `PROMPT_HEAD`, `PROMPT_TAIL` (both named), plus
+  `JUDGE_RULES[*].ask` (per-rule fragments assembled into the locate prompt) and
+  `locatePrompt()` (inline template).
+- `src/cardauthor.js` — `COMPILE_SYSTEM` (named), plus `cardCasesPrompt()` (219) — an inline
+  template that renders the rulebook and the person's own Q6/Q7 answers into the compile
+  prompt.
+- `src/readshim.js` — `READ_SHIM_STRATEGY`, `READ_SHIM_DIFF_STRATEGY` (both named, nothing
+  missed).
+- `src/tools.js` — `PERSONA_TOOLS`, `RETRIEVAL_STRATEGY`, `EDIT_STRATEGY` (all named), plus
+  `COMPONENT_STRATEGIES` (117) and `strategyFor()` (163, assembles per-grant strategy prose
+  sentence-by-sentence), and two module-private (unexported) consts: `LINE_SPACE` (230,
+  used in three tool descriptions) and `PERSONA` (38, currently unreferenced anywhere —
+  dead, kept in the inventory anyway since editing it would still be editing a prompt
+  register in this file).
+- `src/planrun.js` — `NATIVE_READ_STRATEGY` (158, nothing missed).
+
+Checked and confirmed to carry NO prompt content: `src/plan.js`, `src/validate.js`,
+`src/kinds.js`, `src/text.js`, `src/declaredclose.js`, `src/calibrate.js`, `src/index.js`
+(barrel export only). The inventory is deliberately **file-scoped, not const-scoped** —
+`isPromptFile` only ever keys on `file`, and the `name` field is documentation. A
+const-scoped check would have silently missed every inline template-literal prompt found
+above; a file-scoped one cannot, because the whole file is in scope the moment it is in the
+inventory.
+
+### The local-enforcement ruling, and why no workflow file was touched
+
+Enforcement is wired into `npm test` (`package.json`), never into `.github/workflows/*` —
+those are ask-first per this repo's own doctrine, and hamr has not asked for this build to
+touch one. CI already runs `npm test` on every push/PR, so the rule is enforced there
+without an edit to any CI file. The defensive shape (a missing/unresolvable range skips
+rather than reds) exists because the same `test` script has to run correctly on a machine
+with no `origin` remote (a fresh clone) and inside a detached CI checkout that hasn't
+fetched `origin/main` — neither is a rule violation, and failing the whole suite for an
+absent baseline would be a false red distinct from the rule itself.
+
+### Numbers
+
+New: `src/promptregisters.js`, `scripts/prompt-commit-check.mjs`,
+`scripts/promptcommitlib.mjs`, `tests/promptcommit.test.js` (15 tests). Suite: 2114 → 2129.
+`npm run typecheck` and `npm run build:types` both clean. Live-run on this repo's own
+history: `--range origin/main..HEAD` on the `prompt-commit` branch reports `OK — 5 commit(s)
+checked, 0 touching a prompt register with a missing label`; `--range nosuchref..HEAD`
+reports `SKIPPED — range "nosuchref..HEAD" could not be resolved (fatal: ambiguous
+argument...)`, exit 0.

@@ -246,3 +246,9 @@ export {
   runInterview, authorCloseForJob, assembleSpec, prepareSigning, refusalEvents, refuseLockedKind,
   GENRE, REFUSAL_LIB, REFUSAL_CATEGORY, AUTHORED_SPEC_FIELDS,
 } from './authorjob.js';
+// PRD build-list item 5 (TODO #8) — the prompt-register inventory: every file
+// known to carry model-facing prompt/instruction text, and the predicate a
+// commit-message check (`scripts/prompt-commit-check.mjs`) uses to decide
+// whether a changed file is one. The ONE place this list lives; exported so
+// bareloop.context.md can point an adopter here instead of re-deriving it.
+export { PROMPT_REGISTERS, isPromptFile } from './promptregisters.js';

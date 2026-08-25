@@ -17,7 +17,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test && node scripts/prompt-commit-check.mjs --range origin/main..HEAD",
     "typecheck": "tsc --noEmit",
     "build:types": "tsc",
     "prepublishOnly": "npm run build:types"

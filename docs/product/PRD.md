@@ -222,7 +222,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    id), all fixed.
 7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
    first (v1.78).
-8. **Prompt-commit shape** — agreed, cheap; Q9 open.
+8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
+   wired into `npm test`, no CI file touched. `src/promptregisters.js` (`PROMPT_REGISTERS`,
+   `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
+   `Failure:`/`Addresses:`/`Corrects:` labels on any commit touching a prompt-register file,
+   skipping (not redding) an unresolvable `--range` baseline.
 9. **Model names in the signed spec** — parked, arbiter territory.
 10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
     by `bare-agent` 0.39.0 (F111).
