@@ -228,7 +228,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    `Failure:`/`Addresses:`/`Corrects:` labels on any commit touching a prompt-register file,
    skipping (not redding) an unresolvable `--range` baseline. hamr's same-day addition: the
    `Failure:` line must also cite the RUN that caused the change (`run <id>`/`run u-<id>`),
-   format-checked only, never verified against a real spine file.
+   format-checked only, never verified against a real spine file. **run→code stamp landed
+   (F118)** — the parked other half: `codeVersion()` (`src/codeversion.js`) stamps
+   `job-start.code: {version, sha}` (report-only, $0, no shell), and `replayRun`/
+   `formatReplay` print it right after `model:`.
 9. **Model names in the signed spec** — parked, arbiter territory.
 10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
     by `bare-agent` 0.39.0 (F111).

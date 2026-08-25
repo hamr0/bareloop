@@ -18,6 +18,10 @@
 //     shell-owned provider binding itself carried a `.model` string at job-start time
 //     (src/planrun.js:76's own comment: bare-agent's Loop reads `baseProvider.model`
 //     directly) — absent on a native/clipipe call path, never guessed.
+//     `code` (F118, the run→code direction, landed same day): `{version, sha}`
+//     from `codeVersion()` (src/codeversion.js) — `sha` is null when the
+//     process ran from an npm install with no `.git`; the whole `code` key is
+//     absent on any spine older than this landing.
 //   job-end        {outcome, spentUsd, spendComplete, engagementSpentUsd}
 //                                                                  src/run.js:288,378-413
 //   escalation     {category, decisionReady, verdicts?, spend?, decision, options, detail?}
@@ -90,6 +94,7 @@
 // explicit word (PRD TODO #20, F117).
 
 import { runBehaviour, formatBehaviour } from './behaviour.js';
+import { shortSha } from './codeversion.js';
 
 /**
  * @param {unknown} e
@@ -568,6 +573,19 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     // neither, and this reader reports that honestly rather than guessing.
     verdictType: typeof jobStart?.verdictType === 'string' ? jobStart.verdictType : null,
     model: typeof jobStart?.model === 'string' ? jobStart.model : null,
+    // F118 (parked-half landed): `job-start.code` — absent on any spine older
+    // than that landing (this run predates the field entirely, distinct from
+    // `sha` being null because the run happened to run from an npm install
+    // with no `.git`). `code: null` here means "not recorded (pre-F118
+    // spine)"; `code: {version, sha}` with `sha: null` means "recorded, but
+    // this process had no `.git` to read a sha from" — the two are never
+    // conflated.
+    code: jobStart && jobStart.code && typeof jobStart.code === 'object'
+      ? {
+          version: typeof jobStart.code.version === 'string' ? jobStart.code.version : null,
+          sha: typeof jobStart.code.sha === 'string' ? jobStart.code.sha : null,
+        }
+      : null,
     goal: typeof jobStart?.goal === 'string' ? jobStart.goal : null,
     // the RAW last escalation record (or null) — the source `stopReason` was
     // built from, exposed directly rather than only reachable through
@@ -765,6 +783,19 @@ export function formatReplay(summary) {
   // provider binding itself carries none (a native/clipipe call path).
   lines.push(`class:   ${summary.verdictType ?? 'not recorded (pre-F117 spine)'}`);
   lines.push(`model:   ${summary.model ?? 'not recorded'}`);
+
+  // F118: the run→code direction (the commit→run half landed same day as
+  // the prompt-commit check). `code` absent entirely = pre-F118 spine; a
+  // present `code` with `sha: null` is a real, honest reading (an
+  // npm-installed copy with no `.git` at run time), never conflated with
+  // "not recorded".
+  if (summary.code) {
+    const versionPart = summary.code.version ?? 'unknown version';
+    const shaPart = shortSha(summary.code.sha) ?? 'sha unknown';
+    lines.push(`code:    bareloop ${versionPart} @ ${shaPart}`);
+  } else {
+    lines.push('code:    not recorded (pre-F118 spine)');
+  }
 
   const signedWall = summary.chainClock && typeof summary.chainClock.requestedMs === 'number' ? duration(summary.chainClock.requestedMs) : NONE_RECORDED;
   const specShort = summary.specHash ? summary.specHash.slice(0, 8) : NONE_RECORDED;

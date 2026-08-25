@@ -648,4 +648,28 @@ console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
 
   assert.equal(summarizeForAllLine(s).class, 'green');
   assert.equal(summarizeForAllLine(s).model, 'claude-sonnet-5', 'the --all model column keeps the FULL string, never truncated');
+
+  // F118 (run→code direction): a freshly-written spine (this SAME real
+  // runJob() call) carries `code.version`/`code.sha`, read independently of
+  // codeVersion() itself — via package.json and .git/HEAD.
+  const realPkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+  assert.equal(typeof jobStart.code, 'object');
+  assert.equal(jobStart.code.version, realPkg.version);
+  assert.match(jobStart.code.sha, /^[0-9a-f]{40}$/);
+
+  assert.deepEqual(s.code, { version: realPkg.version, sha: jobStart.code.sha });
+  assert.match(text, new RegExp(`code:    bareloop ${realPkg.version} @ ${jobStart.code.sha.slice(0, 8)}`));
+  assert.doesNotMatch(text, /pre-F118 spine/);
+});
+
+test('u-msdsmkid (archived, pre-F118) prints "code: not recorded (pre-F118 spine)"', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  const spinePath = join(BAREAGENT_U, 'u-msdsmkid.jsonl');
+  const spine = parseJsonl(spinePath);
+  assert.equal(spine.find((e) => e.type === 'job-start').code, undefined, 'precondition: this real archived job-start really predates code');
+
+  const s = replayRun(spine, [], { runId: 'msdsmkid' });
+  assert.equal(s.code, null);
+
+  const text = formatReplay(s);
+  assert.match(text, /code: {4}not recorded \(pre-F118 spine\)/);
 });

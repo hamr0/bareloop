@@ -9394,3 +9394,47 @@ reference reproduces the fail path live:
 does not satisfy the rule (non-empty Failure, Addresses, Corrects labels; Failure: must
 also cite the run that caused it, e.g. "run mszcthk1"): <sha>: Failure: must cite the run
 that caused the change (e.g. "Failure: run mszcthk1 — ...")`, exit 1.
+
+### Addendum (same day): the parked half landed — run→code
+
+The base build above closed commit→run and named, explicitly, the gap it left open:
+"the run itself does not record which CODE COMMIT it ran under, so the loop only closes
+in the commit→run direction, never run→commit." hamr's go, same day, closed it. Same
+class as PRD TODO #20 (a report-only field on `job-start`, `src/run.js:303`), which hamr
+already blessed.
+
+`src/codeversion.js` — `codeVersion()`, a pure, $0, no-shell reader: `version` from
+bareloop's own `package.json` (resolved off `import.meta.url`, never a hardcoded path);
+`sha` from `.git/HEAD` ONLY when `.git` is a real directory at the package root (a dev
+checkout — an npm-installed copy has none, and reads that absence as `null`, never
+fakes one), following a symbolic ref to its loose ref file and falling back to
+`packed-refs` when the branch has been packed (this repo's own `main` is packed,
+confirmed live); `dirty` is always `null` — uncommitted-changes state cannot be known
+without a shell, and `null` reports that honestly rather than laundering "unknown" into
+`false`. NEVER shells out to git: `run` is the one locked verb (hamr's law targets
+actions, not syntax), and a report-only field is not a reason for the library to grow a
+shell seam.
+
+`job-start` (`src/run.js:303`) now also carries `code: {version, sha}` alongside F117's
+`verdictType`/`model`. `replayRun`/`formatReplay` (`src/replay.js`) read it: a `code:`
+line right after `model:` — `bareloop 0.14.0 @ 43f2812` on a spine carrying it with a
+real sha, `@ sha unknown` when `sha` is null (an npm-installed run), `not recorded
+(pre-F118 spine)` when the whole field is absent (measured: `u-msdsmkid`, the same
+Aug-3 archived run F117 used as its own pre-field witness). No new `--all` column —
+hamr's index is already full, per the brief.
+
+Tests (`tests/codeversion.test.js`, 6): `codeVersion()` against THIS checkout reads the
+real `package.json` version and the real `.git/HEAD`-resolved sha, both re-derived
+independently in the test (never asserted against `codeVersion()`'s own internals); a
+fake package root with no `.git` yields `sha: null`; a fake root with no `package.json`
+yields `version: null`; neither throws. `tests/replay.test.js` gained one archived-spine
+case (`u-msdsmkid` prints `not recorded (pre-F118 spine)`) and extended the existing
+F117 fresh-spine test (a real `runJob()` through the $0 harness) to also assert the real
+`code.version`/`code.sha` land on `job-start` and print correctly.
+
+### Numbers (addendum)
+
+New: `src/codeversion.js`, `tests/codeversion.test.js` (6 tests). Suite: 2134 → 2141
+(+6 codeversion, +1 replay). `npm run typecheck` and `npm run build:types` both clean.
+Full `npm test` (including `prompt-commit-check`) green: 2141/2141, `OK — 7 commit(s)
+checked, 0 touching a prompt register with a missing/incomplete label`.

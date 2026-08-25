@@ -67,6 +67,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   lowercase-alnum chars), failing with a distinct message
   (`FAILURE_NEEDS_RUN_REF`) when absent; format only, never checked against a real spine
   file.
+- **Run→code stamp** (F118, the parked half of the same day's prompt-commit build, closed
+  same day on hamr's go): the prompt-commit check closes commit→run; this closes run→code.
+  `src/codeversion.js`'s `codeVersion()` is a pure, $0, no-shell reader — `version` from
+  bareloop's own `package.json`, `sha` from `.git/HEAD` (loose ref, falling back to
+  `packed-refs`) ONLY when a `.git` directory exists at the package root (a dev checkout;
+  an npm install has none), `dirty` always `null` (uncommitted-changes state cannot be
+  known without a shell — reported as unknown, never faked as `false`). `job-start`
+  (`src/run.js`) now also carries `code: {version, sha}`. `replayRun`/`formatReplay`
+  (`src/replay.js`) read it: a `code:` line right after `model:` — `bareloop 0.14.0 @
+  43f2812` / `@ sha unknown` / `not recorded (pre-F118 spine)`; no new `--all` column
+  (hamr's index is already full). The library never grows a shell seam to answer this —
+  `run` stays the one locked verb.
 
 ## [0.14.0] — 2026-08-25
 

@@ -2152,7 +2152,7 @@ NOTHING to the spine**, same posture as `runBehaviour` above, which it reuses ra
 reimplements for the tool-call breakdown. It returns one plain object:
 
 ```
-{ runId, job, goal, budgetUsd, specHash, branch, verdictType, model,
+{ runId, job, goal, budgetUsd, specHash, branch, verdictType, model, code,
   outcome, stopReason, spentUsd, spendComplete, wallMs, chainClock,
   resumed, resumeSeed, thisFileSpend, spendMismatch,
   timelineKind: 'steps'|'iterations', replans, close,
@@ -2182,6 +2182,31 @@ an archive-age gap, a missing `model` can happen on any spine, old or new). `--a
 the model string, or `-`) — `model` is kept FULL, never truncated, unlike the compact `reason`
 column: a wrong or uncertain model reading is exactly the thing a directory-wide scan needs in
 full, not cut.
+
+**`code`** (F118, the run→code direction — the commit→run direction is the prompt-commit
+check's `Failure:` run-reference rule; the two are companion halves of one loop, built the
+same day). `codeVersion()` (`src/codeversion.js`) is a pure, $0, no-shell reader: `version`
+is bareloop's own `package.json` version (resolved off `import.meta.url`, never a hardcoded
+path — works whether this module is imported from `src/` or from an installed
+`node_modules/bareloop`); `sha` is read straight off `.git/HEAD` (following a symbolic ref
+to its loose ref file, falling back to `packed-refs` when the branch has been packed) **only
+when `.git` is a real directory at the package root** — a dev checkout has one, an
+npm-installed copy does not, and that absence reads as `sha: null`, honestly, never a guess.
+`dirty` is always `null`: whether the tree has uncommitted changes cannot be known without a
+shell, and this module NEVER shells out — `run` is the one locked verb (hamr's law targets
+what the agent can DO, not how it's written), and a report-only field is not a license for
+the library to grow a shell seam. `null` is reported here rather than a defaulted `false`,
+because a faked "clean" reading is a worse lie than an honest "don't know."
+
+`job-start` (`src/run.js:303`) carries `code: {version, sha}` alongside F117's
+`verdictType`/`model` (`dirty` is intentionally omitted from the spine — it is always
+`null`, and a spine field that can only ever hold one value is not worth a byte).
+`replayRun` reads it as `{version, sha}` or `null` (absent field, an archive older than this
+landing); `formatReplay` prints a `code:` line right after `model:` — `code:    bareloop
+0.14.0 @ 43f2812` on a spine with a real sha, `code:    bareloop 0.14.0 @ sha unknown` when
+`sha` is null (an npm-installed run), `code:    not recorded (pre-F118 spine)` when the
+whole field is absent. `--all` gains no new column for this — the row is already at hamr's
+named limit.
 
 **Unknown money/time is always `null`/`unknown` — never `0`, and a partial sum is never stamped
 exact** (F6's rule, carried through every level this module reports at): `spentUsd`/`wallMs` are
