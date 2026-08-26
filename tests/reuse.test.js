@@ -22,9 +22,9 @@
 // standing lesson: a fake that never reaches the real seam masks the bug that lives
 // there).
 
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +39,7 @@ import { runJob } from '../src/run.js';
 import { scriptedProvider, initPatientRepo } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'reuse-test-'));
+after(() => rmSync(base, { recursive: true, force: true }));
 let n = 0;
 const freshRegistry = () => makeRegistry(join(base, `reg-${n += 1}`));
 

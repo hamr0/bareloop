@@ -210,15 +210,29 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    surface-only, Q8 answered library. Printed live at the tail of u-run `mt7g7b68` (F114).
 2. **MEMORY-CACHE readout** — **BUILT 2026-08-24, LIVE-PROVEN 2026-08-25** (F114 §3; F115
    addendum 2026-08-25).
-3. **One transport retry** — **BUILT 2026-08-24**; live proof still pending — the retry seam
-   has never fired on a real run (F115).
+3. ~~One transport retry~~ — **BUILT 2026-08-24, LIVE-PROVEN 2026-08-25** (F119: fired twice
+   on u-mt8yk53k, both recovered).
 4. **provider-red resumable + honest readout** — **BUILT 2026-08-24, LIVE-PROVEN 2026-08-25**
    (F115 addendum 2026-08-25; ruling #5 above).
-5. **Chase the TLS `bad record mac` cause** — optional, paid, hamr's call (F115).
-6. **Generic run replay** — agreed gap, unscoped; item 1 was its cheap first slice.
+5. **Chase the TLS `bad record mac` cause** — optional, paid, hamr's call (F115); the retry
+   now absorbs it (F119) — chase stays optional.
+6. ~~Generic run replay~~ — **BUILT 2026-08-25** (F117): `replayRun`/`formatReplay`
+   (`src/replay.js`) + `scripts/run-replay.mjs`, report-only, reuses `runBehaviour`/
+   MEMORY-CACHE; the pre-declared 5-minute test passed on 3 unseen failed runs and found 3
+   defects (escalation detail hidden, `--all` name-matched only, a replanned step merged by
+   id), all fixed.
 7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
    first (v1.78).
-8. **Prompt-commit shape** — agreed, cheap; Q9 open.
+8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
+   wired into `npm test`, no CI file touched. `src/promptregisters.js` (`PROMPT_REGISTERS`,
+   `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
+   `Failure:`/`Addresses:`/`Corrects:` labels on any commit touching a prompt-register file,
+   skipping (not redding) an unresolvable `--range` baseline. hamr's same-day addition: the
+   `Failure:` line must also cite the RUN that caused the change (`run <id>`/`run u-<id>`),
+   format-checked only, never verified against a real spine file. **run→code stamp landed
+   (F118)** — the parked other half: `codeVersion()` (`src/codeversion.js`) stamps
+   `job-start.code: {version, sha}` (report-only, $0, no shell), and `replayRun`/
+   `formatReplay` print it right after `model:`. Live-proven on u-mt8yk53k (F118 addendum).
 9. **Model names in the signed spec** — parked, arbiter territory.
 10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
     by `bare-agent` 0.39.0 (F111).
@@ -235,6 +249,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 18. **Flake-name capture** — held until the peer says "load window open" verbatim.
 19. **Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`; broad-`git add`
     workflow rule (stage by explicit path while a reorg is in flight).
+20. ~~`job-start` to carry `verdictType` + worker model~~ — **DONE 2026-08-25** (F117):
+    hamr blessed "1" verbatim; both `verdictType` (`src/run.js:303`, always real — a required
+    spec field) and `model` (conditional on the provider binding carrying one — `src/planrun.js:76`)
+    landed, `src/replay.js` reads both. Live-proven on u-mt8yk53k (F118 addendum).
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on

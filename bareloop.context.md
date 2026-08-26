@@ -2142,6 +2142,312 @@ is not a spend record and no spend-slicing instrument needs to account for it.
 (`no record` if the run ended before the summary could fire); `scripts/behaviour-readout.mjs`
 prints the same line when handed the run's spine file as its optional third positional.
 
+
+### `replayRun(spineEvents, auditEvents?, { runId? })` / `formatReplay(summary)` — `src/replay.js`
+
+PRD build-list item 6: today no failed run can be reconstructed in under five minutes — every
+byte is on disk (the spine JSONL + its gate-audit sidecar) but only hand-slicing JSONL reads it.
+`replayRun` is a report-only reader over BOTH files: **reads only, mints no verdict, writes
+NOTHING to the spine**, same posture as `runBehaviour` above, which it reuses rather than
+reimplements for the tool-call breakdown. It returns one plain object:
+
+```
+{ runId, job, goal, budgetUsd, specHash, branch, verdictType, model, code,
+  outcome, stopReason, spentUsd, spendComplete, wallMs, chainClock,
+  resumed, resumeSeed, thisFileSpend, spendMismatch,
+  timelineKind: 'steps'|'iterations', replans, close,
+  steps: [{ id, occurrence, outcome, rounds, toolCalls, checks: {passed, failed},
+    treeChanged, wallMs, spentUsd, unpricedRounds, tripped }],
+  iterations: [{ iteration, verdict, boundary, closeStage, rounds, toolCalls,
+    wallMs, spentUsd, unpricedRounds, tripped }],
+  ending: { record, before /* the 3 records before it */, escalation },
+  lastEscalation, behaviour, memoryCache, skipped }
+```
+
+**`verdictType`/`model`** (F117, PRD TODO #20 — hamr blessed the whole item verbatim, landed
+2026-08-25): `verdictType` reads `job-start.verdictType` (`src/run.js:303`) — a REQUIRED spec
+field (`src/job.js:552` reds `missing-required` before job-start ever fires), so `null` here
+means only "this spine predates the field" (measured: `u-msdsmkid`, an Aug-3 archived run),
+never "unset". `model` reads `job-start.model`, present only when the shell-owned provider
+binding itself carried a `.model` string at job-start time — `src/planrun.js:76`'s own comment
+documents bare-agent's Loop reading `baseProvider.model` directly off that same object, so it is
+a real, citable, synchronously-available property, not a guess; a native/clipipe call path (or
+any provider double with no such field — measured on `tests/helpers.js`'s `scriptedProvider`)
+legitimately has neither, and this reader reports that honestly rather than defaulting one in.
+`formatReplay` prints both right after `shape:` — `class:   softgreen` / `class:   not recorded
+(pre-F117 spine)`, `model:   claude-sonnet-5` / `model:   not recorded`
+(the two "not recorded" wordings are deliberately different: a missing `verdictType` is always
+an archive-age gap, a missing `model` can happen on any spine, old or new). `--all` gains a
+`class` column right after `shape` and a `model` column right after `class` (the verdict class /
+the model string, or `-`) — `model` is kept FULL, never truncated, unlike the compact `reason`
+column: a wrong or uncertain model reading is exactly the thing a directory-wide scan needs in
+full, not cut.
+
+**`code`** (F118, the run→code direction — the commit→run direction is the prompt-commit
+check's `Failure:` run-reference rule; the two are companion halves of one loop, built the
+same day). `codeVersion()` (`src/codeversion.js`) is a pure, $0, no-shell reader: `version`
+is bareloop's own `package.json` version (resolved off `import.meta.url`, never a hardcoded
+path — works whether this module is imported from `src/` or from an installed
+`node_modules/bareloop`); `sha` is read straight off `.git/HEAD` (following a symbolic ref
+to its loose ref file, falling back to `packed-refs` when the branch has been packed) **only
+when `.git` is a real directory at the package root** — a dev checkout has one, an
+npm-installed copy does not, and that absence reads as `sha: null`, honestly, never a guess.
+`dirty` is always `null`: whether the tree has uncommitted changes cannot be known without a
+shell, and this module NEVER shells out — `run` is the one locked verb (hamr's law targets
+what the agent can DO, not how it's written), and a report-only field is not a license for
+the library to grow a shell seam. `null` is reported here rather than a defaulted `false`,
+because a faked "clean" reading is a worse lie than an honest "don't know."
+
+`job-start` (`src/run.js:303`) carries `code: {version, sha}` alongside F117's
+`verdictType`/`model` (`dirty` is intentionally omitted from the spine — it is always
+`null`, and a spine field that can only ever hold one value is not worth a byte).
+`replayRun` reads it as `{version, sha}` or `null` (absent field, an archive older than this
+landing); `formatReplay` prints a `code:` line right after `model:` — `code:    bareloop
+0.14.0 @ 43f2812` on a spine with a real sha, `code:    bareloop 0.14.0 @ sha unknown` when
+`sha` is null (an npm-installed run), `code:    not recorded (pre-F118 spine)` when the
+whole field is absent. `--all` gains no new column for this — the row is already at hamr's
+named limit.
+
+**Unknown money/time is always `null`/`unknown` — never `0`, and a partial sum is never stamped
+exact** (F6's rule, carried through every level this module reports at): `spentUsd`/`wallMs` are
+`null` when the run's own `job-end` is absent or carries no figure; `spendComplete` reads `false`
+whenever `spentUsd` is `null`, regardless of what the record's own flag says. The SAME rule
+governs one occurrence/iteration's own `spentUsd`: it sums `worker-round.costUsd`
+(`src/planrun.js:2288-2297`) over records strictly inside that occurrence's own `seq` window —
+a single `null` `costUsd` anywhere in the window makes the WHOLE occurrence's `spentUsd` `null`
+(`unpricedRounds` names how many), never a partial sum. Zero rounds in the window is a real `$0`,
+not an unknown one.
+
+`stopReason` is `null` on a green/already-green outcome; otherwise `category — decision —
+detail` from the last `escalation` record, every part present that record actually carries
+(`category` dropped when it duplicates the outcome already shown beside it; `detail` trimmed at
+400 chars with an explicit `…[+N chars]` marker, never silent) — `decision` alone is the generic
+one-line prose every category shares ("the provider path failed mid-run…" fires for every
+transport casualty); **`detail` is what actually killed THIS run** (a TLS "bad record mac", a
+specific mypy error) and is the reason a stop is explained, never the decision prose alone.
+Falls back to the bare outcome string for a pre-escalation red (`plan-red`/`job-red`/
+`smoke-red`). `ending.escalation` carries that same last escalation record whenever it falls
+outside the fixed 3-before window (common on a run that keeps emitting bookkeeping records after
+its real failure) — never silently dropped. `lastEscalation` is the same raw record exposed
+unconditionally (not gated on the window check) — `summarizeForAllLine`'s `reason` column reads
+it directly rather than re-deriving from `ending`.
+
+**A step id can recur** (a replan re-executes the same step): each `step-start`..`step-end` pair
+is its own **occurrence** (`occurrence: 1, 2, …`), and every field on it — `rounds`, `toolCalls`,
+`checks`, `treeChanged`, `wallMs`, `spentUsd` — is scoped to records strictly between THAT pair's
+own `seq` (the spine's monotonic per-record counter, never `ts` — every record in one spine
+shares the same seq counter, so it is an exact ordering where two same-millisecond `ts` stamps
+are not), never pooled across every occurrence sharing the id. `rounds` counts real
+`worker-round` records (`phase === 'step:<id>'`), never the declared cap; `toolCalls` is the one
+thing still windowed by `ts` (the gate-audit carries no `step` or shared `seq`). `tripped` is the
+last `escalation` whose `seq` falls inside the occurrence's window — `{category, detail}`, with
+`detail` falling back to `decision` when the escalation site carries no `detail` at all (a
+ladder-exhaustion `cap-halt`, `src/ralph.js`, is the measured example — without the fallback the
+tripped line would print a bare category and hide the real reason).
+
+**A run whose spine carries no `step-start` at all** — the plan's only step was
+already-green-skipped on a resumed leg, or a genuinely loop-only shape (measured: `u-msf70nei`,
+a resumed leg whose one step was already proven and only the CLOSE-FIX loop ran) — has
+`timelineKind: 'iterations'` and `iterations[]` populated from `iteration-start`
+(`src/ralph.js:583`) instead: each row runs from one `iteration-start` to the next
+`close-verdict`/`run-end`/`escalation` (`src/ralph.js:674,577/657/676/698`), whichever comes
+first by `seq`. `steps`/`iterations` are never both populated — exactly one is non-empty. Each
+iteration's own `closeStage` (`{verdict, stages}`) is set when a `close-verdict` ended it, distinct
+from the run's FINAL `close` (below).
+
+**`close`** is the run's real, final close — resolved by picking the LAST (by `seq`) record
+among every `close-verdict` that carries an ARRAY `stages` field and every `outer-close`
+(`src/planrun.js:3296`). A `close-verdict` with NO `stages` came from a PLAN STEP's own
+micro-loop, judged by the exit evaluator instead of a command (`src/planrun.js:2907`) — never
+"the close". Picking by `seq` rather than preferring `outer-close`'s TYPE matters: `outer-close`
+is the PRECHECK against the real close, fired once before the fix loop even starts, so when it
+reads red the fix loop's own staged close-verdicts run strictly AFTER it — measured on
+`u-msf70nei`, whose `outer-close` (seq 14) reads `needs_revision` but whose fix loop's own final
+close-verdict (seq 97, LATER) reads `satisfied`, which is what the run actually ended on
+(`job-end.outcome:'green'`). A run that never reached ANY close (e.g. `u-msdsmkid`, stopped by a
+step-variance meter before `judgeClose()` ever fired) resolves `close: null`, printed as `none —
+the run ended before any close ran` — never omitted.
+
+`replans` prefers `plan-executed.replans` (`src/planrun.js:2688`) and falls back to counting
+`materials` records stamped `phase:'replan'` (`src/planrun.js:2520`) when that field is absent —
+an older archived spine can predate the field (measured on `u-msdsmkid`, an Aug-3 run). `branch`
+reads the last `work-branch.branch` (`src/planrun.js:1589`) or `null` when absent — also measured
+missing on the same era of archive, before the work-branch rung landed.
+
+`wallMs` is THIS FILE's own `job-start`→`job-end` span, labeled `(this file)` — on a RESUMED leg
+that is only the latest engagement, not the whole signed chain. `chainClock` is the other true
+number: the SIGNED wall read off the run's own clock record — `wall-halt` when present (the
+TERMINAL reading, taken at the moment the wall stopped the run; `src/planrun.js:1269`'s
+`emitWallHalt`), else the single `wall-clock` record every run emits near its start
+(`src/planrun.js:1203`) — both spread from `clock.report()` (`src/clock.js:235-247`: `bounded,
+requestedMs, closeStages, enforcedMs, elapsedMs, remainingMs`). `elapsedMs` on either is
+chain-scoped by construction (`createClock`'s `priorElapsedMs` fold, `src/clock.js:174`), so it
+can legitimately exceed this file's own `wallMs` on a resumed run. `wall-halt`'s reading is
+end-of-run-honest, so `formatReplay` states it plainly: `clock: 60m04s of 60m00s signed (chain,
+from wall-halt)`. `wall-clock`'s reading is taken at the TOP of the engagement (chain time
+already inherited, not this run's own duration) — printing that under the same template read as
+"this run took 0 seconds" on a cold run, so it gets its own honest wording instead: `clock: 30m00s
+signed · 0.0s inherited from prior legs at start (from wall-clock; no end-of-run reading in this
+file)`.
+
+**Money carries the identical split** (hamr, 2026-08-25): a RESUMED run's `job-end.spentUsd` is
+the CHAIN total (prior legs folded in — `src/run.js:227`'s `chainFoldUsd`, seeded from
+`job-start.priorSpentUsd`), which can never equal this ONE file's own rounds — measured on
+`u-msf70nei`: header `spentUsd` reads `$5.3389` while its own 55 `worker-round`s sum to exactly
+`$1.2127`. `resumed` reads `job-start.priorSpentUsd > 0` — the SAME condition `src/run.js` itself
+folds on — deliberately NOT `resume-seed`'s presence: `resume-seed` (`src/planrun.js:2622`) is a
+NARROWER record, fired only when a plan is actually reloaded mid-flight, and its absence does not
+mean "not resumed" — measured directly on 4 real archived runs (`litectx-maintainer-bareloop`'s
+`msx7xoe0`/`msx87qqs`/`msxf9129`/`msxf2mwi`) that carry a real `priorSpentUsd` fold with NO
+resume-seed record at all. `resumeSeed` (when present) supplies the DETAIL —
+`{phase, completed, skipping, divergence}` — printed as `resumed: yes — phase close, 1 of 1
+completed step(s) skipped`; a resumed leg with no resume-seed record still reads `resumed: yes
+(no resume-seed detail recorded)`, honestly, rather than falling back to `no`. `thisFileSpend`
+prefers `job-end.engagementSpentUsd` (F103, `src/run.js:284` — this engagement's own fold-out
+spend) when the record carries it, falling back to summing this file's own `worker-round.costUsd`
+when it does not (measured absent on `u-msf70nei` itself); an unpriced round anywhere in THIS
+FILE makes the figure `null` regardless of source (F6, never a partial sum stamped exact) — both
+figures print on the `spent:` line, each labeled with its source, never one silently standing in
+for the other. `spendMismatch` is the same-class check for a NON-resumed run: there is no fold to
+explain a gap, so `job-end.spentUsd` disagreeing with this file's own summed rounds by more than
+$0.0001 is a genuine finding, printed as `MISMATCH vs job-end`, never hidden — measured across
+every non-resumed run in the available archive (aurora-u, bareagent-u, litectx-maintainer): zero
+trip it. `--all`'s spend column stays the chain total (what a directory scan asks first) but
+marks a resumed row with a trailing `*` on its id, with one footnote line
+(`* resumed run — spend is the chain total, see detail`) printed once, only when the listing
+holds at least one such row.
+
+`formatReplay` renders the full page: a header block (`goal:`/`shape:`/`signed:`/`branch:`/
+`resumed:`/`outcome:`/`spent:`, every absent field printing the literal `none recorded` — never
+blank, never a fabricated `0`), a `TIMELINE (steps)` or `TIMELINE (iterations — loop-shape run)` section with
+its own column-header row (`#  step  result  rounds  tools  checks  tree  wall  spend`, or the
+iteration equivalent without `checks`/`tree`) and a `↳ tripped:`/`↳ close:` line under any row an
+escalation or close fell inside, a `CLOSE` section (never omitted — `none — the run ended before
+any close ran` when nothing ever closed; the failing stage, if any, prints FIRST with `✗`, the
+rest `name OK`), `ENDING` (last record + 3 before it, plus an out-of-window escalation), the
+`BEHAVIOUR` block, and a `MEMORY-CACHE` line **always printed** — the existing wording when the
+run carried a record, `not armed on this run` otherwise. An absent record is never silent.
+`RESULT` words are `GREEN`/`RED`/`UNKNOWN` — `satisfied`/`green`/`already-green` read GREEN,
+every other non-null value reads RED.
+
+`summarizeForAllLine(summary)` builds one `--all` row's raw fields (`id, job, shape, outcome,
+spend, wall, steps, reason`) — `shape` is `plan`/`loop` (from `timelineKind`, never the
+always-literal-`'plan'` `job-start.shape` field); `steps` is a bare count for a plan-shape run,
+`"N it"` for a loop-shape one; `reason` is `category — <first clause of detail, cut at 60 chars,
+plain "…", no [+N] marker>` off `lastEscalation` — **`detail` only, never `decision`** for this
+column specifically (unlike the full report's `↳ tripped:` line, which does fall back to
+`decision` — this compact row has no room for both and the coordinator's own ruling keeps
+`decision`'s generic per-category prose out of it); `-` on a green row; the distinct, literal
+`no job-end (killed mid-run)` when the spine never reached a `job-end` at all (`outcome` itself
+is `null`) — not folded into the ordinary escalation case. `formatAllLines(entries)` renders every
+row as a FIXED-COLUMN, ALIGNED table with a header row (never CSV — columns are padded, not
+delimited; the header's own label lengths count toward the column widths) plus any
+`<name>  not-a-spine` lines at their original position (unpadded — a filename carries no
+outcome/spend/wall of its own). No header prints when there are zero real spines in the listing.
+
+`scripts/run-replay.mjs <spine.jsonl>` resolves the sibling `-gate-audit.jsonl` automatically and
+prints the full report; `--all <dir>` is **name-agnostic** — the patient corpus does not agree on
+one filename convention (`u-<id>.jsonl`, `battery-A1-<id>.jsonl`, `l2accept-L1-<id>.jsonl`,
+`reuse-<id>.jsonl`, `types-screen-C-<id>.jsonl`, …), so a spine is identified by CONTENT: any
+`.jsonl` that is not a sidecar by name (`*-gate-audit.jsonl`, `*.lag.jsonl`) and whose records
+include a `job-start` (present on every real spine checked, nested wrappers included) or
+`run-start` (present on most, absent on a run that died before ralph's first iteration). A
+`.jsonl` matching neither is printed as `<name>  not-a-spine` — never silently dropped or
+misread as an empty run. Both modes mirror `scripts/behaviour-readout.mjs`'s own malformed-line
+handling (skip-and-count, never throw).
+
+**F117's PRD TODO #20 is now landed in full**: both the verdict CLASS and the worker MODEL
+name are surfaced (see `verdictType`/`model` above) — hamr blessed the item verbatim
+("1") on 2026-08-25, so the spine-WRITER change to `job-start` (`src/run.js`) that a
+report-only reader would not otherwise make on its own authority went in with his explicit
+word. `judgedCount` on a close-verdict was never a reliable stand-in for the class either way
+(it appears on plain green closes too, not only softgreen ones) — this reads the real
+declared field instead.
+
+**Transport retries and floor reasons (F119, live-proven 2026-08-25)**: every
+`transport-retry` record (`src/planrun.js:126`) whose `seq` falls inside a step's or
+iteration's own window prints a `↳ transport retry ×N (recovered|not recovered|partially
+recovered) — <first 80 chars of the error>` line under that row — the same open-interval
+`seq` windowing `windowSpend` already uses for rounds. A retry whose `seq` falls outside
+every occurrence window (e.g. during the scout/plan phase) is counted instead under the
+`TIMELINE` header as `transport retries outside steps: N`, printed only when that count is
+non-zero. The header's `spent:` line, whenever `spendComplete` is `false`, appends
+`· floor because: <reason(s)>` — derived from the spine, never guessed: `transport retry
+×N` (any `transport-retry` record), `unpriced round(s)` (a `worker-round`/`judge-round`
+with non-finite `costUsd`), `cut mid-call` (a `wall-halt` record with `cutMidCall:true`),
+`stall` (a `stall` record), `prior leg floor` (`job-start.priorSpendComplete === false`) —
+every cause that actually shows evidence prints, never just one; a floor with no derivable
+evidence on this spine (an older archive, or a resumed leg's floor inherited from a file not
+in hand) prints `· floor (reason not in spine)` instead. `--all` adds no new column: a run
+that carried any transport retry gets ` ⟲N` appended directly after its outcome word (same
+posture as the resumed `*` on `id`), with one footnote
+(`⟲N transport retry(ies), recovered inline — see the full replay for detail`) printed once
+when the listing holds at least one such row. Live-proven on `u-mt8yk53k` (F119): two
+recovered TLS `bad record mac` retries, both inside step `fix-mypy-strict`'s window —
+`floor because: transport retry ×2` and `green ⟲2` in `--all`, on a run that finished green.
+
+```js
+import { replayRun, formatReplay } from 'bareloop';
+const spine = fs.readFileSync(spineFile, 'utf8').trim().split('\n').map(JSON.parse);
+const audit = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.parse);
+console.log(formatReplay(replayRun(spine, audit, { runId: 'mszcthk1' })));
+```
+
+### `PROMPT_REGISTERS` / `isPromptFile(path)` — `src/promptregisters.js`, and the prompt-commit rule
+
+PRD build-list item 5 (TODO #8), Q9 answered (hamr, 2026-08-25): "a check". A commit that
+changes a **prompt register** — one of the model-facing system/strategy/instruction
+strings a worker or judge actually reads (`SCOUT_SYSTEM`, `AUTHOR_SYSTEM`,
+`PERSONA_TOOLS`, `READ_SHIM_STRATEGY`, and their neighbors — the full, verified list is
+`PROMPT_REGISTERS` in `src/promptregisters.js`) — must say, in its own message, three
+things: what failure caused the change, what it addresses, and what it corrects.
+Convention-only was rejected: doctrine already on record is "a frozen rule without a
+wired detector is prose." `isPromptFile(path)` is the pure predicate the check runs
+against; both are exported from `bareloop`'s root so the inventory has exactly one home.
+
+hamr's addition (2026-08-25, same day): the `Failure:` line must ALSO cite the **run**
+that caused the change — `run <id>` or `run u-<id>` (case-insensitive at the `run`
+keyword, multiple refs fine), matched by `\brun\s+(u-)?[a-z0-9]{6,12}\b`. The commit
+points at the run; `replayRun`/`formatReplay` (above) close the loop the other way,
+turning that run id back into the whole story. A `Failure:` line with no run reference
+fails with a distinct message: `Failure: must cite the run that caused the change (e.g.
+"Failure: run mszcthk1 — ...")`. FORMAT ONLY — the check never verifies the cited run's
+spine file actually exists (a run's patient lives outside this repo entirely, so there is
+nothing here to check it against).
+
+Enforcement is **local only** — wired into `npm test` (see `package.json`'s `test`
+script), never into `.github/workflows/*` (CI already runs `npm test`, so the rule is
+enforced there without an ask-first CI edit). The check itself lives outside the
+published package, at `scripts/prompt-commit-check.mjs` (pure decision logic in
+`scripts/promptcommitlib.mjs`, `scripts/` is not in `package.json`'s `files`, so none of
+this ships):
+
+```
+node scripts/prompt-commit-check.mjs --range origin/main..HEAD   # validates every commit
+                                                                    # in the range that
+                                                                    # touches a prompt file
+node scripts/prompt-commit-check.mjs --message-file .git/COMMIT_EDITMSG
+                                                                    # commit-msg hook mode:
+                                                                    # validates one message
+                                                                    # against staged files
+```
+
+A compliant message:
+
+```
+fix: tighten PERSONA_TOOLS
+
+Failure: run mszcthk1 — worker read the arbiter spine after being told it was denied
+Addresses: PERSONA_TOOLS did not name the spine file explicitly
+Corrects: spells the denied paths from ARBITER_BOOK_STORES
+```
+
+A commit that touches no prompt-register file is passed without inspecting its message.
+An unresolvable `--range` (no such ref — a fresh clone with no `origin`, a detached
+checkout that never fetched) is a **skip**, printed and exited 0: a missing baseline is
+not a rule violation, never a red.
+
+
 ## Architecture
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,

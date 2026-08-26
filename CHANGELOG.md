@@ -7,6 +7,92 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Generic run replay** (PRD build-list #6): `replayRun`/`formatReplay` (`src/replay.js`)
+  reconstruct one run's whole story from its spine JSONL + gate-audit sidecar. The single-run
+  report is a signed layout (hamr, 2026-08-25): a header block (`goal:`/`shape:`/`signed:`/
+  `branch:`/`outcome:`/`spent:`, absent fields printing the literal `none recorded`, never
+  blank or a fabricated `0`), a `TIMELINE (steps)` or `TIMELINE (iterations — loop-shape run)`
+  section with its own column-header row and per-row time/cost (wall, `$` — a `null` `costUsd`
+  anywhere in a row's window makes that row's spend `unknown (N unpriced rounds)`, never `0` or
+  a partial sum stamped exact) and a `↳ tripped:`/`↳ close:` line under any row an escalation or
+  close fell inside, a `CLOSE` section (never omitted — `none — the run ended before any close
+  ran` when nothing ever closed; picks the run's REAL final close by seq, never by record type —
+  an early `outer-close` precheck reading red must not shadow a LATER fix-loop close-verdict that
+  went satisfied), `ENDING` (last record + 3 before it, plus an out-of-window escalation), the
+  `BEHAVIOUR` block, and a `MEMORY-CACHE` line always printed (`not armed on this run` when
+  absent — absence is never silent). Stop reason is `category — decision — detail` off the last
+  escalation, so a run's actual failure text (a TLS "bad record mac", a specific mypy error)
+  rides onto the report instead of just the generic per-category decision prose. A step id that
+  recurs after a replan is split per OCCURRENCE, never merged into one pooled row. `--all <dir>`
+  is name-agnostic (a spine is identified by a `job-start`/`run-start` record in its content,
+  never a filename convention) and prints a fixed-column, ALIGNED table (never CSV) — `id job
+  shape outcome spend wall steps reason`, `reason` built from `detail` only (never `decision`,
+  cut at 60 chars) — flagging any non-spine `.jsonl` as `<name> not-a-spine` rather than dropping
+  it. A RESUMED run's `job-end.spentUsd` is a CHAIN total (prior legs folded in) that can never
+  equal this one file's own rounds (measured: `u-msf70nei` header `$5.3389` vs its own 55 rounds
+  summing to `$1.2127`) — the header now prints both, each labelled, plus a `resumed:` line
+  (keyed on `job-start.priorSpentUsd`, never on the narrower `resume-seed` record alone — 4 real
+  archived runs carry a real fold with no resume-seed record at all). A non-resumed run's own
+  spend disagreeing with its summed rounds is a genuine finding and prints as a `MISMATCH`, never
+  hidden (measured: 0 of the archive's non-resumed runs trip it). `--all` marks a resumed row
+  with a trailing `*` and one footnote line when the listing holds any. Reuses `runBehaviour`/the
+  `memory-cache` readout rather than reimplementing either. Reads only, mints no verdict, writes
+  nothing to the spine. `job-start` (`src/run.js`) now also carries `verdictType` (the spec's
+  required verdict class) and `model` (when the shell-owned provider binding itself carries one)
+  — PRD TODO #20, blessed verbatim by hamr the same day. The header prints `class:`/`model:`
+  right after `shape:` (`not recorded (pre-F117 spine)` / `not recorded` on an older archive or
+  a provider with no `.model`), and `--all` gains `class`/`model` columns (`model` kept FULL,
+  never truncated).
+- **Prompt-commit shape — a check, not convention** (PRD build-list #5, TODO #8, Q9 answered
+  by hamr 2026-08-25): a commit that changes a prompt register (a model-facing
+  system/strategy/instruction string a worker or judge reads) must now say, in its own
+  message, three labelled things — `Failure:` what caused the change, `Addresses:` what it
+  addresses, `Corrects:` what it corrects. `src/promptregisters.js` (`PROMPT_REGISTERS`,
+  `isPromptFile`, both exported from `bareloop`'s root) is the ONE inventory: 7 files carry
+  real prompt content (`src/authorscout.js`, `src/authorflow.js`, `src/judged.js`,
+  `src/cardauthor.js`, `src/readshim.js`, `src/tools.js`, `src/planrun.js`) — more than double
+  the 8 named consts a first grep found, once module-private consts and inline
+  template-literal prompt builders (`scoutPrompt()`, `cardCasesPrompt()`, `locatePrompt()`,
+  `strategyFor()`) are counted; the check is file-scoped precisely because a const-scoped one
+  would have silently missed those. Enforcement is LOCAL ONLY — wired into `npm test`
+  (`scripts/prompt-commit-check.mjs --range origin/main..HEAD`), never into any
+  `.github/workflows/*` file (ask-first, untouched); an unresolvable range (no `origin`, no
+  fetch) is a printed SKIP at exit 0, never a violation. Pure decision logic lives in
+  `scripts/promptcommitlib.mjs`, neither of which ships (`scripts/` is outside
+  `package.json`'s `files`). hamr's same-day addition: the `Failure:` line must also cite
+  the RUN that caused the change (`run <id>` / `run u-<id>`, `\brun\s+(u-)?[a-z0-9]{6,12}\b`
+  — alphabet/length measured against 231 real archived spine ids, every one exactly 8
+  lowercase-alnum chars), failing with a distinct message
+  (`FAILURE_NEEDS_RUN_REF`) when absent; format only, never checked against a real spine
+  file.
+- **Run→code stamp** (F118, the parked half of the same day's prompt-commit build, closed
+  same day on hamr's go): the prompt-commit check closes commit→run; this closes run→code.
+  `src/codeversion.js`'s `codeVersion()` is a pure, $0, no-shell reader — `version` from
+  bareloop's own `package.json`, `sha` from `.git/HEAD` (loose ref, falling back to
+  `packed-refs`) ONLY when a `.git` directory exists at the package root (a dev checkout;
+  an npm install has none), `dirty` always `null` (uncommitted-changes state cannot be
+  known without a shell — reported as unknown, never faked as `false`). `job-start`
+  (`src/run.js`) now also carries `code: {version, sha}`. `replayRun`/`formatReplay`
+  (`src/replay.js`) read it: a `code:` line right after `model:` — `bareloop 0.14.0 @
+  43f2812` / `@ sha unknown` / `not recorded (pre-F118 spine)`; no new `--all` column
+  (hamr's index is already full). The library never grows a shell seam to answer this —
+  `run` stays the one locked verb.
+- **Replay surfaces transport retries and floor reasons** (F119, live-proven the same day
+  a real run — `u-mt8yk53k` — fired the retry seam twice): `replayRun`/`formatReplay`
+  window `transport-retry` records into the step/iteration occurrence they fell inside
+  (same `seq` windowing as `worker-round`), printing `↳ transport retry ×N (recovered|not
+  recovered|partially recovered) — <error>` under that row; a retry outside every window
+  prints as `transport retries outside steps: N` under the `TIMELINE` header instead. The
+  header's `spent:` line, whenever `spendComplete:false`, now appends `· floor because:
+  <reason(s)>` — derived from the spine, never guessed: `transport retry ×N`, `unpriced
+  round(s)`, `cut mid-call`, `stall`, `prior leg floor`, every cause that shows real
+  evidence, or `floor (reason not in spine)` when none can be derived. `--all` adds no
+  column: a run carrying any retry gets ` ⟲N` appended to its outcome word (same posture
+  as the resumed `*`), with one footnote when the listing holds any. Report-only — reads
+  existing `transport-retry`/`wall-halt`/`stall`/`job-start` records, writes nothing.
+
 ## [0.14.0] — 2026-08-25
 
 ### Added

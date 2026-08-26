@@ -17,6 +17,7 @@ import { validateJob, jobSpecHash, checkApproval } from './job.js';
 import { runPlan } from './planrun.js';
 import { SMOKE_STORE, resolveHumanRuling } from './kinds.js';
 import { readShimArm } from './readshim.js';
+import { codeVersion } from './codeversion.js';
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
@@ -303,6 +304,19 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   emit('job-start', {
     job: job.job, specHash: jobSpecHash(job), budgetUsd: job.budgetUsd,
     shape: 'plan', goal: job.goal,
+    // F117: replay reads these; report-only. `verdictType` is a REQUIRED spec
+    // field (src/job.js:552 reds `missing-required` before this line is ever
+    // reached), so it is always a real validated string here, never a
+    // fabricated default. `model` rides along only when the shell-owned
+    // provider binding actually carries one (bare-agent's Loop reads
+    // `baseProvider.model` directly — src/planrun.js:76's own comment); a
+    // native/clipipe call path with no such provider omits the field rather
+    // than guessing.
+    verdictType: job.verdictType,
+    ...(typeof provider?.model === 'string' ? { model: provider.model } : {}),
+    // F118: replay reads this; report-only. `dirty` is deliberately omitted —
+    // it can't be known without a shell, and null = unknown, never faked.
+    code: (() => { const { version, sha } = codeVersion(); return { version, sha }; })(),
     // RESUME (v1.46 §3) — the DECLARED fold, the `try-start` precedent one level
     // down. A reader reconstructing a chain of resumes must add only each attempt's
     // OWN new rounds; without this record the second resume of a halted run would

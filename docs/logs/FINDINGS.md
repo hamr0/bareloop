@@ -9054,3 +9054,521 @@ ledger, not in the resume mechanism, and not in any budget/ceiling enforcement �
 battery driver's own ceiling accounting (`spendUsd`, summed across rows) was already
 leg-scoped on the `observed` side of its `max()`; only the `ledgerUsd` side was chain-scoped,
 which this fix corrects.
+
+## F117
+
+**Generic run replay built; the 5-minute test passes and is what found three defects.**
+
+PRD TODO item 6 / build-list item 4: today no failed run can be reconstructed in under five
+minutes — every byte is on disk (the spine JSONL + its gate-audit sidecar) but only
+hand-slicing JSONL reads it.
+
+### What was built
+
+`replayRun`/`formatReplay`, exported from `src/replay.js` (and `src/index.js`) — a
+report-only reader over a run's spine + gate-audit: reads only, mints no verdict, writes
+NOTHING to the spine, arbiter untouched. Reuses `runBehaviour`/`formatBehaviour` for the
+tool-call breakdown and the `memory-cache` record's readout rather than reimplementing
+either. `scripts/run-replay.mjs <spine.jsonl>` prints the full report for one run
+(resolving its sibling `-gate-audit.jsonl` automatically); `--all <dir>` lists every run in
+a directory.
+
+### The test (pre-declared before the build)
+
+The orchestrator's own pass/fail bar, fixed before any of the three runs were opened: 3
+UNSEEN failed runs, 3 different terminals, pass = each one explained in under 5 minutes.
+
+- `bareagent-u-bareloop/u-msdsmkid.jsonl` — step-red/step-variance territory (a step that
+  escalates, replans, and re-runs to green)
+- `bareagent-u-bareloop/u-msew1uy5.jsonl` — cap-halt, gate-terminated
+- `litectx-maintainer-bareloop/u-msx87qqs.jsonl` — wall-halt
+
+Wall time: 10 seconds to run all three through the CLI; each one's report read and
+understood in under a minute. **PASS on time.**
+
+### The three defects the test surfaced (each fixed and verified on the real file)
+
+**(a) The real error was hidden.** `u-mszcthk1`'s header showed only the generic per-category
+`decision` prose ("the provider path failed mid-run…") — the actual failure, a TLS `bad
+record mac`, lived in the escalation's own `detail` field and never reached the printed
+report. Its terminal escalation record also fell 4 records before `job-end`, outside the
+fixed 3-before ENDING window, and was silently dropped. Fixed: `stopReason` is now
+`category — decision — detail` (detail trimmed at 400 chars with an explicit
+`…[+N chars]` marker, never silent); `ending.escalation` carries the last escalation
+whenever it falls outside the 3-before window.
+
+**(b) `--all` matched only `u-*.jsonl`.** 4 of 12 patients in the archive use other naming
+conventions entirely (`aurora-soar-bareloop`'s 201 files are `battery-A1-<id>.jsonl` /
+`l2accept-L1-<id>.jsonl` / `l2clip-L1-<id>.jsonl`; `mailproof-job2-bareloop`,
+`litectx-job1-bareloop`, `litectx-types-bareloop` each have their own prefix) — every one of
+them read as an empty directory. Fixed: a spine is now identified by CONTENT (a `job-start`
+or `run-start` record present anywhere in the file — measured on every real spine across all
+12 patients, 100% carry a `job-start`), never by filename. A `.jsonl` that is neither a
+gate-audit/lag sidecar by name nor a spine by content is printed as `<name>  not-a-spine`,
+never dropped (found two genuine cases in the real archive: `litectx-types-bareloop`'s
+`types-check-log.jsonl`/`types-close-log.jsonl`, bare `{ts, check, ...}` rows with no `type`
+field at all).
+
+**(c) A step run twice after a replan was merged by name.** `u-msdsmkid`'s `fix-loop-strict`
+step has two `step-start`/`step-end` pairs (escalated, then green after a replan) — the
+timeline printed two rows, but both showed the identical full-file tally (`82 rounds`) because
+`rounds`/`checks`/`tree-changed` were being scanned across the WHOLE spine by step id, not
+scoped to either occurrence. Fixed: each `step-start`→its paired `step-end` is now its own
+OCCURRENCE, attributed by `seq` (the spine's own monotonic counter, never `ts` — every record
+type shares one seq space, so it is an exact ordering `ts` is not). Real split: 54 + 28 = 82,
+matching the file's own `worker-round` count for that step id exactly. Repeats print an
+ordinal marker (`fix-loop-strict (2nd)`); the first occurrence prints unmarked.
+
+### The wall ambiguity
+
+`u-msx87qqs` prints both: the file-scoped wall (`job-start`→`job-end` of this ONE spine,
+15m12s) and the SIGNED chain clock read off the run's own `wall-halt` record (`elapsedMs`
+3603793.6ms of a `requestedMs` 3600000ms signed — `60m04s of 60m00s signed`). Both numbers
+are true and both are now labelled, so neither is mistaken for the other. A run with no
+`wall-halt` (the ordinary case) falls back to the single `wall-clock` record every run emits
+near its start — but that record's `elapsedMs` is a START-of-engagement snapshot (chain time
+already inherited when this engagement began, via `createClock`'s `priorElapsedMs` fold), not
+this run's own elapsed time. Printing it under the same "X of Y signed" template as
+`wall-halt` read as "this run took 0 seconds" on a cold run (`u-ms2c0ls7`: `clock: 0.0s of
+30m00s signed`) — the unknown/partial-rendered-as-zero honesty class this whole reader exists
+to refuse. Fixed: the wall-clock line now reads `clock: 30m00s signed · 0.0s inherited from
+prior legs at start (from wall-clock; no end-of-run reading in this file)` — naming what the
+number is instead of implying an end-of-run total that was never taken.
+
+### Honest rows
+
+`litectx-u-bareloop`'s 4 `reuse-exec-*` spines list as `unknown unknown` under `--all` — each
+was killed mid-scout, before any `job-end` existed. Never fabricated as `$0`/green; the
+absence reads as the absence it is.
+
+### Side finding: a full `npm test` leaked ~155 tmp dirs per run
+
+`ralph-test-*` (49), `reuse-test-*` (48), `run-test-*` (57), `resume-test-*` (2) — file-scope
+`mkdtempSync` in `tests/ralph.test.js`, `tests/reuse.test.js`, `tests/run.test.js`,
+`tests/resume.test.js` with no cleanup. This filled `/tmp` (tmpfs, `ENOSPC`) and blocked the
+first build agent before it wrote a byte. Fixed with a file-scope `after(() =>
+rmSync(dir/base, {recursive:true, force:true}))` in each of the four files; verified
+`ls /tmp | grep -cE '^(ralph|reuse|run|resume)-test-'` at 0 before and 0 after a full
+`npm test`.
+
+### Coverage note — not exhaustive, left as is
+
+`replayRun` pairs the FIRST `job-start` with the LAST `job-end` in a spine. Correct for every
+plain run-u spine checked, but a wrapper spine that nests multiple job runs inside one file
+(e.g. `litectx-u-bareloop/reuse-msc6w93z.jsonl`: 5 `job-start` records, 10 `run-start`
+records) summarizes as ONE outer row rather than five nested ones. Known, named, not fixed —
+the nested jobs are still visible in the raw spine, just not split out by `--all`.
+
+### hamr's read of the first output (2026-08-25)
+
+Judged against the committed build (b6f0157), three things had to change, stated plainly:
+
+- **Index vs detail confusion.** The `--all` listing packed the WHOLE escalation paragraph
+  (category, the generic per-category `decision` prose, and the run's own `detail`, all
+  concatenated) into one unbounded line per run — indistinguishable in shape from the single-run
+  detail view's own header line, so a directory listing meant for a fast scan read exactly like
+  20 stacked detail reports with no visual boundary between "the index" and "the detail".
+- **Missing per-step time/cost.** The first build's `TIMELINE` rows carried outcome, rounds, tool
+  calls, checks and tree-changed — but no wall time and no per-occurrence spend at all, so the
+  one thing a 5-minute triage most wants to know first ("where did the money and the clock go")
+  was absent from the very timeline meant to answer it.
+- **Loop-shape runs rendered stepless.** A spine with no `step-start` records (a resumed leg
+  whose only step was already-green-skipped, only the close-fix loop running) printed
+  `TIMELINE\n  (no steps reached)` — technically true and completely uninformative on a run that
+  actually ran two full iterations and $5.34 of real work; the reader had assumed every run was
+  plan-shaped and had nothing to fall back to for the ones that were not.
+
+### The signed layout (hamr, 2026-08-25)
+
+Two views, fixed columns, never CSV:
+
+- **Index (`--all <dir>`)**: one aligned table, header row included in the column-width
+  computation — `id  job  shape  outcome  spend  wall  steps  reason`. `shape` is `plan`/`loop`
+  (derived from which timeline the spine actually has, never the always-literal-`'plan'`
+  `job-start.shape` field); `steps` is a bare count for a plan-shape run, `"N it"` for a
+  loop-shape one; `reason` is `category — <first clause of the escalation's own detail, cut at
+  60 chars with a plain `…`>` — **`detail` only, never `decision`**, because `decision` is the
+  same sentence for every run in a category and this row's whole job is showing what was
+  DIFFERENT about this one. A `.jsonl` that is not a spine prints `<name>  not-a-spine`, at its
+  real position in the listing, never silently dropped.
+- **Detail (`<spine.jsonl>`)**: a header block (`goal:`/`shape:`/`signed:`/`branch:`/`outcome:`/
+  `spent:`), a `TIMELINE (steps)` or `TIMELINE (iterations — loop-shape run)` section with its
+  own column-header row and per-row wall+spend, a `CLOSE` section, `ENDING`, `BEHAVIOUR`, and
+  `MEMORY-CACHE`.
+
+The rulings behind both, load-bearing and unconditional:
+
+- Unknown money/time prints `unknown` (or, in the header block, the literal `none recorded` for
+  an entirely absent record) — never `0`, and a partial sum is never stamped exact. One
+  unpriced `worker-round.costUsd` anywhere in an occurrence's `seq` window makes that occurrence's
+  whole spend `unknown (N unpriced rounds)`, never a sum of only the priced ones.
+- `MEMORY-CACHE` is always printed — the existing wording when the run carried a record,
+  `not armed on this run` when it did not. Absence is never silent.
+- `CLOSE` is never omitted — `none — the run ended before any close ran` when the spine holds
+  no real close at all (measured: `u-msdsmkid`, stopped by a step-variance meter before
+  `judgeClose()` ever fired). Picking the right close-verdict record matters more than it looks:
+  `resolveClose` takes the LAST (by `seq`) record among staged `close-verdict`s and `outer-close`,
+  never a type preference — `outer-close` is a PRECHECK fired once before the fix loop starts, so
+  when it reads red the fix loop's own later close-verdicts are the true final answer. Measured
+  live on `u-msf70nei`: its `outer-close` (seq 14) reads `needs_revision`, but the fix loop's own
+  close-verdict two iterations later (seq 97) reads `satisfied` — and that IS what the run ended
+  on (`job-end.outcome:'green'`). An early implementation that preferred `outer-close`
+  unconditionally reported a run that went green as still needing revision.
+- A repeated step id is split per OCCURRENCE (never merged by name) — see F117's own body above.
+- Loop-shape runs (no `step-start` at all) get their own `iterations[]` timeline, built from
+  `iteration-start`/`close-verdict`/`run-end`/`escalation`, never an empty/misleading steps table.
+- The real escalation `detail` is the stop reason a reader needs; the generic per-category
+  `decision` prose is secondary — present in the full detail view's `stopReason`/`↳ tripped:`
+  lines (which have the room), deliberately absent from the compact `--all` `reason` column
+  (which does not).
+
+### Not in the spine — parked
+
+The signed verdict CLASS (green/softgreen) and the worker MODEL name are NOT carried by any
+spine record — they live only in the signed spec. Surfacing either in the replay means adding
+fields to the `job-start` record in `src/run.js`: a spine-WRITER change, which this report-only
+reader does not make on its own authority. Held for hamr's explicit word (PRD TODO #20). The
+replay prints neither rather than inferring one — `judgedCount` on a close-verdict, for
+instance, is not a reliable stand-in for the verdict class: it appears on plain green closes
+too, not only softgreen ones.
+
+### Spend on resumed runs
+
+Reconciling numbers on `u-msf70nei.jsonl` (a real archived run) turned up a fourth honesty
+defect, same class as the wall/clock split: the header printed `spent: $5.3389`, but the
+file's own 55 `worker-round`s (all priced) sum to `$1.2127`. The run is a RESUME
+(`resume-seed`, `src/planrun.js:2622`) — `job-end.spentUsd` is the CHAIN total (prior legs
+folded in, `src/run.js:227`'s `chainFoldUsd`, seeded from `job-start.priorSpentUsd`), so a
+resumed leg's own spine can NEVER add up to its own header figure and printing only the chain
+number silently hid that. Fixed: the header now states both, each labelled — `spent:
+$5.3389 chain total (job-end; prior legs folded) · this file $1.2127 (55 rounds, all priced;
+summed rounds) · of $8.00 signed`. `resumed` is deliberately keyed on
+`job-start.priorSpentUsd`, never on `resume-seed`'s presence alone — measured directly, 4 real
+archived runs (`litectx-maintainer-bareloop`'s `msx7xoe0`/`msx87qqs`/`msxf9129`/`msxf2mwi`)
+carry a genuine chain fold with NO resume-seed record at all (resumed before any plan reload
+was needed), and keying the check on resume-seed would have printed `resumed: no` on runs that
+really are resumed. A NON-resumed run has nothing to fold — its own `spentUsd` disagreeing with
+its own summed rounds by more than a cent's rounding noise is a real finding, not an expected
+honest split, and prints as `MISMATCH vs job-end`, never hidden; measured across every
+non-resumed run in the available archive (aurora-u, bareagent-u, litectx-maintainer): zero trip
+it. `--all` keeps the chain total in its spend column (what a directory scan asks first) but
+marks a resumed row with a trailing `*` and one footnote line when the listing holds any.
+
+### PRD TODO #20 blessed same day — verdictType now on job-start; model landed too
+
+hamr blessed PRD TODO #20 verbatim ("1") the same day this whole item shipped — a spine-WRITER
+change to `job-start` (`src/run.js:303`), which a report-only reader would never make on its own
+authority. `verdictType: job.verdictType` was safe to add outright: it is a REQUIRED spec field
+(`src/job.js:552` reds `missing-required` before `job-start` ever fires), so it is always a real,
+validated string at the emit site — no default was invented because none needed inventing.
+`model` turned out to be citable too, contrary to the original PRD line's assumption that it was
+"only resolvable inside bare-agent or per-round later": `src/planrun.js:76`'s own comment
+documents bare-agent's Loop reading `baseProvider.model` directly off the exact `provider` object
+`runJob` already receives as a parameter, so `model: provider.model` reads a real, synchronously-
+available property rather than guessing one — added conditionally
+(`typeof provider?.model === 'string'`), so a provider double or a native/clipipe binding with no
+such field (measured: `tests/helpers.js`'s `scriptedProvider`) omits it rather than fabricating
+one. Both landed; `src/replay.js` reads them as `class:`/`model:` right after `shape:`, with
+`--all` gaining a `class` column. No test asserts job-start's exact/complete field shape anywhere
+in the suite (checked every `'job-start'` occurrence across `tests/*.test.js`), so nothing broke.
+
+### Numbers
+
+Suite: 2096 → 2114 (24 tests total in `tests/replay.test.js`, +2 in `tests/run.test.js`,
+across the whole build). `npm run typecheck` and `npm run build:types` both clean throughout
+every round.
+
+## F118
+
+**Prompt-commit shape built — a check, wired into `npm test`, enforcing local-only; the
+verified inventory came out to 7 files, not the 8 named consts a first grep found.**
+
+PRD TODO item 8 / build-list item 5. Q9 (hamr, 2026-08-25): "a check" — convention-only was
+rejected, on doctrine already on record: "a frozen rule without a wired detector is prose"
+(`docs/product/2026-08-23-agreed-build-list.md:187-189`). A commit that changes a **prompt
+register** (a model-facing system/strategy/instruction string a worker or judge actually
+reads) must now say, in its own message, three labelled things: `Failure:` what caused the
+change, `Addresses:` what it addresses, `Corrects:` what it corrects.
+
+### What was built
+
+`src/promptregisters.js` — `PROMPT_REGISTERS` (a frozen `{file, name}[]`) and a pure
+`isPromptFile(path)` predicate, both exported from `src/index.js`. This is the ONE place the
+inventory lives; both the check and `bareloop.context.md` point at it rather than
+re-deriving it. `scripts/prompt-commit-check.mjs` — pure Node, no deps, reads only (never
+edits a file, never touches git state beyond `rev-list`/`show`/`diff`/`diff-tree`), two
+modes: `--range <rev-range>` validates every commit in the range that touches a
+prompt-register file; `--message-file <path>` validates one message (a `commit-msg` hook
+shape) against the currently staged files. The pure decision logic (`validateCommitMessage`,
+`evaluateCommits`) lives in `scripts/promptcommitlib.mjs` so `tests/promptcommit.test.js`
+(15 tests) can exercise it on constructed inputs without shelling out to git or building a
+tmp repo. `package.json`'s `test` script becomes `node --test && node
+scripts/prompt-commit-check.mjs --range origin/main..HEAD`; an unresolvable range (no
+`origin` remote, a detached checkout that never fetched) prints a SKIPPED line and exits 0 —
+a missing baseline is not a violation, confirmed live with `--range nosuchref..HEAD`.
+
+### The verified inventory — 7 files, more than double the named-const count
+
+The brief's own grep named 8 exported consts across 7 files. Re-verifying against source
+(grepping every `src/*.js` for exported/module-level string consts that read as model-facing
+instruction text, separately for inline template-literal prompts built inside a function)
+confirmed the FILE list but not the const count: the same 7 files carry it, but 3 of them
+hold prompt content the first pass missed entirely.
+
+- `src/authorscout.js` — `SCOUT_SYSTEM`, `SCOUT_RECOVERY_PROMPT` (both named), plus
+  `scoutPrompt()` (203) — a template literal built inline, not a const, and the actual
+  survey prompt sent to the model.
+- `src/authorflow.js` — `AUTHOR_SYSTEM` (named), plus `REVISE_INSTRUCTION` (138),
+  `STRUCTURE_INSTRUCTION_TOOL` (150), `STRUCTURE_INSTRUCTION_TEXT` (152) — three more
+  exported consts the first grep's line-range didn't catch.
+- `src/judged.js` — `PROMPT_HEAD`, `PROMPT_TAIL` (both named), plus
+  `JUDGE_RULES[*].ask` (per-rule fragments assembled into the locate prompt) and
+  `locatePrompt()` (inline template).
+- `src/cardauthor.js` — `COMPILE_SYSTEM` (named), plus `cardCasesPrompt()` (219) — an inline
+  template that renders the rulebook and the person's own Q6/Q7 answers into the compile
+  prompt.
+- `src/readshim.js` — `READ_SHIM_STRATEGY`, `READ_SHIM_DIFF_STRATEGY` (both named, nothing
+  missed).
+- `src/tools.js` — `PERSONA_TOOLS`, `RETRIEVAL_STRATEGY`, `EDIT_STRATEGY` (all named), plus
+  `COMPONENT_STRATEGIES` (117) and `strategyFor()` (163, assembles per-grant strategy prose
+  sentence-by-sentence), and two module-private (unexported) consts: `LINE_SPACE` (230,
+  used in three tool descriptions) and `PERSONA` (38, currently unreferenced anywhere —
+  dead, kept in the inventory anyway since editing it would still be editing a prompt
+  register in this file).
+- `src/planrun.js` — `NATIVE_READ_STRATEGY` (158, nothing missed).
+
+Checked and confirmed to carry NO prompt content: `src/plan.js`, `src/validate.js`,
+`src/kinds.js`, `src/text.js`, `src/declaredclose.js`, `src/calibrate.js`, `src/index.js`
+(barrel export only). The inventory is deliberately **file-scoped, not const-scoped** —
+`isPromptFile` only ever keys on `file`, and the `name` field is documentation. A
+const-scoped check would have silently missed every inline template-literal prompt found
+above; a file-scoped one cannot, because the whole file is in scope the moment it is in the
+inventory.
+
+### The local-enforcement ruling, and why no workflow file was touched
+
+Enforcement is wired into `npm test` (`package.json`), never into `.github/workflows/*` —
+those are ask-first per this repo's own doctrine, and hamr has not asked for this build to
+touch one. CI already runs `npm test` on every push/PR, so the rule is enforced there
+without an edit to any CI file. The defensive shape (a missing/unresolvable range skips
+rather than reds) exists because the same `test` script has to run correctly on a machine
+with no `origin` remote (a fresh clone) and inside a detached CI checkout that hasn't
+fetched `origin/main` — neither is a rule violation, and failing the whole suite for an
+absent baseline would be a false red distinct from the rule itself.
+
+### Addendum (same day): the Failure line must cite the run
+
+hamr's ruling, same turn as the base build: a prompt-register commit's `Failure:` line
+must also point at the RUN that caused the change — `run <id>` or `run u-<id>`,
+`\brun\s+(u-)?[a-z0-9]{6,12}\b`, case-insensitive at the `run` keyword, multiple refs
+allowed. The alphabet/length was measured, not assumed: `ls
+~/PycharmProjects/bareloop-patients/*/*.jsonl` lists 263 spine-shaped filenames; once the
+`-gate-audit.jsonl` sidecars and `.jsonl.lag` sidecars are stripped, 231 real spine ids
+remain across every prefix this repo's patients use (`u-`, `battery-A1-`, `l2accept-L1-`,
+`reuse-`, `job2-`, ...) — EVERY one exactly 8 characters from `[a-z0-9]`, no exception
+found; `{6,12}` is hamr's own margin around that measured 8. A `Failure:` line without a
+run reference fails with a distinct message, `FAILURE_NEEDS_RUN_REF`
+(`scripts/promptcommitlib.mjs`): `Failure: must cite the run that caused the change (e.g.
+"Failure: run mszcthk1 — ...")`. The commit is one half of a loop this build closes the
+other half of: the commit now points AT the run that motivated it, and `replayRun`/
+`formatReplay` (F117) turn that same run id back into the whole story — a human (or a
+future tool) can walk from either side to the other. The gap this leaves, named rather
+than closed: the check is FORMAT ONLY, by design (a run's patient lives outside this
+repo, unreachable from a commit-message check) — and the run itself does not record which
+CODE COMMIT it ran under, so the loop only closes in the commit→run direction, never
+run→commit. That gap is parked, not built here.
+
+### Numbers
+
+New: `src/promptregisters.js`, `scripts/prompt-commit-check.mjs`,
+`scripts/promptcommitlib.mjs`, `tests/promptcommit.test.js` (20 tests, +5 for the run-ref
+addendum). Suite: 2114 → 2129 (base) → 2134 (with the run-ref addendum). `npm run
+typecheck` and `npm run build:types` both clean throughout. Live-run on this repo's own
+history: `--range origin/main..HEAD` on the `prompt-commit` branch reports `OK — 5
+commit(s) checked, 0 touching a prompt register with a missing/incomplete label`;
+`--range nosuchref..HEAD` reports `SKIPPED — range "nosuchref..HEAD" could not be resolved
+(fatal: ambiguous argument...)`, exit 0. A staged demo commit built in an isolated
+throwaway repo (never inside bareloop itself) with a `Failure:` line lacking a run
+reference reproduces the fail path live:
+`prompt-commit-check: FAILED — these commits change a prompt register but their message
+does not satisfy the rule (non-empty Failure, Addresses, Corrects labels; Failure: must
+also cite the run that caused it, e.g. "run mszcthk1"): <sha>: Failure: must cite the run
+that caused the change (e.g. "Failure: run mszcthk1 — ...")`, exit 1.
+
+### Addendum (same day): the parked half landed — run→code
+
+The base build above closed commit→run and named, explicitly, the gap it left open:
+"the run itself does not record which CODE COMMIT it ran under, so the loop only closes
+in the commit→run direction, never run→commit." hamr's go, same day, closed it. Same
+class as PRD TODO #20 (a report-only field on `job-start`, `src/run.js:303`), which hamr
+already blessed.
+
+`src/codeversion.js` — `codeVersion()`, a pure, $0, no-shell reader: `version` from
+bareloop's own `package.json` (resolved off `import.meta.url`, never a hardcoded path);
+`sha` from `.git/HEAD` ONLY when `.git` is a real directory at the package root (a dev
+checkout — an npm-installed copy has none, and reads that absence as `null`, never
+fakes one), following a symbolic ref to its loose ref file and falling back to
+`packed-refs` when the branch has been packed (this repo's own `main` is packed,
+confirmed live); `dirty` is always `null` — uncommitted-changes state cannot be known
+without a shell, and `null` reports that honestly rather than laundering "unknown" into
+`false`. NEVER shells out to git: `run` is the one locked verb (hamr's law targets
+actions, not syntax), and a report-only field is not a reason for the library to grow a
+shell seam.
+
+`job-start` (`src/run.js:303`) now also carries `code: {version, sha}` alongside F117's
+`verdictType`/`model`. `replayRun`/`formatReplay` (`src/replay.js`) read it: a `code:`
+line right after `model:` — `bareloop 0.14.0 @ 43f2812` on a spine carrying it with a
+real sha, `@ sha unknown` when `sha` is null (an npm-installed run), `not recorded
+(pre-F118 spine)` when the whole field is absent (measured: `u-msdsmkid`, the same
+Aug-3 archived run F117 used as its own pre-field witness). No new `--all` column —
+hamr's index is already full, per the brief.
+
+Tests (`tests/codeversion.test.js`, 6): `codeVersion()` against THIS checkout reads the
+real `package.json` version and the real `.git/HEAD`-resolved sha, both re-derived
+independently in the test (never asserted against `codeVersion()`'s own internals); a
+fake package root with no `.git` yields `sha: null`; a fake root with no `package.json`
+yields `version: null`; neither throws. `tests/replay.test.js` gained one archived-spine
+case (`u-msdsmkid` prints `not recorded (pre-F118 spine)`) and extended the existing
+F117 fresh-spine test (a real `runJob()` through the $0 harness) to also assert the real
+`code.version`/`code.sha` land on `job-start` and print correctly.
+
+### Numbers (addendum)
+
+New: `src/codeversion.js`, `tests/codeversion.test.js` (6 tests). Suite: 2134 → 2141
+(+6 codeversion, +1 replay). `npm run typecheck` and `npm run build:types` both clean.
+Full `npm test` (including `prompt-commit-check`) green: 2141/2141, `OK — 7 commit(s)
+checked, 0 touching a prompt register with a missing/incomplete label`.
+
+### Addendum: Live proof 2026-08-25
+
+A real paid run, `aurora-u-bareloop/u-mt8yk53k.jsonl`, launched 2026-08-25T17:47:54.057Z
+from code sha `aef0c1b0` (`--read-shim A1 --approve c395b716…`, fresh, patient reset to
+seed `d661e50`), is the first real spine to carry the run→code stamp this addendum
+landed. Its `job-start` record, quoted verbatim:
+
+```
+{"type":"job-start","job":"aurora-u-spawner-types","specHash":"c395b716b7afd...",
+"budgetUsd":5,"shape":"plan","goal":"Make packages/spawner pass mypy --strict without
+weakening the tests.","verdictType":"green","model":"claude-sonnet-5",
+"code":{"version":"0.14.0","sha":"aef0c1b05996f9172363d2b82fb5eebbad35d34b"},
+"seq":1,"ts":"2026-08-25T17:47:54.057Z"}
+```
+
+`replayRun`/`formatReplay` render it exactly as designed — no fabrication, no fallback
+text triggered:
+
+```
+class:   green
+model:   claude-sonnet-5
+code:    bareloop 0.14.0 @ aef0c1b0
+```
+
+The run finished green ($1.9983 floor, wall 8m40s, 1 step). This is the first time
+`verdictType`/`model`/`code` have been observed on a REAL archived spine rather than only
+on the $0 test-harness run F117/F118 originally proved them against — the same fields,
+same rendering, now confirmed live. See F119 below for what else this same run's spine
+surfaced.
+
+## F119
+
+**The transport retry fired live: two TLS `bad record mac` alerts in one run, both
+recovered, green.**
+
+The same real run this addendum opened with, `aurora-u-bareloop/u-mt8yk53k.jsonl`,
+carries two `transport-retry` records — the first time PRD TODO item 3 / F115's retry
+seam has fired on a real archived run since it was built 2026-08-24. Both, quoted
+verbatim, grepped straight off the spine:
+
+```
+{"type":"transport-retry","phase":"step:fix-mypy-strict","attempt":1,
+"error":"0039C0F6E97F0000:error:0A0003FC:SSL routines:ssl3_read_bytes:ssl/tls alert bad
+record mac:ssl/record/rec_layer_s3.c:918:SSL alert number 20\n","recovered":true,
+"seq":62,"ts":"2026-08-25T17:53:26.639Z"}
+
+{"type":"transport-retry","phase":"step:fix-mypy-strict","attempt":1,
+"error":"0039C0F6E97F0000:error:0A0003FC:SSL routines:ssl3_read_bytes:ssl/tls alert bad
+record mac:ssl/record/rec_layer_s3.c:918:SSL alert number 20\n","recovered":true,
+"seq":71,"ts":"2026-08-25T17:54:14.728Z"}
+```
+
+Both fired inside the run's one plan step (`fix-mypy-strict`, `step-start` seq 35,
+`step-end` seq 80) — specifically inside its second `iteration-start`..`close-verdict`
+window (seq 58..78), roughly 39 and 87 seconds apart. Both carry `attempt:1` (the retry
+is always attempt 1 per `withTransportRetry`'s own comment, `src/planrun.js:126`) and
+`recovered:true` — the retried call succeeded both times, and the run went on to close
+green: `job-end.outcome:"green"`.
+
+### The contrast: the same error killed a different run five days earlier
+
+`aurora-u-bareloop/u-mszcthk1.jsonl` (2026-08-19, pre-dates the retry build) carries the
+IDENTICAL error string — `error:0A0003FC:SSL routines:ssl3_read_bytes:ssl/tls alert bad
+record mac:ssl/record/rec_layer_s3.c:918:SSL alert number 20` — as an `escalation`
+(`category:"provider-red"`, seq 77), with no `transport-retry` record anywhere in that
+spine (the seam did not exist yet). That run's `job-end`: `{"outcome":"provider-red",
+"spentUsd":0.8529209000000001,"spendComplete":false,"seq":81}` — killed outright at an
+$0.85 floor. Same failure signature, same condition class (F115's still-unexplained TLS
+alert); the only difference between a dead run and a green one is whether the retry seam
+existed to absorb it.
+
+### What this does and does not prove
+
+**Proves**: the retry mechanism, as built, correctly detects a transport-class failure,
+retries exactly once, and the retried call can succeed — turning what would have been
+this run's death into a green outcome, live, on a real paid run, not a POC or a scripted
+test double.
+
+**Does not prove**: a recovery *rate*. This is n=1 run carrying 2 retry events, both
+recovered — not a sample large enough to say retries recover most of the time, or even
+usually; a run where the retried attempt fails too (both attempts hit the same transport
+error) has not been observed yet, and the code path for that case (report `recovered:
+false`, propagate the original error) remains untested against a real provider. The TLS
+`bad record mac` condition's root CAUSE is still unproven — F115's $0-then-~$5 probe
+(39/39 clean, logged 2026-08-24) never reproduced it, and this run does not change that;
+PRD TODO item 5 (chase the cause) stays optional, on the same reasoning as before, now
+strengthened by direct evidence that the retry absorbs the symptom regardless of cause.
+
+### The honesty flag, live
+
+`job-end.spendComplete:false` on a GREEN run — `src/run.js:266,393`'s one-way floor
+fired exactly as designed: the retried call's first attempt may already have been billed
+before it threw, and that unknown does not heal even though the retry recovered and the
+run finished green. `spentUsd:1.9983196500000002` is a floor, not a total, printed
+honestly as `$1.9983 (floor, not exact)` rather than a laundered exact-looking figure —
+the F6 doctrine in a green run's coat, working exactly as it was built to.
+
+### The replay gap this exposed, and closed
+
+Before this build, `replayRun`/`formatReplay` (F117) read `job-end.spendComplete` and
+printed the bare fact — a floor with no visible cause. Running the real spine through the
+existing reader confirmed the gap directly: `spent: $1.9983 (floor, not exact) of $5.00
+signed` gave no hint that two transport retries were the reason, and neither
+`transport-retry` record appeared anywhere in the report (not in the TIMELINE, not
+anywhere else) — a real, load-bearing event invisible in the tool built to make exactly
+this kind of run explainable in under five minutes. Fixed same day (see the build's own
+commit): `replayRun` now windows `transport-retry` records into the occurrence they fell
+inside (same `seq` windowing as `worker-round`), `formatReplay` prints a `↳ transport
+retry ×N (recovered) — <error>` line under the row and a derived `floor because:
+transport retry ×2` clause on the header's `spent:` line, and `--all` appends ` ⟲2` to
+the outcome word. Verified against this exact run:
+
+```
+spent:   $1.9983 (floor, not exact) of $5.00 signed · floor because: transport retry ×2 · wall 8m40s (this file) · ...
+
+TIMELINE (steps)
+  #  step             result  rounds     tools     checks  tree     wall   spend
+  1  fix-mypy-strict  GREEN   29 rounds  46 tools  1/1     changed  4m14s  $1.4994
+     ↳ transport retry ×2 (recovered) — 0039C0F6E97F0000:error:0A0003FC:SSL routines:ssl3_read_bytes:ssl/tls alert bad r…
+```
+
+and in `--all`: `green ⟲2` on this run's row, with a footnote
+(`⟲N transport retry(ies), recovered inline — see the full replay for detail`).
+
+### Numbers
+
+Changed: `src/replay.js` (windowing + floor-reason derivation, no new spine fields —
+report-only, reads existing `transport-retry`/`wall-halt`/`stall`/`job-start` records
+only), `tests/replay.test.js` (+2: the F119 live-proof case on `u-mt8yk53k`, and a
+control case on a retry-free archived run; +1 existing `--all` test updated to account
+for the new footnote line). Suite: 2141 → 2143. `npm run typecheck` and `npm run
+build:types` both clean. Full `npm test` green: 2143/2143, `prompt-commit-check: OK — 8
+commit(s) checked, 0 touching a prompt register with a missing/incomplete label`.
