@@ -73,6 +73,16 @@ test('validateCommitMessage: Failure present but no run ref fails with FAILURE_N
   assert.deepEqual(missing, [FAILURE_NEEDS_RUN_REF]);
 });
 
+test('validateCommitMessage: "run failed" (prose, not a citation) no longer passes as a run ref — PR #23 review item 2, scripts/promptcommitlib.mjs:29', () => {
+  const prose = 'fix: tighten PERSONA_TOOLS\n\n'
+    + 'Failure: the CI run failed intermittently\n'
+    + 'Addresses: PERSONA_TOOLS did not name the spine file explicitly\n'
+    + 'Corrects: spells the denied paths from ARBITER_BOOK_STORES\n';
+  const { ok, missing } = validateCommitMessage(prose);
+  assert.equal(ok, false);
+  assert.deepEqual(missing, [FAILURE_NEEDS_RUN_REF]);
+});
+
 test('validateCommitMessage: "run u-<id>" form passes', () => {
   const withPrefixed = COMPLIANT.replace('run mszcthk1', 'run u-mszcthk1');
   const { ok, missing } = validateCommitMessage(withPrefixed);

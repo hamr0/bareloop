@@ -103,6 +103,7 @@
 
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
+import { SPEND_RECORD_TYPES } from './ledger.js';
 
 /**
  * @param {unknown} e
@@ -430,7 +431,13 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
 
   const stepStarts = spine.filter((e) => e.type === 'step-start');
   const stepEnds = spine.filter((e) => e.type === 'step-end');
-  const workerRounds = spine.filter((e) => e.type === 'worker-round');
+  // F1 fix (2026-08-26 review of PR #23): was `e.type === 'worker-round'` only,
+  // silently dropping `judge-round` (a close's own paid seam) and `worker-turn`
+  // (native per-turn attribution) out of every spend total below — the same
+  // canonical set `spendProvenance` uses (src/ledger.js:482, `SPEND_RECORD_TYPES`
+  // = `['worker-round', 'judge-round', 'worker-turn']`), imported rather than
+  // re-spelled so the two can never drift apart.
+  const spendRecords = spine.filter((e) => SPEND_RECORD_TYPES.includes(e.type));
   const exitEvals = spine.filter((e) => e.type === 'exit-eval');
 
   // F119: every `transport-retry` record on this spine, and the (derived,
@@ -444,17 +451,23 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
   // the sum of THIS file's own worker-rounds, and the header must say so
   // rather than let the two numbers silently disagree (measured:
   // u-msf70nei's header read $5.3389 while its own 55 rounds sum to
-  // $1.2127). `resumed` is read off `job-start.priorSpentUsd` — the SAME
-  // condition src/run.js itself uses to decide whether to fold — not off
-  // `resume-seed`'s presence: resume-seed (src/planrun.js:2622) is a
-  // NARROWER record that fires only when a plan is actually reloaded
-  // mid-flight, and its absence does NOT mean "not resumed". Measured
-  // directly: 4 real archived runs (litectx-maintainer's msx7xoe0, msx87qqs,
-  // msxf9129, msxf2mwi) carry `job-start.priorSpentUsd` — a real chain fold —
-  // with NO resume-seed record at all (resumed before any plan reload was
-  // needed); keying "resumed" on resume-seed alone would have printed
-  // `resumed: no` on genuinely resumed runs and mis-explained their spend.
-  const resumed = jobStart && typeof jobStart.priorSpentUsd === 'number' && Number.isFinite(jobStart.priorSpentUsd) && jobStart.priorSpentUsd > 0;
+  // $1.2127). `resumed` mirrors the SAME condition src/run.js:328 itself uses
+  // to decide whether to fold — the key's PRESENCE, not `priorSpentUsd > 0`
+  // (PR #23 review, 2026-08-26): src/run.js:328 emits the field whenever
+  // `spentUsd > 0 || priorFloor`, and its own comment states "a fold of $0
+  // that is NOT exact is still a fold" — a resumed run whose prior leg spent
+  // exactly $0 (a genuine floor, `priorSpendComplete: false`) still carries
+  // `priorSpentUsd: 0`, and reading `> 0` here would have silently read that
+  // real resume as `resumed: no`. Not off `resume-seed`'s presence either:
+  // resume-seed (src/planrun.js:2622) is a NARROWER record that fires only
+  // when a plan is actually reloaded mid-flight, and its absence does NOT
+  // mean "not resumed". Measured directly: 4 real archived runs
+  // (litectx-maintainer's msx7xoe0, msx87qqs, msxf9129, msxf2mwi) carry
+  // `job-start.priorSpentUsd` — a real chain fold — with NO resume-seed
+  // record at all (resumed before any plan reload was needed); keying
+  // "resumed" on resume-seed alone would have printed `resumed: no` on
+  // genuinely resumed runs and mis-explained their spend.
+  const resumed = !!jobStart && 'priorSpentUsd' in jobStart;
 
   // resumeSeed: the DETAIL fields (phase/completed/skipping/divergence) —
   // present only on the narrower resume-seed record; `resumed` above stays
@@ -477,9 +490,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
   // F6's rule) — checked directly against this file's rounds regardless of
   // which source supplies the value, because `engagementSpentUsd` is built
   // from the SAME priced-only sum and can carry the identical floor.
-  const totalRoundsInFile = workerRounds.length;
-  const unpricedRoundsInFile = workerRounds.filter((r) => !(typeof r.costUsd === 'number' && Number.isFinite(r.costUsd))).length;
-  const summedRounds = workerRounds.reduce((acc, r) => (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? acc + r.costUsd : acc), 0);
+  const totalRoundsInFile = spendRecords.length;
+  const unpricedRoundsInFile = spendRecords.filter((r) => !(typeof r.costUsd === 'number' && Number.isFinite(r.costUsd))).length;
+  const summedRounds = spendRecords.reduce((acc, r) => (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? acc + r.costUsd : acc), 0);
   const hasEngagementField = jobEnd && typeof jobEnd.engagementSpentUsd === 'number' && Number.isFinite(jobEnd.engagementSpentUsd);
   const thisFileSpend = {
     value: unpricedRoundsInFile > 0 ? null : (hasEngagementField ? jobEnd.engagementSpentUsd : summedRounds),
@@ -500,6 +513,39 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     detail: trimTo(e.detail, TRIP_DETAIL_MAX) ?? trimTo(e.decision, TRIP_DETAIL_MAX),
   } : null);
 
+  /**
+   * The metrics ONE occurrence window (one step, or one loop iteration) shares
+   * regardless of which timeline it belongs to — extracted (PR #23 review item
+   * 6, 2026-08-26) so a fix to how spend/tool-calls/trips get windowed lands
+   * ONCE for both the steps and iterations blocks below, rather than needing
+   * to be re-applied twice and risking the two silently drifting apart (the
+   * original bug in item 1 above was exactly a fix that had to touch two
+   * near-identical windowing call sites by hand).
+   * @param {number} startSeq
+   * @param {number|null} startTs
+   * @param {number} endSeq
+   * @param {number|null} endTs
+   * @param {any[]} roundsInWindow
+   */
+  function buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow) {
+    const startTsForAudit = startTs ?? -Infinity;
+    const endTsForAudit = endTs ?? Infinity;
+    const windowed = audit.filter((a) => {
+      const t = parseTs(a.ts);
+      return t !== null && t >= startTsForAudit && t <= endTsForAudit;
+    });
+    const { spentUsd, unpricedRounds } = windowSpend(roundsInWindow);
+    return {
+      rounds: roundsInWindow.length,
+      toolCalls: runBehaviour(windowed).totalCalls,
+      wallMs: windowWallMs(startTs, endTs),
+      spentUsd,
+      unpricedRounds,
+      tripped: tripOf(findTrip(escalations, startSeq, endSeq)),
+      transportRetries: windowTransportRetries(transportRetries, startSeq, endSeq),
+    };
+  }
+
   const usedEndSeqs = new Set();
   const idOccurrence = new Map();
 
@@ -507,7 +553,6 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     const id = ss.step;
     const startSeq = typeof ss.seq === 'number' ? ss.seq : -Infinity;
     const startTs = parseTs(ss.ts);
-    const startTsForAudit = startTs ?? -Infinity;
 
     const end = stepEnds
       .filter((se) => se.step === id && typeof se.seq === 'number' && se.seq >= startSeq && !usedEndSeqs.has(se.seq))
@@ -515,10 +560,15 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     if (end) usedEndSeqs.add(end.seq);
     const endSeq = end && typeof end.seq === 'number' ? end.seq : Infinity;
     const endTs = end ? parseTs(end.ts) : null;
-    const endTsForAudit = endTs ?? Infinity;
 
     const phaseTag = `step:${id}`;
-    const roundsInWindow = workerRounds.filter((r) => r.phase === phaseTag
+    // `judge-round` (a close's paid seam) carries no `.phase` at all
+    // (src/planrun.js:1333's `onJudgeCost` emit — stage/path/attempt/label/model,
+    // never phase); a phase check that only ever runs against `worker-round`/
+    // `worker-turn` records would silently exclude it from every step forever,
+    // so a record with no `.phase` field is windowed by seq alone, same as the
+    // iterations timeline below already does unconditionally.
+    const roundsInWindow = spendRecords.filter((r) => (typeof r.phase === 'string' ? r.phase === phaseTag : true)
       && typeof r.seq === 'number' && r.seq > startSeq && r.seq < endSeq);
 
     let passed = 0;
@@ -534,27 +584,15 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
       }
     }
 
-    const windowed = audit.filter((a) => {
-      const t = parseTs(a.ts);
-      return t !== null && t >= startTsForAudit && t <= endTsForAudit;
-    });
-
     idOccurrence.set(id, (idOccurrence.get(id) ?? 0) + 1);
-    const { spentUsd: stepSpentUsd, unpricedRounds } = windowSpend(roundsInWindow);
 
     return {
       id,
       occurrence: idOccurrence.get(id),
       outcome: end ? (end.outcome ?? null) : null,
-      rounds: roundsInWindow.length,
-      toolCalls: runBehaviour(windowed).totalCalls,
+      ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
       checks: { passed, failed },
       treeChanged,
-      wallMs: windowWallMs(startTs, endTs),
-      spentUsd: stepSpentUsd,
-      unpricedRounds,
-      tripped: tripOf(findTrip(escalations, startSeq, endSeq)),
-      transportRetries: windowTransportRetries(transportRetries, startSeq, endSeq),
     };
   });
 
@@ -569,21 +607,14 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
   const iterations = timelineKind === 'iterations' ? iterationStarts.map((is) => {
     const startSeq = typeof is.seq === 'number' ? is.seq : -Infinity;
     const startTs = parseTs(is.ts);
-    const startTsForAudit = startTs ?? -Infinity;
 
     const end = boundaries
       .filter((b) => typeof b.seq === 'number' && b.seq > startSeq)
       .sort((a, b) => a.seq - b.seq)[0] ?? null;
     const endSeq = end && typeof end.seq === 'number' ? end.seq : Infinity;
     const endTs = end ? parseTs(end.ts) : null;
-    const endTsForAudit = endTs ?? Infinity;
 
-    const roundsInWindow = workerRounds.filter((r) => typeof r.seq === 'number' && r.seq > startSeq && r.seq < endSeq);
-    const windowed = audit.filter((a) => {
-      const t = parseTs(a.ts);
-      return t !== null && t >= startTsForAudit && t <= endTsForAudit;
-    });
-    const { spentUsd: iterSpentUsd, unpricedRounds } = windowSpend(roundsInWindow);
+    const roundsInWindow = spendRecords.filter((r) => typeof r.seq === 'number' && r.seq > startSeq && r.seq < endSeq);
 
     const verdict = end
       ? (end.type === 'close-verdict' ? (end.verdict ?? null)
@@ -602,13 +633,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
       closeStage: end && end.type === 'close-verdict'
         ? { verdict: end.verdict ?? null, stages: Array.isArray(end.stages) ? end.stages : null }
         : null,
-      rounds: roundsInWindow.length,
-      toolCalls: runBehaviour(windowed).totalCalls,
-      wallMs: windowWallMs(startTs, endTs),
-      spentUsd: iterSpentUsd,
-      unpricedRounds,
-      tripped: tripOf(findTrip(escalations, startSeq, endSeq)),
-      transportRetries: windowTransportRetries(transportRetries, startSeq, endSeq),
+      ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
     };
   }) : [];
 

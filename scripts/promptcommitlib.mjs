@@ -24,9 +24,17 @@ export const PROMPT_COMMIT_LABELS = Object.freeze(['Failure', 'Addresses', 'Corr
 // filenames; stripping the `-gate-audit.jsonl` sidecars and the `.jsonl.lag`
 // lag sidecars leaves 231 real spine ids across every prefix this repo uses
 // (`u-`, `battery-A1-`, `l2accept-L1-`, `reuse-`, `job2-`, ...) — EVERY one of
-// them exactly 8 characters from `[a-z0-9]`, no exception found. `{6,12}` is
-// hamr's own margin around that measured 8, not a guess made here.
-const RUN_REF_RE = /\brun\s+(u-)?[a-z0-9]{6,12}\b/i;
+// them exactly 8 characters from `[a-z0-9]`, no exception found. Originally
+// `{6,12}` (hamr's own margin around that measured 8) — tightened here to the
+// measured shape itself after a PR #23 review flagged the margin as loose
+// enough to accept plain prose ("run failed" is 6 lowercase letters, which
+// satisfied `{6,12}` outright). A per-id DIGIT requirement was also proposed
+// in that review and explicitly rejected: re-measuring the same archive found
+// 23 of 130 sampled real ids carry no digit at all (`msdsmkid` among them —
+// cited by name throughout `tests/replay.test.js` as a real archived run), so
+// a digit requirement would reject genuine citations the check exists to
+// require, not just prose.
+const RUN_REF_RE = /\brun\s+(u-)?[a-z0-9]{8}\b/i;
 
 /** The exact message a `Failure:` line without a run reference fails with —
  * hamr's own wording, so the CLI and the tests never restate it differently. */

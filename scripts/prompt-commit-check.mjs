@@ -86,6 +86,50 @@ function loadStagedCommit(messageFile) {
   return { sha: '(staged)', message, files };
 }
 
+/** @param {string} ref @returns {string|null} */
+function resolveShaQuiet(ref) {
+  try {
+    return git(['rev-parse', ref]).trim();
+  } catch {
+    return null;
+  }
+}
+
+// PR #23 review item 7 (2026-08-26): `origin/main..HEAD` resolves to ZERO
+// commits the instant a routine change pushes DIRECT to main (this repo's
+// own norm — see .claude/remember/MEMORY.md's "Push direct to main"), because
+// `origin/main` catches up to local `HEAD` on that same push — the range the
+// prompt-commit rule was built to inspect ends up inspecting NOTHING there,
+// silently, on exactly the workflow this repo actually uses most. Detected
+// ONLY by the narrow, measured condition — a zero-commit range AND
+// `HEAD === origin/main` (never just "zero commits", which can also mean a
+// legitimate empty range for other reasons) — and it falls back to
+// `HEAD~1..HEAD`, the single commit that just landed, PRINTING that it did
+// rather than silently substituting a different range. This is a PARTIAL fix,
+// stated as such: a multi-commit direct push (`git push` after several local
+// commits) still only re-covers the LAST one — a full fix needs the actual
+// pre-push range, which only a CI-side `github.event.before` (a `.github/`
+// workflow edit) can supply, and that is explicitly out of scope here
+// (ask-first, untouched per this file's own header).
+/**
+ * @param {string} range the originally requested range (only used for the
+ *   printed message — the fallback range itself is always `HEAD~1..HEAD`)
+ * @returns {{skipped: true, reason: string} | {skipped: false, commits: import('./promptcommitlib.mjs').PromptCommitInput[]}}
+ */
+function loadRangeWithMainPushFallback(range) {
+  const loaded = loadRangeCommits(range);
+  if (loaded.skipped || loaded.commits.length > 0) return loaded;
+
+  const headSha = resolveShaQuiet('HEAD');
+  const originMainSha = resolveShaQuiet('origin/main');
+  if (headSha === null || originMainSha === null || headSha !== originMainSha) return loaded;
+
+  const fallback = loadRangeCommits('HEAD~1..HEAD');
+  console.log(`prompt-commit-check: range ${range} is empty at main — checked HEAD~1..HEAD instead; `
+    + 'commits 2..N of a multi-commit direct push are NOT covered (needs github.event.before, a CI edit — hamr\'s word).');
+  return fallback;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -98,7 +142,7 @@ function main() {
   /** @type {import('./promptcommitlib.mjs').PromptCommitInput[]} */
   let commits;
   if (args.range) {
-    const loaded = loadRangeCommits(args.range);
+    const loaded = loadRangeWithMainPushFallback(args.range);
     if (loaded.skipped) {
       console.log(`prompt-commit-check: SKIPPED — ${loaded.reason}; no baseline to compare, not a violation.`);
       process.exitCode = 0;

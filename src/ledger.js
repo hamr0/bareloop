@@ -479,7 +479,7 @@ export function rateProvenance(record) {
  * Re-spelled rather than imported (src/run.js imports this module's siblings and a cycle
  * buys nothing here) — `tests/ledger.test.js` asserts the two spellings agree, because a
  * spend-slicing instrument that misses a writer is the F45 class this list exists to avoid. */
-const SPEND_RECORD_TYPES = Object.freeze(['worker-round', 'judge-round', 'worker-turn']);
+export const SPEND_RECORD_TYPES = Object.freeze(['worker-round', 'judge-round', 'worker-turn']);
 
 /** @typedef {{rounds: number, usd: number, unpricedRounds: number}} ProvenanceBucket */
 

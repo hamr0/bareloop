@@ -93,6 +93,40 @@ feature lands, **patch** = docs, fixes, scaffolding.
   as the resumed `*`), with one footnote when the listing holds any. Report-only — reads
   existing `transport-retry`/`wall-halt`/`stall`/`job-start` records, writes nothing.
 
+### Fixed
+
+- **`codeversion.test.js` false-red on PR checkouts** (F118 addendum): the HEAD-sha test's own
+  precondition assumed a symbolic ref, but `actions/checkout` leaves a PR checkout's HEAD
+  DETACHED at the merge commit, so the precondition threw before the module under test ever
+  ran — `src/codeversion.js` itself already handled the detached case correctly. Test-only fix:
+  the precondition now resolves a bare 40-hex `.git/HEAD` the same way `codeVersion()` does, plus
+  a new deterministic fake-package-root test that exercises the detached case without depending
+  on the checkout's own HEAD state.
+- **Review of PR #23 (2026-08-26), 7 items fixed**: (1) `replayRun`'s spend totals
+  (`src/replay.js`) counted only `worker-round`, silently dropping a close's own `judge-round`
+  spend and native `worker-turn` attribution out of every total — now filters on the canonical
+  `SPEND_RECORD_TYPES` (newly exported from `src/ledger.js`), including the per-step window,
+  which no longer requires a `.phase` match for records (like `judge-round`) that never carry
+  one. (2) `scripts/promptcommitlib.mjs`'s run-reference regex accepted plain prose ("run
+  failed" satisfied its `{6,12}` margin outright) — tightened to the measured exact shape
+  (`{8}`); a proposed additional per-id digit requirement was investigated and REJECTED (23 of
+  130 re-sampled real archived ids carry no digit, `msdsmkid` among them). (3)
+  `src/codeversion.js` read `sha: null` inside any real git worktree (`.git` there is a FILE,
+  `gitdir: <path>`, not a directory) — now resolves the pointer file and the worktree's
+  `commondir` to find HEAD/refs correctly. (4) `replayRun`'s `resumed` flag missed a genuine
+  $0-floor resume (`priorSpentUsd: 0` is still a real fold per `src/run.js:328`'s own doctrine)
+  — now keys on the field's presence, not `> 0`. (5) `scripts/run-replay.mjs --all` opened
+  every run's gate-audit sidecar despite never using the fields it feeds — no longer opens it
+  in `--all` mode (`--all` output on `aurora-u-bareloop` confirmed byte-identical before/after).
+  (6) the steps/iterations windowing logic in `replayRun` was duplicated inline twice — extracted
+  into one shared `buildOccurrenceMetrics` helper (replay output on `u-msdsmkid`, `u-msf70nei`,
+  `u-mt8yk53k` confirmed byte-identical before/after). (7) `npm test`'s prompt-commit check
+  (`origin/main..HEAD`) inspects NOTHING after a direct push to main, because the push itself
+  advances `origin/main` to match `HEAD` — `scripts/prompt-commit-check.mjs` now falls back to
+  `HEAD~1..HEAD` on that exact condition and prints that it did; a multi-commit direct push
+  still only re-covers the last commit (needs `github.event.before`, a `.github/` edit — out of
+  scope here, ask-first).
+
 ## [0.14.0] — 2026-08-25
 
 ### Added

@@ -210,6 +210,24 @@ test('a malformed line is counted and never thrown — CLI stays green over a co
   assert.match(out, /1 malformed line skipped/);
 });
 
+test('--all never opens a run\'s gate-audit sidecar — PR #23 review item 5, scripts/run-replay.mjs:95', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-noaudit-'));
+  tmpDirs.push(dir);
+  writeFileSync(join(dir, 'u-fake0001.jsonl'), [
+    JSON.stringify({ type: 'job-start', job: 'x', budgetUsd: 5, seq: 1 }),
+    JSON.stringify({ type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, seq: 2 }),
+  ].join('\n') + '\n');
+  // a DIRECTORY where the sidecar filename would be: `readFileSync` throws
+  // EISDIR on this the instant anything tries to open it as a file, so a
+  // clean `--all` run here is direct proof the sidecar path is never touched
+  // (a nonexistent-file check alone wouldn't distinguish "never opened" from
+  // "opened, found absent, moved on").
+  mkdirSync(join(dir, 'u-fake0001-gate-audit.jsonl'));
+
+  const out = execFileSync('node', [SCRIPT, '--all', dir], { encoding: 'utf8' });
+  assert.match(out, /fake0001/, '--all completes and lists the run despite the poisoned sidecar path');
+});
+
 test('spentUsd reads null (never 0) when a real job-end record has no spend field', { skip: !haveArchive && 'no archive on this machine' }, () => {
   const { spine } = loadRun('ms2c0ls7');
   const jobEnd = spine.find((e) => e.type === 'job-end');
@@ -529,6 +547,20 @@ test('u-msx87qqs (litectx-maintainer) reads resumed: yes from job-start.priorSpe
   assert.match(text, /resumed: yes \(no resume-seed detail recorded\)/);
 });
 
+test('(hand-built, synthetic spine) a $0-floor resume (priorSpentUsd: 0, priorSpendComplete: false) still reads resumed: true — PR #23 review item 4, src/replay.js:464', () => {
+  // src/run.js:328 emits `priorSpentUsd` on `spentUsd > 0 || priorFloor` — a
+  // prior leg that spent exactly $0 but hit a genuine floor still folds this
+  // key in, and its own comment states "a fold of $0 that is NOT exact is
+  // still a fold". Checking `priorSpentUsd > 0` here would misread this
+  // exact case as a fresh (non-resumed) run.
+  const events = [
+    { type: 'job-start', job: 'x', budgetUsd: 5, priorSpentUsd: 0, priorSpendComplete: false },
+    { type: 'job-end', outcome: 'green', spentUsd: 0, spendComplete: true, seq: 2 },
+  ];
+  const s = replayRun(events, []);
+  assert.equal(s.resumed, true, 'presence of priorSpentUsd — even 0 — must mirror src/run.js:328\'s own fold condition');
+});
+
 test('every non-resumed real archived run agrees: job-end.spentUsd equals its own summed rounds (0 mismatches found)', () => {
   const dirs = [ARCHIVE, BAREAGENT_U, LITECTX_MAINTAINER].filter(existsSync);
   if (dirs.length === 0) { assert.ok(true); return; }
@@ -563,6 +595,20 @@ test('spendMismatch fires (never silently) when a constructed non-resumed run ge
   assert.ok(Math.abs(s.spendMismatch.diffUsd - 3.0) < 1e-9);
   const text = formatReplay(s);
   assert.match(text, /MISMATCH vs job-end/);
+});
+
+test('(hand-built, synthetic spine) thisFileSpend sums judge-round alongside worker-round — review of PR #23 item 1, src/replay.js:433', () => {
+  const events = [
+    { type: 'job-start', job: 'x', budgetUsd: 5 },
+    { type: 'worker-round', phase: 'fix', costUsd: 0.10, seq: 2 },
+    { type: 'judge-round', stage: 'verdict', costUsd: 0.05, seq: 3 },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.15, spendComplete: true, seq: 4 },
+  ];
+  const s = replayRun(events, []);
+  assert.equal(s.resumed, false);
+  assert.ok(!s.spendMismatch, 'judge-round spend must count toward this-file totals, not read as a mismatch');
+  assert.equal(s.thisFileSpend.totalRounds, 2, 'both the worker-round and the judge-round are counted');
+  assert.ok(Math.abs(s.thisFileSpend.value - 0.15) < 1e-9, 'this-file spend is 0.10 (worker-round) + 0.05 (judge-round) = 0.15');
 });
 
 // ── F117 landed (PRD TODO #20): verdictType on job-start, model when citable
