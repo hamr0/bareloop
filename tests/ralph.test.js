@@ -420,8 +420,10 @@ test('ralph threads the redactor into runClose so the spine close-verdict carrie
 
 test('runClose executes the close in the given cwd — a cwd-relative close judges THAT tree, not the runner\'s', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'close-cwd-'));
+  after(() => rmSync(repo, { recursive: true, force: true }));
   writeFileSync(join(repo, 'check.mjs'), 'process.exit(0)');           // greens ONLY from inside repo
   const elsewhere = mkdtempSync(join(tmpdir(), 'close-cwd-other-'));
+  after(() => rmSync(elsewhere, { recursive: true, force: true }));
   writeFileSync(join(elsewhere, 'check.mjs'), 'process.exit(1)');      // the same relative name, red
 
   const green = await runClose(['node', 'check.mjs'], undefined, { cwd: repo });
@@ -433,6 +435,7 @@ test('runClose executes the close in the given cwd — a cwd-relative close judg
 
 test('ralph threads cwd to every close it runs — the arbiter never judges another repository', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'ralph-cwd-'));
+  after(() => rmSync(repo, { recursive: true, force: true }));
   writeFileSync(join(repo, 'check.mjs'), 'process.exit(1)'); // red until the middle fixes it
   const file = join(dir, 'ralph-cwd.jsonl');
   const middle = () => writeFileSync(join(repo, 'check.mjs'), 'process.exit(0)');

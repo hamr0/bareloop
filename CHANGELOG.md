@@ -95,6 +95,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **Leaked tmp dirs from `npm test`** (same class that filled `/tmp` tmpfs on 2026-08-25 and
+  blocked a build): `tests/codeversion.test.js`'s real-worktree test tracked only the `wt`
+  subdirectory passed to `git worktree remove`, never the `mkdtemp`-created parent, so every run
+  left an empty `codeversion-worktree-*` dir behind; its `after()` now also prunes stale worktree
+  metadata when `remove` fails and `rmSync`s the tracked dir unconditionally, plus the mkdtemp
+  parent is now itself tracked and removed. `tests/ralph.test.js`'s cwd-threading test created a
+  `ralph-cwd-*` repo with no cleanup at all, and its cwd-relative-close test likewise leaked a
+  `close-cwd-*` and a `close-cwd-other-*` dir per run; added a per-test `after(() => rmSync(...))`
+  for each, matching the file's existing top-level cleanup pattern.
 - **`codeversion.test.js` false-red on PR checkouts** (F118 addendum): the HEAD-sha test's own
   precondition assumed a symbolic ref, but `actions/checkout` leaves a PR checkout's HEAD
   DETACHED at the merge commit, so the precondition threw before the module under test ever

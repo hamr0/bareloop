@@ -23,7 +23,15 @@ const tmpDirs = [];
 const worktreeDirs = [];
 after(() => {
   for (const d of worktreeDirs) {
-    try { execFileSync('git', ['-C', REPO_ROOT, 'worktree', 'remove', '--force', d]); } catch { /* best-effort cleanup */ }
+    try {
+      execFileSync('git', ['-C', REPO_ROOT, 'worktree', 'remove', '--force', d]);
+    } catch {
+      // `git worktree remove` can fail (e.g. dir already gone) — prune the
+      // stale metadata so `git worktree list` never keeps a dangling entry,
+      // then fall through to the rmSync below for the on-disk leftovers.
+      try { execFileSync('git', ['-C', REPO_ROOT, 'worktree', 'prune']); } catch { /* best-effort cleanup */ }
+    }
+    rmSync(d, { recursive: true, force: true });
   }
   for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
 });
@@ -105,7 +113,9 @@ test('a fake package root with a detached HEAD (bare 40-hex sha in .git/HEAD) re
 });
 
 test('a REAL git worktree (`.git` is a FILE, not a directory) resolves sha correctly — PR #23 review item 3, src/codeversion.js:74', () => {
-  const dir = join(mkdtempSync(join(tmpdir(), 'codeversion-worktree-')), 'wt');
+  const tmpParent = mkdtempSync(join(tmpdir(), 'codeversion-worktree-'));
+  tmpDirs.push(tmpParent);
+  const dir = join(tmpParent, 'wt');
   worktreeDirs.push(dir);
   // fixture setup is allowed to shell out to git (the module under test never does):
   // a real worktree of THIS repo, detached at the current HEAD.
