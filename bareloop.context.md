@@ -2407,7 +2407,13 @@ against; both are exported from `bareloop`'s root so the inventory has exactly o
 
 hamr's addition (2026-08-25, same day): the `Failure:` line must ALSO cite the **run**
 that caused the change — `run <id>` or `run u-<id>` (case-insensitive at the `run`
-keyword, multiple refs fine), matched by `\brun\s+(u-)?[a-z0-9]{6,12}\b`. The commit
+keyword, multiple refs fine), matched by `\brun\s+(u-)?[a-z0-9]{8}\b` (tightened from an
+initial `{6,12}` margin after a PR #23 review found the margin loose enough to accept
+plain prose — "run failed" is 6 lowercase letters, satisfying `{6,12}` outright — to the
+measured exact shape: every real archived id is exactly 8 characters. A per-id digit
+requirement was proposed in that same review and rejected: 23 of 130 re-sampled real ids
+carry no digit at all, `msdsmkid` among them — a real archived run cited by name
+elsewhere in this repo — so requiring a digit would reject genuine citations). The commit
 points at the run; `replayRun`/`formatReplay` (above) close the loop the other way,
 turning that run id back into the whole story. A `Failure:` line with no run reference
 fails with a distinct message: `Failure: must cite the run that caused the change (e.g.

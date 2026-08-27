@@ -210,6 +210,24 @@ test('a malformed line is counted and never thrown — CLI stays green over a co
   assert.match(out, /1 malformed line skipped/);
 });
 
+test('--all never opens a run\'s gate-audit sidecar — PR #23 review item 5, scripts/run-replay.mjs:95', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-noaudit-'));
+  tmpDirs.push(dir);
+  writeFileSync(join(dir, 'u-fake0001.jsonl'), [
+    JSON.stringify({ type: 'job-start', job: 'x', budgetUsd: 5, seq: 1 }),
+    JSON.stringify({ type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, seq: 2 }),
+  ].join('\n') + '\n');
+  // a DIRECTORY where the sidecar filename would be: `readFileSync` throws
+  // EISDIR on this the instant anything tries to open it as a file, so a
+  // clean `--all` run here is direct proof the sidecar path is never touched
+  // (a nonexistent-file check alone wouldn't distinguish "never opened" from
+  // "opened, found absent, moved on").
+  mkdirSync(join(dir, 'u-fake0001-gate-audit.jsonl'));
+
+  const out = execFileSync('node', [SCRIPT, '--all', dir], { encoding: 'utf8' });
+  assert.match(out, /fake0001/, '--all completes and lists the run despite the poisoned sidecar path');
+});
+
 test('spentUsd reads null (never 0) when a real job-end record has no spend field', { skip: !haveArchive && 'no archive on this machine' }, () => {
   const { spine } = loadRun('ms2c0ls7');
   const jobEnd = spine.find((e) => e.type === 'job-end');
@@ -529,6 +547,20 @@ test('u-msx87qqs (litectx-maintainer) reads resumed: yes from job-start.priorSpe
   assert.match(text, /resumed: yes \(no resume-seed detail recorded\)/);
 });
 
+test('(hand-built, synthetic spine) a $0-floor resume (priorSpentUsd: 0, priorSpendComplete: false) still reads resumed: true — PR #23 review item 4, src/replay.js:464', () => {
+  // src/run.js:328 emits `priorSpentUsd` on `spentUsd > 0 || priorFloor` — a
+  // prior leg that spent exactly $0 but hit a genuine floor still folds this
+  // key in, and its own comment states "a fold of $0 that is NOT exact is
+  // still a fold". Checking `priorSpentUsd > 0` here would misread this
+  // exact case as a fresh (non-resumed) run.
+  const events = [
+    { type: 'job-start', job: 'x', budgetUsd: 5, priorSpentUsd: 0, priorSpendComplete: false },
+    { type: 'job-end', outcome: 'green', spentUsd: 0, spendComplete: true, seq: 2 },
+  ];
+  const s = replayRun(events, []);
+  assert.equal(s.resumed, true, 'presence of priorSpentUsd — even 0 — must mirror src/run.js:328\'s own fold condition');
+});
+
 test('every non-resumed real archived run agrees: job-end.spentUsd equals its own summed rounds (0 mismatches found)', () => {
   const dirs = [ARCHIVE, BAREAGENT_U, LITECTX_MAINTAINER].filter(existsSync);
   if (dirs.length === 0) { assert.ok(true); return; }
@@ -563,6 +595,20 @@ test('spendMismatch fires (never silently) when a constructed non-resumed run ge
   assert.ok(Math.abs(s.spendMismatch.diffUsd - 3.0) < 1e-9);
   const text = formatReplay(s);
   assert.match(text, /MISMATCH vs job-end/);
+});
+
+test('(hand-built, synthetic spine) thisFileSpend sums judge-round alongside worker-round — review of PR #23 item 1, src/replay.js:433', () => {
+  const events = [
+    { type: 'job-start', job: 'x', budgetUsd: 5 },
+    { type: 'worker-round', phase: 'fix', costUsd: 0.10, seq: 2 },
+    { type: 'judge-round', stage: 'verdict', costUsd: 0.05, seq: 3 },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.15, spendComplete: true, seq: 4 },
+  ];
+  const s = replayRun(events, []);
+  assert.equal(s.resumed, false);
+  assert.ok(!s.spendMismatch, 'judge-round spend must count toward this-file totals, not read as a mismatch');
+  assert.equal(s.thisFileSpend.totalRounds, 2, 'both the worker-round and the judge-round are counted');
+  assert.ok(Math.abs(s.thisFileSpend.value - 0.15) < 1e-9, 'this-file spend is 0.10 (worker-round) + 0.05 (judge-round) = 0.15');
 });
 
 // ── F117 landed (PRD TODO #20): verdictType on job-start, model when citable
@@ -734,4 +780,48 @@ test('a run with no transport-retry records carries an empty floorReasons and no
   const row = summarizeForAllLine(s);
   assert.equal(row.hadTransportRetries, false);
   assert.doesNotMatch(row.outcome, /⟲/);
+});
+
+// Release-gate finding 3 (2026-08-27, SUGGESTION, src/replay.js:~565-572,
+// SYNTHETIC spine — no archive involved): the per-step window filter
+// `typeof r.phase === 'string' ? r.phase === phaseTag : true` admits
+// phase-less spend records (e.g. `judge-round`) into a step's window by
+// `seq` alone. Today `judge-round` only fires from the final close, AFTER
+// every step-end (src/planrun.js:1333), so in practice it never lands
+// between two adjacent step-start/step-end occurrences of the SAME id — this
+// test proves the windowing logic itself is correct on that adversarial
+// shape, not just correct by lucky call-site ordering.
+test('(hand-built, SYNTHETIC spine) a phase-less spend record between two occurrences of the same step lands in neither window, but still counts toward this-file spend', () => {
+  const events = [
+    { type: 'job-start', job: 'x', budgetUsd: 5, seq: 0 },
+    { type: 'step-start', step: 's', seq: 1 },
+    { type: 'worker-round', phase: 'step:s', costUsd: 1.0, seq: 3 },
+    { type: 'step-end', step: 's', outcome: 'green', seq: 5 },
+    // phase-less, strictly BETWEEN the two occurrences (after end-1, before start-2)
+    { type: 'judge-round', stage: 'verdict', costUsd: 0.3, seq: 7 },
+    { type: 'step-start', step: 's', seq: 10 },
+    // phase-less, strictly INSIDE occurrence 2's window
+    { type: 'judge-round', stage: 'verdict', costUsd: 0.5, seq: 15 },
+    { type: 'step-end', step: 's', outcome: 'green', seq: 20 },
+    { type: 'job-end', outcome: 'green', spentUsd: 1.8, spendComplete: true, seq: 21 },
+  ];
+  const s = replayRun(events, []);
+
+  assert.equal(s.steps.length, 2, 'precondition: two step-start/step-end occurrences of the same id');
+  const [occ1, occ2] = s.steps;
+
+  assert.equal(occ1.rounds, 1, 'occurrence 1 sees only its own worker-round');
+  assert.ok(Math.abs(occ1.spentUsd - 1.0) < 1e-9, 'occurrence 1 spend excludes BOTH phase-less records (neither seq 7 nor 15 falls in its (1,5) window)');
+
+  assert.equal(occ2.rounds, 1, 'occurrence 2 includes only the phase-less record strictly inside its own window');
+  assert.ok(Math.abs(occ2.spentUsd - 0.5) < 1e-9, 'occurrence 2 spend is exactly the inside record (seq 15), not the between one (seq 7)');
+
+  // the between-record (seq 7) must land in no step at all.
+  const totalStepRounds = occ1.rounds + occ2.rounds;
+  assert.equal(totalStepRounds, 2, 'the between-record (seq 7) is picked up by neither occurrence — only 2 of the 3 spend records are attributed to a step');
+
+  // ... yet it still counts toward this-file spend (thisFileSpend sums every
+  // spendRecord in the file unconditionally, regardless of phase or window).
+  assert.equal(s.thisFileSpend.totalRounds, 3, 'this-file spend counts all 3 records, including the one attributed to no step');
+  assert.ok(Math.abs(s.thisFileSpend.value - 1.8) < 1e-9, 'this-file spend = 1.0 + 0.3 (between, no step) + 0.5 (inside occurrence 2) = 1.8');
 });

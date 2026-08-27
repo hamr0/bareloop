@@ -86,6 +86,57 @@ function loadStagedCommit(messageFile) {
   return { sha: '(staged)', message, files };
 }
 
+/** @param {string} ref @returns {string|null} */
+function resolveShaQuiet(ref) {
+  try {
+    return git(['rev-parse', ref]).trim();
+  } catch {
+    return null;
+  }
+}
+
+// PR #23 review item 7 (2026-08-26): `origin/main..HEAD` resolves to ZERO
+// commits the instant a routine change pushes DIRECT to main (this repo's
+// own norm — see .claude/remember/MEMORY.md's "Push direct to main"), because
+// `origin/main` catches up to local `HEAD` on that same push — the range the
+// prompt-commit rule was built to inspect ends up inspecting NOTHING there,
+// silently, on exactly the workflow this repo actually uses most. Detected
+// ONLY by the narrow, measured condition — a zero-commit range AND
+// `HEAD === origin/main` (never just "zero commits", which can also mean a
+// legitimate empty range for other reasons) — and it falls back to
+// `HEAD~1..HEAD`, the commit(s) that just landed, PRINTING that it did rather
+// than silently substituting a different range. This is a PARTIAL fix,
+// stated as such: on a MERGE commit, `HEAD~1` is the first parent, so
+// `HEAD~1..HEAD` covers the merge commit itself PLUS every commit unique to
+// the merged-in branch (measured on a real merge in this repo's own history,
+// 4904d76: `git rev-list 4904d76~1..4904d76` lists 10 commits, not 1) — but
+// on a LINEAR multi-commit direct push (`git push` after several local
+// commits, no merge involved) it still only re-covers the LAST one. Full
+// coverage of that linear case needs the actual pre-push range, which only a
+// CI-side `github.event.before` (a `.github/` workflow edit) can supply, and
+// that is explicitly out of scope here (ask-first, untouched per this file's
+// own header).
+/**
+ * @param {string} range the originally requested range (only used for the
+ *   printed message — the fallback range itself is always `HEAD~1..HEAD`)
+ * @returns {{skipped: true, reason: string} | {skipped: false, commits: import('./promptcommitlib.mjs').PromptCommitInput[]}}
+ */
+function loadRangeWithMainPushFallback(range) {
+  const loaded = loadRangeCommits(range);
+  if (loaded.skipped || loaded.commits.length > 0) return loaded;
+
+  const headSha = resolveShaQuiet('HEAD');
+  const originMainSha = resolveShaQuiet('origin/main');
+  if (headSha === null || originMainSha === null || headSha !== originMainSha) return loaded;
+
+  const fallback = loadRangeCommits('HEAD~1..HEAD');
+  console.log(`prompt-commit-check: range ${range} is empty at main — checked HEAD~1..HEAD instead; `
+    + 'on a merge commit this covers the merge and every commit it brought in; on a linear multi-commit '
+    + 'direct push only the last commit — full coverage of that case needs github.event.before '
+    + '(a CI edit, hamr\'s word).');
+  return fallback;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -95,10 +146,25 @@ function main() {
     return;
   }
 
+  // Security (release-gate finding, 2026-08-27): `git rev-list` takes the
+  // range positionally with no way to disambiguate it from an option — unlike
+  // `show`/`diff-tree` below, `rev-list -- <range>` does NOT work (verified
+  // against a real repo: `--` makes rev-list treat everything after it as a
+  // PATH filter, not a revision range, and it errors out with a usage
+  // message instead of resolving anything). So a `--range` value that starts
+  // with `-` (e.g. `--output=<path>`) would otherwise be parsed by git as an
+  // option of its own. Reject it up front, before any git call runs.
+  if (args.range !== undefined && args.range.startsWith('-')) {
+    console.error(`prompt-commit-check: --range value "${args.range}" looks like an option (starts with "-"), `
+      + 'not a rev-range — refusing to pass it to git. Use a real range, e.g. "origin/main..HEAD".');
+    process.exitCode = 2;
+    return;
+  }
+
   /** @type {import('./promptcommitlib.mjs').PromptCommitInput[]} */
   let commits;
   if (args.range) {
-    const loaded = loadRangeCommits(args.range);
+    const loaded = loadRangeWithMainPushFallback(args.range);
     if (loaded.skipped) {
       console.log(`prompt-commit-check: SKIPPED — ${loaded.reason}; no baseline to compare, not a violation.`);
       process.exitCode = 0;

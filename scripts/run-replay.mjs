@@ -88,11 +88,16 @@ function resolveSiblings(spinePath) {
  * @param {{records: any[], skipped: number}} [preParsedSpine] avoids a second
  *   parse of the same file when the caller (--all) already read it once to
  *   run {@link looksLikeSpine}
+ * @param {{skipAudit?: boolean}} [opts] `skipAudit` (PR #23 review item 5,
+ *   2026-08-26): `--all` never opens the gate-audit sidecar at all —
+ *   `summarizeForAllLine` reads none of the fields (`toolCalls`/behaviour)
+ *   that sidecar feeds inside `replayRun`, so reading every run's sidecar in
+ *   a directory listing was pure unused I/O, multiplied by every spine found.
  */
-function replayOne(spinePath, preParsedSpine) {
+function replayOne(spinePath, preParsedSpine, { skipAudit = false } = {}) {
   const { runId, auditPath } = resolveSiblings(spinePath);
   const spine = preParsedSpine ?? parseJsonl(spinePath);
-  const audit = auditPath ? parseJsonl(auditPath) : { records: [], skipped: 0 };
+  const audit = (!skipAudit && auditPath) ? parseJsonl(auditPath) : { records: [], skipped: 0 };
   const summary = replayRun(spine.records, audit.records, { runId });
   summary.skipped += spine.skipped + audit.skipped;
   return summary;
@@ -119,7 +124,7 @@ if (args[0] === '--all') {
         const path = join(dir, f);
         const spine = parseJsonl(path);
         if (!looksLikeSpine(spine.records)) return { kind: 'not-a-spine', name: f };
-        const summary = replayOne(path, spine);
+        const summary = replayOne(path, spine, { skipAudit: true });
         return { kind: 'spine', row: summarizeForAllLine(summary) };
       });
       console.log(formatAllLines(entries));

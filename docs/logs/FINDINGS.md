@@ -9469,6 +9469,82 @@ on the $0 test-harness run F117/F118 originally proved them against — the same
 same rendering, now confirmed live. See F119 below for what else this same run's spine
 surfaced.
 
+### Addendum: PR CI false-red, 2026-08-26 (PR #23, run 33003253249)
+
+PR #23's CI (run 33003253249) went red on `tests/codeversion.test.js` while `main`'s CI
+stayed green on the same commit's content. Cause: the test's own HEAD-sha precondition
+assumed a symbolic `.git/HEAD` ref, but `actions/checkout` leaves a PR checkout's HEAD
+DETACHED at the merge commit (a bare 40-hex sha), so the precondition threw before
+`codeVersion()` was ever exercised. `src/codeversion.js:80-83` already handled the
+detached case correctly — the module was never wrong, only the test's precondition.
+Fixed test-only: the precondition now resolves a detached HEAD the same way the module
+does, plus a new deterministic fake-root test covering the detached case directly.
+
+### Addendum: Review of PR #23 (2026-08-26): 8 confirmed, fixed here
+
+1. `src/codeversion.test.js` false-red on PR CI (above): main's own module was never
+   wrong, only the test's precondition — fixed test-only.
+2. `src/replay.js`'s spend totals counted only `worker-round`, silently dropping
+   `judge-round`/`worker-turn` — now filters on `SPEND_RECORD_TYPES` (newly exported
+   from `src/ledger.js:482`), including the per-step window falling back to seq-only
+   for records with no `.phase`.
+3. `scripts/promptcommitlib.mjs`'s `RUN_REF_RE` accepted plain prose ("run failed" fit
+   its `{6,12}` margin) — tightened to the measured exact shape `{8}`; a proposed
+   digit requirement was investigated and REJECTED (23 of 130 re-sampled real archived
+   ids carry no digit, `msdsmkid` among them — a real run cited by name elsewhere in
+   this repo).
+4. `src/codeversion.js` read `sha: null` inside any real git worktree (`.git` there is
+   a `gitdir: <path>` FILE, not a directory) — now resolves the pointer file and the
+   worktree's `commondir` to reach the real HEAD/refs.
+5. `src/replay.js`'s `resumed` flag missed a genuine $0-floor resume (`priorSpentUsd: 0`
+   is still a real fold per `src/run.js:328`'s own doctrine) — now keys on the field's
+   presence, never `> 0`.
+6. `scripts/run-replay.mjs --all` opened every run's gate-audit sidecar despite never
+   using the fields it feeds `summarizeForAllLine` — no longer opens it in `--all` mode
+   (confirmed byte-identical `--all` output on `aurora-u-bareloop` before/after).
+7. `src/replay.js`'s steps/iterations windowing logic was duplicated inline twice —
+   extracted into one shared `buildOccurrenceMetrics` helper (confirmed byte-identical
+   replay output on `u-msdsmkid`, `u-msf70nei`, `u-mt8yk53k` before/after).
+8. `npm test`'s prompt-commit check (`origin/main..HEAD`) inspects NOTHING after a
+   direct push to main, because the push itself advances `origin/main` to match `HEAD`
+   — `scripts/prompt-commit-check.mjs` now falls back to `HEAD~1..HEAD` on that exact
+   condition and PRINTS that it did. Honest limitation, stated rather than papered
+   over: a multi-commit direct push still only re-covers the LAST commit — a full fix
+   needs the real pre-push range, which only a CI-side `github.event.before` (a
+   `.github/` workflow edit) can supply, and that stays out of scope here (ask-first,
+   untouched).
+
+### Addendum: Release-gate findings (2026-08-27), 3 items
+
+9. SECURITY (low): `scripts/prompt-commit-check.mjs`'s `git(['rev-list', range])` passed
+   the `--range` argv value to `git rev-list` positionally with no `--` separator, so an
+   option-shaped value (e.g. `--output=<path>`) was parsed by git as its own flag rather
+   than a revision range. Verified against a real repo that `--` does NOT fix this for
+   `rev-list` (unlike `show`/`diff-tree` elsewhere in the same file): rev-list's `--`
+   marks everything after it as a PATH filter, not a revision range, and it errors out
+   (exit 129) instead of resolving anything. Fixed by rejecting any `--range` value
+   starting with `-` up front, before any git call runs; every other `git([...])` call
+   in the file was audited and found safe (arguments are either fixed literals or SHAs
+   git itself produced, never argv-derived).
+10. WARNING (item 8 above, corrected): the fallback's printed limitation and code
+    comment claimed `HEAD~1..HEAD` "only re-covers the LAST commit" of a multi-commit
+    direct push, unconditionally. On a MERGE commit, `HEAD~1` is the first parent, so
+    `HEAD~1..HEAD` lists the merge PLUS every commit unique to the merged branch —
+    reproduced on this repo's own history: `git rev-list 4904d76~1..4904d76 | wc -l` →
+    10 commits, not 1. The wording is only accurate for a LINEAR multi-commit push; both
+    the printed message and the code comment now state the merge case and the linear
+    case separately.
+11. SUGGESTION: `src/replay.js`'s per-step window filter (`typeof r.phase === 'string'
+    ? r.phase === phaseTag : true`) admits phase-less spend records (`judge-round`) into
+    a step's window by `seq` alone — safe today only because `judge-round` fires from
+    the final close, after every step-end, never call-site-order-proof by construction.
+    A new adversarial SYNTHETIC test (`tests/replay.test.js`, two occurrences of the
+    same step id with a phase-less record placed strictly between them and another
+    strictly inside the second occurrence) confirmed the windowing logic itself is
+    correct: the between-record lands in neither occurrence's window yet still counts
+    toward `thisFileSpend` — no code change needed, the design holds under the
+    adversarial shape it was never explicitly tested against before.
+
 ## F119
 
 **The transport retry fired live: two TLS `bad record mac` alerts in one run, both

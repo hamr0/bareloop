@@ -18,6 +18,55 @@ import { dirname, join } from 'node:path';
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
+ * `.git` at a package root can be a FILE, not a directory — `git worktree
+ * add` makes every worktree's own `.git` a one-line pointer file
+ * (`gitdir: <path>`, absolute or relative to the worktree root) at the
+ * per-worktree git dir living under the main checkout's `.git/worktrees/
+ * <name>/` (measured directly: `git worktree add <tmp> HEAD --detach`
+ * against this repo). Resolves that file to the real per-worktree git dir;
+ * returns the plain `.git` directory path unchanged when it already is one,
+ * and `null` when `.git` is absent (an npm install) or the pointer file
+ * can't be read/parsed.
+ * @param {string} pkgRoot
+ * @returns {string|null}
+ */
+function resolveGitDir(pkgRoot) {
+  const dotGit = join(pkgRoot, '.git');
+  if (!existsSync(dotGit)) return null;
+  const st = statSync(dotGit);
+  if (st.isDirectory()) return dotGit;
+  if (!st.isFile()) return null;
+  const contents = readFileSync(dotGit, 'utf8').trim();
+  const m = /^gitdir:\s*(.+)$/.exec(contents);
+  if (!m) return null;
+  const target = m[1].trim();
+  return target.startsWith('/') ? target : join(pkgRoot, target);
+}
+
+/**
+ * A worktree's own git dir (from {@link resolveGitDir}) holds HEAD but never
+ * refs — branches/`packed-refs` are shared, and live in the MAIN checkout's
+ * `.git`, whose path is this worktree git dir's own `commondir` file (one
+ * line, a path RELATIVE TO THIS GIT DIR — measured directly: this repo's own
+ * worktree fixture wrote `../..`, which from `.git/worktrees/<name>/`
+ * resolves back to the repo's real `.git`). A normal (non-worktree) git dir
+ * carries no `commondir` file at all and IS already the common dir.
+ * @param {string} gitDir
+ * @returns {string}
+ */
+function resolveCommonDir(gitDir) {
+  const commondirPath = join(gitDir, 'commondir');
+  if (!existsSync(commondirPath)) return gitDir;
+  try {
+    const rel = readFileSync(commondirPath, 'utf8').trim();
+    if (!rel) return gitDir;
+    return rel.startsWith('/') ? rel : join(gitDir, rel);
+  } catch {
+    return gitDir;
+  }
+}
+
+/**
  * Resolve a ref name (e.g. "refs/heads/main") to a sha by reading the loose
  * ref file, falling back to `packed-refs` when the branch has been packed
  * (measured: this repo's own `.git/packed-refs` carries `main` but not every
@@ -68,15 +117,19 @@ export function codeVersion() {
 
   let sha = null;
   try {
-    const gitDir = join(PKG_ROOT, '.git');
-    // only a dev checkout carries a `.git` directory at all; an npm-installed
-    // copy has none, and this reads that absence as "unknown", never fakes one
-    if (existsSync(gitDir) && statSync(gitDir).isDirectory()) {
+    // only a dev checkout carries a `.git` at all (directory OR the
+    // `gitdir:` pointer file a worktree checkout leaves instead) — an
+    // npm-installed copy has neither, and this reads that absence as
+    // "unknown", never fakes one
+    const gitDir = resolveGitDir(PKG_ROOT);
+    if (gitDir !== null) {
       const headPath = join(gitDir, 'HEAD');
       const head = readFileSync(headPath, 'utf8').trim();
       const m = /^ref:\s*(\S+)$/.exec(head);
       if (m) {
-        sha = resolveRef(gitDir, m[1]);
+        // branches/packed-refs are shared across worktrees and live in the
+        // COMMON git dir, never the per-worktree one HEAD itself came from
+        sha = resolveRef(resolveCommonDir(gitDir), m[1]);
       } else if (/^[0-9a-f]{40}$/.test(head)) {
         // detached HEAD: a bare 40-hex sha directly in the file
         sha = head;
