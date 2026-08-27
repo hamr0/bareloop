@@ -12,9 +12,9 @@
 //   Corrects:  what it corrects
 // Convention-only was rejected — doctrine already on record is "a frozen rule
 // without a wired detector is prose" (docs/product/2026-08-23-agreed-build-list.md
-// :187-189). Enforcement is LOCAL ONLY, wired into `npm test` (package.json's
-// `test` script) rather than any `.github/workflows/*` file — CI already runs
-// `npm test`, so the rule is enforced there without an ask-first CI edit.
+// :187-189). Enforcement is wired into `npm test` (package.json's `test`
+// script); CI runs `npm test` and (since #2b, below) only adds the env var
+// that names the real pre-push range.
 //
 // Two modes, both read-only (never edits anything, never writes a file, never
 // touches git state beyond the read commands below):
@@ -29,6 +29,17 @@
 //   --message-file <path>     validate one message (e.g. `.git/COMMIT_EDITMSG`
 //                              from a `commit-msg` hook) against the files
 //                              currently staged (`git diff --cached`).
+//
+// #2b (2026-08-27, hamr's word, CI edit approved): when the env var
+// `PROMPT_COMMIT_RANGE` is set (CI's `.github/workflows/ci.yml` sets it to
+// `github.event.before..github.sha` on push events), it is used INSTEAD of
+// `--range` and needs no HEAD~1 fallback — `github.event.before` is the real
+// pre-push tip, so the range already covers every commit of a linear
+// multi-commit direct push, not just the last one. If it fails to resolve
+// (e.g. `github.event.before` is 40 zeros on a brand-new branch push), that
+// is reported and the run falls back to the `--range` arg's own path
+// (including its existing `loadRangeWithMainPushFallback` HEAD~1 fallback,
+// which remains the ONLY coverage for local runs with no env var set).
 //
 // Exits non-zero (via `process.exitCode`, never `process.exit()`, so any
 // already-queued stdout survives) and lists every offending commit + its
@@ -112,10 +123,11 @@ function resolveShaQuiet(ref) {
 // 4904d76: `git rev-list 4904d76~1..4904d76` lists 10 commits, not 1) — but
 // on a LINEAR multi-commit direct push (`git push` after several local
 // commits, no merge involved) it still only re-covers the LAST one. Full
-// coverage of that linear case needs the actual pre-push range, which only a
-// CI-side `github.event.before` (a `.github/` workflow edit) can supply, and
-// that is explicitly out of scope here (ask-first, untouched per this file's
-// own header).
+// coverage of that linear case needs the actual pre-push range — #2b
+// (2026-08-27, hamr's word) supplies it in CI via `PROMPT_COMMIT_RANGE`
+// (`github.event.before..sha`, see `main()`), so this HEAD~1 fallback is now
+// the LOCAL/no-env-var path only; CI always has the env var set on push
+// events and never reaches this function's fallback branch there.
 /**
  * @param {string} range the originally requested range (only used for the
  *   printed message — the fallback range itself is always `HEAD~1..HEAD`)
@@ -132,8 +144,7 @@ function loadRangeWithMainPushFallback(range) {
   const fallback = loadRangeCommits('HEAD~1..HEAD');
   console.log(`prompt-commit-check: range ${range} is empty at main — checked HEAD~1..HEAD instead; `
     + 'on a merge commit this covers the merge and every commit it brought in; on a linear multi-commit '
-    + 'direct push only the last commit — full coverage of that case needs github.event.before '
-    + '(a CI edit, hamr\'s word).');
+    + 'direct push only the last commit — CI covers that case via PROMPT_COMMIT_RANGE (#2b).');
   return fallback;
 }
 
@@ -161,9 +172,38 @@ function main() {
     return;
   }
 
+  // #2b (2026-08-27, hamr's word): CI supplies the real pre-push range via
+  // PROMPT_COMMIT_RANGE, which supersedes --range when present and needs no
+  // HEAD~1 fallback of its own. Same option-shaped-value guard as --range.
+  // Honoured in --range mode ONLY — a commit-msg hook (--message-file) must
+  // never be redirected by a stray env var.
+  const envRange = args.range ? process.env.PROMPT_COMMIT_RANGE : undefined;
+  if (envRange && envRange.startsWith('-')) {
+    console.error(`prompt-commit-check: PROMPT_COMMIT_RANGE value "${envRange}" looks like an option (starts with "-"), `
+      + 'not a rev-range — refusing to pass it to git.');
+    process.exitCode = 2;
+    return;
+  }
+
   /** @type {import('./promptcommitlib.mjs').PromptCommitInput[]} */
   let commits;
-  if (args.range) {
+  if (envRange) {
+    const loaded = loadRangeCommits(envRange);
+    if (!loaded.skipped) {
+      console.log(`prompt-commit-check: using PROMPT_COMMIT_RANGE=${envRange}`);
+      commits = loaded.commits;
+    } else {
+      console.log(`prompt-commit-check: PROMPT_COMMIT_RANGE=${envRange} could not be resolved (${loaded.reason}); `
+        + `falling back to the --range arg (${args.range}).`);
+      const fallback = loadRangeWithMainPushFallback(/** @type {string} */ (args.range));
+      if (fallback.skipped) {
+        console.log(`prompt-commit-check: SKIPPED — ${fallback.reason}; no baseline to compare, not a violation.`);
+        process.exitCode = 0;
+        return;
+      }
+      commits = fallback.commits;
+    }
+  } else if (args.range) {
     const loaded = loadRangeWithMainPushFallback(args.range);
     if (loaded.skipped) {
       console.log(`prompt-commit-check: SKIPPED — ${loaded.reason}; no baseline to compare, not a violation.`);

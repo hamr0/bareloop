@@ -34,3 +34,10 @@ jobs:
       - run: npm run typecheck   # tsc --noEmit — JSDoc/code mismatch blocks merge (anti-drift, LIBRARY_CONVENTIONS §2)
       - run: npm run build:types # prove the .d.ts actually generate from the JSDoc
       - run: npm test            # node --test — hermetic, token-free
+        env:
+          # #2b (2026-08-27, hamr's word): supply the real pre-push range so
+          # prompt-commit-check covers EVERY commit of a linear multi-commit
+          # direct push to main, not just HEAD~1..HEAD (its local fallback).
+          # Push events only — pull_request has no event.before; the script
+          # ignores an empty value and falls back to --range origin/main..HEAD.
+          PROMPT_COMMIT_RANGE: ${{ github.event_name == 'push' && format('{0}..{1}', github.event.before, github.sha) || '' }}

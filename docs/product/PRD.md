@@ -224,7 +224,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
    first (v1.78).
 8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
-   wired into `npm test`, no CI file touched. `src/promptregisters.js` (`PROMPT_REGISTERS`,
+   wired into `npm test` (CI untouched until #2b, below). `src/promptregisters.js` (`PROMPT_REGISTERS`,
    `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
    `Failure:`/`Addresses:`/`Corrects:` labels on any commit touching a prompt-register file,
    skipping (not redding) an unresolvable `--range` baseline. hamr's same-day addition: the
@@ -233,6 +233,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    (F118)** — the parked other half: `codeVersion()` (`src/codeversion.js`) stamps
    `job-start.code: {version, sha}` (report-only, $0, no shell), and `replayRun`/
    `formatReplay` print it right after `model:`. Live-proven on u-mt8yk53k (F118 addendum).
+   CI now supplies `PROMPT_COMMIT_RANGE` (`github.event.before..sha`, push events) so a
+   linear multi-commit direct push is fully covered (#2b, 2026-08-27).
 9. **Model names in the signed spec** — parked, arbiter territory.
 10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
     by `bare-agent` 0.39.0 (F111).
@@ -247,8 +249,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     territory, hamr.
 17. **`readShim` default flip** — ships OFF; hamr's call alone.
 18. **Flake-name capture** — held until the peer says "load window open" verbatim.
-19. **Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`; broad-`git add`
-    workflow rule (stage by explicit path while a reorg is in flight).
+19. ~~**Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`~~ — **DONE
+    2026-08-27** (`bareagent-0381-bump` deleted locally; `reorg-v2-test` already gone from
+    local and remote); broad-`git add` workflow rule (stage by explicit path while a reorg
+    is in flight) stays.
 20. ~~`job-start` to carry `verdictType` + worker model~~ — **DONE 2026-08-25** (F117):
     hamr blessed "1" verbatim; both `verdictType` (`src/run.js:303`, always real — a required
     spec field) and `model` (conditional on the provider binding carrying one — `src/planrun.js:76`)
