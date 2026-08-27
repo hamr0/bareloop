@@ -781,3 +781,47 @@ test('a run with no transport-retry records carries an empty floorReasons and no
   assert.equal(row.hadTransportRetries, false);
   assert.doesNotMatch(row.outcome, /⟲/);
 });
+
+// Release-gate finding 3 (2026-08-27, SUGGESTION, src/replay.js:~565-572,
+// SYNTHETIC spine — no archive involved): the per-step window filter
+// `typeof r.phase === 'string' ? r.phase === phaseTag : true` admits
+// phase-less spend records (e.g. `judge-round`) into a step's window by
+// `seq` alone. Today `judge-round` only fires from the final close, AFTER
+// every step-end (src/planrun.js:1333), so in practice it never lands
+// between two adjacent step-start/step-end occurrences of the SAME id — this
+// test proves the windowing logic itself is correct on that adversarial
+// shape, not just correct by lucky call-site ordering.
+test('(hand-built, SYNTHETIC spine) a phase-less spend record between two occurrences of the same step lands in neither window, but still counts toward this-file spend', () => {
+  const events = [
+    { type: 'job-start', job: 'x', budgetUsd: 5, seq: 0 },
+    { type: 'step-start', step: 's', seq: 1 },
+    { type: 'worker-round', phase: 'step:s', costUsd: 1.0, seq: 3 },
+    { type: 'step-end', step: 's', outcome: 'green', seq: 5 },
+    // phase-less, strictly BETWEEN the two occurrences (after end-1, before start-2)
+    { type: 'judge-round', stage: 'verdict', costUsd: 0.3, seq: 7 },
+    { type: 'step-start', step: 's', seq: 10 },
+    // phase-less, strictly INSIDE occurrence 2's window
+    { type: 'judge-round', stage: 'verdict', costUsd: 0.5, seq: 15 },
+    { type: 'step-end', step: 's', outcome: 'green', seq: 20 },
+    { type: 'job-end', outcome: 'green', spentUsd: 1.8, spendComplete: true, seq: 21 },
+  ];
+  const s = replayRun(events, []);
+
+  assert.equal(s.steps.length, 2, 'precondition: two step-start/step-end occurrences of the same id');
+  const [occ1, occ2] = s.steps;
+
+  assert.equal(occ1.rounds, 1, 'occurrence 1 sees only its own worker-round');
+  assert.ok(Math.abs(occ1.spentUsd - 1.0) < 1e-9, 'occurrence 1 spend excludes BOTH phase-less records (neither seq 7 nor 15 falls in its (1,5) window)');
+
+  assert.equal(occ2.rounds, 1, 'occurrence 2 includes only the phase-less record strictly inside its own window');
+  assert.ok(Math.abs(occ2.spentUsd - 0.5) < 1e-9, 'occurrence 2 spend is exactly the inside record (seq 15), not the between one (seq 7)');
+
+  // the between-record (seq 7) must land in no step at all.
+  const totalStepRounds = occ1.rounds + occ2.rounds;
+  assert.equal(totalStepRounds, 2, 'the between-record (seq 7) is picked up by neither occurrence — only 2 of the 3 spend records are attributed to a step');
+
+  // ... yet it still counts toward this-file spend (thisFileSpend sums every
+  // spendRecord in the file unconditionally, regardless of phase or window).
+  assert.equal(s.thisFileSpend.totalRounds, 3, 'this-file spend counts all 3 records, including the one attributed to no step');
+  assert.ok(Math.abs(s.thisFileSpend.value - 1.8) < 1e-9, 'this-file spend = 1.0 + 0.3 (between, no step) + 0.5 (inside occurrence 2) = 1.8');
+});

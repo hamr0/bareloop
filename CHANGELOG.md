@@ -135,6 +135,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `HEAD~1..HEAD` on that exact condition and prints that it did; a multi-commit direct push
   still only re-covers the last commit (needs `github.event.before`, a `.github/` edit — out of
   scope here, ask-first).
+- **Release-gate findings (2026-08-27)**: `scripts/prompt-commit-check.mjs`'s `--range` value
+  was passed to `git rev-list` positionally with no way to disambiguate it from an option — an
+  option-shaped value (e.g. `--output=<path>`) was parsed by git as its own flag (verified: a
+  `--` separator does NOT fix `rev-list`, unlike `show`/`diff-tree`, since it treats everything
+  after it as a path filter, not a revision range); the script now rejects any `--range` value
+  starting with `-` up front, before any git call runs. Also corrected the fallback's printed
+  limitation and code comment: on a MERGE commit, `HEAD~1` is the first parent, so
+  `HEAD~1..HEAD` covers the merge PLUS every commit unique to the merged branch (measured on
+  this repo's own `4904d76`: 10 commits, not 1) — the prior wording ("only re-covers the last
+  commit") was only accurate for a LINEAR multi-commit push, which is now stated explicitly.
+  (`src/replay.js`'s phase-less step-window filter was also reviewed and confirmed correct by a
+  new adversarial synthetic test — no code change there.)
 
 ## [0.14.0] — 2026-08-25
 

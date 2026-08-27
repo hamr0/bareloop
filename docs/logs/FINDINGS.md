@@ -9514,6 +9514,37 @@ does, plus a new deterministic fake-root test covering the detached case directl
    `.github/` workflow edit) can supply, and that stays out of scope here (ask-first,
    untouched).
 
+### Addendum: Release-gate findings (2026-08-27), 3 items
+
+9. SECURITY (low): `scripts/prompt-commit-check.mjs`'s `git(['rev-list', range])` passed
+   the `--range` argv value to `git rev-list` positionally with no `--` separator, so an
+   option-shaped value (e.g. `--output=<path>`) was parsed by git as its own flag rather
+   than a revision range. Verified against a real repo that `--` does NOT fix this for
+   `rev-list` (unlike `show`/`diff-tree` elsewhere in the same file): rev-list's `--`
+   marks everything after it as a PATH filter, not a revision range, and it errors out
+   (exit 129) instead of resolving anything. Fixed by rejecting any `--range` value
+   starting with `-` up front, before any git call runs; every other `git([...])` call
+   in the file was audited and found safe (arguments are either fixed literals or SHAs
+   git itself produced, never argv-derived).
+10. WARNING (item 8 above, corrected): the fallback's printed limitation and code
+    comment claimed `HEAD~1..HEAD` "only re-covers the LAST commit" of a multi-commit
+    direct push, unconditionally. On a MERGE commit, `HEAD~1` is the first parent, so
+    `HEAD~1..HEAD` lists the merge PLUS every commit unique to the merged branch —
+    reproduced on this repo's own history: `git rev-list 4904d76~1..4904d76 | wc -l` →
+    10 commits, not 1. The wording is only accurate for a LINEAR multi-commit push; both
+    the printed message and the code comment now state the merge case and the linear
+    case separately.
+11. SUGGESTION: `src/replay.js`'s per-step window filter (`typeof r.phase === 'string'
+    ? r.phase === phaseTag : true`) admits phase-less spend records (`judge-round`) into
+    a step's window by `seq` alone — safe today only because `judge-round` fires from
+    the final close, after every step-end, never call-site-order-proof by construction.
+    A new adversarial SYNTHETIC test (`tests/replay.test.js`, two occurrences of the
+    same step id with a phase-less record placed strictly between them and another
+    strictly inside the second occurrence) confirmed the windowing logic itself is
+    correct: the between-record lands in neither occurrence's window yet still counts
+    toward `thisFileSpend` — no code change needed, the design holds under the
+    adversarial shape it was never explicitly tested against before.
+
 ## F119
 
 **The transport retry fired live: two TLS `bad record mac` alerts in one run, both
