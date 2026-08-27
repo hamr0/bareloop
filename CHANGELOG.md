@@ -7,6 +7,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-08-27
+
 ### Added
 
 - **Generic run replay** (PRD build-list #6): `replayRun`/`formatReplay` (`src/replay.js`)
