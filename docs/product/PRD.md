@@ -224,7 +224,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
    first (v1.78).
 8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
-   wired into `npm test`, no CI file touched. `src/promptregisters.js` (`PROMPT_REGISTERS`,
+   wired into `npm test` (CI untouched until #2b, below). `src/promptregisters.js` (`PROMPT_REGISTERS`,
    `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
    `Failure:`/`Addresses:`/`Corrects:` labels on any commit touching a prompt-register file,
    skipping (not redding) an unresolvable `--range` baseline. hamr's same-day addition: the
@@ -233,6 +233,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    (F118)** — the parked other half: `codeVersion()` (`src/codeversion.js`) stamps
    `job-start.code: {version, sha}` (report-only, $0, no shell), and `replayRun`/
    `formatReplay` print it right after `model:`. Live-proven on u-mt8yk53k (F118 addendum).
+   CI now supplies `PROMPT_COMMIT_RANGE` (`github.event.before..sha`, push events) so a
+   linear multi-commit direct push is fully covered (#2b, 2026-08-27). **CI-proven
+   2026-08-30**: branch-birth push (40-zero `before`) fell back and checked 5 commits (CI run
+   33314883771); the next push used the real range `7e975b3..f0c3199` and checked exactly 1
+   (run 33314899690).
 9. **Model names in the signed spec** — parked, arbiter territory.
 10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
     by `bare-agent` 0.39.0 (F111).
@@ -240,19 +245,38 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     to `^0.39.0`, post-publish sweep 2050/2050 (F111).
 12. **aurora run-time signature** — sign when a run next fires; spec's `approvals` key is
     `null` today (F110).
-13. **4 `jobs/*.json` stale doc-path strings** — each edit flips a signed hash; hamr's word.
-14. **`bareloop.context.md` target-design-first flip** — asked, unanswered.
-15. **Accept re-proof wall governance** — arbiter question.
-16. **Green-class registry hole** (`door-accept` on green refuses `no-row-for-run`) — reuse
-    territory, hamr.
+13. ~~4 `jobs/*.json` stale doc-path strings~~ — **DONE 2026-08-30** (hamr's word): the four
+    `description` strings now point at `docs/product/{TESTGEN,TYPES}-PREREG.md`; the two
+    `docs/logs/` preregs moved to `docs/product/` beside the other eight (index + live links
+    repointed; `docs/archive/` and CHANGELOG history untouched). Four signed hashes flipped —
+    each re-signs at its next run (#12's mechanism).
+14. ~~**`bareloop.context.md` target-design-first flip**~~ — **DONE 2026-08-30** (hamr: "flip"):
+    the header leads with the shipped v0.15.0 contract (green + soft-green, judged floor,
+    review door); `hitl` demoted to a LEGACY block — still admitted in code, retired by design.
+15. ~~**Accept re-proof wall governance**~~ — **RULED 2026-08-30** (hamr): the door-accept
+    re-proof runs UNCLOCKED, on the condition it stays mechanical — `mechanicalStages()` only
+    (`src/reviewdoor.js:213`), never a judged floor, never a person, no LLM. A check is never
+    bounded (W-2); any future non-mechanical re-proof is a new arbiter question.
+16. ~~**Green-class registry hole** (`door-accept` on green refuses `no-row-for-run`) — reuse
+    territory, hamr.~~ — **RULED + BUILT 2026-08-30** (hamr): green mints a registry row at
+    run end, born released; soft-green unchanged (held → accept releases). Accept on green
+    records and releases nothing.
 17. **`readShim` default flip** — ships OFF; hamr's call alone.
 18. **Flake-name capture** — held until the peer says "load window open" verbatim.
-19. **Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`; broad-`git add`
-    workflow rule (stage by explicit path while a reorg is in flight).
+19. ~~**Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`~~ — **DONE
+    2026-08-27** (`bareagent-0381-bump` deleted locally; `reorg-v2-test` already gone from
+    local and remote); broad-`git add` workflow rule (stage by explicit path while a reorg
+    is in flight) stays.
 20. ~~`job-start` to carry `verdictType` + worker model~~ — **DONE 2026-08-25** (F117):
     hamr blessed "1" verbatim; both `verdictType` (`src/run.js:303`, always real — a required
     spec field) and `model` (conditional on the provider binding carrying one — `src/planrun.js:76`)
     landed, `src/replay.js` reads both. Live-proven on u-mt8yk53k (F118 addendum).
+21. **`hitl` cleanup — decision deferred** (hamr, 2026-08-30). `hitl` is retired by design
+    (v1.71) but still admitted in code (`VERDICT_TYPES`, `human-confirms`, `hitl-pause`/
+    `hitl-decision-red`); its pause machinery already lives on as the review door. Two ways
+    to close: (a) finish the retirement — delete the class, the stage kind, the two terminals,
+    migrate any `jobs/*.json` using it — a breaking rung with its own release; or (b) keep it
+    admitted so the class can be reopened later. Neither scheduled; hamr's call.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on

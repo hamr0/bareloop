@@ -22,9 +22,14 @@
 //     that already existed.
 //
 // AND EVERY GUARD THE RUNNER ALREADY HAD SURVIVES: an already-green run mints
-// nothing (the reuse-credit leak block, from the other side), a green-class run
-// mints nothing here (main's behaviour, kept — the U runner has never written a
-// registry row for one), and no `--registry` writes nothing at all.
+// nothing (the reuse-credit leak block, from the other side), and no `--registry`
+// writes nothing at all.
+//
+// hamr's ruling 2026-08-30 (PRD open item #16, "green-class registry hole"): a
+// green-class run now MINTS its row too, born RELEASED — a machine proved it, so
+// there is no credit to quarantine. Soft-green is unchanged (born HELD; accept
+// releases it). Accept over a green's (unheld) row records the disposition and
+// releases nothing — it no longer dies `no-row-for-run`.
 //
 // The door TEXT is tested beside them, because the promise and the thing that
 // makes it true have to move together: with no row minted, the accept line must
@@ -142,12 +147,48 @@ test('an ALREADY-GREEN run mints NOTHING — accept confirms a verdict, it never
   assert.equal(rowsOf(dir, 'judged-patient'), null, 'nothing on disk at all');
 });
 
-test('a GREEN-CLASS run mints nothing here — this runner has never written one, and that stands', () => {
+test('a GREEN-CLASS run MINTS a row, born RELEASED (hamr ruling 2026-08-30) — a machine proved it, there is no credit to quarantine', () => {
   const dir = registry();
   const w = writeRunGreenRow({ registryDir: dir, job: job('green'), name: null, outcome: 'green', plan: PLAN, record: record() });
-  assert.equal(w.minted, false);
-  assert.equal(w.reason, 'credit-not-held');
-  assert.equal(rowsOf(dir, 'judged-patient'), null);
+  assert.equal(w.minted, true, JSON.stringify(w));
+  assert.equal(w.write.action, 'mint');
+
+  const b = rowsOf(dir, 'judged-patient');
+  assert.equal(b.history.length, 1);
+  assert.equal(b.history[0].outcome, 'green');
+  assert.equal(b.history[0].quarantined, undefined, 'green-class credit is never held');
+  assert.equal(b.versions[0].quarantined, undefined, 'both halves of the one fact');
+});
+
+test('soft-green stays exactly as it was — the row is still born HELD (regression guard)', () => {
+  const dir = registry();
+  const w = writeRunGreenRow({ registryDir: dir, job: job('soft-green'), name: null, outcome: 'green', plan: PLAN, record: record() });
+  assert.equal(w.minted, true);
+  const b = rowsOf(dir, 'judged-patient');
+  assert.equal(b.history[0].quarantined, true);
+  assert.equal(b.versions[0].quarantined, true);
+});
+
+test('door accept on an UNHELD green row records the disposition and releases nothing — never no-row-for-run', () => {
+  const dir = registry();
+  writeRunGreenRow({ registryDir: dir, job: job('green'), name: null, outcome: 'green', plan: PLAN, record: record() });
+
+  const r = applyDoorDecision({ registryDir: dir, name: 'judged-patient', runid: 'u-abc123', decision: 'accept', at: '2026-08-23T11:00:00.000Z' });
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.equal(r.released, false, 'nothing was held, so accept releases nothing');
+
+  const b = rowsOf(dir, 'judged-patient');
+  assert.deepEqual(b.history[0].doors, [{ decision: 'accept', at: '2026-08-23T11:00:00.000Z' }], 'the disposition is still recorded');
+  assert.equal(b.history[0].quarantined, undefined, 'never flipped to false — it was never true');
+});
+
+test('door accept on a run with NO row at all still reds no-row-for-run', () => {
+  const dir = registry();
+  // a bridge exists (from some other green), but this runid never earned a row in it
+  writeRunGreenRow({ registryDir: dir, job: job('soft-green'), name: null, outcome: 'green', plan: PLAN, record: record() });
+  const r = applyDoorDecision({ registryDir: dir, name: 'judged-patient', runid: 'no-such-run', decision: 'accept', at: null });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds[0].code, 'no-row-for-run');
 });
 
 test('a green with NO PLAN on the spine mints nothing — the artifact that inherits is the one that ran', () => {

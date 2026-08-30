@@ -26,6 +26,12 @@ const GIT_ENV = {
   GIT_COMMITTER_NAME: 'bareloop-test', GIT_COMMITTER_EMAIL: 'test@bareloop',
 };
 
+// A --range-only spawn must never inherit an ambient PROMPT_COMMIT_RANGE —
+// CI's own `npm test` step sets it on every push (#2b), and without this
+// override these tests would silently take the env-range branch instead of
+// the --range path they exist to prove hermetically.
+const NO_ENV_RANGE = { ...process.env, PROMPT_COMMIT_RANGE: '' };
+
 /** @type {string[]} */
 const tmpDirs = [];
 after(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }); });
@@ -71,7 +77,7 @@ test('--range origin/main..HEAD falls back to HEAD~1..HEAD after a direct push t
   let out = '';
   let status = 0;
   try {
-    out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+    out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   } catch (err) {
     const e = /** @type {{stdout?: string, stderr?: string, status?: number}} */ (err);
     out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
@@ -96,7 +102,7 @@ test('the ordinary branch/PR path (origin/main behind HEAD by a real commit) is 
   git(['add', '-A']);
   git(['commit', '-q', '-m', 'Failure: run mszcthk1 — x\nAddresses: y\nCorrects: z']);
 
-  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   assert.match(out, /OK — 1 commit\(s\) checked/, 'the one real unpushed commit is the one actually inspected');
   assert.doesNotMatch(out, /checked HEAD~1\.\.HEAD instead/, 'the fallback must not fire when the range already has content');
 });
@@ -118,7 +124,7 @@ test('--range value that looks like an option is rejected before it ever reaches
   let out = '';
   let status = 0;
   try {
-    out = execFileSync('node', [SCRIPT, '--range', `--output=${injectedTarget}`], { cwd: clone, encoding: 'utf8' });
+    out = execFileSync('node', [SCRIPT, '--range', `--output=${injectedTarget}`], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   } catch (err) {
     const e = /** @type {{stdout?: string, stderr?: string, status?: number}} */ (err);
     out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
@@ -134,7 +140,7 @@ test('--range value that looks like an option is rejected before it ever reaches
   // one seed commit (origin/main == HEAD), so the main-push fallback fires
   // and then finds no HEAD~1 to fall back to — a SKIP, exit 0, same as any
   // other run this script would have made before this fix existed.
-  const okOut = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+  const okOut = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   assert.match(okOut, /SKIPPED/, 'a normal range is never touched by the option-shaped guard');
 });
 
@@ -164,7 +170,7 @@ test('a merge commit pushed to main: the fallback reports the merge + every comm
   const expectedCount = git(['rev-list', 'HEAD~1..HEAD']).trim().split('\n').filter(Boolean).length;
   assert.equal(expectedCount, 3, 'precondition: merge commit + its 2 unique feature commits');
 
-  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   assert.match(out, new RegExp(`OK — ${expectedCount} commit\\(s\\) checked`), 'the fallback inspects the merge and every commit it brought in, not just the merge itself');
   assert.match(out, /on a merge commit this covers the merge and every commit it brought in/, 'the printed limitation is accurate for the merge case');
 });
@@ -184,7 +190,102 @@ test('a linear 2-commit direct push to main: the fallback reports only the last 
   const expectedCount = git(['rev-list', 'HEAD~1..HEAD']).trim().split('\n').filter(Boolean).length;
   assert.equal(expectedCount, 1, 'precondition: a linear push has no merge parent to widen the range');
 
-  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   assert.match(out, new RegExp(`OK — ${expectedCount} commit\\(s\\) checked`), 'the fallback on a linear push covers only the last commit, as documented');
   assert.match(out, /on a linear multi-commit\s+direct push only the last commit/, 'the printed limitation is accurate for the linear case');
+});
+
+// #2b (2026-08-27, hamr's word): CI now supplies PROMPT_COMMIT_RANGE
+// (github.event.before..sha, push events only) so a linear multi-commit
+// direct push is fully covered, unlike the HEAD~1..HEAD local fallback
+// exercised above. These three tests exercise the env var directly, the
+// same way the CI step would set it.
+test('PROMPT_COMMIT_RANGE covers BOTH commits of a linear 2-commit direct push, unlike the HEAD~1 fallback', () => {
+  const clone = makeRepoWithOrigin();
+  const git = (/** @type {string[]} */ args) => execFileSync('git', args, { cwd: clone, encoding: 'utf8', env: GIT_ENV });
+
+  const seedSha = git(['rev-parse', 'HEAD']).trim();
+
+  mkdirSync(join(clone, 'src'), { recursive: true });
+  writeFileSync(join(clone, 'src', 'authorscout.js'), 'x');
+  git(['add', '-A']);
+  git(['commit', '-q', '-m', 'linear commit 1, no labels']);
+  writeFileSync(join(clone, 'src', 'authorscout.js'), 'y');
+  git(['add', '-A']);
+  git(['commit', '-q', '-m', 'linear commit 2, no labels']);
+  git(['push', '-q', 'origin', 'main']);
+
+  const sha1 = git(['rev-parse', 'HEAD~1']).trim();
+  const sha2 = git(['rev-parse', 'HEAD']).trim();
+
+  let out = '';
+  try {
+    out = execFileSync(
+      'node',
+      [SCRIPT, '--range', 'origin/main..HEAD'],
+      { cwd: clone, encoding: 'utf8', env: { ...process.env, PROMPT_COMMIT_RANGE: `${seedSha}..HEAD` } },
+    );
+  } catch (err) {
+    const e = /** @type {{stdout?: string, stderr?: string}} */ (err);
+    out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+  }
+
+  assert.match(out, /using PROMPT_COMMIT_RANGE=/, 'the env range in use is printed so CI logs show it');
+  assert.match(out, new RegExp(sha1), 'the FIRST of the two linear commits is named — the HEAD~1 fallback would miss it');
+  assert.match(out, new RegExp(sha2), 'the SECOND of the two linear commits is also named');
+});
+
+test('an unresolvable PROMPT_COMMIT_RANGE (github.event.before all-zeros, new-branch shape) falls back to the --range arg', () => {
+  const clone = makeRepoWithOrigin();
+  const git = (/** @type {string[]} */ args) => execFileSync('git', args, { cwd: clone, encoding: 'utf8', env: GIT_ENV });
+
+  mkdirSync(join(clone, 'src'), { recursive: true });
+  writeFileSync(join(clone, 'src', 'authorscout.js'), 'x');
+  git(['add', '-A']);
+  git(['commit', '-q', '-m', 'touch a prompt file, no labels']);
+  git(['push', '-q', 'origin', 'main']); // origin/main now == HEAD, triggers the existing main-push fallback
+
+  const zeroSha = '0'.repeat(40);
+  let out = '';
+  let status = 0;
+  try {
+    out = execFileSync(
+      'node',
+      [SCRIPT, '--range', 'origin/main..HEAD'],
+      { cwd: clone, encoding: 'utf8', env: { ...process.env, PROMPT_COMMIT_RANGE: `${zeroSha}..HEAD` } },
+    );
+  } catch (err) {
+    const e = /** @type {{stdout?: string, stderr?: string, status?: number}} */ (err);
+    out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+    status = e.status ?? 1;
+  }
+
+  assert.match(out, /PROMPT_COMMIT_RANGE.*could not be resolved/, 'the unresolvable env range is reported');
+  assert.match(out, /falling back to.*--range/, 'it says it is falling back to the --range arg');
+  assert.match(out, /checked HEAD~1\.\.HEAD instead/, 'the existing main-push fallback still fires on the --range arg\'s own path');
+  assert.notEqual(status, 0, 'the pushed commit was still found and flagged via the --range arg fallback');
+});
+
+test('a PROMPT_COMMIT_RANGE value that looks like an option is rejected before it ever reaches git', () => {
+  const clone = makeRepoWithOrigin();
+  const injectedTarget = join(clone, 'pwned-by-env-range');
+
+  let out = '';
+  let status = 0;
+  try {
+    out = execFileSync(
+      'node',
+      [SCRIPT, '--range', 'origin/main..HEAD'],
+      { cwd: clone, encoding: 'utf8', env: { ...process.env, PROMPT_COMMIT_RANGE: `--output=${injectedTarget}` } },
+    );
+  } catch (err) {
+    const e = /** @type {{stdout?: string, stderr?: string, status?: number}} */ (err);
+    out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+    status = e.status ?? 1;
+  }
+
+  assert.equal(existsSync(injectedTarget), false, 'the option-shaped env range must never reach `git rev-list` and create the file');
+  assert.notEqual(status, 0, 'an option-shaped PROMPT_COMMIT_RANGE value is refused, not silently accepted');
+  assert.match(out, /PROMPT_COMMIT_RANGE/, 'the refusal names the env var');
+  assert.match(out, /looks like an option/, 'the refusal is reported with a clear message, not a raw git error');
 });

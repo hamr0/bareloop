@@ -26,7 +26,7 @@ import { JUDGE_MODEL } from '../src/judged.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
-import { loadRegistry } from '../src/bridges.js';
+import { loadRegistry, quarantinesCredit } from '../src/bridges.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
 // is the seam that answers one. Same rulebook, one level out.
@@ -872,7 +872,7 @@ if (doorSpineFile !== null) {
     console.log(`\n${RULING.decision === 'accept' ? 'ACCEPTED' : 'PAUSED'} — the verdict this run minted (${doorRecord.outcome}) is UNTOUCHED; what you answered is what happens to the work.`);
     if (RULING.decision === 'accept') {
       console.log(`  proved   ${ans.mechanical?.ran ?? 0} mechanical stage(s) re-ran on the tree as it stands, and passed — an accept is not a rubber stamp`);
-      console.log(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : (arg('registry') === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : 'nothing was held — a green-class run was never quarantined')}`);
+      console.log(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : (arg('registry') === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : (quarantinesCredit(spec.verdictType) ? 'nothing left to release — this row was already released by an earlier accept (a repeat answer records nothing new)' : 'nothing was held to release — a green-class row is minted born RELEASED (hamr, 2026-08-30): a machine proved it, so there was never a credit to quarantine'))}`);
       if (ans.note) console.log(`  note     ${ans.note}`);
     } else {
       console.log(`  costs    nothing, in any state — no work, no money, no allowance moved`);
@@ -1318,9 +1318,10 @@ if (outcome === HITL_PAUSE) {
 // the row is written, and exactly one thing reads it back — the door. Every rule lives in
 // the library seam, which is where the reuse runner's greens go too, so there is ONE
 // spelling of what a green writes: no `--registry` is no row, an already-green run mints
-// nothing (accept confirms a verdict, it never mints one), a green with no executed plan
-// mints nothing, and a class whose credit is not held — green, today — mints nothing here,
-// which is what this runner has always done. The row is born HELD because `greenParts`
+// nothing (accept confirms a verdict, it never mints one), and a green with no executed
+// plan mints nothing. hamr's ruling 2026-08-30 (PRD open item #16): a green-class run now
+// mints its row too, born RELEASED — a machine proved it, so there is no credit to
+// quarantine. Whether the minted row IS held is decided one level down: `greenParts`
 // reads the SIGNED class off the record, never because a line here set a flag.
 //
 // A SPINE LEAK BLOCKS IT, exactly as it blocks the bridge file below and for the same
@@ -1356,7 +1357,12 @@ const REGISTRY_ROW = leaks.length
   });
 if (REGISTRY_ROW.minted) {
   console.log(`\nREGISTRY   ${REGISTRY_ROW.write.name} — ${REGISTRY_ROW.write.action} (${REGISTRY_ROW.write.file})`);
-  console.log('  HELD: this green\'s learning credit is quarantined until you release it at the door below');
+  // hamr's ruling 2026-08-30: a minted row is HELD only for a class `quarantinesCredit`
+  // still names (soft-green today) — a green-class row is born RELEASED, because a
+  // machine proved it and there was never a credit to quarantine
+  console.log(quarantinesCredit(spec.verdictType)
+    ? '  HELD: this green\'s learning credit is quarantined until you release it at the door below'
+    : '  RELEASED: a machine proved this green, so its row carries no credit to quarantine');
 } else if (REGISTRY_ROW.write !== null) {
   // a REFUSED write is said out loud rather than swallowed — the door below is about to
   // offer a disposition this run has no row to record
@@ -1364,7 +1370,7 @@ if (REGISTRY_ROW.minted) {
 } else if (arg('registry') !== null) {
   // the operator NAMED a registry and no row was even attempted — silence here would
   // leave them guessing whether the flag was read at all. One line, the reason as-is
-  // (green-predates-run / not-green / no-plan-executed / credit-not-held / spine-leak);
+  // (green-predates-run / not-green / no-plan-executed / spine-leak);
   // no --registry stays silent, because nothing was asked for.
   console.log(`\nREGISTRY   no row — ${REGISTRY_ROW.reason}`);
 }

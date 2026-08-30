@@ -290,8 +290,8 @@ export function runInterview({ answers, verdictType = null, repoPath = null, que
         verb: 'non-green-verdict',
         path: 'repoPath',
         detail: 'This job has no code repository, so there is no seed to measure against and no changed set to read — '
-          + 'nothing deterministic can decide whether it came back done. That needs a judged or a human close, and '
-          + 'both are declared-but-locked in v1.',
+          + 'nothing deterministic can decide whether it came back done. That needs a judged (soft-green) or a '
+          + 'human close; this authoring flow drafts code-genre closes against a git seed only.',
       }),
     });
   }
