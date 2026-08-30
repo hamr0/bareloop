@@ -1,6 +1,6 @@
 # bareloop — Integration Guide
 
-> **Current: v0.15.0.** The verdict classes are **`green` + `soft-green`**. `soft-green` has
+> **Current: v0.16.0.** The verdict classes are **`green` + `soft-green`**. `soft-green` has
 > a real judged floor (`judged-floor`, `src/judged.js`): a pinned haiku-4.5 judge LOCATEs
 > facts with quotes from the real artifact, an arbiter-owned `decide()` renders pass/fail from
 > a signed rubric card, and *unsure* is a red, never a pass — bought by a signed calibration
