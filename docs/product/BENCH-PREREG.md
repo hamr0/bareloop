@@ -100,7 +100,7 @@ recorded above is corrected in the freeze commit itself, never silently.
   | job | total archived greens (any hash, any date) | greens AT the current frozen hash |
   |---|---|---|
   | `aurora-u-spawner-types` | 11 | **2** (`u-mt7ugedk` $3.0026, `u-mt8yk53k` $1.9983) |
-  | `litectx-u-types` | 5 | **0** |
+  | `litectx-u-types` | 5 (+1 re-baseline, below) | **1** (`u-mtfywb55` $5.7195, 2026-08-30 — the re-baseline run) |
 
   The "11 greens" / "5 greens" figures are the job's total archive history across every hash
   it has ever run under (config changed repeatedly — verb-menu widening, close-stage axis
@@ -123,6 +123,14 @@ recorded above is corrected in the freeze commit itself, never silently.
   config.** Closing this gap needs one paid green run at the current hash before the freeze
   commit; that run is the row's own re-baseline, not a bench pass (it establishes the row,
   it does not read it as a bench result).
+
+  **Re-baseline done, 2026-08-30 (hamr's "go"):** run `u-mtfywb55` at hash `31733829fbba…`
+  — outcome green, $5.7195 (`spendComplete:true`), 14.6 min of 45, 79 rounds, 1 replan after
+  a step-variance escalation. Spine:
+  `../bareloop-patients/litectx-u-bareloop/u-mtfywb55.jsonl`. This run ESTABLISHES the row;
+  it is not a bench pass and is not written to `docs/logs/BENCH.md`. Both rows now satisfy
+  the requirement as designed. Note the spend ($5.72) sits above the archived median ($4.29)
+  — one run, not a re-estimate of the median.
 
 ## Results ledger — FROZEN facts
 
