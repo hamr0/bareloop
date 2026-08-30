@@ -4859,7 +4859,7 @@ replan channel, unnoticed until now.
 ### The defect INVERTED the experiment that found it
 
 Both rows above are lift-contrast **calibration** runs, judged against the frozen
-`must-GREEN` admission clause (`docs/logs/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
+`must-GREEN` admission clause (`docs/product/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
 addenda). Both were REJECTED. Neither was rejected for being too hard: both were rejected
 because the harness stopped them while the envelope still had money and time, and in one case
 while the error count was falling on every iteration. **The screen was measuring the workflow's

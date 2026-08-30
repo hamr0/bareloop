@@ -242,7 +242,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     to `^0.39.0`, post-publish sweep 2050/2050 (F111).
 12. **aurora run-time signature** — sign when a run next fires; spec's `approvals` key is
     `null` today (F110).
-13. **4 `jobs/*.json` stale doc-path strings** — each edit flips a signed hash; hamr's word.
+13. ~~4 `jobs/*.json` stale doc-path strings~~ — **DONE 2026-08-30** (hamr's word): the four
+    `description` strings now point at `docs/product/{TESTGEN,TYPES}-PREREG.md`; the two
+    `docs/logs/` preregs moved to `docs/product/` beside the other eight (index + live links
+    repointed; `docs/archive/` and CHANGELOG history untouched). Four signed hashes flipped —
+    each re-signs at its next run (#12's mechanism).
 14. **`bareloop.context.md` target-design-first flip** — asked, unanswered.
 15. **Accept re-proof wall governance** — arbiter question.
 16. **Green-class registry hole** (`door-accept` on green refuses `no-row-for-run`) — reuse

@@ -216,7 +216,7 @@ for (let d = 0; d < 10; d++) {
 }
 
 const out = {
-  prereg: 'docs/logs/TESTGEN-PREREG.md',
+  prereg: 'docs/product/TESTGEN-PREREG.md',
   seed: SEED, k: K, file: TARGET_REL, mirror: MIRROR_REL,
   fileSha256: sha, poolSize: pool.length, importRejected: rejected,
   mutants: chosen,

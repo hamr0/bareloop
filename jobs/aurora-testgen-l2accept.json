@@ -1,7 +1,7 @@
 {
   "schema": "job-v1",
   "job": "aurora-testgen-l2accept",
-  "description": "Layer 2 rung acceptance battery \u2014 job #4 (TESTGEN) run through the REAL plan flow (scout -> Planner -> plan-v1 validator -> per-step Loop+Gate executor -> operator-signed clean-run check -> outer grader close). Reads against F39's baseline (0 conversion; 3/3 acting rows died at the clean wall) and the POC's hardwired 3/3 (F46). The build authors the check composition the POC hardwired. Grader is the only truth; the clean-run check decides nothing and mints nothing. Prereg: docs/02-experiments/TESTGEN-PREREG.md amendment 2026-07-22a.",
+  "description": "Layer 2 rung acceptance battery \u2014 job #4 (TESTGEN) run through the REAL plan flow (scout -> Planner -> plan-v1 validator -> per-step Loop+Gate executor -> operator-signed clean-run check -> outer grader close). Reads against F39's baseline (0 conversion; 3/3 acting rows died at the clean wall) and the POC's hardwired 3/3 (F46). The build authors the check composition the POC hardwired. Grader is the only truth; the clean-run check decides nothing and mints nothing. Prereg: docs/product/TESTGEN-PREREG.md amendment 2026-07-22a.",
   "provider": "anthropic-api",
   "conditions": {
     "closeVerbosity": "scoreboard"

@@ -1,7 +1,7 @@
 {
   "schema": "job-v1",
   "job": "litectx-types-screen-f",
-  "description": "Job #5 (TYPES) hardness screen, ARM F \u2014 full-error gap channel. Second-genre e2e per PRD v1.26: can the agent author a complete workable workflow for a job that is NOT TESTGEN? Screen decides ADMISSION only (gates H1/H2, TYPES-PREREG.md \u00a76); it never mints a capability finding at n=1. Prereg: docs/02-experiments/TYPES-PREREG.md.",
+  "description": "Job #5 (TYPES) hardness screen, ARM F \u2014 full-error gap channel. Second-genre e2e per PRD v1.26: can the agent author a complete workable workflow for a job that is NOT TESTGEN? Screen decides ADMISSION only (gates H1/H2, TYPES-PREREG.md \u00a76); it never mints a capability finding at n=1. Prereg: docs/product/TYPES-PREREG.md.",
   "provider": "anthropic-api",
   "conditions": {
     "closeVerbosity": "full-errors"
