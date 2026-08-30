@@ -8,4 +8,4 @@ holds only the rows the bench has actually produced.
 | release | job | spec hash | seed | outcome | spentUsd (spendComplete) | wallMs | runid | n | notes |
 |---|---|---|---|---|---|---|---|---|---|
 
-No rows yet — the bench is not frozen.
+No rows yet — frozen 2026-08-30; the first pass fires on the next release after v0.16.1.

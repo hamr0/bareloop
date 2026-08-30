@@ -1,9 +1,9 @@
-# BENCH-PREREG — the two-row bench (DRAFT)
+# BENCH-PREREG — the two-row bench (FROZEN 2026-08-30)
 
-**DRAFT — not frozen; frozen only by hamr's word "freeze", which is the commit that locks
-this before any number exists.** Nothing below binds a run yet. This document exists so the
-facts, hashes, and decision rules are written down and can be checked BEFORE that commit —
-not so a bench can fire today.
+**FROZEN 2026-08-30 by hamr's word "freeze", in this commit, before any bench number exists.**
+Every fact and decision rule below binds every bench pass from here on. Seeds (`d661e50`,
+`96813a4`) and both spec hashes were re-computed at freeze time and match. Rules never loosen
+post-hoc; a spec edit re-hashes its row and requires a new freeze.
 
 Source of every fact below: `docs/product/PRD.md` addendum v1.81 (tail of file),
 `docs/product/2026-08-23-agreed-build-list.md` Q1/Q3–Q6 (hamr's answers, verbatim source —
