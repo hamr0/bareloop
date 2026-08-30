@@ -109,7 +109,7 @@ Do not build.
 
 ## Open questions (answer before handoff)
 
-**Q1 — which four patients?** (BLOCKS the bench.) Candidates from existing work: litectx
+**Q1 — ANSWERED 2026-08-30 (hamr): reuse the existing patient copies, reset to seed per run.** Original text: Candidates from existing work: litectx
 (job #1/#2), bareagent-u, aurora, testgen. Patients are always local copies, never clones,
 and choosing them is a real decision, not a detail. Reuse existing patients or prepare new?
 
@@ -137,7 +137,7 @@ Rough Tier 2 sizing from the same read (ESTIMATE, not a quote): red rows ~$0.4�
 rows $4.7–$6.5 — so four rows at n=1 plausibly $10–25, before the re-baseline. Q4's ceiling
 should be derived properly, not taken from this line.
 
-**Q3 — n per row. OPEN. No proposal is adopted** (hamr's explicit instruction: this is a
+**Q3 — ANSWERED 2026-08-30 (hamr): n=1 per job per release; a colour flip re-runs to n=3.** Was: (hamr's explicit instruction: this is a
 discussable limit, not a settled rule). Input only, from the same $0 archive read:
 
 | Job | Green rate | Date |
@@ -169,14 +169,14 @@ actually NEEDS a paid re-baseline and which can inherit its archived outcome. An
 may cut the bench's first bill substantially, or may prove it cannot — either is worth
 knowing before Q4 is set.
 
-**Q4 — money ceiling for Tier 2.** Threshold-setting is arbiter territory, so hamr sets it.
+**Q4 — ANSWERED 2026-08-30 (hamr): $16 per bench pass, adjustable by his word only** (PRD v1.81 has the measured per-row costs). Threshold-setting is arbiter territory, so hamr sets it.
 It cannot be picked from a small observed sample.
 
-**Q5 — signing.** Bench jobs run from signed specs. A frozen bench means frozen hashes; any
+**Q5 — ANSWERED 2026-08-30 (hamr): frozen, pre-greened set under one signature; an edit re-freezes and re-signs.** Bench jobs run from signed specs. A frozen bench means frozen hashes; any
 spec edit flips them and needs re-signing. Does a bench run need a fresh signature each time,
 or does one signature stand for the frozen set?
 
-**Q6 — where results live.** A new bench log, or FINDINGS entries, or both? A row that
+**Q6 — ANSWERED 2026-08-30 (hamr): `docs/logs/BENCH.md`; a colour flip also mints a FINDINGS entry.** A new bench log, or FINDINGS entries, or both? A row that
 changes outcome is a finding by definition.
 
 **Q7 — ANSWERED 2026-08-24.** Surface only — no spine record (a new record type is a new

@@ -221,8 +221,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    MEMORY-CACHE; the pre-declared 5-minute test passed on 3 unseen failed runs and found 3
    defects (escalation detail hidden, `--all` name-matched only, a replanned step merged by
    id), all fixed.
-7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
-   first (v1.78).
+7. **The bench** — Q1, Q3–Q6 **ANSWERED 2026-08-30** (v1.81 below; Q10 answered v1.78);
+   next branch after `conventions-gap`: write the frozen prereg, then G2 re-author + re-baseline
+   inside the $16 ceiling.
 8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
    wired into `npm test` (CI untouched until #2b, below). `src/promptregisters.js` (`PROMPT_REGISTERS`,
    `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
@@ -277,6 +278,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     to close: (a) finish the retirement — delete the class, the stage kind, the two terminals,
     migrate any `jobs/*.json` using it — a breaking rung with its own release; or (b) keep it
     admitted so the class can be reopened later. Neither scheduled; hamr's call.
+22. **LIBRARY_CONVENTIONS gap — DONE 2026-08-30**: 26/36 rules already met, 8 N/A; this
+    branch adds context.md §Which-mode/§Extension-contract/§Threat-model, per-dependency
+    justification in CLAUDE.md, `.env.example`. PARKED with reason: `src/types.js` central
+    typedefs (doc says preferred; per-file `@typedef` already generates 1:1 `.d.ts` and
+    typechecks clean — moving 23 files' typedefs is churn with no adopter benefit).
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on
@@ -380,3 +386,24 @@ no doctrine moved: "dreaming" (offline distillation into memory) cross-validates
 without changing the kill-switch bar; "outcomes" (rubric + parallel grader + retry-until-pass)
 cross-validates the close/gap/retry spine without changing the judged-floor requirement
 (PRD.md:4949-5017).
+
+### Bench questions answered; green rows, door re-proof, hitl deferral (v1.81 — 2026-08-30)
+
+hamr's answers to the bench (`docs/product/2026-08-23-agreed-build-list.md` Q1, Q3–Q6), as
+said: **Q1** reuse the existing patient COPIES under `../bareloop-patients/` (each carries its
+own git history and is reset to its frozen seed before every run; originals never touched).
+**Q3** n=1 per job per release; a row whose colour flips against the previous release re-runs
+twice more (n=3) before it is read. **Q4** money ceiling **$16 per bench pass**, hamr's number,
+adjustable at any point by his word only (tighten-only for the agent, as every cap). Measured
+against the archive's median green-run cost (aurora-u $2.00, litectx-u-types $4.29,
+bareagent-u-types $5.34, aurora-testgen-l2accept $6.46), $16 funds TWO real rows plus one flip
+re-run; the other two rows join when the ceiling is raised. The session's earlier "$1–3 a run"
+was a guess and is withdrawn — the table above is the measurement. **Q5** the bench is a frozen,
+pre-greened set under ONE signature; any spec edit re-freezes and re-signs. **Q6** results live
+in `docs/logs/BENCH.md`, one row per (job, release); a colour flip ALSO mints a FINDINGS entry.
+
+Same day, from the open-items list: green-class runs mint a registry row born released (#16);
+the door-accept re-proof stays unclocked on the condition it is mechanical only (#15); hitl
+cleanup deferred, finish-or-keep is hamr's call (#21); LIBRARY_CONVENTIONS gap closed with
+`src/types.js` parked (#22).
+
