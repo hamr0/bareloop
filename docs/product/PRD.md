@@ -234,7 +234,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    `job-start.code: {version, sha}` (report-only, $0, no shell), and `replayRun`/
    `formatReplay` print it right after `model:`. Live-proven on u-mt8yk53k (F118 addendum).
    CI now supplies `PROMPT_COMMIT_RANGE` (`github.event.before..sha`, push events) so a
-   linear multi-commit direct push is fully covered (#2b, 2026-08-27).
+   linear multi-commit direct push is fully covered (#2b, 2026-08-27). **CI-proven
+   2026-08-30**: branch-birth push (40-zero `before`) fell back and checked 5 commits (CI run
+   33314883771); the next push used the real range `7e975b3..f0c3199` and checked exactly 1
+   (run 33314899690).
 9. **Model names in the signed spec** — parked, arbiter territory.
 10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
     by `bare-agent` 0.39.0 (F111).
