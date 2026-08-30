@@ -77,6 +77,16 @@ const JOBS = {
     spine: 'baremobile-u-bareloop',
     seed: 'd9b318fac78036bd3db35f68c4b1eb5ee634244d',
   },
+  // Bench row G2 (the NEGATIVE row) — TESTGEN cold start in plan-v1. The legacy
+  // steps[] config went 0-of-43 (F38); this config's rate is UNKNOWN until its
+  // establishing run. Same patient/seed/grader as the l2accept battery
+  // (TESTGEN-PREREG); the spec is the cold goal. See docs/product/G2-SCOPING.md.
+  'aurora-testgen-cold': {
+    spec: 'aurora-testgen-cold.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar',
+    spine: 'aurora-soar-bareloop',
+    seed: 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18',
+  },
   'bareagent-types': {
     spec: 'bareagent-u-types.json',
     workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u',

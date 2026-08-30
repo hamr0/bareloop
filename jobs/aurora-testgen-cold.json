@@ -1,0 +1,55 @@
+{
+  "schema": "job-v1",
+  "job": "aurora-testgen-cold",
+  "description": "Bench row G2 (the negative row) — job #4 (TESTGEN) COLD START through the real plan flow: no existing suite, same frozen mutation-kill grader as l2accept (testgen-close, K=40, docs/product/TESTGEN-PREREG.md). The legacy steps[] row went 0-of-43 (F38); this plan-v1 cold config's rate is UNKNOWN and this spec exists to establish it. Scoping: docs/product/G2-SCOPING.md.",
+  "provider": "anthropic-api",
+  "conditions": {
+    "closeVerbosity": "scoreboard"
+  },
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 8,
+  "maxWallMs": 2700000,
+  "model": "claude-sonnet-5",
+  "writeScope": [
+    "tests/testgen/**"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Create a pytest test suite for the SOAR orchestrator at packages/soar/src/aurora_soar/orchestrator.py (2,455 lines, currently untested). Repository root: /home/hamr/PycharmProjects/bareloop-patients/aurora-soar. Write at least 10 unit tests under tests/testgen/unit/ and at least 7 integration tests under tests/testgen/integration/. An external close you cannot run grades the suite: first all your tests must pass against the CURRENT source (current behavior is the spec), then it measures how many hidden planted faults your suite detects — the grade is the fault-detection rate, so trivial always-pass tests score zero. The class takes injected dependencies (store, config, reasoning_llm, solving_llm, agent_registry) — construct it with plain fakes and drive it offline, no network, no real models; pytest and pytest-asyncio are installed. Testing standards: test behavior, not implementation — assert specific return values, state transitions, error routing, and call delegation through the class's methods; smoke asserts (not-None, no-exception) are worthless here; every test is self-contained (tmp_path, monkeypatch, fakes) and deterministic; parametrize only where it multiplies coverage of real behavior. Only tests/testgen/** is writable — never modify source files; tests must never read source files off the filesystem, hash them, touch os.environ, or spawn subprocesses (the close rejects the suite if they do). Stop when the suite is written.",
+  "verdictType": "green",
+  "close": [
+    {
+      "name": "clean-run",
+      "cmd": "/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop/l2poc-check-close.sh",
+      "expect": 0,
+      "judged": {
+        "pattern": "TESTGEN judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^TESTGEN "
+    },
+    {
+      "name": "verdict",
+      "cmd": "/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop/testgen-close.sh",
+      "expect": 0,
+      "judged": {
+        "pattern": "TESTGEN judged=(\\d+)",
+        "min": 1
+      },
+      "gapKeep": "^TESTGEN ",
+      "offer": false
+    }
+  ],
+  "tools": [
+    "read",
+    "grep",
+    "write",
+    "edit",
+    "recall",
+    "get"
+  ]
+}

@@ -87,6 +87,19 @@ money: G2's per-run cap ($8) joins the pass ceiling — 5 + 10 + 8 = $23 > $16, 
 must rise by hamr's word before G2 is in the frozen set (BENCH-PREREG "two more rows join only
 when hamr raises the ceiling"). Establishing run ≈ $5–$6.5 (l2accept's spend), cap $8.
 
+## Spec written, 2026-08-30 — awaiting hamr's signature
+
+`jobs/aurora-testgen-cold.json` + a `run-u.mjs` JOBS row (`aurora-testgen-cold`) exist as of
+this commit. Cold goal = the deleted spec's own text minus its legacy 40-round line; plumbing
+(close stages, writeScope, tools, escalation) = the l2accept spec verbatim; `budgetUsd: 8`,
+`maxWallMs: 2700000` (45 min, operator-set), `model: "claude-sonnet-5"` (pinned like the
+other bench rows). Spec hash: `ec25bb112e8604b26f7f77fe766f29d75bfa4111dacf09c6fe1241b050f1f621`.
+$0 verifications done: patient `aurora-soar` clean at `d661e50` with NO tests dir at seed
+(genuinely cold); K=40 frozen mutants present (`experiments/testgen-mutants.json`); both
+close scripts exist in `aurora-soar-bareloop/`. Nothing has run: hamr's `--approve` of the
+hash above IS the signature, and the establishing run (expected non-green, cap $8) fires
+only on his word.
+
 ## Decisions for hamr (remaining)
 
 1. Route: hand-written close reusing `testgen-close` (recommended) vs interview-authored.
