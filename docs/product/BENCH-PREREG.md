@@ -180,8 +180,15 @@ v1.81 — the table above is the measurement that replaced it.
 
 ## Open questions that do NOT block freezing
 
-- Which release cadence triggers a pass — every tag, or only minor releases? Left for hamr;
-  not required to lock this document's frozen facts.
+- ~~Which release cadence triggers a pass~~ — **ANSWERED 2026-08-30 (hamr, same day as the
+  freeze): "major releases triggers bench."** Recorded verbatim. Reading at 0.x SemVer: the
+  version bump that carries the release's breaking/feature line (0.16 → 0.17), not every patch
+  tag — hamr confirms or corrects that reading; the words above are his, the reading is not.
+- **Who pays / whose key.** The bench is a REPO instrument, not a library feature: it runs on
+  hamr's machine, against local patient copies, with `ANTHROPIC_API_KEY` from his environment
+  (`pass`). It never runs in CI (paid) and ships nothing to adopters — an adopter of the
+  library brings their own key via the environment, exactly as `bareloop.context.md` says
+  for every run. No key is ever provided by bareloop.
 
 ## What was left out as underivable, or found rather than assumed
 

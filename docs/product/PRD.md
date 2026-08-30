@@ -222,8 +222,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    defects (escalation detail hidden, `--all` name-matched only, a replanned step merged by
    id), all fixed.
 7. **The bench** — Q1, Q3–Q6 **ANSWERED 2026-08-30** (v1.81 below; Q10 answered v1.78);
-   next branch after `conventions-gap`: write the frozen prereg, then G2 re-author + re-baseline
-   inside the $16 ceiling.
+   Prereg **FROZEN 2026-08-30** (`docs/product/BENCH-PREREG.md`; litectx row re-baselined
+   green at its hash, run `u-mtfywb55`, $5.72). Cadence answered 2026-08-30 (hamr): major
+   releases trigger a pass. Queue after v0.16.1, hamr's order: **G2 re-author + re-baseline**
+   ($0 scoping first — the re-author + unknown 0-rate sits outside the $16 pass ceiling, so
+   its own ceiling is hamr's word), then **#3 model names in the signed spec** (parked → next).
 8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
    wired into `npm test` (CI untouched until #2b, below). `src/promptregisters.js` (`PROMPT_REGISTERS`,
    `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
