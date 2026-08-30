@@ -1649,13 +1649,17 @@ in the ledger whatever the person then does with it.
 write}` — the terminal registry write for a runner that drives `runJob` directly** (rather
 than through `runReuse`, which writes its own rows). It is what gives that runner's review
 door a row to release: without one, `accept` reaches `recordDoor` and reds `no-row-for-run`.
-STORAGE ONLY — nothing here selects, promotes or reuses a bridge. Four refusals, each with a
-named `reason`: no `registryDir` (`no-registry` — the registry is operator-supplied, never
+STORAGE ONLY — nothing here selects, promotes or reuses a bridge. Three refusals, each with
+a named `reason`: no `registryDir` (`no-registry` — the registry is operator-supplied, never
 conjured), `outcome !== 'green'` (`green-predates-run` for already-green — accept confirms a
-verdict, it never mints one — else `not-green`), no executed `plan` (`no-plan-executed`, R1),
-and a verdict class whose credit is not held (`credit-not-held` — `green`-class runs mint
-nothing here, `quarantinesCredit` is the one predicate). `name` falls back to `job.job`; the
-row is born HELD because the record carries the spec's own `verdictType`, never a flag. A
+verdict, it never mints one — else `not-green`), and no executed `plan` (`no-plan-executed`,
+R1). Every green class mints (hamr's ruling 2026-08-30): a `soft-green` row is born HELD —
+its learning credit is quarantined until a signer accepts at the door — and a `green`-class
+row is born RELEASED, because a machine's own close proved it and there was never a credit
+to quarantine; `quarantinesCredit(verdictType)` in `greenParts` is the one predicate, read
+off the record's own `verdictType`, never a flag. `door-accept` on a released row records
+the disposition and releases nothing — not an error; a run that earned no row at all still
+refuses `no-row-for-run`. `name` falls back to `job.job`. A
 refused underlying write returns `{minted: false, reason: 'write-refused', write}` with the
 reds on `write` — never a throw. Minting goes through the same cold-leg green write `runReuse`
 uses (shape-fork rule and collision refusals included), so the two runners can never spell

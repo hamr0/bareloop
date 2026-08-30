@@ -247,10 +247,17 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     `docs/logs/` preregs moved to `docs/product/` beside the other eight (index + live links
     repointed; `docs/archive/` and CHANGELOG history untouched). Four signed hashes flipped —
     each re-signs at its next run (#12's mechanism).
-14. **`bareloop.context.md` target-design-first flip** — asked, unanswered.
-15. **Accept re-proof wall governance** — arbiter question.
-16. **Green-class registry hole** (`door-accept` on green refuses `no-row-for-run`) — reuse
-    territory, hamr.
+14. ~~**`bareloop.context.md` target-design-first flip**~~ — **DONE 2026-08-30** (hamr: "flip"):
+    the header leads with the shipped v0.15.0 contract (green + soft-green, judged floor,
+    review door); `hitl` demoted to a LEGACY block — still admitted in code, retired by design.
+15. ~~**Accept re-proof wall governance**~~ — **RULED 2026-08-30** (hamr): the door-accept
+    re-proof runs UNCLOCKED, on the condition it stays mechanical — `mechanicalStages()` only
+    (`src/reviewdoor.js:213`), never a judged floor, never a person, no LLM. A check is never
+    bounded (W-2); any future non-mechanical re-proof is a new arbiter question.
+16. ~~**Green-class registry hole** (`door-accept` on green refuses `no-row-for-run`) — reuse
+    territory, hamr.~~ — **RULED + BUILT 2026-08-30** (hamr): green mints a registry row at
+    run end, born released; soft-green unchanged (held → accept releases). Accept on green
+    records and releases nothing.
 17. **`readShim` default flip** — ships OFF; hamr's call alone.
 18. **Flake-name capture** — held until the peer says "load window open" verbatim.
 19. ~~**Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`~~ — **DONE
@@ -261,6 +268,12 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     hamr blessed "1" verbatim; both `verdictType` (`src/run.js:303`, always real — a required
     spec field) and `model` (conditional on the provider binding carrying one — `src/planrun.js:76`)
     landed, `src/replay.js` reads both. Live-proven on u-mt8yk53k (F118 addendum).
+21. **`hitl` cleanup — decision deferred** (hamr, 2026-08-30). `hitl` is retired by design
+    (v1.71) but still admitted in code (`VERDICT_TYPES`, `human-confirms`, `hitl-pause`/
+    `hitl-decision-red`); its pause machinery already lives on as the review door. Two ways
+    to close: (a) finish the retirement — delete the class, the stage kind, the two terminals,
+    migrate any `jobs/*.json` using it — a breaking rung with its own release; or (b) keep it
+    admitted so the class can be reopened later. Neither scheduled; hamr's call.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on

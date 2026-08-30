@@ -46,7 +46,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { loadRegistry, loadBridge, saveBridge, appendGreen, appendRed, mintBridge, registryExists, reuseEligibility, recordDoor, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
+import { loadRegistry, loadBridge, saveBridge, appendGreen, appendRed, mintBridge, registryExists, reuseEligibility, recordDoor, QUARANTINED_CODE } from './bridges.js';
 import { renderListing, selectionPrompt } from './selection.js';
 import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
@@ -2128,7 +2128,7 @@ export function writeGreenRow({ registryDir, bridge = null, meta, record }) {
  * `no-row-for-run`. This is the row, and STORAGE IS ALL IT IS — selection, promotion
  * and reuse execution stay parked (layer-3-reuse). Nothing here reads a row back.
  *
- * FOUR REFUSALS, each one a guard that already existed somewhere and is kept:
+ * THREE REFUSALS, each one a guard that already existed somewhere and is kept:
  *   - NO REGISTRY, no row. The registry path is operator-supplied and never
  *     conjured; without one the door says, in words, that nothing was released.
  *   - ALREADY-GREEN mints nothing. The close was satisfied before this run did
@@ -2136,16 +2136,15 @@ export function writeGreenRow({ registryDir, bridge = null, meta, record }) {
  *     the writing side rather than the door's.
  *   - A GREEN WITH NO PLAN mints nothing. The artifact that inherits is the one that
  *     RAN, and there is none (R1).
- *   - A CLASS WHOSE CREDIT IS NOT HELD mints nothing HERE. That is `green` today, and
- *     it is main's behaviour kept rather than a new rule: this runner has never
- *     written a registry row for a green-class run, and widening what enters the
- *     registry is a reuse-rung question, not a side effect of fixing a door. The
- *     predicate is `quarantinesCredit` — the ONE spelling of "is this class held" —
- *     so the row this runner mints and the row a door releases can never disagree
- *     about which classes they are talking about.
  *
- * The row is born HELD for exactly the reason any judged green is: `greenParts` reads
- * `verdictType` off the record. Nothing here sets the flag.
+ * hamr's ruling 2026-08-30 (PRD open item #16, "green-class registry hole"): a
+ * green-class run (mechanical close) now MINTS its row too, born RELEASED — a
+ * machine proved it, so there is no credit to quarantine. This drops the fourth
+ * refusal this function used to carry (`credit-not-held`, main's behaviour kept
+ * from before the ruling): every outcome that reaches this line and clears the
+ * three refusals above now mints, held or not. Whether the minted row IS held is
+ * decided one level down, in `greenParts`, off `quarantinesCredit(verdictType)` —
+ * the ONE spelling of "is this class held" — never here.
  * @param {{registryDir: string|null|undefined, job: any, name: string|null,
  *   outcome: string, plan: any, record: any}} o
  * @returns {{minted: boolean, reason: string|null, write: any|null}}
@@ -2156,7 +2155,6 @@ export function writeRunGreenRow({ registryDir, job, name, outcome, plan, record
     return { minted: false, reason: outcome === 'already-green' ? 'green-predates-run' : 'not-green', write: null };
   }
   if (!isObj(plan)) return { minted: false, reason: 'no-plan-executed', write: null };
-  if (!quarantinesCredit(job?.verdictType)) return { minted: false, reason: 'credit-not-held', write: null };
 
   const target = isNonEmptyString(name) ? name : job.job;
   const meta = {
