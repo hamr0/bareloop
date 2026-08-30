@@ -1,31 +1,37 @@
 # bareloop — Integration Guide
 
-> **Current through Layer 2 (ACCEPTED, F47)**: the plan-v1 flow — a four-field job shape,
-> agent-authored validated plans, in-run check exits — validated end-to-end on the
-> real-model acceptance battery (3/3 conversion, 3/3 over the owned bar, the agent
-> composing its own check exits). **The plan shape is now the ONLY shape**: the legacy
+> **Current: v0.15.0.** The verdict classes are **`green` + `soft-green`**. `soft-green` has
+> a real judged floor (`judged-floor`, `src/judged.js`): a pinned haiku-4.5 judge LOCATEs
+> facts with quotes from the real artifact, an arbiter-owned `decide()` renders pass/fail from
+> a signed rubric card, and *unsure* is a red, never a pass — bought by a signed calibration
+> gate (ten graded truths, five resisted lies, floor 10/10, itemized reds). A soft-green pass
+> mints its bridge row QUARANTINED: no learning credit until an `accept` releases it, forward
+> only; a rerun records a disposition and its outcome is a NEW run's own row, born held
+> again. Every run ends at the signer's **review door** — `accept` / `rerun` / `pause` — which
+> records a disposition and **never changes the loop's own verdict** (`runPlan` still returns
+> `green`/`already-green` exactly as before). The door
+> is open **always for `soft-green`**, and **opt-in for `green`** via `reviewDoor: true` /
+> `--review-door` (the flag wins in both directions, never inferred); `accept` re-runs the
+> close's MECHANICAL stages only — never a judged floor, never a person. Shipped in v0.12.0
+> (2026-08-23); see CHANGELOG `## [0.12.0]` onward for the softgreen rung and the fixes/rungs
+> that followed through v0.15.0. **The plan shape is the ONLY shape**: the legacy
 > operator-authored `steps[]` path, config-v1 and the draft-PR hitl step were deleted
 > 2026-07-26 (PRD v1.32), so `interpret`, `validateConfig` and `extractRules` are gone from
-> the public surface — a breaking change. `hitl` and `soft-green` return as a Layer 3
-> decision, rebuilt in the plan shape rather than ported. Runs on two worker surfaces —
-> the API `Loop` and, for
-> `clipipe-subscription`, the CLI's native tool channel (module 4d). API sections fill in
-> as build-ladder rungs land (PRD §10). What is settled — the boundary, the architecture,
-> the refusals, the constraints — is settled for good. Per LIBRARY_CONVENTIONS §3 this
-> file ships with the package and is the complete adopter contract; the README is only
-> the pitch.
+> the public surface — a breaking change. Runs on two worker surfaces — the API `Loop` and,
+> for `clipipe-subscription`, the CLI's native tool channel (module 4d). API sections fill in
+> as build-ladder rungs land (PRD §10). What is settled — the boundary, the architecture, the
+> refusals, the constraints — is settled for good. Per LIBRARY_CONVENTIONS §3 this file ships
+> with the package and is the complete adopter contract; the README is only the pitch.
 
-> **DIRECTION CHANGE — 2026-08-17 (design decided, NOT built; nothing below has moved yet).**
-> **`hitl` is RETIRED as a verdict class.** The verdict classes become **`green` +
-> `soft-green`**, and the hitl pause machinery is **RE-HOMED, not deleted**: it becomes the
-> **review door** at the end of EVERY run (green and soft-green alike), where the person
-> `accept`s, `rerun`s (their text is the gap, funded as a FRESH engagement with its own money
-> and time) or `pause`s — and **the door never changes the loop's own verdict**. `soft-green`
-> gets a `judged-floor` stage behind a signed rubric card and a signed calibration set.
-> **Everything documented in this file describes the code as it actually is on this branch**,
-> where `hitl` IS admitted, `human-confirms` IS live, and the three `hitl-*` terminals exist —
-> integrate against what is written here, and expect the class-level rename when the next rung
-> lands. Records: PRD Addendum v1.71 and
+> **LEGACY — `hitl` (retired by design, PRD Addendum v1.71, 2026-08-17).** `hitl` remains
+> ADMITTED in code today — `VERDICT_TYPES` still lists it, the `human-confirms` stage kind is
+> still live (never offered, at-most-once, must be last), and the two `hitl-*` terminals
+> (`hitl-pause`, `hitl-decision-red`) still exist and still work exactly as documented
+> wherever this file describes them below. It is retired as a *design direction*, not deleted
+> as *code*: `LOCKED_CLASSES` is empty, so nothing refuses a `hitl` job today, but new
+> integrations should target `green` / `soft-green` plus the review door instead — that pair
+> is the forward path for anything needing a person's judgement, and `hitl`'s removal is a
+> future breaking change, not yet scheduled. Records: PRD Addendum v1.71,
 > `docs/product/2026-08-17-softgreen-review-door-design.md` (repo-only, not shipped);
 > evidence F102–F105.
 
@@ -110,8 +116,8 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 | field | shape | notes |
 |---|---|---|
 | `goal` | non-empty text | what the agent plans against |
-| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **`green` and `hitl` are ADMITTED** (N4 slice 1) — *and `hitl` is RETIRED as a class by the 2026-08-17 design (see the direction note at the top): it still works exactly as documented here on this branch, and the forward path for a job needing judgement is `soft-green` plus the end-of-run review door*; `soft-green` is still declared-but-locked and reds `request-red` with the type as a structured `verb` field (the tool-menu pattern) until its judged floor exists. Every `request-red` also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
-| `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) **only** for the declared-but-locked verdict classes | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close validates (the declared-but-locked verdict classes still parse) but the plan flow refuses it at runtime as `close-unsupported` — it names no command to run |
+| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **All three are ADMITTED today** — `LOCKED_VERDICTS` is empty, so nothing reds `request-red` on the class itself. `soft-green` has its judged floor (`judged-floor`, signed rubric card + calibration gate) and is the forward path for a job needing judgement, paired with the end-of-run review door; `hitl` is LEGACY — retired as a design direction (see the direction note at the top) but still admitted and still works exactly as documented here. Every `request-red` (e.g. for a locked TOOL verb, not a verdict class) also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
+| `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs? }, ...]` (PRD v1.28), or a close object (table below) | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close still VALIDATES (`CLOSE_TYPES`) but the plan flow refuses all three at runtime as `close-unsupported` — an object close names no command to run. The modern route to a judged or human-decided close is a staged `closeDecl` (`judged-floor` / `human-confirms` stage kinds), not this object form |
 | `closeDecl` | **the AUTHORED close** `{ genre: "TYPES", lang: "js"\|"python", stages: [{ name, kind, params }], notes? }` | the ALTERNATIVE to `close`, and the point of the close-authoring rung: the user answers an interview and an LLM composes a DECLARATION over kinds whose implementations we own — never a script, never a shell fragment, never a new kind. **`close` and `closeDecl` are alternatives**: declaring both reds `close-duplicated` (two closes are two arbiters). It is HARD-class by construction (`CLASS_BY_CLOSE.declared`), so a locked verdict on one reds `close-hierarchy` as well as `request-red`. The declaration is validated by `validateCloseDecl`; the TREE-GROUNDED half of that gate (the path rule, and the scoped-job derivation that arms the F84 one-population law) is DEFERRED at spec-validation time — a job spec is validated with no repository in hand — and the runner re-runs it GROUNDED against the real seed before any stage and before any token. It stores the counting RULE and never a number (D12): there is no seed field, and `baseline: "seed"` is measured at each run's own HEAD |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
 | `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (omitting it means the full menu — and the hash is taken over that RESOLVED form, so a `TOOL_MENU` widening flips an omitted-`tools` spec's hash and forces a re-sign; see `jobSpecHash`, MED-1); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
@@ -203,14 +209,15 @@ redo it. Write the goal from the close's own stage list, in the close's own word
 a few explicit requirements rather than prose. Preflight already names every stage on the
 `check-menu` spine event — read it back and check your goal against it before you sign.
 
-**Close types and the hierarchy — the OBJECT form, which survives only for the
-declared-but-locked verdict classes** (a close is data, never code; verdict-class laundering
-is a named red `close-hierarchy`). The go-forward shape is the staged list above; a
-`predicate` object is legal shorthand for a one-stage list and the plan flow adapts it, but
-`gold`/`rubric`/`hitl` validate and then refuse at runtime (`close-unsupported`) since v1
-admits `verdictType: green` and `hitl` only — and N4's hitl is a STAGE
-(`human-confirms` inside a `closeDecl`), never a close TYPE, so the `hitl` OBJECT form below
-stays refused at runtime exactly as it was:
+**Close types and the hierarchy — the OBJECT form, which the plan flow only partially
+supports** (a close is data, never code; verdict-class laundering is a named red
+`close-hierarchy`). The go-forward shape is the staged list above; a `predicate` object is
+legal shorthand for a one-stage list and the plan flow adapts it, but `gold`/`rubric`/`hitl`
+validate and then refuse at runtime (`close-unsupported`) regardless of verdict class — the
+plan flow has never executed an object close beyond `predicate`. `hitl` (LEGACY) is a STAGE
+(`human-confirms` inside a `closeDecl`) and `soft-green`'s judged floor is likewise a STAGE
+(`judged-floor` inside a `closeDecl`) — never close TYPES — so both OBJECT forms below stay
+refused at runtime exactly as they were:
 
 | type | fields (exact — extras red) | legal class |
 |---|---|---|
@@ -484,17 +491,19 @@ signed `writeScope` alone, never a free-text fallback. Menus exported: `EXIT_TYP
 The one layer where a human still wrote code. A close used to be a hand-written script
 per patient; now the user PICKS A VERDICT CLASS, answers that class's questions, and an LLM
 composes a DECLARATION over kinds whose implementations bareloop owns. **v1 admits exactly
-ONE genre** (`TYPES`: a type checker stops complaining without breaking the tests) and
-exactly one verdict class (`green`) — everything else refuses honestly, and every refusal
-is COUNTED.
+ONE genre** (`TYPES`: a type checker stops complaining without breaking the tests) —
+everything else refuses honestly, and every refusal is COUNTED.
 
 **The verdict class is the USER's answer (PRD v1.57 §1), and it DRIVES the authoring.**
 `verdictType` is a declared radio the preflight validates, never inferred:
-`VERDICT_CLASSES` = `green` | `soft-green` | `hitl`, with `LOCKED_CLASSES` =
-`soft-green` alone (N4 slice 1 admitted `hitl`; `soft-green` waits for its judged floor —
-**which is now the forward path: `hitl` is retired as a class by the 2026-08-17 design and its
-pause becomes the end-of-run review door, unbuilt as of this branch**). Picking a locked one returns a counted
-`request-red` refusal at ADMISSION — before that class's questions are ever asked. The
+`VERDICT_CLASSES` = `green` | `soft-green` | `hitl`, with `LOCKED_CLASSES` = **empty** —
+`soft-green` shipped its judged floor in v0.12.0 (2026-08-23) and is fully admitted
+alongside `green`; `hitl` is LEGACY (retired as a class by the 2026-08-17 design, PRD
+Addendum v1.71) but still admitted too, since removal is a future breaking change. The
+review door (`accept`/`rerun`/`pause`) that re-homes hitl's pause machinery is shipped and
+live — always on for `soft-green`, opt-in for `green` via `reviewDoor: true` /
+`--review-door`. A future LOCKED_CLASSES entry would still return a counted `request-red`
+refusal at ADMISSION — before that class's questions are ever asked. The
 pick is also a PROMISE: every catalogue kind carries the `verdictClass` it can honestly
 render, `closeCeiling(declaration)` reports the highest class a declaration demands, and a
 declaration ABOVE the pick is a `class-ceiling` red naming the kind that raised it (inert
@@ -505,7 +514,7 @@ a step, or test it without a provider.
 
 | step | call | what it is |
 |---|---|---|
-| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. THREE frozen question sets keyed by verdict class (`QUESTION_SETS`; `questionsFor(cls)` / `requiredAnswersFor(cls)`), and the interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost two slots since it was frozen (D13's genre confirm, then the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input and asking for it again invites a second, drifting answer for a fact the machine already holds), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today the green set is five questions, answers keyed by number; the HITL set is those five byte for byte plus one more (what the signer is deciding when they look at the result — `human-confirms`' `ask`), which is the spread's next number and moves with a green-side deletion; the soft-green set is named but LOCKED (`questions: null`, absent rather than empty) and its selection refuses before it runs. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
+| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. THREE frozen question sets keyed by verdict class (`QUESTION_SETS`; `questionsFor(cls)` / `requiredAnswersFor(cls)`), all three LIVE as of softgreen module 3 — nothing is locked today (`LOCKED_CLASSES` is empty) — and the interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost two slots since it was frozen (D13's genre confirm, then the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input and asking for it again invites a second, drifting answer for a fact the machine already holds), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today the green set is five questions, answers keyed by number; the LEGACY `hitl` set is those five byte for byte plus one more (what the signer is deciding when they look at the result — `human-confirms`' `ask`), which is the spread's next number and moves with a green-side deletion; the `soft-green` set is likewise those five plus two more — Q6 the signed rubric card (what separates a pass from a fail) and Q7 the frozen calibration set (one example to pass, one to fail) — the judged floor's two required inputs. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
 | survey | `runAuthorScout({ workdir, provider, attempts?, ceilingUsd? })` → `{ state, facts, reason, meta, raw, raws, calls, budgetStop }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes. Up to `SCOUT_ATTEMPTS` (**3**, hardcoded — PRD v1.58) attempts: `attempts` is TIGHTEN-ONLY and CLAMPS rather than throws (floor **1**, because a scout that never ran is an ABSENT nobody can act on), the direction every cap in this system runs in. **A retry fires on the typed MALFORMED class alone** (`SCOUT_RETRY_CAUSES` = `empty` \| `unparseable`); what is excluded is excluded for a reason — `call-failed` covers transport and `truncated:max_tokens`, both provider-red with NO redraft; `short` is F59's cut-off population and already has its own instrument INSIDE the attempt; `non-object` and `empty-object` are valid JSON with wrong or vacuous content, which is a SEMANTIC failure, and F38/F39 measured what re-asking one buys (the same distribution, sampled twice) — that is the self-healing line, and it is not crossed here. The re-ask is TOOLLESS over the conversation the survey already produced (the repository was already read; only the emission was unreadable) and names the mechanical parse error and nothing else. **There is no JSON repair behind it and there never will be** — a repairer decides what the model MEANT and writes it down as though the model had said it, in the one artefact whose whole job is to be honest about what a repository contains. `meta.attempts` / `meta.attemptsAllowed` record what was paid for; every attempt is metered under its own label (`author-scout`, `author-scout#2`, …) and leaves its raw behind. **`ceilingUsd` is the operator's money ceiling** (PRD v1.62) — checked BETWEEN attempts and before F59's reserved round, so no paid call escapes it; `null`/absent is UNBOUNDED, and a non-null non-finite value THROWS (the shared `capStop` seam — see `authorClose` below). When it ends the ladder, `budgetStop` names which stop (`cap-halt` \| `pricing-red`) and a survey that was never asked for carries the typed cause `not-funded` — deliberately OUTSIDE `SCOUT_RETRY_CAUSES`, because a retry is precisely what the cap forbade |
 | listing | `buildSeedListing({ workdir, seedRef, sourcePaths, testPaths })` | mechanical, `$0`, no model. `files` is the WHOLE tree (what the validator judges paths against); `block` is scoped to the survey's own paths and capped in ANNOUNCED tiers (what the prompt carries). Handing the validator the scoped half would make a job scoped to `src/` read as whole-tree and silently disarm the one-population law |
 | authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate, ceilingUsd? })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2) — a passed `maxRevisions` is TIGHTEN-ONLY, so a caller may LOWER that ceiling and never buy more revise rounds than the constant (floor **0**: one authoring call with no revise round is a legal ask, and unlimited revising would launder thrash as adaptation) — early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close. The return carries **`raws`**: what every model call actually SAID, the scout's attempts absorbed together with the declaration's, in the cost book's own order and under the same labels it meters. Each is `{ label, attempt, bytes, trimmed, text, cause, reason }` through the ONE persist helper (`scrubRaw` — redacted over the ONE `SECRET_PATTERNS` inventory, since a raw is the record most likely in this system to carry a live credential; bounded at `RAW_PERSIST_MAX` (8000) with the trim ANNOUNCING its own full size, and the cut walked back off a continuation byte so a multi-byte character is never split). `raws` is present on EVERY path **including the `$0` preflight refusals** — the path that spends nothing more is exactly the one whose evidence used to vanish with the process. `iterations` records what each turn MEANT (declaration, validation, seed read); `raws` records what it SAID, and a malformation is only ever visible in the second. **`ceilingUsd` is the same operator ceiling the survey took** — the scout's spend is ABSORBED into this loop's cost book before its first call is weighed, so spend already incurred folds in and re-entering cannot silently widen it. It is checked immediately before EVERY paid call (the author call, each revise, and each malformed-emission retry). **A MALFORMED ceiling is an ERROR, not a silent unbounded run** (v1.64 §3): the seam every ceiling read goes through (`capStop`, `src/text.js`) THROWS on a non-null non-finite value — `'2.50'`, `NaN`, `Infinity`, `true`, `{}` — before the first paid call, and the throw propagates uncaught rather than being caught into an ABSENT survey, because a caught one would hand you the very silent-unbounded run it exists to prevent. `null`/omitted is the STATED operator choice for unbounded; `0` and negatives are finite, legal, and cap-halt immediately. The advertised ceiling and the enforced ceiling can therefore never be different numbers. A `cap-halt` here can arrive with `ok:true` — a close that was already validated and measured survives the money stop, exactly as a late provider casualty does |
