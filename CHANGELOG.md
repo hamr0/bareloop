@@ -7,6 +7,81 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-08-30
+
+### Added
+
+- **`PROMPT_COMMIT_RANGE` covers every commit of a direct push (PRD #2b, #8)**:
+  `scripts/prompt-commit-check.mjs` now honours an env var of that name (`--range` mode
+  only — a commit-msg hook's `--message-file` path is never redirected by a stray env
+  var), which supersedes `--range` and needs no `HEAD~1` fallback of its own.
+  `.github/workflows/ci.yml`'s `npm test` step sets it to `github.event.before..sha` on
+  push events, so a linear multi-commit direct push to `main` is inspected whole instead
+  of the local `HEAD~1..HEAD` fallback re-covering only the last commit. An unresolvable
+  env range (a 40-zero `github.event.before` on a brand-new branch push) is reported and
+  falls back to the `--range` arg's own path, including its existing main-push fallback.
+  Same option-shaped-value guard as `--range` (a value starting with `-` is refused before
+  it reaches `git`). Premise measured on `origin/main`'s own reflog (two 3-commit linear
+  pushes on 2026-08-24, one carrying a prompt-register change the `HEAD~1` fallback would
+  have skipped); 3 new CLI tests, each proven failing before the fix. **CI-proven
+  2026-08-30**: a branch-birth push (40-zero `before`) fell back and checked 5 commits
+  (CI run 33314883771); the next push used the real range `7e975b3..f0c3199` and checked
+  exactly 1 (run 33314899690).
+- **Green-class runs mint a registry row, born released** (PRD open item #16,
+  `src/reuse.js`'s `writeRunGreenRow`): the fourth refusal (`credit-not-held`) is dropped —
+  a mechanical `green` run now mints its registry row at run end exactly like `soft-green`
+  does, but unheld: `greenParts` already keys the hold on `quarantinesCredit(verdictType)`
+  (`src/bridges.js:372`), so no bridge/door code changed. `door accept` on an unheld green
+  row records the disposition and releases nothing — it no longer dies `no-row-for-run`;
+  that terminal is reserved for a run that truly earned no row. `scripts/run-u.mjs`'s
+  registry line now prints `HELD`/`RELEASED` by class instead of `HELD` unconditionally,
+  and its door credit readout distinguishes a genuine release from a repeat `accept` on an
+  already-released row (`recordDoor` returns `released: false` on a same-decision repeat —
+  the wording now branches on `quarantinesCredit(spec.verdictType)` rather than claiming a
+  fresh release every time). 4 new/updated tests (2 proven failing before the fix),
+  including a soft-green regression guard (still born `HELD`) and the still-refusing
+  no-row-for-run case.
+
+### Changed
+
+- **`bareloop.context.md` leads with the shipped design** (PRD #14): the header states the
+  v0.15.0 contract first — `green` + `soft-green`, the judged floor and calibration gate,
+  the review door (`accept`/`rerun`/`pause`) that never changes the loop's own verdict —
+  and demotes `hitl` to a LEGACY block: still admitted in code (`VERDICT_TYPES`,
+  `human-confirms`, `hitl-pause`/`hitl-decision-red`), retired by design (PRD v1.71),
+  removal a future breaking change. Six inner passages that still called `soft-green`
+  "locked" or `hitl` "the forward path" now state the shipped fact.
+- **The authorjob no-repo refusal message** (`src/authorjob.js`) no longer says a judged or
+  human close is "declared-but-locked" — `LOCKED_CLASSES` has been empty since v0.12.0; it
+  now says what is true: this authoring flow drafts code-genre closes against a git seed
+  only.
+- **4 `jobs/*.json` description paths repointed, docs reorg** (PRD #13): the two preregs
+  living under `docs/logs/` (`TESTGEN-PREREG.md`, `REUSE-LIFT-CONTRAST-PREREG.md`) moved to
+  `docs/product/` beside the other eight; `docs/index.md`, the one live `FINDINGS.md` link
+  and `scripts/gen-mutants-testgen.mjs`'s prereg string follow. The four job descriptions
+  that still cited the pre-reorg `docs/02-experiments/*-PREREG.md` path now cite the real
+  files — each job's signed hash flips and re-signs at its next run. `docs/archive/` and
+  CHANGELOG history left as written.
+
+### Fixed
+
+- **`--range`-only CLI tests no longer leak an ambient `PROMPT_COMMIT_RANGE`**: the six
+  tests exercising `--range` in isolation now pass `PROMPT_COMMIT_RANGE: ''` explicitly, so
+  a resolvable ambient value (as CI's own `npm test` step now sets on every push) can never
+  silently route them onto the env-range path they don't exist to prove.
+
+### Ruled (no code change)
+
+- **Accept's re-proof wall governance** (PRD #15, hamr, 2026-08-30): the door-accept
+  re-proof runs unclocked, on the condition it stays mechanical
+  (`mechanicalStages()` only, `src/reviewdoor.js:213`) — never a judged floor, never a
+  person. A check is never bounded (W-2); any future non-mechanical re-proof is a new
+  arbiter question.
+- **`hitl` cleanup deferred** (PRD #21, hamr, 2026-08-30): `hitl` stays admitted in code
+  (retired by design only) until hamr decides between finishing the retirement (delete the
+  class, the stage kind, the two terminals, migrate any job using it — a breaking rung with
+  its own release) or keeping it reopenable. Unscheduled either way.
+
 ## [0.15.0] — 2026-08-27
 
 ### Added
