@@ -247,7 +247,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    2026-08-30**: branch-birth push (40-zero `before`) fell back and checked 5 commits (CI run
    33314883771); the next push used the real range `7e975b3..f0c3199` and checked exactly 1
    (run 33314899690).
-9. **Model names in the signed spec** — parked, arbiter territory.
+9. ~~Model names in the signed spec~~ — **BUILT 2026-08-30** (hamr's GO, `eacaeae` + `0119f19`):
+    optional `model` in job-v1 (exact id), in the signed hash; spec wins, a mismatched `--model`
+    is refused; judge stays library-pinned (calibration-bound). $0 runner checks passed (old hash
+    refused, mismatch refused). Both bench specs pinned `claude-sonnet-5` (`0bf1c26`) — re-baseline
+    + re-freeze pending the two paid runs; live `(spec)` banner proof lands with them.
 10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
     by `bare-agent` 0.39.0 (F111).
 11. ~~Awaiting ba24 — BA-24 fix candidate~~ — **CLOSED**: validated pre-release, pin bumped
