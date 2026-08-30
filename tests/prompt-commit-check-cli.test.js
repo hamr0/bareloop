@@ -26,6 +26,12 @@ const GIT_ENV = {
   GIT_COMMITTER_NAME: 'bareloop-test', GIT_COMMITTER_EMAIL: 'test@bareloop',
 };
 
+// A --range-only spawn must never inherit an ambient PROMPT_COMMIT_RANGE —
+// CI's own `npm test` step sets it on every push (#2b), and without this
+// override these tests would silently take the env-range branch instead of
+// the --range path they exist to prove hermetically.
+const NO_ENV_RANGE = { ...process.env, PROMPT_COMMIT_RANGE: '' };
+
 /** @type {string[]} */
 const tmpDirs = [];
 after(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }); });
@@ -71,7 +77,7 @@ test('--range origin/main..HEAD falls back to HEAD~1..HEAD after a direct push t
   let out = '';
   let status = 0;
   try {
-    out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+    out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   } catch (err) {
     const e = /** @type {{stdout?: string, stderr?: string, status?: number}} */ (err);
     out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
@@ -96,7 +102,7 @@ test('the ordinary branch/PR path (origin/main behind HEAD by a real commit) is 
   git(['add', '-A']);
   git(['commit', '-q', '-m', 'Failure: run mszcthk1 — x\nAddresses: y\nCorrects: z']);
 
-  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   assert.match(out, /OK — 1 commit\(s\) checked/, 'the one real unpushed commit is the one actually inspected');
   assert.doesNotMatch(out, /checked HEAD~1\.\.HEAD instead/, 'the fallback must not fire when the range already has content');
 });
@@ -118,7 +124,7 @@ test('--range value that looks like an option is rejected before it ever reaches
   let out = '';
   let status = 0;
   try {
-    out = execFileSync('node', [SCRIPT, '--range', `--output=${injectedTarget}`], { cwd: clone, encoding: 'utf8' });
+    out = execFileSync('node', [SCRIPT, '--range', `--output=${injectedTarget}`], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   } catch (err) {
     const e = /** @type {{stdout?: string, stderr?: string, status?: number}} */ (err);
     out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
@@ -134,7 +140,7 @@ test('--range value that looks like an option is rejected before it ever reaches
   // one seed commit (origin/main == HEAD), so the main-push fallback fires
   // and then finds no HEAD~1 to fall back to — a SKIP, exit 0, same as any
   // other run this script would have made before this fix existed.
-  const okOut = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+  const okOut = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   assert.match(okOut, /SKIPPED/, 'a normal range is never touched by the option-shaped guard');
 });
 
@@ -164,7 +170,7 @@ test('a merge commit pushed to main: the fallback reports the merge + every comm
   const expectedCount = git(['rev-list', 'HEAD~1..HEAD']).trim().split('\n').filter(Boolean).length;
   assert.equal(expectedCount, 3, 'precondition: merge commit + its 2 unique feature commits');
 
-  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   assert.match(out, new RegExp(`OK — ${expectedCount} commit\\(s\\) checked`), 'the fallback inspects the merge and every commit it brought in, not just the merge itself');
   assert.match(out, /on a merge commit this covers the merge and every commit it brought in/, 'the printed limitation is accurate for the merge case');
 });
@@ -184,7 +190,7 @@ test('a linear 2-commit direct push to main: the fallback reports only the last 
   const expectedCount = git(['rev-list', 'HEAD~1..HEAD']).trim().split('\n').filter(Boolean).length;
   assert.equal(expectedCount, 1, 'precondition: a linear push has no merge parent to widen the range');
 
-  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8' });
+  const out = execFileSync('node', [SCRIPT, '--range', 'origin/main..HEAD'], { cwd: clone, encoding: 'utf8', env: NO_ENV_RANGE });
   assert.match(out, new RegExp(`OK — ${expectedCount} commit\\(s\\) checked`), 'the fallback on a linear push covers only the last commit, as documented');
   assert.match(out, /on a linear multi-commit\s+direct push only the last commit/, 'the printed limitation is accurate for the linear case');
 });

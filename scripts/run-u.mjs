@@ -872,7 +872,7 @@ if (doorSpineFile !== null) {
     console.log(`\n${RULING.decision === 'accept' ? 'ACCEPTED' : 'PAUSED'} — the verdict this run minted (${doorRecord.outcome}) is UNTOUCHED; what you answered is what happens to the work.`);
     if (RULING.decision === 'accept') {
       console.log(`  proved   ${ans.mechanical?.ran ?? 0} mechanical stage(s) re-ran on the tree as it stands, and passed — an accept is not a rubber stamp`);
-      console.log(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : (arg('registry') === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : 'nothing was held to release — a green-class row is minted born RELEASED (hamr, 2026-08-30): a machine proved it, so there was never a credit to quarantine')}`);
+      console.log(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : (arg('registry') === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : (quarantinesCredit(spec.verdictType) ? 'nothing left to release — this row was already released by an earlier accept (a repeat answer records nothing new)' : 'nothing was held to release — a green-class row is minted born RELEASED (hamr, 2026-08-30): a machine proved it, so there was never a credit to quarantine'))}`);
       if (ans.note) console.log(`  note     ${ans.note}`);
     } else {
       console.log(`  costs    nothing, in any state — no work, no money, no allowance moved`);
