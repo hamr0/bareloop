@@ -1,4 +1,4 @@
-# BENCH-PREREG — the two-row bench (RE-FROZEN 2026-08-30, model pinned)
+# BENCH-PREREG — the three-row bench (RE-FROZEN 2026-08-30: model pinned; G2 admitted, ceiling $24)
 
 **RE-FROZEN 2026-08-30 (same day as the first freeze): build-list #3 pinned
 `"model": "claude-sonnet-5"` into both specs (`0bf1c26`), re-hashing both rows; both were
@@ -19,12 +19,14 @@ Style follows `docs/product/2026-08-18-readshim-phase2-prereg.md` and
 
 ## Rows — FROZEN facts
 
-Exactly two rows. Two more join only when hamr raises the $16 ceiling (below).
+Exactly three rows — hamr admitted G2 and raised the ceiling to $24 (his "ok", 2026-08-30).
+Two more join only when hamr raises the ceiling again (below).
 
 | job | budgetUsd | maxWallMs | current spec hash |
 |---|---|---|---|
 | `aurora-u-spawner-types` | 5 | 1,800,000 (30 min) | `5d989ae7be3d46f938d551a39a1e08b1d57ff50b32da22a521cbc0e1ab99107e` |
 | `litectx-u-types` | 10 | 2,700,000 (45 min) | `42a7c42704fa007b62c1393275ef218cc43cfeebbfc0f4a79750d26eff7f8de0` |
+| `aurora-testgen-cold` (G2, negative) | 8 | 2,700,000 (45 min) | `ec25bb112e8604b26f7f77fe766f29d75bfa4111dacf09c6fe1241b050f1f621` |
 
 Both hashes computed directly from the tracked spec files, not copied from memory:
 
@@ -36,9 +38,13 @@ node -e "import('./src/job.js').then(({jobSpecHash})=>
 node -e "import('./src/job.js').then(({jobSpecHash})=>
   console.log(jobSpecHash(JSON.parse(require('fs').readFileSync('jobs/litectx-u-types.json','utf8')))))"
 => 42a7c42704fa007b62c1393275ef218cc43cfeebbfc0f4a79750d26eff7f8de0
+
+node -e "import('./src/job.js').then(({jobSpecHash})=>
+  console.log(jobSpecHash(JSON.parse(require('fs').readFileSync('jobs/aurora-testgen-cold.json','utf8')))))"
+=> ec25bb112e8604b26f7f77fe766f29d75bfa4111dacf09c6fe1241b050f1f621
 ```
 
-Per-job cap = the job's own `budgetUsd` (5 + 10 = 15 ≤ 16, the pass ceiling below). A row
+Per-job cap = the job's own `budgetUsd` (5 + 10 + 8 = 23 ≤ 24, the pass ceiling below). A row
 freezes the CONFIG, not just the job name — either spec file changing re-hashes it, which
 ends that row's comparable series (see Signature, below).
 
@@ -52,6 +58,7 @@ $6.46). Neither is admitted, priced, or hashed here — naming them is scope, no
 |---|---|---|
 | `aurora-u-spawner-types` | `../bareloop-patients/aurora-u` | `d661e50` |
 | `litectx-u-types` | `../bareloop-patients/litectx-u` | `96813a4` |
+| `aurora-testgen-cold` | `../bareloop-patients/aurora-soar` | `d661e50` |
 
 Both are existing copies (Q1: hamr's answer is to reuse them, never clone fresh); each carries
 its own local git history and is a separate copy of the source repo — never the original.
@@ -63,6 +70,7 @@ adjacent work), which is exactly why the reset rule exists:
 ```
 git -C ../bareloop-patients/aurora-u reset --hard d661e50 && git -C ../bareloop-patients/aurora-u clean -fdx
 git -C ../bareloop-patients/litectx-u reset --hard 96813a4 && git -C ../bareloop-patients/litectx-u clean -fdx
+git -C ../bareloop-patients/aurora-soar reset --hard d661e50 && git -C ../bareloop-patients/aurora-soar clean -fdx
 ```
 
 This command runs ONLY inside the copy. The seed commit recorded here is the copy's HEAD at
@@ -71,16 +79,20 @@ recorded above is corrected in the freeze commit itself, never silently.
 
 ## Money — FROZEN facts
 
-- **$16 per bench pass** — hamr's number (PRD v1.81, Q4). Adjustable ONLY by hamr's explicit
+- **$24 per bench pass** — hamr's number ($16 at first freeze, raised to $24 with G2's admission,
+  2026-08-30). Adjustable ONLY by hamr's explicit
   word recorded in the PRD; the agent may only TIGHTEN this ceiling, never widen it, per
   standing budget doctrine.
-- Per-job cap = the job's own `budgetUsd` (aurora $5, litectx $10; 15 ≤ 16).
+- Per-job cap = the job's own `budgetUsd` (aurora $5, litectx $10, testgen-cold $8; 23 ≤ 24).
 - A colour-flip re-run pair (below) is a SEPARATE pass with its own $16 — it does not draw
   against the same ceiling as the pass that detected the flip.
 
 ## n — FROZEN facts (decision rule)
 
 - **n = 1 run per job per release.**
+- **G2's expected colour is NON-GREEN** (`escalated` baseline). For G2 the flip that matters
+  is non-green → green; a green read there is never a win, it is the n=3 trigger and, if the
+  majority confirms, the release-blocking question (model improved, or the ruler broke).
 - A row whose colour FLIPS against the previous release's row (green↔non-green) triggers 2
   more runs of that job (bringing it to n = 3) BEFORE the row is read; the read is the
   majority of the 3.
@@ -95,8 +107,9 @@ recorded above is corrected in the freeze commit itself, never silently.
   either job file re-hashes that row and re-freezes/re-signs the set — the OLD rows under the
   old hash stop being comparable to anything that runs after the edit (a hash change ends a
   row's series; the archive under the old hash is history, not the live bench).
-- **Requirement as designed:** each row must have ≥1 archived green AT ITS FROZEN HASH before
-  freeze.
+- **Requirement as designed:** each POSITIVE row must have ≥1 archived green AT ITS FROZEN
+  HASH before freeze; the NEGATIVE row (G2) must have its baseline colour established by ≥1
+  archived run at its frozen hash (a green would disqualify it as a negative row).
 - **What the archive actually shows, checked directly against spine files under
   `../bareloop-patients/*-bareloop/`, matched job-start `specHash` to job-end `outcome`:**
 
@@ -143,6 +156,12 @@ recorded above is corrected in the freeze commit itself, never silently.
   the requirement as designed. Note the spend ($5.72) sits above the archived median ($4.29)
   — one run, not a re-estimate of the median.
 
+- **G2 baseline (2026-08-30):** run `u-mtg6bwa0` at `ec25bb11…` — **escalated** (cap-halt,
+  2/2 strikes), $7.0865 (`spendComplete:true`), 29.8 min, grader `killed=6/40 rate=15%
+  threshold=45% clean=green form=unit:18,integ:10`. Cold start confirmed; banner
+  `claude-sonnet-5 (spec)`. Establishment details and the named config wrinkle (the borrowed
+  accept-shape clean-run stage): `docs/product/G2-SCOPING.md`.
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).
@@ -153,12 +172,14 @@ recorded above is corrected in the freeze commit itself, never silently.
 
 ## Decision rules — FROZEN
 
-- **PASS of the bench:** every row is green, OR every row's colour is UNCHANGED from the
-  previous release's reading for that job (a repeat non-green is not a regression if the
-  previous release already read non-green there — there is currently no such baseline for
-  either row, since this is the first freeze).
-- **STOP:** any CONFIRMED flip to non-green (i.e. the majority of the n=3 confirmation runs
-  reads non-green) is a release-blocking finding.
+- **PASS of the bench:** every POSITIVE row is green (or its colour is UNCHANGED from the
+  previous release's reading — a repeat non-green is not a regression if the previous
+  release already read non-green there), AND G2's colour is unchanged NON-GREEN. The
+  baselines are: aurora green, litectx green, G2 escalated (the establishing runs above).
+- **STOP:** any CONFIRMED flip (majority of the n=3 confirmation runs) is release-blocking —
+  a positive row to non-green, OR G2 to green. A confirmed G2 green is never celebrated as a
+  pass; it is the "model improved or ruler broke" question, answered by a human before any
+  release.
 - **Provider condition:** a repeating provider-red is reported as a provider condition —
   "pass not readable", never rounded up to green and never counted as a flip.
 - **Explicit non-claim:** nothing in this bench is a lift claim. The bench detects
@@ -177,8 +198,10 @@ files audited above (not a proxy, not a step-count estimate):
 | `bareagent-u-types` (not in this bench) | ≈ $5.34 |
 | `aurora-testgen-l2accept` (not in this bench) | ≈ $6.46 |
 
-Expected pass cost for the two frozen rows: **≈ $6.3 median** ($2.00 + $4.29), **≤ $15 cap**
-(the sum of the two `budgetUsd` values), inside the **$16 ceiling**. hamr's earlier "$1–3 a
+Expected pass cost for the three frozen rows: **≈ $13.3** ($2.00 + $4.29 medians + $7.09,
+G2's one measured run), **≤ $23 cap** (the sum of the three `budgetUsd` values), inside the
+**$24 ceiling**. The 2026-08-30 establishing runs actually cost $2.34 + $7.21 + $7.09 =
+$16.64 — singles, not medians. hamr's earlier "$1–3 a
 run" guess (`2026-08-23-agreed-build-list.md`, Q3 discussion) is explicitly withdrawn per
 v1.81 — the table above is the measurement that replaced it.
 

@@ -231,7 +231,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    in the signed spec** (parked → GO given 2026-08-30; note: it re-hashes every spec, so the two
    bench rows must be re-baselined and re-frozen after it — hamr's call which way), then
    generic replay follow-ups if hamr names a gap (it is BUILT, #6 above). The feature bump
-   that results (0.17.0) fires the first bench pass.
+   that results (0.17.0) fires the first bench pass. **2026-08-30, complete:** #3 built +
+   live-proven; both positive rows re-baselined green at model-pinned hashes; G2
+   (`aurora-testgen-cold`) established non-green (u-mtg6bwa0, 15% vs 45% bar, $7.09); hamr
+   raised the pass ceiling to **$24** and the bench re-froze as THREE rows (BENCH-PREREG).
 8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
    wired into `npm test` (CI untouched until #2b, below). `src/promptregisters.js` (`PROMPT_REGISTERS`,
    `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
