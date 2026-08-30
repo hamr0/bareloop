@@ -1,6 +1,9 @@
-# BENCH-PREREG — the two-row bench (FROZEN 2026-08-30)
+# BENCH-PREREG — the two-row bench (RE-FROZEN 2026-08-30, model pinned)
 
-**FROZEN 2026-08-30 by hamr's word "freeze", in this commit, before any bench number exists.**
+**RE-FROZEN 2026-08-30 (same day as the first freeze): build-list #3 pinned
+`"model": "claude-sonnet-5"` into both specs (`0bf1c26`), re-hashing both rows; both were
+re-baselined green at the new hashes the same day (below), and this commit re-freezes the
+set. The first-freeze hashes (`c395b716…`, `31733829…`) are retired series. Still true:**
 Every fact and decision rule below binds every bench pass from here on. Seeds (`d661e50`,
 `96813a4`) and both spec hashes were re-computed at freeze time and match. Rules never loosen
 post-hoc; a spec edit re-hashes its row and requires a new freeze.
@@ -20,19 +23,19 @@ Exactly two rows. Two more join only when hamr raises the $16 ceiling (below).
 
 | job | budgetUsd | maxWallMs | current spec hash |
 |---|---|---|---|
-| `aurora-u-spawner-types` | 5 | 1,800,000 (30 min) | `c395b716b7afdbe8e3b637fb46eb394773332a367dd30e47f9ee7fc3aecd56a3` |
-| `litectx-u-types` | 10 | 2,700,000 (45 min) | `31733829fbba925d81bffb0558c0ff92e1199e7700c58dfa5ed73dffa8979598` |
+| `aurora-u-spawner-types` | 5 | 1,800,000 (30 min) | `5d989ae7be3d46f938d551a39a1e08b1d57ff50b32da22a521cbc0e1ab99107e` |
+| `litectx-u-types` | 10 | 2,700,000 (45 min) | `42a7c42704fa007b62c1393275ef218cc43cfeebbfc0f4a79750d26eff7f8de0` |
 
 Both hashes computed directly from the tracked spec files, not copied from memory:
 
 ```
 node -e "import('./src/job.js').then(({jobSpecHash})=>
   console.log(jobSpecHash(JSON.parse(require('fs').readFileSync('jobs/aurora-u-spawner-types.json','utf8')))))"
-=> c395b716b7afdbe8e3b637fb46eb394773332a367dd30e47f9ee7fc3aecd56a3
+=> 5d989ae7be3d46f938d551a39a1e08b1d57ff50b32da22a521cbc0e1ab99107e
 
 node -e "import('./src/job.js').then(({jobSpecHash})=>
   console.log(jobSpecHash(JSON.parse(require('fs').readFileSync('jobs/litectx-u-types.json','utf8')))))"
-=> 31733829fbba925d81bffb0558c0ff92e1199e7700c58dfa5ed73dffa8979598
+=> 42a7c42704fa007b62c1393275ef218cc43cfeebbfc0f4a79750d26eff7f8de0
 ```
 
 Per-job cap = the job's own `budgetUsd` (5 + 10 = 15 ≤ 16, the pass ceiling below). A row
@@ -108,6 +111,14 @@ recorded above is corrected in the freeze commit itself, never silently.
   asked to carry forward, but **they are not the number the signature rule needs** — a hash
   change ends a row's series, so a green minted under a retired hash cannot pre-green the
   current one.
+
+- **Re-freeze pre-greens (2026-08-30, model pinned):** each row has exactly one green AT ITS
+  RE-FROZEN HASH, minted by the model-pin re-baseline runs (hamr's "do the baseline"):
+  `aurora-u-spawner-types` — `u-mtg50j39`, $2.3425 (`spendComplete:true`), 8.3 min;
+  `litectx-u-types` — `u-mtg5bwfn`, $7.2051 (`spendComplete:true`), 23.9 min. Both banners
+  read `claude-sonnet-5 (spec)` — the pinned model demonstrably reached the run. Both runs
+  establish rows; neither is a bench pass. litectx's $7.21 is one run, not a new median.
+  History below is the FIRST freeze's audit, kept verbatim:
 
 - **aurora-u-spawner-types satisfies the requirement as designed:** 2 greens exist at the
   current hash (`c395b716b7af…`), both post-dating the two most recent spec edits (`892439f`,
