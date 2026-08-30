@@ -7,6 +7,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Worker model name in the signed spec (build-list #3)**: `job-v1` gains an optional
+  `model` field — a non-empty string naming the exact worker provider model id. Absent,
+  behaviour is unchanged (the runner's own default); present, it is part of the signed
+  spec hash and `scripts/run-u.mjs` runs the job on that model. A `--model <tier>` flag
+  naming a different model is refused (`resolveWorkerModel`, `src/job.js`) rather than
+  silently overridden — the spec always wins. Worker only; the judge model stays
+  library-pinned pending recalibration.
+
 ## [0.16.0] — 2026-08-30
 
 ### Added
