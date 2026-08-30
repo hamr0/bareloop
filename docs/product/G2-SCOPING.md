@@ -77,8 +77,17 @@ it — the archive holds zero plan-v1 cold rows. It is answered only by paying.
 - G3 (worker cheats, close catches it) and G4 (cap-halt → replan → green) — unscoped.
 - Widening the kind catalogue with a mutation-kill kind (arbiter-adjacent; not needed here).
 
-## Decisions for hamr
+## hamr's ruling, 2026-08-30 — G2 follows the BENCH's rules, not its own
+
+G2 is one of the four bench jobs, so it gets the same baseline and reading rules as the
+frozen bench (BENCH-PREREG.md): **n = 1 establishing run** (expected non-green) at its
+frozen hash, n = 1 per release after that, a colour flip (here: red → green) re-runs to n = 3
+and the read is the majority. The n=3-all-red proposal above is WITHDRAWN. Consequence for
+money: G2's per-run cap ($8) joins the pass ceiling — 5 + 10 + 8 = $23 > $16, so the ceiling
+must rise by hamr's word before G2 is in the frozen set (BENCH-PREREG "two more rows join only
+when hamr raises the ceiling"). Establishing run ≈ $5–$6.5 (l2accept's spend), cap $8.
+
+## Decisions for hamr (remaining)
 
 1. Route: hand-written close reusing `testgen-close` (recommended) vs interview-authored.
-2. n=3-all-red rule for a negative row (recommended).
-3. The G2 ceiling: $24 hard cap proposed.
+2. The pass ceiling once G2 joins: $23 minimum (sum of the three caps) — hamr's number.
