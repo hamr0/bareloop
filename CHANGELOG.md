@@ -9,6 +9,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **Publish workflow gates on the types being usable BY AN ADOPTER, not just internally.** `npm run typecheck` (`tsc --noEmit`) checks the *source*; it cannot see the generated `.d.ts` as an adopter resolves it from inside `node_modules`, which is the one thing consumers actually get. The publish workflow now packs the tarball, installs it into a clean consumer project, and compiles a quickstart against it, so a release whose published types are broken cannot reach the registry.  The consumer pins `@types/node` to the major this package builds against instead of floating to the newest, so a stricter DefinitelyTyped release cannot turn the publish gate red for reasons unrelated to the commit being published. Verified locally: the quickstart compiles green against a packed tarball, and a deliberately broken dereference fails it. CI only — no runtime or published-artifact change.
+
+### Added
+
 - **Worker model name in the signed spec (build-list #3)**: `job-v1` gains an optional
   `model` field — a non-empty string naming the exact worker provider model id. Absent,
   behaviour is unchanged (the runner's own default); present, it is part of the signed
