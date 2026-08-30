@@ -1037,7 +1037,9 @@ const provider = new AnthropicProvider({ apiKey, model: MODEL });
 // `sonnet` maps to the RESOLVED worker model (MODEL — spec/flag/default), not the
 // bare DEFAULT_TIER_MODELS id, so a spec-named model reaches every plan step's own
 // provider (STEP_MODELS is sonnet-only), not just the top-level `provider` above.
-const TIER_MODELS = { ...DEFAULT_TIER_MODELS, sonnet: MODEL };
+// ONLY when the SPEC named it: a `--model haiku` probe keeps its old reach (the
+// top-level provider), never silently widening into every step's tier.
+const TIER_MODELS = modelResolution.source === 'spec' ? { ...DEFAULT_TIER_MODELS, sonnet: MODEL } : DEFAULT_TIER_MODELS;
 /** @type {Record<string, any>} */
 const tierCache = {};
 const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
