@@ -84,7 +84,7 @@ recorded above is corrected in the freeze commit itself, never silently.
   word recorded in the PRD; the agent may only TIGHTEN this ceiling, never widen it, per
   standing budget doctrine.
 - Per-job cap = the job's own `budgetUsd` (aurora $5, litectx $10, testgen-cold $8; 23 ≤ 24).
-- A colour-flip re-run pair (below) is a SEPARATE pass with its own $16 — it does not draw
+- A colour-flip re-run pair (below) is a SEPARATE pass with its own $24 — it does not draw
   against the same ceiling as the pass that detected the flip.
 
 ## n — FROZEN facts (decision rule)
