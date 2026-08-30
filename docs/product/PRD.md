@@ -224,9 +224,14 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 7. **The bench** — Q1, Q3–Q6 **ANSWERED 2026-08-30** (v1.81 below; Q10 answered v1.78);
    Prereg **FROZEN 2026-08-30** (`docs/product/BENCH-PREREG.md`; litectx row re-baselined
    green at its hash, run `u-mtfywb55`, $5.72). Cadence answered 2026-08-30 (hamr): major
-   releases trigger a pass. Queue after v0.16.1, hamr's order: **G2 re-author + re-baseline**
-   ($0 scoping first — the re-author + unknown 0-rate sits outside the $16 pass ceiling, so
-   its own ceiling is hamr's word), then **#3 model names in the signed spec** (parked → next).
+   releases trigger a pass. Cadence reading confirmed by hamr: 0.16 → 0.17 (feature bump), not
+   patch tags. Queue on the SAME branch (`bench-prereg`, no interim release — hamr, 2026-08-30),
+   his order: **G2 re-author + re-baseline** ($0 scoping first — the re-author + unknown 0-rate
+   sits outside the $16 pass ceiling, so its own ceiling is hamr's word), then **#3 model names
+   in the signed spec** (parked → GO given 2026-08-30; note: it re-hashes every spec, so the two
+   bench rows must be re-baselined and re-frozen after it — hamr's call which way), then
+   generic replay follow-ups if hamr names a gap (it is BUILT, #6 above). The feature bump
+   that results (0.17.0) fires the first bench pass.
 8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
    wired into `npm test` (CI untouched until #2b, below). `src/promptregisters.js` (`PROMPT_REGISTERS`,
    `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
