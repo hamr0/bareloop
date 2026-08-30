@@ -100,6 +100,28 @@ close scripts exist in `aurora-soar-bareloop/`. Nothing has run: hamr's `--appro
 hash above IS the signature, and the establishing run (expected non-green, cap $8) fires
 only on his word.
 
+## ESTABLISHED, 2026-08-30 — the establishing run came back non-green
+
+Run `u-mtg6bwa0` at hash `ec25bb11…` (signed by hamr's `--approve`, fired by him): outcome
+**escalated** (cap-halt, 2/2 strikes in the close-fix loop), $7.0865 of $8
+(`spendComplete:true`), 29.8 min of 45, 117 rounds, plan 3 steps, cold start confirmed
+("store was already absent"), banner `claude-sonnet-5 (spec)`. The grader's own numbers:
+`TESTGEN verdict killed=6/40 rate=15% threshold=45% clean=green form=unit:18,integ:10` — a
+real, passing, form-complete suite that detects 15% of planted faults against a 45% bar.
+Notable: 15% is the same rate the l2accept SEED suite scored; a cold sonnet-5 suite lands at
+the same detection floor. Spine: `../bareloop-patients/aurora-soar-bareloop/u-mtg6bwa0.jsonl`.
+
+Config wrinkle, named not hidden: the borrowed `clean-run` stage carries l2accept's
+accept-shape "unchanged-red" check (it fired once mid-run: "identical to the existing
+seed"), and 5 `gate-red: forbidden pattern` reds fired. Neither rendered the verdict — the
+`verdict` stage (mutation grader) did. Fixing the stage borrow would re-hash the row; parked
+as-is since the row is now established AT this hash.
+
+**G2's colour baseline is `escalated` (non-green).** Under bench rules a future GREEN here is
+the colour flip that triggers n=3 and, if confirmed, a release-blocking question (ruler broke
+or model improved). G2 joins the frozen bench set only when hamr raises the pass ceiling to
+≥ $23 (5 + 10 + 8) — his word, still open.
+
 ## Decisions for hamr (remaining)
 
 1. Route: hand-written close reusing `testgen-close` (recommended) vs interview-authored.
