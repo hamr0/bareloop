@@ -88,7 +88,7 @@ const SIZING_PER_DRAFT_USD = 0.06;
 const N_PER_ARM = 3;
 /** prereg §2: sonnet, the drafter tier floor (PRD v1.36); same model across all arms.
  * Spelled the way run-u.mjs spells its sonnet tier. */
-const MODEL = 'claude-sonnet-5';
+const DEFAULT_MODEL = 'claude-sonnet-5';
 /** runPlan's default per-step rounds ceiling — the same number the shipped drafter's
  * prompt and validator are built against (run.js passes no override) */
 const MAX_STEP_ROUNDS = 40;
@@ -117,6 +117,8 @@ const arg = (/** @type {string} */ n) => { const i = argv.indexOf(`--${n}`); ret
 const DRY = argv.includes('--dry-run');
 
 const spec = JSON.parse(readFileSync(new URL('../jobs/litectx-u-types.json', import.meta.url), 'utf8'));
+// the signed spec's `model` wins (build-list #3); this driver has no --model knob
+const MODEL = spec.model ?? DEFAULT_MODEL;
 const specHash = jobSpecHash(spec);
 const bridge = JSON.parse(readFileSync(BRIDGE_FILE, 'utf8'));
 const bridgePlanText = JSON.stringify(bridge.plan, null, 2);

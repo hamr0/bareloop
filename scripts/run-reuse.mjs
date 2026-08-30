@@ -74,7 +74,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { runReuse, validateEnvelope, resolveReuse, reuseSpecHash, readResume, resumeTreeGate } from '../src/reuse.js';
-import { jobSpecHash } from '../src/job.js';
+import { jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { registryExists, loadRegistry } from '../src/bridges.js';
@@ -160,7 +160,7 @@ const target = JOBS[jobKey];
 if (!target) die(`unknown --job "${jobKey}" — one of: ${Object.keys(JOBS).join(', ')}`);
 
 const tierArg = arg('model') ?? 'sonnet';
-const MODEL = DEFAULT_TIER_MODELS[tierArg];
+let MODEL = DEFAULT_TIER_MODELS[tierArg];
 if (!MODEL) die(`unknown --model "${tierArg}" — one of: ${Object.keys(DEFAULT_TIER_MODELS).join(', ')}`);
 
 // ── the ENVELOPE: three operator numbers, none of them defaulted. A missing one is a
@@ -181,6 +181,15 @@ const FORCE_COLD = argv.includes('--force-cold');
 if (PIN && FORCE_COLD) die('--pin and --force-cold contradict each other — pick one');
 
 const spec = JSON.parse(readFileSync(new URL(`../jobs/${target.spec}`, import.meta.url), 'utf8'));
+// The signed spec's `model` wins outright; a mismatched --model flag is refused
+// (same contract as run-u.mjs — src/job.js resolveWorkerModel, build-list #3).
+try {
+  MODEL = resolveWorkerModel({
+    specModel: spec.model,
+    flagModel: arg('model') === null ? undefined : MODEL,
+    defaultModel: DEFAULT_TIER_MODELS.sonnet,
+  }).model;
+} catch (e) { die(/** @type {Error} */ (e).message); }
 const ev = validateEnvelope(envelope, { job: spec });
 if (!ev.ok) {
   console.error('ENVELOPE REFUSED — it does not compose with the signed spec:');

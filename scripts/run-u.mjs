@@ -221,7 +221,6 @@ try {
   });
 } catch (e) {
   die(/** @type {Error} */ (e).message);
-  throw e; // unreachable — die() exits the process; satisfies control-flow analysis
 }
 const MODEL = modelResolution.model;
 const MODEL_LABEL = modelResolution.source === 'spec' ? `${MODEL} (spec)` : MODEL;

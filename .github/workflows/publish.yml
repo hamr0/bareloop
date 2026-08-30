@@ -31,6 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # fetch-depth: 0 — this workflow runs `npm test` too, and the suite reads
+          # history (tests/close-stages.test.js does `git show f2be2b6:...`); a
+          # depth-1 clone hard-fails it. Documented prior incident — ci.yml's
+          # comment says this must hold in BOTH workflows. Restored 2026-08-30
+          # after the workflow rewrite dropped it (found by /code-review).
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           # Native-addon repos (e.g. better-sqlite3) may need `20` instead if the
@@ -71,6 +78,10 @@ jobs:
           fi
       - name: Typecheck
         run: npm run typecheck --if-present
+      # litectx's impact() shells out to ripgrep (documented requirement; not on the
+      # runner image) — without it tests/tools.test.js's ctx_impact tests hard-fail.
+      # Documented prior incident; restored 2026-08-30 after the rewrite dropped it.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
       - name: Test
         run: npm test --if-present
       - name: Skip if this version is already on npm

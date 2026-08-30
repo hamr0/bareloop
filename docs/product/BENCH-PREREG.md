@@ -201,7 +201,10 @@ files audited above (not a proxy, not a step-count estimate):
 Expected pass cost for the three frozen rows: **≈ $13.3** ($2.00 + $4.29 medians + $7.09,
 G2's one measured run), **≤ $23 cap** (the sum of the three `budgetUsd` values), inside the
 **$24 ceiling**. The 2026-08-30 establishing runs actually cost $2.34 + $7.21 + $7.09 =
-$16.64 — singles, not medians. hamr's earlier "$1–3 a
+$16.64 — singles, not medians.
+  *Erratum, 2026-08-30 (same day, /code-review finding): summing the full-precision figures
+  ($2.3425 + $7.2051 + $7.0865 = $16.6341) rounds to $16.63; the $16.64 above is the sum of
+  the already-rounded addends. One cent; the $24 ceiling is unaffected. Noted, not edited.* hamr's earlier "$1–3 a
 run" guess (`2026-08-23-agreed-build-list.md`, Q3 discussion) is explicitly withdrawn per
 v1.81 — the table above is the measurement that replaced it.
 

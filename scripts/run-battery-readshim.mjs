@@ -43,7 +43,12 @@ const JOB_KEY = 'aurora-spawner';
 const SPEC_FILE = 'aurora-u-spawner-types.json';
 /** hamr-approved, this spec version. A spec that drifted mid-battery invalidates every
  * row that already ran, because rows filed together would have been run against
- * different closes/budgets — so this is a REFUSAL, not a warning. */
+ * different closes/budgets — so this is a REFUSAL, not a warning.
+ *
+ * 2026-08-30: the spec gained a signed `model` field and now hashes 5d989ae7be3d…,
+ * so this driver refuses BY DESIGN. The Phase 2 battery is CONCLUDED (its prereg
+ * froze THIS hash); re-pointing the constant would let a frozen instrument run
+ * against a spec its prereg never froze. Left refusing on purpose. */
 const EXPECTED_HASH = 'c395b716b7afdbe8e3b637fb46eb394773332a367dd30e47f9ee7fc3aecd56a3';
 const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u';
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop';
