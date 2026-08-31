@@ -41,7 +41,8 @@
         "min": 1
       },
       "gapKeep": "^TESTGEN ",
-      "offer": false
+      "offer": false,
+      "direction": "up"
     }
   ],
   "tools": [

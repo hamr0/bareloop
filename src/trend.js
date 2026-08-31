@@ -212,12 +212,25 @@ const UNSTAGED = '(unstaged)';
  *   grades a PREVIOUS leg of this same run already recorded, oldest first, read off
  *   its own spine. Baselines only (see THE SEED above). Empty/omitted is the cold
  *   path and is byte-identical to the pre-resume reader.
+ * @param {Record<string, 'up'|'down'>} [opts.directions] per-stage comparison
+ *   direction, read from the signed close spec (2026-08-31 ruling, hamr's option
+ *   A) — never inferred, never LLM-judged. 'up' = higher is better (a rate of good
+ *   things caught); 'down' = lower is better (a count of bad things remaining, the
+ *   pre-existing behaviour). A stage absent from this map — including every close
+ *   authored before this field existed — resolves to 'down', so a cold spec's
+ *   trend reading is byte-identical to before this option existed.
  */
-export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCap = null, seed = [] } = {}) {
+export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCap = null, seed = [], directions = {} } = {}) {
   /** @type {Map<string, number[]>} stage → every count it reported, in order */
   const series = new Map();
-  /** @type {Map<string, number>} stage → the BEST (lowest) count it ever reported */
+  /** @type {Map<string, number>} stage → the BEST (max for 'up', min for 'down') count it ever reported */
   const best = new Map();
+  /** is `a` a BETTER reading than `b` for this stage, under its own declared
+   * direction? 'up' stages are better when higher (a caught-rate climbing);
+   * every other stage — including one absent from `directions` — is better
+   * when lower, which is the ORIGINAL, only comparison this reader ever made. */
+  const isBetter = (/** @type {string} */ stage, /** @type {number} */ a, /** @type {number} */ b) =>
+    (directions[stage] === 'up' ? a > b : a < b);
   /** the furthest stage index reached so far; null until a KNOWN stage is seen */
   let bestStageIdx = null;
   let iterations = 0;
@@ -249,7 +262,7 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
     if (!series.has(st)) series.set(st, []);
     /** @type {number[]} */ (series.get(st)).push(v);
     const b = best.get(st);
-    if (b === undefined || v < b) best.set(st, v);
+    if (b === undefined || isBetter(st, v, b)) best.set(st, v);
   }
 
   return {
@@ -273,7 +286,7 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
       // ── the two comparisons, each against this stage's OWN history ──
       const priorBest = best.get(st);
       const countComparable = v !== null && priorBest !== undefined;
-      const countImproved = countComparable && v < /** @type {number} */ (priorBest);
+      const countImproved = countComparable && isBetter(st, /** @type {number} */ (v), /** @type {number} */ (priorBest));
       // the ordering signal only exists between two KNOWN positions that DIFFER —
       // an unnamed stage has no position, and standing still says nothing
       const stageComparable = idx >= 0 && bestStageIdx !== null && idx !== bestStageIdx;
@@ -286,7 +299,7 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
       if (v !== null) {
         if (!series.has(st)) series.set(st, []);
         /** @type {number[]} */ (series.get(st)).push(v);
-        if (priorBest === undefined || v < priorBest) best.set(st, v);
+        if (priorBest === undefined || isBetter(st, v, priorBest)) best.set(st, v);
       }
       if (idx >= 0 && (bestStageIdx === null || idx > bestStageIdx)) bestStageIdx = idx;
       if (stageImproved) advancedEver = true;
@@ -348,10 +361,12 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
       // question is the different one of whether the LAST attempt helped.
       const numeric = rows.filter((r) => r.values.length > 1);
       const render = numeric.map((r) => `${r.stage} ${r.values.join(' → ')}`).join('; ');
-      // convergence is defined PER STAGE and per stage only: some axis is lower than
-      // where it started. First-vs-last, because the question a halt asks is "did
-      // this run make net progress", not "did the last attempt help".
-      const fell = numeric.some((r) => r.values[r.values.length - 1] < r.values[0]);
+      // convergence is defined PER STAGE and per stage only: some axis moved toward
+      // its OWN declared better direction from where it started — lower for a
+      // 'down' stage (a count of bad things remaining), higher for an 'up' stage (a
+      // rate of good things caught). First-vs-last, because the question a halt asks
+      // is "did this run make net progress", not "did the last attempt help".
+      const improvedNet = numeric.some((r) => isBetter(r.stage, r.values[r.values.length - 1], r.values[0]));
 
       // No stage ever reported a comparable number: the honest answer, stated rather
       // than rounded up to either direction. A "flat" here would recommend rewriting
@@ -385,7 +400,7 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
       // Past this point a real number decided it, so motion is not consulted and is
       // not reported: a byte comparison beside a measured direction can only ever
       // contradict it, and the contradiction would be the weaker signal winning.
-      return fell
+      return improvedNet
         ? {
           trend: 'converging',
           motion: null,

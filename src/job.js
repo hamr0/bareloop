@@ -492,7 +492,7 @@ export function checkMenu(close) {
 }
 
 /** the fields a close STAGE may carry — anything else is a smuggle channel */
-const STAGE_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep', 'offer', 'needs'];
+const STAGE_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep', 'offer', 'needs', 'direction'];
 
 /**
  * Validate the staged close. Every stage is a predicate BODY under the same
@@ -533,6 +533,17 @@ function validateStagedClose(stages, red) {
         const bad = s.needs.filter((n) => !earlier.has(n));
         if (bad.length) red('invalid-value', `${at}.needs`, `must name stages declared BEFORE this one (a prerequisite that has not run yet cannot be one): ${bad.join(', ')} — earlier stages: ${[...earlier].join(', ') || 'none'}`);
       }
+    }
+    // the close-fix governor's comparison direction (2026-08-31 ruling, hamr's
+    // option A): a signed, per-stage field, never inferred from goal prose and
+    // never LLM-judged. 'up' = higher is better (a rate of good things caught,
+    // e.g. mutation-kill %); 'down' = lower is better (a count of bad things
+    // remaining, e.g. typecheck errors or suppressions). Absent means 'down' —
+    // the field defaults to the trend reader's pre-existing behaviour exactly,
+    // so every close authored before this field existed keeps an IDENTICAL
+    // spec hash (an absent field adds nothing to the hash).
+    if (s.direction !== undefined && s.direction !== 'up' && s.direction !== 'down') {
+      red('invalid-value', `${at}.direction`, `"up" or "down" — up means higher is better (a rate of good things caught), down means lower is better (a count of bad things remaining); omit for down (the default)`);
     }
   });
 }

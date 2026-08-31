@@ -408,6 +408,37 @@ test('a close may declare gapKeep — a regex source whose matching lines surviv
   assert.equal(r.job.close[0].gapKeep, '^not ok');
 });
 
+// ── direction: the close-fix governor's comparison axis (2026-08-31 ruling) ──
+
+test('a close stage may declare direction "up" or "down" — both accepted, both preserved verbatim', () => {
+  const up = mut((s) => { s.close[0].direction = 'up'; });
+  const ru = validateJob(up);
+  assert.deepEqual(ru.reds, []);
+  assert.equal(ru.job.close[0].direction, 'up');
+
+  const down = mut((s) => { s.close[0].direction = 'down'; });
+  const rd = validateJob(down);
+  assert.deepEqual(rd.reds, []);
+  assert.equal(rd.job.close[0].direction, 'down');
+});
+
+test('direction is OPTIONAL — a close without it validates and defaults to down (unchanged spec hash contract)', () => {
+  assert.equal(validateJob(JOB1).ok, true, 'job #1 declares no direction and must still validate');
+  assert.equal('direction' in JOB1.close[0], false);
+});
+
+test('an invalid direction value reds as invalid-value, never a crash', () => {
+  const sideways = mut((s) => { s.close[0].direction = 'sideways'; });
+  const r1 = validateJob(sideways);
+  assert.ok(r1.reds.some((x) => x.code === 'invalid-value' && x.path === 'close.0.direction'),
+    `expected invalid-value@close.0.direction, got ${JSON.stringify(r1.reds)}`);
+
+  const numeric = mut((s) => { s.close[0].direction = 5; });
+  const r2 = validateJob(numeric);
+  assert.ok(r2.reds.some((x) => x.code === 'invalid-value' && x.path === 'close.0.direction'),
+    `expected invalid-value@close.0.direction, got ${JSON.stringify(r2.reds)}`);
+});
+
 test('gapKeep is OPTIONAL — a close without it validates and keeps exactly today\'s bound', () => {
   assert.equal(validateJob(JOB1).ok, true, 'job #1 declares no gapKeep and must still validate');
 });

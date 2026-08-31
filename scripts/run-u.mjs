@@ -696,7 +696,14 @@ if (arg('approve') !== specHash) {
   const stages = closeStagesOf(spec) ?? [];
   if (stages.length) {
     console.log(`  judged   ${stages.length} close stage(s) — this run is green only when EVERY one of them is, so the goal above has to name what they measure:`);
-    for (const s of stages) console.log(`           ${s?.name ?? '(unnamed)'}  [${s?.kind ?? 'command'}]`);
+    // direction is a deliberate visibility guard (2026-08-31 ruling) against the
+    // silent 'down' default: printed for every stage, never inferred, so the
+    // person signing sees which stages the close-fix governor reads as a rate
+    // (higher is better) rather than assuming every number is a count going down.
+    for (const s of stages) {
+      const dir = s?.direction === 'up' ? 'up (higher is better)' : 'down (lower is better, default)';
+      console.log(`           ${s?.name ?? '(unnamed)'}  [${s?.kind ?? 'command'}]  direction ${dir}`);
+    }
   }
   if (dead) {
     const rs = dead.restart;

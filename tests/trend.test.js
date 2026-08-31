@@ -477,3 +477,64 @@ test('SEED belongs to ONE reader: a seeded instance reads the CHAIN while an uns
   assert.equal(chain.verdict().trend, 'converging', 'the RUN fell 12 → 5 and was cut by an allowance, not by an idea running out');
   assert.equal(leg.verdict().trend, 'flat', 'this LEG moved nothing, and its governor must say so rather than inherit a direction it did not measure');
 });
+
+// ── DIRECTION: the close declares which way is better, per stage (2026-08-31) ─
+//
+// hamr's option A: the close signs a `direction` field per stage — 'up' for a
+// rate of good things caught, 'down' (the default, unchanged) for a count of bad
+// things remaining. No inference, no LLM — createTrend is handed a plain
+// stage → direction map built straight off the signed spec.
+
+test('DIRECTION up: a climbing rate mints ZERO strikes and reads CONVERGING — the live regression from run u-mtgr1qnu (TESTGEN fault-detection rate 15 → 37.5 → 42.5, bar 45)', () => {
+  const tr = createTrend({ stageOrder: ['verdict'], directions: { verdict: 'up' } });
+  const r1 = tr.record({ stage: 'verdict', value: 15 });
+  assert.equal(r1.noProgress, 0, 'the baseline never strikes');
+  const r2 = tr.record({ stage: 'verdict', value: 37.5 });
+  assert.equal(r2.improved, true, 'a HIGHER rate is progress under direction:up');
+  assert.equal(r2.noProgress, 0);
+  const r3 = tr.record({ stage: 'verdict', value: 42.5 });
+  assert.equal(r3.improved, true);
+  assert.equal(r3.noProgress, 0);
+  assert.equal(tr.struckOut(), false, 'the run that actually killed u-mtgr1qnu at 2 strikes must mint none once direction is declared');
+  assert.equal(tr.verdict().trend, 'converging');
+});
+
+test('DIRECTION up, mirror defect: a COLLAPSING rate mints strikes and must NOT reset them — a falling rate is not progress just because the number is smaller', () => {
+  const tr = createTrend({ stageOrder: ['verdict'], directions: { verdict: 'up' } });
+  tr.record({ stage: 'verdict', value: 42.5 });
+  const r2 = tr.record({ stage: 'verdict', value: 20 });
+  assert.equal(r2.improved, false, 'a lower rate is a regression under direction:up, never an improvement');
+  assert.equal(r2.noProgress, 1);
+  const r3 = tr.record({ stage: 'verdict', value: 10 });
+  assert.equal(r3.improved, false);
+  assert.equal(r3.noProgress, 2);
+  assert.equal(tr.struckOut(), true, 'a collapsing rate must strike the loop out, not fund another regression round');
+  assert.equal(tr.verdict().trend, 'flat');
+});
+
+test('DIRECTION down (default, unchanged): a falling count behaves exactly as before direction existed — the pre-existing characterization', () => {
+  const tr = createTrend({ stageOrder: ['typecheck'] });
+  const r1 = tr.record({ stage: 'typecheck', value: 12 });
+  assert.equal(r1.noProgress, 0);
+  const r2 = tr.record({ stage: 'typecheck', value: 5 });
+  assert.equal(r2.improved, true, 'a LOWER count is progress under the default direction:down');
+  assert.equal(r2.noProgress, 0);
+  const r3 = tr.record({ stage: 'typecheck', value: 8 });
+  assert.equal(r3.improved, false, 'a rise back up is not progress under direction:down');
+  assert.equal(r3.noProgress, 1);
+  assert.equal(tr.verdict().trend, 'converging', '12 → 5 → 8 still nets a fall from where it started');
+});
+
+test('DIRECTION mixed close: one up stage and one down stage are each graded against their OWN direction', () => {
+  const tr = createTrend({ stageOrder: ['typecheck', 'verdict'], directions: { verdict: 'up' } });
+  // typecheck (down): 9 → 4 is an improvement
+  tr.record({ stage: 'typecheck', value: 9 });
+  const tcImproved = tr.record({ stage: 'typecheck', value: 4 });
+  assert.equal(tcImproved.improved, true);
+  // verdict (up): 15 → 5 is a REGRESSION, not an improvement, despite the smaller number
+  tr.record({ stage: 'verdict', value: 15 });
+  const vRegressed = tr.record({ stage: 'verdict', value: 5 });
+  assert.equal(vRegressed.improved, false, 'a smaller number on an up-stage is a regression, never progress');
+  const v = tr.verdict();
+  assert.equal(v.trend, 'converging', 'the down-stage alone made net progress, which is enough to headline converging');
+});

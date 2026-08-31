@@ -1363,7 +1363,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * an unchanged tree is flat on its own evidence while the RUN — the thing the human
    * is deciding about — may have been converging when its allowance ran out. Cold, the
    * seed is empty and this is byte-identical to the pre-resume reader. */
-  const runTrend = createTrend({ stageOrder: stagedClose.map((/** @type {any} */ s) => s.name), seed: resumeGrades });
+  // per-stage comparison direction, read straight off the signed close (2026-08-31
+  // ruling): a stage absent here — every close authored before this field existed
+  // included — resolves to 'down' inside createTrend, so this is additive only.
+  const stageDirections = Object.fromEntries(
+    stagedClose.filter((/** @type {any} */ s) => s?.direction === 'up' || s?.direction === 'down').map((/** @type {any} */ s) => [s.name, s.direction]),
+  );
+  const runTrend = createTrend({ stageOrder: stagedClose.map((/** @type {any} */ s) => s.name), seed: resumeGrades, directions: stageDirections });
   /** the run-level MONEY record, one shape wherever the wallet stops the run —
    * W-2's `emitWallHalt` in a money coat, and deliberately its mirror image. hamr's
    * ruling for TIME was "keep the grade we already have and stop"; a money cut is
@@ -3396,6 +3402,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       stageOrder: stagedClose.map((/** @type {any} */ s) => s.name),
       limit: FIX_STRIKE_LIMIT,
       blindCap: capRuns,
+      directions: stageDirections,
     });
     fixTrend.record({ gap: post.gap ?? '' });
     /** ralph's `ladder` seam, filled by the trend reader instead of the step
