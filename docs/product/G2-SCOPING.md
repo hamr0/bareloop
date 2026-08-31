@@ -158,16 +158,47 @@ rate that was rising toward the bar, not for genuinely stalling. A run halted fo
 reason cannot be trusted to freeze the right baseline. G2 must NOT be re-frozen at this hash
 or this outcome; a clean re-establish under the fixed governor is required first.
 
-## Clean re-establish — IN FLIGHT, 2026-08-31
+## Clean re-establish — ENDED provider-red, 2026-08-31 (a casualty, not a baseline)
 
 Run `u-mtgx135x` fired ~09:25 CEST 2026-08-31 at the current spec hash (`64ca31c0…`, see
 BENCH-PREREG), read shim pinned `off`, $8 cap — the clean re-establish under the fixed
-close-fix governor. In flight; outcome pending. Do not treat any number from this run as
-final until it lands; G2's baseline stays open until it does.
+close-fix governor. It never reached the close: outcome **provider-red**, a CASUALTY per
+standing doctrine, not evidence. No verdict exists; no grade was rendered.
+
+Spend `>= $4.3997` of $8 (a FLOOR — `spendComplete:false`). 19.3 of 45 min, 79 rounds, 2 plan
+steps, 1 allowed write (1 file), 0 check runs, replan YES.
+
+Sequence: the STEP ladder (not the close-fix governor) struck the first step out 2/2 —
+iteration 1 wrote nothing (strike), iteration 2 repeated iteration 1's exit output (strike,
+`repeatOf:1`) → `cap-halt` → replan → in the replanned step `write-integration-tests`, one
+worker turn emitted 32,000 output tokens (`outputTokens:32000`, $0.52 for that turn) and
+stopped at max_tokens; bare-agent surfaced it as `truncated:max_tokens`, which
+`src/planrun.js:2386` maps to `provider-red` ("transport, not logic"). This is the FIRST
+`truncated:max_tokens` event across the three G2 runs (`u-mtg6bwa0`: 0, `u-mtgr1qnu`: 0, this
+run: 1) — n=1, an anecdote, not a class.
+
+Behaviour: 78 tool calls (53 read, 21 grep, 3 recall, 1 write), 38 exact repeats (~49%), 1
+denied. NOT a TLS event — hamr's "drop TLS unless persistent" ruling is untouched.
+
+Resumable: the driver printed the exact `--resume mtgx135x` line; the resume would re-enter
+step 1 with the $4.40 already folded into the $8 ceiling (~$3.60 left). The `direction`-field
+fix (F120) therefore still has NO live exercise — test-proven only; said so here rather than
+rounded up.
+
+Named, not fixed — arbiter territory, parked for hamr: whether a model-output truncation
+belongs in the `provider-red` class at all. Its label says "transport, not logic"; a
+32k-token turn running into max_tokens is a worker-output failure, not a transport fault. No
+fix proposed here, just the question.
+
+Spine: `../bareloop-patients/aurora-soar-bareloop/u-mtgx135x.jsonl`; driver log
+`g2-reestablish-2.log` in the same dir.
 
 ## Decisions for hamr (remaining)
 
 1. Route: hand-written close reusing `testgen-close` (recommended) vs interview-authored.
 2. The pass ceiling once G2 joins: $23 minimum (sum of the three caps) — hamr's number.
-3. Whether `u-mtgx135x` (in flight) is accepted as G2's clean established baseline once it
-   lands, or needs a further re-run — hamr's read once the outcome is known.
+3. `u-mtgx135x` live choice: resume (~$3.60 left, re-enters a plan whose first step already
+   struck out 2/2 — the ladder may strike it a third time before ever reaching the close) vs
+   a fresh $8 establish (full budget, clean plan, no inherited strikes, but pays the full cap
+   again) vs park G2 PENDING (no spend, no progress toward a clean baseline, the row stays
+   open) — hamr's call.

@@ -200,10 +200,12 @@ toward the bar, not for a genuine stall. A clean re-establish under the fixed go
 required before this row can be re-frozen; per the Signature rule, that establishing run has
 not yet happened at `64ca31c0…`.
 
-**IN FLIGHT, 2026-08-31:** run `u-mtgx135x` fired ~09:25 CEST at hash `64ca31c0…`, read
-shim pinned `off`, $8 cap — the clean re-establish attempt. Outcome pending; no result is
-recorded here until it lands, and G2 stays PENDING (awaiting hamr's signature on the new
-hash and a clean establishing outcome) until then.
+**ENDED, 2026-08-31 — CASUALTY, not a baseline:** run `u-mtgx135x` (hash `64ca31c0…`, read
+shim pinned `off`, $8 cap) ended `provider-red` — a `truncated:max_tokens` event mapped by
+`src/planrun.js:2386` to the provider-red class ("transport, not logic"). It never reached
+the close; no verdict was rendered. Per standing doctrine a casualty is not evidence. G2
+stays PENDING a clean re-establish at `64ca31c0…`; none has happened yet. Full account:
+`docs/product/G2-SCOPING.md`.
 
 ## Results ledger — FROZEN facts
 
