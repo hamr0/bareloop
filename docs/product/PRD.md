@@ -221,8 +221,23 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    MEMORY-CACHE; the pre-declared 5-minute test passed on 3 unseen failed runs and found 3
    defects (escalation detail hidden, `--all` name-matched only, a replanned step merged by
    id), all fixed.
-7. **The bench** — shape agreed; blocked on Q1, Q3–Q6, Q10; G2 re-author + full re-baseline
-   first (v1.78).
+7. **The bench** — Q1, Q3–Q6 **ANSWERED 2026-08-30** (v1.81 below; Q10 answered v1.78);
+   Prereg **FROZEN 2026-08-30** (`docs/product/BENCH-PREREG.md`; litectx row re-baselined
+   green at its hash, run `u-mtfywb55`, $5.72). Cadence answered 2026-08-30 (hamr): major
+   releases trigger a pass. Cadence reading confirmed by hamr: 0.16 → 0.17 (feature bump), not
+   patch tags. Queue on the SAME branch (`bench-prereg`, no interim release — hamr, 2026-08-30),
+   his order: **G2 re-author + re-baseline** ($0 scoping first — the re-author + unknown 0-rate
+   sits outside the $16 pass ceiling, so its own ceiling is hamr's word), then **#3 model names
+   in the signed spec** (parked → GO given 2026-08-30; note: it re-hashes every spec, so the two
+   bench rows must be re-baselined and re-frozen after it — hamr's call which way), then
+   generic replay follow-ups if hamr names a gap (it is BUILT, #6 above). The feature bump
+   that results (0.17.0) fires the first bench pass. **2026-08-30, complete:** #3 built +
+   live-proven; both positive rows re-baselined green at model-pinned hashes; G2
+   (`aurora-testgen-cold`) established non-green (u-mtg6bwa0, 15% vs 45% bar, $7.09); hamr
+   raised the pass ceiling to **$24** and the bench re-froze as THREE rows (BENCH-PREREG).
+   **2026-08-31 (at v0.17.0):** pass trigger amended to hamr's per-release CHOICE (BENCH-PREREG
+   amendment); a cheaper-provider experiment is queued for AFTER the build freeze, judged by a
+   bench pass under its own re-baselined condition — provider work lands upstream in bare-agent.
 8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
    wired into `npm test` (CI untouched until #2b, below). `src/promptregisters.js` (`PROMPT_REGISTERS`,
    `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
@@ -238,7 +253,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    2026-08-30**: branch-birth push (40-zero `before`) fell back and checked 5 commits (CI run
    33314883771); the next push used the real range `7e975b3..f0c3199` and checked exactly 1
    (run 33314899690).
-9. **Model names in the signed spec** — parked, arbiter territory.
+9. ~~Model names in the signed spec~~ — **BUILT 2026-08-30** (hamr's GO, `eacaeae` + `0119f19`):
+    optional `model` in job-v1 (exact id), in the signed hash; spec wins, a mismatched `--model`
+    is refused; judge stays library-pinned (calibration-bound). $0 runner checks passed (old hash
+    refused, mismatch refused). Both bench specs pinned `claude-sonnet-5` (`0bf1c26`) — re-baseline
+    + re-freeze pending the two paid runs; live `(spec)` banner proof lands with them.
 10. ~~F6 halt semantics for all-zeros usage; companion F6 test fix~~ — **CLOSED 2026-08-24**
     by `bare-agent` 0.39.0 (F111).
 11. ~~Awaiting ba24 — BA-24 fix candidate~~ — **CLOSED**: validated pre-release, pin bumped
@@ -277,6 +296,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     to close: (a) finish the retirement — delete the class, the stage kind, the two terminals,
     migrate any `jobs/*.json` using it — a breaking rung with its own release; or (b) keep it
     admitted so the class can be reopened later. Neither scheduled; hamr's call.
+22. **LIBRARY_CONVENTIONS gap — DONE 2026-08-30**: 26/36 rules already met, 8 N/A; this
+    branch adds context.md §Which-mode/§Extension-contract/§Threat-model, per-dependency
+    justification in CLAUDE.md, `.env.example`. PARKED with reason: `src/types.js` central
+    typedefs (doc says preferred; per-file `@typedef` already generates 1:1 `.d.ts` and
+    typechecks clean — moving 23 files' typedefs is churn with no adopter benefit).
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on
@@ -380,3 +404,24 @@ no doctrine moved: "dreaming" (offline distillation into memory) cross-validates
 without changing the kill-switch bar; "outcomes" (rubric + parallel grader + retry-until-pass)
 cross-validates the close/gap/retry spine without changing the judged-floor requirement
 (PRD.md:4949-5017).
+
+### Bench questions answered; green rows, door re-proof, hitl deferral (v1.81 — 2026-08-30)
+
+hamr's answers to the bench (`docs/product/2026-08-23-agreed-build-list.md` Q1, Q3–Q6), as
+said: **Q1** reuse the existing patient COPIES under `../bareloop-patients/` (each carries its
+own git history and is reset to its frozen seed before every run; originals never touched).
+**Q3** n=1 per job per release; a row whose colour flips against the previous release re-runs
+twice more (n=3) before it is read. **Q4** money ceiling **$16 per bench pass**, hamr's number,
+adjustable at any point by his word only (tighten-only for the agent, as every cap). Measured
+against the archive's median green-run cost (aurora-u $2.00, litectx-u-types $4.29,
+bareagent-u-types $5.34, aurora-testgen-l2accept $6.46), $16 funds TWO real rows plus one flip
+re-run; the other two rows join when the ceiling is raised. The session's earlier "$1–3 a run"
+was a guess and is withdrawn — the table above is the measurement. **Q5** the bench is a frozen,
+pre-greened set under ONE signature; any spec edit re-freezes and re-signs. **Q6** results live
+in `docs/logs/BENCH.md`, one row per (job, release); a colour flip ALSO mints a FINDINGS entry.
+
+Same day, from the open-items list: green-class runs mint a registry row born released (#16);
+the door-accept re-proof stays unclocked on the condition it is mechanical only (#15); hitl
+cleanup deferred, finish-or-keep is hamr's call (#21); LIBRARY_CONVENTIONS gap closed with
+`src/types.js` parked (#22).
+

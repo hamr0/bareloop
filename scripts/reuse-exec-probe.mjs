@@ -86,8 +86,7 @@ const BRIDGE_FILE = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u-barel
 const CLOSE_TIMEOUT_MS = 900_000;
 const CAP_RUNS = 4;
 /** the sonnet tier, spelled as run-u spells it. One configuration, no --model knob. */
-const MODEL = 'claude-sonnet-5';
-const TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' };
+const DEFAULT_MODEL = 'claude-sonnet-5';
 /** RECORDED FACTS, not re-measured here: the two cold litectx/aurora U greens this run is
  * read beside. run 1 = $2.21 / 8.9min, run 3 = $2.47 (wall not recorded in the same form).
  * They are aurora-u-spawner-types runs — the SAME SHAPE, a DIFFERENT patient — which is
@@ -109,6 +108,10 @@ const arg = (/** @type {string} */ n) => { const i = argv.indexOf(`--${n}`); ret
 const DRY = argv.includes('--dry-run');
 
 const spec = JSON.parse(readFileSync(new URL(`../jobs/${SPEC_FILE}`, import.meta.url), 'utf8'));
+// the signed spec's `model` wins (build-list #3); this driver has no --model knob.
+// The sonnet tier follows the spec-named model, mirroring run-u.mjs's spec-only remap.
+const MODEL = spec.model ?? DEFAULT_MODEL;
+const TIER_MODELS = { sonnet: MODEL, haiku: 'claude-haiku-4-5-20251001' };
 const specHash = jobSpecHash(spec);
 const bridge = JSON.parse(readFileSync(BRIDGE_FILE, 'utf8'));
 const bridgePlanText = JSON.stringify(bridge.plan, null, 2);

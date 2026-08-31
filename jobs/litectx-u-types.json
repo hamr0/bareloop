@@ -9,6 +9,7 @@
   },
   "budgetUsd": 10,
   "maxWallMs": 2700000,
+  "model": "claude-sonnet-5",
   "writeScope": [
     "src/**"
   ],

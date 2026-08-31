@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { runJob } from '../src/run.js';
-import { jobSpecHash } from '../src/job.js';
+import { jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { readShimArm } from '../src/readshim.js';
 import { closeStagesOf } from '../src/plan.js';
 import { makeSpine } from '../src/spine.js';
@@ -77,6 +77,16 @@ const JOBS = {
     spine: 'baremobile-u-bareloop',
     seed: 'd9b318fac78036bd3db35f68c4b1eb5ee634244d',
   },
+  // Bench row G2 (the NEGATIVE row) — TESTGEN cold start in plan-v1. The legacy
+  // steps[] config went 0-of-43 (F38); this config's rate is UNKNOWN until its
+  // establishing run. Same patient/seed/grader as the l2accept battery
+  // (TESTGEN-PREREG); the spec is the cold goal. See docs/product/G2-SCOPING.md.
+  'aurora-testgen-cold': {
+    spec: 'aurora-testgen-cold.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar',
+    spine: 'aurora-soar-bareloop',
+    seed: 'd661e507c5cd0981368d90ed3e3abf6e2bb9ed18',
+  },
   'bareagent-types': {
     spec: 'bareagent-u-types.json',
     workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u',
@@ -134,9 +144,14 @@ const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 // BELOW the floor: an explicit operator probe whose rows are probes, never battery
 // evidence.
 const DEFAULT_TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' };
-const tierArg = arg('model') ?? 'sonnet';
-const MODEL = DEFAULT_TIER_MODELS[/** @type {keyof typeof DEFAULT_TIER_MODELS} */ (tierArg)];
-if (!MODEL) { console.error(`unknown --model "${tierArg}" — one of: ${Object.keys(DEFAULT_TIER_MODELS).join(', ')}`); process.exit(2); }
+// `modelFlagArg` is null when --model was never passed at all — distinct from a
+// flag that happens to resolve to the default tier's own id, because the SPEC
+// (below, once loaded) needs to know whether a flag was actually given, not just
+// what it resolved to (build-list #3: spec wins, a mismatched flag is refused).
+const modelFlagArg = arg('model');
+const tierArg = modelFlagArg ?? 'sonnet';
+const FLAG_TIER_MODEL = DEFAULT_TIER_MODELS[/** @type {keyof typeof DEFAULT_TIER_MODELS} */ (tierArg)];
+if (!FLAG_TIER_MODEL) { console.error(`unknown --model "${tierArg}" — one of: ${Object.keys(DEFAULT_TIER_MODELS).join(', ')}`); process.exit(2); }
 // --read-shim picks the READ SHIM's ARM (src/readshim.js, Phase 2 A0/A1/A2/A3). Runner
 // territory exactly like --model: the spec names no shim, so the signed hash is
 // unaffected, and the default is OFF — the flag stays OFF regardless of the Phase 2
@@ -192,6 +207,23 @@ try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
   die(`--job ${jobKey}: ${specPath} is not readable JSON (${e.message}) — a spec nobody can parse is a spec nobody signed`);
 }
 const specHash = jobSpecHash(spec);
+// MODEL (build-list #3, hamr's GO 2026-08-30): the signed spec's `model`, if
+// present, wins outright; a --model flag naming a DIFFERENT id is refused
+// (never silently overridden) — resolveWorkerModel is the one decision, pure
+// and tested apart from this script. Judge model stays library-pinned
+// (JUDGE_MODEL below), out of scope here.
+let modelResolution;
+try {
+  modelResolution = resolveWorkerModel({
+    specModel: spec.model,
+    flagModel: modelFlagArg === null ? undefined : FLAG_TIER_MODEL,
+    defaultModel: DEFAULT_TIER_MODELS.sonnet,
+  });
+} catch (e) {
+  die(/** @type {Error} */ (e).message);
+}
+const MODEL = modelResolution.model;
+const MODEL_LABEL = modelResolution.source === 'spec' ? `${MODEL} (spec)` : MODEL;
 // `maxWallMs` is OPTIONAL in job-v1 and has NO DEFAULT — a spec without one is
 // time-unbounded by explicit operator choice, and the whole point of the missing
 // default is that an unbounded run must be a VISIBLE choice rather than a silent
@@ -1011,7 +1043,12 @@ const provider = new AnthropicProvider({ apiKey, model: MODEL });
 // the tier->model mapping is the RUNNER's territory, here, and keeps haiku for the
 // operator's own --model knob. haiku takes no output_config.effort (provider-gated,
 // battery rule) - nothing to gate yet since neither tier sets effort params.
-const TIER_MODELS = DEFAULT_TIER_MODELS;
+// `sonnet` maps to the RESOLVED worker model (MODEL — spec/flag/default), not the
+// bare DEFAULT_TIER_MODELS id, so a spec-named model reaches every plan step's own
+// provider (STEP_MODELS is sonnet-only), not just the top-level `provider` above.
+// ONLY when the SPEC named it: a `--model haiku` probe keeps its old reach (the
+// top-level provider), never silently widening into every step's tier.
+const TIER_MODELS = modelResolution.source === 'spec' ? { ...DEFAULT_TIER_MODELS, sonnet: MODEL } : DEFAULT_TIER_MODELS;
 /** @type {Record<string, any>} */
 const tierCache = {};
 const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
@@ -1027,7 +1064,7 @@ const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MO
 const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL });
 
 const started = Date.now();
-console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL}`);
+console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL_LABEL}`);
 // the arm is named on the run's own stdout: a battery row whose arm is only in the
 // driver's plan is a row nobody can audit from its own log.
 console.log(`   ${READ_SHIM_LABEL}`);

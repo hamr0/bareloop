@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateJob, jobSpecHash, checkApproval, checkMenu, CLASS_BY_CLOSE, CLOSE_TYPES, TOOL_MENU, LOCKED_TOOLS, VERDICT_TYPES, LOCKED_VERDICTS } from '../src/job.js';
+import { validateJob, jobSpecHash, checkApproval, checkMenu, CLASS_BY_CLOSE, CLOSE_TYPES, TOOL_MENU, LOCKED_TOOLS, VERDICT_TYPES, LOCKED_VERDICTS, resolveWorkerModel } from '../src/job.js';
 
 // The base fixture is the PLAN shape — the only shape (PRD v1.32, 2026-07-26):
 // the human signs the destination (goal / verdictType / close / checks) and the
@@ -216,6 +216,63 @@ test('jobSpecHash is stable under key order and 64-hex', () => {
 test('any spec change changes the hash (approval binds to the exact version)', () => {
   assert.notEqual(jobSpecHash(JOB1), jobSpecHash(mut((j) => { j.budgetUsd = 1.4; })));
   assert.notEqual(jobSpecHash(JOB1), jobSpecHash(mut((j) => { j.close[0].cmd = 'npm test --silent'; })));
+});
+
+// build-list #3 (hamr's GO 2026-08-30): the worker MODEL NAME becomes a signed-spec
+// field — absent means today's behaviour exactly (hash-neutral), present it is part
+// of what the human signed (hash-moving, like every other field this suite covers).
+test('a spec.model hashes distinctly from the same spec without one; absent-vs-absent is hash-neutral', () => {
+  assert.equal(jobSpecHash(JOB1), jobSpecHash(clone(JOB1)), 'two specs both omitting model must hash the same (sanity)');
+  const withModel = mut((j) => { j.model = 'claude-sonnet-5'; });
+  assert.notEqual(jobSpecHash(JOB1), jobSpecHash(withModel), 'adding model must move the hash');
+});
+
+test('changing spec.model changes the hash', () => {
+  const a = mut((j) => { j.model = 'claude-sonnet-5'; });
+  const b = mut((j) => { j.model = 'claude-haiku-4-5-20251001'; });
+  assert.notEqual(jobSpecHash(a), jobSpecHash(b));
+});
+
+test('spec.model validates green as a non-empty string, and reds on any other type', () => {
+  const withModel = mut((j) => { j.model = 'claude-sonnet-5'; });
+  const rOk = validateJob(withModel);
+  assert.deepEqual(rOk.reds, []);
+  assert.equal(rOk.ok, true);
+  for (const bad of [42, '', true, {}, [], null]) {
+    const r = validateJob(mut((j) => { j.model = bad; }));
+    assert.equal(r.ok, false, `model=${JSON.stringify(bad)} must red`);
+    assert.ok(r.reds.some((d) => d.code === 'invalid-value' && d.path === 'model'),
+      `model=${JSON.stringify(bad)}: expected invalid-value@model, got ${JSON.stringify(r.reds)}`);
+  }
+});
+
+// resolveWorkerModel — the runner's spec-vs-flag decision, extracted so it is
+// testable without running scripts/run-u.mjs (build-list #3).
+test('resolveWorkerModel: spec present, no flag -> spec wins, source "spec"', () => {
+  const r = resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: undefined, defaultModel: 'claude-sonnet-5' });
+  assert.deepEqual(r, { model: 'claude-sonnet-5', source: 'spec' });
+});
+
+test('resolveWorkerModel: spec present, flag names the SAME model -> spec wins, no throw', () => {
+  const r = resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: 'claude-sonnet-5', defaultModel: 'claude-sonnet-5' });
+  assert.deepEqual(r, { model: 'claude-sonnet-5', source: 'spec' });
+});
+
+test('resolveWorkerModel: spec present, flag names a DIFFERENT model -> throws naming both', () => {
+  assert.throws(
+    () => resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: 'claude-haiku-4-5-20251001', defaultModel: 'claude-sonnet-5' }),
+    (e) => e instanceof Error && e.message.includes('claude-sonnet-5') && e.message.includes('claude-haiku-4-5-20251001'),
+  );
+});
+
+test('resolveWorkerModel: no spec, flag present -> flag wins, source "flag"', () => {
+  const r = resolveWorkerModel({ specModel: undefined, flagModel: 'claude-haiku-4-5-20251001', defaultModel: 'claude-sonnet-5' });
+  assert.deepEqual(r, { model: 'claude-haiku-4-5-20251001', source: 'flag' });
+});
+
+test('resolveWorkerModel: neither spec nor flag -> the runner default, source "default"', () => {
+  const r = resolveWorkerModel({ specModel: undefined, flagModel: undefined, defaultModel: 'claude-sonnet-5' });
+  assert.deepEqual(r, { model: 'claude-sonnet-5', source: 'default' });
 });
 
 // MED-1: `tools` is OPTIONAL, and its absence means the full TOOL_MENU — which

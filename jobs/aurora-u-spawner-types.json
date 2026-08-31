@@ -9,6 +9,7 @@
   },
   "budgetUsd": 5,
   "maxWallMs": 1800000,
+  "model": "claude-sonnet-5",
   "writeScope": [
     "packages/spawner/src/**"
   ],

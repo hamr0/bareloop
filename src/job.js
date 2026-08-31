@@ -140,7 +140,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'model', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
 /** the four-field plan shape's core (decision 5) — presence of any of these
  * declares the shape; `tools` (the ceiling) rides the shape but alone does not
  * declare it, so a legacy spec carrying it gets a pointed red, not a conflict */
@@ -238,6 +238,17 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
       && !(typeof spec.maxWallMs === 'number' && Number.isInteger(spec.maxWallMs) && spec.maxWallMs >= MIN_WALL_MS)) {
     red('bounds', 'maxWallMs',
       `integer milliseconds >= ${MIN_WALL_MS} (one close timeout). Enforcement is a between-round deadline, measured as maxWallMs + closeStages x closeTimeoutMs (design addendum 1: loop.stop() cannot cut an in-flight call; W5: every close stage runs under the full timeout), so a budget under one close cannot fund its own close and the advertised number would be more wrong than right`);
+  }
+
+  // MODEL — the worker's provider model id (build-list #3, hamr's GO
+  // 2026-08-30). OPTIONAL, exactly like budgetUsd/maxWallMs before it: absent
+  // means today's behaviour (the runner's own default), present it is part
+  // of the signed hash — jobSpecHash canonizes the whole resolved spec
+  // (resolveSpec), so a spec that names a model is an operator signing off
+  // on THAT model, not merely on the goal/close it runs against. The judge
+  // model stays library-pinned pending recalibration — out of scope here.
+  if (spec.model !== undefined && !isNonEmptyString(spec.model)) {
+    red('invalid-value', 'model', 'non-empty string — exact provider model id (e.g. "claude-sonnet-5")');
   }
 
   // 3. the outer write fence — operator law (interview decision #4), same
@@ -731,4 +742,31 @@ export function checkApproval(job, approvals) {
   try { c = canon(resolveSpec(job)); } catch { return false; }
   const h = createHash('sha256').update(c).digest('hex');
   return approvals.some((a) => isObj(a) && /** @type {Record<string, unknown>} */ (a).specHash === h);
+}
+
+/**
+ * Pure decision: which worker model id a run actually uses (build-list #3,
+ * hamr's GO 2026-08-30). The signed spec's `model`, if present, is what an
+ * operator SIGNED — it wins outright. A `--model` runner flag naming a
+ * DIFFERENT id is refused rather than silently overridden (spec wins, a
+ * mismatched flag is a mistake worth stopping on, never a silent swap); the
+ * same id from both is not a conflict. Extracted from scripts/run-u.mjs so
+ * the decision is testable without running the script or touching a provider.
+ * @param {{ specModel?: string, flagModel?: string, defaultModel: string }} args
+ *   `specModel` — `job.model` if the signed spec carries one, else undefined.
+ *   `flagModel` — the model id an explicit `--model <tier>` resolved to, else
+ *   undefined (a flag that was never passed, not merely a default tier name).
+ *   `defaultModel` — the runner's own default when neither spec nor flag says.
+ * @returns {{ model: string, source: 'spec'|'flag'|'default' }}
+ * @throws {Error} when the spec names a model and the flag names a different one
+ */
+export function resolveWorkerModel({ specModel, flagModel, defaultModel }) {
+  if (specModel !== undefined) {
+    if (flagModel !== undefined && flagModel !== specModel) {
+      throw new Error(`spec names model "${specModel}" but --model resolved to "${flagModel}" — the signed spec wins; a mismatched --model flag is refused, never silently overridden. Drop --model or point it at the same model.`);
+    }
+    return { model: specModel, source: 'spec' };
+  }
+  if (flagModel !== undefined) return { model: flagModel, source: 'flag' };
+  return { model: defaultModel, source: 'default' };
 }

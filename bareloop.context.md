@@ -52,6 +52,35 @@ inherited rule carries the green that minted it and the contrast that attributed
 - **Is not:** a general agent, a swarm, or an orchestrator framework. One-off or small
   jobs are out of scope — that's a CLI session, not a bareloop job.
 
+## Which mode / components do I need?
+
+- **Verdict class — how "done" gets decided:** `green` (a mechanical close: exit code =
+  truth, `src/kinds.js` `LIVE_KINDS`) is the default and the only class with a live-proven
+  paid run. `soft-green` (a judged floor behind a signed calibration gate, plus a review
+  door) is fully admitted (`VERDICT_TYPES`, `src/job.js:106`) but has never rendered a live
+  verdict — see `## Public API` → "THE JUDGED FLOOR" and "THE REVIEW DOOR" below. `hitl` is
+  LEGACY: still admitted (removal is a future breaking change) but retired as a design
+  (PRD Addendum v1.71); its pause machinery lives on as the review door, not as a class to
+  pick for new jobs.
+- **Worker surface — how the agent runs:** `provider: 'anthropic-api'` (the default, the
+  only one with an operational guarantee, F48) drives `bare-agent`'s `Loop` and takes the
+  shell-owned `provider` binding. `provider: 'clipipe-subscription'` (`src/job.js:135`)
+  drives the worker natively over the Claude CLI's own tool channel and requires
+  `opts.nativeProvider` in `runJob`/`runPlan` — its `costUsd` axis is notional, never pools
+  with `anthropic-api` on cost, and budgets don't transfer between them.
+  `job.provider === 'clipipe-subscription'` with no `nativeProvider` supplied is
+  `interpreter-red`, never a silent fall-back to the metered API (`src/planrun.js:1073`).
+- **Reuse — where a workflow comes from:** a plain `runJob` always drafts cold. Passing
+  `bridge` starts from one standalone bridge file (`src/reuse.js`'s envelope, `## The reuse
+  ENVELOPE and runReuse` below). The CLI's `--registry <dir>` / library-level `registryDir`
+  (`src/reuse.js`, `scripts/run-u.mjs`) instead reads/writes dated rows in an
+  operator-supplied directory of plain JSON files — no database, no default location; a
+  named-but-missing registry is a red, never conjured (`## The reuse registry (Layer 3)`
+  below).
+- **Read shim:** `readShim` defaults to `false` on both `runJob` (`src/run.js:205`) and
+  `runPlan` (`src/planrun.js:808`) — the OFF arm wraps nothing at all. Opt in with `true`,
+  `'cap'`, or `'diff'` (`src/readshim.js`) only once the read-hygiene tradeoff is wanted.
+
 ## Minimal usage
 
 ```js
@@ -106,6 +135,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
 | `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage number, so a spec with many stages can validate while its overshoot dwarfs its cap: the clock reports that honestly rather than the floor pretending to prevent it (stage-aware floor parked, PRD v1.39). Operator-only, tighten-only; adding or changing it changes the spec hash |
+| `model` | optional non-empty string, exact provider model id (e.g. `"claude-sonnet-5"`) | the WORKER's model, build-list #3. Absent means today's runner default; present it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the judge model stays library-pinned (`JUDGE_MODEL`) pending recalibration |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
@@ -2479,6 +2509,73 @@ operator-authored `steps[]` shape is deleted, PRD v1.32). A **floor**: append-on
 JSONL spine (single source for every UI), litectx store per job, per-run ledger. Built on
 the bare suite: bareagent, bareguard, litectx, barebrowse, baremobile — the full surface
 is disclosed to the authoring agent; only admitted verbs are callable per job.
+
+## Extension contract
+
+hamr's law, verbatim: **the agent may author anything whose only verbs are gated
+primitives; it may never author the arbiter — the close, the budget, the fence, the
+merge.** What an adopter can plug into `runJob` (`src/run.js:205`):
+
+- **Providers.** `provider` (shell-owned LLM binding for the `Loop`/API path),
+  `nativeProvider` (a factory required for a `clipipe-subscription` job),
+  `providerFor(tier)` (per-step model-tier provider, forwarded to the plan flow), and
+  `judgeProvider` (SOFTGREEN's own seam — the provider a judged close stage runs its
+  locate-only call through; distinct from `provider`/`providerFor` because the judge tier
+  is fixed, never the worker's). All four are documented at `src/run.js:91-101`.
+- **Close stage kinds.** The catalogue is fixed and enumerated (`LIVE_KINDS`,
+  `src/kinds.js:142`: `command-exit`, `count-not-worse`, `pattern-absent-in-diff`,
+  `files-changed`, `human-confirms`, `judged-floor`). An adopter's declaration SELECTS
+  from this menu; it never authors a new kind — a stage naming an unimplemented or unknown
+  kind is a hard runtime stop (`src/kinds.js:1885-1888`), not a way to run adopter code
+  inside the close.
+- **`emit` — the spine sink.** `makeSpine(file)` (`src/spine.js:21`) returns an
+  `emit(type, data)` that appends one JSONL line per event; any function with that
+  signature can stand in as a custom sink, but it is write-only — nothing in bareloop reads
+  the spine back, so a custom sink cannot feed anything into a run's own decisions.
+- **`rates` is NOT an extension point.** A rates passthrough was designed but never built;
+  pricing is guesstimate-plus-loud-`estimated`-flag by ruling, and rate tables are the
+  customer's own responsibility, not a bareloop seam to wire up.
+
+Everything else in `runJob`'s options — budgets, caps, the close, the fence, merge/publish
+— is arbiter territory and is never adopter-suppliable as behavior, only as signed,
+schema-validated data.
+
+## Threat model summary
+
+**Local-trust model, NOT a sandbox.** The worker runs with the OS user's own permissions.
+Both the close (`src/ralph.js:222`) and a declared close stage's environment
+(`src/kinds.js:351`) start from a full copy of `process.env` and spawn child processes
+under it — this is a passthrough, not a jail.
+
+**What the arbiter guarantees:**
+- **Cap-not-estimate money and time.** `budgetUsd` is validated `0 < budget <= shellCapUsd`
+  with the check's own name, `cap-not-estimate` (`src/job.js:227`); spend is never a
+  projection.
+- **A signed spec hash refuses drift.** `jobSpecHash`/`checkApproval` (`src/job.js:703,
+  723`) mean an edited spec is unapproved by construction; `runJob` red-lines
+  `'unapproved-spec'` before any provider call if no approval record matches the exact spec
+  version (`src/run.js:289-290`).
+- **Secrets never enter the tree, the spine, the ledger, or a close's child process.**
+  `redactSecrets` (`src/validate.js:130`) scrubs at every emission boundary in the
+  authoring path; `CLOSE_ENV_DENY` (`src/ralph.js:136-153`) strips provider keys and
+  known credential-shaped env-var names from the copy of `process.env` handed to a close
+  child, by name/prefix/suffix-shape — a strip of a COPY, so the host process (and
+  bare-agent, which reads the real key every round) keeps its own credentials.
+- **The worker is fenced off the arbiter's own books.** The authoring scout's read scope
+  denies the gate audit path and every `ARBITER_BOOK_STORES` path under the workdir
+  (`src/authorscout.js:295`); a plan step's read scope is the workdir alone
+  (`src/planrun.js:1894`).
+
+**What it does not guarantee:** no network egress control and no container/VM isolation —
+this repo has neither built nor documented either. `CLOSE_ENV_DENY`'s deny rule matches
+only credential-shaped names (`src/ralph.js:136-153`); any env var that doesn't match that
+shape passes through to the close's child process untouched. `SSH_AUTH_SOCK` is one of them
+and stays on purpose — stripping it would break git-over-SSH inside a close — but the deny
+list itself carries no comment saying so; this paragraph is the record.
+
+**What an adopter must do:** keys load from the environment only (`.env.example` below);
+the patient is always a COPY of the target repo, never the original — the copy is the
+blast radius.
 
 ## What's NOT in bareloop, and why
 
