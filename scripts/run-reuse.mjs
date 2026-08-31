@@ -183,13 +183,18 @@ if (PIN && FORCE_COLD) die('--pin and --force-cold contradict each other — pic
 const spec = JSON.parse(readFileSync(new URL(`../jobs/${target.spec}`, import.meta.url), 'utf8'));
 // The signed spec's `model` wins outright; a mismatched --model flag is refused
 // (same contract as run-u.mjs — src/job.js resolveWorkerModel, build-list #3).
+let MODEL_SOURCE = 'default';
 try {
-  MODEL = resolveWorkerModel({
+  const r = resolveWorkerModel({
     specModel: spec.model,
     flagModel: arg('model') === null ? undefined : MODEL,
     defaultModel: DEFAULT_TIER_MODELS.sonnet,
-  }).model;
+  });
+  MODEL = r.model; MODEL_SOURCE = r.source;
 } catch (e) { die(/** @type {Error} */ (e).message); }
+// ONLY a SPEC-named model remaps the sonnet step tier (mirrors run-u.mjs) — so the
+// signed model reaches every plan step's provider, and a --model flag never widens.
+const TIER_MODELS = MODEL_SOURCE === 'spec' ? { ...DEFAULT_TIER_MODELS, sonnet: MODEL } : DEFAULT_TIER_MODELS;
 const ev = validateEnvelope(envelope, { job: spec });
 if (!ev.ok) {
   console.error('ENVELOPE REFUSED — it does not compose with the signed spec:');
@@ -474,7 +479,7 @@ const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date
 const provider = new AnthropicProvider({ apiKey, model: MODEL });
 /** @type {Record<string, any>} */
 const tierCache = {};
-const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= DEFAULT_TIER_MODELS[tier] === MODEL ? provider : new AnthropicProvider({ apiKey, model: DEFAULT_TIER_MODELS[tier] }));
+const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[tier] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[tier] }));
 
 const started = Date.now();
 console.log(`\n== ${dead ? 'RESUMED' : 'REUSE'} run ${runid} ==  $${ev.envelope.perTryBudgetUsd}/try · ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min/try · ${ev.envelope.bridgeTries} tries then cold · ${MODEL}`);
