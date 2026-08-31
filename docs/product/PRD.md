@@ -280,7 +280,12 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     territory, hamr.~~ — **RULED + BUILT 2026-08-30** (hamr): green mints a registry row at
     run end, born released; soft-green unchanged (held → accept releases). Accept on green
     records and releases nothing.
-17. **`readShim` default flip** — ships OFF; hamr's call alone.
+17. ~~**`readShim` default flip**~~ — **DONE 2026-08-31** (`2811c6d`, hamr's explicit call):
+    `scripts/run-u.mjs`'s `--read-shim` default flips from A0 (off) to A1 (cap); Phase 2's own
+    prereg promise (the experiment never flips its own default) held — the operator flipped it,
+    not the experiment. `--read-shim off` restores A0; the three frozen bench rows pin `off`
+    explicitly so their baselines keep the condition they were established under — no
+    re-baseline required or paid.
 18. **Flake-name capture** — held until the peer says "load window open" verbatim.
 19. ~~**Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`~~ — **DONE
     2026-08-27** (`bareagent-0381-bump` deleted locally; `reorg-v2-test` already gone from
@@ -424,4 +429,39 @@ Same day, from the open-items list: green-class runs mint a registry row born re
 the door-accept re-proof stays unclocked on the condition it is mechanical only (#15); hitl
 cleanup deferred, finish-or-keep is hamr's call (#21); LIBRARY_CONVENTIONS gap closed with
 `src/types.js` parked (#22).
+
+### Close-stage direction is a signed field, never inferred (v1.82 — 2026-08-31)
+
+F120 (`docs/logs/FINDINGS.md`): the close-fix governor (`src/trend.js`) assumed lower-is-better
+universally — `countImproved = v < priorBest`, `best` tracked the minimum, `verdict()`'s
+convergence test was `values[last] < values[0]`. Correct for every close ever built before
+today (all count-shaped: typecheck errors, suppressions — down is better), wrong for a
+rate-shaped close where up is better. Live consequence on the G2 re-establish run
+`u-mtgr1qnu`: a fault-detection rate rising `15% → 37.5% → 42.5%` against a 45% bar read as "no
+stage improved", minted 2/2 strikes and cap-halted a run that was converging and 2.5 points
+from passing (the `flat` lever in code, "more money is unlikely to help", is backwards for it
+too — code-read, not printed live). A mirror defect, equally real: a COLLAPSING rate series satisfies the old
+`v < priorBest` test and resets the strike count, funding a regression. Missed because the $0
+replay that retired `CAP_RUNS` as the close-fix governor ran over all 8 archived fix loops,
+every one count-shaped — a corpus in which lower-is-better is always true cannot falsify a
+lower-is-better assumption (the repo's own standing hazard: a clean result across many
+experiments can be an artifact of testing one genre — check the population before minting a
+general claim). Unreachable until today's other fix (the G2 cold-variant close repoint) let a
+fix loop actually iterate and produce the repo's first higher-is-better series; the latent
+defect fired on first exposure.
+
+**Ruling (hamr, his option A):** close stages declare their comparison direction as a signed
+per-stage field, `direction: 'up'|'down'`; absent means `'down'`. Never inferred from goal
+prose and never LLM-judged — the reason nothing LLM-judges the close is that prose the agent
+writes must never influence its own halt rule. `isBetter(stage,a,b)` in `src/trend.js` is the
+one place direction is consulted, used by `countImproved` and both `best`-tracking sites;
+`createTrend` takes a `directions` option; `STAGE_FIELDS` (`src/job.js`) gains `direction` with
+an allow-list validator (only `'up'`/`'down'`; anything else is `invalid-value`); wired at both
+`runTrend` and `fixTrend` call sites in `src/planrun.js` off one map built from `stagedClose`.
+`scripts/run-u.mjs` prints each stage's direction at the close-stage banner — a deliberate
+visibility guard, since a silent default is the same shape as the bug just fixed. Verified: 7
+new tests (each confirmed failing against the old code, for the right reason, before the fix),
+full suite 2176/2176, both production job hashes (`aurora-u-spawner-types.json`,
+`litectx-u-types.json`) independently re-computed and unchanged — the default is behaviour- and
+hash-identical for every close that predates this field. Commit `5b43d68`.
 

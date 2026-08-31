@@ -7,6 +7,27 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Close stages declare their comparison direction (F120).** `job-v1` close stages gain an
+  optional `direction: 'up'|'down'` field; absent means `'down'` (unchanged behaviour for
+  every existing close). `src/trend.js`'s close-fix governor hardcoded lower-is-better —
+  wrong for a rate-shaped close, where up is better — and cap-halted a converging G2 run
+  for improving (live on `u-mtgr1qnu`); a mirror defect funded a collapsing rate as
+  progress. Direction is never inferred from goal prose and never LLM-judged; a new
+  `isBetter(stage,a,b)` helper in `src/trend.js` drives `countImproved` and both
+  `best`-tracking sites, `createTrend` gains a `directions` option, `STAGE_FIELDS`
+  (`src/job.js`) validates the field against an allow-list. `scripts/run-u.mjs` prints each
+  stage's direction at the close-stage banner. 7 new tests, each proven failing against the
+  old code first; both production job hashes independently re-verified unchanged.
+
+### Changed
+
+- **`--read-shim` defaults to A1 (cap) in `scripts/run-u.mjs`** (hamr's call, 2026-08-31).
+  `--read-shim off` restores A0. The three frozen bench rows in `docs/product/BENCH-PREREG.md`
+  pin `off` explicitly, so their baselines keep the condition they were established under —
+  no bench re-baseline required or paid.
+
 ### Fixed
 
 - **`resolveWorkerModel` is now exported from the package root.** `bareloop.context.md`
@@ -14,6 +35,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
   in-repo (`src/job.js`) — the exports map admits only `.`, so an adopter could not import
   it. Documented-but-unexported is a false contract (same rule that exported `checkMenu`);
   caught by validating the installed 0.17.0 artifact from the registry. Additive only.
+- **G2 cold-variant `clean-run` close dropped a vacuous stage.** The borrowed
+  `changed-from-seed` stage compared against a seed manifest that can never show a change
+  on a genuinely cold patient (zero files under `tests/testgen/` at seed), firing a spurious
+  `unchanged-red` before the worker had written anything. New
+  `scripts/testgen-cold-check-close.mjs` (grader-identical minus that stage);
+  `jobs/aurora-testgen-cold.json`'s `clean-run` stage repoints to it. Live-proven: the
+  re-establish run recorded zero `unchanged-red` events.
 
 ## [0.17.0] — 2026-08-31
 

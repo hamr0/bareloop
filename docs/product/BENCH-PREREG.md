@@ -170,6 +170,41 @@ guidance stands: model, close-authoring, or validation-gate changes are the ones
 firing on; a docs-only release can skip. Everything else in this document (rows, caps,
 $24 ceiling, n rules, flip rules) is unchanged.
 
+## Amendment, 2026-08-31 — readShim default flip does not touch this bench's condition
+
+`scripts/run-u.mjs`'s `--read-shim` default flipped from A0 (off) to A1 (cap) the same day
+(`2811c6d`, hamr's call — PRD v1.82). All three bench rows were established under A0 — the
+driver's default at the time, so those runs passed no flag. From this amendment on, EVERY
+bench run MUST pass `--read-shim off` explicitly (the G2 re-establish runs of 2026-08-31
+already do), so the frozen baselines keep the condition they were established under
+regardless of the driver's default. No re-baseline is required and none was paid for by this
+flip. A bench run that omits the flag runs A1 and is NOT a bench row.
+
+## Amendment, 2026-08-31 — G2's hash moved twice; the row is PENDING a clean re-establish
+
+Two same-day spec edits re-hashed `aurora-testgen-cold.json` after the table above was
+frozen: (1) the cold-close repoint (dropping the vacuous `changed-from-seed` stage —
+`docs/product/G2-SCOPING.md`), then (2) the `direction` field landing on every close stage
+(`docs/logs/FINDINGS.md` F120; `docs/product/PRD.md` v1.82). Current hash:
+
+```
+64ca31c0c987b47320ca8622eb80a516463656a03144bd469a8323bbe12e35db
+```
+
+This retires the `ec25bb11…` row above (its establishing run `u-mtg6bwa0` is history, not
+the live bench) per the Signature rule already frozen in this document (a spec edit
+re-hashes the row and ends its series). The re-establish attempt that followed,
+`u-mtgr1qnu`, is **NOT** accepted as G2's new baseline: its `escalated` outcome was rendered
+under the close-fix governor's direction defect (F120) — halted for a rate that was rising
+toward the bar, not for a genuine stall. A clean re-establish under the fixed governor is
+required before this row can be re-frozen; per the Signature rule, that establishing run has
+not yet happened at `64ca31c0…`.
+
+**IN FLIGHT, 2026-08-31:** run `u-mtgx135x` fired ~09:25 CEST at hash `64ca31c0…`, read
+shim pinned `off`, $8 cap — the clean re-establish attempt. Outcome pending; no result is
+recorded here until it lands, and G2 stays PENDING (awaiting hamr's signature on the new
+hash and a clean establishing outcome) until then.
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).

@@ -122,7 +122,52 @@ the colour flip that triggers n=3 and, if confirmed, a release-blocking question
 or model improved). G2 joins the frozen bench set only when hamr raises the pass ceiling to
 ≥ $23 (5 + 10 + 8) — his word, still open.
 
+## Config wrinkle FIXED and live-proven, 2026-08-31
+
+The "Config wrinkle" named above (2026-08-30) — the borrowed `clean-run` stage's
+accept-shape `changed-from-seed` check firing a vacuous `unchanged-red` on a cold patient
+whose `tests/testgen/` is empty at seed, so the walk-and-compare loop can never observe a
+change before the worker has written anything — is now UNPARKED and fixed (commit
+`80a51ff`). New `scripts/testgen-cold-check-close.mjs` (a copy of the in-run check
+`scripts/l2poc-check-close.mjs` minus its `changed-from-seed` stage; every other stage stays
+grader-identical) plus a wrapper in the patient dir;
+`jobs/aurora-testgen-cold.json`'s `clean-run` stage repoints to it. Re-hashes the spec
+(see below).
+
+Proven live on the re-establish run `u-mtgr1qnu` (below): the spine recorded ZERO
+`unchanged-red` events, versus the prior establishing run `u-mtg6bwa0`, which fired one.
+
+## Re-establish run `u-mtgr1qnu`, 2026-08-31 — NOT a clean baseline (F120)
+
+The cold-close fix alone let the fix loop iterate on a rate-shaped close for the first time
+in this repo's history — and that first iteration is what exposed the close-fix governor's
+direction defect (`docs/logs/FINDINGS.md` F120), which was fixed AFTER this run, not before it. Run `u-mtgr1qnu` at the new hash (see
+`docs/product/BENCH-PREREG.md` for the exact value): outcome **escalated**, spend
+`>= $6.8843` of the $8 cap (a FLOOR — `spendComplete:false`, one transport retry fired and
+recovered), 28.5 of 45 min, 121 rounds, 2 plan steps, 12 allowed writes across 5 files, 4
+`gate-red` forbidden-pattern events, 0 `unchanged-red`. Grader's own numbers across three
+grades: `killed=6/40 rate=15%`, `killed=15/40 rate=37.5%`, `killed=17/40 rate=42.5%`, all
+`clean=green`, final form `unit:63, integ:12`, threshold 45%. Read shim pinned OFF to match
+the frozen baseline condition (177 tool calls, ~55% exact repeats). Spine:
+`../bareloop-patients/aurora-soar-bareloop/u-mtgr1qnu.jsonl`.
+
+**This does NOT establish G2's clean baseline.** The row's colour (`escalated`, non-green)
+still matches G2's expected outcome, but the escalation REASON is now known to be an
+artifact of the close-fix governor's direction defect (F120) — the run was cap-halted for a
+rate that was rising toward the bar, not for genuinely stalling. A run halted for the wrong
+reason cannot be trusted to freeze the right baseline. G2 must NOT be re-frozen at this hash
+or this outcome; a clean re-establish under the fixed governor is required first.
+
+## Clean re-establish — IN FLIGHT, 2026-08-31
+
+Run `u-mtgx135x` fired ~09:25 CEST 2026-08-31 at the current spec hash (`64ca31c0…`, see
+BENCH-PREREG), read shim pinned `off`, $8 cap — the clean re-establish under the fixed
+close-fix governor. In flight; outcome pending. Do not treat any number from this run as
+final until it lands; G2's baseline stays open until it does.
+
 ## Decisions for hamr (remaining)
 
 1. Route: hand-written close reusing `testgen-close` (recommended) vs interview-authored.
 2. The pass ceiling once G2 joins: $23 minimum (sum of the three caps) — hamr's number.
+3. Whether `u-mtgx135x` (in flight) is accepted as G2's clean established baseline once it
+   lands, or needs a further re-run — hamr's read once the outcome is known.

@@ -9648,3 +9648,94 @@ control case on a retry-free archived run; +1 existing `--all` test updated to a
 for the new footnote line). Suite: 2141 → 2143. `npm run typecheck` and `npm run
 build:types` both clean. Full `npm test` green: 2143/2143, `prompt-commit-check: OK — 8
 commit(s) checked, 0 touching a prompt register with a missing/incomplete label`.
+
+## F120
+
+**The close-fix governor assumed lower-is-better for every stage, universally — wrong for a
+rate-shaped close, and it cap-halted a converging G2 run for the crime of improving.**
+
+`src/trend.js` is the arbiter's close-fix governor: it decides whether a fix loop is making
+progress and, if not, mints a strike toward cap-halt. It hardcoded lower-is-better —
+`countImproved = v < priorBest`, `best` tracked the running minimum at both `best`-tracking
+sites, and `verdict()`'s own convergence test was `values[last] < values[0]`. Correct for
+every close ever built before today: they all report a COUNT of bad things remaining
+(typecheck errors, suppressions), where down is better. WRONG for a rate-shaped close, where
+up is better — and G2 (`aurora-testgen-cold`)'s grader reports a fault-detection RATE.
+
+### The live consequence
+
+Run `u-mtgr1qnu` (job `aurora-testgen-cold`, the G2 bench row): the grader reported
+fault-detection `rate=15% → 37.5% → 42.5%` against a `threshold=45%` bar. The governor read
+that rising series as "no stage improved" (each value failed `v < priorBest` against a
+minimum that was itself falling further behind an ever-higher `best`), minted 2/2 strikes,
+and cap-halted a run that was converging and 2.5 points from passing. The instrument rendered
+its own refutation: it printed the rising series as the evidence for "no stage improved". The
+`flat` verdict's lever in `src/trend.js` — "more money is unlikely to help; revise the
+goal/spec first" — is equally backwards for this run; it was NOT printed to the driver log or
+the spine (the terminal prints only the reading), so it is a code-read finding, not a live one.
+
+A MIRROR defect, equally real and arguably worse, sits in the same code: on a rate stage a
+COLLAPSING series (say `42.5 → 20`) satisfies the old `v < priorBest` test, reads as
+improvement, and RESETS the strike count — the rule would have funded a regression indefinitely
+rather than stopping it.
+
+### Why it was missed — a repeat of a known hazard
+
+The $0 replay that authorised this rule (the ruling that retired `CAP_RUNS` as the close-fix
+governor, `docs/logs/FINDINGS.md` around line 5171) ran over "all 8 archived fix loops", and
+every one of them was count-shaped. A corpus in which lower-is-better is always true CANNOT
+falsify a lower-is-better assumption — this is the repo's own standing hazard, already on
+record elsewhere in this file: a clean result across many experiments can be an artifact of
+testing ONE genre; check the population before minting a general claim. F78's replay had in
+fact explicitly EXCLUDED the close-fix loop from the step-ladder replay, on the stated
+reasoning that it "needs its own replay before its own rule" — the replay it later did get was
+single-genre, and the gap in that replay is what let this ship.
+
+**Second-order miss:** at the FINAL close stage there is no remaining stage-advance signal
+(`stageImproved` cannot fire — there is no next stage to advance to), so the count comparison
+is the ONLY judge rendered there. The direction bug therefore had no backstop at exactly the
+place the verdict is rendered.
+
+**Latency:** this was unreachable until today. The prior G2 baseline run `u-mtg6bwa0` produced
+exactly ONE verdict grade (15%), and one number cannot be compared against anything, so the
+trend honestly read "unknown" and the bug never fired. Today's separate fix — dropping the
+vacuous `changed-from-seed` stage from the cold-variant `clean-run` close (the seed patient
+holds zero files under `tests/testgen/`, so that stage could never observe a change and fired
+a spurious `unchanged-red` before the worker had written anything; see
+`docs/product/G2-SCOPING.md`'s "Config wrinkle") — let the fix loop actually iterate for the
+first time, producing the repo's first higher-is-better SERIES in its history. The latent
+direction defect fired on first exposure. Not a new bug — a bug that could not be reached
+before today.
+
+### The fix
+
+hamr's ruling (his option A, 2026-08-31): close stages declare a signed per-stage `direction`
+field, `'up'` or `'down'`; absent means `'down'`. Never inferred from goal prose, never
+LLM-judged — hamr explicitly rejected inferring direction from the goal because prose the
+agent writes must never influence its own halt rule (the same reasoning behind "nothing
+LLM-judges the close"). Implemented via an `isBetter(stage,a,b)` helper in `src/trend.js`,
+used by `countImproved` and BOTH `best`-tracking sites; `createTrend` gains a `directions`
+option; `STAGE_FIELDS` in `src/job.js` gains `direction` with an allow-list validator (only
+`'up'`/`'down'` are legal; anything else is `invalid-value`); wired at both call sites in
+`src/planrun.js` (`runTrend` line ~1372 and `fixTrend` line ~3405) from one map built off
+`stagedClose`. `scripts/run-u.mjs` now prints each stage's direction in the close-stage
+banner — a deliberate visibility guard, because a silent default is the same shape as the bug
+just fixed.
+
+### Numbers
+
+7 new tests (4 in `tests/trend.test.js`, 3 in `tests/job.test.js`), each confirmed to FAIL
+against the old code, for the right reason, before the fix. Full suite green: 2176/2176.
+`jobs/aurora-u-spawner-types.json` and `jobs/litectx-u-types.json` hashes independently
+re-computed and UNCHANGED (`5d989ae7be3d...`, `42a7c42704fa...`), proving the default is
+behaviour- and hash-identical for every existing close. Commit `5b43d68`.
+
+### What is NOT claimed
+
+G2's bench row is NOT clean under this fix yet. Run `u-mtgr1qnu` itself still ended
+`escalated` — its non-green colour still matches G2's expected outcome, but the escalation
+REASON is now known to be an artifact of the direction defect, not a genuine cap-halt on a
+stalled loop. This run does NOT establish a clean G2 baseline; the bench row stays PENDING a
+clean re-establish under the fixed governor before it can be re-frozen (see
+`docs/product/BENCH-PREREG.md` and `docs/product/G2-SCOPING.md` for the current state and
+the run now in flight to answer it).
