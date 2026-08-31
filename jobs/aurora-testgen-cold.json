@@ -24,7 +24,7 @@
   "close": [
     {
       "name": "clean-run",
-      "cmd": "/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop/l2poc-check-close.sh",
+      "cmd": "/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop/testgen-cold-check-close.sh",
       "expect": 0,
       "judged": {
         "pattern": "TESTGEN judged=(\\d+)",
