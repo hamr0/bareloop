@@ -307,6 +307,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     typedefs (doc says preferred; per-file `@typedef` already generates 1:1 `.d.ts` and
     typechecks clean — moving 23 files' typedefs is churn with no adopter benefit).
 
+23. **G3/G4 scoping** — unscoped, hamr's answers recorded 2026-08-31: G3 = a real planted-cheat
+    bench row the close must catch; G4 = any halt→replan→green (not narrowly a money cap-halt).
+    Neither built or scheduled. Detail: `docs/product/G2-SCOPING.md` §"G3/G4 scoping".
+
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on
 the build list), refuse-to-price preflight, memory/recall harness.

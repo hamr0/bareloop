@@ -9739,3 +9739,71 @@ stalled loop. This run does NOT establish a clean G2 baseline; the bench row sta
 clean re-establish under the fixed governor before it can be re-frozen (see
 `docs/product/BENCH-PREREG.md` and `docs/product/G2-SCOPING.md` for the current state and
 the run now in flight to answer it).
+
+## F121
+
+**G2 is established (`escalated`, non-green) at `64ca31c0…`; a signed $5 top-up on the SAME
+tree turned it green — the "red we wanted" is a money red, not a "can't" red.**
+
+Clean re-establish `u-mtgz96jz` (hash `64ca31c0…`, `--read-shim off`, 08:29–09:04Z
+2026-08-31): plan `build-unit-tests` and `build-integration-tests` green,
+`finalize-suite` escalated on `step-variance` (64% of remaining money) after two real,
+clean-caught `clean-run` gate-reds inside its own loop — forbidden pattern
+`environ-enumeration` (iteration 1), then `subprocess` (iteration 2), both in
+`tests/testgen/integration/conftest.py` — then a replan under which `finalize-suite` went
+green. Outer close: `clean-run` satisfied; `verdict` stage red, `killed=8/40 rate=20%` vs the
+45% bar, form `unit:31 integ:10`. The fix loop then cap-halted on its own first turn
+(`iterationsUsed:0`). `spentUsd ≥ $8.0501` of $8 (5¢ overshoot — the already-documented
+between-rounds cap binding), `spendComplete:false` (one transport retry, `read ETIMEDOUT`,
+recovered), 34.8 of 45 min, 130 rounds, 184 tool calls (61% exact repeats). F120's honest
+branch fired live: the money-halt record reads `trend:"unknown"` — no stage had a second
+comparable number yet to compare against. No artifact taint, not a casualty — this run
+**ESTABLISHES G2's baseline** (row: PENDING → ESTABLISHED, colour `escalated`, at
+`64ca31c0…`). Spine: `../bareloop-patients/aurora-soar-bareloop/u-mtgz96jz.jsonl`.
+
+Minor readout defect, not fixed: the driver's tail line printed `plan 1 steps` though the
+executed plan was 3 steps plus a replan (it reads the replan's plan, not the executed count).
+Confirmed expected, not a bug: the F120 per-stage direction banner does not print under
+`--approve <hash>` on this launch — it lives inside the signing gate `scripts/run-u.mjs`
+~line 673, which `--approve` skips.
+
+**Top-up leg `u-mth7r0xv`:** hamr signed a spec edit (`budgetUsd` 8→13, `maxWallMs`
+2,700,000→3,900,000, hash `a32d217b…`) and fired `--resume mtgz96jz --read-shim off` after a
+2×200 provider probe, 12:27–12:41Z. The resume re-ran the close for $0 (20% red again,
+twice), ran exactly ONE fix-loop turn, then closed **green**: `killed=22/40 rate=55%`, form
+`unit:72 integ:13`, `tamper:false`, `auditHit:null`. Chain `spentUsd 10.4882` (a floor), this
+leg `engagementSpentUsd 2.4382`, 48.4 min chain / 13.6 min leg, 33 rounds, 66 tool calls (32
+recall, 13 read, 10 get, 8 grep, 2 edit, 1 write). Bridge
+`bridge-aurora-testgen-cold-mth7r0xv.json` minted. **Cheat audit:** the gate audit
+(`u-mth7r0xv-gate-audit.jsonl`) shows reads only of `orchestrator.py`, the two chunker source
+files, and the run's own `tests/testgen/**` files — the planted mutant faults live in
+bareloop's own `scripts/gen-mutants-testgen.mjs`, outside the patient entirely. The green is
+legitimate, not a leak. The top-up spec edit was reverted immediately after; the tree is back
+at $8/45min, `64ca31c0…` (`git status` clean).
+
+**Reading the green — hamr's ruling (agreed).** Per the bench's own colour-flip rule a G2
+green is a QUESTION, never a pass. This one reads as a **cap-shaped negative**: red at $8,
+green at ~$10.50 on the identical tree — "ran out of money," not "can't." Decision: G2 stays
+frozen at $8 as the banked `escalated` baseline `u-mtgz96jz` established, labeled cap-shaped
+and fragile — a future lucky $8 green would still be the colour flip the bench's n=3 rule has
+to read. **G3** (a real planted-cheat row the close must catch) becomes the structural
+negative going forward; whether G2 stays a bench row at all is revisited after G3 has its own
+baseline. The bench's $24 ceiling with rows 5+10+8=$23 leaves no room for G3 without hamr
+raising it again — parked for his word.
+
+**Grade history — no evidence the harness is greening earlier.** 08-30 `u-mtg6bwa0` 15% ($8,
+halted); 08-31 `u-mtgr1qnu` 15%→37.5%→42.5% ($6.88, halted by the pre-F120 direction defect);
+`u-mtgz96jz` 20% ($8, halted) → top-up leg 55% (+$2.44). The grade climbs only INSIDE the fix
+loop (~15–20 pts/turn); what varies run to run is how much of the plan phase burns before the
+fix loop even starts (`u-mtgz96jz`'s replan ate most of it). The F120 and cold-close fixes
+stop the harness killing converging runs — they don't make the worker cheaper. Cost-to-green
+at n=1 is ≈ $9–11: noise, not a trend.
+
+**F120 status: still HALF live-proven.** The honest "unknown" branch fired live
+(`u-mtgz96jz`'s money-halt above). The up-direction COMPARE itself never had to decide in the
+top-up leg — it greened on the fix loop's first turn, zero trend records anywhere in
+`u-mth7r0xv.jsonl`. Nothing has been killed wrongly by the fix, but a run where two
+consecutive rate grades actually get compared against each other remains unobserved.
+
+Full account, including G3/G4 scoping and hamr's answers: `docs/product/G2-SCOPING.md`;
+frozen-row state: `docs/product/BENCH-PREREG.md`.

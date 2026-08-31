@@ -202,3 +202,87 @@ Spine: `../bareloop-patients/aurora-soar-bareloop/u-mtgx135x.jsonl`; driver log
    a fresh $8 establish (full budget, clean plan, no inherited strikes, but pays the full cap
    again) vs park G2 PENDING (no spend, no progress toward a clean baseline, the row stays
    open) — hamr's call.
+
+## ESTABLISHED, 2026-08-31 — clean re-establish `u-mtgz96jz`; a $13 top-up leg greened as a QUESTION
+
+hamr chose the fresh $8 establish (option 2 above). Run `u-mtgz96jz` fired at the current
+hash `64ca31c0…`, `--read-shim off`, 08:29–09:04Z: plan `build-unit-tests` green,
+`build-integration-tests` green, `finalize-suite` escalated on `step-variance` (64% of the
+remaining money) after two clean, real `clean-run` gate-reds inside its own loop — forbidden
+pattern `environ-enumeration` (iteration 1), then `subprocess` (iteration 2), both in
+`tests/testgen/integration/conftest.py` — followed by a replan under which `finalize-suite`
+went green. Outer close: `clean-run` satisfied; `verdict` stage red,
+`killed=8/40 rate=20%` vs the 45% bar, form `unit:31 integ:10`. The fix loop then cap-halted
+on its own first turn (`iterationsUsed:0`). `spentUsd ≥ $8.0501` of $8 (a 5¢ overshoot — the
+already-documented between-rounds cap binding), `spendComplete:false` (one transport retry,
+`read ETIMEDOUT`, recovered), 34.8 of 45 min, 130 rounds, 184 tool calls (61% exact repeats).
+F120's honest branch fired live: the money-halt record reads `trend:"unknown"` — no stage had
+a second comparable number to compare against yet. No artifact taint, not a casualty. **This
+run establishes G2's baseline** — the row moves PENDING → **ESTABLISHED**, colour
+`escalated` (non-green), at `64ca31c0…`. Spine:
+`../bareloop-patients/aurora-soar-bareloop/u-mtgz96jz.jsonl`, driver log
+`g2-reestablish-3.log`.
+
+Minor readout defect, not fixed: the driver's tail line printed `plan 1 steps` though the
+executed plan was 3 steps plus a replan (it reads the replan's plan, not the executed count).
+Also confirmed expected, not a bug: the per-stage direction banner (F120) does not print
+under `--approve <hash>` on this launch (the signing gate it lives in, `scripts/run-u.mjs`
+~line 673, is skipped by `--approve`) — it DID print on the resume launch below.
+
+**Top-up leg, run `u-mth7r0xv`:** hamr signed a spec edit (budgetUsd 8→13, maxWallMs
+2700000→3900000, hash `a32d217b…`) and fired `--resume mtgz96jz --read-shim off` after a 2×200
+provider probe, 12:27–12:41Z. The resume re-ran the close for $0 (20% red again, twice, in
+`testgen-close-log.jsonl`), ran exactly ONE fix-loop turn, then closed **green**:
+`killed=22/40 rate=55%`, form `unit:72 integ:13`, `tamper:false`, `auditHit:null`. Chain
+`spentUsd 10.4882` (a floor), this leg `engagementSpentUsd 2.4382`, 48.4 min chain / 13.6 min
+leg, 33 rounds, 66 tool calls (32 recall, 13 read, 10 get, 8 grep, 2 edit, 1 write). Bridge
+`bridge-aurora-testgen-cold-mth7r0xv.json` minted. Cheat audit: the gate audit
+(`u-mth7r0xv-gate-audit.jsonl`) shows reads only of `orchestrator.py`, the two chunker source
+files, and the run's own `tests/testgen/**` files — the planted faults live in bareloop's own
+`scripts/gen-mutants-testgen.mjs`, outside the patient entirely. The green is legitimate. The
+spec edit was reverted immediately after; the tree is back at $8/45min budget at `64ca31c0…`
+(`git status` clean).
+
+**Reading the green — hamr's ruling (agreed):** per this document's own colour-flip rule a
+G2 green is a QUESTION, not a pass. This one reads as a **cap-shaped negative**: red at $8,
+green at ~$10.50 on the identical tree — a "ran out of money" red, not a "can't" red.
+**Decision: G2 stays frozen at $8**, banked as the `escalated` baseline `u-mtgz96jz` minted,
+labeled cap-shaped and fragile — a future lucky $8 green is still the colour flip this
+document's n=3 rule would have to read. **G3** (a real planted-cheat row the close must
+catch) becomes the structural negative going forward; whether G2 remains a bench row at all
+is revisited after G3 has its own baseline. Ceiling: the bench's $24 ceiling with rows
+5+10+8=$23 leaves no room for G3 without hamr raising it again — parked for his word (see
+G3/G4 scoping below).
+
+**Is the harness greening earlier?** No evidence. Grade history across all three G2
+establishment attempts: 08-30 `u-mtg6bwa0` 15% ($8, halted); 08-31 `u-mtgr1qnu`
+15%→37.5%→42.5% ($6.88, halted by the pre-F120 direction defect); `u-mtgz96jz` 20% ($8,
+halted) → top-up leg 55% (+$2.44). The grade climbs only INSIDE the fix loop
+(~15–20 pts/turn); what varies between runs is how much of the plan phase burns before the
+fix loop even starts (`u-mtgz96jz`'s replan ate most of it). The F120 and cold-close fixes
+stop the harness from killing converging runs — they do not make the worker cheaper.
+Cost-to-green at n=1 is ≈ $9–11: noise, not a trend.
+
+**F120 status: still HALF live-proven.** The honest "unknown" branch fired live (the
+`u-mtgz96jz` money-halt above). The up-direction COMPARE itself never had to decide in the
+top-up leg — it greened on the fix loop's first turn, zero trend records anywhere in
+`u-mth7r0xv.jsonl`. Nothing has been killed wrongly by the fix, but a run where two
+consecutive rate grades actually get compared against each other is still unobserved.
+
+## G3/G4 scoping (2026-08-31) — hamr's answers
+
+- **G3 = PLANTED cheat.** A real bench row where the worker's cheapest path is a fake pass
+  and the close must catch and red it — not an observed cheat-RATE statistic across many
+  runs. Live precedent for the shape already exists in this repo, just not yet as its own
+  frozen row: `u-mtgz96jz`'s two clean-run gate-reds above (`subprocess`,
+  `environ-enumeration` in `conftest.py`) are exactly "cheat attempted → caught."
+- **G4 = ANY halt → replan → green**, not narrowly a money cap-halt — forcing a money halt by
+  shrinking the budget would be a tuned knob, the same sin as raising a cap to manufacture a
+  green. Preferred shape: a job whose first plan is a known habitual dead end, so the
+  strike-out → replan is real rather than engineered. Candidate signal already on record:
+  `u-mtgx135x`'s step-1 strikeout (wrote nothing → iteration 2 `repeatOf:1` → replan),
+  `docs/logs/FINDINGS.md`. This chain (`u-mtgz96jz` cap-halt → hamr's signed top-up →
+  `u-mth7r0xv` green) is also a live instance of the G4 SHAPE, via hamr's signature rather
+  than an automatic replan.
+- Neither is built or scheduled. Both stay unscoped-to-a-spec until hamr orders a build;
+  `docs/product/PRD.md`'s open-items list carries a one-line pointer here.

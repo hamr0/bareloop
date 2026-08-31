@@ -207,6 +207,65 @@ the close; no verdict was rendered. Per standing doctrine a casualty is not evid
 stays PENDING a clean re-establish at `64ca31c0…`; none has happened yet. Full account:
 `docs/product/G2-SCOPING.md`.
 
+## Amendment, 2026-08-31 — G2 ESTABLISHED (escalated); a top-up leg greened as a QUESTION, not a flip
+
+**Clean re-establish, run `u-mtgz96jz`** (hash `64ca31c0…`, `--read-shim off`, 08:29–09:04Z):
+outcome **escalated**. Plan `build-unit-tests` green, `build-integration-tests` green,
+`finalize-suite` escalated on `step-variance` after two clean, real gate-reds inside its own
+loop (forbidden pattern `environ-enumeration` then `subprocess` in
+`tests/testgen/integration/conftest.py`) → replan → `finalize-suite` green. Outer close:
+`clean-run` satisfied; `verdict` stage red, `killed=8/40 rate=20%` vs the 45% bar, form
+`unit:31 integ:10`. The fix loop then ran and cap-halted on its own first turn
+(`iterationsUsed:0`). `spentUsd ≥ $8.0501` of $8 (5¢ overshoot — the known between-rounds cap
+binding; `spendComplete:false`, one transport retry `read ETIMEDOUT`, recovered), 34.8 of 45
+min, 130 rounds, 184 tool calls (61% exact repeats). F120's honest branch fired live: the
+money-halt record reads `trend:"unknown"` (no stage had a second comparable number yet). This
+run carries **no artifact taint** and is not a casualty — it **ESTABLISHES G2's baseline**.
+Per the Signature rule, the row moves PENDING → **ESTABLISHED**, colour `escalated`
+(non-green), at `64ca31c0…`.
+
+**Top-up leg, run `u-mth7r0xv`** (hamr's signed spec edit, budgetUsd 8→13 / maxWallMs
+2700000→3900000, hash `a32d217b…`, `--resume mtgz96jz --read-shim off`, provider probed 2×200
+first, 12:27–12:41Z): the resume re-ran the close for $0 (20% red again, twice), ran ONE fix
+turn, then closed **green** — `killed=22/40 rate=55%`, form `unit:72 integ:13`,
+`tamper:false`, `auditHit:null`. Chain `spentUsd 10.4882` (floor), this leg
+`engagementSpentUsd 2.4382`, 48.4 min chain / 13.6 min leg, 33 rounds, 66 tool calls. Bridge
+`bridge-aurora-testgen-cold-mth7r0xv.json` minted. Cheat audit (gate-audit) shows only reads
+of `orchestrator.py`, two chunker source files, and the run's own `tests/testgen/**` — the
+planted faults live in bareloop's own `scripts/`, outside the patient; the green is
+legitimate. The top-up spec edit was **reverted** afterward; the tree is back at $8/45min,
+`64ca31c0…` (`git status` clean).
+
+Per this document's own STOP rule, a G2 green is release-blocking pending a human read — not
+a pass. **hamr's reading (agreed):** this is a **cap-shaped negative** — red at $8, green at
+~$10.50 on the same tree, i.e. "ran out of money," not "can't." **Decision: G2 stays frozen
+at $8** as the banked `escalated` baseline established by `u-mtgz96jz` above, labeled
+cap-shaped and fragile (a lucky $8 green on a future establishing run would still be the
+colour flip this document's STOP rule requires reading, at n=3). **G3** (a planted-cheat row
+the close must catch) becomes the structural negative; whether G2 remains a bench row at all
+is decided after G3's own baseline. Ceiling note: the bench ceiling is $24 with the three
+rows summing 5+10+8=$23 — G3 does not fit inside that without hamr raising the ceiling again;
+parked for his word (`docs/product/G2-SCOPING.md` carries the G3/G4 scoping detail).
+
+Grade history shows no evidence the harness is "greening earlier": 08-30 `u-mtg6bwa0` 15%
+($8, halted); 08-31 `u-mtgr1qnu` 15→37.5→42.5% ($6.88, halted by the pre-F120 direction
+defect); `u-mtgz96jz` 20% ($8, halted) → top-up leg 55% (+$2.44). The grade only climbs
+inside the fix loop (~15–20 pts/turn); what varies run to run is how much the plan phase
+burns before the loop even starts. Cost-to-green at n=1 is ≈ $9–11 — noise, not a trend.
+
+F120 status: still HALF live-proven. The honest "unknown" branch fired on the money-halt in
+`u-mtgz96jz` above. The up-direction COMPARE never had to decide in the top-up leg either —
+it greened on the fix loop's first turn, zero trend records in `u-mth7r0xv`. Nothing has been
+killed wrongly, but a run where two consecutive rate grades actually get compared is still
+unobserved.
+
+Minor readout defect, not fixed: the driver's `plan N steps` tail line printed `plan 1 steps`
+for `u-mtgz96jz` though the executed plan was 3 steps plus 1 replan (it reads the replan's
+plan, not the executed count). Also confirmed as expected, not a bug: the per-stage direction
+banner (F120) does not print under `--approve <hash>` (it lives inside the signing gate,
+`scripts/run-u.mjs` ~line 673, which `--approve` skips) — it DID print on the resume launch:
+`clean-run [command] direction down` / `verdict [command] direction up`.
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).
