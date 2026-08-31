@@ -162,6 +162,14 @@ recorded above is corrected in the freeze commit itself, never silently.
   `claude-sonnet-5 (spec)`. Establishment details and the named config wrinkle (the borrowed
   accept-shape clean-run stage): `docs/product/G2-SCOPING.md`.
 
+## Amendment, 2026-08-31 — the pass trigger is hamr's CHOICE at a release
+
+hamr's word at the v0.17.0 release: a bench pass fires **on his call**, decided per release
+from what the features touched — not automatically on every feature bump. The written
+guidance stands: model, close-authoring, or validation-gate changes are the ones worth
+firing on; a docs-only release can skip. Everything else in this document (rows, caps,
+$24 ceiling, n rules, flip rules) is unchanged.
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).

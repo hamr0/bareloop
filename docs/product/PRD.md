@@ -235,6 +235,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    live-proven; both positive rows re-baselined green at model-pinned hashes; G2
    (`aurora-testgen-cold`) established non-green (u-mtg6bwa0, 15% vs 45% bar, $7.09); hamr
    raised the pass ceiling to **$24** and the bench re-froze as THREE rows (BENCH-PREREG).
+   **2026-08-31 (at v0.17.0):** pass trigger amended to hamr's per-release CHOICE (BENCH-PREREG
+   amendment); a cheaper-provider experiment is queued for AFTER the build freeze, judged by a
+   bench pass under its own re-baselined condition — provider work lands upstream in bare-agent.
 8. ~~Prompt-commit shape~~ — **BUILT 2026-08-25** (F118). Q9 ANSWERED 2026-08-25: a check,
    wired into `npm test` (CI untouched until #2b, below). `src/promptregisters.js` (`PROMPT_REGISTERS`,
    `isPromptFile`) is the one inventory; `scripts/prompt-commit-check.mjs` validates
