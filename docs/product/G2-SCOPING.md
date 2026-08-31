@@ -286,3 +286,48 @@ consecutive rate grades actually get compared against each other is still unobse
   than an automatic replan.
 - Neither is built or scheduled. Both stay unscoped-to-a-spec until hamr orders a build;
   `docs/product/PRD.md`'s open-items list carries a one-line pointer here.
+
+## Model-output truncation — the "2A" trigger rule (2026-08-31, pre-registered, build nothing now)
+
+The parked wrinkle above — "whether a model-output truncation belongs in the `provider-red`
+class at all" (from `u-mtgx135x`'s casualty) — gets a frozen answer without building anything.
+
+**Base rate, measured ($0 archive scan, 2026-08-31, this session):** across every archived API
+worker-round record under `../bareloop-patients/*/` (clipipe runs segmented out — a distinct
+provider population, F48), 9,185 rounds total. p99 output = 9,188 tokens. Only 13 rounds ever
+reached ≥20,000 output tokens; exactly 3 rounds hit the 32,000-token call cap
+(`maxTokens: 32000`, `src/planrun.js:2355`) — all 3 truncated. ≈0.03% of rounds (3-of-9,185).
+Full account and the F121-neighbor `u-mtgx135x` truncation event: `docs/logs/FINDINGS.md`
+F122.
+
+**Known mechanism, known cure, not applied.** The adaptlearn battery (closed record) already
+diagnosed this: sonnet-5 adaptive thinking can burn the whole output allowance on internal
+thinking and truncate/return empty at `stop=max_tokens`; the documented fix is
+`output_config: {effort:'low'}` (sonnet-only — haiku-4.5 lacks the field, so any fix gates the
+param per tier). bareloop sets no effort param anywhere today, deliberately
+(`scripts/run-u.mjs:140-141`).
+
+**hamr's frozen trigger rule ("2A"):** on the SECOND `truncated:max_tokens` occurrence in a
+paid run, (a) wire `effort:'low'` for sonnet-tier worker calls, and (b) reclassify
+model-output truncation as a worker failure, not transport/provider-red. Until then: keep the
+current classification (`provider-red`, "transport, not logic"), keep `maxTokens` at 32,000
+(≈3.5× p99 — not the cause; a lower cap only cheapens the crash and risks cutting a
+legitimately large file write). This rule is pre-registered before the second data point
+exists and never loosens post-hoc. The reclassification half is arbiter territory — the
+trigger firing authorizes bringing the build to hamr, not silently landing it.
+
+## G3 swap plan (2026-08-31, hamr's "agreed, lower cap, plan a swap" on option A)
+
+G3 (planted-cheat negative row, scoped above) is sized at ~$5 budget. **When G3's baseline is
+established** (non-green, per the negative-row rules this document and BENCH-PREREG already
+use for G2), **G2 (`aurora-testgen-cold`, $8) LEAVES the bench** — it is the weak, cap-shaped
+negative documented in F121 (red at $8, green at ~$10.50 on the identical tree). Rows after
+the swap: aurora $5 + litectx $10 + G3 $5 = $20 per pass. The $24 ceiling stays untouched — no
+raise needed for the swap itself.
+
+G2 does not vanish from the repo — it remains a normal e2e job (`jobs/aurora-testgen-cold.json`)
+outside the bench, runnable on its own, just no longer one of the frozen bench rows.
+
+Nothing built or scheduled by this entry; the swap fires only once G3 has a spec, a signed
+hash, and an established baseline. Dated amendment carrying the same plan:
+`docs/product/BENCH-PREREG.md`.

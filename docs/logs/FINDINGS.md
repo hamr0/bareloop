@@ -9807,3 +9807,36 @@ consecutive rate grades actually get compared against each other remains unobser
 
 Full account, including G3/G4 scoping and hamr's answers: `docs/product/G2-SCOPING.md`;
 frozen-row state: `docs/product/BENCH-PREREG.md`.
+
+## F122 — model-output truncation is 3-of-9,185 archived rounds (0.03%); the trigger rule for
+reclassifying it is frozen before the second occurrence exists
+
+**The $0 base-rate scan behind hamr's "2A" ruling (2026-08-31).** Run `u-mtgx135x` (see F121's
+neighbor entry and `docs/product/G2-SCOPING.md`) died when one worker turn emitted exactly
+32,000 output tokens — the `maxTokens: 32000` call cap (`src/planrun.js:2355`) — bare-agent
+flagged `truncated:max_tokens`, and `src/planrun.js:2386` classes it `provider-red`
+("transport, not logic"): a casualty, ≥$4.40, no verdict rendered.
+
+Archive scan across every archived API worker-round record under
+`../bareloop-patients/*/` (clipipe runs excluded — a distinct provider population, F48):
+9,185 rounds total. p99 output = 9,188 tokens. Only 13 rounds ever reached ≥20k output
+tokens; exactly 3 rounds hit the 32,000 cap, and all 3 truncated. ≈0.03% of rounds
+(3-of-9,185).
+
+**Known mechanism, known cure, not yet applied.** The adaptlearn battery (closed record)
+already diagnosed this failure mode: sonnet-5 adaptive thinking can burn the whole output
+allowance on internal thinking and truncate/return empty at `stop=max_tokens`; the documented
+fix is `output_config: {effort:'low'}` (sonnet-only — haiku-4.5 lacks the field, so any fix
+must gate the param per tier). bareloop currently sets no effort param anywhere, deliberately
+(`scripts/run-u.mjs:140-141`).
+
+**hamr's frozen trigger rule ("2A"), pre-registered before the second data point exists:** on
+the SECOND `truncated:max_tokens` occurrence in a paid run, (a) wire `effort:'low'` for
+sonnet-tier worker calls, and (b) reclassify model-output truncation as a worker failure, not
+transport/provider-red. Until the trigger fires: classification stays `provider-red`,
+`maxTokens` stays 32,000 (≈3.5× p99; not the cause — a lower cap only cheapens the crash and
+risks truncating a legitimately large file write). The rule never loosens post-hoc. The
+reclassification half is arbiter territory — the trigger firing authorizes bringing the build
+to hamr, not silently landing it.
+
+Nothing built by this entry. Full ruling text: `docs/product/G2-SCOPING.md`.

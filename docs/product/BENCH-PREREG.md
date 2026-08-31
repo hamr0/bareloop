@@ -266,6 +266,25 @@ banner (F120) does not print under `--approve <hash>` (it lives inside the signi
 `scripts/run-u.mjs` ~line 673, which `--approve` skips) — it DID print on the resume launch:
 `clean-run [command] direction down` / `verdict [command] direction up`.
 
+## Amendment, 2026-08-31 — G3 swap plan (hamr's "agreed, lower cap, plan a swap" on option A)
+
+The Rows table above stays FROZEN and untouched by this amendment — it carries the plan, not
+a rewrite of the frozen facts. G3 (a planted-cheat negative row, scoped in
+`docs/product/G2-SCOPING.md` §"G3/G4 scoping") is sized at ~$5 budget. **When G3's baseline is
+established** (non-green, per the negative-row rules this document already applies to G2),
+**G2 (`aurora-testgen-cold`, $8) LEAVES the bench** — F121 established it as the weak,
+cap-shaped negative (red at $8, green at ~$10.50 on the identical tree; a "ran out of money"
+red, not a "can't" red). Rows after the swap: `aurora-u-spawner-types` $5 +
+`litectx-u-types` $10 + G3 $5 = **$20 per pass**. The **$24 ceiling stays untouched** — the
+swap needs no raise.
+
+G2 does not vanish from the repo — `jobs/aurora-testgen-cold.json` remains a normal e2e job,
+runnable on its own, just no longer one of the frozen bench rows once the swap fires.
+
+Nothing built or scheduled by this amendment; the swap fires only once G3 has a spec, a
+signed hash, and its own established baseline. Full scoping detail:
+`docs/product/G2-SCOPING.md`.
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).

@@ -309,7 +309,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 
 23. **G3/G4 scoping** — unscoped, hamr's answers recorded 2026-08-31: G3 = a real planted-cheat
     bench row the close must catch; G4 = any halt→replan→green (not narrowly a money cap-halt).
-    Neither built or scheduled. Detail: `docs/product/G2-SCOPING.md` §"G3/G4 scoping".
+    Neither built or scheduled. Detail: `docs/product/G2-SCOPING.md` §"G3/G4 scoping". G3 swap
+    plan (hamr's "agreed, lower cap, plan a swap"): once G3 establishes, G2 leaves the bench,
+    $24 ceiling untouched — `docs/product/BENCH-PREREG.md` amendment, `docs/product/G2-SCOPING.md`
+    §"G3 swap plan".
 
 24. **Harness streamline (convergence-per-dollar levers)** — hamr's ruling 2026-08-31: next
     after the current release. Two levers, worked ONE AT A TIME (two changes landing in one pass
