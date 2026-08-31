@@ -311,6 +311,31 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     bench row the close must catch; G4 = any halt→replan→green (not narrowly a money cap-halt).
     Neither built or scheduled. Detail: `docs/product/G2-SCOPING.md` §"G3/G4 scoping".
 
+24. **Harness streamline (convergence-per-dollar levers)** — hamr's ruling 2026-08-31: next
+    after the current release. Two levers, worked ONE AT A TIME (two changes landing in one pass
+    make the resulting delta unattributable): (a) close-forbidden-patterns surfaced at draft time
+    (a validator/drafter register, like the no-shell law — a prompt register, never a runtime
+    regex) so a gate-red replan stops burning the run's remaining money; (b) bridge-reuse cost
+    lift — proven safe, never proven cheaper, needs an ON/OFF contrast. Validation protocol
+    pre-registered here before any number exists: a $0 archive replay first measures how many
+    dollars gate-red-driven replans actually burned across archived runs — if small, the lever is
+    dropped (no paid fire before the archive read); only then one live A/B at a frozen job, one
+    lever per pass, judged on cost-to-green and fix-loop turns reached; n=1 detects big dents
+    only — a small delta at n=1 is noise and must be reported as such. Neither built nor
+    scheduled beyond "next."
+
+25. **Priority order** (hamr, 2026-08-31): (1) harness streamline (item 24) → (2) export (the
+    product: spec+bridge+close+runner, relocatable — export is never eject, the arbiter
+    relocates, never disappears) → (3) reuse lift proof. G3/G4 (item 23) slot alongside as bench
+    work; the ceiling question stays parked.
+
+26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
+    hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
+    `docs/logs/FINDINGS.md`), and hitl is retired (v1.71; item 21 above). Dropped from tracking,
+    not scheduled, as of today — not a deletion of any closed prose, an appended closure only.
+    Softgreen (the judged floor) itself remains shipped and unaffected; only the doc-genre
+    roadmap item ends.
+
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on
 the build list), refuse-to-price preflight, memory/recall harness.
