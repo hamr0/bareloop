@@ -154,9 +154,12 @@ const FLAG_TIER_MODEL = DEFAULT_TIER_MODELS[/** @type {keyof typeof DEFAULT_TIER
 if (!FLAG_TIER_MODEL) { console.error(`unknown --model "${tierArg}" — one of: ${Object.keys(DEFAULT_TIER_MODELS).join(', ')}`); process.exit(2); }
 // --read-shim picks the READ SHIM's ARM (src/readshim.js, Phase 2 A0/A1/A2/A3). Runner
 // territory exactly like --model: the spec names no shim, so the signed hash is
-// unaffected, and the default is OFF — the flag stays OFF regardless of the Phase 2
-// outcome (the prereg's own "what this experiment does NOT claim"), so a default here
-// would flip a decision that is hamr's alone.
+// unaffected. Phase 2 itself never flipped this default — its own "what this
+// experiment does NOT claim" — leaving the flip as a decision only hamr could make.
+// hamr made it explicitly on 2026-08-31: default becomes A1 cap for everyday runs;
+// `--read-shim off` restores A0 (bench rows pin `off` explicitly, handled separately).
+// This is the operator's flip, not the experiment's — the Phase 2 no-self-flip promise
+// was honored.
 //
 // The arm NAMES are the operator's spelling; `readShimArm` is the one resolver, and it
 // THROWS on anything it does not recognise (BA-4 param-guard class) before a token is
@@ -172,15 +175,16 @@ if (shimArg !== null && !Object.prototype.hasOwnProperty.call(READ_SHIM_ARM_NAME
   console.error(`unknown --read-shim "${shimArg}" — one of: ${Object.keys(READ_SHIM_ARM_NAMES).join(', ')}`);
   process.exit(2);
 }
-const READ_SHIM = shimArg === null ? false : READ_SHIM_ARM_NAMES[shimArg];
+const READ_SHIM = shimArg === null ? 'cap' : READ_SHIM_ARM_NAMES[shimArg];
 // resolve it HERE, at argv, not at runJob: the throw must land before the approval
 // gate, the patient reset and the provider, not three hundred lines and one API key later.
 const READ_SHIM_LEVERS = readShimArm(READ_SHIM);
 const READ_SHIM_LABEL = shimArg === null
-  ? 'read shim OFF (A0 — default; the flag is not flipped by any experiment)'
+  ? 'read shim CAP (A1 — default per hamr 2026-08-31; pass --read-shim off for A0, as bench rows do)'
   : `read shim ${shimArg} -> ${JSON.stringify(READ_SHIM)} (cap ${READ_SHIM_LEVERS.cap} · pointer ${READ_SHIM_LEVERS.pointer} · diff ${READ_SHIM_LEVERS.diff} · G1 ${READ_SHIM_LEVERS.g1})`;
 /** every re-invocation this script PRINTS carries the arm. A resume that drops it runs
- * A0 while being filed under the arm it was launched with — a silently mislabelled row
+ * the default (A1 cap since 2026-08-31) while being filed under the arm it was launched
+ * with — a silently mislabelled row
  * is the one failure the arm resolver's throw cannot catch. */
 const SHIM_TAIL = shimArg === null ? '' : ` --read-shim ${shimArg}`;
 
