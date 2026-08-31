@@ -24,7 +24,7 @@ export { makeSpine } from './spine.js';
 // name. Documented-but-unexported is a false contract; the additions are additive.
 export { ralph, runClose, runStages, CLOSE_FAULTS } from './ralph.js';
 export { globToPrefix, scanSecrets } from './validate.js';
-export { validateJob, jobSpecHash, checkApproval, checkMenu, CLOSE_TYPES, CLASS_BY_CLOSE, GOLD_COMPARE, CADENCE_UNITS, PROVIDERS, CONDITION_KEYS, TOOL_MENU, LOCKED_TOOLS, STORE_VERBS, VERDICT_TYPES, LOCKED_VERDICTS } from './job.js';
+export { validateJob, jobSpecHash, checkApproval, checkMenu, resolveWorkerModel, CLOSE_TYPES, CLASS_BY_CLOSE, GOLD_COMPARE, CADENCE_UNITS, PROVIDERS, CONDITION_KEYS, TOOL_MENU, LOCKED_TOOLS, STORE_VERBS, VERDICT_TYPES, LOCKED_VERDICTS } from './job.js';
 // Layer 2: the plan-v1 validator — the agent-authored plan doc's gate; the
 // two-doc split's third validator never happens (plan-v1 gates the PLAN, the
 // job spec stays the arbiter's only home).

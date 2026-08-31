@@ -7,6 +7,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`resolveWorkerModel` is now exported from the package root.** `bareloop.context.md`
+  names it as the spec-model resolution mechanism, but v0.17.0 shipped it reachable only
+  in-repo (`src/job.js`) — the exports map admits only `.`, so an adopter could not import
+  it. Documented-but-unexported is a false contract (same rule that exported `checkMenu`);
+  caught by validating the installed 0.17.0 artifact from the registry. Additive only.
+
 ## [0.17.0] — 2026-08-31
 
 ### Added
