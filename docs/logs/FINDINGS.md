@@ -9974,3 +9974,36 @@ exact (type+path+args), so a ranged/partial re-read of the same file counts as a
 — 56% is a LOWER bound on read redundancy, not an upper one.
 
 Nothing built by this entry; item 24 closes as a BUILD target (see PRD).
+
+**2026-09-01 — addendum: hamr's question answered from this entry's own numbers; two orders
+recorded, neither built here.** hamr asked why the worker reads that much and whether tool
+execution carries a saving. Answer, grounded in the measured record: the worker has no
+memory between rounds beyond its own transcript, so every round re-derives what to look at;
+measured habits are re-reading a just-edited file, re-grepping to reconfirm a symbol, and
+re-reading to re-orient after a check result. Tool results are ~80% of admitted context and
+every admitted token is re-read ~10.5x over a run's life ("Where the money goes," memory);
+this entry's own call-level number is the median 56% exact-repeat share among read-class
+calls (155/217 runs with gate-audit; see above) — a lower bound, ranged re-reads of the same
+file count as distinct keys. There IS a bounded dollar saving, not an unbounded one:
+read-hygiene levers touch cache-writes (~41% of spend) and cannot touch cache-reads (~35%,
+the replayed transcript) — measured ceiling ≈10% of total spend; `shell_read` costs ~5.4x per
+call what `ctx_get` costs, ~48% of reads are re-reads of unchanged content. The lever is
+already built and flipped: read shim A1 (cap+pointer — a repeat of already-delivered content
+returns a pointer, a partial re-read returns the next unseen slice) has been the run-u default
+since `2811c6d` (2026-08-31); every run behind the 56% figure predates the flip (shim off), so
+56% is the BEFORE picture, not a live measurement of the fix. Decision: build nothing further
+here — measure A1's dollar effect on upcoming shim-on runs (MEMORY-CACHE already reports exact
+bytes withheld per armed run) and re-read the repeat-share on the next 10-20 shim-on runs
+against this 56% baseline. Tool EXECUTION time is not itself a money cost (wall is a separate
+budget from the token meter); the money is the tool RESULT re-admitted to context on re-read.
+Explicitly ruled out as a lever: steering the worker to read less by instruction — memory's
+own finding is that a retrieval-verb steer can route the worker into stale reads of files it
+just edited; the shim serves from disk with an in-band notice instead of narrowing what the
+worker is told to do.
+
+Two orders recorded alongside, neither built by this entry: (1) "add tokens" — a per-run
+token-total line in the run tail (this entry above already flagged the gap: job-end carries
+dollars only, tokens exist only per round record); tracked on branch `feat/tokens-tail`, in
+progress, ships in the next release. (2) "plant it" — G3's planted diff gets authored on a
+fresh `pulselog-u` copy with a $0 unwinnable proof, shown to hamr before the row is frozen;
+scoping lives at `docs/product/G3-SCOPING.md`.

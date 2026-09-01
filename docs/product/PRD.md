@@ -345,6 +345,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     only, arbiter-adjacent. Priority order (item 25) is unchanged: G3 → export → reuse-lift
     proof. Full numbers: `docs/logs/FINDINGS.md` F124.
 
+    **2026-09-01** — hamr's "why does it read that much, is there a saving" answered from
+    F124's own numbers (56% exact-repeat reads, shim A1 already the fix, measured ceiling
+    ~10% of spend); tokens-tail and G3-plant orders recorded. Full text:
+    `docs/logs/FINDINGS.md` F124 addendum.
+
 25. **Priority order** (hamr, 2026-08-31): (1) harness streamline (item 24) → (2) export (the
     product: spec+bridge+close+runner, relocatable — export is never eject, the arbiter
     relocates, never disappears) → (3) reuse lift proof. G3/G4 (item 23) slot alongside as bench
