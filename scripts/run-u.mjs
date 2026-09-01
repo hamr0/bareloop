@@ -62,6 +62,18 @@ const JOBS = {
     spine: 'pulselog-u-bareloop',
     seed: '92d71a7c1253f8f2430e2d308ecfef01c826b5c2',
   },
+  // Bench row G3 (the NEGATIVE row) — the planted contract contradiction
+  // (docs/product/G3-SCOPING.md). A copy of the pulselog-u patient (patients are
+  // always copies) with one extra commit: two test/** files that pin
+  // assembleEmail's subject to two different strings, unsatisfiable together
+  // inside writeScope: src/**. Not frozen, not signed, no run — BUILT ON BRANCH
+  // per hamr's 2026-09-01 order; he reviews the diff before this row ever fires.
+  'pulselog-g3': {
+    spec: 'pulselog-g3-types.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/pulselog-g3',
+    spine: 'pulselog-g3-bareloop',
+    seed: '54d18935dd310ec1986bdc2b37cebbc6999efc10',
+  },
   // the first AUTHORED close (closeDecl, not a hand-written close script) — the
   // sign-and-run e2e: same patient/seed as 'pulselog-types', close declared by the
   // authoring interview (run msmsy579) instead of by hand.

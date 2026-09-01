@@ -5,6 +5,18 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **G3 bench row (the structural negative) built on branch.** `scripts/u-pulselog-close.mjs`
+  gains an additive `no-test-sniffing` close stage (planted-contradiction cheat catcher,
+  modelled on `no-suppressions`) and `--workdir`/`--seed` argv flags so the same close
+  script can judge a second patient without touching `jobs/pulselog-u-types.json`'s
+  behaviour or signed hash. New spec `jobs/pulselog-g3-types.json`, registered in
+  `scripts/run-u.mjs`. Not frozen, not signed, no run — see
+  `docs/product/G3-SCOPING.md`'s "PLANTED" addendum.
+
 ## [0.18.0] — 2026-08-31
 
 ### Added

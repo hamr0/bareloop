@@ -119,16 +119,30 @@ test('the one-population check FAILS on the pre-split close source (the defect w
 
 // ── 2. spec ↔ script agreement, by spawning the real close ──────────────────
 
+/** true iff `needle` appears in `haystack`, in order, not necessarily contiguous —
+ * a spec may grade a PREFIX/SUBSET of a shared script's known stages (G3 reuses
+ * u-pulselog-close.mjs verbatim plus one extra stage; pulselog-u-types.json's own
+ * 6-stage close must still be exactly declared, in order, among the 7 the script
+ * now knows about). Every stage the spec names must still be one the script knows,
+ * in the spec's own order — an unknown or reordered stage still fails this. */
+const isOrderedSubsequence = (/** @type {string[]} */ needle, /** @type {string[]} */ haystack) => {
+  let i = 0;
+  for (const h of haystack) { if (needle[i] === h) i++; }
+  return i === needle.length;
+};
+
 for (const { spec, job, name, script } of PAIRS) {
-  test(`${name} declares exactly ${spec}'s stage list, in order`, () => {
+  test(`${name} declares ${spec}'s stage list, in order, among what the script knows`, () => {
     // an unknown stage is an INSTRUMENT STOP (97), never a verdict — spawnSync,
     // because a non-zero exit is the expected result here, not a harness error
     const r = spawnSync('node', [script, '__not-a-stage__'], { encoding: 'utf8' });
     assert.equal(r.status, 97, `an unknown stage is an instrument stop, not a judgment: ${r.stdout}${r.stderr}`);
     const m = /the close is: (.+)$/m.exec(r.stdout);
     assert.ok(m, `the unknown-stage instrument stop names the close: got ${JSON.stringify(r.stdout)}`);
-    assert.deepEqual(m[1].trim().split(', '), job.close.map((s) => s.name),
-      'the script and the signed spec must name the same stages in the same order — a stage the spec runs that the script does not know is an instrument stop mid-close');
+    const scriptStages = m[1].trim().split(', ');
+    const specStages = job.close.map((s) => s.name);
+    assert.ok(isOrderedSubsequence(specStages, scriptStages),
+      `the spec's stages must all be known to the script, in the spec's own order — spec wants [${specStages}], script knows [${scriptStages}]`);
   });
 }
 
