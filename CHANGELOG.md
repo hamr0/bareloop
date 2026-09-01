@@ -5,6 +5,21 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **`tokens` tail line in `scripts/run-u.mjs`'s run readout** (hamr's order,
+  2026-09-01). `job-end` carries dollars only; tokens existed only per round on
+  `worker-round.usage`/`judge-round.usage`, invisible in the printed tail. New
+  `tokensLine`/`fmtTokens` exports in `scripts/u-readout.mjs` sum `usage`
+  (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`) over every
+  `worker-round` and `judge-round` record of the CURRENT leg's own spine —
+  `worker-result` (an attempt-level echo of round sums) is deliberately excluded. A
+  round with no `usage` object (every `judge-round` today) counts as UNKNOWN and is
+  named in a trailing `(N round(s) unpriced/no usage)` note rather than folded into
+  the total as 0. Prints right after the `rounds` line. 5 new tests.
+
 ## [0.18.0] — 2026-08-31
 
 ### Added

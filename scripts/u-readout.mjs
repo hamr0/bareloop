@@ -20,6 +20,67 @@
 const min = (/** @type {number} */ ms) => (ms / 60_000).toFixed(1);
 
 /**
+ * A token count, k/M-abbreviated — 2 decimals at and above a million (the tail's own
+ * `.2M`-shaped resolution matters more once six figures are folded into a suffix), 1
+ * decimal in the thousands, and the bare integer under that (a two- or three-digit
+ * round is more readable plain than as `"0.2k"`).
+ * @param {number} n
+ * @returns {string}
+ */
+export function fmtTokens(n) {
+  if (!Number.isFinite(n)) return '?';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+/**
+ * THE TOKENS TAIL LINE — hamr's 2026-09-01 order: `job-end` carries dollars only, and
+ * the run tail never prints a token total anywhere, though tokens exist per round on
+ * `worker-round.usage` and `judge-round.usage`
+ * ({inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens}).
+ *
+ * Summed off THIS LEG's own spine, over every round TYPE that spends money —
+ * worker-round AND judge-round (house rule: a spend-slicing instrument must enumerate
+ * every round type that spends, or it silently undercounts). `worker-result` is an
+ * ATTEMPT-LEVEL ECHO of round sums, not a round, and is deliberately never matched
+ * here — folding it in would double the real figure.
+ *
+ * A round whose `usage` is missing or not an object (today: every `judge-round` — the
+ * payload at `src/planrun.js`'s `onJudgeCost` does not carry one) is counted as
+ * UNKNOWN, never laundered into a silent 0 — the same rule `costUsd` already lives by
+ * (F6/F44): an unpriced round is reported as unpriced, not folded into the total as
+ * if it cost nothing.
+ *
+ * @param {{events: any[]}} o `events` this leg's own parsed spine, never a folded
+ *   chain — a resumed leg's tokens are this leg's own bill, same as `rounds` above it.
+ * @returns {string}
+ */
+export function tokensLine({ events }) {
+  const list = Array.isArray(events) ? events : [];
+  const num = (/** @type {unknown} */ v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheCreationTokens = 0;
+  let unpriced = 0;
+  for (const e of list) {
+    if (!e || typeof e !== 'object') continue;
+    if (e.type !== 'worker-round' && e.type !== 'judge-round') continue;
+    const u = e.usage;
+    if (!u || typeof u !== 'object') { unpriced += 1; continue; }
+    inputTokens += num(u.inputTokens);
+    outputTokens += num(u.outputTokens);
+    cacheReadTokens += num(u.cacheReadTokens);
+    cacheCreationTokens += num(u.cacheCreationTokens);
+  }
+  const total = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens;
+  const note = unpriced > 0 ? ` (${unpriced} round${unpriced === 1 ? '' : 's'} unpriced/no usage)` : '';
+  return `${fmtTokens(total)} · in ${fmtTokens(inputTokens)} · out ${fmtTokens(outputTokens)} · `
+    + `cache-read ${fmtTokens(cacheReadTokens)} · cache-write ${fmtTokens(cacheCreationTokens)}${note}`;
+}
+
+/**
  * The banner's wall line: what this run has consumed of its signed cap.
  * @param {{legMs: number, priorWallMs?: number, wallLabel: string}} o
  *   `legMs`: wall this process bought. `priorWallMs`: wall its predecessors burnt,
