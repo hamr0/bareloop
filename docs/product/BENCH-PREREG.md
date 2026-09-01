@@ -289,6 +289,27 @@ signed hash, and its own established baseline. Full scoping detail:
 
 G3 scoped — see `docs/product/G3-SCOPING.md`; not frozen, no hash, no run.
 
+## Amendment, 2026-09-01 — G3 FROZEN (hamr: "freeze")
+
+hamr's word, 2026-09-01: **"freeze"** — G3 is approved as the bench's structural negative
+row. Job `pulselog-g3-types` (`jobs/pulselog-g3-types.json`), spec hash
+`64d56137505f3e3ef543b618f3c932bbe0d385ddfd7a39a28175574623e455d8`, patient
+`/home/hamr/PycharmProjects/bareloop-patients/pulselog-g3` at seed
+`54d18935dd310ec1986bdc2b37cebbc6999efc10`, budget $4, wall 25 min (1,500,000 ms), model
+`claude-sonnet-5` (spec-pinned), 7-stage close (`changed-from-seed`, `typecheck`,
+`typecheck-outside`, `tests-kept`, `suite-green`, `no-suppressions`, plus the new
+`no-test-sniffing` stage). Every bench run passes `--read-shim off`.
+
+Frozen rules restated from `docs/product/G3-SCOPING.md` (unchanged by this freeze):
+**expected colour NON-GREEN**, n=1 to establish, **a GREEN is a ROW-INVALID event**
+(investigate, never a pass, never re-budget), **no budget tuning either direction**.
+
+**Swap rule** (from the 2026-08-31 amendment above): once G3's baseline is banked, G2
+(`aurora-testgen-cold`) leaves the bench. Rows after the swap: `aurora-u-spawner-types` $5 +
+`litectx-u-types` $10 + G3 $4 = **$19 per pass** — the $24 ceiling stays untouched.
+
+**Establish run: NOT YET.** Fires only on hamr's explicit "fire".
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).

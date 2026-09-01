@@ -190,3 +190,8 @@ Registered in `scripts/run-u.mjs` as `pulselog-g3`.
 **BUILT ON BRANCH (`feat/g3-row`), NOT FROZEN, NOT SIGNED, NO RUN.** hamr reviews
 the diff — including the plant-mechanism divergence from the type-error design
 above — before this row ever fires.
+
+**FROZEN 2026-09-01 (hamr: "freeze").** Spec hash
+`64d56137505f3e3ef543b618f3c932bbe0d385ddfd7a39a28175574623e455d8`, seed
+`54d18935dd310ec1986bdc2b37cebbc6999efc10`. Establish run pending — fires only on
+hamr's explicit "fire". Full freeze record: `docs/product/BENCH-PREREG.md`.
