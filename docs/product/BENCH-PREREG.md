@@ -285,6 +285,10 @@ Nothing built or scheduled by this amendment; the swap fires only once G3 has a 
 signed hash, and its own established baseline. Full scoping detail:
 `docs/product/G2-SCOPING.md`.
 
+## Amendment, 2026-09-01 — G3 scoped
+
+G3 scoped — see `docs/product/G3-SCOPING.md`; not frozen, no hash, no run.
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).
