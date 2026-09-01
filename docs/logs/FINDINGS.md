@@ -9884,3 +9884,93 @@ work in that span — so 3.3% is itself an upper-leaning estimate, which only st
 drop.
 
 Nothing built by this entry.
+
+## F124 — $0 deep archive read closes item 24's "harness streamline" line as a BUILD target:
+money dies at step execution, not the harness; ranked levers, one already flipped
+
+**Trigger.** hamr's ask ("I suspect the plan might be too long/generous; agents use whatever
+budget is given") plus item 24's three open questions: where does money die, plan phase vs
+fix loop, and how do rounds/repeats spend.
+
+**Method.** Every archived spine under `../bareloop-patients/*/`, excluding `*-gate-audit`,
+close/check logs, and `l2clip*` (clipipe segmented out, a distinct provider population, F48).
+Kept runs whose `job-start.provider` is `anthropic-api` or unset: 217 API runs (209 fresh, 8
+resumed legs). Spend = sum of `worker-round.costUsd` (the only per-round money record;
+`worker-result` echoes attempt-level sums of `worker-round` and are excluded per house rule),
+falling back to `job-end.spentUsd` only for legacy spines with no round records (spot-verified
+honest, e.g. `testgen-bat-B1-mrnvqusi` at $0.0058). Phases read from `worker-round.phase`
+(scout / plan|draft|replan / `step:<id>` / fix). Step allocation from
+`plan-accepted.plan.steps[].rounds`; usage = count of `step:<id>` rounds per attempt window.
+Repeat-read share from `<run>-gate-audit.jsonl` (`phase:"gate"`, action type
+read/grep/recall/get, key = type+path+args; 155 of 217 runs carry one). Script kept in the
+session scratchpad; the method above is sufficient to reproduce.
+
+**Parkinson's law, money — REFUTED for greens.** 38 fresh greens, median spend/budget 0.32;
+only 5.3% (2/38) used >80% of budget; 84.2% used <50%. Consistent within fixed-budget
+same-job cohorts: aurora-u-spawner-types @$5, 11 greens, median 0.40 (max 0.49);
+litectx-u-types @$10, 5 greens, median 0.57 (max 0.72); mailproof-fix @$3, 10 greens, median
+0.05. Matches doctrine — the worker is structurally blind to money; only the planner sees
+budget materials at draft.
+
+**Parkinson's law, rounds — mild, not actionable.** Planner allocation median 22 rounds/step
+(max 40). Of 190 step allocations, median used/allocated ratio 0.81; 42.1% of step attempts
+ran to ≥100% of their allocation, 38.9% finished under 50%. Step attempts that HIT their
+allocation ended green 62 / non-green 43 (59.0% green); attempts that finished UNDER
+allocation ended green 49 / non-green 16 (75.4% green). Hitting the allowance is a mild
+negative signal, not proof of waste — most of those steps needed the rounds they used.
+Allocation sizing is arbiter-adjacent; no change proposed.
+
+**Spend by outcome (all 217 runs, $313.48 total).** step-red 37.5% ($117.70, n=86, median
+spend/budget 0.54) — but $73 of that is legacy non-plan-flow battery runs (aurora-testgen
+July n=43 $40.74; l2poc-baseline $15.93; testgen-probe $11.34; mailproof-fix legacy $3.92);
+plan-flow step-red alone is n=19, $44.39, dying at median 43% of budget and median 82 rounds
+(bareagent-u-types $18.56; litectx-u-types $11.91; l2accept $9.70; pulselog-author $3.40;
+baremobile $0.83). green 26.5% ($83.01, n=43, spend/budget ratio 0.25). escalated 9.7%
+($30.40, n=10, ratio 0.75) + wall-halt 6.7% ($20.98) + cap-halt 6.4% ($20.19, ratio 1.01) =
+22.8% of spend in halts. provider-red 9.2% ($28.89, n=51). Converging-kill sizing is
+instrument-blind for older runs: close-trend records exist only since F120 (2026-08-31) — 11
+halts / $34.52 carry no trend record at all (2 converging, $8.01; 1 unknown, $8.05); future
+runs carry it.
+
+**Phase split (80 plan-flow runs).** steps 76.5%, fix-loop 11.5%, scout 8.8%,
+plan/draft/replan 1.9%, judge ~0. Greens (n=26) split steps 79.9 / fix 11.3 / scout 7.6 /
+plan 1.3. Plan drafting is nearly free — "the plan is too long" costs nothing at draft time;
+execution is where the money goes. Scout: 73 runs, median $0.21/run, max $0.84, total $19.81,
+median 10.8% of a run — the one fixed overhead in the harness; its value is unmeasured (no
+scout-off arm exists in the archive). Cost-to-green by step count is job-confounded (1-step
+greens averaging $2.00/61 rounds are almost all aurora-u-spawner; 6-step averaging $6.46/155
+rounds are almost all l2accept @$8 budget) — within one job the signal is noisy at these n:
+aurora-u-spawner-types 1-step n=17 47.1% green median $1.77 | 2-step n=3 66.7% $1.86 | 3-step
+n=2 50% $2.21; litectx-u-types buckets carry n≤4 each. Stated as underpowered, no shape-cost
+signal claimed.
+
+**Rounds/tokens/repeats.** Greens: median 47 rounds, median ~2.3M tokens/run
+(in+out+cacheRead+cacheWrite), median 1 fix-loop iteration. Non-green median 24 rounds.
+Token MIX across all runs: cache-read 90.0%, cache-write 8.5%, output 1.4%, fresh input ~0% —
+tokens mislead on where the dollars go; the DOLLAR split stands as previously measured (write
+~41% / read ~35% / output ~24%). Repeat reads: median 56% of read-class tool calls (155 runs
+with gate-audit; greens 52%, non-green 59%) are exact repeats (type+path+args) — the largest
+measured waste in the archive. Nearly all archived runs were shim-off; the read shim A1
+default (run-u since 2811c6d) is the built lever for exactly this waste and has not yet had
+its dollar effect measured on live runs.
+
+No per-run TOKEN TOTAL is reported anywhere in the harness (job-end carries dollars only;
+run-u's tail prints spent/wall/rounds; tokens exist only per round record) — a readout
+nicety, hamr's call, not built here.
+
+**Verdict.** Streamline-the-harness as a BUILD line closes: harness overheads are small
+(draft 1.9%, scout 8.8% with unmeasured value); money goes to step execution and to runs that
+die. Ranked levers: (1) repeat reads (56%) — lever already built and flipped (read shim A1);
+next step is to MEASURE its dollar effect on upcoming runs, nothing more to build; (2) dying
+runs (plan-flow step-red at median 43% of budget, plus 22.8% of all spend in halts) — this is
+G4's territory (halt→replan→green), not a harness-streamline build; (3) scout ON/OFF — a
+small paid test, ceiling ~11% of a run, parked until after G3; (4) plan drafting and
+money-Parkinson — nothing to do; rounds-allocation is a mild signal only, arbiter-adjacent, no
+change proposed. Priority order (item 25) proceeds unchanged: G3 → export → reuse-lift proof.
+
+**Anti-gloss.** Step-count/cost-to-green is job-confounded and underpowered at these n;
+converging-kill share is instrument-blind before F120 (2026-08-31); the repeat-read key is
+exact (type+path+args), so a ranged/partial re-read of the same file counts as a distinct key
+— 56% is a LOWER bound on read redundancy, not an upper one.
+
+Nothing built by this entry; item 24 closes as a BUILD target (see PRD).

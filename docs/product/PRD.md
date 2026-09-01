@@ -333,6 +333,18 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     already-minor read-hygiene lever — dropped per the pre-registered rule, not built. Lever
     (b) (bridge-reuse cost lift, ON/OFF contrast) stays open, next streamline candidate.
 
+    **2026-09-01 — item 24 CLOSES as a BUILD target** (F124): a deeper $0 archive read (217
+    API runs, $313.48) found harness overhead small (draft 1.9%, scout 8.8% of plan-flow
+    spend) and money dying at step execution and in halted runs instead. Ranked levers going
+    forward, in order: (1) repeat reads (56% of read-class calls, the largest measured waste)
+    — lever already built and flipped (read shim A1 default); only measurement remains, no
+    further build; (2) dying runs (plan-flow step-red at median 43% of budget; halts 22.8% of
+    all spend) — routed to item 23's G4 (halt→replan→green), not a streamline build; (3) scout
+    ON/OFF cost contrast — small paid test, ~11% ceiling, parked until after G3; (4) plan
+    drafting cost and money-Parkinson — no action; round-allocation Parkinson is a mild signal
+    only, arbiter-adjacent. Priority order (item 25) is unchanged: G3 → export → reuse-lift
+    proof. Full numbers: `docs/logs/FINDINGS.md` F124.
+
 25. **Priority order** (hamr, 2026-08-31): (1) harness streamline (item 24) → (2) export (the
     product: spec+bridge+close+runner, relocatable — export is never eject, the arbiter
     relocates, never disappears) → (3) reuse lift proof. G3/G4 (item 23) slot alongside as bench
