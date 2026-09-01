@@ -9840,3 +9840,47 @@ reclassification half is arbiter territory — the trigger firing authorizes bri
 to hamr, not silently landing it.
 
 Nothing built by this entry. Full ruling text: `docs/product/G2-SCOPING.md`.
+
+## F123 — PRD item 24 lever (a) DROPPED: gate-red recovery is ~3% of spend (~6% on testgen),
+below the already-minor read-hygiene lever, no evidence the register changes behaviour
+
+**The $0 archive replay pre-registered as item 24's premise test for lever (a)
+("close-forbidden-patterns surfaced at draft time").** Scanned every archived spine under
+`../bareloop-patients/*/` (`*.jsonl`, excluding `*-gate-audit`, close/check logs, and
+`l2clip*` — clipipe is a distinct provider population and must not pool, F48). Kept runs
+whose `job-start.provider` is `anthropic-api` (or unset): 217 runs. A "gate-red event" = a
+`close-verdict`/`outer-close` record with verdict needs_revision/red whose `gap` matches
+`/gate-red|forbidden pattern/i` (`check-run` records were excluded as the gap-less twins of
+close-verdict — including them ate the attempt window and zeroed the producing column on the
+first pass; corrected before reading). RECOVERY cost = every priced `*round` record's
+`costUsd` from a gate-red verdict until the next verdict that is not a gate-red (or run end).
+PRODUCING cost = the priced rounds of the attempt that ended in the gate-red (an upper bound
+— that attempt also did real work). Denominator = each run's own total priced-round spend.
+Script kept in the session scratchpad (not shipped); the method above is sufficient to
+reproduce.
+
+**Numbers.** Total priced spend $313.48 across 217 API runs. 13 runs (6.0%) had ≥1 gate-red;
+22 events. Recovery cost $10.25 = 3.3% of all spend. Producing-attempt upper bound $17.47 =
+5.6%. Genre split: testgen family (aurora-testgen, -cold, -l2accept; 101 runs, $129.41) 17
+events, recovery $8.19 = 6.3%; all other jobs (116 runs, $184.07) 5 events, recovery $2.05 =
+1.1%. Top rows by recovery: testgen-bat-B5-mrnwm5o8 $2.50; u-mtgz96jz $1.90; u-msoaovx9
+(pulselog-author-types) $1.86; testgen-bat-B1-mrnwm5o8 $1.48; l2accept-L3-mrvyexy4 $1.16 (3
+events).
+
+**Read.** The lever's ceiling is ~3% of spend overall (~6% on the testgen genre) — below the
+read-hygiene lever (~10%) already judged minor. Mechanism doubt on top: the goal text already
+names the forbidden patterns and the worker wrote `subprocess` anyway (u-mtgz96jz, in a
+conftest docstring/fake), so a louder draft-time register has no evidence of changing
+behaviour. Per the pre-registered rule ("if small, the lever is dropped"), lever (a) is
+DROPPED — not built. Honest nuance kept: on u-mtgz96jz the $1.90 recovery at the tail of an
+$8 cap was the difference between zero and one fix-loop turn — a budget-sizing fact (F121's
+cap-shaped negative), not a lever justification. Lever (b), bridge-reuse ON/OFF cost contrast,
+remains open and is the next streamline candidate; it needs a paid contrast, not an archive
+read.
+
+**Anti-gloss.** n is small for events (22) and concentrated in one genre; the recovery metric
+attributes ALL post-gate-red rounds to recovery even when the worker also did unrelated real
+work in that span — so 3.3% is itself an upper-leaning estimate, which only strengthens the
+drop.
+
+Nothing built by this entry.

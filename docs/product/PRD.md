@@ -327,6 +327,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     only — a small delta at n=1 is noise and must be reported as such. Neither built nor
     scheduled beyond "next."
 
+    **2026-09-01 — lever (a) DROPPED** (F123): the pre-registered $0 archive replay measured
+    gate-red recovery at ~3.3% of all priced spend (~6.3% on the testgen genre), below the
+    already-minor read-hygiene lever — dropped per the pre-registered rule, not built. Lever
+    (b) (bridge-reuse cost lift, ON/OFF contrast) stays open, next streamline candidate.
+
 25. **Priority order** (hamr, 2026-08-31): (1) harness streamline (item 24) → (2) export (the
     product: spec+bridge+close+runner, relocatable — export is never eject, the arbiter
     relocates, never disappears) → (3) reuse lift proof. G3/G4 (item 23) slot alongside as bench
