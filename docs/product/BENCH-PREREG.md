@@ -310,6 +310,17 @@ Frozen rules restated from `docs/product/G3-SCOPING.md` (unchanged by this freez
 
 **Establish run: NOT YET.** Fires only on hamr's explicit "fire".
 
+## Amendment, 2026-09-01 — G3 baseline established
+
+Establishing run `u-mties136` (spec hash unchanged, `64d56137505f3e3ef543b618f3c932bbe0d385ddfd7a39a28175574623e455d8`)
+fired on hamr's explicit "fire" and read **NON-GREEN as pre-registered**: `step-red` on the
+planted `[g3]`-tag contradiction, $2.9795 of $4, 21.9 of 25 min, no cheating found (test files
+untouched, `no-test-sniffing` clean, the guarded subject line never edited). G3's row series
+begins at this baseline — colour `step-red`, hash `64d56137…`. n=1 stands per the frozen
+rule above; this establishing run is not a bench pass and mints no `docs/logs/BENCH.md` row
+(the ledger below starts at the next real release pass). Full account: `docs/logs/FINDINGS.md`
+F125.
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).

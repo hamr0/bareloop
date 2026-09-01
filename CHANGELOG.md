@@ -14,8 +14,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
   modelled on `no-suppressions`) and `--workdir`/`--seed` argv flags so the same close
   script can judge a second patient without touching `jobs/pulselog-u-types.json`'s
   behaviour or signed hash. New spec `jobs/pulselog-g3-types.json`, registered in
-  `scripts/run-u.mjs`. Frozen 2026-09-01 (hamr: "freeze"); not yet signed, no run — see
-  `docs/product/G3-SCOPING.md` and the BENCH-PREREG freeze amendment.
+  `scripts/run-u.mjs`. Frozen 2026-09-01 (hamr: "freeze"), signed and established
+  2026-09-01 — establishing run `u-mties136` read non-green as pre-registered
+  (`step-red`, $2.98 of $4, 21.9 of 25 min) — see `docs/product/G3-SCOPING.md`, the
+  BENCH-PREREG freeze amendment, and FINDINGS F125.
 - **`tokens` tail line in `scripts/run-u.mjs`'s run readout** (hamr's order,
   2026-09-01). `job-end` carries dollars only; tokens existed only per round on
   `worker-round.usage`/`judge-round.usage`, invisible in the printed tail. New
