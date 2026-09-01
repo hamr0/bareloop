@@ -675,3 +675,33 @@ test('§tokens: the runner prints the tail line through THIS function, right aft
   const src = readFileSync(RUNNER, 'utf8');
   assert.match(src, /tokens {4}\$\{tokensLine\(/, 'the tail calls the shared helper');
 });
+
+// ── `plan` tail line pluralization — the readout printed `1 steps` for a genuinely
+// 1-step plan (grammar only, no misreading of the count itself). The line is an
+// inline top-level template literal in run-u.mjs (the script cannot be imported: it
+// is top-level and it spends money past the gate — same reason the tokens tests
+// above go through an extracted helper instead). So this checks the SOURCE carries
+// the correct singular/plural expression, and separately exercises that exact
+// expression (mirrored verbatim, not paraphrased) against real plan objects so the
+// grammar itself — not just its presence in source — is proven against a plan
+// shape, never a hardcoded budget/count.
+test('§plan: the runner\'s tail line pluralizes on the ACCEPTED plan\'s own step count', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(
+    src,
+    /plan {6}\$\{plan \? `\$\{plan\.steps\?\.length \?\? '\?'\} \$\{plan\.steps\?\.length === 1 \? 'step' : 'steps'\}` : 'none validated'\}/,
+    'the singular/plural ternary is wired into the tail line, not just a bare "steps" literal',
+  );
+});
+
+test('§plan: singular vs plural derived from a plan object, never hardcoded', () => {
+  // mirrors the exact expression asserted above — kept in sync by that source test,
+  // so a future edit that drifts the two apart fails there first.
+  const planLine = (plan) => (plan ? `${plan.steps?.length ?? '?'} ${plan.steps?.length === 1 ? 'step' : 'steps'}` : 'none validated');
+
+  assert.equal(planLine({ steps: [{ id: 'fix-strict-types' }] }), '1 step', 'a real 1-step plan (this is the G3 establish run\'s own shape) reads singular');
+  assert.equal(planLine({ steps: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }), '3 steps', 'a multi-step plan stays plural');
+  assert.equal(planLine({ steps: [] }), '0 steps', 'zero is grammatically plural, and stays that way');
+  assert.equal(planLine({ steps: undefined }), '? steps', 'an unreadable count falls back to "?" and stays plural, per spec');
+  assert.equal(planLine(null), 'none validated', 'no accepted plan at all is the unrelated branch, untouched by this fix');
+});

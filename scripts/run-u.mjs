@@ -1285,7 +1285,7 @@ console.log(`rounds    ${legRounds}`);
 // never the folded chain (see `tokensLine`'s doc for why worker-result is excluded).
 console.log(`tokens    ${tokensLine({ events })}`);
 console.log(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
-console.log(`plan      ${plan ? `${plan.steps?.length ?? '?'} steps` : 'none validated'}`);
+console.log(`plan      ${plan ? `${plan.steps?.length ?? '?'} ${plan.steps?.length === 1 ? 'step' : 'steps'}` : 'none validated'}`);
 console.log(`checks    ${events.filter((e) => e.type === 'check-run').length} runs · menu [${events.find((e) => e.type === 'check-menu')?.offered?.join(', ') ?? '-'}]`);
 // the close as JUDGED FIRST, then whether the fix loop had to run. Printing only
 // the last outer-close reads as "close red" next to "outcome green" — the record
