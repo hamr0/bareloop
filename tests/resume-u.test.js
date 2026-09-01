@@ -619,3 +619,59 @@ test('§F97 banner E2E: the REAL preview prints it for F97\'s own spine shape, a
   assert.match(ctl.out, /replans  2 already spent/, 'the ledger line still prints — that one is not the warning');
   assert.doesNotMatch(ctl.out, /SAME PLAN, NO REPLANS/, 'no banner: the plan finished, and the close fix loop writes without a replan');
 });
+
+// ── tokens tail line — hamr's 2026-09-01 order: `job-end` carries dollars only, and
+// the run tail (rounds/writes/plan lines) prints no token total anywhere, even though
+// tokens exist per round on `worker-round.usage` and `judge-round.usage`. One tail
+// line, summed off THIS LEG's own spine — never `worker-result`, which is an
+// attempt-level ECHO of round sums (house rule: enumerate every round type that
+// spends, and never fold an echo record into the sum).
+import { tokensLine, fmtTokens } from '../scripts/u-readout.mjs';
+
+test('§tokens: sums usage across BOTH worker-round and judge-round', () => {
+  const events = [
+    { type: 'worker-round', usage: { inputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheCreationTokens: 400 } },
+    { type: 'judge-round', usage: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 30, cacheCreationTokens: 40 } },
+  ];
+  const line = tokensLine({ events });
+  assert.match(line, /^1\.1k · in 110 · out 220 · cache-read 330 · cache-write 440$/,
+    'both round types contribute, and nothing is dropped');
+});
+
+test('§tokens: `worker-result` is EXCLUDED — it is an attempt-level echo of round sums, never a third addend', () => {
+  const events = [
+    { type: 'worker-round', usage: { inputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheCreationTokens: 400 } },
+    // an echo of the SAME round, at attempt granularity — summing it in would double count
+    { type: 'worker-result', usage: { inputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheCreationTokens: 400 } },
+  ];
+  const line = tokensLine({ events });
+  assert.match(line, /^1\.0k · in 100 · out 200 · cache-read 300 · cache-write 400$/,
+    'the echo never doubles the real round');
+});
+
+test('§tokens: a round with NO usage object is UNKNOWN, never laundered into a silent 0', () => {
+  const events = [
+    { type: 'worker-round', usage: { inputTokens: 100, outputTokens: 200, cacheReadTokens: 300, cacheCreationTokens: 400 } },
+    // judge-round today never carries `usage` at all (src/kinds.js onJudgeCost) — this
+    // is that real shape, not a manufactured one
+    { type: 'judge-round', costUsd: 0.002 },
+  ];
+  const line = tokensLine({ events });
+  assert.match(line, /^1\.0k · in 100 · out 200 · cache-read 300 · cache-write 400 \(1 round unpriced\/no usage\)$/,
+    'the unpriced round is COUNTED and named, not folded silently into the total as 0');
+});
+
+test('§tokens: formatter renders k/M with the precision the line prints', () => {
+  assert.equal(fmtTokens(0), '0');
+  assert.equal(fmtTokens(999), '999');
+  assert.equal(fmtTokens(1200), '1.2k');
+  assert.equal(fmtTokens(32_100), '32.1k');
+  assert.equal(fmtTokens(189_500), '189.5k');
+  assert.equal(fmtTokens(2_100_000), '2.10M');
+  assert.equal(fmtTokens(2_330_000), '2.33M');
+});
+
+test('§tokens: the runner prints the tail line through THIS function, right after `rounds`', () => {
+  const src = readFileSync(RUNNER, 'utf8');
+  assert.match(src, /tokens {4}\$\{tokensLine\(/, 'the tail calls the shared helper');
+});
