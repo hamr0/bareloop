@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.19.0] — 2026-09-02
 
 ### Added
 
@@ -28,6 +28,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
   round with no `usage` object (every `judge-round` today) counts as UNKNOWN and is
   named in a trailing `(N round(s) unpriced/no usage)` note rather than folded into
   the total as 0. Prints right after the `rounds` line. 5 new tests.
+
+### Fixed
+
+- **`scripts/run-u.mjs`'s run tail pluralizes `plan N step(s)`.** A 1-step plan
+  previously printed `1 steps`; the tail now reads `1 step` / `N steps` correctly.
 
 ## [0.18.0] — 2026-08-31
 
