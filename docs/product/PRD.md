@@ -313,7 +313,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     plan (hamr's "agreed, lower cap, plan a swap"): once G3 establishes, G2 leaves the bench,
     $24 ceiling untouched — `docs/product/BENCH-PREREG.md` amendment, `docs/product/G2-SCOPING.md`
     §"G3 swap plan". G3 itself scoped 2026-09-01, not frozen, no hash, no run:
-    `docs/product/G3-SCOPING.md`.
+    `docs/product/G3-SCOPING.md`. G3 frozen 2026-09-01 (hash 64d56137…), established
+    2026-09-01 — establish run `u-mties136` read non-green as pre-registered
+    (step-red, $2.98/$4), F125.
 
 24. **Harness streamline (convergence-per-dollar levers)** — hamr's ruling 2026-08-31: next
     after the current release. Two levers, worked ONE AT A TIME (two changes landing in one pass

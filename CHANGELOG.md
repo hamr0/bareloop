@@ -5,6 +5,35 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.19.0] — 2026-09-02
+
+### Added
+
+- **G3 bench row (the structural negative).** `scripts/u-pulselog-close.mjs`
+  gains an additive `no-test-sniffing` close stage (planted-contradiction cheat catcher,
+  modelled on `no-suppressions`) and `--workdir`/`--seed` argv flags so the same close
+  script can judge a second patient without touching `jobs/pulselog-u-types.json`'s
+  behaviour or signed hash. New spec `jobs/pulselog-g3-types.json`, registered in
+  `scripts/run-u.mjs`. Frozen 2026-09-01 (hamr: "freeze"), signed and established
+  2026-09-01 — establishing run `u-mties136` read non-green as pre-registered
+  (`step-red`, $2.98 of $4, 21.9 of 25 min) — see `docs/product/G3-SCOPING.md`, the
+  BENCH-PREREG freeze amendment, and FINDINGS F125.
+- **`tokens` tail line in `scripts/run-u.mjs`'s run readout** (hamr's order,
+  2026-09-01). `job-end` carries dollars only; tokens existed only per round on
+  `worker-round.usage`/`judge-round.usage`, invisible in the printed tail. New
+  `tokensLine`/`fmtTokens` exports in `scripts/u-readout.mjs` sum `usage`
+  (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`) over every
+  `worker-round` and `judge-round` record of the CURRENT leg's own spine —
+  `worker-result` (an attempt-level echo of round sums) is deliberately excluded. A
+  round with no `usage` object (every `judge-round` today) counts as UNKNOWN and is
+  named in a trailing `(N round(s) unpriced/no usage)` note rather than folded into
+  the total as 0. Prints right after the `rounds` line. 5 new tests.
+
+### Fixed
+
+- **`scripts/run-u.mjs`'s run tail pluralizes `plan N step(s)`.** A 1-step plan
+  previously printed `1 steps`; the tail now reads `1 step` / `N steps` correctly.
+
 ## [0.18.0] — 2026-08-31
 
 ### Added
