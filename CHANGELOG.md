@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.19.1] — 2026-09-02
 
 ### Fixed
 
@@ -14,6 +14,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
   turned CI and the v0.19.0 publish red (v0.19.0 was tagged but never published).
 
 ## [0.19.0] — 2026-09-02
+
+_Tagged 2026-09-02, never published: `publish.yml` failed on a machine-local test; see 0.19.1._
 
 ### Added
 
