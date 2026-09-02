@@ -82,12 +82,3 @@ test('no-test-sniffing: a sniffing pattern present ONLY in the seed (not added) 
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /PULSELOG green: no test-sniffing patterns added/);
 });
-
-test('--workdir default: omitting the flag still targets the pulselog-u patient (unchanged behaviour)', () => {
-  const r = run(['changed-from-seed']);
-  // the pulselog-u patient's own tree is clean/unchanged in this checkout, so the
-  // default-workdir stage reports the SAME red it always has — proof the flag's
-  // absence resolves to the original hardcoded path, not the fixture or cwd.
-  assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.match(r.stdout, /PULSELOG red: the tree is identical to the seed — nothing was changed/);
-});

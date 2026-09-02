@@ -5,6 +5,14 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- `tests/no-test-sniffing.test.js` no longer runs the close against the machine-local
+  `pulselog-u` patient — that test could only pass on the maintainer's machine and
+  turned CI and the v0.19.0 publish red (v0.19.0 was tagged but never published).
+
 ## [0.19.0] — 2026-09-02
 
 ### Added
