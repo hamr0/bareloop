@@ -348,7 +348,9 @@ rail: `docs/product/G4-SCOPING.md`; principle: PRD v1.83.
 **First deliberate G4 test pass, 2026-09-05 (hamr's fire, not a release pass):** `u-mtotxw1z`
 at `42a7c427…`, green, $6.1772 (`spendComplete:true`), 14.5 min, 1 step, no replan → **G4
 DID NOT FIRE** (cold green). Per the rule: not a pass, not a fail, no re-fire. Logged in
-`docs/logs/BENCH.md`.
+`docs/logs/BENCH.md`. **Counting rule (hamr, same day):** G4 rides the bench's own litectx
+passes only; frozen-hash count replanned/runs = 0 / 2; tripwire at 0 / 4 → scope the planted
+fixable-dead-end row instead (`docs/product/G4-SCOPING.md` §Counting rule).
 
 ## Results ledger — FROZEN facts
 

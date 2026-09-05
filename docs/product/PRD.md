@@ -326,8 +326,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     green instance at the row's PREVIOUS hash — corrected same day), $0 marginal, no fifth
     row, no hash change; a planted-fixable-dead-end row kept as the second act. **hamr: "A"
     (2026-09-05)** — BENCH-PREREG amendment signed. First deliberate test pass `u-mtotxw1z`:
-    cold green $6.18, G4 DID NOT FIRE (0 of 2 at the frozen hash). Rides future litectx
-    passes; the candidate rail stays named, not built (v1.83).
+    cold green $6.18, G4 DID NOT FIRE (0 of 2 at the frozen hash). **Counting rule (hamr):
+    ride the bench's own litectx passes, count replanned/runs, tripwire at 0 / 4 → scope
+    the planted row.** Candidate rail stays named, not built (v1.83). Next: export (item 25
+    priority 2).
 
 24. ~~**Harness streamline (convergence-per-dollar levers)**~~ — **CLOSED 2026-09-05** (lever (a) dropped F123, build line closed F124, lever (3) scout contrast measured F126; lever (b) reuse-lift lives on under item 25 priority 3). Original text follows. hamr's ruling 2026-08-31: next
     after the current release. Two levers, worked ONE AT A TIME (two changes landing in one pass

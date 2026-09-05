@@ -131,5 +131,14 @@ Tally at the frozen hash: 2 runs, 0 replans. The 6/14 archive rate spans older h
 July-era plans; whether the model-pinned condition replans as often is now an open
 question the next passes answer for free.
 
-**Status line: SIGNED as a reading (hamr "A"). First instance `u-mtfywb55` (previous hash).
-At the frozen hash: 0 of 2 fired. No build.**
+## Counting rule (hamr, 2026-09-05: "A, count the free passes")
+
+G4 is read off every litectx pass hamr fires for the bench anyway — no G4-only fires. The
+count at the frozen hash `42a7c427…` is kept here and in BENCH.md: **replanned / runs**.
+Today: 0 / 2. **Tripwire:** three consecutive cold passes at the frozen hash (i.e. the
+count reaching 0 / 4 with no replan) means the habit did not survive the model-pin
+condition; then G4's second act — the planted, hand-provable fixable dead end — gets
+scoped as its own row. Until the tripwire, nothing is built and nothing is fired for G4.
+
+**Status line: SIGNED as a reading (hamr "A"). Frozen-hash count 0 / 2. Tripwire at 0 / 4.
+No build, no G4-only fire.**
