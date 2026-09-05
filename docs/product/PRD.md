@@ -545,3 +545,38 @@ full suite 2176/2176, both production job hashes (`aurora-u-spawner-types.json`,
 `litectx-u-types.json`) independently re-computed and unchanged — the default is behaviour- and
 hash-identical for every close that predates this field. Commit `5b43d68`.
 
+
+### The rails-versus-freedom optimization principle (v1.83 — 2026-09-05)
+
+hamr's ruling, recorded as doctrine for every future "should we add a rule" decision. The
+goal is always to improve wherever there is an opportunity — with one standing caveat: in
+bareloop, too many rules become a straitjacket. Every rule is a deterministic rail laid over
+a probabilistic worker, and each rail removes one thing the model could have worked out for
+itself. The product's value is in letting that probabilistic nature show inside a small set
+of un-gameable rails (the arbiter), not in scripting the worker. Diminishing returns sit
+right beside the straitjacket: the tenth rail buys less than the first and costs the same
+freedom.
+
+**The weighing, applied every time:**
+
+1. **Measure the payoff first, $0.** A rule earns its place only against a measured dollar
+   or colour figure (an archive read, a bench pass) — never against a plausible story about
+   what the model "keeps doing." A phase's or habit's share is the CEILING of what a rule
+   can buy, never the buy itself (F126).
+2. **Price the freedom it removes.** Ask what the rail forbids that was sometimes right. A
+   rail cannot tell a dumb instance from a smart one; the model can. If the forbidden shape
+   is ever the correct move, the rail is a tax on every run to fix some runs.
+3. **Prefer watching over ruling when an instrument exists.** If the bench or the loop can
+   show whether the worker recovers on its own, run that first; building the rail first
+   spends the instrument before it reads anything.
+4. **Stop at diminishing returns.** When the next rail's measured payoff is smaller than the
+   last one's, stop — the remaining spend belongs to the probabilistic side.
+
+**Where it binds today.** G4 (item 23, `docs/product/G4-SCOPING.md`): a candidate rail —
+reject a plan that drafts a check-only step before any write step has run — is NAMED and
+NOT BUILT. Payoff unmeasured beyond "3 of 6 litectx replans, on one job" and F123's 3.3%
+gate-red-recovery share; the rail would forbid a sometimes-right cheap probe; and G4 is the
+instrument that reads whether the loop recovers without it. It is re-weighed on G4's own
+number, not before. This principle sits beside, not above, §3's design laws: the arbiter's
+rails (close, budget, fence, merge) are never on this scale — they are the floor, not an
+optimization.

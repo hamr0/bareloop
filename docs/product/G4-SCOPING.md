@@ -77,6 +77,16 @@ this goal, measured across 14 runs.
 - **Baseline already banked:** `u-mtfywb55` is G4's first instance, at the row's current
   hash, from the 2026-08-30 pass. G4 needs no establish fire.
 
+## A named candidate rail — NOT built (PRD v1.83 principle)
+
+Half of litectx's replans (3 of 6) fired on a check-only "verify strict" step drafted before
+the work was done. A validation-gate rule could reject that plan shape outright. It is NOT
+built, by hamr's rails-versus-freedom principle (`docs/product/PRD.md` v1.83): the payoff
+is unmeasured beyond one job's half-dozen replans and F123's 3.3% gate-red share; the rail
+would forbid a cheap probe that is sometimes the right move; and G4 is exactly the
+instrument that reads whether the loop recovers without it. Re-weighed after G4 has read
+one or two litectx passes: if replans keep failing there, that number earns the rail.
+
 ## Alternatives considered, and why not first
 
 - **A planted dead end that IS fixable after replan** (a G3-shaped plant whose honest path
