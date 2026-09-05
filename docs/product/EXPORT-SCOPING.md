@@ -27,8 +27,10 @@ This document turns that design into a buildable shape and names what only hamr 
    has a different hash. This is the central export fact.
 2. **Close scripts import bareloop internals by relative path** (`u-spawner-close.mjs:20`
    `import { JUDGED_MARKER } from '../src/kinds.js'`) — the F110 hosting problem in another
-   coat. A bundled close script must import from the `bareloop` PACKAGE, so the export needs
-   `JUDGED_MARKER` (and whatever else the scripts reach for) on the package root.
+   coat. A bundled close script must import from the `bareloop` PACKAGE; `JUDGED_MARKER`,
+   `EXIT_GREEN/RED/STOP` are already on the package root (`src/index.js:127`), so this is a
+   one-line import rewrite per script, not a library change — unless a script reaches for
+   something not yet exported (checked per script at export time, refused loudly if so).
 3. **The runner surface already exists as scripts**: `scripts/run-u.mjs` (one run, patient
    reset, approve-on-hash, watchdog) and `scripts/run-reuse.mjs` (envelope `--budget --wall
    --tries`, `--registry`, `--resume`, refuses a dirty tree). Neither ships (`files:` is
@@ -66,8 +68,7 @@ This document turns that design into a buildable shape and names what only hamr 
   job, its bridges) with run-u's approval and resume conventions; NO patient reset (the
   user's repo is not a patient copy — the work-branch rule is the fence, merge stays human);
   key from `ANTHROPIC_API_KEY` only; watchdog/inhibit printed as host advice, never grabbed.
-- **Close scripts (fact 2):** copied verbatim except the import line → `from 'bareloop'`;
-  the needed symbols get exported from the package root (a normal, additive library change).
+- **Close scripts (fact 2):** copied verbatim except the import line → `from 'bareloop'`.
 - **Export command:** a script in this repo (`scripts/export-job.mjs`) that reads a job by
   name, its registry, and its close script(s), and writes the directory above; refuses when
   the job has no green bridge at the current hash, when a close cmd is not a `node <script>`
