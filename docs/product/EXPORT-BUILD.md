@@ -14,7 +14,7 @@ done = the validation run at the bottom greened from a clean consumer directory.
 - **A detached worktree is a legal workdir**: `prepareWorkBranch` (`src/workbranch.js:186`)
   creates the work branch from a detached HEAD by design ("a DETACHED head is not a
   failure"). So `bareloop run` does `git worktree add --detach <repo>/.bareloop/wt/<runid>
-  HEAD` and hands that path to `runJob`; the library then mints `bareloop/<job>[-n]` inside
+  HEAD` and hands that path to `runJob`; the library then mints `bareloop-<job>[-n]` inside
   it. The user's checkout is never touched.
 
 ## The bundle (a directory; `npm pack` is its shipping form)
@@ -100,4 +100,27 @@ runner points them. POC lives in the scratchpad, never ships.
    the bundle's own close, ≤ $5, blessing written, worktree + branch left for the human. A
    red is a finding, not a retry.
 
-**Status line: FROZEN. POC next ($0, sonnet). No module built.**
+## POC result (2026-09-05, $0, scripted provider) — all three PASS
+
+(a) `runJob` on a `git worktree add --detach` checkout: work branch minted INSIDE the
+worktree, `from: null`, origin checkout untouched (`status` empty, still on `main`), the
+branch visible from origin via `git branch --list`. (b) In-memory `$BARELOOP_BUNDLE`
+substitution: the close ran from the bundle path; approval binds to the SUBSTITUTED spec's
+hash; the unsubstituted hash is refused at `runJob` step 1 (`outcome:"unapproved-spec"`,
+$0, before any provider call). (c) Spine records and the gate audit both land as pointed.
+
+**Three facts the spec above must use, corrected from the POC:**
+
+1. Work branches are `bareloop-<slug>` (single dash; `src/workbranch.js`
+   `WORK_BRANCH_RE = /^bareloop-[a-z0-9][a-z0-9-]*$/`); slash names are inexpressible.
+   Every "bareloop/<job>" above reads `bareloop-<job>`.
+2. `runJob`'s `approvals` is an ARRAY of `{ specHash, signer, ts }` records
+   (`checkApproval` does `approvals.some(a => a.specHash === h)`), not a bare hash — the
+   runner passes `[{ specHash: approveHash, signer: 'bundle', ts }]` and RECORDS the
+   bundleHash → approveHash pairing in `history.jsonl` so the two never drift silently.
+3. The library always writes the gate audit at `<workdir>/gate-audit.jsonl`
+   (`GATE_AUDIT_FILE`, `src/kinds.js:536`); relocation to `<bundleDir>/runs/<runid>/` is
+   the runner's job, the same move `scripts/run-u.mjs:1291` makes.
+
+**Status line: FROZEN, POC PASSED. Build starts on branch `feat/export`: M1 `src/bundle.js`
+→ M2 `bin/bareloop.mjs` + run flow → M3 adopter docs. No module built yet.**
