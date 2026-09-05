@@ -322,7 +322,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     2026-09-01 — establish run `u-mties136` read non-green as pre-registered
     (step-red, $2.98/$4), F125.
 
-24. **Harness streamline (convergence-per-dollar levers)** — hamr's ruling 2026-08-31: next
+24. ~~**Harness streamline (convergence-per-dollar levers)**~~ — **CLOSED 2026-09-05** (lever (a) dropped F123, build line closed F124, lever (3) scout contrast measured F126; lever (b) reuse-lift lives on under item 25 priority 3). Original text follows. hamr's ruling 2026-08-31: next
     after the current release. Two levers, worked ONE AT A TIME (two changes landing in one pass
     make the resulting delta unattributable): (a) close-forbidden-patterns surfaced at draft time
     (a validator/drafter register, like the no-shell law — a prompt register, never a runtime
