@@ -384,6 +384,21 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     (`docs/product/SCOUT-CONTRAST.md`) → G4 (item 23) → the rest of this list in its own
     order. Export and the reuse-lift proof come after; item 5 closed and item 12 clarified
     today, above.
+    **2026-09-05, later:** after export comes item 27 (close-bytes signature), then the
+    reuse-lift proof.
+
+27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
+    only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
+    POC's negative scenario N4 (`docs/product/EXPORT-BUILD.md`): `jobSpecHash` covers
+    `close[].cmd` (the path), so a swapped close script keeps the signature valid and the
+    close-first precheck (F17) reads a fake "already-green" at $0 — no model called, no work
+    done, reported green. Export v1 closes it for BUNDLES with a manifest hash over the
+    script bytes, verified before the precheck. This rung closes it for bareloop itself: a
+    per-stage content fingerprint inside the spec (signed with the job), verified by the
+    close runner on EVERY close run, precheck included; mismatch = refuse at $0. Re-hashes
+    every job → bench rows re-sign and re-baseline (hamr's call which way). Arbiter
+    territory; scoped after export v1 ships. Order (item 25 amended): export → this →
+    reuse-lift proof.
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
