@@ -21,3 +21,4 @@
 ## [2026-08-31] reorg | discover+apply-reorg+lint over 45 doc(s), due reported
 ## [2026-09-05] index-flat | 53 row(s) (45 product, 5 logs, 3 archive)
 ## [2026-09-05] index-flat | 53 row(s) (45 product, 5 logs, 3 archive)
+## [2026-09-05] index-flat | 54 row(s) (46 product, 5 logs, 3 archive)

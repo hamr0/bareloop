@@ -10130,3 +10130,43 @@ testgen-shaped jobs. The exact-repeat read share (42% vs 36%) is a `--read-shim 
 by design and says nothing about A1. Bridges were minted by both runs; the runner stores
 bridges only and never reuses one (`scripts/run-u.mjs` "STORAGE ONLY"), independently
 checked before OFF fired — so the OFF planner was genuinely cold, not bridge-fed.
+
+## F127 — $0 archive read for G4: 25 of 290 archived runs ever replanned and only 4 greened after it; the litectx bench row replans habitually (6/14) and its current banked baseline is already a halt → replan → green instance
+
+**Date:** 2026-09-05 · **Status:** MEASURED ($0, every archived spine) · **Class:**
+archive read before scoping · **Grounded in:** all `*.jsonl` spines under
+`../bareloop-patients/*/` (gate-audit files excluded), scan script in the session
+scratchpad (`g4-scan.mjs`, `g4-perjob.mjs`; method below suffices to reproduce).
+
+**Method.** For each spine with both `job-start` and `job-end`: count `replan` records,
+classify each replan's `reason` (contains "meter" → `variance`, else `strikes`), take the
+`job-end.outcome` and `spentUsd`. Group by `job-start.job`.
+
+**Numbers.** 290 runs. 25 with ≥1 replan. Outcomes after a replan: green 4, step-red 17,
+cap-halt 2, wall-halt 1, provider-red 1 — a 16% recovery rate across the whole archive.
+Trigger split: 16 runs replanned on the strike ladder ("step exhausted its attempts with
+exits still red"), 11 replan records came from the variance meter (live since 2026-08-03;
+five of those carry "still progressing" with a moving typecheck count, so the meter stopped
+work that was converging).
+
+Per job: `litectx-u-types` 14 runs / 6 replanned / 2 replan→green / 3 cold→green;
+`aurora-testgen-l2accept` 13 / 6 / 2 / 1; `bareagent-u-types` 12 / 6 / 0 / 2;
+`aurora-u-spawner-types` 24 / **0** / 0 / 14; `aurora-testgen-cold` 5 / 2 / 0 / 1;
+`pulselog-g3-types` 1 / 1 / 0 / 0. The two litectx recoveries: `u-ms3wawub` (2026-07-28,
+strikes on `final-strict-verify`, $5.77) and `u-mtfywb55` (2026-08-30, variance on
+`make-src-strict-clean` "typecheck 63 → 29 → 5", $5.72) — the latter is the row's CURRENT
+banked bench baseline under hash `42a7c427…`.
+
+**What it means for G4.** The aurora spawner row cannot host G4 (never replanned in 24
+runs). The litectx row already exhibits the G4 shape without any engineering, ~43% of the
+time, and has a paid, frozen instance on file. Scoping follows from this read:
+`docs/product/G4-SCOPING.md`.
+
+**Anti-gloss.** "Replan → green" here is read from the spine's record chain, not from
+prose; a run with a replan whose replanned plan was then skipped or resumed is still
+counted as "replanned" by this scan (one such: `reuse-msc6w93z`, resumed, wall-halt). The
+16% recovery rate pools every job, model, budget and era (July $8 battery rows through the
+September bench) — it is a base rate for "replans rarely rescue," not a per-job claim. The
+"habitual dead end" reading (a check-only verify step drafted before the work is done) is
+named from step ids in the replan records, not from transcripts, which the spine does not
+carry. Nothing here is a G4 result; it is the read that had to exist before one.
