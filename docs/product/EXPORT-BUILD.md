@@ -124,3 +124,26 @@ $0, before any provider call). (c) Spine records and the gate audit both land as
 
 **Status line: FROZEN, POC PASSED. Build starts on branch `feat/export`: M1 `src/bundle.js`
 → M2 `bin/bareloop.mjs` + run flow → M3 adopter docs. No module built yet.**
+
+## Negatives (2026-09-05, $0, scripted provider) — two rules folded in
+
+Five negative POCs ran after the three positives: N1 the close can say no (a wrong write →
+`plan-red`, the green was earned); N2 dirty origin left untouched; N3 second run mints
+`-4`/`-5`, never reuses; N4 tampered close script; N5 missing close script. Two of them
+change the spec:
+
+1. **N4 — manifest verify is LOAD-BEARING and runs BEFORE the precheck.** `jobSpecHash`
+   covers `close[].cmd` (a path), not the script's bytes. A swapped close script leaves the
+   signature intact, and the close-first PRECHECK (`src/planrun.js:1669-1684`, F17) reads
+   its fake "already green" → outcome `already-green`, $0, provider never called, no work
+   done, reported as success. So `readBundle`'s `bundle-tampered` red in run-flow step 1 is
+   not a courtesy check: it is the ONLY thing standing between a swapped script and a fake
+   green, and it must complete before `runJob` is called at all (before the precheck, before
+   any spend). No code path may reach `runJob` with an unverified bundle. The general fix
+   (close-bytes fingerprint inside the spec, verified on every close run incl. precheck) is
+   PRD item 27, next after export — not v1.
+2. **N5 — vocabulary.** A missing close script → `node` exits 1 → `runClose` "crashed" →
+   `CLOSE_FAULTS` → job-end **`close-red`**, $0. In this library `close-red` means the
+   INSTRUMENT broke; a close that ran and judged the work "no" is **`plan-red`**. The
+   runner's tail and `history.jsonl` use those words exactly; never render a judged no as
+   `close-red` or an instrument fault as a plan failure.
