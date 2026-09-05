@@ -216,6 +216,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    (F115 addendum 2026-08-25; ruling #5 above).
 5. **Chase the TLS `bad record mac` cause** — optional, paid, hamr's call (F115); the retry
    now absorbs it (F119) — chase stays optional.
+   **2026-09-05 — CLOSED, not pursued** (hamr): the retry (F119) and provider-red resume are
+   the product's answer; a run that hits the condition more than twice stops and returns to
+   hamr rather than chasing it. The cause stays unproven and unchased.
 6. ~~Generic run replay~~ — **BUILT 2026-08-25** (F117): `replayRun`/`formatReplay`
    (`src/replay.js`) + `scripts/run-replay.mjs`, report-only, reuses `runBehaviour`/
    MEMORY-CACHE; the pre-declared 5-minute test passed on 3 unseen failed runs and found 3
@@ -263,7 +266,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 11. ~~Awaiting ba24 — BA-24 fix candidate~~ — **CLOSED**: validated pre-release, pin bumped
     to `^0.39.0`, post-publish sweep 2050/2050 (F111).
 12. **aurora run-time signature** — sign when a run next fires; spec's `approvals` key is
-    `null` today (F110).
+    `null` today (F110). **2026-09-05 (hamr: agreed):** not a build — the signature is minted at
+    run time by `scripts/run-u.mjs`, so it clears itself the next time aurora fires under
+    hamr's in-turn sign. Nothing to schedule.
 13. ~~4 `jobs/*.json` stale doc-path strings~~ — **DONE 2026-08-30** (hamr's word): the four
     `description` strings now point at `docs/product/{TESTGEN,TYPES}-PREREG.md`; the two
     `docs/logs/` preregs moved to `docs/product/` beside the other eight (index + live links
@@ -352,10 +357,21 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     ~10% of spend); tokens-tail and G3-plant orders recorded. Full text:
     `docs/logs/FINDINGS.md` F124 addendum.
 
+    **2026-09-05 — lever (3) scout ON/OFF UNPARKED and SCOPED** (hamr: "let's measure
+    scout"): G3 is established, so the park lifts. Scoping, pre-registered frozen rules, the
+    small switch build (`--scout on|off`, runner territory, hash-unaffected) and the two-arm
+    design on `aurora-u-spawner-types` ($10 ceiling): `docs/product/SCOUT-CONTRAST.md`.
+    Switch not built, no run.
+
 25. **Priority order** (hamr, 2026-08-31): (1) harness streamline (item 24) → (2) export (the
     product: spec+bridge+close+runner, relocatable — export is never eject, the arbiter
     relocates, never disappears) → (3) reuse lift proof. G3/G4 (item 23) slot alongside as bench
     work; the ceiling question stays parked.
+
+    **2026-09-05 — order amended** (hamr): item 24 lever (3) scout contrast
+    (`docs/product/SCOUT-CONTRAST.md`) → G4 (item 23) → the rest of this list in its own
+    order. Export and the reuse-lift proof come after; item 5 closed and item 12 clarified
+    today, above.
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
