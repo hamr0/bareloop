@@ -117,5 +117,4 @@ one or two litectx passes: if replans keep failing there, that number earns the 
 - If "reading": a one-line BENCH-PREREG amendment naming the G4 chain and `u-mtfywb55` as
   its first instance — docs only, hamr's word.
 
-**Status line: SCOPED ($0). Design proposed, not signed. First instance already on record
-(`u-mtfywb55`). No build, no run.**
+**Status line: SIGNED as a reading (hamr "A", 2026-09-05) — `docs/product/BENCH-PREREG.md` amendment. First instance on record (`u-mtfywb55`). No build. First deliberate G4 test pass on the litectx row: hamr's fire.**

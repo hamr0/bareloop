@@ -321,6 +321,25 @@ rule above; this establishing run is not a bench pass and mints no `docs/logs/BE
 (the ledger below starts at the next real release pass). Full account: `docs/logs/FINDINGS.md`
 F125.
 
+## Amendment, 2026-09-05 — G4 is a READING of the litectx row, not a fifth row (hamr: "A")
+
+The Rows table above stays FROZEN and untouched. G4 (halt → replan → green, hamr's
+definition 2026-08-31) is read off `litectx-u-types` passes, at the row's frozen hash
+`42a7c427…`, with no spec edit, no budget or wall change in either direction, and no new
+row — the $0 archive read (F127) found the row replans on its own in 6 of 14 runs, and its
+CURRENT banked baseline `u-mtfywb55` (2026-08-30, $5.72) already carries the chain.
+
+**A G4 instance is the four-record chain on ONE spine, in order:** (1) a halt record
+(`ladder` strike-out or `variance`) on a step → (2) a `replan` record naming that step →
+(3) `plan-accepted` for the replanned plan → (4) `job-end outcome:"green"`. Read
+mechanically from the spine; no prose judgment.
+
+**Frozen rules:** a cold green (no replan) on a litectx pass is "G4 did not fire" — not a
+pass, not a fail, never a reason to re-fire; a replan → non-green is a G4 red at n=1
+(colour-flip → n=3 per the standing decision rules); the row's money and wall are never
+touched on G4's account. First instance on record: `u-mtfywb55`. Scoping and the named,
+not-built candidate rail: `docs/product/G4-SCOPING.md`; principle: PRD v1.83.
+
 ## Results ledger — FROZEN facts
 
 - `docs/logs/BENCH.md`, one row per (job, release tag).
