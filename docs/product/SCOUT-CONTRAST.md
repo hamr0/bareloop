@@ -117,8 +117,10 @@ on all three.
 
 ## Open / not yet
 
-- The switch — built on a branch, reviewed, released before any run (a bench arm runs on a
-  published version, the standing rule).
+- The switch — built on branch `feat/scout-off`. **hamr's order 2026-09-05: NO release
+  first — the two arms run from the branch's working tree; release is the last thing, decided
+  after the number is read.** This is a probe knob, not a bench pass, so the
+  published-version rule for bench rows does not apply.
 - The two runs — hamr's "fire."
 
-**Status line: SCOPED, switch not built, no run.**
+**Status line: SCOPED, switch BUILT on `feat/scout-off` (2026-09-05), no run.**
