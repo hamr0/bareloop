@@ -10154,8 +10154,11 @@ Per job: `litectx-u-types` 14 runs / 6 replanned / 2 replan→green / 3 cold→g
 `aurora-u-spawner-types` 24 / **0** / 0 / 14; `aurora-testgen-cold` 5 / 2 / 0 / 1;
 `pulselog-g3-types` 1 / 1 / 0 / 0. The two litectx recoveries: `u-ms3wawub` (2026-07-28,
 strikes on `final-strict-verify`, $5.77) and `u-mtfywb55` (2026-08-30, variance on
-`make-src-strict-clean` "typecheck 63 → 29 → 5", $5.72) — the latter is the row's CURRENT
-banked bench baseline under hash `42a7c427…`.
+`make-src-strict-clean` "typecheck 63 → 29 → 5", $5.72). **Correction (same day, from
+`job-start.specHash`):** `u-mtfywb55` is at the row's PREVIOUS hash `31733829…` (pre
+model-pin), not the current `42a7c427…`; the current-hash runs (`u-mtg5bwfn`, and the G4
+test fire `u-mtotxw1z` 2026-09-05, green $6.18, 1 step) are both cold greens — 0 G4
+instances in 2 at the frozen signature.
 
 **What it means for G4.** The aurora spawner row cannot host G4 (never replanned in 24
 runs). The litectx row already exhibits the G4 shape without any engineering, ~43% of the

@@ -322,9 +322,12 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     2026-09-01 — establish run `u-mties136` read non-green as pre-registered
     (step-red, $2.98/$4), F125.
     **G4 SCOPED 2026-09-05 ($0, F127):** `docs/product/G4-SCOPING.md`. Proposed as a READING
-    of the litectx bench row (replans 6/14 on its own; current baseline `u-mtfywb55` is
-    already a halt → replan → green instance), $0 marginal, no fifth row, no hash change; a
-    planted-fixable-dead-end row kept as the second act. Awaits hamr's word on the design.
+    of the litectx bench row (replans 6/14 on its own; `u-mtfywb55` is a halt → replan →
+    green instance at the row's PREVIOUS hash — corrected same day), $0 marginal, no fifth
+    row, no hash change; a planted-fixable-dead-end row kept as the second act. **hamr: "A"
+    (2026-09-05)** — BENCH-PREREG amendment signed. First deliberate test pass `u-mtotxw1z`:
+    cold green $6.18, G4 DID NOT FIRE (0 of 2 at the frozen hash). Rides future litectx
+    passes; the candidate rail stays named, not built (v1.83).
 
 24. ~~**Harness streamline (convergence-per-dollar levers)**~~ — **CLOSED 2026-09-05** (lever (a) dropped F123, build line closed F124, lever (3) scout contrast measured F126; lever (b) reuse-lift lives on under item 25 priority 3). Original text follows. hamr's ruling 2026-08-31: next
     after the current release. Two levers, worked ONE AT A TIME (two changes landing in one pass

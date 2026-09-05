@@ -326,8 +326,12 @@ F125.
 The Rows table above stays FROZEN and untouched. G4 (halt → replan → green, hamr's
 definition 2026-08-31) is read off `litectx-u-types` passes, at the row's frozen hash
 `42a7c427…`, with no spec edit, no budget or wall change in either direction, and no new
-row — the $0 archive read (F127) found the row replans on its own in 6 of 14 runs, and its
-CURRENT banked baseline `u-mtfywb55` (2026-08-30, $5.72) already carries the chain.
+row — the $0 archive read (F127) found the row replans on its own in 6 of 14 runs, and
+`u-mtfywb55` (2026-08-30, $5.72) already carries the chain. **Correction, same day:** that
+run sits at the row's PREVIOUS hash `31733829…` (before the model-pin re-hash; same worker
+model `claude-sonnet-5`, so behaviourally the same condition, but NOT the frozen signature).
+At the current hash `42a7c427…` the row has 0 G4 instances in 2 runs (`u-mtg5bwfn`
+2026-08-30 and `u-mtotxw1z` 2026-09-05, both cold greens).
 
 **A G4 instance is the four-record chain on ONE spine, in order:** (1) a halt record
 (`ladder` strike-out or `variance`) on a step → (2) a `replan` record naming that step →
@@ -337,8 +341,14 @@ mechanically from the spine; no prose judgment.
 **Frozen rules:** a cold green (no replan) on a litectx pass is "G4 did not fire" — not a
 pass, not a fail, never a reason to re-fire; a replan → non-green is a G4 red at n=1
 (colour-flip → n=3 per the standing decision rules); the row's money and wall are never
-touched on G4's account. First instance on record: `u-mtfywb55`. Scoping and the named,
-not-built candidate rail: `docs/product/G4-SCOPING.md`; principle: PRD v1.83.
+touched on G4's account. First instance on record: `u-mtfywb55` (previous hash, see the
+correction above); none yet at the frozen hash. Scoping and the named, not-built candidate
+rail: `docs/product/G4-SCOPING.md`; principle: PRD v1.83.
+
+**First deliberate G4 test pass, 2026-09-05 (hamr's fire, not a release pass):** `u-mtotxw1z`
+at `42a7c427…`, green, $6.1772 (`spendComplete:true`), 14.5 min, 1 step, no replan → **G4
+DID NOT FIRE** (cold green). Per the rule: not a pass, not a fail, no re-fire. Logged in
+`docs/logs/BENCH.md`.
 
 ## Results ledger — FROZEN facts
 

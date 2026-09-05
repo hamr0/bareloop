@@ -43,9 +43,13 @@ definition; neither is money-tuned.
 
 The aurora spawner row has NEVER replanned in 24 runs — it is the wrong host for G4. The
 litectx row replans in 6 of 14 runs on its own, and 2 of those 6 greened — including its
-CURRENT banked bench baseline `u-mtfywb55` ($5.72, 2026-08-30): variance halt on
-`make-src-strict-clean` ("still progressing — typecheck 63 → 29 → 5") → replan → green.
-That run is a live, frozen, already-paid G4 instance under the bench's own signature.
+run `u-mtfywb55` ($5.72, 2026-08-30): variance halt on `make-src-strict-clean` ("still
+progressing — typecheck 63 → 29 → 5") → replan → green. **Correction (2026-09-05, after
+checking `job-start.specHash`):** that run is at the row's PREVIOUS hash `31733829…`, before
+the model-pin re-hash — same worker model, same patient, so the same condition in behaviour,
+but not the frozen signature `42a7c427…`. At the frozen hash the row has 0 G4 instances in
+2 runs (`u-mtg5bwfn`, `u-mtotxw1z`, both cold greens). The archive evidence for the habit
+(6/14 replans) spans both hashes.
 
 **The habitual dead end, named from the archive.** litectx's replans fire on a check-only
 "verify strict typecheck" step that cannot pass on its own (`verify-strict-typecheck` ×2,
@@ -74,8 +78,9 @@ this goal, measured across 14 runs.
 - **Cost:** $0 marginal. G4 rides every litectx bench pass hamr already chooses to fire;
   the per-pass ceiling ($19 after the G3 swap, $24 hard) is untouched and no fifth-row
   ceiling question opens.
-- **Baseline already banked:** `u-mtfywb55` is G4's first instance, at the row's current
-  hash, from the 2026-08-30 pass. G4 needs no establish fire.
+- **Baseline:** `u-mtfywb55` is G4's first instance at the PREVIOUS hash (correction
+  above). G4 needs no establish fire — it is a reading, and reads fire only when a replan
+  happens; a cold green is not a miss.
 
 ## A named candidate rail — NOT built (PRD v1.83 principle)
 
@@ -117,4 +122,14 @@ one or two litectx passes: if replans keep failing there, that number earns the 
 - If "reading": a one-line BENCH-PREREG amendment naming the G4 chain and `u-mtfywb55` as
   its first instance — docs only, hamr's word.
 
-**Status line: SIGNED as a reading (hamr "A", 2026-09-05) — `docs/product/BENCH-PREREG.md` amendment. First instance on record (`u-mtfywb55`). No build. First deliberate G4 test pass on the litectx row: hamr's fire.**
+## First deliberate test pass (2026-09-05)
+
+`u-mtotxw1z` at `42a7c427…`: green, $6.18, 14.5 min, 1 step, no replan. The mechanical
+reader (scratchpad `g4-read.mjs`, checked first against a known instance, a known cold
+green and a known replan-red) says **G4 DID NOT FIRE**. Not a pass, not a fail, no re-fire.
+Tally at the frozen hash: 2 runs, 0 replans. The 6/14 archive rate spans older hashes and
+July-era plans; whether the model-pinned condition replans as often is now an open
+question the next passes answer for free.
+
+**Status line: SIGNED as a reading (hamr "A"). First instance `u-mtfywb55` (previous hash).
+At the frozen hash: 0 of 2 fired. No build.**
