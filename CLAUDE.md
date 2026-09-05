@@ -11,7 +11,7 @@ contrast that attributed it.
 
 - `docs/product/PRD.md` — the PRD's core spec (§1–§10, design laws, non-goals, risks, build
   ladder). §3 design laws are inherited doctrine, each paid for in the adaptlearn experiment;
-  do not relitigate them without new evidence. New addenda append here (currently to v1.79);
+  do not relitigate them without new evidence. New addenda append here (currently to v1.83);
   the earlier history is split by theme across `docs/wiki/` (see `docs/index.md`) — six
   companion pages: close-verdicts, money-time, product-surface, providers-context,
   reuse-layer3, workflow-governance. The original monolith is kept at

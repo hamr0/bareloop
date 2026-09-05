@@ -171,6 +171,12 @@ async function primitiveSmoke(workdir) {
  *        frozen A0 baseline arm has to be exactly today, so a guard firing under a disabled
  *        shim would make the baseline a treatment arm. The default-flip belongs to a
  *        paid contrast nobody has approved yet (the `layerRoot` precedent, F41).
+ * @param {boolean} [opts.scout=true] operator-only switch (docs/product/SCOUT-CONTRAST.md),
+ *   forwarded verbatim to the plan flow: `false` on a fresh run (no `resumeSeed`) skips the
+ *   read-only survey and records `scout-skipped {reason:'operator-off'}` instead — the
+ *   planner drafts from `(no scout notes)`. Runner territory exactly like `readShim`: the
+ *   spec names no scout, so the signed hash is unaffected. A non-boolean THROWS at this
+ *   entry, before the ledger, before the approval gate (the `readShim` guard class).
  * @param {boolean} [opts.layerRoot=false] Layer R (within-run ratchet) — shell
  *        territory, threaded to the plan flow. Defaults OFF
  *        (decided 2026-07-21): fixation is extinct on every current job (F41), so
@@ -202,7 +208,7 @@ async function primitiveSmoke(workdir) {
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' |
  *   'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, readShim = false, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, readShim = false, scout = true, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null }) {
   // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
   // before the ledger, before the approval gate, before a byte of the spec is read.
   // An unrecognised spelling throws here at zero cost instead of being coerced by
@@ -211,6 +217,10 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // blind-instrument failure this programme keeps logging. Only the guard runs
   // here; the flag itself is threaded onward to the plan flow as written.
   readShimArm(readShim);
+  // The scout switch's guard, same class and same door (docs/product/SCOUT-CONTRAST.md):
+  // a mis-coerced value would run under the wrong label with no way to recover which arm
+  // actually fired from the results afterwards.
+  if (typeof scout !== 'boolean') throw new TypeError(`scout: expected boolean, got ${JSON.stringify(scout)}`);
   // 0. the ledger's counters, declared FIRST so that every job-end — including
   // the pre-token reds below — can state a real figure. An omitted `spentUsd` is
   // not a zero: a consumer reads `undefined` and either crashes or launders it
@@ -405,7 +415,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, readShim, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd,
+      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, readShim, scout, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
       spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact

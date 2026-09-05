@@ -10069,3 +10069,107 @@ figure is a `--read-shim off` number by bench rule (every bench run pins shim of
 nothing about the A1 shim's live effect and must not be cited as such. Per the frozen G3
 rule, restated here rather than assumed: a GREEN on any future G3 run at this hash is a
 ROW-INVALID event to investigate, never a pass and never a cue to widen the budget or wall.
+
+## F126 — scout ON/OFF contrast on `aurora-u-spawner-types` (n=1 per arm): both green, OFF cost MORE, gap inside the noise band — the scout is not dead weight; nothing to build, nothing to flip
+
+**Date:** 2026-09-05 · **Status:** MEASURED (n=1 per arm, pre-registered read order) ·
+**Class:** cost-lever contrast · **Grounded in:** spines `u-mtoqtcb5.jsonl` (ON) and
+`u-mtor6qkd.jsonl` (OFF) under `../bareloop-patients/aurora-u-bareloop/`, driver logs, the
+frozen rules in `docs/product/SCOUT-CONTRAST.md`.
+
+**Design (frozen before either run).** Same job, same hash `5d989ae7…`, same patient reset
+`d661e50`, `--read-shim off`, worker `claude-sonnet-5`, same 2×200 probe, sequential. ON =
+default; OFF = the new `--scout off` runner switch (branch `feat/scout-off`, not released —
+hamr's order: test first, release last). Read order: colour → road → money; n=1 detects big
+dents only.
+
+**Numbers (phase split from `worker-round.costUsd`, sums equal `job-end.spentUsd`, both
+`spendComplete:true`):**
+
+| | ON `mtoqtcb5` | OFF `mtor6qkd` |
+|---|---|---|
+| colour | green | green |
+| total | $3.1757 | $3.5415 |
+| wall | 8.4 min | 8.5 min |
+| rounds | 54 | 64 |
+| scout | 9 rounds · $0.4001 (12.6%) | skipped (`scout-skipped operator-off`) |
+| plan draft | 1 · $0.0199 | 1 · $0.0264 |
+| steps | 40 · $2.6885 | 57 · $3.3808 |
+| fix loop | 4 · $0.0672 | 6 · $0.1343 |
+| plan shape | 1 step, no replan, no step-red | 1 step, no replan, no step-red |
+| close | needs_revision (no-suppressions) → fix → green | identical |
+| tool calls / exact repeats | 85 / 36 (42%) | 70 / 25 (36%) |
+| writes | 24 (7 files) | 25 (6 files) |
+
+**Read, in the frozen order.**
+
+1. *Colour* — same. The blind planner drafted a one-step plan of the same shape and it
+   greened. hamr's question ("would scout-off green at all?") answers yes, on this row.
+2. *Road* — same shape (one step, no replan, no strike, same close verdict sequence), but
+   OFF ran 17 more step rounds and 2 more fix rounds. The scout's absence did not change
+   WHAT the plan did; it changed how many rounds the step needed.
+3. *Money* — OFF cost **$0.37 MORE**, not less. The scout's own measured cost on ON was
+   $0.40; the frozen rule says a gap inside that figure is noise. A $0.37 gap in the WRONG
+   direction is therefore noise too — but it is noise that points away from "the scout is
+   waste": removing $0.40 of survey did not remove $0.40 of spend, the step phase absorbed
+   it and then some ($2.69 → $3.38).
+
+**Verdict.** Lever (3) of PRD item 24 closes: the scout is not dead weight on this row. No
+saving to build, no default to flip, no second job to fund on this evidence. The switch
+stays as an operator probe knob (it is how this number was obtained); whether to release it
+is hamr's separate call.
+
+**Anti-gloss.** n=1 per arm. A $0.37 gap at n=1 on a job whose greens already range
+$1.77–$3.00 (F124) is well inside that row's own run-to-run spread — this finding does NOT
+claim the scout SAVES money, only that removing it did not save any here. The ON scout was
+F59-truncated (0 bytes on its bounded round, 3,431 bytes after the reserved toolless round)
+— so ON paid $0.40 for a survey that nearly came back empty and still cost less overall; a
+cleaner survey would only strengthen the same direction. Both arms are 1-step aurora greens,
+the easiest shape in the archive (F124): nothing here transfers to litectx- or
+testgen-shaped jobs. The exact-repeat read share (42% vs 36%) is a `--read-shim off` number
+by design and says nothing about A1. Bridges were minted by both runs; the runner stores
+bridges only and never reuses one (`scripts/run-u.mjs` "STORAGE ONLY"), independently
+checked before OFF fired — so the OFF planner was genuinely cold, not bridge-fed.
+
+## F127 — $0 archive read for G4: 25 of 290 archived runs ever replanned and only 4 greened after it; the litectx bench row replans habitually (6/14) and its current banked baseline is already a halt → replan → green instance
+
+**Date:** 2026-09-05 · **Status:** MEASURED ($0, every archived spine) · **Class:**
+archive read before scoping · **Grounded in:** all `*.jsonl` spines under
+`../bareloop-patients/*/` (gate-audit files excluded), scan script in the session
+scratchpad (`g4-scan.mjs`, `g4-perjob.mjs`; method below suffices to reproduce).
+
+**Method.** For each spine with both `job-start` and `job-end`: count `replan` records,
+classify each replan's `reason` (contains "meter" → `variance`, else `strikes`), take the
+`job-end.outcome` and `spentUsd`. Group by `job-start.job`.
+
+**Numbers.** 290 runs. 25 with ≥1 replan. Outcomes after a replan: green 4, step-red 17,
+cap-halt 2, wall-halt 1, provider-red 1 — a 16% recovery rate across the whole archive.
+Trigger split: 16 runs replanned on the strike ladder ("step exhausted its attempts with
+exits still red"), 11 replan records came from the variance meter (live since 2026-08-03;
+five of those carry "still progressing" with a moving typecheck count, so the meter stopped
+work that was converging).
+
+Per job: `litectx-u-types` 14 runs / 6 replanned / 2 replan→green / 3 cold→green;
+`aurora-testgen-l2accept` 13 / 6 / 2 / 1; `bareagent-u-types` 12 / 6 / 0 / 2;
+`aurora-u-spawner-types` 24 / **0** / 0 / 14; `aurora-testgen-cold` 5 / 2 / 0 / 1;
+`pulselog-g3-types` 1 / 1 / 0 / 0. The two litectx recoveries: `u-ms3wawub` (2026-07-28,
+strikes on `final-strict-verify`, $5.77) and `u-mtfywb55` (2026-08-30, variance on
+`make-src-strict-clean` "typecheck 63 → 29 → 5", $5.72). **Correction (same day, from
+`job-start.specHash`):** `u-mtfywb55` is at the row's PREVIOUS hash `31733829…` (pre
+model-pin), not the current `42a7c427…`; the current-hash runs (`u-mtg5bwfn`, and the G4
+test fire `u-mtotxw1z` 2026-09-05, green $6.18, 1 step) are both cold greens — 0 G4
+instances in 2 at the frozen signature.
+
+**What it means for G4.** The aurora spawner row cannot host G4 (never replanned in 24
+runs). The litectx row already exhibits the G4 shape without any engineering, ~43% of the
+time, and has a paid, frozen instance on file. Scoping follows from this read:
+`docs/product/G4-SCOPING.md`.
+
+**Anti-gloss.** "Replan → green" here is read from the spine's record chain, not from
+prose; a run with a replan whose replanned plan was then skipped or resumed is still
+counted as "replanned" by this scan (one such: `reuse-msc6w93z`, resumed, wall-halt). The
+16% recovery rate pools every job, model, budget and era (July $8 battery rows through the
+September bench) — it is a base rate for "replans rarely rescue," not a per-job claim. The
+"habitual dead end" reading (a check-only verify step drafted before the work is done) is
+named from step ids in the replan records, not from transcripts, which the spine does not
+carry. Nothing here is a G4 result; it is the read that had to exist before one.

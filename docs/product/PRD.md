@@ -216,6 +216,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    (F115 addendum 2026-08-25; ruling #5 above).
 5. **Chase the TLS `bad record mac` cause** — optional, paid, hamr's call (F115); the retry
    now absorbs it (F119) — chase stays optional.
+   **2026-09-05 — CLOSED, not pursued** (hamr): the retry (F119) and provider-red resume are
+   the product's answer; a run that hits the condition more than twice stops and returns to
+   hamr rather than chasing it. The cause stays unproven and unchased.
 6. ~~Generic run replay~~ — **BUILT 2026-08-25** (F117): `replayRun`/`formatReplay`
    (`src/replay.js`) + `scripts/run-replay.mjs`, report-only, reuses `runBehaviour`/
    MEMORY-CACHE; the pre-declared 5-minute test passed on 3 unseen failed runs and found 3
@@ -263,7 +266,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 11. ~~Awaiting ba24 — BA-24 fix candidate~~ — **CLOSED**: validated pre-release, pin bumped
     to `^0.39.0`, post-publish sweep 2050/2050 (F111).
 12. **aurora run-time signature** — sign when a run next fires; spec's `approvals` key is
-    `null` today (F110).
+    `null` today (F110). **2026-09-05 (hamr: agreed):** not a build — the signature is minted at
+    run time by `scripts/run-u.mjs`, so it clears itself the next time aurora fires under
+    hamr's in-turn sign. Nothing to schedule.
 13. ~~4 `jobs/*.json` stale doc-path strings~~ — **DONE 2026-08-30** (hamr's word): the four
     `description` strings now point at `docs/product/{TESTGEN,TYPES}-PREREG.md`; the two
     `docs/logs/` preregs moved to `docs/product/` beside the other eight (index + live links
@@ -316,8 +321,17 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     `docs/product/G3-SCOPING.md`. G3 frozen 2026-09-01 (hash 64d56137…), established
     2026-09-01 — establish run `u-mties136` read non-green as pre-registered
     (step-red, $2.98/$4), F125.
+    **G4 SCOPED 2026-09-05 ($0, F127):** `docs/product/G4-SCOPING.md`. Proposed as a READING
+    of the litectx bench row (replans 6/14 on its own; `u-mtfywb55` is a halt → replan →
+    green instance at the row's PREVIOUS hash — corrected same day), $0 marginal, no fifth
+    row, no hash change; a planted-fixable-dead-end row kept as the second act. **hamr: "A"
+    (2026-09-05)** — BENCH-PREREG amendment signed. First deliberate test pass `u-mtotxw1z`:
+    cold green $6.18, G4 DID NOT FIRE (0 of 2 at the frozen hash). **Counting rule (hamr):
+    ride the bench's own litectx passes, count replanned/runs, tripwire at 0 / 4 → scope
+    the planted row.** Candidate rail stays named, not built (v1.83). Next: export (item 25
+    priority 2).
 
-24. **Harness streamline (convergence-per-dollar levers)** — hamr's ruling 2026-08-31: next
+24. ~~**Harness streamline (convergence-per-dollar levers)**~~ — **CLOSED 2026-09-05** (lever (a) dropped F123, build line closed F124, lever (3) scout contrast measured F126; lever (b) reuse-lift lives on under item 25 priority 3). Original text follows. hamr's ruling 2026-08-31: next
     after the current release. Two levers, worked ONE AT A TIME (two changes landing in one pass
     make the resulting delta unattributable): (a) close-forbidden-patterns surfaced at draft time
     (a validator/drafter register, like the no-shell law — a prompt register, never a runtime
@@ -352,10 +366,24 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     ~10% of spend); tokens-tail and G3-plant orders recorded. Full text:
     `docs/logs/FINDINGS.md` F124 addendum.
 
+    **2026-09-05 — lever (3) scout ON/OFF UNPARKED and SCOPED** (hamr: "let's measure
+    scout"): G3 is established, so the park lifts. Scoping, pre-registered frozen rules, the
+    small switch build (`--scout on|off`, runner territory, hash-unaffected) and the two-arm
+    design on `aurora-u-spawner-types` ($10 ceiling): `docs/product/SCOUT-CONTRAST.md`.
+    **Same day — MEASURED, lever (3) CLOSED** (F126): both arms green, OFF cost $0.37 MORE
+    (inside the $0.40 noise band, wrong direction for a saving); the scout is not dead
+    weight; nothing to build, no default flip. Switch shipped in v0.20.0.
+    Spend $6.72. Item 24 now has no open lever; next per item 25's amended order: G4.
+
 25. **Priority order** (hamr, 2026-08-31): (1) harness streamline (item 24) → (2) export (the
     product: spec+bridge+close+runner, relocatable — export is never eject, the arbiter
     relocates, never disappears) → (3) reuse lift proof. G3/G4 (item 23) slot alongside as bench
     work; the ceiling question stays parked.
+
+    **2026-09-05 — order amended** (hamr): item 24 lever (3) scout contrast
+    (`docs/product/SCOUT-CONTRAST.md`) → G4 (item 23) → the rest of this list in its own
+    order. Export and the reuse-lift proof come after; item 5 closed and item 12 clarified
+    today, above.
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
@@ -522,3 +550,38 @@ full suite 2176/2176, both production job hashes (`aurora-u-spawner-types.json`,
 `litectx-u-types.json`) independently re-computed and unchanged — the default is behaviour- and
 hash-identical for every close that predates this field. Commit `5b43d68`.
 
+
+### The rails-versus-freedom optimization principle (v1.83 — 2026-09-05)
+
+hamr's ruling, recorded as doctrine for every future "should we add a rule" decision. The
+goal is always to improve wherever there is an opportunity — with one standing caveat: in
+bareloop, too many rules become a straitjacket. Every rule is a deterministic rail laid over
+a probabilistic worker, and each rail removes one thing the model could have worked out for
+itself. The product's value is in letting that probabilistic nature show inside a small set
+of un-gameable rails (the arbiter), not in scripting the worker. Diminishing returns sit
+right beside the straitjacket: the tenth rail buys less than the first and costs the same
+freedom.
+
+**The weighing, applied every time:**
+
+1. **Measure the payoff first, $0.** A rule earns its place only against a measured dollar
+   or colour figure (an archive read, a bench pass) — never against a plausible story about
+   what the model "keeps doing." A phase's or habit's share is the CEILING of what a rule
+   can buy, never the buy itself (F126).
+2. **Price the freedom it removes.** Ask what the rail forbids that was sometimes right. A
+   rail cannot tell a dumb instance from a smart one; the model can. If the forbidden shape
+   is ever the correct move, the rail is a tax on every run to fix some runs.
+3. **Prefer watching over ruling when an instrument exists.** If the bench or the loop can
+   show whether the worker recovers on its own, run that first; building the rail first
+   spends the instrument before it reads anything.
+4. **Stop at diminishing returns.** When the next rail's measured payoff is smaller than the
+   last one's, stop — the remaining spend belongs to the probabilistic side.
+
+**Where it binds today.** G4 (item 23, `docs/product/G4-SCOPING.md`): a candidate rail —
+reject a plan that drafts a check-only step before any write step has run — is NAMED and
+NOT BUILT. Payoff unmeasured beyond "3 of 6 litectx replans, on one job" and F123's 3.3%
+gate-red-recovery share; the rail would forbid a sometimes-right cheap probe; and G4 is the
+instrument that reads whether the loop recovers without it. It is re-weighed on G4's own
+number, not before. This principle sits beside, not above, §3's design laws: the arbiter's
+rails (close, budget, fence, merge) are never on this scale — they are the floor, not an
+optimization.

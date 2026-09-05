@@ -91,11 +91,11 @@ const collector = () => {
   return { events, emit: (type, data = {}) => { const e = { type, ...data }; events.push(e); return e; } };
 };
 
-async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge, resumeSeed, resumeBranch } = {}) {
+async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge, resumeSeed, resumeBranch, scout } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}), ...(resumeSeed ? { resumeSeed } : {}), ...(resumeBranch ? { resumeBranch } : {}) });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}), ...(resumeSeed ? { resumeSeed } : {}), ...(resumeBranch ? { resumeBranch } : {}), ...(scout !== undefined ? { scout } : {}) });
   return { outcome, events };
 }
 
@@ -119,6 +119,62 @@ test('happy path: scout → plan → write step (exits green) → close green; p
   const exits = events.filter((e) => e.type === 'exit-eval');
   assert.ok(exits.length >= 1, 'exit evaluations are on the spine');
   assert.ok(exits.at(-1).results.every((r) => r.pass));
+});
+
+// ── SCOUT OFF (docs/product/SCOUT-CONTRAST.md) — the operator-only switch:
+// `scout:false` on a FRESH run skips the survey with a named record rather
+// than silence, and leaves everything else byte-identical to today's ON run.
+
+test('scout:false, fresh run: no scout-start/scout-result, exactly one scout-skipped operator-off, and the plan still greens', async (t) => {
+  const wd = makePatient(t);
+  // one fewer entry than the happy path: the scout call is gone, so the
+  // FIRST call the provider sees is the plan draft
+  const provider = scriptedProvider([
+    { text: PLAN(wd) },                                                            // plan draft
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote tests/test_x.mjs' },                                            // attempt summary
+  ]);
+  const { outcome, events } = await go(wd, provider, { scout: false });
+  assert.equal(outcome, 'green');
+  assert.ok(!events.some((e) => e.type === 'scout-start'), 'the scout never starts');
+  assert.ok(!events.some((e) => e.type === 'scout-result'), 'the scout never reports a result');
+  assert.ok(!events.some((e) => e.type === 'scout-empty'), 'the empty-scout record is scout territory, not the off-switch');
+  const skips = events.filter((e) => e.type === 'scout-skipped');
+  assert.equal(skips.length, 1, 'exactly one scout-skipped record');
+  assert.equal(skips[0].reason, 'operator-off');
+  assert.equal(typeof skips[0].meaning, 'string');
+  assert.ok(provider.calls[0].includes('(no scout notes)') || !provider.calls[0].includes('scout notes'), 'the planner drafts from the empty-blob prompt');
+  const exec = events.find((e) => e.type === 'plan-executed');
+  assert.deepEqual(exec.steps.map((s) => s.outcome), ['green']);
+});
+
+test('scout:false + resumeSeed: the resume skip wins its own reason — never operator-off', async (t) => {
+  const wd = makePatient(t);
+  const plan = PLAN(wd);
+  const planObj = JSON.parse(plan);
+  const provider = scriptedProvider([
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote tests/test_x.mjs' },
+  ]);
+  const { outcome, events } = await go(wd, provider, {
+    scout: false,
+    resumeSeed: { phase: 'steps', plan: planObj, completedSteps: [] },
+  });
+  assert.equal(outcome, 'green');
+  const skips = events.filter((e) => e.type === 'scout-skipped');
+  assert.equal(skips.length, 1, 'exactly one scout-skipped record');
+  assert.equal(skips[0].reason, 'resumed', 'the resume skip fires first and wins its own reason');
+  assert.notEqual(skips[0].reason, 'operator-off');
+});
+
+test('scout: a non-boolean throws a TypeError before any provider call', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([{ text: 'never' }]);
+  await assert.rejects(
+    () => go(wd, provider, { scout: /** @type {any} */ ('off') }),
+    TypeError,
+  );
+  assert.equal(provider.calls.length, 0, 'not one provider call');
 });
 
 test('prompt contract (v1.12 §5): the worker sees the repo root and its action — NEVER the budget, the close cmd, or a check cmd', async (t) => {

@@ -186,6 +186,46 @@ test('the read shim ARM is guarded at runJob\'s door — ahead of the approval g
   assert.equal(existsSync(file), false, 'and not one spine record — the guard runs before the gate, so the spine was never even opened');
 });
 
+test('scout:false threads through runJob to runPlan: a scout-skipped operator-off record lands on the spine', async () => {
+  const wd = makePlanWork('plan-scout-off');
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: plan },                                                                 // no scout call
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(planJob(), {
+    approvals: [{ specHash: jobSpecHash(planJob()), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file), scout: false,
+  });
+  assert.equal(outcome, 'green');
+  const events = readSpine(file);
+  const skips = events.filter((e) => e.type === 'scout-skipped');
+  assert.equal(skips.length, 1);
+  assert.equal(skips[0].reason, 'operator-off');
+  assert.ok(!events.some((e) => e.type === 'scout-start'));
+});
+
+test('scout: a non-boolean throws at runJob\'s door, before the ledger', async () => {
+  const wd = makePlanWork('plan-scout-bad');
+  const provider = scriptedProvider([{ text: 'never' }]);
+  const file = join(wd, 'spine.jsonl');
+  await assert.rejects(
+    () => runJob(planJob(), { approvals: [], workdir: wd, provider, emit: makeSpine(file), scout: /** @type {any} */ ('off') }),
+    TypeError,
+  );
+  assert.equal(provider.calls.length, 0, 'not one provider call');
+  assert.equal(existsSync(file), false, 'not one spine record — the guard runs before the gate');
+});
+
 test('MEMORY-CACHE: an ARMED run leaves exactly one memory-cache record on its own spine, before job-end, fields exact', async () => {
   const wd = makePlanWork('plan-memcache-armed');
   // recall/get join the ceiling so G1 is satisfied (a capping arm requires the
