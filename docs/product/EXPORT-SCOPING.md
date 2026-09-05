@@ -132,6 +132,6 @@ This document turns that design into a buildable shape and names what only hamr 
    diverges from `run-reuse` (envelope folded into the hash) and is arbiter-adjacent →
    pending hamr's word.
 
-**Pending hamr:** worktree (Q1), no-re-sign-on-tighten (Q8).
+**hamr, same day: "worktree, no-resign."** Both locked. Build spec: `docs/product/EXPORT-BUILD.md`.
 
-**Status line: INTERVIEW ROUND 1 ANSWERED. Two rulings pending. Nothing built, no run.**
+**Status line: LOCKED (interview complete, 2026-09-05). Build spec frozen separately. Nothing built, no run.**
