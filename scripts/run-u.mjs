@@ -200,6 +200,26 @@ const READ_SHIM_LABEL = shimArg === null
  * is the one failure the arm resolver's throw cannot catch. */
 const SHIM_TAIL = shimArg === null ? '' : ` --read-shim ${shimArg}`;
 
+// --scout picks whether the plan flow pays for the read-only survey at all
+// (docs/product/SCOUT-CONTRAST.md). Runner territory exactly like --read-shim
+// and --model: the spec names no scout, so the signed hash is unaffected. An
+// unrecognised value throws at argv, before the approval gate — the same
+// param-guard class as --read-shim above, for the same reason: a silently
+// coerced knob would mislabel a bench row.
+const SCOUT_NAMES = /** @type {Record<string, boolean>} */ ({ on: true, true: true, off: false, false: false });
+const scoutArg = arg('scout');
+if (scoutArg !== null && !Object.prototype.hasOwnProperty.call(SCOUT_NAMES, scoutArg)) {
+  console.error(`unknown --scout "${scoutArg}" — one of: ${Object.keys(SCOUT_NAMES).join(', ')}`);
+  process.exit(2);
+}
+const SCOUT = scoutArg === null ? true : SCOUT_NAMES[scoutArg];
+const SCOUT_LABEL = scoutArg === null
+  ? 'scout ON (default)'
+  : (SCOUT ? 'scout ON (default)' : 'scout OFF (--scout off — operator probe; planner drafts blind)');
+/** every re-invocation this script PRINTS carries the arm — the SHIM_TAIL rule,
+ * so a resume never silently drops it and runs the default under the arm's label. */
+const SCOUT_TAIL = scoutArg !== null && !SCOUT ? ' --scout off' : '';
+
 const jobKey = arg('job') ?? 'aurora-spawner';
 const target = JOBS[/** @type {keyof typeof JOBS} */ (jobKey)];
 if (!target) { console.error(`unknown --job "${jobKey}" — one of: ${Object.keys(JOBS).join(', ')}`); process.exit(2); }
@@ -687,6 +707,7 @@ if (arg('approve') !== specHash) {
   console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  strikeLimit=${STRIKE_LIMIT} (step ladder + close-fix progress rule)`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
   console.log(`  shim     ${READ_SHIM_LABEL}`);
+  console.log(`  scout    ${SCOUT_LABEL}`);
   console.log(`  goal     "${spec.goal}"`);
   // F87 — the goal must state everything the close will judge, and nothing derives
   // one from the other or checks them against each other. So the only defence is
@@ -833,7 +854,7 @@ if (arg('approve') !== specHash) {
   // costs a cycle, never toward the one that mints a green nobody read). A pause WITH
   // a ruling is shown the ruling back — including the words that will BE the gap —
   // and one invocation to sign.
-  const invoke = (/** @type {string} */ tail) => `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${tail} --approve ${specHash}`;
+  const invoke = (/** @type {string} */ tail) => `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
   /** the door the operator has already picked, as flags — hoisted out of the else
    * below so the inhibitor line at the bottom can print the WHOLE command rather
    * than a shape the operator has to assemble. Empty on an ordinary run and on the
@@ -970,8 +991,8 @@ if (PAUSED && RULING?.decision === 'pause') {
   console.log(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
   console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
   console.log('  resume   the SAME runid, whenever you want, with the door you pick then:');
-  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME}${SHIM_TAIL} --decide accept --approve ${specHash}`);
-  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME}${SHIM_TAIL} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL} --decide accept --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
   console.log(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
   process.exit(0);
 }
@@ -1091,6 +1112,7 @@ console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MO
 // the arm is named on the run's own stdout: a battery row whose arm is only in the
 // driver's plan is a row nobody can audit from its own log.
 console.log(`   ${READ_SHIM_LABEL}`);
+console.log(`   ${SCOUT_LABEL}`);
 
 // F67 — the OUTSIDE watchdog, started before the run and sharing nothing with it.
 // Every guard bareloop had lived inside this process, and ms3197n8/ms3jh76q proved
@@ -1185,6 +1207,7 @@ try {
     approvals, workdir: wd, provider, providerFor, judgeProvider, emit: makeSpine(spineFile),
     shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: CLOSE_TIMEOUT_MS,
     readShim: READ_SHIM,
+    scout: SCOUT,
     // RESUME: the money and the wall the halted run already burned are FOLDED IN (so
     // the signed ceiling cannot widen by being re-invoked), and the checkpoint it
     // reached is handed over so the plan is reloaded rather than re-drafted and the
@@ -1311,7 +1334,7 @@ if (mh) {
   console.log(`  trend   ${mh.trend} — ${mh.reading}`);
   console.log(`  lever   ${mh.lever}`);
   for (const o of mh.options ?? []) console.log(`          · ${o}`);
-  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
   console.log('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
 }
 // A STALL is a checkpoint too (hamr's go, 2026-08-13). Its own escalation prints one
@@ -1321,7 +1344,7 @@ if (mh) {
 // the hash already approved is the hash that resumes.
 if (outcome === 'step-stalled') {
   console.log('\nSTALL HALT — the model stopped producing rounds and reissuing the call did not recover it. The tree, the plan and the steps already finished STAND.');
-  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve ${specHash}`);
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve ${specHash}`);
   console.log('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
   console.log('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
 }
@@ -1342,7 +1365,7 @@ if (outcome === 'provider-red') {
   console.log(`  died    ${total === null ? 'before a plan was accepted — nothing paid is re-payable'
     : done >= total ? `at the close — all ${total} step(s) finished`
       : `in step ${done + 1} of ${total}`}`);
-  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL} --approve ${specHash}`);
+  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve ${specHash}`);
   console.log('          (no spec edit, so the hash is unchanged — this re-enters at the recorded step and re-pays for none of the ones before it)');
   console.log('          (if the allowance is what actually ran out underneath the transport fault, that preview says so and refuses — it is read there, not asserted here)');
 }
@@ -1363,7 +1386,7 @@ if (outcome === HITL_PAUSE) {
   ]);
   console.log('  clock    STOPPED — the wall does not run while a person is reading (W-2), and this leg\'s elapsed is what folds into the resume');
   console.log('');
-  const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${tail} --approve ${specHash}`;
+  const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
   for (const l of doorLines({
     rerun: answer(' --decide rerun --text "<what you want done differently>"'),
     accept: answer(' --decide accept'),

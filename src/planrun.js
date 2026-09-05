@@ -642,6 +642,17 @@ ${scoutBlob || '(no scout notes)'}`;
  *   it.
  * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory)
  * @param {number} [opts.maxStepRounds] the shell's per-step rounds ceiling (validatePlan's bound)
+ * @param {boolean} [opts.scout=true] operator-only switch (docs/product/SCOUT-CONTRAST.md):
+ *        `false` on a FRESH run (no `resumeSeed`) skips the survey entirely — `scoutBlob`
+ *        stays `''`, no `scout-start`/`scout-result`/`scout-empty` is emitted, and a single
+ *        `scout-skipped {reason:'operator-off'}` records it (a RECORD, never silence — the
+ *        resume skip's own rule). The planner then drafts from `(no scout notes)`
+ *        (line ~587) exactly as it does today when a scout returns an empty blob — OFF is
+ *        byte-identical to today's run everywhere but the survey. Precedence: when
+ *        `resumeSeed` is set the existing resume skip fires first and wins its own reason
+ *        (`resumed`); `operator-off` is only ever emitted on a fresh run. A non-boolean
+ *        THROWS a TypeError at entry (the `readShimArm` guard class) — a knob that
+ *        silently coerced would mislabel a bench row.
  * @param {number} [opts.scoutRounds] the read-only survey's round bound (F59: the LAST round is
  *   reserved — a scout that spends every round on tools gets one toolless round to write its
  *   survey, because the bound halts it mid-tool-use and text is its only deliverable)
@@ -805,7 +816,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -822,6 +833,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // would be wrong and would look fine). Only the guard runs here; the flag itself
   // is still threaded onward as written.
   readShimArm(readShim);
+  // The scout switch's guard, same class and same door: a mis-typed value
+  // coerced by truthiness would run the scout under an "off" label (or skip it
+  // under an "on" one) and no reading of the results afterwards could recover
+  // which arm actually ran (docs/product/SCOUT-CONTRAST.md).
+  if (typeof scout !== 'boolean') throw new TypeError(`scout: expected boolean, got ${JSON.stringify(scout)}`);
   // G1's OTHER half, refused at the same $0 door. `validatePlan` reds `read-blind`
   // when a step grants `read` without the retrieval pair — but a step cannot grant
   // what the SIGNED CEILING does not offer, so against a spec whose `tools` lack
@@ -2455,6 +2471,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     emit('scout-skipped', {
       reason: 'resumed', phase: resumeSeed.phase ?? null,
       meaning: 'the killed run already paid for this survey; its plan is reloaded, not re-drafted. A replan after this point drafts from an empty survey plus the failure brief.',
+    });
+  } else if (scout === false) {
+    // The operator-off arm (docs/product/SCOUT-CONTRAST.md): a fresh run whose
+    // operator asked for no survey. Precedence already settled above — the
+    // resume branch fires first and wins its own reason, so this arm is only
+    // ever reached when there is nothing to resume from.
+    emit('scout-skipped', {
+      reason: 'operator-off',
+      meaning: 'the operator ran with --scout off; the planner drafts from "(no scout notes)"; no survey was paid for.',
     });
   } else {
     emit('scout-start', { rounds: scoutRounds });

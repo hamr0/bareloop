@@ -958,7 +958,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, readShim?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, readShim?, scout?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun? })` → outcome — `src/run.js`
 
 The last seven are the RESUME fold and are documented under *Resuming a killed run* below; they
 default to `0` / `true` / `0` / `null` / `[]` / `null` / `null`, so a fresh run passes none of them.
@@ -1026,6 +1026,20 @@ The ledger is per worker, so it resets with every step. On the native (clipipe) 
 arm replaces the CLI-display cap rather than stacking on it; a non-capping arm leaves that wrapper
 installed *inside* the shim, so native never loses its bound. Default-flip pending a paid contrast;
 see CHANGELOG for the replay numbers behind it.
+
+**`scout` (default `true`) — the operator-only off switch** (`docs/product/SCOUT-CONTRAST.md`),
+threaded verbatim from `runJob` to `runPlan`. `false` on a FRESH run (no `resumeSeed`) skips the
+read-only survey entirely — `scout-start`/`scout-result`/`scout-empty` never fire, and a single
+`scout-skipped { reason: 'operator-off', meaning }` records it (a RECORD, never silence — the
+resume skip's own rule). The planner then drafts from `(no scout notes)` exactly as it does today
+when a scout returns an empty blob; nothing else observable changes. Precedence when both a
+resumed leg and `scout:false` are in play: the resume skip fires first and wins its own reason
+(`resumed`) — `operator-off` is only ever emitted on a fresh run. A non-boolean value **throws**
+a `TypeError` at the same door as the `readShim` arm guard, before a token is spent. It is a probe
+knob, not a product default — the spec names no scout, so the signed hash is unaffected — and
+`scripts/run-u.mjs --scout on|off` (default `on`) is its runner-territory surface, modelled on
+`--read-shim`: an unrecognised value exits 2 at argv, and every re-invocation the runner prints
+carries `--scout off` when set, so a resume never silently drops the arm.
 
 **The two hitl terminals (N4 slice 1, doors re-cut 2026-08-18)** are the class's whole surface
 at this layer, and each is a CLEAN exit (`spendComplete` stays true — only the two casualties floor). `hitl-pause` is a

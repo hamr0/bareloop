@@ -5,6 +5,17 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- Operator-only scout OFF switch (`docs/product/SCOUT-CONTRAST.md`): `runJob`/`runPlan`
+  accept `scout` (boolean, default `true`); `false` on a fresh run skips the read-only
+  survey and records `scout-skipped { reason: 'operator-off' }` instead — the planner
+  drafts from `(no scout notes)`. `scripts/run-u.mjs --scout on|off` is the runner
+  surface, modelled on `--read-shim`; a non-boolean/unrecognised value throws/exits
+  before a token is spent. Runner territory — the signed spec hash is unaffected.
+
 ## [0.19.1] — 2026-09-02
 
 ### Fixed
