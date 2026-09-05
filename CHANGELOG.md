@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.20.0] — 2026-09-05
 
 ### Added
 
@@ -15,6 +15,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   drafts from `(no scout notes)`. `scripts/run-u.mjs --scout on|off` is the runner
   surface, modelled on `--read-shim`; a non-boolean/unrecognised value throws/exits
   before a token is spent. Runner territory — the signed spec hash is unaffected.
+  Measured (F126): both arms green on `aurora-u-spawner-types`, OFF cost $0.37 more
+  (inside the $0.40 noise band) — the scout is not dead weight; the switch stays as a
+  probe knob, no default flip.
+
+### Docs
+
+- Export scoping and lock: `docs/product/EXPORT-SCOPING.md` (tree facts, proposed
+  bundle shape) and `docs/product/EXPORT-BUILD.md` (frozen build spec — worktree,
+  no-resign-on-tighten) record hamr's interview answers ahead of the export build
+  itself; no code shipped yet.
+- G4 counting-rule scoping (`docs/product/G4-SCOPING.md`) and the first `docs/logs/BENCH.md`
+  bench-ledger row.
 
 ## [0.19.1] — 2026-09-02
 
