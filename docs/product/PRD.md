@@ -361,7 +361,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     scout"): G3 is established, so the park lifts. Scoping, pre-registered frozen rules, the
     small switch build (`--scout on|off`, runner territory, hash-unaffected) and the two-arm
     design on `aurora-u-spawner-types` ($10 ceiling): `docs/product/SCOUT-CONTRAST.md`.
-    Switch not built, no run.
+    **Same day — MEASURED, lever (3) CLOSED** (F126): both arms green, OFF cost $0.37 MORE
+    (inside the $0.40 noise band, wrong direction for a saving); the scout is not dead
+    weight; nothing to build, no default flip. Switch built on `feat/scout-off`, unreleased.
+    Spend $6.72. Item 24 now has no open lever; next per item 25's amended order: G4.
 
 25. **Priority order** (hamr, 2026-08-31): (1) harness streamline (item 24) → (2) export (the
     product: spec+bridge+close+runner, relocatable — export is never eject, the arbiter

@@ -123,4 +123,12 @@ on all three.
   published-version rule for bench rows does not apply.
 - The two runs — hamr's "fire."
 
-**Status line: SCOPED, switch BUILT on `feat/scout-off` (2026-09-05), no run.**
+## Result (2026-09-05) — MEASURED, F126
+
+Both arms green from the branch. ON `u-mtoqtcb5` $3.18 / 54 rounds / scout $0.40; OFF
+`u-mtor6qkd` $3.54 / 64 rounds. Same plan shape, same close path. OFF cost $0.37 MORE — inside
+the $0.40 noise band, and in the wrong direction for a saving. Read order fired at step 3:
+no saving. Lever closed, nothing to build, no default flip. Full account:
+`docs/logs/FINDINGS.md` F126. Spend: $6.72 of the $10 ceiling.
+
+**Status line: MEASURED (F126). Switch built on `feat/scout-off`, release is hamr's call.**
