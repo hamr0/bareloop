@@ -105,4 +105,33 @@ This document turns that design into a buildable shape and names what only hamr 
 8. **The envelope.** Fixed in the bundle (the spec's own numbers) with tighten-only at the
    CLI, exactly as `run-reuse` does — or may the importer be asked for all three every time?
 
-**Status line: DRAFT for interview. Nothing built, nothing signed, no run.**
+## hamr's answers (2026-09-05, interview round 1)
+
+1. **Real repo, ALWAYS on a branch, never main.** Worktree vs branch: session recommends a
+   per-run WORKTREE (a separate checkout on a fresh branch; the user's own folder untouched;
+   F110: a close in a shared dirty checkout dies) kept alive until the user accepts or
+   discards; the user merges. hamr: "help me decide" — pending his word on worktree.
+2. **Yes — signs at first run, same as the UI.** Refinement (hamr's counter-case, the
+   daily ticketing automation): the bundle is a CLOSED, UNEDITABLE loop. Blessing = replay
+   of the minting run shown + ONE confirming run on the importer's machine; that signature
+   is STORED in the bundle; every later run VERIFIES hash == stored signature and runs
+   without asking. Any change → re-export → new hash → new blessing (CLI or UI).
+3. **A directory with a `package.json` that is the workflow's own map.** Tarball = one
+   packed file of that directory (`npm pack`), a shipping form, not a design.
+4. **Yes, a `bin`:** `bareloop export` / `bareloop run` / `bareloop history`; bare
+   `bareloop` prints a numbered menu (1–3, q) — chosen because it will grow.
+5. **First target: `aurora-u-spawner-types`.**
+6. **Whole history in the bundle** (greens and reds).
+7. **v1 = green only, API only, no door at the CLI tail.** Softgreen later, after green's
+   learnings are shaped and streamlined.
+8. **Tighten-only at run time, yes** — "portable n8n": export sets a wide envelope for the
+   hardest case; a run may only tighten. Session's proposal on hamr's "does tighten need a
+   re-sign? do they re-sign every run?": NO re-sign per run — the stored signature covers
+   the spec + its MAXIMUM envelope; `--budget`/`--wall` below the maximum are runtime
+   parameters recorded on the spine, never a new hash; RAISING needs a re-export. This
+   diverges from `run-reuse` (envelope folded into the hash) and is arbiter-adjacent →
+   pending hamr's word.
+
+**Pending hamr:** worktree (Q1), no-re-sign-on-tighten (Q8).
+
+**Status line: INTERVIEW ROUND 1 ANSWERED. Two rulings pending. Nothing built, no run.**
