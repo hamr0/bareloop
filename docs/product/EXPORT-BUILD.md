@@ -147,3 +147,23 @@ change the spec:
    INSTRUMENT broke; a close that ran and judged the work "no" is **`plan-red`**. The
    runner's tail and `history.jsonl` use those words exactly; never render a judged no as
    `close-red` or an instrument fault as a plan failure.
+
+## Build + validation status (2026-09-06)
+
+M1 `src/bundle.js` (`d576624`, fixes `5333634` import fail-safe, `5880750` shape-fork
+matcher + bundle `package.json`), M2 `src/cli.js` + `bin/bareloop.mjs` (`8faf9df`), M3 docs
+(`a8656fb`). Validation 1–3 ran $0 from this branch: (1) export of `aurora-u-spawner-types`
+→ `bundleHash f8751978…`, 7 files, close cmds rewritten to `$BARELOOP_BUNDLE`, the close
+script's `../src/kinds.js` import rewritten to `bareloop`; (2) clean consumer: `npm pack` of
+the branch + `npm install <bundle>` → `node_modules/.bin/bareloop` present; (3) `bareloop
+run … ` with no key → README questions + hash, exit 0, nothing created. Step 4 (hamr's paid
+fire) pending.
+
+**Finding on the way (F-pending):** export first refused `no-bridge-at-hash` — the bench and
+scout-contrast greens (`u-mtoqtcb5` etc.) were launched WITHOUT `--registry`, so they minted
+per-run bridge FILES (`bridge-<job>-<runid>.json` in the spine dir) but no registry ROW; the
+scoping doc's "bridge at 5d989ae7 exists" read the file, not the row. A $0 replay of the
+archived green spine through the library's own `writeRunGreenRow` mints the row honestly
+(in a scratch registry copy: minted, $3.18, 54 rounds, 0 leaks) — and mints it SHAPE-FORKED
+(`aurora-u-spawner-types-7feefaec`, 5 stages vs the base bridge's 4), which the first M1
+matcher could not see. Writing the row into the real registry is hamr's call.
