@@ -17,6 +17,7 @@ import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
 import { scriptedProvider, initPatientRepo } from './helpers.js';
+import { hashCloseScriptBytes } from '../src/close-integrity.js';
 
 const ARCHIVE = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u-bareloop';
 const AURORA_SOAR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop';
@@ -655,7 +656,10 @@ console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
     writeScope: ['tests/**'],
     goal: 'Write tests/test_x.mjs with an ok assertion.',
     verdictType: 'green',
-    close: [{ name: 'clean-run', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+    // PRD item 27/M2: sha256 of the REAL close.mjs bytes written above — this
+    // job actually runs through runJob, so a dummy value would red the run
+    // itself as close-tampered.
+    close: [{ name: 'clean-run', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED', sha256: hashCloseScriptBytes(probe) }],
     tools: ['read', 'write'],
     escalation: { mode: 'decision-ready' },
   };

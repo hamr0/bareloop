@@ -29,10 +29,13 @@ const JOB = {
   // the staged close (PRD v1.28): the inspection IS the list, and the agent's
   // rulers derive from it — `clean-run` and `form-floor` are stages of the same
   // close whose last stage renders the verdict
+  // PRD item 27/M2: each stage's cmd is `python <token> …` — a script-shaped
+  // cmd under closeScriptCandidateToken — and demands sha256; a dummy value,
+  // since this fixture is pure validator shape (never actually run).
   close: [
-    { name: 'clean-run', cmd: 'python -m pytest -ra tests/test_orchestrator.py', expect: 0, gapKeep: '^FAILED' },
-    { name: 'form-floor', cmd: 'python check_form.py', expect: 0 },
-    { name: 'verdict', cmd: 'python grade.py', expect: 0 },
+    { name: 'clean-run', cmd: 'python -m pytest -ra tests/test_orchestrator.py', expect: 0, gapKeep: '^FAILED', sha256: 'a'.repeat(64) },
+    { name: 'form-floor', cmd: 'python check_form.py', expect: 0, sha256: 'a'.repeat(64) },
+    { name: 'verdict', cmd: 'python grade.py', expect: 0, sha256: 'a'.repeat(64) },
   ],
   tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'],
   escalation: { mode: 'decision-ready' },
@@ -921,7 +924,7 @@ test('W3: an OFF-MENU step scope is one defect — the illegal scope reds, the n
 
 /** the legacy object-form predicate close — still validateJob-green, and the only
  * shape whose staging used to differ between the three consumers */
-const OBJ_JOB = { ...clone(JOB), close: { type: 'predicate', cmd: 'python grade.py', expect: 0, gapKeep: '^FAILED' } };
+const OBJ_JOB = { ...clone(JOB), close: { type: 'predicate', cmd: 'python grade.py', expect: 0, gapKeep: '^FAILED', sha256: 'a'.repeat(64) } };
 
 test('W4: an object-form predicate close is validateJob-green (the anchor these cases rest on)', () => {
   assert.deepEqual(validateJob(OBJ_JOB).reds, []);

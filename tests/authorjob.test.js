@@ -462,7 +462,10 @@ test('D9.1: the GROUNDED listing rule refuses an invented path at signing, where
 
 test('prepareSigning refuses a spec carrying a COMMAND close — those stages are signed as written', async (t) => {
   const p = makePatient(t);
-  const spec = { ...SPEC_DRAFT, verdictType: 'green', close: [{ name: 'c', cmd: 'node check.mjs', expect: 0 }] };
+  // PRD item 27/M2: `node check.mjs` is a script-shaped cmd and demands
+  // sha256 — a dummy value keeps this a pure command-vs-declared-close
+  // check, isolated from that unrelated field.
+  const spec = { ...SPEC_DRAFT, verdictType: 'green', close: [{ name: 'c', cmd: 'node check.mjs', expect: 0, sha256: 'a'.repeat(64) }] };
   const r = await prepareSigning({ spec, workdir: p.dir, seedRef: p.seed });
   assert.equal(r.ok, false);
   assert.ok(r.reds.some((x) => x.path === 'closeDecl'));

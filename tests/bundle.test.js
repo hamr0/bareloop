@@ -23,6 +23,7 @@ import { writeRunGreenRow } from '../src/reuse.js';
 import {
   exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from '../src/bundle.js';
+import { hashCloseScriptBytes } from '../src/close-integrity.js';
 
 /** this repo's own root — the real `bareloop` package a symlinked
  * node_modules/bareloop points at in these fixtures. */
@@ -52,6 +53,10 @@ const stage = process.argv[2];
 console.log(\`FIXTURE \${stage} \${JUDGED_MARKER}\`);
 process.exit(0);
 `;
+// PRD item 27/M2: both close stages below share this one script file, so
+// they share this one signature — the sha256 field never covers `cmd`'s
+// args, only the bytes the path resolves to.
+const CLOSE_SCRIPT_SHA256 = hashCloseScriptBytes(CLOSE_SCRIPT_SOURCE);
 
 const JOB = {
   schema: 'job-v1',
@@ -65,8 +70,8 @@ const JOB = {
   goal: 'Make the fixture pass its own close.',
   verdictType: 'green',
   close: [
-    { name: 'changed-from-seed', cmd: `node ${CLOSE_SCRIPT_PATH} changed-from-seed`, expect: 0, offer: false },
-    { name: 'suite-green', cmd: `node ${CLOSE_SCRIPT_PATH} suite-green`, expect: 0 },
+    { name: 'changed-from-seed', cmd: `node ${CLOSE_SCRIPT_PATH} changed-from-seed`, expect: 0, offer: false, sha256: CLOSE_SCRIPT_SHA256 },
+    { name: 'suite-green', cmd: `node ${CLOSE_SCRIPT_PATH} suite-green`, expect: 0, sha256: CLOSE_SCRIPT_SHA256 },
   ],
   escalation: { mode: 'decision-ready' },
 };
@@ -103,7 +108,7 @@ const CLOSE_SCRIPTS = { [CLOSE_SCRIPT_PATH]: CLOSE_SCRIPT_SOURCE };
 
 const VARIANT_JOB = (() => {
   const j = clone(JOB);
-  j.close = [...j.close, { name: 'extra-stage', cmd: `node ${CLOSE_SCRIPT_PATH} extra-stage`, expect: 0 }];
+  j.close = [...j.close, { name: 'extra-stage', cmd: `node ${CLOSE_SCRIPT_PATH} extra-stage`, expect: 0, sha256: CLOSE_SCRIPT_SHA256 }];
   return j;
 })();
 
@@ -388,9 +393,20 @@ test('exportBundle refuses: a close[].cmd not shaped "node <abs .mjs> …"', (t)
   assert.equal(existsSync(outDir), false);
 });
 
+/** PRD item 27/M2: re-sign every close stage's sha256 against `script` — these
+ * fixtures deliberately swap the SCRIPT content while keeping the same spec,
+ * to isolate ONE red (an import shape) at a time; without this, the swapped
+ * content would ALSO trip close-sha-mismatch and break the exact-red-count
+ * assertions these tests make on purpose.
+ * @param {any} job @param {string} script */
+function reSignFor(job, script) {
+  const sha256 = hashCloseScriptBytes(script);
+  return { ...job, close: job.close.map((/** @type {any} */ s) => ({ ...s, sha256 })) };
+}
+
 test('exportBundle refuses: a close script importing something src/index.js does not export', (t) => {
   const badScript = CLOSE_SCRIPT_SOURCE.replace('JUDGED_MARKER', 'NOT_A_REAL_EXPORT');
-  const job = clone(JOB);
+  const job = reSignFor(clone(JOB), badScript);
   const bridge = bridgeFor(job);
   const registryDir = makeRegistry(t, bridge);
   const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
@@ -418,7 +434,7 @@ function scriptWith(replacementLine) {
 
 /** @param {import('node:test').TestContext} t @param {string} script @returns {any} */
 function exportWithScript(t, script) {
-  const job = clone(JOB);
+  const job = reSignFor(clone(JOB), script);
   const bridge = bridgeFor(job);
   const registryDir = makeRegistry(t, bridge);
   const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');

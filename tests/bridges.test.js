@@ -75,11 +75,14 @@ const JOB = {
   writeScope: ['src/**'],
   goal: 'Make litectx pass tsc --strict without weakening the tests.',
   verdictType: 'green',
+  // PRD item 27/M2: `typecheck`/`no-suppressions` are script-shaped cmds and
+  // demand sha256 — a dummy value, since this is a pure validator fixture
+  // (never actually run).
   close: [
     { name: 'changed-from-seed', cmd: 'git diff --quiet', expect: 1, offer: false },
-    { name: 'typecheck', cmd: 'npx tsc --noEmit', expect: 0 },
+    { name: 'typecheck', cmd: 'npx tsc --noEmit', expect: 0, sha256: 'a'.repeat(64) },
     { name: 'suite-green', cmd: 'npm test', expect: 0 },
-    { name: 'no-suppressions', cmd: 'node scripts/no-suppressions.mjs', expect: 0 },
+    { name: 'no-suppressions', cmd: 'node scripts/no-suppressions.mjs', expect: 0, sha256: 'a'.repeat(64) },
   ],
   escalation: { mode: 'decision-ready' },
 };

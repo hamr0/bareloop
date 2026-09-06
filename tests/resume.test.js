@@ -35,6 +35,7 @@ import { validateJob, jobSpecHash } from '../src/job.js';
 import { makeRegistry, saveBridge, loadBridge } from '../src/bridges.js';
 import { makeSpine } from '../src/spine.js';
 import { readSpine, scriptedProvider, initPatientRepo, mockWallClock } from './helpers.js';
+import { signCloseScripts } from '../src/close-integrity.js';
 
 const base = mkdtempSync(join(tmpdir(), 'resume-test-'));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -52,7 +53,10 @@ const JOB = (over = {}) => ({
   writeScope: ['src/**'],
   goal: 'Make the package pass tsc --strict without weakening the tests.',
   verdictType: 'green',
-  close: [{ name: 'typecheck', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+  // PRD item 27/M2: this default close is never actually spawned in most of
+  // this file's tests (mocked/scripted runJob) — a dummy value satisfies
+  // validateJob's shape check. STEPJOB/CYCLEJOB below sign for real.
+  close: [{ name: 'typecheck', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED', sha256: 'a'.repeat(64) }],
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
   ...over,
@@ -1195,13 +1199,16 @@ console.log('FAILED missing ' + missing.join(', ')); process.exit(1);
   return wd;
 }
 
-const STEPJOB = (over = {}) => ({
+// PRD item 27/M2: `wd` is REQUIRED (not optional) — every caller of STEPJOB
+// runs its close for real against a `patientDir(...)`-written close.mjs, and
+// signCloseScripts needs that real directory to hash the real file.
+const STEPJOB = (wd, over = {}) => signCloseScripts({
   ...JOB(),
   job: 'plan-patient',
   writeScope: ['src/**', 'tests/**'],
   close: [{ name: 'files-present', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
   ...over,
-});
+}, wd).spec;
 
 const STEP_A = { id: 'seed-src', action: 'Write src/a.mjs.', tools: ['write'], rounds: 4, target: 'src/a.mjs', exit: [{ type: 'artifact-written', path: 'src/a.mjs' }] };
 const STEP_B = { id: 'write-test', action: 'Write tests/test_x.mjs with an ok assertion.', tools: ['write'], rounds: 4, target: 'tests/test_x.mjs', exit: [{ type: 'artifact-written', path: 'tests/test_x.mjs', pattern: 'ok' }] };
@@ -1209,7 +1216,7 @@ const TWO_STEP = { schema: 'plan-v1', steps: [STEP_A, STEP_B] };
 const wcall = (id, path, content) => ({ toolCalls: [{ id, name: 'shell_write', arguments: { path, content } }] });
 
 /** record a REAL plan flow: real executor, real spawned close, scripted provider */
-async function recordFlow(wd, script, { job = STEPJOB(), capRuns = 3, resumeSeed, provider, over = {} } = {}) {
+async function recordFlow(wd, script, { job = STEPJOB(wd), capRuns = 3, resumeSeed, provider, over = {} } = {}) {
   const jv = validateJob(job, { shellCapUsd: job.budgetUsd });
   assert.deepEqual(jv.reds, [], 'the fixture job must be validateJob-green');
   /** @type {any[]} */
@@ -1364,7 +1371,7 @@ test('resume end to end: the restarted try RELOADS the plan and re-pays for noth
   // scripted provider is the one legitimate seam; the close, the plan flow, the ledger
   // and the registry write are all real.
   const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
-  const job = STEPJOB();
+  const job = STEPJOB(wd);
   const envelope = { perTryBudgetUsd: 5, perTryWallMs: 1_800_000, bridgeTries: 0 };
   const approvals = [{ specHash: jobSpecHash({ ...job, budgetUsd: 5, maxWallMs: 1_800_000 }), signer: 'hamr', ts: '2026-08-02T00:00:00Z' }];
   const dir = freshRegistry();
@@ -1746,7 +1753,7 @@ const fakeClock = (startMs = 1_000_000) => {
  * emits its own `wall-bounded` there (src/planrun.js, the round seam) */
 async function wallCrossedFlow() {
   const wd = patientDir(['src/a.mjs', 'tests/test_x.mjs']);
-  const job = STEPJOB();
+  const job = STEPJOB(wd);
   const clk = fakeClock();
   const script = twoStepScript(wd);
   const inner = scriptedProvider(script);
@@ -1954,7 +1961,9 @@ console.log(\`FAILED red: \${missing.length} requirement(s) missing\`); process.
   return wd;
 }
 
-const CYCLEJOB = (over = {}) => ({
+// PRD item 27/M2: `wd` is REQUIRED — every CYCLEJOB caller runs its close for
+// real against a `cyclePatient()`-written check.mjs/close.mjs.
+const CYCLEJOB = (wd, over = {}) => signCloseScripts({
   schema: 'job-v1',
   job: 'money-cycle',
   description: 'a plan-shape job whose wallet runs out inside the close-fix loop',
@@ -1971,7 +1980,7 @@ const CYCLEJOB = (over = {}) => ({
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
   ...over,
-});
+}, wd).spec;
 
 const CYCLE_PLAN = JSON.stringify({
   schema: 'plan-v1',
@@ -1999,7 +2008,7 @@ const approveJob = (job) => [{ specHash: jobSpecHash(job), signer: 'hamr', ts: '
  * @param {string} wd @param {object} [over] extra runJob opts (the fold, for a chain)
  */
 async function moneyLeg1(wd, over = {}) {
-  const job = CYCLEJOB();
+  const job = CYCLEJOB(wd);
   const provider = scriptedProvider([
     { text: 'src/mod.mjs exports x; tests/ is empty.', costUsd: 0.01 },  // scout
     { text: CYCLE_PLAN, costUsd: 0.01 },                                  // draft
@@ -2140,7 +2149,7 @@ const RETRY_PLAN = JSON.stringify({
  * file would fold a STEP's reading into the run's CLOSE trend, in a bucket the close
  * never named. @param {string} wd */
 async function moneyLeg1StepRetry(wd) {
-  const job = CYCLEJOB();
+  const job = CYCLEJOB(wd);
   const w = (tag, files, costUsd) => ({
     toolCalls: files.map(([rel, content], i) => ({ id: `${tag}-${i}`, name: 'shell_write', arguments: { path: join(wd, rel), content } })),
     costUsd,
@@ -2230,7 +2239,7 @@ const REPLAN_CYCLE_PLAN = (id) => JSON.stringify({
  * the ceiling's ONE redraft is spent, and the second plan exhausts too.
  * @param {string} wd @param {object} [over] extra runJob opts (the fold, for a chain) */
 async function replanLeg1(wd, over = {}) {
-  const job = CYCLEJOB();
+  const job = CYCLEJOB(wd);
   const miss = (tag, body) => [cwrite(wd, tag, body, 0.01), { text: `attempt ${tag}`, costUsd: 0.01 }];
   const provider = scriptedProvider([
     { text: 'tests/ is empty.', costUsd: 0.01 },              // scout
@@ -2303,7 +2312,7 @@ test('cycle leg 2: the top-up resumes AT THE CHECKPOINT and greens — the finis
 
   // ── the operator's top-up: a NEW spec version, and a NEW signature (never the
   // library's own doing — `budgetUsd` is in the hash, so raising it is a re-sign)
-  const topped = CYCLEJOB({ budgetUsd: 2 });
+  const topped = CYCLEJOB(wd, { budgetUsd: 2 });
   assert.notEqual(jobSpecHash(topped), jobSpecHash(leg1.job), 'a top-up changes the spec hash: the runner refuses it until it is re-signed');
   const provider2 = scriptedProvider([
     cwrite(wd, 'f1', 'ok A B C\n', 0.05),
@@ -2353,7 +2362,7 @@ test('cycle CONTROL: resuming with the SAME budget buys no second pass — the r
   const r = readPause(leg1.events);
 
   // NO top-up: the same signed spec, so the fold leaves the wallet at or below empty
-  const same = CYCLEJOB();
+  const same = CYCLEJOB(wd);
   const provider2 = scriptedProvider([
     cwrite(wd, 'f1', 'ok A B C\n', 0.05),
     { text: 'the last requirement is in', costUsd: 0.05 },
@@ -2400,7 +2409,7 @@ test('cycle UNSOLVABLE: a topped-up leg that makes no per-stage progress strikes
 
   // the operator tops up — and the work turns out to be unreachable: every fix
   // rewrites the file without ever satisfying the requirement the close names
-  const topped = CYCLEJOB({ budgetUsd: 2 });
+  const topped = CYCLEJOB(wd, { budgetUsd: 2 });
   const provider2 = scriptedProvider([
     cwrite(wd, 'f1', 'ok A B x\n', 0.02), { text: 'fix a', costUsd: 0.02 },
     cwrite(wd, 'f2', 'ok A B y\n', 0.02), { text: 'fix b', costUsd: 0.02 },
@@ -2455,7 +2464,7 @@ test('cycle F6: a DECLARED floor survives the whole cycle — leg 1\'s unknown r
   assert.equal(r.restart.priorSpendComplete, false, 'the reader carries the floor forward off the declaration');
   assert.ok(Math.abs(r.restart.priorSpentUsd - end1.spentUsd) < 1e-9, 'and the floor is still a real number, not a blank');
 
-  const topped = CYCLEJOB({ budgetUsd: 2 });
+  const topped = CYCLEJOB(wd, { budgetUsd: 2 });
   const provider2 = scriptedProvider([
     cwrite(wd, 'f1', 'ok A B C\n', 0.05),
     { text: 'the last requirement is in', costUsd: 0.05 },
@@ -2512,7 +2521,7 @@ const wallCutProvider = (burnWall) => {
 
 test('F83: a floor leg 1 MINTED (the wall cut a call mid-flight) reaches the resume seam — the restart fold reads the terminal, not just the rounds it can count', async (t) => {
   const wd = cyclePatient();
-  const job = CYCLEJOB({ maxWallMs: 120_000 });
+  const job = CYCLEJOB(wd, { maxWallMs: 120_000 });
   mockWallClock(t);
   const provider = wallCutProvider(() => t.mock.timers.tick(200_000));
   const file = join(wd, 'spine-wallcut.jsonl');
