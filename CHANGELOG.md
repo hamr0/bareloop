@@ -5,6 +5,29 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **Export/run a bundle** (`docs/product/EXPORT-BUILD.md`, frozen 2026-09-05). New
+  `src/bundle.js`: `exportBundle` mints a plain directory bundle (signed spec with
+  `close[].cmd` rewritten under `$BARELOOP_BUNDLE`, the close scripts, and the job's
+  registry history) from a job that already carries a real green at its current spec
+  hash — refuses (typed reds, nothing written) on an unrelocatable close cmd, a script
+  collision, an import this module cannot verify or that bareloop's own `src/index.js`
+  does not export, or no bridge at the spec's hash. `bundleHash(dir)` / `readBundle(dir)`
+  recompute the signature from disk and red `bundle-tampered` on any mismatch — the load-
+  bearing check that stands between a swapped close script and a fake green (N4).
+  `resolveBundleSpec`, `checkEnvelope` (tighten-only budget/wall), `bless`/`verifyBlessing`
+  (first-run approval, no-resign on later runs), and `appendHistory` round out the module.
+- **`bareloop` CLI and `bin/`.** New `bin/bareloop.mjs` (the package's first `bin` entry)
+  and `src/cli.js`'s `main(argv, deps)` — exported from the package root as `cliMain` —
+  implement `bareloop export|run|history` plus a bare numbered menu. `run` orders its
+  steps as: tamper check, tighten-only envelope check, provider key (or the injected
+  test-seam provider), blessing/approval, a fresh `git worktree add --detach` per run,
+  then `runJob` itself; the tail prints the outcome, spend, and the `git merge` command —
+  merge stays human, the CLI never merges. `bin/` added to `package.json`'s `files`.
+
 ## [0.20.0] — 2026-09-05
 
 ### Added

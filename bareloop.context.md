@@ -2511,6 +2511,189 @@ An unresolvable `--range` (no such ref — a fresh clone with no `origin`, a det
 checkout that never fetched) is a **skip**, printed and exited 0: a missing baseline is
 not a rule violation, never a red.
 
+### Bundles — export a job, run it elsewhere (`src/bundle.js`, `src/cli.js`, `bin/bareloop.mjs`)
+
+`docs/product/EXPORT-BUILD.md` (frozen build spec, 2026-09-05). A **bundle** is a plain
+directory that ships a proven job — spec, close scripts, and registry history — so it can
+run on a different machine without this repo. `npm pack` is its shipping form (there is no
+separate tarball step).
+
+```
+<job>.bareloop/
+  manifest.json       { schema:"bundle-v1", job, exportedAt, bareloopVersion, files:{...}, bundleHash }
+  spec.json           the job spec; close[].cmd rewritten to "node $BARELOOP_BUNDLE/close/<script> …"
+  close/<script>.mjs  the close script(s), verbatim except `from '../src/…'` → `from 'bareloop'`
+  bridges/*.json      the job's whole registry history for this job name (greens and reds)
+  README.md           the operator questions, in the order `bareloop run` asks them
+  blessing.json        absent at export; written by the run that first greens it
+  history.jsonl        absent at export; one line appended per `bareloop run` on this machine
+  runs/<runid>/        absent at export; one per run — that run's own spine.jsonl + gate-audit.jsonl
+```
+
+**`bundleHash`** = sha256 over the sorted `path:contentSha256` lines of exactly `spec.json`
+and every `close/*` file (`hashFilesMap` in `src/bundle.js`) — nothing else. `manifest.json`,
+`README.md`, `bridges/*`, `blessing.json`, `history.jsonl` and `runs/` are all **outside**
+the hash on purpose: they are records, not the arbiter. This is the one signature a human
+approves and the CLI stores.
+
+**Code-vs-spec, verified by reading `src/bundle.js`/`src/cli.js`:** the frozen spec's bundle
+layout table also lists a `package.json` (name/version/`dependencies: {"bareloop": "^…"}}) as
+part of the bundle. `exportBundle` does not write one — a bundle today has no `package.json`
+of its own; an importer's `npm install <bundle dir>` installs a directory with no manifest.
+The `runs/<runid>/` directory (this run's relocated `spine.jsonl`/`gate-audit.jsonl`,
+written by `bareloop run`, step 6 below) is real and live but is not in the frozen spec's
+layout table at all. `history.jsonl`'s row also carries `bundleHash` and `approveHash`
+(the POC-fact correction, below) beyond the fields the original layout table named.
+
+#### `src/bundle.js` — pure, no provider/process calls
+
+| function | args → returns | notes |
+|---|---|---|
+| `exportBundle(o)` | `{ spec, closeScripts, registryDir, outDir, bareloopVersion }` → `{ ok, reds, dir, bundleHash, manifest }` | mints the directory above. Every check runs before anything touches disk — a red means nothing was written |
+| `bundleHash(dir)` | `dir` → sha256 hex | recomputes from what is on disk right now; throws only if `dir` itself is not a directory |
+| `readBundle(dir)` | `dir` → `{ ok, reds, spec, manifest, bridges, blessing, history }` | never throws; every failure is a typed red. Runs the tamper check (below) whenever both a manifest and a spec parsed |
+| `resolveBundleSpec(bundle, bundleDir)` | a `readBundle` result + the bundle dir → `{ spec, approveHash }` | the in-memory `$BARELOOP_BUNDLE` → absolute `bundleDir` substitution; `approveHash` is `jobSpecHash` of the *substituted* spec, never the unresolved one |
+| `checkEnvelope(spec, envelope)` | `spec` (already resolved) + `{ budgetUsd?, maxWallMs? }` → `{ ok, reds }` | tighten-only: a given number must be ≤ the spec's own |
+| `bless(dir, record)` | `dir` + `{ bundleHash, runid, outcome, host?, blessedAt? }` → the blessing object | writes/overwrites `blessing.json`; there is only ever one, for the bundle's current hash |
+| `verifyBlessing(bundle)` | a `readBundle` result → `{ ok, unblessed, reds }` | `unblessed: true` (no red) means never blessed here; a red means blessed-but-stale |
+| `appendHistory(dir, row)` | `dir` + a plain object → `void` | atomic append to `history.jsonl` (`appendFileSync`, same convention as `spine.js`/`ledger.js`) |
+
+**Every red code `src/bundle.js` can emit, and when:**
+
+| code | fires in | meaning |
+|---|---|---|
+| `invalid-value` | `exportBundle` (`spec.job` missing, `spec.close` empty/absent, `outDir` exists and is not a directory), `checkEnvelope` (a given `budgetUsd`/`maxWallMs` is not a positive finite number) | a shape the caller must fix before minting/tightening anything |
+| `outdir-not-empty` | `exportBundle` | `outDir` exists and already holds files — export never merges into a prior bundle |
+| `registry-unreadable` | `exportBundle` | `registryDir` itself could not be read (bubbled from `loadRegistry`) |
+| `no-bridge-at-hash` | `exportBundle` | no bridge named `spec.job` in `registryDir` carries a green (bridge-level or on any stored version) at `jobSpecHash(spec)` — export ships a run that actually happened, never an unproven draft |
+| `close-cmd-unrelocatable` | `exportBundle` | a `close[].cmd` is not exactly `node <absolute path>.mjs …` — the one shape this module can relocate under `$BARELOOP_BUNDLE` |
+| `close-script-missing` | `exportBundle` | a stage's `cmd` names a script `closeScripts` carries no source for |
+| `close-script-collision` | `exportBundle` | two different close script paths share one basename — a flat `close/` directory would silently clobber one |
+| `close-import-unparsed` | `exportBundle` | a close script's import is a shape this module cannot verify at all — default import, `* as ns`, mixed default+named/namespace, a bare side-effect import, a dynamic `import()`, or a relative import that does not point into `src/` (a sibling file never ships in `close/`). Fails safe rather than silently accepting what it cannot read |
+| `close-import-unexported` | `exportBundle` | a close script imports a name from bareloop's own `src` that `src/index.js` does not export |
+| `bundle-missing` | `readBundle` | `dir` is not a directory at all |
+| `manifest-invalid` / `spec-invalid` | `readBundle` | `manifest.json`/`spec.json` could not be read or parsed |
+| `bundle-tampered` | `readBundle` | manifest and spec both parsed, but the recomputed `bundleHash` (from what's really on disk) does not match the stored one — **the load-bearing check, N4 below** |
+| `envelope-widen` | `checkEnvelope` | a given `budgetUsd`/`maxWallMs` exceeds the bundle's own signed ceiling — raising one is a re-export, never a runner flag |
+| `blessing-stale` | `verifyBlessing` | `blessing.json` exists but its `bundleHash` no longer matches the manifest's — the bundle was re-exported/edited since the run that blessed it; re-export and re-approve |
+
+**N4 — why `readBundle`'s tamper check must run before anything else touches the bundle.**
+`jobSpecHash` covers `close[].cmd` as a *path*, not the script's bytes, so a swapped close
+script leaves the signed spec's own hash intact. `runJob`'s close-first precheck
+(`src/planrun.js`) would then read the swapped script's fake "already green" as a genuine
+one — a fake green, $0 spent, no work done, reported as success. `readBundle`'s
+`bundle-tampered` red is therefore not a courtesy check: it is the only thing standing
+between a swapped script and a fake green, so `bareloop run` calls it as literal step 1,
+before the envelope check, before the key check, before the worktree, before `runJob` is
+ever reached.
+
+#### The CLI — `bareloop export | run | history`, `bin/bareloop.mjs`
+
+`bin/bareloop.mjs` is a ~10-line adapter: it supplies the real `deps` (real `env`/`stdout`/
+`stderr`/`cwd`/`stdin`) and turns the returned number into `process.exitCode` — never
+`process.exit()`, which can discard queued stdout under a slow reader. All logic lives in
+`src/cli.js`'s `main(argv, deps)`, exported from the package root as **`cliMain`**
+(`export { main as cliMain } from './cli.js'` — renamed on export so it never collides with
+some other module's own generic `main`). `cliMain(argv, deps)` is the in-process test/
+integration seam: pass `deps.provider` (and optionally `providerFor`/`judgeProvider`) and the
+real `ANTHROPIC_API_KEY` check is skipped entirely — a scripted provider *is* the run, the
+same seam `tests/planrun.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
+`now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
+
+Bare `bareloop` (no sub-command) prints a numbered menu — `1 export  2 run  3 history  q
+quit` — and asks each sub-command's arguments one line at a time over the SAME code paths
+below.
+
+- **`bareloop export <jobs/x.json> --registry <dir> --out <dir>`** → resolves the spec's
+  close-script paths against the spec file's own directory (never the process cwd), calls
+  `exportBundle`. On success prints `bundleHash:`, the sorted file list, and "this bundle is
+  unblessed until its first run greens on the importer's machine." Exit `1` on any red or
+  missing flag, `0` on success.
+
+- **`bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]`**
+  — the exact order below; no step is ever reordered:
+  1. `readBundle(bundleDir)` — the tamper check (N4, above). Any red stops here, exit `1`.
+  2. `checkEnvelope(spec, { budgetUsd?, maxWallMs? })` — `--wall` is minutes, converted to ms.
+     A red (an invalid number, or a widen) stops here, exit `1`.
+  3. The provider key: `deps.provider` if the caller injected one (the test seam), else
+     `ANTHROPIC_API_KEY` from `env`. Absent and no injected provider: print the bundle's own
+     `README.md` plus `bundleHash:`, spend nothing, **exit `0`** (this is a legitimate,
+     non-error stop, not a red).
+  4. Blessing. No `blessing.json` yet: print the "first run" notice (+ the minting run's id
+     from the bundled bridge, if any — its spine is *not* bundled in v1, so that's a note
+     only), the `bundleHash`, and **require** `--approve <bundleHash>` to match exactly, or
+     exit `1`. A `blessing.json` present: `verifyBlessing` must pass (`blessing-stale` stops
+     here, exit `1`); a `--approve` flag is accepted but ignored with a printed note
+     ("no-resign" — hamr's ruling).
+  5. The worktree: refuse (exit `1`) if `--repo` is not a git repo with ≥1 commit, or if
+     `<repo>/.bareloop/wt/<runid>` already exists; otherwise `git worktree add --detach
+     <repo>/.bareloop/wt/<runid> HEAD` — **always fresh, never reused** (a reused worktree
+     would read a prior run's edits as "already-green" — a negative POC's exact finding).
+  6. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/
+     `maxWallMs` on that resolved spec in memory if `--budget`/`--wall` were given → mint a
+     **fresh** `approveHash = jobSpecHash(that tightened+resolved spec)` (the runner signs
+     the spec it is actually about to run; the human-approved `bundleHash` never changes) →
+     `runJob(runSpec, { approvals: [{ specHash: approveHash, signer: 'bundle', ts }], workdir:
+     worktree, provider, providerFor, judgeProvider, emit, shellCapUsd: runSpec.budgetUsd,
+     readShim: 'cap', scout: true })`, spine written to `<bundleDir>/runs/<runid>/spine.jsonl`.
+     A thrown `runJob` crash is caught and reported, exit `1`.
+  7. The worktree's `gate-audit.jsonl` is moved to `<bundleDir>/runs/<runid>/gate-audit.jsonl`
+     (same relocation `scripts/run-u.mjs` does for in-repo runs). `spentUsd`/`spendComplete`
+     are read off this run's own `job-end` spine event — never fabricated as `0` when unknown.
+  8. `appendHistory` — one `history.jsonl` line: `{ runid, at, outcome, spentUsd,
+     spendComplete, budgetUsd, maxWallMs, worktree, branch, bundleHash, approveHash }` (the
+     `bundleHash` ↔ `approveHash` pairing, POC fact 2, so the human-signed hash and the
+     hash actually enforced can never drift apart silently). A `green` outcome on a still-
+     unblessed bundle also calls `bless(bundleDir, { bundleHash, runid, outcome, host })`.
+  9. The tail: `outcome`, `spent` (`≥$…` when `spendComplete === false`, `UNKNOWN` when
+     `spentUsd` is `null`), `branch`, `worktree`, a `git merge <branch>` instruction
+     ("merge stays human — this CLI never merges"), and "the worktree is kept until you
+     remove it: `git worktree remove <worktree>`" (F110: never delete it for the user).
+     Exit `0` — a non-green **outcome** is still a successful CLI invocation; only a usage
+     error or an unhandled crash exits non-zero.
+
+- **`bareloop history <bundleDir>`** → prints every `history.jsonl` line verbatim, then
+  every bridge's `listingRow(b)` from `<bundleDir>/bridges`. Always exit `0`; "(no runs
+  yet)" when `history.jsonl` doesn't exist.
+
+**Tighten-only budget/wall.** `--budget`/`--wall` on `bareloop run` may only lower the
+bundle's own signed `budgetUsd`/`maxWallMs` — `checkEnvelope`'s `envelope-widen` red refuses
+anything higher. Raising a ceiling is a re-export (a new signed bundle), never a runner flag.
+
+**First-run approval, blessing, no-resign.** The bundle's own signed `bundleHash` is what a
+human reads and accepts with `--approve` on the run that first blesses it. That first GREEN
+writes `blessing.json`; every later run on that machine, against that same unchanged bundle,
+needs no `--approve` at all ("no-resign", hamr's ruling) — it only has to pass
+`verifyBlessing`. Editing the bundle after blessing (or re-exporting it) changes
+`manifest.bundleHash`, so the stored blessing goes stale (`blessing-stale`) and the human
+has to approve again.
+
+**Fresh worktree per run; merge stays human.** Every `bareloop run` creates a brand-new
+`git worktree add --detach <repo>/.bareloop/wt/<runid>` off `HEAD` and hands that path to
+`runJob` as `workdir` — the caller's own checkout is never touched, and no worktree is ever
+reused (reuse would let a prior run's uncommitted edits masquerade as this run's own green).
+The CLI never merges anything itself: the tail prints the exact `git merge <branch>` command
+and leaves the worktree in place until the human removes it.
+
+**`history.jsonl` row shape** — one JSON object per line, one line per `bareloop run` on this
+machine: `{ runid, at, outcome, spentUsd, spendComplete, budgetUsd, maxWallMs, worktree,
+branch, bundleHash, approveHash }`. `bundleHash` is the bundle's own signed manifest hash
+(unchanged across tightened runs); `approveHash` is the hash of the actual, possibly-
+tightened, `$BARELOOP_BUNDLE`-resolved spec that run executed — the two are recorded side
+by side so a tightened run's real approval can never be confused with the bundle's headline
+signature.
+
+**Vocabulary:** `close-red` means the close **instrument** itself broke — it could not run,
+never finished, was killed, or crashed without judging anything (`CLOSE_FAULTS`, above) —
+never a judgment about the work. `plan-red` means the close ran, judged, and rendered a real
+**no**. A `readBundle`/`checkEnvelope` red is a bundle-shape or envelope refusal (before any
+provider call); it is neither of those two — call it what it is: a bundle-red or an
+envelope-red, not a close verdict.
+
+**What is NOT in v1 (hamr Q7):** the review door at the run's tail, `soft-green`, any
+provider but `anthropic-api`, spine bundling for `formatReplay` on the minting run (only its
+`runid` is noted), and tarball packing — a bundle is a plain directory; use `npm pack` on it
+yourself if you want a tarball.
 
 ## Architecture
 
