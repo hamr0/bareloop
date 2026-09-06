@@ -98,16 +98,26 @@ export const CLOSE_SCRIPT_INTERPRETERS = Object.freeze(['node', 'sh', 'bash', 'p
  * The candidate script path TOKEN a close stage's `cmd` names, by SHAPE
  * alone — no fs, no cwd resolution, so this is safe for `validateJob` (pure)
  * to call directly. Two recognized forms, first match wins:
- *   - an INTERPRETER cmd followed by a non-empty argv[1] → the token is argv[1];
+ *   - an INTERPRETER cmd: the token is the first argv[1..] element that is
+ *     PATH-SHAPED (not a `-`-prefixed flag, and either contains `/` or ends
+ *     in one of `.mjs .cjs .js .ts .sh .py`) — never just argv[1] outright.
+ *     `node --enable-source-maps ./close/x.mjs stage` names `./close/x.mjs`,
+ *     not `--enable-source-maps`; `python -m pytest` and `npx tsc --noEmit`
+ *     name NOTHING (`-m`/`--noEmit` are flags, `pytest`/`tsc` are bare
+ *     command names with no path shape) — fixed 2026-09-06 (orchestrator
+ *     audit) after the earlier bare-argv[1] version demanded a sha256 for a
+ *     token that named no file, making such a spec unsignable forever (the
+ *     sign helper reads nothing, the validator reds permanently);
  *   - a bare cmd whose argv[0] ITSELF is an absolute path (no interpreter
  *     prefix — a `.sh`/other directly-executable close script) → the token
  *     is argv[0].
  * Anything else — a relative bare executable (`true`, `pytest`), an
- * interpreter with no argument, a non-string/empty cmd — names no
- * addressable file under this scheme and returns null; those stages carry
- * no sha256 demand and are invisible to the byte/path detectors, exactly as
- * they always were (most test-fixture closes use exactly this shape on
- * purpose, to exercise runtime behaviour with no real script file at all).
+ * interpreter with no path-shaped argument (`python -m pytest`, `npx tsc
+ * --noEmit`), a non-string/empty cmd — names no addressable file under this
+ * scheme and returns null; those stages carry no sha256 demand and are
+ * invisible to the byte/path detectors, exactly as they always were (most
+ * test-fixture closes use exactly this shape on purpose, to exercise
+ * runtime behaviour with no real script file at all).
  * @param {unknown} cmd
  * @returns {string|null}
  */
@@ -115,7 +125,10 @@ export function closeScriptCandidateToken(cmd) {
   if (typeof cmd !== 'string') return null;
   const parts = cmd.trim().split(/\s+/);
   if (!parts[0]) return null;
-  if (CLOSE_SCRIPT_INTERPRETERS.includes(parts[0])) return parts[1] || null;
+  if (CLOSE_SCRIPT_INTERPRETERS.includes(parts[0])) {
+    const pathShaped = (/** @type {string} */ tok) => !tok.startsWith('-') && (tok.includes('/') || /\.(?:mjs|cjs|js|ts|sh|py)$/.test(tok));
+    return parts.slice(1).find(pathShaped) ?? null;
+  }
   return parts[0].startsWith('/') ? parts[0] : null;
 }
 

@@ -21,6 +21,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { runPlan } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
+import { closeScriptCandidateToken } from '../src/validate.js';
 import {
   readCloseScripts, checkCloseAbsolutePaths, absolutePathLiteralsOf,
   hashCloseScriptBytes, checkCloseByteSignature, checkStageByteSignature, signCloseScripts,
@@ -376,6 +377,35 @@ test('src/cli.js: the bundle CLI\'s runJob call passes resumable:false (F130) �
 // ===========================================================================
 
 const tcall = (id, name, args) => ({ id, name, arguments: args });
+
+// ---------------------------------------------------------------------------
+// (c2) closeScriptCandidateToken — the shared shape test, fixed 2026-09-06
+// (orchestrator audit): the FIRST version returned bare argv[1] for an
+// interpreter cmd, so `python -m pytest` demanded a sha256 for the token
+// `-m` — a flag, never a file — making such a spec permanently unsignable
+// (the sign helper reads nothing at that "path", the validator reds
+// forever). The fix requires the token to be PATH-SHAPED: not a `-`-flag,
+// and either containing `/` or ending in a recognized script extension.
+// ---------------------------------------------------------------------------
+
+test('closeScriptCandidateToken: a bare interpreter invocation with no path-shaped argument names nothing', () => {
+  assert.equal(closeScriptCandidateToken('python -m pytest'), null);
+  assert.equal(closeScriptCandidateToken('npx tsc --noEmit'), null);
+});
+
+test('closeScriptCandidateToken: flags before the real path are skipped, never mistaken for the path', () => {
+  assert.equal(closeScriptCandidateToken('node --enable-source-maps ./close/x.mjs stage'), './close/x.mjs');
+});
+
+test('closeScriptCandidateToken: the ordinary node/bash forms are unchanged', () => {
+  assert.equal(closeScriptCandidateToken('node close.mjs'), 'close.mjs');
+  assert.equal(closeScriptCandidateToken('bash /abs/wrap.sh'), '/abs/wrap.sh');
+});
+
+test('closeScriptCandidateToken: a path-shaped argument further down argv[1..] is still found', () => {
+  assert.equal(closeScriptCandidateToken('python -m mypy --strict src/pkg'), 'src/pkg');
+  assert.equal(closeScriptCandidateToken('python check_form.py'), 'check_form.py');
+});
 
 // ---------------------------------------------------------------------------
 // (d) unit level
