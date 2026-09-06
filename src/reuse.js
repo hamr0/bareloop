@@ -167,7 +167,7 @@ function sameCloseShape(entry, stageNames) {
  * to prevent.
  * @param {string} name @param {string[]} stageNames @returns {string}
  */
-function shapeForkName(name, stageNames) {
+export function shapeForkName(name, stageNames) {
   return `${name}-${createHash('sha256').update(stageNames.join('\n')).digest('hex').slice(0, 8)}`;
 }
 

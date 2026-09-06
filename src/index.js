@@ -81,7 +81,7 @@ export { renderListing, selectionPrompt } from './selection.js';
 // at a review door, and a door with no row to act on can only describe a held learning
 // credit it has no way to release. STORAGE ONLY — nothing here selects, promotes or reuses
 // a bridge; those stay parked on `layer-3-reuse`.
-export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow } from './reuse.js';
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow, shapeForkName } from './reuse.js';
 // BA-21 pricing provenance rides out with the ledger because it is the same job: reading
 // a run's own spend record honestly. `rateProvenance`/`spendProvenance` answer "how much of
 // this was priced by a rate nobody vouched for" — REPORTING ONLY, no halt, no refusal.

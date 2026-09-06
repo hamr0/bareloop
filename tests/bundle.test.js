@@ -13,11 +13,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { mintBridge } from '../src/bridges.js';
+import { writeRunGreenRow } from '../src/reuse.js';
 import {
   exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory,
 } from '../src/bundle.js';
@@ -85,6 +86,60 @@ function makeRegistry(t, bridge) {
 }
 
 const CLOSE_SCRIPTS = { [CLOSE_SCRIPT_PATH]: CLOSE_SCRIPT_SOURCE };
+
+// ---------------------------------------------------------------------------
+// the shape-forked bridge fixture (`no-bridge-at-hash` live defect, F-export-M1
+// fix 2): a VARIANT of JOB whose close carries an EXTRA stage, so its stage
+// set differs from the base bridge's stored `closeStageNames`. Minted through
+// the REAL `writeRunGreenRow`/`writeGreenRow` seam — never a hand-written
+// bridge file — so the fork name this fixture produces is exactly the name
+// production would mint, not a name this test asserted into being.
+// ---------------------------------------------------------------------------
+
+const VARIANT_JOB = (() => {
+  const j = clone(JOB);
+  j.close = [...j.close, { name: 'extra-stage', cmd: `node ${CLOSE_SCRIPT_PATH} extra-stage`, expect: 0 }];
+  return j;
+})();
+
+/**
+ * Mint a base bridge for JOB, then write a green for VARIANT_JOB under the
+ * SAME job slug — production's real fork trigger (`writeGreenRow`: an entry
+ * already exists under this name with a DIFFERENT close-stage shape). Returns
+ * the registryDir holding BOTH the base file and the forked file, plus the
+ * fork's own name (read off the write record `writeRunGreenRow` returns, not
+ * recomputed).
+ * @param {import('node:test').TestContext} t
+ */
+function mintForkFixture(t) {
+  const baseBridge = bridgeFor(JOB);
+  const registryDir = makeRegistry(t, baseBridge);
+  const variantHash = jobSpecHash(VARIANT_JOB);
+  const result = writeRunGreenRow({
+    registryDir,
+    job: VARIANT_JOB,
+    name: null, // defaults to VARIANT_JOB.job, same slug as JOB.job
+    outcome: 'green',
+    plan: { schema: 'plan-v1', steps: [{ id: 's1', tools: ['read', 'edit'] }] },
+    record: {
+      runid: 'r2', patient: 'p1', at: '2026-09-06T00:00:00.000Z',
+      costUsd: 2, spendComplete: true, wallMs: 60_000, rounds: 10, specHash: variantHash,
+    },
+  });
+  assert.equal(result.minted, true, `fork fixture must mint clean: ${JSON.stringify(result)}`);
+  assert.equal(result.write.action, 'mint-shape-forked', 'the real seam must have taken the fork path, not appended');
+  const forkName = result.write.name;
+  assert.notEqual(forkName, JOB.job, 'a forked write must land under a DERIVED name, not the base slug');
+  return { registryDir, forkName, variantHash, baseBridge };
+}
+
+/** copy exactly ONE named bridge file out of a registry into a fresh, isolated registry dir
+ * @param {import('node:test').TestContext} t @param {string} srcDir @param {string} name */
+function isolateBridge(t, srcDir, name) {
+  const dir = tmp(t, 'bareloop-registry-iso-');
+  writeFileSync(join(dir, `${name}.json`), readFileSync(join(srcDir, `${name}.json`), 'utf8'));
+  return dir;
+}
 
 // ---------------------------------------------------------------------------
 // fixture connectivity
@@ -429,4 +484,98 @@ test('exportBundle refuses: a close script named in cmd has no source in closeSc
   assert.equal(r.ok, false);
   assert.equal(r.reds[0].code, 'close-script-missing');
   assert.equal(existsSync(outDir), false);
+});
+
+// ---------------------------------------------------------------------------
+// exportBundle — shape-forked bridges (the live $0 defect: `writeGreenRow`
+// mints a bridge under `shapeForkName(job, closeStageNames)` whenever a run's
+// close-stage set differs from the entry already sitting under the job's own
+// name; `exportBundle` used to look ONLY for `bridge.name === spec.job` and
+// so red `no-bridge-at-hash` even though a real green existed under the fork)
+// ---------------------------------------------------------------------------
+
+test('exportBundle: registry holds ONLY a shape-forked bridge at the current hash — succeeds, bridges/ holds the fork', (t) => {
+  const { registryDir, forkName, variantHash } = mintForkFixture(t);
+  const onlyForkDir = isolateBridge(t, registryDir, forkName);
+  assert.equal(existsSync(join(onlyForkDir, `${JOB.job}.json`)), false, 'the base bridge must be genuinely absent here');
+
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
+  const r = exportBundle({ spec: VARIANT_JOB, closeScripts: CLOSE_SCRIPTS, registryDir: onlyForkDir, outDir, bareloopVersion: '0.99.0' });
+  assert.equal(r.ok, true, `export must find the shape-forked bridge: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
+
+  assert.ok(existsSync(join(outDir, 'bridges', `${forkName}.json`)), 'the fork must be bundled');
+  const shipped = JSON.parse(readFileSync(join(outDir, 'bridges', `${forkName}.json`), 'utf8'));
+  assert.equal(shipped.name, forkName);
+  const hasHash = shipped.specHash === variantHash
+    || (Array.isArray(shipped.versions) && shipped.versions.some((/** @type {any} */ v) => v.specHash === variantHash));
+  assert.equal(hasHash, true, 'the shipped fork must actually carry the current spec hash');
+  // exactly one bridge shipped — the base was never in this registry
+  assert.deepEqual(readdirSync(join(outDir, 'bridges')), [`${forkName}.json`]);
+});
+
+test('exportBundle: base AND fork both present, only the fork at the current hash — succeeds, bridges/ holds BOTH', (t) => {
+  const { registryDir, forkName, variantHash } = mintForkFixture(t);
+
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
+  const r = exportBundle({ spec: VARIANT_JOB, closeScripts: CLOSE_SCRIPTS, registryDir, outDir, bareloopVersion: '0.99.0' });
+  assert.equal(r.ok, true, `export must succeed: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
+
+  const shipped = readdirSync(join(outDir, 'bridges')).sort();
+  assert.deepEqual(shipped, [`${JOB.job}.json`, `${forkName}.json`].sort());
+
+  const base = JSON.parse(readFileSync(join(outDir, 'bridges', `${JOB.job}.json`), 'utf8'));
+  assert.equal(base.specHash === variantHash, false, 'the base entry itself does NOT carry the current hash — only the fork does');
+});
+
+test('exportBundle refuses: fork present but at a DIFFERENT hash, base also at a different hash — no-bridge-at-hash', (t) => {
+  const { registryDir } = mintForkFixture(t);
+
+  // a spec that shares VARIANT_JOB's close shape (so it forks to the SAME derived
+  // name) but has drifted since — its own hash matches neither the base bridge's
+  // hash (JOB's) nor the fork's stored hash (VARIANT_JOB's)
+  const drifted = clone(VARIANT_JOB);
+  drifted.budgetUsd = 999;
+  assert.notEqual(jobSpecHash(drifted), jobSpecHash(JOB));
+  assert.notEqual(jobSpecHash(drifted), jobSpecHash(VARIANT_JOB));
+
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
+  const r = exportBundle({ spec: drifted, closeScripts: CLOSE_SCRIPTS, registryDir, outDir, bareloopVersion: '0.99.0' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'no-bridge-at-hash');
+  assert.equal(existsSync(outDir), false, 'a refused export writes nothing');
+});
+
+// ---------------------------------------------------------------------------
+// exportBundle — package.json (frozen spec: required for `npm install
+// <bundle dir>`, validation step 2). Outside bundleHash by design.
+// ---------------------------------------------------------------------------
+
+test('exportBundle writes package.json with the bareloop dependency, outside bundleHash', (t) => {
+  const bridge = bridgeFor(JOB);
+  const registryDir = makeRegistry(t, bridge);
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
+  const r = exportBundle({ spec: JOB, closeScripts: CLOSE_SCRIPTS, registryDir, outDir, bareloopVersion: '0.99.0' });
+  assert.equal(r.ok, true, `export must succeed: ${JSON.stringify(r.reds)}`);
+
+  const pkgPath = join(outDir, 'package.json');
+  assert.ok(existsSync(pkgPath));
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  assert.equal(pkg.name, 'fixture-export-job.bareloop');
+  assert.equal(pkg.version, '1.0.0');
+  assert.equal(pkg.private, true);
+  assert.equal(pkg.type, 'module');
+  assert.deepEqual(pkg.dependencies, { bareloop: '^0.99.0' });
+  assert.deepEqual(pkg.bareloop, { manifest: 'manifest.json' });
+
+  // package.json is NEVER part of manifest.files or the bundle hash
+  assert.ok(!Object.keys(r.manifest.files).includes('package.json'));
+
+  // editing package.json after export must NOT move bundleHash
+  writeFileSync(pkgPath, JSON.stringify({ ...pkg, version: '2.0.0' }, null, 2));
+  assert.equal(bundleHash(outDir), r.bundleHash, 'package.json is outside the hashed set');
+  const read = readBundle(outDir);
+  assert.equal(read.ok, true, 'editing package.json must not trip bundle-tampered');
 });

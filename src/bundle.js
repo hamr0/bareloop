@@ -24,6 +24,8 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 import { isObj, isNonEmptyString } from './validate.js';
 import { jobSpecHash } from './job.js';
 import { loadRegistry } from './bridges.js';
+import { closeStagesOf } from './plan.js';
+import { shapeForkName } from './reuse.js';
 // The live export list IS `src/index.js`'s own `Object.keys` — never a second,
 // hand-kept copy that can drift from the real surface a close script can
 // legally import. This module is itself exported from `index.js` (a cycle by
@@ -204,10 +206,17 @@ function parseNodeCmd(cmd) {
  * nothing trustworthy to compare against yet.
  *
  * Refusals, each a distinct red code:
- *  - `no-bridge-at-hash` — the job has no bridge in `registryDir` whose name
- *    is `spec.job` and whose recorded specHash (bridge-level or on some
- *    version) equals `jobSpecHash(spec)`: nothing has ever greened THIS exact
- *    spec, so there is nothing proven to ship.
+ *  - `no-bridge-at-hash` — neither of the job's two possible bridge names —
+ *    `spec.job` itself, or its SHAPE FORK `shapeForkName(spec.job,
+ *    closeStagesOf(spec))` (the name `writeGreenRow`/`writeRunGreenRow` in
+ *    `src/reuse.js` mint whenever a run's close-stage set differs from the
+ *    base bridge's `closeStageNames` — same derivation, imported rather than
+ *    re-spelled, so the two names cannot drift) — carries a recorded specHash
+ *    (bridge-level or on some version) equal to `jobSpecHash(spec)`: nothing
+ *    has ever greened THIS exact spec, so there is nothing proven to ship.
+ *    Every candidate bridge that DOES exist (base and/or fork) still ships
+ *    into `bridges/` — the spec says "the job's WHOLE registry history
+ *    (greens and reds)", not just the one that matched.
  *  - `close-cmd-unrelocatable` — a `close[].cmd` is not `node <abs .mjs> …`.
  *  - `close-script-missing` — a cmd names a script `closeScripts` does not
  *    carry the source for.
@@ -259,13 +268,22 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     return fail();
   }
   const currentHash = jobSpecHash(spec);
-  const bridge = reg.bridges.find((/** @type {any} */ b) => b.name === spec.job);
-  const hashMatches = !!bridge && (
-    bridge.specHash === currentHash
-    || (Array.isArray(bridge.versions) && bridge.versions.some((/** @type {any} */ v) => v.specHash === currentHash))
-  );
+  // Two candidate bridge names for this job: its own name, and the SHAPE FORK
+  // `writeGreenRow` mints when a run's close-stage set differs from the base
+  // bridge's stored `closeStageNames` (src/reuse.js `shapeForkName`). The
+  // stage names are derived through the same `closeStagesOf` the writer uses,
+  // never re-spelled, so the fork name this reads can never drift from the
+  // fork name that gets minted.
+  const stageNames = (closeStagesOf(spec) ?? []).map((/** @type {any} */ s) => s.name);
+  const forkName = shapeForkName(spec.job, stageNames);
+  const candidateNames = new Set([spec.job, forkName]);
+  const candidateBridges = reg.bridges.filter((/** @type {any} */ b) => candidateNames.has(b.name));
+  const hashMatches = candidateBridges.some((/** @type {any} */ b) => (
+    b.specHash === currentHash
+    || (Array.isArray(b.versions) && b.versions.some((/** @type {any} */ v) => v.specHash === currentHash))
+  ));
   if (!hashMatches) {
-    red('no-bridge-at-hash', 'spec', `no bridge named "${spec.job}" in ${registryDir} carries a green at this spec's current hash (${currentHash.slice(0, 12)}…) — export ships a run that actually happened, never an unproven draft`);
+    red('no-bridge-at-hash', 'spec', `neither "${spec.job}" nor its shape fork "${forkName}" in ${registryDir} carries a green at this spec's current hash (${currentHash.slice(0, 12)}…) — export ships a run that actually happened, never an unproven draft`);
   }
 
   // close[].cmd shape + import legality, over EVERY stage before writing any of them.
@@ -337,7 +355,10 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
   writeFileSync(join(outDir, 'spec.json'), specText);
   files['spec.json'] = sha256(specText);
 
-  for (const b of reg.bridges.filter((/** @type {any} */ x) => x.name === spec.job)) {
+  // Bundle EVERY candidate bridge that exists (base and/or shape fork) — the
+  // spec says "the job's whole registry history (greens and reds)", not just
+  // whichever one happened to carry the matching hash.
+  for (const b of candidateBridges) {
     writeFileSync(join(bridgesDir, `${b.name}.json`), `${JSON.stringify(b, null, 2)}\n`);
   }
 
@@ -351,6 +372,22 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     bundleHash: hash,
   };
   writeFileSync(join(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+
+  // `package.json` — required by the frozen spec's bundle table so `npm install
+  // <bundle dir>` (validation step 2) works in a clean consumer. Deliberately
+  // OUTSIDE `bundleHash`: the hash covers spec.json + close/* only (per spec),
+  // so this file is written after `hashFilesMap(files)` above and never folded
+  // into `files`/`manifest.files`.
+  const npmName = `${spec.job}.bareloop`.toLowerCase().replace(/[^a-z0-9._-]/g, '-');
+  const packageJson = {
+    name: npmName,
+    version: '1.0.0',
+    private: true,
+    type: 'module',
+    dependencies: { bareloop: `^${bareloopVersion}` },
+    bareloop: { manifest: 'manifest.json' },
+  };
+  writeFileSync(join(outDir, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`);
 
   const readme = [
     `# ${spec.job}`,
