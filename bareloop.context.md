@@ -2552,7 +2552,7 @@ written by `bareloop run`, step 6 below) is real and live but is not in the froz
 layout table at all. `history.jsonl`'s row also carries `bundleHash` and `approveHash`
 (the POC-fact correction, below) beyond the fields the original layout table named.
 
-#### `src/close-integrity.js` — the ONE `close-absolute-path` detector (PRD item 27/M1, F129)
+#### `src/close-integrity.js` — close-absolute-path (M1) AND close-bytes signature (M2)
 
 Shared by `src/bundle.js` (export time) and a $0 run-start precheck inside `runPlan`
 (`src/planrun.js`) — every job, not only exported bundles, refuses at $0 (before the
@@ -2560,11 +2560,43 @@ close-first precheck, before any provider call) when a close script's CONTENT ba
 absolute path that exists on disk. Two spellings of the same rule is exactly how F129
 shipped an export-only guard while every non-exported job stayed exposed.
 
+**Scope (widened 2026-09-06, PRD item 27/M2, an orchestrator audit):** a close script is
+addressable — visible to `readCloseScripts`, `checkCloseAbsolutePaths`, the sha256
+fingerprint, and `signCloseScripts` — when its `cmd` is EITHER an interpreter
+(`node`/`sh`/`bash`/`python`/`python3`/`npx`) followed by a non-empty argv[1], OR a bare
+cmd whose argv[0] ITSELF is an absolute path (a `.sh`/other directly-executable close
+script, no interpreter prefix — e.g. `jobs/aurora-testgen-cold.json`'s close). A relative
+bare executable (`true`, `pytest`, `npm test`) names no file at all and stays out of
+scope, on both halves, exactly as before. The shape test itself
+(`closeScriptCandidateToken`, `src/validate.js`) is shared with `src/job.js`'s sha256
+demand so the demand and the detectors can never drift apart about which stages are in
+scope.
+
 | function | args → returns | notes |
 |---|---|---|
 | `absolutePathLiteralsOf(source)` | close script text → `string[]` | the scan itself (moved here from `src/bundle.js`, which now imports it) |
-| `readCloseScripts(spec, cwd)` | resolved job spec + cwd → `{ stage, path, bytes }[]` | resolves every `close[].cmd` of the form `node <path> …` to its absolute path and bytes off disk; a relative path resolves against `cwd`. Never throws — a missing/unreadable script reports `bytes: null`. Non-`node` cmds (a `.sh` script) are out of scope, same as `src/bundle.js`'s own `parseCmd`. This is the pure reader M2's sha256 fingerprint will reuse |
+| `readCloseScripts(spec, cwd)` | resolved job spec + cwd → `{ stage, path, bytes, sha256 }[]` | resolves every addressable `close[].cmd` (see scope above) to its absolute path and bytes off disk; a relative path resolves against `cwd`. Never throws — a missing/unreadable script reports `bytes: null`. `sha256` (M2, additive) is the stage's own signed field verbatim, or `null` |
 | `checkCloseAbsolutePaths(spec, cwd)` | resolved job spec + cwd → `{ ok: true } \| { ok: false, reds: { stage, path, literal }[] }` | the run-start check `runPlan` calls before the close-first precheck |
+| `hashCloseScriptBytes(text)` | script text → sha256 hex | the ONE formula every M2 consumer uses (minting, the run-start check, the runtime re-verify, the export mismatch check) — hashing the utf8-decoded text agrees with hashing the raw file bytes because a close script is always valid UTF-8 |
+| `checkCloseByteSignature(spec, cwd)` | resolved job spec + cwd → `{ ok: true } \| { ok: false, reds: { stage, path, expected, actual }[] }` | the $0 run-start integrity check (PRD item 27): every signed `close[].sha256` must match the script's bytes off disk RIGHT NOW. `runPlan` calls this alongside `checkCloseAbsolutePaths`, before the close-first precheck and before any provider call — a mismatch reds `close-tampered`. An unreadable signed script reads `actual: null` and is STILL a red (never silently "fine") |
+| `checkStageByteSignature(stages, cwd)` | a close stage chain + cwd → same shape as above | the narrower re-verify `runPlan`'s `runCloseStages` wrapper runs before EVERY close execution (precheck, preflight, check-passes, and the close-fix loop all go through this one seam) — a mismatch short-circuits to a `close-tampered` verdict in the same shape `runClose`/`runStages` render, so it rides out through the existing `CLOSE_FAULTS` machinery exactly like `crashed`/`timed-out`/`killed` |
+| `signCloseScripts(spec, cwd)` | resolved job spec + cwd → `{ ok, spec, changes: {stage,path,old,new}[], missing: {stage,path}[] }` | the PURE minting helper: fills `close[].sha256` from disk for every addressable stage. Never writes anything itself — `scripts/sign-close.mjs` is the thin CLI wrapper that gates on `--write`. A `closeDecl` spec (no script path to sign) returns `ok:false` unchanged |
+
+**`scripts/sign-close.mjs`** — `node scripts/sign-close.mjs <jobs/x.json> [--write]` or
+`--all` for every `jobs/*.json`. Prints the old→new `jobSpecHash` and each stage's
+old→new sha256; NEVER writes unless `--write` is passed (a dry run is the default). The
+agent never runs this with `--write` on its own authority — minting a close-bytes
+signature is arbiter territory exactly like a budget or a wall clock, the same as the
+authoring pipeline's own refusal (`src/authorjob.js`'s `assembleSpec`, which refuses a
+draft carrying `sha256` the same way it refuses `close`/`closeDecl`/`verdictType`).
+
+**`close[].sha256`** — a signed spec field (PRD item 27/M2): hex sha256 of the bytes of
+the script file the stage's `cmd` names (only for an addressable cmd, per the scope
+above). `validateJob` (`src/job.js`) demands it as `missing-required` on every addressable
+stage and shape-checks it (`invalid-value`, 64 lowercase hex chars) even where not
+demanded. It sits INSIDE the signed spec, so `jobSpecHash` covers it with no
+hash-function change — re-signing a job (minting or changing this field) moves the spec
+hash and needs re-approval, exactly like any other semantic edit.
 
 #### `src/bundle.js` — pure, no provider/process calls
 
@@ -2593,6 +2625,8 @@ shipped an export-only guard while every non-exported job stayed exposed.
 | `close-import-unparsed` | `exportBundle` | a close script's import is a shape this module cannot verify at all — default import, `* as ns`, mixed default+named/namespace, a bare side-effect import, a dynamic `import()`, or a relative import that does not point into `src/` (a sibling file never ships in `close/`). Fails safe rather than silently accepting what it cannot read |
 | `close-import-unexported` | `exportBundle` | a close script imports a name from bareloop's own `src` that `src/index.js` does not export |
 | `close-absolute-path` | `exportBundle` (F129) AND `runPlan` (PRD item 27, every job) | a close script's source bakes in a quoted string literal that is an absolute POSIX path which `existsSync` finds real on this machine and which is not under an allow-listed system prefix (`/usr/`, `/bin/`, `/sbin/`, `/lib/`, `/lib64/`, `/dev/`, `/etc/`, `/proc/`, `/sys/`, `/opt/`). **A close judges `process.cwd()` — the runner's cwd — never a path baked into the script (F8/F129):** the live defect this catches is a hardcoded `WORKDIR` making a close judge the ORIGINAL patient checkout instead of the fresh worktree it was actually pointed at, minting a fake `already-green` at $0. A nonexistent absolute-looking literal is a NAME, not a proven hazard, and is not flagged — the check is deliberately monotone and simple, not clever (see `absolutePathLiteralsOf`'s JSDoc, `src/close-integrity.js`, for its named limits: string concatenation and cross-machine-only paths are invisible to it). `runPlan` reds this at run start, before the close-first precheck and before any provider call — $0, nothing spent |
+| `close-sha-mismatch` | `exportBundle` (PRD item 27/M2) | a `close[].sha256` the spec carries does not match the bytes of the script actually being packed into the bundle — the two signatures (this one, and `bundleHash`'s manifest hash over the rewritten script) cover the same bytes by two different paths and must never drift apart silently (N4's own hazard, one layer up). Only fires when a value is PRESENT and wrong; a spec with no sha256 at all reds `missing-required` upstream, at `validateJob` |
+| `close-tampered` | `runPlan` (PRD item 27/M2) | a close script's bytes no longer match its signed `sha256` — checked at run start (alongside `close-absolute-path`, before the close-first precheck and before any provider call) AND before EVERY close run thereafter (`runCloseStages`'s wrapper in `src/planrun.js`, the one seam the precheck/preflight/check-passes/close-fix-loop all share). Distinct from `close-red` (a judged "no" from a working close) and from `close-crashed`/`close-timeout`/`close-killed` (the close ran and hit an instrument fault): this is decided BEFORE the close is even spawned, and it means the close that ran would not have been the one the operator approved. Registered in `CLOSE_FAULTS` (`src/ralph.js`) so it rides out through the same forbidden-zone machinery as every other close fault — never retried, never fed back as a gap |
 | `bundle-missing` | `readBundle` | `dir` is not a directory at all |
 | `manifest-invalid` / `spec-invalid` | `readBundle` | `manifest.json`/`spec.json` could not be read or parsed |
 | `bundle-tampered` | `readBundle` | manifest and spec both parsed, but the recomputed `bundleHash` (from what's really on disk) does not match the stored one — **the load-bearing check, N4 below** |

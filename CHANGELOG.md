@@ -32,6 +32,37 @@ feature lands, **patch** = docs, fixes, scaffolding.
   hardcoded absolute patient path, following `u-spawner-close.mjs`'s fix
   (`3b987d4`). Behaviour-preserving: `run-u` always passes `cwd` = the patient.
 
+- **Close integrity M2 — close-bytes signature** (`docs/product/CLOSE-INTEGRITY-BUILD.md`,
+  PRD item 27, N4). A job's signature now covers its close scripts' CONTENT, not only
+  the path naming them.
+  - New signed spec field `close[].sha256`: hex sha256 of the script file's bytes, for
+    every stage whose `cmd` names an addressable script (an interpreter cmd —
+    `node`/`sh`/`bash`/`python`/`python3`/`npx` — or a bare directly-executable absolute
+    path, e.g. a `.sh` wrapper). It sits inside the signed spec, so `jobSpecHash` covers
+    it with no hash-function change. `validateJob` (`src/job.js`) demands it
+    (`missing-required`) on every addressable stage and shape-checks it
+    (`invalid-value`, 64 lowercase hex chars).
+  - `src/close-integrity.js` gains `hashCloseScriptBytes`, `checkCloseByteSignature`,
+    `checkStageByteSignature`, `signCloseScripts` (all exported from `src/index.js`).
+    `runPlan` verifies the signature at run start (alongside `close-absolute-path`, $0,
+    before the close-first precheck and before any provider call) AND before EVERY
+    close run thereafter (the `runCloseStages` seam the precheck/preflight/check-passes/
+    close-fix-loop all share) — a mismatch reds the new typed fault `close-tampered`
+    (`src/ralph.js`'s `CLOSE_FAULTS`), distinct from `close-red`/`close-crashed`.
+  - `src/bundle.js`'s `exportBundle` reds `close-sha-mismatch` when a spec's signed
+    sha256 disagrees with the script bytes actually being packed — the manifest hash
+    and the spec's own signature must never drift apart.
+  - `scripts/sign-close.mjs`: a thin CLI wrapper around `signCloseScripts` that fills
+    `close[].sha256` from disk and prints the old→new `jobSpecHash`; never writes
+    unless `--write`. The agent never writes this field — `src/authorjob.js`'s
+    `assembleSpec` refuses a draft carrying `sha256` the same way it refuses
+    `close`/`closeDecl`/`verdictType`.
+  - **Widened scope (orchestrator audit, folded into this build):** the addressable-script
+    shape test (`closeScriptCandidateToken`, `src/validate.js`) now also recognizes a
+    bare directly-executable absolute-path cmd (no interpreter prefix) — previously
+    invisible to BOTH `close-absolute-path` and this fingerprint. Every `jobs/*.json`
+    whose close names a script was re-signed with `scripts/sign-close.mjs --all --write`.
+
 ## [0.21.0] — 2026-09-06
 
 ### Added

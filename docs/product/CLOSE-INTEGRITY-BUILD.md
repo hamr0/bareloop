@@ -188,4 +188,8 @@ those stay arbiter-set per the ruling above.
 4. **Bench re-sign is hamr's call** (per item 27's own text: "re-hashes every job → bench
    rows re-sign and re-baseline, hamr's call which way").
 
-## Status line: FROZEN, POC (timing method) PASSED n=1. Build not started.
+## Status line: FROZEN, POC (timing method) PASSED n=1. M1 shipped. M2 (close-bytes
+signature) shipped 2026-09-06 — `close[].sha256`, `close-tampered`, `close-sha-mismatch`,
+`scripts/sign-close.mjs`; scope widened to bare-executable (`.sh`) close scripts per an
+orchestrator audit mid-build (folded into this rung, not a separate one); every
+`jobs/*.json` re-signed. M3 (close timeout autoset) not started.

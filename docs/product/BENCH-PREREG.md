@@ -444,3 +444,35 @@ established base rate is not invalidated by this edit. The pinned `../bareloop-c
 worktree moved from `ee2a349` (v0.12.0 merge, detached) to `8b209a9` (feat/export branch
 tip, detached, carries `3b987d4` in ancestry) on hamr's "we need a permanent fix now"; a
 further re-pin to a `main` that carries the fix is still pending merge (PRD item 27(b)).
+
+## Amendment, 2026-09-06 — PRD item 27/M2 (close-bytes signature) re-hashed every row; RE-SIGN PENDING HAMR
+
+Every `jobs/*.json` whose close names a script — the frozen bench rows included — now
+carries `close[].sha256` (`scripts/sign-close.mjs --all --write`, computed from the REAL
+script bytes on disk at signing time, 2026-09-06). This is the destination the previous
+amendment named as still open ("that gap is PRD item 27 / N4, close-bytes signature,
+still open") — it is now closed at the mechanism level; the bench's own re-sign/re-baseline
+is a SEPARATE decision, hamr's to make (per this document's own Signature rule: "any spec
+edit to either job file re-hashes that row and re-freezes/re-signs the set").
+
+Old→new `jobSpecHash`, this row's own signing pass:
+
+| job | old hash | new hash |
+|---|---|---|
+| `aurora-u-spawner-types.json` | `5d989ae7be3d46f938d551a39a1e08b1d57ff50b32da22a521cbc0e1ab99107e` | `9ad373ac1ce833b88356914b9207b13271332322fcf16c5e46bfdc3811821107` |
+| `litectx-u-types.json` | `42a7c42704fa007b62c1393275ef218cc43cfeebbfc0f4a79750d26eff7f8de0` | `69a41748a9b4c45bf50cf465582f49a4469cc007297f85c8e3096a7fd92346ee` |
+| `aurora-testgen-cold.json` (G2) | `64ca31c0c987b47320ca8622eb80a516463656a03144bd469a8323bbe12e35db` | `6838e871ad79c87f5af233189fe0b28d24ae727cb0fd960aa9b76b2bc0cb8eb6` |
+
+**G2's own scope widening.** `aurora-testgen-cold.json`'s close names `.sh` wrapper
+scripts (`testgen-cold-check-close.sh`, `testgen-close.sh`) with no interpreter prefix — a
+shape this rung's fingerprint could not address until an orchestrator audit mid-build
+widened `readCloseScripts`'/`checkCloseAbsolutePaths`'s scope to bare directly-executable
+absolute-path cmds (folded into this same M2 commit, not a separate rung); before that
+widening, this row's own signing pass would have silently signed ZERO stages. Named here
+because a bench row is exactly the kind of frozen artifact a silent blind spot in a new
+detector would otherwise pass over unnoticed.
+
+**Per this document's Signature rule, the OLD hashes' archived history stays the live
+series until hamr re-freezes at the new hashes** — this amendment records the mechanical
+fact (every row now re-hashes under M2) and stops there; it does not re-baseline, does not
+re-run, and does not touch any bridge/registry/approval file.
