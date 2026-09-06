@@ -43,6 +43,7 @@ import {
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
+import { checkCloseAbsolutePaths } from './close-integrity.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, Retry, wireGate, HaltError } = require('bare-agent');
@@ -914,6 +915,29 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       options: ['restate the close as a predicate', 'wait for the verdict-classes rung'],
     });
     return 'close-unsupported';
+  }
+
+  // ── close-absolute-path (PRD item 27(c), F129's general fix): the SAME
+  // detector `src/bundle.js` already applies at export time, now applied for
+  // EVERY job at run start, before the close-first precheck and before any
+  // provider call. A close script whose CONTENT bakes in an absolute path
+  // that exists on disk judges the wrong tree by construction (F129) — the
+  // spec's own `cmd` field naming the script is the address and stays legal;
+  // only the script's bytes are judged. `readCloseScripts`/
+  // `checkCloseAbsolutePaths` live in `src/close-integrity.js` so this and
+  // `exportBundle` never drift into two spellings of the same rule.
+  {
+    const integrity = checkCloseAbsolutePaths(job, workdir);
+    if (!integrity.ok) {
+      const detail = integrity.reds.map((r) => `${r.stage}: "${r.literal}"`).join('; ');
+      emit('escalation', {
+        category: 'close-absolute-path', decisionReady: true,
+        decision: 'A close script bakes in an absolute path that exists on disk — it would judge the wrong tree by construction (F129), so nothing was run and nothing was spent.',
+        options: ['fix the close script to read the cwd it is given, never a baked-in path', 'abandon the task'],
+        detail,
+      });
+      return 'close-absolute-path';
+    }
   }
 
   // ── THE SIGNER'S ANSWER (N4 §1.4), read before anything costs anything.

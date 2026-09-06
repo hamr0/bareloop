@@ -27,6 +27,7 @@ import { jobSpecHash } from './job.js';
 import { loadRegistry } from './bridges.js';
 import { closeStagesOf } from './plan.js';
 import { shapeForkName } from './reuse.js';
+import { absolutePathLiteralsOf } from './close-integrity.js';
 // The live export list IS `src/index.js`'s own `Object.keys` — never a second,
 // hand-kept copy that can drift from the real surface a close script can
 // legally import. This module is itself exported from `index.js` (a cycle by
@@ -128,50 +129,10 @@ function isRelative(spec) {
   return spec.startsWith('./') || spec.startsWith('../');
 }
 
-// Every quoted string literal (single/double/backtick). Backtick literals
-// carrying `${…}` interpolation are filtered out below — they are not a
-// fixed literal, so they cannot be "a path baked into the script" at all.
-const STRING_LITERAL_RE = /'([^'\\]*(?:\\.[^'\\]*)*)'|"([^"\\]*(?:\\.[^"\\]*)*)"|`([^`\\]*(?:\\.[^`\\]*)*)`/g;
-
-// A close script is entitled to name a real system path (`/usr/bin/env`,
-// `/etc/hosts`, …) without that being the F8/F129 hazard — only a path this
-// bundle would actually relocate (a patient checkout, a scratch dir) is.
-const SYSTEM_PATH_PREFIXES = ['/usr/', '/bin/', '/sbin/', '/lib/', '/lib64/', '/dev/', '/etc/', '/proc/', '/sys/', '/opt/'];
-
-/**
- * F8/F129 — a close judges the cwd the runner gives it, never a path baked
- * into the script itself (`src/ralph.js`'s `cwd` is load-bearing precisely
- * because every close script in this repo's OWN test suite named an
- * absolute path, so cwd never mattered there — see F8). This scans every
- * quoted string literal in a close script's source for an absolute POSIX
- * path (`/…`) that EXISTS on the exporting machine right now and is not
- * under an allow-listed system prefix.
- *
- * Deliberately monotone and simple, not clever, with named limits: a
- * nonexistent absolute-looking string is treated as a NAME, not a path —
- * `existsSync` is the only oracle this has for "load-bearing", so it is not
- * flagged; a path built by string concatenation (never one whole literal)
- * is invisible to this scan; and a literal that only exists inside a `//` or
- * `/* *\/` comment is naturally excluded because a comment carries no quote
- * characters of its own around the path text.
- * @param {string} source close script text
- * @returns {string[]} the offending literal path values, in source order
- */
-function absolutePathLiteralsOf(source) {
-  /** @type {string[]} */
-  const hits = [];
-  for (const m of source.matchAll(STRING_LITERAL_RE)) {
-    const isBacktick = m[3] !== undefined;
-    const value = m[1] ?? m[2] ?? m[3];
-    if (value === undefined) continue;
-    if (isBacktick && value.includes('${')) continue; // interpolated, not a fixed literal
-    if (!value.startsWith('/')) continue;
-    if (SYSTEM_PATH_PREFIXES.some((p) => value.startsWith(p))) continue;
-    if (!existsSync(value)) continue; // a nonexistent path is a name, not a hazard
-    hits.push(value);
-  }
-  return hits;
-}
+// F8/F129 — `absolutePathLiteralsOf` (a close judges the cwd the runner
+// gives it, never a path baked into the script itself) now lives in
+// `src/close-integrity.js`, shared with the run-start precheck that applies
+// the SAME rule to every job, not only exports. Never a second spelling.
 
 /**
  * Every import in a close script this bundle has an opinion about: a
