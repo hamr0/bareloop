@@ -600,6 +600,64 @@ test('checkBundleDeps: no node_modules at all -> bundle-deps-missing with the ex
   assert.match(r.reds[0].detail, new RegExp(`cd ${dir} && npm install`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
+// ---------------------------------------------------------------------------
+// close-absolute-path — F129 live defect: a close script's WORKDIR baked in
+// as an absolute string literal judges the ORIGINAL patient checkout no
+// matter what cwd the runner passes it. Each case is proven able to fail:
+// (a) is the positive, (b)-(e) each remove exactly the one thing that makes
+// (a) fire, and the tail case pins the real live-defect script as a
+// regression.
+// ---------------------------------------------------------------------------
+
+test('exportBundle refuses: a close script bakes in an existing absolute path literal', (t) => {
+  const dir = tmp(t, 'bareloop-abspath-');
+  const r = exportWithScript(t, `const WORKDIR = '${dir}';\n${CLOSE_SCRIPT_SOURCE}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'close-absolute-path');
+  assert.match(r.reds[0].detail, /fixture-close\.mjs/);
+  assert.match(r.reds[0].detail, new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('exportBundle: same literal but the directory does not exist -> no close-absolute-path red', (t) => {
+  const dir = tmp(t, 'bareloop-abspath-');
+  rmSync(dir, { recursive: true, force: true }); // path never existed at all now
+  const r = exportWithScript(t, `const WORKDIR = '${dir}';\n${CLOSE_SCRIPT_SOURCE}`);
+  assert.equal(r.ok, true, `must succeed once the literal names nothing real: ${JSON.stringify(r.reds)}`);
+});
+
+test('exportBundle: a system-prefix literal ("/usr/bin/env") never reds', (t) => {
+  const r = exportWithScript(t, `const ENV_BIN = '/usr/bin/env';\n${CLOSE_SCRIPT_SOURCE}`);
+  assert.equal(r.ok, true, `must succeed: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
+});
+
+test('exportBundle: a script using process.cwd() instead of a baked path never reds', (t) => {
+  const r = exportWithScript(t, `const WORKDIR = process.cwd();\n${CLOSE_SCRIPT_SOURCE}`);
+  assert.equal(r.ok, true, `must succeed: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
+});
+
+test('exportBundle: an existing absolute path named only inside a comment never reds', (t) => {
+  const dir = tmp(t, 'bareloop-abspath-');
+  const r = exportWithScript(t, `// see ${dir} for context\n${CLOSE_SCRIPT_SOURCE}`);
+  assert.equal(r.ok, true, `a comment carries no quote characters, so it must not trip the scan: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
+});
+
+test('exportBundle: the REAL scripts/u-spawner-close.mjs reds close-absolute-path (F129 regression pin)', (t) => {
+  // This pins the LIVE defect (F129) as a standing regression test: as of
+  // this commit, scripts/u-spawner-close.mjs hardcodes a real absolute
+  // WORKDIR and ignores the cwd the runner passes it (F8's return one layer
+  // up). If this script is ever fixed to read `process.cwd()` instead, this
+  // assertion flips to `r.ok === true` and this comment must be updated —
+  // do not silently invert it.
+  const script = readFileSync(join(REPO_ROOT, 'scripts', 'u-spawner-close.mjs'), 'utf8');
+  const r = exportWithScript(t, script);
+  assert.equal(r.ok, false, 'scripts/u-spawner-close.mjs is expected to still hardcode WORKDIR — see the comment above if this ever flips');
+  assert.equal(r.reds.some((x) => x.code === 'close-absolute-path'), true, `expected a close-absolute-path red: ${JSON.stringify(r.reds)}`);
+});
+
 test('checkBundleDeps: a node_modules/bareloop symlink to this repo root -> ok', (t) => {
   const dir = tmp(t, 'bareloop-deps-');
   mkdirSync(join(dir, 'close'), { recursive: true });

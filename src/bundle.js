@@ -128,6 +128,51 @@ function isRelative(spec) {
   return spec.startsWith('./') || spec.startsWith('../');
 }
 
+// Every quoted string literal (single/double/backtick). Backtick literals
+// carrying `${…}` interpolation are filtered out below — they are not a
+// fixed literal, so they cannot be "a path baked into the script" at all.
+const STRING_LITERAL_RE = /'([^'\\]*(?:\\.[^'\\]*)*)'|"([^"\\]*(?:\\.[^"\\]*)*)"|`([^`\\]*(?:\\.[^`\\]*)*)`/g;
+
+// A close script is entitled to name a real system path (`/usr/bin/env`,
+// `/etc/hosts`, …) without that being the F8/F129 hazard — only a path this
+// bundle would actually relocate (a patient checkout, a scratch dir) is.
+const SYSTEM_PATH_PREFIXES = ['/usr/', '/bin/', '/sbin/', '/lib/', '/lib64/', '/dev/', '/etc/', '/proc/', '/sys/', '/opt/'];
+
+/**
+ * F8/F129 — a close judges the cwd the runner gives it, never a path baked
+ * into the script itself (`src/ralph.js`'s `cwd` is load-bearing precisely
+ * because every close script in this repo's OWN test suite named an
+ * absolute path, so cwd never mattered there — see F8). This scans every
+ * quoted string literal in a close script's source for an absolute POSIX
+ * path (`/…`) that EXISTS on the exporting machine right now and is not
+ * under an allow-listed system prefix.
+ *
+ * Deliberately monotone and simple, not clever, with named limits: a
+ * nonexistent absolute-looking string is treated as a NAME, not a path —
+ * `existsSync` is the only oracle this has for "load-bearing", so it is not
+ * flagged; a path built by string concatenation (never one whole literal)
+ * is invisible to this scan; and a literal that only exists inside a `//` or
+ * `/* *\/` comment is naturally excluded because a comment carries no quote
+ * characters of its own around the path text.
+ * @param {string} source close script text
+ * @returns {string[]} the offending literal path values, in source order
+ */
+function absolutePathLiteralsOf(source) {
+  /** @type {string[]} */
+  const hits = [];
+  for (const m of source.matchAll(STRING_LITERAL_RE)) {
+    const isBacktick = m[3] !== undefined;
+    const value = m[1] ?? m[2] ?? m[3];
+    if (value === undefined) continue;
+    if (isBacktick && value.includes('${')) continue; // interpolated, not a fixed literal
+    if (!value.startsWith('/')) continue;
+    if (SYSTEM_PATH_PREFIXES.some((p) => value.startsWith(p))) continue;
+    if (!existsSync(value)) continue; // a nonexistent path is a name, not a hazard
+    hits.push(value);
+  }
+  return hits;
+}
+
 /**
  * Every import in a close script this bundle has an opinion about: a
  * relative import (src-bound or not — a sibling file is exactly the case
@@ -232,6 +277,12 @@ function parseNodeCmd(cmd) {
  *    `src/` (a sibling file `close/` never ships, so it would be missing
  *    from the bundle). Fails safe rather than silently accepting what it
  *    cannot read.
+ *  - `close-absolute-path` — a close script's source bakes in a string
+ *    literal that is an absolute POSIX path which exists on the exporting
+ *    machine and is outside the system-prefix allow-list (see
+ *    `absolutePathLiteralsOf`): a close judges the cwd the runner gives it,
+ *    never a path baked into the script — F8/F129, the live defect this
+ *    guard would have refused at export time before any run.
  *  - `outdir-not-empty` — `outDir` exists and already holds files.
  *  - `registry-unreadable` — `registryDir` itself could not be read
  *    (bubbled from `loadRegistry`).
@@ -323,6 +374,9 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
           red('close-import-unexported', at, `${basename(scriptPath)} imports "${name}" from bareloop's src, which src/index.js does not export`);
         }
       }
+    }
+    for (const lit of absolutePathLiteralsOf(source)) {
+      red('close-absolute-path', at, `${basename(scriptPath)}: bakes in the absolute path "${lit}" — a close judges the cwd the runner gives it, never a path baked into the script (F8/F129)`);
     }
   });
 

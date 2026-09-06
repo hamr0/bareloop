@@ -197,3 +197,25 @@ exact cure line `cd <bundleDir> && npm install` — before the envelope check, t
 worktree; `bareloop run`'s exit code now reflects the outcome (`0` only for
 `green`/`already-green`); and a "minting run" fix (see `docs/logs/FINDINGS.md` F128 for the
 full account, including a sub-finding on that line naming the wrong run).
+
+## Validation step 4, second fire: already-green (F129) (2026-09-06)
+
+Step 4 (hamr's second paid fire) ran again after F128's fix and went `already-green` at $0 —
+the close-first precheck read all 5 stages as satisfied against a brand-new, empty detached
+worktree, so the provider was never called. Cause: the exported `close/u-spawner-close.mjs`
+(verbatim from `scripts/u-spawner-close.mjs`) hardcodes `const WORKDIR = '/home/hamr/
+PycharmProjects/bareloop-patients/aurora-u'` and spawns every stage with `cwd: WORKDIR`,
+ignoring the `cwd` the runner actually passes it (F8's fix, returning one layer up — F8's own
+text already predicted this: "every test close named an ABSOLUTE path, so cwd never
+mattered"). `grep -n "^const WORKDIR" scripts/*-close.mjs` shows 9 of the repo's 10 close
+scripts share this hazard.
+
+**Fix shipped this commit:** `exportBundle` gained a new mechanical, draft-time, fail-safe
+check — `close-absolute-path` — that scans every close script's source for a quoted string
+literal that is an absolute POSIX path, EXISTS on the exporting machine, and is not under a
+system-prefix allow-list. It would have refused this export at $0 before either fire ran.
+See `docs/logs/FINDINGS.md` F129 for the full account. The close scripts' own fix (`WORKDIR
+= process.cwd()`) is explicitly OUT of this commit's fence — editing a close script's bytes
+is arbiter-adjacent (PRD item 27 territory) and is hamr's call, not this session's to make.
+The bundle exported before this fix remains unblessed, correctly: an `already-green` outcome
+never calls `bless()` (that only runs on a real `outcome === 'green'`, `src/cli.js`).

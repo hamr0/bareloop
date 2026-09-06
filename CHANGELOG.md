@@ -35,6 +35,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
   worktree, so a bundle installed the wrong way (as someone else's dependency, never `npm
   install`ed inside its own directory) fails fast with a fix instead of crashing deep
   inside a close stage with a bare `ERR_MODULE_NOT_FOUND`.
+- **`close-absolute-path` export guard** (`src/bundle.js`, F129): `exportBundle` now refuses
+  a close script whose source bakes in a string literal that is an absolute POSIX path
+  which exists on the exporting machine and is outside an allow-listed system prefix — a
+  close judges the `cwd` the runner gives it, never a path baked into its own source. Pins
+  the live defect where a hardcoded `WORKDIR` made the close judge the original patient
+  checkout instead of a fresh worktree, minting `already-green` at $0.
 
 ### Fixed
 

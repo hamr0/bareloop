@@ -10241,3 +10241,62 @@ run the close itself, so a `package.json` naming a broken/absent transitive depe
 `bareloop` itself would still crash past this preflight. That is out of scope for this fix
 (F128 is about the bundle's OWN direct dependency, the one the live fire actually hit) and is
 not claimed as closed.
+
+## F129 — the close judged the ORIGINAL patient via a hardcoded WORKDIR → `already-green` at $0 on a fresh worktree (F8's return, one layer up)
+
+**Date:** 2026-09-06 · **Status:** export-time guard shipped (draft-time, mechanical,
+fail-safe — refuses at $0 before a fire; the close scripts themselves are unfixed, see
+below) · **Class:** live defect, hamr's second paid fire · **Grounded in:**
+`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/03d46c4d-6a90-47b8-a798-40414f52e82c/scratchpad/aurora-real.bareloop/runs/mtpkltyl/spine.jsonl`
+(`close-precheck` verdict `satisfied` on all 5 stages against a FRESH detached worktree of
+the patient at `d661e50`, `job-end` `outcome:"already-green"`, `spentUsd 0` — the provider
+was never called), a direct reproduction (running `close/u-spawner-close.mjs` from the empty
+worktree still printed "6 file(s) changed" — the WRONG tree's diff), and `grep -n
+"^const WORKDIR" scripts/*-close.mjs`, which shows 9 of the repo's 10 close scripts hardcode
+an absolute patient path; only `u-pulselog-close.mjs` takes `--workdir`.
+
+**What happened.** `bareloop run` on the exported `aurora-u-spawner-types` bundle went
+`already-green` at $0 — the close-first precheck read all 5 stages as already satisfied
+against a brand-new, empty detached worktree. Cause: the exported `close/
+u-spawner-close.mjs` (a verbatim copy of `scripts/u-spawner-close.mjs`) hardcodes `const
+WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u';` (line 22) and runs every
+spawned stage with `cwd: WORKDIR` — completely ignoring the `cwd` the runner passes it (F8's
+fix). That original patient checkout still holds 6 files fixed by an earlier green run, so
+the close judged THAT tree, not the fresh worktree it was actually pointed at, and reported
+done. F8's own text predicted this exact failure mode one layer up: "every test close named
+an ABSOLUTE path, so cwd never mattered" — this time the absolute path lived inside a
+SHIPPED close script instead of a test fixture, and the export pipeline had no check for it.
+
+**The operator saw the tell and missed it.** `d576624`'s build notes for M1 already carry
+the fact that every real close script hardcodes an absolute `WORKDIR` (it is why F128's own
+preflight only checks dependency resolution, not cwd correctness) — the export guard below
+should have been built alongside F128, not after a second live fire found it the hard way.
+
+**Two-layer fix, deliberately split.**
+
+1. **Export-time guard (this commit, mechanical, draft-time — the part inside this session's
+   authority).** `exportBundle` now scans every close script's SOURCE for a string literal
+   (single/double/backtick-quoted; a backtick literal carrying `${…}` interpolation is not a
+   fixed literal and is skipped) that is an absolute POSIX path which `existsSync` finds real
+   on the exporting machine and which is not under an allow-listed system prefix (`/usr/`,
+   `/bin/`, `/sbin/`, `/lib/`, `/lib64/`, `/dev/`, `/etc/`, `/proc/`, `/sys/`, `/opt/`). A
+   match reds the new typed code `close-absolute-path` at `close.<i>.cmd`, nothing written —
+   this would have refused THIS export at $0, before hamr's fire ever ran. A nonexistent
+   absolute-looking string is deliberately NOT flagged (a name, not a proven-load-bearing
+   path) — the rule stays monotone and simple rather than clever, and its limits (string
+   concatenation is invisible to it; a path that exists on some OTHER machine but not this
+   one is invisible to it) are named in `absolutePathLiteralsOf`'s JSDoc, not hidden.
+   Test-proven in `tests/bundle.test.js`, including a regression pin that runs the guard over
+   the REAL `scripts/u-spawner-close.mjs` source and asserts it reds today.
+2. **The close scripts' own fix (`WORKDIR = process.cwd()` in all 9 affected scripts under
+   `scripts/`) is NOT this commit.** Editing a close script's bytes is arbiter-adjacent (a
+   close's bytes sit outside the signed spec hash today per N4/`bundle-tampered`'s own
+   reasoning — `jobSpecHash` covers `close[].cmd` as a path, never the script's content) and
+   is PRD item 27 territory (the close-authoring rung); it is hamr's call, not something this
+   fence authorizes.
+
+**Vocabulary and blessing.** The vocabulary held: this was a judged `already-green`, not a
+crash — the close ran, exited 0, and its own "6 file(s) changed" verdict was simply computed
+against the wrong tree. An `already-green` mints NO blessing (correctly — `bless()` is only
+ever called from an actual `runJob` outcome path, and a precheck-only short-circuit never
+reaches it), so the exported bundle in its pre-fix state is, and remains, unblessed.
