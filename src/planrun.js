@@ -43,7 +43,7 @@ import {
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
-import { checkCloseAbsolutePaths } from './close-integrity.js';
+import { checkCloseAbsolutePaths, checkCloseByteSignature, checkStageByteSignature } from './close-integrity.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, Retry, wireGate, HaltError } = require('bare-agent');
@@ -946,6 +946,31 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
   }
 
+  // ── close-tampered (PRD item 27/M2, N4's own general fix): the job's
+  // signature covers a close STAGE's byte-exact CONTENT (`close[].sha256`),
+  // not only the `cmd` path naming it — `jobSpecHash` already covers this
+  // field with no hash-function change (it sits inside the signed spec), so
+  // the only thing left to verify is that the SCRIPT ON DISK still is what
+  // was signed. Same seam as `close-absolute-path` immediately above (run
+  // start, $0, before the close-first precheck and before any provider
+  // call) and the same detector module — `checkCloseByteSignature` reuses
+  // `readCloseScripts`, so this and the runtime re-verify inside
+  // `runCloseStages` below can never drift into two spellings of "which
+  // bytes were signed".
+  {
+    const sig = checkCloseByteSignature(job, workdir);
+    if (!sig.ok) {
+      const detail = sig.reds.map((r) => `${r.stage}: expected ${r.expected.slice(0, 12)}… got ${r.actual ? `${r.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
+      emit('escalation', {
+        category: 'close-tampered', decisionReady: true,
+        decision: "A close script's bytes no longer match its signed sha256 — it would run something other than what was approved, so nothing was run and nothing was spent.",
+        options: ['restore the close script to its signed bytes', 're-sign the close if the change is intentional (a new spec hash needs re-approval)', 'abandon the task'],
+        detail,
+      });
+      return 'close-tampered';
+    }
+  }
+
   // ── THE SIGNER'S ANSWER (N4 §1.4), read before anything costs anything.
   //
   // Three gates, and each refuses rather than guesses. A decision that is not one
@@ -1366,7 +1391,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * The command path is byte-identical to what it was: same call, same options.
    * @param {any[]} stages
    */
-  const runCloseStages = (stages) => (declared
+  const runCloseStagesInner = (stages) => (declared
     ? runDeclaredStages(stages, scrub, {
       ...closeOpts,
       seedRef: /** @type {any} */ (declaredCtx).seedRef,
@@ -1396,6 +1421,34 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }),
     })
     : runStages(stages, scrub, closeOpts));
+  /**
+   * PRD item 27/M2 — the re-verify that runs before EVERY close run, precheck
+   * included: `runCloseStagesInner` is the ONE seam every close execution in
+   * this runner goes through (the precheck's `judgeClose`, the preflight
+   * loop, the check-passes seam, and the close-fix loop via its own `judge`
+   * seam), so wrapping it here covers all of them without threading a
+   * verify call through each call site separately — the same reasoning
+   * `checkCloseAbsolutePaths`'s run-start placement already relies on (W4:
+   * "the staging itself lives in ONE place").
+   *
+   * A mismatch never reaches the executor: it returns a `close-tampered`
+   * verdict in the SAME shape `runClose`/`runStages` render (`{verdict,
+   * stage, detail}`), so every downstream reader that already keys off
+   * `Object.hasOwn(CLOSE_FAULTS, v.verdict)` (the precheck, the preflight
+   * loop, the post-fix read, and ralph's own judge-fault routing) treats it
+   * exactly like `crashed`/`timed-out`/`killed` — a forbidden-zone outcome,
+   * never retried, never fed back as a gap.
+   * @param {any[]} stages
+   */
+  const runCloseStages = async (stages) => {
+    const sig = checkStageByteSignature(stages, workdir);
+    if (!sig.ok) {
+      const r = sig.reds[0];
+      const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
+      return { verdict: 'close-tampered', stage: r?.stage, detail };
+    }
+    return runCloseStagesInner(stages);
+  };
   /** @type {string|undefined} the stage that rendered the LAST close verdict (Layer R's red-set source) */
   let closeStage;
   /** @type {any} the LAST close verdict itself (W-2). A wall stop KEEPS the grade

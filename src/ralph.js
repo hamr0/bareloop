@@ -443,6 +443,21 @@ export const CLOSE_FAULTS = Object.freeze({
     decision: 'The close exited without judging anything — it crashed rather than failed. Its exit code is NOT a verdict, in either direction.',
     options: ['fix what makes the close crash at startup', 'fix the close argv', 'lower the declared judgment floor if the suite legitimately shrank', 'abandon the task'],
   },
+  // PRD item 27/M2 (`docs/product/CLOSE-INTEGRITY-BUILD.md`) — a close
+  // script's bytes no longer match what was signed. Distinct from every row
+  // above: those are read off HOW THE CHILD PROCESS TERMINATED, and this one
+  // is decided BEFORE the process is even spawned (`runCloseStages`,
+  // `src/planrun.js`, re-verifies before every close run and short-circuits
+  // to this verdict on a mismatch, the same forbidden-zone shape as a
+  // crash). Never `close-red` (a judged "no" from a working close) and never
+  // `close-crashed` (an instrument fault the close itself hit) — this is a
+  // THIRD thing: the close that ran would not have been the one the operator
+  // approved.
+  'close-tampered': {
+    category: 'close-tampered',
+    decision: "A close script's bytes no longer match its signed sha256 — it would run something other than what was approved, so no verdict from it can be trusted.",
+    options: ['restore the close script to its signed bytes', 're-sign the close if the change is intentional (a new spec hash needs re-approval)', 'abandon the task'],
+  },
 });
 
 /**

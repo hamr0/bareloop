@@ -177,7 +177,11 @@ export { hasNestedQuantifier };
 export function stageClose(close) {
   if (Array.isArray(close)) return close;
   if (!isObj(close) || close.type !== 'predicate') return null;
-  return [{ name: 'close', cmd: close.cmd, expect: close.expect, judged: close.judged, gapKeep: close.gapKeep }];
+  // `sha256` (M2, PRD item 27) rides through exactly like every other
+  // predicate-body field — a single-object predicate close is byte-signable
+  // the same way a staged close's stages are, and `checkCloseByteSignature`
+  // reads this field off whatever `closeStagesOf` hands back.
+  return [{ name: 'close', cmd: close.cmd, expect: close.expect, judged: close.judged, gapKeep: close.gapKeep, sha256: close.sha256 }];
 }
 
 /**

@@ -27,7 +27,7 @@ import { jobSpecHash } from './job.js';
 import { loadRegistry } from './bridges.js';
 import { closeStagesOf } from './plan.js';
 import { shapeForkName } from './reuse.js';
-import { absolutePathLiteralsOf } from './close-integrity.js';
+import { absolutePathLiteralsOf, hashCloseScriptBytes } from './close-integrity.js';
 // The live export list IS `src/index.js`'s own `Object.keys` — never a second,
 // hand-kept copy that can drift from the real surface a close script can
 // legally import. This module is itself exported from `index.js` (a cycle by
@@ -338,6 +338,20 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     }
     for (const lit of absolutePathLiteralsOf(source)) {
       red('close-absolute-path', at, `${basename(scriptPath)}: bakes in the absolute path "${lit}" — a close judges the cwd the runner gives it, never a path baked into the script (F8/F129)`);
+    }
+    // PRD item 27/M2 — the spec's OWN sha256 (if it carries one) must agree
+    // with the bytes actually being packed into the bundle: the two
+    // signatures (this one, and `bundleHash`'s manifest hash over the
+    // rewritten script) cover the same bytes by two different paths, and N4
+    // is exactly the hazard of letting a spec's signature drift from what it
+    // names. A spec with no sha256 at all is a SEPARATE red (`validateJob`'s
+    // `missing-required`, upstream of export) — this only fires when a value
+    // is present and wrong.
+    if (isNonEmptyString(stage.sha256)) {
+      const actual = hashCloseScriptBytes(source);
+      if (actual !== stage.sha256) {
+        red('close-sha-mismatch', at, `${basename(scriptPath)}: signed sha256 ${stage.sha256.slice(0, 12)}… does not match the script bytes being packed (${actual.slice(0, 12)}…) — re-sign before exporting`);
+      }
     }
   });
 

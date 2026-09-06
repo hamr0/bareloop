@@ -73,6 +73,52 @@ export function isNonEmptyString(v) {
   return typeof v === 'string' && v.length > 0;
 }
 
+/**
+ * PRD item 27/M2 close-bytes signature, orchestrator-flagged gap
+ * (2026-09-06): a close stage's `cmd` can name an addressable script TWO
+ * ways — `node <path> …` (M1's original scope) or a BARE directly-executable
+ * absolute path (a `.sh` wrapper, e.g. `jobs/aurora-testgen-cold.json`'s
+ * close, which `readCloseScripts` used to skip entirely, leaving both
+ * `close-absolute-path` and the sha256 signature blind to it — a "blind
+ * instrument" the audit named directly). This list is the shared, STATIC
+ * (no fs) shape test both `src/job.js` (which only needs to know WHETHER a
+ * stage names an addressable script, to decide whether `sha256` is
+ * demanded) and `src/close-integrity.js` (which resolves the token against
+ * a real cwd and reads it off disk) key off — one spelling, so the demand
+ * and the detector can never drift apart about which stages are in scope.
+ * A leading-interpreter cmd (`sh`/`bash`/`python`/`python3`/`npx` besides
+ * `node`) is included for the same reason `node` is: a close author may use
+ * any of them, and a scope that only recognized `node` would just move the
+ * blind spot rather than close it.
+ * @type {readonly string[]}
+ */
+export const CLOSE_SCRIPT_INTERPRETERS = Object.freeze(['node', 'sh', 'bash', 'python', 'python3', 'npx']);
+
+/**
+ * The candidate script path TOKEN a close stage's `cmd` names, by SHAPE
+ * alone — no fs, no cwd resolution, so this is safe for `validateJob` (pure)
+ * to call directly. Two recognized forms, first match wins:
+ *   - an INTERPRETER cmd followed by a non-empty argv[1] → the token is argv[1];
+ *   - a bare cmd whose argv[0] ITSELF is an absolute path (no interpreter
+ *     prefix — a `.sh`/other directly-executable close script) → the token
+ *     is argv[0].
+ * Anything else — a relative bare executable (`true`, `pytest`), an
+ * interpreter with no argument, a non-string/empty cmd — names no
+ * addressable file under this scheme and returns null; those stages carry
+ * no sha256 demand and are invisible to the byte/path detectors, exactly as
+ * they always were (most test-fixture closes use exactly this shape on
+ * purpose, to exercise runtime behaviour with no real script file at all).
+ * @param {unknown} cmd
+ * @returns {string|null}
+ */
+export function closeScriptCandidateToken(cmd) {
+  if (typeof cmd !== 'string') return null;
+  const parts = cmd.trim().split(/\s+/);
+  if (!parts[0]) return null;
+  if (CLOSE_SCRIPT_INTERPRETERS.includes(parts[0])) return parts[1] || null;
+  return parts[0].startsWith('/') ? parts[0] : null;
+}
+
 // Secrets never enter the tree/spine/configs (hard line) — BOTH config
 // documents get the same sweep: the agent-authored workflow config is the
 // riskier entry point (machine-written), the operator's job spec the other.

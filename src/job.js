@@ -14,7 +14,7 @@
 // judgment call. Minting policy is product doctrine, not job-authorable.
 
 import { createHash } from 'node:crypto';
-import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier } from './validate.js';
+import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier, closeScriptCandidateToken } from './validate.js';
 import { validateCloseDecl, DECLARED_CLOSE_CLASSES } from './declaredclose.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
@@ -148,7 +148,7 @@ const PLAN_CORE_FIELDS = ['goal', 'verdictType', 'close', 'closeDecl', 'checks']
 /** exact field set per close type — anything else is an unknown-field red
  * (freeform code, script bodies, and minting claims all land there) */
 const CLOSE_FIELDS = {
-  predicate: ['type', 'cmd', 'expect', 'judged', 'gapKeep'],
+  predicate: ['type', 'cmd', 'expect', 'judged', 'gapKeep', 'sha256'],
   gold: ['type', 'expected', 'compare'],
   rubric: ['type', 'criteria'],
   hitl: ['type', 'prompt'],
@@ -356,6 +356,34 @@ function predicateBody(o, at, red) {
   // refusal beats silent misparse (N2 design default)
   else if (/["']/.test(o.cmd)) red('invalid-value', `${at}.cmd`, 'quote characters are inexpressible: cmd runs as whitespace-split argv, no shell');
   else if (o.cmd !== o.cmd.trim()) red('invalid-value', `${at}.cmd`, 'leading/trailing whitespace — argv splits on whitespace and an empty argv[0] cannot spawn; honest refusal beats a silent misparse');
+  // Close-bytes signature (PRD item 27/M2, F129's general fix's own general
+  // fix — N4): the signature must cover the close SCRIPT'S CONTENT, not only
+  // its path (`cmd`). Demanded exactly where a byte-exact fingerprint can be
+  // minted against something: `cmd` names an addressable script by the
+  // SAME shape test `src/close-integrity.js`'s detectors use
+  // (`closeScriptCandidateToken`, src/validate.js — `node <path> …`, OR a
+  // bare directly-executable absolute path such as a `.sh` wrapper; widened
+  // 2026-09-06 after an orchestrator audit found the bare form silently
+  // invisible to both this demand and the byte/path detectors — a blind
+  // instrument). A cmd naming no such script (most test-fixture closes:
+  // `true`, `npx`, `pytest`, a relative bare executable — or a
+  // missing/malformed cmd, already reded above) carries no demand — a stage
+  // with nothing to hash gets no `missing-required` for a field that could
+  // never be minted honestly. `validateJob` stays pure (no fs): this checks
+  // the FIELD'S SHAPE only, never the bytes on disk (that is the runner's
+  // job, `checkCloseByteSignature`/`checkStageByteSignature`).
+  const isScriptCmd = closeScriptCandidateToken(o.cmd) !== null;
+  if (isScriptCmd) {
+    if (o.sha256 === undefined) {
+      red('missing-required', `${at}.sha256`, 'hex sha256 of the script file bytes `cmd` names — mint it with signCloseScripts (src/close-integrity.js) / scripts/sign-close.mjs, never hand-typed');
+    } else if (typeof o.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(o.sha256)) {
+      red('invalid-value', `${at}.sha256`, '64 lowercase hex chars — sha256 of the script file bytes, never the spec, never the path');
+    }
+  } else if (o.sha256 !== undefined && (typeof o.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(o.sha256))) {
+    // not demanded for a non-script cmd, but a PRESENT value is still
+    // shape-checked — a malformed string is a typo either way
+    red('invalid-value', `${at}.sha256`, '64 lowercase hex chars — sha256 of the script file bytes, never the spec, never the path');
+  }
   if (!Number.isInteger(o.expect)) red('invalid-value', `${at}.expect`, 'integer exit code');
   // The judgment-rendered signal (PRD v1.11, optional). Exit code alone
   // cannot separate "the suite ran and failed" from "the suite crashed at
@@ -492,7 +520,7 @@ export function checkMenu(close) {
 }
 
 /** the fields a close STAGE may carry — anything else is a smuggle channel */
-const STAGE_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep', 'offer', 'needs', 'direction'];
+const STAGE_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep', 'offer', 'needs', 'direction', 'sha256'];
 
 /**
  * Validate the staged close. Every stage is a predicate BODY under the same
