@@ -24,7 +24,8 @@
         "min": 1
       },
       "gapKeep": "^PULSELOG ",
-      "offer": false
+      "offer": false,
+      "sha256": "ec3c5346e22e3708bbb06464168a4497fbd5ffee355d3e01c95e2376510dc348"
     },
     {
       "name": "typecheck",
@@ -34,7 +35,8 @@
         "pattern": "PULSELOG judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^PULSELOG "
+      "gapKeep": "^PULSELOG ",
+      "sha256": "ec3c5346e22e3708bbb06464168a4497fbd5ffee355d3e01c95e2376510dc348"
     },
     {
       "name": "typecheck-outside",
@@ -44,7 +46,8 @@
         "pattern": "PULSELOG judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^PULSELOG "
+      "gapKeep": "^PULSELOG ",
+      "sha256": "ec3c5346e22e3708bbb06464168a4497fbd5ffee355d3e01c95e2376510dc348"
     },
     {
       "name": "tests-kept",
@@ -54,7 +57,8 @@
         "pattern": "PULSELOG judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^PULSELOG "
+      "gapKeep": "^PULSELOG ",
+      "sha256": "ec3c5346e22e3708bbb06464168a4497fbd5ffee355d3e01c95e2376510dc348"
     },
     {
       "name": "suite-green",
@@ -64,7 +68,8 @@
         "pattern": "PULSELOG judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^PULSELOG "
+      "gapKeep": "^PULSELOG ",
+      "sha256": "ec3c5346e22e3708bbb06464168a4497fbd5ffee355d3e01c95e2376510dc348"
     },
     {
       "name": "no-suppressions",
@@ -74,7 +79,8 @@
         "pattern": "PULSELOG judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^PULSELOG "
+      "gapKeep": "^PULSELOG ",
+      "sha256": "ec3c5346e22e3708bbb06464168a4497fbd5ffee355d3e01c95e2376510dc348"
     }
   ],
   "tools": [

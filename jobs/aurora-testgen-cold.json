@@ -30,7 +30,8 @@
         "pattern": "TESTGEN judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^TESTGEN "
+      "gapKeep": "^TESTGEN ",
+      "sha256": "9cd81e240593cca084b34c2d7b33685a178d29065ce250ae80eb7e6ad87e23e0"
     },
     {
       "name": "verdict",
@@ -42,7 +43,8 @@
       },
       "gapKeep": "^TESTGEN ",
       "offer": false,
-      "direction": "up"
+      "direction": "up",
+      "sha256": "d2962b5fc9599c703e80be9f5332d72152ff11462e94251baa218ecabce9d78a"
     }
   ],
   "tools": [

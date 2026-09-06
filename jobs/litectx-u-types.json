@@ -25,7 +25,8 @@
         "min": 1
       },
       "gapKeep": "^LITECTX ",
-      "offer": false
+      "offer": false,
+      "sha256": "d45fb0192ac1c11fe1372b6452ee141e7eaf46a86cda0cfc0169a291ab02b11b"
     },
     {
       "name": "typecheck",
@@ -35,7 +36,8 @@
         "pattern": "LITECTX judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^LITECTX "
+      "gapKeep": "^LITECTX ",
+      "sha256": "d45fb0192ac1c11fe1372b6452ee141e7eaf46a86cda0cfc0169a291ab02b11b"
     },
     {
       "name": "tests-kept",
@@ -45,7 +47,8 @@
         "pattern": "LITECTX judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^LITECTX "
+      "gapKeep": "^LITECTX ",
+      "sha256": "d45fb0192ac1c11fe1372b6452ee141e7eaf46a86cda0cfc0169a291ab02b11b"
     },
     {
       "name": "suite-green",
@@ -55,7 +58,8 @@
         "pattern": "LITECTX judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^LITECTX "
+      "gapKeep": "^LITECTX ",
+      "sha256": "d45fb0192ac1c11fe1372b6452ee141e7eaf46a86cda0cfc0169a291ab02b11b"
     },
     {
       "name": "no-suppressions",
@@ -65,7 +69,8 @@
         "pattern": "LITECTX judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^LITECTX "
+      "gapKeep": "^LITECTX ",
+      "sha256": "d45fb0192ac1c11fe1372b6452ee141e7eaf46a86cda0cfc0169a291ab02b11b"
     }
   ],
   "tools": [

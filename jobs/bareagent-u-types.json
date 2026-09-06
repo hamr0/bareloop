@@ -12,7 +12,7 @@
   "writeScope": [
     "src/**"
   ],
-  "goal": "Make src/recurse.js and src/loop.js pass `tsc --strict` by giving the code REAL types, not by silencing the checker: no added `any`, no `@ts-ignore` or `@ts-expect-error`, no `@type {...} */ (expr)` casts and no `{*}`/`{?}` JSDoc types (`unknown` is fine \u2014 it forces narrowing). Do not weaken the tests, and do not introduce strict errors elsewhere.",
+  "goal": "Make src/recurse.js and src/loop.js pass `tsc --strict` by giving the code REAL types, not by silencing the checker: no added `any`, no `@ts-ignore` or `@ts-expect-error`, no `@type {...} */ (expr)` casts and no `{*}`/`{?}` JSDoc types (`unknown` is fine — it forces narrowing). Do not weaken the tests, and do not introduce strict errors elsewhere.",
   "verdictType": "green",
   "close": [
     {
@@ -24,7 +24,8 @@
         "min": 1
       },
       "gapKeep": "^BAREAGENT ",
-      "offer": false
+      "offer": false,
+      "sha256": "e9a7faf61f668554f82b86585bd8b3064adba99104450e06a5d4af8d7b2658fc"
     },
     {
       "name": "typecheck",
@@ -34,7 +35,8 @@
         "pattern": "BAREAGENT judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREAGENT "
+      "gapKeep": "^BAREAGENT ",
+      "sha256": "e9a7faf61f668554f82b86585bd8b3064adba99104450e06a5d4af8d7b2658fc"
     },
     {
       "name": "typecheck-outside",
@@ -44,7 +46,8 @@
         "pattern": "BAREAGENT judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREAGENT "
+      "gapKeep": "^BAREAGENT ",
+      "sha256": "e9a7faf61f668554f82b86585bd8b3064adba99104450e06a5d4af8d7b2658fc"
     },
     {
       "name": "tests-kept",
@@ -54,7 +57,8 @@
         "pattern": "BAREAGENT judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREAGENT "
+      "gapKeep": "^BAREAGENT ",
+      "sha256": "e9a7faf61f668554f82b86585bd8b3064adba99104450e06a5d4af8d7b2658fc"
     },
     {
       "name": "suite-green",
@@ -64,7 +68,8 @@
         "pattern": "BAREAGENT judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREAGENT "
+      "gapKeep": "^BAREAGENT ",
+      "sha256": "e9a7faf61f668554f82b86585bd8b3064adba99104450e06a5d4af8d7b2658fc"
     },
     {
       "name": "no-suppressions",
@@ -74,7 +79,8 @@
         "pattern": "BAREAGENT judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREAGENT "
+      "gapKeep": "^BAREAGENT ",
+      "sha256": "e9a7faf61f668554f82b86585bd8b3064adba99104450e06a5d4af8d7b2658fc"
     }
   ],
   "tools": [

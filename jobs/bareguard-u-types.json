@@ -24,7 +24,8 @@
         "min": 1
       },
       "gapKeep": "^BAREGUARD ",
-      "offer": false
+      "offer": false,
+      "sha256": "b19f076c973e978e0d2d98555726c93a6392a8d959cc7442b4e8672fe55e58d9"
     },
     {
       "name": "typecheck",
@@ -34,7 +35,8 @@
         "pattern": "BAREGUARD judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREGUARD "
+      "gapKeep": "^BAREGUARD ",
+      "sha256": "b19f076c973e978e0d2d98555726c93a6392a8d959cc7442b4e8672fe55e58d9"
     },
     {
       "name": "typecheck-outside",
@@ -44,7 +46,8 @@
         "pattern": "BAREGUARD judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREGUARD "
+      "gapKeep": "^BAREGUARD ",
+      "sha256": "b19f076c973e978e0d2d98555726c93a6392a8d959cc7442b4e8672fe55e58d9"
     },
     {
       "name": "tests-kept",
@@ -54,7 +57,8 @@
         "pattern": "BAREGUARD judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREGUARD "
+      "gapKeep": "^BAREGUARD ",
+      "sha256": "b19f076c973e978e0d2d98555726c93a6392a8d959cc7442b4e8672fe55e58d9"
     },
     {
       "name": "suite-green",
@@ -64,7 +68,8 @@
         "pattern": "BAREGUARD judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREGUARD "
+      "gapKeep": "^BAREGUARD ",
+      "sha256": "b19f076c973e978e0d2d98555726c93a6392a8d959cc7442b4e8672fe55e58d9"
     },
     {
       "name": "no-suppressions",
@@ -74,7 +79,8 @@
         "pattern": "BAREGUARD judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREGUARD "
+      "gapKeep": "^BAREGUARD ",
+      "sha256": "b19f076c973e978e0d2d98555726c93a6392a8d959cc7442b4e8672fe55e58d9"
     }
   ],
   "tools": [
