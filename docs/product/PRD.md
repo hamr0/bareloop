@@ -386,6 +386,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     today, above.
     **2026-09-05, later:** after export comes item 27 (close-bytes signature), then the
     reuse-lift proof.
+    **2026-09-06 — order amended again** (hamr): item 28 (provider-agnostic runners) slots
+    in after item 27 and before the reuse-lift proof — see item 28 below. Order now:
+    harness streamline → export → item 27 → item 28 → reuse-lift proof.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
@@ -429,6 +432,40 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     escalation tail must stop naming `--resume` (v1 has none; F130).
     **2026-09-06, later: (b) re-pin to branch tip done (`8b209a9`); main re-pin after merge.
     Post-bless no-approve run live-proven (`mtpo9rxy`, green).**
+    **2026-09-06, later still:** build spec frozen at `docs/product/CLOSE-INTEGRITY-BUILD.md`
+    (facts, three milestones cwd/gate-rule/timeout, POC result, pre-registered validation).
+    Not started; `K`/`FLOOR_MS` remain `TBD (hamr)`. Also carries F131 (the archive/direct
+    timing measurement behind the M3 autoset design) — see `docs/logs/FINDINGS.md`.
+
+28. **Provider-agnostic runners** (hamr, 2026-09-06: "the whole point of bareloop is to be
+    LLM agnostic … Anthropic and OpenAI shaped, this could come next … shouldn't come as a
+    surprise"). Continue on Anthropic until item 27 is done; scoped now so the shape isn't a
+    surprise later. Facts: `src/job.js`'s `PROVIDERS` menu (`Object.freeze(['anthropic-api',
+    'clipipe-subscription'])`, line 135) has no OpenAI-shaped member; `clipipe-subscription`
+    stays OUT as a peer (F48) — this item does not touch it. Both runners construct
+    `AnthropicProvider` BY NAME (`src/cli.js:61-73`'s `buildProviders`; `scripts/run-u.mjs:41`)
+    rather than through a factory. `bare-agent` already ships `src/provider-openai.js` with a
+    constructor `baseUrl` option (default `https://api.openai.com/v1`), so an OpenAI-compatible
+    endpoint (including a local one) is reachable without a new production dependency. The judge
+    is pinned today (`src/judged.js`'s `JUDGE_MODEL = 'claude-haiku-4-5'`), calibrated 10-of-10
+    (softgreen doctrine: a judge-model bump requires recalibration). Pricing for an unrecognized
+    model already falls to guesstimate + a loud `estimated` state (rates passthrough is dead,
+    F113 — the customer's responsibility, never a bareloop rate table).
+
+    Shape: (1) the `provider` menu gains `openai-api` (+ optional `baseUrl`); a new provider
+    FACTORY (`src/providers.js`) maps provider name → constructor + the env-key name it reads
+    (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`), holding per-provider tier tables and
+    provider-specific param gating behind one seam (e.g. sonnet-5's `output_config.effort`
+    guard, currently ungated per-provider) rather than scattering `if (provider === …)` across
+    both runners; (2) the judge becomes a signed `judge: { provider, model }` field with a
+    calibration record keyed by `(provider, model)` — a judge with no recorded 10-of-10 run
+    refuses judged closes at $0, never silently substitutes an uncalibrated model; (3) one paid
+    PROBE per newly admitted provider proves it end-to-end — no battery, no bench row, until a
+    provider earns one the way Anthropic did.
+
+    Order (item 25 amended, 2026-09-06): harness streamline → export → item 27 (close
+    integrity) → **item 28 (provider-agnostic runners)** → the reuse-lift proof. Continue on
+    Anthropic-only work until item 27 ships.
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;

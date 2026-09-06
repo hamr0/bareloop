@@ -10436,3 +10436,43 @@ the `../bareloop-close` pin moved from `ee2a349` to `8b209a9` (feat/export branc
 carries `3b987d4` in ancestry) — the main re-pin still awaits merge. Item (3) (runner-knob
 mirroring) is unchanged, still parked. Full detail: `docs/product/EXPORT-BUILD.md`, "Fire 5"
 section.
+
+## F131 — first-red-wins makes the seed close a blind timing instrument
+
+**Date:** 2026-09-06 · **Status:** measured, feeds PRD item 27's M3 (autoset close timeout)
+· **Class:** measurement/design finding, $0 · **Grounded in:** an archive read over 54
+archived run-u spines with ≥2 closes (`../bareloop-patients/*/u-*.jsonl`; close duration ≈
+close-verdict.ts − preceding middle-done/check-preflight.ts) and a direct per-stage seed
+timing run on a clean clone of aurora-u at `d661e50`
+(`../bareloop-patients/aurora-u-bless`, close = the re-pinned
+`../bareloop-close/scripts/u-spawner-close.mjs`).
+
+**What happened.** `runStages` (`src/ralph.js:328`) is deliberately first-red-wins — the
+close-first precheck (`check-preflight`, `src/planrun.js:1761`) stops at the FIRST stage
+that doesn't pass, so on a job whose seed tree fails an early cheap stage
+(`changed-from-seed`), the archived "seed close duration" never reaches the expensive
+stages (the test suite) at all. The archive read confirms this is the common case: seed
+close p50 2,946 ms (max 209,026), while a LATER close (all stages reachable, suite
+included) runs p50 25,153 ms, p95 130,643, max 263,944 — ratio later/seed p50 7.72, p90
+615, p95 1,225, max 9,385. 3 of 54 archived runs had a later close over 120,000 ms (the
+library's current default `closeTimeoutMs`, `src/ralph.js:663`'s `?? 120_000`) — those
+would be `close-red` (an instrument timeout, not a judged verdict) under the very default
+the bundle CLI runs on today; 1 seed alone was already over 120 s.
+
+**Direct confirmation.** Timing every stage of `u-spawner-close.mjs` individually against
+the clean seed tree (ignoring first-red-wins): `changed-from-seed` exit 1 / 164 ms;
+`typecheck` exit 1 / 2,043 ms; `tests-kept` exit 0 / 20,243 ms; `suite-green` exit 0 /
+20,039 ms; `no-suppressions` exit 0 / 184 ms — sum 42,673 ms. The real full LATER close in
+archived run `mtpo9rxy` (all 5 stages satisfied) took 41,769 ms (spine: close-verdict
+iteration 1 minus middle-done). An ALL-STAGES seed timing pass predicts the real later
+close within 2% (n=1, one job) — the first-red seed timing alone would have predicted
+~164 ms, off by roughly 250×.
+
+**Consequence.** Any autoset close-timeout ceiling must be derived from an ALL-STAGES
+timing pass run once at job start (ignoring verdicts), never from the verdict-bearing
+close-first precheck — the precheck's own first-red-wins design, correct for judging, is
+the wrong instrument for timing because it is blind to every stage after the first
+failure. This finding is the measured basis for PRD item 27 / M3 (autoset close timeout,
+signed override) in `docs/product/CLOSE-INTEGRITY-BUILD.md`; stated honestly as n=1 on one
+job — the METHOD is shown to work, not a validated multiplier/floor pair (those stay
+`TBD (hamr)`, arbiter territory).
