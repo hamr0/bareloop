@@ -10417,3 +10417,22 @@ to "proven." (2) The pinned `../bareloop-close` worktree carries the `process.cw
 uncommitted until re-pinned after merge (PRD item 27, close integrity, next in line). (3) The
 runner-knob question (`capRuns`/`closeTimeoutMs` mirroring `run-u`'s operator values) stays
 parked, per F130.
+
+**Addendum 2026-09-06 — fifth fire, post-bless, no `--approve`: item (1) above resolved live.**
+Run `mtpo9rxy`, 2026-09-06T10:41:23Z, fired from the bundle's new permanent home
+`../bareloop-patients/bundles/aurora-u-spawner-types.bareloop` (relocated from the session
+scratchpad; hash-safe, since `manifest.files` covers only `spec.json` and
+`close/u-spawner-close.mjs`) against a fresh clean clone `../bareloop-patients/aurora-u-bless`
+(`d661e50`), with **no `--approve` flag given** — the bundle was already blessed by
+`mtpmecks`. Outcome `green`, `spentUsd 2.7497431500000005` (`spendComplete true`), close-verdict
+`satisfied` at iteration 3 (spine seq 153), `job-end` at seq 204, 90 `worker-round` records,
+5 files changed left uncommitted on work branch `bareloop-aurora-u-spawner-types` in worktree
+`.../aurora-u-bless/.bareloop/wt/mtpo9rxy`. `blessing.json` unchanged (`runid mtpmecks`,
+`bundleHash f6706a98…`); `history.jsonl` now 3 rows (`mtplc72b` escalated, `mtpmecks` green,
+`mtpo9rxy` green). This is the first real fire to run without `--approve`, so item (1) is now
+live-proven, not merely test-proven. Total paid spend across all five fires of this bundle:
+$0 + $0 + $4.449282 + $3.4187784 + $2.7497432 = **$10.618**. Item (2) is partially resolved:
+the `../bareloop-close` pin moved from `ee2a349` to `8b209a9` (feat/export branch tip,
+carries `3b987d4` in ancestry) — the main re-pin still awaits merge. Item (3) (runner-knob
+mirroring) is unchanged, still parked. Full detail: `docs/product/EXPORT-BUILD.md`, "Fire 5"
+section.

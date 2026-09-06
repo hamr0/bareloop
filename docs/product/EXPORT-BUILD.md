@@ -278,3 +278,42 @@ real fire so far ran against an unblessed bundle, so live no-resign behaviour ha
 exercised; the pinned `../bareloop-close` worktree still carries the `process.cwd()` fix
 uncommitted, pending re-pin after merge; PRD item 27 (close-bytes signature widened to close
 integrity) is next in the priority order; the runner-knob mirroring question stays parked.
+
+**2026-09-06 — of the three items above, two are now resolved (see the fire-5 section
+below):** the "no-resign" path is live-proven by `mtpo9rxy` (no `--approve` given, ran
+anyway); the `../bareloop-close` pin moved to `8b209a9` (feat/export tip, carries the fix as
+a committed line, `3b987d4`), with the main re-pin still pending merge. The runner-knob
+mirroring question stays parked, unchanged, and PRD item 27 (close-bytes signature) remains
+open — see PRD.md and BENCH-PREREG.md for the amendment on the bytes-changed/hash-unchanged
+consequence of the `3b987d4` edit.
+
+## Fire 5 — 2026-09-06 — post-bless no-approve run (live)
+
+Run `mtpo9rxy`, 2026-09-06T10:41:23Z, launched from the bundle's new permanent home
+`../bareloop-patients/bundles/aurora-u-spawner-types.bareloop` (relocated from the session
+scratchpad; hamr's 2026-09-06 decision: bundles live in `../bareloop-patients/bundles/`,
+beside the registry `../bareloop-patients/bridges/`, never tracked in this repo — relocation
+is hash-safe because `manifest.files` covers only `spec.json` and
+`close/u-spawner-close.mjs` via the `$BARELOOP_BUNDLE` substitution) with `bareloop run . --repo
+../bareloop-patients/aurora-u-bless --budget 5 --wall 30` and **no `--approve`** (the bundle
+was already blessed by `mtpmecks`). Patient `../bareloop-patients/aurora-u-bless` is a fresh
+local `git clone` of `../bareloop-patients/aurora-u` at `d661e50`, clean, 0 dirty files
+before the run.
+
+Outcome `green`, `spentUsd 2.7497431500000005` (`spendComplete true`, `engagementSpentUsd`
+the same), close-verdict `satisfied` at iteration 3 (spine seq 153), `job-end` at seq 204, 90
+`worker-round` records. Worker left 5 files changed (25 insertions, 22 deletions)
+uncommitted on work branch `bareloop-aurora-u-spawner-types` in worktree
+`../bareloop-patients/aurora-u-bless/.bareloop/wt/mtpo9rxy` — same shape as fire 4.
+`blessing.json` is unchanged (still `runid mtpmecks`, `bundleHash f6706a98…`); `history.jsonl`
+now carries 3 rows (`mtplc72b` escalated, `mtpmecks` green, `mtpo9rxy` green). Primary
+artifacts: `<bundle>/history.jsonl`, `<bundle>/blessing.json`,
+`<bundle>/runs/mtpo9rxy/spine.jsonl`.
+
+**This resolves the "no-resign path test-proven only" open item** from the fourth-fire
+section above — live-proven, not merely tested. Total paid spend across all five fires of
+this bundle: $0 + $0 + $4.449282 + $3.4187784 + $2.7497432 = **$10.618**.
+
+`scripts/replay-row.mjs` (a $0 registry-row replay from an archived green spine, via
+`writeRunGreenRow`) also got a permanent home this session (was scratchpad-only), on hamr's
+"ok" 2026-09-06.

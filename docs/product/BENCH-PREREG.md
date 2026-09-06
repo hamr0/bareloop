@@ -431,3 +431,16 @@ v1.81 — the table above is the measurement that replaced it.
   results-ledger columns, decision rules, cost figures) required inference beyond the cited
   sources; where a number needed computing (both spec hashes, the greens-at-hash counts) the
   computation and its exact command/method are shown inline above so it can be re-run.
+
+## Amendment, 2026-09-06 — aurora close bytes changed (process.cwd()), hash unchanged, pin moved
+
+The frozen `aurora-u-spawner-types` row (hash `5d989ae7…` above) now runs a changed close
+script: `scripts/u-spawner-close.mjs` was edited (F129, hamr: "change it") to read
+`WORKDIR = process.cwd()` instead of a hardcoded absolute patient path (commit `3b987d4`).
+The spec hash is UNCHANGED because close-script bytes are not yet part of the signature
+(that gap is PRD item 27 / N4, close-bytes signature, still open). Behaviour is preserved
+for `run-u`: its cwd IS the patient path the script used to hardcode, so the frozen row's
+established base rate is not invalidated by this edit. The pinned `../bareloop-close`
+worktree moved from `ee2a349` (v0.12.0 merge, detached) to `8b209a9` (feat/export branch
+tip, detached, carries `3b987d4` in ancestry) on hamr's "we need a permanent fix now"; a
+further re-pin to a `main` that carries the fix is still pending merge (PRD item 27(b)).

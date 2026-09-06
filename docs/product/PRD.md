@@ -415,6 +415,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     validation gate so a baked-in path is inexpressible for every job, not only bundles.
 
     **export v1 validated 2026-09-06, see EXPORT-BUILD.md.**
+    **2026-09-06, later: (b) re-pin to branch tip done (`8b209a9`); main re-pin after merge.
+    Post-bless no-approve run live-proven (`mtpo9rxy`, green).**
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
