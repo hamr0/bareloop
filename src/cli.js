@@ -31,7 +31,7 @@ import {
 } from 'node:path';
 
 import {
-  exportBundle, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory,
+  exportBundle, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
   runJob, makeSpine, loadRegistry, listingRow, jobSpecHash, resolveWorkerModel, JUDGE_MODEL,
 } from './index.js';
 
@@ -194,6 +194,13 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
   const bundle = readBundle(bundleDir);
   if (!bundle.ok) { printReds(bundle.reds, err); return 1; }
 
+  // 1b. F128 — the bundle's OWN node_modules must carry `bareloop` before
+  // anything else runs. Left unchecked, the close crashes deep inside
+  // runJob's close-first precheck with a bare ERR_MODULE_NOT_FOUND, reported
+  // as an unhelpful generic close-red with no cure line.
+  const depsCheck = checkBundleDeps(bundleDir);
+  if (!depsCheck.ok) { printReds(depsCheck.reds, err); return 1; }
+
   // 2. checkEnvelope — tighten-only, wall given in minutes -> ms.
   /** @type {{ budgetUsd?: number, maxWallMs?: number }} */
   const envelope = {};
@@ -229,10 +236,21 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
   // 4. blessing.
   const { manifest } = bundle;
   if (!bundle.blessing) {
-    const bridge = bundle.bridges.find((/** @type {any} */ b) => b.name === bundle.spec.job) ?? null;
-    const mintRunid = bridge?.history?.[0]?.runid ?? null;
+    // The runid that ACTUALLY minted this bundle's own signed spec — the
+    // bridge VERSION (base or shape fork; both ship into bridges/) whose
+    // recorded specHash equals the resolved bundle spec's jobSpecHash. NOT
+    // the bridge's first history row: a job can be re-exported/rebased many
+    // times, and only the version at THIS exact hash proves anything for
+    // THIS bundle.
+    const { approveHash: mintMatchHash } = resolveBundleSpec(bundle, bundleDir);
+    let mintRunid = null;
+    for (const b of bundle.bridges) {
+      const versions = Array.isArray(b.versions) ? b.versions : [];
+      const v = versions.find((/** @type {any} */ ver) => ver.specHash === mintMatchHash);
+      if (v) { mintRunid = v.runid; break; }
+    }
     out('first run — this bundle has never been blessed on this machine.');
-    if (mintRunid) out(`minting run: ${mintRunid} (spine not bundled in v1)`);
+    out(mintRunid ? `minting run: ${mintRunid} (spine not bundled in v1)` : 'no version at this hash');
     out(`bundleHash: ${manifest.bundleHash}`);
     if (flags.approve !== manifest.bundleHash) {
       err(`--approve ${manifest.bundleHash} is required for the first run of an unblessed bundle`);
@@ -342,7 +360,11 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
   out(`worktree  ${worktree}`);
   if (branch) out(`merge     git merge ${branch}   (merge stays human — this CLI never merges)`);
   out(`the worktree is kept until you remove it: git worktree remove ${worktree}`);
-  return 0;
+  // exit 0 ONLY for a real green — every other outcome (close-red, plan-red,
+  // escalated, cap/wall halts, worker-crash, provider-red, …) exits 1 so a
+  // caller scripting `bareloop run` off its exit code cannot mistake a red
+  // for a success. The tail print above is unchanged either way.
+  return outcome === 'green' || outcome === 'already-green' ? 0 : 1;
 }
 
 /**

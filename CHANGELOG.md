@@ -27,6 +27,35 @@ feature lands, **patch** = docs, fixes, scaffolding.
   test-seam provider), blessing/approval, a fresh `git worktree add --detach` per run,
   then `runJob` itself; the tail prints the outcome, spend, and the `git merge` command —
   merge stays human, the CLI never merges. `bin/` added to `package.json`'s `files`.
+- **`checkBundleDeps(bundleDir)`** (`src/bundle.js`, F128): resolves `bareloop` from the
+  bundle's own `close/` directory (`createRequire(...).resolve('bareloop')`, walking the
+  package's own `exports` map) and reds typed `bundle-deps-missing` — with the exact cure
+  line `cd <bundleDir> && npm install` — when it cannot. `bareloop run` calls it as literal
+  step 1b, right after the tamper check and before the envelope check, the key, and any
+  worktree, so a bundle installed the wrong way (as someone else's dependency, never `npm
+  install`ed inside its own directory) fails fast with a fix instead of crashing deep
+  inside a close stage with a bare `ERR_MODULE_NOT_FOUND`.
+
+### Fixed
+
+- **F128 — `bareloop run` exit code now reflects the run outcome.** Previously every
+  invocation that reached the tail exited `0` regardless of outcome — a close-red, plan-
+  red, escalated, cap/wall-halted, or crashed run all read as CLI success. `run` now
+  returns `0` only for `green`/`already-green`; every other outcome exits `1`, so a caller
+  scripting off the exit code can no longer mistake a red run for a green one. The tail's
+  printed lines are unchanged.
+- **F128 — the "minting run" line named the wrong run.** On a bundle's first (unblessed)
+  run, the notice printed the bridge's FIRST history row's `runid`, not the run that
+  actually minted the bundle's own signed spec. It now searches every bridge version
+  across ALL shipped bridges (base + shape fork) for the one whose `specHash` equals the
+  resolved `$BARELOOP_BUNDLE` spec's `jobSpecHash`, and prints "no version at this hash"
+  (honestly, never a guess) when none matches — which cross-machine is the common case,
+  since the historic mint's real script path and the importer's own bundle path rarely
+  coincide.
+- **`bin/bareloop.mjs`: a closed stdout reader (`| head`) no longer crashes with an
+  unhandled `EPIPE`.** `process.stdout` now has an `'error'` listener that exits `0` on
+  `EPIPE` (the one legitimate `process.exit()` in this file — the reader is gone, so
+  there is no queued output left to lose) and re-throws anything else.
 
 ## [0.20.0] — 2026-09-05
 

@@ -260,7 +260,7 @@ export { PROMPT_REGISTERS, isPromptFile } from './promptregisters.js';
 // whether a close script's imports are legal — a cycle by design, safe
 // because the binding is read only inside function bodies.
 export {
-  exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory,
+  exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from './bundle.js';
 // Export M2 (`docs/product/EXPORT-BUILD.md`) — the CLI's one entry point,
 // exported as `cliMain` (never `main`, a name generic enough to collide with

@@ -13,15 +13,20 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { mintBridge } from '../src/bridges.js';
 import { writeRunGreenRow } from '../src/reuse.js';
 import {
-  exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory,
+  exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from '../src/bundle.js';
+
+/** this repo's own root — the real `bareloop` package a symlinked
+ * node_modules/bareloop points at in these fixtures. */
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const clone = (/** @type {any} */ o) => JSON.parse(JSON.stringify(o));
 
@@ -578,4 +583,29 @@ test('exportBundle writes package.json with the bareloop dependency, outside bun
   assert.equal(bundleHash(outDir), r.bundleHash, 'package.json is outside the hashed set');
   const read = readBundle(outDir);
   assert.equal(read.ok, true, 'editing package.json must not trip bundle-tampered');
+});
+
+// ---------------------------------------------------------------------------
+// checkBundleDeps — F128 live defect: a bundle's OWN node_modules must carry
+// `bareloop` before its close scripts can `import ... from 'bareloop'`.
+// ---------------------------------------------------------------------------
+
+test('checkBundleDeps: no node_modules at all -> bundle-deps-missing with the exact cure line', (t) => {
+  const dir = tmp(t, 'bareloop-deps-');
+  mkdirSync(join(dir, 'close'), { recursive: true });
+  const r = checkBundleDeps(dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'bundle-deps-missing');
+  assert.match(r.reds[0].detail, new RegExp(`cd ${dir} && npm install`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('checkBundleDeps: a node_modules/bareloop symlink to this repo root -> ok', (t) => {
+  const dir = tmp(t, 'bareloop-deps-');
+  mkdirSync(join(dir, 'close'), { recursive: true });
+  mkdirSync(join(dir, 'node_modules'), { recursive: true });
+  symlinkSync(REPO_ROOT, join(dir, 'node_modules', 'bareloop'), 'dir');
+  const r = checkBundleDeps(dir);
+  assert.equal(r.ok, true, `expected ok, got: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
 });

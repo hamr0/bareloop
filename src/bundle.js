@@ -17,6 +17,7 @@
 // records, not the arbiter) — only `spec.json` and `close/*` are signed.
 
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import {
   existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, appendFileSync,
 } from 'node:fs';
@@ -398,9 +399,19 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     `exported: ${manifest.exportedAt}`,
     `bareloop: ${bareloopVersion}`,
     '',
+    '## Install this bundle\'s own dependency first (F128)',
+    '',
+    '  cd <this directory> && npm install',
+    '',
+    'This bundle\'s own package.json declares "bareloop" as its dependency — its close',
+    'scripts import from it at run time. `npm install <this directory>` from SOMEWHERE',
+    'ELSE installs this bundle AS that other project\'s dependency instead, which never',
+    'installs this bundle\'s own node_modules and crashes every close stage. Run npm',
+    'install INSIDE this directory, then use the bareloop binary it just installed:',
+    '',
     '## Running this bundle',
     '',
-    '  bareloop run <this directory> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]',
+    '  ./node_modules/.bin/bareloop run . --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]',
     '',
     'Answer these, in the order `bareloop run` asks them:',
     '',
@@ -596,6 +607,49 @@ export function verifyBlessing(bundle) {
     return { ok: false, unblessed: false, reds: [{ code: 'blessing-stale', path: 'blessing.bundleHash', detail: `blessed ${b.blessing.bundleHash ?? '<none>'} vs manifest ${manifestHash ?? '<none>'} — re-export and re-approve` }] };
   }
   return { ok: true, unblessed: false, reds: [] };
+}
+
+/**
+ * F128 preflight — can this bundle's close scripts actually resolve `import
+ * ... from 'bareloop'` at runtime? The bundle's own `package.json` declares
+ * `bareloop` as ITS dependency (`npm install` must be run INSIDE the bundle
+ * directory — validation step 2 was corrected 2026-09-06, see the dated
+ * addendum in `docs/product/EXPORT-BUILD.md`); nothing installs it for the
+ * bundle as a side effect of the bundle being installed as someone else's
+ * dependency. Left unchecked, a missing `node_modules` crashes every close
+ * stage deep inside the close-first precheck with a bare
+ * `ERR_MODULE_NOT_FOUND`, which surfaces as a generic `close-red` with no
+ * cure line (the live defect this fixes) — this check runs first and fails
+ * fast with the exact command to run.
+ *
+ * Resolves the bare specifier `'bareloop'` exactly as a close script would,
+ * from inside the bundle's own `close/` directory (the probe path itself
+ * need not exist — `createRequire`/`resolve` only use it to anchor the
+ * `node_modules` walk). Going through `require.resolve` also walks
+ * `bareloop`'s own `exports` map (the package root, `"."` -> `./src/
+ * index.js`), so a bare successful resolve already proves a real,
+ * exports-map-shaped `bareloop` package is reachable from THIS bundle's own
+ * dependency chain — not some unrelated global install. Any resolution
+ * counts (a direct `node_modules/bareloop`, a symlink into it, or a parent
+ * `node_modules/bareloop` up the directory chain) — it only has to resolve.
+ * @param {string} bundleDir
+ * @returns {{ ok: boolean, reds: Red[] }}
+ */
+export function checkBundleDeps(bundleDir) {
+  /** @type {Red[]} */
+  const reds = [];
+  const probeFrom = join(bundleDir, 'close', '__bundle_deps_probe__.mjs');
+  try {
+    createRequire(probeFrom).resolve('bareloop');
+  } catch {
+    reds.push({
+      code: 'bundle-deps-missing',
+      path: bundleDir,
+      detail: `close scripts cannot resolve their own "bareloop" dependency — run: cd ${bundleDir} && npm install`,
+    });
+    return { ok: false, reds };
+  }
+  return { ok: true, reds: [] };
 }
 
 /**

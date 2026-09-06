@@ -167,3 +167,33 @@ archived green spine through the library's own `writeRunGreenRow` mints the row 
 (in a scratch registry copy: minted, $3.18, 54 rounds, 0 leaks) — and mints it SHAPE-FORKED
 (`aurora-u-spawner-types-7feefaec`, 5 stages vs the base bridge's 4), which the first M1
 matcher could not see. Writing the row into the real registry is hamr's call.
+
+## Validation step 2 corrected (2026-09-06, F128 — hamr's paid fire)
+
+Step 4 (hamr's paid fire) ran and crashed: `bareloop run <bundle> --repo <patient> --approve
+<hash>` went `close-red` at the precheck (`changed-from-seed`), $0 spent, before any provider
+call. Direct cause: the close script does `import { JUDGED_MARKER } from 'bareloop'` (the
+exact substitution `exportBundle` performs), and the bundle directory carried no
+`node_modules` at all — `Cannot find package 'bareloop' imported from
+<bundle>/close/u-spawner-close.mjs`.
+
+**Step 2 above is the wrong shape.** `npm install <bundle dir>` run from a clean CONSUMER
+directory installs the bundle AS that consumer's own dependency (into the consumer's
+`node_modules/<bundle-name>/`) — it never runs `npm install` INSIDE the bundle, so the
+bundle's own declared dependency (`package.json`'s `"dependencies": { "bareloop": "^…" }`,
+which a close script actually needs at run time) is never installed. This is a real gap in
+the frozen spec, not a bundling bug: `exportBundle`'s output was always correct.
+
+**Corrected adopter flow:** `cd <bundle> && npm install` (reads the bundle's own
+`package.json`), then `./node_modules/.bin/bareloop run . --repo <path> …`. The "dry step
+only" wording above (a pre-release `npm pack` install as a consumer dependency) still has a
+legitimate, narrower purpose — proving the packed tarball installs cleanly as a dependency —
+but it is NOT a substitute for installing the bundle's own dependencies before running it,
+and must not be read as validation step 2's full instruction.
+
+**Fixes shipped:** a fail-safe preflight (`checkBundleDeps`, `src/bundle.js`) that resolves
+`bareloop` from the bundle's own `close/` directory and reds `bundle-deps-missing` — with the
+exact cure line `cd <bundleDir> && npm install` — before the envelope check, the key, or any
+worktree; `bareloop run`'s exit code now reflects the outcome (`0` only for
+`green`/`already-green`); and a "minting run" fix (see `docs/logs/FINDINGS.md` F128 for the
+full account, including a sub-finding on that line naming the wrong run).

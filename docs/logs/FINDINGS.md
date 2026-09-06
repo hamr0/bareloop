@@ -10173,3 +10173,71 @@ September bench) — it is a base rate for "replans rarely rescue," not a per-jo
 "habitual dead end" reading (a check-only verify step drafted before the work is done) is
 named from step ids in the replan records, not from transcripts, which the spine does not
 carry. Nothing here is a G4 result; it is the read that had to exist before one.
+
+## F128 — hamr's paid fire crashed on `Cannot find package 'bareloop'`: the frozen spec's validation step 2 named the wrong install shape; the bundle's OWN dependency was never installed
+
+**Date:** 2026-09-06 · **Status:** FIXED (preflight red, exit-code rule, minting-run
+correction; all three test-proven) · **Class:** live defect, hamr's real paid run · **Grounded
+in:** `<bundle>/runs/mtpjop4v/spine.jsonl` (`close-precheck` verdict `crashed`, `exitCode 1`,
+`job-end` `outcome:"close-red"`, `spentUsd 0`), and a direct reproduction: `node
+close/u-spawner-close.mjs changed-from-seed` inside the bundle throws `ERR_MODULE_NOT_FOUND:
+Cannot find package 'bareloop' imported from <bundle>/close/u-spawner-close.mjs` because the
+bundle directory carries no `node_modules` at all.
+
+**What happened.** `bareloop run <bundle> --repo <patient> --approve <hash>` on the exported
+`aurora-u-spawner-types` bundle went `close-red` at the precheck, stage
+`changed-from-seed`, before a single token was spent. The close script does `import {
+JUDGED_MARKER } from 'bareloop'` (the exact substitution `exportBundle` performs on every
+close script's `../src/kinds.js` import) — a plain, correct import for an installed
+`bareloop` consumer. The bundle's own `package.json` (written by `exportBundle`, outside the
+`bundleHash`) declares `"dependencies": { "bareloop": "^…" }`, but `docs/product/
+EXPORT-BUILD.md`'s validation step 2 read `npm install <bundle dir>` FROM a clean consumer
+directory — that installs the bundle AS the consumer's own dependency (i.e. into the
+consumer's `node_modules/<bundle-name>/`), which never runs `npm install` INSIDE the bundle
+directory and so never populates the bundle's OWN `node_modules/`. The correct adopter flow,
+confirmed by direct reproduction, is `cd <bundle> && npm install` (reads the bundle's own
+`package.json`), then `./node_modules/.bin/bareloop run . --repo …`.
+
+**Vocabulary held.** The close crashed (`ERR_MODULE_NOT_FOUND` before any `console.log`,
+exit code 1, zero stages judged) — `runClose`'s `CLOSE_FAULTS` path correctly rendered this
+as `close-red` (the instrument broke), never `plan-red` (a judged no). `spentUsd:0`, honestly
+— no provider call was ever reached. This is the vocabulary N5 already named in the frozen
+spec; the live run obeyed it correctly. The defect was upstream of the close entirely: a
+wrong-shape install instruction, not a close-authoring bug.
+
+**Fixes (one commit, all three test-proven at $0 against real spines/fixtures).**
+
+1. **Fail-safe preflight, `checkBundleDeps(bundleDir)`** (`src/bundle.js`, new, exported):
+   resolves the bare specifier `'bareloop'` from inside the bundle's own `close/` directory
+   the same way a close script's `import` would (`createRequire(...).resolve('bareloop')`,
+   which walks `bareloop`'s own `exports` map). `bareloop run` calls it as literal step 1b
+   — right after the tamper check, before the envelope check, the provider key, and any
+   worktree — and reds `bundle-deps-missing` with the exact cure line `cd <bundleDir> && npm
+   install` on failure, spending nothing. Reproduced directly against the real crashed
+   bundle from this fire (`checkBundleDeps` on `<bundle>` above returns exactly that red).
+2. **Exit code.** `bareloop run` returned `0` for every outcome, including this `close-red`
+   — a caller scripting off the exit code could not tell success from this crash. `run` now
+   returns `0` only for `green`/`already-green`; every other outcome (this one included)
+   exits `1`.
+3. **Docs corrected.** `docs/product/EXPORT-BUILD.md` gets a dated addendum (the frozen
+   text above is never rewritten); `bareloop.context.md`'s Bundles section states the
+   corrected `cd <bundle> && npm install` flow, the `bundle-deps-missing` red and its
+   position in the run order, and the exit-code rule.
+
+**Sub-finding — the "minting run" line named the wrong run.** While fixing the exit code,
+found `bareloop run`'s first-run notice printed the shipped bridge's FIRST history row's
+`runid`, unconditionally — not the run that actually minted the bundle's own signed spec.
+Fixed to search every bridge VERSION across all shipped bridges (base + shape fork) for the
+one whose `specHash` equals the resolved `$BARELOOP_BUNDLE` spec's `jobSpecHash`, printing
+"no version at this hash" (never a guessed runid) when none matches — which, cross-machine,
+is the common case, since the historic mint's real close-script path and the importer's own
+bundle path essentially never coincide. Test-proven both ways: a fixture built so the
+resolved path IS byte-identical to the mint-time path (match), and the ordinary cross-machine
+case (no match).
+
+**Anti-gloss.** `checkBundleDeps` only proves `bareloop` RESOLVES from `close/` — it does not
+prove the resolved version matches the bundle's declared `^<version>` range, and it does not
+run the close itself, so a `package.json` naming a broken/absent transitive dependency of
+`bareloop` itself would still crash past this preflight. That is out of scope for this fix
+(F128 is about the bundle's OWN direct dependency, the one the live fire actually hit) and is
+not claimed as closed.

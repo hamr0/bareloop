@@ -9,14 +9,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync,
+  mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { jobSpecHash } from '../src/job.js';
 import { mintBridge } from '../src/bridges.js';
 import { main } from '../src/cli.js';
 import { scriptedProvider } from './helpers.js';
+
+/** this repo's own root — every fixture bundle's node_modules/bareloop
+ * symlinks here so `checkBundleDeps`'s preflight (F128) passes for the
+ * existing green-path tests, exactly the way a real `npm install` inside the
+ * bundle would resolve the package. */
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** @param {import('node:test').TestContext} t @param {string} prefix */
 const tmp = (t, prefix) => {
@@ -138,6 +145,12 @@ async function exportFixture(t, o = {}) {
   const rc = await main(['export', specFile, '--registry', registryDir, '--out', outDir], { stdout: out, stderr: err, cwd: process.cwd() });
   assert.equal(rc, 0, `export must succeed: ${err.text()}`);
   const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf8'));
+  // F128: mint the bundle's own node_modules/bareloop so checkBundleDeps'
+  // preflight passes — every `run` test below exercises what happens AFTER
+  // that check, not the check itself (tests/bundle.test.js covers that
+  // directly, and one dedicated test here proves the CLI fails without it).
+  mkdirSync(join(outDir, 'node_modules'), { recursive: true });
+  symlinkSync(REPO_ROOT, join(outDir, 'node_modules', 'bareloop'), 'dir');
   return {
     bundleDir: outDir, bundleHash: manifest.bundleHash, manifest, out, err,
   };
@@ -388,6 +401,123 @@ test('bareloop run: blessing-stale (bundle re-exported since blessing) reds and 
   });
   assert.equal(rc, 1);
   assert.match(err.text(), /blessing-stale/);
+});
+
+// ---------------------------------------------------------------------------
+// F128 — bundle-deps-missing preflight
+// ---------------------------------------------------------------------------
+
+test('bareloop run: a bundle with no node_modules reds bundle-deps-missing BEFORE any worktree/provider', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  // exportFixture mints node_modules/bareloop by default (F128) — strip it
+  // back out to reproduce hamr's live defect exactly.
+  rmSync(join(bundleDir, 'node_modules'), { recursive: true, force: true });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider,
+  });
+  assert.equal(rc, 1);
+  assert.match(err.text(), /bundle-deps-missing/);
+  assert.match(err.text(), /npm install/);
+  assert.deepEqual(provider.calls, []);
+  assert.equal(existsSync(join(repo, '.bareloop', 'wt')), false);
+});
+
+// ---------------------------------------------------------------------------
+// exit code — run exits 0 only for green/already-green
+// ---------------------------------------------------------------------------
+
+test('bareloop run: a non-green outcome (cap-halt) exits 1', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 0.0005 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const runid = (1_700_000_600_000).toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', runid);
+  const provider = scriptedProvider([CLOSE_SCOUT, { text: planFor() }, { text: 'never reached' }]);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now: makeNow(1_700_000_600_000),
+  });
+  const outcomeLine = out.text().match(/^outcome {3}(\S+)$/m)?.[1];
+  assert.notEqual(outcomeLine, 'green', `fixture must not accidentally green: ${out.text()}`);
+  assert.notEqual(outcomeLine, 'already-green');
+  assert.equal(rc, 1, `a non-green outcome (${outcomeLine}) must exit 1: ${out.text()}\n${err.text()}`);
+});
+
+// ---------------------------------------------------------------------------
+// minting-run line — the runid of the bridge VERSION at the resolved bundle
+// spec's own hash, never the bridge's first history row
+// ---------------------------------------------------------------------------
+
+test('bareloop run: first-run "minting run" names the bridge VERSION at this exact spec hash', async (t) => {
+  // The bridge's stored version.specHash is `jobSpecHash` of the ORIGINAL
+  // (unrewritten) spec, which names the close script by its REAL absolute
+  // path at mint time — a path that generally differs from wherever the
+  // bundle later lands on an importer's machine, so the two hashes usually
+  // do NOT collide (proven by the "no version at this hash" test below,
+  // which is the honest common case). To exercise the MATCH branch here, the
+  // fixture's "original" close-script path is deliberately chosen to be the
+  // bundle's own eventual `<outDir>/close/<script>` path, so
+  // `resolveBundleSpec`'s `$BARELOOP_BUNDLE` substitution reconstructs the
+  // exact byte-identical cmd string the bridge was minted against.
+  const outDir = join(tmp(t, 'cli-out-'), 'selfmatch.bareloop');
+  const scriptAbsPath = join(outDir, 'close', 'close.mjs');
+  const job = buildJob({ job: 'cli-selfmatch-job', closeScriptPath: scriptAbsPath });
+  const bridge = bridgeFor(job);
+  const registryDir = makeRegistry(t, bridge);
+
+  const { exportBundle } = await import('../src/bundle.js');
+  const r = exportBundle({
+    spec: job, closeScripts: { [scriptAbsPath]: CLOSE_SOURCE }, registryDir, outDir, bareloopVersion: '0.0.0-test',
+  });
+  assert.equal(r.ok, true, `export must succeed: ${JSON.stringify(r.reds)}`);
+  // F128: this bundle went through exportBundle directly (not exportFixture),
+  // so mint its node_modules/bareloop by hand.
+  mkdirSync(join(outDir, 'node_modules'), { recursive: true });
+  symlinkSync(REPO_ROOT, join(outDir, 'node_modules', 'bareloop'), 'dir');
+
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const out = sink(); const err = sink();
+  // wrong --approve so the run stops right after printing the first-run
+  // notice — cheapest way to observe the "minting run" line at $0.
+  const rc = await main(['run', outDir, '--repo', repo, '--approve', 'deadbeef'], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider,
+  });
+  assert.equal(rc, 1);
+  assert.match(out.text(), /minting run: mint-1 \(spine not bundled in v1\)/, out.text());
+});
+
+test('bareloop run: "no version at this hash" when no bridge version matches the resolved spec', async (t) => {
+  const { bundleDir } = await exportFixture(t);
+  // Change the shipped spec.json (moves both jobSpecHash AND bundleHash) but
+  // keep the SAME shipped bridge, whose one version was minted at the
+  // ORIGINAL hash — same simulation the blessing-stale test uses, minus the
+  // blessing file (this is still a first run).
+  const specPath = join(bundleDir, 'spec.json');
+  const spec = JSON.parse(readFileSync(specPath, 'utf8'));
+  spec.budgetUsd = 999;
+  writeFileSync(specPath, JSON.stringify(spec, null, 2));
+  const { bundleHash: recomputed } = await import('../src/bundle.js').then((m) => ({ bundleHash: m.bundleHash(bundleDir) }));
+  const manifest = JSON.parse(readFileSync(join(bundleDir, 'manifest.json'), 'utf8'));
+  writeFileSync(join(bundleDir, 'manifest.json'), JSON.stringify({ ...manifest, bundleHash: recomputed }, null, 2));
+
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const out = sink(); const err = sink();
+  // no --approve given at all: exits 1 right after printing the first-run
+  // notice, which is all this test needs to observe.
+  const rc = await main(['run', bundleDir, '--repo', repo], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider,
+  });
+  assert.equal(rc, 1);
+  assert.match(out.text(), /no version at this hash/);
+  assert.deepEqual(provider.calls, []);
 });
 
 // ---------------------------------------------------------------------------
