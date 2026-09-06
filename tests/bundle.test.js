@@ -645,17 +645,17 @@ test('exportBundle: an existing absolute path named only inside a comment never 
   assert.deepEqual(r.reds, []);
 });
 
-test('exportBundle: the REAL scripts/u-spawner-close.mjs reds close-absolute-path (F129 regression pin)', (t) => {
-  // This pins the LIVE defect (F129) as a standing regression test: as of
-  // this commit, scripts/u-spawner-close.mjs hardcodes a real absolute
-  // WORKDIR and ignores the cwd the runner passes it (F8's return one layer
-  // up). If this script is ever fixed to read `process.cwd()` instead, this
-  // assertion flips to `r.ok === true` and this comment must be updated —
-  // do not silently invert it.
+test('exportBundle: the REAL scripts/u-spawner-close.mjs exports clean (F129 fixed: WORKDIR = process.cwd())', (t) => {
+  // F129's live defect was this script hardcoding an absolute WORKDIR and
+  // ignoring the cwd the runner passes it (F8's return one layer up). hamr's
+  // "change it" (2026-09-06) set it to `process.cwd()`. This pin now guards
+  // the FIX: if anyone bakes an absolute path back into the script, export
+  // must red it again. The other close scripts are outside this pin until
+  // they are fixed the same way.
   const script = readFileSync(join(REPO_ROOT, 'scripts', 'u-spawner-close.mjs'), 'utf8');
   const r = exportWithScript(t, script);
-  assert.equal(r.ok, false, 'scripts/u-spawner-close.mjs is expected to still hardcode WORKDIR — see the comment above if this ever flips');
-  assert.equal(r.reds.some((x) => x.code === 'close-absolute-path'), true, `expected a close-absolute-path red: ${JSON.stringify(r.reds)}`);
+  assert.equal(r.reds.some((x) => x.code === 'close-absolute-path'), false, `the fixed script must not red close-absolute-path: ${JSON.stringify(r.reds)}`);
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
 });
 
 test('checkBundleDeps: a node_modules/bareloop symlink to this repo root -> ok', (t) => {
