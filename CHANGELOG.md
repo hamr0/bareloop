@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.21.0] — 2026-09-06
 
 ### Added
 
@@ -67,6 +67,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
   unhandled `EPIPE`.** `process.stdout` now has an `'error'` listener that exits `0` on
   `EPIPE` (the one legitimate `process.exit()` in this file — the reader is gone, so
   there is no queued output left to lose) and re-throws anything else.
+- **`scripts/replay-row.mjs`** — a $0 registry-row replay from an archived green spine: mints
+  the row a real run would have written via `writeRunGreenRow` had it been launched with
+  `--registry`, using the same seam and the same input derivation `scripts/run-u.mjs` uses.
+  Given it a permanent home this session (was scratchpad-only).
 
 ## [0.20.0] — 2026-09-05
 
