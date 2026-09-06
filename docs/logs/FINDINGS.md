@@ -10300,3 +10300,84 @@ crash — the close ran, exited 0, and its own "6 file(s) changed" verdict was s
 against the wrong tree. An `already-green` mints NO blessing (correctly — `bless()` is only
 ever called from an actual `runJob` outcome path, and a precheck-only short-circuit never
 reaches it), so the exported bundle in its pre-fix state is, and remains, unblessed.
+
+## F130 — third fire of the exported bundle: mechanism proven end-to-end, job escalated on an Any⇄no-Any oscillation the governor read correctly
+
+**Date:** 2026-09-06 · **Status:** mechanism validated live; job outcome `escalated`, bundle
+unblessed, n=1 · **Class:** live run, hamr's third paid fire · **Grounded in:** spine
+`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/03d46c4d-6a90-47b8-a798-40414f52e82c/scratchpad/aurora-v3.bareloop/runs/mtplc72b/spine.jsonl`
+(215 records), `history.jsonl` in the same bundle dir, and `src/cli.js`/`scripts/run-u.mjs`
+for the runner-knob comparison below.
+
+**The fire.** `./node_modules/.bin/bareloop run . --repo <fresh copy of aurora-u @ d661e50>
+--approve f6706a98…`, from inside the exported bundle. Tamper check and `checkBundleDeps`
+(F128) both passed; a fresh detached worktree was created at
+`.bareloop/wt/mtplc72b`; precheck was honest — `needs_revision`, "tree identical to the seed"
+(seq 5), correctly refusing the F129 already-green trap this time. Preflight minted per-stage
+baselines (seq 7–10); work branch `bareloop-aurora-u-spawner-types-21` minted inside the
+worktree (seq 11, collision counter 20 — an artifact of repeated fires against the same
+bridge dir, not a defect). No `blessing.json` exists anywhere under the bundle — correct,
+since only an actual `green` outcome blesses (F129).
+
+| | |
+|---|---|
+| spend | $4.449282 of $5.00 budget (`spendComplete: true`) |
+| worker rounds | 112 (`step:fix-mypy-strict` 57, `fix` 45, `scout` 9, `plan` 1) |
+| scout | truncated once (seq 24, `scout-truncated bytes:0`) |
+| strikes | 2 of 2 (`close-trend` governor), `cap-halt` at seq 210 |
+| outcome | `escalated` (seq 212, 215); CLI exit 1 |
+| history row | carries `bundleHash f6706a98…` and `approveHash a52a35fc…` |
+
+**The job.** Step `fix-mypy-strict`'s own inner check went green: seq 115–118 show
+`check-run satisfied` → `exit-eval` → `close-verdict satisfied` → `run-end`, and
+`plan-executed` (seq 213) records the step outcome as `"green"`. This is the step's own
+check, not the job's verdict (per standing doctrine: only the outer close is truth) — seq
+120 immediately runs the **outer close**, which reds `no-suppressions`: the fix imported
+`Any` into `recovery.py` and `spawner.py` to satisfy mypy, and the outer close judges that
+"suppressing an error is not typing it." That step-green/outer-close-red split is the
+staged-close design working as intended, not a contradiction.
+
+Fix iteration 1 (seq 121–199, capped at the attempt-bounded 40-round ceiling, seq 197):
+removed the `Any` imports → `typecheck` went red again with 8 "Name \"Any\" is not defined"
+errors (seq 199) — a regression from stage 4 (no-suppressions, the best reached) back to
+stage 1 (typecheck). `ladder` governor: `close-trend`, `stageIndex 1 < best 4`, `improved:
+false`, strike 1 (seq 200). Fix iteration 2 (seq 201–208): re-added the `Any` imports →
+`no-suppressions` red again, value 2 vs prior best 2, `improved: false`, strike 2 (seq 209)
+→ `cap-halt` (seq 210, "not under cap — not can't") → `escalation`/`run-end escalated` (seq
+211–212) with the readout "no stage improved — no-suppressions 2 → 2". **The governor was
+right**: the loop genuinely oscillated (Any ⇄ no Any) rather than converging: this operator's
+first read suspected the governor itself and withdrew that suspicion once seq 120, 199, 200,
+208, 209 were traced in order and showed two real, comparable non-improvements, not a
+governor bug.
+
+**Base rate.** The identical job under `scripts/run-u.mjs` is 3/3 green in its last three
+archived runs: `u-mtoqtcb5` ($3.18, 54 rounds), `u-mtor6qkd` ($3.54, 64 rounds), `u-mtg50j39`
+($2.34, 41 rounds). This exported-bundle fire is n=1 and is not evidence of a CLI-caused
+regression on its own; the worker reaching for `Any` as a typing shortcut is a known hazard
+of this job's close, independent of the export path.
+
+**Two runner-knob divergences (parked, not fixed here).** Reading `src/cli.js`'s call into
+`runJob` against `scripts/run-u.mjs`'s call into the same library functions: the CLI passes
+no `capRuns` (library default `capRuns = 3` in `src/run.js`/`src/planrun.js`; `run-u`'s own
+`CAP_RUNS = 4`) and no `closeTimeoutMs` (library default `?? 120_000` in `src/ralph.js`/
+`src/planrun.js`; `run-u`'s own `CLOSE_TIMEOUT_MS = 900_000`). Neither divergence caused this
+escalation — the `close-trend` strike governor (`strikeLimit`, 2 in both paths) is what
+stopped the run, and no close stage ever approached a 120s wall. But a 120s close timeout is
+a live hazard for any job whose suite is slower than aurora's (~23s) or litectx's (~53s,
+per `run-u.mjs`'s own comment). **Parked for hamr:** whether the bundle runner should mirror
+`run-u`'s operator knobs (`capRuns: 4`, `strikeLimit: 2`, `closeTimeoutMs: 900_000`) or keep
+the library defaults — these are runner-knob values, arbiter-adjacent, and the bench greens
+that established this job's base rate were minted under `run-u`'s numbers, not the CLI's.
+
+**One v1 UX gap.** The escalation text (seq 211) offers "top up budgetUsd and rerun with
+`--resume`" as an option, but `bareloop run` v1 has no resume path (by spec — not in v1); only
+`run-u` has `--resume`. The tail print should say the lever honestly: resume is `run-u`-only
+until the bundle runner grows one, rather than offering a flag the bundle CLI does not
+implement.
+
+**Validation status.** Validation step 4's pre-registered expectation was GREEN; a red is a
+finding, not a retry. The mechanism (tamper check, deps preflight, detached worktree,
+honest precheck, per-stage baselines, work-branch minting, strike governor, honest spend/exit
+accounting) is now proven end-to-end for the first time across three real fires. The job
+itself is `escalated`, n=1; the bundle stays unblessed. Whether to fire again (n=2, colour-
+flip to n=3 per the frozen bench rules on any flip) is hamr's call, not decided here.

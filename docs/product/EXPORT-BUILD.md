@@ -219,3 +219,38 @@ See `docs/logs/FINDINGS.md` F129 for the full account. The close scripts' own fi
 is arbiter-adjacent (PRD item 27 territory) and is hamr's call, not this session's to make.
 The bundle exported before this fix remains unblessed, correctly: an `already-green` outcome
 never calls `bless()` (that only runs on a real `outcome === 'green'`, `src/cli.js`).
+
+## Validation step 4, third fire: escalated (F130) (2026-09-06)
+
+Step 4 (hamr's third paid fire) ran the exported bundle end-to-end without crashing or
+false-greening: tamper check, `checkBundleDeps` (F128), fresh detached worktree, an honest
+close-first precheck ("tree identical to the seed"), per-stage preflight baselines, and
+minted work branch all behaved correctly. **The mechanism is proven; the job's
+definition-of-done (a `green` outcome) was NOT met.** The worker oscillated between adding
+`Any` (satisfies typecheck, fails `no-suppressions`) and removing it (fails typecheck again)
+across two fix iterations, and the `close-trend` strike governor correctly read that as two
+non-improving strikes and cap-halted to `escalated` ($4.449282 of $5.00, 112 rounds). See
+`docs/logs/FINDINGS.md` F130 for the full trace, including the sequence numbers that trace
+the governor's correctness (this operator's initial suspicion of the governor itself was
+traced and withdrawn).
+
+The exported bundle stays unblessed (correctly — no `blessing.json` was minted, since
+`bless()` only ever fires on a real `green` outcome). Whether to fire again is hamr's call —
+per the frozen bench rules, a colour-flip (green after a red, or vice versa) would call for
+n=3, not another lone n=1.
+
+**Two items parked, not fixed in this fence:**
+
+1. **Runner-knob mirroring.** `src/cli.js`'s call into `runJob` supplies neither `capRuns`
+   nor `closeTimeoutMs`, so the bundle CLI runs on the library defaults (`capRuns: 3`,
+   `closeTimeoutMs: 120_000`) rather than `scripts/run-u.mjs`'s operator-set values
+   (`CAP_RUNS: 4`, `CLOSE_TIMEOUT_MS: 900_000`). Neither divergence caused this run's
+   escalation (the strike governor, `strikeLimit: 2` in both paths, is what stopped it), but
+   a 120s close timeout is a live hazard for a slower suite, and this job's bench base rate
+   (3/3 green) was established under `run-u`'s numbers. Whether the bundle runner should
+   mirror those operator knobs or keep the library defaults is hamr's call — runner-knob
+   values are arbiter-adjacent.
+2. **v1 resume UX gap.** The escalation readout offers "rerun with `--resume`" as a next
+   step, but `bareloop run` v1 has no resume path by spec. The tail print should say so
+   honestly (resume stays `run-u`-only) rather than naming a flag the bundle CLI does not
+   implement.

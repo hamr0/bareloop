@@ -421,7 +421,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     Softgreen (the judged floor) itself remains shipped and unaffected; only the doc-genre
     roadmap item ends.
 
-Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
+Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
+bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
+library's own values (3 / 120_000ms) rather than `run-u`'s operator-set values (4 /
+900_000ms), the numbers this job's bench base rate was established under (F130).
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on
 the build list), refuse-to-price preflight, memory/recall harness.
 
