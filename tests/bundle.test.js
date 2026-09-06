@@ -342,6 +342,73 @@ test('exportBundle refuses: a close script importing something src/index.js does
   assert.equal(existsSync(outDir), false);
 });
 
+// ---------------------------------------------------------------------------
+// exportBundle — close-import-unparsed: shapes this module cannot verify at
+// all, and a relative import that does not point into src/ (a sibling file
+// close/ never ships). Each case swaps ONLY the kinds.js import line for one
+// unparsed form — everything else about CLOSE_SCRIPT_SOURCE stays real.
+// ---------------------------------------------------------------------------
+
+const KINDS_IMPORT_LINE = "import { JUDGED_MARKER } from '../src/kinds.js';";
+
+/** @param {string} replacementLine */
+function scriptWith(replacementLine) {
+  return CLOSE_SCRIPT_SOURCE.replace(KINDS_IMPORT_LINE, replacementLine);
+}
+
+/** @param {import('node:test').TestContext} t @param {string} script @returns {any} */
+function exportWithScript(t, script) {
+  const job = clone(JOB);
+  const bridge = bridgeFor(job);
+  const registryDir = makeRegistry(t, bridge);
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
+  return exportBundle({ spec: job, closeScripts: { [CLOSE_SCRIPT_PATH]: script }, registryDir, outDir, bareloopVersion: '0.99.0' });
+}
+
+test('exportBundle refuses: a default import from src is close-import-unparsed', (t) => {
+  const r = exportWithScript(t, scriptWith("import JUDGED_MARKER from '../src/kinds.js';"));
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'close-import-unparsed');
+  assert.match(r.reds[0].detail, /fixture-close\.mjs/);
+  assert.match(r.reds[0].detail, /kinds\.js/);
+});
+
+test('exportBundle refuses: a namespace import from src is close-import-unparsed', (t) => {
+  const r = exportWithScript(t, scriptWith("import * as k from '../src/kinds.js';"));
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'close-import-unparsed');
+});
+
+test('exportBundle refuses: a bare side-effect import of src is close-import-unparsed', (t) => {
+  const r = exportWithScript(t, scriptWith("import '../src/kinds.js';"));
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'close-import-unparsed');
+});
+
+test('exportBundle refuses: a dynamic import() of src is close-import-unparsed', (t) => {
+  const r = exportWithScript(t, scriptWith("await import('../src/kinds.js');"));
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'close-import-unparsed');
+});
+
+test('exportBundle refuses: a plain named import of a SIBLING relative file (not src/) is close-import-unparsed', (t) => {
+  const r = exportWithScript(t, scriptWith("import { x } from './helpers.mjs';"));
+  assert.equal(r.ok, false);
+  assert.equal(r.reds.length, 1);
+  assert.equal(r.reds[0].code, 'close-import-unparsed');
+  assert.match(r.reds[0].detail, /helpers\.mjs/);
+});
+
+test('exportBundle: a plain named import of a REAL export from src still passes', (t) => {
+  const r = exportWithScript(t, KINDS_IMPORT_LINE); // unchanged — the real fixture shape
+  assert.equal(r.ok, true, `must succeed: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
+});
+
 test('exportBundle refuses: outDir exists and is non-empty', (t) => {
   const bridge = bridgeFor(JOB);
   const registryDir = makeRegistry(t, bridge);

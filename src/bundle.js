@@ -111,28 +111,57 @@ function isBareloopSrcImport(spec) {
   return spec === 'bareloop' || /^(\.\.?\/)+src\//.test(spec);
 }
 
-const IMPORT_LINE_RE = /import\s*\{([^}]+)\}\s*from\s*(['"])([^'"]+)\2/g;
+// Every STATIC import statement, clause captured whole (undefined when there
+// is no `from` — a bare side-effect `import 'x'`). Deliberately permissive:
+// the shape check below is what decides legality, not this regex.
+const STATIC_IMPORT_RE = /import\s+(?:([^'";]*?)\s+from\s+)?(['"])([^'"]+)\2/g;
+// Dynamic `import('x')` (and `await import('x')`, `import ('x')`, …) — no
+// clause exists for this form at all, so it is ALWAYS unparsed when it
+// targets something this bundle would otherwise have to check.
+const DYNAMIC_IMPORT_RE = /import\s*\(\s*(['"])([^'"]+)\1\s*\)/g;
+
+/** @param {string} spec @returns {boolean} */
+function isRelative(spec) {
+  return spec.startsWith('./') || spec.startsWith('../');
+}
 
 /**
- * Named imports a close script pulls from bareloop's own src (or the
- * installed package). One entry per `{ a, b as c }` clause, aliases resolved
- * to the ORIGINAL exported name (the alias is a local rename, not what has to
- * exist on the export list).
+ * Every import in a close script this bundle has an opinion about: a
+ * relative import (src-bound or not — a sibling file is exactly the case
+ * that must be caught) and the bare `'bareloop'` package specifier. A
+ * node:/third-party specifier is filtered out here and never reaches the
+ * legality check — this module has nothing to say about those.
  * @param {string} source close script text
- * @returns {string[]}
+ * @returns {{ raw: string, spec: string, clause: string|null, dynamic: boolean }[]}
  */
-function bareloopImportsOf(source) {
-  /** @type {string[]} */
-  const names = [];
-  for (const m of source.matchAll(IMPORT_LINE_RE)) {
-    const [, clause, , spec] = m;
-    if (!isBareloopSrcImport(spec)) continue;
-    for (const raw of clause.split(',')) {
-      const name = raw.trim().split(/\s+as\s+/)[0].trim();
-      if (name) names.push(name);
-    }
+function relevantImportsOf(source) {
+  /** @type {{ raw: string, spec: string, clause: string|null, dynamic: boolean }[]} */
+  const out = [];
+  for (const m of source.matchAll(STATIC_IMPORT_RE)) {
+    const [raw, clause, , spec] = m;
+    if (!isRelative(spec) && spec !== 'bareloop') continue;
+    out.push({ raw: raw.trim(), spec, clause: clause === undefined ? null : clause.trim(), dynamic: false });
   }
-  return names;
+  for (const m of source.matchAll(DYNAMIC_IMPORT_RE)) {
+    const [raw, , spec] = m;
+    if (!isRelative(spec) && spec !== 'bareloop') continue;
+    out.push({ raw: raw.trim(), spec, clause: null, dynamic: true });
+  }
+  return out;
+}
+
+/**
+ * The ONLY import shape this module can verify: a plain `{ a, b as c }`
+ * named clause. Anything else — a default import, `* as ns`, a mix of
+ * default+named/namespace, a bare side-effect import, or (by construction,
+ * since it carries no clause at all) a dynamic `import()` — is UNPARSED, not
+ * silently accepted: a legality check that skips what it cannot read is a
+ * blind instrument, and blind is not the same as clean.
+ * @param {string|null} clause @param {boolean} dynamic
+ * @returns {boolean}
+ */
+function isPlainNamedClause(clause, dynamic) {
+  return !dynamic && clause !== null && /^\{[^{}]*\}$/.test(clause);
 }
 
 /**
@@ -186,6 +215,13 @@ function parseNodeCmd(cmd) {
  *    copying both into one flat `close/` directory would silently clobber one.
  *  - `close-import-unexported` — a close script imports a name from
  *    bareloop's own src that `src/index.js` does not export.
+ *  - `close-import-unparsed` — a close script's import is a shape this
+ *    module cannot verify at all (default import, `* as ns`, mixed
+ *    default+named/namespace, a bare side-effect import, or a dynamic
+ *    `import()`), or is a relative import that does not point into
+ *    `src/` (a sibling file `close/` never ships, so it would be missing
+ *    from the bundle). Fails safe rather than silently accepting what it
+ *    cannot read.
  *  - `outdir-not-empty` — `outDir` exists and already holds files.
  *  - `registry-unreadable` — `registryDir` itself could not be read
  *    (bubbled from `loadRegistry`).
@@ -254,9 +290,19 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     byPath.set(scriptPath, name);
     const source = scripts[scriptPath];
     if (!isNonEmptyString(source)) { red('close-script-missing', at, `closeScripts has no source for ${scriptPath}`); return; }
-    for (const imported of bareloopImportsOf(source)) {
-      if (!exportNames.has(imported)) {
-        red('close-import-unexported', at, `${basename(scriptPath)} imports "${imported}" from bareloop's src, which src/index.js does not export`);
+    for (const imp of relevantImportsOf(source)) {
+      if (!isPlainNamedClause(imp.clause, imp.dynamic) || (isRelative(imp.spec) && !isBareloopSrcImport(imp.spec))) {
+        red('close-import-unparsed', at, `${basename(scriptPath)}: "${imp.raw}" is not a plain named import this bundle can verify — a default/namespace/side-effect/dynamic import, or a relative import outside src/ (close/ ships only the named script, so a sibling file would be missing from the bundle)`);
+        continue;
+      }
+      // isPlainNamedClause guarantees clause is a non-null `{ ... }` string here
+      const names = /** @type {string} */ (imp.clause).slice(1, -1).split(',')
+        .map((raw) => raw.trim().split(/\s+as\s+/)[0].trim())
+        .filter(Boolean);
+      for (const name of names) {
+        if (!exportNames.has(name)) {
+          red('close-import-unexported', at, `${basename(scriptPath)} imports "${name}" from bareloop's src, which src/index.js does not export`);
+        }
       }
     }
   });
