@@ -262,3 +262,9 @@ export { PROMPT_REGISTERS, isPromptFile } from './promptregisters.js';
 export {
   exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory,
 } from './bundle.js';
+// Export M2 (`docs/product/EXPORT-BUILD.md`) — the CLI's one entry point,
+// exported as `cliMain` (never `main`, a name generic enough to collide with
+// an adopter's own). `bin/bareloop.mjs` is the only other caller; this export
+// exists so an adopter driving `bareloop run` from their own script can do so
+// without spawning `bin/bareloop.mjs` as a child process.
+export { main as cliMain } from './cli.js';

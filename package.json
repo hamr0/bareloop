@@ -11,6 +11,9 @@
       "default": "./src/index.js"
     }
   },
+  "bin": {
+    "bareloop": "bin/bareloop.mjs"
+  },
   "license": "Apache-2.0",
   "author": "hamr0",
   "engines": {
@@ -38,6 +41,7 @@
   "homepage": "https://github.com/hamr0/bareloop#readme",
   "files": [
     "src/",
+    "bin/",
     "types/",
     "NOTICE",
     "bareloop.context.md",
