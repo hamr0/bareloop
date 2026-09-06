@@ -399,6 +399,20 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     every job → bench rows re-sign and re-baseline (hamr's call which way). Arbiter
     territory; scoped after export v1 ships. Order (item 25 amended): export → this →
     reuse-lift proof.
+    **2026-09-06 (hamr: "that should come with next in prd … both are related"):** the rung
+    widens to CLOSE INTEGRITY — the close must be exactly what was signed (bytes, above) AND
+    must judge exactly the tree it was given (cwd). F129 (`docs/logs/FINDINGS.md`): 9 of 10
+    hand-authored close scripts bake in an absolute patient path and ignore the cwd the
+    runner passes (F8's return one layer up); the exported aurora close judged the ORIGINAL
+    patient and read `already-green` at $0 on a fresh worktree. Item 27 would have signed
+    that bug in happily — different hole, same instrument. Export v1 ships the wall for
+    bundles (`close-absolute-path` refuses at export) and the aurora close now reads
+    `process.cwd()` (hamr: "change it"). This rung finishes it: (a) the remaining 8
+    `scripts/*-close.mjs` read `process.cwd()` (behaviour-preserving for run-u, whose cwd
+    IS the patient); (b) the pinned `../bareloop-close` worktree re-pins to a main that
+    carries the fix; (c) when close authoring becomes a rung, its template starts from
+    `process.cwd()` and the `close-absolute-path` rule moves from export-time to the
+    validation gate so a baked-in path is inexpressible for every job, not only bundles.
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
