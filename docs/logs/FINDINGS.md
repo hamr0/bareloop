@@ -10381,3 +10381,39 @@ honest precheck, per-stage baselines, work-branch minting, strike governor, hone
 accounting) is now proven end-to-end for the first time across three real fires. The job
 itself is `escalated`, n=1; the bundle stays unblessed. Whether to fire again (n=2, colour-
 flip to n=3 per the frozen bench rules on any flip) is hamr's call, not decided here.
+
+**2026-09-06 — closed, n=2, green: export v1 validated.** The colour-flip fire ran (same
+bundle, `bundleHash f6706a98…`, same command, `--approve` still required since the bundle
+was still unblessed): spine
+`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/03d46c4d-6a90-47b8-a798-40414f52e82c/scratchpad/aurora-v3.bareloop/runs/mtpmecks/spine.jsonl`
+(109 records). Outcome `green`, `spentUsd 3.4187783999999994` of the same $5 budget,
+`spendComplete true`, 53 `worker-round` records, work branch
+`bareloop-aurora-u-spawner-types-22` minted inside worktree `.bareloop/wt/mtpmecks` (seq 11,
+`work-branch`), CLI exit 0. Close-stage trail (`close-precheck`/`close-verdict`/`outer-close`
+records, in order): precheck `needs_revision` on `changed-from-seed` (tree matched seed,
+correctly refusing an already-green false read) → step `fix-mypy-strict` iteration 1's own
+inner close red on `typecheck` (4 `mypy --strict` unreachable-statement errors) → iteration 2
+inner close `satisfied`, step `run-end green` → **outer close** iteration 1 red on
+`no-suppressions` (an `Any` import crept back in) → fix-loop → outer close iteration 2 (final)
+`satisfied` across all five stages (`changed-from-seed`, `typecheck`, `tests-kept`,
+`suite-green`, `no-suppressions`) → `run-end green` → `job-end green`. `blessing.json` written:
+`{bundleHash f6706a98…, blessedAt 2026-09-06T09:50:02.361Z, runid mtpmecks, outcome green,
+host hamr}`; `history.jsonl` now carries 2 rows (`mtplc72b` escalated, `mtpmecks` green — both
+confirmed by direct read, matching this finding and F130's numbers exactly).
+
+n=2 on the CLI reads 1 escalated / 1 green, in line with the job's `run-u` base rate (3/3
+green, $2.34–3.54, 41–64 rounds) cited in F130 — the exported-bundle path shows no divergence
+from that base rate across two real fires. Validation step 4's pre-registered bar (expected
+GREEN, ≤ $5, blessing written, worktree + branch left behind) is MET on this second attempt.
+Total paid spend across all four fires of this bundle (two $0 precheck-only runs plus these
+two): `runs/mtpjop4v` $0 (`close-red`) + `runs/mtpkltyl` $0 (`already-green`) + `mtplc72b`
+$4.449282 + `mtpmecks` $3.4187784 = **$7.868** (`docs/product/EXPORT-BUILD.md`'s "done =
+the validation run at the bottom greened from a clean consumer directory" is now met).
+
+**Still open, not closed by this fire.** (1) The "no-resign" behaviour on a second run against
+an already-blessed bundle is test-proven only — never exercised live, because this fire ran
+before the bundle was blessed (same as the first three); say this exactly, do not round it up
+to "proven." (2) The pinned `../bareloop-close` worktree carries the `process.cwd()` line
+uncommitted until re-pinned after merge (PRD item 27, close integrity, next in line). (3) The
+runner-knob question (`capRuns`/`closeTimeoutMs` mirroring `run-u`'s operator values) stays
+parked, per F130.

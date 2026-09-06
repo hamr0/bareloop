@@ -414,6 +414,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     `process.cwd()` and the `close-absolute-path` rule moves from export-time to the
     validation gate so a baked-in path is inexpressible for every job, not only bundles.
 
+    **export v1 validated 2026-09-06, see EXPORT-BUILD.md.**
+
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
     `docs/logs/FINDINGS.md`), and hitl is retired (v1.71; item 21 above). Dropped from tracking,

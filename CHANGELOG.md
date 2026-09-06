@@ -41,6 +41,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
   close judges the `cwd` the runner gives it, never a path baked into its own source. Pins
   the live defect where a hardcoded `WORKDIR` made the close judge the original patient
   checkout instead of a fresh worktree, minting `already-green` at $0.
+- **The aurora close now reads `process.cwd()`** (`scripts/u-spawner-close.mjs`) instead of a
+  hardcoded absolute `WORKDIR`, so it judges the tree the runner actually hands it rather than
+  the original patient checkout — the fix behind F129, validated live by a fourth paid fire
+  that went green from a fresh detached worktree (`docs/logs/FINDINGS.md`, F130's closing
+  pointer).
 
 ### Fixed
 

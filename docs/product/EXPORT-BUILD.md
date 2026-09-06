@@ -254,3 +254,27 @@ n=3, not another lone n=1.
    step, but `bareloop run` v1 has no resume path by spec. The tail print should say so
    honestly (resume stays `run-u`-only) rather than naming a flag the bundle CLI does not
    implement.
+
+## Validation step 4, fourth fire: green, blessed — definition of done met (F130 closed) (2026-09-06)
+
+Step 4's colour-flip fire (same bundle, `bundleHash f6706a98…`, same command, `--approve`
+still required) went `green`: spine
+`.../aurora-v3.bareloop/runs/mtpmecks/spine.jsonl`, `spentUsd 3.4187783999999994` of $5,
+`spendComplete true`, 53 worker rounds, work branch `bareloop-aurora-u-spawner-types-22` left
+in worktree `.bareloop/wt/mtpmecks`, CLI exit 0. Close trail: precheck correctly refused
+`changed-from-seed` (fresh worktree, honest, no already-green false read), the step's own
+inner close went green on iteration 2, the **outer close** caught one more `no-suppressions`
+red (an `Any` import) before iteration 2 satisfied all five stages. `blessing.json` minted;
+`history.jsonl` now carries both fires (`mtplc72b` escalated, `mtpmecks` green). Full trace
+and n=2 read: `docs/logs/FINDINGS.md`, dated pointer under F130.
+
+**This closes "done" for export v1.** n=2 on the CLI (1 escalated, 1 green) lines up with the
+job's `run-u` base rate (3/3 green) — no CLI-path divergence found. Total paid spend across
+all four fires of this bundle: $0 + $0 + $4.449282 + $3.4187784 = **$7.868**.
+
+**Still open after this fire (unchanged from F130, one item resolved into a fact, not fixed
+here):** the "no-resign" path on an already-blessed bundle remains test-proven only — every
+real fire so far ran against an unblessed bundle, so live no-resign behaviour has never been
+exercised; the pinned `../bareloop-close` worktree still carries the `process.cwd()` fix
+uncommitted, pending re-pin after merge; PRD item 27 (close-bytes signature widened to close
+integrity) is next in the priority order; the runner-knob mirroring question stays parked.
