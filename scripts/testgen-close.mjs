@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
-const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar';
+const WORKDIR = process.cwd(); // F129: a close judges the cwd the runner gives it (F8), never a baked-in path (was: bareloop-patients/aurora-soar)
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop';
 const REAL = join(WORKDIR, 'packages/soar/src/aurora_soar/orchestrator.py');
 const PRISTINE = join(SPINE_DIR, 'testgen-pristine-orchestrator.py');

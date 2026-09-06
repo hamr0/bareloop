@@ -22,7 +22,7 @@ import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
-const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types';
+const WORKDIR = process.cwd(); // F129: a close judges the cwd the runner gives it (F8), never a baked-in path (was: bareloop-patients/litectx-types)
 const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types-bareloop';
 const SEED_REF = 'ca1af8a'; // frozen seed commit (TYPES-PREREG.md §3)
 const SEED_SYMBOLS = join(SPINE_DIR, 'types-seed-symbols.txt');

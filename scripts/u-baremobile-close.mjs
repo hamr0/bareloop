@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
-const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/baremobile-u';
+const WORKDIR = process.cwd(); // F129: a close judges the cwd the runner gives it (F8), never a baked-in path (was: bareloop-patients/baremobile-u)
 const SEED_REF = 'd9b318fac78036bd3db35f68c4b1eb5ee634244d'; // the patient as seeded
 const PKG_SRC = 'src';
 const SCOPE = ['src/errors.js', 'src/aria.js']; // the job's target files

@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
-const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u';
+const WORKDIR = process.cwd(); // F129: a close judges the cwd the runner gives it (F8), never a baked-in path (was: bareloop-patients/bareguard-u)
 const SEED_REF = '2ae8fcd37041c186524a6eb5e953b9752cd602fa'; // the patient as seeded
 const PKG_SRC = 'src';
 const SCOPE = ['src/primitives/classify.js', 'src/primitives/fs.js', 'src/primitives/spawn-rate.js', 'src/primitives/defer-rate.js', 'src/primitives/bash.js']; // the job's target files

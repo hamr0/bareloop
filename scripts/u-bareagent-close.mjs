@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
-const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u';
+const WORKDIR = process.cwd(); // F129: a close judges the cwd the runner gives it (F8), never a baked-in path (was: bareloop-patients/bareagent-u)
 const SEED_REF = '0037182a5a369d380e1635e0e4ab13e3557cfab9'; // the patient as seeded
 const PKG_SRC = 'src';
 const SCOPE = ['src/recurse.js', 'src/loop.js']; // the job's target files

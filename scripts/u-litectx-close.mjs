@@ -25,7 +25,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
-const WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-u';
+const WORKDIR = process.cwd(); // F129: a close judges the cwd the runner gives it (F8), never a baked-in path (was: bareloop-patients/litectx-u)
 const SEED_REF = '96813a43bbcbac6a808ff610c6751a8736e2903e'; // the patient as seeded
 const PKG_SRC = 'src';
 const TESTS_MIN = 410; // the seed's EXECUTED count (409 pass + 1 skipped) — executed, never passed (F40)
