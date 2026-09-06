@@ -399,6 +399,24 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     every job → bench rows re-sign and re-baseline (hamr's call which way). Arbiter
     territory; scoped after export v1 ships. Order (item 25 amended): export → this →
     reuse-lift proof.
+    **2026-09-06 (hamr: "that should come with next in prd … both are related"):** the rung
+    widens to CLOSE INTEGRITY — the close must be exactly what was signed (bytes, above) AND
+    must judge exactly the tree it was given (cwd). F129 (`docs/logs/FINDINGS.md`): 9 of 10
+    hand-authored close scripts bake in an absolute patient path and ignore the cwd the
+    runner passes (F8's return one layer up); the exported aurora close judged the ORIGINAL
+    patient and read `already-green` at $0 on a fresh worktree. Item 27 would have signed
+    that bug in happily — different hole, same instrument. Export v1 ships the wall for
+    bundles (`close-absolute-path` refuses at export) and the aurora close now reads
+    `process.cwd()` (hamr: "change it"). This rung finishes it: (a) the remaining 8
+    `scripts/*-close.mjs` read `process.cwd()` (behaviour-preserving for run-u, whose cwd
+    IS the patient); (b) the pinned `../bareloop-close` worktree re-pins to a main that
+    carries the fix; (c) when close authoring becomes a rung, its template starts from
+    `process.cwd()` and the `close-absolute-path` rule moves from export-time to the
+    validation gate so a baked-in path is inexpressible for every job, not only bundles.
+
+    **export v1 validated 2026-09-06, see EXPORT-BUILD.md.**
+    **2026-09-06, later: (b) re-pin to branch tip done (`8b209a9`); main re-pin after merge.
+    Post-bless no-approve run live-proven (`mtpo9rxy`, green).**
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
@@ -407,7 +425,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     Softgreen (the judged floor) itself remains shipped and unaffected; only the doc-genre
     roadmap item ends.
 
-Parked pending measurement: read compaction; stale-slice usage; context-headroom meter.
+Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
+bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
+library's own values (3 / 120_000ms) rather than `run-u`'s operator-set values (4 /
+900_000ms), the numbers this job's bench base rate was established under (F130).
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on
 the build list), refuse-to-price preflight, memory/recall harness.
 

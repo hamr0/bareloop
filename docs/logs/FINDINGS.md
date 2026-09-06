@@ -10173,3 +10173,266 @@ September bench) — it is a base rate for "replans rarely rescue," not a per-jo
 "habitual dead end" reading (a check-only verify step drafted before the work is done) is
 named from step ids in the replan records, not from transcripts, which the spine does not
 carry. Nothing here is a G4 result; it is the read that had to exist before one.
+
+## F128 — hamr's paid fire crashed on `Cannot find package 'bareloop'`: the frozen spec's validation step 2 named the wrong install shape; the bundle's OWN dependency was never installed
+
+**Date:** 2026-09-06 · **Status:** FIXED (preflight red, exit-code rule, minting-run
+correction; all three test-proven) · **Class:** live defect, hamr's real paid run · **Grounded
+in:** `<bundle>/runs/mtpjop4v/spine.jsonl` (`close-precheck` verdict `crashed`, `exitCode 1`,
+`job-end` `outcome:"close-red"`, `spentUsd 0`), and a direct reproduction: `node
+close/u-spawner-close.mjs changed-from-seed` inside the bundle throws `ERR_MODULE_NOT_FOUND:
+Cannot find package 'bareloop' imported from <bundle>/close/u-spawner-close.mjs` because the
+bundle directory carries no `node_modules` at all.
+
+**What happened.** `bareloop run <bundle> --repo <patient> --approve <hash>` on the exported
+`aurora-u-spawner-types` bundle went `close-red` at the precheck, stage
+`changed-from-seed`, before a single token was spent. The close script does `import {
+JUDGED_MARKER } from 'bareloop'` (the exact substitution `exportBundle` performs on every
+close script's `../src/kinds.js` import) — a plain, correct import for an installed
+`bareloop` consumer. The bundle's own `package.json` (written by `exportBundle`, outside the
+`bundleHash`) declares `"dependencies": { "bareloop": "^…" }`, but `docs/product/
+EXPORT-BUILD.md`'s validation step 2 read `npm install <bundle dir>` FROM a clean consumer
+directory — that installs the bundle AS the consumer's own dependency (i.e. into the
+consumer's `node_modules/<bundle-name>/`), which never runs `npm install` INSIDE the bundle
+directory and so never populates the bundle's OWN `node_modules/`. The correct adopter flow,
+confirmed by direct reproduction, is `cd <bundle> && npm install` (reads the bundle's own
+`package.json`), then `./node_modules/.bin/bareloop run . --repo …`.
+
+**Vocabulary held.** The close crashed (`ERR_MODULE_NOT_FOUND` before any `console.log`,
+exit code 1, zero stages judged) — `runClose`'s `CLOSE_FAULTS` path correctly rendered this
+as `close-red` (the instrument broke), never `plan-red` (a judged no). `spentUsd:0`, honestly
+— no provider call was ever reached. This is the vocabulary N5 already named in the frozen
+spec; the live run obeyed it correctly. The defect was upstream of the close entirely: a
+wrong-shape install instruction, not a close-authoring bug.
+
+**Fixes (one commit, all three test-proven at $0 against real spines/fixtures).**
+
+1. **Fail-safe preflight, `checkBundleDeps(bundleDir)`** (`src/bundle.js`, new, exported):
+   resolves the bare specifier `'bareloop'` from inside the bundle's own `close/` directory
+   the same way a close script's `import` would (`createRequire(...).resolve('bareloop')`,
+   which walks `bareloop`'s own `exports` map). `bareloop run` calls it as literal step 1b
+   — right after the tamper check, before the envelope check, the provider key, and any
+   worktree — and reds `bundle-deps-missing` with the exact cure line `cd <bundleDir> && npm
+   install` on failure, spending nothing. Reproduced directly against the real crashed
+   bundle from this fire (`checkBundleDeps` on `<bundle>` above returns exactly that red).
+2. **Exit code.** `bareloop run` returned `0` for every outcome, including this `close-red`
+   — a caller scripting off the exit code could not tell success from this crash. `run` now
+   returns `0` only for `green`/`already-green`; every other outcome (this one included)
+   exits `1`.
+3. **Docs corrected.** `docs/product/EXPORT-BUILD.md` gets a dated addendum (the frozen
+   text above is never rewritten); `bareloop.context.md`'s Bundles section states the
+   corrected `cd <bundle> && npm install` flow, the `bundle-deps-missing` red and its
+   position in the run order, and the exit-code rule.
+
+**Sub-finding — the "minting run" line named the wrong run.** While fixing the exit code,
+found `bareloop run`'s first-run notice printed the shipped bridge's FIRST history row's
+`runid`, unconditionally — not the run that actually minted the bundle's own signed spec.
+Fixed to search every bridge VERSION across all shipped bridges (base + shape fork) for the
+one whose `specHash` equals the resolved `$BARELOOP_BUNDLE` spec's `jobSpecHash`, printing
+"no version at this hash" (never a guessed runid) when none matches — which, cross-machine,
+is the common case, since the historic mint's real close-script path and the importer's own
+bundle path essentially never coincide. Test-proven both ways: a fixture built so the
+resolved path IS byte-identical to the mint-time path (match), and the ordinary cross-machine
+case (no match).
+
+**Anti-gloss.** `checkBundleDeps` only proves `bareloop` RESOLVES from `close/` — it does not
+prove the resolved version matches the bundle's declared `^<version>` range, and it does not
+run the close itself, so a `package.json` naming a broken/absent transitive dependency of
+`bareloop` itself would still crash past this preflight. That is out of scope for this fix
+(F128 is about the bundle's OWN direct dependency, the one the live fire actually hit) and is
+not claimed as closed.
+
+## F129 — the close judged the ORIGINAL patient via a hardcoded WORKDIR → `already-green` at $0 on a fresh worktree (F8's return, one layer up)
+
+**Date:** 2026-09-06 · **Status:** export-time guard shipped (draft-time, mechanical,
+fail-safe — refuses at $0 before a fire; the close scripts themselves are unfixed, see
+below) · **Class:** live defect, hamr's second paid fire · **Grounded in:**
+`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/03d46c4d-6a90-47b8-a798-40414f52e82c/scratchpad/aurora-real.bareloop/runs/mtpkltyl/spine.jsonl`
+(`close-precheck` verdict `satisfied` on all 5 stages against a FRESH detached worktree of
+the patient at `d661e50`, `job-end` `outcome:"already-green"`, `spentUsd 0` — the provider
+was never called), a direct reproduction (running `close/u-spawner-close.mjs` from the empty
+worktree still printed "6 file(s) changed" — the WRONG tree's diff), and `grep -n
+"^const WORKDIR" scripts/*-close.mjs`, which shows 9 of the repo's 10 close scripts hardcode
+an absolute patient path; only `u-pulselog-close.mjs` takes `--workdir`.
+
+**What happened.** `bareloop run` on the exported `aurora-u-spawner-types` bundle went
+`already-green` at $0 — the close-first precheck read all 5 stages as already satisfied
+against a brand-new, empty detached worktree. Cause: the exported `close/
+u-spawner-close.mjs` (a verbatim copy of `scripts/u-spawner-close.mjs`) hardcodes `const
+WORKDIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-u';` (line 22) and runs every
+spawned stage with `cwd: WORKDIR` — completely ignoring the `cwd` the runner passes it (F8's
+fix). That original patient checkout still holds 6 files fixed by an earlier green run, so
+the close judged THAT tree, not the fresh worktree it was actually pointed at, and reported
+done. F8's own text predicted this exact failure mode one layer up: "every test close named
+an ABSOLUTE path, so cwd never mattered" — this time the absolute path lived inside a
+SHIPPED close script instead of a test fixture, and the export pipeline had no check for it.
+
+**The operator saw the tell and missed it.** `d576624`'s build notes for M1 already carry
+the fact that every real close script hardcodes an absolute `WORKDIR` (it is why F128's own
+preflight only checks dependency resolution, not cwd correctness) — the export guard below
+should have been built alongside F128, not after a second live fire found it the hard way.
+
+**Two-layer fix, deliberately split.**
+
+1. **Export-time guard (this commit, mechanical, draft-time — the part inside this session's
+   authority).** `exportBundle` now scans every close script's SOURCE for a string literal
+   (single/double/backtick-quoted; a backtick literal carrying `${…}` interpolation is not a
+   fixed literal and is skipped) that is an absolute POSIX path which `existsSync` finds real
+   on the exporting machine and which is not under an allow-listed system prefix (`/usr/`,
+   `/bin/`, `/sbin/`, `/lib/`, `/lib64/`, `/dev/`, `/etc/`, `/proc/`, `/sys/`, `/opt/`). A
+   match reds the new typed code `close-absolute-path` at `close.<i>.cmd`, nothing written —
+   this would have refused THIS export at $0, before hamr's fire ever ran. A nonexistent
+   absolute-looking string is deliberately NOT flagged (a name, not a proven-load-bearing
+   path) — the rule stays monotone and simple rather than clever, and its limits (string
+   concatenation is invisible to it; a path that exists on some OTHER machine but not this
+   one is invisible to it) are named in `absolutePathLiteralsOf`'s JSDoc, not hidden.
+   Test-proven in `tests/bundle.test.js`, including a regression pin that runs the guard over
+   the REAL `scripts/u-spawner-close.mjs` source and asserts it reds today.
+2. **The close scripts' own fix (`WORKDIR = process.cwd()` in all 9 affected scripts under
+   `scripts/`) is NOT this commit.** Editing a close script's bytes is arbiter-adjacent (a
+   close's bytes sit outside the signed spec hash today per N4/`bundle-tampered`'s own
+   reasoning — `jobSpecHash` covers `close[].cmd` as a path, never the script's content) and
+   is PRD item 27 territory (the close-authoring rung); it is hamr's call, not something this
+   fence authorizes.
+
+**Vocabulary and blessing.** The vocabulary held: this was a judged `already-green`, not a
+crash — the close ran, exited 0, and its own "6 file(s) changed" verdict was simply computed
+against the wrong tree. An `already-green` mints NO blessing (correctly — `bless()` is only
+ever called from an actual `runJob` outcome path, and a precheck-only short-circuit never
+reaches it), so the exported bundle in its pre-fix state is, and remains, unblessed.
+
+## F130 — third fire of the exported bundle: mechanism proven end-to-end, job escalated on an Any⇄no-Any oscillation the governor read correctly
+
+**Date:** 2026-09-06 · **Status:** mechanism validated live; job outcome `escalated`, bundle
+unblessed, n=1 · **Class:** live run, hamr's third paid fire · **Grounded in:** spine
+`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/03d46c4d-6a90-47b8-a798-40414f52e82c/scratchpad/aurora-v3.bareloop/runs/mtplc72b/spine.jsonl`
+(215 records), `history.jsonl` in the same bundle dir, and `src/cli.js`/`scripts/run-u.mjs`
+for the runner-knob comparison below.
+
+**The fire.** `./node_modules/.bin/bareloop run . --repo <fresh copy of aurora-u @ d661e50>
+--approve f6706a98…`, from inside the exported bundle. Tamper check and `checkBundleDeps`
+(F128) both passed; a fresh detached worktree was created at
+`.bareloop/wt/mtplc72b`; precheck was honest — `needs_revision`, "tree identical to the seed"
+(seq 5), correctly refusing the F129 already-green trap this time. Preflight minted per-stage
+baselines (seq 7–10); work branch `bareloop-aurora-u-spawner-types-21` minted inside the
+worktree (seq 11, collision counter 20 — an artifact of repeated fires against the same
+bridge dir, not a defect). No `blessing.json` exists anywhere under the bundle — correct,
+since only an actual `green` outcome blesses (F129).
+
+| | |
+|---|---|
+| spend | $4.449282 of $5.00 budget (`spendComplete: true`) |
+| worker rounds | 112 (`step:fix-mypy-strict` 57, `fix` 45, `scout` 9, `plan` 1) |
+| scout | truncated once (seq 24, `scout-truncated bytes:0`) |
+| strikes | 2 of 2 (`close-trend` governor), `cap-halt` at seq 210 |
+| outcome | `escalated` (seq 212, 215); CLI exit 1 |
+| history row | carries `bundleHash f6706a98…` and `approveHash a52a35fc…` |
+
+**The job.** Step `fix-mypy-strict`'s own inner check went green: seq 115–118 show
+`check-run satisfied` → `exit-eval` → `close-verdict satisfied` → `run-end`, and
+`plan-executed` (seq 213) records the step outcome as `"green"`. This is the step's own
+check, not the job's verdict (per standing doctrine: only the outer close is truth) — seq
+120 immediately runs the **outer close**, which reds `no-suppressions`: the fix imported
+`Any` into `recovery.py` and `spawner.py` to satisfy mypy, and the outer close judges that
+"suppressing an error is not typing it." That step-green/outer-close-red split is the
+staged-close design working as intended, not a contradiction.
+
+Fix iteration 1 (seq 121–199, capped at the attempt-bounded 40-round ceiling, seq 197):
+removed the `Any` imports → `typecheck` went red again with 8 "Name \"Any\" is not defined"
+errors (seq 199) — a regression from stage 4 (no-suppressions, the best reached) back to
+stage 1 (typecheck). `ladder` governor: `close-trend`, `stageIndex 1 < best 4`, `improved:
+false`, strike 1 (seq 200). Fix iteration 2 (seq 201–208): re-added the `Any` imports →
+`no-suppressions` red again, value 2 vs prior best 2, `improved: false`, strike 2 (seq 209)
+→ `cap-halt` (seq 210, "not under cap — not can't") → `escalation`/`run-end escalated` (seq
+211–212) with the readout "no stage improved — no-suppressions 2 → 2". **The governor was
+right**: the loop genuinely oscillated (Any ⇄ no Any) rather than converging: this operator's
+first read suspected the governor itself and withdrew that suspicion once seq 120, 199, 200,
+208, 209 were traced in order and showed two real, comparable non-improvements, not a
+governor bug.
+
+**Base rate.** The identical job under `scripts/run-u.mjs` is 3/3 green in its last three
+archived runs: `u-mtoqtcb5` ($3.18, 54 rounds), `u-mtor6qkd` ($3.54, 64 rounds), `u-mtg50j39`
+($2.34, 41 rounds). This exported-bundle fire is n=1 and is not evidence of a CLI-caused
+regression on its own; the worker reaching for `Any` as a typing shortcut is a known hazard
+of this job's close, independent of the export path.
+
+**Two runner-knob divergences (parked, not fixed here).** Reading `src/cli.js`'s call into
+`runJob` against `scripts/run-u.mjs`'s call into the same library functions: the CLI passes
+no `capRuns` (library default `capRuns = 3` in `src/run.js`/`src/planrun.js`; `run-u`'s own
+`CAP_RUNS = 4`) and no `closeTimeoutMs` (library default `?? 120_000` in `src/ralph.js`/
+`src/planrun.js`; `run-u`'s own `CLOSE_TIMEOUT_MS = 900_000`). Neither divergence caused this
+escalation — the `close-trend` strike governor (`strikeLimit`, 2 in both paths) is what
+stopped the run, and no close stage ever approached a 120s wall. But a 120s close timeout is
+a live hazard for any job whose suite is slower than aurora's (~23s) or litectx's (~53s,
+per `run-u.mjs`'s own comment). **Parked for hamr:** whether the bundle runner should mirror
+`run-u`'s operator knobs (`capRuns: 4`, `strikeLimit: 2`, `closeTimeoutMs: 900_000`) or keep
+the library defaults — these are runner-knob values, arbiter-adjacent, and the bench greens
+that established this job's base rate were minted under `run-u`'s numbers, not the CLI's.
+
+**One v1 UX gap.** The escalation text (seq 211) offers "top up budgetUsd and rerun with
+`--resume`" as an option, but `bareloop run` v1 has no resume path (by spec — not in v1); only
+`run-u` has `--resume`. The tail print should say the lever honestly: resume is `run-u`-only
+until the bundle runner grows one, rather than offering a flag the bundle CLI does not
+implement.
+
+**Validation status.** Validation step 4's pre-registered expectation was GREEN; a red is a
+finding, not a retry. The mechanism (tamper check, deps preflight, detached worktree,
+honest precheck, per-stage baselines, work-branch minting, strike governor, honest spend/exit
+accounting) is now proven end-to-end for the first time across three real fires. The job
+itself is `escalated`, n=1; the bundle stays unblessed. Whether to fire again (n=2, colour-
+flip to n=3 per the frozen bench rules on any flip) is hamr's call, not decided here.
+
+**2026-09-06 — closed, n=2, green: export v1 validated.** The colour-flip fire ran (same
+bundle, `bundleHash f6706a98…`, same command, `--approve` still required since the bundle
+was still unblessed): spine
+`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/03d46c4d-6a90-47b8-a798-40414f52e82c/scratchpad/aurora-v3.bareloop/runs/mtpmecks/spine.jsonl`
+(109 records). Outcome `green`, `spentUsd 3.4187783999999994` of the same $5 budget,
+`spendComplete true`, 53 `worker-round` records, work branch
+`bareloop-aurora-u-spawner-types-22` minted inside worktree `.bareloop/wt/mtpmecks` (seq 11,
+`work-branch`), CLI exit 0. Close-stage trail (`close-precheck`/`close-verdict`/`outer-close`
+records, in order): precheck `needs_revision` on `changed-from-seed` (tree matched seed,
+correctly refusing an already-green false read) → step `fix-mypy-strict` iteration 1's own
+inner close red on `typecheck` (4 `mypy --strict` unreachable-statement errors) → iteration 2
+inner close `satisfied`, step `run-end green` → **outer close** iteration 1 red on
+`no-suppressions` (an `Any` import crept back in) → fix-loop → outer close iteration 2 (final)
+`satisfied` across all five stages (`changed-from-seed`, `typecheck`, `tests-kept`,
+`suite-green`, `no-suppressions`) → `run-end green` → `job-end green`. `blessing.json` written:
+`{bundleHash f6706a98…, blessedAt 2026-09-06T09:50:02.361Z, runid mtpmecks, outcome green,
+host hamr}`; `history.jsonl` now carries 2 rows (`mtplc72b` escalated, `mtpmecks` green — both
+confirmed by direct read, matching this finding and F130's numbers exactly).
+
+n=2 on the CLI reads 1 escalated / 1 green, in line with the job's `run-u` base rate (3/3
+green, $2.34–3.54, 41–64 rounds) cited in F130 — the exported-bundle path shows no divergence
+from that base rate across two real fires. Validation step 4's pre-registered bar (expected
+GREEN, ≤ $5, blessing written, worktree + branch left behind) is MET on this second attempt.
+Total paid spend across all four fires of this bundle (two $0 precheck-only runs plus these
+two): `runs/mtpjop4v` $0 (`close-red`) + `runs/mtpkltyl` $0 (`already-green`) + `mtplc72b`
+$4.449282 + `mtpmecks` $3.4187784 = **$7.868** (`docs/product/EXPORT-BUILD.md`'s "done =
+the validation run at the bottom greened from a clean consumer directory" is now met).
+
+**Still open, not closed by this fire.** (1) The "no-resign" behaviour on a second run against
+an already-blessed bundle is test-proven only — never exercised live, because this fire ran
+before the bundle was blessed (same as the first three); say this exactly, do not round it up
+to "proven." (2) The pinned `../bareloop-close` worktree carries the `process.cwd()` line
+uncommitted until re-pinned after merge (PRD item 27, close integrity, next in line). (3) The
+runner-knob question (`capRuns`/`closeTimeoutMs` mirroring `run-u`'s operator values) stays
+parked, per F130.
+
+**Addendum 2026-09-06 — fifth fire, post-bless, no `--approve`: item (1) above resolved live.**
+Run `mtpo9rxy`, 2026-09-06T10:41:23Z, fired from the bundle's new permanent home
+`../bareloop-patients/bundles/aurora-u-spawner-types.bareloop` (relocated from the session
+scratchpad; hash-safe, since `manifest.files` covers only `spec.json` and
+`close/u-spawner-close.mjs`) against a fresh clean clone `../bareloop-patients/aurora-u-bless`
+(`d661e50`), with **no `--approve` flag given** — the bundle was already blessed by
+`mtpmecks`. Outcome `green`, `spentUsd 2.7497431500000005` (`spendComplete true`), close-verdict
+`satisfied` at iteration 3 (spine seq 153), `job-end` at seq 204, 90 `worker-round` records,
+5 files changed left uncommitted on work branch `bareloop-aurora-u-spawner-types` in worktree
+`.../aurora-u-bless/.bareloop/wt/mtpo9rxy`. `blessing.json` unchanged (`runid mtpmecks`,
+`bundleHash f6706a98…`); `history.jsonl` now 3 rows (`mtplc72b` escalated, `mtpmecks` green,
+`mtpo9rxy` green). This is the first real fire to run without `--approve`, so item (1) is now
+live-proven, not merely test-proven. Total paid spend across all five fires of this bundle:
+$0 + $0 + $4.449282 + $3.4187784 + $2.7497432 = **$10.618**. Item (2) is partially resolved:
+the `../bareloop-close` pin moved from `ee2a349` to `8b209a9` (feat/export branch tip,
+carries `3b987d4` in ancestry) — the main re-pin still awaits merge. Item (3) (runner-knob
+mirroring) is unchanged, still parked. Full detail: `docs/product/EXPORT-BUILD.md`, "Fire 5"
+section.

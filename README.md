@@ -133,6 +133,20 @@ works, **export the whole workflow** — with its self-healing harness — and r
 anywhere. The point is to stop trial-and-erroring your way to the workflow that fits a job.
 Find it once, keep it, reuse it. It is a seed of something bigger over time.
 
+### Export a job
+
+```bash
+bareloop export jobs/my-maintainer.json --registry ./bridges --out ./my-maintainer.bareloop
+bareloop run ./my-maintainer.bareloop --repo /path/to/checkout --approve <bundleHash printed above>
+```
+
+`export` only ships a job that has already earned a real green — it refuses to bundle an
+unproven draft. The first `run` on a new machine asks you to approve the bundle's printed
+hash; once that run goes green, later runs need no re-approval as long as the bundle stays
+unchanged. Every run works in its own fresh git worktree and leaves the merge to you. Full
+contract — flags, approval/blessing rules, exit codes — in
+[`bareloop.context.md`](bareloop.context.md).
+
 ## Running it
 
 bareloop runs locally, as you. Secrets load from the environment and never enter the tree or

@@ -5,6 +5,73 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.21.0] — 2026-09-06
+
+### Added
+
+- **Export/run a bundle** (`docs/product/EXPORT-BUILD.md`, frozen 2026-09-05). New
+  `src/bundle.js`: `exportBundle` mints a plain directory bundle (signed spec with
+  `close[].cmd` rewritten under `$BARELOOP_BUNDLE`, the close scripts, and the job's
+  registry history) from a job that already carries a real green at its current spec
+  hash — refuses (typed reds, nothing written) on an unrelocatable close cmd, a script
+  collision, an import this module cannot verify or that bareloop's own `src/index.js`
+  does not export, or no bridge at the spec's hash. `bundleHash(dir)` / `readBundle(dir)`
+  recompute the signature from disk and red `bundle-tampered` on any mismatch — the load-
+  bearing check that stands between a swapped close script and a fake green (N4).
+  `resolveBundleSpec`, `checkEnvelope` (tighten-only budget/wall), `bless`/`verifyBlessing`
+  (first-run approval, no-resign on later runs), and `appendHistory` round out the module.
+- **`bareloop` CLI and `bin/`.** New `bin/bareloop.mjs` (the package's first `bin` entry)
+  and `src/cli.js`'s `main(argv, deps)` — exported from the package root as `cliMain` —
+  implement `bareloop export|run|history` plus a bare numbered menu. `run` orders its
+  steps as: tamper check, tighten-only envelope check, provider key (or the injected
+  test-seam provider), blessing/approval, a fresh `git worktree add --detach` per run,
+  then `runJob` itself; the tail prints the outcome, spend, and the `git merge` command —
+  merge stays human, the CLI never merges. `bin/` added to `package.json`'s `files`.
+- **`checkBundleDeps(bundleDir)`** (`src/bundle.js`, F128): resolves `bareloop` from the
+  bundle's own `close/` directory (`createRequire(...).resolve('bareloop')`, walking the
+  package's own `exports` map) and reds typed `bundle-deps-missing` — with the exact cure
+  line `cd <bundleDir> && npm install` — when it cannot. `bareloop run` calls it as literal
+  step 1b, right after the tamper check and before the envelope check, the key, and any
+  worktree, so a bundle installed the wrong way (as someone else's dependency, never `npm
+  install`ed inside its own directory) fails fast with a fix instead of crashing deep
+  inside a close stage with a bare `ERR_MODULE_NOT_FOUND`.
+- **`close-absolute-path` export guard** (`src/bundle.js`, F129): `exportBundle` now refuses
+  a close script whose source bakes in a string literal that is an absolute POSIX path
+  which exists on the exporting machine and is outside an allow-listed system prefix — a
+  close judges the `cwd` the runner gives it, never a path baked into its own source. Pins
+  the live defect where a hardcoded `WORKDIR` made the close judge the original patient
+  checkout instead of a fresh worktree, minting `already-green` at $0.
+- **The aurora close now reads `process.cwd()`** (`scripts/u-spawner-close.mjs`) instead of a
+  hardcoded absolute `WORKDIR`, so it judges the tree the runner actually hands it rather than
+  the original patient checkout — the fix behind F129, validated live by a fourth paid fire
+  that went green from a fresh detached worktree (`docs/logs/FINDINGS.md`, F130's closing
+  pointer).
+
+### Fixed
+
+- **F128 — `bareloop run` exit code now reflects the run outcome.** Previously every
+  invocation that reached the tail exited `0` regardless of outcome — a close-red, plan-
+  red, escalated, cap/wall-halted, or crashed run all read as CLI success. `run` now
+  returns `0` only for `green`/`already-green`; every other outcome exits `1`, so a caller
+  scripting off the exit code can no longer mistake a red run for a green one. The tail's
+  printed lines are unchanged.
+- **F128 — the "minting run" line named the wrong run.** On a bundle's first (unblessed)
+  run, the notice printed the bridge's FIRST history row's `runid`, not the run that
+  actually minted the bundle's own signed spec. It now searches every bridge version
+  across ALL shipped bridges (base + shape fork) for the one whose `specHash` equals the
+  resolved `$BARELOOP_BUNDLE` spec's `jobSpecHash`, and prints "no version at this hash"
+  (honestly, never a guess) when none matches — which cross-machine is the common case,
+  since the historic mint's real script path and the importer's own bundle path rarely
+  coincide.
+- **`bin/bareloop.mjs`: a closed stdout reader (`| head`) no longer crashes with an
+  unhandled `EPIPE`.** `process.stdout` now has an `'error'` listener that exits `0` on
+  `EPIPE` (the one legitimate `process.exit()` in this file — the reader is gone, so
+  there is no queued output left to lose) and re-throws anything else.
+- **`scripts/replay-row.mjs`** — a $0 registry-row replay from an archived green spine: mints
+  the row a real run would have written via `writeRunGreenRow` had it been launched with
+  `--registry`, using the same seam and the same input derivation `scripts/run-u.mjs` uses.
+  Given it a permanent home this session (was scratchpad-only).
+
 ## [0.20.0] — 2026-09-05
 
 ### Added

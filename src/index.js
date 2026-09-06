@@ -81,7 +81,7 @@ export { renderListing, selectionPrompt } from './selection.js';
 // at a review door, and a door with no row to act on can only describe a held learning
 // credit it has no way to release. STORAGE ONLY — nothing here selects, promotes or reuses
 // a bridge; those stay parked on `layer-3-reuse`.
-export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow } from './reuse.js';
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow, shapeForkName } from './reuse.js';
 // BA-21 pricing provenance rides out with the ledger because it is the same job: reading
 // a run's own spend record honestly. `rateProvenance`/`spendProvenance` answer "how much of
 // this was priced by a rate nobody vouched for" — REPORTING ONLY, no halt, no refusal.
@@ -252,3 +252,19 @@ export {
 // whether a changed file is one. The ONE place this list lives; exported so
 // bareloop.context.md can point an adopter here instead of re-deriving it.
 export { PROMPT_REGISTERS, isPromptFile } from './promptregisters.js';
+// Export M1 (`docs/product/EXPORT-BUILD.md`) — the bundle a `bareloop run`
+// (M2) drives from a clean consumer directory: a signed spec (close paths
+// rewritten to `$BARELOOP_BUNDLE/close/<script>`), the close scripts it
+// needs, and the job's whole registry history. `bundle.js` reads this
+// module's own export list at call time (never a hand-kept copy) to judge
+// whether a close script's imports are legal — a cycle by design, safe
+// because the binding is read only inside function bodies.
+export {
+  exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
+} from './bundle.js';
+// Export M2 (`docs/product/EXPORT-BUILD.md`) — the CLI's one entry point,
+// exported as `cliMain` (never `main`, a name generic enough to collide with
+// an adopter's own). `bin/bareloop.mjs` is the only other caller; this export
+// exists so an adopter driving `bareloop run` from their own script can do so
+// without spawning `bin/bareloop.mjs` as a child process.
+export { main as cliMain } from './cli.js';
