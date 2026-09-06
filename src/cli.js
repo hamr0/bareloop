@@ -313,6 +313,9 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
       shellCapUsd: runSpec.budgetUsd,
       readShim: 'cap',
       scout: true,
+      // F130/PRD item 27(c) — the bundle CLI has no `--resume` (v1); the
+      // honest tail says so instead of naming a flag that does not exist.
+      resumable: false,
     });
   } catch (e) {
     err(`runJob crashed: ${/** @type {Error} */ (e).message}`);

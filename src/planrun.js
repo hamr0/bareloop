@@ -812,12 +812,18 @@ ${scoutBlob || '(no scout notes)'}`;
  *   precisely the state the person rejected), and the words reach the PLANNER as new
  *   authoring. It is never a `humanRuling` — that answers a close's human STAGE, and
  *   a green-class job has none. Empty words are refused at the same seam every door is.
+ * @param {boolean} [opts.resumable=true] PRD item 27(c)/F130 — does THIS runner
+ *   support `--resume`? Forwarded verbatim from `runJob`; `run-u.mjs` leaves it at
+ *   the default (byte-identical to before this param existed), the bundle CLI
+ *   passes `false` so the three `--resume`-naming readouts below (`MONEY_OPTIONS`,
+ *   the resume-plan-red option, the fix-loop terminal) say "resume is `run-u`-only
+ *   in v1" instead of naming a flag that would fail if typed.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1324,6 +1330,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     'revise the goal/spec so the work fits the time (same re-approval)',
     'abandon the task',
   ];
+  /** PRD item 27(c)/F130 — the honest escalation tail. `run-u.mjs` supports
+   * `--resume`; the exported bundle CLI does not (v1) and would print a flag
+   * that fails if typed. `resumable` (default `true`, `run-u`'s existing
+   * lines unchanged) picks which sentence names the resume lever. */
+  const resumeToCapNote = resumable
+    ? 'top up budgetUsd and rerun with --resume (resume-to-cap; a spec edit, so the new hash needs re-approval)'
+    : 'resume is `run-u`-only in v1 — top up budgetUsd and re-fire the bundle from the start (a spec edit, so the new hash needs re-approval)';
   /** MONEY's levers (PRD v1.46 §2), the same three shapes the wall's are, because a
    * money cut is the same KIND of stop: the run is out of an operator-owned
    * allowance, not out of capability, and the last verdict rendered stands. hamr's
@@ -1334,7 +1347,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * hash, so raising it is a new spec version somebody signs — the library only ever
    * names the lever, and never adjusts a budget itself (the permanent hard line). */
   const MONEY_OPTIONS = [
-    'top up budgetUsd and rerun with --resume (resume-to-cap; a spec edit, so the new hash needs re-approval)',
+    resumeToCapNote,
     'revise the goal/spec so the work fits the budget (same re-approval)',
     'abandon the task',
   ];
@@ -3486,7 +3499,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
             : `${rep.strikes}/${rep.limit} strikes — the fix loop stopped making progress against the close's own numbers (${t.reading}). Continue, change approach, or stop?`,
           options: [
             'revise the goal/spec so the work is reachable (a spec edit, so the new hash needs re-approval)',
-            'top up budgetUsd and rerun with --resume, if the trend above says it was still converging',
+            resumable
+              ? 'top up budgetUsd and rerun with --resume, if the trend above says it was still converging'
+              : 'resume is `run-u`-only in v1 — top up budgetUsd and re-fire the bundle from the start, if the trend above says it was still converging',
             'abandon the task',
           ],
         };

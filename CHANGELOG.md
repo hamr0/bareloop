@@ -5,6 +5,33 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **Close integrity M1** (`docs/product/CLOSE-INTEGRITY-BUILD.md`, PRD item 27, F129/F131).
+  - `src/close-integrity.js`: the ONE `close-absolute-path` detector, shared by
+    `src/bundle.js` (export time) and a new $0 run-start precheck in `runPlan`
+    (`src/planrun.js`) — every job, not only exported bundles, now refuses at $0
+    (before the close-first precheck, before any provider call) when a close
+    script's CONTENT bakes in an absolute path that exists on disk. Exports
+    `readCloseScripts`, `checkCloseAbsolutePaths`, `absolutePathLiteralsOf` from
+    `src/index.js` — `readCloseScripts` is the pure reader M2's sha256 fingerprint
+    will reuse.
+  - `runJob`/`runPlan` gain an optional `resumable` flag (default `true`,
+    `run-u.mjs` unchanged); the bundle CLI (`src/cli.js`) passes `resumable: false`
+    so its escalation tail says "resume is `run-u`-only in v1" instead of naming a
+    `--resume` flag it does not implement (F130).
+
+### Fixed
+
+- **F129, remaining 8 close scripts**: `scripts/testgen-cold-check-close.mjs`,
+  `testgen-close.mjs`, `types-close.mjs`, `l2poc-check-close.mjs`,
+  `u-bareagent-close.mjs`, `u-bareguard-close.mjs`, `u-litectx-close.mjs`,
+  `u-baremobile-close.mjs` now read `WORKDIR = process.cwd()` instead of a
+  hardcoded absolute patient path, following `u-spawner-close.mjs`'s fix
+  (`3b987d4`). Behaviour-preserving: `run-u` always passes `cwd` = the patient.
+
 ## [0.21.0] — 2026-09-06
 
 ### Added

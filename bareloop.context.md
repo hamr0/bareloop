@@ -958,12 +958,18 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, readShim?, scout?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, readShim?, scout?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
 
 The last seven are the RESUME fold and are documented under *Resuming a killed run* below; they
 default to `0` / `true` / `0` / `null` / `[]` / `null` / `null`, so a fresh run passes none of them.
 Three of them are folds of a bound the operator SIGNED (money, wall, replans) and one is a
 readout seed (grades) — the distinction matters and is spelled out there.
+
+`resumable` (default `true`, PRD item 27(c)/F130) says whether THIS runner supports
+`--resume` at all — `run-u.mjs` leaves it at the default (byte-identical to before this
+flag existed); the exported bundle CLI (`src/cli.js`) passes `false` so the run's
+escalation tail says "resume is `run-u`-only in v1" instead of naming a flag it does not
+implement.
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -2546,6 +2552,20 @@ written by `bareloop run`, step 6 below) is real and live but is not in the froz
 layout table at all. `history.jsonl`'s row also carries `bundleHash` and `approveHash`
 (the POC-fact correction, below) beyond the fields the original layout table named.
 
+#### `src/close-integrity.js` — the ONE `close-absolute-path` detector (PRD item 27/M1, F129)
+
+Shared by `src/bundle.js` (export time) and a $0 run-start precheck inside `runPlan`
+(`src/planrun.js`) — every job, not only exported bundles, refuses at $0 (before the
+close-first precheck, before any provider call) when a close script's CONTENT bakes in an
+absolute path that exists on disk. Two spellings of the same rule is exactly how F129
+shipped an export-only guard while every non-exported job stayed exposed.
+
+| function | args → returns | notes |
+|---|---|---|
+| `absolutePathLiteralsOf(source)` | close script text → `string[]` | the scan itself (moved here from `src/bundle.js`, which now imports it) |
+| `readCloseScripts(spec, cwd)` | resolved job spec + cwd → `{ stage, path, bytes }[]` | resolves every `close[].cmd` of the form `node <path> …` to its absolute path and bytes off disk; a relative path resolves against `cwd`. Never throws — a missing/unreadable script reports `bytes: null`. Non-`node` cmds (a `.sh` script) are out of scope, same as `src/bundle.js`'s own `parseCmd`. This is the pure reader M2's sha256 fingerprint will reuse |
+| `checkCloseAbsolutePaths(spec, cwd)` | resolved job spec + cwd → `{ ok: true } \| { ok: false, reds: { stage, path, literal }[] }` | the run-start check `runPlan` calls before the close-first precheck |
+
 #### `src/bundle.js` — pure, no provider/process calls
 
 | function | args → returns | notes |
@@ -2572,7 +2592,7 @@ layout table at all. `history.jsonl`'s row also carries `bundleHash` and `approv
 | `close-script-collision` | `exportBundle` | two different close script paths share one basename — a flat `close/` directory would silently clobber one |
 | `close-import-unparsed` | `exportBundle` | a close script's import is a shape this module cannot verify at all — default import, `* as ns`, mixed default+named/namespace, a bare side-effect import, a dynamic `import()`, or a relative import that does not point into `src/` (a sibling file never ships in `close/`). Fails safe rather than silently accepting what it cannot read |
 | `close-import-unexported` | `exportBundle` | a close script imports a name from bareloop's own `src` that `src/index.js` does not export |
-| `close-absolute-path` | `exportBundle` (F129) | a close script's source bakes in a quoted string literal that is an absolute POSIX path which `existsSync` finds real on the exporting machine and which is not under an allow-listed system prefix (`/usr/`, `/bin/`, `/sbin/`, `/lib/`, `/lib64/`, `/dev/`, `/etc/`, `/proc/`, `/sys/`, `/opt/`). **A close judges `process.cwd()` — the runner's cwd — never a path baked into the script (F8/F129):** the live defect this catches is a hardcoded `WORKDIR` making a close judge the ORIGINAL patient checkout instead of the fresh worktree it was actually pointed at, minting a fake `already-green` at $0. A nonexistent absolute-looking literal is a NAME, not a proven hazard, and is not flagged — the check is deliberately monotone and simple, not clever (see `absolutePathLiteralsOf`'s JSDoc for its named limits: string concatenation and cross-machine-only paths are invisible to it) |
+| `close-absolute-path` | `exportBundle` (F129) AND `runPlan` (PRD item 27, every job) | a close script's source bakes in a quoted string literal that is an absolute POSIX path which `existsSync` finds real on this machine and which is not under an allow-listed system prefix (`/usr/`, `/bin/`, `/sbin/`, `/lib/`, `/lib64/`, `/dev/`, `/etc/`, `/proc/`, `/sys/`, `/opt/`). **A close judges `process.cwd()` — the runner's cwd — never a path baked into the script (F8/F129):** the live defect this catches is a hardcoded `WORKDIR` making a close judge the ORIGINAL patient checkout instead of the fresh worktree it was actually pointed at, minting a fake `already-green` at $0. A nonexistent absolute-looking literal is a NAME, not a proven hazard, and is not flagged — the check is deliberately monotone and simple, not clever (see `absolutePathLiteralsOf`'s JSDoc, `src/close-integrity.js`, for its named limits: string concatenation and cross-machine-only paths are invisible to it). `runPlan` reds this at run start, before the close-first precheck and before any provider call — $0, nothing spent |
 | `bundle-missing` | `readBundle` | `dir` is not a directory at all |
 | `manifest-invalid` / `spec-invalid` | `readBundle` | `manifest.json`/`spec.json` could not be read or parsed |
 | `bundle-tampered` | `readBundle` | manifest and spec both parsed, but the recomputed `bundleHash` (from what's really on disk) does not match the stored one — **the load-bearing check, N4 below** |
