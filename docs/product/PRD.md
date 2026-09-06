@@ -415,6 +415,18 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     validation gate so a baked-in path is inexpressible for every job, not only bundles.
 
     **export v1 validated 2026-09-06, see EXPORT-BUILD.md.**
+    **2026-09-06, later (hamr: "both, ui is coming. it's autoset and can be override, same
+    like api pricing"):** the close timeout joins this rung. Today `closeTimeoutMs` is a
+    caller-passed library parameter defaulting to 120s (`src/ralph.js`), which run-u
+    overrides at 900s and the bundle CLI does not pass at all — a defaulted cap is a silent
+    second ceiling (the same defect the wall's no-default rule already forbids), and a suite
+    slower than the ceiling can never be judged, only close-red. Ruling: AUTOSET from the
+    measured $0 seed close (the precheck already times every stage) under a rule hamr signs
+    once, printed on every run as `estimated`, with an explicit signed OVERRIDE in the spec —
+    the pricing shape (guesstimate + loud sign + customer override), never a hidden knob.
+    "Mirror run-u's 900s" is moot under this ruling. Rule constants (multiplier, floor) are
+    arbiter territory: hamr sets them at build, never the agent. Also folded: the bundle CLI's
+    escalation tail must stop naming `--resume` (v1 has none; F130).
     **2026-09-06, later: (b) re-pin to branch tip done (`8b209a9`); main re-pin after merge.
     Post-bless no-approve run live-proven (`mtpo9rxy`, green).**
 
