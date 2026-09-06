@@ -317,3 +317,16 @@ this bundle: $0 + $0 + $4.449282 + $3.4187784 + $2.7497432 = **$10.618**.
 `scripts/replay-row.mjs` (a $0 registry-row replay from an archived green spine, via
 `writeRunGreenRow`) also got a permanent home this session (was scratchpad-only), on hamr's
 "ok" 2026-09-06.
+
+## Post-release check — 2026-09-06 — install from the REGISTRY (v0.21.0), $0
+
+v0.21.0 published (85 files, 910.6 kB; `npm view bareloop version` → 0.21.0). The fires above
+ran against a branch pack (`file:../pack/bareloop-0.20.0.tgz`), because the registry's 0.20.0
+had no `bareloop` bin. Closed now: the blessed bundle's `package.json` dependency set back to
+the range `exportBundle` writes (`^0.21.0`), `node_modules` wiped and reinstalled from the
+registry (exit 0, resolves 0.21.0), then `bareloop run . --repo …` with NO key printed the
+operator questions and spent nothing (exit 0); `bareloop history .` exit 0; `readBundle`
+reads `ok:true, reds:[], blessing present`. The same sequence was first run on a scratch copy
+(`node_modules`/`runs` excluded) with the same results. `../bareloop-close` re-pinned to
+`main`'s merge commit `99ac25f` (PRD item 27(b) done). Bundle home:
+`../bareloop-patients/bundles/aurora-u-spawner-types.bareloop`.
