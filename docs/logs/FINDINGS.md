@@ -10704,3 +10704,19 @@ sibling call sites missing the identity env on this branch.
 
 **Proof.** Same CI-like command re-run post-fix: 70/70 pass, exit 0. Full suite
 `npm test`: 2320/2320 pass. `npm run typecheck`: clean.
+
+**Closed at the runner (2026-09-07).** The fixture fix above closed this one instance, but
+the class — a local test leaning on this machine's own state and going green here, red
+only on CI — had already shipped twice (v0.19.0's hardcoded local path; this F136's
+inherited git identity). `scripts/test-hermetic.mjs` closes the class instead of the
+instance: `npm test` now runs `node --test` under an env with `HOME` redirected to a fresh
+empty `mkdtemp` dir and `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`/`GIT_CONFIG_NOSYSTEM` set
+to neutralise git config resolution, with any inherited `GIT_AUTHOR_*`/`GIT_COMMITTER_*`/
+`EMAIL` deleted so nothing in the ambient shell env can quietly supply an identity either
+— the same blindness CI's runner already has for free. Reverting one of the two fixed
+`makePatient` call sites back to the raw, env-less `execFileSync('git', ['commit', ...])`
+form and running it through the hermetic runner reproduced `Author identity unknown`
+immediately; the same reverted file under plain `node --test` (no hermetic wrapper) stayed
+green on this machine, confirming the wrapper is what closes the blindness, not the
+fixture fix alone. Deliberately not a sandbox: PATH, `node_modules`, and shelled-out
+binaries (ripgrep, git itself) are untouched.

@@ -61,6 +61,8 @@ bareloop is a published JS library and follows `~/PycharmProjects/hamr0/LIBRARY_
 - **CHANGELOG: keep-a-changelog + SemVer.** Entry for every release.
 - **CI:** push/PR runs `typecheck` → `build:types` → `test`; no lint step. Publishing is
   the OIDC trusted-publishing workflow (`.github/workflows/publish.yml`), manual dispatch.
+  `npm test` runs hermetic (`scripts/test-hermetic.mjs`: empty `HOME`, no git config) —
+  F136.
 - **Repo hygiene:** `.claude/`, `.litectx/`, `.idea/` are never tracked (this CLAUDE.md
   is). Repo-only docs (`docs/`, CLAUDE.md) never ship in the tarball.
 - **License: Apache-2.0** (suite-wide) — LICENSE + NOTICE preserved in forks.
