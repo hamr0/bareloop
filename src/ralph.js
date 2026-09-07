@@ -208,17 +208,24 @@ export const CLOSE_ENV_DENY = Object.freeze({
  *
  * @param {string[]} close argv, e.g. ['node', '--test', 'close/']
  * @param {(s: string) => string} [redact] source scrubber; identity by default
- * @param {{ timeoutMs?: number, cwd?: string, expect?: number, judged?: {pattern: string, min: number}, gapKeep?: string }} [opts]
+ * @param {{ timeoutMs?: number, cwd?: string, expect?: number, judged?: {pattern: string, min: number}, gapKeep?: string, closeDir?: string|null }} [opts]
  *   close wall-clock cap (operator-set via the runner, never the config's — the
  *   agent must not author its arbiter's clock), the directory the close runs in
  *   (the workdir — the tree it is judging), the exit code the SIGNED spec calls
  *   success, the judgment-rendered signal, and the kept-failures pattern. All
  *   five are arbiter territory: the drafted workflow config cannot express any.
+ *   `closeDir` (PRD item 27/M3 Part B) is the close's OWN books directory —
+ *   pristine copies, calibration thresholds, logs — deliberately outside the
+ *   patient tree (the worker must never read the arbiter's books). Handed to
+ *   the child as `BARELOOP_CLOSE_DIR` (`CLOSE_DIR_ENV_VAR`,
+ *   src/close-integrity.js); a close script that needs one and gets none
+ *   instrument-stops itself, by the script's own contract — this seam only
+ *   ever THREADS the value, it never invents one.
  * @returns {Promise<{verdict: 'satisfied'|'needs_revision'|'failed'|'timed-out'|'killed'|'crashed',
  *   gap?: string, exitCode?: number, signal?: string, detail?: string,
  *   judgedCount?: number|null, unaudited?: boolean}>}
  */
-export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged, gapKeep } = {}) {
+export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, cwd, expect = 0, judged, gapKeep, closeDir = null } = {}) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT; // a `node --test` close inherits this from a test runner and silently no-ops — a fake green
   // …and the operator's credentials go with it (CLOSE_ENV_DENY above). A COPY is
@@ -229,6 +236,13 @@ export async function runClose(close, redact = (s) => s, { timeoutMs = 120_000, 
       || CLOSE_ENV_DENY.prefixes.some((p) => name.startsWith(p))
       || CLOSE_ENV_DENY.shape.test(name)) delete env[name];
   }
+  // PRD item 27/M3 Part B — a `BARELOOP_` name, deliberately not matched by
+  // any CLOSE_ENV_DENY rule above (checked: no name/prefix/suffix entry there
+  // touches it), set AFTER the strip loop so it can never be stripped by a
+  // future denylist edit either. Only set when the runner actually has one —
+  // an empty/absent `closeDir` leaves the child's env exactly as it was
+  // before this rung, so a script that never reads the variable is unaffected.
+  if (typeof closeDir === 'string' && closeDir.length > 0) env.BARELOOP_CLOSE_DIR = closeDir;
   const r = await spawnClose(close[0], close.slice(1), { env, cwd, timeoutMs });
 
   // ── forbidden zone, before any exit code is believed ──────────────────────
@@ -322,17 +336,17 @@ export const stageGap = (name, gap) => `close stage "${name}" failed:\n${gap}`;
  *
  * @param {any[]} stages the stage list (already validated by validateJob)
  * @param {(s: string) => string} [redact] scrub, applied at capture on EVERY stage
- * @param {{timeoutMs?: number, cwd?: string}} [opts]
+ * @param {{timeoutMs?: number, cwd?: string, closeDir?: string|null}} [opts]
  * @returns {Promise<any>} runClose's verdict shape, plus `stage` and `stages`
  */
-export async function runStages(stages, redact = (s) => s, /** @type {{timeoutMs?: number, cwd?: string}} */ { timeoutMs, cwd } = {}) {
+export async function runStages(stages, redact = (s) => s, /** @type {{timeoutMs?: number, cwd?: string, closeDir?: string|null}} */ { timeoutMs, cwd, closeDir } = {}) {
   const ran = [];
   let last;
   for (const st of stages) {
     // Sequential by construction (F68): stages run one at a time under a single
     // await, so nothing here ever has two closes in flight against one tree.
     const r = await runClose(st.cmd.trim().split(/\s+/), redact, {
-      timeoutMs, cwd, expect: st.expect, judged: st.judged, gapKeep: st.gapKeep,
+      timeoutMs, cwd, expect: st.expect, judged: st.judged, gapKeep: st.gapKeep, closeDir,
     });
     ran.push({ name: st.name, verdict: r.verdict, ...(r.exitCode !== undefined ? { exitCode: r.exitCode } : {}) });
     last = r;
@@ -544,9 +558,13 @@ export const CLOSE_FAULTS = Object.freeze({
  *   it to the gate audit's allow-decision writes. Injected like `redact` so the shell
  *   stays stdlib-only and dumb; consulted ONLY at a crashed verdict. With no seam, or
  *   with zero writes, a crash stays what it always was: an instrument stop.
+ * @param {string|null} [opts.closeDir] the close's own books directory
+ *   (PRD item 27/M3 Part B), forwarded to the raw `close` path's `runClose`
+ *   call unchanged; a caller supplying `judge` instead already closed over
+ *   its own `closeDir` and this param does nothing for it.
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, judge, capRuns, ladder, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites }) {
+export async function ralph({ middle, close, judge, capRuns, ladder, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites, closeDir }) {
   // PARAM GUARD (the BA-4 class — a caller's malformed argument, which is the one
   // thing this shell throws for; a WORKER's bad reach comes back as a refusal
   // RESULT instead, and that rule is about feedback, not about the API contract).
@@ -675,7 +693,7 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
     emit('middle-done', { iteration });
     const v = judge
       ? await judge()
-      : await runClose(/** @type {string[]} */ (close), redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged, gapKeep });
+      : await runClose(/** @type {string[]} */ (close), redact, { timeoutMs: closeTimeoutMs ?? 120_000, cwd, expect, judged, gapKeep, closeDir });
     // Worker-crash attribution (F32, measured in F31: 4 of 7 battery rows). A crash is
     // still not a verdict (F17) — but a crash that FOLLOWS worker writes, on a run whose
     // precheck proved the close judged at baseline (run.js escalates a crash-at-precheck

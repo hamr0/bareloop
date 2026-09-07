@@ -1353,6 +1353,7 @@ export function resumeTreeGate({ head, seed, dirty }) {
  * @param {number} [opts.capRuns] forwarded
  * @param {number} [opts.strikeLimit] forwarded (a plan step's strike ceiling)
  * @param {number} [opts.closeTimeoutMs] forwarded
+ * @param {string} [opts.closeDir] forwarded (PRD item 27/M3 Part B)
  * @param {boolean} [opts.layerRoot] forwarded
  * @param {boolean|'cap'|'diff'} [opts.readShim] the read shim's ARM (A0/A1/A2/A3), forwarded verbatim
  * @param {any} [opts.resume] RESUME (module C) — a `readResume` reading of the KILLED
@@ -1371,7 +1372,7 @@ export async function runReuse(opts) {
   const {
     job, approvals, registryDir, patient, workdir, provider, selectionProvider,
     emit, ask, pinned = null, shortlist = null, forceCold = false,
-    providerFor, nativeProvider, capRuns, strikeLimit, closeTimeoutMs, layerRoot, readShim,
+    providerFor, nativeProvider, capRuns, strikeLimit, closeTimeoutMs, closeDir, layerRoot, readShim,
     runJob = shippedRunJob, now = () => Date.now(),
   } = opts;
   const runid = opts.runid ?? Date.now().toString(36);
@@ -1538,6 +1539,7 @@ export async function runReuse(opts) {
         ...(capRuns !== undefined ? { capRuns } : {}),
         ...(strikeLimit !== undefined ? { strikeLimit } : {}),
         ...(closeTimeoutMs !== undefined ? { closeTimeoutMs } : {}),
+        ...(closeDir !== undefined ? { closeDir } : {}),
         ...(layerRoot !== undefined ? { layerRoot } : {}),
         ...(readShim !== undefined ? { readShim } : {}),
         // the fold, and whether the fold is EXACT. `priorSpendComplete` used to stop at

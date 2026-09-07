@@ -15,6 +15,7 @@ import { runJob } from '../src/run.js';
 import { jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { readShimArm } from '../src/readshim.js';
 import { closeStagesOf } from '../src/plan.js';
+import { resolveCloseTimeoutMs, closeTimeoutBanner } from '../src/closetimeout.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { runBehaviour, formatBehaviour } from '../src/behaviour.js';
@@ -128,7 +129,13 @@ const JOBS = {
     seed: '115213dcb4c9f468c1045a212e6802456ed9119e',
   },
 };
-const CLOSE_TIMEOUT_MS = 900_000; // the slowest close stage is the suite (~23s aurora, ~53s litectx); headroom, not a budget
+// CLOSE_TIMEOUT_MS retired (PRD item 27/M3, 2026-09-07): a hardcoded 900s cap
+// was a defaulted second ceiling with no operator-set floor, exactly the shape
+// `maxWallMs`'s own no-default rule already forbids. The per-stage ceiling is
+// now resolved once, below, before the watchdog is even spawned (F67 needs
+// the real number to size its stale/grace windows) — `resolveCloseTimeoutMs`
+// (src/closetimeout.js) is the ONE place this precedence is spelled out, and
+// `src/planrun.js`'s own in-run resolution goes through the identical function.
 // The close-fix loop's RETIRED iteration cap (PRD v1.46 §4). It no longer governs:
 // that loop now stops on the same 2-strike no-progress rule the step ladder uses,
 // read off the close's own per-stage numbers. This number survives as the bound for
@@ -916,13 +923,20 @@ if (doorSpineFile !== null) {
     process.exit(2);
   }
   const answeredAt = new Date().toISOString();
+  // PRD item 27/M3 — the door's mechanical re-run needs the same effective
+  // ceiling the run itself would use; resolved through the identical
+  // function (`resolveCloseTimeoutMs`), never a second guess. Paid only on
+  // an `accept` decision's re-proof (`proveMechanically`, src/reviewdoor.js);
+  // a `rerun`/`pause` decision spends nothing here either way.
+  const doorCloseTiming = await resolveCloseTimeoutMs({ job: spec, stages: closeStagesOf(spec) ?? [], cwd: wd, redact: redactSecrets });
   const ans = await answerReviewDoor({
     job: spec,
     workdir: wd,
     events: doorEvents ?? [],
     decision: RULING.decision,
     text: RULING.text,
-    closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    closeTimeoutMs: doorCloseTiming.timedOut ? undefined : doorCloseTiming.closeTimeoutMs,
+    closeDir: spineDir,
     at: answeredAt,
     // THE REGISTRY IS OPTIONAL AND NEVER CONJURED. This runner keeps standalone
     // bridge FILES, not a registry, so a release has nothing to write unless the
@@ -1146,7 +1160,32 @@ console.log(`   ${SCOUT_LABEL}`);
 // close at all) or an empty list, and a 0 or NaN here would disarm both windows
 // silently.
 const closeStages = closeStagesOf(spec)?.length || 1;
-const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * closeStages;
+// PRD item 27/M3 — the watchdog needs the REAL per-stage ceiling before it can
+// size its own windows, and this run's own clock/close calls need the exact
+// same number, so it is resolved ONCE, here, through the same function
+// `src/planrun.js` uses in-run (`resolveCloseTimeoutMs`), before the watchdog
+// spawn or the run itself sees a single provider token. `emit` is created
+// here (not inline at the `runJob` call below) so this pre-run reading lands
+// on the run's own spine in the SAME seq order everything else does, rather
+// than a second, disconnected spine writer.
+const emit = makeSpine(spineFile);
+const closeTimingResolved = await resolveCloseTimeoutMs({ job: spec, stages: closeStagesOf(spec) ?? [], cwd: wd, redact: redactSecrets });
+if (closeTimingResolved.timedOut) {
+  const names = closeTimingResolved.timing.perStage.filter((s) => s.timedOut).map((s) => s.name).join(', ');
+  emit('close-timing', { perStage: closeTimingResolved.timing.perStage, slowestMs: closeTimingResolved.timing.slowestMs, slowestName: closeTimingResolved.timing.slowestName, ceilingMs: null, source: 'estimated' });
+  emit('escalation', {
+    category: 'close-timing-red', decisionReady: true,
+    decision: `A close stage did not finish within the timing preflight's own ceiling — the close cannot run on this machine in a boundable time, so nothing was run and nothing was spent. Stage(s): ${names}`,
+    options: ['investigate why the stage hangs (infra/network/resource issue)', 'sign an explicit closeTimeoutMs override once the real duration is known', 'abandon the task'],
+  });
+  emit('run-end', { outcome: 'escalated' });
+  console.error(`CLOSE-TIMING-RED — stage(s) never finished the timing preflight: ${names}. See ${spineFile}`);
+  process.exit(1);
+}
+const RESOLVED_CLOSE_TIMEOUT_MS = /** @type {number} */ (closeTimingResolved.closeTimeoutMs);
+emit('close-timing', { ...closeTimingResolved.timing, ceilingMs: RESOLVED_CLOSE_TIMEOUT_MS, source: closeTimingResolved.source });
+console.log(`   ${closeTimeoutBanner({ ceilingMs: RESOLVED_CLOSE_TIMEOUT_MS, source: closeTimingResolved.source, slowestMs: closeTimingResolved.timing?.slowestMs, slowestName: closeTimingResolved.timing?.slowestName })}`);
+const worstCloseSilenceMs = RESOLVED_CLOSE_TIMEOUT_MS * closeStages;
 // `fileURLToPath`, not `.pathname`: a URL keeps its path percent-ENCODED, so a repo
 // checked out under a directory with a space (or any of `#?%`) hands spawn a path
 // containing `%20` that does not exist, and the guard dies at startup on the one run
@@ -1204,8 +1243,13 @@ const lagTimer = setInterval(() => {
 let outcome;
 try {
   outcome = await runJob(spec, {
-    approvals, workdir: wd, provider, providerFor, judgeProvider, emit: makeSpine(spineFile),
-    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: CLOSE_TIMEOUT_MS,
+    // PRD item 27/M3 — the SAME `emit` the pre-run close-timing reading above
+    // used (never a second `makeSpine(spineFile)` here: two independent
+    // emitters against one file would both start their seq counter at 0 and
+    // collide the moment either one had already written a record).
+    approvals, workdir: wd, provider, providerFor, judgeProvider, emit,
+    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: RESOLVED_CLOSE_TIMEOUT_MS,
+    closeDir: spineDir,
     readShim: READ_SHIM,
     scout: SCOUT,
     // RESUME: the money and the wall the halted run already burned are FOLDED IN (so

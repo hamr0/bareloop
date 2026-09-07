@@ -663,7 +663,12 @@ export async function authorCloseForJob({
 // script), so this can only ever fire on a smuggled/legacy-shaped draft —
 // named here anyway, because "arbiter fields are refused by name" is the
 // rule, not "arbiter fields that are currently reachable are refused".
-export const AUTHORED_SPEC_FIELDS = Object.freeze(['close', 'closeDecl', 'verdictType', 'sha256']);
+// `closeTimeoutMs` (PRD item 27/M3) joins the same list for the same reason:
+// it is arbiter territory exactly like the timeout floor/multiplier
+// themselves — the agent never mints a close-timeout override (only the
+// operator's own signed spec edit does), so a draft carrying it is refused
+// the same way one carrying a raw `close` array is.
+export const AUTHORED_SPEC_FIELDS = Object.freeze(['close', 'closeDecl', 'verdictType', 'sha256', 'closeTimeoutMs']);
 
 /**
  * Fold an authored close into the OPERATOR's own half of the spec.

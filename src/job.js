@@ -16,6 +16,7 @@
 import { createHash } from 'node:crypto';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier, closeScriptCandidateToken } from './validate.js';
 import { validateCloseDecl, DECLARED_CLOSE_CLASSES } from './declaredclose.js';
+import { CLOSE_TIMEOUT_FLOOR_MS } from './closetimeout.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
 // they are read at call time, so a mutable export would let adopter code
@@ -140,7 +141,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'model', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
 /** the four-field plan shape's core (decision 5) — presence of any of these
  * declares the shape; `tools` (the ceiling) rides the shape but alone does not
  * declare it, so a legacy spec carrying it gets a pointed red, not a conflict */
@@ -238,6 +239,21 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
       && !(typeof spec.maxWallMs === 'number' && Number.isInteger(spec.maxWallMs) && spec.maxWallMs >= MIN_WALL_MS)) {
     red('bounds', 'maxWallMs',
       `integer milliseconds >= ${MIN_WALL_MS} (one close timeout). Enforcement is a between-round deadline, measured as maxWallMs + closeStages x closeTimeoutMs (design addendum 1: loop.stop() cannot cut an in-flight call; W5: every close stage runs under the full timeout), so a budget under one close cannot fund its own close and the advertised number would be more wrong than right`);
+  }
+
+  // CLOSE TIMEOUT (PRD item 27/M3, hamr 2026-09-06: "both … autoset and can be
+  // override, same like api pricing"). OPTIONAL and WITH NO CEILING: absent
+  // means the runner autosets it from a $0 seed timing pass
+  // (`src/closetimeout.js`); present is the OPERATOR's own number and — like a
+  // rates-passthrough override (F113) — it may legally sit ABOVE the autoset
+  // estimate, so this is not tighten-only. The one bound that IS enforced is
+  // the floor every close timeout has always had (`CLOSE_TIMEOUT_FLOOR_MS`,
+  // hamr's arbiter constant, 2026-09-07): a value below it could never fund
+  // even a fast close, exactly the "advertised number more wrong than right"
+  // failure `maxWallMs` already guards above.
+  if (spec.closeTimeoutMs !== undefined
+      && !(typeof spec.closeTimeoutMs === 'number' && Number.isInteger(spec.closeTimeoutMs) && spec.closeTimeoutMs >= CLOSE_TIMEOUT_FLOOR_MS)) {
+    red('bounds', 'closeTimeoutMs', `integer milliseconds >= ${CLOSE_TIMEOUT_FLOOR_MS} (the arbiter's floor) — a signed override may sit above the autoset estimate, never below the floor every close timeout has always had`);
   }
 
   // MODEL — the worker's provider model id (build-list #3, hamr's GO

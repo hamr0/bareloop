@@ -209,6 +209,44 @@ export function checkCloseByteSignature(spec, cwd) {
   return compareSignatures(readCloseScripts(spec, cwd));
 }
 
+/** the exact env var name a close script reads for its own books directory
+ * (Part B, PRD item 27/M3) — named once so the detector below and the runner
+ * that sets it (`src/ralph.js`'s `runClose`) can never drift into two
+ * spellings of the same contract. */
+export const CLOSE_DIR_ENV_VAR = 'BARELOOP_CLOSE_DIR';
+
+/**
+ * PRD item 27/M3, Part B — "the library `runJob` takes `closeDir` and refuses
+ * at $0 if a spec's close needs it and none is given." A close script's
+ * NEED is read the same way its bytes already are (`readCloseScripts`): a
+ * script whose source mentions `BARELOOP_CLOSE_DIR` reads that variable at
+ * run time, so a run with no `closeDir` handed to it would run that script
+ * against `undefined` — silently, since `env.BARELOOP_CLOSE_DIR` would just
+ * be absent from the child's environment rather than throwing. Refusing here,
+ * at the same $0 run-start seam as the absolute-path/byte-signature checks,
+ * turns that silent gap into a named red before any tokens spend, rather than
+ * leaving it to whatever the script's own author remembered to check for.
+ *
+ * A script that never mentions the variable carries no demand — most
+ * predicate-only fixture closes (`true`, `pytest`) have no books of their own
+ * to keep, and requiring a `closeDir` for them would be a needless refusal.
+ * @param {any} spec resolved job spec
+ * @param {string} cwd
+ * @param {string|null|undefined} closeDir the value the runner is about to hand
+ *   the close as `BARELOOP_CLOSE_DIR` (or none)
+ * @returns {{ ok: true } | { ok: false, reds: {stage: string, path: string}[] }}
+ */
+export function checkCloseDirRequired(spec, cwd, closeDir) {
+  if (typeof closeDir === 'string' && closeDir.length > 0) return { ok: true };
+  const scripts = readCloseScripts(spec, cwd);
+  /** @type {{stage: string, path: string}[]} */
+  const reds = [];
+  for (const s of scripts) {
+    if (s.bytes != null && s.bytes.includes(CLOSE_DIR_ENV_VAR)) reds.push({ stage: s.stage, path: s.path });
+  }
+  return reds.length > 0 ? { ok: false, reds } : { ok: true };
+}
+
 /**
  * The re-verify that runs before EVERY close run, precheck included (PRD
  * item 27, M2 §2) — scoped to the STAGES about to actually run rather than

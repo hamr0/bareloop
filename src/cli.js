@@ -300,6 +300,14 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
   mkdirSync(runsDir, { recursive: true });
   const spineFile = join(runsDir, 'spine.jsonl');
   const emit = makeSpine(spineFile);
+  // PRD item 27/M3 Part B — the close's own books directory, inside the run's
+  // own directory so the bundle stays one self-contained unit (hamr,
+  // 2026-09-07: "export holds as one unit of itself"). `runJob` autosets the
+  // close timeout itself (no `closeTimeoutMs` passed — the bundle CLI has
+  // always run on the library default/autoset path, never run-u's operator
+  // knob).
+  const closeDir = join(runsDir, 'close');
+  mkdirSync(closeDir, { recursive: true });
 
   let outcome;
   try {
@@ -310,6 +318,7 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
       providerFor,
       judgeProvider,
       emit,
+      closeDir,
       shellCapUsd: runSpec.budgetUsd,
       readShim: 'cap',
       scout: true,

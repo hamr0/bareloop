@@ -51,13 +51,16 @@ const collector = () => {
 // must set it via process.cwd(), never a hardcoded absolute path.
 //
 // SCOPED to WORKDIR, not every absolute-looking literal in every close
-// script: `types-close.mjs`, `testgen-close.mjs`, `testgen-cold-check-close.mjs`
-// and `l2poc-check-close.mjs` still hardcode a `SPINE_DIR` (a log/pristine-copy
-// location the arbiter deliberately keeps OUTSIDE the patient tree — never the
-// cwd-judging bug F129 names), and `u-pulselog-close.mjs`'s `--workdir`
-// DEFAULT is a deliberate hash-stable fallback per its own header comment.
-// Both are flagged as a divergence in this build's report, not silently
-// swept into this pin.
+// script. As of PRD item 27/M3 Part B, `types-close.mjs`, `testgen-close.mjs`,
+// `testgen-cold-check-close.mjs` and `l2poc-check-close.mjs`'s `SPINE_DIR`
+// (a log/pristine-copy location the arbiter deliberately keeps OUTSIDE the
+// patient tree — never the cwd-judging bug F129 names) reads
+// `process.env.BARELOOP_CLOSE_DIR`, absent = instrument-stop (see
+// tests/close-timeout.test.js); `u-pulselog-close.mjs`'s `--workdir` DEFAULT
+// moved from a hardcoded absolute path to `process.cwd()` (same M1 template
+// as every other script) — the old literal already tripped the run-start
+// close-absolute-path guard for every job that named this close without
+// `--workdir` (`jobs/pulselog-u-types.json`).
 // ---------------------------------------------------------------------------
 
 const CLOSE_SCRIPT_FILES = readdirSync(join(REPO_ROOT, 'scripts')).filter((f) => f.endsWith('-close.mjs'));
@@ -77,9 +80,11 @@ test('F129: scripts/*-close.mjs — a close script judges the cwd the runner giv
   assert.equal(checked.length, 9, `expected exactly 9 single-line-WORKDIR close scripts, got: ${JSON.stringify(checked)}`);
 });
 
-test('F129 regression pin: u-pulselog-close.mjs already takes --workdir (no change needed)', () => {
+test('F129/M3 regression pin: u-pulselog-close.mjs still takes --workdir, and its default is now process.cwd() (no baked /home/ literal)', () => {
   const src = readFileSync(join(REPO_ROOT, 'scripts', 'u-pulselog-close.mjs'), 'utf8');
-  assert.match(src, /process\.argv\.indexOf\('--workdir'\)/, 'must still support the --workdir override this build left untouched');
+  assert.match(src, /process\.argv\.indexOf\('--workdir'\)/, 'must still support the --workdir override');
+  assert.doesNotMatch(src, /'\/home\//, 'no baked-in /home/ literal may survive — the default fell back to process.cwd() (PRD item 27/M3 Part B)');
+  assert.match(src, /: process\.cwd\(\);/, 'the --workdir-absent fallback must be process.cwd()');
 });
 
 // ---------------------------------------------------------------------------

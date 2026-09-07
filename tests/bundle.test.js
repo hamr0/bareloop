@@ -162,6 +162,37 @@ test('the JOB fixture is validateJob-green', () => {
 });
 
 // ---------------------------------------------------------------------------
+// PRD item 27/M3 Part B — a close reading BARELOOP_CLOSE_DIR exports cleanly.
+// `env.BARELOOP_CLOSE_DIR` is not an absolute-path STRING LITERAL in the
+// script's own source (it is an env-var read), so it must never trip
+// `close-absolute-path`/`close-cmd-unrelocatable` — this is a $0 regression
+// pin for that, not a behaviour this rung had to newly implement.
+// ---------------------------------------------------------------------------
+
+test('exportBundle: a close reading process.env.BARELOOP_CLOSE_DIR exports cleanly (no close-absolute-path, no close-cmd-unrelocatable)', (t) => {
+  const scriptPath = '/home/hamr/PycharmProjects/bareloop-close/scripts/fixture-closedir-close.mjs';
+  const source = `import { JUDGED_MARKER } from '../src/kinds.js';
+
+const dir = process.env.BARELOOP_CLOSE_DIR;
+console.log(\`FIXTURE closedir=\${dir ? 'set' : 'unset'} \${JUDGED_MARKER}\`);
+process.exit(dir ? 0 : 97);
+`;
+  const sha256 = hashCloseScriptBytes(source);
+  const job = {
+    ...clone(JOB),
+    job: 'fixture-closedir-job',
+    close: [{ name: 'suite-green', cmd: `node ${scriptPath} suite-green`, expect: 0, sha256 }],
+  };
+  const bridge = bridgeFor(job);
+  const registryDir = makeRegistry(t, bridge);
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture-closedir.bareloop');
+  const r = exportBundle({ spec: job, closeScripts: { [scriptPath]: source }, registryDir, outDir, bareloopVersion: '0.99.0' });
+  assert.equal(r.ok, true, `export must succeed: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
+  assert.ok(existsSync(join(outDir, 'close', 'fixture-closedir-close.mjs')));
+});
+
+// ---------------------------------------------------------------------------
 // exportBundle — happy path
 // ---------------------------------------------------------------------------
 

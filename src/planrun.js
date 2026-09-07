@@ -43,7 +43,8 @@ import {
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
-import { checkCloseAbsolutePaths, checkCloseByteSignature, checkStageByteSignature } from './close-integrity.js';
+import { checkCloseAbsolutePaths, checkCloseByteSignature, checkStageByteSignature, checkCloseDirRequired } from './close-integrity.js';
+import { resolveCloseTimeoutMs, closeTimeoutBanner, TIMING_PREFLIGHT_CEILING_MS } from './closetimeout.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, Retry, wireGate, HaltError } = require('bare-agent');
@@ -641,7 +642,14 @@ ${scoutBlob || '(no scout notes)'}`;
  *   ladder (src/ladder.js). Arbiter territory exactly as the count it replaced was —
  *   the runner sets it, the plan cannot express it, and no step may tighten or raise
  *   it.
- * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory)
+ * @param {number} [opts.closeTimeoutMs] close/check wall-clock cap (shell territory).
+ *   OPTIONAL as of PRD item 27/M3: absent, this run autosets it from a $0 seed
+ *   timing pass (or the spec's own signed `closeTimeoutMs` override) — an
+ *   explicit value here still wins outright (backward compatibility/test
+ *   control).
+ * @param {string|null} [opts.closeDir] the close's own books directory (PRD
+ *   item 27/M3 Part B), forwarded to every close invocation as
+ *   `BARELOOP_CLOSE_DIR`
  * @param {number} [opts.maxStepRounds] the shell's per-step rounds ceiling (validatePlan's bound)
  * @param {boolean} [opts.scout=true] operator-only switch (docs/product/SCOUT-CONTRAST.md):
  *        `false` on a FRESH run (no `resumeSeed`) skips the survey entirely — `scoutBlob`
@@ -823,7 +831,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -969,6 +977,105 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       });
       return 'close-tampered';
     }
+  }
+
+  // ── close-dir-required (PRD item 27/M3 Part B): a close script that reads
+  // its own books directory (`BARELOOP_CLOSE_DIR`) and gets none would run
+  // silently against `undefined` — refuse at the same $0 seam as the two
+  // checks immediately above, before any tokens spend.
+  {
+    const dirCheck = checkCloseDirRequired(job, workdir, closeDir);
+    if (!dirCheck.ok) {
+      const detail = dirCheck.reds.map((r) => `${r.stage}: ${r.path}`).join('; ');
+      emit('escalation', {
+        category: 'close-dir-required', decisionReady: true,
+        decision: 'A close script reads BARELOOP_CLOSE_DIR (its own books directory, deliberately outside the patient tree) but the runner was given none — nothing was run and nothing was spent.',
+        options: ['run this job through a runner that sets closeDir (run-u.mjs, or the bundle CLI)', 'abandon the task'],
+        detail,
+      });
+      return 'close-dir-required';
+    }
+  }
+
+  // ── close timeout: autoset + signed override (PRD item 27/M3). hamr,
+  // 2026-09-06: "both … autoset and can be override, same like api pricing".
+  // Constants (`CLOSE_TIMEOUT_FLOOR_MS`, `CLOSE_TIMEOUT_K`) are hamr's own
+  // arbiter constants (2026-09-07) — never agent- or adopter-settable.
+  //
+  // Precedence, all $0, before any provider call:
+  //   1. an EXPLICIT `closeTimeoutMs` runtime option (the pre-M3 shell/test
+  //      knob) wins outright — kept for backward compatibility and for tests
+  //      that force a specific close-timeout scenario; it is never the signed
+  //      spec field and prints its own honest word rather than "signed
+  //      override".
+  //   2. the SIGNED spec field `job.closeTimeoutMs` — the operator's own
+  //      number, which may legally sit above OR below the autoset estimate
+  //      (F113's rates-passthrough shape).
+  //   3. AUTOSET — a $0 timing pass runs every stage once (ignoring verdicts;
+  //      first-red-wins stays for the real precheck below), under the
+  //      generous provisional ceiling `TIMING_PREFLIGHT_CEILING_MS` so a
+  //      genuinely hung stage still ends. `max(FLOOR, K × slowest)` becomes
+  //      the ceiling every close run in this call uses, and a stage that
+  //      timed out DURING THE TIMING PASS is `close-timing-red` — the close
+  //      cannot run on this machine, and the provider was never called.
+  //
+  // The pass is SKIPPED whenever an override already exists (case 1 or 2):
+  // running every stage a second time just to throw the reading away would
+  // waste real machine time before any provider call, and — measured risk —
+  // a close stage a test or an operator deliberately made slow/hanging would
+  // then block for up to 10 minutes for no purpose. "Guesstimate only when no
+  // rate is given" is the same doctrine F113 already applies to pricing.
+  {
+    const explicitOverride = typeof closeTimeoutMs === 'number' && Number.isFinite(closeTimeoutMs) ? closeTimeoutMs : null;
+    if (explicitOverride !== null) {
+      // A caller-passed runtime option wins outright and skips the timing
+      // pass entirely — this is EITHER the pre-M3 shell/test knob (backward
+      // compatibility), OR a runner (`scripts/run-u.mjs`) that already ran
+      // this exact resolution itself, before this call, because it needed
+      // the answer to size its own outside watchdog (F67) before the run
+      // even started. Either way, running the pass again here would just
+      // throw a second, redundant reading away.
+      closeTimeoutMs = explicitOverride;
+      emit('close-timing', { perStage: [], slowestMs: null, slowestName: null, ceilingMs: closeTimeoutMs, source: 'explicit' });
+      console.log(closeTimeoutBanner({ ceilingMs: closeTimeoutMs, source: 'explicit' }));
+    } else {
+      const resolved = await resolveCloseTimeoutMs({ job, stages: stagedClose, cwd: workdir, redact: scrub });
+      if (resolved.timedOut) {
+        // `timedOut` is only ever true alongside a real `timing` reading
+        // (`resolveCloseTimeoutMs` never sets one without the other) — the
+        // cast states that correlation for the checker, which cannot infer
+        // it across the two independent optional fields on its own.
+        const timing = /** @type {NonNullable<typeof resolved.timing>} */ (resolved.timing);
+        const detail = timing.perStage.filter((s) => s.timedOut).map((s) => s.name).join(', ');
+        emit('close-timing', { perStage: timing.perStage, slowestMs: timing.slowestMs, slowestName: timing.slowestName, ceilingMs: null, source: 'estimated' });
+        emit('escalation', {
+          category: 'close-timing-red', decisionReady: true,
+          decision: `A close stage did not finish within the timing preflight's own ceiling (${TIMING_PREFLIGHT_CEILING_MS}ms) — the close cannot run on this machine in a boundable time, so nothing was run and nothing was spent.`,
+          options: ['investigate why the stage hangs (infra/network/resource issue)', 'sign an explicit closeTimeoutMs override once the real duration is known', 'abandon the task'],
+          detail,
+        });
+        return 'close-timing-red';
+      }
+      closeTimeoutMs = /** @type {number} */ (resolved.closeTimeoutMs);
+      emit('close-timing', { ...(resolved.timing ?? { perStage: [], slowestMs: null, slowestName: null, anyTimedOut: false }), ceilingMs: closeTimeoutMs, source: resolved.source });
+      console.log(closeTimeoutBanner({ ceilingMs: closeTimeoutMs, source: resolved.source, slowestMs: resolved.timing?.slowestMs, slowestName: resolved.timing?.slowestName }));
+    }
+  }
+
+  // ── the wall must be able to fund at least one close under the EFFECTIVE
+  // ceiling just computed (PRD item 27/M3): `job.maxWallMs`'s own static
+  // floor (`MIN_WALL_MS`, src/job.js) assumed the library's un-autoset
+  // default — with autoset, the real per-stage ceiling is only known here, at
+  // run start, so the honest shape is a run-start check, never a silent
+  // clamp (a budget under one close cannot fund its own close, verbatim the
+  // reasoning `maxWallMs`'s own validator red already states).
+  if (typeof job.maxWallMs === 'number' && job.maxWallMs < closeTimeoutMs) {
+    emit('escalation', {
+      category: 'wall-under-close-timeout', decisionReady: true,
+      decision: `maxWallMs (${job.maxWallMs}ms) is under the effective close timeout (${closeTimeoutMs}ms) — a budget under one close cannot fund its own close, so nothing was run and nothing was spent.`,
+      options: ['raise maxWallMs to at least the printed close timeout and rerun (a spec edit, so the new hash needs re-approval)', 'sign a lower closeTimeoutMs override if the measured duration allows it (same re-approval)', 'abandon the task'],
+    });
+    return 'wall-under-close-timeout';
   }
 
   // ── THE SIGNER'S ANSWER (N4 §1.4), read before anything costs anything.
@@ -1377,7 +1484,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     'abandon the task',
   ];
 
-  const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir };
+  const closeOpts = { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir };
   /** D8 — the DECLARED close's seed, filled in below before anything runs.
    * `null` for a command close, which has no baseline to measure against. */
   /** @type {{seedRef: string}|null} */
@@ -3668,7 +3775,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // is not passed — it survives only inside the governor, as the bound for the
       // case the trend instrument is blind.
       middle, judge: async () => judgeClose(), ladder: fixGovernor, emit: emitL, redact: scrub,
-      closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites,
+      closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites, closeDir,
     });
   } catch (e) {
     planExecuted();

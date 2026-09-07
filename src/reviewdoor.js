@@ -92,6 +92,7 @@ const red = (code, detail, path = 'decision') => [{ code, path, detail }];
  * @param {string} opts.decision one of the three doors
  * @param {string|null} [opts.text] the rerun's words — the gap, and refused when empty
  * @param {number} [opts.closeTimeoutMs] the per-stage bound for the accept's re-run
+ * @param {string|null} [opts.closeDir] the close's own books directory (PRD item 27/M3 Part B), forwarded to the accept's re-run
  * @param {string|null} [opts.registryDir] the workflow registry, when the runner keeps one
  * @param {string|null} [opts.name] the workflow this run wrote its row against
  * @param {string|null} [opts.runid] the RUN's id, exactly as the bridge row records it
@@ -104,7 +105,7 @@ const red = (code, detail, path = 'decision') => [{ code, path, detail }];
  *   options: string[], ttlMs: number, note: string|null}>}
  */
 export async function answerReviewDoor({
-  job, workdir, events, decision, text = null, closeTimeoutMs,
+  job, workdir, events, decision, text = null, closeTimeoutMs, closeDir = null,
   registryDir = null, name = null, runid = null, at = null,
   now = Date.now, ttlMs = PAUSE_TTL_MS, emit = null,
 }) {
@@ -149,7 +150,7 @@ export async function answerReviewDoor({
   // this is the only branch that runs anything, and it runs the close's own
   // mechanical stages — never a second, weaker spelling of "is it still green".
   if (out.decision === 'accept') {
-    const proof = await proveMechanically({ job, workdir, events, closeTimeoutMs });
+    const proof = await proveMechanically({ job, workdir, events, closeTimeoutMs, closeDir });
     out.mechanical = proof.reading;
     if (!proof.ok) {
       out.reds = red('door-accept-red', proof.detail, proof.reading.stage ? `stage.${proof.reading.stage}` : 'close');
@@ -207,9 +208,9 @@ export async function answerReviewDoor({
  * compare the tree to itself and turn "nothing has changed since the run" into a
  * green for a `files-changed` stage that means the opposite. A run whose seed is
  * not on its spine is refused rather than guessed at.
- * @param {{job: any, workdir: string, events: any[], closeTimeoutMs?: number}} o
+ * @param {{job: any, workdir: string, events: any[], closeTimeoutMs?: number, closeDir?: string|null}} o
  */
-async function proveMechanically({ job, workdir, events, closeTimeoutMs }) {
+async function proveMechanically({ job, workdir, events, closeTimeoutMs, closeDir = null }) {
   const stages = mechanicalStages(closeStagesOf(job) ?? []);
   if (!stages.length) {
     // Honest, and named: a close with no mechanical stage has nothing a machine
@@ -226,7 +227,7 @@ async function proveMechanically({ job, workdir, events, closeTimeoutMs }) {
     }
     v = await runDeclaredStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir, seedRef });
   } else {
-    v = await runStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir });
+    v = await runStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir });
   }
   const reading = {
     ran: stages.length,
