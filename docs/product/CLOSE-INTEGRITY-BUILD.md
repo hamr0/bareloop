@@ -265,7 +265,11 @@ whenever the door's own timing pass times out — is RULED WRONG. A door whose t
 times out must REFUSE the accept outright, as a named `close-timing-red` door stop, and
 record nothing; falling through to the library default silently substitutes an
 unauthorized ceiling for a door decision. Fix scheduled on branch
-`fix/door-timing-refuse`, not part of this rung.
+`fix/door-timing-refuse`, not part of this rung. **Landed** on branch
+`fix/door-timing-refuse` (F137, `docs/logs/FINDINGS.md`) — see that branch's HEAD for the
+commit sha; the door now checks `doorCloseTiming.timedOut` before ever calling
+`answerReviewDoor` and refuses via the new pure renderer `doorTimingRedLines`
+(`scripts/u-readout.mjs`).
 
 The four bench rows were also re-signed at their current (unchanged) hashes today — see
 the `docs/product/BENCH-PREREG.md` "RE-SIGNED at v0.22.0" amendment, 2026-09-07.

@@ -36,7 +36,7 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from '../src/reviewdoor.j
 import { coldReset } from './u-patient.mjs';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine } from './u-readout.mjs';
+import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -929,13 +929,26 @@ if (doorSpineFile !== null) {
   // an `accept` decision's re-proof (`proveMechanically`, src/reviewdoor.js);
   // a `rerun`/`pause` decision spends nothing here either way.
   const doorCloseTiming = await resolveCloseTimeoutMs({ job: spec, stages: closeStagesOf(spec) ?? [], cwd: wd, redact: redactSecrets });
+  // hamr's ruling 2026-09-07 (docs/product/CLOSE-INTEGRITY-BUILD.md, "Ruled
+  // 2026-09-07") — a door whose own timing pass times out must REFUSE the
+  // accept outright as a named `close-timing-red` door stop, mirroring the
+  // in-run escalation below (~line 1173): falling through to the library's
+  // 120s default (the pre-fix shape: `closeTimeoutMs: undefined`) silently
+  // substituted an unauthorized ceiling for a door decision. `answerReviewDoor`
+  // is never called on this path — nothing is recorded (no door record on
+  // `doorSpineFile`), nothing is released, and nothing is spent.
+  if (doorCloseTiming.timedOut) {
+    const names = doorCloseTiming.timing.perStage.filter((s) => s.timedOut).map((s) => s.name).join(', ');
+    for (const l of doorTimingRedLines({ names })) console.error(l);
+    process.exit(1);
+  }
   const ans = await answerReviewDoor({
     job: spec,
     workdir: wd,
     events: doorEvents ?? [],
     decision: RULING.decision,
     text: RULING.text,
-    closeTimeoutMs: doorCloseTiming.timedOut ? undefined : doorCloseTiming.closeTimeoutMs,
+    closeTimeoutMs: doorCloseTiming.closeTimeoutMs,
     closeDir: spineDir,
     at: answeredAt,
     // THE REGISTRY IS OPTIONAL AND NEVER CONJURED. This runner keeps standalone
