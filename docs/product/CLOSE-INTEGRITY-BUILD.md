@@ -122,6 +122,11 @@ sits INSIDE the spec so `jobSpecHash` (`src/job.js:725`) covers it with no chang
 - **Locked.** The agent never writes this field — it is arbiter territory exactly like
   `budgetUsd`/`maxWallMs`; the authoring pipeline's declaration schema must not admit it
   (same inexpressibility discipline as the close kind catalogue itself).
+- **F135 (2026-09-07).** The re-verify covers `runCloseStages` (`src/planrun.js`) but had
+  missed the review door's `accept` re-proof (`proveMechanically`, `src/reviewdoor.js`),
+  which called the executors directly — a script tampered with after the run ended and
+  before the accept would be re-run unchecked. Fixed: `proveMechanically` now calls
+  `checkStageByteSignature` first, same as every other close-run seam.
 
 ### M3 — close timeout: autoset + signed override
 

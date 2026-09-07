@@ -10625,3 +10625,49 @@ relative to the job's measured green-cost band, not a proposal: the signed budge
 set from that measured band rather than inherited from the `run-u` default, and raising it
 is a re-export (spec edit → new `bundleHash` → fresh green needed before re-bless) — not
 something this finding recommends doing.
+
+## F135 — Review-door accept re-run bypassed the close byte signature
+
+**Date:** 2026-09-07 · **Status:** fixed · **Class:** close-integrity gap, found by
+`/branch-review` on `feat/close-integrity`, run context `run mtr4t1u1` (the blessed fire
+whose accept path this hardens) · **Grounded in:** `src/reviewdoor.js`, `src/planrun.js`,
+`src/close-integrity.js`, `tests/reviewdoor-tamper.test.js`.
+
+**The gap.** Every close execution in the runner is supposed to go through the PRD item
+27/M2 byte re-verify (`checkStageByteSignature`) before the script's bytes are trusted —
+that is what `runCloseStages` in `src/planrun.js` (~lines 1538–1564) wraps around every
+call to `runStages`/`runDeclaredStages`, catching a script tampered with between the
+precheck and any later re-run. `src/reviewdoor.js`'s `proveMechanically` — the door's
+`accept` re-proof, which re-runs the close's mechanical stages against the tree as it
+stands "now" (potentially minutes or days after the run ended, per the module's own
+docstring) — called `runStages`/`runDeclaredStages` DIRECTLY, skipping that check. A close
+script whose bytes were swapped after the run ended but before the signer answered the door
+would be re-run unchecked: if the swapped script happened to still exit 0, `accept` would
+be honoured on a script nobody signed.
+
+**Reproduced.** `tests/reviewdoor-tamper.test.js` builds a real command-close (`spec.close`)
+green run whose close script judges `src/mod.mjs` for an "ok" marker, signs it
+(`close[].sha256`), opens a review door (`reviewDoor: true`), then — after the run ends —
+overwrites the script on disk with different bytes that are behaviourally identical (always
+`process.exit(0)`), so the failure mode is provably about the SIGNATURE, not the tampered
+script's own logic. On HEAD before the fix, `answerReviewDoor({decision:'accept', …})`
+returned `ok:true` — a false accept. (A declared close (`closeDecl`) is out of scope for
+this particular gap: a `command-exit` stage's `params.cmd` names an interpreter binary, not
+an addressable repo script, so it carries no top-level `cmd`/`sha256` for
+`checkStageByteSignature` to compare in the first place.)
+
+**Fixed.** `proveMechanically` now calls `checkStageByteSignature(stages, workdir)` before
+either executor, reusing the same helper `runCloseStages` already calls (`src/close-integrity.js`).
+A mismatch is refused the same way every other close-tampered surface refuses: it never
+reaches the executor, and reads through the existing `door-accept-red` path (`ok:false`,
+`reds[0].code:'door-accept-red'`, detail naming the tamper) — nothing is recorded, nothing
+is released, exactly like every other refused accept. `src/reviewdoor.js`'s module-level
+comment for the accept re-proof now says the bytes are verified first.
+
+**Proof.** `tests/reviewdoor-tamper.test.js`, 2 tests: the tamper case (red-on-HEAD,
+confirmed failing before the fix — `a.ok` was `true`) and an untampered control (accept
+still honoured, so the fix does not false-red an honest tree). Mutation-proven: inverting
+the new guard's condition in place (edited, run, reverted by edit — never `git checkout`)
+turned both tests red (one on the intended assertion, one on a `TypeError` from the mutant's
+now-wrong branch shape), confirming the guard is load-bearing. Full suite 2320/2320 pass
+(prior 2318, +2 for this file); `npm run typecheck` clean.

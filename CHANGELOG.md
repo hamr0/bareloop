@@ -135,6 +135,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
   rewritten), and a new test pins `job-start` as literally the first record on
   a fresh scripted run.
 
+- **F135 — review-door accept re-run bypassed the close byte signature**. Every
+  other close execution goes through `checkStageByteSignature` before running
+  a stage (`runCloseStages`, `src/planrun.js`); the review door's `accept`
+  re-proof (`proveMechanically`, `src/reviewdoor.js`) called
+  `runStages`/`runDeclaredStages` directly and skipped it — a close script
+  swapped on disk after the run ended but before the signer's accept ran
+  unchecked and could mint a false accept. Fixed: `proveMechanically` now
+  verifies the mechanical stages' bytes against their signed `sha256` first,
+  refusing through the existing `door-accept-red` path on a mismatch
+  (`tests/reviewdoor-tamper.test.js`).
+
 ## [0.21.0] — 2026-09-06
 
 ### Added

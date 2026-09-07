@@ -38,6 +38,7 @@ import { isDeclaredClose, runDeclaredStages, HITL_DECISION_RED } from './declare
 import { runStages } from './ralph.js';
 import { redactSecrets } from './validate.js';
 import { applyDoorDecision, PAUSE_TTL_MS } from './reuse.js';
+import { checkStageByteSignature } from './close-integrity.js';
 
 /** the door's own record, off the run's spine — the LAST one, because a run that
  * ends at a door writes exactly one and a reader that guesses which is which is a
@@ -201,13 +202,21 @@ export async function answerReviewDoor({
 
 /**
  * The accept's re-proof: the close's MECHANICAL stages, run against the tree as it
- * stands now, through the SAME executors the run itself was judged by.
+ * stands now, through the SAME executors the run itself was judged by — the
+ * scripts' own bytes are verified against their signed sha256 FIRST (F135).
  *
  * The declared path measures against the run's OWN seed (`close-decl.seedRef` off
  * the spine), never a fresh one: re-basing the baseline onto today's HEAD would
  * compare the tree to itself and turn "nothing has changed since the run" into a
  * green for a `files-changed` stage that means the opposite. A run whose seed is
  * not on its spine is refused rather than guessed at.
+ *
+ * F135 — the script BYTES are verified (`checkStageByteSignature`, PRD item 27/M2)
+ * BEFORE any stage runs, exactly the re-verify every other close execution in this
+ * runner already goes through (`runCloseStages`, `src/planrun.js`). Without it, a
+ * close script swapped on disk after the run ended but before the signer's accept
+ * would be re-run unchecked — a mismatch here never reaches the executor, and
+ * reads the same `close-tampered` shape the run-start/mid-run checks already use.
  * @param {{job: any, workdir: string, events: any[], closeTimeoutMs?: number, closeDir?: string|null}} o
  */
 async function proveMechanically({ job, workdir, events, closeTimeoutMs, closeDir = null }) {
@@ -217,6 +226,16 @@ async function proveMechanically({ job, workdir, events, closeTimeoutMs, closeDi
     // can re-prove, so the accept rests on the person alone. Never a silent pass
     // dressed as a re-run.
     return { ok: true, detail: '', reading: { ran: 0, verdict: null, stage: null, stages: [], note: 'this close has no mechanical stage — there is nothing a machine can re-prove, so the accept rests on the person' } };
+  }
+  const sig = checkStageByteSignature(stages, workdir);
+  if (!sig.ok) {
+    const r = sig.reds[0];
+    const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
+    return {
+      ok: false,
+      reading: { ran: 0, verdict: 'close-tampered', stage: r?.stage ?? null, stages: [] },
+      detail: `the close script's bytes no longer match its signed sha256 (close-tampered) — the accept is refused rather than re-run against a script nobody vouched for. ${detail}`,
+    };
   }
   /** @type {any} */
   let v;
