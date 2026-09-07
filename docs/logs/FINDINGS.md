@@ -10671,3 +10671,36 @@ the new guard's condition in place (edited, run, reverted by edit — never `git
 turned both tests red (one on the intended assertion, one on a `TypeError` from the mutant's
 now-wrong branch shape), confirming the guard is load-bearing. Full suite 2320/2320 pass
 (prior 2318, +2 for this file); `npm run typecheck` clean.
+
+## F136 — CI-only red: test fixtures committed without the neutralised git identity
+
+**Date:** 2026-09-07 · **Status:** fixed · **Class:** machine-local green blind to CI, found
+by CI on PR #32 (GitHub Actions run 34158519331) · **Grounded in:** `tests/helpers.js`,
+`tests/close-integrity.test.js`, `tests/close-timeout.test.js`.
+
+**The gap.** `initPatientRepo` in `tests/helpers.js` neutralises global/system git config
+and sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*` in its own env so a patient fixture's seed commit
+never depends on the host's git identity. `makePatient` in both
+`tests/close-integrity.test.js` (~line 170) and `tests/close-timeout.test.js` (~line 46)
+then add a second commit on top of that seed (writing `src/mod.mjs` before committing it)
+via a raw `execFileSync('git', ['commit', ...])` with no env at all — so that second commit
+depends on whatever git identity the machine happens to have. On hamr's own machine a global
+`user.name`/`user.email` papered over the gap; on the CI runner, which has none, both files
+red 22 tests with `Author identity unknown ... fatal: unable to auto-detect email address`.
+
+**Reproduced.** `HOME=<empty> GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null node
+--test tests/close-integrity.test.js tests/close-timeout.test.js` on HEAD before the fix:
+18 of 70 tests failed with the CI's exact error text (`# Author identity unknown` /
+`# fatal: unable to auto-detect email address (got 'hamr@hamr.(none)')`), confirming the
+class without needing a real CI dispatch.
+
+**Fixed.** `tests/helpers.js` now exports `patientGitEnv()` (the same identity/config env
+object `initPatientRepo` already built inline) and `gitInPatient(dir, args)`, a thin
+`execFileSync` wrapper applying it. Both test files' `makePatient` now call
+`gitInPatient(wd, ['add', '-A'])` / `gitInPatient(wd, ['commit', ...])` instead of the raw,
+env-less `execFileSync('git', ...)`. `git diff origin/main...HEAD -- tests/` plus
+`grep -n "execFileSync('git', \['commit'" tests/*.test.js` confirmed these were the only two
+sibling call sites missing the identity env on this branch.
+
+**Proof.** Same CI-like command re-run post-fix: 70/70 pass, exit 0. Full suite
+`npm test`: 2320/2320 pass. `npm run typecheck`: clean.

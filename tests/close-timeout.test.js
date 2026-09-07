@@ -33,7 +33,7 @@ import { validateJob, jobSpecHash } from '../src/job.js';
 import { assembleSpec, AUTHORED_SPEC_FIELDS } from '../src/authorjob.js';
 import { runPlan } from '../src/planrun.js';
 import { runJob } from '../src/run.js';
-import { scriptedProvider, initPatientRepo } from './helpers.js';
+import { scriptedProvider, initPatientRepo, gitInPatient } from './helpers.js';
 
 /** @param {import('node:test').TestContext} t @param {string} prefix */
 const tmp = (t, prefix) => {
@@ -49,8 +49,8 @@ function makePatient(t) {
   initPatientRepo(wd);
   mkdirSync(join(wd, 'src'), { recursive: true });
   writeFileSync(join(wd, 'src', 'mod.mjs'), 'export const x = 1;\n');
-  execFileSync('git', ['add', '-A'], { cwd: wd });
-  execFileSync('git', ['commit', '-q', '-m', 'src', '--allow-empty'], { cwd: wd });
+  gitInPatient(wd, ['add', '-A']);
+  gitInPatient(wd, ['commit', '-q', '-m', 'src', '--allow-empty']);
   return wd;
 }
 

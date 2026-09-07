@@ -201,14 +201,38 @@ export const readSpine = (file) => readFileSync(file, 'utf8').trimEnd().split('\
  * @param {string} dir an existing directory (its current contents become the seed commit)
  * @returns {string} the seed commit sha
  */
+
+/**
+ * The SAME neutralised identity env every patient fixture's git calls must
+ * use — a raw `execFileSync('git', ...)` run without it inherits whatever
+ * (or no) git identity the machine has, which is why a fixture's own
+ * `add`/`commit` calls red on CI while passing on a dev box with a global
+ * config (F136). Any test file running its own git commands against a
+ * patient directory must go through this env or `gitInPatient` below, never
+ * a bare `execFileSync('git', ...)`.
+ * @returns {NodeJS.ProcessEnv}
+ */
+export const patientGitEnv = () => ({
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+  GIT_AUTHOR_NAME: 'bareloop-test', GIT_AUTHOR_EMAIL: 'test@bareloop',
+  GIT_COMMITTER_NAME: 'bareloop-test', GIT_COMMITTER_EMAIL: 'test@bareloop',
+});
+
+/**
+ * Run a git command inside a patient directory with the neutralised identity
+ * env applied, so extra fixture setup (an `add`/`commit` beyond the seed
+ * commit `initPatientRepo` already makes) never depends on the host's git
+ * config.
+ * @param {string} dir
+ * @param {string[]} args
+ * @returns {string}
+ */
+export const gitInPatient = (dir, args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env: patientGitEnv() });
+
 export function initPatientRepo(dir) {
-  const env = {
-    ...process.env,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-    GIT_AUTHOR_NAME: 'bareloop-test', GIT_AUTHOR_EMAIL: 'test@bareloop',
-    GIT_COMMITTER_NAME: 'bareloop-test', GIT_COMMITTER_EMAIL: 'test@bareloop',
-  };
+  const env = patientGitEnv();
   const git = (/** @type {string[]} */ args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env });
   git(['init', '-q', '-b', 'main']);
   // an EMPTY tree still needs a commit: `git checkout -b` works on an unborn head,

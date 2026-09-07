@@ -26,7 +26,7 @@ import {
   readCloseScripts, checkCloseAbsolutePaths, absolutePathLiteralsOf,
   hashCloseScriptBytes, checkCloseByteSignature, checkStageByteSignature, signCloseScripts,
 } from '../src/close-integrity.js';
-import { scriptedProvider, initPatientRepo } from './helpers.js';
+import { scriptedProvider, initPatientRepo, gitInPatient } from './helpers.js';
 import { jobSpecHash } from '../src/job.js';
 import { assembleSpec } from '../src/authorjob.js';
 import { exportBundle } from '../src/bundle.js';
@@ -173,8 +173,8 @@ function makePatient(t) {
   initPatientRepo(wd);
   mkdirSync(join(wd, 'src'), { recursive: true });
   writeFileSync(join(wd, 'src', 'mod.mjs'), 'export const x = 1;\n');
-  execFileSync('git', ['add', '-A'], { cwd: wd });
-  execFileSync('git', ['commit', '-q', '-m', 'src', '--allow-empty'], { cwd: wd });
+  gitInPatient(wd, ['add', '-A']);
+  gitInPatient(wd, ['commit', '-q', '-m', 'src', '--allow-empty']);
   return wd;
 }
 

@@ -154,6 +154,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
   caught by `no-suppressions`, not an instrument defect). See
   `docs/logs/FINDINGS.md` F134.
 
+- **F136 — CI-only red: patient test fixtures committed without the neutralised
+  git identity**. `tests/close-integrity.test.js` and `tests/close-timeout.test.js`
+  each added a second commit on top of `initPatientRepo`'s seed via a raw
+  `execFileSync('git', ...)` with no env, so it depended on the host's own git
+  identity — green on hamr's machine (a global config papers over it), red on
+  CI (none). `tests/helpers.js` now exports `patientGitEnv`/`gitInPatient`
+  reusing `initPatientRepo`'s identity env; both files' `makePatient` go through
+  it. See `docs/logs/FINDINGS.md` F136.
+
 ## [0.21.0] — 2026-09-06
 
 ### Added
