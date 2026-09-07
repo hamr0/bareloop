@@ -10708,7 +10708,7 @@ sibling call sites missing the identity env on this branch.
 **Closed at the runner (2026-09-07).** The fixture fix above closed this one instance, but
 the class — a local test leaning on this machine's own state and going green here, red
 only on CI — had already shipped twice (v0.19.0's hardcoded local path; this F136's
-inherited git identity). `scripts/test-hermetic.mjs` closes the class instead of the
+inherited git identity). `scripts/hermetic.mjs` closes the class instead of the
 instance: `npm test` now runs `node --test` under an env with `HOME` redirected to a fresh
 empty `mkdtemp` dir and `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`/`GIT_CONFIG_NOSYSTEM` set
 to neutralise git config resolution, with any inherited `GIT_AUTHOR_*`/`GIT_COMMITTER_*`/
@@ -10720,3 +10720,14 @@ immediately; the same reverted file under plain `node --test` (no hermetic wrapp
 green on this machine, confirming the wrapper is what closes the blindness, not the
 fixture fix alone. Deliberately not a sandbox: PATH, `node_modules`, and shelled-out
 binaries (ripgrep, git itself) are untouched.
+
+**Second catch (2026-09-07).** The runner's own first name, `test-hermetic.mjs`, matched
+node's default test-file discovery glob (`**/test-*.?(c|m)js`), so `node --test` discovered
+and executed the runner itself as a test file — the suite count went 2320 to 2321 with
+`ok - scripts/test-hermetic.mjs`, nesting a whole second `node --test` inside the outer
+suite (it happened to exit 0 in ~1.2s, but it was a self-invoking test file counted as a
+pass). Renamed to `scripts/hermetic.mjs`, which matches none of node's default discovery
+patterns (`**/*.test.?(c|m)js`, `**/*-test.?(c|m)js`, `**/*_test.?(c|m)js`,
+`**/test-*.?(c|m)js`, `**/test.?(c|m)js`, `**/test/**/*.?(c|m)js`); a `NODE_TEST_CONTEXT`
+guard was added so a future rediscovery fails loudly (`process.exitCode = 1` with an error
+message) instead of nesting silently.

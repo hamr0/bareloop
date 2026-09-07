@@ -2515,7 +2515,7 @@ nothing here to check it against).
 Enforcement is **local only** — wired into `npm test` (see `package.json`'s `test`
 script), never into `.github/workflows/*` (CI already runs `npm test`, so the rule is
 enforced there without an ask-first CI edit). `npm test` itself now runs `node --test`
-through `scripts/test-hermetic.mjs`, which strips this machine's `HOME`/git identity so a
+through `scripts/hermetic.mjs`, which strips this machine's `HOME`/git identity so a
 test that leans on either fails locally instead of only on CI (F136). The check itself lives outside the
 published package, at `scripts/prompt-commit-check.mjs` (pure decision logic in
 `scripts/promptcommitlib.mjs`, `scripts/` is not in `package.json`'s `files`, so none of

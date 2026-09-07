@@ -23,7 +23,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
     so its escalation tail says "resume is `run-u`-only in v1" instead of naming a
     `--resume` flag it does not implement (F130).
 
-- **Hermetic test runner** (F136, closed at the runner). `scripts/test-hermetic.mjs`
+- **Hermetic test runner** (F136, closed at the runner). `scripts/hermetic.mjs`
   runs `node --test` with `HOME` redirected to a fresh empty `mkdtemp` dir and
   `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`/`GIT_CONFIG_NOSYSTEM` set to neutralise git
   config, plus any inherited `GIT_AUTHOR_*`/`GIT_COMMITTER_*`/`EMAIL` deleted — the
