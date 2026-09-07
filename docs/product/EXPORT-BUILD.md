@@ -330,3 +330,53 @@ reads `ok:true, reds:[], blessing present`. The same sequence was first run on a
 (`node_modules`/`runs` excluded) with the same results. `../bareloop-close` re-pinned to
 `main`'s merge commit `99ac25f` (PRD item 27(b) done). Bundle home:
 `../bareloop-patients/bundles/aurora-u-spawner-types.bareloop`.
+
+## Fires 6–8 on the close-integrity branch — 2026-09-07
+
+Bundle `../bareloop-patients/bundles/aurora-u-spawner-types-v2.bareloop`, `bundleHash
+935acb95aa94ea0a470b8df9b29ed8c9c27c5615a1ebe692d4fdbb1ab2579ee2`, exported from
+`feat/close-integrity` post-F132/F133 fixes, packed lib from the branch. Patient
+`../bareloop-patients/aurora-u-fire2` (fresh clone of `aurora-u` at `d661e50`). All three
+fires: `bareloop run . --repo <patient> --budget 5 --wall 30 --approve 935acb95…`.
+
+| run id | outcome | spent | wall | blessed? |
+|---|---|---|---|---|
+| `mtqwydl4` (fire 6) | `close-tampered` at $0 — see F132 | $0 | — | no |
+| `mtr0icky` (fire 7) | cap-halt | $5.0693 of $5 | 30 min (cap-halted) | no |
+| `mtr4t1u1` (fire 8) | green | $3.7968 of $5 | ~24 min | yes |
+
+**Fire 6** — the export's own `close-tampered` refusal at $0 (spec's signature over source
+bytes vs. the relocated bytes export actually packed), full trace under F132. One line here
+since the finding already carries it.
+
+**Fire 7 — `mtr0icky`, 2026-09-07T09:16Z.** Cap-halt, `spendComplete true`, overshoot $0.07
+(one round — the known between-rounds cap binding). Story from the spine
+(`<bundle>/runs/mtr0icky/spine.jsonl`, 150 records): close-timing pass live (slowest
+tests-kept 20,514 ms × 5 → floor 120,000 ms won; banner printed once). Step
+`fix-mypy-strict-spawner` spent $3.69 over 40 rounds, typecheck 16→6, variance meter halted
+it at moneyShare 0.824 (threshold 0.5, trend converging); replan → step
+`fix-mypy-strict-errors` green $0.37; outer close red on `no-suppressions`: 2 suppressions
+added (`from typing import … Any` in `recovery.py` and `spawner.py`); fix loop started,
+money ran out after $0.43. Spend by phase: step1 $3.691 (n=40), fix $0.429 (n=12), scout
+$0.448 (n=9), step2 $0.371 (n=11), plan $0.130 (n=3). Bundle NOT blessed.
+
+Read as a cap-shaped negative (this job's past greens ran $1.40–$4.08), not an instrument
+defect — the close caught a real cheat.
+
+**Fire 8 — `mtr4t1u1`, 2026-09-07T11:13Z.** Same bundle/hash/patient/flags, re-fire at the
+same $5 (n=2 at this cap, hamr running the command). Outcome green, $3.7968 of $5, ~24 min
+wall. Close-timing pass: slowest tests-kept 21,042 ms × 5 → floor 120,000 won (same floor,
+banner printed once). Single step `fix-spawner-strict-typing`, 62 rounds, $3.637; scout
+$0.123; plan $0.037; no replan. Outer close satisfied incl. `no-suppressions`; diff 5 files
++31/−27 on branch `bareloop-aurora-u-spawner-types-2`, and the diff only REMOVES `Any` (2
+lines), adds none. `blessing.json` written:
+`{"bundleHash":"935acb95…","blessedAt":"2026-09-07T11:13:47.553Z","runid":"mtr4t1u1","outcome":"green","host":"hamr"}`.
+Post-bless $0 check: `bareloop run` without a key prints the operator questions and spends
+nothing. Bundle history now carries 2 rows.
+
+Bundle fires total is now 8 across the job's two bundle generations (fires 1–5 on the prior
+`aurora-u-spawner-types.bareloop`, session-of-record above; 6, 7, 8 on this v2 bundle).
+
+**Read:** n=2 at $5 on this v2 bundle is 1 cap-halt / 1 green, consistent with the job's
+observed green-cost band topping near $4 — a $5 ceiling is tight, not broken. Full trace,
+read, and lesson: `docs/logs/FINDINGS.md` F134.

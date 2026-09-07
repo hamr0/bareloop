@@ -184,7 +184,19 @@ those stay arbiter-set per the ruling above.
 2. **$0 all-stage timing on aurora AND litectx** (two jobs, not one — this rung's POC was
    n=1/one-job; validation widens to a second job before the method is trusted broadly).
 3. **One paid fire of a re-exported aurora bundle** (spec changes here → new
-   `jobSpecHash` → re-approve, re-bless) on hamr's word.
+   `jobSpecHash` → re-approve, re-bless) on hamr's word. — [x] done, three live fires
+   2026-09-07 on the re-exported v2 bundle (`bundleHash 935acb95…`, packed post-F132/F133):
+   `mtqwydl4` (close-tampered self-refusal at $0, F132), `mtr0icky` (cap-halt, close-timing
+   pass live), `mtr4t1u1` (green, blessed at the new hash). Trace:
+   `docs/product/EXPORT-BUILD.md` "Fires 6–8", `docs/logs/FINDINGS.md` F132, F134.
+   - [x] relocated-bytes sha verify passing after F132 — `mtr0icky` and `mtr4t1u1` both ran
+     past the close-first precheck clean on the same v2 bundle whose bytes previously
+     tripped `close-tampered` in fire 6, confirming the re-signed manifest (post-F132)
+     verifies against the actually-packed (relocated) bytes.
+   - [x] bless at the new hash — `blessing.json` minted by `mtr4t1u1`:
+     `{"bundleHash":"935acb95…","blessedAt":"2026-09-07T11:13:47.553Z","runid":"mtr4t1u1","outcome":"green"}`.
+   - Timing pass banner printed once on both fires 7 and 8 (F133 fix live: the double
+     mislabelled banner did not recur).
 4. **Bench re-sign is hamr's call** (per item 27's own text: "re-hashes every job → bench
    rows re-sign and re-baseline, hamr's call which way").
 

@@ -10575,3 +10575,53 @@ run id as the reason — the archived file is a historical fact and is never rew
 match the fix. A new test (`tests/close-timeout.test.js`, "runJob: job-start is always the
 spine's first record, close-timing (if any) comes after it") pins the FORWARD guarantee on a
 real scripted `runJob` call.
+
+## F134 — Bundle fire cap-halt is a cap-shaped negative; the close caught an `Any` cheat
+
+**Date:** 2026-09-07 · **Status:** closed as a finding, no fix proposed · **Class:** live
+paid fire, hamr's cap re-fire · **Grounded in:** runs `mtr0icky`, `mtr4t1u1` (same v2
+bundle, `bundleHash 935acb95aa94ea0a470b8df9b29ed8c9c27c5615a1ebe692d4fdbb1ab2579ee2`, same
+patient shape, same `--budget 5 --wall 30` flags).
+
+**Fire 7 story.** `mtr0icky`, 2026-09-07T09:16Z, cap-halted at $5.0693 of $5
+(`spendComplete true`, overshoot $0.07 = one round, the known between-rounds cap binding).
+Close-timing pass live and correct (slowest tests-kept 20,514 ms × 5 → floor 120,000 ms
+won, banner printed once). Step `fix-mypy-strict-spawner` spent $3.69 over 40 rounds,
+typecheck errors 16→6, variance meter halted it at moneyShare 0.824 (threshold 0.5, trend
+converging); replan produced `fix-mypy-strict-errors`, green at $0.37. The outer close then
+went red on `no-suppressions`: the worker had added 2 `Any` suppressions (`from typing
+import … Any` in `recovery.py` and `spawner.py`) to satisfy typecheck rather than fix it
+honestly. A fix loop for the suppression red started but money ran out after $0.43 more.
+Spend by phase: step1 $3.691 (n=40), fix $0.429 (n=12), scout $0.448 (n=9), step2 $0.371
+(n=11), plan $0.130 (n=3). Bundle not blessed by this fire.
+
+**The read.** This is a cap-shaped negative, not an instrument defect. The job's past
+observed green costs on this bundle/patient shape ran $1.40–$4.08 — $5 is close to the
+ceiling of that band, and this attempt happened to need the variance-triggered replan
+(itself real work, not waste) before landing in the suppression fix loop with too little
+budget left to finish honestly. Everything the close is supposed to catch, it caught: the
+`Any` suppression cheat was read correctly and refused, not laundered through as a pass.
+
+**The n=2 re-fire.** Fire 8, `mtr4t1u1`, 2026-09-07T11:13Z, same bundle/hash/patient/flags,
+re-fired at the same $5 cap (hamr running the command a second time). Went green: $3.7968
+of $5, ~24 min wall, close-timing pass slowest tests-kept 21,042 ms × 5 → same floor,
+banner printed once. Single step `fix-spawner-strict-typing`, 62 rounds, $3.637; scout
+$0.123; plan $0.037; no replan needed this time. Outer close satisfied including
+`no-suppressions`; the diff (5 files, +31/−27, branch
+`bareloop-aurora-u-spawner-types-2`) only REMOVES `Any` (2 lines), adds none —
+the honest fix this time, not a suppression. `blessing.json` minted at the new hash.
+
+**What worked.** The close-timing pass ran live and correctly on both fires with a single,
+correctly labelled banner each time (F133's fix holding under real re-fire, not just the
+one fire that motivated it). The relocated-bytes sha verify passed on both (F132's fix
+holding — the same bytes that tripped `close-tampered` in fire 6 verified clean here).
+Spend reporting was honest on both: fire 7's overshoot is visible as $0.07 over cap, not
+hidden; fire 8's spend and phase breakdown match the spine.
+
+**Lesson.** A $5 signed ceiling is tight for a job whose observed green cost tops out at
+$4.08 — one variance-triggered replan is enough to push a run past it even when the close
+is behaving correctly throughout. This is a finding about the bundle's SIGNED budget
+relative to the job's measured green-cost band, not a proposal: the signed budget should be
+set from that measured band rather than inherited from the `run-u` default, and raising it
+is a re-export (spec edit → new `bundleHash` → fresh green needed before re-bless) — not
+something this finding recommends doing.
