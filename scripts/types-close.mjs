@@ -23,7 +23,16 @@ import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
 const WORKDIR = process.cwd(); // F129: a close judges the cwd the runner gives it (F8), never a baked-in path (was: bareloop-patients/litectx-types)
-const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types-bareloop';
+// PRD item 27/M3 Part B — the close's own books (pristine copy,
+// calibration threshold, logs) live deliberately OUTSIDE the patient
+// tree (the worker must never read the arbiter's books, v1.12). The
+// runner hands this close its own directory via env; no baked fallback,
+// ever — absent is an instrument-stop, not a guess.
+const SPINE_DIR = process.env.BARELOOP_CLOSE_DIR;
+if (!SPINE_DIR) {
+  console.error('TYPES instrument-stop: BARELOOP_CLOSE_DIR is not set — this close needs its own books directory (pristine copy, calibration threshold, logs), deliberately outside the patient tree, and refuses to guess one.');
+  process.exit(97);
+}
 const SEED_REF = 'ca1af8a'; // frozen seed commit (TYPES-PREREG.md §3)
 const SEED_SYMBOLS = join(SPINE_DIR, 'types-seed-symbols.txt');
 const LOG = join(SPINE_DIR, 'types-close-log.jsonl');

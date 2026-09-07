@@ -22,7 +22,16 @@ import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
 const WORKDIR = process.cwd(); // F129: a close judges the cwd the runner gives it (F8), never a baked-in path (was: bareloop-patients/aurora-soar)
-const SPINE_DIR = '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar-bareloop';
+// PRD item 27/M3 Part B — the close's own books (pristine copy,
+// calibration threshold, logs) live deliberately OUTSIDE the patient
+// tree (the worker must never read the arbiter's books, v1.12). The
+// runner hands this close its own directory via env; no baked fallback,
+// ever — absent is an instrument-stop, not a guess.
+const SPINE_DIR = process.env.BARELOOP_CLOSE_DIR;
+if (!SPINE_DIR) {
+  console.error('TESTGEN instrument-stop: BARELOOP_CLOSE_DIR is not set — this close needs its own books directory (pristine copy, calibration threshold, logs), deliberately outside the patient tree, and refuses to guess one.');
+  process.exit(97);
+}
 const REAL = join(WORKDIR, 'packages/soar/src/aurora_soar/orchestrator.py');
 const PRISTINE = join(SPINE_DIR, 'testgen-pristine-orchestrator.py');
 const SEED_MANIFEST = new URL('../experiments/testgen-seed-suite/MANIFEST.sha256', import.meta.url);
