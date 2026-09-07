@@ -476,3 +476,51 @@ detector would otherwise pass over unnoticed.
 series until hamr re-freezes at the new hashes** — this amendment records the mechanical
 fact (every row now re-hashes under M2) and stops there; it does not re-baseline, does not
 re-run, and does not touch any bridge/registry/approval file.
+
+## Amendment, 2026-09-07 — PRD item 27/M3 (close timeout + BARELOOP_CLOSE_DIR) — the THREE frozen rows are UNCHANGED; two non-frozen jobs moved
+
+M3's script fixes (`process.env.BARELOOP_CLOSE_DIR` in the four `SPINE_DIR` scripts;
+`process.cwd()` in `u-pulselog-close.mjs`'s `--workdir` default) touched five close
+scripts' bytes. Re-running `scripts/sign-close.mjs --all --write` afterward: the three
+FROZEN bench rows' `jobSpecHash` did **NOT** move —
+
+| job | hash (unchanged) |
+|---|---|
+| `aurora-u-spawner-types.json` | `9ad373ac1ce833b88356914b9207b13271332322fcf16c5e46bfdc3811821107` |
+| `litectx-u-types.json` | `69a41748a9b4c45bf50cf465582f49a4469cc007297f85c8e3096a7fd92346ee` |
+| `aurora-testgen-cold.json` (G2) | `6838e871ad79c87f5af233189fe0b28d24ae727cb0fd960aa9b76b2bc0cb8eb6` |
+
+— because none of those three jobs' closes name the five scripts this rung edited
+(`aurora-u-spawner-types`/`litectx-u-types` name `u-spawner-close.mjs`/`u-litectx-close.mjs`,
+untouched here; `aurora-testgen-cold` names the `.sh` wrapper scripts, also untouched — the
+underlying `.mjs` files they wrap were edited, but the `.sh` wrappers' own bytes were not).
+**No bench re-sign/re-baseline decision is needed for this rung.**
+
+Two NON-frozen jobs did move (both name `u-pulselog-close.mjs`, one of the five edited
+scripts):
+
+| job | old hash | new hash |
+|---|---|---|
+| `pulselog-u-types.json` | `2f8de8e6e40c272d8cfc5ed67ff0beb4032a055ba22fbda8f850609c905f9594` | `879969187ed631606ae32ab0d81ad0e2d3ea34a2aa21137113b18a738d8e6154` |
+| `pulselog-g3-types.json` | `db652534ef3199acc017321a827a4e32f35d0d5b8e2945575bc06ec8f64080ae` | `180a2f00ef1943d7f6bee9dc6aa2984e4171fcb6321f056519e3aaff2d1e57e5` |
+
+**Named discrepancy, not fixed by this amendment:** `pulselog-g3-types.json`'s hash
+immediately BEFORE this rung's edit (`db652534…`, above) does not match the hash this
+document's own 2026-09-01 "G3 FROZEN"/"G3 baseline established" amendments recorded
+(`64d56137505f3e3ef543b618f3c932bbe0d385ddfd7a39a28175574623e455d8`). G3's hash moved
+between the freeze and now — almost certainly during the M2 close-bytes signing pass
+(`aa67660`, 2026-09-06), which re-signed every `jobs/*.json` with a command close but whose
+own dated amendment (above, "the three frozen bench rows") never named G3 as one of the
+rows it moved. This is a gap in that earlier amendment's bookkeeping, surfaced by this
+rung's own hash-comparison step — flagged here for hamr's attention, not corrected
+retroactively (out of this rung's scope, and G3's own re-sign/re-baseline is his call per
+the Signature rule, same as the M2 amendment above).
+
+Two other jobs (`litectx-types-screen-c.json`, `litectx-types-screen-f.json`) also moved,
+naming `types-close.mjs` (one of the four `SPINE_DIR` scripts fixed here) — neither is a
+bench row:
+
+| job | old hash | new hash |
+|---|---|---|
+| `litectx-types-screen-c.json` | `8c9702bd1269df0020fe48394849d69758e49d0b96910462e5f0a86c8b0f675a` | `500acdbb06a1f04326cf970a56c29bec43a131b3e4a97b91046f56bd7d2db5c0` |
+| `litectx-types-screen-f.json` | `7c0d31a90479feea43a1fbca11f821cecb0bf20658d5b841e9117ac6ce094a1f` | `0e4a1aa0508ae6675a5720303a10e7fd5f3a4373739920fff4539e2238337a4f` |
