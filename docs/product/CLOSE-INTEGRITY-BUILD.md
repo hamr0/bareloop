@@ -254,3 +254,18 @@ future shell-level override, not part of the customer-facing contract. (3) the
 `timeCloseStages`/`resolveCloseTimeoutMs` rather than a full `runPlan` integration test —
 the real provisional ceiling is 600s and cannot be shrunk from outside without either that
 seam or a genuine 10-minute test.
+
+**Ruled 2026-09-07 (hamr: "do all the above"):** divergence (2) above stands as ruled —
+the `'explicit'` runtime `closeTimeoutMs` tier stays, TEST-ONLY, pinned by a grep test (to
+be added on branch `fix/door-timing-refuse`) so it can never silently become a
+customer-facing knob. Separately, the review door's own timing-pass fallback —
+`scripts/run-u.mjs` (~line 938) passes `closeTimeoutMs: doorCloseTiming.timedOut ?
+undefined : doorCloseTiming.closeTimeoutMs`, i.e. falling back to the library default
+whenever the door's own timing pass times out — is RULED WRONG. A door whose timing pass
+times out must REFUSE the accept outright, as a named `close-timing-red` door stop, and
+record nothing; falling through to the library default silently substitutes an
+unauthorized ceiling for a door decision. Fix scheduled on branch
+`fix/door-timing-refuse`, not part of this rung.
+
+The four bench rows were also re-signed at their current (unchanged) hashes today — see
+the `docs/product/BENCH-PREREG.md` "RE-SIGNED at v0.22.0" amendment, 2026-09-07.

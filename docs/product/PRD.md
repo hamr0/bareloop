@@ -420,6 +420,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     **export v1 validated 2026-09-06, see EXPORT-BUILD.md.**
 
     **shipped in v0.22.0, 2026-09-07 — see CLOSE-INTEGRITY-BUILD.md.**
+    **2026-09-07 (hamr: "do all the above"):** bench rows re-signed at v0.22.0; two M3
+    rulings landed (`'explicit'` tier stays test-only; review-door timing timeout must
+    refuse as `close-timing-red`, door-refuse fix queued) — see CLOSE-INTEGRITY-BUILD.md.
     **2026-09-06, later (hamr: "both, ui is coming. it's autoset and can be override, same
     like api pricing"):** the close timeout joins this rung. Today `closeTimeoutMs` is a
     caller-passed library parameter defaulting to 120s (`src/ralph.js`), which run-u

@@ -524,3 +524,37 @@ bench row:
 |---|---|---|
 | `litectx-types-screen-c.json` | `8c9702bd1269df0020fe48394849d69758e49d0b96910462e5f0a86c8b0f675a` | `500acdbb06a1f04326cf970a56c29bec43a131b3e4a97b91046f56bd7d2db5c0` |
 | `litectx-types-screen-f.json` | `7c0d31a90479feea43a1fbca11f821cecb0bf20658d5b841e9117ac6ce094a1f` | `0e4a1aa0508ae6675a5720303a10e7fd5f3a4373739920fff4539e2238337a4f` |
+
+## Amendment, 2026-09-07 — RE-SIGNED at v0.22.0 (hamr: "do all the above")
+
+Closes both the "RE-SIGN PENDING HAMR" mark left by the 2026-09-06 M2 amendment (above) and
+the G3 hash-bookkeeping discrepancy named in the 2026-09-07 M3 amendment (above). On hamr's
+explicit word today, the four rows the orchestrator put to him are now the SIGNED hashes
+under this document's own Signature rule (a spec edit re-hashes its row and re-freezes/
+re-signs the set):
+
+| job | signed hash |
+|---|---|
+| `aurora-u-spawner-types.json` | `9ad373ac1ce833b88356914b9207b13271332322fcf16c5e46bfdc3811821107` |
+| `litectx-u-types.json` | `69a41748a9b4c45bf50cf465582f49a4469cc007297f85c8e3096a7fd92346ee` |
+| `aurora-testgen-cold.json` (G2) | `6838e871ad79c87f5af233189fe0b28d24ae727cb0fd960aa9b76b2bc0cb8eb6` |
+| `pulselog-g3-types.json` (G3) | `180a2f00ef1943d7f6bee9dc6aa2984e4171fcb6321f056519e3aaff2d1e57e5` |
+
+G3's signed hash is `180a2f00…`, superseding both the 2026-09-01 freeze's `64d56137…` and
+the pre-M3 `db652534…` this document's own bookkeeping had lost track of — the discrepancy
+named above is closed by this re-sign, not by retroactively correcting the earlier
+amendments' prose.
+
+These four hashes were verified directly against the tracked spec files
+(`jobSpecHash`) on this tree, and every close script's bytes were checked against the
+signed `close[].sha256` in the re-pinned `../bareloop-close` worktree at `main` — all
+matched. Fire 8 (`mtr4t1u1`) had already greened the aurora job at `9ad373ac…` via the
+exported bundle, and run-u `mtqwmb9l` greened it too, minting registry row
+`aurora-u-spawner-types-7feefaec`; no new paid run was fired for this re-sign.
+
+**Re-baseline NOT fired.** Signing a hash is a bookkeeping act, not a pass — per the
+2026-08-31 cadence amendment ("the pass trigger is hamr's CHOICE at a release"), a bench
+pass at these hashes is a separate paid decision he makes each time. The existing
+baselines — the aurora `u-mtfywb55`-era rows, G2's `u-mtg6bwa0` establish, and G3's own
+2026-09-01 baseline — stand as-is, unreplayed, until he calls a pass at the newly-signed
+hashes.
