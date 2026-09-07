@@ -369,10 +369,24 @@ test('a run spine is distinguished from the sidecars that live beside it', () =>
 test('the spine predicate finds exactly the real spines in the real archive', { skip: !existsSync(ARCHIVE) && 'no archive on this machine' }, () => {
   const found = readdirSync(ARCHIVE).filter(isSpineFile);
   assert.ok(found.length >= 3, `expected the real archived spines, got ${found.length}`);
-  // every one it picked is a real spine: it parses and carries a job-start
+  // every one it picked is a real spine: it carries a job-start among its first
+  // few records. Strictly the FIRST record for every run this repo has ever
+  // shipped, with one dated, real, NEVER-edited exception:
+  // `u-mtqwmb9l.jsonl` was written by the pre-F133 `scripts/run-u.mjs`, which
+  // resolved the close timeout itself (needed early, to size the outside
+  // watchdog, F67) and announced it with its own `emit('close-timing', …)`
+  // BEFORE calling `runJob` — so that one archived file's true first record is
+  // `close-timing`, one record ahead of `job-start`. F133 fixed the writer (a
+  // fresh run never emits close-timing before job-start again — see
+  // `runJob: job-start is always the spine's first record` below) but the
+  // archive is a historical fact and is never rewritten to match the fix.
+  // Tolerating `job-start` within the first 3 records keeps this real file
+  // readable without loosening the check into meaninglessness (a spine whose
+  // job-start is buried past record 3 is still refused as "not a run spine").
   for (const f of found) {
-    const first = readFileSync(join(ARCHIVE, f), 'utf8').split('\n').find(Boolean);
-    assert.equal(JSON.parse(first).type, 'job-start', `${f} is not a run spine`);
+    const lines = readFileSync(join(ARCHIVE, f), 'utf8').split('\n').filter(Boolean).slice(0, 3);
+    const types = lines.map((l) => JSON.parse(l).type);
+    assert.ok(types.includes('job-start'), `${f} is not a run spine — first 3 record types: ${JSON.stringify(types)}`);
   }
   // and it picked NOTHING that is a sidecar
   for (const f of found) assert.ok(!f.includes('lag') && !f.includes('gate-audit'), f);

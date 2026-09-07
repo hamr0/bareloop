@@ -29,9 +29,10 @@ import {
   timeCloseStages, computeCloseTimeoutCeiling, resolveCloseTimeoutMs, closeTimeoutBanner,
 } from '../src/closetimeout.js';
 import { checkCloseDirRequired, CLOSE_DIR_ENV_VAR, hashCloseScriptBytes } from '../src/close-integrity.js';
-import { validateJob } from '../src/job.js';
+import { validateJob, jobSpecHash } from '../src/job.js';
 import { assembleSpec, AUTHORED_SPEC_FIELDS } from '../src/authorjob.js';
 import { runPlan } from '../src/planrun.js';
+import { runJob } from '../src/run.js';
 import { scriptedProvider, initPatientRepo } from './helpers.js';
 
 /** @param {import('node:test').TestContext} t @param {string} prefix */
@@ -461,6 +462,39 @@ test('F133 sanity: sliceCall actually isolates the runJob call (not the whole fi
   const call = sliceCall(source, 'runJob');
   assert.ok(call.length > 0 && call.length < source.length, 'must be a real slice, not the whole file');
   assert.match(call, /approvals/, 'must actually contain the runJob options bag');
+});
+
+// ---------------------------------------------------------------------------
+// F133 (second catch, same fire): the archived spine `u-mtqwmb9l.jsonl` shows
+// `close-timing` as the FIRST record, one ahead of `job-start` — the pre-fix
+// `scripts/run-u.mjs` emitted its own `close-timing` reading before ever
+// calling `runJob` (which is what emits `job-start`). Every spine reader
+// (replay, the readshim battery, spend slicers) assumes `job-start` opens the
+// file. `runJob` (`src/run.js`) emits `job-start` as literally its first emit
+// after the approval/validation gate, BEFORE `runPlan` (and therefore before
+// `runPlan`'s own `close-timing` emit) is ever called — this was already true
+// of the library; F133's fix (run-u no longer emitting its own early
+// close-timing record) removes the ONLY writer that could get ahead of it.
+// ---------------------------------------------------------------------------
+
+test('runJob: job-start is always the spine\'s first record, close-timing (if any) comes after it', async (t) => {
+  const wd = makePatient(t);
+  const src = 'process.exit(0);\n';
+  writeFileSync(join(wd, 'verdict-close.mjs'), src);
+  const job = JOB_WITH_CLOSE('node verdict-close.mjs', hashCloseScriptBytes(src));
+  const jv = validateJob(job);
+  assert.deepEqual(jv.reds, []);
+  const provider = scriptedProvider([{ text: 'scout' }, { text: 'never reached' }]);
+  const { events, emit } = collector();
+  await runJob(jv.job, {
+    approvals: [{ specHash: jobSpecHash(jv.job), signer: 'test', ts: 'now' }],
+    workdir: wd, provider, emit,
+  });
+  assert.ok(events.length > 0, 'the run must have emitted something');
+  assert.equal(events[0].type, 'job-start', `the spine's first record must be job-start, got: ${events[0].type}`);
+  const closeTimingIdx = events.findIndex((e) => e.type === 'close-timing');
+  const jobStartIdx = events.findIndex((e) => e.type === 'job-start');
+  assert.ok(closeTimingIdx === -1 || closeTimingIdx > jobStartIdx, 'close-timing, if present at all, must come after job-start, never before');
 });
 
 test('runPlan: maxWallMs under the effective close timeout refuses wall-under-close-timeout at $0', async (t) => {

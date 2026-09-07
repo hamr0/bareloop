@@ -10556,3 +10556,22 @@ was always the right number on both lines) — caught only by reading a real run
 output, since no existing test asserted "exactly one banner line" for a production-shaped
 call (every prior `runPlan` test called it directly, never through `scripts/run-u.mjs`'s
 own two-call chain).
+
+**Second catch, same fire, correctness-real this time.** The pre-fix `scripts/run-u.mjs`
+called `emit('close-timing', …)` for its own reading BEFORE ever calling `runJob` — and
+`runJob` is what emits `job-start`, the record every spine reader (replay, the readshim
+battery's spend/tool-share slicers, `run-u.mjs --resume`/`--door`) assumes opens the file.
+The archived spine `../bareloop-patients/aurora-u-bareloop/u-mtqwmb9l.jsonl` (this same
+fire) carries `close-timing` as its literal first record, `job-start` second — confirmed by
+reading the file directly. This fix (run-u no longer emits its own early `close-timing`)
+removes the only writer capable of getting ahead of `job-start`: `runJob`'s own emit of
+`job-start` was already the first line inside `src/run.js`, before `runPlan` (and therefore
+before `runPlan`'s own `close-timing` emit) is ever reached, so once run-u stopped writing
+its own early record the library-only path was already correctly ordered. The one test that
+assumed the archive's first record is unconditionally `job-start`
+(`tests/readshim-battery.test.js`, "the spine predicate finds exactly the real spines in the
+real archive") now tolerates `job-start` within the first 3 records, documented with this
+run id as the reason — the archived file is a historical fact and is never rewritten to
+match the fix. A new test (`tests/close-timeout.test.js`, "runJob: job-start is always the
+spine's first record, close-timing (if any) comes after it") pins the FORWARD guarantee on a
+real scripted `runJob` call.

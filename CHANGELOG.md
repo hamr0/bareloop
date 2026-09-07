@@ -125,7 +125,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
   passes `closeTimeoutMs` into `runJob` at all; `runJob`/`runPlan` resolve
   (autoset, or the spec's own signed field) and announce the ceiling themselves
   — the ONE banner/spine record per run. The runtime `closeTimeoutMs` option on
-  `runJob`/`runPlan` stays, test/backward-compat only.
+  `runJob`/`runPlan` stays, test/backward-compat only. Same fire, second (real)
+  catch: run-u's own pre-fix early `emit('close-timing', …)` landed BEFORE
+  `job-start` on the spine (`runJob` is what emits `job-start`, and run-u called
+  it before ever calling `runJob`) — every spine reader assumes `job-start`
+  opens the file. Fixed by the same change (run-u no longer emits it early);
+  `tests/readshim-battery.test.js`'s archive check now tolerates `job-start`
+  within the first 3 records (the archived `u-mtqwmb9l.jsonl` is real and never
+  rewritten), and a new test pins `job-start` as literally the first record on
+  a fresh scripted run.
 
 ## [0.21.0] — 2026-09-06
 
