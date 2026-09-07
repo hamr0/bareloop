@@ -15,7 +15,7 @@ import { runJob } from '../src/run.js';
 import { jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { readShimArm } from '../src/readshim.js';
 import { closeStagesOf } from '../src/plan.js';
-import { resolveCloseTimeoutMs, closeTimeoutBanner } from '../src/closetimeout.js';
+import { resolveCloseTimeoutMs } from '../src/closetimeout.js';
 import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { runBehaviour, formatBehaviour } from '../src/behaviour.js';
@@ -1183,8 +1183,18 @@ if (closeTimingResolved.timedOut) {
   process.exit(1);
 }
 const RESOLVED_CLOSE_TIMEOUT_MS = /** @type {number} */ (closeTimingResolved.closeTimeoutMs);
-emit('close-timing', { ...closeTimingResolved.timing, ceilingMs: RESOLVED_CLOSE_TIMEOUT_MS, source: closeTimingResolved.source });
-console.log(`   ${closeTimeoutBanner({ ceilingMs: RESOLVED_CLOSE_TIMEOUT_MS, source: closeTimingResolved.source, slowestMs: closeTimingResolved.timing?.slowestMs, slowestName: closeTimingResolved.timing?.slowestName })}`);
+// F133 (run mtqwmb9l) — this reading is used ONLY to size the outside
+// watchdog below (`worstCloseSilenceMs`); it is NEVER announced (no
+// `emit('close-timing', …)`, no banner print) and NEVER passed into `runJob`
+// (see the F133 comment at that call site). The pre-fix shape printed AND
+// emitted this exact reading here, then fed it into `runJob` as a bare
+// `closeTimeoutMs`, which printed/emitted it a SECOND time under the wrong
+// word ("explicit runner override") — two banner lines for one number, the
+// second one lying about its own source. `runJob` now runs its own timing
+// pass (autoset, or the spec's own signed field) and is the ONE place that
+// announces the ceiling for this run — a small, deliberate, $0 re-measure
+// (never two AI-worker rounds, only close scripts) traded for one honest,
+// correctly-labelled line instead of two.
 const worstCloseSilenceMs = RESOLVED_CLOSE_TIMEOUT_MS * closeStages;
 // `fileURLToPath`, not `.pathname`: a URL keeps its path percent-ENCODED, so a repo
 // checked out under a directory with a space (or any of `#?%`) hands spawn a path
@@ -1248,7 +1258,15 @@ try {
     // emitters against one file would both start their seq counter at 0 and
     // collide the moment either one had already written a record).
     approvals, workdir: wd, provider, providerFor, judgeProvider, emit,
-    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT, closeTimeoutMs: RESOLVED_CLOSE_TIMEOUT_MS,
+    // F133 (run mtqwmb9l) — `closeTimeoutMs` is deliberately NOT passed here.
+    // `RESOLVED_CLOSE_TIMEOUT_MS` above exists only to size the outside
+    // watchdog before it spawns; feeding it back into `runJob` used to make
+    // this call print a SECOND, mislabelled "explicit runner override" line
+    // on top of run-u's own already-printed banner (removed above, same
+    // reason). `runJob` resolves (autoset, or the spec's own signed field)
+    // and announces the ceiling itself now — the ONE banner/spine record
+    // for this run.
+    shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT,
     closeDir: spineDir,
     readShim: READ_SHIM,
     scout: SCOUT,

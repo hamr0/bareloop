@@ -10519,3 +10519,40 @@ written spec's `close[].sha256` against the packed bytes). Cost of the catch: $0
 `close-tampered` refusal fires before any provider call) — but only because a human then
 ran a SECOND real fire against the actually-exported bundle; the export step alone reported
 success.
+
+## F133 — double, mislabelled close-timeout banner: two lines for one number, the second lying about its own source
+
+**Date:** 2026-09-07 · **Status:** fixed (`scripts/run-u.mjs` no longer passes
+`closeTimeoutMs` into `runJob`) · **Class:** live defect, hamr's paid fire · **Grounded
+in:** run `mtqwmb9l`'s printed log.
+
+**What happened.** `scripts/run-u.mjs` resolves the effective close timeout itself, before
+the run starts, because it needs the number to size the outside watchdog's stale/grace
+windows (F67) before that watchdog spawns. It printed its own banner from that reading
+(`close timeout: 120s per stage (estimated from seed timing: slowest tests-kept 20069ms ×
+5, floor 120s)`) and then ALSO passed the same resolved number into `runJob` as a bare
+`closeTimeoutMs` runtime option. `runPlan` (`src/planrun.js`) treats any caller-passed
+`closeTimeoutMs` as the pre-M3 shell/test knob — it skips its own timing pass (correct, no
+wasted re-execution) but ALSO prints/emits its own banner, unconditionally labelled
+`'explicit'` (`close timeout: 120s per stage (explicit runner override)`). Same number,
+printed twice, the second line lying about where it came from — a real estimate/signed
+override read out as a bare shell knob.
+
+**The fix.** `scripts/run-u.mjs` still resolves the ceiling locally (needed for watchdog
+sizing before `runJob` is even called) but never announces it (no `console.log`, no
+`emit('close-timing', …)`) and never passes it into `runJob`. `runJob`/`runPlan` run their
+own resolution (autoset from a fresh $0 timing pass, or the spec's own signed
+`closeTimeoutMs` field) and are now the ONE place a production run's ceiling is announced —
+one banner, one spine record, correctly labelled. Traded cost: the close stages get timed
+twice in wall-clock terms (once silently for watchdog sizing, once for real inside
+`runJob`) — $0, and small (the measured sum for aurora-u's 5 stages was ~43s), against one
+honest line instead of two conflicting ones. A grep-pin test
+(`tests/close-timeout.test.js`) bracket-matches the `runJob(` call in both
+`scripts/run-u.mjs` and `src/cli.js` and asserts neither ever passes `closeTimeoutMs` —
+the same discipline as the F129 hardcoded-`WORKDIR` pin.
+
+**Catch class.** A cosmetic/log-honesty defect, not a correctness one (the ENFORCED ceiling
+was always the right number on both lines) — caught only by reading a real run's printed
+output, since no existing test asserted "exactly one banner line" for a production-shaped
+call (every prior `runPlan` test called it directly, never through `scripts/run-u.mjs`'s
+own two-call chain).

@@ -646,7 +646,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   OPTIONAL as of PRD item 27/M3: absent, this run autosets it from a $0 seed
  *   timing pass (or the spec's own signed `closeTimeoutMs` override) — an
  *   explicit value here still wins outright (backward compatibility/test
- *   control).
+ *   control only, F133: `scripts/run-u.mjs`/`src/cli.js` never pass this).
  * @param {string|null} [opts.closeDir] the close's own books directory (PRD
  *   item 27/M3 Part B), forwarded to every close invocation as
  *   `BARELOOP_CLOSE_DIR`
@@ -1007,7 +1007,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   //      knob) wins outright — kept for backward compatibility and for tests
   //      that force a specific close-timeout scenario; it is never the signed
   //      spec field and prints its own honest word rather than "signed
-  //      override".
+  //      override". F133 (run mtqwmb9l): this used to also be how
+  //      `scripts/run-u.mjs` fed its OWN pre-resolved ceiling through, which
+  //      printed the number correctly here but under the wrong word
+  //      ("explicit runner override") beside run-u's own already-correct
+  //      "estimated"/"signed override" line — two banners for one number,
+  //      the second one lying about its source. Fixed by making this the
+  //      ONLY caller of `closeTimeoutMs` an operator/runner is meant to use:
+  //      `run-u.mjs` no longer resolves-and-passes it at all (see its own
+  //      comment); this tier is test/back-compat-only again.
   //   2. the SIGNED spec field `job.closeTimeoutMs` — the operator's own
   //      number, which may legally sit above OR below the autoset estimate
   //      (F113's rates-passthrough shape).
@@ -1029,12 +1037,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const explicitOverride = typeof closeTimeoutMs === 'number' && Number.isFinite(closeTimeoutMs) ? closeTimeoutMs : null;
     if (explicitOverride !== null) {
       // A caller-passed runtime option wins outright and skips the timing
-      // pass entirely — this is EITHER the pre-M3 shell/test knob (backward
-      // compatibility), OR a runner (`scripts/run-u.mjs`) that already ran
-      // this exact resolution itself, before this call, because it needed
-      // the answer to size its own outside watchdog (F67) before the run
-      // even started. Either way, running the pass again here would just
-      // throw a second, redundant reading away.
+      // pass entirely — this is the pre-M3 shell/test knob (backward
+      // compatibility only, F133: no production runner passes this anymore —
+      // `scripts/run-u.mjs` and `src/cli.js` both leave this call site
+      // nothing to autoset from but the autoset/signed-override tiers below).
       closeTimeoutMs = explicitOverride;
       emit('close-timing', { perStage: [], slowestMs: null, slowestName: null, ceilingMs: closeTimeoutMs, source: 'explicit' });
       console.log(closeTimeoutBanner({ ceilingMs: closeTimeoutMs, source: 'explicit' }));

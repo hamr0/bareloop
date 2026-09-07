@@ -377,6 +377,92 @@ test('runPlan: an explicit runtime closeTimeoutMs option wins as "explicit" (bac
   assert.equal(timing.ceilingMs, 77_777);
 });
 
+// ---------------------------------------------------------------------------
+// F133 — a real paid fire (run mtqwmb9l) printed BOTH `scripts/run-u.mjs`'s
+// own resolved banner ("estimated from seed timing") AND `runPlan`'s second
+// one ("explicit runner override") for the SAME number: run-u resolved the
+// ceiling itself (needed early, to size its outside watchdog, F67), printed
+// it, then ALSO fed the resolved number back into `runJob` as a bare
+// `closeTimeoutMs` — which this call site reads as the pre-M3 shell/test
+// knob and prints/emits its own SECOND, mislabelled line. Fixed by making
+// `runJob`/`runPlan`'s one call the ONLY place a production run's ceiling is
+// announced: `scripts/run-u.mjs` still resolves the number for its own
+// watchdog sizing, but never announces it and never passes it to `runJob`
+// (grep-pinned below, the same discipline as the F129 hardcoded-WORKDIR pin).
+// ---------------------------------------------------------------------------
+
+test('runPlan: the banner prints exactly ONCE per run on the autoset path (console.log mutation proof)', async (t) => {
+  const wd = makePatient(t);
+  const src = 'process.exit(0);\n';
+  writeFileSync(join(wd, 'verdict-close.mjs'), src);
+  const job = JOB_WITH_CLOSE('node verdict-close.mjs', hashCloseScriptBytes(src));
+  const jv = validateJob(job);
+  const provider = scriptedProvider([{ text: 'scout' }, { text: 'never reached' }]);
+  const { emit } = collector();
+  const lines = [];
+  const orig = console.log;
+  console.log = (/** @type {string} */ s) => lines.push(s);
+  try {
+    await runPlan(jv.job, { workdir: wd, provider, emit, remainingUsd: () => 1.5 });
+  } finally {
+    console.log = orig;
+  }
+  const banners = lines.filter((l) => typeof l === 'string' && l.includes('close timeout:'));
+  assert.equal(banners.length, 1, `expected exactly one close-timeout banner line, got: ${JSON.stringify(banners)}`);
+  assert.match(banners[0], /estimated from seed timing/, 'the TRUE label, never a second "explicit runner override" line');
+});
+
+// grep-pin (same discipline as the F129 hardcoded-WORKDIR pin): a production
+// runner must never resolve `closeTimeoutMs` for its own purposes and then
+// ALSO hand the number to `runJob`/`runPlan` — that is exactly how F133
+// shipped a second, mislabelled banner beside the runner's own correct one.
+// Scoped to the runJob/runPlan CALL ITSELF (bracket-matched to its closing
+// paren), never a bare source-wide grep: `scripts/run-u.mjs` legitimately
+// passes `closeTimeoutMs` to the UNRELATED `answerReviewDoor`/
+// `proveMechanically` door-rerun path (`src/reviewdoor.js` has no timing-pass
+// or banner infrastructure at all, so that call never double-prints — named
+// in the build spec as the one exempted case) and a source-wide match would
+// false-positive on it.
+/** @param {string} source @param {string} fnName @returns {string} the fnName(...) call's argument text, or '' if not found */
+function sliceCall(source, fnName) {
+  const start = source.indexOf(`${fnName}(`);
+  if (start === -1) return '';
+  let depth = 0;
+  let i = start + fnName.length;
+  const openAt = i;
+  for (; i < source.length; i += 1) {
+    if (source[i] === '(') depth += 1;
+    else if (source[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return source.slice(openAt, i + 1);
+    }
+  }
+  throw new Error(`${fnName}( at ${start} never closes — unbalanced parens in fixture source`);
+}
+
+for (const [file, fnName, label] of [
+  ['scripts/run-u.mjs', 'runJob', 'run-u.mjs'],
+  ['src/cli.js', 'runJob', 'the bundle CLI'],
+]) {
+  test(`F133 grep-pin: ${label}'s ${fnName} call never passes closeTimeoutMs`, () => {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    const call = sliceCall(source, fnName);
+    assert.notEqual(call, '', `fixture bug: no ${fnName}( call found in ${file} — this pin is not exercising anything`);
+    assert.doesNotMatch(
+      call,
+      /closeTimeoutMs\s*:/,
+      `${label}'s ${fnName} call must never pass closeTimeoutMs (F133, run mtqwmb9l) — resolve it locally if needed (e.g. to size a watchdog), never hand it back to the library`,
+    );
+  });
+}
+
+test('F133 sanity: sliceCall actually isolates the runJob call (not the whole file)', () => {
+  const source = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  const call = sliceCall(source, 'runJob');
+  assert.ok(call.length > 0 && call.length < source.length, 'must be a real slice, not the whole file');
+  assert.match(call, /approvals/, 'must actually contain the runJob options bag');
+});
+
 test('runPlan: maxWallMs under the effective close timeout refuses wall-under-close-timeout at $0', async (t) => {
   const wd = makePatient(t);
   const src = 'process.exit(0);\n';

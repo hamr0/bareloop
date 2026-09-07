@@ -111,7 +111,12 @@ async function primitiveSmoke(workdir) {
  *   seed timing pass (or reads the spec's own signed `closeTimeoutMs`
  *   override) — a caller passing an explicit value here still wins outright
  *   (backward compatibility / test control), but production callers
- *   (`src/cli.js`, `scripts/run-u.mjs`) now pass nothing.
+ *   (`src/cli.js`, `scripts/run-u.mjs`) pass nothing (F133, run mtqwmb9l: a
+ *   runner that resolves this itself for its own purposes — e.g. `run-u.mjs`
+ *   sizing its outside watchdog, F67 — must never feed the number back in
+ *   here too, or this call's own autoset/override banner prints a SECOND,
+ *   mislabelled "explicit runner override" line on top of the runner's own
+ *   correctly-labelled one).
  * @param {string|null} [opts.closeDir] the close's own books directory (PRD item
  *   27/M3 Part B) — pristine copies, calibration thresholds, logs — outside
  *   the patient tree. Forwarded to every close invocation as

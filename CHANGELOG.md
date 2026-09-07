@@ -116,6 +116,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
   check against the SOURCE spec/bytes is unchanged (it still guards a tampered
   source).
 
+- **F133 — double/mislabelled close-timeout banner** (run `mtqwmb9l`). `runPlan`
+  printed/emitted "estimated from seed timing" (`scripts/run-u.mjs`'s own
+  resolution, needed early to size the outside watchdog, F67) AND, on the same
+  run, "explicit runner override" (the library's own print, because run-u also
+  fed the resolved number back in as a bare `closeTimeoutMs`) — two lines for
+  one number, the second lying about its source. `scripts/run-u.mjs` no longer
+  passes `closeTimeoutMs` into `runJob` at all; `runJob`/`runPlan` resolve
+  (autoset, or the spec's own signed field) and announce the ceiling themselves
+  — the ONE banner/spine record per run. The runtime `closeTimeoutMs` option on
+  `runJob`/`runPlan` stays, test/backward-compat only.
+
 ## [0.21.0] — 2026-09-06
 
 ### Added
