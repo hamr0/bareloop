@@ -10476,3 +10476,46 @@ failure. This finding is the measured basis for PRD item 27 / M3 (autoset close 
 signed override) in `docs/product/CLOSE-INTEGRITY-BUILD.md`; stated honestly as n=1 on one
 job — the METHOD is shown to work, not a validated multiplier/floor pair (those stay
 `TBD (hamr)`, arbiter territory).
+
+## F132 — an exported bundle refused itself `close-tampered` at $0: the spec's own signature covered the SOURCE bytes, not the RELOCATED ones export actually packed
+
+**Date:** 2026-09-07 · **Status:** fixed (`exportBundle` re-signs `close[].sha256` over the
+relocated bytes) · **Class:** live defect, hamr's paid fire · **Grounded in:** run-u green
+`mtqwmb9l` (spec hash `9ad373ac…`) minting the bridge `exportBundle` needed; `bareloop export
+jobs/aurora-u-spawner-types.json --registry ../bareloop-patients/bridges --out
+../bareloop-patients/bundles/aurora-u-spawner-types-v2.bareloop` succeeding (`bundleHash
+bd19a4fa…`); `bareloop run . --repo <fresh clone at d661e50> --approve bd19a4fa…` refusing
+`close-tampered` at $0 (run `mtqwydl4`, spine in `<bundle>/runs/mtqwydl4/spine.jsonl`).
+
+**What happened.** `exportBundle` (`src/bundle.js`) rewrites a close script's
+`import { X } from '../src/kinds.js'` to `import { X } from 'bareloop'` before writing it
+into the bundle's `close/` directory (`rewriteSrcImports`) — the ONE substitution the
+export spec names. This changes the script's BYTES: the relocated script's sha256 (packed
+into `manifest.files` and covered by `bundleHash`) differs from the SOURCE script's sha256.
+But the written `spec.json`'s `close[].sha256` field was copied verbatim from the source
+spec — never recomputed over the bytes actually being packed. Two signatures, over two
+different byte strings, for the same logical stage: the manifest says "these are the real
+bytes" (correctly, the relocated ones); the spec's own signature says "these are the signed
+bytes" (the source ones, pre-rewrite). `checkCloseByteSignature` at run start reads the
+bundle's OWN spec against the bundle's OWN close script on disk (the relocated one) and
+correctly finds a mismatch — a real bug, not a false positive in the checker: the checker
+did exactly what it was built to do, on a bundle that shipped with an inconsistent
+signature.
+
+**The fix.** `exportBundle` now recomputes `close[].sha256` for the SPEC IT WRITES, over
+the relocated (post-rewrite) bytes it just packed into `close/`, for every stage that
+already carries a signature — never fabricating one for a stage that had none. The
+export-time `close-sha-mismatch` check (source spec's signature vs. source bytes) is
+unchanged: it still catches a spec whose signature was already wrong BEFORE export, which
+is a different hazard from this one.
+
+**Catch class.** A defect that only surfaces by RUNNING the real artifact — the export
+itself validated clean (no red), `readBundle`/`bundleHash` on the freshly-written bundle
+recomputed cleanly against its own manifest, and every unit test that predated this fix
+exercised `exportBundle` only against fixtures whose close scripts happened not to trigger
+the import-rewrite in a way the tests then re-verified against the SIGNED field (the
+happy-path fixture already imports `../src/kinds.js`, but no prior test asserted the
+written spec's `close[].sha256` against the packed bytes). Cost of the catch: $0 (the
+`close-tampered` refusal fires before any provider call) — but only because a human then
+ran a SECOND real fire against the actually-exported bundle; the export step alone reported
+success.

@@ -366,10 +366,19 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
 
   /** @type {Record<string, string>} */
   const files = {};
+  // F132 — keyed by scriptPath (not name) so the spec-rewrite pass below can
+  // look up each relocated stage's REWRITTEN-bytes hash without re-hashing.
+  // Both `sha256` here and `hashCloseScriptBytes` (src/close-integrity.js)
+  // hash the same way (sha256 of the UTF-8 script text) — this is not a
+  // second formula, just this module's own existing helper reused.
+  /** @type {Map<string, string>} scriptPath -> sha256 of the RELOCATED bytes */
+  const relocatedSha = new Map();
   for (const [scriptPath, name] of byPath) {
     const rewritten = rewriteSrcImports(scripts[scriptPath]);
     writeFileSync(join(closeDir, name), rewritten);
-    files[`close/${name}`] = sha256(rewritten);
+    const hash = sha256(rewritten);
+    files[`close/${name}`] = hash;
+    relocatedSha.set(scriptPath, hash);
   }
 
   const specOut = { ...spec, close: spec.close.map((/** @type {any} */ stage) => {
@@ -379,7 +388,17 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     if (!parsed.ok) throw new Error(`unreachable: ${stage.cmd} was validated as a relocatable close cmd`);
     const name = byPath.get(parsed.scriptPath);
     const cmd = ['node', `${BUNDLE_TOKEN}/close/${name}`, ...parsed.rest].join(' ');
-    return { ...stage, cmd };
+    // F132 (run mtqwmb9l/mtqwydl4): the bundle's manifest hash covers the
+    // RELOCATED bytes (the import rewrite above), but the spec's own
+    // `close[].sha256` was left carrying the SOURCE spec's signature — two
+    // signatures over two different byte strings, so `checkCloseByteSignature`
+    // at run start correctly read the bundle as tampered even though nothing
+    // was. Re-sign here, over the bytes actually being packed, so the two
+    // signatures agree by construction. Only a stage that already carried a
+    // signature gets one written back — a stage export never fabricates a
+    // signature that was never there (M2 leaves that to the validator).
+    const sha256Out = typeof stage.sha256 === 'string' ? (relocatedSha.get(parsed.scriptPath) ?? stage.sha256) : stage.sha256;
+    return { ...stage, cmd, sha256: sha256Out };
   }) };
   const specText = `${JSON.stringify(specOut, null, 2)}\n`;
   writeFileSync(join(outDir, 'spec.json'), specText);

@@ -104,6 +104,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
     `spineDir`. Every `jobs/*.json` whose close bytes changed was re-signed
     (`scripts/sign-close.mjs --all --write`).
 
+- **F132 — a real paid fire of an exported bundle refused itself `close-tampered`
+  at $0** (run `mtqwmb9l` → export → `mtqwydl4`). `exportBundle`'s import rewrite
+  (`../src/x.js` → `'bareloop'`) changes a close script's bytes, but the written
+  bundle's `spec.json` kept the SOURCE spec's `close[].sha256` unchanged — two
+  signatures over two different byte strings, so the run-start
+  `checkCloseByteSignature` correctly refused a bundle that was never actually
+  tampered with. `exportBundle` (`src/bundle.js`) now re-signs `close[].sha256`
+  in the written spec over the RELOCATED bytes it actually packs, for every
+  stage that already carries a signature — the export-time `close-sha-mismatch`
+  check against the SOURCE spec/bytes is unchanged (it still guards a tampered
+  source).
+
 ## [0.21.0] — 2026-09-06
 
 ### Added

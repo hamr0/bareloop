@@ -2649,7 +2649,7 @@ hash and needs re-approval, exactly like any other semantic edit.
 
 | function | args → returns | notes |
 |---|---|---|
-| `exportBundle(o)` | `{ spec, closeScripts, registryDir, outDir, bareloopVersion }` → `{ ok, reds, dir, bundleHash, manifest }` | mints the directory above. Every check runs before anything touches disk — a red means nothing was written |
+| `exportBundle(o)` | `{ spec, closeScripts, registryDir, outDir, bareloopVersion }` → `{ ok, reds, dir, bundleHash, manifest }` | mints the directory above. Every check runs before anything touches disk — a red means nothing was written. **F132:** a stage carrying a signed `close[].sha256` gets it RE-SIGNED in the written `spec.json` over the RELOCATED bytes (post import-rewrite) it actually packs — not copied verbatim from the source spec. Without this, a script whose import gets rewritten (`../src/x.js` → `'bareloop'`) ships with a signature that covers the wrong bytes, and the bundle refuses itself as `close-tampered` at $0 on its very first run (the manifest hash and the spec signature disagree over two different byte strings for the same file) |
 | `bundleHash(dir)` | `dir` → sha256 hex | recomputes from what is on disk right now; throws only if `dir` itself is not a directory |
 | `readBundle(dir)` | `dir` → `{ ok, reds, spec, manifest, bridges, blessing, history }` | never throws; every failure is a typed red. Runs the tamper check (below) whenever both a manifest and a spec parsed |
 | `resolveBundleSpec(bundle, bundleDir)` | a `readBundle` result + the bundle dir → `{ spec, approveHash }` | the in-memory `$BARELOOP_BUNDLE` → absolute `bundleDir` substitution; `approveHash` is `jobSpecHash` of the *substituted* spec, never the unresolved one |
