@@ -19,6 +19,7 @@ import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory, initPatientRepo, currentBranch, localBranches, reply } from './helpers.js';
 import { scanSecrets } from '../src/validate.js';
+import { signCloseScripts, hashCloseScriptBytes } from '../src/close-integrity.js';
 // the check gap's ONE ceiling — the backstop test below derives both arms from it
 // rather than respelling 12000, so a change to the constant moves the test with it
 import { CHECK_GAP_MAX } from '../src/exits.js';
@@ -52,7 +53,14 @@ console.log('FAILED tests/test_x.mjs — file missing or has no ok assertion'); 
   return wd;
 }
 
-const JOB = (wd, over = {}) => ({
+// PRD item 27/M2: `signCloseScripts` fills close[].sha256 from the REAL
+// bytes on disk at `wd` — most fixtures in this file actually spawn their
+// close through a real runPlan, so a dummy value would red close-tampered
+// before the scenario under test ever runs. Stages naming no real file at
+// `wd` (a deliberately-broken cmd, a declared close) pass through
+// unsigned — validateJob then reds `missing-required` honestly for those,
+// exactly as it would for a real unsigned job.
+const JOB = (wd, over = {}) => signCloseScripts({
   schema: 'job-v1',
   job: 'plan-patient',
   description: 'write the missing test through an agent-authored plan',
@@ -73,7 +81,7 @@ const JOB = (wd, over = {}) => ({
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
   ...over,
-});
+}, wd).spec;
 
 const PLAN = (wd, steps) => JSON.stringify({
   schema: 'plan-v1',
@@ -1014,7 +1022,10 @@ test('W5: a single-predicate (object-form) close still advertises exactly one cl
     { text: 'writing', toolCalls: [tcall('1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
     { text: 'done' },
   ]);
-  const close = { type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' };
+  // PRD item 27/M2: the object (single-predicate) form of `close` is out of
+  // `signCloseScripts`' array-only scope, so JOB()'s auto-sign never
+  // touches it — sign it here directly against the real close.mjs.
+  const close = { type: 'predicate', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED', sha256: hashCloseScriptBytes(readFileSync(join(wd, 'close.mjs'), 'utf8')) };
   const { events } = await go(wd, provider, { job: JOB(wd, { maxWallMs: 600_000, close }) });
   const wc = events.find((e) => e.type === 'wall-clock');
   assert.equal(wc.closeStages, 1, 'the object form is the ONE-stage list it stands for (stageClose)');
@@ -1209,7 +1220,9 @@ if (n === 0) { console.log('clean'); } else {
   return wd;
 }
 
-const COUNT_JOB = (wd, over = {}) => ({
+// PRD item 27/M2: signCloseScripts auto-fills sha256 from the real count.mjs
+// (or whatever `over.close` names) already written at `wd`.
+const COUNT_JOB = (wd, over = {}) => signCloseScripts({
   schema: 'job-v1',
   job: 'count-patient',
   description: 'shrink the strict-error count through an agent-authored plan',
@@ -1223,7 +1236,7 @@ const COUNT_JOB = (wd, over = {}) => ({
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
   ...over,
-});
+}, wd).spec;
 
 const COUNT_PLAN = (steps) => JSON.stringify({
   schema: 'plan-v1',
@@ -2877,11 +2890,12 @@ test('W4: an object-form predicate close is STAGED once — the drafter, the val
     const wd = makePatient(t);
     // a COUNTING close: it appends one line per execution, so the number of times
     // the operator's command actually ran is on disk, not inferred from events
-    writeFileSync(join(wd, 'close.mjs'), `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+    const closeSrc = `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 appendFileSync(new URL('./close-runs.log', import.meta.url), 'run\\n');
 const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
 if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) { console.log('suite: 1 passed'); process.exit(0); }
-console.log('FAILED tests/test_x.mjs — file missing or has no ok assertion'); process.exit(1);\n`);
+console.log('FAILED tests/test_x.mjs — file missing or has no ok assertion'); process.exit(1);\n`;
+    writeFileSync(join(wd, 'close.mjs'), closeSrc);
     const plan = JSON.stringify({ schema: 'plan-v1', steps: [{
       id: 'write-test', action: 'Write tests/test_x.mjs asserting the module exports.',
       tools: ['write'], rounds: 6, target: 'tests/test_x.mjs',
@@ -2892,7 +2906,11 @@ console.log('FAILED tests/test_x.mjs — file missing or has no ok assertion'); 
       { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
       { text: 'wrote it' },
     ]);
-    const { outcome, events } = await go(wd, provider, { job: JOB(wd, { close }) });
+    // PRD item 27/M2: the object (single-predicate) form of `close` is out of
+    // `signCloseScripts`' array-only scope, so JOB()'s auto-sign never
+    // touches it — sign it here directly against the real file just written.
+    const signedClose = Array.isArray(close) ? close : { ...close, sha256: hashCloseScriptBytes(closeSrc) };
+    const { outcome, events } = await go(wd, provider, { job: JOB(wd, { close: signedClose }) });
     const log = join(wd, 'close-runs.log');
     const runs = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).length : 0;
     return { outcome, events, runs };
@@ -4328,7 +4346,8 @@ if (n === 0) { console.log('clean'); } else {
 /** the real u-mshcpdg4 detail line, verbatim */
 const MSHCPDG4_DETAIL = "| src/recurse.js(978,115): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | null'.";
 
-const GAP_JOB = (wd, over = {}) => ({
+// PRD item 27/M2: auto-signed against the real count.mjs at `wd`.
+const GAP_JOB = (wd, over = {}) => signCloseScripts({
   schema: 'job-v1',
   job: 'gap-shape-patient',
   description: 'the u-mshcpdg4 close shape: a summary line over a detail line',
@@ -4344,7 +4363,7 @@ const GAP_JOB = (wd, over = {}) => ({
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
   ...over,
-});
+}, wd).spec;
 
 const GAP_PLAN = (steps) => JSON.stringify({
   schema: 'plan-v1',
@@ -4999,6 +5018,8 @@ test('NATIVE clipipe: a per-turn event is explicitly unpriced, so its provenance
 test('a capping arm against a ceiling with no retrieval pair throws before a token is spent', async () => {
   const wd = mkdtempSync(join(tmpdir(), 'g1-ceiling-'));
   initPatientRepo(wd);
+  writeFileSync(join(wd, 'check.mjs'), 'process.exit(1)\n');
+  writeFileSync(join(wd, 'close.mjs'), 'process.exit(1)\n');
   // the default JOB's ceiling is ['read','write','edit'] — no recall, no get
   const jv = validateJob(JOB(wd));
   assert.deepEqual(jv.reds, [], 'the fixture job must be validateJob-green');
@@ -5030,6 +5051,8 @@ test('the same ceiling is fine with the shim off, and fine under the diff-only a
   for (const arm of [false, 'diff']) {
     const wd = mkdtempSync(join(tmpdir(), 'g1-ok-'));
     initPatientRepo(wd);
+    writeFileSync(join(wd, 'check.mjs'), 'process.exit(1)\n');
+    writeFileSync(join(wd, 'close.mjs'), 'process.exit(1)\n');
     const jv = validateJob(JOB(wd));
     const { emit } = collector();
     let reached = false;
@@ -5044,6 +5067,8 @@ test('the same ceiling is fine with the shim off, and fine under the diff-only a
 test('a ceiling that DOES offer the retrieval pair passes the capping arm', async () => {
   const wd = mkdtempSync(join(tmpdir(), 'g1-pair-'));
   initPatientRepo(wd);
+  writeFileSync(join(wd, 'check.mjs'), 'process.exit(1)\n');
+  writeFileSync(join(wd, 'close.mjs'), 'process.exit(1)\n');
   const jv = validateJob(JOB(wd, { tools: ['read', 'write', 'edit', 'recall', 'get'] }));
   assert.deepEqual(jv.reds, [], 'the widened fixture job must be validateJob-green');
   const { emit } = collector();

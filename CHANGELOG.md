@@ -5,6 +5,173 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.22.0] — 2026-09-07
+
+### Added
+
+- **Close integrity M1** (`docs/product/CLOSE-INTEGRITY-BUILD.md`, PRD item 27, F129/F131).
+  - `src/close-integrity.js`: the ONE `close-absolute-path` detector, shared by
+    `src/bundle.js` (export time) and a new $0 run-start precheck in `runPlan`
+    (`src/planrun.js`) — every job, not only exported bundles, now refuses at $0
+    (before the close-first precheck, before any provider call) when a close
+    script's CONTENT bakes in an absolute path that exists on disk. Exports
+    `readCloseScripts`, `checkCloseAbsolutePaths`, `absolutePathLiteralsOf` from
+    `src/index.js` — `readCloseScripts` is the pure reader M2's sha256 fingerprint
+    will reuse.
+  - `runJob`/`runPlan` gain an optional `resumable` flag (default `true`,
+    `run-u.mjs` unchanged); the bundle CLI (`src/cli.js`) passes `resumable: false`
+    so its escalation tail says "resume is `run-u`-only in v1" instead of naming a
+    `--resume` flag it does not implement (F130).
+
+- **Hermetic test runner** (F136, closed at the runner). `scripts/hermetic.mjs`
+  runs `node --test` with `HOME` redirected to a fresh empty `mkdtemp` dir and
+  `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`/`GIT_CONFIG_NOSYSTEM` set to neutralise git
+  config, plus any inherited `GIT_AUTHOR_*`/`GIT_COMMITTER_*`/`EMAIL` deleted — the
+  local suite is now blind to this machine's identity the same way CI's runner already
+  is, so a test leaning on either fails here first. `npm test` now runs it in place of
+  a bare `node --test`; not a sandbox (PATH, `node_modules`, shelled-out binaries
+  untouched). See `docs/logs/FINDINGS.md` F136.
+
+### Fixed
+
+- **F129, remaining 8 close scripts**: `scripts/testgen-cold-check-close.mjs`,
+  `testgen-close.mjs`, `types-close.mjs`, `l2poc-check-close.mjs`,
+  `u-bareagent-close.mjs`, `u-bareguard-close.mjs`, `u-litectx-close.mjs`,
+  `u-baremobile-close.mjs` now read `WORKDIR = process.cwd()` instead of a
+  hardcoded absolute patient path, following `u-spawner-close.mjs`'s fix
+  (`3b987d4`). Behaviour-preserving: `run-u` always passes `cwd` = the patient.
+
+- **Close integrity M2 — close-bytes signature** (`docs/product/CLOSE-INTEGRITY-BUILD.md`,
+  PRD item 27, N4). A job's signature now covers its close scripts' CONTENT, not only
+  the path naming them.
+  - New signed spec field `close[].sha256`: hex sha256 of the script file's bytes, for
+    every stage whose `cmd` names an addressable script (an interpreter cmd —
+    `node`/`sh`/`bash`/`python`/`python3`/`npx` — or a bare directly-executable absolute
+    path, e.g. a `.sh` wrapper). It sits inside the signed spec, so `jobSpecHash` covers
+    it with no hash-function change. `validateJob` (`src/job.js`) demands it
+    (`missing-required`) on every addressable stage and shape-checks it
+    (`invalid-value`, 64 lowercase hex chars).
+  - `src/close-integrity.js` gains `hashCloseScriptBytes`, `checkCloseByteSignature`,
+    `checkStageByteSignature`, `signCloseScripts` (all exported from `src/index.js`).
+    `runPlan` verifies the signature at run start (alongside `close-absolute-path`, $0,
+    before the close-first precheck and before any provider call) AND before EVERY
+    close run thereafter (the `runCloseStages` seam the precheck/preflight/check-passes/
+    close-fix-loop all share) — a mismatch reds the new typed fault `close-tampered`
+    (`src/ralph.js`'s `CLOSE_FAULTS`), distinct from `close-red`/`close-crashed`.
+  - `src/bundle.js`'s `exportBundle` reds `close-sha-mismatch` when a spec's signed
+    sha256 disagrees with the script bytes actually being packed — the manifest hash
+    and the spec's own signature must never drift apart.
+  - `scripts/sign-close.mjs`: a thin CLI wrapper around `signCloseScripts` that fills
+    `close[].sha256` from disk and prints the old→new `jobSpecHash`; never writes
+    unless `--write`. The agent never writes this field — `src/authorjob.js`'s
+    `assembleSpec` refuses a draft carrying `sha256` the same way it refuses
+    `close`/`closeDecl`/`verdictType`.
+  - **Widened scope (orchestrator audit, folded into this build):** the addressable-script
+    shape test (`closeScriptCandidateToken`, `src/validate.js`) now also recognizes a
+    bare directly-executable absolute-path cmd (no interpreter prefix) — previously
+    invisible to BOTH `close-absolute-path` and this fingerprint. Every `jobs/*.json`
+    whose close names a script was re-signed with `scripts/sign-close.mjs --all --write`.
+
+- **Close integrity M3 — close timeout: autoset + signed override** (PRD item 27,
+  hamr 2026-09-06: "both … autoset and can be override, same like api pricing"; arbiter
+  constants set 2026-09-07: floor 120,000ms, K = 5).
+  - New `src/closetimeout.js`: `CLOSE_TIMEOUT_FLOOR_MS`, `CLOSE_TIMEOUT_K`,
+    `TIMING_PREFLIGHT_CEILING_MS`, `timeCloseStages`, `computeCloseTimeoutCeiling`,
+    `resolveCloseTimeoutMs`, `closeTimeoutBanner` (all exported from `src/index.js`). A
+    $0 timing preflight runs every close stage once, ignoring verdicts, before the
+    close-first precheck and before any provider call; the per-stage ceiling every close
+    call in the run then uses is `max(FLOOR, K × slowest measured stage)`, printed on
+    every run (`close timeout: <n>s per stage (estimated from seed timing: …)`).
+  - New OPTIONAL signed spec field `closeTimeoutMs` (`>= CLOSE_TIMEOUT_FLOOR_MS`,
+    `src/job.js`): the operator's own override, which wins outright over the estimate and
+    may legally sit above OR below it (the rates-passthrough shape, F113 — not
+    tighten-only). Skipped when set: the timing pass never runs. Arbiter territory —
+    `src/authorjob.js`'s `assembleSpec` refuses a draft carrying it.
+  - New `runPlan` run-start check `wall-under-close-timeout`: refuses at $0 when
+    `job.maxWallMs` is under the just-resolved EFFECTIVE close timeout — the honest shape
+    once the real (autoset or signed) ceiling is known, never a silent clamp.
+  - `scripts/run-u.mjs`'s hardcoded `CLOSE_TIMEOUT_MS = 900_000` retires; the per-stage
+    ceiling is resolved once (via the same `resolveCloseTimeoutMs`) before the outside
+    watchdog (F67) is even spawned, so its stale/grace windows size off the real number.
+    `src/cli.js`'s bundle runner passes nothing — both runners now go through the
+    identical autoset/override path.
+  - **Part B — `BARELOOP_CLOSE_DIR`.** `runClose` (`src/ralph.js`) accepts an optional
+    `closeDir` and sets it as `BARELOOP_CLOSE_DIR` in the close's (already-stripped) env —
+    a `BARELOOP_` name matches none of `CLOSE_ENV_DENY`'s rules. New
+    `checkCloseDirRequired`/`CLOSE_DIR_ENV_VAR` (`src/close-integrity.js`): a close script
+    whose source mentions the variable and gets no `closeDir` refuses at $0
+    (`close-dir-required`), the same seam as `close-absolute-path`/`close-tampered`. The
+    four hand-authored scripts that hardcoded an external `SPINE_DIR`
+    (`testgen-cold-check-close.mjs`, `testgen-close.mjs`, `l2poc-check-close.mjs`,
+    `types-close.mjs`) now read `process.env.BARELOOP_CLOSE_DIR` and instrument-stop
+    (exit 97) when it is absent — no baked fallback. `scripts/u-pulselog-close.mjs`'s
+    hardcoded `--workdir` DEFAULT (a separate F129 cwd-class hazard — that literal existed
+    on disk and already tripped the shipped `close-absolute-path` guard for
+    `jobs/pulselog-u-types.json`) now falls back to `process.cwd()`, the same M1 template
+    every other close script uses. `src/cli.js` sets `closeDir` to
+    `<bundleDir>/runs/<runid>/close/`; `scripts/run-u.mjs` sets it to its existing
+    `spineDir`. Every `jobs/*.json` whose close bytes changed was re-signed
+    (`scripts/sign-close.mjs --all --write`).
+
+- **F132 — a real paid fire of an exported bundle refused itself `close-tampered`
+  at $0** (run `mtqwmb9l` → export → `mtqwydl4`). `exportBundle`'s import rewrite
+  (`../src/x.js` → `'bareloop'`) changes a close script's bytes, but the written
+  bundle's `spec.json` kept the SOURCE spec's `close[].sha256` unchanged — two
+  signatures over two different byte strings, so the run-start
+  `checkCloseByteSignature` correctly refused a bundle that was never actually
+  tampered with. `exportBundle` (`src/bundle.js`) now re-signs `close[].sha256`
+  in the written spec over the RELOCATED bytes it actually packs, for every
+  stage that already carries a signature — the export-time `close-sha-mismatch`
+  check against the SOURCE spec/bytes is unchanged (it still guards a tampered
+  source).
+
+- **F133 — double/mislabelled close-timeout banner** (run `mtqwmb9l`). `runPlan`
+  printed/emitted "estimated from seed timing" (`scripts/run-u.mjs`'s own
+  resolution, needed early to size the outside watchdog, F67) AND, on the same
+  run, "explicit runner override" (the library's own print, because run-u also
+  fed the resolved number back in as a bare `closeTimeoutMs`) — two lines for
+  one number, the second lying about its source. `scripts/run-u.mjs` no longer
+  passes `closeTimeoutMs` into `runJob` at all; `runJob`/`runPlan` resolve
+  (autoset, or the spec's own signed field) and announce the ceiling themselves
+  — the ONE banner/spine record per run. The runtime `closeTimeoutMs` option on
+  `runJob`/`runPlan` stays, test/backward-compat only. Same fire, second (real)
+  catch: run-u's own pre-fix early `emit('close-timing', …)` landed BEFORE
+  `job-start` on the spine (`runJob` is what emits `job-start`, and run-u called
+  it before ever calling `runJob`) — every spine reader assumes `job-start`
+  opens the file. Fixed by the same change (run-u no longer emits it early);
+  `tests/readshim-battery.test.js`'s archive check now tolerates `job-start`
+  within the first 3 records (the archived `u-mtqwmb9l.jsonl` is real and never
+  rewritten), and a new test pins `job-start` as literally the first record on
+  a fresh scripted run.
+
+- **F135 — review-door accept re-run bypassed the close byte signature**. Every
+  other close execution goes through `checkStageByteSignature` before running
+  a stage (`runCloseStages`, `src/planrun.js`); the review door's `accept`
+  re-proof (`proveMechanically`, `src/reviewdoor.js`) called
+  `runStages`/`runDeclaredStages` directly and skipped it — a close script
+  swapped on disk after the run ended but before the signer's accept ran
+  unchecked and could mint a false accept. Fixed: `proveMechanically` now
+  verifies the mechanical stages' bytes against their signed `sha256` first,
+  refusing through the existing `door-accept-red` path on a mismatch
+  (`tests/reviewdoor-tamper.test.js`).
+
+- **F134 — live re-fire validation, no code change**. Two real paid fires of the
+  same exported bundle (`mtr0icky` cap-halt, `mtr4t1u1` green re-fire) confirmed
+  M2's relocated-bytes signature and M3's close-timing banner both hold under a
+  second real fire, not just the one that motivated each fix; the cap-halt
+  itself read as a cap-shaped negative (an `Any`-suppression cheat correctly
+  caught by `no-suppressions`, not an instrument defect). See
+  `docs/logs/FINDINGS.md` F134.
+
+- **F136 — CI-only red: patient test fixtures committed without the neutralised
+  git identity**. `tests/close-integrity.test.js` and `tests/close-timeout.test.js`
+  each added a second commit on top of `initPatientRepo`'s seed via a raw
+  `execFileSync('git', ...)` with no env, so it depended on the host's own git
+  identity — green on hamr's machine (a global config papers over it), red on
+  CI (none). `tests/helpers.js` now exports `patientGitEnv`/`gitInPatient`
+  reusing `initPatientRepo`'s identity env; both files' `makePatient` go through
+  it. See `docs/logs/FINDINGS.md` F136.
+
 ## [0.21.0] — 2026-09-06
 
 ### Added

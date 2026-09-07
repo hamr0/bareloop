@@ -29,6 +29,7 @@ import { readSpine, scriptedProvider, initPatientRepo, mockWallClock, reply } fr
 // and `readResume` is the ONE reader `--resume` and this test both drive — never
 // a second one.
 import { readResume, CHECKPOINT_OUTCOMES } from '../src/reuse.js';
+import { hashCloseScriptBytes } from '../src/close-integrity.js';
 
 const base = mkdtempSync(join(tmpdir(), 'run-test-'));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -40,17 +41,22 @@ after(() => rmSync(base, { recursive: true, force: true }));
 
 const tcall2 = (id, name, args) => ({ id, name, arguments: args });
 
+// the same probe every `makePlanWork` call writes, verbatim — pulled to
+// module scope so its sha256 (PRD item 27/M2) can be computed ONCE and
+// shared by every `planJob()` caller, none of which vary this content.
+const PROBE_SOURCE = `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) process.exit(0);
+console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
+const PROBE_SHA256 = hashCloseScriptBytes(PROBE_SOURCE);
+
 function makePlanWork(name) {
   const workdir = join(base, name);
   mkdirSync(join(workdir, 'tests'), { recursive: true });
   mkdirSync(join(workdir, 'src'), { recursive: true });
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
-  const probe = `import { existsSync, readFileSync } from 'node:fs';
-const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
-if (existsSync(p) && readFileSync(p, 'utf8').includes('ok')) process.exit(0);
-console.log('FAILED tests/test_x.mjs missing'); process.exit(1);\n`;
-  writeFileSync(join(workdir, 'close.mjs'), probe);
-  writeFileSync(join(workdir, 'check.mjs'), probe);
+  writeFileSync(join(workdir, 'close.mjs'), PROBE_SOURCE);
+  writeFileSync(join(workdir, 'check.mjs'), PROBE_SOURCE);
   // a real patient is a git checkout: the WORK BRANCH hard rule (PRD v1.57 §3) makes
   // one a precondition of running a job at all
   initPatientRepo(workdir);
@@ -68,8 +74,10 @@ const planJob = () => ({
   goal: 'Write tests/test_x.mjs with an ok assertion.',
   verdictType: 'green',
   // the staged close (PRD v1.28): ONE list of named stages, and the check menu
-  // derives from it — `clean-run` is a piece of the close, not a copy beside it
-  close: [{ name: 'clean-run', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+  // derives from it — `clean-run` is a piece of the close, not a copy beside it.
+  // PRD item 27/M2: sha256 is PROBE_SOURCE's real hash — every caller writes
+  // that exact content via makePlanWork, so this is never a dummy value.
+  close: [{ name: 'clean-run', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED', sha256: PROBE_SHA256 }],
   tools: ['read', 'write'],
   escalation: { mode: 'decision-ready' },
 });

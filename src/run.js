@@ -106,7 +106,22 @@ async function primitiveSmoke(workdir) {
  *   CLOSE-FIX loop (a plan STEP runs under the strike ladder instead)
  * @param {number} [opts.strikeLimit] shell-owned strike ceiling for a plan step's ladder
  * @param {number} [opts.shellCapUsd] the shell's hard USD ceiling
- * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory)
+ * @param {number} [opts.closeTimeoutMs] close wall-clock cap (shell territory).
+ *   OPTIONAL as of PRD item 27/M3: absent, the plan flow autosets it from a $0
+ *   seed timing pass (or reads the spec's own signed `closeTimeoutMs`
+ *   override) — a caller passing an explicit value here still wins outright
+ *   (backward compatibility / test control), but production callers
+ *   (`src/cli.js`, `scripts/run-u.mjs`) pass nothing (F133, run mtqwmb9l: a
+ *   runner that resolves this itself for its own purposes — e.g. `run-u.mjs`
+ *   sizing its outside watchdog, F67 — must never feed the number back in
+ *   here too, or this call's own autoset/override banner prints a SECOND,
+ *   mislabelled "explicit runner override" line on top of the runner's own
+ *   correctly-labelled one).
+ * @param {string|null} [opts.closeDir] the close's own books directory (PRD item
+ *   27/M3 Part B) — pristine copies, calibration thresholds, logs — outside
+ *   the patient tree. Forwarded to every close invocation as
+ *   `BARELOOP_CLOSE_DIR`; a close script that needs one and gets none
+ *   instrument-stops itself (`checkCloseDirRequired`, src/close-integrity.js).
  * @param {unknown} [opts.bridge] Layer 3 — a bridge-v1 entry to reuse as the drafter's
  *   STARTING DRAFT (design record 2026-08-01, D4), forwarded to the plan flow. Omitted is
  *   the cold path and is byte-identical to a pre-Layer-3 run. WHICH entry (the listing, an
@@ -202,13 +217,19 @@ async function primitiveSmoke(workdir) {
  * @param {{text: string, fromRunid?: string|null, receivedAt?: string|null}|null} [opts.doorRerun]
  *   MODULE 8 — this leg IS the fresh engagement a signer commissioned at a previous
  *   run's review door, carrying their words. Forwarded verbatim.
+ * @param {boolean} [opts.resumable=true] PRD item 27(c)/F130 — does THIS runner
+ *   support `--resume` at all? `run-u.mjs` does (the default, `true`, byte-identical
+ *   to before this param existed); the exported bundle CLI does not (F130) and
+ *   passes `false` so the escalation tail's option strings say "resume is
+ *   `run-u`-only in v1" instead of naming a flag that would fail if typed. Forwarded
+ *   verbatim to the plan flow, which owns the three `--resume`-naming readouts.
  * @returns {Promise<string>} outcome: 'green' | 'already-green' | 'escalated' |
  *   'unapproved-spec' | 'job-red' | 'smoke-red' | 'plan-red' | 'check-red' |
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'branch-red' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' |
  *   'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, layerRoot = false, readShim = false, scout = true, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true }) {
   // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
   // before the ledger, before the approval gate, before a byte of the spec is read.
   // An unrecognised spelling throws here at zero cost instead of being coerced by
@@ -415,7 +436,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, layerRoot, readShim, scout, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd,
+      workdir, provider, nativeProvider, providerFor, judgeProvider, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, closeDir, layerRoot, readShim, scout, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd, resumable,
       remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
       spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact

@@ -38,6 +38,7 @@ import { isDeclaredClose, runDeclaredStages, HITL_DECISION_RED } from './declare
 import { runStages } from './ralph.js';
 import { redactSecrets } from './validate.js';
 import { applyDoorDecision, PAUSE_TTL_MS } from './reuse.js';
+import { checkStageByteSignature } from './close-integrity.js';
 
 /** the door's own record, off the run's spine — the LAST one, because a run that
  * ends at a door writes exactly one and a reader that guesses which is which is a
@@ -92,6 +93,7 @@ const red = (code, detail, path = 'decision') => [{ code, path, detail }];
  * @param {string} opts.decision one of the three doors
  * @param {string|null} [opts.text] the rerun's words — the gap, and refused when empty
  * @param {number} [opts.closeTimeoutMs] the per-stage bound for the accept's re-run
+ * @param {string|null} [opts.closeDir] the close's own books directory (PRD item 27/M3 Part B), forwarded to the accept's re-run
  * @param {string|null} [opts.registryDir] the workflow registry, when the runner keeps one
  * @param {string|null} [opts.name] the workflow this run wrote its row against
  * @param {string|null} [opts.runid] the RUN's id, exactly as the bridge row records it
@@ -104,7 +106,7 @@ const red = (code, detail, path = 'decision') => [{ code, path, detail }];
  *   options: string[], ttlMs: number, note: string|null}>}
  */
 export async function answerReviewDoor({
-  job, workdir, events, decision, text = null, closeTimeoutMs,
+  job, workdir, events, decision, text = null, closeTimeoutMs, closeDir = null,
   registryDir = null, name = null, runid = null, at = null,
   now = Date.now, ttlMs = PAUSE_TTL_MS, emit = null,
 }) {
@@ -149,7 +151,7 @@ export async function answerReviewDoor({
   // this is the only branch that runs anything, and it runs the close's own
   // mechanical stages — never a second, weaker spelling of "is it still green".
   if (out.decision === 'accept') {
-    const proof = await proveMechanically({ job, workdir, events, closeTimeoutMs });
+    const proof = await proveMechanically({ job, workdir, events, closeTimeoutMs, closeDir });
     out.mechanical = proof.reading;
     if (!proof.ok) {
       out.reds = red('door-accept-red', proof.detail, proof.reading.stage ? `stage.${proof.reading.stage}` : 'close');
@@ -200,22 +202,40 @@ export async function answerReviewDoor({
 
 /**
  * The accept's re-proof: the close's MECHANICAL stages, run against the tree as it
- * stands now, through the SAME executors the run itself was judged by.
+ * stands now, through the SAME executors the run itself was judged by — the
+ * scripts' own bytes are verified against their signed sha256 FIRST (F135).
  *
  * The declared path measures against the run's OWN seed (`close-decl.seedRef` off
  * the spine), never a fresh one: re-basing the baseline onto today's HEAD would
  * compare the tree to itself and turn "nothing has changed since the run" into a
  * green for a `files-changed` stage that means the opposite. A run whose seed is
  * not on its spine is refused rather than guessed at.
- * @param {{job: any, workdir: string, events: any[], closeTimeoutMs?: number}} o
+ *
+ * F135 — the script BYTES are verified (`checkStageByteSignature`, PRD item 27/M2)
+ * BEFORE any stage runs, exactly the re-verify every other close execution in this
+ * runner already goes through (`runCloseStages`, `src/planrun.js`). Without it, a
+ * close script swapped on disk after the run ended but before the signer's accept
+ * would be re-run unchecked — a mismatch here never reaches the executor, and
+ * reads the same `close-tampered` shape the run-start/mid-run checks already use.
+ * @param {{job: any, workdir: string, events: any[], closeTimeoutMs?: number, closeDir?: string|null}} o
  */
-async function proveMechanically({ job, workdir, events, closeTimeoutMs }) {
+async function proveMechanically({ job, workdir, events, closeTimeoutMs, closeDir = null }) {
   const stages = mechanicalStages(closeStagesOf(job) ?? []);
   if (!stages.length) {
     // Honest, and named: a close with no mechanical stage has nothing a machine
     // can re-prove, so the accept rests on the person alone. Never a silent pass
     // dressed as a re-run.
     return { ok: true, detail: '', reading: { ran: 0, verdict: null, stage: null, stages: [], note: 'this close has no mechanical stage — there is nothing a machine can re-prove, so the accept rests on the person' } };
+  }
+  const sig = checkStageByteSignature(stages, workdir);
+  if (!sig.ok) {
+    const r = sig.reds[0];
+    const detail = sig.reds.map((rr) => `${rr.stage}: expected ${rr.expected.slice(0, 12)}… got ${rr.actual ? `${rr.actual.slice(0, 12)}…` : '<unreadable>'}`).join('; ');
+    return {
+      ok: false,
+      reading: { ran: 0, verdict: 'close-tampered', stage: r?.stage ?? null, stages: [] },
+      detail: `the close script's bytes no longer match its signed sha256 (close-tampered) — the accept is refused rather than re-run against a script nobody vouched for. ${detail}`,
+    };
   }
   /** @type {any} */
   let v;
@@ -226,7 +246,7 @@ async function proveMechanically({ job, workdir, events, closeTimeoutMs }) {
     }
     v = await runDeclaredStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir, seedRef });
   } else {
-    v = await runStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir });
+    v = await runStages(stages, redactSecrets, { timeoutMs: closeTimeoutMs, cwd: workdir, closeDir });
   }
   const reading = {
     ran: stages.length,

@@ -365,6 +365,13 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   // wall+60min — the guard could destroy a live verdict, on the exact axis the
   // grace exists to protect. The sibling `--stale-ms` already had this arithmetic.
   //
+  // PRD item 27/M3 (2026-09-07): `CLOSE_TIMEOUT_MS` (a hardcoded 900s) RETIRED — the
+  // per-stage ceiling is now RESOLVED once, dynamically, via `resolveCloseTimeoutMs`
+  // (the same function `src/planrun.js` uses), BEFORE the watchdog is even spawned,
+  // so this test can no longer regex a static number out of the source — it pins the
+  // STRUCTURE instead: the resolved value (never a hardcoded single-stage constant)
+  // times the real stage count, computed before the spawn and actually passed.
+  //
   // Read from SOURCE because run-u.mjs cannot be imported: it is a top-level script
   // that resets the patient repo and spawns a run on load. The arithmetic is checked
   // against the real spec, and the wiring against the real flag.
@@ -376,17 +383,25 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   // a test that hardcoded the number would red on a legal close edit while saying
   // nothing about the arithmetic it exists to guard.
   assert.ok(stages >= 4, `the U target runs a multi-stage close — got ${stages}`);
-  const timeout = Number(/const CLOSE_TIMEOUT_MS = ([\d_]+)/.exec(src)?.[1]?.replace(/_/g, ''));
-  assert.equal(timeout, 900_000, 'every stage runs under the full close timeout (src/clock.js W5)');
-  const ONE_STAGE_DEFAULT = 900_000; // the watchdog's own default — the defect's value
-  assert.ok(stages * timeout - ONE_STAGE_DEFAULT >= 2_700_000,
-    `the grace this spec needs is ${(stages * timeout) / 60_000} minutes — at least the 45 the one-stage default lost, got ${(stages * timeout - ONE_STAGE_DEFAULT) / 60_000}`);
+  // No more static CLOSE_TIMEOUT_MS constant to regex — confirm it is GONE (a
+  // reintroduced hardcoded constant would be exactly the old defect returning).
+  assert.doesNotMatch(src, /const CLOSE_TIMEOUT_MS/, 'the hardcoded per-stage constant must stay retired (PRD item 27/M3)');
   // The count comes from the RUNNER's own derivation, so the guard and the thing it
   // guards read one number. Reading `spec.close` alone saw an AUTHORED close
   // (`closeDecl`) as one stage — the arm below is that defect, measured.
   assert.match(src, /const closeStages = closeStagesOf\(spec\)\?\.length \|\| 1;/);
-  assert.match(src, /const worstCloseSilenceMs = CLOSE_TIMEOUT_MS \* closeStages;/);
+  // The RESOLVED value (never a bare constant) is what the grace multiplies —
+  // resolved via the SAME function `src/planrun.js` uses (never a second spelling
+  // of this precedence), and resolved BEFORE the watchdog spawn reads it.
+  assert.match(src, /resolveCloseTimeoutMs\(\{ job: spec, stages: closeStagesOf\(spec\) \?\? \[\], cwd: wd, redact: redactSecrets \}\)/);
+  assert.match(src, /const worstCloseSilenceMs = RESOLVED_CLOSE_TIMEOUT_MS \* closeStages;/);
   assert.match(src, /'--grace-ms', String\(worstCloseSilenceMs\)/, 'and it is actually passed to the guard');
+  // The resolution runs BEFORE the watchdog spawn textually in the source — an
+  // ordering pin, since a grace computed AFTER the spawn would arm the guard on
+  // stale/undefined numbers.
+  const resolveIdx = src.indexOf('resolveCloseTimeoutMs({ job: spec');
+  const spawnIdx = src.indexOf("fileURLToPath(new URL('./u-watchdog.mjs'");
+  assert.ok(resolveIdx > -1 && spawnIdx > -1 && resolveIdx < spawnIdx, 'the close timeout must be resolved BEFORE the watchdog is spawned');
 
   // AN AUTHORED CLOSE IS THE SAME ARITHMETIC. A `closeDecl` spec carries no
   // `close` field at all, so the old reading sized a six-stage declaration at ONE

@@ -36,6 +36,12 @@ const JOB1 = {
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const mut = (fn) => { const j = clone(JOB1); fn(j); return j; };
+// PRD item 27/M2: a shape-valid 64-hex-char placeholder for fixtures that
+// never actually run their close — validateJob is pure (no fs), so any
+// well-formed hex string satisfies the field. Never use this where a close
+// is actually executed (the runtime re-verify reds a mismatch as
+// close-tampered).
+const DUMMY_SHA256 = 'a'.repeat(64);
 
 test('job #1 validates green and returns the normalized spec', () => {
   const r = validateJob(JOB1);
@@ -114,7 +120,10 @@ const RED_CASES = [
   ['cadence not an object (one red naming cadence, not two at paths that do not exist)', (j) => { j.cadence = 'daily'; }, 'invalid-value:cadence'],
   ['cadence unit outside the menu', (j) => { j.cadence.unit = 'fortnight'; }, 'invalid-value:cadence.unit'],
   ['predicate expect not an exit code', (j) => { j.close[0].expect = 'zero'; }, 'invalid-value:close.0.expect'],
-  ['quote characters in a predicate cmd (argv is whitespace-split, no shell — N2 design default)', (j) => { j.close[0].cmd = 'node -e "process.exit(0)"'; }, 'invalid-value:close.0.cmd'],
+  // PRD item 27/M2: this mutation also turns cmd into a `node <token>` shape,
+  // which would newly demand close.0.sha256 too — a dummy (shape-valid,
+  // never-run) hash keeps this case isolated to the ONE defect it targets.
+  ['quote characters in a predicate cmd (argv is whitespace-split, no shell — N2 design default)', (j) => { j.close[0].cmd = 'node -e "process.exit(0)"'; j.close[0].sha256 = DUMMY_SHA256; }, 'invalid-value:close.0.cmd'],
 
   // -- nested smuggle channels (review F1: every level reds unknown keys, not just some) --
   ['unknown field inside cadence', (j) => { j.cadence.exfil = 'x'; }, 'unknown-field:cadence.exfil'],
@@ -539,10 +548,14 @@ const JOB4 = {
   writeScope: ['tests/**'],
   goal: 'Write a pytest suite for src/aurora/agent/orchestrator.py that kills at least 45% of the frozen mutant set.',
   verdictType: 'green',
+  // PRD item 27/M2: each stage's cmd is `python <token> …`, so each is a
+  // script-shaped cmd under closeScriptCandidateToken and demands sha256 —
+  // a dummy value, since this fixture never runs for real (pure validator
+  // shape test).
   close: [
-    { name: 'clean-run', cmd: 'python -m pytest -ra tests/test_orchestrator.py', expect: 0, gapKeep: '^FAILED' },
-    { name: 'form-floor', cmd: 'python check_form.py', expect: 0, judged: { pattern: 'collected (\\d+) items', min: 5 } },
-    { name: 'verdict', cmd: 'python grade.py', expect: 0 },
+    { name: 'clean-run', cmd: 'python -m pytest -ra tests/test_orchestrator.py', expect: 0, gapKeep: '^FAILED', sha256: 'a'.repeat(64) },
+    { name: 'form-floor', cmd: 'python check_form.py', expect: 0, judged: { pattern: 'collected (\\d+) items', min: 5 }, sha256: 'a'.repeat(64) },
+    { name: 'verdict', cmd: 'python grade.py', expect: 0, sha256: 'a'.repeat(64) },
   ],
   tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'],
   escalation: { mode: 'decision-ready' },

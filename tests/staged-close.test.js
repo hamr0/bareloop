@@ -4,6 +4,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateJob, checkMenu } from '../src/job.js';
 
+// PRD item 27/M2: `npx <bin>` and `node <path>` are both script-shaped cmds
+// under closeScriptCandidateToken, so `typecheck` and `api-superset` demand
+// sha256 — a dummy value, since this fixture is a pure validator-shape test
+// (nothing here is ever actually run).
+const DUMMY_SHA256 = 'a'.repeat(64);
+
 const JOB = (over = {}) => ({
   schema: 'job-v1',
   job: 'staged',
@@ -16,9 +22,9 @@ const JOB = (over = {}) => ({
   verdictType: 'green',
   close: [
     { name: 'seed-present', cmd: 'git rev-parse SEED', expect: 0, offer: false },
-    { name: 'typecheck', cmd: 'npx tsc --noEmit', expect: 0, gapKeep: '^src/' },
+    { name: 'typecheck', cmd: 'npx tsc --noEmit', expect: 0, gapKeep: '^src/', sha256: DUMMY_SHA256 },
     { name: 'declarations', cmd: 'npm run build:types', expect: 0 },
-    { name: 'api-superset', cmd: 'node check-api.mjs', expect: 0, needs: ['declarations'] },
+    { name: 'api-superset', cmd: 'node check-api.mjs', expect: 0, needs: ['declarations'], sha256: DUMMY_SHA256 },
   ],
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },

@@ -25,7 +25,8 @@
         "min": 1
       },
       "gapKeep": "^SPAWNER ",
-      "offer": false
+      "offer": false,
+      "sha256": "578fddeff68cd891c90a332f7e1cc84d84da45e559f69414a060614b85474258"
     },
     {
       "name": "typecheck",
@@ -35,7 +36,8 @@
         "pattern": "SPAWNER judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^SPAWNER "
+      "gapKeep": "^SPAWNER ",
+      "sha256": "578fddeff68cd891c90a332f7e1cc84d84da45e559f69414a060614b85474258"
     },
     {
       "name": "tests-kept",
@@ -45,7 +47,8 @@
         "pattern": "SPAWNER judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^SPAWNER "
+      "gapKeep": "^SPAWNER ",
+      "sha256": "578fddeff68cd891c90a332f7e1cc84d84da45e559f69414a060614b85474258"
     },
     {
       "name": "suite-green",
@@ -55,7 +58,8 @@
         "pattern": "SPAWNER judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^SPAWNER "
+      "gapKeep": "^SPAWNER ",
+      "sha256": "578fddeff68cd891c90a332f7e1cc84d84da45e559f69414a060614b85474258"
     },
     {
       "name": "no-suppressions",
@@ -65,7 +69,8 @@
         "pattern": "SPAWNER judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^SPAWNER "
+      "gapKeep": "^SPAWNER ",
+      "sha256": "578fddeff68cd891c90a332f7e1cc84d84da45e559f69414a060614b85474258"
     }
   ],
   "tools": [

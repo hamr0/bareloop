@@ -37,6 +37,7 @@ import { jobSpecHash, validateJob } from '../src/job.js';
 import { classifyIncidents } from '../src/ledger.js';
 import { runJob } from '../src/run.js';
 import { scriptedProvider, initPatientRepo } from './helpers.js';
+import { hashCloseScriptBytes } from '../src/close-integrity.js';
 
 const base = mkdtempSync(join(tmpdir(), 'reuse-test-'));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -55,7 +56,11 @@ const JOB = (over = {}) => ({
   writeScope: ['src/**'],
   goal: 'Make the package pass tsc --strict without weakening the tests.',
   verdictType: 'green',
-  close: [{ name: 'typecheck', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+  // PRD item 27/M2: this default close is never actually spawned in this
+  // file (every runJob here is injected/scripted except the one test that
+  // overrides `close` with its own REAL script and hash below) — a dummy
+  // value satisfies validateJob's shape check.
+  close: [{ name: 'typecheck', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED', sha256: 'a'.repeat(64) }],
   tools: ['read', 'write', 'edit'],
   escalation: { mode: 'decision-ready' },
   ...over,
@@ -1114,9 +1119,10 @@ test('REAL runJob: a cold green through runReuse mints a bridge the registry can
   initPatientRepo(workdir); // v1.57 §3: a job runs on its own branch, so the patient is a repo
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
   // the close: green only once the worker has written the file
-  writeFileSync(join(workdir, 'close.mjs'), `import { existsSync } from 'node:fs';
+  const closeSrc = `import { existsSync } from 'node:fs';
 if (existsSync(new URL('./src/typed.mjs', import.meta.url).pathname)) process.exit(0);
-console.log('FAILED src/typed.mjs missing'); process.exit(1);\n`);
+console.log('FAILED src/typed.mjs missing'); process.exit(1);\n`;
+  writeFileSync(join(workdir, 'close.mjs'), closeSrc);
 
   const job = JOB({
     job: 'real-types',
@@ -1124,7 +1130,10 @@ console.log('FAILED src/typed.mjs missing'); process.exit(1);\n`);
     maxWallMs: undefined,
     writeScope: ['src/**'],
     goal: 'Create src/typed.mjs.',
-    close: [{ name: 'typed-exists', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED' }],
+    // PRD item 27/M2: this close is REAL and actually runs through runJob —
+    // sha256 must be the real file's hash, or the run-start integrity check
+    // reds it as close-tampered before the provider is ever called.
+    close: [{ name: 'typed-exists', cmd: 'node close.mjs', expect: 0, gapKeep: '^FAILED', sha256: hashCloseScriptBytes(closeSrc) }],
     tools: ['read', 'write'],
   });
   delete job.maxWallMs;

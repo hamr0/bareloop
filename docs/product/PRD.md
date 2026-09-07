@@ -386,6 +386,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     today, above.
     **2026-09-05, later:** after export comes item 27 (close-bytes signature), then the
     reuse-lift proof.
+    **2026-09-06 — order amended again** (hamr): item 28 (provider-agnostic runners) slots
+    in after item 27 and before the reuse-lift proof — see item 28 below. Order now:
+    harness streamline → export → item 27 → item 28 → reuse-lift proof.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
@@ -415,8 +418,63 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     validation gate so a baked-in path is inexpressible for every job, not only bundles.
 
     **export v1 validated 2026-09-06, see EXPORT-BUILD.md.**
+
+    **shipped in v0.22.0, 2026-09-07 — see CLOSE-INTEGRITY-BUILD.md.**
+    **2026-09-06, later (hamr: "both, ui is coming. it's autoset and can be override, same
+    like api pricing"):** the close timeout joins this rung. Today `closeTimeoutMs` is a
+    caller-passed library parameter defaulting to 120s (`src/ralph.js`), which run-u
+    overrides at 900s and the bundle CLI does not pass at all — a defaulted cap is a silent
+    second ceiling (the same defect the wall's no-default rule already forbids), and a suite
+    slower than the ceiling can never be judged, only close-red. Ruling: AUTOSET from the
+    measured $0 seed close (the precheck already times every stage) under a rule hamr signs
+    once, printed on every run as `estimated`, with an explicit signed OVERRIDE in the spec —
+    the pricing shape (guesstimate + loud sign + customer override), never a hidden knob.
+    "Mirror run-u's 900s" is moot under this ruling. Rule constants (multiplier, floor) are
+    arbiter territory: hamr sets them at build, never the agent. Also folded: the bundle CLI's
+    escalation tail must stop naming `--resume` (v1 has none; F130).
     **2026-09-06, later: (b) re-pin to branch tip done (`8b209a9`); main re-pin after merge.
     Post-bless no-approve run live-proven (`mtpo9rxy`, green).**
+    **2026-09-06, later still:** build spec frozen at `docs/product/CLOSE-INTEGRITY-BUILD.md`
+    (facts, three milestones cwd/gate-rule/timeout, POC result, pre-registered validation).
+    Not started; `K`/`FLOOR_MS` remain `TBD (hamr)`. Also carries F131 (the archive/direct
+    timing measurement behind the M3 autoset design) — see `docs/logs/FINDINGS.md`.
+    **2026-09-07 — M3 shipped** (hamr's arbiter constants: floor 120,000ms, K = 5):
+    close timeout autoset ($0 seed timing pass, `max(FLOOR, K × slowest)`) + signed
+    `closeTimeoutMs` override, and `BARELOOP_CLOSE_DIR` (the close's own books directory,
+    threaded by both runners, refusing `close-dir-required` at $0 for a script that needs
+    one and gets none). Item 27 (close integrity) is now fully shipped across all three
+    milestones — see `CLOSE-INTEGRITY-BUILD.md`'s status line for detail and named
+    divergences.
+
+28. **Provider-agnostic runners** (hamr, 2026-09-06: "the whole point of bareloop is to be
+    LLM agnostic … Anthropic and OpenAI shaped, this could come next … shouldn't come as a
+    surprise"). Continue on Anthropic until item 27 is done; scoped now so the shape isn't a
+    surprise later. Facts: `src/job.js`'s `PROVIDERS` menu (`Object.freeze(['anthropic-api',
+    'clipipe-subscription'])`, line 135) has no OpenAI-shaped member; `clipipe-subscription`
+    stays OUT as a peer (F48) — this item does not touch it. Both runners construct
+    `AnthropicProvider` BY NAME (`src/cli.js:61-73`'s `buildProviders`; `scripts/run-u.mjs:41`)
+    rather than through a factory. `bare-agent` already ships `src/provider-openai.js` with a
+    constructor `baseUrl` option (default `https://api.openai.com/v1`), so an OpenAI-compatible
+    endpoint (including a local one) is reachable without a new production dependency. The judge
+    is pinned today (`src/judged.js`'s `JUDGE_MODEL = 'claude-haiku-4-5'`), calibrated 10-of-10
+    (softgreen doctrine: a judge-model bump requires recalibration). Pricing for an unrecognized
+    model already falls to guesstimate + a loud `estimated` state (rates passthrough is dead,
+    F113 — the customer's responsibility, never a bareloop rate table).
+
+    Shape: (1) the `provider` menu gains `openai-api` (+ optional `baseUrl`); a new provider
+    FACTORY (`src/providers.js`) maps provider name → constructor + the env-key name it reads
+    (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`), holding per-provider tier tables and
+    provider-specific param gating behind one seam (e.g. sonnet-5's `output_config.effort`
+    guard, currently ungated per-provider) rather than scattering `if (provider === …)` across
+    both runners; (2) the judge becomes a signed `judge: { provider, model }` field with a
+    calibration record keyed by `(provider, model)` — a judge with no recorded 10-of-10 run
+    refuses judged closes at $0, never silently substitutes an uncalibrated model; (3) one paid
+    PROBE per newly admitted provider proves it end-to-end — no battery, no bench row, until a
+    provider earns one the way Anthropic did.
+
+    Order (item 25 amended, 2026-09-06): harness streamline → export → item 27 (close
+    integrity) → **item 28 (provider-agnostic runners)** → the reuse-lift proof. Continue on
+    Anthropic-only work until item 27 ships.
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;

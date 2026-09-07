@@ -24,13 +24,18 @@ import { join } from 'node:path';
 import { JUDGED_MARKER } from '../src/kinds.js';
 
 // `--workdir <abs path>` overrides the patient the stage judges (G3 reuses this close
-// unmodified against its own copy). Default stays the pulselog-u path so
-// jobs/pulselog-u-types.json's behaviour — and its signed spec hash — is byte-identical
-// whether or not this flag exists.
+// unmodified against its own copy). PRD item 27/M1 (F129): the default used to be a
+// baked-in absolute path (`bareloop-patients/pulselog-u`) — a close judges the cwd the
+// runner gives it, never a path baked into the script, and that literal existing on
+// disk already tripped the run-start `close-absolute-path` guard for every job naming
+// this close without `--workdir`. The default is now `process.cwd()`, the same
+// template every other hand-authored close script uses (F129) — behaviour-preserving,
+// since `run-u.mjs` always spawns this close with `cwd` set to the patient, so
+// `process.cwd()` and the old hardcoded constant name the same directory.
 const workdirFlagIdx = process.argv.indexOf('--workdir');
 const WORKDIR = workdirFlagIdx !== -1 && process.argv[workdirFlagIdx + 1]
   ? process.argv[workdirFlagIdx + 1]
-  : '/home/hamr/PycharmProjects/bareloop-patients/pulselog-u';
+  : process.cwd();
 // `--seed <sha>` overrides the frozen ref changed-from-seed/no-suppressions/
 // no-test-sniffing diff against. NECESSARY alongside --workdir, not optional: G3's
 // patient carries one extra commit beyond pulselog-u's seed (the planted test files

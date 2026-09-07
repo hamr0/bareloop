@@ -654,7 +654,21 @@ export async function authorCloseForJob({
 /** The fields `assembleSpec` writes, and therefore the fields a DRAFT must not
  * carry. Named as data so the refusal and the fold can never disagree about
  * which half of the spec is which. */
-export const AUTHORED_SPEC_FIELDS = Object.freeze(['close', 'closeDecl', 'verdictType']);
+// `sha256` (PRD item 27/M2) rides alongside `close`/`closeDecl`/`verdictType`:
+// it is arbiter territory exactly like a budget or a wall clock — the agent
+// never mints a close-bytes signature (only `signCloseScripts`/hamr's own
+// re-sign does), so a draft carrying the field at all is refused the same
+// way one carrying a raw `close` array is. A `closeDecl` spec has no script
+// path to sign in the first place (M1's own kind executor, never a shipped
+// script), so this can only ever fire on a smuggled/legacy-shaped draft —
+// named here anyway, because "arbiter fields are refused by name" is the
+// rule, not "arbiter fields that are currently reachable are refused".
+// `closeTimeoutMs` (PRD item 27/M3) joins the same list for the same reason:
+// it is arbiter territory exactly like the timeout floor/multiplier
+// themselves — the agent never mints a close-timeout override (only the
+// operator's own signed spec edit does), so a draft carrying it is refused
+// the same way one carrying a raw `close` array is.
+export const AUTHORED_SPEC_FIELDS = Object.freeze(['close', 'closeDecl', 'verdictType', 'sha256', 'closeTimeoutMs']);
 
 /**
  * Fold an authored close into the OPERATOR's own half of the spec.

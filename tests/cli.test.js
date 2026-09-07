@@ -18,6 +18,7 @@ import { jobSpecHash } from '../src/job.js';
 import { mintBridge } from '../src/bridges.js';
 import { main } from '../src/cli.js';
 import { scriptedProvider } from './helpers.js';
+import { hashCloseScriptBytes } from '../src/close-integrity.js';
 
 /** this repo's own root — every fixture bundle's node_modules/bareloop
  * symlinks here so `checkBundleDeps`'s preflight (F128) passes for the
@@ -56,6 +57,11 @@ console.log('FIXTURE judged=1');
 process.exit(ok ? 0 : 1);
 `;
 
+// PRD item 27/M2: every fixture in this file writes CLOSE_SOURCE verbatim to
+// disk before running (real spawns through runPlan/exportBundle), so the
+// signed sha256 must be the REAL hash of that constant, computed once here.
+const CLOSE_SOURCE_SHA256 = hashCloseScriptBytes(CLOSE_SOURCE);
+
 /** @param {{ job: string, closeScriptPath: string, budgetUsd?: number, maxWallMs?: number }} o */
 function buildJob({ job, closeScriptPath, budgetUsd = 2, maxWallMs = 1_800_000 }) {
   return {
@@ -70,7 +76,7 @@ function buildJob({ job, closeScriptPath, budgetUsd = 2, maxWallMs = 1_800_000 }
     goal: 'Append the line MARKER_OK to src/mod.mjs.',
     verdictType: 'green',
     close: [
-      { name: 'has-marker', cmd: `node ${closeScriptPath} has-marker`, expect: 0 },
+      { name: 'has-marker', cmd: `node ${closeScriptPath} has-marker`, expect: 0, sha256: CLOSE_SOURCE_SHA256 },
     ],
     tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'],
     escalation: { mode: 'decision-ready' },

@@ -14,8 +14,9 @@
 // judgment call. Minting policy is product doctrine, not job-authorable.
 
 import { createHash } from 'node:crypto';
-import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier } from './validate.js';
+import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier, closeScriptCandidateToken } from './validate.js';
 import { validateCloseDecl, DECLARED_CLOSE_CLASSES } from './declaredclose.js';
+import { CLOSE_TIMEOUT_FLOOR_MS } from './closetimeout.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
 // they are read at call time, so a mutable export would let adopter code
@@ -140,7 +141,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'model', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
 /** the four-field plan shape's core (decision 5) — presence of any of these
  * declares the shape; `tools` (the ceiling) rides the shape but alone does not
  * declare it, so a legacy spec carrying it gets a pointed red, not a conflict */
@@ -148,7 +149,7 @@ const PLAN_CORE_FIELDS = ['goal', 'verdictType', 'close', 'closeDecl', 'checks']
 /** exact field set per close type — anything else is an unknown-field red
  * (freeform code, script bodies, and minting claims all land there) */
 const CLOSE_FIELDS = {
-  predicate: ['type', 'cmd', 'expect', 'judged', 'gapKeep'],
+  predicate: ['type', 'cmd', 'expect', 'judged', 'gapKeep', 'sha256'],
   gold: ['type', 'expected', 'compare'],
   rubric: ['type', 'criteria'],
   hitl: ['type', 'prompt'],
@@ -238,6 +239,21 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
       && !(typeof spec.maxWallMs === 'number' && Number.isInteger(spec.maxWallMs) && spec.maxWallMs >= MIN_WALL_MS)) {
     red('bounds', 'maxWallMs',
       `integer milliseconds >= ${MIN_WALL_MS} (one close timeout). Enforcement is a between-round deadline, measured as maxWallMs + closeStages x closeTimeoutMs (design addendum 1: loop.stop() cannot cut an in-flight call; W5: every close stage runs under the full timeout), so a budget under one close cannot fund its own close and the advertised number would be more wrong than right`);
+  }
+
+  // CLOSE TIMEOUT (PRD item 27/M3, hamr 2026-09-06: "both … autoset and can be
+  // override, same like api pricing"). OPTIONAL and WITH NO CEILING: absent
+  // means the runner autosets it from a $0 seed timing pass
+  // (`src/closetimeout.js`); present is the OPERATOR's own number and — like a
+  // rates-passthrough override (F113) — it may legally sit ABOVE the autoset
+  // estimate, so this is not tighten-only. The one bound that IS enforced is
+  // the floor every close timeout has always had (`CLOSE_TIMEOUT_FLOOR_MS`,
+  // hamr's arbiter constant, 2026-09-07): a value below it could never fund
+  // even a fast close, exactly the "advertised number more wrong than right"
+  // failure `maxWallMs` already guards above.
+  if (spec.closeTimeoutMs !== undefined
+      && !(typeof spec.closeTimeoutMs === 'number' && Number.isInteger(spec.closeTimeoutMs) && spec.closeTimeoutMs >= CLOSE_TIMEOUT_FLOOR_MS)) {
+    red('bounds', 'closeTimeoutMs', `integer milliseconds >= ${CLOSE_TIMEOUT_FLOOR_MS} (the arbiter's floor) — a signed override may sit above the autoset estimate, never below the floor every close timeout has always had`);
   }
 
   // MODEL — the worker's provider model id (build-list #3, hamr's GO
@@ -356,6 +372,34 @@ function predicateBody(o, at, red) {
   // refusal beats silent misparse (N2 design default)
   else if (/["']/.test(o.cmd)) red('invalid-value', `${at}.cmd`, 'quote characters are inexpressible: cmd runs as whitespace-split argv, no shell');
   else if (o.cmd !== o.cmd.trim()) red('invalid-value', `${at}.cmd`, 'leading/trailing whitespace — argv splits on whitespace and an empty argv[0] cannot spawn; honest refusal beats a silent misparse');
+  // Close-bytes signature (PRD item 27/M2, F129's general fix's own general
+  // fix — N4): the signature must cover the close SCRIPT'S CONTENT, not only
+  // its path (`cmd`). Demanded exactly where a byte-exact fingerprint can be
+  // minted against something: `cmd` names an addressable script by the
+  // SAME shape test `src/close-integrity.js`'s detectors use
+  // (`closeScriptCandidateToken`, src/validate.js — `node <path> …`, OR a
+  // bare directly-executable absolute path such as a `.sh` wrapper; widened
+  // 2026-09-06 after an orchestrator audit found the bare form silently
+  // invisible to both this demand and the byte/path detectors — a blind
+  // instrument). A cmd naming no such script (most test-fixture closes:
+  // `true`, `npx`, `pytest`, a relative bare executable — or a
+  // missing/malformed cmd, already reded above) carries no demand — a stage
+  // with nothing to hash gets no `missing-required` for a field that could
+  // never be minted honestly. `validateJob` stays pure (no fs): this checks
+  // the FIELD'S SHAPE only, never the bytes on disk (that is the runner's
+  // job, `checkCloseByteSignature`/`checkStageByteSignature`).
+  const isScriptCmd = closeScriptCandidateToken(o.cmd) !== null;
+  if (isScriptCmd) {
+    if (o.sha256 === undefined) {
+      red('missing-required', `${at}.sha256`, 'hex sha256 of the script file bytes `cmd` names — mint it with signCloseScripts (src/close-integrity.js) / scripts/sign-close.mjs, never hand-typed');
+    } else if (typeof o.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(o.sha256)) {
+      red('invalid-value', `${at}.sha256`, '64 lowercase hex chars — sha256 of the script file bytes, never the spec, never the path');
+    }
+  } else if (o.sha256 !== undefined && (typeof o.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(o.sha256))) {
+    // not demanded for a non-script cmd, but a PRESENT value is still
+    // shape-checked — a malformed string is a typo either way
+    red('invalid-value', `${at}.sha256`, '64 lowercase hex chars — sha256 of the script file bytes, never the spec, never the path');
+  }
   if (!Number.isInteger(o.expect)) red('invalid-value', `${at}.expect`, 'integer exit code');
   // The judgment-rendered signal (PRD v1.11, optional). Exit code alone
   // cannot separate "the suite ran and failed" from "the suite crashed at
@@ -492,7 +536,7 @@ export function checkMenu(close) {
 }
 
 /** the fields a close STAGE may carry — anything else is a smuggle channel */
-const STAGE_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep', 'offer', 'needs', 'direction'];
+const STAGE_FIELDS = ['name', 'cmd', 'expect', 'judged', 'gapKeep', 'offer', 'needs', 'direction', 'sha256'];
 
 /**
  * Validate the staged close. Every stage is a predicate BODY under the same

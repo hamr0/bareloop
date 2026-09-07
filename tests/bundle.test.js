@@ -23,6 +23,7 @@ import { writeRunGreenRow } from '../src/reuse.js';
 import {
   exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from '../src/bundle.js';
+import { hashCloseScriptBytes, checkCloseByteSignature } from '../src/close-integrity.js';
 
 /** this repo's own root — the real `bareloop` package a symlinked
  * node_modules/bareloop points at in these fixtures. */
@@ -52,6 +53,10 @@ const stage = process.argv[2];
 console.log(\`FIXTURE \${stage} \${JUDGED_MARKER}\`);
 process.exit(0);
 `;
+// PRD item 27/M2: both close stages below share this one script file, so
+// they share this one signature — the sha256 field never covers `cmd`'s
+// args, only the bytes the path resolves to.
+const CLOSE_SCRIPT_SHA256 = hashCloseScriptBytes(CLOSE_SCRIPT_SOURCE);
 
 const JOB = {
   schema: 'job-v1',
@@ -65,8 +70,8 @@ const JOB = {
   goal: 'Make the fixture pass its own close.',
   verdictType: 'green',
   close: [
-    { name: 'changed-from-seed', cmd: `node ${CLOSE_SCRIPT_PATH} changed-from-seed`, expect: 0, offer: false },
-    { name: 'suite-green', cmd: `node ${CLOSE_SCRIPT_PATH} suite-green`, expect: 0 },
+    { name: 'changed-from-seed', cmd: `node ${CLOSE_SCRIPT_PATH} changed-from-seed`, expect: 0, offer: false, sha256: CLOSE_SCRIPT_SHA256 },
+    { name: 'suite-green', cmd: `node ${CLOSE_SCRIPT_PATH} suite-green`, expect: 0, sha256: CLOSE_SCRIPT_SHA256 },
   ],
   escalation: { mode: 'decision-ready' },
 };
@@ -103,7 +108,7 @@ const CLOSE_SCRIPTS = { [CLOSE_SCRIPT_PATH]: CLOSE_SCRIPT_SOURCE };
 
 const VARIANT_JOB = (() => {
   const j = clone(JOB);
-  j.close = [...j.close, { name: 'extra-stage', cmd: `node ${CLOSE_SCRIPT_PATH} extra-stage`, expect: 0 }];
+  j.close = [...j.close, { name: 'extra-stage', cmd: `node ${CLOSE_SCRIPT_PATH} extra-stage`, expect: 0, sha256: CLOSE_SCRIPT_SHA256 }];
   return j;
 })();
 
@@ -154,6 +159,37 @@ test('the JOB fixture is validateJob-green', () => {
   const r = validateJob(JOB);
   assert.deepEqual(r.reds, []);
   assert.equal(r.ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// PRD item 27/M3 Part B — a close reading BARELOOP_CLOSE_DIR exports cleanly.
+// `env.BARELOOP_CLOSE_DIR` is not an absolute-path STRING LITERAL in the
+// script's own source (it is an env-var read), so it must never trip
+// `close-absolute-path`/`close-cmd-unrelocatable` — this is a $0 regression
+// pin for that, not a behaviour this rung had to newly implement.
+// ---------------------------------------------------------------------------
+
+test('exportBundle: a close reading process.env.BARELOOP_CLOSE_DIR exports cleanly (no close-absolute-path, no close-cmd-unrelocatable)', (t) => {
+  const scriptPath = '/home/hamr/PycharmProjects/bareloop-close/scripts/fixture-closedir-close.mjs';
+  const source = `import { JUDGED_MARKER } from '../src/kinds.js';
+
+const dir = process.env.BARELOOP_CLOSE_DIR;
+console.log(\`FIXTURE closedir=\${dir ? 'set' : 'unset'} \${JUDGED_MARKER}\`);
+process.exit(dir ? 0 : 97);
+`;
+  const sha256 = hashCloseScriptBytes(source);
+  const job = {
+    ...clone(JOB),
+    job: 'fixture-closedir-job',
+    close: [{ name: 'suite-green', cmd: `node ${scriptPath} suite-green`, expect: 0, sha256 }],
+  };
+  const bridge = bridgeFor(job);
+  const registryDir = makeRegistry(t, bridge);
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture-closedir.bareloop');
+  const r = exportBundle({ spec: job, closeScripts: { [scriptPath]: source }, registryDir, outDir, bareloopVersion: '0.99.0' });
+  assert.equal(r.ok, true, `export must succeed: ${JSON.stringify(r.reds)}`);
+  assert.deepEqual(r.reds, []);
+  assert.ok(existsSync(join(outDir, 'close', 'fixture-closedir-close.mjs')));
 });
 
 // ---------------------------------------------------------------------------
@@ -388,9 +424,20 @@ test('exportBundle refuses: a close[].cmd not shaped "node <abs .mjs> …"', (t)
   assert.equal(existsSync(outDir), false);
 });
 
+/** PRD item 27/M2: re-sign every close stage's sha256 against `script` — these
+ * fixtures deliberately swap the SCRIPT content while keeping the same spec,
+ * to isolate ONE red (an import shape) at a time; without this, the swapped
+ * content would ALSO trip close-sha-mismatch and break the exact-red-count
+ * assertions these tests make on purpose.
+ * @param {any} job @param {string} script */
+function reSignFor(job, script) {
+  const sha256 = hashCloseScriptBytes(script);
+  return { ...job, close: job.close.map((/** @type {any} */ s) => ({ ...s, sha256 })) };
+}
+
 test('exportBundle refuses: a close script importing something src/index.js does not export', (t) => {
   const badScript = CLOSE_SCRIPT_SOURCE.replace('JUDGED_MARKER', 'NOT_A_REAL_EXPORT');
-  const job = clone(JOB);
+  const job = reSignFor(clone(JOB), badScript);
   const bridge = bridgeFor(job);
   const registryDir = makeRegistry(t, bridge);
   const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
@@ -418,7 +465,7 @@ function scriptWith(replacementLine) {
 
 /** @param {import('node:test').TestContext} t @param {string} script @returns {any} */
 function exportWithScript(t, script) {
-  const job = clone(JOB);
+  const job = reSignFor(clone(JOB), script);
   const bridge = bridgeFor(job);
   const registryDir = makeRegistry(t, bridge);
   const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
@@ -666,4 +713,79 @@ test('checkBundleDeps: a node_modules/bareloop symlink to this repo root -> ok',
   const r = checkBundleDeps(dir);
   assert.equal(r.ok, true, `expected ok, got: ${JSON.stringify(r.reds)}`);
   assert.deepEqual(r.reds, []);
+});
+
+// ---------------------------------------------------------------------------
+// F132 — a real paid fire (mtqwmb9l -> export -> mtqwydl4) refused an
+// exported bundle as `close-tampered` at $0: the import rewrite
+// (`../src/kinds.js` -> `'bareloop'`) changes the close script's bytes, the
+// manifest hash covers those RELOCATED bytes, but `spec.json`'s own
+// `close[].sha256` was left carrying the SOURCE spec's signature — two
+// signatures over two different byte strings. `exportBundle` now re-signs
+// `close[].sha256` over the bytes it actually packs, so the two agree by
+// construction. JOB's own fixture script already imports `../src/kinds.js`
+// (the exact real-world shape), so its export always exercises the rewrite —
+// no separate fixture needed for the positive case.
+// ---------------------------------------------------------------------------
+
+test('exportBundle re-signs close[].sha256 over the RELOCATED bytes (F132): the bundle signs itself clean', (t) => {
+  const bridge = bridgeFor(JOB);
+  const registryDir = makeRegistry(t, bridge);
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
+  const r = exportBundle({ spec: JOB, closeScripts: CLOSE_SCRIPTS, registryDir, outDir, bareloopVersion: '0.99.0' });
+  assert.equal(r.ok, true, `export must succeed: ${JSON.stringify(r.reds)}`);
+
+  // the written spec's signature must NOT be the source spec's (the import
+  // rewrite changed the bytes) — this is the live defect's own root cause,
+  // pinned directly: a spec that still carries CLOSE_SCRIPT_SHA256 here is
+  // exactly the pre-fix bug.
+  const specOut = JSON.parse(readFileSync(join(outDir, 'spec.json'), 'utf8'));
+  assert.notEqual(specOut.close[0].sha256, CLOSE_SCRIPT_SHA256, 're-signed hash must differ from the SOURCE (pre-rewrite) signature');
+  assert.equal(specOut.close[0].sha256, specOut.close[1].sha256, 'both stages still share the one relocated script, so one signature');
+
+  // the run-start integrity check `checkCloseByteSignature` — the same one
+  // `checkCloseAbsolutePaths`/precheck runs — must read the resolved bundle
+  // as clean, exactly like a real `bareloop run` would at $0 before any
+  // provider call.
+  const resolved = resolveBundleSpec(readBundle(outDir), outDir);
+  const sig = checkCloseByteSignature(resolved.spec, outDir);
+  assert.equal(sig.ok, true, `bundle must sign clean: ${JSON.stringify(sig)}`);
+});
+
+test('exportBundle F132 mutation proof: the SOURCE (pre-rewrite) signature reds close-tampered against the relocated bundle', (t) => {
+  const bridge = bridgeFor(JOB);
+  const registryDir = makeRegistry(t, bridge);
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture.bareloop');
+  exportBundle({ spec: JOB, closeScripts: CLOSE_SCRIPTS, registryDir, outDir, bareloopVersion: '0.99.0' });
+
+  // Simulate the pre-fix bundle: force spec.json's close[].sha256 back to the
+  // SOURCE spec's own (pre-rewrite) signature, byte-identical to what
+  // `exportBundle` wrote before this fix. This is the exact live-defect
+  // shape (run mtqwydl4) reconstructed from the real fixture, never a
+  // synthetic mismatch invented for the test.
+  const specPath = join(outDir, 'spec.json');
+  const preFixSpec = JSON.parse(readFileSync(specPath, 'utf8'));
+  preFixSpec.close = preFixSpec.close.map((/** @type {any} */ s) => ({ ...s, sha256: CLOSE_SCRIPT_SHA256 }));
+
+  const sig = checkCloseByteSignature(preFixSpec, outDir);
+  assert.equal(sig.ok, false, 'the pre-fix (source-signed) spec must read the relocated bytes as tampered — proves the checker is sensitive to exactly this defect');
+  assert.ok(sig.reds.every((/** @type {any} */ r) => r.expected === CLOSE_SCRIPT_SHA256));
+});
+
+test('exportBundle F132: re-signed sha256 EQUALS the source signature when the rewrite changes nothing', (t) => {
+  // a close script with no `../src/…` (or `bareloop`) import at all — the
+  // import rewrite has nothing to change, so the relocated bytes are
+  // byte-identical to the source and the re-signed hash must equal the
+  // original.
+  const scriptPath = '/home/hamr/PycharmProjects/bareloop-close/scripts/fixture-norewrite-close.mjs';
+  const source = `const stage = process.argv[2];\nconsole.log(\`FIXTURE \${stage}\`);\nprocess.exit(0);\n`;
+  const sha256 = hashCloseScriptBytes(source);
+  const job = { ...clone(JOB), job: 'fixture-norewrite-job', close: [{ name: 'suite-green', cmd: `node ${scriptPath} suite-green`, expect: 0, sha256 }] };
+  const bridge = bridgeFor(job);
+  const registryDir = makeRegistry(t, bridge);
+  const outDir = join(tmp(t, 'bareloop-out-'), 'fixture-norewrite.bareloop');
+  const r = exportBundle({ spec: job, closeScripts: { [scriptPath]: source }, registryDir, outDir, bareloopVersion: '0.99.0' });
+  assert.equal(r.ok, true, `export must succeed: ${JSON.stringify(r.reds)}`);
+  const specOut = JSON.parse(readFileSync(join(outDir, 'spec.json'), 'utf8'));
+  assert.equal(specOut.close[0].sha256, sha256, 'no rewrite happened, so the re-signed hash must equal the source signature');
 });

@@ -262,6 +262,20 @@ export { PROMPT_REGISTERS, isPromptFile } from './promptregisters.js';
 export {
   exportBundle, bundleHash, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from './bundle.js';
+// Close integrity (PRD item 27 / M1, `docs/product/CLOSE-INTEGRITY-BUILD.md`)
+// — the ONE `close-absolute-path` detector shared by `exportBundle` (above)
+// and `runPlan`'s run-start precheck. `readCloseScripts` is the pure reader
+// M2's sha256 fingerprint will reuse.
+export { readCloseScripts, checkCloseAbsolutePaths, absolutePathLiteralsOf } from './close-integrity.js';
+// Close integrity M2 (PRD item 27, `docs/product/CLOSE-INTEGRITY-BUILD.md`) —
+// the close-BYTES half. `hashCloseScriptBytes`/`checkCloseByteSignature` are
+// the fingerprint the run-start precheck and `exportBundle` both compare
+// against; `checkStageByteSignature` is the narrower re-verify `runCloseStages`
+// (src/planrun.js) runs before every close run; `signCloseScripts` is the
+// pure minting helper `scripts/sign-close.mjs` wraps (never writes itself).
+export {
+  hashCloseScriptBytes, checkCloseByteSignature, checkStageByteSignature, signCloseScripts,
+} from './close-integrity.js';
 // Export M2 (`docs/product/EXPORT-BUILD.md`) — the CLI's one entry point,
 // exported as `cliMain` (never `main`, a name generic enough to collide with
 // an adopter's own). `bin/bareloop.mjs` is the only other caller; this export

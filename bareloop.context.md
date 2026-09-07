@@ -134,7 +134,8 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
-| `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage number, so a spec with many stages can validate while its overshoot dwarfs its cap: the clock reports that honestly rather than the floor pretending to prevent it (stage-aware floor parked, PRD v1.39). Operator-only, tighten-only; adding or changing it changes the spec hash |
+| `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage, un-autoset-default number, so a spec with many stages OR a raised/autoset `closeTimeoutMs` can validate while its overshoot dwarfs its cap: `runPlan` adds a RUN-START check (PRD item 27/M3) that refuses `wall-under-close-timeout` at $0 once the EFFECTIVE per-stage ceiling is known (autoset or signed), rather than a silent clamp. Operator-only, tighten-only; adding or changing it changes the spec hash |
+| `closeTimeoutMs` | optional integer ms `>= CLOSE_TIMEOUT_FLOOR_MS` (120,000 — hamr's arbiter floor, 2026-09-07) | PRD item 27/M3's SIGNED override for the close's own per-stage wall-clock cap. Absent (the normal case): the run autosets it from a $0 seed timing pass — `max(FLOOR, K × slowest measured stage)`, `K = 5` (hamr, 2026-09-07: "2 and 5 are fine"). Present: the operator's own number wins outright and may legally sit ABOVE *or below* the autoset estimate (the rates-passthrough shape, F113 — never tighten-only). Arbiter territory exactly like `budgetUsd`/`maxWallMs`/`close[].sha256`: the authoring pipeline's `assembleSpec` refuses a draft carrying it |
 | `model` | optional non-empty string, exact provider model id (e.g. `"claude-sonnet-5"`) | the WORKER's model, build-list #3. Absent means today's runner default; present it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the judge model stays library-pinned (`JUDGE_MODEL`) pending recalibration |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
@@ -391,7 +392,7 @@ Append-only JSONL event emitter bound to one file. `seq` monotonic per spine, `t
 last. Consumers are pure listeners; nothing reads the file back. Returns each event as
 written.
 
-### `ralph({ middle, close?, judge?, capRuns?, ladder?, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites? })` → `'green' | 'escalated'` — `src/ralph.js`
+### `ralph({ middle, close?, judge?, capRuns?, ladder?, emit, redact?, closeTimeoutMs?, cwd?, expect?, judged?, gapKeep?, workerWrites?, closeDir? })` → `'green' | 'escalated'` — `src/ralph.js`
 
 The dumb outer shell: `while close-red and not exhausted: run the middle`. **Exhaustion has
 two alternative rules and you supply exactly one** — `capRuns` (a fixed number of middle runs)
@@ -422,11 +423,23 @@ set the close's `gapKeep` (job-spec, arbiter territory) to a regex like `"^not o
 matching failure lines are preserved in a capped kept-failures block regardless of where
 they print (F28: the first real firing delivered a gap with zero failure names). The gap
 also combines stdout+stderr, so a stdout failure survives stderr noise.
-`closeTimeoutMs` caps the close's wall clock (default 120s) — shell/operator
-territory, inexpressible in any config. A faulted close is asked to leave with SIGTERM and,
-if it is still there 2s later, ended with SIGKILL: SIGTERM is a request a close can decline
-(its own handler, a trapping wrapper), and without a second deadline the wait never resolves.
-The verdict is untouched — the FIRST fault named the outcome and the kill only enforces it.
+`closeTimeoutMs` caps the close's wall clock (default 120s when nothing else supplies a
+value — `runClose`'s own bare default) — shell/operator territory, inexpressible in any
+config. A faulted close is asked to leave with SIGTERM and, if it is still there 2s later,
+ended with SIGKILL: SIGTERM is a request a close can decline (its own handler, a trapping
+wrapper), and without a second deadline the wait never resolves. The verdict is untouched —
+the FIRST fault named the outcome and the kill only enforces it. **As of PRD item 27/M3, a
+direct `ralph`/`runClose`/`runStages` caller still owns this number outright (`closeTimeoutMs
+?? 120_000`); the AUTOSET/override resolution lives one level up, in `runPlan`/`runJob`
+(see `resolveCloseTimeoutMs` below) — `ralph` itself never runs a timing pass.**
+
+`closeDir` (PRD item 27/M3 Part B, optional) is the close's own BOOKS DIRECTORY — pristine
+copies, calibration thresholds, logs — deliberately outside the patient tree (the worker
+must never read the arbiter's books, v1.12). Forwarded to every close invocation as the
+env var `BARELOOP_CLOSE_DIR` (set on a COPY of `process.env`, after `CLOSE_ENV_DENY`
+stripping — a `BARELOOP_` name matches none of that denylist's rules and is never stripped).
+A close script that reads this variable and gets none must instrument-stop itself; nothing
+in the runner invents a fallback directory.
 
 **The close child's environment is stripped of credential-shaped variables before it runs**
 (`CLOSE_ENV_DENY` in `src/ralph.js`: provider keys, `AWS_*`, any name ending
@@ -958,12 +971,32 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, layerRoot?, readShim?, scout?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+
+**`closeTimeoutMs` (PRD item 27/M3) is now OPTIONAL for every real caller.** Omit it (both
+`src/cli.js`'s bundle runner and `scripts/run-u.mjs` do) and the run AUTOSETS the per-stage
+close ceiling from a $0 seed timing pass, or reads the job spec's own signed override —
+"guesstimate + loud sign + customer override", the same shape rates-passthrough already
+uses (F113). Passing an explicit value here still wins outright over both (kept for
+backward compatibility and test control) — see `resolveCloseTimeoutMs` further down.
+
+**`closeDir` (PRD item 27/M3 Part B, optional but effectively required for any
+hand-authored close that reads its own books)** — the close's own directory (pristine
+copies, calibration thresholds, logs), outside the patient tree. `src/cli.js` sets it to
+`<bundleDir>/runs/<runid>/close/`; `scripts/run-u.mjs` sets it to its existing `spineDir`. A
+close script whose source mentions `BARELOOP_CLOSE_DIR` and gets none here refuses the run
+at $0 (`close-dir-required`, before any provider call) — see `checkCloseDirRequired` below.
 
 The last seven are the RESUME fold and are documented under *Resuming a killed run* below; they
 default to `0` / `true` / `0` / `null` / `[]` / `null` / `null`, so a fresh run passes none of them.
 Three of them are folds of a bound the operator SIGNED (money, wall, replans) and one is a
 readout seed (grades) — the distinction matters and is spelled out there.
+
+`resumable` (default `true`, PRD item 27(c)/F130) says whether THIS runner supports
+`--resume` at all — `run-u.mjs` leaves it at the default (byte-identical to before this
+flag existed); the exported bundle CLI (`src/cli.js`) passes `false` so the run's
+escalation tail says "resume is `run-u`-only in v1" instead of naming a flag it does not
+implement.
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -1601,7 +1634,7 @@ package makes). Which runs open one is `doorOpens(job, reviewDoor)`:
   territory.
 
 **Answering one — `answerReviewDoor({ job, workdir, events, decision, text?, closeTimeoutMs?,
-registryDir?, name?, runid?, at?, now?, emit? })`** (`src/reviewdoor.js`). The answer arrives
+closeDir?, registryDir?, name?, runid?, at?, now?, emit? })`** (`src/reviewdoor.js`). The answer arrives
 after the run has ended, possibly days later and from another process, so it cannot ride the
 run's return path. This is that seam. It never throws and never conjures — a fourth door, an
 empty `rerun`, a run that opened no door (`no-door`), an expired one (`door-expired`), a tree
@@ -2481,7 +2514,9 @@ nothing here to check it against).
 
 Enforcement is **local only** — wired into `npm test` (see `package.json`'s `test`
 script), never into `.github/workflows/*` (CI already runs `npm test`, so the rule is
-enforced there without an ask-first CI edit). The check itself lives outside the
+enforced there without an ask-first CI edit). `npm test` itself now runs `node --test`
+through `scripts/hermetic.mjs`, which strips this machine's `HOME`/git identity so a
+test that leans on either fails locally instead of only on CI (F136). The check itself lives outside the
 published package, at `scripts/prompt-commit-check.mjs` (pure decision logic in
 `scripts/promptcommitlib.mjs`, `scripts/` is not in `package.json`'s `files`, so none of
 this ships):
@@ -2546,11 +2581,77 @@ written by `bareloop run`, step 6 below) is real and live but is not in the froz
 layout table at all. `history.jsonl`'s row also carries `bundleHash` and `approveHash`
 (the POC-fact correction, below) beyond the fields the original layout table named.
 
+#### `src/close-integrity.js` — close-absolute-path (M1) AND close-bytes signature (M2)
+
+Shared by `src/bundle.js` (export time) and a $0 run-start precheck inside `runPlan`
+(`src/planrun.js`) — every job, not only exported bundles, refuses at $0 (before the
+close-first precheck, before any provider call) when a close script's CONTENT bakes in an
+absolute path that exists on disk. Two spellings of the same rule is exactly how F129
+shipped an export-only guard while every non-exported job stayed exposed.
+
+**Scope (widened 2026-09-06, PRD item 27/M2, an orchestrator audit):** a close script is
+addressable — visible to `readCloseScripts`, `checkCloseAbsolutePaths`, the sha256
+fingerprint, and `signCloseScripts` — when its `cmd` is EITHER an interpreter
+(`node`/`sh`/`bash`/`python`/`python3`/`npx`) followed by a non-empty argv[1], OR a bare
+cmd whose argv[0] ITSELF is an absolute path (a `.sh`/other directly-executable close
+script, no interpreter prefix — e.g. `jobs/aurora-testgen-cold.json`'s close). A relative
+bare executable (`true`, `pytest`, `npm test`) names no file at all and stays out of
+scope, on both halves, exactly as before. The shape test itself
+(`closeScriptCandidateToken`, `src/validate.js`) is shared with `src/job.js`'s sha256
+demand so the demand and the detectors can never drift apart about which stages are in
+scope.
+
+| function | args → returns | notes |
+|---|---|---|
+| `absolutePathLiteralsOf(source)` | close script text → `string[]` | the scan itself (moved here from `src/bundle.js`, which now imports it) |
+| `readCloseScripts(spec, cwd)` | resolved job spec + cwd → `{ stage, path, bytes, sha256 }[]` | resolves every addressable `close[].cmd` (see scope above) to its absolute path and bytes off disk; a relative path resolves against `cwd`. Never throws — a missing/unreadable script reports `bytes: null`. `sha256` (M2, additive) is the stage's own signed field verbatim, or `null` |
+| `checkCloseAbsolutePaths(spec, cwd)` | resolved job spec + cwd → `{ ok: true } \| { ok: false, reds: { stage, path, literal }[] }` | the run-start check `runPlan` calls before the close-first precheck |
+| `hashCloseScriptBytes(text)` | script text → sha256 hex | the ONE formula every M2 consumer uses (minting, the run-start check, the runtime re-verify, the export mismatch check) — hashing the utf8-decoded text agrees with hashing the raw file bytes because a close script is always valid UTF-8 |
+| `checkCloseByteSignature(spec, cwd)` | resolved job spec + cwd → `{ ok: true } \| { ok: false, reds: { stage, path, expected, actual }[] }` | the $0 run-start integrity check (PRD item 27): every signed `close[].sha256` must match the script's bytes off disk RIGHT NOW. `runPlan` calls this alongside `checkCloseAbsolutePaths`, before the close-first precheck and before any provider call — a mismatch reds `close-tampered`. An unreadable signed script reads `actual: null` and is STILL a red (never silently "fine") |
+| `checkStageByteSignature(stages, cwd)` | a close stage chain + cwd → same shape as above | the narrower re-verify `runPlan`'s `runCloseStages` wrapper runs before EVERY close execution (precheck, preflight, check-passes, and the close-fix loop all go through this one seam) — a mismatch short-circuits to a `close-tampered` verdict in the same shape `runClose`/`runStages` render, so it rides out through the existing `CLOSE_FAULTS` machinery exactly like `crashed`/`timed-out`/`killed` |
+| `signCloseScripts(spec, cwd)` | resolved job spec + cwd → `{ ok, spec, changes: {stage,path,old,new}[], missing: {stage,path}[] }` | the PURE minting helper: fills `close[].sha256` from disk for every addressable stage. Never writes anything itself — `scripts/sign-close.mjs` is the thin CLI wrapper that gates on `--write`. A `closeDecl` spec (no script path to sign) returns `ok:false` unchanged |
+| `checkCloseDirRequired(spec, cwd, closeDir)` | resolved job spec + cwd + the runner's `closeDir` (or `null`) → `{ ok: true } \| { ok: false, reds: { stage, path }[] }` | PRD item 27/M3 Part B: scans the same addressable-script bytes `readCloseScripts` reads for the literal substring `BARELOOP_CLOSE_DIR` — a script that mentions it needs a real `closeDir` or it would run against `undefined`. A script that never mentions it carries no demand |
+| `CLOSE_DIR_ENV_VAR` | `'BARELOOP_CLOSE_DIR'` | the ONE spelling `checkCloseDirRequired`'s scan and `runClose`'s env-set (`src/ralph.js`) both use |
+
+#### `src/closetimeout.js` — close timeout: autoset + signed override (M3)
+
+hamr's ruling (2026-09-06): *"both … autoset and can be override, same like api pricing"*
+— the guesstimate-plus-loud-sign-plus-customer-override shape (F113), never a hidden
+defaulted knob. Arbiter constants, hamr 2026-09-07 verbatim: **floor = 120,000 ms; K = 5
+("2 and 5 are fine")** — never agent- or adopter-settable.
+
+| export | shape | notes |
+|---|---|---|
+| `CLOSE_TIMEOUT_FLOOR_MS` | `120_000` | the floor, hamr's arbiter constant |
+| `CLOSE_TIMEOUT_K` | `5` | the multiplier, hamr's arbiter constant |
+| `LIBRARY_DEFAULT_CLOSE_TIMEOUT_MS` | `120_000` | `runClose`'s own un-autoset default (`src/ralph.js`'s `timeoutMs = 120_000`) — named separately from the floor above even though the two numbers agree today, because they are different claims |
+| `TIMING_PREFLIGHT_CEILING_MS` | `600_000` (library default × K) | the GENEROUS provisional ceiling every stage runs under DURING the timing pass itself — never the autoset/override ceiling the run then uses, which is only known after the pass completes |
+| `timeCloseStages(stages, {cwd, redact})` | → `{ perStage: {name,ms,exitCode,timedOut}[], slowestMs, slowestName, anyTimedOut }` | runs EVERY stage once, ignoring verdicts (first-red-wins stays for the real verdict precheck) — a declared/kind stage (no `.cmd`) is skipped, contributing no reading rather than a false zero. A stage that never finishes within `TIMING_PREFLIGHT_CEILING_MS` reads `timedOut: true` |
+| `computeCloseTimeoutCeiling({slowestMs, overrideMs?})` | → `{ ceilingMs, source: 'estimated'\|'override' }` | `max(FLOOR, K × slowestMs)`, unless `overrideMs` is given, in which case it wins outright (may sit above OR below the estimate — not tighten-only) |
+| `resolveCloseTimeoutMs({job, stages, cwd, redact})` | → `{ closeTimeoutMs, source, timing, timedOut }` | the ONE resolver `src/planrun.js` and `scripts/run-u.mjs` BOTH call (never two independent spellings of this precedence): a signed `job.closeTimeoutMs` wins with NO timing pass run at all; absent, the pass runs and the ceiling autosets. `timedOut: true` means a stage never finished the pass — the caller reds `close-timing-red` rather than trusting any number |
+| `closeTimeoutBanner({ceilingMs, source, slowestMs?, slowestName?})` | → the printed line | ONE spelling for `estimated`/`override`/`explicit` (the last is the pre-M3 shell/test runtime-option escape hatch, never the signed field) — printed on every run so a silent default can never hide behind this feature the way the OLD 120s/900s defaults did |
+
+**`scripts/sign-close.mjs`** — `node scripts/sign-close.mjs <jobs/x.json> [--write]` or
+`--all` for every `jobs/*.json`. Prints the old→new `jobSpecHash` and each stage's
+old→new sha256; NEVER writes unless `--write` is passed (a dry run is the default). The
+agent never runs this with `--write` on its own authority — minting a close-bytes
+signature is arbiter territory exactly like a budget or a wall clock, the same as the
+authoring pipeline's own refusal (`src/authorjob.js`'s `assembleSpec`, which refuses a
+draft carrying `sha256` the same way it refuses `close`/`closeDecl`/`verdictType`).
+
+**`close[].sha256`** — a signed spec field (PRD item 27/M2): hex sha256 of the bytes of
+the script file the stage's `cmd` names (only for an addressable cmd, per the scope
+above). `validateJob` (`src/job.js`) demands it as `missing-required` on every addressable
+stage and shape-checks it (`invalid-value`, 64 lowercase hex chars) even where not
+demanded. It sits INSIDE the signed spec, so `jobSpecHash` covers it with no
+hash-function change — re-signing a job (minting or changing this field) moves the spec
+hash and needs re-approval, exactly like any other semantic edit.
+
 #### `src/bundle.js` — pure, no provider/process calls
 
 | function | args → returns | notes |
 |---|---|---|
-| `exportBundle(o)` | `{ spec, closeScripts, registryDir, outDir, bareloopVersion }` → `{ ok, reds, dir, bundleHash, manifest }` | mints the directory above. Every check runs before anything touches disk — a red means nothing was written |
+| `exportBundle(o)` | `{ spec, closeScripts, registryDir, outDir, bareloopVersion }` → `{ ok, reds, dir, bundleHash, manifest }` | mints the directory above. Every check runs before anything touches disk — a red means nothing was written. **F132:** a stage carrying a signed `close[].sha256` gets it RE-SIGNED in the written `spec.json` over the RELOCATED bytes (post import-rewrite) it actually packs — not copied verbatim from the source spec. Without this, a script whose import gets rewritten (`../src/x.js` → `'bareloop'`) ships with a signature that covers the wrong bytes, and the bundle refuses itself as `close-tampered` at $0 on its very first run (the manifest hash and the spec signature disagree over two different byte strings for the same file) |
 | `bundleHash(dir)` | `dir` → sha256 hex | recomputes from what is on disk right now; throws only if `dir` itself is not a directory |
 | `readBundle(dir)` | `dir` → `{ ok, reds, spec, manifest, bridges, blessing, history }` | never throws; every failure is a typed red. Runs the tamper check (below) whenever both a manifest and a spec parsed |
 | `resolveBundleSpec(bundle, bundleDir)` | a `readBundle` result + the bundle dir → `{ spec, approveHash }` | the in-memory `$BARELOOP_BUNDLE` → absolute `bundleDir` substitution; `approveHash` is `jobSpecHash` of the *substituted* spec, never the unresolved one |
@@ -2572,7 +2673,12 @@ layout table at all. `history.jsonl`'s row also carries `bundleHash` and `approv
 | `close-script-collision` | `exportBundle` | two different close script paths share one basename — a flat `close/` directory would silently clobber one |
 | `close-import-unparsed` | `exportBundle` | a close script's import is a shape this module cannot verify at all — default import, `* as ns`, mixed default+named/namespace, a bare side-effect import, a dynamic `import()`, or a relative import that does not point into `src/` (a sibling file never ships in `close/`). Fails safe rather than silently accepting what it cannot read |
 | `close-import-unexported` | `exportBundle` | a close script imports a name from bareloop's own `src` that `src/index.js` does not export |
-| `close-absolute-path` | `exportBundle` (F129) | a close script's source bakes in a quoted string literal that is an absolute POSIX path which `existsSync` finds real on the exporting machine and which is not under an allow-listed system prefix (`/usr/`, `/bin/`, `/sbin/`, `/lib/`, `/lib64/`, `/dev/`, `/etc/`, `/proc/`, `/sys/`, `/opt/`). **A close judges `process.cwd()` — the runner's cwd — never a path baked into the script (F8/F129):** the live defect this catches is a hardcoded `WORKDIR` making a close judge the ORIGINAL patient checkout instead of the fresh worktree it was actually pointed at, minting a fake `already-green` at $0. A nonexistent absolute-looking literal is a NAME, not a proven hazard, and is not flagged — the check is deliberately monotone and simple, not clever (see `absolutePathLiteralsOf`'s JSDoc for its named limits: string concatenation and cross-machine-only paths are invisible to it) |
+| `close-absolute-path` | `exportBundle` (F129) AND `runPlan` (PRD item 27, every job) | a close script's source bakes in a quoted string literal that is an absolute POSIX path which `existsSync` finds real on this machine and which is not under an allow-listed system prefix (`/usr/`, `/bin/`, `/sbin/`, `/lib/`, `/lib64/`, `/dev/`, `/etc/`, `/proc/`, `/sys/`, `/opt/`). **A close judges `process.cwd()` — the runner's cwd — never a path baked into the script (F8/F129):** the live defect this catches is a hardcoded `WORKDIR` making a close judge the ORIGINAL patient checkout instead of the fresh worktree it was actually pointed at, minting a fake `already-green` at $0. A nonexistent absolute-looking literal is a NAME, not a proven hazard, and is not flagged — the check is deliberately monotone and simple, not clever (see `absolutePathLiteralsOf`'s JSDoc, `src/close-integrity.js`, for its named limits: string concatenation and cross-machine-only paths are invisible to it). `runPlan` reds this at run start, before the close-first precheck and before any provider call — $0, nothing spent |
+| `close-sha-mismatch` | `exportBundle` (PRD item 27/M2) | a `close[].sha256` the spec carries does not match the bytes of the script actually being packed into the bundle — the two signatures (this one, and `bundleHash`'s manifest hash over the rewritten script) cover the same bytes by two different paths and must never drift apart silently (N4's own hazard, one layer up). Only fires when a value is PRESENT and wrong; a spec with no sha256 at all reds `missing-required` upstream, at `validateJob` |
+| `close-tampered` | `runPlan` (PRD item 27/M2) | a close script's bytes no longer match its signed `sha256` — checked at run start (alongside `close-absolute-path`, before the close-first precheck and before any provider call) AND before EVERY close run thereafter (`runCloseStages`'s wrapper in `src/planrun.js`, the one seam the precheck/preflight/check-passes/close-fix-loop all share). Distinct from `close-red` (a judged "no" from a working close) and from `close-crashed`/`close-timeout`/`close-killed` (the close ran and hit an instrument fault): this is decided BEFORE the close is even spawned, and it means the close that ran would not have been the one the operator approved. Registered in `CLOSE_FAULTS` (`src/ralph.js`) so it rides out through the same forbidden-zone machinery as every other close fault — never retried, never fed back as a gap |
+| `close-dir-required` | `runPlan` (PRD item 27/M3 Part B) | a close script's source mentions `BARELOOP_CLOSE_DIR` (it reads its own books directory) but the runner was given no `closeDir` at all — `checkCloseDirRequired` (`src/close-integrity.js`) reuses the same `readCloseScripts` reader the other two integrity checks share. $0, run start, before the close-first precheck and before any provider call |
+| `close-timing-red` | `runPlan` (PRD item 27/M3) | the $0 timing preflight (`resolveCloseTimeoutMs`/`timeCloseStages`, `src/closetimeout.js`) ran every close stage once, ignoring verdicts, and at least one never finished within the provisional ceiling (`TIMING_PREFLIGHT_CEILING_MS`, the library default × K = 600s) — the close cannot run on this machine in a boundable time. Only reachable when NEITHER a signed `job.closeTimeoutMs` NOR a caller-passed runtime override is present (both skip the pass entirely) |
+| `wall-under-close-timeout` | `runPlan` (PRD item 27/M3) | `job.maxWallMs` is set and is under the EFFECTIVE per-stage close timeout just resolved (autoset or signed) — a budget under one close cannot fund its own close. `validateJob`'s own `MIN_WALL_MS` floor only bounds the un-autoset library default; this run-start check is the honest shape once the real ceiling is known, rather than a silent clamp |
 | `bundle-missing` | `readBundle` | `dir` is not a directory at all |
 | `manifest-invalid` / `spec-invalid` | `readBundle` | `manifest.json`/`spec.json` could not be read or parsed |
 | `bundle-tampered` | `readBundle` | manifest and spec both parsed, but the recomputed `bundleHash` (from what's really on disk) does not match the stored one — **the load-bearing check, N4 below** |

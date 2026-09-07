@@ -10436,3 +10436,298 @@ the `../bareloop-close` pin moved from `ee2a349` to `8b209a9` (feat/export branc
 carries `3b987d4` in ancestry) — the main re-pin still awaits merge. Item (3) (runner-knob
 mirroring) is unchanged, still parked. Full detail: `docs/product/EXPORT-BUILD.md`, "Fire 5"
 section.
+
+## F131 — first-red-wins makes the seed close a blind timing instrument
+
+**Date:** 2026-09-06 · **Status:** measured, feeds PRD item 27's M3 (autoset close timeout)
+· **Class:** measurement/design finding, $0 · **Grounded in:** an archive read over 54
+archived run-u spines with ≥2 closes (`../bareloop-patients/*/u-*.jsonl`; close duration ≈
+close-verdict.ts − preceding middle-done/check-preflight.ts) and a direct per-stage seed
+timing run on a clean clone of aurora-u at `d661e50`
+(`../bareloop-patients/aurora-u-bless`, close = the re-pinned
+`../bareloop-close/scripts/u-spawner-close.mjs`).
+
+**What happened.** `runStages` (`src/ralph.js:328`) is deliberately first-red-wins — the
+close-first precheck (`check-preflight`, `src/planrun.js:1761`) stops at the FIRST stage
+that doesn't pass, so on a job whose seed tree fails an early cheap stage
+(`changed-from-seed`), the archived "seed close duration" never reaches the expensive
+stages (the test suite) at all. The archive read confirms this is the common case: seed
+close p50 2,946 ms (max 209,026), while a LATER close (all stages reachable, suite
+included) runs p50 25,153 ms, p95 130,643, max 263,944 — ratio later/seed p50 7.72, p90
+615, p95 1,225, max 9,385. 3 of 54 archived runs had a later close over 120,000 ms (the
+library's current default `closeTimeoutMs`, `src/ralph.js:663`'s `?? 120_000`) — those
+would be `close-red` (an instrument timeout, not a judged verdict) under the very default
+the bundle CLI runs on today; 1 seed alone was already over 120 s.
+
+**Direct confirmation.** Timing every stage of `u-spawner-close.mjs` individually against
+the clean seed tree (ignoring first-red-wins): `changed-from-seed` exit 1 / 164 ms;
+`typecheck` exit 1 / 2,043 ms; `tests-kept` exit 0 / 20,243 ms; `suite-green` exit 0 /
+20,039 ms; `no-suppressions` exit 0 / 184 ms — sum 42,673 ms. The real full LATER close in
+archived run `mtpo9rxy` (all 5 stages satisfied) took 41,769 ms (spine: close-verdict
+iteration 1 minus middle-done). An ALL-STAGES seed timing pass predicts the real later
+close within 2% (n=1, one job) — the first-red seed timing alone would have predicted
+~164 ms, off by roughly 250×.
+
+**Consequence.** Any autoset close-timeout ceiling must be derived from an ALL-STAGES
+timing pass run once at job start (ignoring verdicts), never from the verdict-bearing
+close-first precheck — the precheck's own first-red-wins design, correct for judging, is
+the wrong instrument for timing because it is blind to every stage after the first
+failure. This finding is the measured basis for PRD item 27 / M3 (autoset close timeout,
+signed override) in `docs/product/CLOSE-INTEGRITY-BUILD.md`; stated honestly as n=1 on one
+job — the METHOD is shown to work, not a validated multiplier/floor pair (those stay
+`TBD (hamr)`, arbiter territory).
+
+## F132 — an exported bundle refused itself `close-tampered` at $0: the spec's own signature covered the SOURCE bytes, not the RELOCATED ones export actually packed
+
+**Date:** 2026-09-07 · **Status:** fixed (`exportBundle` re-signs `close[].sha256` over the
+relocated bytes) · **Class:** live defect, hamr's paid fire · **Grounded in:** run-u green
+`mtqwmb9l` (spec hash `9ad373ac…`) minting the bridge `exportBundle` needed; `bareloop export
+jobs/aurora-u-spawner-types.json --registry ../bareloop-patients/bridges --out
+../bareloop-patients/bundles/aurora-u-spawner-types-v2.bareloop` succeeding (`bundleHash
+bd19a4fa…`); `bareloop run . --repo <fresh clone at d661e50> --approve bd19a4fa…` refusing
+`close-tampered` at $0 (run `mtqwydl4`, spine in `<bundle>/runs/mtqwydl4/spine.jsonl`).
+
+**What happened.** `exportBundle` (`src/bundle.js`) rewrites a close script's
+`import { X } from '../src/kinds.js'` to `import { X } from 'bareloop'` before writing it
+into the bundle's `close/` directory (`rewriteSrcImports`) — the ONE substitution the
+export spec names. This changes the script's BYTES: the relocated script's sha256 (packed
+into `manifest.files` and covered by `bundleHash`) differs from the SOURCE script's sha256.
+But the written `spec.json`'s `close[].sha256` field was copied verbatim from the source
+spec — never recomputed over the bytes actually being packed. Two signatures, over two
+different byte strings, for the same logical stage: the manifest says "these are the real
+bytes" (correctly, the relocated ones); the spec's own signature says "these are the signed
+bytes" (the source ones, pre-rewrite). `checkCloseByteSignature` at run start reads the
+bundle's OWN spec against the bundle's OWN close script on disk (the relocated one) and
+correctly finds a mismatch — a real bug, not a false positive in the checker: the checker
+did exactly what it was built to do, on a bundle that shipped with an inconsistent
+signature.
+
+**The fix.** `exportBundle` now recomputes `close[].sha256` for the SPEC IT WRITES, over
+the relocated (post-rewrite) bytes it just packed into `close/`, for every stage that
+already carries a signature — never fabricating one for a stage that had none. The
+export-time `close-sha-mismatch` check (source spec's signature vs. source bytes) is
+unchanged: it still catches a spec whose signature was already wrong BEFORE export, which
+is a different hazard from this one.
+
+**Catch class.** A defect that only surfaces by RUNNING the real artifact — the export
+itself validated clean (no red), `readBundle`/`bundleHash` on the freshly-written bundle
+recomputed cleanly against its own manifest, and every unit test that predated this fix
+exercised `exportBundle` only against fixtures whose close scripts happened not to trigger
+the import-rewrite in a way the tests then re-verified against the SIGNED field (the
+happy-path fixture already imports `../src/kinds.js`, but no prior test asserted the
+written spec's `close[].sha256` against the packed bytes). Cost of the catch: $0 (the
+`close-tampered` refusal fires before any provider call) — but only because a human then
+ran a SECOND real fire against the actually-exported bundle; the export step alone reported
+success.
+
+## F133 — double, mislabelled close-timeout banner: two lines for one number, the second lying about its own source
+
+**Date:** 2026-09-07 · **Status:** fixed (`scripts/run-u.mjs` no longer passes
+`closeTimeoutMs` into `runJob`) · **Class:** live defect, hamr's paid fire · **Grounded
+in:** run `mtqwmb9l`'s printed log.
+
+**What happened.** `scripts/run-u.mjs` resolves the effective close timeout itself, before
+the run starts, because it needs the number to size the outside watchdog's stale/grace
+windows (F67) before that watchdog spawns. It printed its own banner from that reading
+(`close timeout: 120s per stage (estimated from seed timing: slowest tests-kept 20069ms ×
+5, floor 120s)`) and then ALSO passed the same resolved number into `runJob` as a bare
+`closeTimeoutMs` runtime option. `runPlan` (`src/planrun.js`) treats any caller-passed
+`closeTimeoutMs` as the pre-M3 shell/test knob — it skips its own timing pass (correct, no
+wasted re-execution) but ALSO prints/emits its own banner, unconditionally labelled
+`'explicit'` (`close timeout: 120s per stage (explicit runner override)`). Same number,
+printed twice, the second line lying about where it came from — a real estimate/signed
+override read out as a bare shell knob.
+
+**The fix.** `scripts/run-u.mjs` still resolves the ceiling locally (needed for watchdog
+sizing before `runJob` is even called) but never announces it (no `console.log`, no
+`emit('close-timing', …)`) and never passes it into `runJob`. `runJob`/`runPlan` run their
+own resolution (autoset from a fresh $0 timing pass, or the spec's own signed
+`closeTimeoutMs` field) and are now the ONE place a production run's ceiling is announced —
+one banner, one spine record, correctly labelled. Traded cost: the close stages get timed
+twice in wall-clock terms (once silently for watchdog sizing, once for real inside
+`runJob`) — $0, and small (the measured sum for aurora-u's 5 stages was ~43s), against one
+honest line instead of two conflicting ones. A grep-pin test
+(`tests/close-timeout.test.js`) bracket-matches the `runJob(` call in both
+`scripts/run-u.mjs` and `src/cli.js` and asserts neither ever passes `closeTimeoutMs` —
+the same discipline as the F129 hardcoded-`WORKDIR` pin.
+
+**Catch class.** A cosmetic/log-honesty defect, not a correctness one (the ENFORCED ceiling
+was always the right number on both lines) — caught only by reading a real run's printed
+output, since no existing test asserted "exactly one banner line" for a production-shaped
+call (every prior `runPlan` test called it directly, never through `scripts/run-u.mjs`'s
+own two-call chain).
+
+**Second catch, same fire, correctness-real this time.** The pre-fix `scripts/run-u.mjs`
+called `emit('close-timing', …)` for its own reading BEFORE ever calling `runJob` — and
+`runJob` is what emits `job-start`, the record every spine reader (replay, the readshim
+battery's spend/tool-share slicers, `run-u.mjs --resume`/`--door`) assumes opens the file.
+The archived spine `../bareloop-patients/aurora-u-bareloop/u-mtqwmb9l.jsonl` (this same
+fire) carries `close-timing` as its literal first record, `job-start` second — confirmed by
+reading the file directly. This fix (run-u no longer emits its own early `close-timing`)
+removes the only writer capable of getting ahead of `job-start`: `runJob`'s own emit of
+`job-start` was already the first line inside `src/run.js`, before `runPlan` (and therefore
+before `runPlan`'s own `close-timing` emit) is ever reached, so once run-u stopped writing
+its own early record the library-only path was already correctly ordered. The one test that
+assumed the archive's first record is unconditionally `job-start`
+(`tests/readshim-battery.test.js`, "the spine predicate finds exactly the real spines in the
+real archive") now tolerates `job-start` within the first 3 records, documented with this
+run id as the reason — the archived file is a historical fact and is never rewritten to
+match the fix. A new test (`tests/close-timeout.test.js`, "runJob: job-start is always the
+spine's first record, close-timing (if any) comes after it") pins the FORWARD guarantee on a
+real scripted `runJob` call.
+
+## F134 — Bundle fire cap-halt is a cap-shaped negative; the close caught an `Any` cheat
+
+**Date:** 2026-09-07 · **Status:** closed as a finding, no fix proposed · **Class:** live
+paid fire, hamr's cap re-fire · **Grounded in:** runs `mtr0icky`, `mtr4t1u1` (same v2
+bundle, `bundleHash 935acb95aa94ea0a470b8df9b29ed8c9c27c5615a1ebe692d4fdbb1ab2579ee2`, same
+patient shape, same `--budget 5 --wall 30` flags).
+
+**Fire 7 story.** `mtr0icky`, 2026-09-07T09:16Z, cap-halted at $5.0693 of $5
+(`spendComplete true`, overshoot $0.07 = one round, the known between-rounds cap binding).
+Close-timing pass live and correct (slowest tests-kept 20,514 ms × 5 → floor 120,000 ms
+won, banner printed once). Step `fix-mypy-strict-spawner` spent $3.69 over 40 rounds,
+typecheck errors 16→6, variance meter halted it at moneyShare 0.824 (threshold 0.5, trend
+converging); replan produced `fix-mypy-strict-errors`, green at $0.37. The outer close then
+went red on `no-suppressions`: the worker had added 2 `Any` suppressions (`from typing
+import … Any` in `recovery.py` and `spawner.py`) to satisfy typecheck rather than fix it
+honestly. A fix loop for the suppression red started but money ran out after $0.43 more.
+Spend by phase: step1 $3.691 (n=40), fix $0.429 (n=12), scout $0.448 (n=9), step2 $0.371
+(n=11), plan $0.130 (n=3). Bundle not blessed by this fire.
+
+**The read.** This is a cap-shaped negative, not an instrument defect. The job's past
+observed green costs on this bundle/patient shape ran $1.40–$4.08 — $5 is close to the
+ceiling of that band, and this attempt happened to need the variance-triggered replan
+(itself real work, not waste) before landing in the suppression fix loop with too little
+budget left to finish honestly. Everything the close is supposed to catch, it caught: the
+`Any` suppression cheat was read correctly and refused, not laundered through as a pass.
+
+**The n=2 re-fire.** Fire 8, `mtr4t1u1`, 2026-09-07T11:13Z, same bundle/hash/patient/flags,
+re-fired at the same $5 cap (hamr running the command a second time). Went green: $3.7968
+of $5, ~24 min wall, close-timing pass slowest tests-kept 21,042 ms × 5 → same floor,
+banner printed once. Single step `fix-spawner-strict-typing`, 62 rounds, $3.637; scout
+$0.123; plan $0.037; no replan needed this time. Outer close satisfied including
+`no-suppressions`; the diff (5 files, +31/−27, branch
+`bareloop-aurora-u-spawner-types-2`) only REMOVES `Any` (2 lines), adds none —
+the honest fix this time, not a suppression. `blessing.json` minted at the new hash.
+
+**What worked.** The close-timing pass ran live and correctly on both fires with a single,
+correctly labelled banner each time (F133's fix holding under real re-fire, not just the
+one fire that motivated it). The relocated-bytes sha verify passed on both (F132's fix
+holding — the same bytes that tripped `close-tampered` in fire 6 verified clean here).
+Spend reporting was honest on both: fire 7's overshoot is visible as $0.07 over cap, not
+hidden; fire 8's spend and phase breakdown match the spine.
+
+**Lesson.** A $5 signed ceiling is tight for a job whose observed green cost tops out at
+$4.08 — one variance-triggered replan is enough to push a run past it even when the close
+is behaving correctly throughout. This is a finding about the bundle's SIGNED budget
+relative to the job's measured green-cost band, not a proposal: the signed budget should be
+set from that measured band rather than inherited from the `run-u` default, and raising it
+is a re-export (spec edit → new `bundleHash` → fresh green needed before re-bless) — not
+something this finding recommends doing.
+
+## F135 — Review-door accept re-run bypassed the close byte signature
+
+**Date:** 2026-09-07 · **Status:** fixed · **Class:** close-integrity gap, found by
+`/branch-review` on `feat/close-integrity`, run context `run mtr4t1u1` (the blessed fire
+whose accept path this hardens) · **Grounded in:** `src/reviewdoor.js`, `src/planrun.js`,
+`src/close-integrity.js`, `tests/reviewdoor-tamper.test.js`.
+
+**The gap.** Every close execution in the runner is supposed to go through the PRD item
+27/M2 byte re-verify (`checkStageByteSignature`) before the script's bytes are trusted —
+that is what `runCloseStages` in `src/planrun.js` (~lines 1538–1564) wraps around every
+call to `runStages`/`runDeclaredStages`, catching a script tampered with between the
+precheck and any later re-run. `src/reviewdoor.js`'s `proveMechanically` — the door's
+`accept` re-proof, which re-runs the close's mechanical stages against the tree as it
+stands "now" (potentially minutes or days after the run ended, per the module's own
+docstring) — called `runStages`/`runDeclaredStages` DIRECTLY, skipping that check. A close
+script whose bytes were swapped after the run ended but before the signer answered the door
+would be re-run unchecked: if the swapped script happened to still exit 0, `accept` would
+be honoured on a script nobody signed.
+
+**Reproduced.** `tests/reviewdoor-tamper.test.js` builds a real command-close (`spec.close`)
+green run whose close script judges `src/mod.mjs` for an "ok" marker, signs it
+(`close[].sha256`), opens a review door (`reviewDoor: true`), then — after the run ends —
+overwrites the script on disk with different bytes that are behaviourally identical (always
+`process.exit(0)`), so the failure mode is provably about the SIGNATURE, not the tampered
+script's own logic. On HEAD before the fix, `answerReviewDoor({decision:'accept', …})`
+returned `ok:true` — a false accept. (A declared close (`closeDecl`) is out of scope for
+this particular gap: a `command-exit` stage's `params.cmd` names an interpreter binary, not
+an addressable repo script, so it carries no top-level `cmd`/`sha256` for
+`checkStageByteSignature` to compare in the first place.)
+
+**Fixed.** `proveMechanically` now calls `checkStageByteSignature(stages, workdir)` before
+either executor, reusing the same helper `runCloseStages` already calls (`src/close-integrity.js`).
+A mismatch is refused the same way every other close-tampered surface refuses: it never
+reaches the executor, and reads through the existing `door-accept-red` path (`ok:false`,
+`reds[0].code:'door-accept-red'`, detail naming the tamper) — nothing is recorded, nothing
+is released, exactly like every other refused accept. `src/reviewdoor.js`'s module-level
+comment for the accept re-proof now says the bytes are verified first.
+
+**Proof.** `tests/reviewdoor-tamper.test.js`, 2 tests: the tamper case (red-on-HEAD,
+confirmed failing before the fix — `a.ok` was `true`) and an untampered control (accept
+still honoured, so the fix does not false-red an honest tree). Mutation-proven: inverting
+the new guard's condition in place (edited, run, reverted by edit — never `git checkout`)
+turned both tests red (one on the intended assertion, one on a `TypeError` from the mutant's
+now-wrong branch shape), confirming the guard is load-bearing. Full suite 2320/2320 pass
+(prior 2318, +2 for this file); `npm run typecheck` clean.
+
+## F136 — CI-only red: test fixtures committed without the neutralised git identity
+
+**Date:** 2026-09-07 · **Status:** fixed · **Class:** machine-local green blind to CI, found
+by CI on PR #32 (GitHub Actions run 34158519331) · **Grounded in:** `tests/helpers.js`,
+`tests/close-integrity.test.js`, `tests/close-timeout.test.js`.
+
+**The gap.** `initPatientRepo` in `tests/helpers.js` neutralises global/system git config
+and sets `GIT_AUTHOR_*`/`GIT_COMMITTER_*` in its own env so a patient fixture's seed commit
+never depends on the host's git identity. `makePatient` in both
+`tests/close-integrity.test.js` (~line 170) and `tests/close-timeout.test.js` (~line 46)
+then add a second commit on top of that seed (writing `src/mod.mjs` before committing it)
+via a raw `execFileSync('git', ['commit', ...])` with no env at all — so that second commit
+depends on whatever git identity the machine happens to have. On hamr's own machine a global
+`user.name`/`user.email` papered over the gap; on the CI runner, which has none, both files
+red 22 tests with `Author identity unknown ... fatal: unable to auto-detect email address`.
+
+**Reproduced.** `HOME=<empty> GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null node
+--test tests/close-integrity.test.js tests/close-timeout.test.js` on HEAD before the fix:
+18 of 70 tests failed with the CI's exact error text (`# Author identity unknown` /
+`# fatal: unable to auto-detect email address (got 'hamr@hamr.(none)')`), confirming the
+class without needing a real CI dispatch.
+
+**Fixed.** `tests/helpers.js` now exports `patientGitEnv()` (the same identity/config env
+object `initPatientRepo` already built inline) and `gitInPatient(dir, args)`, a thin
+`execFileSync` wrapper applying it. Both test files' `makePatient` now call
+`gitInPatient(wd, ['add', '-A'])` / `gitInPatient(wd, ['commit', ...])` instead of the raw,
+env-less `execFileSync('git', ...)`. `git diff origin/main...HEAD -- tests/` plus
+`grep -n "execFileSync('git', \['commit'" tests/*.test.js` confirmed these were the only two
+sibling call sites missing the identity env on this branch.
+
+**Proof.** Same CI-like command re-run post-fix: 70/70 pass, exit 0. Full suite
+`npm test`: 2320/2320 pass. `npm run typecheck`: clean.
+
+**Closed at the runner (2026-09-07).** The fixture fix above closed this one instance, but
+the class — a local test leaning on this machine's own state and going green here, red
+only on CI — had already shipped twice (v0.19.0's hardcoded local path; this F136's
+inherited git identity). `scripts/hermetic.mjs` closes the class instead of the
+instance: `npm test` now runs `node --test` under an env with `HOME` redirected to a fresh
+empty `mkdtemp` dir and `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`/`GIT_CONFIG_NOSYSTEM` set
+to neutralise git config resolution, with any inherited `GIT_AUTHOR_*`/`GIT_COMMITTER_*`/
+`EMAIL` deleted so nothing in the ambient shell env can quietly supply an identity either
+— the same blindness CI's runner already has for free. Reverting one of the two fixed
+`makePatient` call sites back to the raw, env-less `execFileSync('git', ['commit', ...])`
+form and running it through the hermetic runner reproduced `Author identity unknown`
+immediately; the same reverted file under plain `node --test` (no hermetic wrapper) stayed
+green on this machine, confirming the wrapper is what closes the blindness, not the
+fixture fix alone. Deliberately not a sandbox: PATH, `node_modules`, and shelled-out
+binaries (ripgrep, git itself) are untouched.
+
+**Second catch (2026-09-07).** The runner's own first name, `test-hermetic.mjs`, matched
+node's default test-file discovery glob (`**/test-*.?(c|m)js`), so `node --test` discovered
+and executed the runner itself as a test file — the suite count went 2320 to 2321 with
+`ok - scripts/test-hermetic.mjs`, nesting a whole second `node --test` inside the outer
+suite (it happened to exit 0 in ~1.2s, but it was a self-invoking test file counted as a
+pass). Renamed to `scripts/hermetic.mjs`, which matches none of node's default discovery
+patterns (`**/*.test.?(c|m)js`, `**/*-test.?(c|m)js`, `**/*_test.?(c|m)js`,
+`**/test-*.?(c|m)js`, `**/test.?(c|m)js`, `**/test/**/*.?(c|m)js`); a `NODE_TEST_CONTEXT`
+guard was added so a future rediscovery fails loudly (`process.exitCode = 1` with an error
+message) instead of nesting silently.

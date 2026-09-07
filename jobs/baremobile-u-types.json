@@ -24,7 +24,8 @@
         "min": 1
       },
       "gapKeep": "^BAREMOBILE ",
-      "offer": false
+      "offer": false,
+      "sha256": "9ac0c3f8c8244de95f175f1dc62a3d46924ac0d5d33140bd0cbc805c01e123d4"
     },
     {
       "name": "typecheck",
@@ -34,7 +35,8 @@
         "pattern": "BAREMOBILE judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREMOBILE "
+      "gapKeep": "^BAREMOBILE ",
+      "sha256": "9ac0c3f8c8244de95f175f1dc62a3d46924ac0d5d33140bd0cbc805c01e123d4"
     },
     {
       "name": "typecheck-outside",
@@ -44,7 +46,8 @@
         "pattern": "BAREMOBILE judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREMOBILE "
+      "gapKeep": "^BAREMOBILE ",
+      "sha256": "9ac0c3f8c8244de95f175f1dc62a3d46924ac0d5d33140bd0cbc805c01e123d4"
     },
     {
       "name": "tests-kept",
@@ -54,7 +57,8 @@
         "pattern": "BAREMOBILE judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREMOBILE "
+      "gapKeep": "^BAREMOBILE ",
+      "sha256": "9ac0c3f8c8244de95f175f1dc62a3d46924ac0d5d33140bd0cbc805c01e123d4"
     },
     {
       "name": "suite-green",
@@ -64,7 +68,8 @@
         "pattern": "BAREMOBILE judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREMOBILE "
+      "gapKeep": "^BAREMOBILE ",
+      "sha256": "9ac0c3f8c8244de95f175f1dc62a3d46924ac0d5d33140bd0cbc805c01e123d4"
     },
     {
       "name": "no-suppressions",
@@ -74,7 +79,8 @@
         "pattern": "BAREMOBILE judged=(\\d+)",
         "min": 1
       },
-      "gapKeep": "^BAREMOBILE "
+      "gapKeep": "^BAREMOBILE ",
+      "sha256": "9ac0c3f8c8244de95f175f1dc62a3d46924ac0d5d33140bd0cbc805c01e123d4"
     }
   ],
   "tools": [
