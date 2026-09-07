@@ -418,6 +418,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     validation gate so a baked-in path is inexpressible for every job, not only bundles.
 
     **export v1 validated 2026-09-06, see EXPORT-BUILD.md.**
+
+    **shipped in v0.22.0, 2026-09-07 — see CLOSE-INTEGRITY-BUILD.md.**
     **2026-09-06, later (hamr: "both, ui is coming. it's autoset and can be override, same
     like api pricing"):** the close timeout joins this rung. Today `closeTimeoutMs` is a
     caller-passed library parameter defaulting to 120s (`src/ralph.js`), which run-u

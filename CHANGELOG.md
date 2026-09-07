@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.22.0] — 2026-09-07
 
 ### Added
 
@@ -145,6 +145,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
   verifies the mechanical stages' bytes against their signed `sha256` first,
   refusing through the existing `door-accept-red` path on a mismatch
   (`tests/reviewdoor-tamper.test.js`).
+
+- **F134 — live re-fire validation, no code change**. Two real paid fires of the
+  same exported bundle (`mtr0icky` cap-halt, `mtr4t1u1` green re-fire) confirmed
+  M2's relocated-bytes signature and M3's close-timing banner both hold under a
+  second real fire, not just the one that motivated each fix; the cap-halt
+  itself read as a cap-shaped negative (an `Any`-suppression cheat correctly
+  caught by `no-suppressions`, not an instrument defect). See
+  `docs/logs/FINDINGS.md` F134.
 
 ## [0.21.0] — 2026-09-06
 
