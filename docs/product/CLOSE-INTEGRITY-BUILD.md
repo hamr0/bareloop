@@ -192,4 +192,48 @@ those stay arbiter-set per the ruling above.
 signature) shipped 2026-09-06 — `close[].sha256`, `close-tampered`, `close-sha-mismatch`,
 `scripts/sign-close.mjs`; scope widened to bare-executable (`.sh`) close scripts per an
 orchestrator audit mid-build (folded into this rung, not a separate one); every
-`jobs/*.json` re-signed. M3 (close timeout autoset) not started.
+`jobs/*.json` re-signed.
+
+**M3 (close timeout autoset + `BARELOOP_CLOSE_DIR`) shipped 2026-09-07.** hamr's arbiter
+constants, verbatim: floor = 120,000 ms; K = 5 ("2 and 5 are fine"). `src/closetimeout.js`
+(new module) — `resolveCloseTimeoutMs` is the ONE precedence resolver `src/planrun.js` and
+`scripts/run-u.mjs` both call: a signed `job.closeTimeoutMs` wins outright with no timing
+pass run at all; absent, a $0 pass times every stage once (ignoring verdicts) and the
+ceiling autosets to `max(FLOOR, K × slowest)`. New signed spec field `closeTimeoutMs`
+(floor-bounded, no ceiling — the customer-override shape). New `runPlan` run-start check
+`wall-under-close-timeout` (maxWallMs under the just-resolved effective ceiling refuses at
+$0). `run-u.mjs`'s hardcoded `CLOSE_TIMEOUT_MS = 900_000` retired; the outside watchdog
+(F67) now sizes its stale/grace windows off the real resolved number, computed before the
+watchdog spawns.
+
+Part B (`BARELOOP_CLOSE_DIR`, hamr 2026-09-07: "logs have their own dir, trying to keep it
+clean and export holds as one unit of itself") shipped alongside: `runClose` threads an
+optional `closeDir` as the env var `BARELOOP_CLOSE_DIR`; `checkCloseDirRequired`
+(`src/close-integrity.js`) refuses `close-dir-required` at $0 for a close script that
+mentions the variable and gets none. The four scripts hardcoding an external `SPINE_DIR`
+(`testgen-cold-check-close.mjs`, `testgen-close.mjs`, `l2poc-check-close.mjs`,
+`types-close.mjs`) now read the env var and instrument-stop (exit 97) when absent — those
+hardcoded literals had ALREADY been tripping the shipped M1 `close-absolute-path` guard
+(confirmed: `absolutePathLiteralsOf` flagged all four before this fix). `u-pulselog-close.mjs`'s
+hardcoded `--workdir` default (the same F129 hazard, one script over) moved to
+`process.cwd()`. `src/cli.js` sets `closeDir` to `<bundleDir>/runs/<runid>/close/`;
+`scripts/run-u.mjs` sets it to its existing `spineDir`. `grep -n "'/home" scripts/*-close.mjs`
+now returns zero hits across all 10 close scripts (was 5 before this rung: the 4 SPINE_DIR
+scripts plus `u-pulselog-close.mjs`'s default). Every `jobs/*.json` whose close bytes moved
+was re-signed (`scripts/sign-close.mjs --all --write`) — see the dated `BENCH-PREREG.md`
+amendment for the old→new hashes.
+
+Divergences from the letter of this build spec, named: (1) the timing pass is SKIPPED
+(never run) whenever ANY override is present — a caller-passed runtime `closeTimeoutMs` or
+the signed spec field — rather than "always run, source label only distinguishes the
+ceiling used"; running it anyway would waste real machine time and, on a deliberately
+slow/hung stage, block for up to 10 minutes for no purpose (documented in
+`src/closetimeout.js`'s own header). (2) a caller-passed runtime `closeTimeoutMs` (the
+pre-M3 shell/test knob) is kept as a THIRD precedence tier above both the signed field and
+autoset, labeled `'explicit'` (never `'signed override'`) on the printed banner and the
+`close-timing` spine record — kept for backward compatibility with existing tests and any
+future shell-level override, not part of the customer-facing contract. (3) the
+`close-timing-red` (timing-pass timeout) path is unit-tested via a `ceilingMs` test seam on
+`timeCloseStages`/`resolveCloseTimeoutMs` rather than a full `runPlan` integration test —
+the real provisional ceiling is 600s and cannot be shrunk from outside without either that
+seam or a genuine 10-minute test.

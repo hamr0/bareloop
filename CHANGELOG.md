@@ -63,6 +63,47 @@ feature lands, **patch** = docs, fixes, scaffolding.
     invisible to BOTH `close-absolute-path` and this fingerprint. Every `jobs/*.json`
     whose close names a script was re-signed with `scripts/sign-close.mjs --all --write`.
 
+- **Close integrity M3 — close timeout: autoset + signed override** (PRD item 27,
+  hamr 2026-09-06: "both … autoset and can be override, same like api pricing"; arbiter
+  constants set 2026-09-07: floor 120,000ms, K = 5).
+  - New `src/closetimeout.js`: `CLOSE_TIMEOUT_FLOOR_MS`, `CLOSE_TIMEOUT_K`,
+    `TIMING_PREFLIGHT_CEILING_MS`, `timeCloseStages`, `computeCloseTimeoutCeiling`,
+    `resolveCloseTimeoutMs`, `closeTimeoutBanner` (all exported from `src/index.js`). A
+    $0 timing preflight runs every close stage once, ignoring verdicts, before the
+    close-first precheck and before any provider call; the per-stage ceiling every close
+    call in the run then uses is `max(FLOOR, K × slowest measured stage)`, printed on
+    every run (`close timeout: <n>s per stage (estimated from seed timing: …)`).
+  - New OPTIONAL signed spec field `closeTimeoutMs` (`>= CLOSE_TIMEOUT_FLOOR_MS`,
+    `src/job.js`): the operator's own override, which wins outright over the estimate and
+    may legally sit above OR below it (the rates-passthrough shape, F113 — not
+    tighten-only). Skipped when set: the timing pass never runs. Arbiter territory —
+    `src/authorjob.js`'s `assembleSpec` refuses a draft carrying it.
+  - New `runPlan` run-start check `wall-under-close-timeout`: refuses at $0 when
+    `job.maxWallMs` is under the just-resolved EFFECTIVE close timeout — the honest shape
+    once the real (autoset or signed) ceiling is known, never a silent clamp.
+  - `scripts/run-u.mjs`'s hardcoded `CLOSE_TIMEOUT_MS = 900_000` retires; the per-stage
+    ceiling is resolved once (via the same `resolveCloseTimeoutMs`) before the outside
+    watchdog (F67) is even spawned, so its stale/grace windows size off the real number.
+    `src/cli.js`'s bundle runner passes nothing — both runners now go through the
+    identical autoset/override path.
+  - **Part B — `BARELOOP_CLOSE_DIR`.** `runClose` (`src/ralph.js`) accepts an optional
+    `closeDir` and sets it as `BARELOOP_CLOSE_DIR` in the close's (already-stripped) env —
+    a `BARELOOP_` name matches none of `CLOSE_ENV_DENY`'s rules. New
+    `checkCloseDirRequired`/`CLOSE_DIR_ENV_VAR` (`src/close-integrity.js`): a close script
+    whose source mentions the variable and gets no `closeDir` refuses at $0
+    (`close-dir-required`), the same seam as `close-absolute-path`/`close-tampered`. The
+    four hand-authored scripts that hardcoded an external `SPINE_DIR`
+    (`testgen-cold-check-close.mjs`, `testgen-close.mjs`, `l2poc-check-close.mjs`,
+    `types-close.mjs`) now read `process.env.BARELOOP_CLOSE_DIR` and instrument-stop
+    (exit 97) when it is absent — no baked fallback. `scripts/u-pulselog-close.mjs`'s
+    hardcoded `--workdir` DEFAULT (a separate F129 cwd-class hazard — that literal existed
+    on disk and already tripped the shipped `close-absolute-path` guard for
+    `jobs/pulselog-u-types.json`) now falls back to `process.cwd()`, the same M1 template
+    every other close script uses. `src/cli.js` sets `closeDir` to
+    `<bundleDir>/runs/<runid>/close/`; `scripts/run-u.mjs` sets it to its existing
+    `spineDir`. Every `jobs/*.json` whose close bytes changed was re-signed
+    (`scripts/sign-close.mjs --all --write`).
+
 ## [0.21.0] — 2026-09-06
 
 ### Added

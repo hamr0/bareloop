@@ -436,6 +436,13 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     (facts, three milestones cwd/gate-rule/timeout, POC result, pre-registered validation).
     Not started; `K`/`FLOOR_MS` remain `TBD (hamr)`. Also carries F131 (the archive/direct
     timing measurement behind the M3 autoset design) — see `docs/logs/FINDINGS.md`.
+    **2026-09-07 — M3 shipped** (hamr's arbiter constants: floor 120,000ms, K = 5):
+    close timeout autoset ($0 seed timing pass, `max(FLOOR, K × slowest)`) + signed
+    `closeTimeoutMs` override, and `BARELOOP_CLOSE_DIR` (the close's own books directory,
+    threaded by both runners, refusing `close-dir-required` at $0 for a script that needs
+    one and gets none). Item 27 (close integrity) is now fully shipped across all three
+    milestones — see `CLOSE-INTEGRITY-BUILD.md`'s status line for detail and named
+    divergences.
 
 28. **Provider-agnostic runners** (hamr, 2026-09-06: "the whole point of bareloop is to be
     LLM agnostic … Anthropic and OpenAI shaped, this could come next … shouldn't come as a
