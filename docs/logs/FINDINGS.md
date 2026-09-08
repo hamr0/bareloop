@@ -10877,3 +10877,61 @@ held). The page is now proven end to end on the PUBLISHED package by someone who
 two orders of magnitude under. A trivial patient is not a cost baseline for real work (the standing
 rule against re-baselining on a floor-shaped workload), but it IS the honest number for what the
 quickstart page itself asks a stranger to spend, and that number belongs on the page's promise.
+
+
+## F144 — The per-request cliff is a gateway connection-lifetime ceiling (~231–252s), not a job-length or request-size effect; bareloop's own worst phase runs at less than half of it
+
+**2026-09-08, jointly established with the fwdloop session; all evidence $0 except the runs that were
+already paid for.** Two independent jobs, two independent codebases, one wall.
+
+**Observations.** bareloop (GLM-5.2 via synthetic.new's OpenAI-shaped endpoint, runs `zj2a4qqp` and
+`1a1o446u`): slowest request that returned = **104s**; the request that was cut = **252s**; nothing
+observed in between. fwdloop (same model, same gateway, 34 successful rounds + 3 failures,
+`poc/m0/out/spend.jsonl` on branch `m0-poc`): successful round wall min 9s / median 31s / **max 102s**;
+failures HTTP 524 at **251s** and **252s**; nothing in the 102–251s band. Neither job observed a single
+request in the ~104–251s gap.
+
+**It is a connection-lifetime ceiling, not an idle timeout** (fwdloop's measurement, the one that
+settles the mechanism). A `stream: true` request to GLM-5.2 returned its first byte at **92s** and
+delivered **3,951 chunks** with bytes flowing continuously right up to the socket being killed at
+**231s**. An idle timeout cannot fire against a stream that never goes idle. Consequences: streaming
+is not a workaround, and neither is swapping to a faster model on the SAME gateway — the ceiling is a
+property of the connection, shared by every model behind that edge. Only a direct provider API escapes
+it. Corroborating disconfirmation of a size hypothesis: fwdloop's cut requests carried a 4,000-token
+output cap while several of bareloop's 4,500–9,182-output-token rounds returned fine under the wall.
+
+**The mechanism is model generation SPEED, not step shape** (this corrects a mechanism this repo
+asserted and fwdloop published before either was measured — see the withdrawal below). GLM-5.2 through
+that gateway generates at roughly **50–95 output tokens/sec** (measured: 4,570 out in 85s; 6,584 in
+104s; 9,182 in 97s). The budget is therefore `output tokens needed ÷ the model's tokens-per-second`,
+which puts GLM-5.2's ceiling near 15–20k output tokens in one request. fwdloop's steps ask for a few
+hundred; bareloop's ask for thousands but on a provider an order of magnitude faster.
+
+**bareloop's own baseline — 233 archived runs, 9,548 worker rounds, Anthropic API.** Measured as the
+gap from the previous spine record to the round record, so every figure is an UPPER bound that
+includes tool execution, not pure request time:
+
+| phase | n | median | p95 | max | >100s | >240s |
+|---|---|---|---|---|---|---|
+| plan (draft) | 130 | 34.1s | 76.7s | **107.4s** | 1 | **0** |
+| scout | 754 | 5.3s | 23.5s | 60.9s | 0 | 0 |
+| step | 5,157 | 5.0s | 39.9s | 296.8s | 43 | 7 |
+| fix | 940 | 4.4s | 37.2s | 260.4s | 4 | 1 |
+| ALL | 9,548 | 4.9s | 37.7s | 296.8s | 58 | **8 (0.08%)** |
+
+**WITHDRAWN.** This session told the fwdloop session that bareloop "puts one whole planning pass in a
+single request, so it lives past the cliff by construction," and fwdloop published that mechanism as
+fact (their F6, corrected at `8e22e97`). It is false. The drafting pass is bareloop's slowest phase by
+median and has **never** exceeded 108s in 130 observed draft rounds — under half the wall. The claim
+was a plausible mechanism offered without a measurement that cost $0 and two minutes to run. The
+error class: a story about one's own system's shape, asserted from design intuition, propagated to a
+peer, and published downstream before anyone read the archive.
+
+**Reads.** (1) The 524 question is CLOSED with no build: a retry re-sends a 4-minute request into the
+same wall and pays twice, streaming does not help, and no model on that gateway escapes. GLM-5.2 +
+synthetic.new stays off the worker menu — for provider speed, not for our request shape. (2) The
+0.08% figure is the tripwire's baseline: fwdloop's rule, adopted here as a watch not a redesign, is
+that a step whose model round can exceed ~2 minutes is a spec bug. bareloop passes today, and none of
+the 8 over-240s rounds is a draft round. (3) A measured baseline of a peer's 9,548 rounds is a better
+instrument than either session's own POC data; the cross-session comparison is what produced both the
+mechanism and the withdrawal.
