@@ -2556,6 +2556,7 @@ with a constructor option (e.g. `legacyMaxTokens: true`) for compat servers that
 `max_tokens`. No model-name sniffing inside the provider. bareloop consumes by version bump; no
 local shim (the runner would otherwise have to subclass the provider to rename one key).
 
+> **Carried upstream by fwdloop (2026-09-08).** Consolidated with fwdloop's own bare-agent asks (F4: silent reasoning truncation; `tool_choice`) in `../fwdloop/docs/product/2026-09-08-bare-agent-asks.md` (branch `m0-poc`, `35baf65`), severity-ordered with BA-25 first. The fwd session re-ran `harness-drop.mjs` against bare-agent 0.41.1: identical outcomes, BA-25 confirmed unchanged there. fwdloop's session, not this one, talks to the bareagent session.
 
 ## BA-25 — a response whose body is cut short after headers leaves `generate()` pending FOREVER; with no other handle alive the process drains and exits with no outcome (both `OpenAIProvider` and `AnthropicProvider`) (2026-09-08)
 
@@ -2614,3 +2615,5 @@ In `_request` (both providers, and any shared helper): reject on `res.on('aborte
 one-retry rule can see it), and reject on `res.on('error')`. No new option, no behaviour change
 on the happy path. bareloop consumes by version bump; no local shim (the runner has no seam
 between `generate()` and the socket).
+
+> **Carried upstream by fwdloop (2026-09-08).** Consolidated with fwdloop's own bare-agent asks (F4: silent reasoning truncation; `tool_choice`) in `../fwdloop/docs/product/2026-09-08-bare-agent-asks.md` (branch `m0-poc`, `35baf65`), severity-ordered with BA-25 first. The fwd session re-ran `harness-drop.mjs` against bare-agent 0.41.1: identical outcomes, BA-25 confirmed unchanged there. fwdloop's session, not this one, talks to the bareagent session.
