@@ -10845,3 +10845,35 @@ a live process; a process that has already EXITED is invisible to it. The smalle
 instrument is in the runner: a `beforeExit` hook that, if no `job-end` was emitted, writes one with
 a distinct outcome (`runner-drained`), the floor spend, and a non-zero exit code — so a drained run
 reads as a casualty, never as nothing. Parked in PRD item 28.
+
+
+## F142 — The quickstart's own "Run it" snippet threw before the first API call: `AnthropicProvider` never reads the key from the environment
+
+**2026-09-08, the quickstart's paid proof run (PRD item 28 sibling, F138's page).** `docs/QUICKSTART.md`
+was built by a sonnet builder who verified "every $0 command" in a clean consumer — but the page's
+LAST code block, the one that spends money, was the one block nobody ever executed. Its provider line
+read `new AnthropicProvider({ model: 'claude-sonnet-5' }) // key comes from env`. No version of
+bare-agent has ever read `ANTHROPIC_API_KEY` itself: `provider-anthropic.js:46` throws
+`[AnthropicProvider] requires apiKey` at CONSTRUCTION. A cold adopter following the page verbatim gets
+a stack trace on their very first run, with a comment in the code actively telling them the wrong
+thing about where their key goes.
+
+**The catch class.** This was NOT a paid-only defect — the throw happens before any HTTP request, so a
+$0 execution of that block would have found it. The gap was that "verify every command" was read as
+"verify every command that costs nothing", and the boundary between the two was drawn at exactly the
+place the page stops being checked. **Rule:** a doc's terminal step is the step most worth executing;
+a $0 SYNTAX check of a paid snippet (constructing the objects, then not calling) costs nothing and
+would have closed this. Corroborates F138 (same page, same class: an import line nobody ran).
+
+**Proof run, after the fix.** Clean consumer (`npm install bareloop` → 0.22.0, bare-agent 0.39.0),
+patient a fresh 2-commit git repo with a genuinely failing suite (a `slug()` helper failing 3 of 4
+real assertions: punctuation, repeated separators, trimming). Spec copied from the page verbatim,
+only `workdir`/spine paths filled in. Outcome **`green`**, `spentUsd` **$0.0567**, `spendComplete`
+true, 34 spine records, work on branch `bareloop-my-maintainer`; the patient's suite went 1 pass /
+3 fail → **4 pass / 0 fail** with a real rewrite of the regex, not a test edit (`writeScope: ['src/**']`
+held). The page is now proven end to end on the PUBLISHED package by someone who is not its author.
+
+**Cost read:** the operator's own pre-run estimate for this proof was "$2 to $6". Actual: **$0.057**,
+two orders of magnitude under. A trivial patient is not a cost baseline for real work (the standing
+rule against re-baselining on a floor-shaped workload), but it IS the honest number for what the
+quickstart page itself asks a stranger to spend, and that number belongs on the page's promise.
