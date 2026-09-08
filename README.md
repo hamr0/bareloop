@@ -82,7 +82,7 @@ A signed job spec goes in. A verdict comes out.
 
 ```js
 import { runJob, jobSpecHash, makeSpine } from 'bareloop';
-import { AnthropicProvider } from 'bare-agent';
+import { AnthropicProvider } from 'bare-agent/providers';
 
 const spec = {
   schema: 'job-v1',
