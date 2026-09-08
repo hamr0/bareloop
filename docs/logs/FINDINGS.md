@@ -10980,3 +10980,54 @@ half of every round is billed at full input price, so there the O(N²) replay DO
 deep conversations get expensive fast. **Small turns are safe on every provider; cheap turns are not.**
 A per-provider cache-effectiveness reading belongs in item 28's tier table beside the TPM figures
 (F143), because it changes the cost model, not just the speed.
+
+
+## F146 — Four models, one job, one patient, one clock: no synthetic.new model cleared bareloop's bar, and the reason is the PLAN SCHEMA, not the gateway
+
+**2026-09-08, hamr's instruction "close all open items gpt, synthetic, close 28 properly with thorough
+testing, i got them all topped up"; prompted to widen past n=1 model by the fwdloop session, whose
+objection was correct: this repo had generalised "GLM-5.2 fails" into "synthetic.new is off the menu"
+on one model's evidence.** Controlled comparison — the SAME job (`bareguard-u-types`), the same signed
+spec, a fresh copy of the same patient, and the same $5 / 30-min ceiling for every arm.
+
+| model | endpoint | rounds | plan accepted | steps green | cost | outcome | wall |
+|---|---|---|---|---|---|---|---|
+| GLM-5.2 | synthetic | 9 | no | 0 | $0.328 | wall-halt | 10 min |
+| GLM-5.2 | synthetic | 11 | yes | 0 | $0.596 | provider-red (HTTP 524) | 11 min |
+| Qwen3.8-27B | synthetic | 8 | no | 0 | $0.288 | provider-red (HTTP 400) | **136s** |
+| Kimi-K3 | synthetic | 6 | **no** | 0 | $0.094 | plan-red | **104s** |
+| gpt-5-mini | OpenAI | 56 | yes | **5** | $0.976 | **plan-red (close rendered it)** | 12 min |
+
+**The bar** (set before the runs, from the gpt-5-mini baseline): write a plan, green some steps, end on
+a verdict rather than a casualty. **0 of 3 synthetic models cleared it. 1 of 1 OpenAI model did.**
+
+**Three different failure modes, and NONE of them is F144's gateway cliff.** GLM-5.2 = too slow, dies at
+the ~240-250s connection cap. Qwen3.8-27B = an unexplained HTTP 400 during scout at ~25k context (well
+inside its 262k window); its simple shapes all pass a $0 probe (with tools, toolless, large maxTokens),
+so the 400 belongs to the accumulated transcript, not the request shape. Kimi-K3 = **capability**: it
+drafted twice and BOTH drafts failed plan validation — draft 1 omitted `exit` on every step, draft 2
+used absolute paths and `..` segments — so it never earned an accepted plan. Qwen and Kimi both finished
+in under 140 seconds, nowhere near the cliff.
+
+**The real bar is bareloop's plan schema, not the transport.** Even gpt-5-mini needed two drafts (draft 1
+red on `steps.0.exit` missing). fwdloop's bake-off found 88 zero-error rounds across 9 models on THEIR
+job because their steps ask for a few hundred output tokens and no comparable schema; bareloop asks a
+model to emit a valid `plan-v1` with a closed exit menu and relative-path constraints. That is a
+capability threshold, and it is where these models fail — which also means F144's per-project bar
+(`output tokens ÷ tok/sec`) is necessary but not sufficient: a model can be fast enough and still be
+unable to author the plan.
+
+**Blind instrument, named not fixed.** Qwen's failure reaches the operator as the bare string
+`[OpenAIProvider] HTTP 400`. bare-agent has `exposeErrorBody` and **bareloop never sets it on any
+provider** (`grep exposeErrorBody src/ scripts/` = 0 hits), so every HTTP error from every provider
+arrives with the vendor's own explanation discarded — the fifth instance of this repo's recurring
+blind-readout class. It is NOT a free fix: an error body can echo auth material, which is why the
+transport-prose scrub already exists (F6 lineage), so exposing it must route through that scrub.
+**Parked for hamr** — it touches secret handling, not just diagnostics.
+
+**Reads.** (1) The fwdloop objection is sustained and the correction stands: the earlier phrasing was a
+one-model generalisation. (2) The corrected verdict is narrower AND worse for synthetic on this job —
+not "GLM is slow" but "no model tested there can author a bareloop plan". (3) Nothing joins the worker
+menu without its own clean paid run (standing rule); after $1.01 across three models, synthetic.new has
+zero candidates. (4) The gateway is exonerated as the cause here — two of three deaths happened inside
+140 seconds.
