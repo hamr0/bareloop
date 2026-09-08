@@ -10774,3 +10774,46 @@ honest floor. **Reads:** (1) the OpenAI SHAPE is safe to admit — item 28's fac
 refactor, not a port; (2) the WORKER tier for OpenAI must be at least `gpt-4.1` class, `mini` fails
 the validator at draft; (3) the 429 policy is arbiter territory (a retry rule) — parked for hamr in
 PRD item 28; (4) the GPT-5 line is closed until BA-24 lands upstream. Nothing here is a lift claim.
+
+
+## F140 — A provider call can end the whole run with NO outcome: the dangling-promise class (BA-25), one unattributed silent death, and the archive's 10-of-235 without a `job-end`
+
+**2026-09-08, item 28 POC on synthetic.new (hamr's key `pass amr/synthetic_api`), $0.44 over three
+runs plus a $0 harness.** Cheap instrument first: ten single tool-call rounds — five open models
+(GLM-5.2, Kimi-K3, Qwen3.8-27B, gpt-oss-120b, `syn:large:text`) on BOTH the OpenAI-shaped
+(`/openai/v1`) and Anthropic-shaped (`/anthropic/v1`) endpoints — all ten returned `tool_use` with
+parsed arguments and a usage block (GLM-5.2 2.4 s, Kimi-K3 38 s). Oddity noted, not chased: on the
+Anthropic-shaped endpoint `cacheCreationTokens` equals `inputTokens` on every model, so any price
+there is a guess over mis-metered usage.
+
+**Run 3 — `n3spffeh`, GLM-5.2 via OpenAI shape: SILENT DEATH, $0.11 (floor).** Scout ran 9
+rounds to its cap (`attempt-bounded 8/8`, `scout-truncated`), `materials` opened the draft phase
+at 15:57:58Z with $1.89 and 9 min left — and the spine stops there. No `job-end`, no
+`escalation`, no stack, no "unsettled await" warning in the log, process gone, nothing in the
+journal. My watcher also misread it (its PID file held the launcher shell, F-lesson: capture
+node's own PID via `/proc/<pid>/cmdline`). **Unattributed**: see below for what it is NOT.
+
+**Run 4 — `g2ddkkub`, same model, instrumented (`beforeExit`/`exit`/signal hooks + a wrapper
+printing the exit code): `provider-red`, 481 s, $0.21 (floor), `[OpenAIProvider] HTTP 524`** from
+the gateway during the scout; the run ended honestly, exit 0 AFTER the outcome line. Clean.
+
+**The class, proven at $0 (`harness-drop.mjs`, see BA-25).** Headers + a body cut short (socket
+destroyed, or ended before `content-length`) leaves `generate()` pending forever in BOTH bare-agent
+providers; the idle bound cannot fire on a dead socket; when nothing else holds the loop, node
+drains and exits — with exit 13 and a stderr warning only when the await is top-level. Run 3's log
+carries no such warning, so run 3 is either this class reached through a path where the await is
+not top-level (exit 0, no warning — `runJob`'s internals await the provider several frames down),
+or something else entirely. Stated at that confidence and no higher.
+
+**Archive read ($0).** Of 235 archived spines with a `job-start`, 10 have no `job-end`. Some are
+known operator kills or wall-bounded reuse legs; at least three end mid-`worker-round` with no
+recorded reason (`u-mszg0wnt` 2026-08-19, `types-screen-C-ms0cjvu5`/`ms0w9hxu` 2026-07-25). They
+are CANDIDATES for the class, not evidence of it — nothing in a spine can distinguish "process
+drained" from "operator killed" today. That absence is the finding.
+
+**What bareloop lacks, named for hamr (arbiter-adjacent — a terminal, not built here):** an
+instrument that fires on the ABSENCE of a `job-end`. The outside watchdog (F67) watches silence in
+a live process; a process that has already EXITED is invisible to it. The smallest honest
+instrument is in the runner: a `beforeExit` hook that, if no `job-end` was emitted, writes one with
+a distinct outcome (`runner-drained`), the floor spend, and a non-zero exit code — so a drained run
+reads as a casualty, never as nothing. Parked in PRD item 28.

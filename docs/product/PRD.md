@@ -500,6 +500,17 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     env-key + tier table), `openai-api` (+`baseUrl`) on the `provider` menu, signed
     `judge:{provider,model}` with a per-pair calibration record, one paid probe per admitted
     provider at `gpt-4.1` or better. Evidence: `../bareloop-patients/spines-poc-openai/`.
+    **2026-09-08, later — synthetic.new (F140, BA-25), $0.44.** All five open models answer
+    tool calls correctly on BOTH API shapes through bare-agent's `baseUrl`. GLM-5.2 gave one
+    honest `provider-red` (gateway 524) and one SILENT DEATH (spine stops at the draft phase,
+    no `job-end`). A $0 harness proved the class in bare-agent's request code, both providers:
+    a body cut short after headers never settles `generate()`; the process drains. Filed
+    upstream as BA-25. **Two more parked rulings for hamr:** (c) a runner `beforeExit` backstop
+    minting `runner-drained` + non-zero exit when no `job-end` exists (a new terminal word —
+    arbiter territory); (d) whether gateway-fronted endpoints (`baseUrl`) are admitted in v1 of
+    `openai-api` at all, or only the vendor's own host until BA-25 lands. Recommendation: (c)
+    yes, small and honest; (d) admit `baseUrl` but the probe rule stands — no endpoint is in the
+    menu without its own paid probe, and today none of them has a clean one.
 
 29. **fwdloop — the sibling product** (hamr, 2026-09-08). Human-in-the-loop flows (trigger →
     gather → derive → ask → send), non-repo, accepted once then rerun daily, are NOT a bareloop

@@ -2555,3 +2555,62 @@ Send `max_completion_tokens` by default (accepted by every current OpenAI model,
 with a constructor option (e.g. `legacyMaxTokens: true`) for compat servers that still need
 `max_tokens`. No model-name sniffing inside the provider. bareloop consumes by version bump; no
 local shim (the runner would otherwise have to subclass the provider to rename one key).
+
+
+## BA-25 — a response whose body is cut short after headers leaves `generate()` pending FOREVER; with no other handle alive the process drains and exits with no outcome (both `OpenAIProvider` and `AnthropicProvider`) (2026-09-08)
+
+### The defect, in bare-agent's own words against its own code
+
+`_request` in `src/provider-openai.js` (0.39.0 lines ~150-205; byte-identical shape in 0.41.1) and
+`src/provider-anthropic.js` (~295-345) wires exactly three things: `res.on('data')`, `res.on('end')`
+→ resolve/reject, and `req.on('error')` → reject, plus `applyRequestBounds` (BA-18 idle bound,
+default 600 000 ms, and the BA-19 deadline, default off). Nothing listens for the RESPONSE ending
+abnormally: `res.on('aborted')`, `res.on('close')` without a prior `end`, or `res.on('error')`.
+Node 22 (v22.22.2 here) does not throw for those — it emits `aborted`/`close` on the
+`IncomingMessage` and moves on. So a server that sends headers and then destroys the socket, or
+ends the connection short of its declared `content-length`, produces a promise that neither
+resolves nor rejects.
+
+Harness (`../bareloop-patients/spines-poc-openai/harness-drop.mjs`, local `http` server, seven drop
+patterns, $0):
+
+```
+destroy-before-headers:          REJECTED socket hang up                          (req 'error' — handled)
+http-524-empty / http-200-empty: REJECTED Invalid JSON response                   ('end' fired — handled)
+headers-then-silence:            PENDING; REJECTED only once timeoutMs fires      (idle bound — handled, 10 min by default)
+headers-partial-body-destroy:    SILENT EXIT — promise never settled, loop drained, node exit 13
+headers-partial-body-end-early:  SILENT EXIT — promise never settled, loop drained, node exit 13
+```
+
+The idle bound cannot help the last two: the socket is already destroyed, so `req.setTimeout`'s
+inactivity timer has nothing left to watch (verified: `timeoutMs: 2000` rescues `headers-then-
+silence` and does nothing for `headers-partial-body-destroy`).
+
+### Consequence downstream (why this is filed same-day)
+
+A bareloop run is one process awaiting `runJob`. When the dangling promise is the only pending
+work, node drains and exits: no `job-end`, no escalation, no exit-code signal a runner can read
+(exit 13 only where the await is top-level; 0 otherwise). That is the exact footprint of POC run
+`n3spffeh` (2026-09-08, synthetic.new, GLM-5.2): 31 spine records, last `materials` (draft phase),
+then nothing, process gone, log silent — and of 10 archived spines (of 235 with a `job-start`)
+that carry no `job-end`, several of which have no recorded operator kill. F140 records what can
+and cannot be attributed; this ask is about the class, which the harness proves.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+- **Is this the BA-19 deadline's job?** Partly: a deadline WOULD fire here (it is a wall timer, not
+  a socket timer) — but it defaults to off, and bareloop deliberately does not set it (F103/W-2:
+  the run's wall belongs to the arbiter, not the transport). A 10-minute deadline per call would
+  also be a second silent ceiling. The right fix is at the socket, where the fact is known.
+- **Does a real provider ever do this?** Cloudflare-fronted gateways do (synthetic.new returned a
+  bare 524 on the NEXT run, `g2ddkkub`, which the code handled — headers arrived); a mid-body cut
+  is the same edge one step later. Anthropic direct has not shown it in 235 archived runs; a
+  gateway/proxy path (`baseUrl`, item 28) makes it reachable for both shapes.
+
+### Ask
+
+In `_request` (both providers, and any shared helper): reject on `res.on('aborted')` and on
+`res.on('close')` when `end` has not fired (`ProviderError`, transport-class, so bareloop's F115
+one-retry rule can see it), and reject on `res.on('error')`. No new option, no behaviour change
+on the happy path. bareloop consumes by version bump; no local shim (the runner has no seam
+between `generate()` and the socket).
