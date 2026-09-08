@@ -10731,3 +10731,32 @@ patterns (`**/*.test.?(c|m)js`, `**/*-test.?(c|m)js`, `**/*_test.?(c|m)js`,
 `**/test-*.?(c|m)js`, `**/test.?(c|m)js`, `**/test/**/*.?(c|m)js`); a `NODE_TEST_CONTEXT`
 guard was added so a future rediscovery fails loudly (`process.exitCode = 1` with an error
 message) instead of nesting silently.
+
+## F138 — The README's first import fails against the published package (found by the cold-adopter quickstart)
+
+**2026-09-08.** The first thing the cold-adopter quickstart (`docs/QUICKSTART.md`, PRD item 25's
+"item 28 + a quickstart" order) did was follow the README's own Usage block in a clean consumer
+(`npm install bareloop@0.22.0` in an empty dir). Its second line failed:
+
+```
+import { AnthropicProvider } from 'bare-agent';
+SyntaxError: Named export 'AnthropicProvider' not found. The requested module 'bare-agent' is a CommonJS module...
+```
+
+`bare-agent`'s root export has never carried `AnthropicProvider`; it lives under
+`bare-agent/providers`, which is exactly what `src/cli.js`'s `buildProviders` and
+`scripts/run-u.mjs` already require. Both the README (line 85) and `bareloop.context.md`
+"Minimal usage" (line 88) showed the broken root import. Verified in the same consumer:
+`'AnthropicProvider' in await import('bare-agent')` → `false`; `typeof (await
+import('bare-agent/providers')).AnthropicProvider` → `'function'` (bare-agent 0.39.0).
+
+**Class, not instance.** Every prior release validated "importable from the published root"
+for bareloop's OWN exports (the v0.16.0 rule) — it never followed the README's example as a
+stranger would, so a wrong import of the DEPENDENCY sat in the pitch and the adopter contract
+across 22 releases. This is the same blindness as F136 (a check that runs only on the
+maintainer's machine, with the maintainer's habits): here the habit was knowing the right
+subpath. The quickstart is the instrument that cannot know it, which is why it caught it on
+its first run. Fixed on `feat/quickstart`: both lines now import from `bare-agent/providers`;
+the quickstart uses the corrected import throughout. Not fixed here, reported: the
+quickstart's paid step (the actual run) is unexercised — a stranger's full path to a green is
+still unproven until one is fired.
