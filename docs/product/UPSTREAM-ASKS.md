@@ -2558,6 +2558,11 @@ local shim (the runner would otherwise have to subclass the provider to rename o
 
 > **Carried upstream by fwdloop (2026-09-08).** Consolidated with fwdloop's own bare-agent asks (F4: silent reasoning truncation; `tool_choice`) in `../fwdloop/docs/product/2026-09-08-bare-agent-asks.md` (branch `m0-poc`, `35baf65`), severity-ordered with BA-25 first. The fwd session re-ran `harness-drop.mjs` against bare-agent 0.41.1: identical outcomes, BA-25 confirmed unchanged there. fwdloop's session, not this one, talks to the bareagent session.
 
+> **LANDED upstream in bare-agent 0.42.0 (2026-09-08).** `OpenAIProvider` now sends
+> `max_completion_tokens` by default, with a new `legacyMaxTokens` constructor option to send the
+> legacy `max_tokens` key instead. The openai-api provider is still unbuilt in bareloop (PRD item
+> 28), so nothing in shipped code changes from this landing — noted for when that build starts.
+
 ## BA-25 — a response whose body is cut short after headers leaves `generate()` pending FOREVER; with no other handle alive the process drains and exits with no outcome (both `OpenAIProvider` and `AnthropicProvider`) (2026-09-08)
 
 ### The defect, in bare-agent's own words against its own code
@@ -2617,3 +2622,10 @@ on the happy path. bareloop consumes by version bump; no local shim (the runner 
 between `generate()` and the socket).
 
 > **Carried upstream by fwdloop (2026-09-08).** Consolidated with fwdloop's own bare-agent asks (F4: silent reasoning truncation; `tool_choice`) in `../fwdloop/docs/product/2026-09-08-bare-agent-asks.md` (branch `m0-poc`, `35baf65`), severity-ordered with BA-25 first. The fwd session re-ran `harness-drop.mjs` against bare-agent 0.41.1: identical outcomes, BA-25 confirmed unchanged there. fwdloop's session, not this one, talks to the bareagent session.
+
+> **LANDED upstream in bare-agent 0.42.0 (2026-09-08).** `guardResponseSettles` now wires
+> `res.on('aborted'|'error'|'close')` and rejects a body-cut-after-headers response with a
+> retryable `ProviderError` (`context.bound:'transport'`) instead of leaving the promise
+> pending — re-verified at bareloop's layer with `harness-drop.mjs` on 0.42.0: all six drop
+> cases REJECT, both providers; consumed by the `^0.42.0` bump. The reject shape was not
+> recognised by bareloop's F115 predicate — F141.

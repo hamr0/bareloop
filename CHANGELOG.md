@@ -5,6 +5,32 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- Bumped `bare-agent` pin from `^0.39.0` to `^0.42.0`. 0.42.0 brings: BA-24 —
+  `OpenAIProvider` now sends `max_completion_tokens` by default (GPT-5-safe),
+  with a new `legacyMaxTokens` option to send the legacy `max_tokens` key
+  instead; BA-25 — a response body cut after headers (peer `'aborted'`,
+  stream `'error'`, or a premature `'close'` before `'end'`) now REJECTS
+  `generate()` with a retryable `ProviderError` (`context.bound:'transport'`)
+  instead of leaving the promise pending forever; a new `loop:truncated`
+  stream event plus `stopReason` on the `onLlmResult` metering payload; and
+  `options.toolChoice` on `OpenAIProvider`.
+
+### Fixed
+
+- **F141** — `src/transport.js`'s `isTransportFailure` now also recognizes
+  bare-agent's own BA-25 transport classification
+  (`err.context.bound === 'transport'`), after the existing HTTP-status and
+  `retryable:false` guards. Before this fix, the exact class hamr's F115
+  one-retry ruling names — a call that dies mid-read, no full response —
+  would have ended provider-red with no retry once the 0.42.0 pin landed,
+  because the new rejection shape carried none of the signals the classifier
+  previously looked for (no `status`, `retryable:true`, no matching error
+  code/message). Retry budget unchanged: `TRANSPORT_RETRIES = 1`.
+
 ## [0.22.0] — 2026-09-07
 
 ### Added

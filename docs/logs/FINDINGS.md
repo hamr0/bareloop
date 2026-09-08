@@ -10817,3 +10817,46 @@ a live process; a process that has already EXITED is invisible to it. The smalle
 instrument is in the runner: a `beforeExit` hook that, if no `job-end` was emitted, writes one with
 a distinct outcome (`runner-drained`), the floor spend, and a non-zero exit code — so a drained run
 reads as a casualty, never as nothing. Parked in PRD item 28.
+
+## F141 — bare-agent 0.42.0 closes BA-25, but the new rejection was invisible to bareloop's transport-retry predicate
+
+**2026-09-08, `chore/bare-agent-0.42` pin bump.** `harness-drop.mjs` re-run on bare-agent 0.42.0
+(the same six drop cases from F140/BA-25, both `AnthropicProvider` and `OpenAIProvider`):
+headers-partial-body-destroy and headers-then-end-early, which SILENTLY EXITED on 0.39.0 (promise
+never settled, the process drained with no outcome, no warning), now both REJECT on 0.42.0 with
+`[<Provider>Name] response stream aborted before the body completed` — a `ProviderError`,
+`retryable:true`, `context:{bound:'transport', event:'aborted'|'error'|'close'}` — on both
+providers. The other four cases were already correct and stayed correct: destroy-before-headers,
+HTTP 524 with an empty body, HTTP 200 with an empty body, and end-without-a-body on a chunked
+response all still reject the same way they did before. `headers-then-silence` (no terminal socket
+event at all, just quiet) still needs the separate idle bound (BA-19, `context.bound:'idle'`,
+already handled via its `ETIMEDOUT` code) — BA-25's fix does not touch that path and was never
+meant to.
+
+**The gap.** `isTransportFailure(err)` in `src/transport.js` — the classifier gating hamr's F115
+one-retry ruling — returned **false** on the real BA-25 rejection before this fix: it has no
+`status`/`statusCode` (correctly not excluded there), `retryable` is `true` (not excluded there
+either), but the predicate had no rule that reads `err.code`/`err.cause.code` against a known
+transport code set, and BA-25's error carries neither — its only transport signal is
+`err.context.bound === 'transport'`, a field the predicate never looked at. So the exact class
+hamr's ruling names — a call that dies mid-read, no full response — would have landed as
+`provider-red` with zero retries the moment the 0.42.0 pin took effect, silently reproducing a
+softer version of F140's silent-death risk (not a hang this time, just a wasted, unretried attempt
+on a transient socket fault).
+
+**The fix.** `isTransportFailure` now returns true for `err.context?.bound === 'transport'`,
+checked immediately after the existing `status`/`retryable:false` early-outs (both still win over
+`bound`) and before the code/message heuristics. `TRANSPORT_RETRIES` stays 1 — unchanged. Proven
+by a real local-server test (headers written, partial body, socket destroyed) driving
+`AnthropicProvider.generate()` from `bare-agent/providers` end to end, plus unit cases for the
+guard ordering (status wins, `retryable:false` wins, `bound:'idle'` alone does NOT qualify — only
+`'transport'` does). Both new-assertion tests were confirmed to FAIL against the pre-fix predicate
+before the fix was restored.
+
+**Lesson.** An upstream fix landing does not automatically restore the guarantee one layer up in
+the same laundering class (cf. F140's "unpriced is never free" family) — the consumer's own
+classifier has to be re-validated against the REAL thrown shape, not assumed compatible because the
+underlying defect is gone. Note in passing: 0.42.0 also adds `stopReason` on the `onLlmResult`
+metering payload (alongside the new `loop:truncated` stream event) — that is the exact input PRD
+item 28's report-only worker-round `stopReason` needs, but wiring it is parked to item 28's own
+branch, not built here.

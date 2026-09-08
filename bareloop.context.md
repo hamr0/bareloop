@@ -1191,7 +1191,10 @@ round of this attempt being priced repairs nothing about the one before it); and
 reporting with the rest end of gate"). Every worker Loop (scout, drafter, each step, the fix
 worker — the ONE seam in `planrun.js`) gets exactly ONE extra attempt, and only for a
 transport-class throw — fetch itself throwing with no HTTP response at all (a TLS fault,
-`ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` wrapping a network cause); an HTTP response
+`ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` wrapping a network cause), OR (bare-agent
+0.42.0, BA-25) a response body cut after headers but before it completed — the provider's own
+`guardResponseSettles` rejects that as a retryable `ProviderError` tagged
+`context.bound:'transport'`, which `isTransportFailure` also recognizes (F141). An HTTP response
 (4xx/5xx/429) is never retried here and rides bare-agent's own unchanged policy. The budget is
 fixed (`TRANSPORT_MAX_ATTEMPTS` in `src/transport.js`) — never a job-spec or CLI knob, tighten-only
 doctrine. Each retry emits a report-only `transport-retry` spine record (`{phase, attempt, error,
