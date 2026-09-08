@@ -1195,15 +1195,31 @@ transport-class throw — fetch itself throwing with no HTTP response at all (a 
 0.42.0, BA-25) a response body cut after headers but before it completed — the provider's own
 `guardResponseSettles` rejects that as a retryable `ProviderError` tagged
 `context.bound:'transport'`, which `isTransportFailure` also recognizes (F141). An HTTP response
-(4xx/5xx/429) is never retried here and rides bare-agent's own unchanged policy. The budget is
-fixed (`TRANSPORT_MAX_ATTEMPTS` in `src/transport.js`) — never a job-spec or CLI knob, tighten-only
-doctrine. Each retry emits a report-only `transport-retry` spine record (`{phase, attempt, error,
-recovered}`, no cost field — the ledger is unaffected); the FIRST attempt threw before any usage
-figure came back, so **any** transport retry floors `spendComplete` for the rest of the run even
-when the retry recovers and the run finishes green — the same one-way flag class as `stalled`
-and `cutMidCall`. A wall stop read BETWEEN iterations or steps has no call in flight,
+(4xx/5xx generally) is never retried here and rides bare-agent's own unchanged policy. The budget
+is fixed (`TRANSPORT_MAX_ATTEMPTS` in `src/transport.js`) — never a job-spec or CLI knob,
+tighten-only doctrine. Each retry emits a report-only `transport-retry` spine record (`{phase,
+attempt, error, recovered}`, no cost field — the ledger is unaffected); the FIRST attempt threw
+before any usage figure came back, so **any** transport retry floors `spendComplete` for the rest
+of the run even when the retry recovers and the run finishes green — the same one-way flag class
+as `stalled` and `cutMidCall`. A wall stop read BETWEEN iterations or steps has no call in flight,
 so it stays exact. Both fields are present on all outcomes, so a consumer never branches on
 field presence and never has to launder a missing `spentUsd` into `$0`.
+
+A **rate-limit retry** (PRD item 28's parked a/b ruling, hamr verbatim: "do a/b as a fallback, and
+verify/validate + no regression"; F143/`src/ratelimit.js`) rides the SAME seam as a second,
+INDEPENDENT one-shot budget: an HTTP 429 gets ONE retry that honours the vendor's own stated
+wait, capped at 60s (`RATE_LIMIT_MAX_WAIT_MS` — a longer stated wait is not honoured at all, no
+retry). This is a FALLBACK, not the primary answer — the primary answer (F139) is picking a
+worker model with adequate rate headroom; this only softens the failure mode when that was not
+enough. The wall always wins here too: before sleeping, a retry that would cost more than
+`clock.remainingMs()` is refused and the error rides straight through, exactly like the transport
+ladder's own wall carve-out. Each retry emits a report-only `rate-limit-retry` spine record
+(`{phase, attempt, statedMs, waitedMs, error, recovered}`, no cost field). Unlike the transport
+retry, a rate-limit retry does **not** floor `spendComplete`: a 429 is a REFUSAL — the vendor
+rejected the request before processing it, so nothing can have been billed (a stated assumption,
+not independently measured against a real provider). The two budgets are independent — a
+transport throw and a 429 may both occur, and both retry, across one call's lifetime, but each at
+most once.
 
 **The plan flow (Layer 2).** `job-start` carries `shape: 'plan'` + the goal; plan steps are
 tool-mode by construction. The flow (`runPlan`, also exported for direct callers who own

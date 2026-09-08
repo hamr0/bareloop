@@ -10953,3 +10953,70 @@ underlying defect is gone. Note in passing: 0.42.0 also adds `stopReason` on the
 metering payload (alongside the new `loop:truncated` stream event) — that is the exact input PRD
 item 28's report-only worker-round `stopReason` needs, but wiring it is parked to item 28's own
 branch, not built here.
+
+## F143 — a bounded 429 retry, honouring the vendor's stated wait, as a FALLBACK behind the primary answer (model rate headroom)
+
+**2026-09-08, PRD item 28's parked (a/b) ruling.** hamr, verbatim: "do a/b as a fallback, and
+verify/validate + no regression." F139 (same day) found the underlying problem: a worker model
+without enough rate headroom 429s deterministically on our workload, and the runner's only retry
+(F115) is transport-only — an HTTP status, including 429, was never retried, so the whole run
+ended `provider-red` and every completed step's work was thrown away, even though the vendor's own
+response says exactly how long to wait.
+
+**The measured TPM table (read from `x-ratelimit-limit-tokens` response headers, 2026-09-08,
+hamr's OpenAI key):** gpt-4.1 = 30,000 TPM, gpt-4.1-mini = 200,000 TPM, gpt-5-mini = 500,000 TPM,
+gpt-5 = 500,000 TPM. gpt-4.1 429s deterministically on our workload — 2 of 2 runs: `55b7eazy`
+(pre-0.42 pin) and `8ev2sdkn` (today, F139), the latter with `Limit 30000, Used 27001, Requested
+8997` and a stated `11.996s` wait (`Please try again in 11.996s.`, `[OpenAIProvider]`).
+
+**hamr's ruling and what was built.** Option B: one bounded retry, not unbounded reissue and not
+ignoring the vendor's own number. New sibling module `src/ratelimit.js` (never an extension of
+`src/transport.js` — `isTransportFailure` keeps returning FALSE for anything carrying an HTTP
+status, 429 included, and nothing here widens that): `isRateLimited(err)` is TRUE only for an
+explicit `status`/`statusCode` of 429; `rateLimitWaitMs(err)` parses the vendor's stated delay
+from `err.message` (bare-agent does not expose `retry-after` / `x-ratelimit-reset-*` headers on
+the thrown error — BA-26, filed same day), adds a 250ms safety margin to any PARSED value (the
+vendor's number is the earliest moment its window resets, not a safe one to fire on the dot),
+falls back to a 5000ms default when nothing parses, and returns `null` (do not retry at all) when
+the raw stated delay exceeds a hard 60s cap (`RATE_LIMIT_MAX_WAIT_MS`) — a wait that long is the
+operator's decision, not ours. The budget is fixed at one retry (`RATE_LIMIT_RETRIES = 1`), never a
+job-spec/CLI knob (tighten-only doctrine, mirroring `TRANSPORT_RETRIES` exactly).
+
+Wired into `src/planrun.js`'s ONE provider-retry seam (`withTransportRetry` renamed
+`withProviderRetries`, every call site updated) as a SECOND, INDEPENDENT one-shot ladder beside
+the existing F115 transport retry: a transport throw and a 429 may both occur, and both retry,
+across one `generate()` call's lifetime, but each budget is spent at most once. The wall always
+wins, same doctrine as F115's own F64 carve-out: `isWallTimeout` refuses either retry outright, and
+before sleeping for a rate-limit retry, `clock.remainingMs()` must exceed the wait — a wait that
+would cost more time than the run has left is not honoured, and the run ends on the operator's
+clock rather than sleeping past it. Each retry emits a report-only `rate-limit-retry` spine record
+(`{phase, attempt, statedMs, waitedMs, error, recovered}`, no cost field).
+
+**The one place this differs from F115 on purpose.** A transport retry floors `spendComplete` for
+the rest of the run (the first attempt may already have been billed — fetch failed after leaving
+the socket). A 429 is a REFUSAL: the vendor rejected the request before processing it, so nothing
+can have been billed — `spendComplete` is NOT floored by a rate-limit retry. **This is a stated
+assumption**, not independently measured against a real provider's billing record; `src/run.js`'s
+spend-floor reader only watches for the `transport-retry` spine event, so a `rate-limit-retry`
+naturally passes through without triggering the floor — no separate code path had to be built or
+could silently disagree.
+
+**Verify/validate.** New `tests/ratelimit.test.js`: pure-function coverage of `isRateLimited` /
+`rateLimitWaitMs` / `statedWaitMs` (including the real verbatim `8ev2sdkn` message, parsing to
+11996 + 250ms), and seam coverage driven live through `runJob` with a scripted provider (the same
+instrument tests/run.test.js's F115 tests use — the seam itself is not exported by design): a 429
+that recovers, two 429s that exhaust the budget, a 429 whose stated wait exceeds the remaining
+wall (no retry, no sleep), and a transport-throw-then-429 combination proving both ladders fire
+independently. No-regression coverage: a plain transport throw still gets exactly one retry with
+an unchanged `transport-retry` record, and a 500/503 (neither transport- nor rate-limit-eligible)
+is still never retried. Each new assertion was proven able to FAIL: reverting `src/planrun.js` to
+its pre-change (committed) content and removing `src/ratelimit.js` made the entire new suite fail
+to even load (`ERR_MODULE_NOT_FOUND`, exit 1); restoring both brought it back to 27/27 green.
+`npm run typecheck` and the full `npm test` both re-run clean after the change (see CHANGELOG for
+exact figures).
+
+**This is a FALLBACK, not the primary answer.** The primary answer stays picking a worker model
+with adequate rate headroom (the TPM table above); one bounded retry only softens the failure mode
+when that was not followed, or headroom was still exceeded despite following it — it does not
+replace the model-selection fix, and nothing here should be read as making gpt-4.1 an acceptable
+default for this workload.

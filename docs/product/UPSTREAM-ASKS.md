@@ -2629,3 +2629,37 @@ between `generate()` and the socket).
 > pending — re-verified at bareloop's layer with `harness-drop.mjs` on 0.42.0: all six drop
 > cases REJECT, both providers; consumed by the `^0.42.0` bump. The reject shape was not
 > recognised by bareloop's F115 predicate — F141.
+
+## BA-26 — `ProviderError` carries `status: 429` but discards the response's `retry-after` / `x-ratelimit-reset-*` headers, so every consumer must regex the vendor's English prose to learn the wait (2026-09-08, PRD item 28 / F143)
+
+### The defect, in bare-agent's own words against its own code
+
+A 429 arrives at the caller as a `ProviderError` with `status: 429`, `code: 'PROVIDER_ERROR'`,
+`retryable: true` (measured, run `8ev2sdkn`, F139). The vendor's response headers on that same
+HTTP exchange carry the machine-readable wait — OpenAI's `retry-after` and
+`x-ratelimit-reset-requests` / `x-ratelimit-reset-tokens` — but neither `provider-openai.js` nor
+`provider-anthropic.js` attaches any of them to the thrown error. The ONLY place the wait survives
+is the vendor's own English sentence inside `message` (OpenAI, verbatim): `"[OpenAIProvider] Rate
+limit reached for gpt-4.1 in organization org-XXXX on tokens per min (TPM): Limit 30000, Used
+27001, Requested 8997. Please try again in 11.996s. Visit https://platform.openai.com/account/rate-
+limits to learn more."`
+
+### Disconfirming evidence, considered per this file's standing rule
+
+A workaround exists — bareloop's own `src/ratelimit.js` (F143) regexes `message` for `try again in
+<n><unit>` / `retry after <n><unit>` shapes — so this is not a hard blocker. It is brittle and
+vendor-specific by construction: it depends on the exact English phrasing staying stable across
+provider SDK versions, covers only the shapes observed or guessed at, and cannot distinguish a
+token-bucket reset (usually seconds) from a longer organization-level cooldown (occasionally
+stated in different units or omitted entirely) the way a structured header value could. Every
+consumer that wants to honour a vendor's stated wait has to reinvent the same regex bareloop did.
+
+### Ask
+
+Attach the parsed `retry-after` (and ideally the raw `x-ratelimit-*` values) to the thrown
+`ProviderError`'s `context`, e.g. `context.retryAfterMs` (parsed from `retry-after`, whether it
+arrives as a delta-seconds integer or an HTTP-date) alongside the existing `context.bound`
+convention BA-25 already established. No new option, no behaviour change on the happy path — this
+is additive context on an error that is already thrown. bareloop consumes by version bump; the
+regex-on-message fallback in `src/ratelimit.js` stays as the graceful degradation for older
+bare-agent versions, never removed just because this lands.

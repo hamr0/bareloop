@@ -7,6 +7,26 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Bounded 429 retry — a FALLBACK, not the primary answer** (PRD item 28's
+  parked a/b ruling, hamr verbatim: "do a/b as a fallback, and verify/validate
+  + no regression"; F143). A vendor HTTP 429 used to end the whole run as
+  `provider-red`, discarding all completed work, even though the vendor's own
+  response states exactly how long to wait. `src/ratelimit.js` (new,
+  `transport.js`'s sibling) adds ONE bounded retry that honours that stated
+  delay, capped at 60s (`RATE_LIMIT_MAX_WAIT_MS`) — a wait longer than that is
+  not honoured at all. Wired into `src/planrun.js`'s provider-retry seam
+  (`withTransportRetry` renamed `withProviderRetries`) as a SECOND,
+  independent one-shot budget alongside the existing F115 transport retry;
+  the wall always wins (no retry past the deadline); each retry emits a
+  report-only `rate-limit-retry` spine record and does NOT floor
+  `spendComplete` (a 429 is a refusal — nothing was billed — unlike a
+  transport throw). **The primary answer stays the primary answer**: picking
+  a worker model with adequate rate headroom (F139/F143's measured TPM
+  table) — this retry only softens the failure mode when that was not
+  followed or headroom was still exceeded.
+
 ### Changed
 
 - Bumped `bare-agent` pin from `^0.39.0` to `^0.42.0`. 0.42.0 brings: BA-24 —
