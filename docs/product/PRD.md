@@ -306,6 +306,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     to close: (a) finish the retirement — delete the class, the stage kind, the two terminals,
     migrate any `jobs/*.json` using it — a breaking rung with its own release; or (b) keep it
     admitted so the class can be reopened later. Neither scheduled; hamr's call.
+    **CLOSED by ruling 2026-09-08** (hamr, fwdloop interview): (b) — keep it admitted. The
+    human stage is not deleted; it is COPIED (never imported) into the sibling product
+    `fwdloop` as its mid-flow `ask` step. bareloop keeps `human-confirms` as the end-of-close
+    pause it already is. No code change here.
 22. **LIBRARY_CONVENTIONS gap — DONE 2026-08-30**: 26/36 rules already met, 8 N/A; this
     branch adds context.md §Which-mode/§Extension-contract/§Threat-model, per-dependency
     justification in CLAUDE.md, `.env.example`. PARKED with reason: `src/types.js` central
@@ -389,6 +393,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     **2026-09-06 — order amended again** (hamr): item 28 (provider-agnostic runners) slots
     in after item 27 and before the reuse-lift proof — see item 28 below. Order now:
     harness streamline → export → item 27 → item 28 → reuse-lift proof.
+    **2026-09-08 — order amended** (hamr: "openloop interview then item 28 + a quick start
+    guide and ui will come after"): the fwdloop interview is DONE (item 29) → **item 28 +
+    a cold-adopter quickstart** (one page a stranger can follow to job #1) → the panel (N6)
+    after, arriving as fwdloop's inbox UI first. Reuse-lift proof stays after item 28.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
@@ -478,6 +486,15 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     Order (item 25 amended, 2026-09-06): harness streamline → export → item 27 (close
     integrity) → **item 28 (provider-agnostic runners)** → the reuse-lift proof. Continue on
     Anthropic-only work until item 27 ships.
+
+29. **fwdloop — the sibling product** (hamr, 2026-09-08). Human-in-the-loop flows (trigger →
+    gather → derive → ask → send), non-repo, accepted once then rerun daily, are NOT a bareloop
+    rung: they are a separate repo, `../fwdloop` (github.com/hamr0/fwdloop), which borrows
+    bareloop's solved problems by COPY, never import. The interview and the preliminary PRD
+    (v0.3, unsigned) live at `../fwdloop/docs/product/PRD.md`; the bareloop-side record is
+    `docs/product/FWDLOOP-PRD-DRAFT.md`. Consequences here: item 21 closed by ruling (above);
+    item 26 unchanged (doc-genre stays dropped in bareloop — it lives in fwdloop instead);
+    the panel (N6) arrives as fwdloop's inbox UI before any bareloop-only panel.
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
