@@ -30,6 +30,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   because the new rejection shape carried none of the signals the classifier
   previously looked for (no `status`, `retryable:true`, no matching error
   code/message). Retry budget unchanged: `TRANSPORT_RETRIES = 1`.
+- **Review door refuses `close-timing-red` instead of defaulting the close timeout**
+  (F137, `docs/product/CLOSE-INTEGRITY-BUILD.md` "Ruled 2026-09-07", found by
+  orchestrator review of M3, run `mtqwmb9l`). `scripts/run-u.mjs`'s `accept` door path
+  resolved the mechanical re-run's close timeout via `resolveCloseTimeoutMs` and, when
+  that timing pass itself timed out, silently fell through to `closeTimeoutMs:
+  undefined` — the library's 120s default — substituting an unauthorized ceiling for a
+  door decision, the exact second silent-default class M3 was built to remove one door
+  up. A door whose own timing pass times out now REFUSES outright as a named
+  `close-timing-red` door stop (same wording/options as the in-run escalation, new pure
+  renderer `doorTimingRedLines` in `scripts/u-readout.mjs`): `answerReviewDoor` is never
+  called, nothing is recorded (no door record), nothing is released, nothing is spent,
+  and the process exits non-zero.
 
 ## [0.22.0] — 2026-09-07
 

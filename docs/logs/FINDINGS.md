@@ -10732,6 +10732,71 @@ patterns (`**/*.test.?(c|m)js`, `**/*-test.?(c|m)js`, `**/*_test.?(c|m)js`,
 guard was added so a future rediscovery fails loudly (`process.exitCode = 1` with an error
 message) instead of nesting silently.
 
+## F137 — door accept fell back to the library close default when its timing pass timed out
+
+`scripts/run-u.mjs`'s review-door `accept` path resolves the mechanical re-run's close
+timeout via `resolveCloseTimeoutMs` (the same function `runPlan`'s in-run path uses,
+PRD item 27/M3). When that timing pass itself timed out (`doorCloseTiming.timedOut`),
+the pre-fix line read:
+
+```js
+closeTimeoutMs: doorCloseTiming.timedOut ? undefined : doorCloseTiming.closeTimeoutMs,
+```
+
+`undefined` reaches `answerReviewDoor` → `proveMechanically` → `runStages`/
+`runDeclaredStages`, which fall through to `runClose`'s own shipped default
+(`timeoutMs = 120_000`, `src/ralph.js:221`) — the exact second silent-default-ceiling
+class M3 was built to close one door up (the in-run path already treats a timing-pass
+timeout as a hard `close-timing-red` escalation, `scripts/run-u.mjs` ~line 1173). A door
+whose timing pass cannot bound the close's real duration was silently answering with an
+unauthorized number instead of refusing.
+
+Found by orchestrator review of M3 (run `mtqwmb9l`'s archive), ruled wrong by hamr
+2026-09-07 (`docs/product/CLOSE-INTEGRITY-BUILD.md`, "Ruled 2026-09-07" paragraph):
+a timed-out door timing pass must REFUSE the accept outright as a named
+`close-timing-red` door stop, record nothing (no door record, no release, no
+bridge/credit), spend nothing, and exit non-zero.
+
+**Fixed** on branch `fix/door-timing-refuse`: the door path now checks
+`doorCloseTiming.timedOut` immediately after resolving it and, if true, prints the
+refusal (new pure renderer `doorTimingRedLines`, `scripts/u-readout.mjs`, mirroring the
+in-run escalation's wording/options list) and `process.exit(1)`s — `answerReviewDoor` is
+never called on this path, so no door record is ever written to `doorSpineFile`. The
+non-timeout path now passes `doorCloseTiming.closeTimeoutMs` directly (never a ternary
+that could silently produce `undefined` again).
+
+**Proof.** The behavioral path (a real door `accept` whose timing pass genuinely times
+out) is not reachable in test time without a new seam: `run-u.mjs`'s door call to
+`resolveCloseTimeoutMs` has no `ceilingMs` override wired to it, and the real
+provisional ceiling a stage must outlast is `TIMING_PREFLIGHT_CEILING_MS` = 600s — the
+same named divergence `tests/close-timeout.test.js` already documents for the analogous
+in-run timing-pass-timeout path (unit-tested via the `ceilingMs` seam on
+`resolveCloseTimeoutMs` directly, never a full `runPlan` run). `scripts/run-u.mjs` is a
+script, not an importable module (it executes top-level on import), so that seam cannot
+be reached from a test either. Escalated rather than invented: the seam this would need
+is a test/CLI-only `ceilingMs` pass-through on the door's own `resolveCloseTimeoutMs`
+call. What tests do prove at $0: (1) the refusal's wording/options mirror the in-run
+escalation exactly (`doorTimingRedLines` unit test); (2) a source-level pin
+(`tests/close-timeout.test.js`, "F137 grep-pin") that the door checks
+`doorCloseTiming.timedOut` and exits non-zero strictly before ever reaching
+`answerReviewDoor(...)`, and that call's `closeTimeoutMs` argument is never
+`undefined`/a ternary — proven RED against the pre-fix `a4888ed` blob (which has exactly
+the forbidden `doorCloseTiming.timedOut ? undefined : …` shape) and GREEN against the
+current source.
+
+**Divergence flagged, not fixed here:** hamr's ruling also asked that the caller-passed
+`closeTimeoutMs` "explicit" runtime tier be pinned TEST-ONLY across every
+`scripts/*.mjs`/`src/*.js` file calling `runJob`/`runPlan`/`runClose`/`ralph`/
+`answerReviewDoor`. Several pre-existing battery/probe/reuse harnesses
+(`scripts/run-battery-*.mjs`, `scripts/reuse-*.mjs`, `scripts/run-probe-testgen.mjs`,
+`scripts/run-calibration-testgen.mjs`, `scripts/run-screen-types.mjs`,
+`scripts/run-reuse.mjs`) already pass a hardcoded `closeTimeoutMs: CLOSE_TIMEOUT_MS`
+literal into `runJob` — session-internal experiment tooling, never a signed-spec or
+customer-facing knob. Pinning those too is a materially larger, separately-scoped
+change; the grep-pin extension here covers only the two files the existing F133 pin
+already names (`scripts/run-u.mjs`, `src/cli.js`). Parked for hamr's explicit scope
+call.
+
 ## F138 — The README's first import fails against the published package (found by the cold-adopter quickstart)
 
 **2026-09-08.** The first thing the cold-adopter quickstart (`docs/QUICKSTART.md`, PRD item 25's

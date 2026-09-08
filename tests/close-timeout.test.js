@@ -34,6 +34,7 @@ import { assembleSpec, AUTHORED_SPEC_FIELDS } from '../src/authorjob.js';
 import { runPlan } from '../src/planrun.js';
 import { runJob } from '../src/run.js';
 import { scriptedProvider, initPatientRepo, gitInPatient } from './helpers.js';
+import { doorTimingRedLines } from '../scripts/u-readout.mjs';
 
 /** @param {import('node:test').TestContext} t @param {string} prefix */
 const tmp = (t, prefix) => {
@@ -527,4 +528,127 @@ test('runPlan: maxWallMs at or above the effective close timeout is fine', async
   const { emit } = collector();
   const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, remainingUsd: () => 1.5 });
   assert.notEqual(outcome, 'wall-under-close-timeout');
+});
+
+// ---------------------------------------------------------------------------
+// F137 (docs/product/CLOSE-INTEGRITY-BUILD.md, "Ruled 2026-09-07", found by
+// orchestrator review of M3, run mtqwmb9l) — the review door's own `accept`
+// path resolved `resolveCloseTimeoutMs` for its mechanical re-run and, when
+// that timing pass itself timed out, silently fell through to
+// `closeTimeoutMs: undefined` — the LIBRARY's 120s default, substituting an
+// unauthorized ceiling for a door decision (the exact second silent-default
+// class M3 was built to remove, one door up). Ruled wrong: a door whose own
+// timing pass times out must REFUSE outright as a named `close-timing-red`
+// door stop, record nothing (no door record, no release, no bridge/credit),
+// spend nothing, and exit non-zero — mirroring the in-run `close-timing-red`
+// escalation's wording/options list.
+//
+// The behavioral path (a real `run-u.mjs --door ... --decide accept` whose
+// door timing pass genuinely times out) is NOT reachable in test time: the
+// door's `resolveCloseTimeoutMs` call has no `ceilingMs` seam wired to it (it
+// is called with only `{ job, stages, cwd, redact }`, same as the in-run
+// call), and the real provisional ceiling a stage must outlast to time out is
+// `TIMING_PREFLIGHT_CEILING_MS` = 600_000ms — the SAME named divergence this
+// file already documents at the top for the in-run timing-pass-timeout path
+// (unit-tested via the `ceilingMs` seam on `resolveCloseTimeoutMs` directly,
+// never a full `runPlan`/`runJob` run). `scripts/run-u.mjs` is a script, not
+// an importable module (it executes top-level on import), so that seam
+// cannot be reached from here either. Escalating rather than inventing a new
+// production knob: the seam this would need is a `ceilingMs` pass-through on
+// the door's own `resolveCloseTimeoutMs({ job, stages, cwd, redact })` call
+// (scripts/run-u.mjs ~line 931), gated to test/CLI use only (mirroring how
+// `timeCloseStages`/`resolveCloseTimeoutMs` already keep `ceilingMs` as a
+// documented test-seam parameter never wired to any spec or runner surface).
+//
+// What IS provable at $0, without a provider and without a 10-minute wait:
+//   1. the wording/options the refusal prints (pure function, unit-tested
+//      directly — the same pattern `scripts/u-readout.mjs`'s other pure
+//      renderers use, per `tests/reviewdoor-u.test.js`'s own docstring);
+//   2. a SOURCE-LEVEL pin (same discipline as the F129/F133 pins above) that
+//      the door's `accept` path checks `doorCloseTiming.timedOut` and exits
+//      non-zero BEFORE ever reaching the `answerReviewDoor(` call, and that
+//      the call it does reach never passes `undefined`/a bare ternary for
+//      `closeTimeoutMs` — proven RED against the pre-fix `a4888ed` blob
+//      (which had exactly the `doorCloseTiming.timedOut ? undefined : …`
+//      shape this ruling forbids) and GREEN against the current source.
+//
+// Part (B) of the same ruling (pin the caller-passed `closeTimeoutMs`
+// "explicit" tier as TEST-ONLY) is extended below ONLY for the two files the
+// existing F133 block already names (`scripts/run-u.mjs`, `src/cli.js`) — the
+// door's `answerReviewDoor(...)` call is checked to pass exactly the
+// door-resolved value (never `undefined`/a ternary) via `checkDoorRefusesOnTimeout`
+// above. A source-wide sweep of every `scripts/*.mjs`/`src/*.js` file (the
+// ruling's literal wording) was NOT built: several battery/probe/reuse
+// harnesses (`scripts/run-battery-*.mjs`, `scripts/reuse-*.mjs`,
+// `scripts/run-probe-testgen.mjs`, `scripts/run-calibration-testgen.mjs`,
+// `scripts/run-screen-types.mjs`, `scripts/run-reuse.mjs`) already pass a
+// hardcoded `closeTimeoutMs: CLOSE_TIMEOUT_MS` literal straight into `runJob`
+// — pre-existing, session-internal experiment tooling, never a signed-spec or
+// customer-facing knob, and not part of this rung's build spec. Pinning
+// those too would be a much larger, separately-scoped change; flagged in
+// docs/logs/FINDINGS.md (F137) and the branch report for hamr's explicit
+// scope call rather than silently fixed or silently left unaudited.
+// ---------------------------------------------------------------------------
+
+test('F137: doorTimingRedLines mirrors the in-run close-timing-red wording/options exactly', () => {
+  const lines = doorTimingRedLines({ names: 'typecheck-clean, no-suppressions' });
+  assert.match(lines[0], /CLOSE-TIMING-RED \(door\)/);
+  assert.match(lines[0], /typecheck-clean, no-suppressions/);
+  assert.match(lines[0], /nothing was run, nothing was recorded, and nothing was spent/);
+  // the exact three options `scripts/run-u.mjs`'s in-run close-timing-red
+  // escalation already uses (~line 1197) — same catalogue, never a second
+  // invented list.
+  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  assert.match(src, /'investigate why the stage hangs \(infra\/network\/resource issue\)'/);
+  assert.match(src, /'sign an explicit closeTimeoutMs override once the real duration is known'/);
+  assert.match(src, /'abandon the task'/);
+  assert.match(lines[1], /investigate why the stage hangs \(infra\/network\/resource issue\)/);
+  assert.match(lines[2], /sign an explicit closeTimeoutMs override once the real duration is known/);
+  assert.match(lines[3], /abandon the task/);
+});
+
+/**
+ * The source-level pin: given `scripts/run-u.mjs`'s full text, checks the
+ * door's `accept` path (a) refuses on `doorCloseTiming.timedOut` with a
+ * `process.exit(` strictly BEFORE the `answerReviewDoor(` call, and (b) the
+ * `answerReviewDoor(` call's own `closeTimeoutMs` argument is exactly the
+ * door-resolved value, never `undefined` and never a ternary guessing at it.
+ * @param {string} source
+ * @returns {{ok: boolean, reasons: string[]}}
+ */
+function checkDoorRefusesOnTimeout(source) {
+  /** @type {string[]} */
+  const reasons = [];
+  const resolveIdx = source.indexOf('const doorCloseTiming = await resolveCloseTimeoutMs(');
+  const answerIdx = source.indexOf('const ans = await answerReviewDoor(');
+  if (resolveIdx === -1 || answerIdx === -1 || answerIdx < resolveIdx) {
+    reasons.push('fixture bug: could not locate the door\'s resolveCloseTimeoutMs/answerReviewDoor call sites in order');
+    return { ok: false, reasons };
+  }
+  const doorRegion = source.slice(resolveIdx, answerIdx);
+  if (!/doorCloseTiming\.timedOut/.test(doorRegion)) reasons.push('the door never reads doorCloseTiming.timedOut before answering');
+  if (!/process\.exit\(1\)/.test(doorRegion)) reasons.push('no process.exit(1) between resolving the door\'s timing and calling answerReviewDoor — a timed-out pass would fall through to the call instead of refusing first');
+  if (/\bemit\(/.test(doorRegion) || /makeSpine\(doorSpineFile/.test(doorRegion)) reasons.push('the refusal region writes to the spine (emit(...)/makeSpine(doorSpineFile...)) — the ruling requires recording NOTHING on a timed-out door timing pass');
+  const call = sliceCall(source, 'answerReviewDoor');
+  if (call === '') { reasons.push('fixture bug: no answerReviewDoor( call found'); return { ok: false, reasons }; }
+  const ctm = call.match(/closeTimeoutMs:\s*([^,\n]+)/);
+  if (!ctm) reasons.push('answerReviewDoor( call carries no closeTimeoutMs argument at all');
+  else if (/undefined/.test(ctm[1]) || /\?/.test(ctm[1])) reasons.push(`answerReviewDoor(...)'s closeTimeoutMs is not a plain resolved value: "${ctm[1].trim()}" (a ternary/undefined here is exactly the pre-fix shape)`);
+  return { ok: reasons.length === 0, reasons };
+}
+
+test('F137 grep-pin: the door refuses close-timing-red before answering (GREEN on current source)', () => {
+  const source = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  const result = checkDoorRefusesOnTimeout(source);
+  assert.ok(result.ok, `door refusal pin failed on current source: ${JSON.stringify(result.reasons)}`);
+});
+
+test('F137 red-before-fix: the SAME pin fails on the pre-fix a4888ed blob (proves the pin actually catches the bug)', () => {
+  const preFix = execFileSync('git', ['show', 'a4888ed:scripts/run-u.mjs'], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname });
+  const result = checkDoorRefusesOnTimeout(preFix);
+  assert.equal(result.ok, false, 'the pin must be RED on the pre-fix blob, or it proves nothing');
+  assert.ok(
+    result.reasons.some((r) => /process\.exit\(1\)/.test(r)) && result.reasons.some((r) => /ternary\/undefined/.test(r)),
+    `expected both the missing-refusal and the undefined/ternary reasons on pre-fix source, got: ${JSON.stringify(result.reasons)}`,
+  );
 });
