@@ -10935,3 +10935,48 @@ that a step whose model round can exceed ~2 minutes is a spec bug. bareloop pass
 the 8 over-240s rounds is a draft round. (3) A measured baseline of a peer's 9,548 rounds is a better
 instrument than either session's own POC data; the cross-session comparison is what produced both the
 mechanism and the withdrawal.
+
+
+## F145 — Extra turns are nearly free: turn 12 carries 34× the context of turn 1 and costs LESS, so the cost argument for batching work into big turns does not survive measurement
+
+**2026-09-08, $0 archive read (233 runs, 9,549 worker rounds, $354.94 of real spend, Anthropic API).**
+Asked in the plain form hamr put it: do we send big turns or small ones? The reliability half was already
+answered (F144). This is the money half, and it came out against the intuition that motivated the
+question.
+
+**Token mix across the whole archive.** cacheRead **90.0%**, cacheWrite 8.5%, freshInput **0.0%**,
+output 1.5%. The transcript replay IS the token bill — consistent with the standing record that every
+admitted token is re-read ~10.5× — but token share is not cost share, and conflating them is the trap.
+
+**Cost per round, indexed by position within its own conversation.**
+
+| round # | n | avg cacheRead | avg output | avg $/round |
+|---|---|---|---|---|
+| 1 | 513 | 1,737 | 1,592 | **0.0508** |
+| 2 | 403 | 7,537 | 574 | 0.0348 |
+| 4 | 382 | 23,599 | 843 | 0.0469 |
+| 8 | 341 | 45,861 | 1,177 | 0.0366 |
+| 12 | 239 | 58,521 | 1,151 | **0.0337** |
+
+Replayed context grows ~5,000 tokens per round (the O(N²) total everyone expects), and the dollar cost
+per round is **flat to slightly falling**. Round 12 replays 34× round 1's context and costs 34% LESS.
+Round 1 is the most expensive round in the archive because it pays the cache WRITE; every round after
+it rides cache reads at a tenth of the base input rate. **Cost per round tracks OUTPUT tokens, not
+context size.**
+
+**Reads.** (1) The "fewer, bigger turns are cheaper" intuition is FALSE on this provider — total output
+is set by the work, not by how it is chunked, and the replay that batching would avoid is the cheap
+part. (2) Every other axis favours small turns: a 5s round cannot reach a gateway ceiling (F144), a
+failed small round forfeits seconds instead of a 4-minute round's whole spend, and bareloop's exit
+checks run BETWEEN rounds, so more rounds = more interception points. (3) No change: bareloop's median
+round is already 4.9s. The one deliberately large turn is the drafting pass (median 34.1s, max 107.4s
+in 130 rounds), which SHOULD stay one turn — a plan is a single coherent artifact — and is at less than
+half the F144 wall.
+
+**Provider caveat — cheap replay is not universal, and this is an item 28 fact.** Measured cacheRead
+share of tokens: Anthropic API **90.0%** (freshInput 0.0%); gpt-5-mini **66.9%** (freshInput 20.1%,
+run `yqljn9kf`); GLM-5.2 via synthetic.new **32.1%** (freshInput **54.0%**, run `1a1o446u`). On GLM over
+half of every round is billed at full input price, so there the O(N²) replay DOES land on the bill and
+deep conversations get expensive fast. **Small turns are safe on every provider; cheap turns are not.**
+A per-provider cache-effectiveness reading belongs in item 28's tier table beside the TPM figures
+(F143), because it changes the cost model, not just the speed.
