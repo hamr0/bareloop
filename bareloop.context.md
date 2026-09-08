@@ -85,7 +85,7 @@ inherited rule carries the green that minted it and the contrast that attributed
 
 ```js
 import { runJob, jobSpecHash, makeSpine } from 'bareloop';
-import { AnthropicProvider } from 'bare-agent';
+import { AnthropicProvider } from 'bare-agent/providers';
 
 const spec = {
   schema: 'job-v1', job: 'my-maintainer',
