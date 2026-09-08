@@ -486,6 +486,20 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     Order (item 25 amended, 2026-09-06): harness streamline → export → item 27 (close
     integrity) → **item 28 (provider-agnostic runners)** → the reuse-lift proof. Continue on
     Anthropic-only work until item 27 ships.
+    **2026-09-08 — POC done (F139), $0.24, hamr's OpenAI key.** The loop holds on the OpenAI
+    shape end to end with no code change (scout → draft → validator → steps → gate-audited
+    edits → honest halt). Facts that shape the build: `gpt-4.1-mini` fails the plan validator
+    at draft (ignores the stated 2-exit cap twice → `plan-red`, $0.07); `gpt-4.1` drafts
+    legally on the redraft, greens five analyze steps, edits two files (strict errors 21 → 5),
+    then dies to an OpenAI **429 TPM limit** the runner has no policy for (`provider-red`,
+    resumable, $0.17 floor); the GPT-5 family is closed until BA-24 (upstream `max_tokens` →
+    `max_completion_tokens`) lands. **Parked for hamr (arbiter, a retry rule):** on an HTTP 429
+    carrying a retry-after ≤ 60 s, (a) keep today's contract — `provider-red` + human resume —
+    or (b) one bounded wait-and-retry honouring the vendor's own delay, tighten-only, spend
+    floored like F115's retry. Build plan unchanged: `src/providers.js` factory (name → ctor +
+    env-key + tier table), `openai-api` (+`baseUrl`) on the `provider` menu, signed
+    `judge:{provider,model}` with a per-pair calibration record, one paid probe per admitted
+    provider at `gpt-4.1` or better. Evidence: `../bareloop-patients/spines-poc-openai/`.
 
 29. **fwdloop — the sibling product** (hamr, 2026-09-08). Human-in-the-loop flows (trigger →
     gather → derive → ask → send), non-repo, accepted once then rerun daily, are NOT a bareloop

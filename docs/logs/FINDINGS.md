@@ -10731,3 +10731,46 @@ patterns (`**/*.test.?(c|m)js`, `**/*-test.?(c|m)js`, `**/*_test.?(c|m)js`,
 `**/test-*.?(c|m)js`, `**/test.?(c|m)js`, `**/test/**/*.?(c|m)js`); a `NODE_TEST_CONTEXT`
 guard was added so a future rediscovery fails loudly (`process.exitCode = 1` with an error
 message) instead of nesting silently.
+
+
+## F139 — Item 28 POC: bareloop's loop holds on an OpenAI-shaped provider; the blockers are the model tier at draft, an upstream param name, and a 429 the runner has no policy for
+
+**2026-09-08, two paid runs, $0.24 total, hamr's OpenAI key (`pass amr/openai_api`).** Evidence:
+`../bareloop-patients/spines-poc-openai/` (both spines, both logs, the POC script, the gate audit,
+the patient diff). Patient: a fresh local clone `../bareloop-patients/bareguard-u-openai` of the
+signed `bareguard-u-types` job (seed confirmed red at $0 first: 21 strict errors, suite green).
+Wiring: `scripts/run-u.mjs`'s `runJob` call mirrored with `OpenAIProvider` from
+`bare-agent/providers` swapped in by hand (`poc-openai-run.mjs`, never shipped); cap $2, wall 10 min,
+`readShim:'cap'`, scout on. The spec kept `provider:'anthropic-api'` (the only Loop-driven menu
+value) — a POC-only label lie, one reason the factory in item 28 exists.
+
+**Cheap instrument first.** Two single tool-call rounds ($<0.01): auth 200 ×2, `stopReason=tool_use`
+both, neutral usage shape, no cost on the provider return (priced by the Loop, as designed).
+Found on the way: the GPT-5 family rejects `max_tokens` — filed as BA-24 in UPSTREAM-ASKS.
+
+**Run 1 — `gpt-4.1-mini` → `plan-red`, 46 s, $0.071, `spendComplete:true`.** Scout 3 rounds, draft
+1 + redraft 1. Draft 1: step 0 had no exit. Redraft, reds fed back: step 0 `check-passes` on a
+read-only step, and steps 1–4 each carried MORE than `MAX_EXITS_PER_STEP=2`. The cap is stated to the
+drafter (`src/planrun.js:549`, "exit: 1..2 … ALL must pass"), so this is instruction-following, not a
+prompt gap. The validator refused, the run stopped honestly at seven cents. n=1: a base rate would
+need more drafts; not bought here.
+
+**Run 2 — `gpt-4.1` → `provider-red`, 63 s, $0.171, `spendComplete:false`.** Draft 1 red (missing
+exits), redraft ACCEPTED. Five analyze steps green on `artifact-written`; the fix step
+`apply-strict-type-fixes` edited `classify.js` and `fs.js` (+81/−5, gate-audited `edit` actions),
+and `tsc --strict` on the five files dropped 21 → 5 errors before the next round was refused by
+OpenAI with HTTP 429: *"Rate limit reached for gpt-4.1 … tokens per min (TPM): Limit 30000, Used
+25361, Requested 8914. Please try again in 8.55s."* bareloop classed it `provider-red` (decision-ready,
+resumable, spend a floor), which is exactly its contract — and exactly the gap: the runner's only
+retry is for fetch-throws (F115), never an HTTP status, so a vendor that ANSWERS "wait 8.55 s" gets a
+terminal leg and a human resume. Anthropic's limits never produced this on 147 archived runs; the
+org's OpenAI tier (30k TPM) produced it on the second run.
+
+**Every other rule held with no code change:** close-timing autoset ran ($0 seed pass, 120 s floor),
+`close-precheck`, `primitive-smoke`, work-branch (`…-openai-poc`, `…-poc-2`), scope menu, the read
+shim, per-round metering with `rateSource:'default'` → `pricing:'priced'` + the loud GUESSTIMATE
+line (F113's shape, doing its job on a model nobody priced), `memory-cache` report, `job-end` with an
+honest floor. **Reads:** (1) the OpenAI SHAPE is safe to admit — item 28's factory + menu entry is a
+refactor, not a port; (2) the WORKER tier for OpenAI must be at least `gpt-4.1` class, `mini` fails
+the validator at draft; (3) the 429 policy is arbiter territory (a retry rule) — parked for hamr in
+PRD item 28; (4) the GPT-5 line is closed until BA-24 lands upstream. Nothing here is a lift claim.

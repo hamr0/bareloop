@@ -2522,3 +2522,36 @@ Per this file's standing rule the fix is upstream, consumed here by version bump
 F6 regression test is the failure, and it is doing its job). Restoring F6 locally by minting
 `pricing-red` on a new condition would be both a shim and arbiter-adjacent (verdict routing);
 neither happens without hamr's word.
+
+
+## BA-24 — `OpenAIProvider` sends `max_tokens`, which every GPT-5-family model rejects (`max_completion_tokens` required); the OpenAI-shaped path is closed to the current model line (2026-09-08, PRD item 28 POC)
+
+### The defect, in bare-agent's own words against its own code
+
+`src/provider-openai.js:76` builds the request body with `...(options.maxTokens && { max_tokens: options.maxTokens })`.
+Verified live 2026-09-08 against the real OpenAI API through bare-agent 0.39.0 (installed) and
+re-read in the 0.41.1 tarball (same line, unchanged): `gpt-4.1-mini` → OK, `stopReason=tool_use`;
+`gpt-5-mini` and `gpt-5.4-mini` → `[OpenAIProvider] Unsupported parameter: 'max_tokens' is not
+supported with this model. Use 'max_completion_tokens' instead.` The probe script is
+`../bareloop-patients/spines-poc-openai/probe-openai-2.mjs`. Every model OpenAI lists today under
+`gpt-5*` (5, 5.1 … 5.6, codex, mini, nano, pro) is on the rejecting side; only the `gpt-4o`/`gpt-4.1`
+lines still accept the legacy name. bareloop's provider-agnostic runners (PRD item 28) therefore
+cannot admit a current OpenAI model until this is fixed upstream.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+- **Is `max_tokens` the right name for OpenAI-COMPATIBLE servers?** Partly: `baseUrl` is a
+  documented option and some local/compat servers (older LM Studio / Ollama compat builds, some
+  vLLM configs) historically knew only `max_tokens`. That is the one argument for keeping the
+  legacy key reachable — as an OPTION, not the default. It does not argue for sending a key the
+  vendor's own current models refuse.
+- **Could bareloop just omit `maxTokens`?** No: the output cap is the `truncated:max_tokens`
+  instrument's whole basis (`provider-stop-reason.js` BA-6); an uncapped round has no cut-off
+  signal and the F6/W-2 honesty rules lose their handle.
+
+### Ask
+
+Send `max_completion_tokens` by default (accepted by every current OpenAI model, 4o/4.1 included),
+with a constructor option (e.g. `legacyMaxTokens: true`) for compat servers that still need
+`max_tokens`. No model-name sniffing inside the provider. bareloop consumes by version bump; no
+local shim (the runner would otherwise have to subclass the provider to rename one key).
