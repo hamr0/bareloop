@@ -538,7 +538,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 30. **Item 28 close-out ledger** (hamr, 2026-09-09: "make a list in prd for outstanding things
     … and close them out properly, no review before you close all above and validate it"). Every
     row below is closed with its own validation before `chore/bare-agent-0.42` goes to review.
-    Tick = closed, with the instrument that closed it.
+    Tick = closed, with the instrument that closed it. **All ten rows closed 2026-09-09** — what
+    remains is named in 30.9's status line (item 28 part (2)) and carried as its own work, not as
+    an unclosed row here.
 
     | # | Outstanding | Close criterion | Status |
     |---|---|---|---|
@@ -550,7 +552,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | 30.6 | fwd not told the Qwen cause | message sent | CLOSED — sent 2026-09-09 (cause + DeepSeek max_tokens note) |
     | 30.7 | Kimi drafter-prompt test (worked example + up-front relative-path rule) never run | ~$0.10 Kimi draft with the candidate prompt; ship ONLY if Kimi drafts AND a Sonnet run stays green, else close as "model" | CLOSED by ruling (hamr, 2026-09-09: "settle on one secondary/replacement for claude … don't pickpocket random models") — secondary is `deepseek-chat` (F150), which drafts on the current prompt; Kimi is not a candidate, experiment killed at $0.02, prompt untouched |
     | 30.8 | `decide()` completeness hole (softgreen judge grades only the functions locate reported) | a function the card names but locate omitted → RED; test | CLOSED F155 — completeness diff against the artifact; ONE FN_SHAPES inventory drives both the prompt prose and the detector (the hand-typed regex already disagreed on 4 shapes); red→green captured twice |
-    | 30.9 | Item 28 build: provider factory, `openai-api` (+`baseUrl`, per-model request-key) on the menu, tier table with `deepseek-chat` as THE secondary (hamr's ruling, one replacement, no menu of half-tested models), signed `judge:{provider,model}` + calibration record, `stopReason` on worker-round | built + one paid probe through the SHIPPED runner on DeepSeek | open |
+    | 30.9 | Item 28 build: provider factory, `openai-api` (+`baseUrl`, per-model request-key) on the menu, tier table with `deepseek-chat` as THE secondary (hamr's ruling, one replacement, no menu of half-tested models), signed `judge:{provider,model}` + calibration record, `stopReason` on worker-round | built + one paid probe through the SHIPPED runner on DeepSeek | CLOSED F156+F157 — factory built (one table, unknown name throws, per-model request-key gating, baseUrl admitted); probe GREEN through scripts/run-u.mjs (run mtu12vks, $1.64/$4, 10.3min, bridge minted). REMAINS OPEN as item 28 part (2): signed judge:{provider,model} + per-pair calibration, and the judge-key story (run-u demands ANTHROPIC_API_KEY even for a never-judged green job) |
     | 30.10 | Docs drift: CHANGELOG lacked F147; PRD spend figure wrong ($5.94 → $3.91) | corrected | CLOSED 487320d |
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
