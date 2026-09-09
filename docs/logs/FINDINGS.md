@@ -11259,3 +11259,43 @@ tripwire (`tests/reviewdoor-u.test.js`) greps the source text for the exact pin 
 red — correctly: it guards that the judge tier is never agent-selectable. Fixed by putting the pin
 first and widening the tripwire to allow trailing ctor options only. A source-grepping tripwire is
 brittle by design; that brittleness is what caught an unrelated edit reaching an arbiter-pinned line.
+
+## F154 — every provider call bareloop makes now carries a deadline; the unbounded set was seven call sites, not one
+
+**2026-09-09, PRD 30.4, `chore/bare-agent-0.42`.** F152 established the live hazard: a silent
+endpoint HANGS (an open socket is an active handle; `beforeExit` never fires, so `runner-drained`
+is structurally blind to it), and a deadline is the only instrument that fires on the absence of
+events. F148 named the judge as the unbounded path. The sweep found six more.
+
+**The unbounded set (all now bounded, tighten-only — a bound where there was none):**
+
+| path | site | bound source |
+|---|---|---|
+| softgreen judge locate | `src/judged.js` `runLocate` | the run's own `callBounds()`, threaded planrun → declaredclose → kinds → judged |
+| calibration gate locate | `src/calibrate.js` | same |
+| authoring scout survey / recovery / re-ask | `src/authorscout.js` ×3 | `AUTHOR_CALL_TIMEOUT_MS` = `clock.js`'s `PROVIDER_TIMEOUT_MS` (reused, not invented) |
+| declaration / revise boundary | `src/authorflow.js` `makeLoopGenerate` | same |
+| bridge picker | `src/reuse.js` `selectBridge` | same |
+
+Worker rounds were already bounded (`...callBounds()`); the native/clipipe path stays deliberately
+excluded (the CLI owns that transport — no `ClientRequest` for either timer to arm, documented in
+`callBounds()`).
+
+**Tests** (`tests/silent-endpoint.test.js`): a real `node:http` server that accepts and never
+answers, a real bare-agent provider pointed at it by `baseUrl`, driving the real production
+functions. Both settle in ~1.5 s against a 1500 ms bound; unbounded, the identical call was still
+pending after 5 s.
+
+**A regression the existing suite caught, and the doctrine it restates.** The first implementation
+wrapped each call in a `settled()` seam that turned EVERY throw into `{error}` so a timeout would
+land as the existing `call-failed` cause. That also swallowed a budget `HaltError` and any
+programming bug — laundering named terminals into "the survey call failed", the unknown-reported-as-
+known class this repo refuses. `tests/authorscout.test.js`'s "a throw from the loop is relayed AFTER
+cleanup" went red and named it. The seam now catches ONLY `code:'ETIMEDOUT'` / `TimeoutError` and
+re-raises everything else. Suite 2364/2364, typecheck 0.
+
+**One tension left open, not resolved here.** The worker path promotes a wall-derived `TimeoutError`
+to `wall-halt` (`categorize()`, `src/planrun.js`); the judge's timeout stays on `judged.js`'s own
+`provider-red` locate axis and, after `JUDGE_ATTEMPTS`, stops as `CRASHED`. Promoting it would mean
+threading `clock.expired()` into `judged.js`, whose axis precedence is documented as load-bearing.
+Named for hamr, not decided by the builder.

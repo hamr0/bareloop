@@ -567,13 +567,14 @@ function translate(r, redact) {
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   judgeLoop?: ((o: {system: string}) => any)|null,
- *   onJudgeCost?: ((c: any) => void)|null}} [opts]
+ *   onJudgeCost?: ((c: any) => void)|null,
+ *   callBounds?: (() => {timeoutMs?: number, deadlineMs?: number})|null}} [opts]
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    judgeLoop = null, onJudgeCost = null,
+    judgeLoop = null, onJudgeCost = null, callBounds = null,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -611,6 +612,12 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     // until this kind, and a budget must fund the attempt PLUS its close.
     judgeLoop,
     onJudgeCost,
+    // F152/PRD 30.4 — the SAME per-call time bounds every worker round already
+    // carries (`callBounds()`, src/planrun.js:1518), so the judged stage's own
+    // locate call cannot hang the process on a live silent endpoint. `null` is
+    // the honest absence (an adopter/test that wires no clock through), never a
+    // defaulted number invented here.
+    callBounds,
     seedTrees,
   };
   try {

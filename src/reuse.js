@@ -60,6 +60,7 @@ import { readGrade } from './trend.js';
 import { HITL_PAUSE, HUMAN_CHECKPOINTS } from './declaredclose.js';
 import { extractArtifact, priceOf } from './text.js';
 import { runJob as shippedRunJob, ACCOUNTED_ROUND_TYPES } from './run.js';
+import { PROVIDER_TIMEOUT_MS } from './clock.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -416,7 +417,14 @@ export async function selectBridge({ registry, job, ask, provider, pinned = null
   let result;
   try {
     const loop = new Loop({ provider });
-    result = await loop.run([{ role: 'user', content: prompt }], [], { maxTokens: SELECTION_MAX_TOKENS });
+    // F152/PRD 30.4 — the picker's call carried no time bound at all: a live
+    // endpoint that accepts and never answers hangs the process forever
+    // (measured elsewhere in this repo). This runs BETWEEN bridge tries, not
+    // inside any one try's own signed `perTryWallMs`, so there is no wall to
+    // derive a tighter number from — the same "no clock here" reasoning
+    // `authorscout.js` documents, and the same fallback: the idle-timeout
+    // default the run path itself uses when ITS OWN wall is unbounded.
+    result = await loop.run([{ role: 'user', content: prompt }], [], { maxTokens: SELECTION_MAX_TOKENS, timeoutMs: PROVIDER_TIMEOUT_MS });
   } catch (e) {
     // a throw out of the selection call is TRANSPORT — a casualty, and the run stops on
     // it rather than quietly drafting cold on a decision that was never made

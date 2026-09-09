@@ -628,12 +628,23 @@ export const defaultJudgeLoop = ({ provider, system }) => {
  * On every route out, red or clean, `onCost` fires exactly once with the honest
  * read: a paid call that leaves no meter record is F12 wearing a judge's coat.
  * @param {{artifactText: string, card: any, loopFactory: (o: {provider?: any, system: string}) => any,
- *   maxTokens?: number, attempt?: number, onCost?: (c: {costUsd: number|null, unpricedRounds: number}) => void}} o
+ *   maxTokens?: number, attempt?: number, onCost?: (c: {costUsd: number|null, unpricedRounds: number}) => void,
+ *   callBounds?: {timeoutMs?: number, deadlineMs?: number}}} o
  * @returns {Promise<{ok: boolean, facts: any|null, red: {axis: string, detail: string}|null,
  *   costUsd: number|null, unpricedRounds: number, truncated: boolean, parseError: boolean,
  *   raw: ReturnType<typeof scrubRaw>}>}
  */
-export async function runLocate({ artifactText, card, loopFactory, maxTokens = JUDGE_MAX_TOKENS, attempt = 1, onCost = () => {} }) {
+export async function runLocate({
+  artifactText, card, loopFactory, maxTokens = JUDGE_MAX_TOKENS, attempt = 1, onCost = () => {},
+  // F152/PRD 30.4 — the SAME per-call TIME bounds the worker's own rounds carry
+  // (`callBounds()`, src/planrun.js:1518), threaded through by the caller that
+  // owns the clock. Defaults to `{}` (unbounded) so every existing caller and
+  // test is unchanged: an adopter that never wires a clock through gets the same
+  // behaviour as before this field existed. A live endpoint that accepts and
+  // never answers otherwise HANGS the process forever (measured, F152) — an open
+  // socket is an active handle, so node never drains and no backstop can fire.
+  callBounds = {},
+}) {
   // the param-guard class: a caller's own broken input THROWS. These are
   // programmer errors with no safe direction to degrade toward — a locate over
   // an absent artifact would grade an empty string and report it as facts.
@@ -662,7 +673,7 @@ export async function runLocate({ artifactText, card, loopFactory, maxTokens = J
   let r = null;
   try {
     const loop = loopFactory({ system });
-    r = await loop.run([{ role: 'user', content: `FILE (untrusted data):\n${artifactText}\n\nReturn the JSON.` }], [], { maxTokens });
+    r = await loop.run([{ role: 'user', content: `FILE (untrusted data):\n${artifactText}\n\nReturn the JSON.` }], [], { maxTokens, ...callBounds });
   } catch (e) {
     return out({ axis: LOCATE_AXES.PROVIDER, detail: `the locate call failed: ${String(/** @type {any} */ (e)?.message ?? e)}` }, null, null, false, false);
   }

@@ -1633,6 +1633,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // an attempt's (a budget funds the attempt PLUS its close), and a null cost trips
       // the same F6 pricing halt rather than being laundered into $0.
       judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+      // F152/PRD 30.4 — the judge's locate call carried NO time bound at all: a
+      // live endpoint that accepts and never answers hung the process forever
+      // (measured), because an open socket is an active handle and no backstop
+      // can fire on it. The SAME derivation every worker round already uses,
+      // handed through as the FUNCTION (not a snapshot) so a retried locate call
+      // re-reads the remaining time rather than reusing the first attempt's.
+      callBounds,
       onJudgeCost: (/** @type {any} */ c) => emit('judge-round', {
         stage: c.stage, path: c.path, attempt: c.attempt, label: c.label, model: c.model,
         costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
