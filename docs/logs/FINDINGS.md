@@ -11020,3 +11020,44 @@ with adequate rate headroom (the TPM table above); one bounded retry only soften
 when that was not followed, or headroom was still exceeded despite following it — it does not
 replace the model-selection fix, and nothing here should be read as making gpt-4.1 an acceptable
 default for this workload.
+
+## F147 — the F59 summary round sent the persona TWICE: a duplicate system message that real OpenAI shrugs at and vLLM-class backends reject (the Qwen 400, root-caused)
+
+**2026-09-09, `chore/bare-agent-0.42`, $0.** F146 left Qwen3.8-27B's `HTTP 400` unexplained — the
+readout carried the number and dropped the sentence. A capture run (`x760ei99`, request dumped to
+`../bareloop-patients/spines-poc-openai/qwen-failing-request-x760ei99.json`) recovered it:
+`Error from inference backend: 400 System message must be at the beginning.` The failing request was
+the F59 toolless summary round (tools `[]`, 31 messages), and its roles read `system system user
+assistant …` — the SAME persona text at index 0 and index 1.
+
+**Trace ($0, source).** `askFrom` (`src/planrun.js`) continues the scout's conversation by passing
+the prior `loop.run()`'s returned `msgs` into a NEW `Loop.run()`. bare-agent's `Loop.run`
+(`loop.js` ~482–486) prepends `{role:'system'}` when the Loop carries `system`, and returns that
+prepended transcript as `msgs`. `newLoop` builds every Loop with the same `system`, so the second
+`run()` prepended it again. bare-agent's own `Loop.chat()` (~1321) strips the leading system
+message before re-running — the library already knew the trap; bareloop's continuation path did
+not follow it. **Ours, not upstream's.** No BA ask.
+
+**Why Anthropic and OpenAI never showed it.** `AnthropicProvider` lifts every system message into
+the top-level `system` field; OpenAI proper accepts system messages anywhere. Only strict
+OpenAI-compatible backends (vLLM-class, which synthetic.new fronts) enforce position. Same
+"OpenAI-compatible ≠ OpenAI" class as BA-24 and fwdloop F4 — and an item 28 blocker for ANY such
+backend, not a Qwen quirk. F146's "Qwen = 400, unexplained" line is corrected by this entry.
+
+**Fix.** `askFrom` drops a leading `role:'system'` message before re-running (one line; the
+persona is still sent exactly once by the new Loop). Test (`tests/planrun.test.js`, F147): drive the
+scout to its round bound so the summary round fires, record the FULL message array per provider
+call (a new `messagesLog` on `scriptedProvider` — the harness's `systems`/`calls` fields recorded
+only `messages[0]`/`messages.at(-1)` and could not see index 1: a blind instrument, F-class
+"instrument cannot see the variable"), assert exactly one system message at index 0. Red on the
+unfixed line (`got 2 / 2 !== 1`), green with it. typecheck 0; suite 2356/2356.
+
+**Not re-fired.** Qwen is not re-run: F146's verdict on synthetic stands (Kimi = plan-schema
+capability, GLM = gateway cliff), and Qwen with the fix would still have to clear the plan bar
+those two did not. The fix is proven by the captured request shape, not by a paid green.
+
+**Divergence recorded.** The 2026-09-08 stash claimed `chore/bare-agent-0.42` @ `c1cdd30` was "CI
+green". CI run 34279018488 on that commit is FAILED: `prompt-commit-check` rejects `c1cdd30` (it
+edits `src/planrun.js`, a prompt register, with no Failure/Addresses/Corrects labels). The claim
+was made off a local suite pass, not the instrument CI uses — the exact blind spot already in
+memory. Corrected by amending that commit's message on the branch (content untouched).

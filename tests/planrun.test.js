@@ -943,6 +943,33 @@ test('F59: a scout still empty after its reserved round emits the LOUD scout-emp
   assert.equal(outcome, 'green', 'an empty survey is reported, not fatal (3 of 5 archived greens had one)');
 });
 
+// F147: `askFrom` feeds a prior `loop.run()`'s returned `msgs` into a NEW Loop.
+// bare-agent's Loop.run() prepends its `system` message to the transcript it
+// returns, and the new Loop (built with the same `system`) would prepend it
+// again — two identical system messages at index 0/1. Real OpenAI tolerates
+// that; vLLM-class OpenAI-compatible backends 400 on it. The fix strips a
+// leading system message from `msgs` before re-running.
+test('F147: the F59 summary round sends exactly ONE system message, not two', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { toolCalls: [tcall('s1', 'shell_grep', { pattern: 'export', path: wd })] }, // scout burns its round on a tool
+    { text: `Layout: src/mod.mjs (exports x), tests/ exists but is empty. ${'The suite runner is node --test over tests/**. '.repeat(4)}Hypothesis: the work needs one new test file under tests/ asserting on x; no source change is required, and the close greens only once that file contains an ok assertion.` }, // F59 summary round
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const { events } = await go(wd, provider, { scoutRounds: 1 });
+  const sr = events.find((e) => e.type === 'scout-result');
+  assert.ok(sr.bytes > 0, 'the survey reached the planner (sanity check the summary round ran)');
+  // call index 1 is the F59 toolless summary round (index 0 is the scout's
+  // first, tool-burning round) — assert on the FULL messages array bare-agent
+  // saw, not just messages[0], since a duplicate lands at index 1 as well.
+  const summaryMessages = provider.messagesLog[1];
+  const systemMessages = summaryMessages.filter((m) => m.role === 'system');
+  assert.equal(systemMessages.length, 1, `expected exactly one system message, got ${systemMessages.length}`);
+  assert.equal(summaryMessages[0].role, 'system', 'the single system message stays at index 0');
+});
+
 // ── T + A: materials at the plan surface, the wall clock, and the variance
 // replan trigger (PRD v1.27/v1.29; materials design record + addenda 1-3).
 //

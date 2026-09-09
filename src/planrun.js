@@ -2644,7 +2644,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      */
     const askFrom = async (msgs, prompt) => {
       try {
-        return await stallWatch.watch((gen) => newLoop(gen).run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        // `msgs` is a prior `loop.run()`'s returned transcript, which already has
+        // the Loop's `system` PREPENDED (bare-agent Loop.run, loop.js ~482-486).
+        // The new Loop built below is constructed with the same `system` and would
+        // prepend it again, leaving two identical system messages at index 0/1.
+        // Real OpenAI tolerates that; vLLM-class OpenAI-compatible backends 400 on
+        // it ("System message must be at the beginning") — captured evidence:
+        // bareloop-patients/spines-poc-openai/qwen-failing-request-x760ei99.json.
+        // bare-agent's own Loop.chat() (loop.js ~1321) strips a leading system
+        // message before re-running for exactly this reason; do the same here.
+        const rest = msgs[0]?.role === 'system' ? msgs.slice(1) : msgs;
+        return await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
       } catch (e) {
         throw categorize(e).err;
       }
