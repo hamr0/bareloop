@@ -11091,3 +11091,54 @@ Parked (arbiter-adjacent — the judge's own bound is a cap): give the judge cal
 watch / call deadline the worker gets. Reachability today: only `soft-green` jobs; every
 `jobs/*.json` is `green`, so unreachable until the first soft-green job — same precondition as the
 `decide()` completeness hole noted in the 2026-09-08 stash.
+
+## F149 — F147's fix holds live on the failing backend; DeepSeek is the first non-OpenAI model to reach a close-rendered verdict; DeepSeek silently ignores `max_completion_tokens`
+
+**2026-09-09, hamr's order ("we would need to try both … to see if your fix holds"), ~$2.05.**
+
+**Pennies A/B first (the cheap instrument, $0.01).** The captured x760ei99 request replayed through
+bare-agent's `OpenAIProvider` (`maxTokens: 64`) in two shapes:
+
+| backend | as captured (two system msgs) | F147 shape (one) |
+|---|---|---|
+| synthetic.new `hf:Qwen/Qwen3.8-27B` | HTTP 400 | 200, 14,238 in / 64 out |
+| DeepSeek `deepseek-chat` | 200 | 200 |
+
+Same request, one line stripped, 400 → 200 on the exact backend that killed `ozwhcibj`. DeepSeek
+tolerates both, like OpenAI proper. The fix cannot regress a tolerant backend and cures the strict one.
+
+**Two full loop runs, $1 cap / 10 min each, `poc-run-param.mjs`, fresh patient copies.**
+
+| run | model | scout summary round (the F147 round) | plan | steps | close | end |
+|---|---|---|---|---|---|---|
+| `iinqqlao` | Qwen3.8-27B (synthetic) | OK, 3,766 bytes | accepted draft-1 | 1 started, escalated at cap | not reached | cap-halt $1.008, 433 s |
+| `90qneth9` | deepseek-chat | OK, 3,559 bytes | accepted draft-1 | 1 GREEN (tree-changed + typecheck satisfied) | verdict rendered, fix-loop entered | cap-halt $1.008, 360 s |
+
+The round that 400'd on 2026-09-08 now completes on the same backend, same model, same job. F147
+holds live. Qwen got a plan accepted first try (Kimi never did — F146's plan-bar verdict on Kimi
+stands; Qwen is no longer in the "cannot draft" bucket, it is in the "$1 was not enough" bucket).
+DeepSeek went further than any non-Anthropic model so far except gpt-5-mini: step green, close
+verdict, fix loop — the loop holds end to end on a third provider. Cache-read share: DeepSeek
+0.89, Qwen 0.79 (Anthropic 0.90, gpt-5-mini 0.67, GLM 0.32 — F146). Per-round gap median
+DeepSeek 3.6 s / Qwen 7.1 s, max 132 s / 113 s — nowhere near the F144 gateway cliff.
+
+**Hazard found on the way — DeepSeek ignores `max_completion_tokens`.** With bare-agent's default
+key (BA-24: `max_completion_tokens`, GPT-5-safe) and `maxTokens: 64`, DeepSeek returned 665 and 608
+output tokens — the cap was silently dropped, not rejected. With `legacyMaxTokens: true`
+(`max_tokens`) it returned exactly 64. An output cap that does not bind is a money hazard
+(a reasoning model can run to its own ceiling on every round), so the DeepSeek run was fired
+with the legacy key. Consequence for item 28: the per-provider tier table must carry the request-key
+choice per model — a third "OpenAI-compatible ≠ OpenAI" instance (BA-24, F147, this). Not an
+upstream ask: bare-agent already exposes the switch; the routing is bareloop's tier table.
+
+**Pricing honesty.** Both runs' rounds carry `pricing:'priced', rateSource:'default'` — the generic
+fallback rate, loudly stamped as such by the provenance field, not the vendor's list price (DeepSeek's
+real rate is far lower). The $1 cap bound on the DEFAULT rate; real spend was less. Fine for a
+proof, and exactly the F113 guesstimate posture; a DeepSeek tier entry would carry its own rate.
+
+**Cap overshoot** $0.008 on both — one round's cost past the cap, the known between-rounds bind.
+
+**Not claimed.** Neither run greened; n=1 each; the DeepSeek job was still in its fix loop at the
+cap. This proves the fix and one clean step/close on DeepSeek, not that DeepSeek can finish the job.
+Evidence: `../bareloop-patients/spines-poc-openai/poc-{iinqqlao,90qneth9}.jsonl`, logs
+`poc-qwen-fix.log` / `poc-deepseek.log`, probe `dupsys-probe.mjs` (session scratchpad).
