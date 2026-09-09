@@ -35,7 +35,7 @@ import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKP
 // file's own source for that exact literal as proof THIS runner wires the
 // judge, not just that the library can — moving it into the factory would
 // have to rewrite that tripwire's intent, not just its regex, so it stays.
-import { resolveProvider, makeProvider } from '../src/providers.js';
+import { resolveProvider, makeProvider, PROBE_STATUS } from '../src/providers.js';
 import { loadRegistry, quarantinesCredit } from '../src/bridges.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
@@ -285,6 +285,19 @@ try {
 } catch (e) {
   die(/** @type {Error} */ (e).message);
 }
+// PRD item 31.3 — an ADMITTED-PENDING-PROBE provider says so, LOUDLY, on every
+// launch. The probe rule (item 28 ruling (d)) is that no endpoint enters the
+// menu without its own clean paid probe; hamr admitted `gemini-api` to the menu
+// before that fire, so the honest state is "runnable, unproven" and it must be
+// visible at the moment money is about to be spent — not buried in a doc. This
+// NEVER refuses: refusing would be a second ruling nobody made.
+const probe = PROBE_STATUS[/** @type {string} */ (spec.provider)];
+if (probe && probe.probed === false) {
+  console.error(`⚠  UNPROVEN PROVIDER — "${spec.provider}" is on the menu but has never been probed end to end.`);
+  console.error(`   ${probe.evidence}`);
+  console.error('   It will run. Nothing has shown that it CAN run this job to a close-rendered verdict.');
+}
+
 let modelResolution;
 try {
   modelResolution = resolveWorkerModel({

@@ -136,8 +136,29 @@ export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
 /** PRD item 28 (2026-09-06/09-09): `openai-api` — an OpenAI-shaped provider,
  * constructed via `src/providers.js`'s factory. hamr's ruling (PRD 30.7):
  * `deepseek-chat` is THE secondary provider (one, not a menu of half-tested
- * models); the factory's tier table is where that lives, not this menu. */
-export const PROVIDERS = Object.freeze(['anthropic-api', 'openai-api', 'clipipe-subscription']);
+ * models); the factory's tier table is where that lives, not this menu.
+ *
+ * PRD item 31.3 (hamr, 2026-09-09: *"anthropic, openai, gemini drop ollama for
+ * now"*): `gemini-api` joins. That is bareloop matching bare-agent's own
+ * adapter surface rather than curating a shorter list — bare-agent exports four
+ * real HTTP backends (Anthropic, OpenAI, Gemini, Ollama) plus CLIPipe and the
+ * FallbackProvider composite; `provider-http.js`, `provider-stop-reason.js`,
+ * `provider-temperature.js` and `provider-usage.js` are shared HELPERS, not
+ * backends, and were miscounted as providers once — the export list, never the
+ * filenames, is the source of truth.
+ *
+ * Ollama is deliberately NOT here. Beyond hamr's word, it is the one entry
+ * whose economics differ in kind: it takes no API key and bills nothing, so
+ * every round would price at $0 through machinery that treats $0 as a real
+ * price. An unpriced round reported as free is the exact honesty violation the
+ * `?? 0` rule exists to stop, and admitting it needs that question answered
+ * first, not a menu entry.
+ *
+ * `gemini-api` is ADMITTED-PENDING-PROBE: the probe rule stands (item 28
+ * ruling (d)) and gemini has zero runs. See `PROBE_STATUS` in
+ * `src/providers.js` — a spec may name it, and the runner says out loud that
+ * nothing has proven it. */
+export const PROVIDERS = Object.freeze(['anthropic-api', 'openai-api', 'gemini-api', 'clipipe-subscription']);
 /** V3 environment label: declared keys only — every field is a lineage-key
  * candidate at N3. `provider` is part of the key by definition (top-level,
  * not duplicated here). */
