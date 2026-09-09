@@ -10799,7 +10799,7 @@ call.
 
 ## F138 — The README's first import fails against the published package (found by the cold-adopter quickstart)
 
-**2026-09-08.** The first thing the cold-adopter quickstart (`docs/QUICKSTART.md`, PRD item 25's
+**2026-09-08.** The first thing the cold-adopter quickstart (`docs/product/QUICKSTART.md`, PRD item 25's
 "item 28 + a quickstart" order) did was follow the README's own Usage block in a clean consumer
 (`npm install bareloop@0.22.0` in an empty dir). Its second line failed:
 
