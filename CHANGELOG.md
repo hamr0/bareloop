@@ -9,6 +9,27 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **`openai-api` on the provider menu, behind a provider FACTORY** (PRD item 28,
+  F149/F150/F156/F157). `src/providers.js` holds one table — provider name →
+  constructor, env key, tier models, per-model request-key gating — and both
+  runners go through it instead of naming `AnthropicProvider` directly. An
+  unknown provider name THROWS; there is no silent default. `openai-api` takes
+  an optional validated job-level `baseUrl` (https, or http on loopback only)
+  and admits ONE model, `deepseek-chat`, which earned the slot with a real paid
+  green through the shipped runner (run `mtu12vks`: green, $1.64 of $4, 10.3 of
+  30 min). DeepSeek silently ignores `max_completion_tokens`, so its table entry
+  sets bare-agent's `legacyMaxTokens` — an output cap that does not bind is a
+  money hazard. The judge stays PINNED to `anthropic-api` and `JUDGE_MODEL`
+  whatever the worker's provider is. `bareloop run` (the bundle runner) is
+  `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would have
+  needed, rather than building another provider with the wrong key.
+- **`provider` and `baseUrl` on the `job-start` spine record** (F157),
+  report-only. Without them an archive cannot separate anthropic rows from
+  `openai-api` rows, and every pooled cost or duration figure would be a
+  contaminated aggregate.
+- **`stopReason` on every `worker-round`** (BA-13, report-only, null when
+  absent, never invented).
+
 - **`runner-drained` — a `beforeExit` backstop for the absent-`job-end` class**
   (PRD item 28's ruling (c); F140). A provider promise that never settles
   (BA-25's class) used to let node drain and exit with NO terminal record at
@@ -60,6 +81,23 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F154** — every provider call bareloop makes now carries a deadline. Seven
+  sites had none: the softgreen judge, the calibration gate, the authoring
+  scout's three rounds, the declaration/revise boundary, and the bridge picker.
+  A silent endpoint HANGS the process (an open socket is an active handle, so
+  the drain backstop cannot see it); a deadline is the only instrument that
+  fires on the absence of events. Tighten-only.
+- **F155** — the judged floor graded whatever LOCATE reported, so a silently
+  omitted function passed on the subset. `decide()` now diffs the artifact's own
+  top-level functions against the reported set and reds, naming what was
+  missing. The declaration shapes live ONCE (`FN_SHAPES`), from which both the
+  locate prompt's prose and the detector are derived.
+- **F153** — a provider's own error sentence now reaches the operator instead of
+  a bare status number, redacted through the one secret inventory and capped.
+- **F151** — the bounded 429 retry, added last release, fired on a real vendor
+  429 for the first time: it parsed the stated wait from prose, waited it, and
+  retried once. Mechanism proven; on a TPM-saturated model the retry is not
+  expected to recover, and did not.
 - **F147** — the F59 scout summary round (and the authoring scout's recovery
   round, the same shape in `src/authorscout.js`) re-fed a transcript bare-agent
   had already system-prepended into a new `Loop.run()`, which prepended the
