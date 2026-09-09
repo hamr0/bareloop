@@ -143,7 +143,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 |---|---|---|
 | `job` | kebab-case slug | |
 | `description` | non-empty string | |
-| `provider` | `anthropic-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
+| `provider` | `anthropic-api` \| `openai-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-chat` today — see "Worker surface" above for its `baseUrl` field and per-model gating; `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |

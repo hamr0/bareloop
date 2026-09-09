@@ -2560,8 +2560,12 @@ local shim (the runner would otherwise have to subclass the provider to rename o
 
 > **LANDED upstream in bare-agent 0.42.0 (2026-09-08).** `OpenAIProvider` now sends
 > `max_completion_tokens` by default, with a new `legacyMaxTokens` constructor option to send the
-> legacy `max_tokens` key instead. The openai-api provider is still unbuilt in bareloop (PRD item
-> 28), so nothing in shipped code changes from this landing — noted for when that build starts.
+> legacy `max_tokens` key instead.
+
+> **Consumed 2026-09-09 (PRD 30.9/F156, `chore/bare-agent-0.42`).** The `openai-api` provider is
+> now built (`src/providers.js`) and admits `deepseek-chat`, whose table entry sets
+> `legacyMaxTokens` (DeepSeek silently ignores `max_completion_tokens`) — the exact constructor
+> option this ask requested. Proven live through the shipped runner (run `mtu12vks`, green).
 
 ## BA-25 — a response whose body is cut short after headers leaves `generate()` pending FOREVER; with no other handle alive the process drains and exits with no outcome (both `OpenAIProvider` and `AnthropicProvider`) (2026-09-08)
 
