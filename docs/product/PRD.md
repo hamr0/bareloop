@@ -520,7 +520,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     unexplained was OURS: the F59 summary round sent the persona twice (bareloop re-fed a transcript
     bare-agent had already system-prepended); real OpenAI tolerates it, vLLM-class backends reject it.
     Fixed at `askFrom`; an item-28 blocker for ANY strict OpenAI-compatible backend, cleared.
-    **2026-09-09, later — F149/F150, $5.94 total.** F147 holds live (Qwen 400→200 A/B on the captured
+    **2026-09-09, later — F149/F150, $3.91 across the three runs plus ~$0.05 of probes.** F147 holds live (Qwen 400→200 A/B on the captured
     request; full Qwen run drafts a legal plan, cap-halts at $1). **`deepseek-chat` GREENS the job**
     ($1.89 floor / 11.2 min, six stages satisfied, one caught suppression) — the first non-Anthropic
     green and the item 28 probe for its first admitted provider. Hazard: DeepSeek silently ignores
@@ -534,6 +534,24 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     `docs/product/FWDLOOP-PRD-DRAFT.md`. Consequences here: item 21 closed by ruling (above);
     item 26 unchanged (doc-genre stays dropped in bareloop — it lives in fwdloop instead);
     the panel (N6) arrives as fwdloop's inbox UI before any bareloop-only panel.
+
+30. **Item 28 close-out ledger** (hamr, 2026-09-09: "make a list in prd for outstanding things
+    … and close them out properly, no review before you close all above and validate it"). Every
+    row below is closed with its own validation before `chore/bare-agent-0.42` goes to review.
+    Tick = closed, with the instrument that closed it.
+
+    | # | Outstanding | Close criterion | Status |
+    |---|---|---|---|
+    | 30.1 | Second double-system site: `src/authorscout.js` recovery round re-feeds a system-prepended transcript (F147's twin) | strip + red/green test | open |
+    | 30.2 | 429 retry (F143) never fired live | a real vendor 429 absorbed by `rate-limit-retry` on a paid run (gpt-4.1 429s deterministically, F139) | open |
+    | 30.3 | `runner-drained` (c) proven only in-process | a real child process through `bin/`/runner against a real HTTP endpoint that goes silent drains and mints the record + non-zero exit | open |
+    | 30.4 | Judge call has no stall watch / call deadline (F148) | judge Loop wrapped in the same watch the worker gets; test | open |
+    | 30.5 | `exposeErrorBody` parked (F146): provider error sentence discarded | body passes through the ONE secret scrub before any record; test proves a key in the body is redacted | open |
+    | 30.6 | fwd not told the Qwen cause | message sent | open |
+    | 30.7 | Kimi drafter-prompt test (worked example + up-front relative-path rule) never run | ~$0.10 Kimi draft with the candidate prompt; ship ONLY if Kimi drafts AND a Sonnet run stays green, else close as "model" | open |
+    | 30.8 | `decide()` completeness hole (softgreen judge grades only the functions locate reported) | a function the card names but locate omitted → RED; test | open |
+    | 30.9 | Item 28 build: provider factory, `openai-api` (+`baseUrl`, per-model request-key) on the menu, tier table with `deepseek-chat`, signed `judge:{provider,model}` + calibration record, `stopReason` on worker-round | built + one paid probe through the SHIPPED runner on DeepSeek | open |
+    | 30.10 | Docs drift: CHANGELOG lacked F147; PRD spend figure wrong ($5.94 → $3.91) | corrected | open |
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;

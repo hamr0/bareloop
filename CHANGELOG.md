@@ -60,6 +60,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F147** — the F59 scout summary round (and the authoring scout's recovery
+  round, the same shape in `src/authorscout.js`) re-fed a transcript bare-agent
+  had already system-prepended into a new `Loop.run()`, which prepended the
+  persona AGAIN: two identical system messages at index 0/1. Real OpenAI
+  tolerates that; vLLM-class OpenAI-compatible backends reject it (HTTP 400
+  "System message must be at the beginning" — the Qwen death F146 left
+  unexplained). Both sites now strip the leading system message before
+  continuing, as bare-agent's own `Loop.chat()` does. Proven live: the captured
+  failing request goes 400 → 200 with one line removed; deepseek-chat then
+  greened a full job (F149/F150).
 - **F141** — `src/transport.js`'s `isTransportFailure` now also recognizes
   bare-agent's own BA-25 transport classification
   (`err.context.bound === 'transport'`), after the existing HTTP-status and
