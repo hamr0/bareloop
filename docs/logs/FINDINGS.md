@@ -11061,3 +11061,33 @@ green". CI run 34279018488 on that commit is FAILED: `prompt-commit-check` rejec
 edits `src/planrun.js`, a prompt register, with no Failure/Addresses/Corrects labels). The claim
 was made off a local suite pass, not the instrument CI uses — the exact blind spot already in
 memory. Corrected by amending that commit's message on the branch (content untouched).
+
+## F148 — `runner-drained` built (PRD item 28 (c)); the only worker-side path that can still drain organically is the softgreen JUDGE call, which has no stall watch
+
+**2026-09-09, `chore/bare-agent-0.42`, $0.** hamr's go on (c). `runJob` now registers one
+`beforeExit` listener after `job-start`; every `job-end` site goes through a local `end()` that
+flips `ended`; on drain with `ended` false it mints `job-end {outcome:'runner-drained',
+spendComplete:false, detail}` and sets `process.exitCode ||= 1` (never `process.exit()`). Listener
+removed in `finally`. Not in the resumable set — an unknown in-flight state is not a safe resume
+point. Adopter contract updated (`bareloop.context.md`).
+
+**Test had to be a real child process.** Firing `process.emit('beforeExit')` by hand inside
+`node:test` cancels the test (`Promise resolution is still pending but the event loop has already
+resolved`, via a transitive `signal-exit` patch on `process.emit`) — reproduced with an unrelated
+resolved promise and zero bareloop code. So `tests/runner-drained.test.js` spawns
+`tests/fixtures/runner-drained-fixture.mjs` and lets node drain on its own. Red with the
+`process.once` line disabled (`0 !== 1` job-ends; spine ends at `step-end: green` then nothing),
+green with it. Suite 2358/2358, typecheck 0.
+
+**The finding.** Getting an ORGANIC drain was hard, and why is the useful part: every
+worker-provider round (scout, draft, steps, close-fix) funnels through `mkWorker`, which wraps each
+call in the F66 stall watch (300 s, 3 reissues). A hung `generate()` there is reissued and resolved
+into a real `step-stalled` job-end through the normal path — the backstop never fires. The one
+provider call with NO stall watch, no timeout, nothing, is the softgreen judge
+(`src/judged.js defaultJudgeLoop`, wired through the separate `judgeProvider` param): a bare
+`Loop` built directly. That is the path the fixture hangs to prove the backstop, and it is a real
+gap: a judge call that never settles today ends the run with no terminal except this backstop.
+Parked (arbiter-adjacent — the judge's own bound is a cap): give the judge call the same stall
+watch / call deadline the worker gets. Reachability today: only `soft-green` jobs; every
+`jobs/*.json` is `green`, so unreachable until the first soft-green job — same precondition as the
+`decide()` completeness hole noted in the 2026-09-08 stash.

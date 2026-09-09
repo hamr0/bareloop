@@ -511,6 +511,15 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     `openai-api` at all, or only the vendor's own host until BA-25 lands. Recommendation: (c)
     yes, small and honest; (d) admit `baseUrl` but the probe rule stands — no endpoint is in the
     menu without its own paid probe, and today none of them has a clean one.
+    **2026-09-09 — hamr's rulings (c) and (d), both GO.** (c) built on `chore/bare-agent-0.42`: a
+    `beforeExit` backstop in `runJob` mints `job-end {outcome:'runner-drained', spendComplete:false}`
+    + non-zero exit when the process drains with no `job-end`; not in the resumable set. (d) DECIDED:
+    `baseUrl` IS admitted in v1 of `openai-api`; the probe rule stands — no endpoint enters the
+    `provider` menu without its own clean paid probe, and the code lands with the provider factory
+    (the item 28 build), not before. Also on the branch: **F147** — the Qwen `HTTP 400` F146 left
+    unexplained was OURS: the F59 summary round sent the persona twice (bareloop re-fed a transcript
+    bare-agent had already system-prepended); real OpenAI tolerates it, vLLM-class backends reject it.
+    Fixed at `askFrom`; an item-28 blocker for ANY strict OpenAI-compatible backend, cleared.
 
 29. **fwdloop — the sibling product** (hamr, 2026-09-08). Human-in-the-loop flows (trigger →
     gather → derive → ask → send), non-repo, accepted once then rerun daily, are NOT a bareloop

@@ -9,6 +9,25 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **`runner-drained` — a `beforeExit` backstop for the absent-`job-end` class**
+  (PRD item 28's ruling (c); F140). A provider promise that never settles
+  (BA-25's class) used to let node drain and exit with NO terminal record at
+  all — no escalation, no outcome, no way to tell a silent drain from an
+  operator kill (F140: 10-of-235 archived spines with no `job-end`, one real
+  silent death). bare-agent 0.42 closed the known drop cases (F141), but the
+  class itself is "an instrument fires on absence," not a specific bug, so
+  the backstop stays needed. `runJob` (`src/run.js`) now registers ONE
+  `process.once('beforeExit', …)` right after `job-start`, tracked via a
+  local `ended` flag every `job-end` site sets; if the process still drains
+  with no `job-end`, it mints one with outcome `runner-drained`,
+  `spendComplete:false` (a drained run's in-flight spend is unknowable — the
+  floor already banked is honest, F6), and sets `process.exitCode` non-zero
+  (never `process.exit()`). The listener is removed in a `finally` so a
+  normal run never leaks it. `runner-drained` is a new terminal outcome,
+  documented in `bareloop.context.md`'s outcomes list — deliberately **not**
+  added to the resumable/checkpoint set (`CHECKPOINT_OUTCOMES`, `src/reuse.js`):
+  an unknown in-flight state is not a known-safe resume point.
+
 - **Bounded 429 retry — a FALLBACK, not the primary answer** (PRD item 28's
   parked a/b ruling, hamr verbatim: "do a/b as a fallback, and verify/validate
   + no regression"; F143). A vendor HTTP 429 used to end the whole run as

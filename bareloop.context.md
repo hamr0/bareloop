@@ -1008,7 +1008,18 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
 plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red | pricing-red |
 provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | hitl-pause |
-hitl-decision-red | step-red:<id>`.
+hitl-decision-red | step-red:<id> | runner-drained`.
+
+**`runner-drained` (F140/PRD item 28(c))** is a distinct class from every outcome above: it is
+NOT `runJob`'s own return value, it is a `beforeExit` backstop's terminal, emitted from outside
+the normal control flow the instant node drains with no `job-end` at all — a provider promise
+that never settled (BA-25's class; bare-agent 0.42.0 closed the known drop cases per F141, but
+"an instrument fires on absence" stays a permanent class, not a fixed bug). It means: exits
+non-zero, `spendComplete:false` always (a drained run's in-flight spend is unknowable — the
+floor already banked is honest, an exact-looking total would not be, F6). **It is deliberately
+NOT in the resumable/checkpoint set** (`CHECKPOINT_OUTCOMES`/`RESUMABLE_HALTS`, `src/reuse.js`)
+— an unknown in-flight state, unlike a clean `cap-halt`/`wall-halt`/`provider-red`, is not a
+known-safe resume point.
 
 **`readShim` (default `false`) — the capped read seam, per ARM.** The value names which levers
 run — the four arms of the frozen Phase 2 pre-registration:

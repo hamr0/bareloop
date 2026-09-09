@@ -228,6 +228,14 @@ async function primitiveSmoke(workdir) {
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'branch-red' | 'pricing-red' | 'provider-red' |
  *   'interpreter-red' | 'cap-halt' | 'wall-halt' | 'step-stalled' |
  *   'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
+ *   NOTE: `job-end` can ALSO land with outcome 'runner-drained' (F140/PRD item
+ *   28(c)) — the `beforeExit` backstop's own terminal, emitted from OUTSIDE this
+ *   function's normal control flow when the process drains with no `job-end` at
+ *   all (a provider promise that never settled). It never appears as this
+ *   function's own RETURN value (nothing is left to receive it), only as the
+ *   spine's terminal record. Non-zero exit, `spendComplete:false` always, and
+ *   deliberately NOT in the resumable/checkpoint set (`src/reuse.js`) — an
+ *   unknown in-flight state is not a known-safe resume point.
  */
 export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true }) {
   // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
@@ -380,12 +388,46 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
       : {}),
   });
 
+  // F140/PRD item 28 (c) — the backstop that fires on the ABSENCE of a
+  // `job-end`. A provider promise that never settles (BA-25's class; 0.42.0
+  // closed the known drop cases per F141 but the class itself is "an
+  // instrument fires on absence", not a specific bug) lets node drain with
+  // nothing else holding the event loop, and the process exits with no
+  // terminal record at all — no escalation, no outcome, no way to tell a
+  // silent drain from an operator kill. `ended` is the one flag every
+  // job-end site sets via the local `end()` helper below (never a second
+  // spelling of "did we finish" that could fall out of sync with the real
+  // emits). One `beforeExit` listener per call, removed in the `finally` so
+  // multiple runs in one process (tests included) never leak listeners.
+  let ended = false;
+  /** @type {(outcome: string, extra?: object) => object} */
+  const end = (outcome, extra = {}) => {
+    ended = true;
+    return emit('job-end', { outcome, ...extra });
+  };
+  const onBeforeExit = () => {
+    if (ended) return;
+    // A drained run's in-flight spend is unknowable — the floor already
+    // accumulated is honest, an exact-looking total would not be (F6).
+    end('runner-drained', {
+      ...spend(),
+      spendComplete: false,
+      detail: 'process drained with no job-end — a provider call never settled (F140)',
+    });
+    // Never process.exit() (can discard queued stdout) — set the code and
+    // let node exit on its own; preserve a more specific code if one is
+    // already set.
+    process.exitCode = process.exitCode || 1;
+  };
+  process.once('beforeExit', onBeforeExit);
+
+  try {
   // 2. known-answer smoke before tokens (A3: silent degradation throws nothing)
   const smoke = await primitiveSmoke(workdir);
   emit('primitive-smoke', smoke);
   if (!smoke.ok) {
     emit('escalation', { category: 'smoke-red', decisionReady: true, decision: `The ${smoke.primitive} primitive failed its known-answer check — no run verdict is trustworthy on a degraded primitive.`, options: ['fix the primitive/store', 'abandon the run'], detail: smoke.detail });
-    emit('job-end', { outcome: 'smoke-red', ...spend() });
+    end('smoke-red', spend());
     return 'smoke-red';
   }
 
@@ -426,7 +468,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   };
   const pricingRed = () => {
     emit('escalation', { category: 'pricing-red', decisionReady: true, decision: 'A provider result carried no priced cost — the hard cap cannot govern spend it cannot see (unpriced is never free, F6).', options: ['bind a priced provider/model', 'abandon the run'], spentUsd });
-    emit('job-end', { outcome: 'pricing-red', ...spend() });
+    end('pricing-red', spend());
     return 'pricing-red';
   };
 
@@ -443,7 +485,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     });
     if (unpriced) return pricingRed();
     if (outcome.startsWith('step-red:')) {
-      emit('job-end', { outcome: 'step-red', step: outcome.slice('step-red:'.length), ...spend() });
+      end('step-red', { step: outcome.slice('step-red:'.length), ...spend() });
     } else if (outcome === 'provider-red' || outcome === 'step-stalled') {
       // F44: a transport-throw provider-red never returned a usage figure for the
       // failed call, so the priced sum is a FLOOR, not the total — spendComplete
@@ -453,10 +495,13 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
       // the known cost of self-heal — and an unbilled reissue is indistinguishable
       // from a billed one from here. Reporting the priced sum as exact would be F6
       // in a self-heal coat.
-      emit('job-end', { outcome, ...spend(), spendComplete: false });
+      end(outcome, { ...spend(), spendComplete: false });
     } else {
-      emit('job-end', { outcome, ...spend() });
+      end(outcome, spend());
     }
     return outcome;
+  }
+  } finally {
+    process.removeListener('beforeExit', onBeforeExit);
   }
 }

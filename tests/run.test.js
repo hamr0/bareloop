@@ -1021,3 +1021,10 @@ test('§3 resume: a fold of $0 that is NOT exact is still a floor — an unprice
   assert.equal(events.find((e) => e.type === 'job-end').spendComplete, false,
     'the unknown rides one-way onto the terminal, exactly as a non-zero floor fold does');
 });
+
+// F140/PRD item 28(c) — the `beforeExit` backstop itself is covered as a
+// real CHILD PROCESS test (tests/runner-drained.test.js): a manual
+// `process.emit('beforeExit', …)` inside THIS process is an impersonation of
+// the event (and is separately incompatible with this repo's node:test +
+// signal-exit combination), so only a genuinely separate process — where
+// node's own drain fires the real event — is the true instrument.
