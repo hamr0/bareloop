@@ -81,7 +81,8 @@ import { AnthropicProvider } from 'bare-agent/providers';
 const outcome = await runJob(spec, {
   approvals,
   workdir: '/path/to/your/checkout',
-  provider: new AnthropicProvider({ model: 'claude-sonnet-5' }), // key comes from env
+  // bareloop never reads your key: you construct the provider and hand it the key yourself.
+  provider: new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY, model: 'claude-sonnet-5' }),
   emit: makeSpine('/path/to/your/checkout/run.jsonl'),
 });
 

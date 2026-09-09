@@ -10954,6 +10954,38 @@ metering payload (alongside the new `loop:truncated` stream event) — that is t
 item 28's report-only worker-round `stopReason` needs, but wiring it is parked to item 28's own
 branch, not built here.
 
+## F142 — The quickstart's own "Run it" snippet threw before the first API call: `AnthropicProvider` never reads the key from the environment
+
+**2026-09-08, the quickstart's paid proof run (PRD item 28 sibling, F138's page).** `docs/QUICKSTART.md`
+was built by a sonnet builder who verified "every $0 command" in a clean consumer — but the page's
+LAST code block, the one that spends money, was the one block nobody ever executed. Its provider line
+read `new AnthropicProvider({ model: 'claude-sonnet-5' }) // key comes from env`. No version of
+bare-agent has ever read `ANTHROPIC_API_KEY` itself: `provider-anthropic.js:46` throws
+`[AnthropicProvider] requires apiKey` at CONSTRUCTION. A cold adopter following the page verbatim gets
+a stack trace on their very first run, with a comment in the code actively telling them the wrong
+thing about where their key goes.
+
+**The catch class.** This was NOT a paid-only defect — the throw happens before any HTTP request, so a
+$0 execution of that block would have found it. The gap was that "verify every command" was read as
+"verify every command that costs nothing", and the boundary between the two was drawn at exactly the
+place the page stops being checked. **Rule:** a doc's terminal step is the step most worth executing;
+a $0 SYNTAX check of a paid snippet (constructing the objects, then not calling) costs nothing and
+would have closed this. Corroborates F138 (same page, same class: an import line nobody ran).
+
+**Proof run, after the fix.** Clean consumer (`npm install bareloop` → 0.22.0, bare-agent 0.39.0),
+patient a fresh 2-commit git repo with a genuinely failing suite (a `slug()` helper failing 3 of 4
+real assertions: punctuation, repeated separators, trimming). Spec copied from the page verbatim,
+only `workdir`/spine paths filled in. Outcome **`green`**, `spentUsd` **$0.0567**, `spendComplete`
+true, 34 spine records, work on branch `bareloop-my-maintainer`; the patient's suite went 1 pass /
+3 fail → **4 pass / 0 fail** with a real rewrite of the regex, not a test edit (`writeScope: ['src/**']`
+held). The page is now proven end to end on the PUBLISHED package by someone who is not its author.
+
+**Cost read:** the operator's own pre-run estimate for this proof was "$2 to $6". Actual: **$0.057**,
+two orders of magnitude under. A trivial patient is not a cost baseline for real work (the standing
+rule against re-baselining on a floor-shaped workload), but it IS the honest number for what the
+quickstart page itself asks a stranger to spend, and that number belongs on the page's promise.
+
+
 ## F143 — a bounded 429 retry, honouring the vendor's stated wait, as a FALLBACK behind the primary answer (model rate headroom)
 
 **2026-09-08, PRD item 28's parked (a/b) ruling.** hamr, verbatim: "do a/b as a fallback, and
@@ -11020,6 +11052,159 @@ with adequate rate headroom (the TPM table above); one bounded retry only soften
 when that was not followed, or headroom was still exceeded despite following it — it does not
 replace the model-selection fix, and nothing here should be read as making gpt-4.1 an acceptable
 default for this workload.
+
+## F144 — The per-request cliff is a gateway connection-lifetime ceiling (~231–252s), not a job-length or request-size effect; bareloop's own worst phase runs at less than half of it
+
+**2026-09-08, jointly established with the fwdloop session; all evidence $0 except the runs that were
+already paid for.** Two independent jobs, two independent codebases, one wall.
+
+**Observations.** bareloop (GLM-5.2 via synthetic.new's OpenAI-shaped endpoint, runs `zj2a4qqp` and
+`1a1o446u`): slowest request that returned = **104s**; the request that was cut = **252s**; nothing
+observed in between. fwdloop (same model, same gateway, 34 successful rounds + 3 failures,
+`poc/m0/out/spend.jsonl` on branch `m0-poc`): successful round wall min 9s / median 31s / **max 102s**;
+failures HTTP 524 at **251s** and **252s**; nothing in the 102–251s band. Neither job observed a single
+request in the ~104–251s gap.
+
+**It is a connection-lifetime ceiling, not an idle timeout** (fwdloop's measurement, the one that
+settles the mechanism). A `stream: true` request to GLM-5.2 returned its first byte at **92s** and
+delivered **3,951 chunks** with bytes flowing continuously right up to the socket being killed at
+**231s**. An idle timeout cannot fire against a stream that never goes idle. Consequences: streaming
+is not a workaround, and neither is swapping to a faster model on the SAME gateway — the ceiling is a
+property of the connection, shared by every model behind that edge. Only a direct provider API escapes
+it. Corroborating disconfirmation of a size hypothesis: fwdloop's cut requests carried a 4,000-token
+output cap while several of bareloop's 4,500–9,182-output-token rounds returned fine under the wall.
+
+**The mechanism is model generation SPEED, not step shape** (this corrects a mechanism this repo
+asserted and fwdloop published before either was measured — see the withdrawal below). GLM-5.2 through
+that gateway generates at roughly **50–95 output tokens/sec** (measured: 4,570 out in 85s; 6,584 in
+104s; 9,182 in 97s). The budget is therefore `output tokens needed ÷ the model's tokens-per-second`,
+which puts GLM-5.2's ceiling near 15–20k output tokens in one request. fwdloop's steps ask for a few
+hundred; bareloop's ask for thousands but on a provider an order of magnitude faster.
+
+**bareloop's own baseline — 233 archived runs, 9,548 worker rounds, Anthropic API.** Measured as the
+gap from the previous spine record to the round record, so every figure is an UPPER bound that
+includes tool execution, not pure request time:
+
+| phase | n | median | p95 | max | >100s | >240s |
+|---|---|---|---|---|---|---|
+| plan (draft) | 130 | 34.1s | 76.7s | **107.4s** | 1 | **0** |
+| scout | 754 | 5.3s | 23.5s | 60.9s | 0 | 0 |
+| step | 5,157 | 5.0s | 39.9s | 296.8s | 43 | 7 |
+| fix | 940 | 4.4s | 37.2s | 260.4s | 4 | 1 |
+| ALL | 9,548 | 4.9s | 37.7s | 296.8s | 58 | **8 (0.08%)** |
+
+**WITHDRAWN.** This session told the fwdloop session that bareloop "puts one whole planning pass in a
+single request, so it lives past the cliff by construction," and fwdloop published that mechanism as
+fact (their F6, corrected at `8e22e97`). It is false. The drafting pass is bareloop's slowest phase by
+median and has **never** exceeded 108s in 130 observed draft rounds — under half the wall. The claim
+was a plausible mechanism offered without a measurement that cost $0 and two minutes to run. The
+error class: a story about one's own system's shape, asserted from design intuition, propagated to a
+peer, and published downstream before anyone read the archive.
+
+**Reads.** (1) The 524 question is CLOSED with no build: a retry re-sends a 4-minute request into the
+same wall and pays twice, streaming does not help, and no model on that gateway escapes. GLM-5.2 +
+synthetic.new stays off the worker menu — for provider speed, not for our request shape. (2) The
+0.08% figure is the tripwire's baseline: fwdloop's rule, adopted here as a watch not a redesign, is
+that a step whose model round can exceed ~2 minutes is a spec bug. bareloop passes today, and none of
+the 8 over-240s rounds is a draft round. (3) A measured baseline of a peer's 9,548 rounds is a better
+instrument than either session's own POC data; the cross-session comparison is what produced both the
+mechanism and the withdrawal.
+
+
+## F145 — Extra turns are nearly free: turn 12 carries 34× the context of turn 1 and costs LESS, so the cost argument for batching work into big turns does not survive measurement
+
+**2026-09-08, $0 archive read (233 runs, 9,549 worker rounds, $354.94 of real spend, Anthropic API).**
+Asked in the plain form hamr put it: do we send big turns or small ones? The reliability half was already
+answered (F144). This is the money half, and it came out against the intuition that motivated the
+question.
+
+**Token mix across the whole archive.** cacheRead **90.0%**, cacheWrite 8.5%, freshInput **0.0%**,
+output 1.5%. The transcript replay IS the token bill — consistent with the standing record that every
+admitted token is re-read ~10.5× — but token share is not cost share, and conflating them is the trap.
+
+**Cost per round, indexed by position within its own conversation.**
+
+| round # | n | avg cacheRead | avg output | avg $/round |
+|---|---|---|---|---|
+| 1 | 513 | 1,737 | 1,592 | **0.0508** |
+| 2 | 403 | 7,537 | 574 | 0.0348 |
+| 4 | 382 | 23,599 | 843 | 0.0469 |
+| 8 | 341 | 45,861 | 1,177 | 0.0366 |
+| 12 | 239 | 58,521 | 1,151 | **0.0337** |
+
+Replayed context grows ~5,000 tokens per round (the O(N²) total everyone expects), and the dollar cost
+per round is **flat to slightly falling**. Round 12 replays 34× round 1's context and costs 34% LESS.
+Round 1 is the most expensive round in the archive because it pays the cache WRITE; every round after
+it rides cache reads at a tenth of the base input rate. **Cost per round tracks OUTPUT tokens, not
+context size.**
+
+**Reads.** (1) The "fewer, bigger turns are cheaper" intuition is FALSE on this provider — total output
+is set by the work, not by how it is chunked, and the replay that batching would avoid is the cheap
+part. (2) Every other axis favours small turns: a 5s round cannot reach a gateway ceiling (F144), a
+failed small round forfeits seconds instead of a 4-minute round's whole spend, and bareloop's exit
+checks run BETWEEN rounds, so more rounds = more interception points. (3) No change: bareloop's median
+round is already 4.9s. The one deliberately large turn is the drafting pass (median 34.1s, max 107.4s
+in 130 rounds), which SHOULD stay one turn — a plan is a single coherent artifact — and is at less than
+half the F144 wall.
+
+**Provider caveat — cheap replay is not universal, and this is an item 28 fact.** Measured cacheRead
+share of tokens: Anthropic API **90.0%** (freshInput 0.0%); gpt-5-mini **66.9%** (freshInput 20.1%,
+run `yqljn9kf`); GLM-5.2 via synthetic.new **32.1%** (freshInput **54.0%**, run `1a1o446u`). On GLM over
+half of every round is billed at full input price, so there the O(N²) replay DOES land on the bill and
+deep conversations get expensive fast. **Small turns are safe on every provider; cheap turns are not.**
+A per-provider cache-effectiveness reading belongs in item 28's tier table beside the TPM figures
+(F143), because it changes the cost model, not just the speed.
+
+
+## F146 — Four models, one job, one patient, one clock: no synthetic.new model cleared bareloop's bar, and the reason is the PLAN SCHEMA, not the gateway
+
+**2026-09-08, hamr's instruction "close all open items gpt, synthetic, close 28 properly with thorough
+testing, i got them all topped up"; prompted to widen past n=1 model by the fwdloop session, whose
+objection was correct: this repo had generalised "GLM-5.2 fails" into "synthetic.new is off the menu"
+on one model's evidence.** Controlled comparison — the SAME job (`bareguard-u-types`), the same signed
+spec, a fresh copy of the same patient, and the same $5 / 30-min ceiling for every arm.
+
+| model | endpoint | rounds | plan accepted | steps green | cost | outcome | wall |
+|---|---|---|---|---|---|---|---|
+| GLM-5.2 | synthetic | 9 | no | 0 | $0.328 | wall-halt | 10 min |
+| GLM-5.2 | synthetic | 11 | yes | 0 | $0.596 | provider-red (HTTP 524) | 11 min |
+| Qwen3.8-27B | synthetic | 8 | no | 0 | $0.288 | provider-red (HTTP 400) | **136s** |
+| Kimi-K3 | synthetic | 6 | **no** | 0 | $0.094 | plan-red | **104s** |
+| gpt-5-mini | OpenAI | 56 | yes | **5** | $0.976 | **plan-red (close rendered it)** | 12 min |
+
+**The bar** (set before the runs, from the gpt-5-mini baseline): write a plan, green some steps, end on
+a verdict rather than a casualty. **0 of 3 synthetic models cleared it. 1 of 1 OpenAI model did.**
+
+**Three different failure modes, and NONE of them is F144's gateway cliff.** GLM-5.2 = too slow, dies at
+the ~240-250s connection cap. Qwen3.8-27B = an unexplained HTTP 400 during scout at ~25k context (well
+inside its 262k window); its simple shapes all pass a $0 probe (with tools, toolless, large maxTokens),
+so the 400 belongs to the accumulated transcript, not the request shape. Kimi-K3 = **capability**: it
+drafted twice and BOTH drafts failed plan validation — draft 1 omitted `exit` on every step, draft 2
+used absolute paths and `..` segments — so it never earned an accepted plan. Qwen and Kimi both finished
+in under 140 seconds, nowhere near the cliff.
+
+**The real bar is bareloop's plan schema, not the transport.** Even gpt-5-mini needed two drafts (draft 1
+red on `steps.0.exit` missing). fwdloop's bake-off found 88 zero-error rounds across 9 models on THEIR
+job because their steps ask for a few hundred output tokens and no comparable schema; bareloop asks a
+model to emit a valid `plan-v1` with a closed exit menu and relative-path constraints. That is a
+capability threshold, and it is where these models fail — which also means F144's per-project bar
+(`output tokens ÷ tok/sec`) is necessary but not sufficient: a model can be fast enough and still be
+unable to author the plan.
+
+**Blind instrument, named not fixed.** Qwen's failure reaches the operator as the bare string
+`[OpenAIProvider] HTTP 400`. bare-agent has `exposeErrorBody` and **bareloop never sets it on any
+provider** (`grep exposeErrorBody src/ scripts/` = 0 hits), so every HTTP error from every provider
+arrives with the vendor's own explanation discarded — the fifth instance of this repo's recurring
+blind-readout class. It is NOT a free fix: an error body can echo auth material, which is why the
+transport-prose scrub already exists (F6 lineage), so exposing it must route through that scrub.
+**Parked for hamr** — it touches secret handling, not just diagnostics.
+
+**Reads.** (1) The fwdloop objection is sustained and the correction stands: the earlier phrasing was a
+one-model generalisation. (2) The corrected verdict is narrower AND worse for synthetic on this job —
+not "GLM is slow" but "no model tested there can author a bareloop plan". (3) Nothing joins the worker
+menu without its own clean paid run (standing rule); after $1.01 across three models, synthetic.new has
+zero candidates. (4) The gateway is exonerated as the cause here — two of three deaths happened inside
+140 seconds.
 
 ## F147 — the F59 summary round sent the persona TWICE: a duplicate system message that real OpenAI shrugs at and vLLM-class backends reject (the Qwen 400, root-caused)
 
