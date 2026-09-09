@@ -11299,3 +11299,44 @@ to `wall-halt` (`categorize()`, `src/planrun.js`); the judge's timeout stays on 
 `provider-red` locate axis and, after `JUDGE_ATTEMPTS`, stops as `CRASHED`. Promoting it would mean
 threading `clock.expired()` into `judged.js`, whose axis precedence is documented as load-bearing.
 Named for hamr, not decided by the builder.
+
+## F155 — the judged floor graded whatever LOCATE happened to report: a silently omitted function was a pass on the subset (PRD 30.8)
+
+**2026-09-09, `chore/bare-agent-0.42`.** `decide()` (`src/judged.js`) graded `facts.functions` and
+nothing else; its only completeness guard was `fns.length === 0`. So a locate emission that reported
+SOME functions and silently dropped one was graded green on the subset — a judged pass over an
+artifact the judge never fully read. The fail-safe direction inverted: "I did not see it" is unsure,
+and unsure is red (softgreen doctrine).
+
+**Fix.** `decide()` already receives `artifactText` (both production callers pass it —
+`src/calibrate.js`, `src/kinds.js`) and used it only for quote verification. It now also diffs the
+artifact's real top-level function names against the reported set; any name in the file and not in
+the facts is RED, naming what was missing, BEFORE any rule grading. With no `artifactText` it makes
+no completeness claim — the same opt-in precedent the quote check already set, so no existing caller
+changes behaviour.
+
+**Rejected: a card-level "named target" field.** No card or case shape in production names a
+function matchable against facts; the only `{rule, fn}` shape is `validateCalibrationSet`'s
+one-time authoring-accuracy set, a different mechanism. Inventing a signed-spec field to hold what
+the artifact already states would be the wrong direction.
+
+**ONE inventory, per the secret-shape precedent.** The first implementation hand-typed a regex
+beside `PROMPT_HEAD`'s prose — two spellings of one contract, and it already disagreed: it missed
+`export const`, `async function`, `export async function`, and `const x = async () =>`, i.e. the
+detector was silently blind in the UNSAFE direction for four shapes the prompt implies. Now a single
+`FN_SHAPES` table holds each shape once as `{prose, match}`; `PROMPT_HEAD` joins the prose and the
+detector runs the matchers, so a shape added to one IS added to the other. A test asserts the prompt
+wording and eight per-shape detections agree; narrowing `FN_SHAPES` back to the original three forms
+turns 6 tests red.
+
+**Asymmetry, deliberate and documented.** An unenumerated shape is a false NEGATIVE (unsafe;
+closed by widening `FN_SHAPES` — `const e = function(){}` is currently out, as it is in the prompt).
+A false POSITIVE (a column-0 match inside a template literal) reds a real close — the safe
+direction, kept.
+
+**Also fixed:** `tests/judged-stage.test.js`'s `RED_FACTS` fixture said "three top-level functions"
+and listed two; the new check surfaced it. A fixture whose comment and content disagree is a test
+that cannot mean what it claims. Suite 2377/2377, typecheck 0.
+
+**Reachability unchanged:** judged closes are soft-green only, and every `jobs/*.json` is `green` —
+this is a precondition closed BEFORE the first soft-green job, not a live bug fixed after one.
