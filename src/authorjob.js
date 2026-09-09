@@ -99,6 +99,7 @@ import { runCalibration } from './calibrate.js';
 import { JUDGE_MODEL, CALIBRATION_SIZE } from './judged.js';
 import {
   GENRE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
+  UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import { QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook } from './authorflow.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
@@ -123,7 +124,7 @@ export { QUESTION_SETS, questionsFor, requiredAnswersFor };
  * rule about it: illegal becomes inexpressible instead of rejected after the
  * fact (the `check-passes(name)` model). A UI renders it as three buttons, and
  * two of them are marked locked. */
-export { VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES };
+export { VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, UNLISTED_CLASSES, MENU_CLASSES };
 
 /** The territory every refusal here lands against. bareloop's OWN catalogue —
  * the genre menu, the verdict menu, the kind menu — never a bare-suite package.
@@ -139,6 +140,15 @@ export const REFUSAL_CATEGORY = 'close-unauthorable';
 const LEVERS = ([
   'describe a job bareloop can close today: one whose done is machine-checkable, on a git repository',
   'wait for the verdict-classes rung — this refusal is the evidence it waits on',
+]);
+
+/** the levers for an UNLISTED class (PRD item 31.1): the class is BUILT, so
+ * "wait for the rung" is the wrong sentence — there is no rung left to wait on.
+ * The honest next step is the other product, or a class this one still offers. */
+/** @type {string[]} */
+const UNLISTED_LEVERS = ([
+  'restate the job for a class bareloop still offers: green (a command decides done) or soft-green (a rubric does)',
+  'take a job that needs a person\'s sign-off to fwdloop — that product is built for the human-in-the-loop shape',
 ]);
 
 /**
@@ -236,17 +246,33 @@ export function runInterview({ answers, verdictType = null, repoPath = null, que
     return out({});
   }
 
-  // A LOCKED class refuses HERE, before its questions are asked. Counted demand
-  // for the class itself — the verdict-classes rung is what this evidence is for.
-  if (LOCKED_CLASSES.includes(picked)) {
+  // A class that is not ON THE MENU refuses HERE, before its questions are asked.
+  // Counted demand for the class itself — the verdict-classes rung is what this
+  // evidence is for. TWO reasons a pick lands here, and they are different facts
+  // (PRD item 31.1):
+  //   * LOCKED   — no guard battery exists, so nothing could validate the close.
+  //   * UNLISTED — the class is built and still RUNS; this product just no longer
+  //                offers it. `hitl` moved to fwdloop (item 29); its code, tests
+  //                and runtime stay, and an existing hitl spec still validates.
+  // Either way the person cannot author one, and the refusal says which it is
+  // rather than pooling two different situations into one sentence.
+  if (LOCKED_CLASSES.includes(picked) || UNLISTED_CLASSES.includes(picked)) {
+    const unlisted = UNLISTED_CLASSES.includes(picked);
     return out({
       refusal: refuse({
         verb: picked,
         path: 'verdictType',
-        detail: `You picked "${picked}", and v1 cannot close that yet: it admits ${LIVE_CLASSES.join(', ')} only — a `
-          + 'job whose done a command can decide. A judged score and a person\'s sign-off are named in the menu and '
-          + 'locked, so picking one is recorded as demand rather than dropped, and this refusal is the evidence the '
-          + 'verdict-classes rung waits on.',
+        options: unlisted ? UNLISTED_LEVERS : LEVERS,
+        detail: unlisted
+          ? `You picked "${picked}", and this product no longer offers that class: the menu is `
+            + `${MENU_CLASSES.join(', ')} — a job whose done a command can decide, or one whose done needs `
+            + 'judgement against a rubric. A person\'s sign-off moved to fwdloop, which is built for it. The '
+            + 'class itself is not deleted — an existing spec still validates and still runs — so picking one is '
+            + 'recorded as demand rather than dropped.'
+          : `You picked "${picked}", and v1 cannot close that yet: it admits ${MENU_CLASSES.join(', ')} only — a `
+            + 'job whose done a command can decide. A class with no guard battery is named in the menu and locked, '
+            + 'so picking one is recorded as demand rather than dropped, and this refusal is the evidence the '
+            + 'verdict-classes rung waits on.',
       }),
     });
   }

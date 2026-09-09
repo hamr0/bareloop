@@ -80,7 +80,7 @@ import { JUDGE_RULE_IDS } from './judged.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
-  validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES,
+  validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop } from './text.js';
@@ -1418,18 +1418,28 @@ export async function authorClose({
   // what D5 exists to make impossible. `verb` rides as a structured field so the
   // caller can carry this to the counted admission path rather than re-deriving
   // the demand from prose.
-  if (!LIVE_CLASSES.includes(String(verdictType))) {
+  // MENU_CLASSES, not LIVE_CLASSES (PRD item 31.1): this is the AUTHORING path,
+  // and the question it asks is "may a NEW close be drafted for this class",
+  // never "can this class run". `hitl` answers no to the first and yes to the
+  // second — it is unlisted, not locked, so `validateCloseDecl` still validates an
+  // existing hitl close against its real battery and the runtime still executes it.
+  if (!MENU_CLASSES.includes(String(verdictType))) {
     const known = VERDICT_CLASSES.includes(String(verdictType));
+    const unlisted = LIVE_CLASSES.includes(String(verdictType));
     return refuse([{
       code: 'class-unsupported',
       path: 'verdictType',
       verb: String(verdictType),
       lib: 'bareloop',
-      detail: known
-        ? `"${verdictType}" is a named but LOCKED verdict class — v1 admits ${LIVE_CLASSES.join(', ')} only, and a `
-          + 'class with no guard battery must refuse rather than author a close without the guards it cannot supply'
-        : `"${verdictType}" is not a verdict class — the menu is ${VERDICT_CLASSES.join(' | ')}, and nothing derives `
-          + 'a class from the answers',
+      detail: unlisted
+        ? `"${verdictType}" is built and still runs, but it is NOT ON THE AUTHORING MENU — this flow drafts `
+          + `${MENU_CLASSES.join(', ')} only. Its class moved to fwdloop; an existing close of this class still `
+          + 'validates and still executes, but no new one is drafted here'
+        : known
+          ? `"${verdictType}" is a named but LOCKED verdict class — v1 admits ${MENU_CLASSES.join(', ')} only, and a `
+            + 'class with no guard battery must refuse rather than author a close without the guards it cannot supply'
+          : `"${verdictType}" is not a verdict class — the menu is ${VERDICT_CLASSES.join(' | ')}, and nothing derives `
+            + 'a class from the answers',
     }], 'precheck');
   }
 

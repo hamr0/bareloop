@@ -21,7 +21,17 @@ import { spawnSync } from 'node:child_process';
 // the LIBRARY's own frozen sets — the expectations below are DERIVED from them, so a
 // question that is ever re-worded moves the test with it instead of leaving a stale
 // literal that passes while the person is asked something else
-import { questionsFor, requiredAnswersFor, VERDICT_CLASSES, LOCKED_CLASSES, AUTHORED_SPEC_FIELDS } from '../src/authorjob.js';
+import {
+  questionsFor, requiredAnswersFor, VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES,
+  AUTHORED_SPEC_FIELDS,
+} from '../src/authorjob.js';
+
+// The fixture class for every wizard test below: the LONGEST question set the
+// menu still offers, so a test that walks every question walks the widest one.
+// DERIVED from the menu, never a literal — it was `hitl` until PRD item 31.1
+// took that class off the menu, and a literal here would have silently become a
+// test of a class the product no longer offers.
+const CLASS = MENU_CLASSES.reduce((a, b) => (requiredAnswersFor(b).length > requiredAnswersFor(a).length ? b : a));
 
 const SCRIPT = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
 const base = mkdtempSync(join(tmpdir(), 'run-interview-'));
@@ -42,7 +52,7 @@ const outDir = () => join(base, `out-${n += 1}`);
  * @param {{verdict?: string, patient?: string, out: string, budget?: string|null,
  *   key?: string, lines: string[]}} o
  */
-const interview = ({ verdict = 'hitl', patient = base, out, budget = '2.50', key = '', lines }) => {
+const interview = ({ verdict = CLASS, patient = base, out, budget = '2.50', key = '', lines }) => {
   const args = ['--patient', patient, '--verdict', verdict, '--out', out, ...(budget === null ? [] : ['--budget', budget])];
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf8', timeout: 120_000, input: `${lines.join('\n')}\n`,
@@ -70,15 +80,18 @@ const session = (verdict, over = {}) => [
 
 test('the class\'s own frozen questions are asked ONE AT A TIME, byte for byte, in order', () => {
   const out = outDir();
-  const r = interview({ out, lines: session('hitl') });
+  const r = interview({ out, lines: session(CLASS) });
   assert.equal(r.code, 0, r.out);
 
-  const qs = questionsFor('hitl');
-  const nums = requiredAnswersFor('hitl');
-  // DERIVED, never a literal: the hitl set is the green set plus the human stage's
-  // own ask, and green has now lost two slots (D13's genre confirm, then the repo
-  // question). A hardcoded count here would have gone stale twice.
-  assert.equal(nums.length, requiredAnswersFor('green').length + 1, 'the hitl set is the green questions plus the human stage\'s own ask');
+  const qs = questionsFor(CLASS);
+  const nums = requiredAnswersFor(CLASS);
+  // DERIVED, never a literal, on BOTH sides: a non-green class is the green set
+  // plus that class's own extra asks. Green has lost two slots since it was frozen
+  // (D13's genre confirm, then the repo question), and the fixture class changed
+  // from hitl to soft-green at PRD item 31.1 — a hardcoded count here would have
+  // gone stale three times. The DELTA is not asserted, only that there IS one.
+  assert.ok(nums.length > requiredAnswersFor('green').length,
+    `the ${CLASS} set is the green questions plus that class's own asks`);
   assert.deepEqual(nums, nums.map((_, i) => i + 1), 'numbered contiguously from 1 — the number shown is the key the answer is filed under');
   let at = -1;
   nums.forEach((q, i) => {
@@ -90,7 +103,7 @@ test('the class\'s own frozen questions are asked ONE AT A TIME, byte for byte, 
   });
 });
 
-test('the GREEN class gets its own set, one shorter than hitl — read from the library, never from a copy here', () => {
+test('the GREEN class gets its own set, shorter than the judged one — read from the library, never from a copy here', () => {
   const out = outDir();
   const r = interview({ verdict: 'green', out, lines: session('green') });
   assert.equal(r.code, 0, r.out);
@@ -99,12 +112,12 @@ test('the GREEN class gets its own set, one shorter than hitl — read from the 
   // `--patient` made it a second answer for a fact the machine already holds), so a
   // literal count here would have gone stale twice while still passing once.
   const greenNums = requiredAnswersFor('green');
-  const hitlNums = requiredAnswersFor('hitl');
-  const last = hitlNums[hitlNums.length - 1];
-  assert.equal(greenNums.length + 1, hitlNums.length, 'the hitl set is green plus the human stage\'s own ask');
+  const judgedNums = requiredAnswersFor(CLASS);
+  const last = judgedNums[judgedNums.length - 1];
+  assert.ok(greenNums.length < judgedNums.length, `the ${CLASS} set is green plus that class's own asks`);
   assert.match(r.out, new RegExp(`── ${greenNums.length} of ${greenNums.length} `));
-  assert.doesNotMatch(r.out, new RegExp(`── ${greenNums.length + 1} of `), 'the extra slot belongs to hitl: a human stage needs an ask, and a green close has none');
-  assert.doesNotMatch(r.out, new RegExp(questionsFor('hitl')[last].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(r.out, new RegExp(`── ${greenNums.length + 1} of `), `the extra slots belong to ${CLASS}: a rubric needs its own asks, and a green close has none`);
+  assert.doesNotMatch(r.out, new RegExp(questionsFor(CLASS)[last].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('tripwire: the script SPELLS no question of its own', () => {
@@ -122,15 +135,15 @@ test('tripwire: the script SPELLS no question of its own', () => {
 
 test('it writes exactly what run-author.mjs consumes: the answers, and the OPERATOR half of a spec', () => {
   const out = outDir();
-  const r = interview({ out, lines: session('hitl') });
+  const r = interview({ out, lines: session(CLASS) });
   assert.equal(r.code, 0, r.out);
 
   const answers = JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'));
-  const hitlNums = requiredAnswersFor('hitl');
-  assert.deepEqual(Object.keys(answers).map(Number), hitlNums, 'keyed by the question numbers, which is how run-author reads them');
+  const judgedNums = requiredAnswersFor(CLASS);
+  assert.deepEqual(Object.keys(answers).map(Number), judgedNums, 'keyed by the question numbers, which is how run-author reads them');
   // the LAST answer is the human stage's own ask, and it is the one a green run has
   // no slot for — named by the library's own last number rather than by a literal
-  const last = hitlNums[hitlNums.length - 1];
+  const last = judgedNums[judgedNums.length - 1];
   assert.equal(answers[last], `answer to question ${last}`);
 
   const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
@@ -148,13 +161,13 @@ test('it writes exactly what run-author.mjs consumes: the answers, and the OPERA
   // and the exact command that consumes them, with both files named
   assert.match(r.out, new RegExp(`run-author\\.mjs .*--answers ${join(out, 'answers.json')}`));
   assert.match(r.out, new RegExp(`--draft ${join(out, 'specdraft.json')}`));
-  assert.match(r.out, /--verdict hitl/);
+  assert.match(r.out, new RegExp(`--verdict ${CLASS}`));
   assert.match(r.out, /--budget 2\.5\b/, 'the authoring ceiling travels to the process that spends it');
 });
 
 test('the two ceilings are never the same number on screen: the AUTHORING one and the JOB\'s', () => {
   const out = outDir();
-  const r = interview({ out, budget: '2.50', lines: session('hitl', { budget: '5' }) });
+  const r = interview({ out, budget: '2.50', lines: session(CLASS, { budget: '5' }) });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /budget +\$2\.5 ceiling/, 'the authoring ceiling, announced in the header before anything is asked');
   assert.match(r.out, /NOT the authoring ceiling/, 'and named as a different thing where the job\'s own budget is asked');
@@ -163,7 +176,7 @@ test('the two ceilings are never the same number on screen: the AUTHORING one an
 
 test('an unbounded authoring run is ANNOUNCED rather than arrived at by omission', () => {
   const out = outDir();
-  const r = interview({ out, budget: null, lines: session('hitl') });
+  const r = interview({ out, budget: null, lines: session(CLASS) });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /budget +UNBOUNDED/);
   const cmd = r.out.split('\n').find((l) => l.includes('run-author.mjs --patient')) ?? '';
@@ -173,7 +186,7 @@ test('an unbounded authoring run is ANNOUNCED rather than arrived at by omission
 
 test('the wall is ASKED, and `none` records the unbounded choice as a choice', () => {
   const out = outDir();
-  const r = interview({ out, lines: session('hitl', { wall: 'none' }) });
+  const r = interview({ out, lines: session(CLASS, { wall: 'none' }) });
   assert.equal(r.code, 0, r.out);
   const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
   assert.equal(draft.maxWallMs, undefined, 'absent is what job-v1 spells unbounded — never a number nobody chose');
@@ -183,8 +196,8 @@ test('the wall is ASKED, and `none` records the unbounded choice as a choice', (
 test('a multi-line answer survives as the person typed it', () => {
   const out = outDir();
   const lines = [
-    ...requiredAnswersFor('hitl').slice(0, 1).flatMap(() => ['first line', 'second line', '']),
-    ...requiredAnswersFor('hitl').slice(1).flatMap((q) => a(`answer to question ${q}`)),
+    ...requiredAnswersFor(CLASS).slice(0, 1).flatMap(() => ['first line', 'second line', '']),
+    ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
     ...a('litectx-maintainer'), ...a('a goal'), ...a('src/**'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
@@ -197,7 +210,7 @@ test('a secret typed into an answer is SCRUBBED by the library seam before it re
   const key = `sk-${'a1b2c3d4e5f6g7h8'.repeat(2)}`;
   const lines = [
     ...a(`the token is ${key}`),
-    ...requiredAnswersFor('hitl').slice(1).flatMap((q) => a(`answer to question ${q}`)),
+    ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
     ...a('litectx-maintainer'), ...a('a goal'), ...a('src/**'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
@@ -251,7 +264,7 @@ test('a blank answer is RE-ASKED with the rule named — never accepted, never f
   const lines = [
     '', '', // two blank lines at question 1: the answer is empty, twice
     ...a('finally an answer'),
-    ...requiredAnswersFor('hitl').slice(1).flatMap((q) => a(`answer to question ${q}`)),
+    ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
     ...a('litectx-maintainer'), ...a('a goal'), ...a('src/**'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
@@ -263,7 +276,7 @@ test('a blank answer is RE-ASKED with the rule named — never accepted, never f
 test('a number that is not a number is re-asked, and the field is named', () => {
   const out = outDir();
   const lines = [
-    ...requiredAnswersFor('hitl').flatMap((q) => a(`answer to question ${q}`)),
+    ...requiredAnswersFor(CLASS).flatMap((q) => a(`answer to question ${q}`)),
     ...a('litectx-maintainer'), ...a('a goal'), ...a('src/**'),
     ...a('five dollars'), ...a('5'),
     ...a('30'), 'n',
@@ -289,7 +302,7 @@ test('a draft the JOB VALIDATOR would refuse is refused HERE, for $0, before the
   // a slug the validator rejects and a wall under its own floor, together: the two
   // classes of red a person can type. Both would otherwise surface after a real
   // scout and a real model call — a true answer at the wrong price.
-  const r = interview({ out, lines: session('hitl', { job: 'Litectx Maintainer', wall: '1' }) });
+  const r = interview({ out, lines: session(CLASS, { job: 'Litectx Maintainer', wall: '1' }) });
   assert.equal(r.code, 1);
   assert.match(r.out, /THE SPEC DRAFT DOES NOT VALIDATE/);
   assert.match(r.out, /invalid-value at job/);
@@ -311,7 +324,7 @@ test('the paid step is OFFERED, never taken: the default is no, and saying nothi
   const out = outDir();
   // input simply ENDS at the offer — the same as pressing return. A KEYED shell,
   // because the offer is only put when it could actually be taken (below).
-  const r = interview({ out, key: 'sk-test-not-a-real-key', lines: session('hitl').slice(0, -1) });
+  const r = interview({ out, key: 'sk-test-not-a-real-key', lines: session(CLASS).slice(0, -1) });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Run it now\? \[y\/N\]/);
   assert.match(r.out, /Not run\./);
@@ -329,7 +342,7 @@ test('with no key in the shell, the run offer is NOT PUT — the question has on
   const out = outDir();
   // the full session INCLUDING its trailing "y": if the offer were still put,
   // this would spawn the paid child. It must not be read at all.
-  const r = interview({ out, lines: session('hitl', { run: 'y' }) });
+  const r = interview({ out, lines: session(CLASS, { run: 'y' }) });
   assert.equal(r.code, 0, r.out);
   assert.doesNotMatch(r.out, /Run it now\?/, 'the offer is put over a shell that cannot take it');
   assert.doesNotMatch(r.out, /close-authoring, run /, 'a "y" was read and the paid child was spawned without a key');
@@ -339,7 +352,7 @@ test('with no key in the shell, the run offer is NOT PUT — the question has on
 
 test('the offer names the key it will need, without ever printing one — and says how to set it', () => {
   const out = outDir();
-  const r = interview({ out, lines: session('hitl') });
+  const r = interview({ out, lines: session(CLASS) });
   assert.match(r.out, /ANTHROPIC_API_KEY is not set in this shell/);
   assert.match(r.out, /ANTHROPIC_API_KEY=\.\.\. node scripts\/run-author\.mjs/, 'the command shows the shape, never a value');
   assert.match(r.out, /set the key in the shell you run it from/, 'the explainer says what to DO, not only what is wrong');
@@ -354,8 +367,8 @@ test('the offer names the key it will need, without ever printing one — and sa
 test('the two files are on disk EITHER WAY — the offer is the only thing the key gates', () => {
   const unkeyed = outDir();
   const keyed = outDir();
-  assert.equal(interview({ out: unkeyed, lines: session('hitl') }).code, 0);
-  assert.equal(interview({ out: keyed, key: 'sk-test-not-a-real-key', lines: session('hitl') }).code, 0);
+  assert.equal(interview({ out: unkeyed, lines: session(CLASS) }).code, 0);
+  assert.equal(interview({ out: keyed, key: 'sk-test-not-a-real-key', lines: session(CLASS) }).code, 0);
   for (const out of [unkeyed, keyed]) {
     assert.ok(existsSync(join(out, 'answers.json')), `${out} lost its answers`);
     assert.ok(existsSync(join(out, 'specdraft.json')), `${out} lost its draft`);
