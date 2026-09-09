@@ -11386,3 +11386,46 @@ shape for a one-model provider — a second model masquerading as `haiku` would 
 **Still not done for item 28:** part (2) the signed judge pair, and the paid probe of `openai-api`
 through the SHIPPED runner — F150's green was fired through `poc-run-param.mjs`, not through
 `scripts/run-u.mjs`'s factory path. That probe is the remaining item-28 exit.
+
+## F157 — item 28's paid probe through the SHIPPED runner: green at $1.64; and the spine could not say which provider ran
+
+**2026-09-09, run `u-mtu12vks`, PRD 30.9's exit criterion.** F150's DeepSeek green was fired
+through `poc-run-param.mjs`, a script outside the product. This is the same job shape through
+`scripts/run-u.mjs` — the shipped runner, the new `src/providers.js` factory, `provider:
+'openai-api'`, `baseUrl: https://api.deepseek.com/v1`, `deepseek-chat`.
+
+| | |
+|---|---|
+| outcome | **green** |
+| spend | $1.64 of $4, `spendComplete: true` |
+| wall | 10.3 min of 30 |
+| rounds | 86; 1.26M tokens, cache-read 1.08M |
+| road | 5-step plan, 14 allowed writes across 5 files, close first said `needs_revision` on `no-suppressions`, fix loop ran, green |
+| bridge | minted — the next run of this shape reuses the plan |
+
+The factory path works end to end: menu entry, baseUrl, per-model `legacyMaxTokens`, the judge
+still pinned to `anthropic-api`. `stopReason` (BA-13, new on `worker-round`) carried real values
+(`tool_use`, `end_turn`) on every round. **PRD item 28's probe rule is satisfied for
+`openai-api`/`deepseek-chat`.**
+
+**The instrument gap the probe exposed, and it is the important half.** The spine recorded NOTHING
+about which provider or endpoint the run used: `job-start` carried `job`, `specHash`, `budgetUsd`,
+`verdictType`, `code`, and `model` only when the binding happened to expose one — but never
+`provider`, never `baseUrl`. From the day `openai-api` joined the menu, every archived cost,
+duration and outcome row would have pooled anthropic and non-anthropic runs into one aggregate with
+no way to segment them — the contaminated-aggregate reading error this repo has already paid for.
+Fixed: `job-start` now carries `provider` always and `baseUrl` when the job set one (an absent
+`baseUrl` is the vendor's own host, not an unknown). Tests red without each field.
+
+**Two more provenance notes, unfixed and named.** (1) bare-agent's own pricing warning names the
+served model as `deepseek-v4-flash` while the request says `deepseek-chat` — the vendor maps the
+alias server-side. `paramsFor()` keys on the REQUEST id, which is what we send, so the gating is
+correct today; but any future keying on the RESPONSE model id would miss, and `worker-round.model`
+is `undefined` throughout this spine, so which model actually served is not recorded anywhere.
+(2) every round is `rateSource: 'default'` — the guesstimate rate, loudly stamped (F113 posture
+holds), so the $1.64 is approximate and the $4 cap bound on a guessed rate, not DeepSeek's real one.
+
+**Also named, not built:** `scripts/run-u.mjs` demands `ANTHROPIC_API_KEY` even for a `green`-class
+job that never judges, because the judge provider is built unconditionally. Honest (it fails loud,
+never silently), but over-strict — a pure `openai-api` green job cannot run without an Anthropic
+key at all. Belongs with item 28 part (2)'s signed judge-key story.

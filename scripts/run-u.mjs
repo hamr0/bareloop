@@ -121,6 +121,14 @@ const JOBS = {
     spine: 'bareguard-u-bareloop',
     seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
   },
+  // PRD item 28 / 30.9 — the openai-api probe through THIS runner (the shipped
+  // one), not poc-run-param.mjs. Same job shape, same seed, its own patient copy.
+  'bareguard-types-deepseek': {
+    spec: 'bareguard-u-types-deepseek.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u-deepseek',
+    spine: 'bareguard-u-deepseek-bareloop',
+    seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
+  },
   // N4's hitl PROVING job (build plan §Proving; hamr's ruling, 2026-08-13). The job
   // has been dark since 507adbb deleted the legacy `steps[]` path its old spec was
   // written against, and it comes back as a plan-flow job with an AUTHORED close.

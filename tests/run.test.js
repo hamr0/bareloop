@@ -143,6 +143,39 @@ test('job-start carries verdictType (F117, PRD TODO #20) equal to the spec\'s, a
   assert.equal(start.verdictType, job.verdictType, 'the job-start record\'s verdictType is the SPEC\'s own, not a default');
   assert.equal(start.verdictType, 'green');
   assert.equal('model' in start, false, 'a provider binding with no .model field must never fabricate one');
+  // PRD item 28 — WHICH provider ran. Without it an archive cannot segment
+  // anthropic rows from openai-api rows, and every pooled cost/duration median
+  // is a contaminated aggregate.
+  assert.equal(start.provider, job.provider, 'job-start names the provider the job declared');
+  assert.equal('baseUrl' in start, false, 'a job that set no baseUrl must not fabricate one');
+});
+
+test('job-start carries baseUrl when the job declares one, and the provider it actually ran (PRD item 28)', async () => {
+  const wd = makePlanWork('plan-baseurl');
+  const job = { ...planJob(), provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' };
+  const plan = JSON.stringify({
+    schema: 'plan-v1',
+    steps: [{
+      id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6,
+      target: 'tests/test_x.mjs',
+      exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }],
+    }],
+  });
+  const provider = scriptedProvider([
+    { text: 'no tests exist yet' },
+    { text: plan },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  const outcome = await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+  });
+  assert.equal(outcome, 'green');
+  const start = readSpine(file).find((e) => e.type === 'job-start');
+  assert.equal(start.provider, 'openai-api');
+  assert.equal(start.baseUrl, 'https://api.deepseek.com/v1', 'the endpoint a run actually spoke to is part of its record');
 });
 
 test('job-start carries model when the shell-owned provider binding actually has one', async () => {

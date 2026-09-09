@@ -353,6 +353,15 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // than guessing.
     verdictType: job.verdictType,
     ...(typeof provider?.model === 'string' ? { model: provider.model } : {}),
+    // PRD item 28 / F156 — WHICH provider actually ran, and against which
+    // endpoint. Report-only, but without it an archived spine cannot be
+    // segmented by provider at all: every cost, duration and outcome row from
+    // the day openai-api joined the menu would pool anthropic and non-anthropic
+    // runs into one contaminated aggregate, which is the reading error this repo
+    // has already paid for once. `baseUrl` rides along only when the job set one
+    // (an absent baseUrl is the vendor's own host, not an unknown).
+    provider: typeof job.provider === 'string' ? job.provider : null,
+    ...(typeof job.baseUrl === 'string' ? { baseUrl: job.baseUrl } : {}),
     // F118: replay reads this; report-only. `dirty` is deliberately omitted —
     // it can't be known without a shell, and null = unknown, never faked.
     code: (() => { const { version, sha } = codeVersion(); return { version, sha }; })(),
