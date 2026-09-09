@@ -2977,8 +2977,18 @@ blast radius.
 
 ## Gotchas
 
-*TBD from real adopter friction; recorded here as they're found (repo-side friction goes
-to `docs/logs/FINDINGS.md`).*
+*Recorded here as they're found (repo-side friction goes to `docs/logs/FINDINGS.md`).*
+
+- **`non-green-verdict` is a misleading refusal verb, and it is kept on purpose.** When
+  `runInterview` refuses a job for having no git repository (`repoPath` absent), the refusal
+  carries `verb: 'non-green-verdict'` and `path: 'repoPath'`. The name is wrong: the refusal
+  is about the GENRE — this authoring flow drafts code-genre closes against a git seed, and
+  that is true of BOTH classes it offers — not about the verdict class, and it fires for a
+  `soft-green` pick exactly as it does for `green`. **Read `path`, never `verb`, to know what
+  was refused.** The verb is kept because it is the demand ledger's key for this refusal:
+  renaming it would split one running count into two that read as different demands. Named
+  rather than fixed (PRD item 31.2); say so if you would rather have the accurate name and
+  accept the discontinuity.
 
 ## Constraints
 

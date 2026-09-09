@@ -11614,3 +11614,49 @@ holds), so the $1.64 is approximate and the $4 cap bound on a guessed rate, not 
 job that never judges, because the judge provider is built unconditionally. Honest (it fails loud,
 never silently), but over-strict — a pure `openai-api` green job cannot run without an Anthropic
 key at all. Belongs with item 28 part (2)'s signed judge-key story.
+
+## F158 — a suite that passes and a run that fails are two different readings, and the second one is at the bottom of the file
+
+**2026-09-09, PRD item 31.1/31.2, `feat/item-31`.** The 31.1 commit was reported to hamr as
+"gate green" on the strength of this:
+
+```
+# pass 2411
+# fail 0
+```
+
+The command's own exit code was **1**. `npm test` runs the suite AND `prompt-commit-check`
+after it (package.json's `test` script); the suite passed and the check failed, so the
+pass/fail tally and the exit code disagreed — and the tally is the line a reader's eye lands
+on. The failure sat sixteen lines below it, under the `1..2411` plan and seven `# ` summary
+lines.
+
+**This is the same class as the pipeline-exit hazard already on record** (a `$?` after a pipe
+reports the last element's status, not the suite's), and it survived that lesson because the
+command WAS bare. Reading `$?` correctly is not enough if the number read afterwards is a
+different number. **Both must be read: the exit code, and then the tail.**
+
+**What actually failed, and why it is not a bug.** `prompt-commit-check` requires a commit
+touching a prompt register to carry `Failure:`/`Addresses:`/`Corrects:` labels, the Failure
+line citing a run. It matches on FILE granularity — `git diff-tree --no-commit-id --name-only`
+(`scripts/prompt-commit-check.mjs:87`) — against `PROMPT_REGISTERS`' file list. Item 31.1
+edited a class gate in `src/authorflow.js`, a register FILE, while changing no register
+STRING: `AUTHOR_SYSTEM`, `REVISE_INSTRUCTION`, `STRUCTURE_INSTRUCTION_TOOL` and
+`STRUCTURE_INSTRUCTION_TEXT` were byte-identical across the commit (verified by diffing the
+commit against those four names).
+
+So the check fired on a commit it did not need to fire on. **Left exactly as it is.** A
+file-granular match is the fail-safe direction: it over-reports, and the failure mode of the
+precise alternative is a prompt change that slips through unlabelled. Narrowing it would be
+widening a guard, which is not a thing to do while stepping past one. The labels were
+supplied instead, and the commit message says plainly that no register string changed.
+
+**A second format trap inside the same check.** The run citation must sit on the `Failure:`
+line's OWN text (`RUN_REF_RE = /\brun\s+(u-)?[a-z0-9]{8}\b/i`, matched against
+`failureLineText`). A citation on the second line of the Failure paragraph reads as absent,
+and the refusal message is identical either way — two amend cycles were spent before the
+placement, not the content, turned out to be the problem.
+
+**Fix, and it is a reading habit rather than code:** a gate claim quotes the EXIT CODE and the
+LAST LINE of the output, never the pass/fail tally alone. A suite can be entirely green inside
+a run that failed.
