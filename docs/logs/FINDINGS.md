@@ -11199,3 +11199,35 @@ to the mechanism: a second retry or a longer wait would be widening a cap the ar
 
 **Closes 30.2 as live-proven.** Mechanism: proven. Recovery on this model: not expected, not
 observed. Evidence `../bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl`.
+
+## F152 — a live silent endpoint HANGS the process, it never drains: `runner-drained` covers the settled-socket class only, and a deadline is the only instrument for the open-socket class — which the judge and the authoring scout do not have
+
+**2026-09-09, PRD 30.3, $0.** hamr asked for (c) proven through a real process against a real HTTP
+endpoint. Probe (`silent-probe.mjs`, scratchpad): a local HTTP server that accepts the request and
+never answers, in two shapes — no headers ever, and 200 + headers then silence — hit through
+bare-agent's real `OpenAIProvider` (`baseUrl` = the local port), with and without `timeoutMs`.
+
+| shape | no bound | `timeoutMs: 3000` |
+|---|---|---|
+| silent (no headers) | HANGS ≥ 12 s, `beforeExit` never fires | rejects at 3.0 s, process exits normally |
+| headers then silence | HANGS ≥ 12 s, `beforeExit` never fires | rejects at 3.0 s, process exits normally |
+
+**The reading.** An open socket is an active handle; node's event loop is NOT empty, so
+`beforeExit` cannot fire — the backstop is structurally blind to a live hang. The class it catches
+is the OTHER one: socket settled, promise never settled (F140's real death) — and bare-agent 0.42
+now rejects every known instance of that (F141). So "prove (c) live against a real endpoint" is
+impossible by construction: a real endpoint either answers, aborts (0.42 → provider-red), or hangs
+(no drain). (c) stays proven by the child-process test (an organic drain via a bounded-free
+in-process path) and stands as the fail-safe for an UNKNOWN future settled-socket path. Closed
+as such — not "live-proven", and the row says why.
+
+**What the probe actually found.** The live hazard is the hang, and the only instrument that
+fires on the absence of events is a deadline (F67's own lesson). The worker has one:
+`callBounds()` (`src/planrun.js:1494`) derives `timeoutMs`/`deadlineMs` from the wall and every
+`mkWorker` round carries it. Two provider paths carry NONE: the softgreen judge
+(`src/judged.js:665`, `loop.run(…, { maxTokens })`) and the authoring scout
+(`src/authorscout.js:458/504/534`, `{ cacheMessages, maxTokens }`). A silent endpoint on either
+hangs the run forever with no terminal, no spend readout, and the machine's idle-suspend as the
+only thing that ends it. That is 30.4's actual scope: not "a stall watch for the judge" but the
+worker's call deadline on every provider call bareloop makes. Tighten-only (adds a bound where
+there was none), arbiter-adjacent, hamr's "close them all" is the go.

@@ -544,8 +544,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     |---|---|---|---|
     | 30.1 | Second double-system site: `src/authorscout.js` recovery round re-feeds a system-prepended transcript (F147's twin) | strip + red/green test | CLOSED 79f3478 — two sites (recovery, re-ask) stripped; real-Loop test red 2≠1 → green |
     | 30.2 | 429 retry (F143) never fired live | a real vendor 429 absorbed by `rate-limit-retry` on a paid run (gpt-4.1 429s deterministically, F139) | CLOSED F151 — live 429 on gpt-4.1: parsed 9.47 s, waited 9.72 s, one retry, refused again, honest provider-red $0.12 |
-    | 30.3 | `runner-drained` (c) proven only in-process | a real child process through `bin/`/runner against a real HTTP endpoint that goes silent drains and mints the record + non-zero exit | open |
-    | 30.4 | Judge call has no stall watch / call deadline (F148) | judge Loop wrapped in the same watch the worker gets; test | open |
+    | 30.3 | `runner-drained` (c) proven only in-process | a real child process through `bin/`/runner against a real HTTP endpoint that goes silent drains and mints the record + non-zero exit | CLOSED F152 — impossible live by construction (open socket never drains; settled-socket drops now reject, F141); backstop stays child-process-proven; the live hazard is a HANG → 30.4 widened to every unbounded provider call |
+    | 30.4 | Judge AND authoring-scout provider calls carry no deadline (F148, F152) | every `Loop.run` bareloop makes carries the worker's `callBounds()` deadline; a silent endpoint rejects into an honest terminal; test | open |
     | 30.5 | `exposeErrorBody` parked (F146): provider error sentence discarded | body passes through the ONE secret scrub before any record; test proves a key in the body is redacted | open |
     | 30.6 | fwd not told the Qwen cause | message sent | CLOSED — sent 2026-09-09 (cause + DeepSeek max_tokens note) |
     | 30.7 | Kimi drafter-prompt test (worked example + up-front relative-path rule) never run | ~$0.10 Kimi draft with the candidate prompt; ship ONLY if Kimi drafts AND a Sonnet run stays green, else close as "model" | open |
