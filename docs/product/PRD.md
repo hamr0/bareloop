@@ -398,7 +398,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     a cold-adopter quickstart** (one page a stranger can follow to job #1) → the panel (N6)
     after, arriving as fwdloop's inbox UI first. Reuse-lift proof stays after item 28.
     **2026-09-09 — order amended, SUPERSEDES the line above** (hamr): item 28's open half is
-    carried as **item 31**; order is now item 31 (judge pair, judge-key, request-key gating)
+    carried as **item 31**; order is now item 31 (retire hitl, two shapes, full bare-agent adapter,
+    judge-key, first-ever calibration fire)
     → **the panel (N6) — built HERE, shaped against fwdloop's UI PRD so one build fits both**
     → the reuse-lift proof LAST. See item 31.
 
@@ -556,7 +557,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | 30.6 | fwd not told the Qwen cause | message sent | CLOSED — sent 2026-09-09 (cause + DeepSeek max_tokens note) |
     | 30.7 | Kimi drafter-prompt test (worked example + up-front relative-path rule) never run | ~$0.10 Kimi draft with the candidate prompt; ship ONLY if Kimi drafts AND a Sonnet run stays green, else close as "model" | CLOSED by ruling (hamr, 2026-09-09: "settle on one secondary/replacement for claude … don't pickpocket random models") — secondary is `deepseek-chat` (F150), which drafts on the current prompt; Kimi is not a candidate, experiment killed at $0.02, prompt untouched |
     | 30.8 | `decide()` completeness hole (softgreen judge grades only the functions locate reported) | a function the card names but locate omitted → RED; test | CLOSED F155 — completeness diff against the artifact; ONE FN_SHAPES inventory drives both the prompt prose and the detector (the hand-typed regex already disagreed on 4 shapes); red→green captured twice |
-    | 30.9 | Item 28 build: provider factory, `openai-api` (+`baseUrl`, per-model request-key) on the menu, tier table with `deepseek-chat` as THE secondary (hamr's ruling, one replacement, no menu of half-tested models), signed `judge:{provider,model}` + calibration record, `stopReason` on worker-round | built + one paid probe through the SHIPPED runner on DeepSeek | CLOSED F156+F157 — factory built (one table, unknown name throws, per-model request-key gating, baseUrl admitted); probe GREEN through scripts/run-u.mjs (run mtu12vks, $1.64/$4, 10.3min, bridge minted). REMAINS OPEN as item 28 part (2) — carried in full as **item 31** below (31.1 judge pair, 31.2 judge-key, 31.3 request-key gating), not as an unclosed row here |
+    | 30.9 | Item 28 build: provider factory, `openai-api` (+`baseUrl`, per-model request-key) on the menu, tier table with `deepseek-chat` as THE secondary (hamr's ruling, one replacement, no menu of half-tested models), signed `judge:{provider,model}` + calibration record, `stopReason` on worker-round | built + one paid probe through the SHIPPED runner on DeepSeek | CLOSED F156+F157 — factory built (one table, unknown name throws, per-model request-key gating, baseUrl admitted); probe GREEN through scripts/run-u.mjs (run mtu12vks, $1.64/$4, 10.3min, bridge minted). REMAINS OPEN as item 28 part (2) — DEFERRED by **item 31** below (the judge seam has 0 uses in 167 runs; signing a provider field for it is dead weight until a rubric job exists). The judge-key half is carried as item 31.4 |
     | 30.10 | Docs drift: CHANGELOG lacked F147; PRD spend figure wrong ($5.94 → $3.91) | corrected | CLOSED 487320d |
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
@@ -566,28 +567,33 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     Softgreen (the judged floor) itself remains shipped and unaffected; only the doc-genre
     roadmap item ends.
 
-31. **Item 28 part (2) — the open half, and the order after it** (hamr, 2026-09-09: "add to
-    prd all pending items above … prioritize ui after the bugs/nuances coming next and
-    reuse-lift last"). Item 28 shipped shape (1) (the provider factory) and shape (3) (one
-    paid probe per admitted provider — DeepSeek green, run `mtu12vks`). Shape (2) and the
-    nuances found alongside it are NOT built and are the next work, in this order:
+31. **Item 31 — two shapes, one adapter, and the gate nobody has ever fired** (hamr,
+    2026-09-09). Supersedes the first draft of this item, which was written from a STALE
+    SOURCE COMMENT and got the central fact backwards. **The correction, established at $0 by
+    running the real code, not reading it:** `LOCKED_CLASSES` is EMPTY (`src/authoring.js:107`),
+    so `runInterview` admits all three classes — `green`, `soft-green` AND `hitl` — with
+    `ok=true, refusal=none, reds=0` for each. soft-green was never locked. The comment at
+    `src/authorjob.js:38` (*"v1 STILL ADMITS ONLY `green`"*) is FALSE, and the refusal text at
+    `src/authorjob.js:293` still offers hitl as a live alternative. Calibration has therefore
+    never run for the ordinary reason: **0 calibrations and 0 `judged-locate` rounds across 167
+    archived runs, because nobody ever authored a soft-green job** — not because anything
+    blocked one. Read this before touching the verdict-class code; a comment in this area has
+    already sent one build in the wrong direction.
 
-    | # | Open item | What "done" means |
-    |---|---|---|
-    | 31.1 | Signed `judge: { provider, model }` + per-pair calibration record (item 28 shape (2), the only unbuilt shape) | the judge is a signed spec field; a `(provider, model)` pair with no recorded 10-of-10 calibration REFUSES judged closes at $0 and never silently substitutes an uncalibrated model |
-    | 31.2 | Judge-key story: `scripts/run-u.mjs:1107` hard-exits on a missing `ANTHROPIC_API_KEY` even for a job that never judges (a green DeepSeek run still demands an Anthropic key) | a never-judged job runs with only its own provider's key; a judged job still refuses honestly and by name when the judge's key is absent |
-    | 31.3 | `OPENAI_MODEL_OPTIONS` (`src/providers.js:68`) knows the output-cap request key for `deepseek-chat` ONLY; any other model falls through to bare-agent's `max_completion_tokens` default, which DeepSeek-class backends silently IGNORE (F149: asked 64 tokens, got 665) | an unknown `openai-api` model cannot silently un-bind the budget cap — either the key is proven per model before admission, or an unproven model is refused by name. A cap that does not bind is a money hazard, not a crash: arbiter territory, hamr's ruling required on which of the two |
+    | # | Item | What "done" means | Validation |
+    |---|---|---|---|
+    | 31.1 | `hitl` is retired (v1.71 ruling; the class moved to fwdloop, item 29) but is still LIVE in the authoring menu | `hitl` moves into `LOCKED_CLASSES` so a pick returns the counted demand refusal, never an authorable job. **Its CODE STAYS** (hamr, 2026-09-09: "retire hitl from list, keep its code") — the locked-class machinery is the mechanism, and the question set stays in `QUESTION_SETS` for the fourth-class case the module was built for | `runInterview({verdictType:'hitl'})` returns a refusal, not `ok:true`; green and soft-green still `ok:true`; full suite green, no regression |
+    | 31.2 | Stale prose asserts a green-only v1 that the code does not implement | `src/authorjob.js:38` and `:293` rewritten to the two-shape truth (`green` deterministic + `soft-green` rubric); every other green-only claim swept | grep proves no surviving green-only assertion; fwdloop's quoted text no longer contradicts the source |
+    | 31.3 | The provider table is a curated two-entry menu while `bare-agent` already ships seven adapter shapes (`anthropic`, `openai`, `gemini`, `ollama`, `http`, `clipipe`, `fallback`) | bareloop adopts bare-agent's FULL adapter surface on hamr's framing — **api + api shape + endpoint** — instead of curating a menu. The one per-backend fact that does NOT disappear is the output-cap request key: `bare-agent` deliberately does not sniff model names (`provider-openai.js:96` *"No model sniffing"*), and DeepSeek silently ignores `max_completion_tokens` (F149: asked 64 output tokens, returned 665). A cap that does not bind is a money hazard, so the key is declared per backend | a spec naming each admitted shape validates; the token-key flag is exercised per backend; full suite green |
+    | 31.4 | `scripts/run-u.mjs:1107` hard-exits on a missing `ANTHROPIC_API_KEY` even for a job that never judges — a green DeepSeek run still demands an Anthropic key | a job whose `verdictType` is `green` runs with only its own provider's key; a judged job still refuses honestly and BY NAME when the judge's key is absent | both paths tested; the green-on-DeepSeek path proven with `ANTHROPIC_API_KEY` unset |
+    | 31.5 | The calibration gate (`src/calibrate.js`) is built, unit-tested and **has never executed once** — 0 of 167 runs | UNTOUCHED by this item (hamr: it is correct, it has simply never been exercised). Proven by USE, not by edit: a real soft-green job is authored and FIRED on DeepSeek so calibration runs end to end for the first time | one paid soft-green run; the calibration record exists in the spine with its 10-of-10 floor read; defects found on first real use are logged as findings, not papered over |
 
-    **Order after 31 (hamr, 2026-09-09 — amends the 2026-09-08 order at item 25):**
-    item 31 (the bugs/nuances above) → **the panel (N6, §10) — the UI** → the reuse-lift
-    proof LAST. The UI is promoted ahead of the reuse-lift proof; item 29's "fwdloop's inbox
-    UI arrives before any bareloop-only panel" is SUPERSEDED. hamr's reasoning, verbatim in
-    substance: "this repo has its own ui … it's an integral long overdue part". bareloop
-    builds the panel HERE so fwdloop borrows a built thing rather than developing one from
-    scratch (the borrow-not-import contract, item 29, is unchanged — fwdloop copies). When
-    the UI rung starts, the first step is to READ `../fwdloop/docs/product/PRD.md`'s UI
-    section and shape the build so one artifact can mutate to fit both products — "both are
-    close in shape". No UI design is frozen before that read.
+    **The judge stays pinned to `anthropic-api`/`JUDGE_MODEL` — arbiter territory, unchanged by
+    this item.** A soft-green job therefore legitimately needs BOTH keys (the worker's and the
+    judge's); 31.4 removes the demand only where no judge can run. The first draft's
+    "signed `judge:{provider,model}` + per-pair calibration" is DEFERRED, not built: signing a
+    provider field for a seam with 0 uses in 167 runs is dead weight until a rubric job exists.
+    Item 28 part (2) is carried by that deferral, not closed by it.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
