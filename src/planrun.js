@@ -2617,7 +2617,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const newLoop = (gen) => {
       /** @type {any} */
       let self = null;
-      /** @param {{costUsd?: number|null, pricing?: string|null, rateSource?: string|null, usage?: any, kind?: string}} arg */
+      /** @param {{costUsd?: number|null, pricing?: string|null, rateSource?: string|null, usage?: any, kind?: string, stopReason?: string|null}} arg */
       const metered = async (arg) => {
         // The meter fires for EVERY generation, live or abandoned. An orphaned round
         // was really billed, and spend that no instrument sees is the one thing this
@@ -2638,6 +2638,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           ...rateSourceFields(arg),
           tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
           usage: usageOf(arg?.usage),
+          // PRD item 28 — BA-13: bare-agent's Loop surfaces the round's own neutral
+          // stop reason ('end_turn'|'max_tokens'|'tool_use'|'refusal'|…) on EVERY
+          // onLlmResult call, forwarded verbatim. REPORT-ONLY (nothing here acts on
+          // it — the Loop itself already refuses to execute a 'max_tokens' round's
+          // tool calls, BA-6); null when bare-agent didn't say (pre-BA-13, or a
+          // non-string value), never invented — the same honesty rule every other
+          // provenance field on this record already follows.
+          stopReason: typeof arg?.stopReason === 'string' ? arg.stopReason : null,
         });
         // Everything BELOW here belongs to the live call only. A superseded call must
         // not beat the watch (that is the whole watchdog), must not spend the step's

@@ -19,7 +19,6 @@
 // run, never the unresolved bundleHash. `history.jsonl` records both hashes
 // side by side (POC fact 2) so the pairing can never drift silently.
 
-import { createRequire } from 'node:module';
 import { createInterface } from 'node:readline/promises';
 import { hostname } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -34,15 +33,13 @@ import {
   exportBundle, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
   runJob, makeSpine, loadRegistry, listingRow, jobSpecHash, resolveWorkerModel, JUDGE_MODEL,
 } from './index.js';
+import { resolveProvider, buildRunnerProviders } from './providers.js';
 
-const require = createRequire(import.meta.url);
-
-// The runner's own tier menu, the same spelling `scripts/run-u.mjs` uses (not
-// exported from `src/` — the tier->model mapping is runner territory, not the
-// library's). A `bareloop run` has no `--model` flag (not in the frozen
-// spec), so `flagModel` is always undefined and only the spec's own `model`
-// (if signed) or this default is ever in play.
-const DEFAULT_TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' };
+// The tier->model tables live in `src/providers.js` now (PRD item 28's
+// factory) — one seam instead of a copy hardcoded in each runner. A
+// `bareloop run` has no `--model` flag (not in the frozen spec), so
+// `flagModel` is always undefined below and only the spec's own `model`
+// (if signed) or the resolved provider's default tier is ever in play.
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObj = (v) => typeof v === 'object' && v !== null;
@@ -58,20 +55,38 @@ const isObj = (v) => typeof v === 'object' && v !== null;
  * @param {any} spec the (already `$BARELOOP_BUNDLE`-resolved) bundle spec
  */
 function buildProviders(apiKey, spec) {
-  const { AnthropicProvider } = require('bare-agent/providers');
+  // `bareloop run`'s frozen key contract (module header above) is
+  // ANTHROPIC_API_KEY only — this `apiKey` is always that key. A bundle
+  // whose spec names a provider that reads a DIFFERENT env key therefore
+  // has no seam into this flow yet, and the one thing this must never do is
+  // construct that provider with the Anthropic key: the run would fail at
+  // the first call with a vendor 401, which reads as a credential problem
+  // rather than as the unbuilt seam it actually is. So it REFUSES here, at
+  // $0, naming the key it would have needed. Widening the contract (a
+  // signed per-provider key story) is PRD item 28 part (2)/(3), the
+  // arbiter's, not this factory rewire's — the runner that actually fires
+  // openai-api jobs today is `scripts/run-u.mjs`, which IS key-aware.
+  const providerName = isObj(spec) && typeof spec.provider === 'string' ? spec.provider : 'anthropic-api';
+  const entry = resolveProvider(providerName);
+  if (entry.envKey !== 'ANTHROPIC_API_KEY') {
+    throw new Error(
+      `bareloop run: this bundle's spec names provider "${providerName}", which reads `
+      + `${entry.envKey}. The bundle runner's key contract is ANTHROPIC_API_KEY only, so it `
+      + 'refuses rather than calling that provider with the wrong key (PRD item 28 part 2 — '
+      + 'a signed per-provider key story is not built). Run this job through scripts/run-u.mjs.',
+    );
+  }
   const modelResolution = resolveWorkerModel({
     specModel: isObj(spec) && typeof spec.model === 'string' ? spec.model : undefined,
     flagModel: undefined,
-    defaultModel: DEFAULT_TIER_MODELS.sonnet,
+    defaultModel: entry.tiers.sonnet,
   });
   const MODEL = modelResolution.model;
-  const provider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
-  const TIER_MODELS = modelResolution.source === 'spec' ? { ...DEFAULT_TIER_MODELS, sonnet: MODEL } : DEFAULT_TIER_MODELS;
-  /** @type {Record<string, any>} */
-  const tierCache = {};
-  const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= (TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ exposeErrorBody: true, apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] })));
-  const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL, exposeErrorBody: true });
-  return { provider, providerFor, judgeProvider };
+  const tierModels = modelResolution.source === 'spec' ? { ...entry.tiers, sonnet: MODEL } : entry.tiers;
+  const baseUrl = isObj(spec) && typeof spec.baseUrl === 'string' ? spec.baseUrl : undefined;
+  return buildRunnerProviders({
+    providerName, apiKey, model: MODEL, tierModels, baseUrl, judgeApiKey: apiKey, judgeModel: JUDGE_MODEL,
+  });
 }
 
 /** @param {string[]} args @returns {{ positional: string[], flags: Record<string, string|true> }} */
@@ -230,7 +245,13 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
       out(`bundleHash: ${bundle.manifest.bundleHash}`);
       return 0;
     }
-    ({ provider, providerFor, judgeProvider } = buildProviders(apiKey, bundle.spec));
+    try {
+      ({ provider, providerFor, judgeProvider } = buildProviders(apiKey, bundle.spec));
+    } catch (e) {
+      // a refusal from the key contract above: name it and spend nothing
+      err(String(/** @type {any} */ (e)?.message ?? e));
+      return 1;
+    }
   }
 
   // 4. blessing.

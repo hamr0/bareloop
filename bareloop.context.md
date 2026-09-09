@@ -70,6 +70,19 @@ inherited rule carries the green that minted it and the contrast that attributed
   with `anthropic-api` on cost, and budgets don't transfer between them.
   `job.provider === 'clipipe-subscription'` with no `nativeProvider` supplied is
   `interpreter-red`, never a silent fall-back to the metered API (`src/planrun.js:1073`).
+  `provider: 'openai-api'` (PRD item 28) takes the ordinary `Loop` path against an
+  OpenAI-shaped endpoint, reads `OPENAI_API_KEY`, and accepts an optional job-level
+  `baseUrl` (https, or http on loopback only; credentials in the URL are a red). Its one
+  admitted model is `deepseek-chat`, which earned the slot with a real paid green — no
+  endpoint or model enters the menu without its own clean paid probe. The provider table
+  lives in `src/providers.js` (`resolveProvider`/`makeProvider`/`buildRunnerProviders`);
+  an unknown provider name THROWS there, it never falls back to a default. Per-model
+  request-key gating lives in that table: `deepseek-chat` sets bare-agent's
+  `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
+  output cap that does not bind is a money hazard. The JUDGE stays pinned to
+  `anthropic-api` and `JUDGE_MODEL` whatever the worker's provider is. The bundle runner
+  (`bareloop run`) is `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would
+  have needed, rather than constructing another provider with the wrong key.
 - **Reuse — where a workflow comes from:** a plain `runJob` always drafts cold. Passing
   `bridge` starts from one standalone bridge file (`src/reuse.js`'s envelope, `## The reuse
   ENVELOPE and runReuse` below). The CLI's `--registry <dir>` / library-level `registryDir`

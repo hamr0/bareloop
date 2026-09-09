@@ -11340,3 +11340,49 @@ that cannot mean what it claims. Suite 2377/2377, typecheck 0.
 
 **Reachability unchanged:** judged closes are soft-green only, and every `jobs/*.json` is `green` —
 this is a precondition closed BEFORE the first soft-green job, not a live bug fixed after one.
+
+## F156 — the provider factory: one table, one refusal, and the two gaps the rewire exposed (PRD item 28 shape (1), 30.9)
+
+**2026-09-09, `chore/bare-agent-0.42`.** Both runners constructed `AnthropicProvider` BY NAME.
+`src/providers.js` now holds one table: `providerName → {ctor, envKey, tiers, paramsFor(model)}`,
+with `resolveProvider` / `makeProvider` / `buildRunnerProviders`. `anthropic-api` is byte-identical
+to the old `DEFAULT_TIER_MODELS` path (the existing suite is the proof). `openai-api` joins the
+`PROVIDERS` menu with an optional validated `baseUrl` (PRD ruling (d)) and ONE admitted model,
+`deepseek-chat`, which earned the slot with a real paid green (F150).
+
+**An unknown provider name THROWS.** No silent default — the `resolveRates` lesson (a tier matcher
+that quietly defaulted an unmatched model's rate) applied before it can happen here.
+
+**Per-model request-key gating is in the table, never global.** `deepseek-chat` carries
+`legacyMaxTokens` (F149: DeepSeek ignores `max_completion_tokens`, returning 665 output tokens
+against a 64 cap). An output cap that does not bind is a money hazard, so the routing is per model.
+
+**Tier representation for a single-model provider.** Both `sonnet` and `haiku` map to
+`deepseek-chat`. Checked before choosing: `resolveWorkerModel` and every `providerFor(tier)` caller
+only ever LOOK UP a tier's id; none assumes the tiers differ. Repeating the one id is the honest
+shape for a one-model provider — a second model masquerading as `haiku` would not be.
+
+**`stopReason` now rides every `worker-round`**, report-only, forwarded from bare-agent 0.42
+(BA-13), null when absent, never invented.
+
+**Two gaps the rewire exposed. One fixed, one named.**
+1. **FIXED — the bundle runner would have built the wrong provider with the Anthropic key.**
+   `bareloop run`'s key contract is `ANTHROPIC_API_KEY` only. A bundle whose spec named
+   `openai-api` would have had an `OpenAIProvider` constructed with that key and died at the first
+   call with a vendor 401 — which reads as a credential problem, not as the unbuilt seam it is. It
+   now REFUSES at $0, naming the key it would have needed. Test proves it: red without the guard.
+   Note the manifest-hash guard fires FIRST on an edited `spec.json`, so the fixture names the
+   provider at EXPORT time — testing the refusal through a tampered spec would have tested the
+   tamper check instead.
+2. **NAMED, not built — the judge always needs `ANTHROPIC_API_KEY`.** The judge stays pinned to
+   `anthropic-api`/`JUDGE_MODEL` whatever the worker's provider is (the PRD's own ruling). A judged
+   stage in an OpenAI-only environment therefore fails loud (401), never silently. The signed
+   `judge:{provider,model}` pair with a per-pair calibration record is item 28 part (2) — arbiter
+   territory, unbuilt.
+
+`bareloop.context.md` updated (the adopter contract ships; the menu must not drift from
+`src/job.js`). Suite 2398/2398, typecheck 0.
+
+**Still not done for item 28:** part (2) the signed judge pair, and the paid probe of `openai-api`
+through the SHIPPED runner — F150's green was fired through `poc-run-param.mjs`, not through
+`scripts/run-u.mjs`'s factory path. That probe is the remaining item-28 exit.

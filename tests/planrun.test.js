@@ -442,6 +442,38 @@ test('every provider round is metered on the spine as worker-round with a phase 
   assert.ok(rounds.every((r) => 'costUsd' in r), 'every round carries its cost (null is the honest unknown, never omitted)');
 });
 
+test('a worker-round carries the round\'s own stopReason, forwarded verbatim from the provider (PRD item 28, BA-13)', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })], stopReason: 'tool_use' },
+    { text: 'done', stopReason: 'end_turn' },
+  ]);
+  const { events } = await go(wd, provider);
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  assert.ok(rounds.length >= 4, `expected metered rounds, got ${rounds.length}`);
+  assert.ok(rounds.some((r) => r.stopReason === 'tool_use'), `expected a tool_use round, got ${JSON.stringify(rounds.map((r) => r.stopReason))}`);
+  assert.ok(rounds.some((r) => r.stopReason === 'end_turn'), `expected an end_turn round, got ${JSON.stringify(rounds.map((r) => r.stopReason))}`);
+});
+
+test('a worker-round\'s stopReason is null, never omitted, when the provider payload said nothing (pre-BA-13 / a non-string value) — the same honesty rule rateSource already follows', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { events } = await go(wd, provider);
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  assert.ok(rounds.length >= 4);
+  for (const r of rounds) {
+    assert.ok('stopReason' in r, 'the field is never omitted');
+    assert.equal(r.stopReason, null);
+  }
+});
+
 test('the scout is read-only by construction: its tool menu carries no write-class verb', async (t) => {
   const wd = makePatient(t);
   const provider = scriptedProvider([
