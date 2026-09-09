@@ -11231,3 +11231,31 @@ hangs the run forever with no terminal, no spend readout, and the machine's idle
 only thing that ends it. That is 30.4's actual scope: not "a stall watch for the judge" but the
 worker's call deadline on every provider call bareloop makes. Tighten-only (adds a bound where
 there was none), arbiter-adjacent, hamr's "close them all" is the go.
+
+## F153 — the provider's own error sentence now reaches the human, redacted through the ONE secret inventory (PRD 30.5)
+
+**2026-09-09, `chore/bare-agent-0.42`.** F146's parked item: on an HTTP error bareloop recorded
+`[OpenAIProvider] HTTP 400` and threw away the body sentence explaining it — which is why the Qwen
+400 stayed unexplained for a day and cost a capture run to recover (F147). It was parked because an
+error body can echo the API key back.
+
+**Built.** Every provider construction in `src/` and `scripts/` (24 sites, 17 files — all
+`AnthropicProvider`; the repo builds no `OpenAIProvider` outside the POC scripts) now passes
+`exposeErrorBody: true`. `src/planrun.js` gains `bodySuffix(e)`: `redactSecrets(JSON.stringify(
+e.body))` capped at 600 chars, appended as ` — body: …`. It is applied in `categorize()` — the ONE
+place a provider throw becomes a CategorizedError — so every downstream consumer (relay's
+escalation `detail`, ralph's step-loop provider-red, the transport/rate-limit retry records) gets
+the sentence without a second spelling. Guarded against double-appending.
+
+**Redaction is the point, so the test proves it can fail.** The fixture body carries a real
+key-shaped literal; the test first asserts `scanSecrets` FINDS it in the raw body (a vacuous pass is
+impossible), then asserts the emitted detail carries the explaining sentence, does NOT carry the
+key, and `scanSecrets` over the WHOLE spine returns 0. A second test proves the 600-char cap. Red
+with the append removed (sentence absent), green with it. Suite 2362/2362, typecheck 0.
+
+**One instrument bug found by the suite, not by review.** The builder's first pass wrote
+`new AnthropicProvider({ exposeErrorBody: true, apiKey, model: JUDGE_MODEL })`. The judge-pin
+tripwire (`tests/reviewdoor-u.test.js`) greps the source text for the exact pin spelling and went
+red — correctly: it guards that the judge tier is never agent-selectable. Fixed by putting the pin
+first and widening the tripwire to allow trailing ctor options only. A source-grepping tripwire is
+brittle by design; that brittleness is what caught an unrelated edit reaching an arbiter-pinned line.

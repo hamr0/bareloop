@@ -188,7 +188,7 @@ console.log(`  timeout  ${TIMEOUT_MS}ms per close stage`);
 console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-const provider = new AnthropicProvider({ apiKey, model: MODEL });
+const provider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
 // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
@@ -439,7 +439,7 @@ try {
       // Absent it, `prepareSigning` refuses the close as a wiring gap rather than
       // signing an ungraded ruler.
       const judges = (spec.closeDecl?.stages ?? []).some((s) => s?.kind === JUDGED_FLOOR_KIND);
-      const judgeProvider = judges ? new AnthropicProvider({ apiKey, model: JUDGE_MODEL }) : null;
+      const judgeProvider = judges ? new AnthropicProvider({ exposeErrorBody: true, apiKey, model: JUDGE_MODEL }) : null;
       if (judges) {
         console.log(`\ncalibration gate — REAL judge calls at ${JUDGE_MODEL}, one per case plus the injection battery.`);
         console.log('  this is the only gate that spends money, and it runs after every free one.');

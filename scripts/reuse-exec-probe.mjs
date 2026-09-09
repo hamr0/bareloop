@@ -388,7 +388,7 @@ const bridgesBefore = bridgeSnapshot();
 console.log(`bridges  ${Object.keys(bridgesBefore).length} file(s) hashed under ${PATIENTS_DIR} — asserted unchanged at exit`);
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
-const baseProvider = new AnthropicProvider({ apiKey, model: MODEL });
+const baseProvider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 const provider = injecting(baseProvider, 'default');
 /** @type {Record<string, any>} */
 const tierCache = {};
@@ -398,7 +398,7 @@ const tierCache = {};
 // its target by the PROMPT, so an unwrapped binding is the one place a future drafter could
 // slip through unmarked.
 const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= injecting(
-  TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? baseProvider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }),
+  TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? baseProvider : new AnthropicProvider({ exposeErrorBody: true, apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }),
   `tier:${tier}`,
 ));
 

@@ -2904,6 +2904,72 @@ test('SCOUT casualty: a transport death on the survey call ends the run as provi
   assert.equal(esc.lib, 'bare-agent', 'the typed lib field is stamped at the throw site, never sniffed from prose');
 });
 
+// ---- F146/F149 (PRD item 30.5) — a provider-red's escalation carries the upstream
+// error BODY, redacted and bounded, not just the bare HTTP status ----
+
+test('F146: a provider-red escalation carries the upstream body sentence, scrubbed of the secret it also carried — never the bare status alone', async (t) => {
+  const secretKey = `sk-ant-api03-${'A'.repeat(90)}`;
+  const body = { error: 'System message must be at the beginning', echo: secretKey };
+  // Guard against a vacuous pass: the fixture must actually contain a shape
+  // SECRET_PATTERNS matches, or "0 leaks" would prove nothing.
+  assert.ok(scanSecrets(JSON.stringify(body)).length > 0, 'test fixture must contain a real secret shape or the leak assertion below is vacuous');
+  const wd = makePatient(t);
+  const thrower = () => Object.assign(new Error('HTTP 400'), { status: 400, body });
+  const provider = dyingAt([{ text: 'never reached' }], 0, thrower);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.ok(esc.detail.includes('System message must be at the beginning'),
+    'the body sentence that actually explains the 400 must reach the escalation detail (F146 — the number alone explained nothing)');
+  assert.ok(!esc.detail.includes(secretKey), 'the raw key must never reach the escalation detail');
+  assert.equal(scanSecrets(JSON.stringify(events)).length, 0, 'no secret shape survives anywhere on the emitted spine');
+  // The scout path runs the same error through categorize() TWICE (once inside
+  // mkWorker's ask/askFrom when it throws, once again inside relay() before it
+  // reads e.message) — the BODY_MARKER guard must make that idempotent, never
+  // doubling the suffix.
+  const occurrences = esc.detail.split(' — body: ').length - 1;
+  assert.equal(occurrences, 1, 'the body suffix must appear exactly once, even though categorize() runs twice on the same thrown error (ask() then relay())');
+});
+
+test('F146: a mid-STEP provider throw (ralph.js\'s own dumb-passthrough catch, never touched by this fix) still carries the body sentence — categorize() stamps the message once, before ralph ever reads it', async (t) => {
+  const secretKey = `sk-ant-api03-${'B'.repeat(90)}`;
+  const body = { error: 'System message must be at the beginning', echo: secretKey };
+  assert.ok(scanSecrets(JSON.stringify(body)).length > 0, 'test fixture must contain a real secret shape or the leak assertion below is vacuous');
+  const wd = makePatient(t);
+  // scout + a valid plan, then the STEP worker's provider throws on its first
+  // round — same shape as the F11/F44 mid-step casualty test above, but with a
+  // real HTTP body instead of a bare transport message.
+  const base = scriptedProvider([{ text: 'scout notes' }, { text: PLAN(wd) }]);
+  let n = 0;
+  const provider = {
+    calls: base.calls,
+    async generate(/** @type {any} */ messages, /** @type {any} */ tools) {
+      if (n++ >= 2) throw Object.assign(new Error('HTTP 400'), { status: 400, body });
+      return base.generate(messages, tools);
+    },
+  };
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red', 'a mid-step HTTP throw is a provider-red casualty, never step-red');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.ok(esc.detail.includes('System message must be at the beginning'),
+    'ralph.js reads this categorized error\'s .message verbatim (String(e.message || e)) — the sentence must already be baked in by categorize()');
+  assert.ok(!esc.detail.includes(secretKey), 'the raw key must never reach the step-loop escalation detail');
+  assert.equal(scanSecrets(JSON.stringify(events)).length, 0, 'no secret shape survives anywhere on the emitted spine');
+});
+
+test('F146: an oversized upstream body is capped at 600 chars in the escalation detail', async (t) => {
+  const body = { error: 'x'.repeat(5000) };
+  const wd = makePatient(t);
+  const thrower = () => Object.assign(new Error('HTTP 400'), { status: 400, body });
+  const provider = dyingAt([{ text: 'never reached' }], 0, thrower);
+  const { events } = await go(wd, provider);
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  const bodyPart = esc.detail.slice(esc.detail.indexOf(' — body: ') + ' — body: '.length);
+  assert.ok(bodyPart.length <= 600, `the appended body must be capped at 600 chars, got ${bodyPart.length}`);
+});
+
 // ---- W4: ONE close staging, shared by the prompt, the validator and the runner ----
 
 test('W4: an object-form predicate close is STAGED once — the drafter, the validator and the runner see the same one-stage menu, at the same close cost as the equivalent single-stage list', async (t) => {

@@ -1108,7 +1108,7 @@ if (dead) {
 }
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
-const provider = new AnthropicProvider({ apiKey, model: MODEL });
+const provider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 // P: the per-step model-tier factory. The TIER menu a PLAN may name is signed in the
 // plan schema (STEP_MODELS — sonnet-only since the 2026-08-06 haiku attribution probe);
 // the tier->model mapping is the RUNNER's territory, here, and keeps haiku for the
@@ -1122,7 +1122,7 @@ const provider = new AnthropicProvider({ apiKey, model: MODEL });
 const TIER_MODELS = modelResolution.source === 'spec' ? { ...DEFAULT_TIER_MODELS, sonnet: MODEL } : DEFAULT_TIER_MODELS;
 /** @type {Record<string, any>} */
 const tierCache = {};
-const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
+const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ exposeErrorBody: true, apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
 /** SOFTGREEN — the JUDGED stage's own provider, and it is not the worker's. The tier
  * is PINNED (`JUDGE_MODEL`), never a step knob and never agent-selectable: §4.2's
  * safety argument is worth exactly as much as the tier its injection evidence was
@@ -1132,7 +1132,7 @@ const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MO
  * declaration that can drift from the one the runner actually executes. Absent, a
  * judged stage instrument-STOPS as a wiring gap, which is what every live softgreen
  * run would have done: run-author wired this seam and this runner never did. */
-const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL });
+const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL, exposeErrorBody: true });
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL_LABEL}`);

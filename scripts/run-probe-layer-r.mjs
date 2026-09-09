@@ -68,7 +68,7 @@ const approvals = [{ specHash, signer: 'hamr (in-turn order 2026-07-19: "one mor
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
-const provider = new AnthropicProvider({ apiKey, model: MODEL });
+const provider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 
 const wd = resolve(WORKDIR);
 const spineDir = join(wd, '..', `${wd.split('/').at(-1)}-bareloop`);

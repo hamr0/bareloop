@@ -65,12 +65,12 @@ function buildProviders(apiKey, spec) {
     defaultModel: DEFAULT_TIER_MODELS.sonnet,
   });
   const MODEL = modelResolution.model;
-  const provider = new AnthropicProvider({ apiKey, model: MODEL });
+  const provider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
   const TIER_MODELS = modelResolution.source === 'spec' ? { ...DEFAULT_TIER_MODELS, sonnet: MODEL } : DEFAULT_TIER_MODELS;
   /** @type {Record<string, any>} */
   const tierCache = {};
-  const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= (TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] })));
-  const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL });
+  const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= (TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ exposeErrorBody: true, apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] })));
+  const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL, exposeErrorBody: true });
   return { provider, providerFor, judgeProvider };
 }
 

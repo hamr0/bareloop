@@ -107,7 +107,7 @@ if (apiMode && !dry && !apiKey) {
 const provider = dry
   ? /** @type {any} */ ({ async generate() { throw new Error('DRY RUN: provider called'); } })
   : apiMode
-  ? new AnthropicProvider({ apiKey, model: MODEL })
+  ? new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL })
   : new CLIPipeProvider({
       command: 'claude',
       // --output-format json REQUIRED on base args for the plain-text (drafting)

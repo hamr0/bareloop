@@ -71,7 +71,7 @@ if (!dry && !apiKey) {
 }
 const baseProvider = dry
   ? /** @type {any} */ ({ async generate() { throw new Error('DRY RUN: the provider was called — this run was supposed to spend nothing'); } })
-  : new AnthropicProvider({ apiKey, model: MODEL });
+  : new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 
 // ---- BA-18 RESOLVED upstream (bare-agent 0.34.0) --------------------------
 // The provider now bounds socket INACTIVITY itself (`timeoutMs`, 10-min default, rejecting with

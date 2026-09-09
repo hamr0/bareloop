@@ -257,7 +257,7 @@ const dryProvider = {
   },
 };
 
-const baseProvider = DRY ? dryProvider : new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY, model: MODEL });
+const baseProvider = DRY ? dryProvider : new AnthropicProvider({ exposeErrorBody: true, apiKey: process.env.ANTHROPIC_API_KEY, model: MODEL });
 
 /** @type {{prompt: string|null, source: string}} */
 const captured = { prompt: null, source: 'runPlan (real drafter call, intercepted)' };

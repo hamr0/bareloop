@@ -128,6 +128,30 @@ const transportRetry = new Retry({ maxAttempts: TRANSPORT_MAX_ATTEMPTS, retryOn:
  * @param {(s: string) => string} scrub
  * @param {import('./clock.js').Clock} clock
  */
+// F146/F149 (PRD item 30.5) — every provider construction site in this repo now
+// passes `exposeErrorBody: true` (bare-agent's providers), which attaches the
+// parsed upstream error body as `err.body` on an HTTP throw. The body often
+// carries the ONE sentence that names what actually broke — the category and
+// HTTP status alone never do (F146: Qwen's `HTTP 400` said nothing on its own;
+// its body said "System message must be at the beginning"). This was PARKED
+// (2026-09-05 design note) because a raw body can echo the API key straight
+// back — so it goes through `redactSecrets`, the ONE secret shape inventory
+// (`SECRET_PATTERNS`/`scanSecrets`/`redactSecrets`, `src/validate.js`),
+// REGARDLESS of whatever `scrub` a caller has in scope, and is bounded at
+// `BODY_MAX` chars (600 — bounded like every other detail this file emits:
+// `CHECK_GAP_MAX`, `SCOUT_BLOB_MAX`) so one oversized body can never blow a
+// record open. Only this redacted, capped STRING ever rides an emit — the raw
+// `e.body` object itself must never reach a spine record.
+const BODY_MAX = 600;
+const BODY_MARKER = ' — body: ';
+/** @param {any} e @returns {string} '' when there is no body, else ' — body: <redacted, ≤BODY_MAX chars>' */
+const bodySuffix = (e) => {
+  if (e?.body === undefined) return '';
+  let raw;
+  try { raw = JSON.stringify(e.body); } catch { raw = String(e.body); }
+  return `${BODY_MARKER}${redactSecrets(raw).slice(0, BODY_MAX)}`;
+};
+
 function withProviderRetries(baseProvider, phase, emit, scrub, clock) {
   return new Proxy(baseProvider, {
     get(target, prop, receiver) {
@@ -164,14 +188,14 @@ function withProviderRetries(baseProvider, phase, emit, scrub, clock) {
             });
             if (calls > 1) {
               transportBudget -= 1;
-              const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200);
+              const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200) + bodySuffix(firstErr);
               emit('transport-retry', { phase, attempt: 1, error: scrub(message), recovered: true });
             }
             return result;
           } catch (err) {
             if (calls > 1) {
               transportBudget -= 1;
-              const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200);
+              const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200) + bodySuffix(firstErr);
               emit('transport-retry', { phase, attempt: 1, error: scrub(message), recovered: false });
             }
             throw err;
@@ -194,7 +218,7 @@ function withProviderRetries(baseProvider, phase, emit, scrub, clock) {
 
             rateLimitBudget -= 1;
             const stated = statedWaitMs(err);
-            const message = String(err?.message ?? err ?? '').slice(0, 200);
+            const message = String(err?.message ?? err ?? '').slice(0, 200) + bodySuffix(err);
             await sleepMs(waitMs, undefined, { ref: false });
             try {
               const result = await attempt();
@@ -1505,6 +1529,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * transport-debugging option list for a run that simply ran out of time. A
    * thrower that named its own category keeps it (the standing typed-attribution
    * rule); only an UNNAMED throw is classified here.
+   *
+   * F146/F149 — this is also the ONE place a categorized error's `.message` gets
+   * the redacted upstream body appended (`bodySuffix`, above). Every downstream
+   * reader of a categorized error's message — `relay()`'s `detail` here, AND
+   * ralph.js's own mid-step dumb-passthrough catch (`detail: String(e.message ||
+   * e)`) reading the SAME error `mkWorker`'s `ask`/`askFrom` threw after routing
+   * it through this function — gets the sentence for free, without ralph.js
+   * importing anything (it stays stdlib-only, PRD §4: fixed, deliberately dumb).
+   * `relay()` re-categorizes an error its own `ask`/`askFrom` already ran through
+   * here, so this must be IDEMPOTENT: `BODY_MARKER` guards a second pass over the
+   * same error from doubling the suffix.
    * @param {any} e
    * @returns {{ err: CategorizedError, category: string }} the same throw, stamped,
    *   plus the category as a plain string (so a caller reading it never has to
@@ -1515,6 +1550,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const category = e instanceof HaltError ? 'cap-halt'
       : (err.category ?? (isWallTimeout(err, clock) ? 'wall-halt' : 'provider-red'));
     err.category = category;
+    if (typeof err.message === 'string' && !err.message.includes(BODY_MARKER)) {
+      const suffix = bodySuffix(err);
+      if (suffix) err.message += suffix;
+    }
     return { err, category };
   };
 
@@ -2701,6 +2740,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * worker does, so this path needs the same split or it is the blinder route),
    * and transport. */
   const relay = (/** @type {any} */ e, /** @type {string} */ phase) => {
+    // categorize(e) mutates e.message in place (guarded, idempotent) with the
+    // redacted body suffix — never re-append it here, or a caller whose thrown
+    // error already went through categorize() once (mkWorker's ask/askFrom)
+    // would double it.
     const { category } = categorize(e);
     const detail = String(e?.message ?? e);
     if (category === 'cap-halt') {
