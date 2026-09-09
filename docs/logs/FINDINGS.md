@@ -11142,3 +11142,37 @@ proof, and exactly the F113 guesstimate posture; a DeepSeek tier entry would car
 cap. This proves the fix and one clean step/close on DeepSeek, not that DeepSeek can finish the job.
 Evidence: `../bareloop-patients/spines-poc-openai/poc-{iinqqlao,90qneth9}.jsonl`, logs
 `poc-qwen-fix.log` / `poc-deepseek.log`, probe `dupsys-probe.mjs` (session scratchpad).
+
+## F150 — first non-Anthropic GREEN: deepseek-chat greens bareguard-u-types at $1.89 / 11.2 min (n=1)
+
+**2026-09-09, hamr's "fire deepseek", run `pm48w5az`, `poc-run-param.mjs`, $4 cap / 30 min wall,
+`legacyMaxTokens:true` (F149), fresh patient reset to seed.** Outcome **green**. All six close
+stages satisfied: changed-from-seed, typecheck, typecheck-outside, tests-kept, suite-green,
+no-suppressions. Patient diff: 6 files, +38/−8, zero `any`/`@ts-ignore`.
+
+**Road.** Scout 2,597 bytes → plan accepted on draft-1 (one step, whole territory — the shape
+that greens, per the shape-lottery memory) → step: 18 strict errors → 1 → satisfied (3 iterations,
+0 strikes) → outer close: 6 errors outside the step's own check → the model added one `any`
+suppression in `src/audit-window.js`, CAUGHT by `no-suppressions` (the arbiter did its job) → fixed
+honestly → satisfied on iteration 3. 101 worker rounds, cache-read share 0.91 (Anthropic 0.90).
+One `transport-retry` (socket hang up, recovered) in the fix phase, so `spendComplete:false` — the
+$1.89 is an honest floor, not exact. `rateSource:'default'` on every round: priced at the fallback
+rate, DeepSeek's list price is lower.
+
+**What this is.** The first green minted by any model outside Anthropic, on the same signed job
+shape the Anthropic bench uses. gpt-5-mini reached a close-rendered plan-red (F139); Qwen a
+cap-halt with an accepted plan (F149); nothing else drafted a legal plan. DeepSeek is therefore
+the first admissible item 28 candidate under the probe rule ("one paid PROBE per newly admitted
+provider proves it end-to-end") — this run IS that probe.
+
+**What this is not.** n=1. Not a bench row, not a battery, not a lift claim, not a cost claim
+(fallback-priced). The G3 planted-cheat row and G2's rate-shaped close are untried on DeepSeek. The
+`max_completion_tokens` drop (F149) means a DeepSeek tier entry MUST set the legacy key or the
+output cap is theatre.
+
+**For the item 28 build (unchanged plan, now with a first admitted provider):** provider factory
+with a tier table carrying `{ctor, envKey, baseUrl, legacyMaxTokens, rate}` per model;
+`deepseek-chat` enters on this probe; `gpt-5-mini` stays a candidate with no green; synthetic
+stays at zero. Evidence: `../bareloop-patients/spines-poc-openai/poc-pm48w5az.jsonl`,
+`poc-deepseek-4.log`; patient branch `bareloop-bareguard-u-types-deepseek-4` in
+`../bareloop-patients/bareguard-u-deepseek`.

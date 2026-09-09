@@ -520,6 +520,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     unexplained was OURS: the F59 summary round sent the persona twice (bareloop re-fed a transcript
     bare-agent had already system-prepended); real OpenAI tolerates it, vLLM-class backends reject it.
     Fixed at `askFrom`; an item-28 blocker for ANY strict OpenAI-compatible backend, cleared.
+    **2026-09-09, later — F149/F150, $5.94 total.** F147 holds live (Qwen 400→200 A/B on the captured
+    request; full Qwen run drafts a legal plan, cap-halts at $1). **`deepseek-chat` GREENS the job**
+    ($1.89 floor / 11.2 min, six stages satisfied, one caught suppression) — the first non-Anthropic
+    green and the item 28 probe for its first admitted provider. Hazard: DeepSeek silently ignores
+    `max_completion_tokens` (F149) — the tier table carries the request-key choice per model.
 
 29. **fwdloop — the sibling product** (hamr, 2026-09-08). Human-in-the-loop flows (trigger →
     gather → derive → ask → send), non-repo, accepted once then rerun daily, are NOT a bareloop
