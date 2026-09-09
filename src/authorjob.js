@@ -35,11 +35,19 @@
 // same way `repoPath` does — a closed set handed over enumerated, never read out
 // of prose.
 //
-// v1 STILL ADMITS ONLY `green`. A soft-green or hitl pick returns the honest
-// counted refusal on the `request-red` admission path (D13's mechanism), now
-// carrying demand for a VERDICT CLASS rather than only for a genre. It refuses
-// at ADMISSION — before that class's questions are ever asked, because those two
-// question sets are named but locked (`QUESTION_SETS`, M3).
+// THE MENU IS TWO SHAPES: `green` (a command decides done) and `soft-green` (a
+// rubric decides it, through the judged floor). Both are LIVE and both author
+// here. `hitl` is named by the radio, still validates and still runs, and is NOT
+// OFFERED — the class moved to fwdloop (PRD items 29 and 31.1); picking it
+// returns the honest counted refusal on the `request-red` admission path (D13's
+// mechanism), carrying demand for a VERDICT CLASS rather than only for a genre.
+// It refuses at ADMISSION — before that class's questions are ever asked.
+//
+// This comment said the opposite until 2026-09-09 (*"v1 STILL ADMITS ONLY
+// `green`"*), which was false for a long time and sent one build in the wrong
+// direction: `LOCKED_CLASSES` was empty, so `runInterview` returned `ok:true` for
+// every class including the retired one. Check `MENU_CLASSES` at runtime rather
+// than trusting any sentence here, this one included.
 //
 // AND THE INTERVIEW KEYS ON THE CLASS. Three frozen question sets replace one
 // set per genre: genres are a fat tail that cannot be enumerated, classes are
@@ -303,21 +311,32 @@ export function runInterview({ answers, verdictType = null, repoPath = null, que
   }
   if (reds.length) return out({ answers: given });
 
-  // The green pick's own precondition: D1's "a repo is never a precondition"
-  // holds for the INTERVIEW and not for D9's validity gates, all three of which
-  // rest on a runnable patient with a git seed. A doc or a website job has no
-  // seed and no changed set, so nothing deterministic can be measured against it
-  // — that is softgreen/hitl territory, out of v1, refused on the same counted
+  // A GENRE precondition, not a class one — and the difference is why this text
+  // was wrong until 2026-09-09 (PRD item 31.2). It used to answer a missing repo
+  // with "that needs a judged (soft-green) or a human close", which told a person
+  // who had just PICKED soft-green that they needed soft-green. Both live classes
+  // land here identically: D1's "a repo is never a precondition" holds for the
+  // INTERVIEW and not for D9's validity gates, all three of which rest on a
+  // runnable patient with a git seed, and the close CATALOGUE is code-genre only
+  // (doc-genre kinds are not admitted — PRD item 26). So a doc or a website job
+  // refuses for want of a SEED, whichever class it picked, on the same counted
   // path. The class the user picked cannot be honoured, so it is not returned.
+  //
+  // The `verb` stays `non-green-verdict` deliberately. It is the ledger's key for
+  // this demand and renaming it would split one running count into two that look
+  // like different demands; the name is a poor description of a genre refusal,
+  // and that is a smaller cost than a discontinuous ledger.
   if (!isNonEmptyString(repoPath)) {
     return out({
       answers: given,
       refusal: refuse({
         verb: 'non-green-verdict',
         path: 'repoPath',
-        detail: 'This job has no code repository, so there is no seed to measure against and no changed set to read — '
-          + 'nothing deterministic can decide whether it came back done. That needs a judged (soft-green) or a '
-          + 'human close; this authoring flow drafts code-genre closes against a git seed only.',
+        detail: 'This job has no code repository, so there is no seed to measure against and no changed set to '
+          + 'read. This authoring flow drafts CODE-GENRE closes against a git seed only, and that is true of both '
+          + 'classes it offers: a green close runs commands over the tree, and a soft-green close judges the '
+          + 'artifacts the run changed in it. A job with no repository needs a doc-genre close, which is not built '
+          + 'here yet.',
       }),
     });
   }

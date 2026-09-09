@@ -25,7 +25,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -161,4 +161,68 @@ test('an unlisted class is still admissible INPUT — a typo dies earlier, and d
   assert.match(said, /is not a verdict class/, 'a typo is refused as a typo');
   assert.doesNotMatch(said, /REFUSED \(request-red\)/, 'and it never reaches the counted-demand path');
   assert.ok(VERDICT_CLASSES.includes('hitl'), 'while hitl stays a real class name, so it reaches that path');
+});
+
+// ── the ADOPTER CONTRACT cannot drift away from the constants ───────────────
+//
+// This whole item began with prose that had drifted: a comment claiming *"v1
+// STILL ADMITS ONLY `green`"* while the code admitted all three, and a shipping
+// contract row claiming *"All three are ADMITTED today"* after hitl was retired.
+// Prose drifts precisely because nothing executes it. `bareloop.context.md`
+// SHIPS in the tarball and is what an integrating agent reads instead of the
+// source, so a wrong sentence there is a wrong answer delivered to a customer.
+
+test('bareloop.context.md states the menu the code actually offers', () => {
+  const contract = readFileSync(new URL('../bareloop.context.md', import.meta.url), 'utf8');
+
+  // the withdrawal must be stated, by name, in the field the adopter reads
+  assert.match(contract, /UNLISTED_CLASSES/, 'the contract names the list that withdrew hitl');
+  assert.match(contract, /MENU_CLASSES/, 'and the list an adopter should ask for');
+
+  // and the claim that started this must never come back
+  assert.doesNotMatch(
+    contract,
+    /\*\*All three are ADMITTED today\*\*/,
+    'hitl is no longer admitted at authoring — this exact sentence was the drift (PRD item 31.2)',
+  );
+
+  // every class the contract calls authorable must really be authorable
+  for (const cls of MENU_CLASSES) {
+    const r = runInterview({ answers: answersFor(cls), verdictType: cls, repoPath: '/tmp/anywhere' });
+    assert.equal(r.ok, true, `the contract offers ${cls}, so the interview must author it`);
+  }
+  for (const cls of UNLISTED_CLASSES) {
+    const r = runInterview({ answers: answersFor(cls), verdictType: cls, repoPath: '/tmp/anywhere' });
+    assert.equal(r.ok, false, `the contract says ${cls} is not offered, so the interview must refuse it`);
+  }
+});
+
+test('the source comment that misled item 31 cannot come back', () => {
+  const src = readFileSync(new URL('../src/authorjob.js', import.meta.url), 'utf8');
+  // The FALSE claim, as it was written. A comment is not executable, so this is
+  // the only way to hold one to account.
+  assert.doesNotMatch(
+    src,
+    /^\/\/ v1 STILL ADMITS ONLY `green`\./m,
+    'this line was false for months and sent one build in the wrong direction (PRD item 31.2)',
+  );
+});
+
+test('the no-repository refusal does not tell a soft-green picker to pick soft-green', () => {
+  // The old text answered a missing repo with "that needs a judged (soft-green)
+  // or a human close" — advice that is circular for a soft-green pick and points
+  // at a retired class for the other. The refusal is about the GENRE (no git
+  // seed), and it lands identically for both live classes.
+  for (const cls of MENU_CLASSES) {
+    const r = runInterview({ answers: answersFor(cls), verdictType: cls, repoPath: null });
+    assert.ok(r.refusal, `${cls} with no repository refuses`);
+    assert.equal(r.refusal.path, 'repoPath', 'and it refuses on the REPOSITORY, not on the class');
+    assert.doesNotMatch(r.refusal.detail, /That needs a judged \(soft-green\) or a\s+human close/,
+      'the circular sentence is gone');
+    assert.match(r.refusal.detail, /CODE-GENRE/, 'the real reason: this flow drafts code-genre closes only');
+  }
+  // the verb stays the ledger's existing key — renaming it would split one
+  // running count of this demand into two that look like different demands
+  const r = runInterview({ answers: answersFor('green'), verdictType: 'green', repoPath: null });
+  assert.equal(r.refusal.verb, 'non-green-verdict', 'ledger continuity: the key is kept even though the name reads poorly');
 });
