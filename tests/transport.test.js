@@ -7,6 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { isTransportFailure, TRANSPORT_RETRIES, TRANSPORT_MAX_ATTEMPTS } from '../src/transport.js';
 
 test('the retry budget is the fixed constant hamr authorized: one retry, two attempts total', () => {
@@ -45,6 +46,64 @@ for (const [label, err] of NON_TRANSPORT_CASES) {
 test('isTransportFailure: FALSE for null/undefined — never throws on a missing error', () => {
   assert.equal(isTransportFailure(null), false);
   assert.equal(isTransportFailure(undefined), false);
+});
+
+// BA-25 (bare-agent 0.42.0): guardResponseSettles's own transport-classified
+// ProviderError shape — a body cut after headers, before 'end' fired.
+test('isTransportFailure: TRUE for a BA-25 ProviderError (context.bound:"transport")', () => {
+  const err = {
+    name: 'ProviderError',
+    code: 'PROVIDER_ERROR',
+    retryable: true,
+    message: '[AnthropicProvider] response stream aborted before the body completed',
+    context: { bound: 'transport', event: 'aborted' },
+  };
+  assert.equal(isTransportFailure(err), true);
+});
+
+test('isTransportFailure: FALSE when an HTTP status accompanies context.bound:"transport" — status wins', () => {
+  const err = { status: 502, retryable: true, context: { bound: 'transport', event: 'error' } };
+  assert.equal(isTransportFailure(err), false);
+});
+
+test('isTransportFailure: FALSE when retryable:false accompanies context.bound:"transport" — explicit false wins', () => {
+  const err = { retryable: false, context: { bound: 'transport', event: 'close' } };
+  assert.equal(isTransportFailure(err), false);
+});
+
+test('isTransportFailure: FALSE for context.bound:"idle" alone — only "transport" qualifies by bound', () => {
+  const err = { context: { bound: 'idle' } };
+  assert.equal(isTransportFailure(err), false);
+});
+
+// Real BA-25 error: a local server that writes headers, a partial body, then
+// destroys the socket — the exact shape guardResponseSettles guards against.
+test('isTransportFailure: TRUE for the real BA-25 rejection from AnthropicProvider.generate', async () => {
+  const { AnthropicProvider } = await import('bare-agent/providers');
+
+  const srv = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.write('{"partial":');
+    setImmediate(() => req.socket.destroy());
+  });
+  srv.unref();
+
+  await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  const { port } = srv.address();
+
+  try {
+    const provider = new AnthropicProvider({ apiKey: 'x', model: 'm', baseUrl: `http://127.0.0.1:${port}` });
+    await assert.rejects(
+      () => provider.generate([{ role: 'user', content: 'hi' }], [], { maxTokens: 10 }),
+      (err) => {
+        assert.equal(isTransportFailure(err), true, 'the real BA-25 rejection must classify as a transport failure');
+        assert.match(String(err.message), /aborted before the body completed/);
+        return true;
+      },
+    );
+  } finally {
+    await new Promise((resolve) => srv.close(resolve));
+  }
 });
 
 // Mutation check (per the ask): flip the classifier to ALSO fire on an

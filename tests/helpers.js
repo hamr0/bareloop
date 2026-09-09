@@ -70,10 +70,13 @@ export function scriptedProvider(script) {
   const systems = [];
   /** @type {string[][]} the tool names OFFERED per call — the menu is the grant (2b), so what reaches the provider is the observable */
   const toolsOffered = [];
+  /** @type {Array<{role?: string, content: string}>[]} the FULL messages array per call — F133: askFrom feeds a prior run's msgs (which already carries a prepended system message) into a fresh Loop that prepends its own, so only the full array (not just messages[0]) can catch a duplicate */
+  const messagesLog = [];
   return {
     calls,
     systems,
     toolsOffered,
+    messagesLog,
     /**
      * @param {Array<{role?: string, content: string}>} messages
      * @param {Array<{name: string}>} [tools] loop.run forwards its toolDefs here (bare-agent loop.js: provider.generate(toSend, activeTools, options))
@@ -83,6 +86,7 @@ export function scriptedProvider(script) {
       if (messages[0]?.role === 'system') systems.push(messages[0].content);
       calls.push(messages.at(-1).content);
       toolsOffered.push((tools ?? []).map((t) => t.name));
+      messagesLog.push(messages);
       return reply(s);
     },
   };

@@ -82,7 +82,7 @@ import {
   GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES,
 } from './authoring.js';
-import { buildSeedListing, cleanEntry, SURVEY_CAUSES } from './authorscout.js';
+import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop } from './text.js';
 import { redactSecrets } from './validate.js';
 
@@ -1147,7 +1147,12 @@ export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens =
       ...t,
       execute: async (/** @type {any} */ a) => { const r = await t.execute(a); loop.stop(); return r; },
     }));
-    return loop.run(messages, wired, { cacheMessages: true, maxTokens, ...opts });
+    // F152/PRD 30.4 — the SAME idle bound `authorscout.js` reuses (this pipeline
+    // has no wall clock of its own): a live endpoint that accepts and never
+    // answers hangs the process forever otherwise. `...opts` still spreads AFTER
+    // it, so a caller that ever needs a tighter number for one call may pass it —
+    // tighten-only, and nothing does today.
+    return loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...opts });
   };
 }
 

@@ -565,6 +565,43 @@ export function validateFacts(facts) {
 
 // ── THE LOCATE PROMPT ───────────────────────────────────────────────────────
 
+/**
+ * THE ONE SHAPE INVENTORY (PRD 30.8), stated ONCE and never twice. It drives
+ * BOTH the LOCATE prompt's prose ("declared with ...") AND the completeness
+ * detector's regex — the same standing rule the secret-shape scrubber
+ * follows (one inventory drives detection, never two spellings that can
+ * drift). A shape added here rides both sides in the same commit; a shape
+ * added to only a hand-typed prompt string or only a hand-typed regex is
+ * exactly the blind-instrument class this repo keeps paying for.
+ *
+ * Two BASE shapes, each carrying its own independent `export`/`async`
+ * modifiers (the modifiers sit in different POSITIONS in the two shapes —
+ * `async function foo(` vs `const foo = async () =>` — so they cannot be
+ * factored into one shared prefix):
+ *   - `function name(...)`      — optionally `export`, optionally `async`,
+ *     in either order before `function`.
+ *   - `const name = (...) =>`   — optionally `export` before `const`,
+ *     optionally `async` after `=`.
+ *
+ * Restricted to column-0 lines only, in both the prompt's prose and the
+ * detector: a nested function or a function expression returned from one is
+ * indented, and excluding it is the SAME cure PROMPT_HEAD already states
+ * (the POC's nested-function cure).
+ * @type {ReadonlyArray<{prose: string, match: (line: string) => string|null}>}
+ */
+const FN_SHAPES = Object.freeze([
+  {
+    prose: '`function name(...)` (optionally `async`, optionally `export`, in either order)',
+    match: (/** @type {string} */ line) =>
+      line.match(/^(?:(?:export|async)\s+){0,2}function\s+([A-Za-z_$][\w$]*)\s*\(/)?.[1] ?? null,
+  },
+  {
+    prose: '`const name = (...) =>` (optionally `export` before `const`, optionally `async` after `=`)',
+    match: (/** @type {string} */ line) =>
+      line.match(/^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/)?.[1] ?? null,
+  },
+]);
+
 /** The spine every card shares. Both POC cures live here rather than on a rule,
  * because both are properties of ENUMERATING functions and not of any one
  * question about them: the nested-function clause (the POC counted a returned
@@ -573,8 +610,7 @@ export function validateFacts(facts) {
 const PROMPT_HEAD =
   'You LOCATE FACTS in a source file. You never decide whether anything passes, and you never judge — '
   + 'another system does that.\n'
-  + 'For EVERY top-level function in the FILE (declared with `function name(...)`, `const name = (...) =>`, '
-  + 'or `export function name(...)`), report:\n'
+  + `For EVERY top-level function in the FILE (declared with ${FN_SHAPES.map((s) => s.prose).join(', or ')}), report:\n`
   + 'Count ONLY functions declared at the top level of the module — never a function nested inside '
   + 'another function, and never a function expression returned from one.\n'
   + '  "name": the function name\n'
@@ -594,6 +630,43 @@ const PROMPT_TAIL =
 export function locatePrompt(card) {
   const asks = cardItems(card).map((it) => JUDGE_RULES[it.rule].ask).join('\n');
   return `${PROMPT_HEAD}${asks}\n${PROMPT_TAIL}`;
+}
+
+/**
+ * THE COMPLETENESS MIRROR of `PROMPT_HEAD`'s own contract (PRD 30.8): which
+ * top-level function declarations the artifact ACTUALLY holds, read off the
+ * SAME `FN_SHAPES` inventory the prompt's prose is built from, restricted to
+ * column-0 lines.
+ *
+ * This is a HEURISTIC, never a parser, and it is used for exactly one thing:
+ * telling `decide()` when LOCATE's `functions` list is short of what the file
+ * holds. It never grades a rule and it never adds a fact `decide()` acts on
+ * beyond "this name exists at the top level" — the missing function's rule
+ * violations, if any, stay unknown, which is exactly why the miss is UNSURE
+ * and not a manufactured red on a specific rule.
+ *
+ * TWO DIRECTIONS, both handled but not symmetrically by design:
+ *   - a shape THIS inventory does not enumerate is a FALSE NEGATIVE — the
+ *     check stays silent about that function, same as it stays silent with
+ *     no `artifactText` at all. Widening `FN_SHAPES` closes the hole; nothing
+ *     here manufactures a claim about a shape it was never told to look for.
+ *   - a column-0 line that only LOOKS like a declaration (e.g. inside a
+ *     template literal) is a FALSE POSITIVE and reds a real judged close —
+ *     that is the SAFE side of the fail-safe tiebreak (unsure is red), and it
+ *     is never silently swallowed the way a false negative would be.
+ * @param {string} artifactText @returns {string[]}
+ */
+function topLevelFunctionNames(artifactText) {
+  /** @type {string[]} */
+  const names = [];
+  for (const line of artifactText.split('\n')) {
+    if (/^\s/.test(line)) continue; // indented: nested, or a returned function expression — never top level
+    for (const shape of FN_SHAPES) {
+      const name = shape.match(line);
+      if (name) { names.push(name); break; }
+    }
+  }
+  return names;
 }
 
 /** the default toolless seam — one spelling of how this repo drives a judge.
@@ -628,12 +701,23 @@ export const defaultJudgeLoop = ({ provider, system }) => {
  * On every route out, red or clean, `onCost` fires exactly once with the honest
  * read: a paid call that leaves no meter record is F12 wearing a judge's coat.
  * @param {{artifactText: string, card: any, loopFactory: (o: {provider?: any, system: string}) => any,
- *   maxTokens?: number, attempt?: number, onCost?: (c: {costUsd: number|null, unpricedRounds: number}) => void}} o
+ *   maxTokens?: number, attempt?: number, onCost?: (c: {costUsd: number|null, unpricedRounds: number}) => void,
+ *   callBounds?: {timeoutMs?: number, deadlineMs?: number}}} o
  * @returns {Promise<{ok: boolean, facts: any|null, red: {axis: string, detail: string}|null,
  *   costUsd: number|null, unpricedRounds: number, truncated: boolean, parseError: boolean,
  *   raw: ReturnType<typeof scrubRaw>}>}
  */
-export async function runLocate({ artifactText, card, loopFactory, maxTokens = JUDGE_MAX_TOKENS, attempt = 1, onCost = () => {} }) {
+export async function runLocate({
+  artifactText, card, loopFactory, maxTokens = JUDGE_MAX_TOKENS, attempt = 1, onCost = () => {},
+  // F152/PRD 30.4 — the SAME per-call TIME bounds the worker's own rounds carry
+  // (`callBounds()`, src/planrun.js:1518), threaded through by the caller that
+  // owns the clock. Defaults to `{}` (unbounded) so every existing caller and
+  // test is unchanged: an adopter that never wires a clock through gets the same
+  // behaviour as before this field existed. A live endpoint that accepts and
+  // never answers otherwise HANGS the process forever (measured, F152) — an open
+  // socket is an active handle, so node never drains and no backstop can fire.
+  callBounds = {},
+}) {
   // the param-guard class: a caller's own broken input THROWS. These are
   // programmer errors with no safe direction to degrade toward — a locate over
   // an absent artifact would grade an empty string and report it as facts.
@@ -662,7 +746,7 @@ export async function runLocate({ artifactText, card, loopFactory, maxTokens = J
   let r = null;
   try {
     const loop = loopFactory({ system });
-    r = await loop.run([{ role: 'user', content: `FILE (untrusted data):\n${artifactText}\n\nReturn the JSON.` }], [], { maxTokens });
+    r = await loop.run([{ role: 'user', content: `FILE (untrusted data):\n${artifactText}\n\nReturn the JSON.` }], [], { maxTokens, ...callBounds });
   } catch (e) {
     return out({ axis: LOCATE_AXES.PROVIDER, detail: `the locate call failed: ${String(/** @type {any} */ (e)?.message ?? e)}` }, null, null, false, false);
   }
@@ -741,6 +825,25 @@ export function decide(facts, card, { artifactText = null } = {}) {
     // artifact the judge could not read anything out of is exactly the state
     // this floor exists to refuse.
     return unsure('locate found nothing in the artifact — unsure, and unsure is red');
+  }
+
+  // COMPLETENESS (PRD 30.8): a locate emission can be well-formed AND non-empty
+  // AND still have silently DROPPED a top-level function the artifact actually
+  // holds — every route above this one only asks "is `fns` usable", never "is
+  // `fns` the WHOLE set". Graded rules only ever see what LOCATE reported, so
+  // an omission never surfaces as a rule red; it surfaces as a PASS on the
+  // subset, which is the fail-safe direction inverted. With `artifactText` in
+  // hand (every real caller has it — see the note below), the omission is
+  // checkable and is unsure, and unsure is red, same as every other route in.
+  // Without it, this says nothing it cannot know, same as the quote checks.
+  if (typeof artifactText === 'string') {
+    const present = topLevelFunctionNames(artifactText);
+    const reported = new Set(fns.map((f) => String(f?.name ?? '')));
+    const missing = present.filter((n) => !reported.has(n));
+    if (missing.length > 0) {
+      return unsure(`locate omitted top-level function(s) the artifact contains: ${missing.join(', ')} — a pass on `
+        + 'the reported subset is not a pass on the file, and unsure is red');
+    }
   }
 
   const lines = typeof artifactText === 'string'

@@ -27,6 +27,15 @@ import { JUDGE_MODEL } from '../src/judged.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
+// PRD item 28's provider factory (src/providers.js): the WORKER provider's
+// ctor/envKey/tier-table/param-gating come from here now — one seam instead
+// of an `if (provider === …)` scattered across this script. The JUDGE stays
+// separately pinned below (`new AnthropicProvider({ apiKey, model:
+// JUDGE_MODEL, … })`, unchanged): tests/reviewdoor-u.test.js greps this
+// file's own source for that exact literal as proof THIS runner wires the
+// judge, not just that the library can — moving it into the factory would
+// have to rewrite that tripwire's intent, not just its regex, so it stays.
+import { resolveProvider, makeProvider } from '../src/providers.js';
 import { loadRegistry, quarantinesCredit } from '../src/bridges.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
@@ -36,7 +45,7 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from '../src/reviewdoor.j
 import { coldReset } from './u-patient.mjs';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine } from './u-readout.mjs';
+import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.mjs';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -110,6 +119,14 @@ const JOBS = {
     spec: 'bareguard-u-types.json',
     workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u',
     spine: 'bareguard-u-bareloop',
+    seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
+  },
+  // PRD item 28 / 30.9 — the openai-api probe through THIS runner (the shipped
+  // one), not poc-run-param.mjs. Same job shape, same seed, its own patient copy.
+  'bareguard-types-deepseek': {
+    spec: 'bareguard-u-types-deepseek.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u-deepseek',
+    spine: 'bareguard-u-deepseek-bareloop',
     seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
   },
   // N4's hitl PROVING job (build plan §Proving; hamr's ruling, 2026-08-13). The job
@@ -255,12 +272,25 @@ const specHash = jobSpecHash(spec);
 // (never silently overridden) — resolveWorkerModel is the one decision, pure
 // and tested apart from this script. Judge model stays library-pinned
 // (JUDGE_MODEL below), out of scope here.
+// The provider's OWN tier table (src/providers.js) supplies the default —
+// not the anthropic-only DEFAULT_TIER_MODELS above (that map is the
+// `--model` FLAG's vocabulary only, sonnet/haiku, unrelated to which
+// provider the spec names). `spec.provider` is not validateJob'd until
+// runJob below, so an unrecognized value dies here with the same operator-
+// facing message resolveWorkerModel's own errors use, rather than an
+// unhandled throw.
+let providerEntry;
+try {
+  providerEntry = resolveProvider(spec.provider);
+} catch (e) {
+  die(/** @type {Error} */ (e).message);
+}
 let modelResolution;
 try {
   modelResolution = resolveWorkerModel({
     specModel: spec.model,
     flagModel: modelFlagArg === null ? undefined : FLAG_TIER_MODEL,
-    defaultModel: DEFAULT_TIER_MODELS.sonnet,
+    defaultModel: /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).tiers.sonnet,
   });
 } catch (e) {
   die(/** @type {Error} */ (e).message);
@@ -929,13 +959,26 @@ if (doorSpineFile !== null) {
   // an `accept` decision's re-proof (`proveMechanically`, src/reviewdoor.js);
   // a `rerun`/`pause` decision spends nothing here either way.
   const doorCloseTiming = await resolveCloseTimeoutMs({ job: spec, stages: closeStagesOf(spec) ?? [], cwd: wd, redact: redactSecrets });
+  // hamr's ruling 2026-09-07 (docs/product/CLOSE-INTEGRITY-BUILD.md, "Ruled
+  // 2026-09-07") — a door whose own timing pass times out must REFUSE the
+  // accept outright as a named `close-timing-red` door stop, mirroring the
+  // in-run escalation below (~line 1173): falling through to the library's
+  // 120s default (the pre-fix shape: `closeTimeoutMs: undefined`) silently
+  // substituted an unauthorized ceiling for a door decision. `answerReviewDoor`
+  // is never called on this path — nothing is recorded (no door record on
+  // `doorSpineFile`), nothing is released, and nothing is spent.
+  if (doorCloseTiming.timedOut) {
+    const names = doorCloseTiming.timing.perStage.filter((s) => s.timedOut).map((s) => s.name).join(', ');
+    for (const l of doorTimingRedLines({ names })) console.error(l);
+    process.exit(1);
+  }
   const ans = await answerReviewDoor({
     job: spec,
     workdir: wd,
     events: doorEvents ?? [],
     decision: RULING.decision,
     text: RULING.text,
-    closeTimeoutMs: doorCloseTiming.timedOut ? undefined : doorCloseTiming.closeTimeoutMs,
+    closeTimeoutMs: doorCloseTiming.closeTimeoutMs,
     closeDir: spineDir,
     at: answeredAt,
     // THE REGISTRY IS OPTIONAL AND NEVER CONJURED. This runner keeps standalone
@@ -1053,8 +1096,18 @@ if (PAUSED && RULING === null) {
 }
 
 
+// `apiKey` stays ANTHROPIC_API_KEY unconditionally — the JUDGE's own key
+// (pinned to anthropic-api regardless of the job's worker provider, PRD
+// item 28) and, for an anthropic-api job, the worker's key too, so an
+// anthropic-api job's behaviour here is byte-identical to before this
+// factory existed. `workerApiKey` below is the WORKER's own key, read
+// through the factory's provider-specific `envKey` — the same variable for
+// an anthropic-api job (no second read, no behaviour change), a distinct
+// one (`OPENAI_API_KEY`) for openai-api.
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
+const workerApiKey = providerEntry.envKey === 'ANTHROPIC_API_KEY' ? apiKey : process.env[providerEntry.envKey];
+if (!workerApiKey) { console.error(`${providerEntry.envKey} not set (secrets load from the environment — never the tree)`); process.exit(2); }
 
 // `wd`/`spineDir` are derived once, above the resume reader that needs them; only the
 // directory's CREATION belongs here, after the preview/approval gates have exited.
@@ -1095,21 +1148,30 @@ if (dead) {
 }
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
-const provider = new AnthropicProvider({ apiKey, model: MODEL });
+// spec.baseUrl (PRD item 28, ruling (d), 2026-09-09: admitted in v1) — an
+// OpenAI-compatible gateway/endpoint. Undefined for anthropic-api jobs and
+// for an openai-api job that names none (bare-agent's OpenAIProvider then
+// defaults to api.openai.com/v1 on its own).
+const baseUrl = typeof spec.baseUrl === 'string' ? spec.baseUrl : undefined;
+const provider = makeProvider(spec.provider, { apiKey: workerApiKey, model: MODEL, baseUrl });
 // P: the per-step model-tier factory. The TIER menu a PLAN may name is signed in the
 // plan schema (STEP_MODELS — sonnet-only since the 2026-08-06 haiku attribution probe);
 // the tier->model mapping is the RUNNER's territory, here, and keeps haiku for the
 // operator's own --model knob. haiku takes no output_config.effort (provider-gated,
 // battery rule) - nothing to gate yet since neither tier sets effort params.
 // `sonnet` maps to the RESOLVED worker model (MODEL — spec/flag/default), not the
-// bare DEFAULT_TIER_MODELS id, so a spec-named model reaches every plan step's own
+// bare provider-table id, so a spec-named model reaches every plan step's own
 // provider (STEP_MODELS is sonnet-only), not just the top-level `provider` above.
 // ONLY when the SPEC named it: a `--model haiku` probe keeps its old reach (the
-// top-level provider), never silently widening into every step's tier.
-const TIER_MODELS = modelResolution.source === 'spec' ? { ...DEFAULT_TIER_MODELS, sonnet: MODEL } : DEFAULT_TIER_MODELS;
+// top-level provider), never silently widening into every step's tier. The tier
+// table itself comes from `providerEntry` (src/providers.js) — for openai-api
+// today that means BOTH tiers resolve to the same `deepseek-chat` id (hamr's
+// ruling, PRD 30.7: one secondary provider, not a menu), so a `--model haiku`
+// probe against an openai-api job harmlessly re-resolves to the same model.
+const TIER_MODELS = modelResolution.source === 'spec' ? { ...providerEntry.tiers, sonnet: MODEL } : providerEntry.tiers;
 /** @type {Record<string, any>} */
 const tierCache = {};
-const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] }));
+const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : makeProvider(spec.provider, { apiKey: workerApiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)], baseUrl }));
 /** SOFTGREEN — the JUDGED stage's own provider, and it is not the worker's. The tier
  * is PINNED (`JUDGE_MODEL`), never a step knob and never agent-selectable: §4.2's
  * safety argument is worth exactly as much as the tier its injection evidence was
@@ -1119,7 +1181,7 @@ const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MO
  * declaration that can drift from the one the runner actually executes. Absent, a
  * judged stage instrument-STOPS as a wiring gap, which is what every live softgreen
  * run would have done: run-author wired this seam and this runner never did. */
-const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL });
+const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL, exposeErrorBody: true });
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL_LABEL}`);

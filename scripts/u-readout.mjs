@@ -238,6 +238,29 @@ function threeDoors(prose, cmd) {
 }
 
 /**
+ * The door's OWN `close-timing-red` refusal (F137, hamr's ruling 2026-09-07,
+ * `docs/product/CLOSE-INTEGRITY-BUILD.md` "Ruled 2026-09-07"): when the
+ * door's timing pass (`resolveCloseTimeoutMs`) times out, the accept must
+ * REFUSE outright rather than fall through to the library's 120s default —
+ * mirroring the wording/options list `scripts/run-u.mjs`'s in-run
+ * `close-timing-red` escalation already prints (~line 1173), never a second
+ * invented phrasing. Pure so the wording is unit-testable without spawning
+ * the script or waiting out the real 600s timing-preflight ceiling.
+ * @param {{names: string}} args comma-joined names of the stage(s) that timed out
+ * @returns {string[]}
+ */
+export function doorTimingRedLines({ names }) {
+  return [
+    `CLOSE-TIMING-RED (door) — stage(s) never finished the timing preflight: ${names}. `
+      + 'A close stage did not finish within the timing preflight\'s own ceiling — the close cannot run on this '
+      + 'machine in a boundable time, so nothing was run, nothing was recorded, and nothing was spent.',
+    '  investigate why the stage hangs (infra/network/resource issue)',
+    '  sign an explicit closeTimeoutMs override once the real duration is known',
+    '  abandon the task',
+  ];
+}
+
+/**
  * The three doors AT THE REVIEW DOOR. Same order and the same rule as
  * `doorLines` (rerun leads, ~40% rubber-stamp), different consequences: this run
  * is OVER, so a rerun is a fresh engagement rather than a continuation, and a

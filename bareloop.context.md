@@ -70,6 +70,19 @@ inherited rule carries the green that minted it and the contrast that attributed
   with `anthropic-api` on cost, and budgets don't transfer between them.
   `job.provider === 'clipipe-subscription'` with no `nativeProvider` supplied is
   `interpreter-red`, never a silent fall-back to the metered API (`src/planrun.js:1073`).
+  `provider: 'openai-api'` (PRD item 28) takes the ordinary `Loop` path against an
+  OpenAI-shaped endpoint, reads `OPENAI_API_KEY`, and accepts an optional job-level
+  `baseUrl` (https, or http on loopback only; credentials in the URL are a red). Its one
+  admitted model is `deepseek-chat`, which earned the slot with a real paid green — no
+  endpoint or model enters the menu without its own clean paid probe. The provider table
+  lives in `src/providers.js` (`resolveProvider`/`makeProvider`/`buildRunnerProviders`);
+  an unknown provider name THROWS there, it never falls back to a default. Per-model
+  request-key gating lives in that table: `deepseek-chat` sets bare-agent's
+  `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
+  output cap that does not bind is a money hazard. The JUDGE stays pinned to
+  `anthropic-api` and `JUDGE_MODEL` whatever the worker's provider is. The bundle runner
+  (`bareloop run`) is `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would
+  have needed, rather than constructing another provider with the wrong key.
 - **Reuse — where a workflow comes from:** a plain `runJob` always drafts cold. Passing
   `bridge` starts from one standalone bridge file (`src/reuse.js`'s envelope, `## The reuse
   ENVELOPE and runReuse` below). The CLI's `--registry <dir>` / library-level `registryDir`
@@ -130,7 +143,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 |---|---|---|
 | `job` | kebab-case slug | |
 | `description` | non-empty string | |
-| `provider` | `anthropic-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
+| `provider` | `anthropic-api` \| `openai-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-chat` today — see "Worker surface" above for its `baseUrl` field and per-model gating; `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
@@ -1008,7 +1021,18 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
 plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red | pricing-red |
 provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | hitl-pause |
-hitl-decision-red | step-red:<id>`.
+hitl-decision-red | step-red:<id> | runner-drained`.
+
+**`runner-drained` (F140/PRD item 28(c))** is a distinct class from every outcome above: it is
+NOT `runJob`'s own return value, it is a `beforeExit` backstop's terminal, emitted from outside
+the normal control flow the instant node drains with no `job-end` at all — a provider promise
+that never settled (BA-25's class; bare-agent 0.42.0 closed the known drop cases per F141, but
+"an instrument fires on absence" stays a permanent class, not a fixed bug). It means: exits
+non-zero, `spendComplete:false` always (a drained run's in-flight spend is unknowable — the
+floor already banked is honest, an exact-looking total would not be, F6). **It is deliberately
+NOT in the resumable/checkpoint set** (`CHECKPOINT_OUTCOMES`/`RESUMABLE_HALTS`, `src/reuse.js`)
+— an unknown in-flight state, unlike a clean `cap-halt`/`wall-halt`/`provider-red`, is not a
+known-safe resume point.
 
 **`readShim` (default `false`) — the capped read seam, per ARM.** The value names which levers
 run — the four arms of the frozen Phase 2 pre-registration:
@@ -1191,16 +1215,35 @@ round of this attempt being priced repairs nothing about the one before it); and
 reporting with the rest end of gate"). Every worker Loop (scout, drafter, each step, the fix
 worker — the ONE seam in `planrun.js`) gets exactly ONE extra attempt, and only for a
 transport-class throw — fetch itself throwing with no HTTP response at all (a TLS fault,
-`ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` wrapping a network cause); an HTTP response
-(4xx/5xx/429) is never retried here and rides bare-agent's own unchanged policy. The budget is
-fixed (`TRANSPORT_MAX_ATTEMPTS` in `src/transport.js`) — never a job-spec or CLI knob, tighten-only
-doctrine. Each retry emits a report-only `transport-retry` spine record (`{phase, attempt, error,
-recovered}`, no cost field — the ledger is unaffected); the FIRST attempt threw before any usage
-figure came back, so **any** transport retry floors `spendComplete` for the rest of the run even
-when the retry recovers and the run finishes green — the same one-way flag class as `stalled`
-and `cutMidCall`. A wall stop read BETWEEN iterations or steps has no call in flight,
+`ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` wrapping a network cause), OR (bare-agent
+0.42.0, BA-25) a response body cut after headers but before it completed — the provider's own
+`guardResponseSettles` rejects that as a retryable `ProviderError` tagged
+`context.bound:'transport'`, which `isTransportFailure` also recognizes (F141). An HTTP response
+(4xx/5xx generally) is never retried here and rides bare-agent's own unchanged policy. The budget
+is fixed (`TRANSPORT_MAX_ATTEMPTS` in `src/transport.js`) — never a job-spec or CLI knob,
+tighten-only doctrine. Each retry emits a report-only `transport-retry` spine record (`{phase,
+attempt, error, recovered}`, no cost field — the ledger is unaffected); the FIRST attempt threw
+before any usage figure came back, so **any** transport retry floors `spendComplete` for the rest
+of the run even when the retry recovers and the run finishes green — the same one-way flag class
+as `stalled` and `cutMidCall`. A wall stop read BETWEEN iterations or steps has no call in flight,
 so it stays exact. Both fields are present on all outcomes, so a consumer never branches on
 field presence and never has to launder a missing `spentUsd` into `$0`.
+
+A **rate-limit retry** (PRD item 28's parked a/b ruling, hamr verbatim: "do a/b as a fallback, and
+verify/validate + no regression"; F143/`src/ratelimit.js`) rides the SAME seam as a second,
+INDEPENDENT one-shot budget: an HTTP 429 gets ONE retry that honours the vendor's own stated
+wait, capped at 60s (`RATE_LIMIT_MAX_WAIT_MS` — a longer stated wait is not honoured at all, no
+retry). This is a FALLBACK, not the primary answer — the primary answer (F139) is picking a
+worker model with adequate rate headroom; this only softens the failure mode when that was not
+enough. The wall always wins here too: before sleeping, a retry that would cost more than
+`clock.remainingMs()` is refused and the error rides straight through, exactly like the transport
+ladder's own wall carve-out. Each retry emits a report-only `rate-limit-retry` spine record
+(`{phase, attempt, statedMs, waitedMs, error, recovered}`, no cost field). Unlike the transport
+retry, a rate-limit retry does **not** floor `spendComplete`: a 429 is a REFUSAL — the vendor
+rejected the request before processing it, so nothing can have been billed (a stated assumption,
+not independently measured against a real provider). The two budgets are independent — a
+transport throw and a 429 may both occur, and both retry, across one call's lifetime, but each at
+most once.
 
 **The plan flow (Layer 2).** `job-start` carries `shape: 'plan'` + the goal; plan steps are
 tool-mode by construction. The flow (`runPlan`, also exported for direct callers who own
@@ -1645,7 +1688,11 @@ that moved (`door-accept-red`) and a missing registry all come back as named red
   a person) before it is honoured: hamr's ruling that an accept is not a rubber stamp, and the
   answer to a tree that can move in the 60 days a door keeps. A red REFUSES the accept with the
   stage named and records **nothing**. A pass records the disposition and, over a held judged
-  green, RELEASES the credit through module 6's `applyDoorDecision`.
+  green, RELEASES the credit through module 6's `applyDoorDecision`. `scripts/run-u.mjs` resolves
+  the re-run's ceiling itself via `resolveCloseTimeoutMs` before calling this, and refuses outright
+  (F137) as a named `close-timing-red` door stop — `answerReviewDoor` never called, nothing
+  recorded — if that timing pass itself times out, rather than falling through to `runClose`'s
+  library default.
 - **`rerun`** carries the person's words back as a directive (`next: 'rerun'`) and re-proves
   nothing: the new run's close is what judges. Empty or whitespace text is refused at the same
   seam every other door is.
@@ -2677,7 +2724,7 @@ hash and needs re-approval, exactly like any other semantic edit.
 | `close-sha-mismatch` | `exportBundle` (PRD item 27/M2) | a `close[].sha256` the spec carries does not match the bytes of the script actually being packed into the bundle — the two signatures (this one, and `bundleHash`'s manifest hash over the rewritten script) cover the same bytes by two different paths and must never drift apart silently (N4's own hazard, one layer up). Only fires when a value is PRESENT and wrong; a spec with no sha256 at all reds `missing-required` upstream, at `validateJob` |
 | `close-tampered` | `runPlan` (PRD item 27/M2) | a close script's bytes no longer match its signed `sha256` — checked at run start (alongside `close-absolute-path`, before the close-first precheck and before any provider call) AND before EVERY close run thereafter (`runCloseStages`'s wrapper in `src/planrun.js`, the one seam the precheck/preflight/check-passes/close-fix-loop all share). Distinct from `close-red` (a judged "no" from a working close) and from `close-crashed`/`close-timeout`/`close-killed` (the close ran and hit an instrument fault): this is decided BEFORE the close is even spawned, and it means the close that ran would not have been the one the operator approved. Registered in `CLOSE_FAULTS` (`src/ralph.js`) so it rides out through the same forbidden-zone machinery as every other close fault — never retried, never fed back as a gap |
 | `close-dir-required` | `runPlan` (PRD item 27/M3 Part B) | a close script's source mentions `BARELOOP_CLOSE_DIR` (it reads its own books directory) but the runner was given no `closeDir` at all — `checkCloseDirRequired` (`src/close-integrity.js`) reuses the same `readCloseScripts` reader the other two integrity checks share. $0, run start, before the close-first precheck and before any provider call |
-| `close-timing-red` | `runPlan` (PRD item 27/M3) | the $0 timing preflight (`resolveCloseTimeoutMs`/`timeCloseStages`, `src/closetimeout.js`) ran every close stage once, ignoring verdicts, and at least one never finished within the provisional ceiling (`TIMING_PREFLIGHT_CEILING_MS`, the library default × K = 600s) — the close cannot run on this machine in a boundable time. Only reachable when NEITHER a signed `job.closeTimeoutMs` NOR a caller-passed runtime override is present (both skip the pass entirely) |
+| `close-timing-red` | `runPlan` (PRD item 27/M3) | the $0 timing preflight (`resolveCloseTimeoutMs`/`timeCloseStages`, `src/closetimeout.js`) ran every close stage once, ignoring verdicts, and at least one never finished within the provisional ceiling (`TIMING_PREFLIGHT_CEILING_MS`, the library default × K = 600s) — the close cannot run on this machine in a boundable time. Only reachable when NEITHER a signed `job.closeTimeoutMs` NOR a caller-passed runtime override is present (both skip the pass entirely). `scripts/run-u.mjs`'s review door hits the SAME red on its own `accept` timing pass (F137) — it refuses the door outright rather than calling `answerReviewDoor` at all, so nothing is recorded |
 | `wall-under-close-timeout` | `runPlan` (PRD item 27/M3) | `job.maxWallMs` is set and is under the EFFECTIVE per-stage close timeout just resolved (autoset or signed) — a budget under one close cannot fund its own close. `validateJob`'s own `MIN_WALL_MS` floor only bounds the un-autoset library default; this run-start check is the honest shape once the real ceiling is known, rather than a silent clamp |
 | `bundle-missing` | `readBundle` | `dir` is not a directory at all |
 | `manifest-invalid` / `spec-invalid` | `readBundle` | `manifest.json`/`spec.json` could not be read or parsed |

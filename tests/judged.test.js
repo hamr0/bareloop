@@ -332,6 +332,101 @@ test('quote verification is OPT-IN and never invents a red without the artifact'
   assert.equal(d.verdict, 'pass');
 });
 
+// ── COMPLETENESS (PRD 30.8): a pass on the REPORTED functions is not a pass on
+// the FILE — a locate emission can be well-formed, non-empty, and still have
+// silently dropped a top-level function the artifact actually holds ─────────
+
+/** two top-level, fully documented functions — the completeness fixture */
+const TWO_FN_ARTIFACT =
+  '/**\n * Adds two numbers.\n * @param {number} a\n * @param {number} b\n * @returns {number} the sum\n */\n'
+  + 'function add(a, b) {\n  return a + b;\n}\n\n'
+  + '/**\n * Subtracts two numbers.\n * @param {number} a\n * @param {number} b\n * @returns {number} the difference\n */\n'
+  + 'function sub(a, b) {\n  return a - b;\n}\n';
+
+const ADD_FACTS = {
+  name: 'add',
+  declarationQuote: 'function add(a, b) {',
+  docQuote: '/**',
+  paramNames: ['a', 'b'],
+  paramIsPattern: [false, false],
+  paramTagNames: ['a', 'b'],
+  returnsTagQuote: ' * @returns {number} the sum',
+  returnsValueQuote: '  return a + b;',
+};
+
+const SUB_FACTS = {
+  name: 'sub',
+  declarationQuote: 'function sub(a, b) {',
+  docQuote: '/**',
+  paramNames: ['a', 'b'],
+  paramIsPattern: [false, false],
+  paramTagNames: ['a', 'b'],
+  returnsTagQuote: ' * @returns {number} the difference',
+  returnsValueQuote: '  return a - b;',
+};
+
+test('decide REDS when locate silently OMITS a top-level function the artifact holds — never a pass on the subset', () => {
+  const d = decide({ functions: [ADD_FACTS] }, CARD, { artifactText: TWO_FN_ARTIFACT });
+  assert.equal(d.verdict, 'red');
+  assert.equal(d.items.length, 0, 'this is an UNSURE route — the same shape as every other completeness-blind red, grading never runs');
+  assert.ok(/sub/.test(String(d.reason)), 'the reason NAMES the missing function');
+  assert.ok(!/\badd\b/.test(String(d.reason)), 'and only the missing one — `add` was reported and is not part of the miss');
+});
+
+test('decide is UNCHANGED when locate reports every top-level function — completeness is silent, the RULES decide', () => {
+  const d = decide({ functions: [ADD_FACTS, SUB_FACTS] }, CARD, { artifactText: TWO_FN_ARTIFACT });
+  assert.equal(d.verdict, 'pass', JSON.stringify(d.items));
+  assert.equal(d.items.length, CARD.items.length, 'grading RAN — completeness did not short-circuit it, it just found nothing to say');
+});
+
+test('completeness is OPT-IN like the quote check — no artifactText, no completeness claim', () => {
+  // without the artifact decide() cannot know `sub` exists, and says nothing it cannot know
+  const d = decide({ functions: [ADD_FACTS] }, CARD);
+  assert.equal(d.verdict, 'pass');
+});
+
+test('the fns.length === 0 route still reds on its OWN reason, completeness or not', () => {
+  const d = decide({ functions: [] }, CARD, { artifactText: TWO_FN_ARTIFACT });
+  assert.equal(d.verdict, 'red');
+  assert.ok(/found nothing/.test(String(d.reason)), 'the empty-list reason is unchanged — completeness never runs on an empty list');
+});
+
+// ── ONE SHAPE INVENTORY: the LOCATE prompt's prose and the completeness
+// detector are both derived from the same `FN_SHAPES` table in src/judged.js
+// (the standing one-inventory rule — never two hand-typed spellings that can
+// drift apart in the unsafe direction). These tests exercise every shape the
+// prompt claims to cover, one at a time, proving the detector actually
+// catches each one rather than trusting the prose — `async`/`export`
+// modifiers included, which is exactly what a hand-typed regex misses first.
+
+test('locatePrompt states the async/export modifiers, not just the bare shapes', () => {
+  const p = locatePrompt(CARD);
+  assert.ok(/async/.test(p), 'the prompt names the async modifier');
+  assert.ok(/export/.test(p), 'the prompt names the export modifier');
+});
+
+/** [label, a real column-0 declaration line, the name it declares] — one per
+ * shape `FN_SHAPES` enumerates */
+const SHAPE_LINES = [
+  ['function name(...)', 'function plain() {\n  return 1;\n}\n', 'plain'],
+  ['async function name(...)', 'async function asyncPlain() {\n  return 1;\n}\n', 'asyncPlain'],
+  ['export function name(...)', 'export function exportedFn() {\n  return 1;\n}\n', 'exportedFn'],
+  ['export async function name(...)', 'export async function exportedAsyncFn() {\n  return 1;\n}\n', 'exportedAsyncFn'],
+  ['const name = (...) =>', 'const arrow = () => {\n  return 1;\n};\n', 'arrow'],
+  ['const name = async (...) =>', 'const asyncArrow = async () => {\n  return 1;\n};\n', 'asyncArrow'],
+  ['export const name = (...) =>', 'export const exportedArrow = () => {\n  return 1;\n};\n', 'exportedArrow'],
+  ['export const name = async (...) =>', 'export const exportedAsyncArrow = async () => {\n  return 1;\n};\n', 'exportedAsyncArrow'],
+];
+
+for (const [label, decl, name] of SHAPE_LINES) {
+  test(`completeness catches an omitted "${label}" — the shape the prompt claims to cover is actually detected`, () => {
+    const artifact = `${TWO_FN_ARTIFACT}\n${decl}`;
+    const d = decide({ functions: [ADD_FACTS, SUB_FACTS] }, CARD, { artifactText: artifact });
+    assert.equal(d.verdict, 'red', `a real "${label}" declaration must not be invisible to completeness`);
+    assert.ok(new RegExp(`\\b${name}\\b`).test(String(d.reason)), `the reason names the omitted function (${name})`);
+  });
+}
+
 // ── first-red-wins, in CARD order, stably ───────────────────────────────────
 
 test('first-red-wins reports the FIRST failing item in CARD order, not emission order', () => {

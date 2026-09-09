@@ -442,6 +442,38 @@ test('every provider round is metered on the spine as worker-round with a phase 
   assert.ok(rounds.every((r) => 'costUsd' in r), 'every round carries its cost (null is the honest unknown, never omitted)');
 });
 
+test('a worker-round carries the round\'s own stopReason, forwarded verbatim from the provider (PRD item 28, BA-13)', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })], stopReason: 'tool_use' },
+    { text: 'done', stopReason: 'end_turn' },
+  ]);
+  const { events } = await go(wd, provider);
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  assert.ok(rounds.length >= 4, `expected metered rounds, got ${rounds.length}`);
+  assert.ok(rounds.some((r) => r.stopReason === 'tool_use'), `expected a tool_use round, got ${JSON.stringify(rounds.map((r) => r.stopReason))}`);
+  assert.ok(rounds.some((r) => r.stopReason === 'end_turn'), `expected an end_turn round, got ${JSON.stringify(rounds.map((r) => r.stopReason))}`);
+});
+
+test('a worker-round\'s stopReason is null, never omitted, when the provider payload said nothing (pre-BA-13 / a non-string value) — the same honesty rule rateSource already follows', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { events } = await go(wd, provider);
+  const rounds = events.filter((e) => e.type === 'worker-round');
+  assert.ok(rounds.length >= 4);
+  for (const r of rounds) {
+    assert.ok('stopReason' in r, 'the field is never omitted');
+    assert.equal(r.stopReason, null);
+  }
+});
+
 test('the scout is read-only by construction: its tool menu carries no write-class verb', async (t) => {
   const wd = makePatient(t);
   const provider = scriptedProvider([
@@ -941,6 +973,33 @@ test('F59: a scout still empty after its reserved round emits the LOUD scout-emp
   assert.equal(events.find((e) => e.type === 'scout-result').bytes, 0);
   // F59's own evidence: empty scouts still green — so this is LOUD, never a halt
   assert.equal(outcome, 'green', 'an empty survey is reported, not fatal (3 of 5 archived greens had one)');
+});
+
+// F147: `askFrom` feeds a prior `loop.run()`'s returned `msgs` into a NEW Loop.
+// bare-agent's Loop.run() prepends its `system` message to the transcript it
+// returns, and the new Loop (built with the same `system`) would prepend it
+// again — two identical system messages at index 0/1. Real OpenAI tolerates
+// that; vLLM-class OpenAI-compatible backends 400 on it. The fix strips a
+// leading system message from `msgs` before re-running.
+test('F147: the F59 summary round sends exactly ONE system message, not two', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { toolCalls: [tcall('s1', 'shell_grep', { pattern: 'export', path: wd })] }, // scout burns its round on a tool
+    { text: `Layout: src/mod.mjs (exports x), tests/ exists but is empty. ${'The suite runner is node --test over tests/**. '.repeat(4)}Hypothesis: the work needs one new test file under tests/ asserting on x; no source change is required, and the close greens only once that file contains an ok assertion.` }, // F59 summary round
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const { events } = await go(wd, provider, { scoutRounds: 1 });
+  const sr = events.find((e) => e.type === 'scout-result');
+  assert.ok(sr.bytes > 0, 'the survey reached the planner (sanity check the summary round ran)');
+  // call index 1 is the F59 toolless summary round (index 0 is the scout's
+  // first, tool-burning round) — assert on the FULL messages array bare-agent
+  // saw, not just messages[0], since a duplicate lands at index 1 as well.
+  const summaryMessages = provider.messagesLog[1];
+  const systemMessages = summaryMessages.filter((m) => m.role === 'system');
+  assert.equal(systemMessages.length, 1, `expected exactly one system message, got ${systemMessages.length}`);
+  assert.equal(summaryMessages[0].role, 'system', 'the single system message stays at index 0');
 });
 
 // ── T + A: materials at the plan surface, the wall clock, and the variance
@@ -2875,6 +2934,72 @@ test('SCOUT casualty: a transport death on the survey call ends the run as provi
   assert.equal(esc.category, 'provider-red');
   assert.equal(esc.phase, 'scout');
   assert.equal(esc.lib, 'bare-agent', 'the typed lib field is stamped at the throw site, never sniffed from prose');
+});
+
+// ---- F146/F149 (PRD item 30.5) — a provider-red's escalation carries the upstream
+// error BODY, redacted and bounded, not just the bare HTTP status ----
+
+test('F146: a provider-red escalation carries the upstream body sentence, scrubbed of the secret it also carried — never the bare status alone', async (t) => {
+  const secretKey = `sk-ant-api03-${'A'.repeat(90)}`;
+  const body = { error: 'System message must be at the beginning', echo: secretKey };
+  // Guard against a vacuous pass: the fixture must actually contain a shape
+  // SECRET_PATTERNS matches, or "0 leaks" would prove nothing.
+  assert.ok(scanSecrets(JSON.stringify(body)).length > 0, 'test fixture must contain a real secret shape or the leak assertion below is vacuous');
+  const wd = makePatient(t);
+  const thrower = () => Object.assign(new Error('HTTP 400'), { status: 400, body });
+  const provider = dyingAt([{ text: 'never reached' }], 0, thrower);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.ok(esc.detail.includes('System message must be at the beginning'),
+    'the body sentence that actually explains the 400 must reach the escalation detail (F146 — the number alone explained nothing)');
+  assert.ok(!esc.detail.includes(secretKey), 'the raw key must never reach the escalation detail');
+  assert.equal(scanSecrets(JSON.stringify(events)).length, 0, 'no secret shape survives anywhere on the emitted spine');
+  // The scout path runs the same error through categorize() TWICE (once inside
+  // mkWorker's ask/askFrom when it throws, once again inside relay() before it
+  // reads e.message) — the BODY_MARKER guard must make that idempotent, never
+  // doubling the suffix.
+  const occurrences = esc.detail.split(' — body: ').length - 1;
+  assert.equal(occurrences, 1, 'the body suffix must appear exactly once, even though categorize() runs twice on the same thrown error (ask() then relay())');
+});
+
+test('F146: a mid-STEP provider throw (ralph.js\'s own dumb-passthrough catch, never touched by this fix) still carries the body sentence — categorize() stamps the message once, before ralph ever reads it', async (t) => {
+  const secretKey = `sk-ant-api03-${'B'.repeat(90)}`;
+  const body = { error: 'System message must be at the beginning', echo: secretKey };
+  assert.ok(scanSecrets(JSON.stringify(body)).length > 0, 'test fixture must contain a real secret shape or the leak assertion below is vacuous');
+  const wd = makePatient(t);
+  // scout + a valid plan, then the STEP worker's provider throws on its first
+  // round — same shape as the F11/F44 mid-step casualty test above, but with a
+  // real HTTP body instead of a bare transport message.
+  const base = scriptedProvider([{ text: 'scout notes' }, { text: PLAN(wd) }]);
+  let n = 0;
+  const provider = {
+    calls: base.calls,
+    async generate(/** @type {any} */ messages, /** @type {any} */ tools) {
+      if (n++ >= 2) throw Object.assign(new Error('HTTP 400'), { status: 400, body });
+      return base.generate(messages, tools);
+    },
+  };
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red', 'a mid-step HTTP throw is a provider-red casualty, never step-red');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'provider-red');
+  assert.ok(esc.detail.includes('System message must be at the beginning'),
+    'ralph.js reads this categorized error\'s .message verbatim (String(e.message || e)) — the sentence must already be baked in by categorize()');
+  assert.ok(!esc.detail.includes(secretKey), 'the raw key must never reach the step-loop escalation detail');
+  assert.equal(scanSecrets(JSON.stringify(events)).length, 0, 'no secret shape survives anywhere on the emitted spine');
+});
+
+test('F146: an oversized upstream body is capped at 600 chars in the escalation detail', async (t) => {
+  const body = { error: 'x'.repeat(5000) };
+  const wd = makePatient(t);
+  const thrower = () => Object.assign(new Error('HTTP 400'), { status: 400, body });
+  const provider = dyingAt([{ text: 'never reached' }], 0, thrower);
+  const { events } = await go(wd, provider);
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  const bodyPart = esc.detail.slice(esc.detail.indexOf(' — body: ') + ' — body: '.length);
+  assert.ok(bodyPart.length <= 600, `the appended body must be capped at 600 chars, got ${bodyPart.length}`);
 });
 
 // ---- W4: ONE close staging, shared by the prompt, the validator and the runner ----

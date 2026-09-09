@@ -397,6 +397,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     guide and ui will come after"): the fwdloop interview is DONE (item 29) → **item 28 +
     a cold-adopter quickstart** (one page a stranger can follow to job #1) → the panel (N6)
     after, arriving as fwdloop's inbox UI first. Reuse-lift proof stays after item 28.
+    **2026-09-09 — order amended, SUPERSEDES the line above** (hamr): item 28's open half is
+    carried as **item 31**; order is now item 31 (judge pair, judge-key, request-key gating)
+    → **the panel (N6) — built HERE, shaped against fwdloop's UI PRD so one build fits both**
+    → the reuse-lift proof LAST. See item 31.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
@@ -511,6 +515,20 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     `openai-api` at all, or only the vendor's own host until BA-25 lands. Recommendation: (c)
     yes, small and honest; (d) admit `baseUrl` but the probe rule stands — no endpoint is in the
     menu without its own paid probe, and today none of them has a clean one.
+    **2026-09-09 — hamr's rulings (c) and (d), both GO.** (c) built on `chore/bare-agent-0.42`: a
+    `beforeExit` backstop in `runJob` mints `job-end {outcome:'runner-drained', spendComplete:false}`
+    + non-zero exit when the process drains with no `job-end`; not in the resumable set. (d) DECIDED:
+    `baseUrl` IS admitted in v1 of `openai-api`; the probe rule stands — no endpoint enters the
+    `provider` menu without its own clean paid probe, and the code lands with the provider factory
+    (the item 28 build), not before. Also on the branch: **F147** — the Qwen `HTTP 400` F146 left
+    unexplained was OURS: the F59 summary round sent the persona twice (bareloop re-fed a transcript
+    bare-agent had already system-prepended); real OpenAI tolerates it, vLLM-class backends reject it.
+    Fixed at `askFrom`; an item-28 blocker for ANY strict OpenAI-compatible backend, cleared.
+    **2026-09-09, later — F149/F150, $3.91 across the three runs plus ~$0.05 of probes.** F147 holds live (Qwen 400→200 A/B on the captured
+    request; full Qwen run drafts a legal plan, cap-halts at $1). **`deepseek-chat` GREENS the job**
+    ($1.89 floor / 11.2 min, six stages satisfied, one caught suppression) — the first non-Anthropic
+    green and the item 28 probe for its first admitted provider. Hazard: DeepSeek silently ignores
+    `max_completion_tokens` (F149) — the tier table carries the request-key choice per model.
 
 29. **fwdloop — the sibling product** (hamr, 2026-09-08). Human-in-the-loop flows (trigger →
     gather → derive → ask → send), non-repo, accepted once then rerun daily, are NOT a bareloop
@@ -521,12 +539,55 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     item 26 unchanged (doc-genre stays dropped in bareloop — it lives in fwdloop instead);
     the panel (N6) arrives as fwdloop's inbox UI before any bareloop-only panel.
 
+30. **Item 28 close-out ledger** (hamr, 2026-09-09: "make a list in prd for outstanding things
+    … and close them out properly, no review before you close all above and validate it"). Every
+    row below is closed with its own validation before `chore/bare-agent-0.42` goes to review.
+    Tick = closed, with the instrument that closed it. **All ten rows closed 2026-09-09** — what
+    remains is named in 30.9's status line (item 28 part (2)) and carried as its own work, not as
+    an unclosed row here.
+
+    | # | Outstanding | Close criterion | Status |
+    |---|---|---|---|
+    | 30.1 | Second double-system site: `src/authorscout.js` recovery round re-feeds a system-prepended transcript (F147's twin) | strip + red/green test | CLOSED 79f3478 — two sites (recovery, re-ask) stripped; real-Loop test red 2≠1 → green |
+    | 30.2 | 429 retry (F143) never fired live | a real vendor 429 absorbed by `rate-limit-retry` on a paid run (gpt-4.1 429s deterministically, F139) | CLOSED F151 — live 429 on gpt-4.1: parsed 9.47 s, waited 9.72 s, one retry, refused again, honest provider-red $0.12 |
+    | 30.3 | `runner-drained` (c) proven only in-process | a real child process through `bin/`/runner against a real HTTP endpoint that goes silent drains and mints the record + non-zero exit | CLOSED F152 — impossible live by construction (open socket never drains; settled-socket drops now reject, F141); backstop stays child-process-proven; the live hazard is a HANG → 30.4 widened to every unbounded provider call |
+    | 30.4 | Judge AND authoring-scout provider calls carry no deadline (F148, F152) | every `Loop.run` bareloop makes carries the worker's `callBounds()` deadline; a silent endpoint rejects into an honest terminal; test | CLOSED F154 — seven sites bounded (judge, calibration, scout ×3, declaration boundary, bridge picker); real silent-server tests; a swallow-everything first pass caught by the existing relay test |
+    | 30.5 | `exposeErrorBody` parked (F146): provider error sentence discarded | body passes through the ONE secret scrub before any record; test proves a key in the body is redacted | CLOSED F153 — exposeErrorBody on all 24 sites, body redacted via validate.js and capped at 600 chars in categorize(); tests prove the key is found raw then absent from the spine |
+    | 30.6 | fwd not told the Qwen cause | message sent | CLOSED — sent 2026-09-09 (cause + DeepSeek max_tokens note) |
+    | 30.7 | Kimi drafter-prompt test (worked example + up-front relative-path rule) never run | ~$0.10 Kimi draft with the candidate prompt; ship ONLY if Kimi drafts AND a Sonnet run stays green, else close as "model" | CLOSED by ruling (hamr, 2026-09-09: "settle on one secondary/replacement for claude … don't pickpocket random models") — secondary is `deepseek-chat` (F150), which drafts on the current prompt; Kimi is not a candidate, experiment killed at $0.02, prompt untouched |
+    | 30.8 | `decide()` completeness hole (softgreen judge grades only the functions locate reported) | a function the card names but locate omitted → RED; test | CLOSED F155 — completeness diff against the artifact; ONE FN_SHAPES inventory drives both the prompt prose and the detector (the hand-typed regex already disagreed on 4 shapes); red→green captured twice |
+    | 30.9 | Item 28 build: provider factory, `openai-api` (+`baseUrl`, per-model request-key) on the menu, tier table with `deepseek-chat` as THE secondary (hamr's ruling, one replacement, no menu of half-tested models), signed `judge:{provider,model}` + calibration record, `stopReason` on worker-round | built + one paid probe through the SHIPPED runner on DeepSeek | CLOSED F156+F157 — factory built (one table, unknown name throws, per-model request-key gating, baseUrl admitted); probe GREEN through scripts/run-u.mjs (run mtu12vks, $1.64/$4, 10.3min, bridge minted). REMAINS OPEN as item 28 part (2) — carried in full as **item 31** below (31.1 judge pair, 31.2 judge-key, 31.3 request-key gating), not as an unclosed row here |
+    | 30.10 | Docs drift: CHANGELOG lacked F147; PRD spend figure wrong ($5.94 → $3.91) | corrected | CLOSED 487320d |
+
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
     hitl/soft-judged ladder (`docs/product/2026-08-17-softgreen-review-door-design.md`;
     `docs/logs/FINDINGS.md`), and hitl is retired (v1.71; item 21 above). Dropped from tracking,
     not scheduled, as of today — not a deletion of any closed prose, an appended closure only.
     Softgreen (the judged floor) itself remains shipped and unaffected; only the doc-genre
     roadmap item ends.
+
+31. **Item 28 part (2) — the open half, and the order after it** (hamr, 2026-09-09: "add to
+    prd all pending items above … prioritize ui after the bugs/nuances coming next and
+    reuse-lift last"). Item 28 shipped shape (1) (the provider factory) and shape (3) (one
+    paid probe per admitted provider — DeepSeek green, run `mtu12vks`). Shape (2) and the
+    nuances found alongside it are NOT built and are the next work, in this order:
+
+    | # | Open item | What "done" means |
+    |---|---|---|
+    | 31.1 | Signed `judge: { provider, model }` + per-pair calibration record (item 28 shape (2), the only unbuilt shape) | the judge is a signed spec field; a `(provider, model)` pair with no recorded 10-of-10 calibration REFUSES judged closes at $0 and never silently substitutes an uncalibrated model |
+    | 31.2 | Judge-key story: `scripts/run-u.mjs:1107` hard-exits on a missing `ANTHROPIC_API_KEY` even for a job that never judges (a green DeepSeek run still demands an Anthropic key) | a never-judged job runs with only its own provider's key; a judged job still refuses honestly and by name when the judge's key is absent |
+    | 31.3 | `OPENAI_MODEL_OPTIONS` (`src/providers.js:68`) knows the output-cap request key for `deepseek-chat` ONLY; any other model falls through to bare-agent's `max_completion_tokens` default, which DeepSeek-class backends silently IGNORE (F149: asked 64 tokens, got 665) | an unknown `openai-api` model cannot silently un-bind the budget cap — either the key is proven per model before admission, or an unproven model is refused by name. A cap that does not bind is a money hazard, not a crash: arbiter territory, hamr's ruling required on which of the two |
+
+    **Order after 31 (hamr, 2026-09-09 — amends the 2026-09-08 order at item 25):**
+    item 31 (the bugs/nuances above) → **the panel (N6, §10) — the UI** → the reuse-lift
+    proof LAST. The UI is promoted ahead of the reuse-lift proof; item 29's "fwdloop's inbox
+    UI arrives before any bareloop-only panel" is SUPERSEDED. hamr's reasoning, verbatim in
+    substance: "this repo has its own ui … it's an integral long overdue part". bareloop
+    builds the panel HERE so fwdloop borrows a built thing rather than developing one from
+    scratch (the borrow-not-import contract, item 29, is unchanged — fwdloop copies). When
+    the UI rung starts, the first step is to READ `../fwdloop/docs/product/PRD.md`'s UI
+    section and shape the build so one artifact can mutate to fit both products — "both are
+    close in shape". No UI design is frozen before that read.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the

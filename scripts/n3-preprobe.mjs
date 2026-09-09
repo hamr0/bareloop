@@ -211,7 +211,7 @@ if (dry) {
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment)'); process.exit(2); }
-const provider = new AnthropicProvider({ apiKey, model: MODEL });
+const provider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 
 async function draftOnce(prompt) {
   let costUsd = 0; let priced = true;

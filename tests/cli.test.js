@@ -63,12 +63,12 @@ process.exit(ok ? 0 : 1);
 const CLOSE_SOURCE_SHA256 = hashCloseScriptBytes(CLOSE_SOURCE);
 
 /** @param {{ job: string, closeScriptPath: string, budgetUsd?: number, maxWallMs?: number }} o */
-function buildJob({ job, closeScriptPath, budgetUsd = 2, maxWallMs = 1_800_000 }) {
+function buildJob({ job, closeScriptPath, budgetUsd = 2, maxWallMs = 1_800_000, provider = 'anthropic-api' }) {
   return {
     schema: 'job-v1',
     job,
     description: 'CLI M2 fixture: append a marker line to src/mod.mjs.',
-    provider: 'anthropic-api',
+    provider,
     cadence: { unit: 'day', every: 1 },
     budgetUsd,
     maxWallMs,
@@ -127,7 +127,7 @@ function fixtureSpec(t, o = {}) {
   writeFileSync(closeScriptPath, CLOSE_SOURCE);
 
   const job = buildJob({
-    job: jobName, closeScriptPath, budgetUsd: o.budgetUsd, maxWallMs: o.maxWallMs,
+    job: jobName, closeScriptPath, budgetUsd: o.budgetUsd, maxWallMs: o.maxWallMs, provider: o.provider,
   });
   const bridge = bridgeFor(job);
   const registryDir = makeRegistry(t, bridge);
@@ -234,6 +234,25 @@ test('bareloop run: no key and no injected provider -> questions + hash, exit 0,
   assert.match(out.text(), new RegExp(bundleHash));
   assert.match(out.text(), /ANTHROPIC_API_KEY/);
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'no worktree may be created when nothing was spent');
+});
+
+test('bareloop run: a bundle naming a provider with a DIFFERENT env key refuses at $0, never builds it with the Anthropic key', async (t) => {
+  // PRD item 28: the bundle runner's key contract is ANTHROPIC_API_KEY only.
+  // Constructing an openai-api worker with that key would 401 at the first
+  // call and read as a credential problem rather than the unbuilt seam it is.
+  // The spec names the provider at EXPORT time — editing spec.json afterwards
+  // would trip the manifest-hash guard first, which is its own (correct) test.
+  const { bundleDir } = await exportFixture(t, { provider: 'openai-api' });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo], {
+    stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' },
+  });
+  assert.notEqual(rc, 0, 'a provider it cannot key must refuse, never run');
+  const said = err.text() + out.text();
+  assert.match(said, /OPENAI_API_KEY/, 'it must name the key it would have needed');
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
 });
 
 test('bareloop run: a tampered bundle reds bundle-tampered BEFORE any worktree/provider', async (t) => {

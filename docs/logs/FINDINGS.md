@@ -10732,9 +10732,74 @@ patterns (`**/*.test.?(c|m)js`, `**/*-test.?(c|m)js`, `**/*_test.?(c|m)js`,
 guard was added so a future rediscovery fails loudly (`process.exitCode = 1` with an error
 message) instead of nesting silently.
 
+## F137 — door accept fell back to the library close default when its timing pass timed out
+
+`scripts/run-u.mjs`'s review-door `accept` path resolves the mechanical re-run's close
+timeout via `resolveCloseTimeoutMs` (the same function `runPlan`'s in-run path uses,
+PRD item 27/M3). When that timing pass itself timed out (`doorCloseTiming.timedOut`),
+the pre-fix line read:
+
+```js
+closeTimeoutMs: doorCloseTiming.timedOut ? undefined : doorCloseTiming.closeTimeoutMs,
+```
+
+`undefined` reaches `answerReviewDoor` → `proveMechanically` → `runStages`/
+`runDeclaredStages`, which fall through to `runClose`'s own shipped default
+(`timeoutMs = 120_000`, `src/ralph.js:221`) — the exact second silent-default-ceiling
+class M3 was built to close one door up (the in-run path already treats a timing-pass
+timeout as a hard `close-timing-red` escalation, `scripts/run-u.mjs` ~line 1173). A door
+whose timing pass cannot bound the close's real duration was silently answering with an
+unauthorized number instead of refusing.
+
+Found by orchestrator review of M3 (run `mtqwmb9l`'s archive), ruled wrong by hamr
+2026-09-07 (`docs/product/CLOSE-INTEGRITY-BUILD.md`, "Ruled 2026-09-07" paragraph):
+a timed-out door timing pass must REFUSE the accept outright as a named
+`close-timing-red` door stop, record nothing (no door record, no release, no
+bridge/credit), spend nothing, and exit non-zero.
+
+**Fixed** on branch `fix/door-timing-refuse`: the door path now checks
+`doorCloseTiming.timedOut` immediately after resolving it and, if true, prints the
+refusal (new pure renderer `doorTimingRedLines`, `scripts/u-readout.mjs`, mirroring the
+in-run escalation's wording/options list) and `process.exit(1)`s — `answerReviewDoor` is
+never called on this path, so no door record is ever written to `doorSpineFile`. The
+non-timeout path now passes `doorCloseTiming.closeTimeoutMs` directly (never a ternary
+that could silently produce `undefined` again).
+
+**Proof.** The behavioral path (a real door `accept` whose timing pass genuinely times
+out) is not reachable in test time without a new seam: `run-u.mjs`'s door call to
+`resolveCloseTimeoutMs` has no `ceilingMs` override wired to it, and the real
+provisional ceiling a stage must outlast is `TIMING_PREFLIGHT_CEILING_MS` = 600s — the
+same named divergence `tests/close-timeout.test.js` already documents for the analogous
+in-run timing-pass-timeout path (unit-tested via the `ceilingMs` seam on
+`resolveCloseTimeoutMs` directly, never a full `runPlan` run). `scripts/run-u.mjs` is a
+script, not an importable module (it executes top-level on import), so that seam cannot
+be reached from a test either. Escalated rather than invented: the seam this would need
+is a test/CLI-only `ceilingMs` pass-through on the door's own `resolveCloseTimeoutMs`
+call. What tests do prove at $0: (1) the refusal's wording/options mirror the in-run
+escalation exactly (`doorTimingRedLines` unit test); (2) a source-level pin
+(`tests/close-timeout.test.js`, "F137 grep-pin") that the door checks
+`doorCloseTiming.timedOut` and exits non-zero strictly before ever reaching
+`answerReviewDoor(...)`, and that call's `closeTimeoutMs` argument is never
+`undefined`/a ternary — proven RED against the pre-fix `a4888ed` blob (which has exactly
+the forbidden `doorCloseTiming.timedOut ? undefined : …` shape) and GREEN against the
+current source.
+
+**Divergence flagged, not fixed here:** hamr's ruling also asked that the caller-passed
+`closeTimeoutMs` "explicit" runtime tier be pinned TEST-ONLY across every
+`scripts/*.mjs`/`src/*.js` file calling `runJob`/`runPlan`/`runClose`/`ralph`/
+`answerReviewDoor`. Several pre-existing battery/probe/reuse harnesses
+(`scripts/run-battery-*.mjs`, `scripts/reuse-*.mjs`, `scripts/run-probe-testgen.mjs`,
+`scripts/run-calibration-testgen.mjs`, `scripts/run-screen-types.mjs`,
+`scripts/run-reuse.mjs`) already pass a hardcoded `closeTimeoutMs: CLOSE_TIMEOUT_MS`
+literal into `runJob` — session-internal experiment tooling, never a signed-spec or
+customer-facing knob. Pinning those too is a materially larger, separately-scoped
+change; the grep-pin extension here covers only the two files the existing F133 pin
+already names (`scripts/run-u.mjs`, `src/cli.js`). Parked for hamr's explicit scope
+call.
+
 ## F138 — The README's first import fails against the published package (found by the cold-adopter quickstart)
 
-**2026-09-08.** The first thing the cold-adopter quickstart (`docs/QUICKSTART.md`, PRD item 25's
+**2026-09-08.** The first thing the cold-adopter quickstart (`docs/product/QUICKSTART.md`, PRD item 25's
 "item 28 + a quickstart" order) did was follow the README's own Usage block in a clean consumer
 (`npm install bareloop@0.22.0` in an empty dir). Its second line failed:
 
@@ -10846,6 +10911,48 @@ instrument is in the runner: a `beforeExit` hook that, if no `job-end` was emitt
 a distinct outcome (`runner-drained`), the floor spend, and a non-zero exit code — so a drained run
 reads as a casualty, never as nothing. Parked in PRD item 28.
 
+## F141 — bare-agent 0.42.0 closes BA-25, but the new rejection was invisible to bareloop's transport-retry predicate
+
+**2026-09-08, `chore/bare-agent-0.42` pin bump.** `harness-drop.mjs` re-run on bare-agent 0.42.0
+(the same six drop cases from F140/BA-25, both `AnthropicProvider` and `OpenAIProvider`):
+headers-partial-body-destroy and headers-then-end-early, which SILENTLY EXITED on 0.39.0 (promise
+never settled, the process drained with no outcome, no warning), now both REJECT on 0.42.0 with
+`[<Provider>Name] response stream aborted before the body completed` — a `ProviderError`,
+`retryable:true`, `context:{bound:'transport', event:'aborted'|'error'|'close'}` — on both
+providers. The other four cases were already correct and stayed correct: destroy-before-headers,
+HTTP 524 with an empty body, HTTP 200 with an empty body, and end-without-a-body on a chunked
+response all still reject the same way they did before. `headers-then-silence` (no terminal socket
+event at all, just quiet) still needs the separate idle bound (BA-19, `context.bound:'idle'`,
+already handled via its `ETIMEDOUT` code) — BA-25's fix does not touch that path and was never
+meant to.
+
+**The gap.** `isTransportFailure(err)` in `src/transport.js` — the classifier gating hamr's F115
+one-retry ruling — returned **false** on the real BA-25 rejection before this fix: it has no
+`status`/`statusCode` (correctly not excluded there), `retryable` is `true` (not excluded there
+either), but the predicate had no rule that reads `err.code`/`err.cause.code` against a known
+transport code set, and BA-25's error carries neither — its only transport signal is
+`err.context.bound === 'transport'`, a field the predicate never looked at. So the exact class
+hamr's ruling names — a call that dies mid-read, no full response — would have landed as
+`provider-red` with zero retries the moment the 0.42.0 pin took effect, silently reproducing a
+softer version of F140's silent-death risk (not a hang this time, just a wasted, unretried attempt
+on a transient socket fault).
+
+**The fix.** `isTransportFailure` now returns true for `err.context?.bound === 'transport'`,
+checked immediately after the existing `status`/`retryable:false` early-outs (both still win over
+`bound`) and before the code/message heuristics. `TRANSPORT_RETRIES` stays 1 — unchanged. Proven
+by a real local-server test (headers written, partial body, socket destroyed) driving
+`AnthropicProvider.generate()` from `bare-agent/providers` end to end, plus unit cases for the
+guard ordering (status wins, `retryable:false` wins, `bound:'idle'` alone does NOT qualify — only
+`'transport'` does). Both new-assertion tests were confirmed to FAIL against the pre-fix predicate
+before the fix was restored.
+
+**Lesson.** An upstream fix landing does not automatically restore the guarantee one layer up in
+the same laundering class (cf. F140's "unpriced is never free" family) — the consumer's own
+classifier has to be re-validated against the REAL thrown shape, not assumed compatible because the
+underlying defect is gone. Note in passing: 0.42.0 also adds `stopReason` on the `onLlmResult`
+metering payload (alongside the new `loop:truncated` stream event) — that is the exact input PRD
+item 28's report-only worker-round `stopReason` needs, but wiring it is parked to item 28's own
+branch, not built here.
 
 ## F142 — The quickstart's own "Run it" snippet threw before the first API call: `AnthropicProvider` never reads the key from the environment
 
@@ -10878,6 +10985,73 @@ two orders of magnitude under. A trivial patient is not a cost baseline for real
 rule against re-baselining on a floor-shaped workload), but it IS the honest number for what the
 quickstart page itself asks a stranger to spend, and that number belongs on the page's promise.
 
+
+## F143 — a bounded 429 retry, honouring the vendor's stated wait, as a FALLBACK behind the primary answer (model rate headroom)
+
+**2026-09-08, PRD item 28's parked (a/b) ruling.** hamr, verbatim: "do a/b as a fallback, and
+verify/validate + no regression." F139 (same day) found the underlying problem: a worker model
+without enough rate headroom 429s deterministically on our workload, and the runner's only retry
+(F115) is transport-only — an HTTP status, including 429, was never retried, so the whole run
+ended `provider-red` and every completed step's work was thrown away, even though the vendor's own
+response says exactly how long to wait.
+
+**The measured TPM table (read from `x-ratelimit-limit-tokens` response headers, 2026-09-08,
+hamr's OpenAI key):** gpt-4.1 = 30,000 TPM, gpt-4.1-mini = 200,000 TPM, gpt-5-mini = 500,000 TPM,
+gpt-5 = 500,000 TPM. gpt-4.1 429s deterministically on our workload — 2 of 2 runs: `55b7eazy`
+(pre-0.42 pin) and `8ev2sdkn` (today, F139), the latter with `Limit 30000, Used 27001, Requested
+8997` and a stated `11.996s` wait (`Please try again in 11.996s.`, `[OpenAIProvider]`).
+
+**hamr's ruling and what was built.** Option B: one bounded retry, not unbounded reissue and not
+ignoring the vendor's own number. New sibling module `src/ratelimit.js` (never an extension of
+`src/transport.js` — `isTransportFailure` keeps returning FALSE for anything carrying an HTTP
+status, 429 included, and nothing here widens that): `isRateLimited(err)` is TRUE only for an
+explicit `status`/`statusCode` of 429; `rateLimitWaitMs(err)` parses the vendor's stated delay
+from `err.message` (bare-agent does not expose `retry-after` / `x-ratelimit-reset-*` headers on
+the thrown error — BA-26, filed same day), adds a 250ms safety margin to any PARSED value (the
+vendor's number is the earliest moment its window resets, not a safe one to fire on the dot),
+falls back to a 5000ms default when nothing parses, and returns `null` (do not retry at all) when
+the raw stated delay exceeds a hard 60s cap (`RATE_LIMIT_MAX_WAIT_MS`) — a wait that long is the
+operator's decision, not ours. The budget is fixed at one retry (`RATE_LIMIT_RETRIES = 1`), never a
+job-spec/CLI knob (tighten-only doctrine, mirroring `TRANSPORT_RETRIES` exactly).
+
+Wired into `src/planrun.js`'s ONE provider-retry seam (`withTransportRetry` renamed
+`withProviderRetries`, every call site updated) as a SECOND, INDEPENDENT one-shot ladder beside
+the existing F115 transport retry: a transport throw and a 429 may both occur, and both retry,
+across one `generate()` call's lifetime, but each budget is spent at most once. The wall always
+wins, same doctrine as F115's own F64 carve-out: `isWallTimeout` refuses either retry outright, and
+before sleeping for a rate-limit retry, `clock.remainingMs()` must exceed the wait — a wait that
+would cost more time than the run has left is not honoured, and the run ends on the operator's
+clock rather than sleeping past it. Each retry emits a report-only `rate-limit-retry` spine record
+(`{phase, attempt, statedMs, waitedMs, error, recovered}`, no cost field).
+
+**The one place this differs from F115 on purpose.** A transport retry floors `spendComplete` for
+the rest of the run (the first attempt may already have been billed — fetch failed after leaving
+the socket). A 429 is a REFUSAL: the vendor rejected the request before processing it, so nothing
+can have been billed — `spendComplete` is NOT floored by a rate-limit retry. **This is a stated
+assumption**, not independently measured against a real provider's billing record; `src/run.js`'s
+spend-floor reader only watches for the `transport-retry` spine event, so a `rate-limit-retry`
+naturally passes through without triggering the floor — no separate code path had to be built or
+could silently disagree.
+
+**Verify/validate.** New `tests/ratelimit.test.js`: pure-function coverage of `isRateLimited` /
+`rateLimitWaitMs` / `statedWaitMs` (including the real verbatim `8ev2sdkn` message, parsing to
+11996 + 250ms), and seam coverage driven live through `runJob` with a scripted provider (the same
+instrument tests/run.test.js's F115 tests use — the seam itself is not exported by design): a 429
+that recovers, two 429s that exhaust the budget, a 429 whose stated wait exceeds the remaining
+wall (no retry, no sleep), and a transport-throw-then-429 combination proving both ladders fire
+independently. No-regression coverage: a plain transport throw still gets exactly one retry with
+an unchanged `transport-retry` record, and a 500/503 (neither transport- nor rate-limit-eligible)
+is still never retried. Each new assertion was proven able to FAIL: reverting `src/planrun.js` to
+its pre-change (committed) content and removing `src/ratelimit.js` made the entire new suite fail
+to even load (`ERR_MODULE_NOT_FOUND`, exit 1); restoring both brought it back to 27/27 green.
+`npm run typecheck` and the full `npm test` both re-run clean after the change (see CHANGELOG for
+exact figures).
+
+**This is a FALLBACK, not the primary answer.** The primary answer stays picking a worker model
+with adequate rate headroom (the TPM table above); one bounded retry only softens the failure mode
+when that was not followed, or headroom was still exceeded despite following it — it does not
+replace the model-selection fix, and nothing here should be read as making gpt-4.1 an acceptable
+default for this workload.
 
 ## F144 — The per-request cliff is a gateway connection-lifetime ceiling (~231–252s), not a job-length or request-size effect; bareloop's own worst phase runs at less than half of it
 
@@ -11031,3 +11205,412 @@ not "GLM is slow" but "no model tested there can author a bareloop plan". (3) No
 menu without its own clean paid run (standing rule); after $1.01 across three models, synthetic.new has
 zero candidates. (4) The gateway is exonerated as the cause here — two of three deaths happened inside
 140 seconds.
+
+## F147 — the F59 summary round sent the persona TWICE: a duplicate system message that real OpenAI shrugs at and vLLM-class backends reject (the Qwen 400, root-caused)
+
+**2026-09-09, `chore/bare-agent-0.42`, $0.** F146 left Qwen3.8-27B's `HTTP 400` unexplained — the
+readout carried the number and dropped the sentence. A capture run (`x760ei99`, request dumped to
+`../bareloop-patients/spines-poc-openai/qwen-failing-request-x760ei99.json`) recovered it:
+`Error from inference backend: 400 System message must be at the beginning.` The failing request was
+the F59 toolless summary round (tools `[]`, 31 messages), and its roles read `system system user
+assistant …` — the SAME persona text at index 0 and index 1.
+
+**Trace ($0, source).** `askFrom` (`src/planrun.js`) continues the scout's conversation by passing
+the prior `loop.run()`'s returned `msgs` into a NEW `Loop.run()`. bare-agent's `Loop.run`
+(`loop.js` ~482–486) prepends `{role:'system'}` when the Loop carries `system`, and returns that
+prepended transcript as `msgs`. `newLoop` builds every Loop with the same `system`, so the second
+`run()` prepended it again. bare-agent's own `Loop.chat()` (~1321) strips the leading system
+message before re-running — the library already knew the trap; bareloop's continuation path did
+not follow it. **Ours, not upstream's.** No BA ask.
+
+**Why Anthropic and OpenAI never showed it.** `AnthropicProvider` lifts every system message into
+the top-level `system` field; OpenAI proper accepts system messages anywhere. Only strict
+OpenAI-compatible backends (vLLM-class, which synthetic.new fronts) enforce position. Same
+"OpenAI-compatible ≠ OpenAI" class as BA-24 and fwdloop F4 — and an item 28 blocker for ANY such
+backend, not a Qwen quirk. F146's "Qwen = 400, unexplained" line is corrected by this entry.
+
+**Fix.** `askFrom` drops a leading `role:'system'` message before re-running (one line; the
+persona is still sent exactly once by the new Loop). Test (`tests/planrun.test.js`, F147): drive the
+scout to its round bound so the summary round fires, record the FULL message array per provider
+call (a new `messagesLog` on `scriptedProvider` — the harness's `systems`/`calls` fields recorded
+only `messages[0]`/`messages.at(-1)` and could not see index 1: a blind instrument, F-class
+"instrument cannot see the variable"), assert exactly one system message at index 0. Red on the
+unfixed line (`got 2 / 2 !== 1`), green with it. typecheck 0; suite 2356/2356.
+
+**Not re-fired.** Qwen is not re-run: F146's verdict on synthetic stands (Kimi = plan-schema
+capability, GLM = gateway cliff), and Qwen with the fix would still have to clear the plan bar
+those two did not. The fix is proven by the captured request shape, not by a paid green.
+
+**Divergence recorded.** The 2026-09-08 stash claimed `chore/bare-agent-0.42` @ `c1cdd30` was "CI
+green". CI run 34279018488 on that commit is FAILED: `prompt-commit-check` rejects `c1cdd30` (it
+edits `src/planrun.js`, a prompt register, with no Failure/Addresses/Corrects labels). The claim
+was made off a local suite pass, not the instrument CI uses — the exact blind spot already in
+memory. Corrected by amending that commit's message on the branch (content untouched).
+
+## F148 — `runner-drained` built (PRD item 28 (c)); the only worker-side path that can still drain organically is the softgreen JUDGE call, which has no stall watch
+
+**2026-09-09, `chore/bare-agent-0.42`, $0.** hamr's go on (c). `runJob` now registers one
+`beforeExit` listener after `job-start`; every `job-end` site goes through a local `end()` that
+flips `ended`; on drain with `ended` false it mints `job-end {outcome:'runner-drained',
+spendComplete:false, detail}` and sets `process.exitCode ||= 1` (never `process.exit()`). Listener
+removed in `finally`. Not in the resumable set — an unknown in-flight state is not a safe resume
+point. Adopter contract updated (`bareloop.context.md`).
+
+**Test had to be a real child process.** Firing `process.emit('beforeExit')` by hand inside
+`node:test` cancels the test (`Promise resolution is still pending but the event loop has already
+resolved`, via a transitive `signal-exit` patch on `process.emit`) — reproduced with an unrelated
+resolved promise and zero bareloop code. So `tests/runner-drained.test.js` spawns
+`tests/fixtures/runner-drained-fixture.mjs` and lets node drain on its own. Red with the
+`process.once` line disabled (`0 !== 1` job-ends; spine ends at `step-end: green` then nothing),
+green with it. Suite 2358/2358, typecheck 0.
+
+**The finding.** Getting an ORGANIC drain was hard, and why is the useful part: every
+worker-provider round (scout, draft, steps, close-fix) funnels through `mkWorker`, which wraps each
+call in the F66 stall watch (300 s, 3 reissues). A hung `generate()` there is reissued and resolved
+into a real `step-stalled` job-end through the normal path — the backstop never fires. The one
+provider call with NO stall watch, no timeout, nothing, is the softgreen judge
+(`src/judged.js defaultJudgeLoop`, wired through the separate `judgeProvider` param): a bare
+`Loop` built directly. That is the path the fixture hangs to prove the backstop, and it is a real
+gap: a judge call that never settles today ends the run with no terminal except this backstop.
+Parked (arbiter-adjacent — the judge's own bound is a cap): give the judge call the same stall
+watch / call deadline the worker gets. Reachability today: only `soft-green` jobs; every
+`jobs/*.json` is `green`, so unreachable until the first soft-green job — same precondition as the
+`decide()` completeness hole noted in the 2026-09-08 stash.
+
+## F149 — F147's fix holds live on the failing backend; DeepSeek is the first non-OpenAI model to reach a close-rendered verdict; DeepSeek silently ignores `max_completion_tokens`
+
+**2026-09-09, hamr's order ("we would need to try both … to see if your fix holds"), ~$2.05.**
+
+**Pennies A/B first (the cheap instrument, $0.01).** The captured x760ei99 request replayed through
+bare-agent's `OpenAIProvider` (`maxTokens: 64`) in two shapes:
+
+| backend | as captured (two system msgs) | F147 shape (one) |
+|---|---|---|
+| synthetic.new `hf:Qwen/Qwen3.8-27B` | HTTP 400 | 200, 14,238 in / 64 out |
+| DeepSeek `deepseek-chat` | 200 | 200 |
+
+Same request, one line stripped, 400 → 200 on the exact backend that killed `ozwhcibj`. DeepSeek
+tolerates both, like OpenAI proper. The fix cannot regress a tolerant backend and cures the strict one.
+
+**Two full loop runs, $1 cap / 10 min each, `poc-run-param.mjs`, fresh patient copies.**
+
+| run | model | scout summary round (the F147 round) | plan | steps | close | end |
+|---|---|---|---|---|---|---|
+| `iinqqlao` | Qwen3.8-27B (synthetic) | OK, 3,766 bytes | accepted draft-1 | 1 started, escalated at cap | not reached | cap-halt $1.008, 433 s |
+| `90qneth9` | deepseek-chat | OK, 3,559 bytes | accepted draft-1 | 1 GREEN (tree-changed + typecheck satisfied) | verdict rendered, fix-loop entered | cap-halt $1.008, 360 s |
+
+The round that 400'd on 2026-09-08 now completes on the same backend, same model, same job. F147
+holds live. Qwen got a plan accepted first try (Kimi never did — F146's plan-bar verdict on Kimi
+stands; Qwen is no longer in the "cannot draft" bucket, it is in the "$1 was not enough" bucket).
+DeepSeek went further than any non-Anthropic model so far except gpt-5-mini: step green, close
+verdict, fix loop — the loop holds end to end on a third provider. Cache-read share: DeepSeek
+0.89, Qwen 0.79 (Anthropic 0.90, gpt-5-mini 0.67, GLM 0.32 — F146). Per-round gap median
+DeepSeek 3.6 s / Qwen 7.1 s, max 132 s / 113 s — nowhere near the F144 gateway cliff.
+
+**Hazard found on the way — DeepSeek ignores `max_completion_tokens`.** With bare-agent's default
+key (BA-24: `max_completion_tokens`, GPT-5-safe) and `maxTokens: 64`, DeepSeek returned 665 and 608
+output tokens — the cap was silently dropped, not rejected. With `legacyMaxTokens: true`
+(`max_tokens`) it returned exactly 64. An output cap that does not bind is a money hazard
+(a reasoning model can run to its own ceiling on every round), so the DeepSeek run was fired
+with the legacy key. Consequence for item 28: the per-provider tier table must carry the request-key
+choice per model — a third "OpenAI-compatible ≠ OpenAI" instance (BA-24, F147, this). Not an
+upstream ask: bare-agent already exposes the switch; the routing is bareloop's tier table.
+
+**Pricing honesty.** Both runs' rounds carry `pricing:'priced', rateSource:'default'` — the generic
+fallback rate, loudly stamped as such by the provenance field, not the vendor's list price (DeepSeek's
+real rate is far lower). The $1 cap bound on the DEFAULT rate; real spend was less. Fine for a
+proof, and exactly the F113 guesstimate posture; a DeepSeek tier entry would carry its own rate.
+
+**Cap overshoot** $0.008 on both — one round's cost past the cap, the known between-rounds bind.
+
+**Not claimed.** Neither run greened; n=1 each; the DeepSeek job was still in its fix loop at the
+cap. This proves the fix and one clean step/close on DeepSeek, not that DeepSeek can finish the job.
+Evidence: `../bareloop-patients/spines-poc-openai/poc-{iinqqlao,90qneth9}.jsonl`, logs
+`poc-qwen-fix.log` / `poc-deepseek.log`, probe `dupsys-probe.mjs` (session scratchpad).
+
+## F150 — first non-Anthropic GREEN: deepseek-chat greens bareguard-u-types at $1.89 / 11.2 min (n=1)
+
+**2026-09-09, hamr's "fire deepseek", run `pm48w5az`, `poc-run-param.mjs`, $4 cap / 30 min wall,
+`legacyMaxTokens:true` (F149), fresh patient reset to seed.** Outcome **green**. All six close
+stages satisfied: changed-from-seed, typecheck, typecheck-outside, tests-kept, suite-green,
+no-suppressions. Patient diff: 6 files, +38/−8, zero `any`/`@ts-ignore`.
+
+**Road.** Scout 2,597 bytes → plan accepted on draft-1 (one step, whole territory — the shape
+that greens, per the shape-lottery memory) → step: 18 strict errors → 1 → satisfied (3 iterations,
+0 strikes) → outer close: 6 errors outside the step's own check → the model added one `any`
+suppression in `src/audit-window.js`, CAUGHT by `no-suppressions` (the arbiter did its job) → fixed
+honestly → satisfied on iteration 3. 101 worker rounds, cache-read share 0.91 (Anthropic 0.90).
+One `transport-retry` (socket hang up, recovered) in the fix phase, so `spendComplete:false` — the
+$1.89 is an honest floor, not exact. `rateSource:'default'` on every round: priced at the fallback
+rate, DeepSeek's list price is lower.
+
+**What this is.** The first green minted by any model outside Anthropic, on the same signed job
+shape the Anthropic bench uses. gpt-5-mini reached a close-rendered plan-red (F139); Qwen a
+cap-halt with an accepted plan (F149); nothing else drafted a legal plan. DeepSeek is therefore
+the first admissible item 28 candidate under the probe rule ("one paid PROBE per newly admitted
+provider proves it end-to-end") — this run IS that probe.
+
+**What this is not.** n=1. Not a bench row, not a battery, not a lift claim, not a cost claim
+(fallback-priced). The G3 planted-cheat row and G2's rate-shaped close are untried on DeepSeek. The
+`max_completion_tokens` drop (F149) means a DeepSeek tier entry MUST set the legacy key or the
+output cap is theatre.
+
+**For the item 28 build (unchanged plan, now with a first admitted provider):** provider factory
+with a tier table carrying `{ctor, envKey, baseUrl, legacyMaxTokens, rate}` per model;
+`deepseek-chat` enters on this probe; `gpt-5-mini` stays a candidate with no green; synthetic
+stays at zero. Evidence: `../bareloop-patients/spines-poc-openai/poc-pm48w5az.jsonl`,
+`poc-deepseek-4.log`; patient branch `bareloop-bareguard-u-types-deepseek-4` in
+`../bareloop-patients/bareguard-u-deepseek`.
+
+## F151 — the 429 retry fired live: it honoured the vendor's stated wait to the second, and the retry hit the same per-minute wall
+
+**2026-09-09, PRD 30.2, run `p2ocuxj8`, gpt-4.1 (30,000 TPM — F139), $0.12, 66 s.** F143's
+fallback had never fired on a real 429 (every run since used models with headroom). gpt-4.1 429s
+deterministically on this workload, so one $1-capped run was the cheap live instrument.
+
+**What the spine shows.** `rate-limit-retry {phase:'step:fix-strict-errors', statedMs:9470,
+waitedMs:9720, recovered:false}` — the parser read "Please try again in 9.47s" out of the prose
+(BA-26: bare-agent discards the retry-after header), waited 9.72 s (stated + 250 ms margin), retried
+ONCE, and the retry was refused the same way (`Used 27511, Requested 7224` of 30,000). The run then
+ended honestly: `provider-red`, `spendComplete:false`, resumable. Every clause of F143 executed on
+a real vendor refusal: parse, bounded wait, one retry, no second retry, honest terminal.
+
+**The reading.** The vendor's stated wait is when the NEXT request may be accepted, not when a
+7,224-token request will fit under a 30,000/min window still 27,511 full. On a TPM-bound model
+the one bounded retry is structurally unlikely to recover; it recovers on burst-shaped 429s (RPM,
+concurrency), not on sustained TPM saturation. F143's own framing stands: the primary answer is
+rate headroom (gpt-4.1 is not an acceptable worker tier here), the retry is a fallback. No change
+to the mechanism: a second retry or a longer wait would be widening a cap the arbiter set.
+
+**Closes 30.2 as live-proven.** Mechanism: proven. Recovery on this model: not expected, not
+observed. Evidence `../bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl`.
+
+## F152 — a live silent endpoint HANGS the process, it never drains: `runner-drained` covers the settled-socket class only, and a deadline is the only instrument for the open-socket class — which the judge and the authoring scout do not have
+
+**2026-09-09, PRD 30.3, $0.** hamr asked for (c) proven through a real process against a real HTTP
+endpoint. Probe (`silent-probe.mjs`, scratchpad): a local HTTP server that accepts the request and
+never answers, in two shapes — no headers ever, and 200 + headers then silence — hit through
+bare-agent's real `OpenAIProvider` (`baseUrl` = the local port), with and without `timeoutMs`.
+
+| shape | no bound | `timeoutMs: 3000` |
+|---|---|---|
+| silent (no headers) | HANGS ≥ 12 s, `beforeExit` never fires | rejects at 3.0 s, process exits normally |
+| headers then silence | HANGS ≥ 12 s, `beforeExit` never fires | rejects at 3.0 s, process exits normally |
+
+**The reading.** An open socket is an active handle; node's event loop is NOT empty, so
+`beforeExit` cannot fire — the backstop is structurally blind to a live hang. The class it catches
+is the OTHER one: socket settled, promise never settled (F140's real death) — and bare-agent 0.42
+now rejects every known instance of that (F141). So "prove (c) live against a real endpoint" is
+impossible by construction: a real endpoint either answers, aborts (0.42 → provider-red), or hangs
+(no drain). (c) stays proven by the child-process test (an organic drain via a bounded-free
+in-process path) and stands as the fail-safe for an UNKNOWN future settled-socket path. Closed
+as such — not "live-proven", and the row says why.
+
+**What the probe actually found.** The live hazard is the hang, and the only instrument that
+fires on the absence of events is a deadline (F67's own lesson). The worker has one:
+`callBounds()` (`src/planrun.js:1494`) derives `timeoutMs`/`deadlineMs` from the wall and every
+`mkWorker` round carries it. Two provider paths carry NONE: the softgreen judge
+(`src/judged.js:665`, `loop.run(…, { maxTokens })`) and the authoring scout
+(`src/authorscout.js:458/504/534`, `{ cacheMessages, maxTokens }`). A silent endpoint on either
+hangs the run forever with no terminal, no spend readout, and the machine's idle-suspend as the
+only thing that ends it. That is 30.4's actual scope: not "a stall watch for the judge" but the
+worker's call deadline on every provider call bareloop makes. Tighten-only (adds a bound where
+there was none), arbiter-adjacent, hamr's "close them all" is the go.
+
+## F153 — the provider's own error sentence now reaches the human, redacted through the ONE secret inventory (PRD 30.5)
+
+**2026-09-09, `chore/bare-agent-0.42`.** F146's parked item: on an HTTP error bareloop recorded
+`[OpenAIProvider] HTTP 400` and threw away the body sentence explaining it — which is why the Qwen
+400 stayed unexplained for a day and cost a capture run to recover (F147). It was parked because an
+error body can echo the API key back.
+
+**Built.** Every provider construction in `src/` and `scripts/` (24 sites, 17 files — all
+`AnthropicProvider`; the repo builds no `OpenAIProvider` outside the POC scripts) now passes
+`exposeErrorBody: true`. `src/planrun.js` gains `bodySuffix(e)`: `redactSecrets(JSON.stringify(
+e.body))` capped at 600 chars, appended as ` — body: …`. It is applied in `categorize()` — the ONE
+place a provider throw becomes a CategorizedError — so every downstream consumer (relay's
+escalation `detail`, ralph's step-loop provider-red, the transport/rate-limit retry records) gets
+the sentence without a second spelling. Guarded against double-appending.
+
+**Redaction is the point, so the test proves it can fail.** The fixture body carries a real
+key-shaped literal; the test first asserts `scanSecrets` FINDS it in the raw body (a vacuous pass is
+impossible), then asserts the emitted detail carries the explaining sentence, does NOT carry the
+key, and `scanSecrets` over the WHOLE spine returns 0. A second test proves the 600-char cap. Red
+with the append removed (sentence absent), green with it. Suite 2362/2362, typecheck 0.
+
+**One instrument bug found by the suite, not by review.** The builder's first pass wrote
+`new AnthropicProvider({ exposeErrorBody: true, apiKey, model: JUDGE_MODEL })`. The judge-pin
+tripwire (`tests/reviewdoor-u.test.js`) greps the source text for the exact pin spelling and went
+red — correctly: it guards that the judge tier is never agent-selectable. Fixed by putting the pin
+first and widening the tripwire to allow trailing ctor options only. A source-grepping tripwire is
+brittle by design; that brittleness is what caught an unrelated edit reaching an arbiter-pinned line.
+
+## F154 — every provider call bareloop makes now carries a deadline; the unbounded set was seven call sites, not one
+
+**2026-09-09, PRD 30.4, `chore/bare-agent-0.42`.** F152 established the live hazard: a silent
+endpoint HANGS (an open socket is an active handle; `beforeExit` never fires, so `runner-drained`
+is structurally blind to it), and a deadline is the only instrument that fires on the absence of
+events. F148 named the judge as the unbounded path. The sweep found six more.
+
+**The unbounded set (all now bounded, tighten-only — a bound where there was none):**
+
+| path | site | bound source |
+|---|---|---|
+| softgreen judge locate | `src/judged.js` `runLocate` | the run's own `callBounds()`, threaded planrun → declaredclose → kinds → judged |
+| calibration gate locate | `src/calibrate.js` | same |
+| authoring scout survey / recovery / re-ask | `src/authorscout.js` ×3 | `AUTHOR_CALL_TIMEOUT_MS` = `clock.js`'s `PROVIDER_TIMEOUT_MS` (reused, not invented) |
+| declaration / revise boundary | `src/authorflow.js` `makeLoopGenerate` | same |
+| bridge picker | `src/reuse.js` `selectBridge` | same |
+
+Worker rounds were already bounded (`...callBounds()`); the native/clipipe path stays deliberately
+excluded (the CLI owns that transport — no `ClientRequest` for either timer to arm, documented in
+`callBounds()`).
+
+**Tests** (`tests/silent-endpoint.test.js`): a real `node:http` server that accepts and never
+answers, a real bare-agent provider pointed at it by `baseUrl`, driving the real production
+functions. Both settle in ~1.5 s against a 1500 ms bound; unbounded, the identical call was still
+pending after 5 s.
+
+**A regression the existing suite caught, and the doctrine it restates.** The first implementation
+wrapped each call in a `settled()` seam that turned EVERY throw into `{error}` so a timeout would
+land as the existing `call-failed` cause. That also swallowed a budget `HaltError` and any
+programming bug — laundering named terminals into "the survey call failed", the unknown-reported-as-
+known class this repo refuses. `tests/authorscout.test.js`'s "a throw from the loop is relayed AFTER
+cleanup" went red and named it. The seam now catches ONLY `code:'ETIMEDOUT'` / `TimeoutError` and
+re-raises everything else. Suite 2364/2364, typecheck 0.
+
+**One tension left open, not resolved here.** The worker path promotes a wall-derived `TimeoutError`
+to `wall-halt` (`categorize()`, `src/planrun.js`); the judge's timeout stays on `judged.js`'s own
+`provider-red` locate axis and, after `JUDGE_ATTEMPTS`, stops as `CRASHED`. Promoting it would mean
+threading `clock.expired()` into `judged.js`, whose axis precedence is documented as load-bearing.
+Named for hamr, not decided by the builder.
+
+## F155 — the judged floor graded whatever LOCATE happened to report: a silently omitted function was a pass on the subset (PRD 30.8)
+
+**2026-09-09, `chore/bare-agent-0.42`.** `decide()` (`src/judged.js`) graded `facts.functions` and
+nothing else; its only completeness guard was `fns.length === 0`. So a locate emission that reported
+SOME functions and silently dropped one was graded green on the subset — a judged pass over an
+artifact the judge never fully read. The fail-safe direction inverted: "I did not see it" is unsure,
+and unsure is red (softgreen doctrine).
+
+**Fix.** `decide()` already receives `artifactText` (both production callers pass it —
+`src/calibrate.js`, `src/kinds.js`) and used it only for quote verification. It now also diffs the
+artifact's real top-level function names against the reported set; any name in the file and not in
+the facts is RED, naming what was missing, BEFORE any rule grading. With no `artifactText` it makes
+no completeness claim — the same opt-in precedent the quote check already set, so no existing caller
+changes behaviour.
+
+**Rejected: a card-level "named target" field.** No card or case shape in production names a
+function matchable against facts; the only `{rule, fn}` shape is `validateCalibrationSet`'s
+one-time authoring-accuracy set, a different mechanism. Inventing a signed-spec field to hold what
+the artifact already states would be the wrong direction.
+
+**ONE inventory, per the secret-shape precedent.** The first implementation hand-typed a regex
+beside `PROMPT_HEAD`'s prose — two spellings of one contract, and it already disagreed: it missed
+`export const`, `async function`, `export async function`, and `const x = async () =>`, i.e. the
+detector was silently blind in the UNSAFE direction for four shapes the prompt implies. Now a single
+`FN_SHAPES` table holds each shape once as `{prose, match}`; `PROMPT_HEAD` joins the prose and the
+detector runs the matchers, so a shape added to one IS added to the other. A test asserts the prompt
+wording and eight per-shape detections agree; narrowing `FN_SHAPES` back to the original three forms
+turns 6 tests red.
+
+**Asymmetry, deliberate and documented.** An unenumerated shape is a false NEGATIVE (unsafe;
+closed by widening `FN_SHAPES` — `const e = function(){}` is currently out, as it is in the prompt).
+A false POSITIVE (a column-0 match inside a template literal) reds a real close — the safe
+direction, kept.
+
+**Also fixed:** `tests/judged-stage.test.js`'s `RED_FACTS` fixture said "three top-level functions"
+and listed two; the new check surfaced it. A fixture whose comment and content disagree is a test
+that cannot mean what it claims. Suite 2377/2377, typecheck 0.
+
+**Reachability unchanged:** judged closes are soft-green only, and every `jobs/*.json` is `green` —
+this is a precondition closed BEFORE the first soft-green job, not a live bug fixed after one.
+
+## F156 — the provider factory: one table, one refusal, and the two gaps the rewire exposed (PRD item 28 shape (1), 30.9)
+
+**2026-09-09, `chore/bare-agent-0.42`.** Both runners constructed `AnthropicProvider` BY NAME.
+`src/providers.js` now holds one table: `providerName → {ctor, envKey, tiers, paramsFor(model)}`,
+with `resolveProvider` / `makeProvider` / `buildRunnerProviders`. `anthropic-api` is byte-identical
+to the old `DEFAULT_TIER_MODELS` path (the existing suite is the proof). `openai-api` joins the
+`PROVIDERS` menu with an optional validated `baseUrl` (PRD ruling (d)) and ONE admitted model,
+`deepseek-chat`, which earned the slot with a real paid green (F150).
+
+**An unknown provider name THROWS.** No silent default — the `resolveRates` lesson (a tier matcher
+that quietly defaulted an unmatched model's rate) applied before it can happen here.
+
+**Per-model request-key gating is in the table, never global.** `deepseek-chat` carries
+`legacyMaxTokens` (F149: DeepSeek ignores `max_completion_tokens`, returning 665 output tokens
+against a 64 cap). An output cap that does not bind is a money hazard, so the routing is per model.
+
+**Tier representation for a single-model provider.** Both `sonnet` and `haiku` map to
+`deepseek-chat`. Checked before choosing: `resolveWorkerModel` and every `providerFor(tier)` caller
+only ever LOOK UP a tier's id; none assumes the tiers differ. Repeating the one id is the honest
+shape for a one-model provider — a second model masquerading as `haiku` would not be.
+
+**`stopReason` now rides every `worker-round`**, report-only, forwarded from bare-agent 0.42
+(BA-13), null when absent, never invented.
+
+**Two gaps the rewire exposed. One fixed, one named.**
+1. **FIXED — the bundle runner would have built the wrong provider with the Anthropic key.**
+   `bareloop run`'s key contract is `ANTHROPIC_API_KEY` only. A bundle whose spec named
+   `openai-api` would have had an `OpenAIProvider` constructed with that key and died at the first
+   call with a vendor 401 — which reads as a credential problem, not as the unbuilt seam it is. It
+   now REFUSES at $0, naming the key it would have needed. Test proves it: red without the guard.
+   Note the manifest-hash guard fires FIRST on an edited `spec.json`, so the fixture names the
+   provider at EXPORT time — testing the refusal through a tampered spec would have tested the
+   tamper check instead.
+2. **NAMED, not built — the judge always needs `ANTHROPIC_API_KEY`.** The judge stays pinned to
+   `anthropic-api`/`JUDGE_MODEL` whatever the worker's provider is (the PRD's own ruling). A judged
+   stage in an OpenAI-only environment therefore fails loud (401), never silently. The signed
+   `judge:{provider,model}` pair with a per-pair calibration record is item 28 part (2) — arbiter
+   territory, unbuilt.
+
+`bareloop.context.md` updated (the adopter contract ships; the menu must not drift from
+`src/job.js`). Suite 2398/2398, typecheck 0.
+
+**Still not done for item 28:** part (2) the signed judge pair, and the paid probe of `openai-api`
+through the SHIPPED runner — F150's green was fired through `poc-run-param.mjs`, not through
+`scripts/run-u.mjs`'s factory path. That probe is the remaining item-28 exit.
+
+## F157 — item 28's paid probe through the SHIPPED runner: green at $1.64; and the spine could not say which provider ran
+
+**2026-09-09, run `u-mtu12vks`, PRD 30.9's exit criterion.** F150's DeepSeek green was fired
+through `poc-run-param.mjs`, a script outside the product. This is the same job shape through
+`scripts/run-u.mjs` — the shipped runner, the new `src/providers.js` factory, `provider:
+'openai-api'`, `baseUrl: https://api.deepseek.com/v1`, `deepseek-chat`.
+
+| | |
+|---|---|
+| outcome | **green** |
+| spend | $1.64 of $4, `spendComplete: true` |
+| wall | 10.3 min of 30 |
+| rounds | 86; 1.26M tokens, cache-read 1.08M |
+| road | 5-step plan, 14 allowed writes across 5 files, close first said `needs_revision` on `no-suppressions`, fix loop ran, green |
+| bridge | minted — the next run of this shape reuses the plan |
+
+The factory path works end to end: menu entry, baseUrl, per-model `legacyMaxTokens`, the judge
+still pinned to `anthropic-api`. `stopReason` (BA-13, new on `worker-round`) carried real values
+(`tool_use`, `end_turn`) on every round. **PRD item 28's probe rule is satisfied for
+`openai-api`/`deepseek-chat`.**
+
+**The instrument gap the probe exposed, and it is the important half.** The spine recorded NOTHING
+about which provider or endpoint the run used: `job-start` carried `job`, `specHash`, `budgetUsd`,
+`verdictType`, `code`, and `model` only when the binding happened to expose one — but never
+`provider`, never `baseUrl`. From the day `openai-api` joined the menu, every archived cost,
+duration and outcome row would have pooled anthropic and non-anthropic runs into one aggregate with
+no way to segment them — the contaminated-aggregate reading error this repo has already paid for.
+Fixed: `job-start` now carries `provider` always and `baseUrl` when the job set one (an absent
+`baseUrl` is the vendor's own host, not an unknown). Tests red without each field.
+
+**Two more provenance notes, unfixed and named.** (1) bare-agent's own pricing warning names the
+served model as `deepseek-v4-flash` while the request says `deepseek-chat` — the vendor maps the
+alias server-side. `paramsFor()` keys on the REQUEST id, which is what we send, so the gating is
+correct today; but any future keying on the RESPONSE model id would miss, and `worker-round.model`
+is `undefined` throughout this spine, so which model actually served is not recorded anywhere.
+(2) every round is `rateSource: 'default'` — the guesstimate rate, loudly stamped (F113 posture
+holds), so the $1.64 is approximate and the $4 cap bound on a guessed rate, not DeepSeek's real one.
+
+**Also named, not built:** `scripts/run-u.mjs` demands `ANTHROPIC_API_KEY` even for a `green`-class
+job that never judges, because the judge provider is built unconditionally. Honest (it fails loud,
+never silently), but over-strict — a pure `openai-api` green job cannot run without an Anthropic
+key at all. Belongs with item 28 part (2)'s signed judge-key story.

@@ -2,7 +2,7 @@
 
 The shortest path from nothing to a signed job you can run. Everything up to "Run it"
 costs $0 and needs no API key. For everything else, read
-[`bareloop.context.md`](../bareloop.context.md) — this page is deliberately narrow.
+[`bareloop.context.md`](../../bareloop.context.md) — this page is deliberately narrow.
 
 ## What you need
 
@@ -116,5 +116,5 @@ bareloop export jobs/my-maintainer.json --registry ./bridges --out ./my-maintain
 ```
 
 That bundle runs again, anywhere, without re-drafting. For everything past this page —
-reuse, export, budgets, review — read [`bareloop.context.md`](../bareloop.context.md), the
+reuse, export, budgets, review — read [`bareloop.context.md`](../../bareloop.context.md), the
 complete adopter contract.

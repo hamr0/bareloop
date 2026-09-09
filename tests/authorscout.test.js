@@ -37,6 +37,7 @@ import {
 import { scrubRaw, RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { TOOL_BY_VERB } from '../src/tools.js';
+import { scriptedProvider } from './helpers.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -956,4 +957,35 @@ test('runAuthorScout: the verdict is stamped on the raw it DESCRIBES, not on whi
   assert.equal(r.raws[0].cause, SURVEY_CAUSES.SHORT, 'the surviving blob is the one that was judged');
   assert.equal(r.raws[1].cause, null, 'the discarded emission is kept, and no verdict is invented for it');
   assert.equal(r.raws[1].text, 'b', 'kept verbatim — a discarded attempt is exactly the one worth reading');
+});
+
+// F147 (second instance; sibling fix: src/planrun.js `askFrom`, commit 031ffe1):
+// `r.msgs` fed into the F59 recovery loop is a prior `loop.run()`'s returned
+// transcript, which bare-agent already prepended `system` to. The recovery
+// loop below is built with the same `system` and would prepend it again,
+// leaving two identical system messages at index 0/1 — real OpenAI tolerates
+// that; vLLM-class OpenAI-compatible backends 400 on it.
+//
+// `scriptLoops` (used everywhere else in this file) fully replaces bare-agent's
+// `Loop`, so it never performs the real prepend and cannot see a duplicate
+// either way — confirmed by hand: it read green on both the fixed and the
+// reverted line. Only `runAuthorScout`'s REAL seams (`defaultLoop` — the real
+// bare-agent `Loop`, left un-overridden — and `defaultSurveyor` against a real
+// repo) drive the actual bare-agent prepend, so this test uses those, wired to
+// `scriptedProvider` (its `messagesLog` field, added at 031ffe1 for the sibling
+// planrun.js fix) as the one seam that IS meant to be faked — the provider.
+test('runAuthorScout (real Loop + real provider stub): the F59 recovery round sends exactly ONE system message, not two', async (t) => {
+  const { dir } = makeRepo(t, { 'src/a.js': 'a\n' });
+  const provider = scriptedProvider([
+    { text: 'short' }, // round 1: toolless, short reply -> bounded && short (< AUTHOR_SCOUT_MIN_BYTES)
+    { text: factsBlob() }, // the F59 recovery round
+  ]);
+  const r = await runAuthorScout({ workdir: dir, provider, rounds: 1, ctx: false });
+  assert.deepEqual(r.raws.map((x) => x.label), ['author-scout', 'author-scout-recovery'],
+    'the recovery must have fired for this test to mean anything');
+  assert.equal(provider.calls.length, 2, 'exactly two provider calls: the survey, then the recovery');
+  const recoveryMessages = provider.messagesLog[1];
+  const systemMessages = recoveryMessages.filter((/** @type {any} */ m) => m.role === 'system');
+  assert.equal(systemMessages.length, 1, `expected exactly one system message, got ${systemMessages.length}`);
+  assert.equal(recoveryMessages[0].role, 'system', 'the single system message stays at index 0');
 });

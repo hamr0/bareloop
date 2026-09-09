@@ -84,7 +84,7 @@ if (!dry && !apiKey) {
 }
 const provider = dry
   ? { async generate() { throw new Error('DRY RUN: the provider was called — this run was supposed to spend nothing'); } }
-  : new AnthropicProvider({ apiKey, model: MODEL });
+  : new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 
 const wd = resolve(WORKDIR);
 const spineDir = join(wd, '..', `${wd.split('/').at(-1)}-bareloop`);

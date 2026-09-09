@@ -46,7 +46,7 @@ bareloop is a published JS library and follows `~/PycharmProjects/hamr0/LIBRARY_
   built on publish. Never hand-edit a `.d.ts`; never `!`, `as any`, or `@ts-ignore`.
 - **One production dependency is the bar** (the bare suite's packages are that budget's
   first claim). `typescript`/`@types/node` are dev-only and don't count.
-  - `bare-agent` (`^0.39.0`) — provides the `Loop`/`Retry`/`wireGate`/`HaltError` primitives
+  - `bare-agent` (`^0.42.0`) — provides the `Loop`/`Retry`/`wireGate`/`HaltError` primitives
     that drive every worker turn against a real provider (`src/planrun.js:48`); nothing in
     bareloop talks to a model API directly.
   - `bareguard` (`^0.13.0`) — provides `Gate`, the budget/wall-clock enforcement primitive

@@ -91,6 +91,21 @@ const RED_FACTS = {
       returnsTagQuote: null,
       returnsValueQuote: '  return {',
     },
+    {
+      // PRD 30.8: the fixture must cover EVERY top-level function `grade.mjs`
+      // actually declares, or decide()'s completeness check (rightly) reds the
+      // locate emission itself before any rule ever runs — this fixture is
+      // read against the real artifact by that same check now, not just by the
+      // quote-verification tests.
+      name: 'score',
+      declarationQuote: 'function score(row) {',
+      docQuote: null,
+      paramNames: ['row'],
+      paramIsPattern: [false],
+      paramTagNames: [],
+      returnsTagQuote: null,
+      returnsValueQuote: '  return { ...f, aimHits: aimHits.length, memoHits: memoHits.length, memoNames: memoHits, winShape };',
+    },
   ],
 };
 

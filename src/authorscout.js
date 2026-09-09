@@ -55,10 +55,36 @@ import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from './tools.js';
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact, priceOf, scrubRaw, stampRaw, tallyCalls, capStop } from './text.js';
+import { PROVIDER_TIMEOUT_MS } from './clock.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate } = require('bare-agent');
 const { createShellTools } = require('bare-agent/tools');
+
+/**
+ * F152/PRD 30.4 — the scout's per-call IDLE bound. Every `loop.run()` in this
+ * module carried NO time bound at all: a live endpoint that accepts and never
+ * answers hangs the process forever (measured) — an open socket is an active
+ * handle, so node never drains and no backstop can fire.
+ *
+ * UNLIKE the run path (`callBounds()`, src/planrun.js:1518), this pipeline has
+ * NO wall clock to derive a bound FROM — the authoring pipeline is genuinely
+ * clockless (`src/authorjob.js`/`src/authorflow.js`/`scripts/run-author.mjs`
+ * carry a money ceiling, `ceilingUsd`/`capStop`, and never a `maxWallMs`).
+ * Rather than inventing a fresh number, this reuses the EXACT ceiling the run
+ * path itself falls back to when ITS OWN wall is unbounded
+ * (`PROVIDER_TIMEOUT_MS`, `src/clock.js` — BA-18's idle timeout, already an
+ * approved "no wall present" default one layer up): an authoring-time call is
+ * the identical situation, one call earlier.
+ *
+ * It bounds SOCKET INACTIVITY only (reset by every byte, per BA-18) — a call
+ * that is merely slow keeps streaming and is untouched; only a truly silent
+ * endpoint trips it. TIGHTEN-ONLY, like every cap in this file: this is an
+ * operator-set ceiling fixed here, not a param a caller or a signed spec may
+ * widen (a defaulted cap is a silent second ceiling, and there is no clock
+ * whose narrower reading could ever tighten it further).
+ */
+export const AUTHOR_CALL_TIMEOUT_MS = PROVIDER_TIMEOUT_MS;
 
 /** src/planrun.js:42 — the survey's hard round bound. */
 export const AUTHOR_SCOUT_ROUNDS = 8;
@@ -348,7 +374,7 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider 
  *
  * @param {{workdir: string, provider?: any,
  *   rounds?: number, minBytes?: number, blobMax?: number, maxTokens?: number, ctx?: boolean,
- *   attempts?: number, ceilingUsd?: number|null,
+ *   attempts?: number, ceilingUsd?: number|null, callTimeoutMs?: number,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any}) => any,
  *   createSurveyor?: (o: {workdir: string, granted: readonly string[], ctx: boolean}) => Promise<any>}} o
@@ -365,10 +391,18 @@ export async function runAuthorScout({
   ctx = true,
   attempts = SCOUT_ATTEMPTS,
   ceilingUsd = null,
+  // F152/PRD 30.4 — TIGHTEN-ONLY, the same clamp shape `attempts` carries just
+  // below: an operator (a test included) may buy a SHORTER idle bound and never
+  // a longer one. A garbage/absent value floors at the module ceiling
+  // (`AUTHOR_CALL_TIMEOUT_MS`), never at "no bound at all".
+  callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS,
   onCall = () => {},
   createLoop = defaultLoop,
   createSurveyor = defaultSurveyor,
 }) {
+  const callTimeout = Number.isFinite(Number(callTimeoutMs)) && Number(callTimeoutMs) > 0
+    ? Math.min(Math.trunc(Number(callTimeoutMs)), AUTHOR_CALL_TIMEOUT_MS)
+    : AUTHOR_CALL_TIMEOUT_MS;
   const granted = AUTHOR_SCOUT_VERBS;
   const system = SCOUT_SYSTEM + strategyFor([...granted]);
   const surveyor = await createSurveyor({ workdir, granted, ctx });
@@ -403,6 +437,33 @@ export async function runAuthorScout({
   // value floors at one attempt rather than at zero — a scout that never ran is
   // an ABSENT nobody can act on.
   const allowed = Math.max(1, Math.min(Math.trunc(Number(attempts)) || 1, SCOUT_ATTEMPTS));
+
+  /**
+   * F152/PRD 30.4 — ONE call seam for every `loop.run()` below, so a REJECTED
+   * call (a `TimeoutError` off `AUTHOR_CALL_TIMEOUT_MS` included — bare-agent
+   * 0.42 rejects every known transport/idle-timeout casualty, F141) lands in the
+   * SAME place a call that merely RESOLVED with an error already did: as an
+   * `{error}` shape, read by `record()` (cost null, same as a `provider-red`
+   * locate call — a rejected call has no knowable cost) and by `classifySurvey`
+   * under the EXISTING `call-failed` cause. Without this seam a rejection would
+   * escape uncaught to `run-author.mjs`'s top-level crash handler instead of the
+   * honest, already-typed terminal this module was built to report through.
+   * @param {Promise<any>} p @returns {Promise<any>}
+   */
+  const settled = async (p) => {
+    try { return await p; } catch (e) {
+      // ONLY the call's own deadline lands here. Swallowing every throw would
+      // launder a budget HaltError, a programming bug, or any other named
+      // terminal into "the survey call failed" — the exact class of dishonesty
+      // this repo refuses (an unknown reported as a known). A timeout is the one
+      // throw this seam exists for: it IS a call that produced nothing, which is
+      // what `call-failed` already means. Everything else re-raises and is
+      // relayed after cleanup, as it was before this seam existed.
+      const err = /** @type {any} */ (e);
+      if (err?.code !== 'ETIMEDOUT' && err?.name !== 'TimeoutError') throw e;
+      return { error: String(err?.message ?? err) };
+    }
+  };
 
   try {
     /** @type {Survey|null} */
@@ -455,8 +516,8 @@ export async function runAuthorScout({
         };
         loop = createLoop({ system, policy: surveyor.policy, onLlmResult: metered, provider });
 
-        const r = await loop.run([{ role: 'user', content: scoutPrompt(workdir) }], surveyor.tools,
-          { cacheMessages: true, maxTokens });
+        const r = await settled(loop.run([{ role: 'user', content: scoutPrompt(workdir) }], surveyor.tools,
+          { cacheMessages: true, maxTokens, timeoutMs: callTimeout }));
         verdictAt = record(label, attempt, r);
         blob = redactSecrets(String(r?.text ?? '')).slice(0, blobMax);
         lastMsgs = Array.isArray(r?.msgs) && r.msgs.length ? r.msgs : null;
@@ -493,8 +554,16 @@ export async function runAuthorScout({
         if (recoveryHalt) budgetStop = recoveryHalt;
         if (recoveryWanted && !recoveryHalt) {
           const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
-          s2 = await recovery.run([...r.msgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
-            { cacheMessages: true, maxTokens });
+          // F147 (second instance; sibling fix: src/planrun.js `askFrom`, commit
+          // 031ffe1): `r.msgs` is a prior `loop.run()`'s returned transcript,
+          // which bare-agent already prepended `system` to (Loop.run, loop.js
+          // ~482-486). `recovery` below is built with the same `system` and
+          // would prepend it again, leaving two identical system messages at
+          // index 0/1 — real OpenAI tolerates it, vLLM-class OpenAI-compatible
+          // backends 400 on it. Strip the leading one before re-running.
+          const rMsgs = r.msgs[0]?.role === 'system' ? r.msgs.slice(1) : r.msgs;
+          s2 = await settled(recovery.run([...rMsgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
+            { cacheMessages: true, maxTokens, timeoutMs: callTimeout }));
           const recoveryAt = record('author-scout-recovery', attempt, s2);
           const t = redactSecrets(String(s2?.text ?? '')).slice(0, blobMax);
           // the verdict follows the blob that WON, never the call that came last
@@ -518,10 +587,15 @@ export async function runAuthorScout({
         // THE RE-ASK. Toolless by construction, over the survey's own
         // conversation, naming only what failed mechanically.
         const reask = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
-        const rr = await reask.run(
-          [...lastMsgs, { role: 'user', content: scoutReaskTurn(/** @type {Survey} */ (survey).reason ?? '') }], [],
-          { cacheMessages: true, maxTokens },
-        );
+        // F147 (second instance; sibling fix: src/planrun.js `askFrom`, commit
+        // 031ffe1): `lastMsgs` is a prior `loop.run()`'s returned transcript
+        // (system already prepended by bare-agent); `reask` is built with the
+        // same `system` and would prepend it again. Strip the leading one.
+        const askMsgs = lastMsgs[0]?.role === 'system' ? lastMsgs.slice(1) : lastMsgs;
+        const rr = await settled(reask.run(
+          [...askMsgs, { role: 'user', content: scoutReaskTurn(/** @type {Survey} */ (survey).reason ?? '') }], [],
+          { cacheMessages: true, maxTokens, timeoutMs: callTimeout },
+        ));
         verdictAt = record(label, attempt, rr);
         blob = redactSecrets(String(rr?.text ?? '')).slice(0, blobMax);
         if (Array.isArray(rr?.msgs) && rr.msgs.length) lastMsgs = rr.msgs;

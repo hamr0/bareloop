@@ -55,7 +55,7 @@ if (!dry && !apiKey) { console.error('ANTHROPIC_API_KEY not set'); process.exit(
 
 const baseProvider = dry
   ? /** @type {any} */ ({ async generate() { throw new Error('DRY: provider called — a dry run must spend nothing'); } })
-  : new AnthropicProvider({ apiKey, model: MODEL });
+  : new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 
 // BA-18 RESOLVED in bare-agent 0.34.0: the provider now bounds socket INACTIVITY itself
 // (timeoutMs, 10-min default, rejects with a retryable TimeoutError/ETIMEDOUT). The harness

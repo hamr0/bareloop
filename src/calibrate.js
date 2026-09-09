@@ -63,6 +63,7 @@ import {
 } from './judged.js';
 import { JUDGE_ATTEMPTS } from './kinds.js';
 import { tallyCalls } from './text.js';
+import { PROVIDER_TIMEOUT_MS } from './clock.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
 
@@ -330,6 +331,15 @@ async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, ki
       card,
       loopFactory: /** @type {any} */ (judgeLoop),
       attempt,
+      // F152/PRD 30.4 — this module's own header already names the hazard ("a
+      // dead socket") as one of its three CASUALTY readings, but with no bound
+      // at all a truly silent judge endpoint never reaches that reading — it
+      // hangs the authoring process forever instead (measured). The gate runs
+      // at draft/sign time, which has no wall clock to derive a bound from (the
+      // authoring pipeline's only ceiling is money, `ceilingUsd`/`capStop`), so
+      // this reuses the same idle-timeout default the run path falls back to
+      // when ITS OWN wall is unbounded (`PROVIDER_TIMEOUT_MS`, src/clock.js).
+      callBounds: { timeoutMs: PROVIDER_TIMEOUT_MS },
       onCost: (c) => meter({
         id, kind, attempt, label: CALIBRATION_LABEL, model: JUDGE_MODEL,
         costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,

@@ -260,6 +260,7 @@ export function mechanicalStages(stages) {
  *   judgeLoop?: (o: {system: string}) => any,
  *   onJudgeCost?: (c: {stage: string|null, kind: string|null, path: string, attempt: number,
  *     label: string, model: string, costUsd: number|null, unpricedRounds: number}) => void,
+ *   callBounds?: () => {timeoutMs?: number, deadlineMs?: number},
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -275,6 +276,11 @@ export function mechanicalStages(stages) {
  *   funded honestly: this executor cannot reach the run's ledger, so every locate
  *   call's cost is reported OUT through it, once per call, on every route including
  *   the red ones — a paid call that leaves no meter record is F12 in a judge's coat.
+ *   `callBounds` is F152/PRD 30.4's per-call TIME bound, read fresh before every
+ *   locate attempt — the same derivation the run's own worker rounds carry
+ *   (`callBounds()`, src/planrun.js). Absent is the honest unbounded default:
+ *   an adopter or test that wires no clock through behaves exactly as before
+ *   this field existed.
  *   `onStage` is a REPORTING seam and nothing else: the seed read spawns a real
  *   toolchain per stage (a suite is the slow one) and a whole read is one opaque
  *   await, so the shell gets told as each stage lands. It decides nothing, it is
@@ -1781,6 +1787,12 @@ async function runJudgedFloor(stage, ctx) {
         card: p.card,
         loopFactory,
         attempt,
+        // F152/PRD 30.4 — read fresh per attempt, the same way `planrun.js`'s own
+        // worker rounds re-read `callBounds()` at every call site rather than
+        // once: the remaining time shrinks between attempts. Absent (no clock
+        // wired through) is `{}`, the honest unbounded default `runLocate` itself
+        // already carries.
+        callBounds: typeof ctx.callBounds === 'function' ? ctx.callBounds() : {},
         onCost: (c) => {
           if (typeof ctx.onJudgeCost !== 'function') return;
           ctx.onJudgeCost({

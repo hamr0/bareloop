@@ -43,6 +43,8 @@ import {
 } from './kinds.js';
 import { workBranchName, prepareWorkBranch } from './workbranch.js';
 import { TRANSPORT_MAX_ATTEMPTS, isTransportFailure } from './transport.js';
+import { isRateLimited, rateLimitWaitMs, statedWaitMs } from './ratelimit.js';
+import { setTimeout as sleepMs } from 'node:timers/promises';
 import { checkCloseAbsolutePaths, checkCloseByteSignature, checkStageByteSignature, checkCloseDirRequired } from './close-integrity.js';
 import { resolveCloseTimeoutMs, closeTimeoutBanner, TIMING_PREFLIGHT_CEILING_MS } from './closetimeout.js';
 
@@ -72,21 +74,44 @@ const { Loop, Retry, wireGate, HaltError } = require('bare-agent');
 const transportRetry = new Retry({ maxAttempts: TRANSPORT_MAX_ATTEMPTS, retryOn: isTransportFailure, timeout: 0 });
 
 /**
- * Wrap a Loop provider's `generate` so a single transport-class throw (fetch
- * itself throwing — no HTTP response was ever produced) gets ONE retry via
- * `transportRetry`, and the outcome is reported once the retry is settled.
- * Every other property of `baseProvider` (`.name`, `.model`, `.ownsCycle`,
- * `.policy`) passes through unchanged — bare-agent's Loop reads those
- * directly (src/loop.js).
+ * Wrap a Loop provider's `generate` with TWO independent, one-shot retry
+ * ladders: F115's transport-class retry (unchanged), and PRD item 28's
+ * parked (a/b) ruling — hamr's verbatim call: "do a/b as a fallback, and
+ * verify/validate + no regression" — a bounded retry on an HTTP 429 that
+ * honours the vendor's OWN stated wait (src/ratelimit.js). Every other
+ * property of `baseProvider` (`.name`, `.model`, `.ownsCycle`, `.policy`)
+ * passes through unchanged — bare-agent's Loop reads those directly
+ * (src/loop.js).
  *
- * F64 carve-out: a wall-DERIVED timeout (bare-agent's own `ETIMEDOUT`/
- * `EDEADLINE`, thrown because `clock.callTimeoutMs()` told the provider to
- * cut the call — `isWallTimeout`, src/clock.js) is doctrine's governance
- * stop, never a transport casualty, and retrying it would both mis-spend a
- * round the operator's clock already ended and corrupt `categorize`'s own
- * classification (which reads the SAME error a moment later). So the
- * per-call `retryOn` here is `isTransportFailure(err) && !isWallTimeout(err,
- * clock)` — the clock's verdict always wins over the transport shape.
+ * The two budgets are independent — one transport retry AND one rate-limit
+ * retry may both occur across a single `generate()` call's lifetime, but
+ * each at most once. This is a FALLBACK, not the primary answer: the
+ * primary answer (F139) is picking a worker model with adequate rate
+ * headroom; this softens the failure mode when that was not enough, it does
+ * not replace it.
+ *
+ * F64 carve-out (both ladders): a wall-DERIVED timeout (bare-agent's own
+ * `ETIMEDOUT`/`EDEADLINE`, thrown because `clock.callTimeoutMs()` told the
+ * provider to cut the call — `isWallTimeout`, src/clock.js) is doctrine's
+ * governance stop, never a casualty to retry, and retrying it would both
+ * mis-spend a round the operator's clock already ended and corrupt
+ * `categorize`'s own classification (which reads the SAME error a moment
+ * later). The wall always wins over either retry shape: before EITHER retry,
+ * `isWallTimeout` must be false, and before sleeping for a rate-limit retry,
+ * the run must have MORE time left than the wait would cost
+ * (`clock.remainingMs() > waitMs`) — a wait that would run past the
+ * deadline is not honoured; the run ends on the operator's clock instead of
+ * sleeping past it.
+ *
+ * `spendComplete` note (the one place the two ladders differ): a transport
+ * throw's first attempt may already have been billed (fetch failing after
+ * the request left the socket), so F115 floors `spendComplete` for the rest
+ * of the run regardless of `recovered` (src/run.js reads the `transport-retry`
+ * record's presence for this). A 429, in contrast, is a REFUSAL — the vendor
+ * rejected the request before processing it — so nothing can have been
+ * billed, and a `rate-limit-retry` record does NOT floor `spendComplete`
+ * (src/run.js only watches for `transport-retry`; this is a stated
+ * assumption, not independently measured against a real provider).
  *
  * Scope note: this wraps the ONE seam that builds every worker Loop
  * (scout/drafter/step-worker/fix-worker, planrun.js `newLoop` ~line 2240) —
@@ -103,38 +128,110 @@ const transportRetry = new Retry({ maxAttempts: TRANSPORT_MAX_ATTEMPTS, retryOn:
  * @param {(s: string) => string} scrub
  * @param {import('./clock.js').Clock} clock
  */
-function withTransportRetry(baseProvider, phase, emit, scrub, clock) {
+// F146/F149 (PRD item 30.5) — every provider construction site in this repo now
+// passes `exposeErrorBody: true` (bare-agent's providers), which attaches the
+// parsed upstream error body as `err.body` on an HTTP throw. The body often
+// carries the ONE sentence that names what actually broke — the category and
+// HTTP status alone never do (F146: Qwen's `HTTP 400` said nothing on its own;
+// its body said "System message must be at the beginning"). This was PARKED
+// (2026-09-05 design note) because a raw body can echo the API key straight
+// back — so it goes through `redactSecrets`, the ONE secret shape inventory
+// (`SECRET_PATTERNS`/`scanSecrets`/`redactSecrets`, `src/validate.js`),
+// REGARDLESS of whatever `scrub` a caller has in scope, and is bounded at
+// `BODY_MAX` chars (600 — bounded like every other detail this file emits:
+// `CHECK_GAP_MAX`, `SCOUT_BLOB_MAX`) so one oversized body can never blow a
+// record open. Only this redacted, capped STRING ever rides an emit — the raw
+// `e.body` object itself must never reach a spine record.
+const BODY_MAX = 600;
+const BODY_MARKER = ' — body: ';
+/** @param {any} e @returns {string} '' when there is no body, else ' — body: <redacted, ≤BODY_MAX chars>' */
+const bodySuffix = (e) => {
+  if (e?.body === undefined) return '';
+  let raw;
+  try { raw = JSON.stringify(e.body); } catch { raw = String(e.body); }
+  return `${BODY_MARKER}${redactSecrets(raw).slice(0, BODY_MAX)}`;
+};
+
+function withProviderRetries(baseProvider, phase, emit, scrub, clock) {
   return new Proxy(baseProvider, {
     get(target, prop, receiver) {
       if (prop !== 'generate') return Reflect.get(target, prop, receiver);
       return async (...args) => {
-        let attempts = 0;
-        let firstErr = null;
-        const fn = async () => {
-          attempts += 1;
+        // Each budget is consumed at most once across the WHOLE call,
+        // however many times the two ladders alternate.
+        let transportBudget = 1;
+        let rateLimitBudget = 1;
+
+        /**
+         * One "transport-protected" attempt: calls `target.generate` through
+         * the shared `transportRetry` instance, which itself may retry once
+         * for a transport-class throw — but only while `transportBudget`
+         * is still available, so a SECOND pass through this function (after
+         * a rate-limit sleep) cannot spend a transport retry twice.
+         */
+        const attemptWithTransport = async () => {
+          let calls = 0;
+          /** @type {any} */
+          let firstErr = null;
+          const fn = async () => {
+            calls += 1;
+            try {
+              return await target.generate(...args);
+            } catch (err) {
+              if (calls === 1) firstErr = err;
+              throw err;
+            }
+          };
           try {
-            return await target.generate(...args);
+            const result = await transportRetry.call(fn, {
+              retryOn: (err) => transportBudget > 0 && isTransportFailure(err) && !isWallTimeout(err, clock),
+            });
+            if (calls > 1) {
+              transportBudget -= 1;
+              const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200) + bodySuffix(firstErr);
+              emit('transport-retry', { phase, attempt: 1, error: scrub(message), recovered: true });
+            }
+            return result;
           } catch (err) {
-            if (attempts === 1) firstErr = err;
+            if (calls > 1) {
+              transportBudget -= 1;
+              const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200) + bodySuffix(firstErr);
+              emit('transport-retry', { phase, attempt: 1, error: scrub(message), recovered: false });
+            }
             throw err;
           }
         };
-        // `recovered` is knowable only once the retried attempt has settled
-        // (succeeded or exhausted the budget) — emit exactly once, here,
-        // after the outcome is known, never speculatively before it.
-        const report = (recovered) => {
-          if (attempts <= 1) return; // no retry happened — nothing to report
-          const message = String(firstErr?.message ?? firstErr ?? '').slice(0, 200);
-          emit('transport-retry', { phase, attempt: 1, error: scrub(message), recovered });
+
+        /** The whole call, recursing (at most once) through a rate-limit sleep. */
+        const attempt = async () => {
+          try {
+            return await attemptWithTransport();
+          } catch (err) {
+            if (rateLimitBudget <= 0 || !isRateLimited(err) || isWallTimeout(err, clock)) throw err;
+
+            const waitMs = rateLimitWaitMs(err);
+            const remainingMs = clock.remainingMs();
+            // The wall always wins: no retry when nothing parses to an
+            // honourable wait, and none when the run has no more time left
+            // than the wait itself would cost.
+            if (waitMs == null || (remainingMs !== Infinity && remainingMs <= waitMs)) throw err;
+
+            rateLimitBudget -= 1;
+            const stated = statedWaitMs(err);
+            const message = String(err?.message ?? err ?? '').slice(0, 200) + bodySuffix(err);
+            await sleepMs(waitMs, undefined, { ref: false });
+            try {
+              const result = await attempt();
+              emit('rate-limit-retry', { phase, attempt: 1, statedMs: stated, waitedMs: waitMs, error: scrub(message), recovered: true });
+              return result;
+            } catch (err2) {
+              emit('rate-limit-retry', { phase, attempt: 1, statedMs: stated, waitedMs: waitMs, error: scrub(message), recovered: false });
+              throw err2;
+            }
+          }
         };
-        try {
-          const result = await transportRetry.call(fn, { retryOn: (err) => isTransportFailure(err) && !isWallTimeout(err, clock) });
-          report(true);
-          return result;
-        } catch (err) {
-          report(false);
-          throw err;
-        }
+
+        return attempt();
       };
     },
   });
@@ -1432,6 +1529,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * transport-debugging option list for a run that simply ran out of time. A
    * thrower that named its own category keeps it (the standing typed-attribution
    * rule); only an UNNAMED throw is classified here.
+   *
+   * F146/F149 — this is also the ONE place a categorized error's `.message` gets
+   * the redacted upstream body appended (`bodySuffix`, above). Every downstream
+   * reader of a categorized error's message — `relay()`'s `detail` here, AND
+   * ralph.js's own mid-step dumb-passthrough catch (`detail: String(e.message ||
+   * e)`) reading the SAME error `mkWorker`'s `ask`/`askFrom` threw after routing
+   * it through this function — gets the sentence for free, without ralph.js
+   * importing anything (it stays stdlib-only, PRD §4: fixed, deliberately dumb).
+   * `relay()` re-categorizes an error its own `ask`/`askFrom` already ran through
+   * here, so this must be IDEMPOTENT: `BODY_MARKER` guards a second pass over the
+   * same error from doubling the suffix.
    * @param {any} e
    * @returns {{ err: CategorizedError, category: string }} the same throw, stamped,
    *   plus the category as a plain string (so a caller reading it never has to
@@ -1442,6 +1550,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const category = e instanceof HaltError ? 'cap-halt'
       : (err.category ?? (isWallTimeout(err, clock) ? 'wall-halt' : 'provider-red'));
     err.category = category;
+    if (typeof err.message === 'string' && !err.message.includes(BODY_MARKER)) {
+      const suffix = bodySuffix(err);
+      if (suffix) err.message += suffix;
+    }
     return { err, category };
   };
 
@@ -1521,6 +1633,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // an attempt's (a budget funds the attempt PLUS its close), and a null cost trips
       // the same F6 pricing halt rather than being laundered into $0.
       judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+      // F152/PRD 30.4 — the judge's locate call carried NO time bound at all: a
+      // live endpoint that accepts and never answers hung the process forever
+      // (measured), because an open socket is an active handle and no backstop
+      // can fire on it. The SAME derivation every worker round already uses,
+      // handed through as the FUNCTION (not a snapshot) so a retried locate call
+      // re-reads the remaining time rather than reusing the first attempt's.
+      callBounds,
       onJudgeCost: (/** @type {any} */ c) => emit('judge-round', {
         stage: c.stage, path: c.path, attempt: c.attempt, label: c.label, model: c.model,
         costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
@@ -2456,7 +2575,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // re-spends a subscription turn, not a metered fetch) and is out of scope.
     const loopProvider = native
       ? /** @type {any} */ (nativeProvider)({ policy, maxTurns, hasTools: false })
-      : withTransportRetry(workerProvider ?? provider, phase, emit, scrub, clock);
+      : withProviderRetries(workerProvider ?? provider, phase, emit, scrub, clock);
     // F66 — the stall watchdog. bare-agent's `timeoutMs` bounds socket INACTIVITY,
     // not call duration (provider-http.js `req.setTimeout` resets on every byte),
     // so a connection that stays alive while producing nothing is invisible to it:
@@ -2498,7 +2617,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const newLoop = (gen) => {
       /** @type {any} */
       let self = null;
-      /** @param {{costUsd?: number|null, pricing?: string|null, rateSource?: string|null, usage?: any, kind?: string}} arg */
+      /** @param {{costUsd?: number|null, pricing?: string|null, rateSource?: string|null, usage?: any, kind?: string, stopReason?: string|null}} arg */
       const metered = async (arg) => {
         // The meter fires for EVERY generation, live or abandoned. An orphaned round
         // was really billed, and spend that no instrument sees is the one thing this
@@ -2519,6 +2638,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           ...rateSourceFields(arg),
           tokens: (arg?.usage?.inputTokens ?? 0) + (arg?.usage?.outputTokens ?? 0),
           usage: usageOf(arg?.usage),
+          // PRD item 28 — BA-13: bare-agent's Loop surfaces the round's own neutral
+          // stop reason ('end_turn'|'max_tokens'|'tool_use'|'refusal'|…) on EVERY
+          // onLlmResult call, forwarded verbatim. REPORT-ONLY (nothing here acts on
+          // it — the Loop itself already refuses to execute a 'max_tokens' round's
+          // tool calls, BA-6); null when bare-agent didn't say (pre-BA-13, or a
+          // non-string value), never invented — the same honesty rule every other
+          // provenance field on this record already follows.
+          stopReason: typeof arg?.stopReason === 'string' ? arg.stopReason : null,
         });
         // Everything BELOW here belongs to the live call only. A superseded call must
         // not beat the watch (that is the whole watchdog), must not spend the step's
@@ -2571,7 +2698,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      */
     const askFrom = async (msgs, prompt) => {
       try {
-        return await stallWatch.watch((gen) => newLoop(gen).run([...msgs, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        // `msgs` is a prior `loop.run()`'s returned transcript, which already has
+        // the Loop's `system` PREPENDED (bare-agent Loop.run, loop.js ~482-486).
+        // The new Loop built below is constructed with the same `system` and would
+        // prepend it again, leaving two identical system messages at index 0/1.
+        // Real OpenAI tolerates that; vLLM-class OpenAI-compatible backends 400 on
+        // it ("System message must be at the beginning") — captured evidence:
+        // bareloop-patients/spines-poc-openai/qwen-failing-request-x760ei99.json.
+        // bare-agent's own Loop.chat() (loop.js ~1321) strips a leading system
+        // message before re-running for exactly this reason; do the same here.
+        const rest = msgs[0]?.role === 'system' ? msgs.slice(1) : msgs;
+        return await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
       } catch (e) {
         throw categorize(e).err;
       }
@@ -2618,6 +2755,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * worker does, so this path needs the same split or it is the blinder route),
    * and transport. */
   const relay = (/** @type {any} */ e, /** @type {string} */ phase) => {
+    // categorize(e) mutates e.message in place (guarded, idempotent) with the
+    // redacted body suffix — never re-append it here, or a caller whose thrown
+    // error already went through categorize() once (mkWorker's ask/askFrom)
+    // would double it.
     const { category } = categorize(e);
     const detail = String(e?.message ?? e);
     if (category === 'cap-halt') {

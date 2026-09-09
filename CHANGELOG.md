@@ -5,6 +5,131 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.23.0] — 2026-09-09
+
+### Added
+
+- **`openai-api` on the provider menu, behind a provider FACTORY** (PRD item 28,
+  F149/F150/F156/F157). `src/providers.js` holds one table — provider name →
+  constructor, env key, tier models, per-model request-key gating — and both
+  runners go through it instead of naming `AnthropicProvider` directly. An
+  unknown provider name THROWS; there is no silent default. `openai-api` takes
+  an optional validated job-level `baseUrl` (https, or http on loopback only)
+  and admits ONE model, `deepseek-chat`, which earned the slot with a real paid
+  green through the shipped runner (run `mtu12vks`: green, $1.64 of $4, 10.3 of
+  30 min). DeepSeek silently ignores `max_completion_tokens`, so its table entry
+  sets bare-agent's `legacyMaxTokens` — an output cap that does not bind is a
+  money hazard. The judge stays PINNED to `anthropic-api` and `JUDGE_MODEL`
+  whatever the worker's provider is. `bareloop run` (the bundle runner) is
+  `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would have
+  needed, rather than building another provider with the wrong key.
+- **`provider` and `baseUrl` on the `job-start` spine record** (F157),
+  report-only. Without them an archive cannot separate anthropic rows from
+  `openai-api` rows, and every pooled cost or duration figure would be a
+  contaminated aggregate.
+- **`stopReason` on every `worker-round`** (BA-13, report-only, null when
+  absent, never invented).
+
+- **`runner-drained` — a `beforeExit` backstop for the absent-`job-end` class**
+  (PRD item 28's ruling (c); F140). A provider promise that never settles
+  (BA-25's class) used to let node drain and exit with NO terminal record at
+  all — no escalation, no outcome, no way to tell a silent drain from an
+  operator kill (F140: 10-of-235 archived spines with no `job-end`, one real
+  silent death). bare-agent 0.42 closed the known drop cases (F141), but the
+  class itself is "an instrument fires on absence," not a specific bug, so
+  the backstop stays needed. `runJob` (`src/run.js`) now registers ONE
+  `process.once('beforeExit', …)` right after `job-start`, tracked via a
+  local `ended` flag every `job-end` site sets; if the process still drains
+  with no `job-end`, it mints one with outcome `runner-drained`,
+  `spendComplete:false` (a drained run's in-flight spend is unknowable — the
+  floor already banked is honest, F6), and sets `process.exitCode` non-zero
+  (never `process.exit()`). The listener is removed in a `finally` so a
+  normal run never leaks it. `runner-drained` is a new terminal outcome,
+  documented in `bareloop.context.md`'s outcomes list — deliberately **not**
+  added to the resumable/checkpoint set (`CHECKPOINT_OUTCOMES`, `src/reuse.js`):
+  an unknown in-flight state is not a known-safe resume point.
+
+- **Bounded 429 retry — a FALLBACK, not the primary answer** (PRD item 28's
+  parked a/b ruling, hamr verbatim: "do a/b as a fallback, and verify/validate
+  + no regression"; F143). A vendor HTTP 429 used to end the whole run as
+  `provider-red`, discarding all completed work, even though the vendor's own
+  response states exactly how long to wait. `src/ratelimit.js` (new,
+  `transport.js`'s sibling) adds ONE bounded retry that honours that stated
+  delay, capped at 60s (`RATE_LIMIT_MAX_WAIT_MS`) — a wait longer than that is
+  not honoured at all. Wired into `src/planrun.js`'s provider-retry seam
+  (`withTransportRetry` renamed `withProviderRetries`) as a SECOND,
+  independent one-shot budget alongside the existing F115 transport retry;
+  the wall always wins (no retry past the deadline); each retry emits a
+  report-only `rate-limit-retry` spine record and does NOT floor
+  `spendComplete` (a 429 is a refusal — nothing was billed — unlike a
+  transport throw). **The primary answer stays the primary answer**: picking
+  a worker model with adequate rate headroom (F139/F143's measured TPM
+  table) — this retry only softens the failure mode when that was not
+  followed or headroom was still exceeded.
+
+### Changed
+
+- Bumped `bare-agent` pin from `^0.39.0` to `^0.42.0`. 0.42.0 brings: BA-24 —
+  `OpenAIProvider` now sends `max_completion_tokens` by default (GPT-5-safe),
+  with a new `legacyMaxTokens` option to send the legacy `max_tokens` key
+  instead; BA-25 — a response body cut after headers (peer `'aborted'`,
+  stream `'error'`, or a premature `'close'` before `'end'`) now REJECTS
+  `generate()` with a retryable `ProviderError` (`context.bound:'transport'`)
+  instead of leaving the promise pending forever; a new `loop:truncated`
+  stream event plus `stopReason` on the `onLlmResult` metering payload; and
+  `options.toolChoice` on `OpenAIProvider`.
+
+### Fixed
+
+- **F154** — every provider call bareloop makes now carries a deadline. Seven
+  sites had none: the softgreen judge, the calibration gate, the authoring
+  scout's three rounds, the declaration/revise boundary, and the bridge picker.
+  A silent endpoint HANGS the process (an open socket is an active handle, so
+  the drain backstop cannot see it); a deadline is the only instrument that
+  fires on the absence of events. Tighten-only.
+- **F155** — the judged floor graded whatever LOCATE reported, so a silently
+  omitted function passed on the subset. `decide()` now diffs the artifact's own
+  top-level functions against the reported set and reds, naming what was
+  missing. The declaration shapes live ONCE (`FN_SHAPES`), from which both the
+  locate prompt's prose and the detector are derived.
+- **F153** — a provider's own error sentence now reaches the operator instead of
+  a bare status number, redacted through the one secret inventory and capped.
+- **F151** — the bounded 429 retry, added last release, fired on a real vendor
+  429 for the first time: it parsed the stated wait from prose, waited it, and
+  retried once. Mechanism proven; on a TPM-saturated model the retry is not
+  expected to recover, and did not.
+- **F147** — the F59 scout summary round (and the authoring scout's recovery
+  round, the same shape in `src/authorscout.js`) re-fed a transcript bare-agent
+  had already system-prepended into a new `Loop.run()`, which prepended the
+  persona AGAIN: two identical system messages at index 0/1. Real OpenAI
+  tolerates that; vLLM-class OpenAI-compatible backends reject it (HTTP 400
+  "System message must be at the beginning" — the Qwen death F146 left
+  unexplained). Both sites now strip the leading system message before
+  continuing, as bare-agent's own `Loop.chat()` does. Proven live: the captured
+  failing request goes 400 → 200 with one line removed; deepseek-chat then
+  greened a full job (F149/F150).
+- **F141** — `src/transport.js`'s `isTransportFailure` now also recognizes
+  bare-agent's own BA-25 transport classification
+  (`err.context.bound === 'transport'`), after the existing HTTP-status and
+  `retryable:false` guards. Before this fix, the exact class hamr's F115
+  one-retry ruling names — a call that dies mid-read, no full response —
+  would have ended provider-red with no retry once the 0.42.0 pin landed,
+  because the new rejection shape carried none of the signals the classifier
+  previously looked for (no `status`, `retryable:true`, no matching error
+  code/message). Retry budget unchanged: `TRANSPORT_RETRIES = 1`.
+- **Review door refuses `close-timing-red` instead of defaulting the close timeout**
+  (F137, `docs/product/CLOSE-INTEGRITY-BUILD.md` "Ruled 2026-09-07", found by
+  orchestrator review of M3, run `mtqwmb9l`). `scripts/run-u.mjs`'s `accept` door path
+  resolved the mechanical re-run's close timeout via `resolveCloseTimeoutMs` and, when
+  that timing pass itself timed out, silently fell through to `closeTimeoutMs:
+  undefined` — the library's 120s default — substituting an unauthorized ceiling for a
+  door decision, the exact second silent-default class M3 was built to remove one door
+  up. A door whose own timing pass times out now REFUSES outright as a named
+  `close-timing-red` door stop (same wording/options as the in-run escalation, new pure
+  renderer `doorTimingRedLines` in `scripts/u-readout.mjs`): `answerReviewDoor` is never
+  called, nothing is recorded (no door record), nothing is released, nothing is spent,
+  and the process exits non-zero.
+
 ## [0.22.0] — 2026-09-07
 
 ### Added

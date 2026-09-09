@@ -476,10 +476,10 @@ const startSeq = dead
 // this record; nothing is forged and no second decision is made. `runReuse` still hands
 // `approvals` straight through and still has no way to mint one itself.
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
-const provider = new AnthropicProvider({ apiKey, model: MODEL });
+const provider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
 /** @type {Record<string, any>} */
 const tierCache = {};
-const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[tier] === MODEL ? provider : new AnthropicProvider({ apiKey, model: TIER_MODELS[tier] }));
+const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[tier] === MODEL ? provider : new AnthropicProvider({ exposeErrorBody: true, apiKey, model: TIER_MODELS[tier] }));
 
 const started = Date.now();
 console.log(`\n== ${dead ? 'RESUMED' : 'REUSE'} run ${runid} ==  $${ev.envelope.perTryBudgetUsd}/try · ${(ev.envelope.perTryWallMs / 60000).toFixed(0)}min/try · ${ev.envelope.bridgeTries} tries then cold · ${MODEL}`);

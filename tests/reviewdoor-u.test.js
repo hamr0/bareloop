@@ -224,7 +224,7 @@ test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provide
   const src = readFileSync(RUNNER, 'utf8');
   assert.match(src, /import \{[^}]*\bJUDGE_MODEL\b/s, 'the tier is the library\'s constant, never a spelling here');
   assert.match(src, /judgeProvider/, 'the judge provider must be built');
-  assert.match(src, /new AnthropicProvider\(\{ apiKey, model: JUDGE_MODEL \}\)/, 'and PINNED to the judged tier');
+  assert.match(src, /new AnthropicProvider\(\{ apiKey, model: JUDGE_MODEL(?:, [^}]*)? \}\)/, 'and PINNED to the judged tier'); // extra ctor options (exposeErrorBody, PRD 30.5) are fine; the PIN is the model
   assert.match(src, /judgeProvider,/, 'and it must reach runJob — a provider built and dropped grades nothing');
   // the key rides the same way every other secret does here: out of the environment,
   // never argv, never printed

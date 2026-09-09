@@ -133,7 +133,11 @@ export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
  * subscription — its costUsd axis is NOTIONAL (API-equivalent value, not
  * billed), so it is a DISTINCT condition: rows never pool with anthropic-api
  * rows on the cost axis, and budgets sized for one do not transfer. */
-export const PROVIDERS = Object.freeze(['anthropic-api', 'clipipe-subscription']);
+/** PRD item 28 (2026-09-06/09-09): `openai-api` — an OpenAI-shaped provider,
+ * constructed via `src/providers.js`'s factory. hamr's ruling (PRD 30.7):
+ * `deepseek-chat` is THE secondary provider (one, not a menu of half-tested
+ * models); the factory's tier table is where that lives, not this menu. */
+export const PROVIDERS = Object.freeze(['anthropic-api', 'openai-api', 'clipipe-subscription']);
 /** V3 environment label: declared keys only — every field is a lineage-key
  * candidate at N3. `provider` is part of the key by definition (top-level,
  * not duplicated here). */
@@ -141,7 +145,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
 /** the four-field plan shape's core (decision 5) — presence of any of these
  * declares the shape; `tools` (the ceiling) rides the shape but alone does not
  * declare it, so a legacy spec carrying it gets a pointed red, not a conflict */
@@ -265,6 +269,37 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   // model stays library-pinned pending recalibration — out of scope here.
   if (spec.model !== undefined && !isNonEmptyString(spec.model)) {
     red('invalid-value', 'model', 'non-empty string — exact provider model id (e.g. "claude-sonnet-5")');
+  }
+
+  // BASE URL — PRD item 28, ruling (d), 2026-09-09: admitted in v1 of
+  // openai-api (an OpenAI-compatible gateway/endpoint), OPTIONAL and part of
+  // the signed hash like `model` above. This validator has no network
+  // access, so it checks SHAPE only: `https://` for a real endpoint, or
+  // `http://` restricted to a loopback host (a local OpenAI-compatible
+  // server, the only legitimate reason to skip TLS) — and never a
+  // credential embedded IN the URL itself. A URL travels into logs and
+  // spine records far more casually than a header ever would, and secrets
+  // never enter the tree/spine (hard line #3) — a bareUrl carrying
+  // `user:pass@host` is exactly that leak, just spelled differently.
+  if (spec.baseUrl !== undefined) {
+    if (!isNonEmptyString(spec.baseUrl)) {
+      red('invalid-value', 'baseUrl', 'non-empty string — an https:// URL (http:// admitted only to 127.0.0.1/localhost/::1)');
+    } else {
+      /** @type {URL|null} */
+      let u = null;
+      try { u = new URL(spec.baseUrl); } catch { /* u stays null — caught below */ }
+      if (!u) {
+        red('invalid-value', 'baseUrl', 'must be a parseable URL');
+      } else if (u.username !== '' || u.password !== '') {
+        red('invalid-value', 'baseUrl', 'no embedded credentials (user:pass@host) — secrets never enter a signed spec');
+      } else if (u.protocol === 'https:') {
+        // admitted
+      } else if (u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '::1')) {
+        // admitted — a local OpenAI-compatible endpoint, the one case that legitimately skips TLS
+      } else {
+        red('invalid-value', 'baseUrl', 'https:// required (http:// admitted only to 127.0.0.1/localhost/::1)');
+      }
+    }
   }
 
   // 3. the outer write fence — operator law (interview decision #4), same
