@@ -6,9 +6,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   resolveProvider, makeProvider, buildRunnerProviders, ANTHROPIC_TIER_MODELS, OPENAI_TIER_MODELS,
-  GEMINI_TIER_MODELS, PROBE_STATUS,
+  GEMINI_TIER_MODELS, PROBE_STATUS, probeWarningLines,
 } from '../src/providers.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
 
@@ -294,4 +295,51 @@ test('ollama is NOT admitted — its rounds would price at $0 through machinery 
   assert.ok(!PROVIDERS.includes('ollama'), 'not on the spec menu');
   assert.ok(!PROVIDERS.includes('ollama-local'), 'under any spelling');
   assert.throws(() => resolveProvider('ollama'), /unknown provider/, 'and the factory refuses it by name, never a silent default');
+});
+
+
+// ── the launch-time UNPROVEN marker (PRD item 31.3) ─────────────────────────
+
+test('an unprobed provider yields a loud warning that NAMES it, cites the absent evidence, and says it will still run', () => {
+  const lines = probeWarningLines('gemini-api');
+  assert.ok(Array.isArray(lines) && lines.length === 3, 'three lines, in order');
+  assert.match(lines[0], /UNPROVEN PROVIDER/, 'the marker itself');
+  assert.match(lines[0], /gemini-api/, 'names the provider — a warning that does not say WHICH one is unactionable');
+  assert.match(lines[1], /ZERO runs/, 'carries the evidence field verbatim, never a paraphrase that could drift from the table');
+  assert.match(lines[2], /will run/, 'and states the NON-refusal — hamr admitted it; this marker never withholds it');
+});
+
+test('a probed provider yields NOTHING — the marker is the exception, never a banner every run carries', () => {
+  assert.equal(probeWarningLines('anthropic-api'), null);
+  assert.equal(probeWarningLines('openai-api'), null);
+});
+
+test('an off-table provider name yields nothing here — an unknown provider is resolveProvider\'s named THROW, not a soft warning', () => {
+  assert.equal(probeWarningLines('ollama'), null);
+  assert.equal(probeWarningLines(''), null);
+  assert.throws(() => resolveProvider('ollama'), /unknown provider/, 'the refusal lives there, and only there');
+});
+
+test('the warning tracks the TABLE, not a copy of it: every unprobed menu provider gets lines, every probed one gets null', () => {
+  // The failure this pins is the one the inline version could not be tested
+  // against at all: gemini pays for its probe, PROBE_STATUS flips to true, and a
+  // hardcoded warning keeps shouting about a provider that has been proven.
+  for (const name of PROVIDERS.filter((p) => p !== 'clipipe-subscription')) {
+    const lines = probeWarningLines(name);
+    if (PROBE_STATUS[name].probed) assert.equal(lines, null, `${name} is probed — nothing to say`);
+    else assert.ok(lines?.[0].includes(name), `${name} is unprobed — it must be named in its own warning`);
+  }
+});
+
+test('scripts/run-u.mjs PRINTS the warning at launch, through this function and not a second copy of the words', () => {
+  // A source-level pin, and deliberately labelled as one: the runner reaches
+  // this line only with a real job row (a machine-local patient path) and a
+  // real signed spec, so the suite cannot EXECUTE the branch — the reason the
+  // words were moved out of the runner in the first place. What this can prove
+  // is that the call site exists, sends the lines to stderr, and holds no
+  // duplicate of the text that could drift away from PROBE_STATUS.
+  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  assert.match(src, /probeWarningLines\(/, 'the runner calls it');
+  assert.match(src, /for \(const line of probeWarningLines\(.*\) \?\? \[\]\) console\.error\(line\);/, 'and prints every line to stderr');
+  assert.ok(!src.includes('UNPROVEN PROVIDER'), 'the words live in ONE place — a second copy is the drift this item exists to stop');
 });

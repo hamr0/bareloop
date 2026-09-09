@@ -5,6 +5,56 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **`gemini-api` on the provider menu, ADMITTED-PENDING-PROBE** (PRD item 31.3;
+  hamr, 2026-09-09: *"anthropic, openai, gemini drop ollama for now"*). Reads
+  `GEMINI_API_KEY` and maps two genuinely different tiers — `sonnet` →
+  `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`. It has **zero runs**: the
+  probe rule (no endpoint in the menu without its own clean paid probe) is not
+  waived for it. `PROBE_STATUS` in `src/providers.js` records that debt per
+  provider and `probeWarningLines` renders the loud `⚠ UNPROVEN PROVIDER`
+  marker `scripts/run-u.mjs` prints at launch, right where money is about to be
+  spent. The table is read to WARN, never to REFUSE — refusing a provider hamr
+  admitted would be a second, invisible ruling.
+- **Per-provider `endpointKey`** — each table entry declares the CONSTRUCTOR
+  option name it reads an endpoint from, instead of a hardcoded `baseUrl`.
+  bare-agent's providers do not agree on one spelling (`baseUrl` for
+  anthropic/openai/gemini, `url` for Ollama) and none of them validate unknown
+  option names, so a mis-spelled endpoint is silently DROPPED, not rejected:
+  measured live, `new OllamaProvider({baseUrl: X}).url` stays
+  `http://localhost:11434` with no error. That is the F149 class (DeepSeek
+  silently ignoring `max_completion_tokens`: asked 64 output tokens, returned
+  665). A job spec still carries ONE field name, `baseUrl`; the translation to
+  each constructor's own spelling happens once, in `makeProvider`.
+
+### Changed
+
+- **`hitl` leaves the authoring menu; its code stays** (PRD item 31.1; hamr:
+  *"retire hitl from list, keep its code"*). Three distinct class lists replace
+  two: `LOCKED_CLASSES` (no guard battery exists — empty today),
+  `UNLISTED_CLASSES` (`['hitl']` — built, validates and RUNS, simply never
+  offered) and `MENU_CLASSES` (live minus unlisted). Only the AUTHORING surface
+  reads them, which is what keeps hitl's code alive and under test; locking the
+  class instead would have taken `validateCloseDecl`, the guard battery and two
+  whole test files with it. `scripts/run-interview.mjs` no longer advertises
+  `--verdict hitl` in a usage line the library then refuses.
+- **Green-only prose corrected** (PRD item 31.2). `soft-green` was never
+  locked; the source comment claiming *"v1 STILL ADMITS ONLY green"* was false
+  and had already sent one build in the wrong direction, and
+  `bareloop.context.md` — the file that SHIPS — said all three classes were
+  admitted. Fixed, and pinned by tests, because prose drifts when nothing
+  executes it.
+
+### Notes
+
+- Ollama is deliberately NOT admitted. It takes no key and bills nothing, so
+  every round would price at $0 through machinery that treats $0 as a real
+  price — the honesty violation the `?? 0` rule exists to stop. That question
+  gets answered before a menu entry, not after.
+
 ## [0.23.0] — 2026-09-09
 
 ### Added

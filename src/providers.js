@@ -252,3 +252,31 @@ export function buildRunnerProviders({
   const judgeProvider = makeProvider('anthropic-api', { apiKey: judgeApiKey, model: judgeModel });
   return { provider, providerFor, judgeProvider };
 }
+
+/**
+ * The launch-time warning lines for an ADMITTED-PENDING-PROBE provider, or
+ * `null` when the provider has paid for its own end-to-end probe (and for an
+ * off-table name — an unknown provider is `resolveProvider`'s named throw to
+ * report, never this function's warning to soften).
+ *
+ * This lives here, next to `PROBE_STATUS`, rather than inline in the runner,
+ * for one reason: inline it was UNTESTABLE. `scripts/run-u.mjs` reaches this
+ * point only with a real job row (a machine-local patient path) and a real
+ * signed spec, so nothing in the suite could reach the branch, and a warning
+ * nothing executes drifts exactly the way the green-only prose did (item 31.2).
+ *
+ * It never REFUSES, and it never returns a shape a caller can mistake for a
+ * refusal: hamr admitted `gemini-api` to the menu, and a probe table that
+ * quietly withheld it would be a second ruling nobody made.
+ * @param {string} providerName
+ * @returns {string[]|null} lines to print, in order, or null when there is nothing to say
+ */
+export function probeWarningLines(providerName) {
+  const probe = PROBE_STATUS[/** @type {keyof typeof PROBE_STATUS} */ (providerName)];
+  if (!probe || probe.probed !== false) return null;
+  return [
+    `⚠  UNPROVEN PROVIDER — "${providerName}" is on the menu but has never been probed end to end.`,
+    `   ${probe.evidence}`,
+    '   It will run. Nothing has shown that it CAN run this job to a close-rendered verdict.',
+  ];
+}

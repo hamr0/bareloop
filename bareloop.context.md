@@ -79,7 +79,20 @@ inherited rule carries the green that minted it and the contrast that attributed
   an unknown provider name THROWS there, it never falls back to a default. Per-model
   request-key gating lives in that table: `deepseek-chat` sets bare-agent's
   `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
-  output cap that does not bind is a money hazard. The JUDGE stays pinned to
+  output cap that does not bind is a money hazard. `provider: 'gemini-api'` (PRD item 31.3)
+  takes the same `Loop` path, reads `GEMINI_API_KEY`, and maps two real tiers
+  (`sonnet` → `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`). It is
+  **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
+  `PROBE_STATUS` (`src/providers.js`) is the machine-readable form of that debt, and
+  `probeWarningLines(provider)` renders the loud launch-time marker `scripts/run-u.mjs`
+  prints. That table is read to WARN, never to REFUSE. Each entry also declares its own
+  `endpointKey` — the CONSTRUCTOR option name it reads an endpoint from — because
+  bare-agent's providers do not agree on one spelling (`baseUrl` for anthropic/openai/
+  gemini, `url` for Ollama) and none of them validate unknown option names, so a
+  mis-spelled endpoint is silently DROPPED rather than rejected. Your job spec keeps one
+  field name, `baseUrl`; the translation happens once, inside `makeProvider`. Ollama is
+  deliberately NOT admitted: it takes no key and bills nothing, so every round would price
+  at $0 through machinery that treats $0 as a real price. The JUDGE stays pinned to
   `anthropic-api` and `JUDGE_MODEL` whatever the worker's provider is. The bundle runner
   (`bareloop run`) is `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would
   have needed, rather than constructing another provider with the wrong key.
@@ -143,7 +156,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 |---|---|---|
 | `job` | kebab-case slug | |
 | `description` | non-empty string | |
-| `provider` | `anthropic-api` \| `openai-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-chat` today — see "Worker surface" above for its `baseUrl` field and per-model gating; `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
+| `provider` | `anthropic-api` \| `openai-api` \| `gemini-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-chat` today — see "Worker surface" above for its `baseUrl` field and per-model gating; `gemini-api` (PRD item 31.3) reads `GEMINI_API_KEY` and is ADMITTED-PENDING-PROBE — zero runs, and every launch says so (`PROBE_STATUS`/`probeWarningLines`); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
