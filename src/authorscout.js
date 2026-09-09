@@ -493,7 +493,15 @@ export async function runAuthorScout({
         if (recoveryHalt) budgetStop = recoveryHalt;
         if (recoveryWanted && !recoveryHalt) {
           const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
-          s2 = await recovery.run([...r.msgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
+          // F147 (second instance; sibling fix: src/planrun.js `askFrom`, commit
+          // 031ffe1): `r.msgs` is a prior `loop.run()`'s returned transcript,
+          // which bare-agent already prepended `system` to (Loop.run, loop.js
+          // ~482-486). `recovery` below is built with the same `system` and
+          // would prepend it again, leaving two identical system messages at
+          // index 0/1 — real OpenAI tolerates it, vLLM-class OpenAI-compatible
+          // backends 400 on it. Strip the leading one before re-running.
+          const rMsgs = r.msgs[0]?.role === 'system' ? r.msgs.slice(1) : r.msgs;
+          s2 = await recovery.run([...rMsgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
             { cacheMessages: true, maxTokens });
           const recoveryAt = record('author-scout-recovery', attempt, s2);
           const t = redactSecrets(String(s2?.text ?? '')).slice(0, blobMax);
@@ -518,8 +526,13 @@ export async function runAuthorScout({
         // THE RE-ASK. Toolless by construction, over the survey's own
         // conversation, naming only what failed mechanically.
         const reask = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
+        // F147 (second instance; sibling fix: src/planrun.js `askFrom`, commit
+        // 031ffe1): `lastMsgs` is a prior `loop.run()`'s returned transcript
+        // (system already prepended by bare-agent); `reask` is built with the
+        // same `system` and would prepend it again. Strip the leading one.
+        const askMsgs = lastMsgs[0]?.role === 'system' ? lastMsgs.slice(1) : lastMsgs;
         const rr = await reask.run(
-          [...lastMsgs, { role: 'user', content: scoutReaskTurn(/** @type {Survey} */ (survey).reason ?? '') }], [],
+          [...askMsgs, { role: 'user', content: scoutReaskTurn(/** @type {Survey} */ (survey).reason ?? '') }], [],
           { cacheMessages: true, maxTokens },
         );
         verdictAt = record(label, attempt, rr);
