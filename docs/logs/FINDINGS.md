@@ -11176,3 +11176,26 @@ with a tier table carrying `{ctor, envKey, baseUrl, legacyMaxTokens, rate}` per 
 stays at zero. Evidence: `../bareloop-patients/spines-poc-openai/poc-pm48w5az.jsonl`,
 `poc-deepseek-4.log`; patient branch `bareloop-bareguard-u-types-deepseek-4` in
 `../bareloop-patients/bareguard-u-deepseek`.
+
+## F151 — the 429 retry fired live: it honoured the vendor's stated wait to the second, and the retry hit the same per-minute wall
+
+**2026-09-09, PRD 30.2, run `p2ocuxj8`, gpt-4.1 (30,000 TPM — F139), $0.12, 66 s.** F143's
+fallback had never fired on a real 429 (every run since used models with headroom). gpt-4.1 429s
+deterministically on this workload, so one $1-capped run was the cheap live instrument.
+
+**What the spine shows.** `rate-limit-retry {phase:'step:fix-strict-errors', statedMs:9470,
+waitedMs:9720, recovered:false}` — the parser read "Please try again in 9.47s" out of the prose
+(BA-26: bare-agent discards the retry-after header), waited 9.72 s (stated + 250 ms margin), retried
+ONCE, and the retry was refused the same way (`Used 27511, Requested 7224` of 30,000). The run then
+ended honestly: `provider-red`, `spendComplete:false`, resumable. Every clause of F143 executed on
+a real vendor refusal: parse, bounded wait, one retry, no second retry, honest terminal.
+
+**The reading.** The vendor's stated wait is when the NEXT request may be accepted, not when a
+7,224-token request will fit under a 30,000/min window still 27,511 full. On a TPM-bound model
+the one bounded retry is structurally unlikely to recover; it recovers on burst-shaped 429s (RPM,
+concurrency), not on sustained TPM saturation. F143's own framing stands: the primary answer is
+rate headroom (gpt-4.1 is not an acceptable worker tier here), the retry is a fallback. No change
+to the mechanism: a second retry or a longer wait would be widening a cap the arbiter set.
+
+**Closes 30.2 as live-proven.** Mechanism: proven. Recovery on this model: not expected, not
+observed. Evidence `../bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl`.
