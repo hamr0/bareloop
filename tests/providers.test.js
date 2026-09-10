@@ -85,10 +85,21 @@ test('makeProvider forwards baseUrl only when given', () => {
 });
 
 // ── buildRunnerProviders: the shared provider/providerFor/judgeProvider triple ──
+//
+// PRD item 32.1/32.2 removed the "judge is ALWAYS anthropic-api" pin this
+// suite used to assert. The judge now DEFAULTS to the worker's own provider
+// (`judgeProviderName = providerName`, PRD item 32.1's un-pinning applied at
+// this factory) and is built through the SAME `makeProvider` seam the worker
+// is, never a hardcoded `AnthropicProvider` — an operator names a DIFFERENT
+// provider for the judge only by passing `judgeProviderName` explicitly. The
+// three tests below are the three shapes that claim replaces: the default
+// (worker's own provider), the override (a deliberately different one), and
+// the reuse (identity match collapses to one instance, which is an economic
+// claim — a second instance against the same endpoint/model/key is a second
+// prompt-cache prefix — not merely a convenience).
 
-test('buildRunnerProviders: providerFor(tier) reuses the top-level provider when the tier resolves to the same model, and the judge is ALWAYS anthropic-api/judgeModel regardless of providerName', async () => {
-  const { AnthropicProvider } = await import('bare-agent/providers');
-  const { provider, providerFor, judgeProvider } = buildRunnerProviders({
+test('buildRunnerProviders: providerFor(tier) reuses the top-level provider when the tier resolves to the same model', () => {
+  const { provider, providerFor } = buildRunnerProviders({
     providerName: 'openai-api',
     apiKey: 'worker-key',
     model: 'deepseek-chat',
@@ -98,9 +109,63 @@ test('buildRunnerProviders: providerFor(tier) reuses the top-level provider when
   });
   assert.equal(providerFor('sonnet'), provider, 'same model id -> the SAME instance, not a rebuild');
   assert.equal(providerFor('haiku'), provider, 'deepseek-chat on both tiers -> the same instance too');
-  assert.ok(judgeProvider instanceof AnthropicProvider, 'the judge is pinned to anthropic-api no matter the worker provider');
+});
+
+test('buildRunnerProviders: with no judgeProviderName override, the judge DEFAULTS to the worker\'s own provider (PRD item 32.1)', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const { judgeProvider } = buildRunnerProviders({
+    providerName: 'openai-api',
+    apiKey: 'worker-key',
+    model: 'deepseek-chat',
+    tierModels: { sonnet: 'deepseek-chat', haiku: 'deepseek-chat' },
+    judgeApiKey: 'judge-key',
+    judgeModel: 'claude-haiku-4-5',
+  });
+  assert.ok(judgeProvider instanceof OpenAIProvider,
+    'no override named -> the judge grades on the WORKER\'s own provider, never a fixed vendor');
   assert.equal(judgeProvider.model, 'claude-haiku-4-5');
   assert.equal(judgeProvider.apiKey, 'judge-key', 'the judge uses ITS OWN key, never the worker\'s');
+});
+
+test('buildRunnerProviders: an explicit judgeProviderName override builds THAT provider instead — a deliberate pin, not the default', async () => {
+  const { AnthropicProvider } = await import('bare-agent/providers');
+  const { provider, judgeProvider } = buildRunnerProviders({
+    providerName: 'openai-api',
+    apiKey: 'worker-key',
+    model: 'deepseek-chat',
+    tierModels: { sonnet: 'deepseek-chat', haiku: 'deepseek-chat' },
+    judgeApiKey: 'judge-key',
+    judgeModel: 'claude-haiku-4-5',
+    judgeProviderName: 'anthropic-api',
+  });
+  assert.ok(judgeProvider instanceof AnthropicProvider, 'the named override, and only the named override, pins the judge');
+  assert.notEqual(judgeProvider, provider, 'a different provider is never the same instance as the worker\'s');
+  assert.equal(judgeProvider.model, 'claude-haiku-4-5');
+});
+
+test('buildRunnerProviders: the worker instance is REUSED when provider+model+key+baseUrl all match — never a second instance for the same identity', () => {
+  const { provider, judgeProvider } = buildRunnerProviders({
+    providerName: 'anthropic-api',
+    apiKey: 'shared-key',
+    model: 'claude-sonnet-5',
+    tierModels: { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5' },
+    judgeApiKey: 'shared-key',
+    judgeModel: 'claude-sonnet-5',
+  });
+  assert.equal(judgeProvider, provider, 'identical identity on every axis -> ONE instance, ONE prompt-cache prefix');
+});
+
+test('buildRunnerProviders: reuse requires EVERY axis to match — a differing key alone still builds a second instance', () => {
+  const { provider, judgeProvider } = buildRunnerProviders({
+    providerName: 'anthropic-api',
+    apiKey: 'worker-key',
+    model: 'claude-sonnet-5',
+    tierModels: { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5' },
+    judgeApiKey: 'a-different-account-key',
+    judgeModel: 'claude-sonnet-5',
+  });
+  assert.notEqual(judgeProvider, provider, 'same provider and model, different key -> still a SEPARATE instance');
+  assert.equal(judgeProvider.apiKey, 'a-different-account-key');
 });
 
 test('buildRunnerProviders: a spec-named model on one tier builds a SECOND provider instance for a differing tier', () => {

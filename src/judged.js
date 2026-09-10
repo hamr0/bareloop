@@ -69,27 +69,95 @@ import { extractArtifact, priceOf, scrubRaw } from './text.js';
 const require = createRequire(import.meta.url);
 
 /**
- * THE JUDGE MODEL, PINNED. Never agent-selectable and never a step knob: it is
- * the only tier with established injection resistance upstream (BA-20's
- * INJECTION_BATTERY is haiku-4.5 only), and §4.2's whole safety argument is
- * worth exactly as much as that evidence. A judge-model bump forces a full
- * recalibration — mandatory, per the model-bump dead-weight replay rule.
+ * THE JUDGE'S HISTORICAL PIN. Until PRD item 32 (2026-09-10) this constant WAS
+ * the judge: every grading path imported it, so bareloop could run a worker on
+ * any provider and still judge only on Claude.
  *
- * THAT IS ENFORCED, not asked for, and it is enforced in three places because a
- * rule with no wired detector is prose (F45):
- *   1. the value here is STORED with the set it graded — `foldJudgedArtifacts`
+ * It is no longer read by any grading path. The judge identity is now RESOLVED
+ * per job (`resolveJudge` below) and travels as data — `ctx.judgeModel` into
+ * `runJudgedFloor`, an explicit argument into the calibration gate, and
+ * `closeDecl.calibration.judgeModel` into the signed spec, exactly as before.
+ * Keeping the export is deliberate: it is part of the public API
+ * (`src/index.js`) and an adopter importing it should not break on a minor.
+ * What it means now is "the judge bareloop pinned before item 32", which is
+ * still the right DEFAULT for an anthropic-api job and still the only tier with
+ * established injection resistance upstream (BA-20's `INJECTION_BATTERY` is
+ * haiku-4.5 only).
+ *
+ * THE ENFORCEMENT IS UNCHANGED, and still lives in three wired places because a
+ * rule with no detector is prose (F45) — only the value being compared moved
+ * from this constant to the resolved identity:
+ *   1. the identity is STORED with the set it graded — `foldJudgedArtifacts`
  *      writes it as `closeDecl.calibration.judgeModel`, inside the spec, so
- *      `jobSpecHash` covers it by construction. Bump this constant and every
+ *      `jobSpecHash` covers it by construction. Change the judge and every
  *      signed judged spec hashes differently: the signature dies, and re-signing
  *      is what re-runs the calibration gate.
  *   2. `validateCloseDecl` REQUIRES it on any stored set — a set nobody can
- *      attribute to a tier is a floor nobody can tell apart from a bumped one.
- *   3. `runJudgedFloor` refuses to grade when the stored tier is not this one,
- *      naming both models. It does not degrade in either direction: grading on
- *      the new tier judges against a floor nobody calibrated, and the old tier is
- *      not on offer.
+ *      attribute to a judge is a floor nobody can tell apart from a moved one.
+ *   3. `runJudgedFloor` refuses to grade when the stored identity is not the one
+ *      about to grade, naming both. It does not degrade in either direction:
+ *      grading on the new judge judges against a floor nobody calibrated, and
+ *      the old judge is not on offer.
  */
 export const JUDGE_MODEL = 'claude-haiku-4-5';
+
+/**
+ * RESOLVE WHICH MODEL GRADES THIS JOB (PRD item 32.1).
+ *
+ * hamr, 2026-09-10: *"what i care about is that judge becomes llm agnostic and
+ * not set to one model or provider"* — and the shape he named: *"defaults to
+ * whatever llm is used and can be overriden"*.
+ *
+ * So, in precedence order:
+ *   1. `spec.judge` — an explicit, SIGNED `{provider, model}`. This is how a run
+ *      pins a judge deliberately different from its worker (an independent
+ *      reader, or a judge whose calibration a job wants to keep while the worker
+ *      moves). It is a spec field the HUMAN signs, part of `jobSpecHash` like
+ *      every other; the drafting agent cannot express it, because naming your
+ *      own examiner is arbiter territory.
+ *   2. otherwise the job's OWN worker provider and model. A DeepSeek job judges
+ *      on DeepSeek and needs no second account — which is the whole point: after
+ *      item 31.4 a green job runs on its own key alone, and this is what lets a
+ *      JUDGED one do the same.
+ *
+ * There is deliberately NO third fallback to `JUDGE_MODEL`. A caller that cannot
+ * say which model will grade has not wired a judge, and the grading path stops
+ * as a wiring gap rather than grading under an identity nobody chose — the same
+ * answer an absent `judgeLoop` already gets. A silent default here would be the
+ * exact silent-ignore class that `endpointKey` and F149 exist to prevent, except
+ * pointed at the arbiter.
+ *
+ * SELF-GRADING is licensed by measurement, not by this function: the judge
+ * renders no verdict (it locates facts; `decide()` is deterministic), and the
+ * calibration gate — 10 cases, a 10-of-10 floor, no partial credit, cases that
+ * MUST fail — is exactly the instrument that catches a judge which cannot see
+ * failures. If a worker-family judge cannot pass its own calibration, that is
+ * the finding, and the gate refuses to sign.
+ *
+ * @param {{specJudge?: any, workerProvider?: string, workerModel?: string}} o
+ * @returns {{provider: string, model: string}}
+ */
+export function resolveJudge({ specJudge, workerProvider, workerModel } = {}) {
+  const nonEmpty = (/** @type {any} */ v) => typeof v === 'string' && v.trim() !== '';
+  if (specJudge !== null && typeof specJudge === 'object'
+    && nonEmpty(specJudge.provider) && nonEmpty(specJudge.model)) {
+    return { provider: specJudge.provider, model: specJudge.model };
+  }
+  if (specJudge !== undefined && specJudge !== null) {
+    // A malformed `judge` is never quietly ignored into the worker default: the
+    // spec VALIDATOR reds it (src/job.js), and reaching here with one means a
+    // caller skipped validation. Throwing beats grading under an identity the
+    // signer did not write.
+    throw new Error('[judged] spec.judge, when present, is {provider, model} with both non-empty — '
+      + `got ${JSON.stringify(specJudge)}. A malformed judge is not a request to use the worker's.`);
+  }
+  if (!nonEmpty(workerProvider) || !nonEmpty(workerModel)) {
+    throw new Error('[judged] resolveJudge needs the job\'s worker provider and model to default the judge to them '
+      + '(PRD item 32.1) — a caller that can name neither a judge nor a worker has not wired a judge, and there is '
+      + 'no library-pinned fall-back any more.');
+  }
+  return { provider: /** @type {string} */ (workerProvider), model: /** @type {string} */ (workerModel) };
+}
 
 /**
  * The locate call's token ceiling. The POC's two real artifacts came back well

@@ -31,7 +31,7 @@ import {
 
 import {
   exportBundle, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
-  runJob, makeSpine, loadRegistry, listingRow, jobSpecHash, resolveWorkerModel, JUDGE_MODEL,
+  runJob, makeSpine, loadRegistry, listingRow, jobSpecHash, resolveWorkerModel, resolveJudge,
 } from './index.js';
 import { resolveProvider, buildRunnerProviders } from './providers.js';
 
@@ -84,9 +84,34 @@ function buildProviders(apiKey, spec) {
   const MODEL = modelResolution.model;
   const tierModels = modelResolution.source === 'spec' ? { ...entry.tiers, sonnet: MODEL } : entry.tiers;
   const baseUrl = isObj(spec) && typeof spec.baseUrl === 'string' ? spec.baseUrl : undefined;
-  return buildRunnerProviders({
-    providerName, apiKey, model: MODEL, tierModels, baseUrl, judgeApiKey: apiKey, judgeModel: JUDGE_MODEL,
+  // THE JUDGE, RESOLVED RATHER THAN PINNED (PRD item 32.1/32.2). The bundle
+  // runner's key contract is `ANTHROPIC_API_KEY`-only and the refusal above has
+  // already established that the WORKER provider reads that key — so a judge
+  // defaulting to the worker's own identity reads the same key by construction,
+  // and a signed `judge` naming a different provider would need a key this
+  // runner does not have. That case refuses here, at $0, by name — the same
+  // shape and the same reason as the worker refusal above, never a call made
+  // with the wrong vendor's key.
+  const judge = resolveJudge({
+    specJudge: isObj(spec) ? spec.judge : undefined,
+    workerProvider: providerName,
+    workerModel: MODEL,
   });
+  const judgeEntry = resolveProvider(judge.provider);
+  if (judgeEntry.envKey !== 'ANTHROPIC_API_KEY') {
+    throw new Error(
+      `bareloop run: this bundle's spec names judge provider "${judge.provider}", which reads `
+      + `${judgeEntry.envKey}. The bundle runner's key contract is ANTHROPIC_API_KEY only, so it `
+      + 'refuses rather than calling that provider with the wrong key. Run this job through scripts/run-u.mjs.',
+    );
+  }
+  return {
+    ...buildRunnerProviders({
+      providerName, apiKey, model: MODEL, tierModels, baseUrl,
+      judgeApiKey: apiKey, judgeModel: judge.model, judgeProviderName: judge.provider, judgeBaseUrl: baseUrl,
+    }),
+    judgeModel: judge.model,
+  };
 }
 
 /** @param {string[]} args @returns {{ positional: string[], flags: Record<string, string|true> }} */
@@ -236,6 +261,11 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
   // provider (the test seam). Absent and no injected provider: print the
   // operator questions (the bundle's own README) and the hash, spend nothing.
   let { provider, providerFor, judgeProvider } = deps;
+  // the judge IDENTITY travels with the judge PROVIDER (PRD item 32.1). A test
+  // injecting `deps.judgeProvider` may name it too; absent, it is resolved
+  // alongside the real providers below, and a judged stage with neither stops as
+  // a wiring gap rather than grading under a name nobody wrote.
+  let judgeModel = /** @type {string|null} */ (deps.judgeModel ?? null);
   if (!provider) {
     const apiKey = env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -246,7 +276,7 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
       return 0;
     }
     try {
-      ({ provider, providerFor, judgeProvider } = buildProviders(apiKey, bundle.spec));
+      ({ provider, providerFor, judgeProvider, judgeModel } = buildProviders(apiKey, bundle.spec));
     } catch (e) {
       // a refusal from the key contract above: name it and spend nothing
       err(String(/** @type {any} */ (e)?.message ?? e));
@@ -338,6 +368,7 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
       provider,
       providerFor,
       judgeProvider,
+      judgeModel,
       emit,
       closeDir,
       shellCapUsd: runSpec.budgetUsd,
@@ -470,7 +501,7 @@ async function runMenu(deps, ctx) {
  * code, so `bin/bareloop.mjs` can set `process.exitCode` and let node flush
  * queued stdout on its own (F-something: `process.exit()` can discard it).
  * @param {string[]} argv
- * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, now?: () => number, stdin?: any }} deps
+ * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any }} deps
  * @returns {Promise<number>}
  */
 export async function main(argv, deps = {}) {

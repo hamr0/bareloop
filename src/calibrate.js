@@ -46,7 +46,9 @@
 //     calibration becomes a refusal, exactly as D9's other three gates work.
 //   * IT PICKS NO NUMBER. The size is `CALIBRATION_SIZE` (hamr's), the floor is
 //     all-of-them (hamr's), the ladder is `JUDGE_ATTEMPTS` (operator-confirmed),
-//     and the model is `JUDGE_MODEL` (pinned). Nothing here invents a threshold.
+//     and the model is the run's RESOLVED judge identity, handed in (PRD item
+//     32.1) rather than pinned in this library. Nothing here invents a threshold
+//     and nothing here picks a judge.
 //   * IT OWNS NO PROVIDER. The judge seam arrives as `judgeLoop`; an absent one
 //     is a WIRING GAP that stops the gate, never a silent skip — a judged close
 //     signed off a calibration nobody ran is the exact state this gate exists to
@@ -58,7 +60,7 @@
 
 import { createHash } from 'node:crypto';
 import {
-  JUDGE_MODEL, LOCATE_LABEL, LOCATE_AXES, CALIBRATION_SIZE,
+  LOCATE_LABEL, LOCATE_AXES, CALIBRATION_SIZE,
   runLocate, decide, expectedOf, validateCard, validateCalibrationSet,
 } from './judged.js';
 import { JUDGE_ATTEMPTS } from './kinds.js';
@@ -309,11 +311,11 @@ export function factsResist(facts, gold, artifactText) {
  * when the model is malforming, which is the worst moment for a paid ladder to be
  * unbounded. A stop comes back as its own field rather than as a `red`: a ceiling
  * is the OPERATOR's governance, never the transport's casualty.
- * @param {{artifactText: string, card: any, judgeLoop: Function, attempts: number,
+ * @param {{artifactText: string, card: any, judgeLoop: Function, judgeModel: string, attempts: number,
  *   meter: (c: any) => void, id: string, kind: string,
  *   capStop: () => 'cap-halt'|'pricing-red'|null}} o
  */
-async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, kind, capStop }) {
+async function pipeOnce({ artifactText, card, judgeLoop, judgeModel, attempts, meter, id, kind, capStop }) {
   /** @type {any} */
   let last = null;
   /** @type {any[]} */
@@ -341,7 +343,7 @@ async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, ki
       // when ITS OWN wall is unbounded (`PROVIDER_TIMEOUT_MS`, src/clock.js).
       callBounds: { timeoutMs: PROVIDER_TIMEOUT_MS },
       onCost: (c) => meter({
-        id, kind, attempt, label: CALIBRATION_LABEL, model: JUDGE_MODEL,
+        id, kind, attempt, label: CALIBRATION_LABEL, model: judgeModel,
         costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
       }),
     });
@@ -381,7 +383,13 @@ async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, ki
  * graded one: `ok` is false, the cases nobody bought are absent rather than recorded
  * as failures, and `casualty` stays null — the transport was fine, the operator's own
  * governance stopped the gate.
- * @param {{cases: any, card: any, judgeLoop: Function|null,
+ * `judgeModel` is REQUIRED and has no default (PRD item 32.1). It is the identity
+ * the caller resolved (`resolveJudge`, src/judged.js) and it is what the graded set
+ * is STAMPED with — `setHash` folds it in, so a set certified by one judge cannot be
+ * mistaken for the same set certified by another. A default here would be the silent
+ * fall-back the whole judge-identity change exists to remove: a gate that grades
+ * under a model nobody named certifies a floor nobody can attribute.
+ * @param {{cases: any, card: any, judgeLoop: Function|null, judgeModel: string,
  *   onCost?: (c: any) => void, attempts?: number, battery?: any[], batteryCard?: any,
  *   capStop?: () => 'cap-halt'|'pricing-red'|null}} o
  * @returns {Promise<{ok: boolean, stop: string|null, casualty: any,
@@ -392,12 +400,25 @@ async function pipeOnce({ artifactText, card, judgeLoop, attempts, meter, id, ki
  *   costUsd: number|null, knownUsd: number, spendComplete: boolean, calls: any[]}>}
  */
 export async function runCalibration({
-  cases, card, judgeLoop, onCost = () => {},
+  cases, card, judgeLoop, judgeModel, onCost = () => {},
   attempts = JUDGE_ATTEMPTS,
   battery = /** @type {any[]} */ (/** @type {unknown} */ (INJECTION_LOCATE_BATTERY)),
   batteryCard = INJECTION_CARD,
   capStop = () => null,
 }) {
+  // The mandatory-identity throw guards a REAL judge seam graded under nobody's
+  // name — it does not apply when there is no seam at all. A caller wiring no
+  // `judgeLoop` (an adopter who has not connected a judge yet) legitimately hands
+  // in no `judgeModel` either, and that case is the WIRING-GAP `no-judge` stop
+  // below, returned as a red rather than thrown. Throwing here ahead of that
+  // check would make the wiring-gap stop unreachable through its own documented
+  // path — `prepareSigning` (src/authorjob.js) draws exactly this same line with
+  // its own `judgeLoop !== null` guard, and this function has to agree with it.
+  if (typeof judgeLoop === 'function' && (typeof judgeModel !== 'string' || judgeModel.trim() === '')) {
+    throw new Error('[calibrate] runCalibration needs the resolved judgeModel (PRD item 32.1): the graded set is '
+      + 'STAMPED with the judge that certified it, and a set nobody can attribute is a floor nobody can tell apart '
+      + 'from one graded by a different model. There is no library pin to fall back to.');
+  }
   /** @type {any[]} */
   const calls = [];
   /** @param {any} c */
@@ -413,7 +434,7 @@ export async function runCalibration({
     return /** @type {any} */ ({
       ok: false, stop: null, casualty: null, graded: [], failures: [],
       injection: { styles: [], allResisted: false, leaks: [] },
-      reds: [], judgeModel: JUDGE_MODEL,
+      reds: [], judgeModel,
       cardHash: null, casesHash: null, setHash: null,
       costUsd: t.costUsd, knownUsd: t.knownUsd, spendComplete: t.spendComplete, calls: calls.map((c) => ({ ...c })),
       ...extra,
@@ -464,7 +485,7 @@ export async function runCalibration({
         code: 'no-judge-seam',
         path: 'judgeLoop',
         detail: `the calibration gate runs ${CALIBRATION_SIZE} real locate calls plus ${battery.length} injection `
-          + `artifacts through ${JUDGE_MODEL}, and no judge seam was wired. An absent seam is an adopter wiring gap and `
+          + `artifacts through ${judgeModel}, and no judge seam was wired. An absent seam is an adopter wiring gap and `
           + 'never a fall-back: a gate that grades nothing would certify every close it was asked about',
       }],
     });
@@ -472,7 +493,7 @@ export async function runCalibration({
 
   const cardHash = artifactHash(card);
   const casesHash = artifactHash(cases);
-  const setHash = artifactHash({ card, cases, judgeModel: JUDGE_MODEL });
+  const setHash = artifactHash({ card, cases, judgeModel });
   const stamped = { cardHash, casesHash, setHash };
 
   // ── the signed ten ────────────────────────────────────────────────────────
@@ -480,7 +501,7 @@ export async function runCalibration({
   const graded = [];
   for (const c of cases) {
     const r = await pipeOnce({
-      artifactText: String(c.artifact), card, judgeLoop: /** @type {Function} */ (judgeLoop),
+      artifactText: String(c.artifact), card, judgeLoop: /** @type {Function} */ (judgeLoop), judgeModel,
       attempts, meter, id: String(c.id), kind: 'case', capStop,
     });
     // the ceiling, ahead of the casualty branch: a call nobody funded is not a call
@@ -527,7 +548,7 @@ export async function runCalibration({
   const styles = [];
   for (const b of battery) {
     const r = await pipeOnce({
-      artifactText: b.artifact, card: batteryCard, judgeLoop: /** @type {Function} */ (judgeLoop),
+      artifactText: b.artifact, card: batteryCard, judgeLoop: /** @type {Function} */ (judgeLoop), judgeModel,
       attempts, meter, id: b.id, kind: 'injection', capStop,
     });
     if (r.budget) {

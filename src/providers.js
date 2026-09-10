@@ -222,24 +222,33 @@ export function makeProvider(providerName, { apiKey, model, baseUrl } = {}) {
  * before this factory existed — that decision stays where each runner's own
  * `--model` flag/spec precedence lives, not duplicated in here).
  *
- * The JUDGE stays pinned to `anthropic-api`/`judgeModel` regardless of
- * `providerName` — arbiter territory (PRD item 28: "the judge stays PINNED
- * … regardless of the job's worker provider"). A signed `judge:{provider,
- * model}` field with its own calibration record is PRD item 28 part (2),
- * NOT built here; until it lands, the judge always needs its own
- * `judgeApiKey` (today, always `ANTHROPIC_API_KEY`), independent of which
- * key the worker used.
+ * THE JUDGE IS NO LONGER PINNED TO ANTHROPIC (PRD item 32.2, hamr 2026-09-10:
+ * *"what i care about is that judge becomes llm agnostic and not set to one
+ * model or provider"*). It is constructed through this same factory, from a
+ * `judgeProviderName`/`judgeModel` pair the CALLER resolved (`resolveJudge`,
+ * src/judged.js — the spec's signed `judge` override, else the job's own worker
+ * provider and model). Item 28's pin, and item 28 part (2)'s deferral of a
+ * signed `judge:{provider,model}` field, both close here.
+ *
+ * `judgeApiKey` stays a SEPARATE argument rather than being derived: the judge
+ * may legitimately be a different provider from the worker, and reading its key
+ * for it would put a second env-var reader in a module whose whole job is to
+ * have exactly one. The caller reads the resolved judge provider's own `envKey`
+ * and hands the key in — the same contract the worker key already has here.
  * @param {object} args
  * @param {string} args.providerName spec.provider (or the anthropic-api default)
  * @param {string|undefined} args.apiKey the WORKER's key, read from the provider's own `envKey`
  * @param {string} args.model the already-resolved worker model id
  * @param {Readonly<Record<string, string>>} args.tierModels the already-resolved tier -> model map (spec override folded in by the caller)
  * @param {string|undefined} [args.baseUrl] spec.baseUrl, if any
- * @param {string|undefined} args.judgeApiKey the judge's own key (today: `ANTHROPIC_API_KEY`)
- * @param {string} args.judgeModel `JUDGE_MODEL`
+ * @param {string|undefined} args.judgeApiKey the judge's own key, read by the caller from the RESOLVED judge provider's `envKey`
+ * @param {string} args.judgeModel the resolved judge model id
+ * @param {string} [args.judgeProviderName] the resolved judge provider name; defaults to `providerName` (the job's own worker provider), which is `resolveJudge`'s own default
+ * @param {string|undefined} [args.judgeBaseUrl] the judge provider's endpoint, when it takes one
  */
 export function buildRunnerProviders({
   providerName, apiKey, model, tierModels, baseUrl, judgeApiKey, judgeModel,
+  judgeProviderName = providerName, judgeBaseUrl = undefined,
 }) {
   const provider = makeProvider(providerName, { apiKey, model, baseUrl });
   /** @type {Record<string, any>} */
@@ -249,7 +258,15 @@ export function buildRunnerProviders({
       ? provider
       : makeProvider(providerName, { apiKey, model: tierModels[tier], baseUrl })
   ));
-  const judgeProvider = makeProvider('anthropic-api', { apiKey: judgeApiKey, model: judgeModel });
+  // the judge goes through the SAME table as the worker — one place names a
+  // provider identity, which is the entire reason this factory exists. Reusing
+  // the worker instance when the identity matches exactly is not an optimisation
+  // for its own sake: a second instance against the same endpoint/model is a
+  // second prompt-cache prefix, and cache writes are ~41% of the bill.
+  const judgeProvider = (judgeProviderName === providerName && judgeModel === model && judgeApiKey === apiKey
+    && judgeBaseUrl === baseUrl)
+    ? provider
+    : makeProvider(judgeProviderName, { apiKey: judgeApiKey, model: judgeModel, baseUrl: judgeBaseUrl });
   return { provider, providerFor, judgeProvider };
 }
 

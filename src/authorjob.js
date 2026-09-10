@@ -104,7 +104,7 @@ import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, SEED_E
 // and the gate that decides whether the ruler they describe is a ruler.
 import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from './cardauthor.js';
 import { runCalibration } from './calibrate.js';
-import { JUDGE_MODEL, CALIBRATION_SIZE } from './judged.js';
+import { CALIBRATION_SIZE } from './judged.js';
 import {
   GENRE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
@@ -415,7 +415,7 @@ function composerRefusal(reds) {
  * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
- *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null,
+ *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
@@ -429,6 +429,11 @@ export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
+  // THE JUDGE IDENTITY (PRD item 32.1), required only on the path that actually
+  // composes a judged stage — the stored calibration set carries the judge that
+  // certified it, and there is no library pin to fall back to. Absent on a purely
+  // mechanical close is correct and costs nothing: that close never judges.
+  judgeModel = null,
   // THE PROGRESS SEAMS. This composition is the pipeline's long silence — a real
   // survey, a real declaration ladder, and a real toolchain per close stage — and
   // it emitted nothing until it returned, so an operator watching a live run
@@ -665,7 +670,14 @@ export async function authorCloseForJob({
     // non-array before anything can be `ok` — and the narrowing is stated rather
     // than defaulted: `?? []` here would fold an EMPTY signed set into a close,
     // which is the one direction that must never be reachable.
-    closeDecl = foldJudgedArtifacts(closeDecl, { card: signed.card, cases: /** @type {any[]} */ (signed.cases) });
+    if (typeof judgeModel !== 'string' || judgeModel.trim() === '') {
+      throw new Error('[authorjob] authorCloseForJob composed a JUDGED close and was given no judgeModel (PRD item '
+        + '32.1). The stored calibration set carries the judge that certified it, and a set stamped with a model '
+        + 'nobody named is exactly the unattributable floor that field exists to prevent.');
+    }
+    closeDecl = foldJudgedArtifacts(closeDecl, {
+      card: signed.card, cases: /** @type {any[]} */ (signed.cases), judgeModel,
+    });
     return {
       ok: true,
       refusal: null,
@@ -805,12 +817,15 @@ const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
  * The book is built HERE and PRIOR SPEND IS ABSORBED into it, so the ceiling folds in
  * what the earlier seams already spent and re-invoking a seam cannot silently widen
  * it; the gate reads it between calls and stops as a refusal that names money.
- * @param {{spec: any, judgedStages: any[], judgeLoop: Function|null,
+ * `judgeModel` is the RESOLVED judge identity (PRD item 32.1), required and with no
+ * default: it is stamped onto the graded set and onto the calibration-missing record
+ * alike, so both say which judge the close would have been certified by.
+ * @param {{spec: any, judgedStages: any[], judgeLoop: Function|null, judgeModel: string,
  *   onJudgeCost: ((c: any) => void)|null, calibrateFn: Function,
  *   ceilingUsd: number|null, priorCalls: any[]}} o
  * @returns {Promise<{ok: boolean, record: any, reds: Red[], refusal: Refusal|null}>}
  */
-async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, calibrateFn, ceilingUsd, priorCalls }) {
+async function calibrationGate({ spec, judgedStages, judgeLoop, judgeModel, onJudgeCost, calibrateFn, ceilingUsd, priorCalls }) {
   const cases = spec.closeDecl?.calibration?.cases ?? null;
   // ONE card, and it is the SIGNED one — the card the calibration is graded
   // against must be the card the close will RUN, or the gate certifies a ruler
@@ -824,7 +839,7 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
       + 'ruler is unmeasured, and an unmeasured ruler cannot be signed.';
     return {
       ok: false,
-      record: { ok: false, stop: 'calibration-missing', judgeModel: JUDGE_MODEL, required: CALIBRATION_SIZE },
+      record: { ok: false, stop: 'calibration-missing', judgeModel, required: CALIBRATION_SIZE },
       reds: [{ code: 'calibration-missing', path: 'closeDecl.calibration.cases', detail }],
       refusal: refuse({
         kind: 'decision-ready',
@@ -850,6 +865,7 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
     cases,
     card,
     judgeLoop,
+    judgeModel,
     // the gate's own calls join the same tally the ceiling is read against — a
     // ceiling that cannot see the spend it bounds is F45's blind detector in a
     // money coat. The caller's reporter fires with the call's whole record, after.
@@ -987,8 +1003,8 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
  *
  * @param {{spec: any, workdir: string, seedRef?: string|null, shellCapUsd?: number,
  *   timeoutMs?: number, seedFn?: Function, listingFn?: Function, seedReadFn?: Function,
- *   judgeLoop?: Function|null, onJudgeCost?: ((c: any) => void)|null, calibrateFn?: Function,
- *   ceilingUsd?: number|null, priorCalls?: any[]}} o
+ *   judgeLoop?: Function|null, judgeModel?: string|null, onJudgeCost?: ((c: any) => void)|null,
+ *   calibrateFn?: Function, ceilingUsd?: number|null, priorCalls?: any[]}} o
  * @returns {Promise<{ok: boolean, specHash: string|null, seedRef: string|null,
  *   gates: any, work: any[], guards: any[], stops: any[], reds: Red[], refusal: Refusal|null}>}
  */
@@ -998,8 +1014,11 @@ export async function prepareSigning({
   // THE PAID SEAM, and it is the operator's to wire — this module owns no
   // provider and picks none (the same contract `authorCloseForJob` keeps for the
   // drafting model). Absent is never a fall-back: a judged close whose gate could
-  // not run is refused, not waved through.
-  judgeLoop = null, onJudgeCost = null, calibrateFn = runCalibration,
+  // not run is refused, not waved through. `judgeModel` is the seam's other half
+  // (PRD item 32.1) — WHICH model that loop drives, resolved by the caller
+  // (`resolveJudge`, src/judged.js). The two travel together: a gate that grades
+  // without recording its judge certifies a floor nobody can attribute.
+  judgeLoop = null, judgeModel = null, onJudgeCost = null, calibrateFn = runCalibration,
   // THE OPERATOR'S CEILING, and the spend it has already met. `null`/absent is
   // UNBOUNDED and is a stated choice, never a default invented here (the same
   // contract `authorCloseForJob` keeps). `priorCalls` is what the earlier paid
@@ -1156,7 +1175,15 @@ export async function prepareSigning({
   // decision and this is the signing gate.
   const judged = judgedStages(spec.closeDecl);
   if (judged.length) {
-    const cal = await calibrationGate({ spec, judgedStages: judged, judgeLoop, onJudgeCost, calibrateFn, ceilingUsd, priorCalls });
+    if (judgeLoop !== null && (typeof judgeModel !== 'string' || judgeModel.trim() === '')) {
+      throw new Error('[authorjob] prepareSigning was wired a judgeLoop with no judgeModel (PRD item 32.1). The two '
+        + 'halves of the judge seam travel together: the graded set is stamped with the judge that certified it, and '
+        + 'there is no library pin to fall back to.');
+    }
+    const cal = await calibrationGate({
+      spec, judgedStages: judged, judgeLoop, judgeModel: /** @type {string} */ (judgeModel),
+      onJudgeCost, calibrateFn, ceilingUsd, priorCalls,
+    });
     base.gates.calibration = cal.record;
     if (!cal.ok) return { ...base, work, guards, reds: cal.reds, refusal: cal.refusal };
   }

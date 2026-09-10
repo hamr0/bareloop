@@ -151,7 +151,7 @@ test('judged-floor: facts that satisfy every card item are a GREEN the ARBITER r
   const wd = patient();
   const j = fakeJudge([facts(PASS_FACTS)]);
   const m = meter();
-  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeLoop: j.loop, onJudgeCost: m.sink }));
+  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop, onJudgeCost: m.sink }));
 
   assert.equal(r.verdict, 'green');
   assert.equal(r.exitCode, EXIT_GREEN);
@@ -171,7 +171,7 @@ test('judged-floor: facts that satisfy every card item are a GREEN the ARBITER r
 test('judged-floor: a card item the facts do not satisfy is a RED, itemized down to the function and the quote', async () => {
   const wd = patient();
   const j = fakeJudge([facts(RED_FACTS)]);
-  const r = await runStage(stage({ card: CARD, paths: ['scripts/grade.mjs'] }), CTX(wd, { judgeLoop: j.loop }));
+  const r = await runStage(stage({ card: CARD, paths: ['scripts/grade.mjs'] }), CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop }));
 
   assert.equal(r.verdict, 'red');
   assert.equal(r.exitCode, EXIT_RED);
@@ -240,7 +240,7 @@ test('judged-floor: FIRST-RED-WINS is the CARD\'s order, ACROSS artifacts — ne
   const j = fakeJudge([facts(LATE_FACTS), facts(EARLY_FACTS)]);
   const r = await runStage(
     stage({ card: CARD, paths: ['src/late.js', 'src/early.js'] }),
-    CTX(wd, { judgeLoop: j.loop }),
+    CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop }),
   );
 
   assert.equal(r.verdict, 'red');
@@ -259,7 +259,7 @@ test('judged-floor: an UNSURE reading is a red, not a pass — the fail-safe sur
   // a well-formed emission that found nothing: decide() calls that unsure, and
   // unsure is red (contract (a)). The stage must not read "no findings" as clean.
   const j = fakeJudge([facts({ functions: [] })]);
-  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeLoop: j.loop }));
+  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop }));
   assert.equal(r.verdict, 'red');
   assert.equal(r.detail.perPath[0].firstRed, null, 'an unsure reading names no item — it names the absence');
   assert.equal(r.detail.redItems, 0, 'and NOTHING is itemized, which is exactly the shape that must not read green');
@@ -273,7 +273,7 @@ test('judged-floor: a malformed emission is RETRIED once, and a good second answ
   const wd = patient();
   const j = fakeJudge([reply('{"functions":[{"name":'), facts(PASS_FACTS)]);
   const m = meter();
-  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeLoop: j.loop, onJudgeCost: m.sink }));
+  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop, onJudgeCost: m.sink }));
 
   assert.equal(r.verdict, 'green');
   assert.equal(j.calls.length, 2, 'exactly one retry');
@@ -284,7 +284,7 @@ test('judged-floor: a malformed emission is RETRIED once, and a good second answ
 test('judged-floor: a second malformed emission STOPS the close — a broken judge is never evidence about the tree', async () => {
   const wd = patient();
   const j = fakeJudge([reply('not json at all'), reply('still not json')]);
-  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeLoop: j.loop }));
+  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop }));
 
   assert.equal(r.verdict, 'instrument-stop');
   assert.equal(r.exitCode, EXIT_STOP);
@@ -299,7 +299,7 @@ test('judged-floor: a transport failure is a casualty too — retried once, then
   const wd = patient();
   const calls = [];
   const loop = () => ({ run: async () => { calls.push(1); throw new Error('ENETUNREACH'); } });
-  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeLoop: loop }));
+  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: loop }));
   assert.equal(r.verdict, 'instrument-stop');
   assert.equal(r.detail.axis, 'provider-red');
   assert.equal(calls.length, JUDGE_ATTEMPTS);
@@ -309,7 +309,7 @@ test('judged-floor: an UNPRICED call stops and is NEVER retried — a retry only
   const wd = patient();
   const j = fakeJudge([{ text: JSON.stringify(PASS_FACTS), stopReason: 'end_turn', error: null, metrics: { costUsd: null, unpricedRounds: 1 } }]);
   const m = meter();
-  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeLoop: j.loop, onJudgeCost: m.sink }));
+  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop, onJudgeCost: m.sink }));
 
   assert.equal(r.verdict, 'instrument-stop');
   assert.equal(r.detail.axis, 'pricing-red');
@@ -325,7 +325,7 @@ test('judged-floor: every locate call reports its own cost, per artifact, throug
   const m = meter();
   const r = await runStage(
     stage({ card: CARD, paths: ['src/spine.js', 'scripts/grade.mjs'] }),
-    CTX(wd, { judgeLoop: j.loop, onJudgeCost: m.sink }),
+    CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop, onJudgeCost: m.sink }),
   );
 
   assert.equal(r.verdict, 'red', 'one clean artifact does not absolve the other');
@@ -367,7 +367,7 @@ test('judged-floor: a card naming a rule this arbiter does not implement is a br
   const j = fakeJudge([facts(PASS_FACTS)]);
   const r = await runStage(
     stage({ card: { items: [{ rule: 'vibes', text: 'it should read nicely' }] }, paths: ['src/spine.js'] }),
-    CTX(wd, { judgeLoop: j.loop }),
+    CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop }),
   );
   assert.equal(r.verdict, 'instrument-stop');
   assert.equal(r.detail.fault, STOP_FAULTS.CRASHED);
@@ -375,9 +375,27 @@ test('judged-floor: a card naming a rule this arbiter does not implement is a br
   assert.equal(j.calls.length, 0, 'refused BEFORE any token');
 });
 
-test('judged-floor: no judge seam wired is a WIRING GAP — never a silent fall-back to another model', async () => {
+test('judged-floor: no judge IDENTITY wired is a WIRING GAP — the identity is checked before the seam', async () => {
+  // PRD item 32.1: `ctx.judgeModel` is checked BEFORE `ctx.judgeLoop`, because
+  // neither of the two messages below (naming a model, or comparing against a
+  // stamp) can be written by a stage that has no name for the judge at all. A run
+  // with neither wired reads as the IDENTITY gap, never the seam gap — this is
+  // the case with nothing wired.
   const wd = patient();
   const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd));
+  assert.equal(r.verdict, 'instrument-stop');
+  assert.equal(r.detail.fault, STOP_FAULTS.FAILED);
+  assert.match(r.gapLines.join('\n'), /wired no judge IDENTITY \(ctx\.judgeModel\)/);
+});
+
+test('judged-floor: no judge SEAM wired is a WIRING GAP — never a silent fall-back to another model', async () => {
+  // an identity CAN be named with no seam behind it (an adopter who has resolved
+  // which model should grade but has not yet connected a `judgeLoop` to it), and
+  // that is a DIFFERENT wiring gap, distinguishable by name — the message below
+  // names the judge that would have graded, which only an identity check ahead of
+  // it can make true.
+  const wd = patient();
+  const r = await runStage(stage({ card: CARD, paths: ['src/spine.js'] }), CTX(wd, { judgeModel: JUDGE_MODEL }));
   assert.equal(r.verdict, 'instrument-stop');
   assert.equal(r.detail.fault, STOP_FAULTS.FAILED);
   assert.match(r.gapLines.join('\n'), new RegExp(`wired no judge seam[\\s\\S]*${JUDGE_MODEL}`));
@@ -387,7 +405,7 @@ test('judged-floor: an artifact that will not open, is empty, or runs past the c
   const wd = patient();
   writeFileSync(join(wd, 'src', 'blank.js'), '   \n');
   const j = fakeJudge([facts(PASS_FACTS)]);
-  const ctx = CTX(wd, { judgeLoop: j.loop });
+  const ctx = CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop });
 
   const missing = await runStage(stage({ card: CARD, paths: ['src/nope.js'] }), ctx);
   assert.equal(missing.verdict, 'instrument-stop');
@@ -416,7 +434,7 @@ test('ruling 8: a judged stage is EXEMPT from the seed-verdict read, as a ROW an
   const j = fakeJudge([facts(PASS_FACTS)]);
   const rows = await seedRead(
     { stages: [stage({ card: CARD, paths: ['src/spine.js'] })] },
-    CTX(wd, { judgeLoop: j.loop }),
+    CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: j.loop }),
   );
   assert.equal(rows.length, 1, 'one row per declared stage (F59: absent is not empty)');
   assert.equal(rows[0].verdict, 'skipped');
@@ -437,7 +455,7 @@ test('the bridge carries the judge seam and the meter into the stage, and transl
   assert.equal(stages[0].gapKeep, `^${DECLARED_GAP_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 
   const ok = await runDeclaredStages(stages, (s) => s, {
-    cwd: wd, seedRef: 'HEAD', judgeLoop: green.loop, onJudgeCost: m.sink,
+    cwd: wd, seedRef: 'HEAD', judgeModel: JUDGE_MODEL, judgeLoop: green.loop, onJudgeCost: m.sink,
   });
   assert.equal(ok.verdict, 'satisfied');
   assert.equal(m.rows.length, 1, 'the meter reached the stage through the bridge');
@@ -446,7 +464,7 @@ test('the bridge carries the judge seam and the meter into the stage, and transl
   const red = await runDeclaredStages(
     declaredStages({ stages: [stage({ card: CARD, paths: ['scripts/grade.mjs'] })] }),
     (s) => s.replace(/namesHit/g, '[scrubbed]'),
-    { cwd: wd, seedRef: 'HEAD', judgeLoop: j.loop },
+    { cwd: wd, seedRef: 'HEAD', judgeModel: JUDGE_MODEL, judgeLoop: j.loop },
   );
   assert.equal(red.verdict, 'needs_revision');
   assert.match(red.gap, /close stage "reads-well" failed:/, 'the ONE gap header the trend reader parses');

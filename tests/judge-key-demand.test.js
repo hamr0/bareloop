@@ -81,22 +81,41 @@ test('scripts/run-u.mjs demands the WORKER key unconditionally and the JUDGE key
     'and it is still ALWAYS required — the worker always runs');
   assert.match(src, /const JUDGES = closeJudges\(spec\.closeDecl\);/,
     'the judge demand asks the shared predicate');
-  assert.match(src, /if \(JUDGES && !apiKey\)/,
+  // Item 32.1 resolves WHICH model judges before deciding whether a key is
+  // demanded for it, so the demand now reads a resolved-provider key
+  // (`judgeApiKey`, following `judgeEntry.envKey`) rather than the pre-item-32
+  // `apiKey` local that assumed the judge was always Anthropic.
+  assert.match(src, /const judgeApiKey = process\.env\.JUDGE_API_KEY \?\? process\.env\[judgeEntry\.envKey\];/,
+    'the judge key follows the RESOLVED judge provider\'s own env var, with the role-named override in front');
+  assert.match(src, /if \(JUDGES && !judgeApiKey\)/,
     'and fires only when the close actually judges');
   assert.ok(!/kind === JUDGED_FLOOR_KIND/.test(src),
     'the runner holds NO open-coded copy of the judged-stage predicate');
 });
 
-test('the judge key reads JUDGE_API_KEY first and falls back to ANTHROPIC_API_KEY — one variable was doing two jobs', () => {
+test('the judge key reads JUDGE_API_KEY first and falls back to the RESOLVED judge provider\'s own envKey (PRD item 32.3)', () => {
+  // Item 32 moved the fallback off a hardcoded `ANTHROPIC_API_KEY` spelling: the
+  // judge is no longer pinned to Anthropic, so the fallback has to follow
+  // WHATEVER provider `resolveJudge` names, read out of the same provider table
+  // the worker key already goes through — never a second hardcoded variable.
   const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
-  assert.match(src, /process\.env\.JUDGE_API_KEY \?\? process\.env\.ANTHROPIC_API_KEY/,
-    'role-named first, fallback second: the fallback is what keeps every existing invocation working');
+  assert.match(src, /process\.env\.JUDGE_API_KEY \?\? process\.env\[judgeEntry\.envKey\]/,
+    'role-named first, fallback second: the fallback follows the RESOLVED provider, never a hardcoded name');
+  assert.ok(!/process\.env\.JUDGE_API_KEY \?\? process\.env\.ANTHROPIC_API_KEY/.test(src),
+    'the pre-item-32 hardcoded Anthropic fallback is gone — that spelling assumed the judge could only ever be Claude');
 });
 
-test('the judge provider is built only when its key exists — a keyless green run wires null, never a provider holding undefined', () => {
+test('the judge provider is built through the factory only when its key exists — a keyless green run wires null, never a provider holding undefined', () => {
+  // Item 32.2 retired the direct `new AnthropicProvider(...)` construction: the
+  // judge is now built through `makeProvider`, exactly like the worker, off the
+  // judge identity `resolveJudge` handed back — never a literal `AnthropicProvider`
+  // import standing in for "the judge".
   const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
-  assert.match(src, /const judgeProvider = apiKey \? new AnthropicProvider\(\{ apiKey, model: JUDGE_MODEL[^)]*\}\) : null;/,
-    'a provider constructed with apiKey:undefined would fail at CALL time, deep in a close, after the run has been paid for');
+  assert.match(src, /const judgeProvider = judgeApiKey\s*\n\s*\? makeProvider\(judge\.provider, \{ apiKey: judgeApiKey, model: judge\.model/,
+    'a provider constructed with apiKey:undefined would fail at CALL time, deep in a close, after the run has been paid for — and it is built through the SAME factory the worker uses, never a hardcoded class');
+  assert.match(src, /: null;/, 'the null branch survives: no key, no provider, never one holding undefined');
+  assert.ok(!/new AnthropicProvider/.test(src),
+    'no direct AnthropicProvider construction survives for the judge — the factory is item 32.2\'s whole point');
 });
 
 // ── the sweep: one spelling, everywhere ─────────────────────────────────────

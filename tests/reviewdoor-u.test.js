@@ -216,16 +216,32 @@ test('tripwire: the runner ANSWERS through the library seam and never re-spells 
 
 test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provider instrument-STOPS', () => {
   // softgreen's whole point is a close that JUDGES, and the judged stage's provider
-  // is not the worker's: it is pinned to JUDGE_MODEL, never agent-selectable, and
-  // absent it the stage stops as a wiring gap rather than grading on whatever model
-  // was lying around. `run-author.mjs` wired it; this runner — the one that actually
-  // runs the job — did not, so every live softgreen run would have died at its own
+  // is not necessarily the worker's — before PRD item 32 it was pinned to
+  // `JUDGE_MODEL` on Anthropic, never agent-selectable, and absent it the stage
+  // stopped as a wiring gap rather than grading on whatever model was lying
+  // around. `run-author.mjs` wired it; this runner — the one that actually runs
+  // the job — did not, so every live softgreen run would have died at its own
   // judged stage. A parsed-and-dropped seam is a flag that opens nothing.
+  //
+  // Item 32.1/32.2 replaced the pin with a RESOLVED identity (`resolveJudge`,
+  // src/judged.js: the spec's signed `judge:{provider,model}` if named, else
+  // this job's own worker provider+model) built through the SAME provider
+  // factory the worker uses (`makeProvider`, never a hardcoded
+  // `new AnthropicProvider`) — so what this tripwire must now prove is that the
+  // RESOLVED identity, not a library constant, is what gets built and handed to
+  // `runJob`.
   const src = readFileSync(RUNNER, 'utf8');
-  assert.match(src, /import \{[^}]*\bJUDGE_MODEL\b/s, 'the tier is the library\'s constant, never a spelling here');
+  assert.match(src, /import \{ resolveJudge \} from '\.\.\/src\/judged\.js';/,
+    'the identity is RESOLVED per job, never imported as a fixed tier');
+  assert.match(src, /const judge = resolveJudge\(\{ specJudge: spec\.judge, workerProvider: spec\.provider, workerModel: MODEL \}\);/,
+    'resolved from the signed spec\'s override, defaulting to the job\'s own worker');
   assert.match(src, /judgeProvider/, 'the judge provider must be built');
-  assert.match(src, /new AnthropicProvider\(\{ apiKey, model: JUDGE_MODEL(?:, [^}]*)? \}\)/, 'and PINNED to the judged tier'); // extra ctor options (exposeErrorBody, PRD 30.5) are fine; the PIN is the model
+  assert.match(src, /const judgeProvider = judgeApiKey\s*\n\s*\? makeProvider\(judge\.provider, \{ apiKey: judgeApiKey, model: judge\.model/,
+    'built through the FACTORY off the resolved identity, never a hardcoded AnthropicProvider construction');
+  assert.ok(!/new AnthropicProvider\(/.test(src),
+    'no direct AnthropicProvider construction survives for the judge — that pin is exactly what item 32.2 removed');
   assert.match(src, /judgeProvider,/, 'and it must reach runJob — a provider built and dropped grades nothing');
+  assert.match(src, /judgeModel: judge\.model,/, 'and so must the identity\'s OTHER half — the seam and the name travel together');
   // the key rides the same way every other secret does here: out of the environment,
   // never argv, never printed
   assert.doesNotMatch(src, /apiKey: ['"]/, 'a literal key must never appear in this runner');

@@ -714,6 +714,11 @@ ${scoutBlob || '(no scout notes)'}`;
  *   `false` → the drafter has no tools, so a native session would report NO cost — return a
  *   metered claude-json TEXT provider (`--output-format json`, `parse:'claude-json'`) instead,
  *   so its spend is never invisible. The Loop path (`anthropic-api`) never touches this.
+ * @param {string|null} [opts.judgeModel] softgreen — WHICH model that judge provider drives
+ *   (PRD item 32.1). Resolved by the CALLER (`resolveJudge`, src/judged.js: the spec's signed
+ *   `judge` override, else the job's own worker model), never pinned in this library. It
+ *   travels with `judgeProvider` or the judged stage stops as a wiring gap: a verdict whose
+ *   grader cannot be named is a floor nobody can attribute.
  * @param {any} [opts.judgeProvider] softgreen — the provider a JUDGED close stage runs its
  *   locate call through, pinned by the operator to `JUDGE_MODEL` (src/judged.js). Separate
  *   from `provider`/`providerFor` on purpose: the judge tier is not a step knob and never
@@ -928,7 +933,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1633,6 +1638,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // an attempt's (a budget funds the attempt PLUS its close), and a null cost trips
       // the same F6 pricing halt rather than being laundered into $0.
       judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+      // the seam's other half (PRD item 32.1) — WHICH model that loop drives. Passed
+      // through untouched: this module resolves no judge, exactly as it constructs no
+      // provider. `runJudgedFloor` stops as a wiring gap when it is absent rather than
+      // falling back to a library pin, so a null here is a stop and never a default.
+      ...(judgeModel === null ? {} : { judgeModel }),
       // F152/PRD 30.4 — the judge's locate call carried NO time bound at all: a
       // live endpoint that accepts and never answers hung the process forever
       // (measured), because an open socket is an active handle and no backstop

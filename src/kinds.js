@@ -66,7 +66,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
-import { runLocate, decide, validateCard, LOCATE_AXES, LOCATE_LABEL, JUDGE_MODEL } from './judged.js';
+import { runLocate, decide, validateCard, LOCATE_AXES, LOCATE_LABEL } from './judged.js';
 
 /** the close's two judgment exits — a stage's verdict, in the shape the
  * hand-written closes already spoke (exit code is truth) */
@@ -298,6 +298,7 @@ export function mechanicalStages(stages) {
  *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees,
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   judgeLoop?: (o: {system: string}) => any,
+ *   judgeModel?: string,
  *   onJudgeCost?: (c: {stage: string|null, kind: string|null, path: string, attempt: number,
  *     label: string, model: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   callBounds?: () => {timeoutMs?: number, deadlineMs?: number},
@@ -308,10 +309,16 @@ export function mechanicalStages(stages) {
  *   runner — never authored, never defaulted, and absent on every ordinary run.
  *   `judgeLoop` is the PAID seam the judged stage runs its locate call through, and
  *   it is operator territory for the same reason the worker's provider is: this
- *   module owns no provider and never picks one, and the judge tier is PINNED
- *   (`JUDGE_MODEL`) rather than chosen. Absent is not a fall-back to some other
- *   model — the stage stops as a wiring gap, the same answer `runPlan` gives a
+ *   module owns no provider and never picks one. Absent is not a fall-back to some
+ *   other model — the stage stops as a wiring gap, the same answer `runPlan` gives a
  *   native job with no native factory.
+ *   `judgeModel` is the seam's other half (PRD item 32.1): WHICH model that loop
+ *   drives, resolved by the runner (`resolveJudge`, src/judged.js — the spec's signed
+ *   `judge` override, else the job's own worker model) rather than pinned in this
+ *   library. It is required whenever `judgeLoop` is, and for the same reason: a
+ *   verdict whose grader cannot be named is a floor nobody can attribute, and the
+ *   signed calibration record has nothing to compare against. The two travel
+ *   together or the stage stops.
  *   `onJudgeCost` is the METER, and it is the only reason a judged stage can be
  *   funded honestly: this executor cannot reach the run's ledger, so every locate
  *   call's cost is reported OUT through it, once per call, on every route including
@@ -1776,16 +1783,34 @@ async function runJudgedFloor(stage, ctx) {
   //     model on it (`validateCloseDecl`), so the runtime question is only ever WHICH
   //     model — and a stage descriptor handed straight to `runStage` by an adopter or a
   //     test is not a signed spec making a claim about a tier.
-  if (isNonEmptyString(stage.calibrationJudgeModel) && stage.calibrationJudgeModel !== JUDGE_MODEL) {
-    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" would grade with ${JUDGE_MODEL}, and the calibration `
-      + `set signed with this close was graded by ${stage.calibrationJudgeModel} — the judge tier moved under the `
+  //
+  // PRD item 32.1: WHICH model grades is no longer this module's constant — it is
+  // `ctx.judgeModel`, the identity the run resolved and wired (`resolveJudge`,
+  // src/judged.js: the spec's signed `judge` override, else the job's own worker
+  // model). The IDENTITY is checked before the seam and before the stamp, because
+  // an unwired identity makes both of the messages below unwritable: neither
+  // "would grade with X" nor "the judge is X" can be said by a stage that cannot
+  // name X. There is deliberately NO fall-back to `JUDGE_MODEL` here — a run that
+  // cannot say which model grades has not wired a judge, and grading under an
+  // identity nobody chose is exactly the silent-ignore class this repo refuses
+  // everywhere else.
+  if (!isNonEmptyString(ctx.judgeModel)) {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" is a judged stage and this run wired no judge IDENTITY `
+      + '(ctx.judgeModel) — an adopter wiring gap, never a silent fall-back to a library pin. A verdict whose grader '
+      + 'cannot be named is a floor nobody can attribute, and the calibration record has nothing to compare against',
+    {}, STOP_FAULTS.FAILED);
+  }
+  const judgeModel = /** @type {string} */ (ctx.judgeModel);
+  if (isNonEmptyString(stage.calibrationJudgeModel) && stage.calibrationJudgeModel !== judgeModel) {
+    return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" would grade with ${judgeModel}, and the calibration `
+      + `set signed with this close was graded by ${stage.calibrationJudgeModel} — the judge moved under the `
       + 'signature. A floor is worth exactly the judge that certified it, so this stops rather than grading against a '
-      + 'floor nobody calibrated: re-sign the spec with the new tier and re-run the calibration gate (recalibrate)',
-    { signedJudgeModel: stage.calibrationJudgeModel, judgeModel: JUDGE_MODEL }, STOP_FAULTS.FAILED);
+      + 'floor nobody calibrated: re-sign the spec with the new judge and re-run the calibration gate (recalibrate)',
+    { signedJudgeModel: stage.calibrationJudgeModel, judgeModel }, STOP_FAULTS.FAILED);
   }
   if (typeof ctx.judgeLoop !== 'function') {
     return stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}" is a judged stage and this run wired no judge seam `
-      + `(ctx.judgeLoop) — an adopter wiring gap, never a silent fall-back: the judge is ${JUDGE_MODEL}, pinned, and a `
+      + `(ctx.judgeLoop) — an adopter wiring gap, never a silent fall-back: the judge is ${judgeModel} and a `
       + 'stage that quietly graded on whatever model was lying around would be a floor nobody calibrated',
     {}, STOP_FAULTS.FAILED);
   }
@@ -1837,7 +1862,7 @@ async function runJudgedFloor(stage, ctx) {
           if (typeof ctx.onJudgeCost !== 'function') return;
           ctx.onJudgeCost({
             stage: stage?.name ?? null, kind: stage?.kind ?? null, path: rel, attempt,
-            label: LOCATE_LABEL, model: JUDGE_MODEL, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
+            label: LOCATE_LABEL, model: judgeModel, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
           });
         },
       });
@@ -1888,7 +1913,7 @@ async function runJudgedFloor(stage, ctx) {
     exitCode: red ? EXIT_RED : EXIT_GREEN,
     gapLines: gap.render(),
     detail: {
-      model: JUDGE_MODEL,
+      model: judgeModel,
       card: p.card.items.map((/** @type {any} */ it) => it.rule),
       paths,
       perPath,

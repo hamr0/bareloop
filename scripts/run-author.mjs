@@ -47,28 +47,37 @@
 //                  goal, tools, escalation. NO close, NO verdictType: the close is
 //                  what this pipeline authors, and the class comes from --verdict.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
   VERDICT_CLASSES, LIVE_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
 import { makeLoopGenerate } from '../src/authorflow.js';
-import { defaultJudgeLoop, JUDGE_MODEL } from '../src/judged.js';
+import { defaultJudgeLoop, resolveJudge } from '../src/judged.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
 import { closeJudges } from '../src/kinds.js';
+import { resolveProvider, makeProvider } from '../src/providers.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
 } from './author-readout.mjs';
 
-const require = createRequire(import.meta.url);
-const { AnthropicProvider } = require('bare-agent/providers');
-
+// THE AUTHORING PROVIDER, through the ONE table (PRD item 32.2). This script
+// used to construct `AnthropicProvider` by name, twice — once for the drafter and
+// once for the judge — which is the scattering `src/providers.js` exists to stop.
+//
+// NOT YET SELECTABLE, and that is stated rather than implied: authoring still runs
+// on `anthropic-api`, because the drafting floor is a MODEL-TIER rule (PRD v1.36:
+// sonnet minimum) that no other provider has been screened against, and screening
+// it is a paid exercise nobody has run. What item 32 changes here is that the
+// identity now goes through the factory, so admitting a second authoring provider
+// is a table lookup and a flag rather than a rewrite. The remaining gap is logged
+// as a finding, never quietly carried.
+const PROVIDER_NAME = 'anthropic-api';
 // The same tier run-u drafts and works on. The declaration is authored by a
 // model, so the floor is the drafter floor (PRD v1.36: sonnet MINIMUM).
-const MODEL = 'claude-sonnet-5';
+const MODEL = resolveProvider(PROVIDER_NAME).tiers.sonnet;
 /** the close precheck / seed read spawns real toolchains; the slowest stage is a
  * suite. Headroom, not a budget — and it is passed EXPLICITLY rather than left
  * to a default, because a defaulted cap is a silent second ceiling. */
@@ -139,8 +148,16 @@ if (carried.length) {
 
 // Secrets load from the environment; they never enter argv (a command line is
 // world-readable on /proc) and they are never printed.
-const apiKey = process.env.ANTHROPIC_API_KEY;
-if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree, never argv)'); process.exit(2); }
+const AUTHOR_ENV_KEY = resolveProvider(PROVIDER_NAME).envKey;
+const apiKey = process.env[AUTHOR_ENV_KEY];
+if (!apiKey) { console.error(`${AUTHOR_ENV_KEY} not set (secrets load from the environment — never the tree, never argv)`); process.exit(2); }
+/** The judge's key follows the RESOLVED judge provider's own env var, with
+ * `JUDGE_API_KEY` as the role-named override in front (PRD item 32.3) — the same
+ * contract `scripts/run-u.mjs` keeps, so one story covers both surfaces. When the
+ * judge IS the authoring provider this is the key already read above. */
+const judgeKeyFor = (/** @type {string} */ providerName) => (
+  process.env.JUDGE_API_KEY ?? process.env[resolveProvider(providerName).envKey]
+);
 
 mkdirSync(OUT, { recursive: true });
 const runid = Date.now().toString(36);
@@ -188,7 +205,7 @@ console.log(`  timeout  ${TIMEOUT_MS}ms per close stage`);
 console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-const provider = new AnthropicProvider({ exposeErrorBody: true, apiKey, model: MODEL });
+const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL });
 emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
 // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
@@ -292,6 +309,12 @@ try {
   // `provider` drives the scout; `generate` is the declaration model boundary (one
   // bare-agent Loop per call, the tool wired to end the call it is used in).
   const authored = await authorCloseForJob({
+    // the judge that will certify this close's calibration set, if it composes a
+    // judged stage (PRD item 32.1). A DRAFT has no signed `judge` yet — nothing is
+    // signed until prepareSigning — so at compose time the judge is this authoring
+    // run's own identity, which is also what the spec will resolve to unless the
+    // signer adds an override and re-signs (which re-runs this gate).
+    judgeModel: MODEL,
     answers,
     verdictType: VERDICT,
     repoPath: PATIENT,
@@ -433,15 +456,25 @@ try {
       // ── 3. D9's gates. Nothing here judges the close; it measures it. ────────
       //
       // THE JUDGE SEAM, wired only when the close actually judges. It is a
-      // SEPARATE provider pinned to `JUDGE_MODEL`: the judge tier is never the
+      // A SEPARATE provider instance for the judge: its tier is never the
       // drafter's model and never agent-selectable, and §4.2's safety argument is
       // worth exactly as much as the tier its injection evidence was measured on.
       // Absent it, `prepareSigning` refuses the close as a wiring gap rather than
       // signing an ungraded ruler.
       const judges = closeJudges(spec.closeDecl);
-      const judgeProvider = judges ? new AnthropicProvider({ exposeErrorBody: true, apiKey, model: JUDGE_MODEL }) : null;
+      // THE JUDGE, RESOLVED (PRD item 32.1) — this authoring run's own drafting
+      // provider and model by default, a signed `judge` override when the spec
+      // names one. The calibration gate STAMPS the graded set with whatever this
+      // resolves to, so the identity that certifies the floor here is the identity
+      // the close will later refuse to grade without.
+      const judge = judges
+        ? resolveJudge({ specJudge: spec.judge, workerProvider: PROVIDER_NAME, workerModel: MODEL })
+        : null;
+      const judgeProvider = judge
+        ? makeProvider(judge.provider, { apiKey: judgeKeyFor(judge.provider), model: judge.model })
+        : null;
       if (judges) {
-        console.log(`\ncalibration gate — REAL judge calls at ${JUDGE_MODEL}, one per case plus the injection battery.`);
+        console.log(`\ncalibration gate — REAL judge calls at ${judge.model} on ${judge.provider}, one per case plus the injection battery.`);
         console.log('  this is the only gate that spends money, and it runs after every free one.');
       }
       const signing = await prepareSigning({
@@ -457,6 +490,9 @@ try {
         ceilingUsd: CEILING_USD,
         priorCalls: [...metered],
         judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+        // the seam's other half (PRD item 32.1): the graded set is STAMPED with
+        // this, and the close later refuses to grade under any other identity.
+        judgeModel: judge?.model ?? null,
         // the gate's spend joins the run's ONE metered list, under the judge call's
         // own label — a close's calibration is money like any other money (F12)
         onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),

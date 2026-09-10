@@ -17,6 +17,12 @@ import {
   JUDGE_RULE_IDS, validateCard, decide,
   CALIBRATION_SIZE, CASE_VERDICTS, validateCalibrationSet, validateJudgedArtifacts, expectedOf,
 } from '../src/judged.js';
+
+/** The judge identity these tests fold in (PRD item 32.1: `foldJudgedArtifacts` takes
+ * it, required — the stored set carries the judge that certified it and there is no
+ * library pin to fall back to). Deliberately NOT the historical pin: a literal that
+ * happened to equal the old constant could pass with the argument ignored. */
+const TEST_JUDGE = 'test-judge-model';
 import {
   PROPOSAL_TOOL_NAME, proposalSchema, proposalTool, cardCasesPrompt, proposeJudgedArtifacts,
   signJudgedArtifacts, foldJudgedArtifacts,
@@ -322,7 +328,7 @@ test('a planted key in a proposed case is SCRUBBED at ingest — a signed artefa
 
 test('the fold enumerates BOTH artifacts into the closeDecl: the card on the judged stage, the ten beside it', () => {
   const signed = signJudgedArtifacts({ proposal: PROPOSAL() });
-  const folded = foldJudgedArtifacts(closeDecl(), { card: signed.card, cases: signed.cases });
+  const folded = foldJudgedArtifacts(closeDecl(), { judgeModel: TEST_JUDGE, card: signed.card, cases: signed.cases });
   const judged = folded.stages.find((/** @type {any} */ s) => s.kind === 'judged-floor');
   assert.deepEqual(judged.params.card, signed.card);
   assert.equal(folded.calibration.cases.length, CALIBRATION_SIZE);
@@ -333,7 +339,7 @@ test('the fold REPLACES the composer\'s card with the signer\'s — one card, an
   const decl = closeDecl();
   decl.stages.at(-1).params.card = { items: [{ rule: 'returns', text: 'the composer\'s guess' }] };
   const signed = signJudgedArtifacts({ proposal: PROPOSAL() });
-  const folded = foldJudgedArtifacts(decl, { card: signed.card, cases: signed.cases });
+  const folded = foldJudgedArtifacts(decl, { judgeModel: TEST_JUDGE, card: signed.card, cases: signed.cases });
   assert.deepEqual(folded.stages.at(-1).params.card, signed.card);
   assert.deepEqual(decl.stages.at(-1).params.card.items[0].rule, 'returns', 'the input is never mutated');
 });
@@ -342,34 +348,34 @@ test('a card with nowhere to land THROWS — a signed rubric over a close with n
   const decl = closeDecl();
   decl.stages = decl.stages.filter((/** @type {any} */ s) => s.kind !== 'judged-floor');
   const signed = signJudgedArtifacts({ proposal: PROPOSAL() });
-  assert.throws(() => foldJudgedArtifacts(decl, { card: signed.card, cases: signed.cases }), /judged-floor/);
+  assert.throws(() => foldJudgedArtifacts(decl, { judgeModel: TEST_JUDGE, card: signed.card, cases: signed.cases }), /judged-floor/);
 });
 
 test('the HASH covers both: a card edit and a case edit each flip it; a byte-identical re-store does not', () => {
   const signed = signJudgedArtifacts({ proposal: PROPOSAL() });
   const base = /** @type {any} */ ({
     job: 'docs', goal: 'document src/', verdictType: 'soft-green',
-    closeDecl: foldJudgedArtifacts(closeDecl(), { card: signed.card, cases: signed.cases }),
+    closeDecl: foldJudgedArtifacts(closeDecl(), { judgeModel: TEST_JUDGE, card: signed.card, cases: signed.cases }),
   });
   const h0 = jobSpecHash(base);
 
   // re-storing the identical artifacts is hash-neutral
   const again = signJudgedArtifacts({ proposal: PROPOSAL() });
-  const h1 = jobSpecHash({ ...base, closeDecl: foldJudgedArtifacts(closeDecl(), { card: again.card, cases: again.cases }) });
+  const h1 = jobSpecHash({ ...base, closeDecl: foldJudgedArtifacts(closeDecl(), { judgeModel: TEST_JUDGE, card: again.card, cases: again.cases }) });
   assert.equal(h1, h0, 'byte-identical artifacts hash identically');
 
   // a CARD line moves it
   const cardFix = PROPOSAL();
   cardFix.card.items[0].text = 'a different sentence entirely';
   const s2 = signJudgedArtifacts({ proposal: PROPOSAL(), fix: cardFix });
-  const h2 = jobSpecHash({ ...base, closeDecl: foldJudgedArtifacts(closeDecl(), { card: s2.card, cases: s2.cases }) });
+  const h2 = jobSpecHash({ ...base, closeDecl: foldJudgedArtifacts(closeDecl(), { judgeModel: TEST_JUDGE, card: s2.card, cases: s2.cases }) });
   assert.notEqual(h2, h0, 'a card change is a re-sign');
 
   // a CASE moves it too
   const caseFix = PROPOSAL();
   caseFix.cases[3].artifact = `${ARTIFACT_PASS}// edited by the signer\n`;
   const s3 = signJudgedArtifacts({ proposal: PROPOSAL(), fix: caseFix });
-  const h3 = jobSpecHash({ ...base, closeDecl: foldJudgedArtifacts(closeDecl(), { card: s3.card, cases: s3.cases }) });
+  const h3 = jobSpecHash({ ...base, closeDecl: foldJudgedArtifacts(closeDecl(), { judgeModel: TEST_JUDGE, card: s3.card, cases: s3.cases }) });
   assert.notEqual(h3, h0, 'a case edit is a re-sign');
   assert.notEqual(h3, h2);
 
@@ -382,7 +388,7 @@ test('the HASH covers both: a card edit and a case edit each flip it; a byte-ide
 
 test('validateCloseDecl accepts a folded softgreen close and REFUSES a broken calibration set', () => {
   const signed = signJudgedArtifacts({ proposal: PROPOSAL() });
-  const ok = foldJudgedArtifacts(closeDecl(), { card: signed.card, cases: signed.cases });
+  const ok = foldJudgedArtifacts(closeDecl(), { judgeModel: TEST_JUDGE, card: signed.card, cases: signed.cases });
   const listing = ['src/spine.js', 'src/other.js'];
   const v = validateCloseDecl(ok, { listing, verdictType: 'soft-green' });
   assert.equal(v.ok, true, JSON.stringify(v.reds));
@@ -408,7 +414,7 @@ test('a calibration set with no judged stage to grade is refused', () => {
 
 test('the set is graded against the JUDGED STAGE\'s own card — a case naming an unjudged rule reds at the spec gate', () => {
   const signed = signJudgedArtifacts({ proposal: PROPOSAL() });
-  const decl = foldJudgedArtifacts(closeDecl(), { card: signed.card, cases: signed.cases });
+  const decl = foldJudgedArtifacts(closeDecl(), { judgeModel: TEST_JUDGE, card: signed.card, cases: signed.cases });
   decl.stages.at(-1).params.card = { items: [{ rule: 'returns', text: 'only returns' }] };
   const v = validateCloseDecl(decl, { listing: ['src/spine.js'], verdictType: 'soft-green' });
   assert.equal(v.ok, false);
@@ -482,4 +488,33 @@ test('validateJudgedArtifacts refuses a card and a set independently, and names 
   assert.equal(r.ok, false);
   assert.ok(r.reds.some((/** @type {any} */ x) => x.path === 'card'));
   assert.ok(r.reds.some((/** @type {any} */ x) => x.code === 'calibration-size'));
+});
+
+
+// ── the folded judge identity (PRD item 32.1) ───────────────────────────────
+
+test('the stored calibration carries the judge HANDED IN, not a library constant', async () => {
+  const signed = signJudgedArtifacts({ proposal: PROPOSAL(), fix: null });
+  const folded = foldJudgedArtifacts(closeDecl(), { judgeModel: 'deepseek-chat', card: signed.card, cases: signed.cases });
+  assert.equal(folded.calibration.judgeModel, 'deepseek-chat');
+  assert.notEqual(folded.calibration.judgeModel, 'claude-haiku-4-5', 'the pre-item-32 pin is not what gets stored any more');
+});
+
+test('a judge CHANGE moves jobSpecHash — which is what kills the signature and forces recalibration', async () => {
+  const signed = signJudgedArtifacts({ proposal: PROPOSAL(), fix: null });
+  const base = { schema: 1, job: 'j', goal: 'g', verdictType: 'soft-green' };
+  const a = jobSpecHash({ ...base, closeDecl: foldJudgedArtifacts(closeDecl(), { judgeModel: 'judge-a', card: signed.card, cases: signed.cases }) });
+  const b = jobSpecHash({ ...base, closeDecl: foldJudgedArtifacts(closeDecl(), { judgeModel: 'judge-b', card: signed.card, cases: signed.cases }) });
+  assert.notEqual(a, b, 'same card, same cases, different judge — a different signed artefact');
+});
+
+test('folding REFUSES without a judge identity — a set stamped by nobody is unattributable', async () => {
+  const signed = signJudgedArtifacts({ proposal: PROPOSAL(), fix: null });
+  for (const bad of [undefined, null, '', '  ']) {
+    assert.throws(
+      () => foldJudgedArtifacts(closeDecl(), { judgeModel: /** @type {any} */ (bad), card: signed.card, cases: signed.cases }),
+      /judgeModel/,
+      `${JSON.stringify(bad)} must be refused, not defaulted`,
+    );
+  }
 });
