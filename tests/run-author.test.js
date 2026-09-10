@@ -371,3 +371,127 @@ test('exit code 4 is the CRASH, and nothing else in this runner claims it', () =
   assert.deepEqual([...new Set(codes)].sort(), ['1', '2', '3', '4'], 'the runner\'s exit vocabulary changed');
   assert.equal(codes.filter((c) => c === '4').length, 1, 'a second site claims exit 4 — the crash code is no longer distinct');
 });
+
+// ── the judge born wrong: compose-time stamp vs the calibration gate ────────
+//
+// The defect: `judgeModel` handed to `authorCloseForJob` (the STAMP written
+// into `closeDecl.calibration.judgeModel`) used to be this authoring run's
+// own drafting identity (`MODEL`, always `anthropic-api`'s sonnet) — and the
+// calibration gate a few lines below ALSO defaulted to `PROVIDER_NAME`/`MODEL`
+// rather than the job's own worker. Both sites agreed with EACH OTHER and
+// disagreed with `scripts/run-u.mjs:1144`, which resolves the judge from
+// `spec.provider` and the job's real resolved worker model. A job whose
+// worker was not `anthropic-api` (DeepSeek via `openai-api`, say) got a close
+// calibrated and stamped under one identity and graded, at its first real
+// run, against a different one — the recalibration guard's whole job is to
+// refuse exactly that.
+//
+// This is executed, not grep'd: the two exact statements below are extracted
+// live out of `scripts/run-author.mjs` — the same `let draftJudge; try {...}`
+// block that runs before any paid call, and the same `const judge = judges
+// ? ... : null;` the calibration gate reads — and spliced into a real child
+// process alongside the actual `resolveJobJudge`/`resolveWorkerModel`
+// exports, so a regression here fails on the REAL wired bytes, not a stand-in.
+const PROVIDER_CONST_LINE = /^const PROVIDER_NAME = 'anthropic-api';$/m.exec(SRC)?.[0];
+const MODEL_CONST_LINE = /^const MODEL = resolveProvider\(PROVIDER_NAME\)\.tiers\.sonnet;$/m.exec(SRC)?.[0];
+const DRAFT_JUDGE = /const resolveDraftJudge = [\s\S]*?\nconst draftJudge = resolveDraftJudge\(draft\);/.exec(SRC)?.[0];
+const GATE_JUDGE = /const judge = judges\n[\s\S]*?: null;/.exec(SRC)?.[0];
+// the STAMP: the actual argument `authorCloseForJob` is called with — extracted
+// separately from `DRAFT_JUDGE` because computing the right identity and USING
+// it at the call site are two different ways to reintroduce the bug (the
+// twin below executes `DRAFT_JUDGE`, but nothing short of reading this exact
+// line proves the call site spends it rather than the old `MODEL`).
+const AUTHOR_JUDGE_ARG = /\n {4}judgeModel: [^,\n]+,\n/.exec(SRC)?.[0];
+
+test('the judge-identity block is still BOUNDED — the twin below reads exact statements, not the rest of the file', () => {
+  assert.ok(PROVIDER_CONST_LINE, 'the authoring provider constant moved or was reworded');
+  assert.ok(MODEL_CONST_LINE, 'the authoring model constant moved or was reworded');
+  assert.ok(DRAFT_JUDGE, 'the draft-judge resolution moved — this guard no longer reads the code it guards');
+  assert.match(DRAFT_JUDGE, /resolveJobJudge\(d, PROVIDER_NAME, resolveWorkerModel\)/, 'the compose-time identity must be resolved from the DRAFT, not the authoring identity');
+  assert.match(DRAFT_JUDGE, /resolveDraftJudge\(draft\)/, 'and it must actually be called on the operator\'s draft');
+  assert.ok(GATE_JUDGE, 'the calibration gate\'s judge resolution moved — this guard no longer reads the code it guards');
+  assert.match(GATE_JUDGE, /resolveJobJudge\(spec, PROVIDER_NAME, resolveWorkerModel\)/, 'the gate must resolve from the assembled SPEC through the same function the stamp uses');
+  assert.ok(AUTHOR_JUDGE_ARG, 'the authorCloseForJob call\'s judgeModel argument moved — this guard no longer reads the line it guards');
+  assert.equal(AUTHOR_JUDGE_ARG.trim(), 'judgeModel: draftJudge.model,',
+    'the compose-time CALL SITE must actually spend the resolved draftJudge, not the authoring MODEL — computing the right '
+    + 'identity above and then not using it at the call site is exactly how this defect happened the first time');
+});
+
+/**
+ * Actually RUN `draftJudge`'s resolution and the gate's `judge` resolution,
+ * spliced verbatim out of `scripts/run-author.mjs`, in a real child process
+ * against a real `draft` — proving the two live statements, not a
+ * paraphrase of them, produce one identity.
+ * @param {any} draft
+ */
+const judgeTwin = (draft) => new Promise((res, reject) => {
+  const dir = mkdtempSync(join(twinBase, 'judge-'));
+  const file = join(dir, 'judge-twin.mjs');
+  writeFileSync(file, [
+    `import { resolveJobJudge } from ${JSON.stringify(join(REPO, 'src/judged.js'))};`,
+    `import { resolveWorkerModel } from ${JSON.stringify(join(REPO, 'src/job.js'))};`,
+    `import { resolveProvider } from ${JSON.stringify(join(REPO, 'src/providers.js'))};`,
+    /** @type {string} */ (PROVIDER_CONST_LINE),
+    /** @type {string} */ (MODEL_CONST_LINE),
+    `const draft = ${JSON.stringify(draft)};`,
+    /** @type {string} */ (DRAFT_JUDGE),
+    'const judges = true;',
+    "const spec = { ...draft, verdictType: 'green', closeDecl: {} };", // the `assembleSpec` fold: provider/model/judge carried through unchanged
+    /** @type {string} */ (GATE_JUDGE),
+    'console.log(JSON.stringify({ stamp: draftJudge, gate: judge }));',
+  ].join('\n'));
+  const child = spawn(process.execPath, [file], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (b) => { out += b; });
+  child.stderr.on('data', (b) => { err += b; });
+  child.on('error', reject);
+  child.on('close', (code) => {
+    if (code !== 0) return reject(new Error(`judge twin exited ${code}\n${err}`));
+    try { return res(JSON.parse(out)); } catch (e) { return reject(new Error(`judge twin did not print JSON: ${out}\n${err}`)); }
+  });
+});
+
+test('a non-anthropic worker: the compose-time stamp and the calibration gate agree with EACH OTHER and with the job\'s real worker', async () => {
+  const draft = { provider: 'openai-api' }; // no model, no judge override — DeepSeek via openai-api, item 30.7's secondary provider
+  const { stamp, gate } = await judgeTwin(draft);
+  // the job's own worker resolves to deepseek-chat (openai-api's only tier) —
+  // NOT anthropic's sonnet, which is what the old hardcoded PROVIDER_NAME/MODEL
+  // stamped regardless of the draft's own provider.
+  assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-chat' });
+  assert.deepEqual(gate, stamp, 'the calibration gate must certify the SAME identity the stamp promised — a mismatch is exactly the recalibration refusal this fixes');
+});
+
+test('an explicit draft model wins over the provider\'s own tier default, at both sites', async () => {
+  const draft = { provider: 'openai-api', model: 'deepseek-reasoner' };
+  const { stamp, gate } = await judgeTwin(draft);
+  assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-reasoner' });
+  assert.deepEqual(gate, stamp);
+});
+
+test('a signed judge override wins at both sites, regardless of the worker', async () => {
+  const draft = { provider: 'anthropic-api', judge: { provider: 'gemini-api', model: 'gemini-2.5-flash' } };
+  const { stamp, gate } = await judgeTwin(draft);
+  assert.deepEqual(stamp, { provider: 'gemini-api', model: 'gemini-2.5-flash' });
+  assert.deepEqual(gate, stamp);
+});
+
+test('the resolved identity matches what scripts/run-u.mjs itself resolves at run time — not just self-agreement', async () => {
+  // Mirrors run-u.mjs:300-311's worker-model resolution and its 1144 judge
+  // resolution directly (imported live, not re-typed): spec.provider's own
+  // provider-table entry, spec.model if named else that provider's tiers.sonnet,
+  // then resolveJudge over spec.judge. If the twin above agreed with itself but
+  // NOT with this, the close would still be born mismatched from the runner
+  // that actually grades it.
+  const { resolveProvider } = await import('../src/providers.js');
+  const { resolveWorkerModel } = await import('../src/job.js');
+  const { resolveJudge } = await import('../src/judged.js');
+  const draft = { provider: 'openai-api' };
+  const providerEntry = resolveProvider(draft.provider);
+  const { model } = resolveWorkerModel({ specModel: draft.model, flagModel: undefined, defaultModel: providerEntry.tiers.sonnet });
+  const expected = resolveJudge({ specJudge: draft.judge, workerProvider: draft.provider, workerModel: model });
+
+  const { stamp, gate } = await judgeTwin(draft);
+  assert.deepEqual(stamp, expected);
+  assert.deepEqual(gate, expected);
+});

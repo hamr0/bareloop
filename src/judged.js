@@ -65,6 +65,7 @@
 
 import { createRequire } from 'node:module';
 import { extractArtifact, priceOf, scrubRaw } from './text.js';
+import { resolveProvider } from './providers.js';
 
 const require = createRequire(import.meta.url);
 
@@ -157,6 +158,55 @@ export function resolveJudge({ specJudge, workerProvider, workerModel } = {}) {
       + 'no library-pinned fall-back any more.');
   }
   return { provider: /** @type {string} */ (workerProvider), model: /** @type {string} */ (workerModel) };
+}
+
+/**
+ * `resolveJudge` needs a worker MODEL already resolved, and an authoring
+ * pipeline has to compute one identity at TWO different moments — once at
+ * compose time, to STAMP `closeDecl.calibration.judgeModel` into the spec it
+ * is about to sign, and again at the calibration gate that grades against
+ * that stamp — from a value that is not yet a validated spec (the operator's
+ * draft) the first time and is one (the assembled spec) the second. Two
+ * hand-spelled compositions of `resolveWorkerModel` + `resolveJudge` is
+ * exactly the kind of pair that drifts (PRD F45's "a rule with no detector is
+ * prose" applies to a rule spelled TWICE just as much as to one spelled
+ * nowhere) — this is the one spelling both calls make, and it mirrors the
+ * SAME composition `scripts/run-u.mjs` applies at launch time: the named
+ * provider's own `tiers.sonnet` defaults an absent model, and a signed
+ * `judge` override wins over the worker default.
+ *
+ * `source` is read for `provider`/`model`/`judge` only, so a draft and the
+ * spec `assembleSpec` folds it into resolve identically — `assembleSpec`
+ * spreads the draft into the spec untouched on those three fields — and any
+ * draft that goes on to validate and sign therefore stamps and grades under
+ * the exact same identity `scripts/run-u.mjs` will resolve at run time.
+ *
+ * `source.provider` absent, or unresolvable, or `source.judge` malformed all
+ * THROW here exactly as `resolveProvider`/`resolveJudge` already do on their
+ * own — a caller composing this from a pre-validation draft is expected to
+ * catch that and use a placeholder, because a draft that cannot resolve here
+ * is a draft `validateJob` reds a few lines later regardless, before anything
+ * gets signed under the placeholder.
+ *
+ * `resolveWorkerModelFn` is taken as a PARAMETER rather than imported — this
+ * module cannot import `./job.js` directly: `job.js` imports
+ * `./declaredclose.js`, which imports `resolveJudge` from THIS module, and a
+ * `judged.js` → `job.js` edge would close that into a cycle. `resolveProvider`
+ * has no such conflict (`./providers.js` imports nothing local) and is
+ * imported directly.
+ *
+ * @param {{provider?: string, model?: string, judge?: any}} source draft or spec
+ * @param {string} fallbackProviderName used only when `source.provider` is absent
+ * @param {(o: {specModel?: string, flagModel?: string, defaultModel: string}) => {model: string, source: string}} resolveWorkerModelFn `resolveWorkerModel` from `./job.js`
+ * @returns {{provider: string, model: string}}
+ */
+export function resolveJobJudge(source, fallbackProviderName, resolveWorkerModelFn) {
+  const providerName = source?.provider ?? fallbackProviderName;
+  const providerEntry = resolveProvider(providerName);
+  const { model } = resolveWorkerModelFn({
+    specModel: source?.model, flagModel: undefined, defaultModel: providerEntry.tiers.sonnet,
+  });
+  return resolveJudge({ specJudge: source?.judge, workerProvider: providerName, workerModel: model });
 }
 
 /**

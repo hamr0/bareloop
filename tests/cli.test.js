@@ -19,6 +19,7 @@ import { mintBridge } from '../src/bridges.js';
 import { main } from '../src/cli.js';
 import { scriptedProvider } from './helpers.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
+import { ANTHROPIC_TIER_MODELS } from '../src/providers.js';
 
 /** this repo's own root — every fixture bundle's node_modules/bareloop
  * symlinks here so `checkBundleDeps`'s preflight (F128) passes for the
@@ -245,7 +246,19 @@ test('bareloop run: a bundle naming a provider with a DIFFERENT env key refuses 
   // call and read as a credential problem rather than the unbuilt seam it is.
   // The spec names the provider at EXPORT time — editing spec.json afterwards
   // would trip the manifest-hash guard first, which is its own (correct) test.
-  const { bundleDir } = await exportFixture(t, { provider: 'openai-api' });
+  //
+  // ISOLATION (found by mutation, PRD item 32.2 fallout): with no `judge`
+  // signed, `resolveJudge` defaults the judge to the WORKER's own provider —
+  // so an unsigned judge here would ALSO resolve to openai-api and read
+  // OPENAI_API_KEY, and `src/cli.js`'s judge refusal (buildProviders, the
+  // block below the worker refusal this test means to isolate) would fire
+  // that exact same message even with the worker refusal deleted. Signing an
+  // explicit ANTHROPIC-keyed `judge` here neutralizes THAT refusal, so only
+  // the worker refusal can produce this test's failure.
+  const { bundleDir } = await exportFixture(t, {
+    provider: 'openai-api',
+    judge: { provider: 'anthropic-api', model: ANTHROPIC_TIER_MODELS.sonnet },
+  });
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
   const out = sink(); const err = sink();
@@ -255,6 +268,7 @@ test('bareloop run: a bundle naming a provider with a DIFFERENT env key refuses 
   assert.notEqual(rc, 0, 'a provider it cannot key must refuse, never run');
   const said = err.text() + out.text();
   assert.match(said, /OPENAI_API_KEY/, 'it must name the key it would have needed');
+  assert.doesNotMatch(said, /judge/i, 'this refusal must be the WORKER\'s, not the judge\'s — the signed judge is anthropic-keyed and must never be what fires here');
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
 });
 

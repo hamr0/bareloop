@@ -53,8 +53,8 @@ import {
   VERDICT_CLASSES, LIVE_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
 import { makeLoopGenerate } from '../src/authorflow.js';
-import { defaultJudgeLoop, resolveJudge } from '../src/judged.js';
-import { validateJob, jobSpecHash } from '../src/job.js';
+import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
+import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
 import { closeJudges } from '../src/kinds.js';
 import { resolveProvider, makeProvider } from '../src/providers.js';
@@ -145,6 +145,38 @@ if (carried.length) {
     + 'The close is what this pipeline authors and the class comes from --verdict; a draft that names either would be '
     + 'silently overwritten, and a signed spec that does not contain what its author typed is the failure nobody sees.');
 }
+
+// THE JUDGE THIS RUN'S OWN WORKER RESOLVES TO (PRD item 32.1) — resolved ONCE,
+// here, from the DRAFT, and reused for BOTH the compose-time stamp (the
+// declaration-authoring call's own `judgeModel` argument, below) and the
+// calibration gate (`prepareSigning`'s `judgeModel` argument, further down).
+// `resolveJobJudge` is the one
+// spelling of "the named provider's own `tiers.sonnet` defaults an absent
+// model, then a signed `judge` override wins" that `scripts/run-u.mjs`
+// applies at run time (`resolveWorkerModel` + `resolveJudge`) — spelling that
+// composition twice by hand, once here at the wrong identity (the AUTHORING
+// provider/model) and once at the gate, was the bug this fixes: a close
+// calibrated against judge X got stamped with model Y, and only the run-time
+// read (`scripts/run-u.mjs:1144`) used the job's real worker, so the mismatch
+// surfaced as a recalibration refusal on the close's first real run.
+// `assembleSpec` carries `provider`/`model`/`judge` from the draft into the
+// spec untouched, so resolving again from the assembled spec below (where the
+// identity is guaranteed valid, because `validateJob` has already passed by
+// then) returns the byte-identical pair — one rule, read twice, not two rules.
+//
+// This first read runs BEFORE `validateJob` has seen the draft, so a draft
+// naming an unresolvable provider or a malformed `judge` override THROWS here
+// — caught, because that draft is going to red cleanly at `validateJob` a few
+// lines below regardless, and the placeholder this falls back to is discarded
+// unsigned the moment it does.
+const resolveDraftJudge = (/** @type {any} */ d) => {
+  try {
+    return resolveJobJudge(d, PROVIDER_NAME, resolveWorkerModel);
+  } catch {
+    return { provider: PROVIDER_NAME, model: MODEL };
+  }
+};
+const draftJudge = resolveDraftJudge(draft);
 
 // Secrets load from the environment; they never enter argv (a command line is
 // world-readable on /proc) and they are never printed.
@@ -310,11 +342,12 @@ try {
   // bare-agent Loop per call, the tool wired to end the call it is used in).
   const authored = await authorCloseForJob({
     // the judge that will certify this close's calibration set, if it composes a
-    // judged stage (PRD item 32.1). A DRAFT has no signed `judge` yet — nothing is
-    // signed until prepareSigning — so at compose time the judge is this authoring
-    // run's own identity, which is also what the spec will resolve to unless the
-    // signer adds an override and re-signs (which re-runs this gate).
-    judgeModel: MODEL,
+    // judged stage (PRD item 32.1). A DRAFT CAN carry a signed `judge` override
+    // already (`judge` is an OPERATOR field, not one of `AUTHORED_SPEC_FIELDS`) —
+    // `draftJudge`, resolved once above from the draft's own `provider`/`model`/
+    // `judge`, is what the spec will resolve to at run time (`scripts/run-u.mjs`),
+    // not this authoring run's own drafting identity.
+    judgeModel: draftJudge.model,
     answers,
     verdictType: VERDICT,
     repoPath: PATIENT,
@@ -462,13 +495,16 @@ try {
       // Absent it, `prepareSigning` refuses the close as a wiring gap rather than
       // signing an ungraded ruler.
       const judges = closeJudges(spec.closeDecl);
-      // THE JUDGE, RESOLVED (PRD item 32.1) — this authoring run's own drafting
-      // provider and model by default, a signed `judge` override when the spec
-      // names one. The calibration gate STAMPS the graded set with whatever this
-      // resolves to, so the identity that certifies the floor here is the identity
-      // the close will later refuse to grade without.
+      // THE JUDGE, RESOLVED (PRD item 32.1) — the job's OWN worker provider and
+      // model by default, a signed `judge` override when the spec names one.
+      // Resolved from the ASSEMBLED SPEC through the same `resolveJobJudge` call
+      // as `draftJudge` above; `provider`/`model`/`judge` reached here unchanged
+      // from the draft, so this is the identical pair — the calibration gate
+      // STAMPS the graded set with whatever this resolves to, so the identity
+      // that certifies the floor here must be the identity the close will later
+      // refuse to grade without (and the identity `scripts/run-u.mjs` resolves).
       const judge = judges
-        ? resolveJudge({ specJudge: spec.judge, workerProvider: PROVIDER_NAME, workerModel: MODEL })
+        ? resolveJobJudge(spec, PROVIDER_NAME, resolveWorkerModel)
         : null;
       const judgeProvider = judge
         ? makeProvider(judge.provider, { apiKey: judgeKeyFor(judge.provider), model: judge.model })
