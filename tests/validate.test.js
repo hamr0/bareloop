@@ -14,7 +14,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { globToPrefix, scopeContained, scanSecrets, sweepSecretLiterals } from '../src/validate.js';
+import { globToPrefix, scopeContained, scanSecrets, sweepSecretLiterals, redactSecrets } from '../src/validate.js';
 
 test('R2 CRITICAL: a "./"+"//" spelling normalizes to a CONTAINED prefix, never an absolute escape', () => {
   // ".//src/**" is a sloppy-but-legal spelling of "src/**" (leading dot = relative).
@@ -73,6 +73,35 @@ test('the secret sweep reds a token literal anywhere in a signed document, and r
   sweepSecretLiterals({ 'ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA': 'harmless' }, (c, p, d) => keyReds.push({ code: c, path: p, detail: d }));
   assert.equal(keyReds.length, 1, 'a key is as much a leak channel as a value');
   assert.equal(keyReds[0].code, 'secret-literal');
+});
+
+// PRD item 31.3 / F160: gemini-api was admitted to real runs without its key
+// shape joining this inventory. Built by concatenation (never a bare
+// key-shaped literal in source) — the repo's own fixture convention, matching
+// tests/authorscout.test.js:583 and tests/coldstore.test.js:174.
+// Real shape: `AIza` + 35 chars of [0-9A-Za-z_-] (39 total, fixed length).
+const GOOGLE_KEY = 'AIza' + 'A'.repeat(35);
+
+test('scanSecrets learns the Google/Gemini key shape (AIza + 35), and a near-miss is not flagged', () => {
+  assert.equal(GOOGLE_KEY.length, 39, 'the fixture really is the real 39-char shape, or this test proves nothing');
+  assert.equal(scanSecrets(`GEMINI_API_KEY=${GOOGLE_KEY}`).length, 1);
+
+  // too short: one char shy of the fixed length
+  assert.deepEqual(scanSecrets('AIza' + 'A'.repeat(34)), [], 'a truncated key must not match');
+  // left-adjacent word char: the pattern is left-bounded like every other shape here
+  assert.deepEqual(scanSecrets('x' + GOOGLE_KEY), [], 'a key glued onto a preceding word char must not match (left-bound)');
+});
+
+test('redactSecrets — the real redaction path the spine/close/prompt scrub rides — masks a Gemini key, not just scanSecrets', () => {
+  const raw = `tool output\nGEMINI_API_KEY=${GOOGLE_KEY}\ndone\n`;
+  const scrubbed = redactSecrets(raw);
+  assert.notEqual(scrubbed, raw, 'the real key must not survive the real redactor byte-identical');
+  assert.deepEqual(scanSecrets(scrubbed), [], 'nothing secret-shaped remains after redaction');
+  assert.match(scrubbed, /\[REDACTED:/, 'masked, not silently dropped');
+
+  // and the near-miss survives untouched through the same seam
+  const benign = `x${GOOGLE_KEY} is just a near-miss`;
+  assert.equal(redactSecrets(benign), benign, 'a non-matching near-miss must ride through byte-identical');
 });
 
 test('scopeContained rejects every escape spelling and accepts the equivalent contained ones — the belt behind globToPrefix', () => {

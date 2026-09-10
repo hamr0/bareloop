@@ -530,7 +530,7 @@ Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
 property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
 is scrubbed at capture (an injected `redact`, wired to bareguard by `runPlan` with the
-validators' full secret-shape inventory — Bearer/sk-/ghp_/github_pat_/AKIA/xox) so a
+validators' full secret-shape inventory — Bearer/sk-/ghp_/github_pat_/AKIA/xox/AIza) so a
 secret a checked command echoes never enters the append-only spine or a worker prompt —
 a benign gap is byte-identical (secrets hard line; design law #7 intact).
 

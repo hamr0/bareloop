@@ -11708,3 +11708,34 @@ widening (additive; arbiter territory, hamr's go).
 ruler at $0.14 of judge calls, before a signature and before the $4 fire. PRD 31.5's "calibration
 runs end to end for the first time" is met for the AUTHORING half; the fire half is blocked on
 a card that fits a rule we own.
+
+## F160 — a provider was admitted without its key shape joining the one secret inventory
+
+**2026-09-10, PRD item 31.3, `feat/item-31`.** `a48c24b` admitted `gemini-api` to real runs
+(`GEMINI_API_KEY`) without adding the Google key shape to `SECRET_PATTERNS`
+(`src/validate.js:144`) — the ONE inventory that drives `scanSecrets` (the answers/draft/spine
+sweeps, 11 call sites in `scripts/`) AND `redactSecrets`/`sweepSecretLiterals` (the spine, close
+output, and signed-doc redactors). Verified before the fix: `scanSecrets('x AIzaSyD9tSrke72PouQ
+MnMXa7eZSW0jkFMBcXY y')` returned `[]` — a live-shaped Gemini key reaching a spine or a close's
+output would have gone undetected and unredacted.
+
+**Caught by /branch-review at `e0bd819`, not by the build.** The provider landed, the tests
+landed, CI landed green — nothing in the build path checks a new provider's key shape against
+the secret inventory, because nothing declares that link exists at all.
+
+**No key leaked.** The one real Gemini run this branch has produced (F159, softgreen calibration,
+authoring run `mtv8jihy`) wrote outputs under `.scratch/softgreen-gemini/` and to the patient
+copy at `bareloop-patients/bareguard-softgreen-gemini`; both were grepped for
+`AIza[0-9A-Za-z_-]{30,}` after the fact and neither carries a match.
+
+**DeepSeek, checked for the same gap:** DeepSeek keys are `sk-...`-shaped, already covered by
+the existing `sk-` pattern — no second gap there.
+
+**Fixed.** A left-bounded `AIza[0-9A-Za-z_-]{35}` pattern (39 chars total, Google's fixed
+issuance length) joins `SECRET_PATTERNS`, in the same style as the existing five shapes;
+monotonic (detection only added). `bareloop.context.md`'s shape-list prose (the one other place
+the inventory is spelled out, for the doc that ships) updated to match.
+
+**The lesson, stated plainly.** Admitting a provider to the menu and adding its key shape to the
+one secret inventory are two different edits with no code linking them — they must land in the
+SAME commit going forward, not as a follow-up a reviewer has to notice is missing.

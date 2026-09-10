@@ -104,6 +104,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
   admitted. Fixed, and pinned by tests, because prose drifts when nothing
   executes it.
 
+### Security
+
+- **`SECRET_PATTERNS` learns the Gemini/Google API key shape** (PRD item
+  31.3, F160). `gemini-api` was admitted to real runs (this file, above)
+  without its own key shape joining the ONE secret-shape inventory
+  (`src/validate.js`) that drives `scanSecrets`, `redactSecrets` and
+  `sweepSecretLiterals` — a `GEMINI_API_KEY`-shaped literal (`AIza` + 35
+  chars) reaching a spine, a close's output, or a signed doc would have gone
+  undetected and unredacted. Fixed with a left-bounded pattern in the same
+  style as the existing shapes; monotonic (detection only added, nothing
+  loosened).
+
 ### Notes
 
 - Ollama is deliberately NOT admitted. It takes no key and bills nothing, so
