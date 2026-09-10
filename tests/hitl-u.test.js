@@ -448,7 +448,13 @@ test('§1 the PAUSE door launches NOTHING and keeps the checkpoint the operator 
   assert.match(block, /nothing was run and nothing was spent/, 'a pause costs nothing — that is the whole of it');
   assert.match(block, /--resume \$\{RESUME\}/, 'and it points at the SAME runid: the checkpoint that matters is the one already on disk');
   assert.match(block, /process\.exit\(0\)/, 'it exits before the key, the spine and the launch — nothing downstream runs');
-  assert.ok(at < src.indexOf('const apiKey = process.env.ANTHROPIC_API_KEY'), 'above the key: nothing about saying "not now" needs a secret');
+  // PRD item 31.4 split one key demand into two (the WORKER's, from the provider
+  // table's own envKey, and the JUDGE's, demanded only when the close judges), so
+  // this anchors on the FIRST of them — the worker key, which every run needs.
+  // The claim is unchanged: a pause exits before ANY secret is asked for.
+  const firstKeyDemand = src.indexOf('const workerApiKey = process.env[providerEntry.envKey]');
+  assert.ok(firstKeyDemand > 0, 'the runner still demands a worker key somewhere below');
+  assert.ok(at < firstKeyDemand, 'above the key: nothing about saying "not now" needs a secret');
 });
 
 test('§1 the pause door is REACHABLE and silent about money: a signed `--decide pause` exits 0 having launched nothing', () => {

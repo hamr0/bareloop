@@ -173,6 +173,46 @@ export const MAX_JUDGED_PATHS = 8;
  * decision on it, and five literals is how they come to disagree. */
 export const JUDGED_FLOOR_KIND = 'judged-floor';
 export const SEED_EXEMPT_KINDS = Object.freeze([JUDGED_FLOOR_KIND, 'human-confirms']);
+
+/**
+ * The judged stages of a close declaration, and whether it has any — the ONE
+ * spelling of "does this close ask a model to render anything?".
+ *
+ * The comment above `JUDGED_FLOOR_KIND` says five literals is how the readers
+ * come to disagree, and by PRD item 31.4 there were SIX open-coded
+ * `stages.filter(s => s.kind === JUDGED_FLOOR_KIND)` across the tree
+ * (`src/authorjob.js` twice, `src/cardauthor.js`, `src/declaredclose.js`,
+ * `scripts/run-author.mjs`, `scripts/author-readout.mjs`). 31.4 needed a
+ * seventh, in the runner, to decide whether a judge KEY is demanded — and a
+ * seventh spelling deciding a REFUSAL is the drift `scripts/run-u.mjs`'s own
+ * judge-provider comment warns about ("a second reading of the declaration
+ * that can drift from the one the runner actually executes"). So there is one
+ * reading now, and every caller shares it.
+ *
+ * Defensive on shape ON PURPOSE: callers pass raw specs read off disk and
+ * half-built drafts, not validated declarations. An absent/!object `closeDecl`
+ * or `stages` is "no judged stages", never a throw — the close VALIDATOR is
+ * what rejects a malformed declaration, and this predicate answering a
+ * question about one is not the place to re-litigate it.
+ * @param {any} closeDecl a close declaration (or anything, including undefined)
+ * @returns {any[]} the judged-floor stages, in declaration order
+ */
+export function judgedStages(closeDecl) {
+  const stages = closeDecl && typeof closeDecl === 'object' ? closeDecl.stages : undefined;
+  if (!Array.isArray(stages)) return [];
+  return stages.filter((s) => s !== null && typeof s === 'object' && s.kind === JUDGED_FLOOR_KIND);
+}
+
+/**
+ * Does this close declaration judge — i.e. will a judge model be CALLED?
+ * The question `scripts/run-u.mjs` asks before demanding a judge key (PRD item
+ * 31.4): a job that never judges must run on its own provider's key alone.
+ * @param {any} closeDecl
+ * @returns {boolean}
+ */
+export function closeJudges(closeDecl) {
+  return judgedStages(closeDecl).length > 0;
+}
 /** the one kind a PERSON renders — named once, because the runner keys three
  * decisions on it (is there a door to answer, which stage paused, whose ruling
  * this is) and three literals is how they come to disagree */

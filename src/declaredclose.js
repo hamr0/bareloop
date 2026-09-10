@@ -68,7 +68,7 @@
 // once instead of once-per-invocation, but `runPlan` has a dozen return paths and
 // a leaked worktree outlives the process that made it.
 
-import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED, JUDGED_FLOOR_KIND } from './kinds.js';
+import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED, JUDGED_FLOOR_KIND, judgedStages } from './kinds.js';
 import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
@@ -424,8 +424,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
   // redded here — making the set MANDATORY is the signing gate's call, and
   // module 5 owns it.
   if (closeDecl.calibration !== undefined) {
-    const judged = (Array.isArray(closeDecl.stages) ? closeDecl.stages : [])
-      .filter((/** @type {any} */ s) => isObj(s) && s.kind === JUDGED_FLOOR_KIND);
+    const judged = judgedStages(closeDecl);
     if (!isObj(closeDecl.calibration)) {
       red('invalid-value', `${at}.calibration`, 'the frozen calibration set, as an object carrying `cases`');
     } else if (judged.length !== 1) {

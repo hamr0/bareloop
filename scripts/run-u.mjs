@@ -20,7 +20,7 @@ import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { runBehaviour, formatBehaviour } from '../src/behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
-import { normalizeHumanRuling, resolveHumanRuling } from '../src/kinds.js';
+import { normalizeHumanRuling, resolveHumanRuling, closeJudges, judgedStages } from '../src/kinds.js';
 // SOFTGREEN — the judged stage's PINNED tier. The constant is the library's; a
 // spelling here would be a second pin that can drift from the one the gate calibrated.
 import { JUDGE_MODEL } from '../src/judged.js';
@@ -1104,18 +1104,40 @@ if (PAUSED && RULING === null) {
 }
 
 
-// `apiKey` stays ANTHROPIC_API_KEY unconditionally — the JUDGE's own key
-// (pinned to anthropic-api regardless of the job's worker provider, PRD
-// item 28) and, for an anthropic-api job, the worker's key too, so an
-// anthropic-api job's behaviour here is byte-identical to before this
-// factory existed. `workerApiKey` below is the WORKER's own key, read
-// through the factory's provider-specific `envKey` — the same variable for
-// an anthropic-api job (no second read, no behaviour change), a distinct
-// one (`OPENAI_API_KEY`) for openai-api.
-const apiKey = process.env.ANTHROPIC_API_KEY;
-if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
-const workerApiKey = providerEntry.envKey === 'ANTHROPIC_API_KEY' ? apiKey : process.env[providerEntry.envKey];
+// TWO KEYS, TWO ROLES, AND ONLY THE ONES THIS JOB WILL USE (PRD item 31.4).
+//
+// Before this, `ANTHROPIC_API_KEY` was demanded UNCONDITIONALLY — so a green
+// job whose worker is DeepSeek or Gemini, and whose close is pure mechanical
+// commands, still hard-exited without an Anthropic key it would never spend a
+// token against. That made "provider-agnostic" half-true: you could run on
+// another provider only if you also held an Anthropic account.
+//
+// The WORKER's key comes from the provider's own `envKey` (the factory's, so
+// there is one table saying which provider reads which variable) and is
+// ALWAYS required — the worker always runs.
+//
+// The JUDGE's key is required only when the close actually judges
+// (`closeJudges`, src/kinds.js — the ONE reading of that question). The judge
+// stays PINNED to `anthropic-api`/`JUDGE_MODEL` whatever the worker is —
+// arbiter territory, unchanged by this item — so its key is an Anthropic key
+// today. It is read from `JUDGE_API_KEY` first, falling back to
+// `ANTHROPIC_API_KEY`: one variable was doing two jobs (worker key for an
+// anthropic-api job AND judge key for every job), which is confusing while the
+// judge is pinned and would be a plain lie the day it is not. The fallback is
+// what keeps every existing invocation working unchanged.
+//
+// A green anthropic-api job's behaviour is byte-identical to before: its
+// worker key IS `ANTHROPIC_API_KEY`, demanded as ever.
+const workerApiKey = process.env[providerEntry.envKey];
 if (!workerApiKey) { console.error(`${providerEntry.envKey} not set (secrets load from the environment — never the tree)`); process.exit(2); }
+const JUDGES = closeJudges(spec.closeDecl);
+const apiKey = process.env.JUDGE_API_KEY ?? process.env.ANTHROPIC_API_KEY;
+if (JUDGES && !apiKey) {
+  console.error(`This job's close JUDGES (${judgedStages(spec.closeDecl).length} judged stage(s)) and the judge is pinned to ${JUDGE_MODEL}.`);
+  console.error('JUDGE_API_KEY not set (nor ANTHROPIC_API_KEY, which it falls back to) — secrets load from the environment, never the tree.');
+  console.error('Refused at $0, BEFORE the worker spends anything: a judged run that discovers this at the close has paid for a verdict it cannot render.');
+  process.exit(2);
+}
 
 // `wd`/`spineDir` are derived once, above the resume reader that needs them; only the
 // directory's CREATION belongs here, after the preview/approval gates have exited.
@@ -1189,7 +1211,7 @@ const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MO
  * declaration that can drift from the one the runner actually executes. Absent, a
  * judged stage instrument-STOPS as a wiring gap, which is what every live softgreen
  * run would have done: run-author wired this seam and this runner never did. */
-const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL, exposeErrorBody: true });
+const judgeProvider = apiKey ? new AnthropicProvider({ apiKey, model: JUDGE_MODEL, exposeErrorBody: true }) : null;
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL_LABEL}`);
