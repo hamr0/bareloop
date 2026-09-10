@@ -3,7 +3,7 @@
 **Status: SCOPING. No spec written, no money spent, nothing frozen.** This document answers
 "what would it take to establish G2" from the archive and the tree, so hamr can set G2's own
 ceiling. Sources: `docs/product/2026-08-23-agreed-build-list.md` §1 + Q2,
-`docs/product/PRD.md` v1.78/v1.81, `docs/product/TESTGEN-PREREG.md`,
+`docs/product/PRD.md` v1.78/v1.81, `docs/logs/TESTGEN-PREREG.md`,
 `jobs/aurora-testgen-l2accept.json`, `scripts/testgen-close.mjs`, `git show 507adbb^:jobs/aurora-testgen.json`.
 
 ## What G2 is for
@@ -142,7 +142,7 @@ Proven live on the re-establish run `u-mtgr1qnu` (below): the spine recorded ZER
 The cold-close fix alone let the fix loop iterate on a rate-shaped close for the first time
 in this repo's history — and that first iteration is what exposed the close-fix governor's
 direction defect (`docs/logs/FINDINGS.md` F120), which was fixed AFTER this run, not before it. Run `u-mtgr1qnu` at the new hash (see
-`docs/product/BENCH-PREREG.md` for the exact value): outcome **escalated**, spend
+`docs/logs/BENCH-PREREG.md` for the exact value): outcome **escalated**, spend
 `>= $6.8843` of the $8 cap (a FLOOR — `spendComplete:false`, one transport retry fired and
 recovered), 28.5 of 45 min, 121 rounds, 2 plan steps, 12 allowed writes across 5 files, 4
 `gate-red` forbidden-pattern events, 0 `unchanged-red`. Grader's own numbers across three
@@ -330,4 +330,4 @@ outside the bench, runnable on its own, just no longer one of the frozen bench r
 
 Nothing built or scheduled by this entry; the swap fires only once G3 has a spec, a signed
 hash, and an established baseline. Dated amendment carrying the same plan:
-`docs/product/BENCH-PREREG.md`.
+`docs/logs/BENCH-PREREG.md`.

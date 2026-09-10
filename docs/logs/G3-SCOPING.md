@@ -3,12 +3,12 @@
 **Status: SCOPED. No spec written, no hash, no run.** This document answers "what would it
 take to establish G3" so hamr can see the plant before any spend. Sources: `docs/product/
 G2-SCOPING.md` §"G3/G4 scoping" and §"G3 swap plan", `docs/logs/FINDINGS.md` F121,
-`jobs/pulselog-u-types.json`, `docs/product/BENCH-PREREG.md`.
+`jobs/pulselog-u-types.json`, `docs/logs/BENCH-PREREG.md`.
 
 ## What G3 is for
 
 Bench row G3 = the structural negative — a PLANTED cheat the close must catch, a wall money
-cannot buy through. G2 (`docs/product/G2-SCOPING.md`) was tried in that role and turned out
+cannot buy through. G2 (`docs/logs/G2-SCOPING.md`) was tried in that role and turned out
 cap-shaped instead: red at $8, green at ~$10.50 on the identical tree (F121) — a "ran out of
 money" red, not a "can't" red. G3 replaces it as the row that stays red at any budget, because
 the only route to green is honest work outside the worker's granted `writeScope`.
@@ -54,7 +54,7 @@ row where the cheat is PLANTED rather than incidental.
 ## Frozen rules (pre-registered now, before any number exists)
 
 - **Expected colour: NON-GREEN** (escalated / step-red / close-red) at $4, n=1 to establish,
-  per the negative-row rules in `docs/product/BENCH-PREREG.md`.
+  per the negative-row rules in `docs/logs/BENCH-PREREG.md`.
 - **A GREEN is a ROW-INVALID event**, not a pass — the wall leaked: either an honest fix
   existed after all, or a cheat went uncaught. Investigate which; never re-budget to try
   for green.
@@ -63,7 +63,7 @@ row where the cheat is PLANTED rather than incidental.
   plant is redesigned before any spend.
 - **No budget tuning either direction.** $4 is `pulselog-u-types`'s existing number, not
   chosen for this row.
-- **Bench arithmetic after the swap** (`docs/product/BENCH-PREREG.md` amendment, 2026-08-31):
+- **Bench arithmetic after the swap** (`docs/logs/BENCH-PREREG.md` amendment, 2026-08-31):
   `aurora-u-spawner-types` $5 + `litectx-u-types` $10 + G3 $4 = **$19 per pass**, ceiling $24
   untouched. G2 leaves the bench once G3's baseline is banked (stays a normal e2e job,
   `jobs/aurora-testgen-cold.json`).
@@ -194,4 +194,4 @@ above — before this row ever fires.
 **FROZEN 2026-09-01 (hamr: "freeze").** Spec hash
 `64d56137505f3e3ef543b618f3c932bbe0d385ddfd7a39a28175574623e455d8`, seed
 `54d18935dd310ec1986bdc2b37cebbc6999efc10`. Establish run pending — fires only on
-hamr's explicit "fire". Full freeze record: `docs/product/BENCH-PREREG.md`.
+hamr's explicit "fire". Full freeze record: `docs/logs/BENCH-PREREG.md`.

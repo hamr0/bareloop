@@ -4859,7 +4859,7 @@ replan channel, unnoticed until now.
 ### The defect INVERTED the experiment that found it
 
 Both rows above are lift-contrast **calibration** runs, judged against the frozen
-`must-GREEN` admission clause (`docs/product/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
+`must-GREEN` admission clause (`docs/logs/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
 addenda). Both were REJECTED. Neither was rejected for being too hard: both were rejected
 because the harness stopped them while the envelope still had money and time, and in one case
 while the error count was falling on every iteration. **The screen was measuring the workflow's
@@ -8299,7 +8299,7 @@ passes `CEILING_USD` with `[...metered]` — every call the run has already paid
 
 **Status: minted 2026-08-23 from the Phase 2 battery fired 2026-08-19 (12 rows, $25.32 of the
 $60 ceiling hamr approved), read off
-`docs/product/2026-08-18-readshim-phase2-prereg.md` (result committed `fb9c2b7`).
+`docs/logs/2026-08-18-readshim-phase2-prereg.md` (result committed `fb9c2b7`).
 Pre-registered BEFORE any number existed, including the arms declared underpowered in advance.
 Cost of the FINDING: $0 (the numbers were already in the record; only this entry was missing).
 F106 is the softgreen lane's; the gap is deliberate, not a lost finding.**
@@ -9702,7 +9702,7 @@ trend honestly read "unknown" and the bug never fired. Today's separate fix — 
 vacuous `changed-from-seed` stage from the cold-variant `clean-run` close (the seed patient
 holds zero files under `tests/testgen/`, so that stage could never observe a change and fired
 a spurious `unchanged-red` before the worker had written anything; see
-`docs/product/G2-SCOPING.md`'s "Config wrinkle") — let the fix loop actually iterate for the
+`docs/logs/G2-SCOPING.md`'s "Config wrinkle") — let the fix loop actually iterate for the
 first time, producing the repo's first higher-is-better SERIES in its history. The latent
 direction defect fired on first exposure. Not a new bug — a bug that could not be reached
 before today.
@@ -9737,7 +9737,7 @@ G2's bench row is NOT clean under this fix yet. Run `u-mtgr1qnu` itself still en
 REASON is now known to be an artifact of the direction defect, not a genuine cap-halt on a
 stalled loop. This run does NOT establish a clean G2 baseline; the bench row stays PENDING a
 clean re-establish under the fixed governor before it can be re-frozen (see
-`docs/product/BENCH-PREREG.md` and `docs/product/G2-SCOPING.md` for the current state and
+`docs/logs/BENCH-PREREG.md` and `docs/logs/G2-SCOPING.md` for the current state and
 the run now in flight to answer it).
 
 ## F121
@@ -9805,14 +9805,14 @@ top-up leg — it greened on the fix loop's first turn, zero trend records anywh
 `u-mth7r0xv.jsonl`. Nothing has been killed wrongly by the fix, but a run where two
 consecutive rate grades actually get compared against each other remains unobserved.
 
-Full account, including G3/G4 scoping and hamr's answers: `docs/product/G2-SCOPING.md`;
-frozen-row state: `docs/product/BENCH-PREREG.md`.
+Full account, including G3/G4 scoping and hamr's answers: `docs/logs/G2-SCOPING.md`;
+frozen-row state: `docs/logs/BENCH-PREREG.md`.
 
 ## F122 — model-output truncation is 3-of-9,185 archived rounds (0.03%); the trigger rule for
 reclassifying it is frozen before the second occurrence exists
 
 **The $0 base-rate scan behind hamr's "2A" ruling (2026-08-31).** Run `u-mtgx135x` (see F121's
-neighbor entry and `docs/product/G2-SCOPING.md`) died when one worker turn emitted exactly
+neighbor entry and `docs/logs/G2-SCOPING.md`) died when one worker turn emitted exactly
 32,000 output tokens — the `maxTokens: 32000` call cap (`src/planrun.js:2355`) — bare-agent
 flagged `truncated:max_tokens`, and `src/planrun.js:2386` classes it `provider-red`
 ("transport, not logic"): a casualty, ≥$4.40, no verdict rendered.
@@ -9839,7 +9839,7 @@ risks truncating a legitimately large file write). The rule never loosens post-h
 reclassification half is arbiter territory — the trigger firing authorizes bringing the build
 to hamr, not silently landing it.
 
-Nothing built by this entry. Full ruling text: `docs/product/G2-SCOPING.md`.
+Nothing built by this entry. Full ruling text: `docs/logs/G2-SCOPING.md`.
 
 ## F123 — PRD item 24 lever (a) DROPPED: gate-red recovery is ~3% of spend (~6% on testgen),
 below the already-minor read-hygiene lever, no evidence the register changes behaviour
@@ -10006,12 +10006,12 @@ token-total line in the run tail (this entry above already flagged the gap: job-
 dollars only, tokens exist only per round record); tracked on branch `feat/tokens-tail`, in
 progress, ships in the next release. (2) "plant it" — G3's planted diff gets authored on a
 fresh `pulselog-u` copy with a $0 unwinnable proof, shown to hamr before the row is frozen;
-scoping lives at `docs/product/G3-SCOPING.md`.
+scoping lives at `docs/logs/G3-SCOPING.md`.
 
 ## F125 — G3's establishing run reads NON-GREEN as pre-registered: step-red on the planted
 contradiction, no cheating found, baseline banked at $2.98/$4
 
-**Trigger.** hamr's "fire" on the frozen G3 spec (`docs/product/BENCH-PREREG.md`, "G3 FROZEN"
+**Trigger.** hamr's "fire" on the frozen G3 spec (`docs/logs/BENCH-PREREG.md`, "G3 FROZEN"
 amendment, 2026-09-01) — the bench's structural-negative row needed its n=1 establishing run.
 
 **Run.** `u-mties136`, 2026-09-01, `jobs/pulselog-g3-types.json` hash
@@ -10075,7 +10075,7 @@ ROW-INVALID event to investigate, never a pass and never a cue to widen the budg
 **Date:** 2026-09-05 · **Status:** MEASURED (n=1 per arm, pre-registered read order) ·
 **Class:** cost-lever contrast · **Grounded in:** spines `u-mtoqtcb5.jsonl` (ON) and
 `u-mtor6qkd.jsonl` (OFF) under `../bareloop-patients/aurora-u-bareloop/`, driver logs, the
-frozen rules in `docs/product/SCOUT-CONTRAST.md`.
+frozen rules in `docs/logs/SCOUT-CONTRAST.md`.
 
 **Design (frozen before either run).** Same job, same hash `5d989ae7…`, same patient reset
 `d661e50`, `--read-shim off`, worker `claude-sonnet-5`, same 2×200 probe, sequential. ON =
@@ -10163,7 +10163,7 @@ instances in 2 at the frozen signature.
 **What it means for G4.** The aurora spawner row cannot host G4 (never replanned in 24
 runs). The litectx row already exhibits the G4 shape without any engineering, ~43% of the
 time, and has a paid, frozen instance on file. Scoping follows from this read:
-`docs/product/G4-SCOPING.md`.
+`docs/logs/G4-SCOPING.md`.
 
 **Anti-gloss.** "Replan → green" here is read from the spine's record chain, not from
 prose; a run with a replan whose replanned plan was then skipped or resumed is still

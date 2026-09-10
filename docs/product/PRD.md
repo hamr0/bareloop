@@ -225,7 +225,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    defects (escalation detail hidden, `--all` name-matched only, a replanned step merged by
    id), all fixed.
 7. **The bench** — Q1, Q3–Q6 **ANSWERED 2026-08-30** (v1.81 below; Q10 answered v1.78);
-   Prereg **FROZEN 2026-08-30** (`docs/product/BENCH-PREREG.md`; litectx row re-baselined
+   Prereg **FROZEN 2026-08-30** (`docs/logs/BENCH-PREREG.md`; litectx row re-baselined
    green at its hash, run `u-mtfywb55`, $5.72). Cadence answered 2026-08-30 (hamr): major
    releases trigger a pass. Cadence reading confirmed by hamr: 0.16 → 0.17 (feature bump), not
    patch tags. Queue on the SAME branch (`bench-prereg`, no interim release — hamr, 2026-08-30),
@@ -318,14 +318,14 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 
 23. **G3/G4 scoping** — unscoped, hamr's answers recorded 2026-08-31: G3 = a real planted-cheat
     bench row the close must catch; G4 = any halt→replan→green (not narrowly a money cap-halt).
-    Neither built or scheduled. Detail: `docs/product/G2-SCOPING.md` §"G3/G4 scoping". G3 swap
+    Neither built or scheduled. Detail: `docs/logs/G2-SCOPING.md` §"G3/G4 scoping". G3 swap
     plan (hamr's "agreed, lower cap, plan a swap"): once G3 establishes, G2 leaves the bench,
-    $24 ceiling untouched — `docs/product/BENCH-PREREG.md` amendment, `docs/product/G2-SCOPING.md`
+    $24 ceiling untouched — `docs/logs/BENCH-PREREG.md` amendment, `docs/logs/G2-SCOPING.md`
     §"G3 swap plan". G3 itself scoped 2026-09-01, not frozen, no hash, no run:
-    `docs/product/G3-SCOPING.md`. G3 frozen 2026-09-01 (hash 64d56137…), established
+    `docs/logs/G3-SCOPING.md`. G3 frozen 2026-09-01 (hash 64d56137…), established
     2026-09-01 — establish run `u-mties136` read non-green as pre-registered
     (step-red, $2.98/$4), F125.
-    **G4 SCOPED 2026-09-05 ($0, F127):** `docs/product/G4-SCOPING.md`. Proposed as a READING
+    **G4 SCOPED 2026-09-05 ($0, F127):** `docs/logs/G4-SCOPING.md`. Proposed as a READING
     of the litectx bench row (replans 6/14 on its own; `u-mtfywb55` is a halt → replan →
     green instance at the row's PREVIOUS hash — corrected same day), $0 marginal, no fifth
     row, no hash change; a planted-fixable-dead-end row kept as the second act. **hamr: "A"
@@ -373,7 +373,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     **2026-09-05 — lever (3) scout ON/OFF UNPARKED and SCOPED** (hamr: "let's measure
     scout"): G3 is established, so the park lifts. Scoping, pre-registered frozen rules, the
     small switch build (`--scout on|off`, runner territory, hash-unaffected) and the two-arm
-    design on `aurora-u-spawner-types` ($10 ceiling): `docs/product/SCOUT-CONTRAST.md`.
+    design on `aurora-u-spawner-types` ($10 ceiling): `docs/logs/SCOUT-CONTRAST.md`.
     **Same day — MEASURED, lever (3) CLOSED** (F126): both arms green, OFF cost $0.37 MORE
     (inside the $0.40 noise band, wrong direction for a saving); the scout is not dead
     weight; nothing to build, no default flip. Switch shipped in v0.20.0.
@@ -385,7 +385,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     work; the ceiling question stays parked.
 
     **2026-09-05 — order amended** (hamr): item 24 lever (3) scout contrast
-    (`docs/product/SCOUT-CONTRAST.md`) → G4 (item 23) → the rest of this list in its own
+    (`docs/logs/SCOUT-CONTRAST.md`) → G4 (item 23) → the rest of this list in its own
     order. Export and the reuse-lift proof come after; item 5 closed and item 12 clarified
     today, above.
     **2026-09-05, later:** after export comes item 27 (close-bytes signature), then the
@@ -854,7 +854,7 @@ freedom.
 4. **Stop at diminishing returns.** When the next rail's measured payoff is smaller than the
    last one's, stop — the remaining spend belongs to the probabilistic side.
 
-**Where it binds today.** G4 (item 23, `docs/product/G4-SCOPING.md`): a candidate rail —
+**Where it binds today.** G4 (item 23, `docs/logs/G4-SCOPING.md`): a candidate rail —
 reject a plan that drafts a check-only step before any write step has run — is NAMED and
 NOT BUILT. Payoff unmeasured beyond "3 of 6 litectx replans, on one job" and F123's 3.3%
 gate-red-recovery share; the rail would forbid a sometimes-right cheap probe; and G4 is the

@@ -1,7 +1,7 @@
 # G4 — the halt → replan → green bench row: scoping ($0, 2026-09-05)
 
 Status line at the bottom. Pre-registered before any G4-labelled number exists. hamr's
-definition (2026-08-31, verbatim in `docs/product/G2-SCOPING.md` §"G3/G4 scoping"): **G4 =
+definition (2026-08-31, verbatim in `docs/logs/G2-SCOPING.md` §"G3/G4 scoping"): **G4 =
 ANY halt → replan → green, not narrowly a money cap-halt.** Forcing a halt by shrinking a
 budget is a tuned knob — the same sin as raising a cap to manufacture a green. Preferred
 shape: a job whose first plan is a known habitual dead end, so the strike-out → replan is
@@ -63,7 +63,7 @@ this goal, measured across 14 runs.
 
 - **Host:** `litectx-u-types`, unchanged — hash `42a7c427…`, $10 / 45 min, patient
   `../bareloop-patients/litectx-u` @ `96813a4`, `--read-shim off`, `claude-sonnet-5`
-  (`docs/product/BENCH-PREREG.md`). No spec edit, no re-sign, no budget change in either
+  (`docs/logs/BENCH-PREREG.md`). No spec edit, no re-sign, no budget change in either
   direction.
 - **What a G4 instance IS (mechanical, from the spine, no judgment):** in one run, in
   order, (1) a halt record (`ladder` strike-out or `variance`) on a step, (2) a `replan`
@@ -110,7 +110,7 @@ one or two litectx passes: if replans keep failing there, that number earns the 
 - G4 is read ONLY from the four-record chain above; no prose judgment of "did it recover."
 - A cold green is "G4 did not fire," never a G4 pass and never a reason to re-fire.
 - A replan → non-green is a G4 red at n=1; a colour flip across passes follows the bench's
-  own n=3 rule (`docs/product/BENCH-PREREG.md`).
+  own n=3 rule (`docs/logs/BENCH-PREREG.md`).
 - No budget/wall change to the litectx row in either direction on G4's account.
 - Nothing here changes any signed hash; nothing is built. If a detector is ever wanted, it
   is a REPORT-ONLY reader over the spine (the replay tool's class), never a runtime change.
