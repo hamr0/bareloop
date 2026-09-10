@@ -32,6 +32,26 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **The judge's API key is demanded only when a judge is CALLED** (PRD item
+  31.4). `scripts/run-u.mjs` hard-exited on a missing `ANTHROPIC_API_KEY` for
+  every job, so a `verdictType: 'green'` job with a DeepSeek or Gemini worker
+  and a mechanical close could not start without an Anthropic account it would
+  never spend a token against. Now the WORKER's key comes from the provider
+  table's own `envKey` and is always required; the JUDGE's key is read from
+  `JUDGE_API_KEY`, falling back to `ANTHROPIC_API_KEY`, and is required only
+  when the close actually judges. When it does refuse it refuses at $0, before
+  the worker spends anything, naming the judged-stage count and the pinned
+  judge model — a judged run that discovered this at the close would have paid
+  in full for a verdict it cannot render. A green `anthropic-api` job behaves
+  byte-identically to before. `bareloop run` (the bundle runner) is unchanged:
+  `ANTHROPIC_API_KEY`-only by a deliberate, documented contract.
+- **One reading of "does this close judge?"** — `judgedStages()`/`closeJudges()`
+  are exported from `src/kinds.js` and the six open-coded copies of that
+  predicate now share them. The runner's own comment warned against "a second
+  reading of the declaration that can drift from the one the runner actually
+  executes"; 31.4 needed a seventh, to decide a REFUSAL, which is that warning
+  coming true.
+
 - **`hitl` leaves the authoring menu; its code stays** (PRD item 31.1; hamr:
   *"retire hitl from list, keep its code"*). Three distinct class lists replace
   two: `LOCKED_CLASSES` (no guard battery exists — empty today),

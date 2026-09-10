@@ -591,9 +591,80 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     **The judge stays pinned to `anthropic-api`/`JUDGE_MODEL` — arbiter territory, unchanged by
     this item.** A soft-green job therefore legitimately needs BOTH keys (the worker's and the
     judge's); 31.4 removes the demand only where no judge can run. The first draft's
-    "signed `judge:{provider,model}` + per-pair calibration" is DEFERRED, not built: signing a
-    provider field for a seam with 0 uses in 167 runs is dead weight until a rubric job exists.
-    Item 28 part (2) is carried by that deferral, not closed by it.
+    "signed `judge:{provider,model}` + per-pair calibration" was DEFERRED here as dead weight
+    for a seam with 0 uses in 167 runs — **that deferral is LIFTED by item 32 below** (hamr,
+    2026-09-10), which un-pins the judge before the seam's first-ever firing rather than
+    after it. Item 28 part (2) is closed by item 32, not by this item.
+
+32. **Item 32 — the judge stops being a Claude judge** (hamr, 2026-09-10: *"what i care about
+    is that judge becomes llm agnostic and not set to one model or provider"*). Item 28 pinned
+    the judge to `anthropic-api`/`JUDGE_MODEL` as arbiter territory and item 31 left it there.
+    That pin is now the last place bareloop requires an Anthropic account: after 31.4 a green
+    job runs on its own provider's key alone, and a JUDGED job still cannot.
+
+    **A correction this item is written to fix.** This session first assessed the un-pinning as
+    *"threaded through 7 shipped modules, baked into the signed hash, arbiter territory, its own
+    build"*. That was answered from memory, and hamr said so (*"i know you answered from memory
+    rather than grounded"*). Read against source, it is wrong in the half that mattered — the
+    judge MACHINERY is already provider-agnostic by construction:
+
+    - `src/calibrate.js:50`, in its own words: *"IT OWNS NO PROVIDER. The judge seam arrives as
+      `judgeLoop`"* — an absent one is a wiring-gap STOP, never a silent skip.
+    - `defaultJudgeLoop({provider, system})` (`src/judged.js:677`) builds a bare-agent `Loop`
+      over WHATEVER provider object it is handed. Nothing Anthropic-shaped is assumed.
+    - `runJudgedFloor` (`src/kinds.js:1786`) reads the seam from `ctx.judgeLoop`, injected by
+      the caller.
+    - The signed calibration record ALREADY carries the judge identity per spec —
+      `foldJudgedArtifacts` writes `closeDecl.calibration.judgeModel` (`src/cardauthor.js:396`),
+      so `jobSpecHash` covers it by construction and no new signed field is needed.
+    - The recalibration refusal ALREADY exists: `src/kinds.js:1739` refuses to grade when the
+      stored judge model is not the one about to grade, naming both, degrading in neither
+      direction.
+
+    So the hash, the record and the guard are built. **Only two things are actually pinned:**
+    (a) three sites construct the judge with `new AnthropicProvider(...)` directly
+    (`scripts/run-u.mjs:1214`, `scripts/run-author.mjs:442`, `src/cli.js:88`), bypassing the
+    provider factory item 31.3 built; (b) `JUDGE_MODEL` (`src/judged.js:92`) is a GLOBAL
+    CONSTANT standing in for "what will grade this", where everything downstream already
+    reads it as data.
+
+    | # | Item | What "done" means | Validation |
+    |---|---|---|---|
+    | 32.1 | The judge identity is a constant, not a resolved value | `JUDGE_MODEL` becomes a resolved judge identity `{provider, model}` flowing from the wiring, threaded on `ctx` instead of imported. **DEFAULT: the job's own worker provider** (hamr: *"defaults to whatever llm is used"*) — so a DeepSeek job judges on DeepSeek and needs no second account. **OVERRIDABLE** by an optional signed `judge: {provider, model}` on the spec (hamr: *"and can be overriden"*), which is where a run pins a judge deliberately different from its worker | a spec naming no judge resolves to the worker's provider/model; a spec naming one resolves to that; both reach `runJudgedFloor` and the calibration record; mutation-proven |
+    | 32.2 | Three sites hardcode `AnthropicProvider` for the judge | all three construct through `makeProvider` (`src/providers.js`) — the factory exists precisely so a provider identity is named in ONE table. `src/cli.js`'s bundle-runner key contract is a separate, deliberate `ANTHROPIC_API_KEY`-only refusal and is decided explicitly here, not swept | no `new AnthropicProvider` survives for a judge; a judge on each admitted provider constructs |
+    | 32.3 | The names say Claude | rename to role-based names now that the moving parts are few (hamr, 2026-09-10: *"i don't care about the name if it has a lot of moving parts … rename then it's llm agnostic"*). `JUDGE_API_KEY` already landed in 31.4 with an `ANTHROPIC_API_KEY` fallback; the judge key now follows the RESOLVED judge provider's own `envKey`, with that fallback kept for the anthropic case | every name reachable by an adopter is role-named, not vendor-named; `bareloop.context.md` updated |
+    | 32.4 | Nothing proves any of it | the recalibration guard is exercised across a judge CHANGE, not just a model bump: a spec calibrated on judge A refuses to grade on judge B, by name | a red that names both identities; mutation-proven |
+
+    **What does NOT change, and is not up for negotiation in this item:** the judge still never
+    says pass/fail — it extracts facts and quotes, and a deterministic `decide()` renders the
+    verdict; unsure is RED; `CALIBRATION_SIZE` is 10 with a 10-of-10 floor and no partial
+    credit; the composition law is mechanical-first, judge-minimal, human-last, first-red-wins.
+    Un-pinning the judge's PROVIDER is not a licence to move any threshold, and no threshold
+    moves here.
+
+    **The self-grading question, answered by measurement rather than doctrine.** Defaulting the
+    judge to the worker's own LLM means a model's output is read by its own family, which is a
+    real correlated-blind-spot hazard. Two things already contain it: the judge renders no
+    verdict (it locates facts; `decide()` is deterministic), and the calibration gate is
+    exactly the instrument that catches a judge which cannot see failures — its frozen set
+    contains cases that MUST fail, and the floor is all ten with no partial credit. So the
+    pairing is licensed empirically, per job, by a gate that already refuses. If a
+    worker-family judge cannot pass its own calibration, that IS the finding.
+
+    **Ordering (hamr, 2026-09-10, and he is right).** This lands BEFORE 31.5's first-ever
+    calibration fire, not after. The session first argued for firing 31.5 on the pinned haiku
+    judge first, on the "land levers one at a time" rule — but that rule protects a BASELINE,
+    and there is none: 0 calibrations across 167 runs. A pinned-haiku fire would preserve
+    nothing and be invalidated immediately, since changing the judge forces a recalibration by
+    the guard above. Named hedge: with both the mechanism and the judge unfired, a red has two
+    candidate causes (mechanism broken vs. judge unfit). Locate+decide is ~$0.002–0.004/call,
+    so re-running the same set against a second judge disambiguates for cents — cheap enough
+    that it is not a reason to reorder.
+
+    **Arbiter line, held.** This changes WHICH model grades, never WHO decides: the agent still
+    never authors its close, its budget, its fence or its merge, and cannot name its own judge
+    — `judge:{provider,model}` is a SIGNED spec field the human signs, exactly like the rest of
+    the hash, never a drafter-selectable knob.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
