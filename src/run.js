@@ -100,8 +100,9 @@ async function primitiveSmoke(workdir) {
  *   through untouched. Travels with `judgeProvider`; absent, a judged stage stops as a
  *   wiring gap rather than grading under an identity nobody named.
  * @param {any} [opts.judgeProvider] SOFTGREEN — the provider a JUDGED close stage runs its
- *   locate call through, wired by the operator and PINNED to `JUDGE_MODEL` (src/judged.js:
- *   the only tier with established injection resistance upstream). Forwarded to the plan
+ *   locate call through, built by the CALLER from the RESOLVED judge identity (PRD item
+ *   32.1: `resolveJudge`/`resolveJobJudge`, src/judged.js — the spec's signed `judge`
+ *   override, else the job's own worker provider and model), never pinned. Forwarded to the plan
  *   flow. It is its own seam and not `provider`/`providerFor`, because the judge tier is
  *   never a step knob and never agent-selectable; absent, a judged stage instrument-stops as
  *   a wiring gap rather than grading on whatever binding happened to be at hand. Its spend

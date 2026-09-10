@@ -1226,12 +1226,14 @@ const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MO
  * signs into the hash. The `baseUrl` rides along only when the judge is the same
  * provider as the worker: a spec's `baseUrl` is the WORKER's endpoint, and pointing a
  * different vendor's client at it would be the silent-misconfiguration class
- * `endpointKey` exists to prevent. Built UNCONDITIONALLY and deliberately so — construction costs nothing
- * and makes no call, `runPlan` reads it only when a stage is `judged-floor`, and the
- * alternative (deriving "does this close judge?" here) is a second reading of the
- * declaration that can drift from the one the runner actually executes. Absent, a
- * judged stage instrument-STOPS as a wiring gap, which is what every live softgreen
- * run would have done: run-author wired this seam and this runner never did. */
+ * `endpointKey` exists to prevent. Built only when `judgeApiKey` is present (PRD item
+ * 31.4 — the judge's key is demanded only when a judge is CALLED, so this construction
+ * is conditional on purpose, not unconditional): `runPlan` reads it only when a stage
+ * is `judged-floor`, and the alternative (deriving "does this close judge?" here) is a
+ * second reading of the declaration that can drift from the one the runner actually
+ * executes. Absent, a judged stage instrument-STOPS as a wiring gap, which is what
+ * every live softgreen run would have done: run-author wired this seam and this
+ * runner never did. */
 const judgeProvider = judgeApiKey
   ? makeProvider(judge.provider, { apiKey: judgeApiKey, model: judge.model, baseUrl: judge.provider === spec.provider ? baseUrl : undefined })
   : null;

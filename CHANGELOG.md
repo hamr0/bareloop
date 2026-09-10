@@ -73,14 +73,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
   every job, so a `verdictType: 'green'` job with a DeepSeek or Gemini worker
   and a mechanical close could not start without an Anthropic account it would
   never spend a token against. Now the WORKER's key comes from the provider
-  table's own `envKey` and is always required; the JUDGE's key is read from
-  `JUDGE_API_KEY`, falling back to `ANTHROPIC_API_KEY`, and is required only
-  when the close actually judges. When it does refuse it refuses at $0, before
-  the worker spends anything, naming the judged-stage count and the pinned
-  judge model — a judged run that discovered this at the close would have paid
-  in full for a verdict it cannot render. A green `anthropic-api` job behaves
-  byte-identically to before. `bareloop run` (the bundle runner) is unchanged:
-  `ANTHROPIC_API_KEY`-only by a deliberate, documented contract.
+  table's own `envKey` and is always required; the JUDGE's key follows the
+  RESOLVED judge provider's own `envKey` (item 32.1 — the judge is no longer
+  pinned to Anthropic), with `JUDGE_API_KEY` as a role-named override in
+  front, and is required only when the close actually judges. When it does
+  refuse it refuses at $0, before the worker spends anything, naming the
+  judged-stage count and the resolved judge model — a judged run that
+  discovered this at the close would have paid in full for a verdict it
+  cannot render. A green `anthropic-api` job behaves byte-identically to
+  before. `bareloop run` (the bundle runner) is unchanged: `ANTHROPIC_API_KEY`
+  -only by a deliberate, documented contract.
 - **One reading of "does this close judge?"** — `judgedStages()`/`closeJudges()`
   are exported from `src/kinds.js` and the six open-coded copies of that
   predicate now share them. The runner's own comment warned against "a second

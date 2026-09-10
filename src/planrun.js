@@ -720,7 +720,9 @@ ${scoutBlob || '(no scout notes)'}`;
  *   travels with `judgeProvider` or the judged stage stops as a wiring gap: a verdict whose
  *   grader cannot be named is a floor nobody can attribute.
  * @param {any} [opts.judgeProvider] softgreen — the provider a JUDGED close stage runs its
- *   locate call through, pinned by the operator to `JUDGE_MODEL` (src/judged.js). Separate
+ *   locate call through, built by the CALLER from the RESOLVED judge identity (PRD item
+ *   32.1: `resolveJudge`, src/judged.js — the spec's signed `judge` override, else the job's
+ *   own worker provider and model), never pinned in this library. Separate
  *   from `provider`/`providerFor` on purpose: the judge tier is not a step knob and never
  *   agent-selectable, and the worker's binding is not a legal stand-in for it. Absent is not
  *   a fall-back — a judged stage with no seam instrument-STOPS as a wiring gap, the same

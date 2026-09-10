@@ -12,11 +12,13 @@
 // models; it is exactly the two provider identities the PROVIDERS menu
 // (`src/job.js`) admits.
 //
-// What this module is NOT: it never picks a judge (the judge stays pinned
-// to `anthropic-api`/`JUDGE_MODEL` regardless of the job's worker provider —
-// arbiter territory, PRD item 28), never prices a round (F113: rates
-// passthrough is dead), and never decides a budget. It only constructs the
-// provider objects `bare-agent`'s `Loop` calls.
+// What this module is NOT: it never RESOLVES a judge identity itself (that
+// stays arbiter territory, `resolveJudge`/`resolveJobJudge` in
+// src/judged.js — the spec's signed `judge` override, else the job's own
+// worker provider and model, PRD item 32) — it only CONSTRUCTS the judge
+// provider object from an identity the caller already resolved
+// (`buildRunnerProviders`, below); it never prices a round (F113: rates
+// passthrough is dead), and never decides a budget.
 
 import { createRequire } from 'node:module';
 
