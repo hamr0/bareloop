@@ -32,6 +32,42 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **The judge is no longer a Claude judge** (PRD item 32; hamr, 2026-09-10:
+  *"what i care about is that judge becomes llm agnostic and not set to one
+  model or provider"*). `JUDGE_MODEL` is no longer read by any grading path.
+  The judge identity is RESOLVED per job by the new exported `resolveJudge`:
+  the spec's signed `judge: {provider, model}` if it names one, else **the
+  job's own worker provider and model** — so a DeepSeek or Gemini job judges on
+  its own provider and needs no second account. There is deliberately no
+  library fall-back: a run that cannot name its judge has not wired one, and
+  the judged stage instrument-STOPS rather than grading under an identity
+  nobody chose. `JUDGE_MODEL` stays exported as the pre-item-32 pin so an
+  adopter's import survives. The judge is now built through the provider
+  factory like every other provider — no `new AnthropicProvider` survives for
+  a judge in `scripts/run-u.mjs`, `scripts/run-author.mjs` or `src/cli.js` —
+  and its key follows the resolved judge provider's own `envKey`, with
+  `JUDGE_API_KEY` as a role-named override in front.
+
+  **BREAKING for direct library callers.** `runCalibration`,
+  `foldJudgedArtifacts` and `prepareSigning`/`authorCloseForJob` now require
+  the resolved `judgeModel` and THROW without it; `runJob`/`runPlan` take a
+  `judgeModel` beside `judgeProvider`, and a judged stage stops as a wiring gap
+  when it is absent. Adding a default would be the silent fall-back this change
+  exists to remove.
+
+  **No threshold moved.** The judge still renders no verdict — it locates facts
+  and a deterministic `decide()` renders; unsure is RED; `CALIBRATION_SIZE` is
+  10 with a 10-of-10 floor and no partial credit. Un-pinning a provider is not
+  a licence to move a bar. Self-grading (a worker's own family reading its
+  work) is licensed by MEASUREMENT: the calibration gate is exactly the
+  instrument that catches a judge which cannot see failures, and its frozen set
+  contains cases that MUST fail.
+- **A new optional signed spec field, `judge: {provider, model}`** — both
+  halves required together, `provider` from the `PROVIDERS` menu, unknown
+  nested keys red. It is part of `jobSpecHash`, so changing the judge kills the
+  signature and forces recalibration — and the recalibration guard now fires
+  across a PROVIDER change, not just a model bump. The drafting agent cannot
+  express it: naming your own examiner is arbiter territory.
 - **The judge's API key is demanded only when a judge is CALLED** (PRD item
   31.4). `scripts/run-u.mjs` hard-exited on a missing `ANTHROPIC_API_KEY` for
   every job, so a `verdictType: 'green'` job with a DeepSeek or Gemini worker

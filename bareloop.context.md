@@ -92,8 +92,15 @@ inherited rule carries the green that minted it and the contrast that attributed
   mis-spelled endpoint is silently DROPPED rather than rejected. Your job spec keeps one
   field name, `baseUrl`; the translation happens once, inside `makeProvider`. Ollama is
   deliberately NOT admitted: it takes no key and bills nothing, so every round would price
-  at $0 through machinery that treats $0 as a real price. The JUDGE stays pinned to
-  `anthropic-api` and `JUDGE_MODEL` whatever the worker's provider is. The bundle runner
+  at $0 through machinery that treats $0 as a real price. The JUDGE IS NO LONGER PINNED
+  (PRD item 32): `resolveJudge` (exported) resolves it per job — the spec's signed
+  `judge: {provider, model}` if it names one, else **this job's own worker provider and
+  model**, so a DeepSeek or Gemini job judges on its own provider and needs no second
+  account. There is no library fall-back: a run that cannot name its judge has not wired
+  one, and the judged stage instrument-STOPS rather than grading under an identity nobody
+  chose. `JUDGE_MODEL` stays exported as the pre-item-32 pin — no grading path reads it.
+  The judge's key follows the resolved judge provider's own `envKey`, with `JUDGE_API_KEY`
+  as a role-named override in front of it. The bundle runner
   (`bareloop run`) is `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would
   have needed, rather than constructing another provider with the wrong key.
 - **Reuse — where a workflow comes from:** a plain `runJob` always drafts cold. Passing
@@ -162,7 +169,8 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
 | `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage, un-autoset-default number, so a spec with many stages OR a raised/autoset `closeTimeoutMs` can validate while its overshoot dwarfs its cap: `runPlan` adds a RUN-START check (PRD item 27/M3) that refuses `wall-under-close-timeout` at $0 once the EFFECTIVE per-stage ceiling is known (autoset or signed), rather than a silent clamp. Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `closeTimeoutMs` | optional integer ms `>= CLOSE_TIMEOUT_FLOOR_MS` (120,000 — hamr's arbiter floor, 2026-09-07) | PRD item 27/M3's SIGNED override for the close's own per-stage wall-clock cap. Absent (the normal case): the run autosets it from a $0 seed timing pass — `max(FLOOR, K × slowest measured stage)`, `K = 5` (hamr, 2026-09-07: "2 and 5 are fine"). Present: the operator's own number wins outright and may legally sit ABOVE *or below* the autoset estimate (the rates-passthrough shape, F113 — never tighten-only). Arbiter territory exactly like `budgetUsd`/`maxWallMs`/`close[].sha256`: the authoring pipeline's `assembleSpec` refuses a draft carrying it |
-| `model` | optional non-empty string, exact provider model id (e.g. `"claude-sonnet-5"`) | the WORKER's model, build-list #3. Absent means today's runner default; present it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the judge model stays library-pinned (`JUDGE_MODEL`) pending recalibration |
+| `model` | optional non-empty string, exact provider model id (e.g. `"claude-sonnet-5"`) | the WORKER's model, build-list #3. Absent means today's runner default; present it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the JUDGE's model comes from the `judge` row below, which DEFAULTS to this same worker model |
+| `judge` | optional `{provider, model}`, both non-empty; `provider` from the `PROVIDERS` menu | the signed JUDGE override (PRD item 32). Absent, the judge resolves to this job's own `provider`/`model` (`resolveJudge`) — which is what lets a non-Anthropic job judge without a second account. Present, it pins a judge deliberately different from the worker (an independent reader). Both halves are required together: a judge with a provider and no model is an identity nobody signed. Part of the signed hash, so changing it kills the signature and forces recalibration. Unknown nested keys red — no smuggling level exists in a signed spec. The drafting agent cannot express it: naming your own examiner is arbiter territory |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
@@ -630,10 +638,13 @@ so it takes no `cmd`, no `timeoutMs` and no `env`; it is `offer: false` BY LAW
 (`NEVER_OFFERED_KINDS` — a paid judge is never an in-run ruler); and it SKIPS the seed-verdict
 read (ruling 8) as a recorded `skipped` row.
 
-**Wiring a judged close, and what it costs.** The judge is PINNED (`JUDGE_MODEL`, exported) and
-is never a step knob: the runner supplies `runJob({ judgeProvider })` — its own seam, not
-`provider`/`providerFor` — and a judged stage with none instrument-STOPS as a wiring gap rather
-than grading on whatever binding was at hand. Each locate call is metered per call and emitted
+**Wiring a judged close, and what it costs.** The judge is RESOLVED per job (`resolveJudge`,
+PRD item 32) and is never a step knob or agent-selectable — naming your own examiner is arbiter
+territory, and `judge` is a field the human SIGNS into the hash. The runner supplies BOTH halves,
+`runJob({ judgeProvider, judgeModel })` — its own seam, not `provider`/`providerFor` — and they
+travel together: a judged stage missing EITHER instrument-STOPS as a wiring gap (two distinct
+messages, identity checked first) rather than grading on whatever binding was at hand or under a
+name nobody wrote. Each locate call is metered per call and emitted
 as a distinct `judge-round` spine record, which `runJob`'s ONE ledger accounts exactly like a
 `worker-round` (`ACCOUNTED_ROUND_TYPES`, and `readResume`'s fold reads that same list, so a
 resumed leg cannot silently widen a signed budget by the close's own spend). A budget funds the
@@ -703,8 +714,9 @@ null rather than an exact-looking floor.
 carrying a `judged-floor` stage is refused when no set is stored, when no `judgeLoop` seam is
 wired (a wiring gap, never a silent pass), when the gate is a casualty, and when anything short
 of all-of-them grades. It runs **after** gates 1–3, so no $0 refusal is ever paid for. The
-signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (which covers
-`JUDGE_MODEL`), the graded rows and the battery — beside `judgeModel` itself.
+signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (which covers the
+resolved judge identity), the graded rows and the battery — beside `judgeModel` itself.
+`runCalibration` takes `judgeModel` as a REQUIRED argument and throws without one.
 
 **D9.3 for a judged-ONLY close** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*).
 A judged stage skips the seed read (ruling 8), so a close whose only work stage is judged has no
@@ -718,10 +730,12 @@ bump forces a full recalibration"* used to be an operator-side rule with nothing
 which makes it prose (F45); it now has both halves of a detector. The tier the signer's set was
 graded by is stored beside the cases as **`calibration.judgeModel`** — `CALIBRATION_FIELDS`
 enumerates a stored set as exactly `cases` and `judgeModel` and nothing else — written by
-`foldJudgedArtifacts` from the PIN (`JUDGE_MODEL`) rather than from anything a caller may name.
-Because it is INSIDE the spec, `jobSpecHash` covers it by construction: bump the constant and
-every signed judged spec hashes differently, the signature dies, and the re-sign is what re-runs
-the calibration gate. **`validateCloseDecl` REQUIRES it** on any stored set (`missing-required`
+`foldJudgedArtifacts` from the RESOLVED judge identity the caller hands in (required; it throws
+without one). Because it is INSIDE the spec, `jobSpecHash` covers it by construction: change the
+judge — its model OR its provider — and every signed judged spec hashes differently, the
+signature dies, and the re-sign is what re-runs the calibration gate. `runJudgedFloor` refuses to
+grade when the stored identity is not the one about to grade, naming both, and it does not
+degrade in either direction. **`validateCloseDecl` REQUIRES it** on any stored set (`missing-required`
 on `…calibration.judgeModel`) — a set nobody can attribute to a tier is a floor nobody can tell
 apart from a bumped one. **`declaredStages` stamps it onto the judged stage** as
 `calibrationJudgeModel`, from the SIGNED bytes and through the one seam that already turns a
