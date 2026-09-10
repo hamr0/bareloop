@@ -726,8 +726,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     widening them is additive, hamr's go, and never agent-authored.
 
     **2026-09-10 — the interview, answered (hamr). Step (1) of item 25's order is DONE.**
-    hamr's answers are the rulings below; lines marked *proposed* are the session's, not yet
-    ruled. The build (step 3) has not started.
+    hamr's answers are the rulings below. The build (step 3) has not started.
 
     **The line between bareloop and fwdloop (RULED).** bareloop = `green`/`soft-green`, repo OR
     plain folder, no human mid-run, one-shot jobs run once or now and then with a fixed shape,
@@ -799,12 +798,20 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     Also RULED as a fix: a genre never adds a close stage the goal does not state (the TYPES
     genre's `tsc --strict` stage in `mtv8jihy`).
 
-    **Proposed, not ruled (settle before or during the build):**
-    - A URL source is fetched ONCE at job start and frozen into the hidden-git copy, so the run
-      and the close judge the same bytes.
-    - Web-search evidence: the close can check a found flight is under $500 but not that it
-      EXISTS. Proposal: the arbiter keeps its own record of what barebrowse returned, and the
-      close checks the output against that record — never against a worker-written file.
+    **Also RULED (hamr, same day, closing the two proposals):**
+    - **Source and destination are proven at job start, mechanically, $0** — a URL is fetched
+      once, a local folder or file is read, and the destination is proven writable, all before
+      any tokens spend; the fetched bytes are frozen into the hidden-git copy, so the run and the
+      close judge the same bytes. A source that cannot be read or a destination that cannot be
+      written refuses there, by name.
+    - **Web-search evidence is the arbiter's own record** of what barebrowse returned; the close
+      checks the output against that record, never against a worker-written file.
+    - **Everything lands in the audit output that already exists** — the form, the confirm-turn
+      questions and the accepted answers ride in the same signed/spine records the interview
+      answers do today; no new record format.
+
+    **Signed by hamr, 2026-09-10** ("prd reads fine, signed"). Next per item 25: step (3), the
+    build, on its own branch.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
