@@ -1,7 +1,7 @@
 # Scout ON/OFF cost contrast: scoping ($0, 2026-09-05)
 
 Status line at the bottom. Pre-registered here BEFORE any switch exists, before any number
-exists — the same discipline as `docs/product/G3-SCOPING.md`. Nothing here is a result.
+exists — the same discipline as `docs/logs/G3-SCOPING.md`. Nothing here is a result.
 
 ## What this is for
 
@@ -76,7 +76,7 @@ survey but `0` is not a legal "off" (F59 reserves a round). Add an operator-only
 | OFF (treatment) | `--scout off` | identical |
 
 Job: `aurora-u-spawner-types` — bench row, $5 / 30 min, hash
-`5d989ae7…` (`docs/product/BENCH-PREREG.md`), patient `../bareloop-patients/aurora-u` at
+`5d989ae7…` (`docs/logs/BENCH-PREREG.md`), patient `../bareloop-patients/aurora-u` at
 `d661e50`. Chosen because it is the cheapest row and the one that greens most often (F124:
 1-step greens median $1.77), so an OFF-arm colour change would carry signal rather than
 drown in the row's own base rate. The ON arm is a fresh paid run, not a borrowed archived

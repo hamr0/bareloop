@@ -12,16 +12,18 @@
 // models; it is exactly the two provider identities the PROVIDERS menu
 // (`src/job.js`) admits.
 //
-// What this module is NOT: it never picks a judge (the judge stays pinned
-// to `anthropic-api`/`JUDGE_MODEL` regardless of the job's worker provider —
-// arbiter territory, PRD item 28), never prices a round (F113: rates
-// passthrough is dead), and never decides a budget. It only constructs the
-// provider objects `bare-agent`'s `Loop` calls.
+// What this module is NOT: it never RESOLVES a judge identity itself (that
+// stays arbiter territory, `resolveJudge`/`resolveJobJudge` in
+// src/judged.js — the spec's signed `judge` override, else the job's own
+// worker provider and model, PRD item 32) — it only CONSTRUCTS the judge
+// provider object from an identity the caller already resolved
+// (`buildRunnerProviders`, below); it never prices a round (F113: rates
+// passthrough is dead), and never decides a budget.
 
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { AnthropicProvider, OpenAIProvider } = require('bare-agent/providers');
+const { AnthropicProvider, OpenAIProvider, GeminiProvider } = require('bare-agent/providers');
 
 /**
  * Today's anthropic-api tier table — EXACTLY the `DEFAULT_TIER_MODELS` both
@@ -50,6 +52,38 @@ export const OPENAI_TIER_MODELS = Object.freeze({
 });
 
 /**
+ * Gemini (PRD item 31.3, hamr 2026-09-09: "anthropic, openai, gemini drop
+ * ollama for now"). Two real tiers, unlike DeepSeek's single model: `flash` is
+ * the cheap tier by design, so `haiku` maps to it honestly rather than
+ * repeating one id.
+ *
+ * ADMITTED-PENDING-PROBE. The probe rule stands (PRD item 28 ruling (d),
+ * 2026-09-09): no endpoint is in the menu without its own clean paid probe,
+ * and `gemini-api` has ZERO runs. `anthropic-api` is the original (~167
+ * archived runs) and `openai-api` was probed green through the shipped runner
+ * (run mtu12vks, $1.64/$4, F157); gemini owes that fire and has not paid it.
+ * `PROBE_STATUS` below is the machine-readable form of that debt — nothing in
+ * here silently pretends the provider is proven.
+ */
+export const GEMINI_TIER_MODELS = Object.freeze({
+  sonnet: 'gemini-2.5-pro',
+  haiku: 'gemini-2.5-flash',
+});
+
+/**
+ * Which admitted providers have paid for their own end-to-end probe, and which
+ * have not. Read by the runner to print a loud marker; never read to REFUSE —
+ * hamr admitted gemini to the menu, and a table that quietly withheld it would
+ * be a second, invisible ruling. An unprobed provider runs, and says so.
+ * @type {Readonly<Record<string, {probed: boolean, evidence: string}>>}
+ */
+export const PROBE_STATUS = Object.freeze({
+  'anthropic-api': Object.freeze({ probed: true, evidence: 'the original surface — ~167 archived runs' }),
+  'openai-api': Object.freeze({ probed: true, evidence: 'run mtu12vks, green through scripts/run-u.mjs, $1.64/$4 (F157)' }),
+  'gemini-api': Object.freeze({ probed: false, evidence: 'ZERO runs — admitted to the menu, owes its own paid probe (PRD item 31.3)' }),
+});
+
+/**
  * Per-MODEL request-key gating (F149, live-measured 2026-09-09): DeepSeek
  * silently IGNORES the modern `max_completion_tokens` key — asked for 64
  * output tokens, it returned 665/608 — and only honours the legacy
@@ -73,8 +107,36 @@ const OPENAI_MODEL_OPTIONS = Object.freeze({
  * @property {new (options: any) => any} ctor the bare-agent provider class
  * @property {string} envKey the environment variable this provider reads its key from
  * @property {Readonly<Record<string, string>>} tiers tier name -> model id
- * @property {(model: string|undefined) => Record<string, any>} paramsFor per-model request-key/param gating, applied on TOP of {exposeErrorBody:true, apiKey, model, baseUrl?}
+ * @property {string} endpointKey the CONSTRUCTOR OPTION NAME this provider reads its endpoint from — NOT assumed to be `baseUrl` (see below)
+ * @property {(model: string|undefined) => Record<string, any>} paramsFor per-model request-key/param gating, applied on TOP of {exposeErrorBody:true, apiKey, model, <endpointKey>?}
  */
+
+// ── WHY `endpointKey` IS A FIELD AND NOT THE LITERAL `baseUrl` ──────────────
+//
+// hamr's framing for this item was "api + api shape + endpoint" (PRD 31.3), and
+// the endpoint half is the one that does NOT generalize. Read from bare-agent's
+// own constructors, not assumed:
+//
+//   AnthropicProvider  `baseUrl`  (provider-anthropic.js:49)
+//   OpenAIProvider     `baseUrl`  (provider-openai.js:76)
+//   GeminiProvider     `baseUrl`  (provider-gemini.js:47)
+//   OllamaProvider     `url`      (provider-ollama.js:32)  <- and NO apiKey at all
+//
+// Every one of these constructors defaults its endpoint when the option is
+// absent and none of them validate unknown option names. So passing `baseUrl`
+// to Ollama would not throw: it would be IGNORED, the provider would default to
+// `http://localhost:11434`, and the run would quietly talk to the wrong machine.
+// That is the F149 class exactly — DeepSeek silently ignoring
+// `max_completion_tokens` and returning 665 tokens for a 64-token cap — where a
+// silently-dropped option produces a plausible-looking run against a
+// configuration nobody chose.
+//
+// Ollama is NOT admitted today (hamr, 2026-09-09: "drop ollama for now"), so
+// this field currently reads `baseUrl` for all three entries and its value is
+// never exercised against a second spelling. It is here anyway, because the
+// alternative is a hardcoded `baseUrl` that is correct for exactly as long as
+// the menu holds only http-shaped API providers, and the FIRST thing that
+// changes when Ollama is admitted is the one line nobody would think to look at.
 
 /** @type {Readonly<Record<string, ProviderTableEntry>>} */
 const PROVIDER_TABLE = Object.freeze({
@@ -82,6 +144,7 @@ const PROVIDER_TABLE = Object.freeze({
     ctor: AnthropicProvider,
     envKey: 'ANTHROPIC_API_KEY',
     tiers: ANTHROPIC_TIER_MODELS,
+    endpointKey: 'baseUrl',
     // Anthropic has only ever had one request key for the output cap
     // (`max_tokens`) — nothing to gate here, ever (unlike OpenAI-shaped
     // backends, which fork on `max_tokens` vs `max_completion_tokens`).
@@ -91,7 +154,18 @@ const PROVIDER_TABLE = Object.freeze({
     ctor: OpenAIProvider,
     envKey: 'OPENAI_API_KEY',
     tiers: OPENAI_TIER_MODELS,
+    endpointKey: 'baseUrl',
     paramsFor: (model) => OPENAI_MODEL_OPTIONS[/** @type {string} */ (model)] ?? {},
+  }),
+  'gemini-api': Object.freeze({
+    ctor: GeminiProvider,
+    envKey: 'GEMINI_API_KEY',
+    tiers: GEMINI_TIER_MODELS,
+    endpointKey: 'baseUrl',
+    // Gemini carries no `max_tokens`/`max_completion_tokens` fork of its own —
+    // bare-agent's GeminiProvider maps the cap internally. Nothing to gate, and
+    // an empty object is the honest statement of that, not an omission.
+    paramsFor: () => ({}),
   }),
 });
 
@@ -130,7 +204,13 @@ export function makeProvider(providerName, { apiKey, model, baseUrl } = {}) {
     exposeErrorBody: true,
     apiKey,
     model,
-    ...(baseUrl !== undefined ? { baseUrl } : {}),
+    // the endpoint goes in under THIS PROVIDER'S OWN OPTION NAME, never a
+    // hardcoded `baseUrl` (PRD item 31.3). The spec field stays `baseUrl` for
+    // everyone — one name for the person writing the job — and the translation
+    // to the constructor's spelling happens here, once. A provider whose option
+    // is spelled differently would otherwise IGNORE the endpoint silently and
+    // run against its own default; see the note above the table.
+    ...(baseUrl !== undefined ? { [entry.endpointKey]: baseUrl } : {}),
     ...entry.paramsFor(model),
   });
 }
@@ -144,24 +224,33 @@ export function makeProvider(providerName, { apiKey, model, baseUrl } = {}) {
  * before this factory existed — that decision stays where each runner's own
  * `--model` flag/spec precedence lives, not duplicated in here).
  *
- * The JUDGE stays pinned to `anthropic-api`/`judgeModel` regardless of
- * `providerName` — arbiter territory (PRD item 28: "the judge stays PINNED
- * … regardless of the job's worker provider"). A signed `judge:{provider,
- * model}` field with its own calibration record is PRD item 28 part (2),
- * NOT built here; until it lands, the judge always needs its own
- * `judgeApiKey` (today, always `ANTHROPIC_API_KEY`), independent of which
- * key the worker used.
+ * THE JUDGE IS NO LONGER PINNED TO ANTHROPIC (PRD item 32.2, hamr 2026-09-10:
+ * *"what i care about is that judge becomes llm agnostic and not set to one
+ * model or provider"*). It is constructed through this same factory, from a
+ * `judgeProviderName`/`judgeModel` pair the CALLER resolved (`resolveJudge`,
+ * src/judged.js — the spec's signed `judge` override, else the job's own worker
+ * provider and model). Item 28's pin, and item 28 part (2)'s deferral of a
+ * signed `judge:{provider,model}` field, both close here.
+ *
+ * `judgeApiKey` stays a SEPARATE argument rather than being derived: the judge
+ * may legitimately be a different provider from the worker, and reading its key
+ * for it would put a second env-var reader in a module whose whole job is to
+ * have exactly one. The caller reads the resolved judge provider's own `envKey`
+ * and hands the key in — the same contract the worker key already has here.
  * @param {object} args
  * @param {string} args.providerName spec.provider (or the anthropic-api default)
  * @param {string|undefined} args.apiKey the WORKER's key, read from the provider's own `envKey`
  * @param {string} args.model the already-resolved worker model id
  * @param {Readonly<Record<string, string>>} args.tierModels the already-resolved tier -> model map (spec override folded in by the caller)
  * @param {string|undefined} [args.baseUrl] spec.baseUrl, if any
- * @param {string|undefined} args.judgeApiKey the judge's own key (today: `ANTHROPIC_API_KEY`)
- * @param {string} args.judgeModel `JUDGE_MODEL`
+ * @param {string|undefined} args.judgeApiKey the judge's own key, read by the caller from the RESOLVED judge provider's `envKey`
+ * @param {string} args.judgeModel the resolved judge model id
+ * @param {string} [args.judgeProviderName] the resolved judge provider name; defaults to `providerName` (the job's own worker provider), which is `resolveJudge`'s own default
+ * @param {string|undefined} [args.judgeBaseUrl] the judge provider's endpoint, when it takes one
  */
 export function buildRunnerProviders({
   providerName, apiKey, model, tierModels, baseUrl, judgeApiKey, judgeModel,
+  judgeProviderName = providerName, judgeBaseUrl = undefined,
 }) {
   const provider = makeProvider(providerName, { apiKey, model, baseUrl });
   /** @type {Record<string, any>} */
@@ -171,6 +260,42 @@ export function buildRunnerProviders({
       ? provider
       : makeProvider(providerName, { apiKey, model: tierModels[tier], baseUrl })
   ));
-  const judgeProvider = makeProvider('anthropic-api', { apiKey: judgeApiKey, model: judgeModel });
+  // the judge goes through the SAME table as the worker — one place names a
+  // provider identity, which is the entire reason this factory exists. Reusing
+  // the worker instance when the identity matches exactly is not an optimisation
+  // for its own sake: a second instance against the same endpoint/model is a
+  // second prompt-cache prefix, and cache writes are ~41% of the bill.
+  const judgeProvider = (judgeProviderName === providerName && judgeModel === model && judgeApiKey === apiKey
+    && judgeBaseUrl === baseUrl)
+    ? provider
+    : makeProvider(judgeProviderName, { apiKey: judgeApiKey, model: judgeModel, baseUrl: judgeBaseUrl });
   return { provider, providerFor, judgeProvider };
+}
+
+/**
+ * The launch-time warning lines for an ADMITTED-PENDING-PROBE provider, or
+ * `null` when the provider has paid for its own end-to-end probe (and for an
+ * off-table name — an unknown provider is `resolveProvider`'s named throw to
+ * report, never this function's warning to soften).
+ *
+ * This lives here, next to `PROBE_STATUS`, rather than inline in the runner,
+ * for one reason: inline it was UNTESTABLE. `scripts/run-u.mjs` reaches this
+ * point only with a real job row (a machine-local patient path) and a real
+ * signed spec, so nothing in the suite could reach the branch, and a warning
+ * nothing executes drifts exactly the way the green-only prose did (item 31.2).
+ *
+ * It never REFUSES, and it never returns a shape a caller can mistake for a
+ * refusal: hamr admitted `gemini-api` to the menu, and a probe table that
+ * quietly withheld it would be a second ruling nobody made.
+ * @param {string} providerName
+ * @returns {string[]|null} lines to print, in order, or null when there is nothing to say
+ */
+export function probeWarningLines(providerName) {
+  const probe = PROBE_STATUS[/** @type {keyof typeof PROBE_STATUS} */ (providerName)];
+  if (!probe || probe.probed !== false) return null;
+  return [
+    `⚠  UNPROVEN PROVIDER — "${providerName}" is on the menu but has never been probed end to end.`,
+    `   ${probe.evidence}`,
+    '   It will run. Nothing has shown that it CAN run this job to a close-rendered verdict.',
+  ];
 }

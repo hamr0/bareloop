@@ -79,8 +79,28 @@ inherited rule carries the green that minted it and the contrast that attributed
   an unknown provider name THROWS there, it never falls back to a default. Per-model
   request-key gating lives in that table: `deepseek-chat` sets bare-agent's
   `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
-  output cap that does not bind is a money hazard. The JUDGE stays pinned to
-  `anthropic-api` and `JUDGE_MODEL` whatever the worker's provider is. The bundle runner
+  output cap that does not bind is a money hazard. `provider: 'gemini-api'` (PRD item 31.3)
+  takes the same `Loop` path, reads `GEMINI_API_KEY`, and maps two real tiers
+  (`sonnet` → `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`). It is
+  **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
+  `PROBE_STATUS` (`src/providers.js`) is the machine-readable form of that debt, and
+  `probeWarningLines(provider)` renders the loud launch-time marker `scripts/run-u.mjs`
+  prints. That table is read to WARN, never to REFUSE. Each entry also declares its own
+  `endpointKey` — the CONSTRUCTOR option name it reads an endpoint from — because
+  bare-agent's providers do not agree on one spelling (`baseUrl` for anthropic/openai/
+  gemini, `url` for Ollama) and none of them validate unknown option names, so a
+  mis-spelled endpoint is silently DROPPED rather than rejected. Your job spec keeps one
+  field name, `baseUrl`; the translation happens once, inside `makeProvider`. Ollama is
+  deliberately NOT admitted: it takes no key and bills nothing, so every round would price
+  at $0 through machinery that treats $0 as a real price. The JUDGE IS NO LONGER PINNED
+  (PRD item 32): `resolveJudge` (exported) resolves it per job — the spec's signed
+  `judge: {provider, model}` if it names one, else **this job's own worker provider and
+  model**, so a DeepSeek or Gemini job judges on its own provider and needs no second
+  account. There is no library fall-back: a run that cannot name its judge has not wired
+  one, and the judged stage instrument-STOPS rather than grading under an identity nobody
+  chose. `JUDGE_MODEL` stays exported as the pre-item-32 pin — no grading path reads it.
+  The judge's key follows the resolved judge provider's own `envKey`, with `JUDGE_API_KEY`
+  as a role-named override in front of it. The bundle runner
   (`bareloop run`) is `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would
   have needed, rather than constructing another provider with the wrong key.
 - **Reuse — where a workflow comes from:** a plain `runJob` always drafts cold. Passing
@@ -143,13 +163,14 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 |---|---|---|
 | `job` | kebab-case slug | |
 | `description` | non-empty string | |
-| `provider` | `anthropic-api` \| `openai-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-chat` today — see "Worker surface" above for its `baseUrl` field and per-model gating; `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
+| `provider` | `anthropic-api` \| `openai-api` \| `gemini-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-chat` today — see "Worker surface" above for its `baseUrl` field and per-model gating; `gemini-api` (PRD item 31.3) reads `GEMINI_API_KEY` and is ADMITTED-PENDING-PROBE — zero runs, and every launch says so (`PROBE_STATUS`/`probeWarningLines`); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
 | `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage, un-autoset-default number, so a spec with many stages OR a raised/autoset `closeTimeoutMs` can validate while its overshoot dwarfs its cap: `runPlan` adds a RUN-START check (PRD item 27/M3) that refuses `wall-under-close-timeout` at $0 once the EFFECTIVE per-stage ceiling is known (autoset or signed), rather than a silent clamp. Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `closeTimeoutMs` | optional integer ms `>= CLOSE_TIMEOUT_FLOOR_MS` (120,000 — hamr's arbiter floor, 2026-09-07) | PRD item 27/M3's SIGNED override for the close's own per-stage wall-clock cap. Absent (the normal case): the run autosets it from a $0 seed timing pass — `max(FLOOR, K × slowest measured stage)`, `K = 5` (hamr, 2026-09-07: "2 and 5 are fine"). Present: the operator's own number wins outright and may legally sit ABOVE *or below* the autoset estimate (the rates-passthrough shape, F113 — never tighten-only). Arbiter territory exactly like `budgetUsd`/`maxWallMs`/`close[].sha256`: the authoring pipeline's `assembleSpec` refuses a draft carrying it |
-| `model` | optional non-empty string, exact provider model id (e.g. `"claude-sonnet-5"`) | the WORKER's model, build-list #3. Absent means today's runner default; present it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the judge model stays library-pinned (`JUDGE_MODEL`) pending recalibration |
+| `model` | optional non-empty string, exact provider model id (e.g. `"claude-sonnet-5"`) | the WORKER's model, build-list #3. Absent means today's runner default; present it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the JUDGE's model comes from the `judge` row below, which DEFAULTS to this same worker model |
+| `judge` | optional `{provider, model}`, both non-empty; `provider` from the `PROVIDERS` menu | the signed JUDGE override (PRD item 32). Absent, the judge resolves to this job's own `provider`/`model` (`resolveJudge`) — which is what lets a non-Anthropic job judge without a second account. Present, it pins a judge deliberately different from the worker (an independent reader). Both halves are required together: a judge with a provider and no model is an identity nobody signed. Part of the signed hash, so changing it kills the signature and forces recalibration. Unknown nested keys red — no smuggling level exists in a signed spec. The drafting agent cannot express it: naming your own examiner is arbiter territory |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
@@ -160,7 +181,7 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 | field | shape | notes |
 |---|---|---|
 | `goal` | non-empty text | what the agent plans against |
-| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **All three are ADMITTED today** — `LOCKED_VERDICTS` is empty, so nothing reds `request-red` on the class itself. `soft-green` has its judged floor (`judged-floor`, signed rubric card + calibration gate) and is the forward path for a job needing judgement, paired with the end-of-run review door; `hitl` is LEGACY — retired as a design direction (see the direction note at the top) but still admitted and still works exactly as documented here. Every `request-red` (e.g. for a locked TOOL verb, not a verdict class) also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
+| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **All three still VALIDATE and RUN** — `LOCKED_VERDICTS` is empty, so nothing reds `request-red` on the class itself, and an existing spec of any class executes. **But AUTHORING offers two: `green` and `soft-green` (`MENU_CLASSES`).** `soft-green` has its judged floor (`judged-floor`, signed rubric card + calibration gate) and is the forward path for a job needing judgement, paired with the end-of-run review door; `hitl` is RETIRED and UNLISTED (`UNLISTED_CLASSES`, PRD item 31.1) — the class moved to fwdloop, so `runInterview` refuses a hitl pick as counted demand and no new hitl job can be drafted, while its battery, its runtime and an already-signed hitl spec are untouched and still work exactly as documented here. The three lists are DIFFERENT facts: `LOCKED_CLASSES` (no battery — cannot validate or run; empty today), `UNLISTED_CLASSES` (built and runnable, never offered — `['hitl']`), `MENU_CLASSES` (what authoring offers). Every `request-red` (e.g. for a locked TOOL verb, not a verdict class) also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
 | `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs?, direction? }, ...]` (PRD v1.28), or a close object (table below) | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close still VALIDATES (`CLOSE_TYPES`) but the plan flow refuses all three at runtime as `close-unsupported` — an object close names no command to run. The modern route to a judged or human-decided close is a staged `closeDecl` (`judged-floor` / `human-confirms` stage kinds), not this object form |
 | `closeDecl` | **the AUTHORED close** `{ genre: "TYPES", lang: "js"\|"python", stages: [{ name, kind, params }], notes? }` | the ALTERNATIVE to `close`, and the point of the close-authoring rung: the user answers an interview and an LLM composes a DECLARATION over kinds whose implementations we own — never a script, never a shell fragment, never a new kind. **`close` and `closeDecl` are alternatives**: declaring both reds `close-duplicated` (two closes are two arbiters). It is HARD-class by construction (`CLASS_BY_CLOSE.declared`), so a locked verdict on one reds `close-hierarchy` as well as `request-red`. The declaration is validated by `validateCloseDecl`; the TREE-GROUNDED half of that gate (the path rule, and the scoped-job derivation that arms the F84 one-population law) is DEFERRED at spec-validation time — a job spec is validated with no repository in hand — and the runner re-runs it GROUNDED against the real seed before any stage and before any token. It stores the counting RULE and never a number (D12): there is no seed field, and `baseline: "seed"` is measured at each run's own HEAD |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
@@ -509,7 +530,7 @@ Escalations are decision-ready (category, options, spend); cap-halt is its own
 category, never merged with "wrong". A thrown middle is relayed by its `category`
 property (`cap-halt`, `gate-red`, …); an unnamed throw is `interpreter-red`. Close output
 is scrubbed at capture (an injected `redact`, wired to bareguard by `runPlan` with the
-validators' full secret-shape inventory — Bearer/sk-/ghp_/github_pat_/AKIA/xox) so a
+validators' full secret-shape inventory — Bearer/sk-/ghp_/github_pat_/AKIA/xox/AIza) so a
 secret a checked command echoes never enters the append-only spine or a worker prompt —
 a benign gap is byte-identical (secrets hard line; design law #7 intact).
 
@@ -571,7 +592,7 @@ a step, or test it without a provider.
 
 | step | call | what it is |
 |---|---|---|
-| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. THREE frozen question sets keyed by verdict class (`QUESTION_SETS`; `questionsFor(cls)` / `requiredAnswersFor(cls)`), all three LIVE as of softgreen module 3 — nothing is locked today (`LOCKED_CLASSES` is empty) — and the interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost two slots since it was frozen (D13's genre confirm, then the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input and asking for it again invites a second, drifting answer for a fact the machine already holds), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today the green set is five questions, answers keyed by number; the LEGACY `hitl` set is those five byte for byte plus one more (what the signer is deciding when they look at the result — `human-confirms`' `ask`), which is the spread's next number and moves with a green-side deletion; the `soft-green` set is likewise those five plus two more — Q6 the signed rubric card (what separates a pass from a fail) and Q7 the frozen calibration set (one example to pass, one to fail) — the judged floor's two required inputs. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
+| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. THREE frozen question sets keyed by verdict class (`QUESTION_SETS`; `questionsFor(cls)` / `requiredAnswersFor(cls)`), all three sets still EXIST, but the interview ADMITS only what is on the menu: nothing is locked today (`LOCKED_CLASSES` is empty) and `hitl` is UNLISTED (PRD item 31.1), so `runInterview({verdictType:'hitl'})` returns a refusal rather than `ok:true` — ask `MENU_CLASSES` which classes can be authored, never this sentence. The interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost two slots since it was frozen (D13's genre confirm, then the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input and asking for it again invites a second, drifting answer for a fact the machine already holds), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today the green set is five questions, answers keyed by number; the RETIRED, UNLISTED `hitl` set (still readable via `questionsFor`, never authorable) is those five byte for byte plus one more (what the signer is deciding when they look at the result — `human-confirms`' `ask`), which is the spread's next number and moves with a green-side deletion; the `soft-green` set is likewise those five plus two more — Q6 the signed rubric card (what separates a pass from a fail) and Q7 the frozen calibration set (one example to pass, one to fail) — the judged floor's two required inputs. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
 | survey | `runAuthorScout({ workdir, provider, attempts?, ceilingUsd? })` → `{ state, facts, reason, meta, raw, raws, calls, budgetStop }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes. Up to `SCOUT_ATTEMPTS` (**3**, hardcoded — PRD v1.58) attempts: `attempts` is TIGHTEN-ONLY and CLAMPS rather than throws (floor **1**, because a scout that never ran is an ABSENT nobody can act on), the direction every cap in this system runs in. **A retry fires on the typed MALFORMED class alone** (`SCOUT_RETRY_CAUSES` = `empty` \| `unparseable`); what is excluded is excluded for a reason — `call-failed` covers transport and `truncated:max_tokens`, both provider-red with NO redraft; `short` is F59's cut-off population and already has its own instrument INSIDE the attempt; `non-object` and `empty-object` are valid JSON with wrong or vacuous content, which is a SEMANTIC failure, and F38/F39 measured what re-asking one buys (the same distribution, sampled twice) — that is the self-healing line, and it is not crossed here. The re-ask is TOOLLESS over the conversation the survey already produced (the repository was already read; only the emission was unreadable) and names the mechanical parse error and nothing else. **There is no JSON repair behind it and there never will be** — a repairer decides what the model MEANT and writes it down as though the model had said it, in the one artefact whose whole job is to be honest about what a repository contains. `meta.attempts` / `meta.attemptsAllowed` record what was paid for; every attempt is metered under its own label (`author-scout`, `author-scout#2`, …) and leaves its raw behind. **`ceilingUsd` is the operator's money ceiling** (PRD v1.62) — checked BETWEEN attempts and before F59's reserved round, so no paid call escapes it; `null`/absent is UNBOUNDED, and a non-null non-finite value THROWS (the shared `capStop` seam — see `authorClose` below). When it ends the ladder, `budgetStop` names which stop (`cap-halt` \| `pricing-red`) and a survey that was never asked for carries the typed cause `not-funded` — deliberately OUTSIDE `SCOUT_RETRY_CAUSES`, because a retry is precisely what the cap forbade |
 | listing | `buildSeedListing({ workdir, seedRef, sourcePaths, testPaths })` | mechanical, `$0`, no model. `files` is the WHOLE tree (what the validator judges paths against); `block` is scoped to the survey's own paths and capped in ANNOUNCED tiers (what the prompt carries). Handing the validator the scoped half would make a job scoped to `src/` read as whole-tree and silently disarm the one-population law |
 | authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate, ceilingUsd? })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2) — a passed `maxRevisions` is TIGHTEN-ONLY, so a caller may LOWER that ceiling and never buy more revise rounds than the constant (floor **0**: one authoring call with no revise round is a legal ask, and unlimited revising would launder thrash as adaptation) — early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close. The return carries **`raws`**: what every model call actually SAID, the scout's attempts absorbed together with the declaration's, in the cost book's own order and under the same labels it meters. Each is `{ label, attempt, bytes, trimmed, text, cause, reason }` through the ONE persist helper (`scrubRaw` — redacted over the ONE `SECRET_PATTERNS` inventory, since a raw is the record most likely in this system to carry a live credential; bounded at `RAW_PERSIST_MAX` (8000) with the trim ANNOUNCING its own full size, and the cut walked back off a continuation byte so a multi-byte character is never split). `raws` is present on EVERY path **including the `$0` preflight refusals** — the path that spends nothing more is exactly the one whose evidence used to vanish with the process. `iterations` records what each turn MEANT (declaration, validation, seed read); `raws` records what it SAID, and a malformation is only ever visible in the second. **`ceilingUsd` is the same operator ceiling the survey took** — the scout's spend is ABSORBED into this loop's cost book before its first call is weighed, so spend already incurred folds in and re-entering cannot silently widen it. It is checked immediately before EVERY paid call (the author call, each revise, and each malformed-emission retry). **A MALFORMED ceiling is an ERROR, not a silent unbounded run** (v1.64 §3): the seam every ceiling read goes through (`capStop`, `src/text.js`) THROWS on a non-null non-finite value — `'2.50'`, `NaN`, `Infinity`, `true`, `{}` — before the first paid call, and the throw propagates uncaught rather than being caught into an ABSENT survey, because a caught one would hand you the very silent-unbounded run it exists to prevent. `null`/omitted is the STATED operator choice for unbounded; `0` and negatives are finite, legal, and cap-halt immediately. The advertised ceiling and the enforced ceiling can therefore never be different numbers. A `cap-halt` here can arrive with `ok:true` — a close that was already validated and measured survives the money stop, exactly as a late provider casualty does |
@@ -617,10 +638,13 @@ so it takes no `cmd`, no `timeoutMs` and no `env`; it is `offer: false` BY LAW
 (`NEVER_OFFERED_KINDS` — a paid judge is never an in-run ruler); and it SKIPS the seed-verdict
 read (ruling 8) as a recorded `skipped` row.
 
-**Wiring a judged close, and what it costs.** The judge is PINNED (`JUDGE_MODEL`, exported) and
-is never a step knob: the runner supplies `runJob({ judgeProvider })` — its own seam, not
-`provider`/`providerFor` — and a judged stage with none instrument-STOPS as a wiring gap rather
-than grading on whatever binding was at hand. Each locate call is metered per call and emitted
+**Wiring a judged close, and what it costs.** The judge is RESOLVED per job (`resolveJudge`,
+PRD item 32) and is never a step knob or agent-selectable — naming your own examiner is arbiter
+territory, and `judge` is a field the human SIGNS into the hash. The runner supplies BOTH halves,
+`runJob({ judgeProvider, judgeModel })` — its own seam, not `provider`/`providerFor` — and they
+travel together: a judged stage missing EITHER instrument-STOPS as a wiring gap (two distinct
+messages, identity checked first) rather than grading on whatever binding was at hand or under a
+name nobody wrote. Each locate call is metered per call and emitted
 as a distinct `judge-round` spine record, which `runJob`'s ONE ledger accounts exactly like a
 `worker-round` (`ACCOUNTED_ROUND_TYPES`, and `readResume`'s fold reads that same list, so a
 resumed leg cannot silently widen a signed budget by the close's own spend). A budget funds the
@@ -690,8 +714,9 @@ null rather than an exact-looking floor.
 carrying a `judged-floor` stage is refused when no set is stored, when no `judgeLoop` seam is
 wired (a wiring gap, never a silent pass), when the gate is a casualty, and when anything short
 of all-of-them grades. It runs **after** gates 1–3, so no $0 refusal is ever paid for. The
-signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (which covers
-`JUDGE_MODEL`), the graded rows and the battery — beside `judgeModel` itself.
+signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (which covers the
+resolved judge identity), the graded rows and the battery — beside `judgeModel` itself.
+`runCalibration` takes `judgeModel` as a REQUIRED argument and throws without one.
 
 **D9.3 for a judged-ONLY close** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*).
 A judged stage skips the seed read (ruling 8), so a close whose only work stage is judged has no
@@ -705,10 +730,12 @@ bump forces a full recalibration"* used to be an operator-side rule with nothing
 which makes it prose (F45); it now has both halves of a detector. The tier the signer's set was
 graded by is stored beside the cases as **`calibration.judgeModel`** — `CALIBRATION_FIELDS`
 enumerates a stored set as exactly `cases` and `judgeModel` and nothing else — written by
-`foldJudgedArtifacts` from the PIN (`JUDGE_MODEL`) rather than from anything a caller may name.
-Because it is INSIDE the spec, `jobSpecHash` covers it by construction: bump the constant and
-every signed judged spec hashes differently, the signature dies, and the re-sign is what re-runs
-the calibration gate. **`validateCloseDecl` REQUIRES it** on any stored set (`missing-required`
+`foldJudgedArtifacts` from the RESOLVED judge identity the caller hands in (required; it throws
+without one). Because it is INSIDE the spec, `jobSpecHash` covers it by construction: change the
+judge — its model OR its provider — and every signed judged spec hashes differently, the
+signature dies, and the re-sign is what re-runs the calibration gate. `runJudgedFloor` refuses to
+grade when the stored identity is not the one about to grade, naming both, and it does not
+degrade in either direction. **`validateCloseDecl` REQUIRES it** on any stored set (`missing-required`
 on `…calibration.judgeModel`) — a set nobody can attribute to a tier is a floor nobody can tell
 apart from a bumped one. **`declaredStages` stamps it onto the judged stage** as
 `calibrationJudgeModel`, from the SIGNED bytes and through the one seam that already turns a
@@ -2977,8 +3004,18 @@ blast radius.
 
 ## Gotchas
 
-*TBD from real adopter friction; recorded here as they're found (repo-side friction goes
-to `docs/logs/FINDINGS.md`).*
+*Recorded here as they're found (repo-side friction goes to `docs/logs/FINDINGS.md`).*
+
+- **`non-green-verdict` is a misleading refusal verb, and it is kept on purpose.** When
+  `runInterview` refuses a job for having no git repository (`repoPath` absent), the refusal
+  carries `verb: 'non-green-verdict'` and `path: 'repoPath'`. The name is wrong: the refusal
+  is about the GENRE — this authoring flow drafts code-genre closes against a git seed, and
+  that is true of BOTH classes it offers — not about the verdict class, and it fires for a
+  `soft-green` pick exactly as it does for `green`. **Read `path`, never `verb`, to know what
+  was refused.** The verb is kept because it is the demand ledger's key for this refusal:
+  renaming it would split one running count into two that read as different demands. Named
+  rather than fixed (PRD item 31.2); say so if you would rather have the accurate name and
+  accept the discontinuity.
 
 ## Constraints
 

@@ -35,11 +35,19 @@
 // same way `repoPath` does — a closed set handed over enumerated, never read out
 // of prose.
 //
-// v1 STILL ADMITS ONLY `green`. A soft-green or hitl pick returns the honest
-// counted refusal on the `request-red` admission path (D13's mechanism), now
-// carrying demand for a VERDICT CLASS rather than only for a genre. It refuses
-// at ADMISSION — before that class's questions are ever asked, because those two
-// question sets are named but locked (`QUESTION_SETS`, M3).
+// THE MENU IS TWO SHAPES: `green` (a command decides done) and `soft-green` (a
+// rubric decides it, through the judged floor). Both are LIVE and both author
+// here. `hitl` is named by the radio, still validates and still runs, and is NOT
+// OFFERED — the class moved to fwdloop (PRD items 29 and 31.1); picking it
+// returns the honest counted refusal on the `request-red` admission path (D13's
+// mechanism), carrying demand for a VERDICT CLASS rather than only for a genre.
+// It refuses at ADMISSION — before that class's questions are ever asked.
+//
+// This comment said the opposite until 2026-09-09 (*"v1 STILL ADMITS ONLY
+// `green`"*), which was false for a long time and sent one build in the wrong
+// direction: `LOCKED_CLASSES` was empty, so `runInterview` returned `ok:true` for
+// every class including the retired one. Check `MENU_CLASSES` at runtime rather
+// than trusting any sentence here, this one included.
 //
 // AND THE INTERVIEW KEYS ON THE CLASS. Three frozen question sets replace one
 // set per genre: genres are a fat tail that cannot be enumerated, classes are
@@ -91,14 +99,15 @@
 // in the stored declaration (forward-compat point 3), and the suite pins it.
 
 import { jobSpecHash, validateJob } from './job.js';
-import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, SEED_EXEMPT_KINDS, JUDGED_FLOOR_KIND } from './kinds.js';
+import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, SEED_EXEMPT_KINDS, judgedStages, closeJudges } from './kinds.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from './cardauthor.js';
 import { runCalibration } from './calibrate.js';
-import { JUDGE_MODEL, CALIBRATION_SIZE } from './judged.js';
+import { CALIBRATION_SIZE } from './judged.js';
 import {
   GENRE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
+  UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import { QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook } from './authorflow.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
@@ -123,7 +132,7 @@ export { QUESTION_SETS, questionsFor, requiredAnswersFor };
  * rule about it: illegal becomes inexpressible instead of rejected after the
  * fact (the `check-passes(name)` model). A UI renders it as three buttons, and
  * two of them are marked locked. */
-export { VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES };
+export { VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, UNLISTED_CLASSES, MENU_CLASSES };
 
 /** The territory every refusal here lands against. bareloop's OWN catalogue —
  * the genre menu, the verdict menu, the kind menu — never a bare-suite package.
@@ -139,6 +148,15 @@ export const REFUSAL_CATEGORY = 'close-unauthorable';
 const LEVERS = ([
   'describe a job bareloop can close today: one whose done is machine-checkable, on a git repository',
   'wait for the verdict-classes rung — this refusal is the evidence it waits on',
+]);
+
+/** the levers for an UNLISTED class (PRD item 31.1): the class is BUILT, so
+ * "wait for the rung" is the wrong sentence — there is no rung left to wait on.
+ * The honest next step is the other product, or a class this one still offers. */
+/** @type {string[]} */
+const UNLISTED_LEVERS = ([
+  'restate the job for a class bareloop still offers: green (a command decides done) or soft-green (a rubric does)',
+  'take a job that needs a person\'s sign-off to fwdloop — that product is built for the human-in-the-loop shape',
 ]);
 
 /**
@@ -236,17 +254,33 @@ export function runInterview({ answers, verdictType = null, repoPath = null, que
     return out({});
   }
 
-  // A LOCKED class refuses HERE, before its questions are asked. Counted demand
-  // for the class itself — the verdict-classes rung is what this evidence is for.
-  if (LOCKED_CLASSES.includes(picked)) {
+  // A class that is not ON THE MENU refuses HERE, before its questions are asked.
+  // Counted demand for the class itself — the verdict-classes rung is what this
+  // evidence is for. TWO reasons a pick lands here, and they are different facts
+  // (PRD item 31.1):
+  //   * LOCKED   — no guard battery exists, so nothing could validate the close.
+  //   * UNLISTED — the class is built and still RUNS; this product just no longer
+  //                offers it. `hitl` moved to fwdloop (item 29); its code, tests
+  //                and runtime stay, and an existing hitl spec still validates.
+  // Either way the person cannot author one, and the refusal says which it is
+  // rather than pooling two different situations into one sentence.
+  if (LOCKED_CLASSES.includes(picked) || UNLISTED_CLASSES.includes(picked)) {
+    const unlisted = UNLISTED_CLASSES.includes(picked);
     return out({
       refusal: refuse({
         verb: picked,
         path: 'verdictType',
-        detail: `You picked "${picked}", and v1 cannot close that yet: it admits ${LIVE_CLASSES.join(', ')} only — a `
-          + 'job whose done a command can decide. A judged score and a person\'s sign-off are named in the menu and '
-          + 'locked, so picking one is recorded as demand rather than dropped, and this refusal is the evidence the '
-          + 'verdict-classes rung waits on.',
+        options: unlisted ? UNLISTED_LEVERS : LEVERS,
+        detail: unlisted
+          ? `You picked "${picked}", and this product no longer offers that class: the menu is `
+            + `${MENU_CLASSES.join(', ')} — a job whose done a command can decide, or one whose done needs `
+            + 'judgement against a rubric. A person\'s sign-off moved to fwdloop, which is built for it. The '
+            + 'class itself is not deleted — an existing spec still validates and still runs — so picking one is '
+            + 'recorded as demand rather than dropped.'
+          : `You picked "${picked}", and v1 cannot close that yet: it admits ${MENU_CLASSES.join(', ')} only — a `
+            + 'job whose done a command can decide. A class with no guard battery is named in the menu and locked, '
+            + 'so picking one is recorded as demand rather than dropped, and this refusal is the evidence the '
+            + 'verdict-classes rung waits on.',
       }),
     });
   }
@@ -277,21 +311,32 @@ export function runInterview({ answers, verdictType = null, repoPath = null, que
   }
   if (reds.length) return out({ answers: given });
 
-  // The green pick's own precondition: D1's "a repo is never a precondition"
-  // holds for the INTERVIEW and not for D9's validity gates, all three of which
-  // rest on a runnable patient with a git seed. A doc or a website job has no
-  // seed and no changed set, so nothing deterministic can be measured against it
-  // — that is softgreen/hitl territory, out of v1, refused on the same counted
+  // A GENRE precondition, not a class one — and the difference is why this text
+  // was wrong until 2026-09-09 (PRD item 31.2). It used to answer a missing repo
+  // with "that needs a judged (soft-green) or a human close", which told a person
+  // who had just PICKED soft-green that they needed soft-green. Both live classes
+  // land here identically: D1's "a repo is never a precondition" holds for the
+  // INTERVIEW and not for D9's validity gates, all three of which rest on a
+  // runnable patient with a git seed, and the close CATALOGUE is code-genre only
+  // (doc-genre kinds are not admitted — PRD item 26). So a doc or a website job
+  // refuses for want of a SEED, whichever class it picked, on the same counted
   // path. The class the user picked cannot be honoured, so it is not returned.
+  //
+  // The `verb` stays `non-green-verdict` deliberately. It is the ledger's key for
+  // this demand and renaming it would split one running count into two that look
+  // like different demands; the name is a poor description of a genre refusal,
+  // and that is a smaller cost than a discontinuous ledger.
   if (!isNonEmptyString(repoPath)) {
     return out({
       answers: given,
       refusal: refuse({
         verb: 'non-green-verdict',
         path: 'repoPath',
-        detail: 'This job has no code repository, so there is no seed to measure against and no changed set to read — '
-          + 'nothing deterministic can decide whether it came back done. That needs a judged (soft-green) or a '
-          + 'human close; this authoring flow drafts code-genre closes against a git seed only.',
+        detail: 'This job has no code repository, so there is no seed to measure against and no changed set to '
+          + 'read. This authoring flow drafts CODE-GENRE closes against a git seed only, and that is true of both '
+          + 'classes it offers: a green close runs commands over the tree, and a soft-green close judges the '
+          + 'artifacts the run changed in it. A job with no repository needs a doc-genre close, which is not built '
+          + 'here yet.',
       }),
     });
   }
@@ -370,7 +415,7 @@ function composerRefusal(reds) {
  * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
- *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null,
+ *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
@@ -384,6 +429,11 @@ export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
+  // THE JUDGE IDENTITY (PRD item 32.1), required only on the path that actually
+  // composes a judged stage — the stored calibration set carries the judge that
+  // certified it, and there is no library pin to fall back to. Absent on a purely
+  // mechanical close is correct and costs nothing: that close never judges.
+  judgeModel = null,
   // THE PROGRESS SEAMS. This composition is the pipeline's long silence — a real
   // survey, a real declaration ladder, and a real toolchain per close stage — and
   // it emitted nothing until it returned, so an operator watching a live run
@@ -573,7 +623,7 @@ export async function authorCloseForJob({
   // as the caller-error guard it is.
   /** @type {any} */
   let judged = null;
-  if ((closeDecl.stages ?? []).some((/** @type {any} */ s) => isObj(s) && s.kind === JUDGED_FLOOR_KIND)) {
+  if (closeJudges(closeDecl)) {
     // ONE CEILING, ALL THREE PAID SEAMS. The declaration loop's own calls are
     // ABSORBED before the compile is asked for, so the ceiling folds in prior
     // spend and re-invoking a seam cannot silently widen it. `absorb` deliberately
@@ -620,7 +670,14 @@ export async function authorCloseForJob({
     // non-array before anything can be `ok` — and the narrowing is stated rather
     // than defaulted: `?? []` here would fold an EMPTY signed set into a close,
     // which is the one direction that must never be reachable.
-    closeDecl = foldJudgedArtifacts(closeDecl, { card: signed.card, cases: /** @type {any[]} */ (signed.cases) });
+    if (typeof judgeModel !== 'string' || judgeModel.trim() === '') {
+      throw new Error('[authorjob] authorCloseForJob composed a JUDGED close and was given no judgeModel (PRD item '
+        + '32.1). The stored calibration set carries the judge that certified it, and a set stamped with a model '
+        + 'nobody named is exactly the unattributable floor that field exists to prevent.');
+    }
+    closeDecl = foldJudgedArtifacts(closeDecl, {
+      card: signed.card, cases: /** @type {any[]} */ (signed.cases), judgeModel,
+    });
     return {
       ok: true,
       refusal: null,
@@ -760,12 +817,15 @@ const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
  * The book is built HERE and PRIOR SPEND IS ABSORBED into it, so the ceiling folds in
  * what the earlier seams already spent and re-invoking a seam cannot silently widen
  * it; the gate reads it between calls and stops as a refusal that names money.
- * @param {{spec: any, judgedStages: any[], judgeLoop: Function|null,
+ * `judgeModel` is the RESOLVED judge identity (PRD item 32.1), required and with no
+ * default: it is stamped onto the graded set and onto the calibration-missing record
+ * alike, so both say which judge the close would have been certified by.
+ * @param {{spec: any, judgedStages: any[], judgeLoop: Function|null, judgeModel: string,
  *   onJudgeCost: ((c: any) => void)|null, calibrateFn: Function,
  *   ceilingUsd: number|null, priorCalls: any[]}} o
  * @returns {Promise<{ok: boolean, record: any, reds: Red[], refusal: Refusal|null}>}
  */
-async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, calibrateFn, ceilingUsd, priorCalls }) {
+async function calibrationGate({ spec, judgedStages, judgeLoop, judgeModel, onJudgeCost, calibrateFn, ceilingUsd, priorCalls }) {
   const cases = spec.closeDecl?.calibration?.cases ?? null;
   // ONE card, and it is the SIGNED one — the card the calibration is graded
   // against must be the card the close will RUN, or the gate certifies a ruler
@@ -779,7 +839,7 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
       + 'ruler is unmeasured, and an unmeasured ruler cannot be signed.';
     return {
       ok: false,
-      record: { ok: false, stop: 'calibration-missing', judgeModel: JUDGE_MODEL, required: CALIBRATION_SIZE },
+      record: { ok: false, stop: 'calibration-missing', judgeModel, required: CALIBRATION_SIZE },
       reds: [{ code: 'calibration-missing', path: 'closeDecl.calibration.cases', detail }],
       refusal: refuse({
         kind: 'decision-ready',
@@ -805,6 +865,7 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
     cases,
     card,
     judgeLoop,
+    judgeModel,
     // the gate's own calls join the same tally the ceiling is read against — a
     // ceiling that cannot see the spend it bounds is F45's blind detector in a
     // money coat. The caller's reporter fires with the call's whole record, after.
@@ -942,8 +1003,8 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, cal
  *
  * @param {{spec: any, workdir: string, seedRef?: string|null, shellCapUsd?: number,
  *   timeoutMs?: number, seedFn?: Function, listingFn?: Function, seedReadFn?: Function,
- *   judgeLoop?: Function|null, onJudgeCost?: ((c: any) => void)|null, calibrateFn?: Function,
- *   ceilingUsd?: number|null, priorCalls?: any[]}} o
+ *   judgeLoop?: Function|null, judgeModel?: string|null, onJudgeCost?: ((c: any) => void)|null,
+ *   calibrateFn?: Function, ceilingUsd?: number|null, priorCalls?: any[]}} o
  * @returns {Promise<{ok: boolean, specHash: string|null, seedRef: string|null,
  *   gates: any, work: any[], guards: any[], stops: any[], reds: Red[], refusal: Refusal|null}>}
  */
@@ -953,8 +1014,11 @@ export async function prepareSigning({
   // THE PAID SEAM, and it is the operator's to wire — this module owns no
   // provider and picks none (the same contract `authorCloseForJob` keeps for the
   // drafting model). Absent is never a fall-back: a judged close whose gate could
-  // not run is refused, not waved through.
-  judgeLoop = null, onJudgeCost = null, calibrateFn = runCalibration,
+  // not run is refused, not waved through. `judgeModel` is the seam's other half
+  // (PRD item 32.1) — WHICH model that loop drives, resolved by the caller
+  // (`resolveJudge`, src/judged.js). The two travel together: a gate that grades
+  // without recording its judge certifies a floor nobody can attribute.
+  judgeLoop = null, judgeModel = null, onJudgeCost = null, calibrateFn = runCalibration,
   // THE OPERATOR'S CEILING, and the spend it has already met. `null`/absent is
   // UNBOUNDED and is a stated choice, never a default invented here (the same
   // contract `authorCloseForJob` keeps). `priorCalls` is what the earlier paid
@@ -1109,9 +1173,17 @@ export async function prepareSigning({
   // validator checks a stored set for LEGALITY only and deliberately allows a
   // judged stage with no set at all, because making it mandatory is a signing
   // decision and this is the signing gate.
-  const judgedStages = (spec.closeDecl.stages ?? []).filter((/** @type {any} */ s) => isObj(s) && s.kind === JUDGED_FLOOR_KIND);
-  if (judgedStages.length) {
-    const cal = await calibrationGate({ spec, judgedStages, judgeLoop, onJudgeCost, calibrateFn, ceilingUsd, priorCalls });
+  const judged = judgedStages(spec.closeDecl);
+  if (judged.length) {
+    if (judgeLoop !== null && (typeof judgeModel !== 'string' || judgeModel.trim() === '')) {
+      throw new Error('[authorjob] prepareSigning was wired a judgeLoop with no judgeModel (PRD item 32.1). The two '
+        + 'halves of the judge seam travel together: the graded set is stamped with the judge that certified it, and '
+        + 'there is no library pin to fall back to.');
+    }
+    const cal = await calibrationGate({
+      spec, judgedStages: judged, judgeLoop, judgeModel: /** @type {string} */ (judgeModel),
+      onJudgeCost, calibrateFn, ceilingUsd, priorCalls,
+    });
     base.gates.calibration = cal.record;
     if (!cal.ok) return { ...base, work, guards, reds: cal.reds, refusal: cal.refusal };
   }

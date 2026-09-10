@@ -272,4 +272,4 @@ commit sha; the door now checks `doorCloseTiming.timedOut` before ever calling
 (`scripts/u-readout.mjs`).
 
 The four bench rows were also re-signed at their current (unchanged) hashes today — see
-the `docs/product/BENCH-PREREG.md` "RE-SIGNED at v0.22.0" amendment, 2026-09-07.
+the `docs/logs/BENCH-PREREG.md` "RE-SIGNED at v0.22.0" amendment, 2026-09-07.

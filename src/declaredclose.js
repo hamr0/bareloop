@@ -68,7 +68,7 @@
 // once instead of once-per-invocation, but `runPlan` has a dozen return paths and
 // a leaked worktree outlives the process that made it.
 
-import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED, JUDGED_FLOOR_KIND } from './kinds.js';
+import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED, JUDGED_FLOOR_KIND, judgedStages } from './kinds.js';
 import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
@@ -424,8 +424,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
   // redded here — making the set MANDATORY is the signing gate's call, and
   // module 5 owns it.
   if (closeDecl.calibration !== undefined) {
-    const judged = (Array.isArray(closeDecl.stages) ? closeDecl.stages : [])
-      .filter((/** @type {any} */ s) => isObj(s) && s.kind === JUDGED_FLOOR_KIND);
+    const judged = judgedStages(closeDecl);
     if (!isObj(closeDecl.calibration)) {
       red('invalid-value', `${at}.calibration`, 'the frozen calibration set, as an object carrying `cases`');
     } else if (judged.length !== 1) {
@@ -567,6 +566,7 @@ function translate(r, redact) {
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   judgeLoop?: ((o: {system: string}) => any)|null,
+ *   judgeModel?: string|null,
  *   onJudgeCost?: ((c: any) => void)|null,
  *   callBounds?: (() => {timeoutMs?: number, deadlineMs?: number})|null}} [opts]
  * @returns {Promise<any>}
@@ -574,7 +574,7 @@ function translate(r, redact) {
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    judgeLoop = null, onJudgeCost = null, callBounds = null,
+    judgeLoop = null, judgeModel = null, onJudgeCost = null, callBounds = null,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -604,13 +604,20 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     // human stage reads the absence as "nobody has answered yet", which is the
     // whole of what a pause means.
     humanRuling,
-    // THE PAID SEAM and THE METER, both operator territory and both absent on
-    // every mechanical close. A judged stage with no seam STOPS as a wiring gap
-    // rather than falling back to some other model (M1 owns no provider and the
-    // judge tier is pinned), and every locate call it does buy is reported OUT
-    // through the meter so the run's ONE ledger can see it — a close has cost $0
-    // until this kind, and a budget must fund the attempt PLUS its close.
+    // THE PAID SEAM, THE IDENTITY and THE METER, all operator territory and all
+    // absent on every mechanical close. A judged stage with no seam STOPS as a
+    // wiring gap rather than falling back to some other model (M1 owns no
+    // provider), and `judgeModel` is the seam's OTHER half (PRD item 32.1) —
+    // WHICH model the seam drives, resolved by the caller (`resolveJudge`,
+    // src/judged.js) and passed through untouched here, exactly as `judgeLoop`
+    // is. `runStage` checks the identity before the seam, so a judged stage with
+    // neither wired reports the identity gap, and one with only the seam missing
+    // still names the judge it would have graded with. Every locate call the
+    // seam buys is reported OUT through the meter so the run's ONE ledger can
+    // see it — a close has cost $0 until this kind, and a budget must fund the
+    // attempt PLUS its close.
     judgeLoop,
+    judgeModel,
     onJudgeCost,
     // F152/PRD 30.4 — the SAME per-call time bounds every worker round already
     // carries (`callBounds()`, src/planrun.js:1518), so the judged stage's own

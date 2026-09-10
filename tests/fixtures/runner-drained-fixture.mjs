@@ -152,9 +152,16 @@ const judgeProvider = mode === 'hang'
   // the JSON facts the judged-stage kind parses.
   : { async generate() { return { text: JSON.stringify(PASS_FACTS), toolCalls: [], usage: { inputTokens: 20, outputTokens: 20 }, costUsd: 0.0004, stopReason: 'end_turn', model: null }; } };
 
+// PRD item 32.1 — the identity travels beside the seam: `judgeModel` is the
+// resolved judge model this fixture's `judgeProvider` stands in for. There is
+// no `judge:{...}` override on the job spec above, so the identity a real run
+// would resolve is this job's own worker model — spelled out here rather than
+// routed through `resolveJudge` because that resolution is proven elsewhere
+// (tests/judge-model-pin.test.js) and this fixture is about the drain, not
+// the resolve.
 const run = runJob(job, {
   approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
-  workdir, provider, judgeProvider, emit: makeSpine(spineFile),
+  workdir, provider, judgeProvider, judgeModel: 'claude-haiku-4-5', emit: makeSpine(spineFile),
 });
 
 if (mode === 'hang') {

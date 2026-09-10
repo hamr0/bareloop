@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import {
   runInterview, questionsFor, requiredAnswersFor,
-  VERDICT_CLASSES, LOCKED_CLASSES, AUTHORED_SPEC_FIELDS,
+  VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
 import { validateJob } from '../src/job.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
@@ -68,12 +68,14 @@ const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget
 
 if (!patientArg || !outArg || verdictArg === null) {
   die('usage: node scripts/run-interview.mjs --patient <repoPath> '
-    + `--verdict <${VERDICT_CLASSES.join('|')}> --out <outdir> [--budget <usd>] [--lang js]`);
+    + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--budget <usd>] [--lang js]`);
 }
 if (budgetError) die(budgetError);
 // the menu is handed over ENUMERATED — an unknown value is a typo, refused as one.
-// A LOCKED class is a different answer entirely: it is admissible input, and the
-// LIBRARY refuses it below as counted demand.
+// A LOCKED or UNLISTED class is a different answer entirely: it is admissible
+// input, and the LIBRARY refuses it below as counted demand. `VERDICT_CLASSES` is
+// the right list for the typo check for exactly that reason — narrowing it to the
+// menu here would turn counted demand into an unrecorded typo (PRD item 31.1).
 const VERDICT = /** @type {string} */ (verdictArg);
 if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${VERDICT_CLASSES.join(' | ')}`);
 
@@ -84,12 +86,12 @@ const PATIENT = resolve(/** @type {string} */ (patientArg));
 if (!existsSync(PATIENT)) die(`--patient ${PATIENT} does not exist — the close is authored against a repository on this machine, never out of prose`);
 const OUT = resolve(/** @type {string} */ (outArg));
 
-// ── the locked classes refuse BEFORE a single question ───────────────────────
+// ── the OFF-MENU classes refuse BEFORE a single question ─────────────────────
 // Not this script's rule and not this script's words: `runInterview` is the
 // admission path, and a locked pick comes back as a `request-red` refusal that is
 // COUNTED demand for the class. Asking its questions first would be an interview
 // for a job nothing here can close.
-if (LOCKED_CLASSES.includes(VERDICT)) {
+if (LOCKED_CLASSES.includes(VERDICT) || UNLISTED_CLASSES.includes(VERDICT)) {
   const iv = runInterview({ answers: {}, verdictType: VERDICT, repoPath: PATIENT });
   const r = iv.refusal;
   console.log(`REFUSED (${r?.kind ?? 'request-red'})  verb=${r?.verb ?? VERDICT}  path=${r?.path ?? 'verdictType'}`);

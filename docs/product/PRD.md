@@ -225,7 +225,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
    defects (escalation detail hidden, `--all` name-matched only, a replanned step merged by
    id), all fixed.
 7. **The bench** — Q1, Q3–Q6 **ANSWERED 2026-08-30** (v1.81 below; Q10 answered v1.78);
-   Prereg **FROZEN 2026-08-30** (`docs/product/BENCH-PREREG.md`; litectx row re-baselined
+   Prereg **FROZEN 2026-08-30** (`docs/logs/BENCH-PREREG.md`; litectx row re-baselined
    green at its hash, run `u-mtfywb55`, $5.72). Cadence answered 2026-08-30 (hamr): major
    releases trigger a pass. Cadence reading confirmed by hamr: 0.16 → 0.17 (feature bump), not
    patch tags. Queue on the SAME branch (`bench-prereg`, no interim release — hamr, 2026-08-30),
@@ -318,14 +318,14 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 
 23. **G3/G4 scoping** — unscoped, hamr's answers recorded 2026-08-31: G3 = a real planted-cheat
     bench row the close must catch; G4 = any halt→replan→green (not narrowly a money cap-halt).
-    Neither built or scheduled. Detail: `docs/product/G2-SCOPING.md` §"G3/G4 scoping". G3 swap
+    Neither built or scheduled. Detail: `docs/logs/G2-SCOPING.md` §"G3/G4 scoping". G3 swap
     plan (hamr's "agreed, lower cap, plan a swap"): once G3 establishes, G2 leaves the bench,
-    $24 ceiling untouched — `docs/product/BENCH-PREREG.md` amendment, `docs/product/G2-SCOPING.md`
+    $24 ceiling untouched — `docs/logs/BENCH-PREREG.md` amendment, `docs/logs/G2-SCOPING.md`
     §"G3 swap plan". G3 itself scoped 2026-09-01, not frozen, no hash, no run:
-    `docs/product/G3-SCOPING.md`. G3 frozen 2026-09-01 (hash 64d56137…), established
+    `docs/logs/G3-SCOPING.md`. G3 frozen 2026-09-01 (hash 64d56137…), established
     2026-09-01 — establish run `u-mties136` read non-green as pre-registered
     (step-red, $2.98/$4), F125.
-    **G4 SCOPED 2026-09-05 ($0, F127):** `docs/product/G4-SCOPING.md`. Proposed as a READING
+    **G4 SCOPED 2026-09-05 ($0, F127):** `docs/logs/G4-SCOPING.md`. Proposed as a READING
     of the litectx bench row (replans 6/14 on its own; `u-mtfywb55` is a halt → replan →
     green instance at the row's PREVIOUS hash — corrected same day), $0 marginal, no fifth
     row, no hash change; a planted-fixable-dead-end row kept as the second act. **hamr: "A"
@@ -373,7 +373,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     **2026-09-05 — lever (3) scout ON/OFF UNPARKED and SCOPED** (hamr: "let's measure
     scout"): G3 is established, so the park lifts. Scoping, pre-registered frozen rules, the
     small switch build (`--scout on|off`, runner territory, hash-unaffected) and the two-arm
-    design on `aurora-u-spawner-types` ($10 ceiling): `docs/product/SCOUT-CONTRAST.md`.
+    design on `aurora-u-spawner-types` ($10 ceiling): `docs/logs/SCOUT-CONTRAST.md`.
     **Same day — MEASURED, lever (3) CLOSED** (F126): both arms green, OFF cost $0.37 MORE
     (inside the $0.40 noise band, wrong direction for a saving); the scout is not dead
     weight; nothing to build, no default flip. Switch shipped in v0.20.0.
@@ -385,7 +385,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     work; the ceiling question stays parked.
 
     **2026-09-05 — order amended** (hamr): item 24 lever (3) scout contrast
-    (`docs/product/SCOUT-CONTRAST.md`) → G4 (item 23) → the rest of this list in its own
+    (`docs/logs/SCOUT-CONTRAST.md`) → G4 (item 23) → the rest of this list in its own
     order. Export and the reuse-lift proof come after; item 5 closed and item 12 clarified
     today, above.
     **2026-09-05, later:** after export comes item 27 (close-bytes signature), then the
@@ -398,9 +398,16 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     a cold-adopter quickstart** (one page a stranger can follow to job #1) → the panel (N6)
     after, arriving as fwdloop's inbox UI first. Reuse-lift proof stays after item 28.
     **2026-09-09 — order amended, SUPERSEDES the line above** (hamr): item 28's open half is
-    carried as **item 31**; order is now item 31 (judge pair, judge-key, request-key gating)
+    carried as **item 31**; order is now item 31 (retire hitl, two shapes, full bare-agent adapter,
+    judge-key, first-ever calibration fire)
     → **the panel (N6) — built HERE, shaped against fwdloop's UI PRD so one build fits both**
     → the reuse-lift proof LAST. See item 31.
+    **2026-09-10 — order amended, SUPERSEDES the line above** (hamr: "all comes after the
+    interview and non repo and it will determine the final shape of bareloop and fwdloop").
+    Order now: (0) ship `feat/item-31` — items 31/32 code, with 31.4/31.5's proof fires carried
+    → (1) the item 33 interview → (2) item 33 written and the bareloop/fwdloop split ruled →
+    (3) item 33 built → (4) proof fires: 31.5 calibration on a real bar, 31.4 on gemini →
+    (5) the panel (N6), shaped by 1–3 → (6) the reuse-lift proof LAST. See item 33.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
@@ -556,7 +563,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | 30.6 | fwd not told the Qwen cause | message sent | CLOSED — sent 2026-09-09 (cause + DeepSeek max_tokens note) |
     | 30.7 | Kimi drafter-prompt test (worked example + up-front relative-path rule) never run | ~$0.10 Kimi draft with the candidate prompt; ship ONLY if Kimi drafts AND a Sonnet run stays green, else close as "model" | CLOSED by ruling (hamr, 2026-09-09: "settle on one secondary/replacement for claude … don't pickpocket random models") — secondary is `deepseek-chat` (F150), which drafts on the current prompt; Kimi is not a candidate, experiment killed at $0.02, prompt untouched |
     | 30.8 | `decide()` completeness hole (softgreen judge grades only the functions locate reported) | a function the card names but locate omitted → RED; test | CLOSED F155 — completeness diff against the artifact; ONE FN_SHAPES inventory drives both the prompt prose and the detector (the hand-typed regex already disagreed on 4 shapes); red→green captured twice |
-    | 30.9 | Item 28 build: provider factory, `openai-api` (+`baseUrl`, per-model request-key) on the menu, tier table with `deepseek-chat` as THE secondary (hamr's ruling, one replacement, no menu of half-tested models), signed `judge:{provider,model}` + calibration record, `stopReason` on worker-round | built + one paid probe through the SHIPPED runner on DeepSeek | CLOSED F156+F157 — factory built (one table, unknown name throws, per-model request-key gating, baseUrl admitted); probe GREEN through scripts/run-u.mjs (run mtu12vks, $1.64/$4, 10.3min, bridge minted). REMAINS OPEN as item 28 part (2) — carried in full as **item 31** below (31.1 judge pair, 31.2 judge-key, 31.3 request-key gating), not as an unclosed row here |
+    | 30.9 | Item 28 build: provider factory, `openai-api` (+`baseUrl`, per-model request-key) on the menu, tier table with `deepseek-chat` as THE secondary (hamr's ruling, one replacement, no menu of half-tested models), signed `judge:{provider,model}` + calibration record, `stopReason` on worker-round | built + one paid probe through the SHIPPED runner on DeepSeek | CLOSED F156+F157 — factory built (one table, unknown name throws, per-model request-key gating, baseUrl admitted); probe GREEN through scripts/run-u.mjs (run mtu12vks, $1.64/$4, 10.3min, bridge minted). REMAINS OPEN as item 28 part (2) — DEFERRED by **item 31** below (the judge seam has 0 uses in 167 runs; signing a provider field for it is dead weight until a rubric job exists). The judge-key half is carried as item 31.4 |
     | 30.10 | Docs drift: CHANGELOG lacked F147; PRD spend figure wrong ($5.94 → $3.91) | corrected | CLOSED 487320d |
 
 26. **Doc-genre roadmap tracking ends** — hamr's ruling 2026-08-31: doc-genre jobs rode the
@@ -565,29 +572,156 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     not scheduled, as of today — not a deletion of any closed prose, an appended closure only.
     Softgreen (the judged floor) itself remains shipped and unaffected; only the doc-genre
     roadmap item ends.
+    **2026-09-10 — re-opened for discussion by item 33** (hamr: non-repo jobs are "more common
+    than you think"; the interview decides what stays here and what goes to fwdloop).
 
-31. **Item 28 part (2) — the open half, and the order after it** (hamr, 2026-09-09: "add to
-    prd all pending items above … prioritize ui after the bugs/nuances coming next and
-    reuse-lift last"). Item 28 shipped shape (1) (the provider factory) and shape (3) (one
-    paid probe per admitted provider — DeepSeek green, run `mtu12vks`). Shape (2) and the
-    nuances found alongside it are NOT built and are the next work, in this order:
+31. **Item 31 — two shapes, one adapter, and the gate nobody has ever fired** (hamr,
+    2026-09-09). Supersedes the first draft of this item, which was written from a STALE
+    SOURCE COMMENT and got the central fact backwards. **The correction, established at $0 by
+    running the real code, not reading it:** `LOCKED_CLASSES` is EMPTY (`src/authoring.js:107`),
+    so `runInterview` admits all three classes — `green`, `soft-green` AND `hitl` — with
+    `ok=true, refusal=none, reds=0` for each. soft-green was never locked. The comment at
+    `src/authorjob.js:38` (*"v1 STILL ADMITS ONLY `green`"*) is FALSE, and the refusal text at
+    `src/authorjob.js:293` still offers hitl as a live alternative. Calibration has therefore
+    never run for the ordinary reason: **0 calibrations and 0 `judged-locate` rounds across 167
+    archived runs, because nobody ever authored a soft-green job** — not because anything
+    blocked one. Read this before touching the verdict-class code; a comment in this area has
+    already sent one build in the wrong direction.
 
-    | # | Open item | What "done" means |
+    | # | Item | What "done" means | Validation |
+    |---|---|---|---|
+    | 31.1 | `hitl` is retired (v1.71 ruling; the class moved to fwdloop, item 29) but is still LIVE in the authoring menu | **CLOSED `e27a83e`.** Written as "moves into `LOCKED_CLASSES`"; built as a THIRD list instead, because locking it took its code with it. `LIVE_CLASSES` also gates `validateCloseDecl` (`src/declaredclose.js:306`) and the guard battery (`:489`), so a lock made a hitl close unvalidatable — **61 suite failures**, 57 even with the lock scoped to authoring. The three facts are now distinct: `LOCKED_CLASSES` (no battery exists — empty today), `UNLISTED_CLASSES` (`['hitl']` — built, validates, RUNS, simply never OFFERED), `MENU_CLASSES` (live minus unlisted). Read by the AUTHORING surface only, which is what keeps hitl's code alive and under test. The refusals differ by reason: locked says "wait for the rung", unlisted points at fwdloop — "wait for the rung" would be a lie for a class already built with no rung left | `runInterview({verdictType:'hitl'})` refuses; green and soft-green still `ok:true`; `tests/unlisted-classes.test.js` (13 tests, mutation-proven); hitl's own runtime suites still 37 pass |
+    | 31.2 | Stale prose asserts a green-only v1 that the code does not implement | **CLOSED `437b4e4`+`724eb56`.** `src/authorjob.js:38` and `:293` rewritten to the two-shape truth (`green` deterministic + `soft-green` rubric); every other green-only claim swept | grep proves no surviving green-only assertion; fwdloop's quoted text no longer contradicts the source |
+    | 31.3 | The provider table is a curated two-entry menu while `bare-agent` ships more adapter shapes than bareloop admits | **CLOSED `a48c24b`+ this commit, with a correction.** The item was written as "bare-agent ships SEVEN adapter shapes". That was a FILENAME COUNT of `node_modules/bare-agent/src/` dressed up as a fact. The EXPORT list is the truth: four real HTTP backends (`AnthropicProvider`, `OpenAIProvider`, `GeminiProvider`, `OllamaProvider`) plus `CLIPipeProvider` (already admitted) and the `FallbackProvider` composite; `provider-http.js` is a shared timeout helper and `provider-stop-reason`/`-temperature`/`-usage` are helpers too. So this item admits **one** provider, not five. hamr's ruling (2026-09-09): *"anthropic, openai, gemini drop ollama for now"*. Built: `gemini-api` on `PROVIDERS` with `GEMINI_API_KEY` and two real tiers (`gemini-2.5-pro`/`gemini-2.5-flash`); `PROBE_STATUS` + `probeWarningLines` as the machine-readable probe debt, read to WARN and never to REFUSE (refusing would be a second ruling nobody made) — the probe rule STANDS and gemini owes its fire. The endpoint half of hamr's "api + api shape + endpoint" does NOT generalize: bare-agent's constructors read it from different option names (`baseUrl` for anthropic/openai/gemini, **`url`** for Ollama) and none validate unknown option names. Measured live: `new OllamaProvider({baseUrl:X}).url` → `http://localhost:11434`, X dropped, no error — the F149 class exactly. So each table entry declares its own `endpointKey` and `makeProvider` routes through it; the job spec keeps ONE field name (`baseUrl`) and translation happens once. Ollama stays out beyond the ruling: no key, no bill, so every round prices at $0 through machinery that trusts a price | a `gemini-api` spec validates; each provider's `endpointKey` checked against the REAL constructor, plus the Ollama silent-drop measured on the dependency itself; the token-key flag exercised per backend; the launch marker tested through `probeWarningLines` (4 mutations, all caught); full suite green |
+    | 31.4 | `scripts/run-u.mjs:1107` hard-exits on a missing `ANTHROPIC_API_KEY` even for a job that never judges — a green DeepSeek run still demands an Anthropic key | a job whose `verdictType` is `green` runs with only its own provider's key; a judged job still refuses honestly and BY NAME when the judge's key is absent | both paths tested; the green-on-DeepSeek path proven with `ANTHROPIC_API_KEY` unset — **2026-09-10: OPEN, carried to item 33 step 4** (one green run on `gemini-api` with `ANTHROPIC_API_KEY` unset; also pays gemini's first-run debt from 31.3) |
+    | 31.5 | The calibration gate (`src/calibrate.js`) is built, unit-tested and **has never executed once** — 0 of 167 runs | UNTOUCHED by this item (hamr: it is correct, it has simply never been exercised). Proven by USE, not by edit: a real soft-green job is authored and FIRED on DeepSeek so calibration runs end to end for the first time | one paid soft-green run; the calibration record exists in the spine with its 10-of-10 floor read; defects found on first real use are logged as findings, not papered over — **2026-09-10: authoring half RAN** (run `mtv8jihy`, $0.87): first calibration ever, refused 1/10 — the rulebook is doc-comments only, so the bar compiled onto the wrong rules (F159). The fire is **carried to item 33 step 4**, on a bar the widened rulebook can express |
+
+    **The judge stays pinned to `anthropic-api`/`JUDGE_MODEL` — arbiter territory, unchanged by
+    this item.** A soft-green job therefore legitimately needs BOTH keys (the worker's and the
+    judge's); 31.4 removes the demand only where no judge can run. The first draft's
+    "signed `judge:{provider,model}` + per-pair calibration" was DEFERRED here as dead weight
+    for a seam with 0 uses in 167 runs — **that deferral is LIFTED by item 32 below** (hamr,
+    2026-09-10), which un-pins the judge before the seam's first-ever firing rather than
+    after it. Item 28 part (2) is closed by item 32, not by this item.
+
+    **31.1–31.3 shipped in v0.24.0, 2026-09-10.** 31.4 and 31.5 stay OPEN, carried to item 33
+    step 4.
+
+32. **Item 32 — the judge stops being a Claude judge** (hamr, 2026-09-10: *"what i care about
+    is that judge becomes llm agnostic and not set to one model or provider"*). Item 28 pinned
+    the judge to `anthropic-api`/`JUDGE_MODEL` as arbiter territory and item 31 left it there.
+    That pin is now the last place bareloop requires an Anthropic account: after 31.4 a green
+    job runs on its own provider's key alone, and a JUDGED job still cannot.
+
+    **A correction this item is written to fix.** This session first assessed the un-pinning as
+    *"threaded through 7 shipped modules, baked into the signed hash, arbiter territory, its own
+    build"*. That was answered from memory, and hamr said so (*"i know you answered from memory
+    rather than grounded"*). Read against source, it is wrong in the half that mattered — the
+    judge MACHINERY is already provider-agnostic by construction:
+
+    - `src/calibrate.js:50`, in its own words: *"IT OWNS NO PROVIDER. The judge seam arrives as
+      `judgeLoop`"* — an absent one is a wiring-gap STOP, never a silent skip.
+    - `defaultJudgeLoop({provider, system})` (`src/judged.js:677`) builds a bare-agent `Loop`
+      over WHATEVER provider object it is handed. Nothing Anthropic-shaped is assumed.
+    - `runJudgedFloor` (`src/kinds.js:1786`) reads the seam from `ctx.judgeLoop`, injected by
+      the caller.
+    - The signed calibration record ALREADY carries the judge identity per spec —
+      `foldJudgedArtifacts` writes `closeDecl.calibration.judgeModel` (`src/cardauthor.js:396`),
+      so `jobSpecHash` covers it by construction and no new signed field is needed.
+    - The recalibration refusal ALREADY exists: `src/kinds.js:1739` refuses to grade when the
+      stored judge model is not the one about to grade, naming both, degrading in neither
+      direction.
+
+    So the hash, the record and the guard are built. **Only two things are actually pinned:**
+    (a) three sites construct the judge with `new AnthropicProvider(...)` directly
+    (`scripts/run-u.mjs:1214`, `scripts/run-author.mjs:442`, `src/cli.js:88`), bypassing the
+    provider factory item 31.3 built; (b) `JUDGE_MODEL` (`src/judged.js:92`) is a GLOBAL
+    CONSTANT standing in for "what will grade this", where everything downstream already
+    reads it as data.
+
+    | # | Item | What "done" means | Validation |
+    |---|---|---|---|
+    | 32.1 | The judge identity is a constant, not a resolved value | **CLOSED `c7b400d`.** `resolveJudge({specJudge, workerProvider, workerModel})` (`src/judged.js`) resolves per job: the spec's signed `judge` override if it names one, else the worker's own provider+model — deliberately **no library fall-back**; neither nameable throws. `JUDGE_MODEL` stays exported (pre-item-32 pin, minor-survives-import) but is read by **no grading path** any more. The resolved identity threads as `judgeModel` on `Ctx` (`src/kinds.js`); its absence is a wiring-gap STOP checked BEFORE the judge seam runs and before the calibration stamp — this is the same stop the item's own text promised, not a new one. Two real defects surfaced by the mutation pass and fixed in-branch (not merely found): `src/declaredclose.js` accepted `judgeLoop` but never forwarded `judgeModel` onto ctx, so every judged run would have hit the wiring-gap stop regardless of what the caller resolved; `src/calibrate.js` had the mandatory-`judgeModel` throw ahead of the `judgeLoop`-absent check, making the documented graceful stop unreachable through its own real caller path | a spec naming no judge resolves to the worker's provider/model; a spec naming one resolves to that; both reach `runJudgedFloor` and the calibration record (`foldJudgedArtifacts` stamps `closeDecl.calibration.judgeModel`, so `jobSpecHash` covers it with no new signed field); mutation-proven (7 mutations, all caught, per the source commit). Honest limitation: none of this has run live — `gemini-api` has 0 runs and `src/calibrate.js` has never executed once (0 of 167 archived runs) — item 32 is proven by tests only, and a real share of that proof is source-text regex (`tests/judge-key-demand.test.js`: 8 of 10 assertions are `assert.match(src, …)`) rather than behaviour; `tests/judge-model-pin.test.js` (9 tests) is real behaviour |
+    | 32.2 | Three sites hardcode `AnthropicProvider` for the judge | **CLOSED `c7b400d`.** All three (`scripts/run-u.mjs`, `scripts/run-author.mjs`, `src/cli.js`) construct the judge through the provider factory instead of `new AnthropicProvider(...)` directly. `src/providers.js`'s `buildRunnerProviders` gained `judgeProviderName` (defaults to `providerName`) and `judgeBaseUrl`, and **reuses the worker provider instance** when provider+model+key+baseUrl all match — a second instance would be a second prompt-cache prefix, and cache writes are ~41% of the bill (MEMORY.md). `src/cli.js`'s bundle-runner key contract stays a separate, deliberate `ANTHROPIC_API_KEY`-only refusal, decided explicitly rather than swept: it refuses by name for **both** the worker and the judge when either resolves to a provider reading a different env key — but the judge half of that refusal had **no behavioural test** until this commit (`tests/cli.test.js`, GAP B) | no `new AnthropicProvider` survives for a judge; a judge on each admitted provider constructs; the worker-provider-reuse path and the judge-side ANTHROPIC_API_KEY-only refusal are both now exercised through the real CLI. Live limitation carries over from 32.1: `gemini-api` (the provider this refusal is now proven against) has 0 real runs |
+    | 32.3 | The names say Claude | **CLOSED `c7b400d`+`808f6c3`.** Renamed to role-based names now that the moving parts are few. `JUDGE_API_KEY` (landed in 31.4 with an `ANTHROPIC_API_KEY` fallback) now follows the RESOLVED judge provider's own `envKey`, with that fallback kept for the anthropic case. `bareloop.context.md` (the adopter contract that SHIPS in the tarball) had five stale statements asserting the judge stays pinned to `anthropic-api`/`JUDGE_MODEL` — all five corrected to the resolved-identity contract, a `judge` row added beside `model` in the job-spec table, and CHANGELOG's Unreleased section gained item 32 with an explicit BREAKING note: `runCalibration`, `foldJudgedArtifacts`, `prepareSigning`, and `authorCloseForJob` now require the resolved `judgeModel` and throw without it | every name reachable by an adopter is role-named, not vendor-named; grep proves no surviving vendor-named judge reference in the shipped contract doc |
+    | 32.4 | Nothing proves any of it | **CLOSED `c7b400d`.** The recalibration guard (`src/kinds.js:1739`, pre-existing) is now exercised across a judge **PROVIDER** change, not only a model bump — `tests/judge-model-pin.test.js` (9 tests, real behaviour, expanded from a prior model-only-bump suite) proves a spec calibrated on judge A refuses to grade on judge B, by name, in both directions | a red that names both identities; mutation-proven (recalibration-mismatch-neutralized mutation caught 2 of 9). What did NOT move: the judge still renders no verdict — it locates facts and quotes; a deterministic `decide()` renders the verdict; unsure is RED; `CALIBRATION_SIZE` stays 10 with a 10-of-10 floor and no partial credit; composition stays mechanical-first/judge-minimal/human-last/first-red-wins. Un-pinning the judge's provider moved no threshold |
+
+    **What does NOT change, and is not up for negotiation in this item:** the judge still never
+    says pass/fail — it extracts facts and quotes, and a deterministic `decide()` renders the
+    verdict; unsure is RED; `CALIBRATION_SIZE` is 10 with a 10-of-10 floor and no partial
+    credit; the composition law is mechanical-first, judge-minimal, human-last, first-red-wins.
+    Un-pinning the judge's PROVIDER is not a licence to move any threshold, and no threshold
+    moves here.
+
+    **The self-grading question, answered by measurement rather than doctrine.** Defaulting the
+    judge to the worker's own LLM means a model's output is read by its own family, which is a
+    real correlated-blind-spot hazard. Two things already contain it: the judge renders no
+    verdict (it locates facts; `decide()` is deterministic), and the calibration gate is
+    exactly the instrument that catches a judge which cannot see failures — its frozen set
+    contains cases that MUST fail, and the floor is all ten with no partial credit. So the
+    pairing is licensed empirically, per job, by a gate that already refuses. If a
+    worker-family judge cannot pass its own calibration, that IS the finding.
+
+    **Ordering (hamr, 2026-09-10, and he is right).** This lands BEFORE 31.5's first-ever
+    calibration fire, not after. The session first argued for firing 31.5 on the pinned haiku
+    judge first, on the "land levers one at a time" rule — but that rule protects a BASELINE,
+    and there is none: 0 calibrations across 167 runs. A pinned-haiku fire would preserve
+    nothing and be invalidated immediately, since changing the judge forces a recalibration by
+    the guard above. Named hedge: with both the mechanism and the judge unfired, a red has two
+    candidate causes (mechanism broken vs. judge unfit). Locate+decide is ~$0.002–0.004/call,
+    so re-running the same set against a second judge disambiguates for cents — cheap enough
+    that it is not a reason to reorder.
+
+    **Arbiter line, held.** This changes WHICH model grades, never WHO decides: the agent still
+    never authors its close, its budget, its fence or its merge, and cannot name its own judge
+    — `judge:{provider,model}` is a SIGNED spec field the human signs, exactly like the rest of
+    the hash, never a drafter-selectable knob.
+
+    **shipped in v0.24.0, 2026-09-10.**
+
+33. **Item 33 — jobs that are not code, and a judge that can read more than doc comments**
+    (hamr, 2026-09-10). **Interview first; nothing here is locked.** It re-opens item 26's
+    2026-08-31 ruling, and its answers decide the final line between bareloop and fwdloop.
+
+    **Why now.** The first soft-green job ever authored (run `mtv8jihy`, F159) showed the judge
+    can grade exactly one thing: whether JS functions have good doc comments. Its rulebook is
+    `has-doc`/`params`/`returns` (`src/judged.js:391`). hamr's bar was about error messages, so it
+    was compiled onto doc-comment rules, and calibration refused (1/10). And hamr's point: green
+    means "a machine can check it", not "code" — a CSV cleaned to a row count is green; a resume
+    turned into a 500-word profile in 3 sections is soft-green. Both are common.
+
+    **Calibration, in plain words** (so the interview starts from the same place): before a
+    judge grades real work, it takes a test — 10 examples the signer marked pass/fail, plus 5
+    trick files that try to fool it. It must get all 10 right and resist all 5, or the job
+    cannot be signed. It checks the ruler, not the work.
+
+    **The holes** — each is a missing feature, never a workaround (hamr: "i don't want a hack";
+    a job that cannot run cleanly is logged as a hole):
+
+    | # | Hole | Blocks today |
     |---|---|---|
-    | 31.1 | Signed `judge: { provider, model }` + per-pair calibration record (item 28 shape (2), the only unbuilt shape) | the judge is a signed spec field; a `(provider, model)` pair with no recorded 10-of-10 calibration REFUSES judged closes at $0 and never silently substitutes an uncalibrated model |
-    | 31.2 | Judge-key story: `scripts/run-u.mjs:1107` hard-exits on a missing `ANTHROPIC_API_KEY` even for a job that never judges (a green DeepSeek run still demands an Anthropic key) | a never-judged job runs with only its own provider's key; a judged job still refuses honestly and by name when the judge's key is absent |
-    | 31.3 | `OPENAI_MODEL_OPTIONS` (`src/providers.js:68`) knows the output-cap request key for `deepseek-chat` ONLY; any other model falls through to bare-agent's `max_completion_tokens` default, which DeepSeek-class backends silently IGNORE (F149: asked 64 tokens, got 665) | an unknown `openai-api` model cannot silently un-bind the budget cap — either the key is proven per model before admission, or an unproven model is refused by name. A cap that does not bind is a money hazard, not a crash: arbiter territory, hamr's ruling required on which of the two |
+    | H0 | The judge's rulebook is doc-comments only | any soft-green bar that is not about JS doc comments — in a repo or out |
+    | H1 | Input must be a git repo with a commit | a plain folder (a CSV, a resume) |
+    | H2 | Judged paths must exist at the seed | an output file the run creates |
+    | H3 | Checks are code-only (the TYPES genre, `src/authoring.js:516`) | word count, headings, CSV rows/columns, schema |
+    | H4 | Mandatory guards are code-shaped (`no-suppressions`) | a guard like "the input was left untouched" |
+    | H5 | Authoring asks for a code language (`js`/`python`) | a job with no language |
+    | H6 | Worker verbs touch files only | outside-world input, e.g. searching flights (parked; booking is fwdloop) |
 
-    **Order after 31 (hamr, 2026-09-09 — amends the 2026-09-08 order at item 25):**
-    item 31 (the bugs/nuances above) → **the panel (N6, §10) — the UI** → the reuse-lift
-    proof LAST. The UI is promoted ahead of the reuse-lift proof; item 29's "fwdloop's inbox
-    UI arrives before any bareloop-only panel" is SUPERSEDED. hamr's reasoning, verbatim in
-    substance: "this repo has its own ui … it's an integral long overdue part". bareloop
-    builds the panel HERE so fwdloop borrows a built thing rather than developing one from
-    scratch (the borrow-not-import contract, item 29, is unchanged — fwdloop copies). When
-    the UI rung starts, the first step is to READ `../fwdloop/docs/product/PRD.md`'s UI
-    section and shape the build so one artifact can mutate to fit both products — "both are
-    close in shape". No UI design is frozen before that read.
+    Also from `mtv8jihy`: the TYPES genre put a `tsc --strict` work stage (142 errors at seed)
+    into a close whose goal never asked for typing — the genre must never add a stage the goal
+    does not state.
+
+    **Example jobs to shape it** (hamr's): resume → 500 words in 3 sections (technical
+    competencies, soft skills, experience summary); CSV in → cleaned CSV out; flight search
+    under $500, no red-eye, judged against the stated criteria.
+
+    **The interview must settle:** which holes are bareloop's and which are fwdloop's; the
+    shape of "folder in, file out" (git as hidden plumbing or not); which judge rules to own
+    first; the non-code check and guard catalogue; whether H6 is in scope at all.
+
+    **Arbiter line.** The rulebook, the check catalogue and the guards are arbiter territory:
+    widening them is additive, hamr's go, and never agent-authored.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
@@ -777,7 +911,7 @@ freedom.
 4. **Stop at diminishing returns.** When the next rail's measured payoff is smaller than the
    last one's, stop — the remaining spend belongs to the probabilistic side.
 
-**Where it binds today.** G4 (item 23, `docs/product/G4-SCOPING.md`): a candidate rail —
+**Where it binds today.** G4 (item 23, `docs/logs/G4-SCOPING.md`): a candidate rail —
 reject a plan that drafts a check-only step before any write step has run — is NAMED and
 NOT BUILT. Payoff unmeasured beyond "3 of 6 litectx replans, on one job" and F123's 3.3%
 gate-red-recovery share; the rail would forbid a sometimes-right cheap probe; and G4 is the

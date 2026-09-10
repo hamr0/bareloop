@@ -1,7 +1,7 @@
 # BENCH — bench pass results
 
 Results ledger for the frozen two-row bench described in
-`docs/product/BENCH-PREREG.md`. Read that document first — it is the only place the rows,
+`docs/logs/BENCH-PREREG.md`. Read that document first — it is the only place the rows,
 patients, money ceiling, n rule, signature rule, and decision rules are frozen. This file
 holds only the rows the bench has actually produced.
 

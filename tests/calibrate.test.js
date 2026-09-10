@@ -40,6 +40,14 @@ import {
   INJECTION_LOCATE_BATTERY, INJECTION_CARD, CALIBRATION_LABEL, CASUALTY_AXES,
 } from '../src/calibrate.js';
 import { JUDGE_MODEL, CALIBRATION_SIZE, expectedOf, decide } from '../src/judged.js';
+
+/** The judge identity these tests hand in (PRD item 32.1: `runCalibration` takes it,
+ * required, with no library default — a set stamped with a model nobody named is a
+ * floor nobody can attribute). It is the pre-item-32 pin, so every existing
+ * assertion about the stamped value is UNCHANGED and still checks the same string;
+ * the point of the argument is that the value now travels, and the test at the
+ * bottom of this file proves it by handing in a different one. */
+const TEST_JUDGE = JUDGE_MODEL;
 import { signJudgedArtifacts } from '../src/cardauthor.js';
 import { prepareSigning, assembleSpec, authorCloseForJob, GENRE } from '../src/authorjob.js';
 import { classGuards } from '../src/authoring.js';
@@ -177,7 +185,7 @@ test('fixture check: the ten carry both polarities, and a red case is ITEMIZED',
 
 test('10/10 graded + 5/5 resisted → the gate passes, and every row is itemized', async () => {
   const j = honest();
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.equal(r.stop, null);
   assert.equal(r.graded.length, CALIBRATION_SIZE);
@@ -195,8 +203,8 @@ test('10/10 graded + 5/5 resisted → the gate passes, and every row is itemized
 
 test('the gate certifies WHICH BYTES it graded — card, cases and the model it used', async () => {
   const cases = CASES();
-  const a = await runCalibration({ cases, card: CARD(), judgeLoop: honest().loop });
-  const b = await runCalibration({ cases, card: CARD(), judgeLoop: honest().loop });
+  const a = await runCalibration({ judgeModel: TEST_JUDGE, cases, card: CARD(), judgeLoop: honest().loop });
+  const b = await runCalibration({ judgeModel: TEST_JUDGE, cases, card: CARD(), judgeLoop: honest().loop });
   assert.equal(a.cardHash, b.cardHash, 'a byte-identical card hashes identically');
   assert.equal(a.casesHash, b.casesHash);
   assert.equal(a.setHash, b.setHash);
@@ -205,11 +213,11 @@ test('the gate certifies WHICH BYTES it graded — card, cases and the model it 
   // stored certification a claim about SOMETHING
   const card2 = CARD();
   card2.items[0].text = 'Every exported function carries a JSDoc block, please.';
-  const c = await runCalibration({ cases, card: card2, judgeLoop: honest().loop });
+  const c = await runCalibration({ judgeModel: TEST_JUDGE, cases, card: card2, judgeLoop: honest().loop });
   assert.notEqual(c.cardHash, a.cardHash);
   const cases2 = CASES();
   cases2[0].artifact += '// edited\n';
-  const d = await runCalibration({ cases: cases2, card: CARD(), judgeLoop: honest().loop });
+  const d = await runCalibration({ judgeModel: TEST_JUDGE, cases: cases2, card: CARD(), judgeLoop: honest().loop });
   assert.notEqual(d.casesHash, a.casesHash);
   // the set hash covers the MODEL too: a judge-model bump is a different ruler
   assert.notEqual(artifactHash({ card: CARD(), cases, judgeModel: 'other-model' }), a.setHash);
@@ -221,7 +229,7 @@ test('one WRONG VERDICT reds the gate and NAMES the case', async () => {
   const cases = CASES();
   // the signer signed a pass for an artifact the rulebook reds
   cases[9].expect = { verdict: 'pass', reds: [] };
-  const r = await runCalibration({ cases, card: CARD(), judgeLoop: honest().loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases, card: CARD(), judgeLoop: honest().loop });
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'calibration-red');
   assert.deepEqual(r.failures, ['red-5']);
@@ -240,7 +248,7 @@ test('THE FLOOR IS ITEMIZED: right verdict, wrong ADDRESS is a failed case', asy
   cases[5].expect = { verdict: 'red', reds: [{ rule: 'has-doc', fn: 'add' }] };
   // …and one where the ADDRESS is wrong rather than missing
   cases[6].expect = { verdict: 'red', reds: [{ rule: 'has-doc', fn: 'subtract' }, { rule: 'params', fn: 'add' }] };
-  const r = await runCalibration({ cases, card: CARD(), judgeLoop: honest().loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases, card: CARD(), judgeLoop: honest().loop });
   assert.equal(r.ok, false);
   assert.deepEqual(r.failures, ['red-1', 'red-2']);
   assert.match(r.graded.find((g) => g.id === 'red-1').detail, /raised that nobody signed/);
@@ -273,7 +281,7 @@ test('a dead call STOPS the gate as a provider casualty, never as a red case', a
       return { text: JSON.stringify(extract(artifactOf(msgs))), stopReason: 'end_turn', error: null, metrics: { costUsd: 0.0004, unpricedRounds: 0 } };
     },
   });
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: loop });
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'provider-red');
   assert.ok(CASUALTY_AXES.includes(r.stop));
@@ -289,7 +297,7 @@ test('a dead call STOPS the gate as a provider casualty, never as a red case', a
 
 test('an UNPRICED call is a pricing casualty and is never retried (F6)', async () => {
   const j = honest({ costUsd: null, unpricedRounds: 1 });
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
   assert.equal(r.stop, 'pricing-red');
   assert.equal(r.casualty.attempts.length, 1, 'a retry of an unpriced call only buys more spend nobody can see');
   assert.equal(r.costUsd, null, 'unknown is reported as UNKNOWN, never as $0');
@@ -300,18 +308,18 @@ test('the ladder is TIGHTEN-ONLY with a floor of 1 — zero attempts is not a ch
   // a caller may buy fewer retries; a caller may not buy a gate that runs no call
   // and therefore has no reading to report
   const one = fakeJudge(() => ({}), { text: () => 'not json' });
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: one.loop, attempts: 0 });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: one.loop, attempts: 0 });
   assert.equal(r.stop, 'artifact-red');
   assert.equal(one.calls.length, 1, 'exactly one attempt — the floor, never none');
   // …and never MORE than the shipped ladder, whatever a caller asks for
   const many = fakeJudge(() => ({}), { text: () => 'not json' });
-  await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: many.loop, attempts: 99 });
+  await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: many.loop, attempts: 99 });
   assert.equal(many.calls.length, 2, 'the operator-confirmed JUDGE_ATTEMPTS ceiling still binds');
 });
 
 test('an emission that never parses is an artifact casualty AFTER the ladder', async () => {
   const j = fakeJudge(() => ({}), { text: () => '{"functions":[' });
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
   assert.equal(r.stop, 'artifact-red');
   assert.equal(r.casualty.at, 'pass-1');
   assert.equal(j.calls.length, 2, 'one retry, then stop');
@@ -322,7 +330,7 @@ test('an emission that never parses is an artifact casualty AFTER the ladder', a
 test('every locate call is metered, on every route out, and the totals are honest', async () => {
   /** @type {any[]} */
   const seen = [];
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: honest().loop, onCost: (c) => seen.push(c) });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: honest().loop, onCost: (c) => seen.push(c) });
   assert.equal(seen.length, CALIBRATION_SIZE + INJECTION_LOCATE_BATTERY.length);
   assert.ok(seen.every((c) => c.label === CALIBRATION_LABEL && c.model === JUDGE_MODEL));
   assert.deepEqual([...new Set(seen.map((c) => c.kind))], ['case', 'injection']);
@@ -347,7 +355,7 @@ test('a null cost inside an otherwise clean run makes the TOTAL unknown, never $
       };
     },
   });
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: loop });
   assert.equal(r.stop, 'pricing-red', 'the unpriced call is itself the stop');
   assert.equal(r.costUsd, null);
   assert.ok(r.knownUsd > 0, 'the priced half is still reported, explicitly');
@@ -370,7 +378,7 @@ test('the battery is FIVE arbiter-owned styles, one per upstream attack, and it 
 });
 
 test('all five styles resist an honest extractor', async () => {
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: honest().loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: honest().loop });
   assert.equal(r.injection.allResisted, true);
   assert.ok(r.injection.styles.every((s) => s.resisted && s.factsOk && s.decisionOk));
 });
@@ -385,7 +393,7 @@ test('a LEAK fails calibration and NAMES the style — even when the decision st
     for (const fn of f.functions) if (fn.docQuote === null) fn.docQuote = '/** documented, honest */';
     return f;
   });
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: leaky.loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: leaky.loop });
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'calibration-red');
   assert.equal(r.injection.allResisted, false);
@@ -402,7 +410,7 @@ test('a style that HIDES a function is a leak too', async () => {
   const hiding = fakeJudge((artifact) => ({
     functions: extract(artifact).functions.filter((f) => f.docQuote !== null),
   }));
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: hiding.loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: hiding.loop });
   assert.equal(r.injection.allResisted, false);
   assert.match(r.injection.styles[0].detail, /function list moved/);
 });
@@ -430,7 +438,7 @@ test('an injection casualty is a casualty, not a leak', async () => {
       return { text: JSON.stringify(extract(artifactOf(msgs))), stopReason: 'end_turn', error: null, metrics: { costUsd: 0.0004, unpricedRounds: 0 } };
     },
   });
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: loop });
   assert.equal(r.stop, 'provider-red');
   assert.equal(r.casualty.kind, 'injection');
   assert.equal(r.injection.leaks.length, 0, 'a casualty is never counted as a leak');
@@ -442,7 +450,7 @@ test('an injection casualty is a casualty, not a leak', async () => {
 
 test('an illegal set is refused BEFORE any call', async () => {
   const j = honest();
-  const r = await runCalibration({ cases: CASES().slice(0, 9), card: CARD(), judgeLoop: j.loop });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES().slice(0, 9), card: CARD(), judgeLoop: j.loop });
   assert.equal(r.stop, 'invalid-set');
   assert.equal(j.calls.length, 0, 'not one token');
   assert.ok(r.reds.some((x) => x.code === 'calibration-size'));
@@ -450,7 +458,7 @@ test('an illegal set is refused BEFORE any call', async () => {
 });
 
 test('NO JUDGE SEAM is a wiring gap that stops the gate — never a silent pass', async () => {
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: null });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: null });
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'no-judge');
   assert.equal(r.reds[0].code, 'no-judge-seam');
@@ -532,7 +540,7 @@ test('D9.3 ruling 3: a JUDGED-ONLY close IS signable once the calibration gate p
   const costs = [];
   const r = await prepareSigning({
     spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000,
-    judgeLoop: j.loop, onJudgeCost: (c) => costs.push(c),
+    judgeModel: TEST_JUDGE, judgeLoop: j.loop, onJudgeCost: (c) => costs.push(c),
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.equal(r.gates.calibration.ok, true);
@@ -550,7 +558,7 @@ test('the signing record stores WHAT the gate certified — hashes and the judge
   const p = makePatient(t);
   const spec = sgSpec();
   const r = await prepareSigning({
-    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: honest().loop,
+    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
   });
   const c = r.gates.calibration;
   assert.equal(c.judgeModel, JUDGE_MODEL);
@@ -567,7 +575,7 @@ test('a judged close with NO calibration set is refused — the gate is MANDATOR
   const p = makePatient(t);
   const spec = sgSpec({ cases: null });
   const r = await prepareSigning({
-    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: honest().loop,
+    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
   });
   assert.equal(r.ok, false);
   assert.equal(r.reds[0].code, 'calibration-missing');
@@ -581,7 +589,7 @@ test('a judged close whose gate FAILS in this run is refused, naming the case', 
   const cases = CASES();
   cases[0].expect = { verdict: 'red', reds: [{ rule: 'has-doc', fn: 'add' }] };
   const r = await prepareSigning({
-    spec: sgSpec({ cases }), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: honest().loop,
+    spec: sgSpec({ cases }), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
   });
   assert.equal(r.ok, false);
   assert.equal(r.specHash, null, 'nothing signable comes back');
@@ -600,7 +608,7 @@ test('a judged close with NO judge seam wired is refused — the gate cannot be 
 test('a gate CASUALTY refuses under the TRANSPORT\'s name — never as a verdict on the close', async (t) => {
   const p = makePatient(t);
   const loop = () => ({ run: async () => { throw new Error('ENETUNREACH'); } });
-  const r = await prepareSigning({ spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: loop });
+  const r = await prepareSigning({ spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: loop });
   assert.equal(r.ok, false);
   assert.equal(r.gates.calibration.stop, 'provider-red');
   assert.match(r.refusal.detail, /could not be RUN/);
@@ -627,7 +635,7 @@ test('a MECHANICAL close is unchanged: it still needs a seed red, calibration or
     verdictType: 'soft-green',
   });
   const r = await prepareSigning({
-    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: honest().loop,
+    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
   });
   assert.equal(r.gates.calibration.ok, true, 'the ruler is fine');
   assert.equal(r.ok, false, 'and the close still has nothing to do');
@@ -638,7 +646,7 @@ test('a MECHANICAL close is unchanged: it still needs a seed red, calibration or
 test('a mechanical work stage that IS red at seed signs on its own seed evidence', async (t) => {
   const p = makePatient(t);
   const r = await prepareSigning({
-    spec: sgSpec({ mechanical: true }), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: honest().loop,
+    spec: sgSpec({ mechanical: true }), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.deepEqual(r.gates.seedVerdict.workRed, ['checks-clean']);
@@ -656,7 +664,7 @@ test('the paid gate runs LAST — a close that fails a $0 gate never buys a call
   });
   spec.closeDecl.stages.at(-1).params.paths = ['src/nope.js'];
   const r = await prepareSigning({
-    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j.loop,
+    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: j.loop,
   });
   assert.equal(r.ok, false);
   assert.equal(r.gates.calibration, null, 'never reached');
@@ -678,7 +686,7 @@ test('the paid gate runs LAST — a close that fails a $0 gate never buys a call
 
 test('the CEILING is read before every paid call — a spent one buys nothing at all', async () => {
   const j = honest();
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: j.loop, capStop: () => 'cap-halt' });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop, capStop: () => 'cap-halt' });
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'cap-halt');
   assert.equal(j.calls.length, 0, 'the check is BEFORE the call, not after it');
@@ -693,6 +701,7 @@ test('a ceiling that trips MID-SET stops there, and the partial is never present
   const j = honest();
   let left = 3;
   const r = await runCalibration({
+    judgeModel: TEST_JUDGE,
     cases: CASES(), card: CARD(), judgeLoop: j.loop,
     capStop: () => (left-- > 0 ? null : 'cap-halt'),
   });
@@ -707,7 +716,7 @@ test('a ceiling that trips MID-SET stops there, and the partial is never present
 
 test('an UNPRICED prior call trips the ceiling as a pricing-red — unknown is never free (F6)', async () => {
   const j = honest();
-  const r = await runCalibration({ cases: CASES(), card: CARD(), judgeLoop: j.loop, capStop: () => 'pricing-red' });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop, capStop: () => 'pricing-red' });
   assert.equal(r.stop, 'pricing-red');
   assert.equal(j.calls.length, 0);
   assert.ok(r.reds.some((x) => x.code === 'pricing-red' && x.path === 'budgetUsd'));
@@ -717,7 +726,7 @@ test('THE ONE OPERATOR NUMBER reaches the gate: a ceiling already spent refuses 
   const p = makePatient(t);
   const j = honest();
   const r = await prepareSigning({
-    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j.loop,
+    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: j.loop,
     ceilingUsd: 0.25,
     // what the scout and the declaration loop already spent, folded in — a ceiling
     // that starts each seam's tally at zero is three ceilings wearing one number
@@ -742,7 +751,7 @@ test('the ceiling BINDS the gate mid-flight, and a gate with room is unchanged',
   // nothing in this repository has.
   const j = honest();
   const bound = await prepareSigning({
-    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j.loop,
+    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: j.loop,
     ceilingUsd: 0.01, priorCalls: [{ label: 'author', costUsd: 0.0091, unpricedRounds: 0 }],
   });
   assert.equal(bound.ok, false);
@@ -752,7 +761,7 @@ test('the ceiling BINDS the gate mid-flight, and a gate with room is unchanged',
   // …and the SAME spec under a ceiling with room signs exactly as it did before
   const j2 = honest();
   const free = await prepareSigning({
-    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j2.loop,
+    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: j2.loop,
     ceilingUsd: 5,
   });
   assert.equal(free.ok, true, JSON.stringify(free.reds ?? free.refusal));
@@ -764,7 +773,7 @@ test('NO ceiling is unbounded here too — an absent number is a stated operator
   const p = makePatient(t);
   const j = honest();
   const r = await prepareSigning({
-    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeLoop: j.loop,
+    spec: sgSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: j.loop,
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.equal(j.calls.length, CALIBRATION_SIZE + INJECTION_LOCATE_BATTERY.length);
@@ -790,6 +799,7 @@ test('authorCloseForJob compiles Q6/Q7 into the close for a judged declaration',
     verdictType: 'soft-green',
     repoPath: p.dir,
     lang: 'js',
+    judgeModel: TEST_JUDGE,
     generate: async () => ({ text: '', metrics: { costUsd: 0.01, unpricedRounds: 0 } }),
     seedRef: p.seed,
     scout: { state: 'ok', facts: {} },
@@ -820,7 +830,7 @@ test('the SIGNER\'s fix is what is stored, and a fix that breaks the ruling is r
   fixed.card.items[0].text = 'what the person actually meant';
   const base = {
     answers: { 1: 'a', 2: 'b', 3: 'c', 4: 'd', 5: 'e', 6: 'f', 7: 'g' },
-    verdictType: 'soft-green', repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    verdictType: 'soft-green', repoPath: p.dir, lang: 'js', seedRef: p.seed, judgeModel: TEST_JUDGE,
     generate: async () => ({ text: '' }),
     scout: { state: 'ok', facts: {} },
     listing: { files: ['src/mod.js'], block: '', stop: null },
@@ -855,4 +865,46 @@ test('the ingest scrub ANNOUNCES what it altered — a signer signs the STORED b
   assert.ok(!JSON.stringify(r.scrubbed).includes(KEY));
   // …and an honest artifact announces nothing
   assert.deepEqual(signJudgedArtifacts({ proposal: { card: CARD(), cases: CASES() } }).scrubbed, []);
+});
+
+
+// ── the judge identity travels (PRD item 32.1) ──────────────────────────────
+
+test('the stamped judge is the one HANDED IN, not a library constant — the whole of the un-pinning', async () => {
+  // The defect this guards: `runCalibration` used to read `JUDGE_MODEL` itself, so
+  // every set on earth was stamped `claude-haiku-4-5` no matter which model actually
+  // graded it. Hand in a different judge and both the record and the set hash must
+  // move with it, or the "which judge certified this floor?" question the whole
+  // recalibration guard rests on has an answer nobody can trust.
+  const other = 'deepseek-chat';
+  const r = await runCalibration({ judgeModel: other, cases: CASES(), card: CARD(), judgeLoop: honest().loop });
+  assert.equal(r.ok, true, 'an honest judge still passes — the identity is a stamp, not a bar');
+  assert.equal(r.judgeModel, other, 'the record carries the judge that graded, not the historical pin');
+  assert.notEqual(r.judgeModel, JUDGE_MODEL);
+  const sameSetOtherJudge = await runCalibration({ judgeModel: JUDGE_MODEL, cases: CASES(), card: CARD(), judgeLoop: honest().loop });
+  assert.notEqual(r.setHash, sameSetOtherJudge.setHash,
+    'the SAME card and cases graded by a different judge is a DIFFERENT certified set — that is what makes a judge change flip jobSpecHash');
+});
+
+test('every metered call reports the judge that made it, so a cost row can be attributed', async () => {
+  const other = 'gemini-2.5-flash';
+  /** @type {any[]} */
+  const seen = [];
+  await runCalibration({
+    judgeModel: other, cases: CASES(), card: CARD(), judgeLoop: honest().loop, onCost: (c) => seen.push(c),
+  });
+  assert.ok(seen.length > 0, 'the gate meters');
+  assert.ok(seen.every((c) => c.model === other), 'and every row names the judge that was actually driven');
+});
+
+test('runCalibration REFUSES without a judge identity — there is no library pin to fall back to', async () => {
+  // A default here would be the silent fall-back item 32 exists to remove: a gate
+  // grading under a model nobody named certifies a floor nobody can attribute.
+  for (const bad of [undefined, null, '', '   ', 42]) {
+    await assert.rejects(
+      () => runCalibration({ judgeModel: /** @type {any} */ (bad), cases: CASES(), card: CARD(), judgeLoop: honest().loop }),
+      /judgeModel/,
+      `${JSON.stringify(bad)} must be refused, not defaulted`,
+    );
+  }
 });

@@ -136,8 +136,29 @@ export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
 /** PRD item 28 (2026-09-06/09-09): `openai-api` — an OpenAI-shaped provider,
  * constructed via `src/providers.js`'s factory. hamr's ruling (PRD 30.7):
  * `deepseek-chat` is THE secondary provider (one, not a menu of half-tested
- * models); the factory's tier table is where that lives, not this menu. */
-export const PROVIDERS = Object.freeze(['anthropic-api', 'openai-api', 'clipipe-subscription']);
+ * models); the factory's tier table is where that lives, not this menu.
+ *
+ * PRD item 31.3 (hamr, 2026-09-09: *"anthropic, openai, gemini drop ollama for
+ * now"*): `gemini-api` joins. That is bareloop matching bare-agent's own
+ * adapter surface rather than curating a shorter list — bare-agent exports four
+ * real HTTP backends (Anthropic, OpenAI, Gemini, Ollama) plus CLIPipe and the
+ * FallbackProvider composite; `provider-http.js`, `provider-stop-reason.js`,
+ * `provider-temperature.js` and `provider-usage.js` are shared HELPERS, not
+ * backends, and were miscounted as providers once — the export list, never the
+ * filenames, is the source of truth.
+ *
+ * Ollama is deliberately NOT here. Beyond hamr's word, it is the one entry
+ * whose economics differ in kind: it takes no API key and bills nothing, so
+ * every round would price at $0 through machinery that treats $0 as a real
+ * price. An unpriced round reported as free is the exact honesty violation the
+ * `?? 0` rule exists to stop, and admitting it needs that question answered
+ * first, not a menu entry.
+ *
+ * `gemini-api` is ADMITTED-PENDING-PROBE: the probe rule stands (item 28
+ * ruling (d)) and gemini has zero runs. See `PROBE_STATUS` in
+ * `src/providers.js` — a spec may name it, and the runner says out loud that
+ * nothing has proven it. */
+export const PROVIDERS = Object.freeze(['anthropic-api', 'openai-api', 'gemini-api', 'clipipe-subscription']);
 /** V3 environment label: declared keys only — every field is a lineage-key
  * candidate at N3. `provider` is part of the key by definition (top-level,
  * not duplicated here). */
@@ -145,7 +166,10 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
+/** the exact fields of a signed `judge` override — nested objects red unknown
+ * keys too, because no smuggling level exists in a signed spec */
+const JUDGE_FIELDS = ['provider', 'model'];
 /** the four-field plan shape's core (decision 5) — presence of any of these
  * declares the shape; `tools` (the ceiling) rides the shape but alone does not
  * declare it, so a legacy spec carrying it gets a pointed red, not a conflict */
@@ -269,6 +293,37 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   // model stays library-pinned pending recalibration — out of scope here.
   if (spec.model !== undefined && !isNonEmptyString(spec.model)) {
     red('invalid-value', 'model', 'non-empty string — exact provider model id (e.g. "claude-sonnet-5")');
+  }
+
+  // JUDGE — PRD item 32.1 (hamr, 2026-09-10: the judge "defaults to whatever
+  // llm is used and can be overriden"). OPTIONAL, and the OVERRIDE half: absent,
+  // the judge resolves to this job's own worker provider and model
+  // (`resolveJudge`, src/judged.js), which is what lets a DeepSeek or Gemini job
+  // judge without a second account. Present, it pins a judge deliberately
+  // different from the worker — an independent reader.
+  //
+  // It is signed like `model`/`baseUrl` above: `jobSpecHash` canonizes the whole
+  // resolved spec, so naming a judge is the OPERATOR signing off on who examines
+  // this work. The drafting agent cannot express it — naming your own examiner is
+  // arbiter territory, and the authoring schema has no such field.
+  //
+  // BOTH halves are required together, deliberately. A `judge` carrying only a
+  // provider would have to invent a model, and a judge identity nobody wrote is
+  // the state the calibration record exists to make impossible.
+  if (spec.judge !== undefined) {
+    if (!isObj(spec.judge)) {
+      red('invalid-value', 'judge', 'an object {provider, model} — the signed judge override; omit it to judge on this job\'s own worker model');
+    } else {
+      for (const key of Object.keys(spec.judge)) {
+        if (!JUDGE_FIELDS.includes(key)) red('unknown-field', `judge.${key}`, `declared keys only: ${JUDGE_FIELDS.join('|')}`);
+      }
+      if (!PROVIDERS.includes(spec.judge.provider)) {
+        red('invalid-value', 'judge.provider', `menu: ${PROVIDERS.join('|')} — the judge runs through the same provider factory the worker does, so an off-menu judge is a provider nothing can construct`);
+      }
+      if (!isNonEmptyString(spec.judge.model)) {
+        red('invalid-value', 'judge.model', 'non-empty string — exact provider model id; a judge with a provider and no model is an identity nobody signed');
+      }
+    }
   }
 
   // BASE URL — PRD item 28, ruling (d), 2026-09-09: admitted in v1 of

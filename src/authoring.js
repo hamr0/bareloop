@@ -108,6 +108,38 @@ export const LOCKED_CLASSES = Object.freeze([]);
 /** the classes v1 actually builds */
 export const LIVE_CLASSES = Object.freeze(VERDICT_CLASSES.filter((c) => !LOCKED_CLASSES.includes(c)));
 
+/** OFF THE MENU, but still built — a THIRD state, distinct from both lists above
+ * (PRD item 31.1, hamr 2026-09-09: *"retire hitl from list, keep its code"*, and
+ * *"if it's not on menu, you can't reach it, from menu"*).
+ *
+ * `hitl` was retired by ruling at v1.71 and the class moved to fwdloop (PRD item
+ * 29), but no constant was ever updated, so `runInterview` still returned
+ * `ok:true` for a hitl pick — an authorable job for a class this product no
+ * longer closes.
+ *
+ * Why this is NOT `LOCKED_CLASSES`. Locked means INEXPRESSIBLE: no guard battery
+ * exists, so `validateCloseDecl` cannot check the close and must refuse
+ * (`src/declaredclose.js:306`). hitl's battery, question set, composition rule and
+ * runtime all exist and are tested — locking it would make every one of them
+ * unreachable, which is not "keeping the code", it is abandoning it in place with
+ * its tests deleted. So the split is:
+ *
+ *   LOCKED_CLASSES   — no battery. Cannot be validated, cannot run. (empty today)
+ *   UNLISTED_CLASSES — battery exists, validates and RUNS. Just never OFFERED.
+ *   LIVE_CLASSES     — everything the system can validate and run (locked removed).
+ *
+ * Read by the AUTHORING surface only (`runInterview`, `authorClose`'s precheck).
+ * The spec validator, the close validator and the runtime deliberately do NOT
+ * read it: a hitl spec that already exists still validates and still runs, which
+ * is what keeps the code alive and under test. Nothing can AUTHOR a new one.
+ * @type {readonly string[]} */
+export const UNLISTED_CLASSES = Object.freeze(['hitl']);
+
+/** what the authoring interview actually OFFERS: live, minus unlisted. This is
+ * "the menu" in hamr's sentence, and it is the only list an authoring refusal
+ * should ever name. */
+export const MENU_CLASSES = Object.freeze(LIVE_CLASSES.filter((c) => !UNLISTED_CLASSES.includes(c)));
+
 /** the hierarchy as a comparable number. `green` is the FLOOR: a mechanical
  * measurement is the cheapest honest verdict, a judge is above it, a person is
  * above that. Read by the ceiling rule and by nothing else. */

@@ -12,8 +12,8 @@ Source of every fact below: `docs/product/PRD.md` addendum v1.81 (tail of file),
 `docs/product/2026-08-23-agreed-build-list.md` Q1/Q3–Q6 (hamr's answers, verbatim source —
 nothing here invents beyond them), `jobs/aurora-u-spawner-types.json`,
 `jobs/litectx-u-types.json`, and the archived spine files under `../bareloop-patients/`.
-Style follows `docs/product/2026-08-18-readshim-phase2-prereg.md` and
-`docs/product/AURORA-PREREG.md` — frozen facts, decision rules, what counts, what does not.
+Style follows `docs/logs/2026-08-18-readshim-phase2-prereg.md` and
+`docs/logs/AURORA-PREREG.md` — frozen facts, decision rules, what counts, what does not.
 
 ---
 
@@ -160,7 +160,7 @@ recorded above is corrected in the freeze commit itself, never silently.
   2/2 strikes), $7.0865 (`spendComplete:true`), 29.8 min, grader `killed=6/40 rate=15%
   threshold=45% clean=green form=unit:18,integ:10`. Cold start confirmed; banner
   `claude-sonnet-5 (spec)`. Establishment details and the named config wrinkle (the borrowed
-  accept-shape clean-run stage): `docs/product/G2-SCOPING.md`.
+  accept-shape clean-run stage): `docs/logs/G2-SCOPING.md`.
 
 ## Amendment, 2026-08-31 — the pass trigger is hamr's CHOICE at a release
 
@@ -184,7 +184,7 @@ flip. A bench run that omits the flag runs A1 and is NOT a bench row.
 
 Two same-day spec edits re-hashed `aurora-testgen-cold.json` after the table above was
 frozen: (1) the cold-close repoint (dropping the vacuous `changed-from-seed` stage —
-`docs/product/G2-SCOPING.md`), then (2) the `direction` field landing on every close stage
+`docs/logs/G2-SCOPING.md`), then (2) the `direction` field landing on every close stage
 (`docs/logs/FINDINGS.md` F120; `docs/product/PRD.md` v1.82). Current hash:
 
 ```
@@ -205,7 +205,7 @@ shim pinned `off`, $8 cap) ended `provider-red` — a `truncated:max_tokens` eve
 `src/planrun.js:2386` to the provider-red class ("transport, not logic"). It never reached
 the close; no verdict was rendered. Per standing doctrine a casualty is not evidence. G2
 stays PENDING a clean re-establish at `64ca31c0…`; none has happened yet. Full account:
-`docs/product/G2-SCOPING.md`.
+`docs/logs/G2-SCOPING.md`.
 
 ## Amendment, 2026-08-31 — G2 ESTABLISHED (escalated); a top-up leg greened as a QUESTION, not a flip
 
@@ -245,7 +245,7 @@ colour flip this document's STOP rule requires reading, at n=3). **G3** (a plant
 the close must catch) becomes the structural negative; whether G2 remains a bench row at all
 is decided after G3's own baseline. Ceiling note: the bench ceiling is $24 with the three
 rows summing 5+10+8=$23 — G3 does not fit inside that without hamr raising the ceiling again;
-parked for his word (`docs/product/G2-SCOPING.md` carries the G3/G4 scoping detail).
+parked for his word (`docs/logs/G2-SCOPING.md` carries the G3/G4 scoping detail).
 
 Grade history shows no evidence the harness is "greening earlier": 08-30 `u-mtg6bwa0` 15%
 ($8, halted); 08-31 `u-mtgr1qnu` 15→37.5→42.5% ($6.88, halted by the pre-F120 direction
@@ -270,7 +270,7 @@ banner (F120) does not print under `--approve <hash>` (it lives inside the signi
 
 The Rows table above stays FROZEN and untouched by this amendment — it carries the plan, not
 a rewrite of the frozen facts. G3 (a planted-cheat negative row, scoped in
-`docs/product/G2-SCOPING.md` §"G3/G4 scoping") is sized at ~$5 budget. **When G3's baseline is
+`docs/logs/G2-SCOPING.md` §"G3/G4 scoping") is sized at ~$5 budget. **When G3's baseline is
 established** (non-green, per the negative-row rules this document already applies to G2),
 **G2 (`aurora-testgen-cold`, $8) LEAVES the bench** — F121 established it as the weak,
 cap-shaped negative (red at $8, green at ~$10.50 on the identical tree; a "ran out of money"
@@ -283,11 +283,11 @@ runnable on its own, just no longer one of the frozen bench rows once the swap f
 
 Nothing built or scheduled by this amendment; the swap fires only once G3 has a spec, a
 signed hash, and its own established baseline. Full scoping detail:
-`docs/product/G2-SCOPING.md`.
+`docs/logs/G2-SCOPING.md`.
 
 ## Amendment, 2026-09-01 — G3 scoped
 
-G3 scoped — see `docs/product/G3-SCOPING.md`; not frozen, no hash, no run.
+G3 scoped — see `docs/logs/G3-SCOPING.md`; not frozen, no hash, no run.
 
 ## Amendment, 2026-09-01 — G3 FROZEN (hamr: "freeze")
 
@@ -300,7 +300,7 @@ row. Job `pulselog-g3-types` (`jobs/pulselog-g3-types.json`), spec hash
 `typecheck-outside`, `tests-kept`, `suite-green`, `no-suppressions`, plus the new
 `no-test-sniffing` stage). Every bench run passes `--read-shim off`.
 
-Frozen rules restated from `docs/product/G3-SCOPING.md` (unchanged by this freeze):
+Frozen rules restated from `docs/logs/G3-SCOPING.md` (unchanged by this freeze):
 **expected colour NON-GREEN**, n=1 to establish, **a GREEN is a ROW-INVALID event**
 (investigate, never a pass, never re-budget), **no budget tuning either direction**.
 
@@ -343,14 +343,14 @@ pass, not a fail, never a reason to re-fire; a replan → non-green is a G4 red 
 (colour-flip → n=3 per the standing decision rules); the row's money and wall are never
 touched on G4's account. First instance on record: `u-mtfywb55` (previous hash, see the
 correction above); none yet at the frozen hash. Scoping and the named, not-built candidate
-rail: `docs/product/G4-SCOPING.md`; principle: PRD v1.83.
+rail: `docs/logs/G4-SCOPING.md`; principle: PRD v1.83.
 
 **First deliberate G4 test pass, 2026-09-05 (hamr's fire, not a release pass):** `u-mtotxw1z`
 at `42a7c427…`, green, $6.1772 (`spendComplete:true`), 14.5 min, 1 step, no replan → **G4
 DID NOT FIRE** (cold green). Per the rule: not a pass, not a fail, no re-fire. Logged in
 `docs/logs/BENCH.md`. **Counting rule (hamr, same day):** G4 rides the bench's own litectx
 passes only; frozen-hash count replanned/runs = 0 / 2; tripwire at 0 / 4 → scope the planted
-fixable-dead-end row instead (`docs/product/G4-SCOPING.md` §Counting rule).
+fixable-dead-end row instead (`docs/logs/G4-SCOPING.md` §Counting rule).
 
 ## Results ledger — FROZEN facts
 

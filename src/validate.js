@@ -147,6 +147,10 @@ export const SECRET_PATTERNS = [
   /(?<![A-Za-z0-9_-])github_pat_[A-Za-z0-9_]{20,}/,
   /(?<![A-Za-z0-9_-])AKIA[0-9A-Z]{16}/,
   /(?<![A-Za-z0-9_-])xox[bap]-[A-Za-z0-9-]{10,}/,
+  // Google/Gemini API key: `AIza` + 35 chars of [0-9A-Za-z_-] (39 total, fixed
+  // length by Google's own issuance format). Admitted with the gemini-api
+  // provider (PRD item 31.3, F160) — was missing on this branch until then.
+  /(?<![A-Za-z0-9_-])AIza[0-9A-Za-z_-]{35}/,
 ];
 const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
 

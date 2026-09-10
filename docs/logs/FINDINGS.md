@@ -4859,7 +4859,7 @@ replan channel, unnoticed until now.
 ### The defect INVERTED the experiment that found it
 
 Both rows above are lift-contrast **calibration** runs, judged against the frozen
-`must-GREEN` admission clause (`docs/product/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
+`must-GREEN` admission clause (`docs/logs/REUSE-LIFT-CONTRAST-PREREG.md`, calibration
 addenda). Both were REJECTED. Neither was rejected for being too hard: both were rejected
 because the harness stopped them while the envelope still had money and time, and in one case
 while the error count was falling on every iteration. **The screen was measuring the workflow's
@@ -8299,7 +8299,7 @@ passes `CEILING_USD` with `[...metered]` — every call the run has already paid
 
 **Status: minted 2026-08-23 from the Phase 2 battery fired 2026-08-19 (12 rows, $25.32 of the
 $60 ceiling hamr approved), read off
-`docs/product/2026-08-18-readshim-phase2-prereg.md` (result committed `fb9c2b7`).
+`docs/logs/2026-08-18-readshim-phase2-prereg.md` (result committed `fb9c2b7`).
 Pre-registered BEFORE any number existed, including the arms declared underpowered in advance.
 Cost of the FINDING: $0 (the numbers were already in the record; only this entry was missing).
 F106 is the softgreen lane's; the gap is deliberate, not a lost finding.**
@@ -9702,7 +9702,7 @@ trend honestly read "unknown" and the bug never fired. Today's separate fix — 
 vacuous `changed-from-seed` stage from the cold-variant `clean-run` close (the seed patient
 holds zero files under `tests/testgen/`, so that stage could never observe a change and fired
 a spurious `unchanged-red` before the worker had written anything; see
-`docs/product/G2-SCOPING.md`'s "Config wrinkle") — let the fix loop actually iterate for the
+`docs/logs/G2-SCOPING.md`'s "Config wrinkle") — let the fix loop actually iterate for the
 first time, producing the repo's first higher-is-better SERIES in its history. The latent
 direction defect fired on first exposure. Not a new bug — a bug that could not be reached
 before today.
@@ -9737,7 +9737,7 @@ G2's bench row is NOT clean under this fix yet. Run `u-mtgr1qnu` itself still en
 REASON is now known to be an artifact of the direction defect, not a genuine cap-halt on a
 stalled loop. This run does NOT establish a clean G2 baseline; the bench row stays PENDING a
 clean re-establish under the fixed governor before it can be re-frozen (see
-`docs/product/BENCH-PREREG.md` and `docs/product/G2-SCOPING.md` for the current state and
+`docs/logs/BENCH-PREREG.md` and `docs/logs/G2-SCOPING.md` for the current state and
 the run now in flight to answer it).
 
 ## F121
@@ -9805,14 +9805,14 @@ top-up leg — it greened on the fix loop's first turn, zero trend records anywh
 `u-mth7r0xv.jsonl`. Nothing has been killed wrongly by the fix, but a run where two
 consecutive rate grades actually get compared against each other remains unobserved.
 
-Full account, including G3/G4 scoping and hamr's answers: `docs/product/G2-SCOPING.md`;
-frozen-row state: `docs/product/BENCH-PREREG.md`.
+Full account, including G3/G4 scoping and hamr's answers: `docs/logs/G2-SCOPING.md`;
+frozen-row state: `docs/logs/BENCH-PREREG.md`.
 
 ## F122 — model-output truncation is 3-of-9,185 archived rounds (0.03%); the trigger rule for
 reclassifying it is frozen before the second occurrence exists
 
 **The $0 base-rate scan behind hamr's "2A" ruling (2026-08-31).** Run `u-mtgx135x` (see F121's
-neighbor entry and `docs/product/G2-SCOPING.md`) died when one worker turn emitted exactly
+neighbor entry and `docs/logs/G2-SCOPING.md`) died when one worker turn emitted exactly
 32,000 output tokens — the `maxTokens: 32000` call cap (`src/planrun.js:2355`) — bare-agent
 flagged `truncated:max_tokens`, and `src/planrun.js:2386` classes it `provider-red`
 ("transport, not logic"): a casualty, ≥$4.40, no verdict rendered.
@@ -9839,7 +9839,7 @@ risks truncating a legitimately large file write). The rule never loosens post-h
 reclassification half is arbiter territory — the trigger firing authorizes bringing the build
 to hamr, not silently landing it.
 
-Nothing built by this entry. Full ruling text: `docs/product/G2-SCOPING.md`.
+Nothing built by this entry. Full ruling text: `docs/logs/G2-SCOPING.md`.
 
 ## F123 — PRD item 24 lever (a) DROPPED: gate-red recovery is ~3% of spend (~6% on testgen),
 below the already-minor read-hygiene lever, no evidence the register changes behaviour
@@ -10006,12 +10006,12 @@ token-total line in the run tail (this entry above already flagged the gap: job-
 dollars only, tokens exist only per round record); tracked on branch `feat/tokens-tail`, in
 progress, ships in the next release. (2) "plant it" — G3's planted diff gets authored on a
 fresh `pulselog-u` copy with a $0 unwinnable proof, shown to hamr before the row is frozen;
-scoping lives at `docs/product/G3-SCOPING.md`.
+scoping lives at `docs/logs/G3-SCOPING.md`.
 
 ## F125 — G3's establishing run reads NON-GREEN as pre-registered: step-red on the planted
 contradiction, no cheating found, baseline banked at $2.98/$4
 
-**Trigger.** hamr's "fire" on the frozen G3 spec (`docs/product/BENCH-PREREG.md`, "G3 FROZEN"
+**Trigger.** hamr's "fire" on the frozen G3 spec (`docs/logs/BENCH-PREREG.md`, "G3 FROZEN"
 amendment, 2026-09-01) — the bench's structural-negative row needed its n=1 establishing run.
 
 **Run.** `u-mties136`, 2026-09-01, `jobs/pulselog-g3-types.json` hash
@@ -10075,7 +10075,7 @@ ROW-INVALID event to investigate, never a pass and never a cue to widen the budg
 **Date:** 2026-09-05 · **Status:** MEASURED (n=1 per arm, pre-registered read order) ·
 **Class:** cost-lever contrast · **Grounded in:** spines `u-mtoqtcb5.jsonl` (ON) and
 `u-mtor6qkd.jsonl` (OFF) under `../bareloop-patients/aurora-u-bareloop/`, driver logs, the
-frozen rules in `docs/product/SCOUT-CONTRAST.md`.
+frozen rules in `docs/logs/SCOUT-CONTRAST.md`.
 
 **Design (frozen before either run).** Same job, same hash `5d989ae7…`, same patient reset
 `d661e50`, `--read-shim off`, worker `claude-sonnet-5`, same 2×200 probe, sequential. ON =
@@ -10163,7 +10163,7 @@ instances in 2 at the frozen signature.
 **What it means for G4.** The aurora spawner row cannot host G4 (never replanned in 24
 runs). The litectx row already exhibits the G4 shape without any engineering, ~43% of the
 time, and has a paid, frozen instance on file. Scoping follows from this read:
-`docs/product/G4-SCOPING.md`.
+`docs/logs/G4-SCOPING.md`.
 
 **Anti-gloss.** "Replan → green" here is read from the spine's record chain, not from
 prose; a run with a replan whose replanned plan was then skipped or resumed is still
@@ -11614,3 +11614,128 @@ holds), so the $1.64 is approximate and the $4 cap bound on a guessed rate, not 
 job that never judges, because the judge provider is built unconditionally. Honest (it fails loud,
 never silently), but over-strict — a pure `openai-api` green job cannot run without an Anthropic
 key at all. Belongs with item 28 part (2)'s signed judge-key story.
+
+## F158 — a suite that passes and a run that fails are two different readings, and the second one is at the bottom of the file
+
+**2026-09-09, PRD item 31.1/31.2, `feat/item-31`.** The 31.1 commit was reported to hamr as
+"gate green" on the strength of this:
+
+```
+# pass 2411
+# fail 0
+```
+
+The command's own exit code was **1**. `npm test` runs the suite AND `prompt-commit-check`
+after it (package.json's `test` script); the suite passed and the check failed, so the
+pass/fail tally and the exit code disagreed — and the tally is the line a reader's eye lands
+on. The failure sat sixteen lines below it, under the `1..2411` plan and seven `# ` summary
+lines.
+
+**This is the same class as the pipeline-exit hazard already on record** (a `$?` after a pipe
+reports the last element's status, not the suite's), and it survived that lesson because the
+command WAS bare. Reading `$?` correctly is not enough if the number read afterwards is a
+different number. **Both must be read: the exit code, and then the tail.**
+
+**What actually failed, and why it is not a bug.** `prompt-commit-check` requires a commit
+touching a prompt register to carry `Failure:`/`Addresses:`/`Corrects:` labels, the Failure
+line citing a run. It matches on FILE granularity — `git diff-tree --no-commit-id --name-only`
+(`scripts/prompt-commit-check.mjs:87`) — against `PROMPT_REGISTERS`' file list. Item 31.1
+edited a class gate in `src/authorflow.js`, a register FILE, while changing no register
+STRING: `AUTHOR_SYSTEM`, `REVISE_INSTRUCTION`, `STRUCTURE_INSTRUCTION_TOOL` and
+`STRUCTURE_INSTRUCTION_TEXT` were byte-identical across the commit (verified by diffing the
+commit against those four names).
+
+So the check fired on a commit it did not need to fire on. **Left exactly as it is.** A
+file-granular match is the fail-safe direction: it over-reports, and the failure mode of the
+precise alternative is a prompt change that slips through unlabelled. Narrowing it would be
+widening a guard, which is not a thing to do while stepping past one. The labels were
+supplied instead, and the commit message says plainly that no register string changed.
+
+**A second format trap inside the same check.** The run citation must sit on the `Failure:`
+line's OWN text (`RUN_REF_RE = /\brun\s+(u-)?[a-z0-9]{8}\b/i`, matched against
+`failureLineText`). A citation on the second line of the Failure paragraph reads as absent,
+and the refusal message is identical either way — two amend cycles were spent before the
+placement, not the content, turned out to be the problem.
+
+**Fix, and it is a reading habit rather than code:** a gate claim quotes the EXIT CODE and the
+LAST LINE of the output, never the pass/fail tally alone. A suite can be entirely green inside
+a run that failed.
+
+## F159 — the judged floor can only judge doc comments, so a soft-green job about anything else compiles into the wrong ruler
+
+**2026-09-10, PRD item 31.5 / 32, `feat/item-31`, authoring run `mtv8jihy`, $0.87 of a $2.50
+ceiling, spend complete.** The first soft-green job ever authored, and the first time the
+calibration gate (`src/calibrate.js`) has executed in the product's life. Patient: a copy of
+bareguard v0.15.0 (`bareloop-patients/bareguard-softgreen-gemini`, seed `3c496ab`). Worker
+`gemini-api`/`gemini-2.5-pro`, signed judge `gemini-2.5-flash`. hamr's bar (Q6): an error
+message passes if it names the offending field or value, says what shape was expected, and
+says what to do next; it fails if it only says "invalid" or leaks internals.
+
+**The gate refused, and it was right to refuse — but for a reason nobody asked it to find.**
+Calibration graded 1 of 10 cases correctly (floor 10/10), 5/5 injection styles resisted.
+Nothing was signed and nothing was run.
+
+**Cause, read from source, not inferred.** The judge's rulebook is three rules, all about
+JSDoc comments: `JUDGE_RULE_IDS = ['has-doc', 'params', 'returns']` (`src/judged.js:391`; the
+comment at `:250` says it outright — "v1 carries the doc genre"). A card item must SELECT a
+rule id, so a rule we do not own is inexpressible. hamr's three lines had nowhere to go, and
+the card compiler bent them onto doc-comment rules:
+
+- "names the field and expected shape" → `has-doc`: *the first line of the doc comment* has to name the field
+- "tells the caller what to do next" → `returns`: *the `@returns` line* has to say what to do next
+- "no internals" → `params`: *the parameter* must not have a private-looking name
+
+So the signed ruler would have graded doc comments, never error messages. The ten calibration
+cases were invented functions (`assertBudgetIsPositive`, `assertPortInRange`, …) that do not
+exist in bareguard, and their expected reds mixed the two meanings — hence the scatter
+(expected `returns`, got `params`; expected `has-doc`, got `returns`). With a card that says
+one thing and a rulebook that checks another, a 1/10 cannot be read as a judge-model score:
+whether `gemini-2.5-flash` would clear 10/10 on a card that fits its rulebook is UNMEASURED.
+
+**A second mismatch in the same close.** The close carries a `typecheck-in-scope` work stage
+(`count-not-worse`, 142 `tsc --strict` errors red at seed, baseline 0). The goal never asks for
+typing — the TYPES genre (the only genre, `src/authoring.js:516`) put it there. Had the ruler
+passed, the signed job would have demanded fixing 142 type errors nobody asked for: an unstated
+close stage, the cost hazard the goal-states-everything rule names.
+
+**What this means.** Soft-green today can judge exactly one thing: whether JS functions have
+good doc comments. Any other bar — error messages, a summary, a cover letter, a CSV — has no
+rule to land on, in a repo or out of one. This is the same hole as hamr's non-repo question
+(2026-09-10): the rulebook and the genre are code-docs-only, and widening either is a catalogue
+widening (additive; arbiter territory, hamr's go).
+
+**The good news, stated once.** The gate did its job on first contact: it refused an unsound
+ruler at $0.14 of judge calls, before a signature and before the $4 fire. PRD 31.5's "calibration
+runs end to end for the first time" is met for the AUTHORING half; the fire half is blocked on
+a card that fits a rule we own.
+
+## F160 — a provider was admitted without its key shape joining the one secret inventory
+
+**2026-09-10, PRD item 31.3, `feat/item-31`.** `a48c24b` admitted `gemini-api` to real runs
+(`GEMINI_API_KEY`) without adding the Google key shape to `SECRET_PATTERNS`
+(`src/validate.js:144`) — the ONE inventory that drives `scanSecrets` (the answers/draft/spine
+sweeps, 11 call sites in `scripts/`) AND `redactSecrets`/`sweepSecretLiterals` (the spine, close
+output, and signed-doc redactors). Verified before the fix: `scanSecrets('x AIzaSyD9tSrke72PouQ
+MnMXa7eZSW0jkFMBcXY y')` returned `[]` — a live-shaped Gemini key reaching a spine or a close's
+output would have gone undetected and unredacted.
+
+**Caught by /branch-review at `e0bd819`, not by the build.** The provider landed, the tests
+landed, CI landed green — nothing in the build path checks a new provider's key shape against
+the secret inventory, because nothing declares that link exists at all.
+
+**No key leaked.** The one real Gemini run this branch has produced (F159, softgreen calibration,
+authoring run `mtv8jihy`) wrote outputs under `.scratch/softgreen-gemini/` and to the patient
+copy at `bareloop-patients/bareguard-softgreen-gemini`; both were grepped for
+`AIza[0-9A-Za-z_-]{30,}` after the fact and neither carries a match.
+
+**DeepSeek, checked for the same gap:** DeepSeek keys are `sk-...`-shaped, already covered by
+the existing `sk-` pattern — no second gap there.
+
+**Fixed.** A left-bounded `AIza[0-9A-Za-z_-]{35}` pattern (39 chars total, Google's fixed
+issuance length) joins `SECRET_PATTERNS`, in the same style as the existing five shapes;
+monotonic (detection only added). `bareloop.context.md`'s shape-list prose (the one other place
+the inventory is spelled out, for the doc that ships) updated to match.
+
+**The lesson, stated plainly.** Admitting a provider to the menu and adding its key shape to the
+one secret inventory are two different edits with no code linking them — they must land in the
+SAME commit going forward, not as a follow-up a reviewer has to notice is missing.

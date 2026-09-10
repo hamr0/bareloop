@@ -19,6 +19,7 @@ import { mintBridge } from '../src/bridges.js';
 import { main } from '../src/cli.js';
 import { scriptedProvider } from './helpers.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
+import { ANTHROPIC_TIER_MODELS } from '../src/providers.js';
 
 /** this repo's own root — every fixture bundle's node_modules/bareloop
  * symlinks here so `checkBundleDeps`'s preflight (F128) passes for the
@@ -62,13 +63,16 @@ process.exit(ok ? 0 : 1);
 // signed sha256 must be the REAL hash of that constant, computed once here.
 const CLOSE_SOURCE_SHA256 = hashCloseScriptBytes(CLOSE_SOURCE);
 
-/** @param {{ job: string, closeScriptPath: string, budgetUsd?: number, maxWallMs?: number }} o */
-function buildJob({ job, closeScriptPath, budgetUsd = 2, maxWallMs = 1_800_000, provider = 'anthropic-api' }) {
+/** @param {{ job: string, closeScriptPath: string, budgetUsd?: number, maxWallMs?: number, provider?: string, judge?: { provider: string, model: string } }} o */
+function buildJob({
+  job, closeScriptPath, budgetUsd = 2, maxWallMs = 1_800_000, provider = 'anthropic-api', judge,
+}) {
   return {
     schema: 'job-v1',
     job,
     description: 'CLI M2 fixture: append a marker line to src/mod.mjs.',
     provider,
+    ...(judge !== undefined ? { judge } : {}),
     cadence: { unit: 'day', every: 1 },
     budgetUsd,
     maxWallMs,
@@ -118,7 +122,7 @@ function makeNow(seed) {
 /**
  * Write a fixture job spec + close script + a registry bridge minted at the
  * job's own hash — everything `bareloop export` needs to succeed.
- * @param {import('node:test').TestContext} t @param {{ job?: string, budgetUsd?: number, maxWallMs?: number }} [o]
+ * @param {import('node:test').TestContext} t @param {{ job?: string, budgetUsd?: number, maxWallMs?: number, provider?: string, judge?: { provider: string, model: string } }} [o]
  */
 function fixtureSpec(t, o = {}) {
   const jobName = o.job ?? 'cli-fixture-job';
@@ -127,7 +131,7 @@ function fixtureSpec(t, o = {}) {
   writeFileSync(closeScriptPath, CLOSE_SOURCE);
 
   const job = buildJob({
-    job: jobName, closeScriptPath, budgetUsd: o.budgetUsd, maxWallMs: o.maxWallMs, provider: o.provider,
+    job: jobName, closeScriptPath, budgetUsd: o.budgetUsd, maxWallMs: o.maxWallMs, provider: o.provider, judge: o.judge,
   });
   const bridge = bridgeFor(job);
   const registryDir = makeRegistry(t, bridge);
@@ -142,7 +146,7 @@ function fixtureSpec(t, o = {}) {
 /**
  * Export a fixture bundle through the REAL CLI path and return the bundleDir
  * + bundleHash a `run` test needs.
- * @param {import('node:test').TestContext} t @param {{ job?: string, budgetUsd?: number, maxWallMs?: number }} [o]
+ * @param {import('node:test').TestContext} t @param {{ job?: string, budgetUsd?: number, maxWallMs?: number, provider?: string, judge?: { provider: string, model: string } }} [o]
  */
 async function exportFixture(t, o = {}) {
   const { specFile, registryDir } = fixtureSpec(t, o);
@@ -242,7 +246,19 @@ test('bareloop run: a bundle naming a provider with a DIFFERENT env key refuses 
   // call and read as a credential problem rather than the unbuilt seam it is.
   // The spec names the provider at EXPORT time — editing spec.json afterwards
   // would trip the manifest-hash guard first, which is its own (correct) test.
-  const { bundleDir } = await exportFixture(t, { provider: 'openai-api' });
+  //
+  // ISOLATION (found by mutation, PRD item 32.2 fallout): with no `judge`
+  // signed, `resolveJudge` defaults the judge to the WORKER's own provider —
+  // so an unsigned judge here would ALSO resolve to openai-api and read
+  // OPENAI_API_KEY, and `src/cli.js`'s judge refusal (buildProviders, the
+  // block below the worker refusal this test means to isolate) would fire
+  // that exact same message even with the worker refusal deleted. Signing an
+  // explicit ANTHROPIC-keyed `judge` here neutralizes THAT refusal, so only
+  // the worker refusal can produce this test's failure.
+  const { bundleDir } = await exportFixture(t, {
+    provider: 'openai-api',
+    judge: { provider: 'anthropic-api', model: ANTHROPIC_TIER_MODELS.sonnet },
+  });
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
   const out = sink(); const err = sink();
@@ -252,6 +268,30 @@ test('bareloop run: a bundle naming a provider with a DIFFERENT env key refuses 
   assert.notEqual(rc, 0, 'a provider it cannot key must refuse, never run');
   const said = err.text() + out.text();
   assert.match(said, /OPENAI_API_KEY/, 'it must name the key it would have needed');
+  assert.doesNotMatch(said, /judge/i, 'this refusal must be the WORKER\'s, not the judge\'s — the signed judge is anthropic-keyed and must never be what fires here');
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
+});
+
+test('bareloop run: a bundle whose signed JUDGE names a DIFFERENT env key refuses at $0, never builds it with the Anthropic key', async (t) => {
+  // PRD item 32.2: the worker stays anthropic-api (so the WORKER refusal
+  // above cannot be what fires here), but the spec signs a `judge` naming
+  // gemini-api, which reads GEMINI_API_KEY. The bundle runner's key contract
+  // is ANTHROPIC_API_KEY only, so resolveJudge's result must refuse the same
+  // way the worker refusal does, by name, before any worktree/provider work.
+  const { bundleDir } = await exportFixture(t, {
+    provider: 'anthropic-api',
+    judge: { provider: 'gemini-api', model: 'gemini-2.5-pro' },
+  });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo], {
+    stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' },
+  });
+  assert.notEqual(rc, 0, 'a judge it cannot key must refuse, never run');
+  const said = err.text() + out.text();
+  assert.match(said, /GEMINI_API_KEY/, 'it must name the key it would have needed');
+  assert.match(said, /judge/i, 'the refusal must say judge, so this cannot pass on the worker refusal\'s text');
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
 });
 

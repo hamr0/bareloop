@@ -146,15 +146,18 @@ export {
 // hitl checkpoint keeps. It never returns, writes or implies a verdict.
 export { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // SOFTGREEN module 1 — the judged floor's core. The pieces an adopter (and an
-// integrating UI) genuinely needs: the PIN (`JUDGE_MODEL` — what a wired judge
-// provider must be bound to, and a bump of which forces recalibration), the
-// rulebook a card SELECTS from, the card gate, and the two halves themselves so a
-// calibration harness can grade the whole pipe without running a close.
+// integrating UI) genuinely needs: `resolveJudge` (PRD item 32.1 — WHICH model
+// grades a job: the spec's signed `judge` override, else the job's own worker
+// model, and no library fall-back), `JUDGE_MODEL` (the pre-item-32 pin, kept
+// exported for adopters and still the right default for an anthropic-api job,
+// but no longer read by any grading path), the rulebook a card SELECTS from,
+// the card gate, and the two halves themselves so a calibration harness can
+// grade the whole pipe without running a close.
 // `defaultJudgeLoop` is the one spelling of how this repo drives a judge; the
 // runner reaches it through `runPlan`'s `judgeProvider`, and it is exported so a
 // caller building its own harness does not spell a second one.
 export {
-  JUDGE_MODEL, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES, LOCATE_LABEL,
+  JUDGE_MODEL, resolveJudge, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES, LOCATE_LABEL,
   validateCard, validateFacts, locatePrompt, runLocate, decide, defaultJudgeLoop,
   // SOFTGREEN module 4 — what a legal SIGNED calibration set is. The SIZE is
   // hamr's own ruling and a size change is a spec-level threshold change;

@@ -5,6 +5,128 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+## [0.24.0] — 2026-09-10
+
+### Added
+
+- **`gemini-api` on the provider menu, ADMITTED-PENDING-PROBE** (PRD item 31.3;
+  hamr, 2026-09-09: *"anthropic, openai, gemini drop ollama for now"*). Reads
+  `GEMINI_API_KEY` and maps two genuinely different tiers — `sonnet` →
+  `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`. It has **zero runs**: the
+  probe rule (no endpoint in the menu without its own clean paid probe) is not
+  waived for it. `PROBE_STATUS` in `src/providers.js` records that debt per
+  provider and `probeWarningLines` renders the loud `⚠ UNPROVEN PROVIDER`
+  marker `scripts/run-u.mjs` prints at launch, right where money is about to be
+  spent. The table is read to WARN, never to REFUSE — refusing a provider hamr
+  admitted would be a second, invisible ruling.
+- **Per-provider `endpointKey`** — each table entry declares the CONSTRUCTOR
+  option name it reads an endpoint from, instead of a hardcoded `baseUrl`.
+  bare-agent's providers do not agree on one spelling (`baseUrl` for
+  anthropic/openai/gemini, `url` for Ollama) and none of them validate unknown
+  option names, so a mis-spelled endpoint is silently DROPPED, not rejected:
+  measured live, `new OllamaProvider({baseUrl: X}).url` stays
+  `http://localhost:11434` with no error. That is the F149 class (DeepSeek
+  silently ignoring `max_completion_tokens`: asked 64 output tokens, returned
+  665). A job spec still carries ONE field name, `baseUrl`; the translation to
+  each constructor's own spelling happens once, in `makeProvider`.
+
+### Changed
+
+- **The judge is no longer a Claude judge** (PRD item 32; hamr, 2026-09-10:
+  *"what i care about is that judge becomes llm agnostic and not set to one
+  model or provider"*). `JUDGE_MODEL` is no longer read by any grading path.
+  The judge identity is RESOLVED per job by the new exported `resolveJudge`:
+  the spec's signed `judge: {provider, model}` if it names one, else **the
+  job's own worker provider and model** — so a DeepSeek or Gemini job judges on
+  its own provider and needs no second account. There is deliberately no
+  library fall-back: a run that cannot name its judge has not wired one, and
+  the judged stage instrument-STOPS rather than grading under an identity
+  nobody chose. `JUDGE_MODEL` stays exported as the pre-item-32 pin so an
+  adopter's import survives. The judge is now built through the provider
+  factory like every other provider — no `new AnthropicProvider` survives for
+  a judge in `scripts/run-u.mjs`, `scripts/run-author.mjs` or `src/cli.js` —
+  and its key follows the resolved judge provider's own `envKey`, with
+  `JUDGE_API_KEY` as a role-named override in front.
+
+  **BREAKING for direct library callers.** `runCalibration`,
+  `foldJudgedArtifacts` and `prepareSigning`/`authorCloseForJob` now require
+  the resolved `judgeModel` and THROW without it; `runJob`/`runPlan` take a
+  `judgeModel` beside `judgeProvider`, and a judged stage stops as a wiring gap
+  when it is absent. Adding a default would be the silent fall-back this change
+  exists to remove.
+
+  **No threshold moved.** The judge still renders no verdict — it locates facts
+  and a deterministic `decide()` renders; unsure is RED; `CALIBRATION_SIZE` is
+  10 with a 10-of-10 floor and no partial credit. Un-pinning a provider is not
+  a licence to move a bar. Self-grading (a worker's own family reading its
+  work) is licensed by MEASUREMENT: the calibration gate is exactly the
+  instrument that catches a judge which cannot see failures, and its frozen set
+  contains cases that MUST fail.
+- **A new optional signed spec field, `judge: {provider, model}`** — both
+  halves required together, `provider` from the `PROVIDERS` menu, unknown
+  nested keys red. It is part of `jobSpecHash`, so changing the judge kills the
+  signature and forces recalibration — and the recalibration guard now fires
+  across a PROVIDER change, not just a model bump. The drafting agent cannot
+  express it: naming your own examiner is arbiter territory.
+- **The judge's API key is demanded only when a judge is CALLED** (PRD item
+  31.4). `scripts/run-u.mjs` hard-exited on a missing `ANTHROPIC_API_KEY` for
+  every job, so a `verdictType: 'green'` job with a DeepSeek or Gemini worker
+  and a mechanical close could not start without an Anthropic account it would
+  never spend a token against. Now the WORKER's key comes from the provider
+  table's own `envKey` and is always required; the JUDGE's key follows the
+  RESOLVED judge provider's own `envKey` (item 32.1 — the judge is no longer
+  pinned to Anthropic), with `JUDGE_API_KEY` as a role-named override in
+  front, and is required only when the close actually judges. When it does
+  refuse it refuses at $0, before the worker spends anything, naming the
+  judged-stage count and the resolved judge model — a judged run that
+  discovered this at the close would have paid in full for a verdict it
+  cannot render. A green `anthropic-api` job behaves byte-identically to
+  before. `bareloop run` (the bundle runner) is unchanged: `ANTHROPIC_API_KEY`
+  -only by a deliberate, documented contract.
+- **One reading of "does this close judge?"** — `judgedStages()`/`closeJudges()`
+  are exported from `src/kinds.js` and the six open-coded copies of that
+  predicate now share them. The runner's own comment warned against "a second
+  reading of the declaration that can drift from the one the runner actually
+  executes"; 31.4 needed a seventh, to decide a REFUSAL, which is that warning
+  coming true.
+
+- **`hitl` leaves the authoring menu; its code stays** (PRD item 31.1; hamr:
+  *"retire hitl from list, keep its code"*). Three distinct class lists replace
+  two: `LOCKED_CLASSES` (no guard battery exists — empty today),
+  `UNLISTED_CLASSES` (`['hitl']` — built, validates and RUNS, simply never
+  offered) and `MENU_CLASSES` (live minus unlisted). Only the AUTHORING surface
+  reads them, which is what keeps hitl's code alive and under test; locking the
+  class instead would have taken `validateCloseDecl`, the guard battery and two
+  whole test files with it. `scripts/run-interview.mjs` no longer advertises
+  `--verdict hitl` in a usage line the library then refuses.
+- **Green-only prose corrected** (PRD item 31.2). `soft-green` was never
+  locked; the source comment claiming *"v1 STILL ADMITS ONLY green"* was false
+  and had already sent one build in the wrong direction, and
+  `bareloop.context.md` — the file that SHIPS — said all three classes were
+  admitted. Fixed, and pinned by tests, because prose drifts when nothing
+  executes it.
+
+### Security
+
+- **`SECRET_PATTERNS` learns the Gemini/Google API key shape** (PRD item
+  31.3, F160). `gemini-api` was admitted to real runs (this file, above)
+  without its own key shape joining the ONE secret-shape inventory
+  (`src/validate.js`) that drives `scanSecrets`, `redactSecrets` and
+  `sweepSecretLiterals` — a `GEMINI_API_KEY`-shaped literal (`AIza` + 35
+  chars) reaching a spine, a close's output, or a signed doc would have gone
+  undetected and unredacted. Fixed with a left-bounded pattern in the same
+  style as the existing shapes; monotonic (detection only added, nothing
+  loosened).
+
+### Notes
+
+- Ollama is deliberately NOT admitted. It takes no key and bills nothing, so
+  every round would price at $0 through machinery that treats $0 as a real
+  price — the honesty violation the `?? 0` rule exists to stop. That question
+  gets answered before a menu entry, not after.
+
 ## [0.23.0] — 2026-09-09
 
 ### Added

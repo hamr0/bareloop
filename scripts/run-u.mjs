@@ -20,22 +20,25 @@ import { makeSpine } from '../src/spine.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { runBehaviour, formatBehaviour } from '../src/behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
-import { normalizeHumanRuling, resolveHumanRuling } from '../src/kinds.js';
+import { normalizeHumanRuling, resolveHumanRuling, closeJudges, judgedStages } from '../src/kinds.js';
 // SOFTGREEN — the judged stage's PINNED tier. The constant is the library's; a
 // spelling here would be a second pin that can drift from the one the gate calibrated.
-import { JUDGE_MODEL } from '../src/judged.js';
+import { resolveJudge } from '../src/judged.js';
 // --resume reads the halted run's own spine back through the SAME reader the reuse
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from '../src/reuse.js';
 // PRD item 28's provider factory (src/providers.js): the WORKER provider's
 // ctor/envKey/tier-table/param-gating come from here now — one seam instead
-// of an `if (provider === …)` scattered across this script. The JUDGE stays
-// separately pinned below (`new AnthropicProvider({ apiKey, model:
-// JUDGE_MODEL, … })`, unchanged): tests/reviewdoor-u.test.js greps this
-// file's own source for that exact literal as proof THIS runner wires the
-// judge, not just that the library can — moving it into the factory would
-// have to rewrite that tripwire's intent, not just its regex, so it stays.
-import { resolveProvider, makeProvider } from '../src/providers.js';
+// of an `if (provider === …)` scattered across this script. PRD item 32.2
+// moved the JUDGE onto this SAME factory: it used to be separately pinned
+// below to a hardcoded Anthropic constructor at the judged tier because the
+// judge could only ever be Claude — now that its identity is RESOLVED
+// (`resolveJudge`, imported above) rather than pinned, building it through a
+// second bespoke constructor would be a second seam for the same job the
+// worker's already goes through. `tests/reviewdoor-u.test.js` greps this
+// file's own source to prove THIS runner actually wires the resolved judge
+// through `makeProvider` into `runJob` (not just that the library can).
+import { resolveProvider, makeProvider, probeWarningLines } from '../src/providers.js';
 import { loadRegistry, quarantinesCredit } from '../src/bridges.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
@@ -270,8 +273,9 @@ const specHash = jobSpecHash(spec);
 // MODEL (build-list #3, hamr's GO 2026-08-30): the signed spec's `model`, if
 // present, wins outright; a --model flag naming a DIFFERENT id is refused
 // (never silently overridden) — resolveWorkerModel is the one decision, pure
-// and tested apart from this script. Judge model stays library-pinned
-// (JUDGE_MODEL below), out of scope here.
+// and tested apart from this script. The JUDGE's model is resolved separately
+// (`resolveJudge`, below the key block): it defaults to this same resolved
+// worker model and a signed `judge` override wins over it.
 // The provider's OWN tier table (src/providers.js) supplies the default —
 // not the anthropic-only DEFAULT_TIER_MODELS above (that map is the
 // `--model` FLAG's vocabulary only, sonnet/haiku, unrelated to which
@@ -285,6 +289,14 @@ try {
 } catch (e) {
   die(/** @type {Error} */ (e).message);
 }
+// PRD item 31.3 — an ADMITTED-PENDING-PROBE provider says so, LOUDLY, on every
+// launch. The probe rule (item 28 ruling (d)) is that no endpoint enters the
+// menu without its own clean paid probe; hamr admitted `gemini-api` to the menu
+// before that fire, so the honest state is "runnable, unproven" and it must be
+// visible at the moment money is about to be spent — not buried in a doc. This
+// NEVER refuses: refusing would be a second ruling nobody made.
+for (const line of probeWarningLines(/** @type {string} */ (spec.provider)) ?? []) console.error(line);
+
 let modelResolution;
 try {
   modelResolution = resolveWorkerModel({
@@ -1096,18 +1108,53 @@ if (PAUSED && RULING === null) {
 }
 
 
-// `apiKey` stays ANTHROPIC_API_KEY unconditionally — the JUDGE's own key
-// (pinned to anthropic-api regardless of the job's worker provider, PRD
-// item 28) and, for an anthropic-api job, the worker's key too, so an
-// anthropic-api job's behaviour here is byte-identical to before this
-// factory existed. `workerApiKey` below is the WORKER's own key, read
-// through the factory's provider-specific `envKey` — the same variable for
-// an anthropic-api job (no second read, no behaviour change), a distinct
-// one (`OPENAI_API_KEY`) for openai-api.
-const apiKey = process.env.ANTHROPIC_API_KEY;
-if (!apiKey) { console.error('ANTHROPIC_API_KEY not set (secrets load from the environment — never the tree)'); process.exit(2); }
-const workerApiKey = providerEntry.envKey === 'ANTHROPIC_API_KEY' ? apiKey : process.env[providerEntry.envKey];
+// TWO KEYS, TWO ROLES, AND ONLY THE ONES THIS JOB WILL USE (PRD item 31.4).
+//
+// Before this, `ANTHROPIC_API_KEY` was demanded UNCONDITIONALLY — so a green
+// job whose worker is DeepSeek or Gemini, and whose close is pure mechanical
+// commands, still hard-exited without an Anthropic key it would never spend a
+// token against. That made "provider-agnostic" half-true: you could run on
+// another provider only if you also held an Anthropic account.
+//
+// The WORKER's key comes from the provider's own `envKey` (the factory's, so
+// there is one table saying which provider reads which variable) and is
+// ALWAYS required — the worker always runs.
+//
+// The JUDGE's key is required only when the close actually judges
+// (`closeJudges`, src/kinds.js — the ONE reading of that question), and since
+// PRD item 32 the judge is no longer pinned to Anthropic: its identity is
+// RESOLVED below, and its key follows that resolved provider's own env var with
+// `JUDGE_API_KEY` as a role-named override in front. One variable used to do two
+// jobs (worker key for an anthropic-api job AND judge key for every job), which
+// was confusing while the judge was pinned and would be a plain lie now that it
+// is not.
+//
+// A green anthropic-api job's behaviour is byte-identical to before: its
+// worker key IS `ANTHROPIC_API_KEY`, demanded as ever.
+const workerApiKey = process.env[providerEntry.envKey];
 if (!workerApiKey) { console.error(`${providerEntry.envKey} not set (secrets load from the environment — never the tree)`); process.exit(2); }
+const JUDGES = closeJudges(spec.closeDecl);
+// WHICH MODEL GRADES THIS JOB (PRD item 32.1). Resolved, never pinned: the
+// spec's signed `judge: {provider, model}` if it names one, else this job's own
+// worker provider and model — so a DeepSeek or Gemini job judges on its own
+// provider and needs no second account. `resolveJudge` throws on a malformed
+// override rather than quietly falling back to the worker's; the spec validator
+// has already redded that shape, so reaching the throw means a caller skipped
+// validation.
+const judge = resolveJudge({ specJudge: spec.judge, workerProvider: spec.provider, workerModel: MODEL });
+const judgeEntry = resolveProvider(judge.provider);
+// The judge's KEY follows the RESOLVED judge provider's own env var, with
+// `JUDGE_API_KEY` as a role-named override in front of it (PRD item 32.3). The
+// override matters most in the case this item exists for: a job whose worker and
+// judge are the SAME provider but different accounts, and the anthropic case
+// where one variable used to do two jobs.
+const judgeApiKey = process.env.JUDGE_API_KEY ?? process.env[judgeEntry.envKey];
+if (JUDGES && !judgeApiKey) {
+  console.error(`This job's close JUDGES (${judgedStages(spec.closeDecl).length} judged stage(s)) and its judge is ${judge.model} on ${judge.provider}${spec.judge ? ' (signed override)' : " (this job's own worker model — no `judge` override signed)"}.`);
+  console.error(`Neither JUDGE_API_KEY nor ${judgeEntry.envKey} is set — secrets load from the environment, never the tree.`);
+  console.error('Refused at $0, BEFORE the worker spends anything: a judged run that discovers this at the close has paid for a verdict it cannot render.');
+  process.exit(2);
+}
 
 // `wd`/`spineDir` are derived once, above the resume reader that needs them; only the
 // directory's CREATION belongs here, after the preview/approval gates have exited.
@@ -1172,16 +1219,24 @@ const TIER_MODELS = modelResolution.source === 'spec' ? { ...providerEntry.tiers
 /** @type {Record<string, any>} */
 const tierCache = {};
 const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : makeProvider(spec.provider, { apiKey: workerApiKey, model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)], baseUrl }));
-/** SOFTGREEN — the JUDGED stage's own provider, and it is not the worker's. The tier
- * is PINNED (`JUDGE_MODEL`), never a step knob and never agent-selectable: §4.2's
- * safety argument is worth exactly as much as the tier its injection evidence was
- * measured on. Built UNCONDITIONALLY and deliberately so — construction costs nothing
- * and makes no call, `runPlan` reads it only when a stage is `judged-floor`, and the
- * alternative (deriving "does this close judge?" here) is a second reading of the
- * declaration that can drift from the one the runner actually executes. Absent, a
- * judged stage instrument-STOPS as a wiring gap, which is what every live softgreen
- * run would have done: run-author wired this seam and this runner never did. */
-const judgeProvider = new AnthropicProvider({ apiKey, model: JUDGE_MODEL, exposeErrorBody: true });
+/** SOFTGREEN — the JUDGED stage's own provider. Since PRD item 32.1 its identity is
+ * RESOLVED (`judge` above), not pinned: the spec's signed `judge` override, else this
+ * job's own worker model. It is still never a step knob and never agent-selectable —
+ * naming your own examiner is arbiter territory, and `judge` is a field the HUMAN
+ * signs into the hash. The `baseUrl` rides along only when the judge is the same
+ * provider as the worker: a spec's `baseUrl` is the WORKER's endpoint, and pointing a
+ * different vendor's client at it would be the silent-misconfiguration class
+ * `endpointKey` exists to prevent. Built only when `judgeApiKey` is present (PRD item
+ * 31.4 — the judge's key is demanded only when a judge is CALLED, so this construction
+ * is conditional on purpose, not unconditional): `runPlan` reads it only when a stage
+ * is `judged-floor`, and the alternative (deriving "does this close judge?" here) is a
+ * second reading of the declaration that can drift from the one the runner actually
+ * executes. Absent, a judged stage instrument-STOPS as a wiring gap, which is what
+ * every live softgreen run would have done: run-author wired this seam and this
+ * runner never did. */
+const judgeProvider = judgeApiKey
+  ? makeProvider(judge.provider, { apiKey: judgeApiKey, model: judge.model, baseUrl: judge.provider === spec.provider ? baseUrl : undefined })
+  : null;
 
 const started = Date.now();
 console.log(`\n== U run ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} · ${MODEL_LABEL}`);
@@ -1319,7 +1374,7 @@ try {
     // used (never a second `makeSpine(spineFile)` here: two independent
     // emitters against one file would both start their seq counter at 0 and
     // collide the moment either one had already written a record).
-    approvals, workdir: wd, provider, providerFor, judgeProvider, emit,
+    approvals, workdir: wd, provider, providerFor, judgeProvider, judgeModel: judge.model, emit,
     // F133 (run mtqwmb9l) — `closeTimeoutMs` is deliberately NOT passed here.
     // `RESOLVED_CLOSE_TIMEOUT_MS` above exists only to size the outside
     // watchdog before it spawns; feeding it back into `runJob` used to make
