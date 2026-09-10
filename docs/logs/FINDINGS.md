@@ -11660,3 +11660,51 @@ placement, not the content, turned out to be the problem.
 **Fix, and it is a reading habit rather than code:** a gate claim quotes the EXIT CODE and the
 LAST LINE of the output, never the pass/fail tally alone. A suite can be entirely green inside
 a run that failed.
+
+## F159 — the judged floor can only judge doc comments, so a soft-green job about anything else compiles into the wrong ruler
+
+**2026-09-10, PRD item 31.5 / 32, `feat/item-31`, authoring run `mtv8jihy`, $0.87 of a $2.50
+ceiling, spend complete.** The first soft-green job ever authored, and the first time the
+calibration gate (`src/calibrate.js`) has executed in the product's life. Patient: a copy of
+bareguard v0.15.0 (`bareloop-patients/bareguard-softgreen-gemini`, seed `3c496ab`). Worker
+`gemini-api`/`gemini-2.5-pro`, signed judge `gemini-2.5-flash`. hamr's bar (Q6): an error
+message passes if it names the offending field or value, says what shape was expected, and
+says what to do next; it fails if it only says "invalid" or leaks internals.
+
+**The gate refused, and it was right to refuse — but for a reason nobody asked it to find.**
+Calibration graded 1 of 10 cases correctly (floor 10/10), 5/5 injection styles resisted.
+Nothing was signed and nothing was run.
+
+**Cause, read from source, not inferred.** The judge's rulebook is three rules, all about
+JSDoc comments: `JUDGE_RULE_IDS = ['has-doc', 'params', 'returns']` (`src/judged.js:391`; the
+comment at `:250` says it outright — "v1 carries the doc genre"). A card item must SELECT a
+rule id, so a rule we do not own is inexpressible. hamr's three lines had nowhere to go, and
+the card compiler bent them onto doc-comment rules:
+
+- "names the field and expected shape" → `has-doc`: *the first line of the doc comment* has to name the field
+- "tells the caller what to do next" → `returns`: *the `@returns` line* has to say what to do next
+- "no internals" → `params`: *the parameter* must not have a private-looking name
+
+So the signed ruler would have graded doc comments, never error messages. The ten calibration
+cases were invented functions (`assertBudgetIsPositive`, `assertPortInRange`, …) that do not
+exist in bareguard, and their expected reds mixed the two meanings — hence the scatter
+(expected `returns`, got `params`; expected `has-doc`, got `returns`). With a card that says
+one thing and a rulebook that checks another, a 1/10 cannot be read as a judge-model score:
+whether `gemini-2.5-flash` would clear 10/10 on a card that fits its rulebook is UNMEASURED.
+
+**A second mismatch in the same close.** The close carries a `typecheck-in-scope` work stage
+(`count-not-worse`, 142 `tsc --strict` errors red at seed, baseline 0). The goal never asks for
+typing — the TYPES genre (the only genre, `src/authoring.js:516`) put it there. Had the ruler
+passed, the signed job would have demanded fixing 142 type errors nobody asked for: an unstated
+close stage, the cost hazard the goal-states-everything rule names.
+
+**What this means.** Soft-green today can judge exactly one thing: whether JS functions have
+good doc comments. Any other bar — error messages, a summary, a cover letter, a CSV — has no
+rule to land on, in a repo or out of one. This is the same hole as hamr's non-repo question
+(2026-09-10): the rulebook and the genre are code-docs-only, and widening either is a catalogue
+widening (additive; arbiter territory, hamr's go).
+
+**The good news, stated once.** The gate did its job on first contact: it refused an unsound
+ruler at $0.14 of judge calls, before a signature and before the $4 fire. PRD 31.5's "calibration
+runs end to end for the first time" is met for the AUTHORING half; the fire half is blocked on
+a card that fits a rule we own.
