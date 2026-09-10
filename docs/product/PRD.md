@@ -402,6 +402,12 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     judge-key, first-ever calibration fire)
     → **the panel (N6) — built HERE, shaped against fwdloop's UI PRD so one build fits both**
     → the reuse-lift proof LAST. See item 31.
+    **2026-09-10 — order amended, SUPERSEDES the line above** (hamr: "all comes after the
+    interview and non repo and it will determine the final shape of bareloop and fwdloop").
+    Order now: (0) ship `feat/item-31` — items 31/32 code, with 31.4/31.5's proof fires carried
+    → (1) the item 33 interview → (2) item 33 written and the bareloop/fwdloop split ruled →
+    (3) item 33 built → (4) proof fires: 31.5 calibration on a real bar, 31.4 on gemini →
+    (5) the panel (N6), shaped by 1–3 → (6) the reuse-lift proof LAST. See item 33.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
@@ -566,6 +572,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     not scheduled, as of today — not a deletion of any closed prose, an appended closure only.
     Softgreen (the judged floor) itself remains shipped and unaffected; only the doc-genre
     roadmap item ends.
+    **2026-09-10 — re-opened for discussion by item 33** (hamr: non-repo jobs are "more common
+    than you think"; the interview decides what stays here and what goes to fwdloop).
 
 31. **Item 31 — two shapes, one adapter, and the gate nobody has ever fired** (hamr,
     2026-09-09). Supersedes the first draft of this item, which was written from a STALE
@@ -585,8 +593,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | 31.1 | `hitl` is retired (v1.71 ruling; the class moved to fwdloop, item 29) but is still LIVE in the authoring menu | **CLOSED `e27a83e`.** Written as "moves into `LOCKED_CLASSES`"; built as a THIRD list instead, because locking it took its code with it. `LIVE_CLASSES` also gates `validateCloseDecl` (`src/declaredclose.js:306`) and the guard battery (`:489`), so a lock made a hitl close unvalidatable — **61 suite failures**, 57 even with the lock scoped to authoring. The three facts are now distinct: `LOCKED_CLASSES` (no battery exists — empty today), `UNLISTED_CLASSES` (`['hitl']` — built, validates, RUNS, simply never OFFERED), `MENU_CLASSES` (live minus unlisted). Read by the AUTHORING surface only, which is what keeps hitl's code alive and under test. The refusals differ by reason: locked says "wait for the rung", unlisted points at fwdloop — "wait for the rung" would be a lie for a class already built with no rung left | `runInterview({verdictType:'hitl'})` refuses; green and soft-green still `ok:true`; `tests/unlisted-classes.test.js` (13 tests, mutation-proven); hitl's own runtime suites still 37 pass |
     | 31.2 | Stale prose asserts a green-only v1 that the code does not implement | **CLOSED `437b4e4`+`724eb56`.** `src/authorjob.js:38` and `:293` rewritten to the two-shape truth (`green` deterministic + `soft-green` rubric); every other green-only claim swept | grep proves no surviving green-only assertion; fwdloop's quoted text no longer contradicts the source |
     | 31.3 | The provider table is a curated two-entry menu while `bare-agent` ships more adapter shapes than bareloop admits | **CLOSED `a48c24b`+ this commit, with a correction.** The item was written as "bare-agent ships SEVEN adapter shapes". That was a FILENAME COUNT of `node_modules/bare-agent/src/` dressed up as a fact. The EXPORT list is the truth: four real HTTP backends (`AnthropicProvider`, `OpenAIProvider`, `GeminiProvider`, `OllamaProvider`) plus `CLIPipeProvider` (already admitted) and the `FallbackProvider` composite; `provider-http.js` is a shared timeout helper and `provider-stop-reason`/`-temperature`/`-usage` are helpers too. So this item admits **one** provider, not five. hamr's ruling (2026-09-09): *"anthropic, openai, gemini drop ollama for now"*. Built: `gemini-api` on `PROVIDERS` with `GEMINI_API_KEY` and two real tiers (`gemini-2.5-pro`/`gemini-2.5-flash`); `PROBE_STATUS` + `probeWarningLines` as the machine-readable probe debt, read to WARN and never to REFUSE (refusing would be a second ruling nobody made) — the probe rule STANDS and gemini owes its fire. The endpoint half of hamr's "api + api shape + endpoint" does NOT generalize: bare-agent's constructors read it from different option names (`baseUrl` for anthropic/openai/gemini, **`url`** for Ollama) and none validate unknown option names. Measured live: `new OllamaProvider({baseUrl:X}).url` → `http://localhost:11434`, X dropped, no error — the F149 class exactly. So each table entry declares its own `endpointKey` and `makeProvider` routes through it; the job spec keeps ONE field name (`baseUrl`) and translation happens once. Ollama stays out beyond the ruling: no key, no bill, so every round prices at $0 through machinery that trusts a price | a `gemini-api` spec validates; each provider's `endpointKey` checked against the REAL constructor, plus the Ollama silent-drop measured on the dependency itself; the token-key flag exercised per backend; the launch marker tested through `probeWarningLines` (4 mutations, all caught); full suite green |
-    | 31.4 | `scripts/run-u.mjs:1107` hard-exits on a missing `ANTHROPIC_API_KEY` even for a job that never judges — a green DeepSeek run still demands an Anthropic key | a job whose `verdictType` is `green` runs with only its own provider's key; a judged job still refuses honestly and BY NAME when the judge's key is absent | both paths tested; the green-on-DeepSeek path proven with `ANTHROPIC_API_KEY` unset |
-    | 31.5 | The calibration gate (`src/calibrate.js`) is built, unit-tested and **has never executed once** — 0 of 167 runs | UNTOUCHED by this item (hamr: it is correct, it has simply never been exercised). Proven by USE, not by edit: a real soft-green job is authored and FIRED on DeepSeek so calibration runs end to end for the first time | one paid soft-green run; the calibration record exists in the spine with its 10-of-10 floor read; defects found on first real use are logged as findings, not papered over |
+    | 31.4 | `scripts/run-u.mjs:1107` hard-exits on a missing `ANTHROPIC_API_KEY` even for a job that never judges — a green DeepSeek run still demands an Anthropic key | a job whose `verdictType` is `green` runs with only its own provider's key; a judged job still refuses honestly and BY NAME when the judge's key is absent | both paths tested; the green-on-DeepSeek path proven with `ANTHROPIC_API_KEY` unset — **2026-09-10: OPEN, carried to item 33 step 4** (one green run on `gemini-api` with `ANTHROPIC_API_KEY` unset; also pays gemini's first-run debt from 31.3) |
+    | 31.5 | The calibration gate (`src/calibrate.js`) is built, unit-tested and **has never executed once** — 0 of 167 runs | UNTOUCHED by this item (hamr: it is correct, it has simply never been exercised). Proven by USE, not by edit: a real soft-green job is authored and FIRED on DeepSeek so calibration runs end to end for the first time | one paid soft-green run; the calibration record exists in the spine with its 10-of-10 floor read; defects found on first real use are logged as findings, not papered over — **2026-09-10: authoring half RAN** (run `mtv8jihy`, $0.87): first calibration ever, refused 1/10 — the rulebook is doc-comments only, so the bar compiled onto the wrong rules (F159). The fire is **carried to item 33 step 4**, on a bar the widened rulebook can express |
 
     **The judge stays pinned to `anthropic-api`/`JUDGE_MODEL` — arbiter territory, unchanged by
     this item.** A soft-green job therefore legitimately needs BOTH keys (the worker's and the
@@ -665,6 +673,50 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     never authors its close, its budget, its fence or its merge, and cannot name its own judge
     — `judge:{provider,model}` is a SIGNED spec field the human signs, exactly like the rest of
     the hash, never a drafter-selectable knob.
+
+33. **Item 33 — jobs that are not code, and a judge that can read more than doc comments**
+    (hamr, 2026-09-10). **Interview first; nothing here is locked.** It re-opens item 26's
+    2026-08-31 ruling, and its answers decide the final line between bareloop and fwdloop.
+
+    **Why now.** The first soft-green job ever authored (run `mtv8jihy`, F159) showed the judge
+    can grade exactly one thing: whether JS functions have good doc comments. Its rulebook is
+    `has-doc`/`params`/`returns` (`src/judged.js:391`). hamr's bar was about error messages, so it
+    was compiled onto doc-comment rules, and calibration refused (1/10). And hamr's point: green
+    means "a machine can check it", not "code" — a CSV cleaned to a row count is green; a resume
+    turned into a 500-word profile in 3 sections is soft-green. Both are common.
+
+    **Calibration, in plain words** (so the interview starts from the same place): before a
+    judge grades real work, it takes a test — 10 examples the signer marked pass/fail, plus 5
+    trick files that try to fool it. It must get all 10 right and resist all 5, or the job
+    cannot be signed. It checks the ruler, not the work.
+
+    **The holes** — each is a missing feature, never a workaround (hamr: "i don't want a hack";
+    a job that cannot run cleanly is logged as a hole):
+
+    | # | Hole | Blocks today |
+    |---|---|---|
+    | H0 | The judge's rulebook is doc-comments only | any soft-green bar that is not about JS doc comments — in a repo or out |
+    | H1 | Input must be a git repo with a commit | a plain folder (a CSV, a resume) |
+    | H2 | Judged paths must exist at the seed | an output file the run creates |
+    | H3 | Checks are code-only (the TYPES genre, `src/authoring.js:516`) | word count, headings, CSV rows/columns, schema |
+    | H4 | Mandatory guards are code-shaped (`no-suppressions`) | a guard like "the input was left untouched" |
+    | H5 | Authoring asks for a code language (`js`/`python`) | a job with no language |
+    | H6 | Worker verbs touch files only | outside-world input, e.g. searching flights (parked; booking is fwdloop) |
+
+    Also from `mtv8jihy`: the TYPES genre put a `tsc --strict` work stage (142 errors at seed)
+    into a close whose goal never asked for typing — the genre must never add a stage the goal
+    does not state.
+
+    **Example jobs to shape it** (hamr's): resume → 500 words in 3 sections (technical
+    competencies, soft skills, experience summary); CSV in → cleaned CSV out; flight search
+    under $500, no red-eye, judged against the stated criteria.
+
+    **The interview must settle:** which holes are bareloop's and which are fwdloop's; the
+    shape of "folder in, file out" (git as hidden plumbing or not); which judge rules to own
+    first; the non-code check and guard catalogue; whether H6 is in scope at all.
+
+    **Arbiter line.** The rulebook, the check catalogue and the guards are arbiter territory:
+    widening them is additive, hamr's go, and never agent-authored.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
