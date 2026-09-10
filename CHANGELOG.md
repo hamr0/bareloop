@@ -7,6 +7,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+## [0.24.0] — 2026-09-10
+
 ### Added
 
 - **`gemini-api` on the provider menu, ADMITTED-PENDING-PROBE** (PRD item 31.3;

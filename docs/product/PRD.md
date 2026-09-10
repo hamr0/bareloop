@@ -604,6 +604,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     2026-09-10), which un-pins the judge before the seam's first-ever firing rather than
     after it. Item 28 part (2) is closed by item 32, not by this item.
 
+    **31.1–31.3 shipped in v0.24.0, 2026-09-10.** 31.4 and 31.5 stay OPEN, carried to item 33
+    step 4.
+
 32. **Item 32 — the judge stops being a Claude judge** (hamr, 2026-09-10: *"what i care about
     is that judge becomes llm agnostic and not set to one model or provider"*). Item 28 pinned
     the judge to `anthropic-api`/`JUDGE_MODEL` as arbiter territory and item 31 left it there.
@@ -673,6 +676,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     never authors its close, its budget, its fence or its merge, and cannot name its own judge
     — `judge:{provider,model}` is a SIGNED spec field the human signs, exactly like the rest of
     the hash, never a drafter-selectable knob.
+
+    **shipped in v0.24.0, 2026-09-10.**
 
 33. **Item 33 — jobs that are not code, and a judge that can read more than doc comments**
     (hamr, 2026-09-10). **Interview first; nothing here is locked.** It re-opens item 26's
