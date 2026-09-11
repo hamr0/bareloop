@@ -35,6 +35,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
   scratch root); `scripts/run-u.mjs`'s two call sites now pass `dirname(wd)` instead of
   `wd`, so a destination inside the scratch area but outside the frozen tree is caught as
   `destination-contained` instead of slipping through.
+- **Source front door hard-line defect (PRD item 33/M2, live-proven):** every frozen
+  file's content — a folder, a single file, or a fetched URL body — is now scanned for a
+  known secret shape (the same `scanSecrets` inventory, `src/validate.js`) BEFORE
+  anything is written under `into`; a hit refuses `source-carries-secret`, naming the
+  file(s) and pattern name(s) only, never the matched text, and leaves nothing on disk.
+  Previously the door scanned only the URL string, so a plain folder or file carrying a
+  real API key (e.g. an `.env`) was frozen into the tree and committed to the hidden git
+  seed untouched.
 
 ## [0.24.0] — 2026-09-10
 

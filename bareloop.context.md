@@ -2947,9 +2947,20 @@ any file refuses the whole prep, naming every offending file) and must contain n
 repo`; that shape keeps its `--patient`, this door is for plain material). PDF and Word input
 have no reader here (hole H7, PRD item 33) — logged, not built.
 
+**Every frozen file's content is scanned for a known secret shape before anything is
+written under `into`** (a folder, a single file, or a fetched URL body — the SAME inventory
+`scanSecrets` reads, `src/validate.js`; live-proven fix — the door used to scan only the URL
+string, so a plain `.env` with a real API key was frozen into the tree and committed to the
+hidden git seed untouched). A hit refuses `source-carries-secret`, naming the file path(s)
+and the pattern name(s) only — the matched text itself never appears in the refusal, the
+manifest, or any file, and nothing is written to disk (`into` does not exist afterward). This
+is a shape-based check, not a filename denylist: a secret whose shape is not in the inventory
+(a plain database password in a `.env`, say) still passes through — a named, accepted
+residual, not this fix's job to close.
+
 **Every refusal is a named `{stop, code}`, never a throw and never silent:** `source-
 unreadable`, `source-is-repo`, `source-symlink`, `source-not-text`, `source-fetch-failed`,
-`source-fetch-timeout`, `source-fetch-oversize`, `into-exists`, `destination-output-
+`source-fetch-timeout`, `source-fetch-oversize`, `source-carries-secret`, `into-exists`, `destination-output-
 required`, `output-invalid`, `destination-in-source`, `destination-not-absolute`,
 `destination-exists`, `destination-parent-missing`, `destination-parent-unwritable`,
 `destination-contained`, `destination-output-missing`, `destination-output-empty`,

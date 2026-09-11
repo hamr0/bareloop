@@ -132,6 +132,44 @@ test('prepareSource: a folder with a NUL byte in a file refuses source-not-text,
   assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
 });
 
+test('prepareSource: a folder with a secret-shaped .env refuses source-carries-secret, into absent, the key never appears in the refusal (live-proven defect: the front door used to scan only the URL string)', async () => {
+  const source = tmp('bareloop-src-secret-folder-');
+  const fakeKey = 'sk-ant-api03-' + 'A'.repeat(60);
+  writeFileSync(join(source, '.env'), `ANTHROPIC_API_KEY=${fakeKey}\n`);
+  writeFileSync(join(source, 'clean.txt'), 'nothing to see here');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-carries-secret');
+  assert.match(r.stop, /\.env/, 'the refusal names the FILE that carried the secret');
+  assert.doesNotMatch(r.stop, new RegExp(fakeKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the matched secret text must never appear in the refusal');
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree — `.env` is never copied, never committed to the hidden seed');
+});
+
+test('prepareSource: a single-file source carrying a Gemini-shaped key refuses source-carries-secret, into absent, key never in the refusal', async () => {
+  const dir = tmp('bareloop-src-secret-file-');
+  const fakeKey = 'AIza' + 'B'.repeat(35);
+  const file = join(dir, 'config.txt');
+  writeFileSync(file, `key=${fakeKey}\n`);
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source: file, into });
+  assert.equal(r.code, 'source-carries-secret');
+  assert.match(r.stop, /config\.txt/);
+  assert.doesNotMatch(r.stop, new RegExp(fakeKey));
+  assert.ok(!existsSync(into));
+});
+
+test('prepareSource: a clean folder with no secret-shaped content still prepares (no false positive)', async () => {
+  const source = tmp('bareloop-src-clean-secret-check-');
+  writeFileSync(join(source, 'readme.txt'), 'sk- is a fine word fragment but not a real key, and this has no AIza/ghp_/AKIA shape either');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.ok(existsSync(join(into, 'tree', 'input', 'readme.txt')));
+});
+
 test('prepareSource: a symlinked file inside a folder refuses source-symlink, never followed', async () => {
   const source = tmp('bareloop-src-symlink-');
   writeFileSync(join(source, 'real.txt'), 'real');
@@ -306,6 +344,18 @@ test('prepareSource: a URL source freezes the fetched body, one 200 text respons
     assert.equal(r.stop, null, r.stop ?? undefined);
     assert.equal(r.manifest.kind, 'url');
     assert.equal(readFileSync(join(into, 'tree', 'input', 'notes.txt'), 'utf8'), 'remote body');
+  } finally { await srv.close(); }
+});
+
+test('prepareSource: a URL body carrying a secret-shaped token refuses source-carries-secret, into absent, key never in the refusal', async () => {
+  const fakeKey = 'ghp_' + 'C'.repeat(36);
+  const srv = await serverWith((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(`token=${fakeKey}`); });
+  try {
+    const into = join(tmp('bareloop-into-parent-'), 'job1');
+    const r = await prepareSource({ source: srv.url('/leak.txt'), into });
+    assert.equal(r.code, 'source-carries-secret');
+    assert.doesNotMatch(r.stop, new RegExp(fakeKey));
+    assert.ok(!existsSync(into), 'a refused prep never builds a partial tree — the fetched body is never written under `into`');
   } finally { await srv.close(); }
 });
 

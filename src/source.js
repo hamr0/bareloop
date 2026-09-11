@@ -29,7 +29,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { git } from './kinds.js';
 import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
-import { scanSecrets } from './validate.js';
+import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.js';
 
 /** @typedef {{stop: string, code: string}} SourceRefusal a named, non-throwing stop */
 
@@ -102,6 +102,34 @@ function hasNulByte(buf) {
 
 /** @param {Buffer} buf @returns {string} */
 const sha256Hex = (buf) => createHash('sha256').update(buf).digest('hex');
+
+/**
+ * Scan every frozen file's CONTENT for a known secret shape, using the SAME
+ * inventory `scanSecrets` reads (`SECRET_PATTERNS`, src/validate.js) — never
+ * a second, hand-typed pattern list. This is the fix for the live-proven
+ * defect: the front door scanned only the URL string, so a plain folder or
+ * file carrying a real API key (an `.env`, a checked-in credential) was
+ * frozen into the tree and committed to the hidden git seed untouched.
+ *
+ * Names the file(s) and the PATTERN NAME(S) only — computed by testing each
+ * pattern in isolation (never by reading `scanSecrets`' own matched text),
+ * so the actual secret substring never has to exist in a variable that could
+ * leak into a refusal, a manifest, stdout, or a log. Whole-file content is
+ * decoded and tested, never a sampled prefix (the NUL sniff samples 8KB; a
+ * secret check must not — a key can sit anywhere in a large file).
+ * @param {{rel: string, buf: Buffer}[]} files
+ * @returns {{rel: string, names: string[]}[]} one entry per file that hit,
+ *   empty when none did
+ */
+function scanFilesForSecrets(files) {
+  const hits = [];
+  for (const f of files) {
+    const text = f.buf.toString('utf8');
+    const names = SECRET_PATTERN_NAMES.filter((_, i) => SECRET_PATTERNS[i].test(text));
+    if (names.length) hits.push({ rel: f.rel, names });
+  }
+  return hits;
+}
 
 /**
  * Walk a folder recursively, refusing on the first symlink or NUL-byte file
@@ -289,6 +317,18 @@ export async function prepareSource({ source, into, destination, output, fetchTi
         return refuse('destination-in-source', `${destination} sits inside ${source} — the drop-off point may never be the material it was read from`);
       }
     }
+  }
+
+  // hard line (CLAUDE.md): secrets never enter the tree, the spine, the
+  // configs, or the ledger — an append-only log that captures a key captures
+  // it forever. Every frozen file's content is scanned BEFORE anything is
+  // written under `into` (no mkdir has run yet — a refusal here leaves
+  // nothing on disk, `into` itself included). The matched text is never
+  // read into this refusal — only the file path and the pattern name.
+  const secretHits = scanFilesForSecrets(frozen.files);
+  if (secretHits.length) {
+    const detail = secretHits.map((h) => `${h.rel} (${h.names.join(', ')})`).join('; ');
+    return refuse('source-carries-secret', `${secretHits.length} file(s) carry a known secret shape — refused before anything was written (hard line #3, secrets never enter the tree): ${detail}`);
   }
 
   const treeDir = join(intoAbs, 'tree');

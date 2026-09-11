@@ -154,6 +154,21 @@ export const SECRET_PATTERNS = [
 ];
 const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
 
+/** Human-readable name for each entry in `SECRET_PATTERNS`, SAME order, SAME
+ * length — for a caller that must name WHICH shape matched (a refusal
+ * message, an audit line) without ever printing the matched text itself. Kept
+ * beside the inventory it describes rather than hand-typed at each call site,
+ * for the same reason `scanSecrets`/`redactSecrets` are: a second, drifting
+ * copy is how a name and its pattern come apart. */
+export const SECRET_PATTERN_NAMES = [
+  'sk- prefixed API key',
+  'GitHub personal access token (ghp_)',
+  'GitHub fine-grained PAT (github_pat_)',
+  'AWS access key ID (AKIA)',
+  'Slack token (xox)',
+  'Google/Gemini API key (AIza)',
+];
+
 /**
  * Scan a RAW text stream (a spine file, a close's output, a transcript) for
  * known secret shapes and return the literal matches. The ONE spelling of the
