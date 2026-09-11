@@ -285,3 +285,12 @@ export {
 // exists so an adopter driving `bareloop run` from their own script can do so
 // without spawning `bin/bareloop.mjs` as a child process.
 export { main as cliMain } from './cli.js';
+// PRD item 33/M2 (`docs/product/ITEM33-BUILD.md`) — the source front door. A
+// plain folder, a plain file, or one URL frozen into a hidden git tree before
+// any token spends (H1's fix: the person never sees the repo), and the
+// destination proven/copied at the two moments a runner needs them ($0
+// preflight, and once on a minted green). Exported because `scripts/prep-
+// source.mjs` and `scripts/run-u.mjs` are two separate call sites reaching
+// for the SAME functions — an adopter building a third has to reach the same
+// module, not a re-derivation of it.
+export { prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest } from './source.js';
