@@ -24,8 +24,12 @@ Branch: `feat/item-33`. Builders are sonnet (strict pin); every milestone lands 
   in its source quote). Honest ceiling kept in writing: code proves a quote exists, not that
   it supports the claim; a section-content rule ("soft skills are soft skills") is separate.
 - Throwaway code, never shipped (scratchpad). Logged as a finding when M5 lands.
+- 2026-09-11: both rules built in the POC and replayed at $0 over the saved haiku facts —
+  28/28 tests; case 5 now reds for the right reason (`number-unsupported`, not the `**`
+  artifact); no honest claim in the 5 real probe rows is redded by the number rule; number
+  words ("three") are not checked (digits only).
 
-## M2 — the source front door ($0) — NEXT
+## M2 — the source front door ($0) — DONE 2026-09-11
 
 **New module `src/source.js`**, every refusal a named `{stop, code}`, never a silent fallback:
 
@@ -61,13 +65,28 @@ Branch: `feat/item-33`. Builders are sonnet (strict pin); every milestone lands 
 1. `scripts/prep-source.mjs` (new CLI): `--source --destination --into [--output name]`;
    calls `prepareSource`; prints the tree path, seed, and the exact next command
    (`run-interview` / `run-author --patient <into>/tree`). $0, no provider.
-2. `src/job.js`: optional signed job field `destination: {path, output}` — `path` absolute,
-   `output` relative and under `output/`; nested unknown keys red; covered by `jobSpecHash`
-   (the signer sees where the result goes). Carried from the draft by `assembleSpec`.
-3. `scripts/run-u.mjs`: (a) before any token, if the spec has `destination`, `proveDestination`
-   — a refusal is a named $0 stop; (b) on a minted `green` / `soft-green` verdict, `copyOut`,
-   and a spine record `destination-written {path, bytes, sha256}` or `destination-refused
-   {code, detail}`. A refused copy-out never changes the verdict (the verdict is the close's).
+2. **Manifest is the run instance; destination never signed** (mid-build correction,
+   2026-09-11, on hamr's question about export): a job spec is a repeatable SHAPE, signed
+   once (goal, checks, judge rules) — source and destination are a PER-RUN value, exactly the
+   way `bareloop run <bundle> --repo <path>` varies the repo without touching the bundle's
+   signature. Baking an absolute destination path into `job.js`/`jobSpecHash` would sign one
+   instance where the spec is meant to describe a shape. So `src/job.js`/`JOB_FIELDS`/
+   `jobSpecHash` carry NO destination field — the run instance lives entirely in the manifest
+   `prepareSource` already writes outside the tree (`kind, source, fetchedAt, files, seed,
+   destination, output`). The output's relative path (`output/<name>`) is what a LATER
+   milestone's signed close checks — nothing to add to the job schema now.
+3. `scripts/run-u.mjs`: `readSourceManifest(dirname(wd))` finds the manifest beside a
+   `prepareSource`-built patient's tree (`wd` IS `<into>/tree`, so its parent is `<into>`); a
+   patient the JOBS table points at directly carries none, and that absence IS "repo jobs
+   untouched" — nothing invents a destination for a job that never declared one. A manifest
+   that EXISTS but is unreadable/malformed is a named stop, never a silent skip.
+   `frontDoorFromManifest` reduces a present manifest to `{destination, output}` or `null`.
+   (a) before any token, when there is a front door, `proveDestination` — a refusal is a named
+   $0 stop; (b) on a minted `green` verdict (the only outcome string a graded close ever
+   mints — soft-green rides the same string, since the class lives on `spec.verdictType`,
+   never on `outcome`), `copyOut`, and a spine record `destination-written {path, bytes,
+   sha256}` or `destination-refused {code, detail}`. A refused copy-out never changes the
+   verdict (the verdict is the close's).
 4. NOT wired this milestone, named: `bareloop run` (bundle, `src/cli.js`) still requires
    `--repo`; export of a front-door job is parked to after M5.
 
@@ -75,6 +94,19 @@ Branch: `feat/item-33`. Builders are sonnet (strict pin); every milestone lands 
 local `node:http` server for the URL paths (200 text, 404, binary content-type, oversize,
 silent server → timeout refusal); every refusal code reached by a test; fail-first shown per
 changed test file. Suite, typecheck, build:types exit 0.
+
+**Landed** (`tests/source.test.js`, 29 tests, fail-first 1/1 files): every refusal code named
+above is reached — `into-exists`, `source-not-text` (folder + URL), `source-symlink`,
+`source-is-repo`, `source-fetch-failed`, `source-fetch-timeout` (injectable bound, never the
+600s production default), `source-fetch-oversize` (streamed past the REAL `MAX_BUFFER`
+ceiling, no crafted shortcut), `destination-output-required`, `destination-in-source`,
+`destination-not-absolute`, `destination-exists`, `destination-parent-missing`,
+`destination-parent-unwritable`, `destination-contained`, `destination-output-missing`,
+`destination-output-empty`, `source-manifest-invalid`. One gap, named rather than papered
+over: the two `scripts/run-u.mjs` call sites cannot be driven through the script itself
+without a live provider key past the JUDGES/key gate that runs before them (this repo makes
+no paid/model calls in its suite) — every piece of LOGIC at those call sites is proven
+directly, and one source-text test proves only that the script actually wires them.
 
 ## M3 — the intake form and confirm turn ($0 build, paid proof later)
 

@@ -7,6 +7,22 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **The source front door** (PRD item 33/M2) — a plain folder, a plain file, or one
+  `http(s)` URL now runs without a `--patient` git checkout: `prepareSource`
+  (`src/source.js`) freezes it into a hidden, scratch git tree bareloop owns (the person
+  never sees the repo), `proveDestination` proves a drop-off file is landable at $0 before
+  any token spends, and `copyOut` delivers the run's own output there once, on a minted
+  green, never overwriting. New CLI `scripts/prep-source.mjs`. `scripts/run-u.mjs` wires
+  both: a manifest-declared destination refuses before any token, and copies out on a
+  green (a refused copy-out never changes the verdict). The destination is a PER-RUN value
+  recorded in the manifest (`<into>/source.json`), never a signed job-spec field — a job
+  spec is a repeatable shape, signed once; nothing was added to `job.js`/`jobSpecHash`.
+  Exported: `prepareSource`, `proveDestination`, `copyOut`, `readSourceManifest`,
+  `frontDoorFromManifest`. `git()` (`src/kinds.js`) is now exported for reuse by this
+  module rather than re-spawned a second way.
+
 ## [0.24.0] — 2026-09-10
 
 ### Added

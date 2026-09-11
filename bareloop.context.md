@@ -2907,6 +2907,79 @@ provider but `anthropic-api`, spine bundling for `formatReplay` on the minting r
 `runid` is noted), and tarball packing — a bundle is a plain directory; use `npm pack` on it
 yourself if you want a tarball.
 
+### The source front door — a plain folder/file/URL, no `--patient` (PRD item 33/M2, `src/source.js`)
+
+A repo job still gives `runJob` a `--patient` checkout it owns. A NON-code job (a resume, a
+CSV, a page) has no repo to point at — this door is what lets it run anyway, WITHOUT the
+person ever seeing a git repo (H1's fix): the source is frozen into a hidden, scratch git
+tree bareloop creates and owns, before any token spends, so the run and its close judge the
+SAME bytes.
+
+```js
+import { prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest } from 'bareloop';
+
+const prepared = await prepareSource({
+  source: '/home/me/resume.md',        // an http(s) URL, an existing file, or an existing plain folder
+  into: '/home/me/.bareloop-jobs/j1',  // must NOT already exist — fresh, never reused
+  destination: '/home/me/profile.md',  // optional; REQUIRED together with `output`
+  output: 'output/profile.md',         // relative, under output/ — where the run writes it
+});
+// prepared.tree === '/home/me/.bareloop-jobs/j1/tree' — hand THIS to runJob as `workdir`
+// prepared.manifest.seed — the commit `seedAtHead` will read at run start
+```
+
+Or the CLI: `node scripts/prep-source.mjs --source <path-or-url> --into <dir> [--destination
+<absolute-path> --output <name>]` — prints the tree path, the seed, and the exact next command.
+
+**Layout.** `<into>/tree/input/…` is the frozen copy; `<into>/tree/output/` is empty (a
+`.gitkeep` seeds it) and is where the run writes; `<into>/source.json` is the manifest,
+OUTSIDE the tree — no worker verb can ever read or edit it. One hidden commit, authored
+`bareloop <bareloop@localhost>` with `commit.gpgsign` pinned off — never the operator's
+identity, never global git config (this repo's own tests run with an empty `HOME`).
+
+**What is admitted today (hamr: "start with already supported files").** A URL is fetched
+ONCE with plain `fetch` — no credentials, no cookies, no custom headers — under
+`PROVIDER_TIMEOUT_MS` and capped at `MAX_BUFFER`, both reused from elsewhere in this library,
+never a second number. Content-type must be `text/*`, `application/json`, or
+`application/xml`. A local file or folder must be plain text (a NUL byte in the first 8KB of
+any file refuses the whole prep, naming every offending file) and must contain no symlinks
+(named, never followed) — a folder that is itself a git repo root is refused too (`source-is-
+repo`; that shape keeps its `--patient`, this door is for plain material). PDF and Word input
+have no reader here (hole H7, PRD item 33) — logged, not built.
+
+**Every refusal is a named `{stop, code}`, never a throw and never silent:** `source-
+unreadable`, `source-is-repo`, `source-symlink`, `source-not-text`, `source-fetch-failed`,
+`source-fetch-timeout`, `source-fetch-oversize`, `into-exists`, `destination-output-
+required`, `destination-in-source`, `destination-not-absolute`, `destination-exists`,
+`destination-parent-missing`, `destination-parent-unwritable`, `destination-contained`,
+`destination-output-missing`, `destination-output-empty`, `destination-write-failed`,
+`source-manifest-unreadable`, `source-manifest-invalid`. A refusal never throws, never
+overwrites a person's file, and never lands a destination inside the run's own scratch tree
+or inside the source it was read from.
+
+**The destination is a PER-RUN value, never a signed job-spec field.** A job spec is a
+repeatable SHAPE (goal, checks, judge rules), signed once; source and destination vary per
+run — the same way `bareloop run <bundle> --repo <path>` varies the repo instance without
+touching the bundle's own signature. So `job.js`/`jobSpecHash` carry nothing about it: the
+run's own instance lives entirely in the manifest `prepareSource` writes.
+
+`scripts/run-u.mjs` reads that manifest via `readSourceManifest(dirname(workdir))` (`workdir`
+IS `<into>/tree`, so its parent is `<into>`) and reduces it with `frontDoorFromManifest`. No
+manifest → no front-door behaviour at all — every existing repo-patient job is untouched. A
+manifest that exists but cannot be read or parsed is a named stop, never a silent skip. When
+a manifest declares a destination, `proveDestination` runs BEFORE any token spends (a job
+that cannot land its output should never buy a worker turn first), and `copyOut` runs once,
+on a minted `green` — the ONE outcome string a graded close ever mints; `soft-green` jobs
+mint the same string, since the class lives on `spec.verdictType`, never on `runJob`'s
+return value. A refused copy-out is spine-recorded (`destination-refused {code, detail}`)
+beside the green it could not deliver and NEVER changes that verdict — a delivery failure is
+not a grading failure.
+
+Not wired yet, named rather than silently absent: `bareloop run` (the exported bundle CLI,
+`src/cli.js`) still requires `--repo`; a bundled front-door job is parked past PRD item
+33/M5. The intake form that lets a person fill in Source/Destination through the authoring
+interview (rather than the CLI above) is item 33/M3, not yet built.
+
 ## Architecture
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,
