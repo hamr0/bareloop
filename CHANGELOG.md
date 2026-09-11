@@ -23,6 +23,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `frontDoorFromManifest`. `git()` (`src/kinds.js`) is now exported for reuse by this
   module rather than re-spawned a second way.
 
+### Fixed
+
+- **Source front door (PRD item 33/M2 review):** `output` is now validated the ONE way
+  everywhere it is read or written (new `output-invalid` refusal) — a bare
+  `resolve(tree, output)` previously let a shape like `output/../../x` escape the frozen
+  tree; a hand-edited manifest carrying such a value is now treated as no front door at
+  all by `frontDoorFromManifest`, never handed to `copyOut` unvalidated. `prepareSource`
+  now proves the destination (`proveDestination`) BEFORE creating `into`, so a refused
+  destination leaves nothing on disk. `copyOut` takes an optional `into` (the run's
+  scratch root); `scripts/run-u.mjs`'s two call sites now pass `dirname(wd)` instead of
+  `wd`, so a destination inside the scratch area but outside the frozen tree is caught as
+  `destination-contained` instead of slipping through.
+
 ## [0.24.0] — 2026-09-10
 
 ### Added

@@ -2950,12 +2950,29 @@ have no reader here (hole H7, PRD item 33) — logged, not built.
 **Every refusal is a named `{stop, code}`, never a throw and never silent:** `source-
 unreadable`, `source-is-repo`, `source-symlink`, `source-not-text`, `source-fetch-failed`,
 `source-fetch-timeout`, `source-fetch-oversize`, `into-exists`, `destination-output-
-required`, `destination-in-source`, `destination-not-absolute`, `destination-exists`,
-`destination-parent-missing`, `destination-parent-unwritable`, `destination-contained`,
-`destination-output-missing`, `destination-output-empty`, `destination-write-failed`,
-`source-manifest-unreadable`, `source-manifest-invalid`. A refusal never throws, never
-overwrites a person's file, and never lands a destination inside the run's own scratch tree
-or inside the source it was read from.
+required`, `output-invalid`, `destination-in-source`, `destination-not-absolute`,
+`destination-exists`, `destination-parent-missing`, `destination-parent-unwritable`,
+`destination-contained`, `destination-output-missing`, `destination-output-empty`,
+`destination-write-failed`, `source-manifest-unreadable`, `source-manifest-invalid`. A
+refusal never throws, never overwrites a person's file, and never lands a destination inside
+the run's own scratch tree or inside the source it was read from.
+
+**`output` is validated the ONE way everywhere it is read or written** (`output-invalid`):
+relative, POSIX, normalized (no `..`, no empty/`.` segment), starting with `output/`, never
+the bare `output/` directory and never `output/.gitkeep`. `prepareSource` checks it before
+signing it into the manifest; `copyOut` checks it again before resolving it against the tree
+(a bare `resolve(tree, output)` would otherwise let `output/../../x` escape); a hand-edited
+manifest whose `output` fails this check is treated by `frontDoorFromManifest` as no front
+door at all, never handed to `copyOut` unvalidated.
+
+**Destination is proven at prepare time, not just in-run** (hamr's ruling: source AND
+destination are proven at job start, $0): when `destination` is given, `prepareSource` calls
+`proveDestination` BEFORE creating `into` — a refused destination leaves nothing on disk.
+`copyOut` takes an optional `into` (the run's scratch root, `<into>`, of which `tree` is the
+`tree/` subdirectory; defaults to `tree` for direct callers with no `into`) so a destination
+sitting inside the scratch area but outside the frozen tree — e.g. `<into>/profile.md` — is
+also caught as `destination-contained`, not just one strictly inside `tree`. `run-u.mjs`'s two
+call sites pass `dirname(wd)` (`wd` IS `<into>/tree`) as `into` for exactly this reason.
 
 **The destination is a PER-RUN value, never a signed job-spec field.** A job spec is a
 repeatable SHAPE (goal, checks, judge rules), signed once; source and destination vary per
