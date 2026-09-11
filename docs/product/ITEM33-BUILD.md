@@ -108,6 +108,40 @@ without a live provider key past the JUDGES/key gate that runs before them (this
 no paid/model calls in its suite) — every piece of LOGIC at those call sites is proven
 directly, and one source-text test proves only that the script actually wires them.
 
+## M2b — review fixes (hamr, 2026-09-11) — IN PROGRESS
+
+An audit after M2 (hamr: "what did you gloss over?") found a live hard-line breach and gaps.
+Rulings and the fix list, in build order (all edit `src/source.js` — ONE builder at a time):
+
+1. **Secrets never enter the tree** — BUILDING. A live smoke put a `.env` carrying an
+   `sk-ant-`-shaped key into `input/` and the hidden-git seed. Fix: every frozen file's whole
+   content (folder, file, URL body) goes through the ONE inventory (`scanSecrets`) before
+   anything is written; a hit refuses `source-carries-secret`, naming path + pattern name
+   only, nothing created on disk. Residual: a secret whose shape is not in the inventory.
+2. **`.env` refused by name** (`.env`, `.env.*`), whatever its content (hamr: yes).
+3. **16 MB cap PER FILE** (`MAX_BUFFER`, reused) for folder files and single files; the URL
+   body already has it. No folder-total cap (hamr's call).
+4. **Date in the delivered name** — `output/profile.md` lands as `profile-YYYY-MM-DD.md` at
+   the destination; a same-day second delivery gets `-2`, `-3` (the work-branch rule). Never
+   overwrites. The spine records the real path.
+5. **Redirects visible** — the final URL after redirects is recorded in the manifest and
+   printed, so a login page cannot become the source unnoticed.
+6. **The seed holds every copied file** — a `.gitignore` inside the source must not drop files
+   from the seed (manifest file list == `git ls-tree` of the seed, checked); a nested `.git`
+   anywhere below the root refuses `source-nested-repo`.
+7. **Repo in, file out** (hamr: yes — the PR-review job) — a repo source is COPIED with its
+   history (never used in place), gets the same `output/`, manifest, destination and copy-out.
+   Its guards (the repo stays untouched) come with M4.
+8. **The folder note** (hamr): `prep-source` prints, whenever the source is a folder: "make a
+   new folder, put only the file(s) this job needs in it, point bareloop at that — never your
+   original folder". Same line in `bareloop.context.md`; the panel (N6) shows it beside the
+   Source field.
+
+Also owed: the PRD item 33 tick for M1/M2/M2b, and a FINDINGS entry for the M1 citation POC
+and the M2 secrets breach. Honest status of M2: built and unit/smoke-proven; it cannot run as
+a real job until M3 (the form) and M4 (non-code checks) exist; the run-u wiring is proven by
+source text only until the first real run.
+
 ## M3 — the intake form and confirm turn ($0 build, paid proof later)
 
 The six fields (Goal / Source / Destination / What success looks like / Guardrails / Judge
