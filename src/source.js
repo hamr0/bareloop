@@ -52,6 +52,44 @@ const TEXT_CONTENT_TYPES = [/^text\//, /^application\/json/, /^application\/xml/
 /** @param {string} code @param {string} stop @returns {SourceRefusal} */
 const refuse = (code, stop) => ({ stop, code });
 
+/**
+ * Validate an `output` value the ONE way, everywhere it is read or written —
+ * mutation review finding (PRD item 33/M2 fixes): `prepareSource` is about to
+ * SIGN a value into a fresh manifest, and `copyOut`/`frontDoorFromManifest`
+ * may be reading one back off a manifest a person can hand-edit; the same
+ * string hurts either caller the same way (`output/../../x` resolves,
+ * `resolve(tree, output)`, to a path OUTSIDE the tree, and `copyOut` would
+ * then happily read whatever sits there). One validator, one refusal code,
+ * used by all three.
+ * @param {unknown} output
+ * @returns {{stop: null}|SourceRefusal}
+ */
+function validateOutput(output) {
+  if (typeof output !== 'string' || output.length === 0) {
+    return refuse('output-invalid', 'output must be a non-empty relative path');
+  }
+  if (output.includes('\\')) {
+    return refuse('output-invalid', `${output} must be a POSIX path — no backslashes`);
+  }
+  if (output.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(output)) {
+    return refuse('output-invalid', `${output} must be relative, never absolute`);
+  }
+  const segments = output.split('/');
+  if (segments.some((s) => s === '' || s === '.' || s === '..')) {
+    return refuse('output-invalid', `${output} must be a normalized path — no empty, "." or ".." segments`);
+  }
+  if (segments[0] !== 'output') {
+    return refuse('output-invalid', `${output} must start with "output/" — the run's own output directory, never anywhere else in the tree`);
+  }
+  if (segments.length === 1) {
+    return refuse('output-invalid', 'output must name a FILE under output/, never the bare "output" directory itself');
+  }
+  if (output === 'output/.gitkeep') {
+    return refuse('output-invalid', 'output/.gitkeep is the seed placeholder that makes the empty directory exist in git — never a delivered file');
+  }
+  return { stop: null };
+}
+
 /** @param {Buffer} buf @returns {boolean} */
 function hasNulByte(buf) {
   // "first 8 KB" (PRD/M2 text) — a NUL anywhere further in a huge log-shaped
@@ -188,6 +226,18 @@ export async function prepareSource({ source, into, destination, output, fetchTi
   const intoAbs = resolve(into);
   if (existsSync(intoAbs)) {
     return refuse('into-exists', `${intoAbs} already exists — a source door writes a FRESH tree, never reuses one (the export worktree rule)`);
+  }
+  // hamr's ruling (PRD item 33): source AND destination are proven at job
+  // start, $0 — and review finding #2 sharpens WHEN: before `into` is
+  // created, never after, so a refused destination leaves nothing on disk
+  // (no half-built tree for a job that was never going to be able to land
+  // its result). Order matters here: this runs before any source is read,
+  // fetched, or walked.
+  if (destination !== undefined) {
+    const ov = validateOutput(output);
+    if (ov.stop !== null) return ov;
+    const dp = await proveDestination(destination, { into: intoAbs });
+    if (dp.stop !== null) return dp;
   }
 
   const isUrl = /^https?:\/\//i.test(source);
@@ -329,11 +379,20 @@ export async function proveDestination(destination, { into }) {
  * minted green only. This function renders no verdict and changes none: a
  * refusal here is reported beside the green it could not deliver, never
  * folded back into it.
- * @param {{tree: string, output: string, destination: string}} o
+ * `into`, when given, is the run's own SCRATCH ROOT (`prepareSource`'s
+ * `into`, of which `tree` is the `tree/` subdirectory) — review finding #3:
+ * a destination sitting inside `<into>` but outside `tree` (e.g. dropped
+ * straight in the scratch area, never inside the frozen tree) must still
+ * refuse `destination-contained`, which a containment check against `tree`
+ * alone cannot see. Omitted, it defaults to `tree` (the pre-fix behaviour),
+ * for direct callers that only ever had a tree, never an `into`.
+ * @param {{tree: string, into?: string, output: string, destination: string}} o
  * @returns {Promise<{stop: null, bytes: number, sha256: string}|SourceRefusal>}
  */
-export async function copyOut({ tree, output, destination }) {
-  const prove = await proveDestination(destination, { into: tree });
+export async function copyOut({ tree, into, output, destination }) {
+  const ov = validateOutput(output);
+  if (ov.stop !== null) return ov;
+  const prove = await proveDestination(destination, { into: into ?? tree });
   if (prove.stop !== null) return prove;
   const outputPath = resolve(tree, output);
   let buf;
@@ -343,6 +402,12 @@ export async function copyOut({ tree, output, destination }) {
   if (buf.length === 0) {
     return refuse('destination-output-empty', `${output} exists but is empty — an empty file is not a delivered result`);
   }
+  // `COPYFILE_EXCL` is the race backstop for a file that appears between
+  // `proveDestination` above and this line — `proveDestination` already
+  // refuses an EXISTING file, so this flag is untestable without actually
+  // winning a filesystem race (spawning a second writer timed to land inside
+  // that window); a mutation that drops it survives every test in this file
+  // for exactly that reason, and is a known, accepted survivor, not a gap.
   try {
     await copyFile(outputPath, destination, fsConstants.COPYFILE_EXCL);
   } catch (e) {
@@ -404,7 +469,11 @@ export async function readSourceManifest(into) {
 export function frontDoorFromManifest(read) {
   if (!read.present || !read.manifest) return null;
   const { destination, output } = read.manifest;
-  return typeof destination === 'string' && destination && typeof output === 'string' && output
-    ? { destination, output }
-    : null;
+  if (typeof destination !== 'string' || !destination) return null;
+  // review finding #1: the manifest is hand-editable — a shape a person (or
+  // a bug) put there that would let `output` escape the tree (`../../x`, an
+  // absolute path, the bare `output/` directory) is treated the SAME as no
+  // output declared at all, never passed through to `copyOut` unvalidated.
+  if (validateOutput(output).stop !== null) return null;
+  return { destination, output };
 }

@@ -1314,8 +1314,12 @@ if (sourceManifest.stop !== null) {
 const frontDoor = frontDoorFromManifest(sourceManifest);
 if (frontDoor) {
   // BEFORE ANY TOKEN (hamr's ruling, PRD item 33): a job that cannot land its
-  // output should never buy a worker turn first.
-  const dp = await proveDestination(frontDoor.destination, { into: wd });
+  // output should never buy a worker turn first. `into: dirname(wd)` — review
+  // finding #3 — NOT `wd`: `wd` IS `<into>/tree`, so proving containment
+  // against `wd` alone let a destination at `<into>/profile.md` (inside the
+  // run's own scratch area, outside the frozen tree, but still bareloop's
+  // own scratch plumbing no destination should land in) slip through clean.
+  const dp = await proveDestination(frontDoor.destination, { into: dirname(wd) });
   if (dp.stop !== null) {
     emit('destination-refused', { code: dp.code, detail: dp.stop });
     emit('run-end', { outcome: 'escalated' });
@@ -1621,7 +1625,10 @@ if (outcome === HITL_PAUSE) {
 // and NEVER changes `outcome` — the verdict is the close's, never this
 // module's to touch.
 if (outcome === 'green' && frontDoor) {
-  const co = await copyOut({ tree: wd, output: frontDoor.output, destination: frontDoor.destination });
+  // `into: dirname(wd)` — same review finding #3 fix as the preflight above,
+  // so the two proofs of the same destination never disagree on what counts
+  // as "contained".
+  const co = await copyOut({ tree: wd, into: dirname(wd), output: frontDoor.output, destination: frontDoor.destination });
   if (co.stop === null) {
     emit('destination-written', { path: frontDoor.destination, bytes: co.bytes, sha256: co.sha256 });
     console.log(`\nDESTINATION  written — ${frontDoor.destination} (${co.bytes}B, sha256 ${co.sha256.slice(0, 12)}…)`);

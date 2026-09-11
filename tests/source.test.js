@@ -100,6 +100,17 @@ test('prepareSource: a single file source freezes as one file under tree/input',
   assert.equal(r.manifest.kind, 'file');
 });
 
+test('prepareSource: a single binary file source refuses source-not-text (mutation gap — the single-file path has its own hasNulByte check, distinct from the folder-walk one)', async () => {
+  const dir = tmp('bareloop-src-file-bin-');
+  const file = join(dir, 'photo.bin');
+  writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x00, 0x47]));
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source: file, into });
+  assert.equal(r.code, 'source-not-text');
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
+});
+
 test('prepareSource: into already existing refuses into-exists, $0, before touching the source', async () => {
   const source = tmp('bareloop-src-');
   writeFileSync(join(source, 'a.txt'), 'x');
@@ -125,6 +136,19 @@ test('prepareSource: a symlinked file inside a folder refuses source-symlink, ne
   const source = tmp('bareloop-src-symlink-');
   writeFileSync(join(source, 'real.txt'), 'real');
   symlinkSync(join(source, 'real.txt'), join(source, 'link.txt'));
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-symlink');
+  assert.ok(!existsSync(into));
+});
+
+test('prepareSource: the SOURCE ITSELF being a symlink refuses source-symlink, never followed (mutation gap — distinct from a symlink found INSIDE a walked folder)', async () => {
+  const real = tmp('bareloop-src-symlink-real-');
+  writeFileSync(join(real, 'a.txt'), 'x');
+  const parent = tmp('bareloop-src-symlink-parent-');
+  const source = join(parent, 'link-to-real');
+  symlinkSync(real, source, 'dir');
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
   const r = await prepareSource({ source, into });
@@ -173,6 +197,105 @@ test('prepareSource: a legal destination/output pair rides into the manifest', a
   assert.equal(r.manifest.output, 'output/result.md');
 });
 
+// ── review finding #1: ONE output validator, used at every seam ───────────
+
+test('prepareSource: an output escaping the tree with ".." refuses output-invalid, before touching the source', async () => {
+  const source = tmp('bareloop-src-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  const destination = join(tmp('bareloop-dest-parent-'), 'out.txt');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into, destination, output: 'output/../../x' });
+  assert.equal(r.code, 'output-invalid');
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
+});
+
+test('prepareSource: an absolute output refuses output-invalid', async () => {
+  const source = tmp('bareloop-src-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  const destination = join(tmp('bareloop-dest-parent-'), 'out.txt');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into, destination, output: '/etc/passwd' });
+  assert.equal(r.code, 'output-invalid');
+});
+
+test('prepareSource: an output pointing at input/ instead of output/ refuses output-invalid', async () => {
+  const source = tmp('bareloop-src-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  const destination = join(tmp('bareloop-dest-parent-'), 'out.txt');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into, destination, output: 'input/a.txt' });
+  assert.equal(r.code, 'output-invalid');
+});
+
+test('prepareSource: a bare "output/" with no filename refuses output-invalid', async () => {
+  const source = tmp('bareloop-src-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  const destination = join(tmp('bareloop-dest-parent-'), 'out.txt');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into, destination, output: 'output/' });
+  assert.equal(r.code, 'output-invalid');
+});
+
+test('prepareSource: a good "output/profile.md" passes validation clean', async () => {
+  const source = tmp('bareloop-src-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  const destination = join(tmp('bareloop-dest-parent-'), 'profile.md');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into, destination, output: 'output/profile.md' });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+});
+
+test('copyOut: an output escaping the tree with ".." refuses output-invalid, never reads outside the tree', async () => {
+  const tree = tmp('bareloop-tree-');
+  mkdirSync(join(tree, 'output'), { recursive: true });
+  // a file OUTSIDE the tree that a "../.." escape could otherwise reach
+  const outsideDir = dirname(tree);
+  writeFileSync(join(outsideDir, 'secret.txt'), 'must never be read');
+  const destination = join(tmp('bareloop-dest-'), 'out.txt');
+
+  const r = await copyOut({ tree, output: 'output/../../secret.txt', destination });
+  assert.equal(r.code, 'output-invalid');
+  assert.ok(!existsSync(destination), 'nothing was copied');
+});
+
+test('frontDoorFromManifest: a hand-edited manifest with an escaping output is treated as no front door (never handed to copyOut unvalidated)', () => {
+  assert.equal(frontDoorFromManifest({ present: true, manifest: { destination: '/x/out.txt', output: '../../etc/passwd' } }), null);
+  assert.equal(frontDoorFromManifest({ present: true, manifest: { destination: '/x/out.txt', output: 'output' } }), null);
+});
+
+// ── review finding #2: destination proven at SETUP time, not just in-run ──
+
+test('prepareSource: an already-existing destination refuses destination-exists at prepare time, and `into` is never created', async () => {
+  const source = tmp('bareloop-src-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  const destParent = tmp('bareloop-dest-parent-');
+  const destination = join(destParent, 'already-there.md');
+  writeFileSync(destination, 'do not touch');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into, destination, output: 'output/already-there.md' });
+  assert.equal(r.code, 'destination-exists');
+  assert.ok(!existsSync(into), 'a refused destination leaves nothing on disk — a refused prep never builds a tree');
+});
+
+// ── review finding #3: destination proven against the SCRATCH ROOT, not just the tree ──
+
+test('copyOut: a destination inside `into` but outside `tree` refuses destination-contained', async () => {
+  const into = tmp('bareloop-into-');
+  const tree = join(into, 'tree');
+  mkdirSync(join(tree, 'output'), { recursive: true });
+  writeFileSync(join(tree, 'output', 'result.md'), 'hi');
+  const destination = join(into, 'profile.md'); // inside `into`, outside `tree` — the gap this closes
+
+  const r = await copyOut({ tree, into, output: 'output/result.md', destination });
+  assert.equal(r.code, 'destination-contained');
+});
+
 // ── prepareSource: URL source, real local HTTP server ────────────────────
 
 test('prepareSource: a URL source freezes the fetched body, one 200 text response', async () => {
@@ -183,6 +306,19 @@ test('prepareSource: a URL source freezes the fetched body, one 200 text respons
     assert.equal(r.stop, null, r.stop ?? undefined);
     assert.equal(r.manifest.kind, 'url');
     assert.equal(readFileSync(join(into, 'tree', 'input', 'notes.txt'), 'utf8'), 'remote body');
+  } finally { await srv.close(); }
+});
+
+test('prepareSource: a URL carrying embedded credentials refuses BEFORE any fetch — the server proves it never saw a request (mutation gap)', async () => {
+  let requestsSeen = 0;
+  const srv = await serverWith((req, res) => { requestsSeen++; res.writeHead(200, { 'content-type': 'text/plain' }); res.end('should never be reached'); });
+  try {
+    const into = join(tmp('bareloop-into-parent-'), 'job1');
+    const url = `http://user:pass@127.0.0.1:${srv.port}/x`;
+    const r = await prepareSource({ source: url, into });
+    assert.equal(r.code, 'source-unreadable');
+    assert.equal(requestsSeen, 0, 'no request may reach the server once credentials are found in the URL');
+    assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
   } finally { await srv.close(); }
 });
 
@@ -392,9 +528,9 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
   const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
   assert.match(src, /import\s*\{\s*readSourceManifest,\s*frontDoorFromManifest,\s*proveDestination,\s*copyOut\s*\}\s*from\s*'\.\.\/src\/source\.js'/);
   assert.match(src, /const sourceManifest = await readSourceManifest\(dirname\(wd\)\)/, 'the manifest must be read from the tree\'s own parent, before any token spends');
-  assert.match(src, /const dp = await proveDestination\(frontDoor\.destination, \{ into: wd \}\)/, 'the $0 preflight stop');
+  assert.match(src, /const dp = await proveDestination\(frontDoor\.destination, \{ into: dirname\(wd\) \}\)/, 'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
   assert.match(src, /if \(outcome === 'green' && frontDoor\)/, 'the copy-out gate fires on the ONE outcome string a graded close mints');
-  assert.match(src, /const co = await copyOut\(\{ tree: wd, output: frontDoor\.output, destination: frontDoor\.destination \}\)/, 'the copy-out call site');
+  assert.match(src, /const co = await copyOut\(\{ tree: wd, into: dirname\(wd\), output: frontDoor\.output, destination: frontDoor\.destination \}\)/, 'the copy-out call site, same scratch-root containment proof');
   assert.match(src, /emit\('destination-written'/);
   assert.match(src, /emit\('destination-refused'/);
 });
