@@ -49,7 +49,7 @@ const GIT_IDENTITY = ['-c', 'user.name=bareloop', '-c', 'user.email=bareloop@loc
  * checking this list against that ruling should find it there verbatim. */
 const TEXT_CONTENT_TYPES = [/^text\//, /^application\/json/, /^application\/xml/];
 
-/** @param {string} s @returns {SourceRefusal} */
+/** @param {string} code @param {string} stop @returns {SourceRefusal} */
 const refuse = (code, stop) => ({ stop, code });
 
 /** @param {Buffer} buf @returns {boolean} */
@@ -168,12 +168,14 @@ async function fetchOnce(url, timeoutMs) {
  * tree with a neutralized identity; the seed sha rides in the manifest and is
  * what every close in this run measures against (`seedAtHead`, src/kinds.js).
  *
- * `destination`/`output`, when given, are recorded in the manifest as the
- * job's declared drop-off point — the SAME shape `job.js`'s `destination`
- * field validates (`path` absolute, `output` relative under `output/`) —
- * required TOGETHER like `judge`'s provider/model (job.js): a destination
- * with no output name, or an output name with nowhere to land, is a state
- * nobody can act on honestly.
+ * `destination`/`output`, when given, are recorded in the manifest (never in
+ * a signed job spec — a job spec is a repeatable SHAPE, source/destination a
+ * PER-RUN value, see `readSourceManifest`'s own comment) as the run's
+ * declared drop-off point — `destination` absolute, `output` relative under
+ * `output/`. Required TOGETHER, the same shape `job.js`'s `judge` field
+ * requires its provider/model together: a destination with no output name,
+ * or an output name with nowhere to land, is a state nobody can act on
+ * honestly.
  * @param {{source: string, into: string, destination?: string, output?: string,
  *   fetchTimeoutMs?: number}} args `fetchTimeoutMs` is test-only — production
  *   callers omit it and get `PROVIDER_TIMEOUT_MS`.
