@@ -166,7 +166,7 @@ the M2 secrets breach, and the M2b hooks breach. Honest status of M2/M2b: built 
 unit/smoke-proven; it cannot run as a real job until M3 (the form) and M4 (non-code checks)
 exist; the run-u wiring is proven by source text only until the first real run.
 
-## Destination model corrected (hamr, 2026-09-12) — REWORK OWED, NOT STARTED
+## Destination model corrected (hamr, 2026-09-12) — REWORK DONE 2026-09-12
 
 hamr ruled the Destination model tonight, in conversation, and explicitly approved recording
 it. Condensed, keeping his framing:
@@ -191,41 +191,68 @@ it. Condensed, keeping his framing:
   whose output lands in the repo at the destination path.
 - Non-repo jobs keep the same shape, on a fresh folder with hidden git that bareloop owns.
 
-**REWORK OWED — what the M2/M2b door got wrong and must change** (this reworks only the NEW
-non-repo door built in M2/M2b; the existing repo flow is untouched, which is how every green job
-to date ran):
+**REWORK DONE — what the M2/M2b door got wrong, and what changed** (this reworks only the NEW
+non-repo door built in M2/M2b; the existing repo flow's OWN semantics — `writeScope` as the
+fence — are untouched, which is how every green job to date ran):
 
-1. `destination` is validated as a single FILE path — it must become a directory path.
-2. `proveDestination` refuses a destination that already exists (`destination-exists`) — a
-   directory that already exists must be legal.
-3. `prepareSource` refuses a destination inside the source (`destination-in-source`) — that
-   must be legal (it is the same-dir case), at minimum for repo jobs.
-4. `copyOut`/`output` handle exactly ONE file and must handle several, with the agent naming
-   them (meaningful + timestamped).
+1. **DONE.** `destination` is a DIRECTORY now, not a single FILE path — `proveDestination`
+   proves the directory is usable (exists as a directory and writable, or creatable); it no
+   longer knows or cares about individual delivered file names, since those are not known
+   until the run produces them.
+2. **DONE.** A destination directory that already exists is legal (`destination-exists` is
+   retired as a prepare-time refusal for the destination itself — it survives only as
+   `copyOut`'s per-file same-day-slot exhaustion refusal, at delivery time). An existing
+   non-directory at the destination path refuses the new `destination-not-directory`.
+3. **DONE.** `destination-in-source` is gone — a destination inside the source (the same-dir
+   case) is legal for every kind, not just repo jobs.
+4. **DONE.** `copyOut` no longer takes an `output` parameter at all — it lists `tree/output/`
+   itself and delivers every non-empty file found there (excluding `output/.gitkeep`), each
+   under its own dated name via the SAME `datedDestination`/`pickDelivery` machinery (M2b item
+   4, unchanged). Returns `{files: [{path, bytes, sha256}]}` instead of a single object. The
+   single-file `output` manifest field and its `output-invalid` validator are removed entirely
+   — the escape vector they guarded (`output/../../x`) is now closed structurally, since
+   `copyOut` never reads a manifest-declared path.
+5. **DONE, repo destination.** A `kind: 'repo'` source's `destination` is recorded as the
+   declared WRITE FENCE and is never proven as a filesystem directory or copied into —
+   `frontDoorFromManifest` returns `null` for a repo manifest, so `proveDestination`/`copyOut`
+   never run against it. Wiring it into the signed `writeScope` field (`src/job.js:363`) is
+   explicitly left to M3/M4 — not built this session.
 
-The dated-name machinery already built (`datedDestination`/`pickDelivery`, M2b item 4) is the
-right idea and survives — it is the single-file, must-not-exist, outside-the-source assumptions
-underneath it that do not. NOT started, awaiting hamr's go.
+The dated-name machinery already built (`datedDestination`/`pickDelivery`, M2b item 4) survived
+unchanged, exactly as predicted — it was the single-file, must-not-exist, outside-the-source
+assumptions AROUND it that needed to go.
 
-**REWORK OWED, cont. — two more found by a live smoke of the repo-source path, 2026-09-12:**
+**F164/F165 — CLOSED 2026-09-12, D1 rework ("copy only what git tracks", hamr's ruling verbatim):**
 
-5. **Repo sources are refused on any real JS repo carrying `node_modules`** (F164). The
-   symlink refusal (`source-symlink`) was written for the plain-folder path, where a symlink
-   can silently widen the frozen copy; inside a repo source the same check fires on ordinary
-   npm `.bin` symlinks, so essentially every real JS repo with dependencies installed is
-   refused before anything is copied. No fixture repo in `tests/source.test.js` has
-   `node_modules`, so unit tests never saw it. OPEN — awaiting a deliberate decision (exempt
-   `node_modules` for repo sources, or scope the symlink refusal to plain-folder sources only),
-   not a reflexive patch.
-6. **The seed force-add (M2b fix 6, `git add -f`) freezes gitignored content into the copied
-   tree for repo sources** (F165). Correct for a plain folder (nothing is gitignored there
-   yet); wrong for a repo, where `-f` forces in everything the SOURCE repo chose to ignore —
-   live-proven on a real repo where `.claude/remember/AGENT_RULES.md` and
-   `.claude/settings.local.json` landed in the seed. On a JS repo the same path would force in
-   `node_modules`; against the hard line, a gitignored `.env` reaches the seed by this route,
-   upstream of the F162 content-secret-scan. OPEN — hamr asked to rule between "copy only what
-   git already tracks" (drop `-f` for repo sources) and "copy everything, keep ignored files
-   out of the seed commit specifically." NOT started.
+5. **Repo sources are refused on any real JS repo carrying `node_modules`** (F164) — CLOSED.
+   Repo sources are now enumerated with `git ls-files --stage` in the source, never a
+   filesystem walk. `node_modules/.bin/*` symlinks are untracked in any real JS repo and are
+   therefore never a candidate for the walk at all — the symlink refusal now only ever fires
+   on a TRACKED symlink resolving outside the source root. Re-run live against the exact repo
+   that broke this (`~/PycharmProjects/adaptlearn`, 15 MB, `node_modules` present): see D4
+   below — it now copies cleanly.
+6. **The seed force-add froze gitignored content into the copied tree for repo sources**
+   (F165) — CLOSED. hamr ruled "copy only what git tracks" (Option 1, verbatim). `git add -A`
+   drops `-f` for repo sources (kept for plain folder/file/URL sources, where a `.gitignore`
+   has no honest meaning yet); since only tracked files are ever candidates for the copy at
+   all, nothing gitignored in the source repo (`node_modules`, a gitignored `.env`, this
+   repo's own `.claude/`) can reach the tree or the seed by any route.
+
+**D2 — the F166 residual, CLOSED 2026-09-12:** every frozen file's content is now scanned for
+secrets, binary files included — the same `SECRET_PATTERNS` inventory, decoded `latin1`
+(byte-preserving) rather than `utf8` so an ASCII key inside a compiled artifact still matches.
+This only matters where binaries are admitted at all (a repo source; a plain folder/file still
+refuses binary content outright via `source-not-text`, unchanged).
+
+**D4 — measuring a real large repo, 2026-09-12 (the measurement F166's "unmeasured" note
+asked for):** `node scripts/prep-source.mjs --source ~/PycharmProjects/adaptlearn --into <dir>`
+— the exact 15 MB repo that refused outright under F164 — now completes cleanly: **1296 files,
+3,162,813 bytes (3.16 MB, less than the raw 15 MB since only TRACKED content is copied), 0.89s
+elapsed wall, ~104% CPU, 83,752 KB (~84 MB) maximum resident set size.** Verified: the copied
+tree's file count matches `git ls-files` in the source exactly (1296); no `node_modules`,
+`.env`, or `.claude/settings.local.json` (all gitignored in that repo) reached the copied tree
+or the hidden-git seed. No size cap is added — the numbers are unremarkable for a repo this
+size, and hamr rules on any future ceiling, not this session.
 
 ## Live smoke, 2026-09-12 (M2b, hands-on after the fix list landed)
 
@@ -260,6 +287,11 @@ this session.
 was refused before any copying began (F164), so the deliberate absence of a per-file size cap
 for repo sources (M2b fix 3) has never been exercised at a size where it would matter. This
 stays open until a repo source can get past F164 far enough to be sized.
+
+> **2026-09-12, later the same day — pointer, not a rewrite of the record above:** F164 and
+> F165 are CLOSED by the D1 rework ("Destination model corrected" section, above); D4 there
+> records the same repo (`adaptlearn`) now measured cleanly. This paragraph and the ones above
+> it are left exactly as the live smoke found them — the historical record of what broke.
 
 ## M3 — the intake form and confirm turn ($0 build, paid proof later)
 
