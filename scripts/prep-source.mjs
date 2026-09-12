@@ -10,13 +10,14 @@
 //
 // usage:
 //   node scripts/prep-source.mjs --source <path-or-url> --into <dir> \
-//     [--destination <absolute-path> --output <name>]
+//     [--destination <absolute-directory>]
 //
-// --destination and --output are signed TOGETHER (a destination with no
-// output name, or an output name with nowhere to land, is a state nobody can
-// act on) — see `docs/product/ITEM33-BUILD.md`'s M2 correction: the
-// destination is a PER-RUN value recorded in the manifest, never a signed
-// job-spec field.
+// D3 rework (hamr's ruling, 2026-09-12, `docs/product/ITEM33-BUILD.md`):
+// destination is a DIRECTORY, never a filename — the job's output files are
+// named by the agent and delivered from `output/` on a green, so there is no
+// `--output` flag any more. `--destination` is optional on its own now (it
+// used to be signed together with `--output`); the destination is a PER-RUN
+// value recorded in the manifest, never a signed job-spec field.
 
 import { resolve } from 'node:path';
 import { prepareSource } from '../src/source.js';
@@ -31,23 +32,16 @@ const arg = (name) => {
 const source = arg('source');
 const into = arg('into');
 const destination = arg('destination');
-const outputName = arg('output');
 
 if (!source || !into) {
   console.error('prep-source: --source and --into are required\n'
-    + '  usage: node scripts/prep-source.mjs --source <path-or-url> --into <dir> [--destination <absolute-path> --output <name>]');
-  process.exitCode = 2;
-} else if ((destination === null) !== (outputName === null)) {
-  console.error('prep-source: --destination and --output are signed together — give both or neither '
-    + '(a destination with no output name, or an output name with nowhere to land, is a state nobody can act on)');
+    + '  usage: node scripts/prep-source.mjs --source <path-or-url> --into <dir> [--destination <absolute-directory>]');
   process.exitCode = 2;
 } else {
-  const output = outputName === null ? undefined : `output/${outputName}`;
   const result = await prepareSource({
     source,
     into,
     ...(destination === null ? {} : { destination: resolve(destination) }),
-    ...(output === undefined ? {} : { output }),
   });
   if (result.stop !== null) {
     console.error(`prep-source: REFUSED — ${result.code}: ${result.stop}`);
@@ -65,7 +59,9 @@ if (!source || !into) {
       console.log(`redirected  ${result.manifest.source}\n         →  ${result.manifest.finalUrl}   (CHECK this is the page you meant — a redirect can land on a login or error page)`);
     }
     if (result.manifest.destination) {
-      console.log(`destination  ${result.manifest.destination}  (output/  ${result.manifest.output})`);
+      console.log(result.manifest.kind === 'repo'
+        ? `destination  ${result.manifest.destination}  (a repo source's destination is the WRITE FENCE — wiring into writeScope lands in a later milestone; nothing is copied out by this door for a repo source)`
+        : `destination  ${result.manifest.destination}  (every non-empty file under output/ is delivered here, each under its own dated name, on a minted green)`);
     }
     // M2b fix 8 (hamr's ruling, verbatim in substance): the blast radius of a
     // folder source is the whole folder — everything in it is frozen, read and

@@ -2919,17 +2919,16 @@ SAME bytes.
 import { prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest } from 'bareloop';
 
 const prepared = await prepareSource({
-  source: '/home/me/resume.md',        // an http(s) URL, an existing file, or an existing plain folder
-  into: '/home/me/.bareloop-jobs/j1',  // must NOT already exist — fresh, never reused
-  destination: '/home/me/profile.md',  // optional; REQUIRED together with `output`
-  output: 'output/profile.md',         // relative, under output/ — where the run writes it
+  source: '/home/me/resume.md',           // an http(s) URL, an existing file, or an existing plain folder/repo
+  into: '/home/me/.bareloop-jobs/j1',     // must NOT already exist — fresh, never reused
+  destination: '/home/me/profile-drafts', // optional — a DIRECTORY (D3), need not exist or be empty
 });
 // prepared.tree === '/home/me/.bareloop-jobs/j1/tree' — hand THIS to runJob as `workdir`
 // prepared.manifest.seed — the commit `seedAtHead` will read at run start
 ```
 
 Or the CLI: `node scripts/prep-source.mjs --source <path-or-url> --into <dir> [--destination
-<absolute-path> --output <name>]` — prints the tree path, the seed, and the exact next command.
+<absolute-directory>]` — prints the tree path, the seed, and the exact next command.
 
 > **If your source is a folder, read this first (hamr's ruling):** make a new folder, put
 > only the file(s) this job needs in it, point bareloop at that — never your original
@@ -2964,8 +2963,27 @@ worker gets a real repo to review. Its guards (the input stays untouched) arrive
 `.git` that is a FILE, not a directory — a linked worktree or a submodule — refuses
 `source-is-linked-worktree`: its real git directory lives elsewhere, and a copy would
 silently commit into the original. Text-only and the per-file ceiling do not apply to a repo
-source (a real repo legitimately carries binaries); binary files there are hashed into the
-manifest but NOT secret-scanned — a named residual.
+source (a real repo legitimately carries binaries).
+
+**A repo source copies only what git tracks** (D1 rework, hamr's ruling verbatim: "copy only
+what git tracks" — closes F164/F165). Files are enumerated with `git ls-files --stage` in the
+SOURCE, never a filesystem walk: each tracked path's WORKING-TREE content is frozen (so
+uncommitted edits to a tracked file come along), and nothing untracked or gitignored is ever a
+candidate — real npm `node_modules/.bin/*` symlinks, this repo's own `.claude/`, a gitignored
+`.env`, none of it is read or written. `git add -A` drops `-f` for a repo source (kept for a
+plain folder/file/URL, where a `.gitignore` has no honest meaning yet). A gitlink entry (a real
+submodule) refuses `source-nested-repo`; a tracked symlink refuses `source-symlink` only when
+it resolves OUTSIDE the source root — one that stays inside is legal tracked content, copied
+verbatim as a link, never dereferenced. Measured live against a real 15 MB repo carrying
+`node_modules` (`~/PycharmProjects/adaptlearn`, the repo that broke F164): 1296 files, 3.16 MB,
+0.89s elapsed, ~84 MB maxRSS — no gitignored or untracked content reached the tree or the seed.
+
+**Every frozen file's content is secret-scanned, binary files included** (D2, closes the F166
+residual). A binary file (a NUL byte in its first 8KB) used to be hashed but never scanned —
+now it runs through the SAME `SECRET_PATTERNS` inventory, decoded `latin1` (byte-preserving)
+instead of `utf8`, so an ASCII key embedded in a compiled artifact is still found. This only
+matters where binaries are admitted at all (a repo source today; a plain folder/file still
+refuses binary content outright via `source-not-text`, unchanged).
 
 **A URL's redirects are followed but never invisible.** The URL the body actually came from
 rides into the manifest as `finalUrl` and is printed by `prep-source` whenever it differs
@@ -2993,41 +3011,55 @@ residual, not this fix's job to close.
 **Every refusal is a named `{stop, code}`, never a throw and never silent:** `source-
 unreadable`, `source-symlink`, `source-env-file`, `source-file-oversize`,
 `source-nested-repo`, `source-is-linked-worktree`, `source-seed-incomplete`, `source-git-failed`, `source-not-text`, `source-fetch-failed`,
-`source-fetch-timeout`, `source-fetch-oversize`, `source-carries-secret`, `into-exists`, `destination-output-
-required`, `output-invalid`, `destination-in-source`, `destination-not-absolute`,
-`destination-exists`, `destination-parent-missing`, `destination-parent-unwritable`,
-`destination-contained`, `destination-output-missing`, `destination-output-empty`,
+`source-fetch-timeout`, `source-fetch-oversize`, `source-carries-secret`, `into-exists`,
+`destination-invalid`, `destination-not-absolute`, `destination-not-directory`,
+`destination-not-writable`, `destination-contained`, `destination-parent-missing`,
+`destination-parent-unwritable`, `destination-exists`, `destination-output-missing`,
 `destination-write-failed`, `source-manifest-unreadable`, `source-manifest-invalid`. A
 refusal never throws, never overwrites a person's file, and never lands a destination inside
-the run's own scratch tree or inside the source it was read from.
+the run's own scratch tree.
 
-**`output` is validated the ONE way everywhere it is read or written** (`output-invalid`):
-relative, POSIX, normalized (no `..`, no empty/`.` segment), starting with `output/`, never
-the bare `output/` directory and never `output/.gitkeep`. `prepareSource` checks it before
-signing it into the manifest; `copyOut` checks it again before resolving it against the tree
-(a bare `resolve(tree, output)` would otherwise let `output/../../x` escape); a hand-edited
-manifest whose `output` fails this check is treated by `frontDoorFromManifest` as no front
-door at all, never handed to `copyOut` unvalidated.
+**Destination is a DIRECTORY, never a filename** (D3 rework, hamr's ruling, 2026-09-12,
+condensed in `docs/product/ITEM33-BUILD.md`). It may already exist and need not be empty; it
+may sit inside the source itself (the same-dir case: "i can limit your actions to a certain
+fix in a certain dir and your output will also be there" — `destination-in-source` is gone). A
+job may produce MORE THAN ONE file (his example: a flight search producing one sheet for
+"SFO→LAX red-eye" and another for "SFO under $700"); the agent names them, and there is no
+`output` field in the manifest any more — `copyOut` always reads `tree/output/` itself, never
+a manifest-declared path, which closes the old escape vector (`output/../../x`) structurally
+rather than by validation.
 
 **Destination is proven at prepare time, not just in-run** (hamr's ruling: source AND
 destination are proven at job start, $0): when `destination` is given, `prepareSource` calls
 `proveDestination` BEFORE creating `into` — a refused destination leaves nothing on disk.
+`proveDestination` only proves the directory is USABLE (exists as a directory and is writable,
+or its parent exists and is writable so it can be created) — it cannot foresee individual
+delivered FILE names, since those are not known until the run actually produces them.
 `copyOut` takes an optional `into` (the run's scratch root, `<into>`, of which `tree` is the
 `tree/` subdirectory; defaults to `tree` for direct callers with no `into`) so a destination
 sitting inside the scratch area but outside the frozen tree — e.g. `<into>/profile.md` — is
 also caught as `destination-contained`, not just one strictly inside `tree`. `run-u.mjs`'s two
 call sites pass `dirname(wd)` (`wd` IS `<into>/tree`) as `into` for exactly this reason.
 
-**The delivered file carries the date, and nothing is ever overwritten.** A destination of
-`/home/me/profile.md` LANDS as `/home/me/profile-2026-09-12.md`; a second delivery the same
-day lands as `profile-2026-09-12-2.md`, then `-3` (the work-branch collision rule), up to
-`-99` before `destination-exists`. `datedDestination(destination, now, n)` and
-`pickDelivery(destination, now?)` are exported and are what BOTH `proveDestination` (the $0
-pre-flight) and `copyOut` (the delivery) call, so the two can never disagree about what
-"landable" means. `copyOut` returns the path it actually wrote (`{bytes, sha256, path}`) and
-`run-u.mjs` spine-records THAT (`destination-written {path, declared, bytes, sha256}`) — the
-declared path is not the path anything wrote. A file already sitting at the bare
-`profile.md` therefore does not block a run: it is not a name bareloop will ever use.
+**A `kind: 'repo'` source's destination is a DIFFERENT thing** (hamr: "destination if for code
+on a green then that would be the place agent allowed to do changes") — it names the WRITE
+FENCE inside the copied repo, the signed `writeScope` field's job (`src/job.js:363`), never a
+filesystem drop-off point. It is recorded as declared, never proven by `proveDestination` and
+never handed to `copyOut` (`frontDoorFromManifest` returns `null` for a repo manifest).
+Wiring it into `writeScope` is M3/M4's job, not this door's.
+
+**Every non-empty file under `output/` is delivered, each under its OWN dated name, and
+nothing is ever overwritten.** A file named `profile.md` LANDS as `profile-2026-09-12.md`
+inside the destination directory; a second delivery of the same name the same day lands as
+`profile-2026-09-12-2.md`, then `-3` (the work-branch collision rule), up to `-99` before
+`destination-exists`. An empty file is silently skipped (not a delivered result); the batch
+refuses `destination-output-missing` only when NOTHING non-empty exists under `output/` at
+all (excluding the `output/.gitkeep` seed placeholder). `datedDestination(destination, now,
+n)` and `pickDelivery(destination, now?)` are exported and unchanged from M2b — `copyOut`
+calls them per file now, at delivery time, rather than once against a single declared path.
+`copyOut` returns `{files: [{path, bytes, sha256}]}` and `run-u.mjs` spine-records ONE
+`destination-written` per delivered file — the declared directory is not the path anything
+wrote.
 
 **The destination is a PER-RUN value, never a signed job-spec field.** A job spec is a
 repeatable SHAPE (goal, checks, judge rules), signed once; source and destination vary per

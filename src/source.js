@@ -76,44 +76,6 @@ const MAX_SAME_DAY = 99;
 /** @param {string} code @param {string} stop @returns {SourceRefusal} */
 const refuse = (code, stop) => ({ stop, code });
 
-/**
- * Validate an `output` value the ONE way, everywhere it is read or written —
- * mutation review finding (PRD item 33/M2 fixes): `prepareSource` is about to
- * SIGN a value into a fresh manifest, and `copyOut`/`frontDoorFromManifest`
- * may be reading one back off a manifest a person can hand-edit; the same
- * string hurts either caller the same way (`output/../../x` resolves,
- * `resolve(tree, output)`, to a path OUTSIDE the tree, and `copyOut` would
- * then happily read whatever sits there). One validator, one refusal code,
- * used by all three.
- * @param {unknown} output
- * @returns {{stop: null}|SourceRefusal}
- */
-function validateOutput(output) {
-  if (typeof output !== 'string' || output.length === 0) {
-    return refuse('output-invalid', 'output must be a non-empty relative path');
-  }
-  if (output.includes('\\')) {
-    return refuse('output-invalid', `${output} must be a POSIX path — no backslashes`);
-  }
-  if (output.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(output)) {
-    return refuse('output-invalid', `${output} must be relative, never absolute`);
-  }
-  const segments = output.split('/');
-  if (segments.some((s) => s === '' || s === '.' || s === '..')) {
-    return refuse('output-invalid', `${output} must be a normalized path — no empty, "." or ".." segments`);
-  }
-  if (segments[0] !== 'output') {
-    return refuse('output-invalid', `${output} must start with "output/" — the run's own output directory, never anywhere else in the tree`);
-  }
-  if (segments.length === 1) {
-    return refuse('output-invalid', 'output must name a FILE under output/, never the bare "output" directory itself');
-  }
-  if (output === 'output/.gitkeep') {
-    return refuse('output-invalid', 'output/.gitkeep is the seed placeholder that makes the empty directory exist in git — never a delivered file');
-  }
-  return { stop: null };
-}
-
 /** @param {Buffer} buf @returns {boolean} */
 function hasNulByte(buf) {
   // "first 8 KB" (PRD/M2 text) — a NUL anywhere further in a huge log-shaped
@@ -354,26 +316,56 @@ async function fetchOnce(url, timeoutMs) {
  * tree with a neutralized identity; the seed sha rides in the manifest and is
  * what every close in this run measures against (`seedAtHead`, src/kinds.js).
  *
- * `destination`/`output`, when given, are recorded in the manifest (never in
- * a signed job spec — a job spec is a repeatable SHAPE, source/destination a
- * PER-RUN value, see `readSourceManifest`'s own comment) as the run's
- * declared drop-off point — `destination` absolute, `output` relative under
- * `output/`. Required TOGETHER, the same shape `job.js`'s `judge` field
- * requires its provider/model together: a destination with no output name,
- * or an output name with nowhere to land, is a state nobody can act on
- * honestly.
- * @param {{source: string, into: string, destination?: string, output?: string,
+ * `destination`, when given, is recorded in the manifest (never in a signed
+ * job spec — a job spec is a repeatable SHAPE, source/destination a PER-RUN
+ * value, see `readSourceManifest`'s own comment) as the run's declared
+ * drop-off point. D3 rework (hamr's ruling, 2026-09-12, condensed in
+ * `docs/product/ITEM33-BUILD.md`): **destination is a DIRECTORY, never a
+ * filename** — it may already exist (need not be empty), and it may sit
+ * inside the source itself (the same-dir case: "i can limit your actions to
+ * a certain fix in a certain dir and your output will also be there"). A job
+ * may produce more than one file; the agent names them, and `copyOut`
+ * delivers every non-empty file it finds under `output/`, each under its own
+ * dated name. There is therefore no separate `output` field any more — the
+ * old single-file `output-invalid` guard existed only to stop a
+ * manifest-declared path from escaping the tree, and that vector is closed
+ * structurally now: `copyOut` always reads `output/` itself, never a path a
+ * manifest could have been hand-edited to name.
+ *
+ * A `kind: 'repo'` source's `destination` is a DIFFERENT thing entirely
+ * (hamr: "destination if for code on a green then that would be the place
+ * agent allowed to do changes") — it names the WRITE FENCE inside the copied
+ * repo, the signed `writeScope` field's job (`src/job.js:363`), not a
+ * filesystem drop-off point this door proves or copies into. It is recorded
+ * as declared, unvalidated by `proveDestination`, and `frontDoorFromManifest`
+ * never hands a repo source's destination to `copyOut` — wiring it into
+ * `writeScope` is M3/M4's job, not this one.
+ * @param {{source: string, into: string, destination?: string,
  *   fetchTimeoutMs?: number}} args `fetchTimeoutMs` is test-only — production
  *   callers omit it and get `PROVIDER_TIMEOUT_MS`.
  * @returns {Promise<{stop: null, into: string, tree: string, manifestPath: string, manifest: object}|SourceRefusal>}
  */
-export async function prepareSource({ source, into, destination, output, fetchTimeoutMs = PROVIDER_TIMEOUT_MS }) {
-  if ((destination === undefined) !== (output === undefined)) {
-    return refuse('destination-output-required', 'destination and output are signed together — a destination with no output name, or an output name with nowhere to land, is a state nobody can act on');
-  }
+export async function prepareSource({ source, into, destination, fetchTimeoutMs = PROVIDER_TIMEOUT_MS }) {
   const intoAbs = resolve(into);
   if (existsSync(intoAbs)) {
     return refuse('into-exists', `${intoAbs} already exists — a source door writes a FRESH tree, never reuses one (the export worktree rule)`);
+  }
+  const isUrl = /^https?:\/\//i.test(source);
+  // a CHEAP peek (a stat, never a read) at whether this source is going to
+  // turn out to be a repo — needed here, before the source is actually
+  // walked below, because a repo source's destination takes a DIFFERENT path
+  // (the write-fence recording above) than every other kind's (the directory
+  // proof). The real walk below makes the authoritative kind determination
+  // (and refuses source-is-linked-worktree when `.git` is a file); this peek
+  // only has to agree with it closely enough to route the destination check
+  // correctly, and it does — both read the same `.git` existence test.
+  let looksLikeRepoSource = false;
+  if (!isUrl) {
+    try {
+      const peekAbs = resolve(source);
+      const peekStat = await lstat(peekAbs);
+      looksLikeRepoSource = peekStat.isDirectory() && existsSync(join(peekAbs, '.git'));
+    } catch { /* an unreadable source is reported properly by the real walk below */ }
   }
   // hamr's ruling (PRD item 33): source AND destination are proven at job
   // start, $0 — and review finding #2 sharpens WHEN: before `into` is
@@ -382,14 +374,17 @@ export async function prepareSource({ source, into, destination, output, fetchTi
   // its result). Order matters here: this runs before any source is read,
   // fetched, or walked.
   if (destination !== undefined) {
-    const ov = validateOutput(output);
-    if (ov.stop !== null) return ov;
-    const dp = await proveDestination(destination, { into: intoAbs });
-    if (dp.stop !== null) return dp;
+    if (looksLikeRepoSource) {
+      if (typeof destination !== 'string' || destination.length === 0) {
+        return refuse('destination-invalid', 'destination must be a non-empty value — a repo source records it as the declared write fence, wired into writeScope in a later milestone');
+      }
+    } else {
+      const dp = await proveDestination(destination, { into: intoAbs });
+      if (dp.stop !== null) return dp;
+    }
   }
 
-  const isUrl = /^https?:\/\//i.test(source);
-  /** @type {{kind: 'url'|'file'|'folder'|'repo', files: {rel: string, abs?: string, buf?: Buffer}[], root?: string, finalUrl?: string}} */
+  /** @type {{kind: 'url'|'file'|'folder'|'repo', files: {rel: string, abs?: string, buf?: Buffer, symlinkTarget?: string}[], root?: string, finalUrl?: string}} */
   let frozen;
 
   if (isUrl) {
@@ -473,14 +468,11 @@ export async function prepareSource({ source, into, destination, output, fetchTi
     } else {
       return refuse('source-unreadable', `${source} is neither a regular file, a folder, nor an http(s) URL`);
     }
-    // the destination may never land inside the source it is drawn from — a
-    // "clean" run would otherwise overwrite the very material it read
-    if (destination !== undefined) {
-      const destAbs = resolve(destination);
-      if (destAbs === sourceAbs || destAbs.startsWith(`${sourceAbs}${sep}`)) {
-        return refuse('destination-in-source', `${destination} sits inside ${source} — the drop-off point may never be the material it was read from`);
-      }
-    }
+    // D3 rework: a destination sitting inside the source is now LEGAL —
+    // hamr's same-dir case ("i can limit your actions to a certain fix in a
+    // certain dir and your output will also be there"). `destination-in-source`
+    // is gone; `copyOut` never overwrites an existing file (dated names,
+    // `COPYFILE_EXCL`), so a same-dir destination cannot clobber the source.
   }
 
   // a repo source keeps its own shape (the history is the point, and a
@@ -593,7 +585,6 @@ export async function prepareSource({ source, into, destination, output, fetchTi
     files: fileMeta,
     seed,
     destination: destination ?? null,
-    output: output ?? null,
   };
   const manifestPath = join(intoAbs, 'source.json');
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -602,18 +593,22 @@ export async function prepareSource({ source, into, destination, output, fetchTi
 }
 
 /**
- * The delivered name (M2b fix 4): a destination of `/home/me/profile.md` lands
- * as `/home/me/profile-2026-09-12.md`, and a SECOND delivery the same day as
+ * The delivered name (M2b fix 4, kept under D3): a destination FILE of
+ * `/home/me/profile.md` lands as `/home/me/profile-2026-09-12.md`, and a
+ * SECOND delivery of the same name the same day as
  * `profile-2026-09-12-2.md`, `-3`, … (the work-branch collision rule, the same
  * spelling `prepareWorkBranch` uses). The date is the delivery's, not the
  * run's: what a person wants to know opening the folder later is when the file
- * arrived.
+ * arrived. D3: `destination` here is a FULL FILE PATH inside the destination
+ * DIRECTORY (`copyOut` builds one per output file it delivers) — this
+ * function itself is unchanged from M2b, it is just no longer handed the
+ * bare top-level destination directly.
  *
  * Nothing is ever overwritten, which is why the name is computed rather than
  * taken: a plain `profile.md` would eventually collide with the person's own
  * file or a previous run's, and the only honest answers to a collision are
  * "refuse" or "a new name" — hamr picked a new name.
- * @param {string} destination the absolute path as declared
+ * @param {string} destination the absolute FILE path as declared
  * @param {Date} now
  * @param {number} n 1 = the plain dated name, 2+ = the same-day suffix
  * @returns {string}
@@ -630,10 +625,10 @@ export function datedDestination(destination, now, n) {
 
 /**
  * The first dated name that is free, or a refusal when every same-day slot up
- * to `MAX_SAME_DAY` is taken. Used by BOTH `proveDestination` (the $0
- * pre-flight) and `copyOut` (the delivery), so the two can never disagree
- * about what "landable" means.
- * @param {string} destination
+ * to `MAX_SAME_DAY` is taken. Used by `copyOut` at delivery time (per output
+ * file) so a same-day repeat delivery of the same name never disagrees with
+ * what "landable" means.
+ * @param {string} destination an absolute FILE path
  * @param {Date} [now]
  * @returns {{stop: null, path: string}|SourceRefusal}
  */
@@ -646,11 +641,19 @@ export function pickDelivery(destination, now = new Date()) {
 }
 
 /**
- * Prove a destination is landable — $0, mechanical, before any token spends
- * (PRD item 33 ruling: "source and destination are proven at job start").
- * Refuses rather than overwrites (bareloop never overwrites a person's file)
- * and rather than landing inside the run's own scratch tree.
- * @param {unknown} destination absolute path
+ * Prove a destination DIRECTORY is landable — $0, mechanical, before any
+ * token spends (PRD item 33 ruling: "source and destination are proven at
+ * job start"). D3 rework (hamr's ruling, 2026-09-12): **destination is a
+ * directory, never a filename** — it may already exist, and need not be
+ * empty (a job may write into a folder that already holds other files, or
+ * even sit inside the source itself, the same-dir case). What this proves is
+ * narrower than the M2/M2b version: only that the directory is USABLE
+ * (exists as a directory and is writable, or can be created) — it can say
+ * nothing about individual delivered FILE names, because those are not known
+ * until the run actually produces them (the agent names its own output
+ * files); per-file same-day collisions are handled at delivery time, inside
+ * `copyOut`, via `pickDelivery`.
+ * @param {unknown} destination absolute directory path
  * @param {{into: string}} o `into` — the run's own scratch root (prepared by
  *   `prepareSource`, or a run's own `workdir` when there is no source door);
  *   the destination may never sit inside it.
@@ -661,19 +664,26 @@ export async function proveDestination(destination, { into }) {
     return refuse('destination-invalid', 'destination must be a non-empty absolute path');
   }
   if (!destination.startsWith(sep) && !/^[a-zA-Z]:[\\/]/.test(destination)) {
-    return refuse('destination-not-absolute', `${destination} is not absolute — the destination is a LOCAL file the person moves elsewhere themselves, never a scope-relative path`);
+    return refuse('destination-not-absolute', `${destination} is not absolute — the destination is a LOCAL directory the person moves elsewhere themselves, never a scope-relative path`);
   }
   const destAbs = resolve(destination);
   const intoAbs = resolve(into);
   if (destAbs === intoAbs || destAbs.startsWith(`${intoAbs}${sep}`)) {
     return refuse('destination-contained', `${destination} sits inside ${into} — the drop-off point may never be inside the run's own scratch tree`);
   }
-  // M2b fix 4: the file that actually lands is the DATED name, so an existing
-  // `profile.md` is not in the way — an existing `profile-<today>.md` only
-  // pushes the delivery to `-2`. The refusal is real but narrow: every
-  // same-day slot taken.
-  const pick = pickDelivery(destAbs);
-  if (pick.stop !== null) return pick;
+  let dstat = null;
+  try { dstat = await stat(destAbs); } catch { /* does not exist yet — proven creatable below */ }
+  if (dstat !== null) {
+    if (!dstat.isDirectory()) {
+      return refuse('destination-not-directory', `${destination} exists and is not a directory — the destination is a DIRECTORY a job writes one or more named files into, never a filename itself`);
+    }
+    try {
+      await access(destAbs, fsConstants.W_OK);
+    } catch {
+      return refuse('destination-not-writable', `${destination} exists but is not writable`);
+    }
+    return { stop: null };
+  }
   const parent = dirname(destAbs);
   let pstat;
   try { pstat = await stat(parent); } catch {
@@ -691,12 +701,47 @@ export async function proveDestination(destination, { into }) {
 }
 
 /**
- * Copy the run's own output to the proven destination — once, never
- * overwriting (the copy uses `COPYFILE_EXCL`, so even a file that appeared
+ * Recursively list every REGULAR file under `dir`, relative to it, excluding
+ * `.gitkeep` (the seed placeholder that makes the empty `output/` directory
+ * exist in git — never a delivered file). A symlink is skipped, never
+ * followed — this door has no reason to ever deliver one, since nothing this
+ * run itself wrote under `output/` should be a link at all.
+ * @param {string} dir @param {string} [rel]
+ * @returns {Promise<string[]>}
+ */
+async function listOutputFiles(dir, rel = '') {
+  let entries;
+  try { entries = await readdir(dir, { withFileTypes: true }); } catch { return []; }
+  /** @type {string[]} */
+  let out = [];
+  for (const e of entries) {
+    const relPath = rel ? `${rel}/${e.name}` : e.name;
+    if (relPath === '.gitkeep') continue;
+    if (e.isDirectory()) out = out.concat(await listOutputFiles(join(dir, e.name), relPath));
+    else if (e.isFile()) out.push(relPath);
+  }
+  return out;
+}
+
+/**
+ * Copy the run's own output to the proven destination DIRECTORY — once per
+ * file, never overwriting (`COPYFILE_EXCL`, so even a file that appears
  * between `proveDestination` and here refuses rather than clobbers), on a
  * minted green only. This function renders no verdict and changes none: a
  * refusal here is reported beside the green it could not deliver, never
  * folded back into it.
+ *
+ * D3 rework (hamr's ruling, 2026-09-12): a job may produce MORE THAN ONE
+ * file (his example: a flight search producing one sheet for "SFO→LAX
+ * red-eye" and another for "SFO under $700") — the agent names them
+ * meaningfully, and EVERY non-empty file under `tree/output/` (excluding
+ * `output/.gitkeep`) is delivered, each under its own dated name
+ * (`datedDestination`/`pickDelivery`, M2b fix 4, unchanged). An empty file is
+ * silently skipped (not a delivered result, same judgment M2b made for the
+ * single-file case) rather than refusing the whole batch over one empty
+ * file; the refusal is reserved for the case where NOTHING is left to
+ * deliver at all.
+ *
  * `into`, when given, is the run's own SCRATCH ROOT (`prepareSource`'s
  * `into`, of which `tree` is the `tree/` subdirectory) — review finding #3:
  * a destination sitting inside `<into>` but outside `tree` (e.g. dropped
@@ -704,41 +749,42 @@ export async function proveDestination(destination, { into }) {
  * refuse `destination-contained`, which a containment check against `tree`
  * alone cannot see. Omitted, it defaults to `tree` (the pre-fix behaviour),
  * for direct callers that only ever had a tree, never an `into`.
- * The file lands under its DATED name (`profile-2026-09-12.md`, then `-2`,
- * `-3` the same day — M2b fix 4), never the bare `destination` as typed, and
- * the path it actually took rides back out so the spine records the real one.
- * @param {{tree: string, into?: string, output: string, destination: string}} o
- * @returns {Promise<{stop: null, bytes: number, sha256: string, path: string}|SourceRefusal>}
+ * @param {{tree: string, into?: string, destination: string}} o
+ * @returns {Promise<{stop: null, files: {path: string, bytes: number, sha256: string}[]}|SourceRefusal>}
  */
-export async function copyOut({ tree, into, output, destination }) {
-  const ov = validateOutput(output);
-  if (ov.stop !== null) return ov;
+export async function copyOut({ tree, into, destination }) {
   const prove = await proveDestination(destination, { into: into ?? tree });
   if (prove.stop !== null) return prove;
-  const pick = pickDelivery(resolve(destination));
-  if (pick.stop !== null) return pick;
-  const landing = pick.path;
-  const outputPath = resolve(tree, output);
-  let buf;
-  try { buf = await readFile(outputPath); } catch {
-    return refuse('destination-output-missing', `${output} does not exist under ${tree} — the run never produced the file this job was declared to write`);
+  const destAbs = resolve(destination);
+  await mkdir(destAbs, { recursive: true });
+  const outputDir = join(tree, 'output');
+  const candidates = await listOutputFiles(outputDir);
+  /** @type {{path: string, bytes: number, sha256: string}[]} */
+  const delivered = [];
+  for (const rel of candidates) {
+    const srcPath = join(outputDir, rel);
+    const buf = await readFile(srcPath);
+    if (buf.length === 0) continue; // an empty file is not a delivered result — skipped, never refused
+    const declaredFile = join(destAbs, rel);
+    await mkdir(dirname(declaredFile), { recursive: true });
+    const pick = pickDelivery(declaredFile);
+    if (pick.stop !== null) return pick;
+    try {
+      // `COPYFILE_EXCL` is the race backstop for a file that appears between
+      // `pickDelivery` choosing a free name and this line — a mutation that
+      // drops it survives every test in this file for exactly that reason,
+      // and is a known, accepted survivor, not a gap.
+      await copyFile(srcPath, pick.path, fsConstants.COPYFILE_EXCL);
+    } catch (e) {
+      if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${pick.path} already exists — bareloop never overwrites a person's file`);
+      return refuse('destination-write-failed', `copying to ${pick.path} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
+    }
+    delivered.push({ path: pick.path, bytes: buf.length, sha256: sha256Hex(buf) });
   }
-  if (buf.length === 0) {
-    return refuse('destination-output-empty', `${output} exists but is empty — an empty file is not a delivered result`);
+  if (delivered.length === 0) {
+    return refuse('destination-output-missing', `no non-empty file exists under ${outputDir} — the run never produced anything this job was declared to write`);
   }
-  // `COPYFILE_EXCL` is the race backstop for a file that appears between
-  // `proveDestination` above and this line — `proveDestination` already
-  // refuses an EXISTING file, so this flag is untestable without actually
-  // winning a filesystem race (spawning a second writer timed to land inside
-  // that window); a mutation that drops it survives every test in this file
-  // for exactly that reason, and is a known, accepted survivor, not a gap.
-  try {
-    await copyFile(outputPath, landing, fsConstants.COPYFILE_EXCL);
-  } catch (e) {
-    if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${landing} already exists — bareloop never overwrites a person's file`);
-    return refuse('destination-write-failed', `copying to ${landing} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
-  }
-  return { stop: null, bytes: buf.length, sha256: sha256Hex(buf), path: landing };
+  return { stop: null, files: delivered };
 }
 
 /**
@@ -781,23 +827,23 @@ export async function readSourceManifest(into) {
 }
 
 /**
- * Reduce a `readSourceManifest` success result to the `{destination, output}`
- * pair a runner acts on, or `null` when there is none to act on (no
- * manifest, or one that never declared a destination). Pure extraction of the
- * one piece of `run-u.mjs`'s front-door reading that has any logic in it
- * (the rest is spine emits and control flow) — unit-testable apart from the
- * script, which is otherwise unreachable without a live provider key.
+ * Reduce a `readSourceManifest` success result to the `{destination}` a
+ * runner acts on, or `null` when there is none to act on (no manifest, one
+ * that never declared a destination, or — D3 — a `kind: 'repo'` manifest,
+ * whose `destination` names the WRITE FENCE inside the copied repo, never a
+ * filesystem drop-off point this door proves or copies into: "repo jobs
+ * UNCHANGED", `writeScope` already does that job, `src/job.js:363`). Pure
+ * extraction of the one piece of `run-u.mjs`'s front-door reading that has
+ * any logic in it (the rest is spine emits and control flow) —
+ * unit-testable apart from the script, which is otherwise unreachable
+ * without a live provider key.
  * @param {{present: boolean, manifest: Record<string, any>|null}} read
- * @returns {{destination: string, output: string}|null}
+ * @returns {{destination: string}|null}
  */
 export function frontDoorFromManifest(read) {
   if (!read.present || !read.manifest) return null;
-  const { destination, output } = read.manifest;
+  if (read.manifest.kind === 'repo') return null;
+  const { destination } = read.manifest;
   if (typeof destination !== 'string' || !destination) return null;
-  // review finding #1: the manifest is hand-editable — a shape a person (or
-  // a bug) put there that would let `output` escape the tree (`../../x`, an
-  // absolute path, the bare `output/` directory) is treated the SAME as no
-  // output declared at all, never passed through to `copyOut` unvalidated.
-  if (validateOutput(output).stop !== null) return null;
-  return { destination, output };
+  return { destination };
 }

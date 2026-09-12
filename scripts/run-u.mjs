@@ -1627,15 +1627,19 @@ if (outcome === HITL_PAUSE) {
 if (outcome === 'green' && frontDoor) {
   // `into: dirname(wd)` — same review finding #3 fix as the preflight above,
   // so the two proofs of the same destination never disagree on what counts
-  // as "contained".
-  const co = await copyOut({ tree: wd, into: dirname(wd), output: frontDoor.output, destination: frontDoor.destination });
+  // as "contained". D3 rework: `destination` is a DIRECTORY now, and a job
+  // may produce more than one file — `copyOut` delivers every non-empty file
+  // under `output/`, each under its own dated name, and returns the list.
+  const co = await copyOut({ tree: wd, into: dirname(wd), destination: frontDoor.destination });
   if (co.stop === null) {
-    // `co.path`, never `frontDoor.destination` — the file lands under its
-    // DATED name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same day), so
-    // the declared path is not the path anything actually wrote. The spine
-    // records what happened, not what was asked for.
-    emit('destination-written', { path: co.path, declared: frontDoor.destination, bytes: co.bytes, sha256: co.sha256 });
-    console.log(`\nDESTINATION  written — ${co.path} (${co.bytes}B, sha256 ${co.sha256.slice(0, 12)}…)`);
+    // `f.path`, never `frontDoor.destination` — each file lands under its
+    // OWN dated name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same
+    // day), so the declared directory is not the path anything actually
+    // wrote. The spine records what happened, not what was asked for.
+    for (const f of co.files) {
+      emit('destination-written', { path: f.path, declared: frontDoor.destination, bytes: f.bytes, sha256: f.sha256 });
+      console.log(`\nDESTINATION  written — ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}…)`);
+    }
   } else {
     emit('destination-refused', { code: co.code, detail: co.stop });
     console.log(`\nDESTINATION  NOT written — ${co.code}: ${co.stop}`);

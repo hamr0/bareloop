@@ -523,137 +523,69 @@ test('prepareSource: no redirect means no finalUrl field at all (absence reporte
   } finally { await srv.close(); }
 });
 
-test('prepareSource: destination and output are required together', async () => {
+// ── D3: destination is a DIRECTORY, never a filename (hamr's ruling, 2026-09-12) ──
+
+test('prepareSource: a legal destination directory rides into the manifest, with no output field at all', async () => {
   const source = tmp('bareloop-src-');
   writeFileSync(join(source, 'a.txt'), 'x');
+  const destination = tmp('bareloop-dest-parent-');
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
-  const r = await prepareSource({ source, into, destination: join(tmp('bareloop-dest-parent-'), 'out.txt') });
-  assert.equal(r.code, 'destination-output-required');
-});
-
-test('prepareSource: a destination inside the source refuses destination-in-source', async () => {
-  const source = tmp('bareloop-src-selfdest-');
-  writeFileSync(join(source, 'a.txt'), 'x');
-  const into = join(tmp('bareloop-into-parent-'), 'job1');
-
-  const r = await prepareSource({ source, into, destination: join(source, 'out.txt'), output: 'output/out.txt' });
-  assert.equal(r.code, 'destination-in-source');
-});
-
-test('prepareSource: a legal destination/output pair rides into the manifest', async () => {
-  const source = tmp('bareloop-src-');
-  writeFileSync(join(source, 'a.txt'), 'x');
-  const destParent = tmp('bareloop-dest-parent-');
-  const destination = join(destParent, 'result.md');
-  const into = join(tmp('bareloop-into-parent-'), 'job1');
-
-  const r = await prepareSource({ source, into, destination, output: 'output/result.md' });
+  const r = await prepareSource({ source, into, destination });
   assert.equal(r.stop, null, r.stop ?? undefined);
   assert.equal(r.manifest.destination, destination);
-  assert.equal(r.manifest.output, 'output/result.md');
+  assert.ok(!('output' in r.manifest), 'D3 drops the single-file output field entirely — outputs are discovered from output/ at delivery time');
 });
 
-// ── review finding #1: ONE output validator, used at every seam ───────────
-
-test('prepareSource: an output escaping the tree with ".." refuses output-invalid, before touching the source', async () => {
+test('prepareSource: a destination DIRECTORY that already exists is legal (D3 — it need not be empty)', async () => {
   const source = tmp('bareloop-src-');
   writeFileSync(join(source, 'a.txt'), 'x');
-  const destination = join(tmp('bareloop-dest-parent-'), 'out.txt');
+  const destination = tmp('bareloop-dest-existing-');
+  writeFileSync(join(destination, 'unrelated.txt'), 'a file already here, untouched by prep');
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
-  const r = await prepareSource({ source, into, destination, output: 'output/../../x' });
-  assert.equal(r.code, 'output-invalid');
-  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
-});
-
-test('prepareSource: an absolute output refuses output-invalid', async () => {
-  const source = tmp('bareloop-src-');
-  writeFileSync(join(source, 'a.txt'), 'x');
-  const destination = join(tmp('bareloop-dest-parent-'), 'out.txt');
-  const into = join(tmp('bareloop-into-parent-'), 'job1');
-
-  const r = await prepareSource({ source, into, destination, output: '/etc/passwd' });
-  assert.equal(r.code, 'output-invalid');
-});
-
-test('prepareSource: an output pointing at input/ instead of output/ refuses output-invalid', async () => {
-  const source = tmp('bareloop-src-');
-  writeFileSync(join(source, 'a.txt'), 'x');
-  const destination = join(tmp('bareloop-dest-parent-'), 'out.txt');
-  const into = join(tmp('bareloop-into-parent-'), 'job1');
-
-  const r = await prepareSource({ source, into, destination, output: 'input/a.txt' });
-  assert.equal(r.code, 'output-invalid');
-});
-
-test('prepareSource: a bare "output/" with no filename refuses output-invalid', async () => {
-  const source = tmp('bareloop-src-');
-  writeFileSync(join(source, 'a.txt'), 'x');
-  const destination = join(tmp('bareloop-dest-parent-'), 'out.txt');
-  const into = join(tmp('bareloop-into-parent-'), 'job1');
-
-  const r = await prepareSource({ source, into, destination, output: 'output/' });
-  assert.equal(r.code, 'output-invalid');
-});
-
-test('prepareSource: a good "output/profile.md" passes validation clean', async () => {
-  const source = tmp('bareloop-src-');
-  writeFileSync(join(source, 'a.txt'), 'x');
-  const destination = join(tmp('bareloop-dest-parent-'), 'profile.md');
-  const into = join(tmp('bareloop-into-parent-'), 'job1');
-
-  const r = await prepareSource({ source, into, destination, output: 'output/profile.md' });
+  const r = await prepareSource({ source, into, destination });
   assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(readFileSync(join(destination, 'unrelated.txt'), 'utf8'), 'a file already here, untouched by prep');
 });
 
-test('copyOut: an output escaping the tree with ".." refuses output-invalid, never reads outside the tree', async () => {
-  const tree = tmp('bareloop-tree-');
-  mkdirSync(join(tree, 'output'), { recursive: true });
-  // a file OUTSIDE the tree that a "../.." escape could otherwise reach
-  const outsideDir = dirname(tree);
-  writeFileSync(join(outsideDir, 'secret.txt'), 'must never be read');
-  const destination = join(tmp('bareloop-dest-'), 'out.txt');
+test('prepareSource: a destination equal to the SOURCE directory is legal (D3 — the same-dir case, hamr\'s ruling)', async () => {
+  const source = tmp('bareloop-src-samedir-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
 
-  const r = await copyOut({ tree, output: 'output/../../secret.txt', destination });
-  assert.equal(r.code, 'output-invalid');
-  assert.ok(!existsSync(destination), 'nothing was copied');
+  const r = await prepareSource({ source, into, destination: source });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.destination, source);
 });
 
-test('frontDoorFromManifest: a hand-edited manifest with an escaping output is treated as no front door (never handed to copyOut unvalidated)', () => {
-  assert.equal(frontDoorFromManifest({ present: true, manifest: { destination: '/x/out.txt', output: '../../etc/passwd' } }), null);
-  assert.equal(frontDoorFromManifest({ present: true, manifest: { destination: '/x/out.txt', output: 'output' } }), null);
-});
-
-// ── review finding #2: destination proven at SETUP time, not just in-run ──
-
-test('prepareSource: a bare existing destination does not block prep — the delivered name is dated, so it never collides with the bare file (M2b fix 4)', async () => {
+test('prepareSource: a destination that exists but is a FILE, not a directory, refuses destination-not-directory', async () => {
   const source = tmp('bareloop-src-');
   writeFileSync(join(source, 'a.txt'), 'x');
   const destParent = tmp('bareloop-dest-parent-');
-  const destination = join(destParent, 'already-there.md');
-  writeFileSync(destination, 'do not touch');
+  const destination = join(destParent, 'not-a-dir.txt');
+  writeFileSync(destination, 'a file, not a directory');
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
-  const r = await prepareSource({ source, into, destination, output: 'output/already-there.md' });
-  assert.equal(r.stop, null, r.stop ?? undefined);
-  assert.equal(readFileSync(destination, 'utf8'), 'do not touch', 'the bare file itself is never touched');
+  const r = await prepareSource({ source, into, destination });
+  assert.equal(r.code, 'destination-not-directory');
 });
 
-test('prepareSource: every same-day dated slot already taken refuses destination-exists at prepare time, and `into` is never created', async () => {
-  const source = tmp('bareloop-src-');
+test('prepareSource: for a REPO source, destination is recorded as the declared write fence — never proven as a filesystem drop-off point (D3)', async () => {
+  const source = tmp('bareloop-src-repo-destfence-');
+  gitFix(source, ['init', '-q']);
   writeFileSync(join(source, 'a.txt'), 'x');
-  const destParent = tmp('bareloop-dest-parent-');
-  const destination = join(destParent, 'already-there.md');
-  const now = new Date();
-  // fill EVERY same-day slot (`pickDelivery` tries -1 through -99) so the
-  // refusal is real, not just pushed to the next free suffix
-  for (let n = 1; n <= 99; n++) writeFileSync(datedDestination(destination, now, n), 'taken');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'root']);
+  // a value that would refuse destination-not-absolute for every OTHER kind —
+  // proving the repo path never runs proveDestination on it at all
+  const destination = 'src/**';
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
-  const r = await prepareSource({ source, into, destination, output: 'output/already-there.md' });
-  assert.equal(r.code, 'destination-exists');
-  assert.ok(!existsSync(into), 'a refused destination leaves nothing on disk — a refused prep never builds a tree');
+  const r = await prepareSource({ source, into, destination });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.destination, destination);
+  assert.equal(frontDoorFromManifest({ present: true, manifest: r.manifest }), null, 'a repo destination is never handed to copyOut');
 });
 
 // ── review finding #3: destination proven against the SCRATCH ROOT, not just the tree ──
@@ -663,9 +595,9 @@ test('copyOut: a destination inside `into` but outside `tree` refuses destinatio
   const tree = join(into, 'tree');
   mkdirSync(join(tree, 'output'), { recursive: true });
   writeFileSync(join(tree, 'output', 'result.md'), 'hi');
-  const destination = join(into, 'profile.md'); // inside `into`, outside `tree` — the gap this closes
+  const destination = join(into, 'dropoff'); // inside `into`, outside `tree` — the gap this closes
 
-  const r = await copyOut({ tree, into, output: 'output/result.md', destination });
+  const r = await copyOut({ tree, into, destination });
   assert.equal(r.code, 'destination-contained');
 });
 
@@ -775,37 +707,43 @@ test('prepareSource: a silent server (accepts, never answers) refuses source-fet
 
 // ── proveDestination ──────────────────────────────────────────────────────
 
-test('proveDestination: a legal destination proves clean', async () => {
+test('proveDestination: a legal destination directory proves clean, whether or not it exists yet', async () => {
   const into = tmp('bareloop-into-');
   const destParent = tmp('bareloop-dest-');
-  const r = await proveDestination(join(destParent, 'out.txt'), { into });
-  assert.equal(r.stop, null, r.stop ?? undefined);
+  const notYet = join(destParent, 'dropoff'); // does not exist yet — proven CREATABLE
+  const r1 = await proveDestination(notYet, { into });
+  assert.equal(r1.stop, null, r1.stop ?? undefined);
+  assert.ok(!existsSync(notYet), 'proving never creates the directory itself — that is copyOut\'s job, on a green');
+
+  mkdirSync(notYet); // now it exists — still legal, and need not be empty
+  writeFileSync(join(notYet, 'preexisting.txt'), 'already here');
+  const r2 = await proveDestination(notYet, { into });
+  assert.equal(r2.stop, null, r2.stop ?? undefined);
 });
 
 test('proveDestination: a relative path refuses destination-not-absolute', async () => {
   const into = tmp('bareloop-into-');
-  const r = await proveDestination('relative/out.txt', { into });
+  const r = await proveDestination('relative/dropoff', { into });
   assert.equal(r.code, 'destination-not-absolute');
 });
 
-test('proveDestination: an existing file at the BARE name does NOT block — the delivered name is dated (M2b fix 4)', async () => {
+test('proveDestination: an existing FILE (not a directory) at the destination refuses destination-not-directory', async () => {
   const into = tmp('bareloop-into-');
   const destParent = tmp('bareloop-dest-');
-  const destination = join(destParent, 'already-there.txt');
-  writeFileSync(destination, 'the person\'s own file, untouched');
+  const destination = join(destParent, 'already-a-file.txt');
+  writeFileSync(destination, 'a file, not a directory');
   const r = await proveDestination(destination, { into });
-  assert.equal(r.stop, null, 'bareloop never writes this exact name, so it was never in the way');
-  assert.equal(readFileSync(destination, 'utf8'), 'the person\'s own file, untouched');
+  assert.equal(r.code, 'destination-not-directory');
 });
 
-test('proveDestination: every same-day slot taken refuses destination-exists (the cap, never a silent overwrite)', async () => {
+test('proveDestination: an existing but unwritable destination DIRECTORY refuses destination-not-writable', async (t) => {
+  if (process.getuid && process.getuid() === 0) { t.skip('root ignores directory permission bits'); return; }
   const into = tmp('bareloop-into-');
-  const destParent = tmp('bareloop-dest-');
-  const destination = join(destParent, 'profile.md');
-  const now = new Date();
-  for (let n = 1; n <= 99; n++) writeFileSync(datedDestination(destination, now, n), 'taken');
+  const destination = tmp('bareloop-dest-locked-');
+  chmodSync(destination, 0o555);
+  t.after(() => chmodSync(destination, 0o755));
   const r = await proveDestination(destination, { into });
-  assert.equal(r.code, 'destination-exists');
+  assert.equal(r.code, 'destination-not-writable');
 });
 
 test('datedDestination: the delivered name carries the day, then -2/-3 for a same-day repeat', () => {
@@ -834,7 +772,7 @@ test('pickDelivery: skips the names already taken today and hands back the first
 test('proveDestination: a missing parent directory refuses destination-parent-missing', async () => {
   const into = tmp('bareloop-into-');
   const destParent = tmp('bareloop-dest-');
-  const destination = join(destParent, 'nope', 'out.txt');
+  const destination = join(destParent, 'nope', 'dropoff');
   const r = await proveDestination(destination, { into });
   assert.equal(r.code, 'destination-parent-missing');
 });
@@ -845,60 +783,81 @@ test('proveDestination: an unwritable parent directory refuses destination-paren
   const destParent = tmp('bareloop-dest-locked-');
   chmodSync(destParent, 0o555);
   t.after(() => chmodSync(destParent, 0o755)); // give it back so the sweep can remove it
-  const r = await proveDestination(join(destParent, 'out.txt'), { into });
+  const r = await proveDestination(join(destParent, 'dropoff'), { into });
   assert.equal(r.code, 'destination-parent-unwritable');
 });
 
 test('proveDestination: a destination inside `into` refuses destination-contained', async () => {
   const into = tmp('bareloop-into-');
-  const r = await proveDestination(join(into, 'sneaky.txt'), { into });
+  const r = await proveDestination(join(into, 'sneaky'), { into });
   assert.equal(r.code, 'destination-contained');
 });
 
 // ── copyOut ────────────────────────────────────────────────────────────────
 
-test('copyOut: copies the produced file, matches bytes/sha256, and never overwrites a second time', async () => {
+test('copyOut: copies the produced file, matches bytes/sha256, and never overwrites a second time (D3: destination is now the DIRECTORY, files ride back as an array)', async () => {
   const tree = tmp('bareloop-tree-');
   mkdirSync(join(tree, 'output'), { recursive: true });
   const body = 'the run wrote this';
   writeFileSync(join(tree, 'output', 'result.md'), body);
-  const destParent = tmp('bareloop-dest-');
-  const destination = join(destParent, 'result.md');
+  const destination = tmp('bareloop-dest-');
 
-  const r1 = await copyOut({ tree, output: 'output/result.md', destination });
+  const r1 = await copyOut({ tree, destination });
   assert.equal(r1.stop, null, r1.stop ?? undefined);
-  assert.equal(r1.bytes, Buffer.byteLength(body));
-  assert.equal(r1.sha256, sha256(Buffer.from(body)));
-  // M2b fix 4: the file lands under its DATED name, and the path it took
-  // comes back — the declared name is never what anything wrote
-  assert.equal(r1.path, datedDestination(destination, new Date(), 1));
-  assert.ok(!existsSync(destination), 'the bare declared name is never written');
-  assert.equal(readFileSync(r1.path, 'utf8'), body);
+  assert.equal(r1.files.length, 1);
+  assert.equal(r1.files[0].bytes, Buffer.byteLength(body));
+  assert.equal(r1.files[0].sha256, sha256(Buffer.from(body)));
+  // M2b fix 4, kept under D3: each file lands under its OWN dated name
+  const declaredFile = join(destination, 'result.md');
+  assert.equal(r1.files[0].path, datedDestination(declaredFile, new Date(), 1));
+  assert.ok(!existsSync(declaredFile), 'the bare declared name is never written');
+  assert.equal(readFileSync(r1.files[0].path, 'utf8'), body);
 
   // a second copyOut the SAME day must never clobber the first — it lands at -2
   writeFileSync(join(tree, 'output', 'result.md'), 'a different run wrote this');
-  const r2 = await copyOut({ tree, output: 'output/result.md', destination });
+  const r2 = await copyOut({ tree, destination });
   assert.equal(r2.stop, null, r2.stop ?? undefined);
-  assert.equal(r2.path, datedDestination(destination, new Date(), 2));
-  assert.equal(readFileSync(r1.path, 'utf8'), body, 'the first delivered file must be untouched');
-  assert.equal(readFileSync(r2.path, 'utf8'), 'a different run wrote this');
+  assert.equal(r2.files[0].path, datedDestination(declaredFile, new Date(), 2));
+  assert.equal(readFileSync(r1.files[0].path, 'utf8'), body, 'the first delivered file must be untouched');
+  assert.equal(readFileSync(r2.files[0].path, 'utf8'), 'a different run wrote this');
 });
 
-test('copyOut: a missing output file refuses destination-output-missing', async () => {
+test('copyOut: SEVERAL files under output/ are all delivered, each under its own dated name (D3 — a job may produce more than one file)', async () => {
   const tree = tmp('bareloop-tree-');
   mkdirSync(join(tree, 'output'), { recursive: true });
-  const destination = join(tmp('bareloop-dest-'), 'result.md');
-  const r = await copyOut({ tree, output: 'output/result.md', destination });
+  writeFileSync(join(tree, 'output', 'sfo-lax-redeye.md'), 'red-eye options');
+  writeFileSync(join(tree, 'output', 'sfo-under-700.md'), 'budget options');
+  writeFileSync(join(tree, 'output', '.gitkeep'), ''); // the seed placeholder — never delivered
+  const destination = tmp('bareloop-dest-multi-');
+
+  const r = await copyOut({ tree, destination });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.files.length, 2, 'both real output files are delivered, .gitkeep is not');
+  const names = r.files.map((f) => f.path.split('/').at(-1)).sort();
+  assert.ok(names[0].startsWith('sfo-lax-redeye-') && names[1].startsWith('sfo-under-700-'));
+});
+
+test('copyOut: an empty output file is SKIPPED, never delivered and never a refusal on its own — but the batch refuses destination-output-missing when NOTHING non-empty exists', async () => {
+  const tree = tmp('bareloop-tree-');
+  mkdirSync(join(tree, 'output'), { recursive: true });
+  writeFileSync(join(tree, 'output', 'empty.md'), '');
+  const destination1 = tmp('bareloop-dest-allempty-');
+  const r1 = await copyOut({ tree, destination: destination1 });
+  assert.equal(r1.code, 'destination-output-missing');
+
+  writeFileSync(join(tree, 'output', 'real.md'), 'content');
+  const destination2 = tmp('bareloop-dest-mixed-');
+  const r2 = await copyOut({ tree, destination: destination2 });
+  assert.equal(r2.stop, null, r2.stop ?? undefined);
+  assert.equal(r2.files.length, 1, 'the empty file is skipped, the non-empty one delivered');
+});
+
+test('copyOut: no file at all under output/ refuses destination-output-missing', async () => {
+  const tree = tmp('bareloop-tree-');
+  mkdirSync(join(tree, 'output'), { recursive: true });
+  const destination = tmp('bareloop-dest-');
+  const r = await copyOut({ tree, destination });
   assert.equal(r.code, 'destination-output-missing');
-});
-
-test('copyOut: an empty output file refuses destination-output-empty', async () => {
-  const tree = tmp('bareloop-tree-');
-  mkdirSync(join(tree, 'output'), { recursive: true });
-  writeFileSync(join(tree, 'output', 'result.md'), '');
-  const destination = join(tmp('bareloop-dest-'), 'result.md');
-  const r = await copyOut({ tree, output: 'output/result.md', destination });
-  assert.equal(r.code, 'destination-output-empty');
 });
 
 // ── readSourceManifest / frontDoorFromManifest — the run-u.mjs seam ────────
@@ -913,17 +872,31 @@ test('readSourceManifest: absence is reported as absence, never a fabricated des
 test('readSourceManifest + frontDoorFromManifest: a prepared source round-trips into the exact pair run-u.mjs acts on', async () => {
   const source = tmp('bareloop-src-');
   writeFileSync(join(source, 'a.txt'), 'x');
-  const destParent = tmp('bareloop-dest-');
-  const destination = join(destParent, 'out.txt');
+  const destination = tmp('bareloop-dest-');
   const into = join(tmp('bareloop-into-parent-'), 'job1');
-  const prepared = await prepareSource({ source, into, destination, output: 'output/out.txt' });
+  const prepared = await prepareSource({ source, into, destination });
   assert.equal(prepared.stop, null, prepared.stop ?? undefined);
 
   // run-u.mjs reads the manifest from `dirname(wd)` where `wd` IS `<into>/tree`
   const r = await readSourceManifest(dirname(join(into, 'tree')));
   assert.equal(r.stop, null);
   assert.equal(r.present, true);
-  assert.deepEqual(frontDoorFromManifest(r), { destination, output: 'output/out.txt' });
+  assert.deepEqual(frontDoorFromManifest(r), { destination });
+});
+
+test('readSourceManifest + frontDoorFromManifest: a REPO source\'s manifest never yields a front door (repo destination is the write fence, not a copy-out target)', async () => {
+  const source = tmp('bareloop-src-repo-frontdoor-');
+  gitFix(source, ['init', '-q']);
+  writeFileSync(join(source, 'a.txt'), 'x');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'root']);
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+  const prepared = await prepareSource({ source, into, destination: 'src/**' });
+  assert.equal(prepared.stop, null, prepared.stop ?? undefined);
+
+  const r = await readSourceManifest(dirname(join(into, 'tree')));
+  assert.equal(r.present, true);
+  assert.equal(frontDoorFromManifest(r), null);
 });
 
 test('readSourceManifest: a malformed manifest is a named stop, never a silent skip', async () => {
@@ -933,9 +906,9 @@ test('readSourceManifest: a malformed manifest is a named stop, never a silent s
   assert.equal(r.code, 'source-manifest-invalid');
 });
 
-test('frontDoorFromManifest: a manifest present but with no destination/output declared yields null (nothing to act on)', () => {
-  assert.equal(frontDoorFromManifest({ present: true, manifest: { destination: null, output: null } }), null);
-  assert.equal(frontDoorFromManifest({ present: true, manifest: { destination: '/x', output: null } }), null);
+test('frontDoorFromManifest: a manifest present but with no destination declared yields null (nothing to act on)', () => {
+  assert.equal(frontDoorFromManifest({ present: true, manifest: { destination: null } }), null);
+  assert.equal(frontDoorFromManifest({ present: true, manifest: { destination: '' } }), null);
 });
 
 // ── run-u.mjs wiring — SOURCE-TEXT PROOF, named as a gap ───────────────────
@@ -954,7 +927,7 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
   assert.match(src, /const sourceManifest = await readSourceManifest\(dirname\(wd\)\)/, 'the manifest must be read from the tree\'s own parent, before any token spends');
   assert.match(src, /const dp = await proveDestination\(frontDoor\.destination, \{ into: dirname\(wd\) \}\)/, 'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
   assert.match(src, /if \(outcome === 'green' && frontDoor\)/, 'the copy-out gate fires on the ONE outcome string a graded close mints');
-  assert.match(src, /const co = await copyOut\(\{ tree: wd, into: dirname\(wd\), output: frontDoor\.output, destination: frontDoor\.destination \}\)/, 'the copy-out call site, same scratch-root containment proof');
-  assert.match(src, /emit\('destination-written', \{ path: co\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one');
+  assert.match(src, /const co = await copyOut\(\{ tree: wd, into: dirname\(wd\), destination: frontDoor\.destination \}\)/, 'the copy-out call site, same scratch-root containment proof');
+  assert.match(src, /emit\('destination-written', \{ path: f\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one, for EVERY file copyOut returns');
   assert.match(src, /emit\('destination-refused'/);
 });
