@@ -166,6 +166,47 @@ the M2 secrets breach, and the M2b hooks breach. Honest status of M2/M2b: built 
 unit/smoke-proven; it cannot run as a real job until M3 (the form) and M4 (non-code checks)
 exist; the run-u wiring is proven by source text only until the first real run.
 
+## Destination model corrected (hamr, 2026-09-12) — REWORK OWED, NOT STARTED
+
+hamr ruled the Destination model tonight, in conversation, and explicitly approved recording
+it. Condensed, keeping his framing:
+
+- Source and Destination are ALWAYS asked, for both green and soft-green, repo and non-repo
+  alike.
+- Source can be a subdirectory or a single file.
+- **Destination is a DIRECTORY, never a filename.** It may already exist; it is a spot nothing
+  has been written into yet.
+- If the destination is the SAME directory as the source, changes are permitted inside that
+  directory and nowhere else ("i can limit your actions to a certain fix in a certain dir and
+  your output will also be there").
+- A job may produce MORE THAN ONE file (his example: a flight search producing one sheet for
+  "SFO→LAX red-eye" and another for "SFO under $700").
+- The AGENT names the output files: meaningful names, timestamped, so a new write never
+  overwrites an old one.
+- Repo jobs are UNCHANGED by all this: `writeScope` (the signed job field, "the fence is
+  operator law", `src/job.js:363`) already IS the destination for a repo job, and it is a LIST
+  of globs — so "you may write `/src/` and `/tests/`" is already expressible. Repo runs stand
+  on a work BRANCH (`prepareWorkBranch`, `src/planrun.js:1922`), never a worktree; a patient
+  with no branch is the named stop `branch-red`, no fallback. A PR-review job is just a repo job
+  whose output lands in the repo at the destination path.
+- Non-repo jobs keep the same shape, on a fresh folder with hidden git that bareloop owns.
+
+**REWORK OWED — what the M2/M2b door got wrong and must change** (this reworks only the NEW
+non-repo door built in M2/M2b; the existing repo flow is untouched, which is how every green job
+to date ran):
+
+1. `destination` is validated as a single FILE path — it must become a directory path.
+2. `proveDestination` refuses a destination that already exists (`destination-exists`) — a
+   directory that already exists must be legal.
+3. `prepareSource` refuses a destination inside the source (`destination-in-source`) — that
+   must be legal (it is the same-dir case), at minimum for repo jobs.
+4. `copyOut`/`output` handle exactly ONE file and must handle several, with the agent naming
+   them (meaningful + timestamped).
+
+The dated-name machinery already built (`datedDestination`/`pickDelivery`, M2b item 4) is the
+right idea and survives — it is the single-file, must-not-exist, outside-the-source assumptions
+underneath it that do not. NOT started, awaiting hamr's go.
+
 ## M3 — the intake form and confirm turn ($0 build, paid proof later)
 
 The six fields (Goal / Source / Destination / What success looks like / Guardrails / Judge

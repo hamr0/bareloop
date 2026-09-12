@@ -742,7 +742,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     |---|---|---|
     | Goal | what you want to achieve | Q1 |
     | Source | a local folder, subfolder or file, OR one URL the machine can reach (no login, no setup) | Q2 (read half) |
-    | Destination | the output file, written LOCALLY — the person moves it anywhere else | Q2 (change half) |
+    | Destination | a LOCAL DIRECTORY the run may write into (never a filename); may already exist, as long as nothing has been written into it yet; same directory as Source = changes permitted there and nowhere else; the run may produce more than one file, and it names them itself, meaningfully and timestamped — see 2026-09-12 addendum below | Q2 (change half) |
     | What success looks like | checks a machine can count | Q4 |
     | Guardrails | what must not happen or change | Q3, Q5 |
     | Judge examples | one pass, one fail, and why — multi-line, its own space, shown ONLY when soft-green is selected | Q6, Q7 |
@@ -812,6 +812,24 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 
     **Signed by hamr, 2026-09-10** ("prd reads fine, signed"). Next per item 25: step (3), the
     build, on its own branch.
+
+    **2026-09-12 — Destination corrected (RULED, hamr).** The Destination row above originally
+    read "the output file, written LOCALLY" — that line was the root cause of the M2/M2b door
+    validating a single file path. Corrected: Destination is always a DIRECTORY, never a
+    filename; it may already exist (it is a spot nothing has been written into yet); if it is
+    the same directory as Source, changes are permitted inside that directory and nowhere else;
+    a job may produce more than one file (e.g. a flight search writing one sheet for "SFO→LAX
+    red-eye" and another for "SFO under $700"); the agent names the output files itself,
+    meaningfully and timestamped, so a new write never overwrites an old one. Source and
+    Destination are always asked, for green and soft-green, repo and non-repo alike; Source may
+    be a subdirectory or a single file. Repo jobs are unchanged by this: `writeScope`
+    (`src/job.js:363`) already IS the destination for a repo job — a list of globs, so "you may
+    write `/src/` and `/tests/`" is already expressible; repo runs stand on a work branch
+    (`prepareWorkBranch`, `src/planrun.js:1922`), never a worktree, and a patient with no branch
+    is the named stop `branch-red`. A PR-review job is a repo job whose output lands in the repo
+    at the destination path. Non-repo jobs keep the same shape, on a fresh folder with hidden
+    git bareloop owns. Rework owed on the M2/M2b non-repo door is tracked in
+    `docs/product/ITEM33-BUILD.md`, not started, awaiting hamr's go.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
