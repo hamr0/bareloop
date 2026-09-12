@@ -24,8 +24,8 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile, lstat, stat, access, copyFile, cp, open, rm, constants as fsConstants } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
+import { mkdir, readdir, readFile, writeFile, lstat, stat, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
+import { dirname, join, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
 import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
@@ -168,24 +168,24 @@ function secretPatternNames(text) {
 }
 
 /**
- * Walk a folder recursively, refusing on the first symlink, nested repo,
- * environment file, oversize file or (plain folders only) binary file it
- * finds. Returns every REGULAR file, relative to `root`.
+ * Walk a plain folder recursively, refusing on the first symlink, nested
+ * repo, environment file, oversize file, or binary file it finds. Returns
+ * every REGULAR file, relative to `root`. This is the PLAIN-FOLDER path only
+ * — a repo source is enumerated by `listRepoFiles` instead (D1 rework,
+ * `docs/product/ITEM33-BUILD.md`), which reads git's own tracked-file list
+ * rather than walking the filesystem, so nothing gitignored or untracked
+ * (npm's `node_modules/.bin/*` symlinks included) is ever a candidate here.
  *
  * A symlink is named and never followed (PRD ruling) — walking into it would
  * silently widen the frozen copy to whatever the link points at, which nobody
- * signed. A `.git` below the root is a NESTED repo (M2b fix 6): its objects
- * are a second history nobody declared, and `git add` would either swallow it
- * as a gitlink or drop its files entirely, so the seed would not hold what the
- * manifest says it holds. `repo: true` (a repo source, M2b fix 7) exempts only
- * the ROOT `.git` — that one IS the history being copied — and lifts the
- * text-only and per-file-size rules, because a real repo legitimately carries
- * binaries and large files; every other refusal still applies.
+ * signed. A `.git` anywhere below the root is a NESTED repo (M2b fix 6): its
+ * objects are a second history nobody declared, and `git add` would either
+ * swallow it as a gitlink or drop its files entirely, so the seed would not
+ * hold what the manifest says it holds.
  * @param {string} root
- * @param {{repo?: boolean}} [o]
  * @returns {Promise<{stop: null, files: string[]}|SourceRefusal>}
  */
-async function walkFolder(root, { repo = false } = {}) {
+async function walkFolder(root) {
   /** @type {string[]} */
   const files = [];
   /** @type {string[]} */
@@ -199,7 +199,6 @@ async function walkFolder(root, { repo = false } = {}) {
       const relPath = rel ? `${rel}/${e.name}` : e.name;
       if (e.isSymbolicLink()) return refuse('source-symlink', `${relPath} is a symlink — named, never followed (a followed link would silently widen the frozen copy to whatever it points at)`);
       if (e.name === '.git') {
-        if (repo && rel === '') continue; // the root history this source IS
         return refuse('source-nested-repo', `${relPath} is a nested git repo — refused, because the seed commit cannot hold a second history honestly (the files under it would be swallowed as a gitlink or dropped outright, and the manifest would then claim bytes the seed does not carry)`);
       }
       if (ENV_FILE.test(e.name)) {
@@ -209,11 +208,9 @@ async function walkFolder(root, { repo = false } = {}) {
         const sub = await walk(join(dir, e.name), relPath);
         if (sub) return sub;
       } else if (e.isFile()) {
-        if (!repo) {
-          const st = await stat(join(dir, e.name));
-          if (st.size > MAX_BUFFER) { oversize.push(`${relPath} (${st.size}B)`); continue; }
-          if (await sniffNul(join(dir, e.name))) { notText.push(relPath); continue; }
-        }
+        const st = await stat(join(dir, e.name));
+        if (st.size > MAX_BUFFER) { oversize.push(`${relPath} (${st.size}B)`); continue; }
+        if (await sniffNul(join(dir, e.name))) { notText.push(relPath); continue; }
         files.push(relPath);
       }
       // neither file, dir, nor symlink (a socket, a fifo) — silently skipped;
@@ -228,6 +225,67 @@ async function walkFolder(root, { repo = false } = {}) {
   }
   if (notText.length) {
     return refuse('source-not-text', `${notText.length} file(s) carry a NUL byte in their first 8KB — text only for now (hole H7: PDF/Word input needs a reader this door does not have): ${notText.join(', ')}`);
+  }
+  return { stop: null, files };
+}
+
+/**
+ * Enumerate a REPO source's files the D1 way (hamr's ruling, verbatim:
+ * "copy only what git tracks"): `git ls-files --stage` in the source, never a
+ * filesystem walk — closes F164 (npm's `node_modules/.bin/*` symlinks are
+ * never candidates at all, because they are never tracked) and F165 (nothing
+ * gitignored or untracked can reach this list, so nothing gitignored can
+ * reach the tree or the seed no matter what `git add` flag runs later).
+ *
+ * Each tracked path's WORKING-TREE content is what gets frozen (so
+ * uncommitted edits to a tracked file come along) — this function only
+ * enumerates and classifies; the caller reads bytes.
+ *
+ * A gitlink entry (mode `160000`, a real submodule) is refused
+ * `source-nested-repo` — it names a second history the seed cannot hold
+ * honestly, the same reason a nested `.git` is refused for a plain folder.
+ * A symlink entry (mode `120000`) is refused `source-symlink` ONLY when it
+ * resolves outside `root` — one that stays inside is legal tracked content
+ * and is copied verbatim as a link (never dereferenced).
+ * @param {string} root the repo's working directory (its `.git` is handled
+ *   separately by the caller, which copies it verbatim)
+ * @returns {Promise<{stop: null, files: {rel: string, abs?: string, symlinkTarget?: string}[]}|SourceRefusal>}
+ */
+async function listRepoFiles(root) {
+  const ls = await git(root, ['ls-files', '-z', '--stage']);
+  if (!ls.ok) return refuse('source-git-failed', `git ls-files failed in ${root}: ${ls.err}`);
+  const entries = ls.out.split('\0').filter(Boolean);
+  /** @type {{rel: string, abs?: string, symlinkTarget?: string}[]} */
+  const files = [];
+  const rootReal = await realpath(root);
+  for (const entry of entries) {
+    // "<mode> <sha> <stage>\t<path>" — the mode tells a gitlink (submodule)
+    // and a symlink apart from an ordinary tracked file without ever reading
+    // bytes for it.
+    const tab = entry.indexOf('\t');
+    if (tab === -1) continue;
+    const mode = entry.slice(0, tab).split(' ')[0];
+    const rel = entry.slice(tab + 1);
+    if (mode === '160000') {
+      return refuse('source-nested-repo', `${rel} is a submodule (a gitlink entry) — refused, the same reason a nested .git is: a second history the seed commit cannot hold honestly`);
+    }
+    if (ENV_FILE.test(basename(rel))) {
+      return refuse('source-env-file', `${rel} is an environment file — refused by NAME, whatever it contains (hard line: secrets never enter the tree)`);
+    }
+    if (mode === '120000') {
+      let target;
+      try { target = await readlink(join(root, rel)); } catch (e) {
+        return refuse('source-unreadable', `${rel}: tracked symlink could not be read (${/** @type {Error} */ (e)?.message ?? e})`);
+      }
+      let resolved = null;
+      try { resolved = await realpath(join(root, rel)); } catch { /* a dangling link resolves to nothing — treated as outside, below */ }
+      if (resolved === null || !(resolved === rootReal || resolved.startsWith(`${rootReal}${sep}`))) {
+        return refuse('source-symlink', `${rel} is a symlink resolving outside ${root} — refused (a link leaving the source root would silently widen the frozen copy to whatever it points at); a link that stays inside the root is legal tracked content and is copied verbatim`);
+      }
+      files.push({ rel, symlinkTarget: target });
+    } else {
+      files.push({ rel, abs: join(root, rel) });
+    }
   }
   return { stop: null, files };
 }
@@ -388,13 +446,19 @@ export async function prepareSource({ source, into, destination, output, fetchTi
         }
         isRepo = true;
       }
-      const walked = await walkFolder(sourceAbs, { repo: isRepo });
-      if (walked.stop !== null) return walked;
-      frozen = {
-        kind: isRepo ? 'repo' : 'folder',
-        root: sourceAbs,
-        files: walked.files.map((rel) => ({ rel, abs: join(sourceAbs, rel) })),
-      };
+      if (isRepo) {
+        const walked = await listRepoFiles(sourceAbs);
+        if (walked.stop !== null) return walked;
+        frozen = { kind: 'repo', root: sourceAbs, files: walked.files };
+      } else {
+        const walked = await walkFolder(sourceAbs);
+        if (walked.stop !== null) return walked;
+        frozen = {
+          kind: 'folder',
+          root: sourceAbs,
+          files: walked.files.map((rel) => ({ rel, abs: join(sourceAbs, rel) })),
+        };
+      }
     } else if (st.isFile()) {
       const name = /** @type {string} */ (source.split(sep).at(-1) ?? source);
       if (ENV_FILE.test(name)) {
@@ -433,19 +497,24 @@ export async function prepareSource({ source, into, destination, output, fetchTi
   // nothing on disk, `into` itself included). The matched text is never
   // read into this refusal — only the file path and the pattern name. One
   // file at a time: a repo source can be far larger than memory if every
-  // buffer is held at once. Known hole, named not papered over: a BINARY
-  // file inside a repo source is hashed but not scanned (decoding arbitrary
-  // bytes as text finds nothing a pattern was written for), so a key stored
-  // inside e.g. a compiled artifact is not caught here.
+  // buffer is held at once.
+  //
+  // D2 (closes the F166 residual): a BINARY file (a NUL byte in its first
+  // 8KB) used to be hashed and never scanned — a named hole sitting on a hard
+  // line. It now runs through the SAME `SECRET_PATTERNS` inventory, decoded
+  // `latin1` rather than `utf8` — `latin1` is byte-preserving (one byte, one
+  // code point), so an ASCII key sitting inside a compiled artifact still
+  // matches; `utf8` would have thrown or mangled bytes on arbitrary binary
+  // content. No second pattern list, ever.
   /** @type {{rel: string, names: string[]}[]} */
   const secretHits = [];
   /** @type {{path: string, bytes: number, sha256: string}[]} */
   const fileMeta = [];
   for (const f of frozen.files) {
-    const buf = f.buf ?? await readFile(/** @type {string} */ (f.abs));
+    const buf = f.buf ?? (f.symlinkTarget !== undefined ? Buffer.from(f.symlinkTarget, 'utf8') : await readFile(/** @type {string} */ (f.abs)));
     fileMeta.push({ path: f.rel, bytes: buf.length, sha256: sha256Hex(buf) });
-    if (hasNulByte(buf.subarray(0, 8192))) continue;
-    const names = secretPatternNames(buf.toString('utf8'));
+    const isBinary = f.symlinkTarget === undefined && hasNulByte(buf.subarray(0, 8192));
+    const names = secretPatternNames(buf.toString(isBinary ? 'latin1' : 'utf8'));
     if (names.length) secretHits.push({ rel: f.rel, names });
   }
   if (secretHits.length) {
@@ -472,6 +541,7 @@ export async function prepareSource({ source, into, destination, output, fetchTi
     const dest = join(treeDir, treeRel(f.rel));
     await mkdir(dirname(dest), { recursive: true });
     if (f.buf) await writeFile(dest, f.buf);
+    else if (f.symlinkTarget !== undefined) await symlink(f.symlinkTarget, dest);
     else await copyFile(/** @type {string} */ (f.abs), dest);
   }
 
@@ -479,12 +549,22 @@ export async function prepareSource({ source, into, destination, output, fetchTi
     const init = await git(treeDir, ['init', '-q']);
     if (!init.ok) return refuse('source-git-failed', `git init failed in ${treeDir}: ${init.err}`);
   }
-  // `-f` (M2b fix 6): a `.gitignore` INSIDE the source must never decide what
-  // the seed holds. Every file this door froze is a file it promised in the
-  // manifest, and a close measures the run's writes against the seed — a file
-  // present on disk but absent from the seed would read as the worker having
-  // written it.
-  const add = await git(treeDir, [...NO_HOOKS, 'add', '-A', '-f']);
+  // `-f` (M2b fix 6) for a PLAIN FOLDER/FILE/URL source only: a `.gitignore`
+  // sitting INSIDE such a source must never decide what the seed holds — the
+  // hidden git tree has no gitignore of its own yet, so "gitignored" has no
+  // honest meaning there. Every file this door froze is a file it promised
+  // in the manifest, and a close measures the run's writes against the seed —
+  // a file present on disk but absent from the seed would read as the worker
+  // having written it.
+  //
+  // D1 rework (F165): a REPO source drops `-f`. Only tracked files ever reach
+  // the copied tree (`listRepoFiles`, above) — nothing gitignored in the
+  // SOURCE repo is a candidate to add at all — so a plain `add -A` here adds
+  // modifications to already-tracked paths and never force-resurrects
+  // anything the source repo chose to ignore (`node_modules`, a gitignored
+  // `.env`, this repo's own `.claude/`).
+  const addArgs = frozen.kind === 'repo' ? ['add', '-A'] : ['add', '-A', '-f'];
+  const add = await git(treeDir, [...NO_HOOKS, ...addArgs]);
   if (!add.ok) return refuse('source-git-failed', `git add failed in ${treeDir}: ${add.err}`);
   const commit = await git(treeDir, [...GIT_IDENTITY, ...NO_HOOKS, 'commit', '-q', '-m', 'bareloop: source front door seed']);
   if (!commit.ok) return refuse('source-git-failed', `git commit failed in ${treeDir}: ${commit.err}`);

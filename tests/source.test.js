@@ -244,6 +244,108 @@ test('prepareSource: a git repo source is COPIED with its history to the tree ro
   assert.ok(!existsSync(join(source, 'output')), 'the original repo never grows an output/');
 });
 
+test('prepareSource: a repo source with a gitignored file AND an untracked file — neither reaches the tree or the seed (D1, closes F165)', async () => {
+  const source = tmp('bareloop-src-repo-ignored-');
+  gitFix(source, ['init', '-q']);
+  writeFileSync(join(source, '.gitignore'), 'ignored.txt\n');
+  writeFileSync(join(source, 'a.txt'), 'tracked');
+  writeFileSync(join(source, 'ignored.txt'), 'gitignored — a real project relies on this staying out');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'root']);
+  // untracked, never added at all — not even gitignored, simply never `git add`ed
+  writeFileSync(join(source, 'scratch.txt'), 'untracked — never staged, never committed');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  const tree = join(into, 'tree');
+  assert.ok(existsSync(join(tree, 'a.txt')));
+  assert.ok(!existsSync(join(tree, 'ignored.txt')), 'a gitignored file in the SOURCE repo must never reach the copied tree');
+  assert.ok(!existsSync(join(tree, 'scratch.txt')), 'an untracked file in the SOURCE repo must never reach the copied tree');
+  const inSeed = execFileSync('git', ['-C', tree, 'ls-tree', '-r', '--name-only', 'HEAD'], { encoding: 'utf8' })
+    .split('\n').map((l) => l.trim()).filter(Boolean);
+  assert.ok(!inSeed.includes('ignored.txt') && !inSeed.includes('scratch.txt'), 'neither file may reach the hidden-git SEED either');
+});
+
+test('prepareSource: a node_modules/.bin-shaped symlink (untracked, as npm actually creates it) never trips source-symlink for a repo source (D1, closes F164)', async () => {
+  const source = tmp('bareloop-src-repo-nodemodules-');
+  gitFix(source, ['init', '-q']);
+  writeFileSync(join(source, 'package.json'), '{"name":"x"}\n');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'root']);
+  // exactly npm's own shape: node_modules is untracked (gitignored in any
+  // real JS repo) and .bin/* are symlinks into an installed package
+  mkdirSync(join(source, 'node_modules', '.bin'), { recursive: true });
+  mkdirSync(join(source, 'node_modules', 'some-pkg', 'bin'), { recursive: true });
+  writeFileSync(join(source, 'node_modules', 'some-pkg', 'bin', 'cli.js'), '#!/usr/bin/env node\n');
+  symlinkSync(join(source, 'node_modules', 'some-pkg', 'bin', 'cli.js'), join(source, 'node_modules', '.bin', 'some-pkg'));
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.ok(!existsSync(join(into, 'tree', 'node_modules')), 'node_modules is untracked and must never reach the copy at all');
+});
+
+test('prepareSource: a TRACKED symlink escaping the repo root refuses source-symlink; one that stays inside is copied verbatim as a link (D1)', async () => {
+  const outside = tmp('bareloop-src-repo-symlink-outside-target-');
+  writeFileSync(join(outside, 'secret.txt'), 'outside the source root');
+
+  const source = tmp('bareloop-src-repo-symlink-');
+  gitFix(source, ['init', '-q']);
+  writeFileSync(join(source, 'a.txt'), 'x');
+  mkdirSync(join(source, 'sub'), { recursive: true });
+  writeFileSync(join(source, 'sub', 'target.txt'), 'inside the source root');
+  symlinkSync(join(source, 'sub', 'target.txt'), join(source, 'link-inside.txt'));
+  symlinkSync(join(outside, 'secret.txt'), join(source, 'link-outside.txt'));
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'tracked symlinks']);
+
+  const r1 = await prepareSource({ source, into: join(tmp('bareloop-into-parent-'), 'job1') });
+  assert.equal(r1.code, 'source-symlink', 'a tracked symlink resolving OUTSIDE the source root must refuse');
+
+  // remove the escaping link and retry — the inside-pointing one must pass
+  execFileSync('rm', [join(source, 'link-outside.txt')]);
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'drop the escaping link']);
+  const into2 = join(tmp('bareloop-into-parent-'), 'job2');
+  const r2 = await prepareSource({ source, into: into2 });
+  assert.equal(r2.stop, null, r2.stop ?? undefined);
+  const linkPath = join(into2, 'tree', 'link-inside.txt');
+  const stat2 = await import('node:fs/promises').then((m) => m.lstat(linkPath));
+  assert.ok(stat2.isSymbolicLink(), 'a symlink staying inside the root is copied VERBATIM as a link, never dereferenced into a copy of its target');
+});
+
+test('prepareSource: a repo source carrying an ASCII key inside a BINARY file refuses source-carries-secret (D2, closes the F166 residual)', async () => {
+  const source = tmp('bareloop-src-repo-binarysecret-');
+  gitFix(source, ['init', '-q']);
+  // NUL byte up front (so hasNulByte's 8KB sniff sees it) plus a real key
+  // shape further in the "binary" content
+  const binary = Buffer.concat([Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe]), Buffer.from('\npadding\nsk-ant-api03-thisisatestkeyshapethatlookslikearealone1234567890\n')]);
+  writeFileSync(join(source, 'artifact.bin'), binary);
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'binary with a key']);
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-carries-secret');
+  assert.ok(!r.stop.includes('sk-ant-'), 'the refusal names the pattern, never the matched text');
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
+});
+
+test('prepareSource: a plain binary file with NO secret shape still prepares clean (D2 does not false-positive on ordinary binary content)', async () => {
+  const source = tmp('bareloop-src-repo-binaryok-');
+  gitFix(source, ['init', '-q']);
+  const binary = Buffer.from([0x89, 0x50, 0x4e, 0x00, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+  writeFileSync(join(source, 'photo.png'), binary);
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'clean binary']);
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.ok(existsSync(join(into, 'tree', 'photo.png')));
+});
+
 test('prepareSource: a repo source carrying a pre-commit hook never runs it (live-proven defect: a copied .git/hooks is arbitrary code from the source repo)', async () => {
   const source = tmp('bareloop-src-repo-hook-');
   gitFix(source, ['init', '-q']);
@@ -279,23 +381,54 @@ test('prepareSource: a repo whose .git is a FILE (linked worktree / submodule) r
   assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
 });
 
-test('prepareSource: a nested .git BELOW the root refuses source-nested-repo (M2b fix 6) — for a plain folder and for a repo source alike', async () => {
+test('prepareSource: a nested .git BELOW the root refuses source-nested-repo for a plain folder (M2b fix 6)', async () => {
   const folder = tmp('bareloop-src-nested-');
   mkdirSync(join(folder, 'vendor', 'lib'), { recursive: true });
   writeFileSync(join(folder, 'a.txt'), 'x');
   gitFix(join(folder, 'vendor', 'lib'), ['init', '-q']);
   const r1 = await prepareSource({ source: folder, into: join(tmp('bareloop-into-parent-'), 'job1') });
   assert.equal(r1.code, 'source-nested-repo');
+});
 
+test('prepareSource: a REPO source enumerates by "git ls-files", so an untracked nested repo below the root is simply never a candidate — nothing under it is copied or refused (D1 rework, F164/F165: tracked-only enumeration makes the old filesystem-walk nested-repo check unreachable, and therefore unneeded, for this path)', async () => {
   const repo = tmp('bareloop-src-repo-nested-');
   gitFix(repo, ['init', '-q']);
   writeFileSync(join(repo, 'a.txt'), 'x');
   gitFix(repo, ['add', '-A']);
   gitFix(repo, ['commit', '-q', '-m', 'root']);
+  // an EMBEDDED, untracked repo — never `git add`ed to the outer repo, so it
+  // never appears in `git ls-files` and nothing under it is a candidate for
+  // the copy at all (the D1 safety property: only what git tracks is ever
+  // read or written).
   mkdirSync(join(repo, 'vendor'), { recursive: true });
   gitFix(join(repo, 'vendor'), ['init', '-q']);
-  const r2 = await prepareSource({ source: repo, into: join(tmp('bareloop-into-parent-'), 'job2') });
-  assert.equal(r2.code, 'source-nested-repo', 'the ROOT .git is exempt for a repo source; a nested one never is');
+  writeFileSync(join(repo, 'vendor', 'untracked.txt'), 'never tracked, never copied');
+  const into = join(tmp('bareloop-into-parent-'), 'job2');
+  const r = await prepareSource({ source: repo, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.ok(!existsSync(join(into, 'tree', 'vendor', 'untracked.txt')), 'untracked content under the embedded repo must never reach the copy');
+  assert.ok(!existsSync(join(into, 'tree', 'vendor', '.git')), 'the embedded repo\'s own .git must never be copied');
+});
+
+test('prepareSource: a REAL submodule (a gitlink entry in the index) refuses source-nested-repo — a second history the seed cannot hold honestly', async () => {
+  const submoduleRepo = tmp('bareloop-src-submodule-target-');
+  gitFix(submoduleRepo, ['init', '-q']);
+  writeFileSync(join(submoduleRepo, 'x.txt'), 'x');
+  gitFix(submoduleRepo, ['add', '-A']);
+  gitFix(submoduleRepo, ['commit', '-q', '-m', 'submodule target']);
+
+  const repo = tmp('bareloop-src-repo-withsubmodule-');
+  gitFix(repo, ['init', '-q']);
+  writeFileSync(join(repo, 'a.txt'), 'x');
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'root']);
+  gitFix(repo, ['-c', 'protocol.file.allow=always', 'submodule', 'add', submoduleRepo, 'vendor/sub']);
+  gitFix(repo, ['commit', '-q', '-m', 'add submodule']);
+
+  const into = join(tmp('bareloop-into-parent-'), 'job3');
+  const r = await prepareSource({ source: repo, into });
+  assert.equal(r.code, 'source-nested-repo');
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
 });
 
 test('prepareSource: a .gitignore inside the source cannot drop a file from the seed (M2b fix 6 — git add -f, then the seed is READ BACK and diffed)', async () => {
