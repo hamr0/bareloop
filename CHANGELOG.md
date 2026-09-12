@@ -5,6 +5,20 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **Package-root export gap (PRD item 33/M2 follow-up):** `bareloop.context.md` documents
+  `datedDestination(destination, now, n)` and `pickDelivery(destination, now?)` as exported
+  from the package root, but `src/index.js`'s `./source.js` re-export only carried
+  `prepareSource`, `proveDestination`, `copyOut`, `readSourceManifest`,
+  `frontDoorFromManifest` — both helpers existed in `src/source.js` but were `undefined`
+  when imported as `import { datedDestination, pickDelivery } from 'bareloop'`. Caught by a
+  clean-consumer import check of the published v0.25.0 package. Both names are now
+  re-exported from `src/index.js`; `tests/index.test.js` pins them against `src/source.js`
+  identity.
+
 ## [0.25.0] — 2026-09-12
 
 ### Added
