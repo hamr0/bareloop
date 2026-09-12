@@ -69,6 +69,40 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `core.hooksPath` to a path that is never created, so a `core.hooksPath` set in the
   copied `.git/config` cannot reopen the hole either.
 
+- **Source front door D1/D2/D3 rework (PRD item 33, hamr's rulings, 2026-09-12):**
+  - **D1 — repo sources copy only what git tracks** (hamr, verbatim: "copy only what git
+    tracks"; closes F164/F165): repo sources are enumerated with `git ls-files --stage` in
+    the source, never a filesystem walk; each tracked path's working-tree content is
+    frozen, and nothing untracked or gitignored is ever a candidate (npm
+    `node_modules/.bin/*` symlinks, this repo's own `.claude/`, a gitignored `.env`,
+    none of it reaches the tree or the seed). `git add -A` drops `-f` for repo sources
+    (kept for plain folder/file/URL sources). A gitlink (a real submodule) refuses
+    `source-nested-repo`; a tracked symlink refuses `source-symlink` only when it
+    resolves outside the source root — one staying inside is copied verbatim as a link.
+  - **D2 — secrets scanned inside binary content too** (closes the F166 residual): every
+    frozen file's content is scanned for secrets, binary files included, decoded `latin1`
+    (byte-preserving) instead of `utf8` — the same `SECRET_PATTERNS` inventory, no second
+    pattern list.
+  - **D3 — destination is a DIRECTORY, never a filename** (hamr's ruling, 2026-09-12): it
+    may already exist, need not be empty, and may sit inside the source itself
+    (`destination-in-source` is gone). A job may produce more than one file; `copyOut`
+    delivers every non-empty file under `output/` (excluding `output/.gitkeep`), each
+    under its own dated name, and returns `{files: [{path, bytes, sha256}]}` instead of a
+    single object. The single-file `output` manifest field and `output-invalid` validator
+    are removed — the escape vector they guarded is now closed structurally, since
+    `copyOut` reads `tree/output/` itself rather than a manifest-declared path. A repo
+    source's `destination` is recorded as the declared write fence and never proven or
+    copied into (`frontDoorFromManifest` returns `null` for a repo manifest) — wiring it
+    into the signed `writeScope` field is left to a later milestone. New refusal codes:
+    `destination-not-directory`, `destination-not-writable`, `destination-invalid`
+    (repo-destination type guard); retired: `output-invalid`,
+    `destination-output-required`, `destination-in-source`. `scripts/prep-source.mjs`
+    drops `--output`; `scripts/run-u.mjs`'s copy-out call site emits one
+    `destination-written` per delivered file.
+  - **D4 — measured a real 15 MB repo** (`~/PycharmProjects/adaptlearn`, the repo that
+    broke F164): 1296 files, 3.16 MB copied, 0.89s elapsed, ~84 MB maxRSS, no gitignored
+    or untracked content reached the tree or the seed. No size cap added.
+
 ## [0.24.0] — 2026-09-10
 
 ### Added
