@@ -574,6 +574,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     roadmap item ends.
     **2026-09-10 — re-opened for discussion by item 33** (hamr: non-repo jobs are "more common
     than you think"; the interview decides what stays here and what goes to fwdloop).
+    **2026-09-10 — answered by item 33's interview:** a non-code job a machine or a judge can
+    close with no human stays in bareloop; fwdloop owns jobs with humans in them. See item 33.
 
 31. **Item 31 — two shapes, one adapter, and the gate nobody has ever fired** (hamr,
     2026-09-09). Supersedes the first draft of this item, which was written from a STALE
@@ -722,6 +724,117 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 
     **Arbiter line.** The rulebook, the check catalogue and the guards are arbiter territory:
     widening them is additive, hamr's go, and never agent-authored.
+
+    **2026-09-10 — the interview, answered (hamr). Step (1) of item 25's order is DONE.**
+    hamr's answers are the rulings below. The build (step 3) has not started.
+
+    **The line between bareloop and fwdloop (RULED).** bareloop = `green`/`soft-green`, repo OR
+    plain folder, no human mid-run, one-shot jobs run once or now and then with a fixed shape,
+    self-healing by retry; the review door at the end (accept / rerun) stays as it is. fwdloop =
+    humans in the job: daily-grind automation of parts of a person's work, hitl windows, chat and
+    multi-turn, daily/monthly budgets, prose + guardrails, escalates to a person more than it
+    retries (it may carry some deterministic/rubric steps). Item 26's "doc-genre goes to fwdloop"
+    is superseded: a non-code job a machine or a judge can close with no human is bareloop's.
+
+    **The intake form (RULED) — the same for green and soft-green:**
+
+    | Field | Holds | Replaces |
+    |---|---|---|
+    | Goal | what you want to achieve | Q1 |
+    | Source | a local folder, subfolder or file, OR one URL the machine can reach (no login, no setup) | Q2 (read half) |
+    | Destination | a LOCAL DIRECTORY the run may write into (never a filename); may already exist, as long as nothing has been written into it yet; same directory as Source = changes permitted there and nowhere else; the run may produce more than one file, and it names them itself, meaningfully and timestamped — see 2026-09-12 addendum below | Q2 (change half) |
+    | What success looks like | checks a machine can count | Q4 |
+    | Guardrails | what must not happen or change | Q3, Q5 |
+    | Judge examples | one pass, one fail, and why — multi-line, its own space, shown ONLY when soft-green is selected | Q6, Q7 |
+
+    The code only checks each answer is non-empty and hands it on verbatim
+    (`src/authorjob.js:298`), so the re-shape changes wording, not machinery. For a repo
+    source, the confirm turn asks Q5's "what counts as worse than before".
+
+    **The confirm turn (RULED).** After the form, the AI reads the source and answers once:
+    "here is what I understood" — the checks it will make, and any questions. The person
+    confirms or fixes. **2 rounds max**, then it drafts; signing is unchanged. The cap is what
+    keeps this one-shot and not fwdloop's chat.
+
+    **Calibration (RULED).** The AI generates the cases (hamr: a person writing them is "a huge
+    ask for automation"), built from the person's judge examples AND the job's REAL input —
+    never invented material (F159's cases were invented functions). **Size stays 10**, floor
+    10-of-10 (the session's call, on hamr's delegation: the AI writes them and they cost pennies,
+    and a judge right 9 times in 10 passes a 5-case test ~59% of the time vs ~35% for 10). The 5
+    injection styles stay built in. Worked example — resume → `profile.md`, 500 words, 3 sections:
+    word count and headings are GREEN checks, never shown to the judge; the judge's cases are
+    real-resume variants (clean and traced = pass; an invented skill = fail; "10 years" when the
+    resume shows 4 = fail; soft-skills section repeating tech skills = fail; heavy rewording
+    still traced = pass).
+
+    **Two base rules, always on, never written by the person (RULED).**
+    1. **Output rule** — the destination file exists and is not empty. Every plain-folder job,
+       green or soft-green; repo jobs keep their `files-changed` equivalent.
+    2. **Citation rule** — every claim in the output points to a line in the input; code checks
+       the quoted line really is in the input; no line or a fake line = RED. Every soft-green
+       job. Honest ceiling: code proves the line EXISTS, not that it supports the claim — that
+       part is the judge's, and is what calibration tests.
+    Both are new; neither exists in code today.
+
+    **Checks and guards (RULED).** First checks: output exists and non-empty; word / line / row
+    count (min, max, exact); named sections or headings present; CSV has named columns; JSON
+    matches a shape. Guards, always on: the input was left untouched; nothing written outside
+    the destination. File types: only what bareloop already reads (`.txt`, `.md`, `.csv`,
+    `.json`, code) — no new libraries for special files yet.
+
+    **Holes → rulings:**
+
+    | # | Ruling |
+    |---|---|
+    | H0 | Rulebook widens with the citation rule first (above); doc-comment rules stay |
+    | H1 | **Hidden git** — bareloop copies the source to a private scratch spot and runs git there itself; the person never sees it; seed, diff, undo and resume keep working; the original is never touched |
+    | H2 | The destination is created by the run — judged paths must be allowed to not exist at the seed |
+    | H3 | The non-code check catalogue above |
+    | H4 | The two guards above; code guards stay for repo jobs |
+    | H5 | No language question — the form has none |
+    | H6 | **IN SCOPE** — a barebrowse verb that can read, type and click to search; never submits a payment or booking form (booking is fwdloop's) |
+    | H7 | NEW — PDF and Word input need a text reader bareloop lacks; logged, not built |
+
+    Also RULED as a fix: a genre never adds a close stage the goal does not state (the TYPES
+    genre's `tsc --strict` stage in `mtv8jihy`).
+
+    **Also RULED (hamr, same day, closing the two proposals):**
+    - **Source and destination are proven at job start, mechanically, $0** — a URL is fetched
+      once, a local folder or file is read, and the destination is proven writable, all before
+      any tokens spend; the fetched bytes are frozen into the hidden-git copy, so the run and the
+      close judge the same bytes. A source that cannot be read or a destination that cannot be
+      written refuses there, by name.
+    - **Web-search evidence is the arbiter's own record** of what barebrowse returned; the close
+      checks the output against that record, never against a worker-written file.
+    - **Everything lands in the audit output that already exists** — the form, the confirm-turn
+      questions and the accepted answers ride in the same signed/spine records the interview
+      answers do today; no new record format.
+
+    **Signed by hamr, 2026-09-10** ("prd reads fine, signed"). Next per item 25: step (3), the
+    build, on its own branch.
+
+    **2026-09-12 — Destination corrected (RULED, hamr).** The Destination row above originally
+    read "the output file, written LOCALLY" — that line was the root cause of the M2/M2b door
+    validating a single file path. Corrected: Destination is always a DIRECTORY, never a
+    filename; it may already exist (it is a spot nothing has been written into yet); if it is
+    the same directory as Source, changes are permitted inside that directory and nowhere else;
+    a job may produce more than one file (e.g. a flight search writing one sheet for "SFO→LAX
+    red-eye" and another for "SFO under $700"); the agent names the output files itself,
+    meaningfully and timestamped, so a new write never overwrites an old one. Source and
+    Destination are always asked, for green and soft-green, repo and non-repo alike; Source may
+    be a subdirectory or a single file. Repo jobs are unchanged by this: `writeScope`
+    (`src/job.js:363`) already IS the destination for a repo job — a list of globs, so "you may
+    write `/src/` and `/tests/`" is already expressible; repo runs stand on a work branch
+    (`prepareWorkBranch`, `src/planrun.js:1922`), never a worktree, and a patient with no branch
+    is the named stop `branch-red`. A PR-review job is a repo job whose output lands in the repo
+    at the destination path. Non-repo jobs keep the same shape, on a fresh folder with hidden
+    git bareloop owns. Rework owed on the M2/M2b non-repo door is tracked in
+    `docs/product/ITEM33-BUILD.md`, not started, awaiting hamr's go.
+
+    **2026-09-12 — build progress.** M1 (citation POC), M2 (source front door) and M2b
+    (review fixes) landed — `docs/product/ITEM33-BUILD.md`. The repo-source path is **OPEN,
+    pending rework**: it does not hold on a real JS repo today (F161–F166,
+    `docs/product/ITEM33-BUILD.md`'s "REWORK OWED" section). M3–M7 not started.
 
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the

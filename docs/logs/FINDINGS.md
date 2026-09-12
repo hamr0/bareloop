@@ -11739,3 +11739,188 @@ the inventory is spelled out, for the doc that ships) updated to match.
 **The lesson, stated plainly.** Admitting a provider to the menu and adding its key shape to the
 one secret inventory are two different edits with no code linking them — they must land in the
 SAME commit going forward, not as a follow-up a reviewer has to notice is missing.
+
+## F161 — the M1 citation POC: a judge probe's false red was a formatting artifact, and code proving a quote exists is not code proving it supports the claim
+
+**2026-09-11, PRD item 33 M1, `feat/item-33`.** A $0 deterministic `citeDecide` over 5 profiles
+of a public fictional CV (career-ops `examples/cv-example.md`, MIT) × 4 judge behaviours: 16/16
+tests, every rule mutation-proven load-bearing. Substring matching beat line-wise matching on
+first contact — a CV summary is one line, so a line-wise rule cannot discriminate within it.
+
+**Then 5 haiku-4.5 locate calls through the real bare-agent seam, $0.0144.** 4/5 landed as
+expected. The fifth was a false red: haiku's quote dropped the `**` markdown bold markers
+around a word the source actually carries — a formatting artifact, not a citation defect. Read
+against the raw source text before being logged as a defect.
+
+**A sixth case, hidden inside the "clean" set, was the real finding.** One profile claimed an
+"8x" improvement for what the source states as "2 weeks → 4 hours" — the POC's own author had
+mislabeled the case clean, and the judge PASSED it, because the quote it located was real and
+related to the claim, just not sufficient to support the specific number in it.
+
+**hamr ruled two additions (2026-09-11):** format-blind matching (markdown stripped on both
+sides before matching words) and "every number in a claim must appear in its source quote."
+Both built in the POC and replayed at $0 over the saved haiku facts: 28/28 tests, case 5 (the
+`**` case) no longer reds on the formatting artifact, case 6 (the "8x" case) now reds for the
+right reason (`number-unsupported`) instead of passing. No honest claim among the 5 real probe
+rows is redded by the new number rule; number words ("three") are deliberately not checked,
+digits only.
+
+**The lesson, stated plainly.** A judge probe's false red can be a formatting artifact rather
+than a real defect — check the quoted text against the source before believing the colour. And
+the inverse failure is the more dangerous one: code that proves a quote EXISTS in the source
+never proves that quote SUPPORTS the claim it's cited for: that gap needs its own rule, not an
+assumption that existence implies support.
+
+## F162 — the M2 secrets breach: a live smoke found what 2500 unit tests and two reviews did not
+
+**2026-09-11→12, PRD item 33 M2, `feat/item-33`.** The source front door
+(`src/source.js`, `prepareSource`) scanned only the URL string for secrets — not the content
+of a frozen file or folder. A hands-on smoke AFTER the milestone was reported built and 2503
+unit tests were green put a plain file carrying a real `sk-ant-`-shaped API key into a source
+folder and ran the door against it: the key was frozen into `input/` in the run tree AND
+committed byte-for-byte into the hidden-git seed commit — a live breach of the hard line in
+this repo's own CLAUDE.md ("secrets load from the environment; they never enter the tree, the
+spine, the configs, or the ledger — an append-only log that captures a key captures it
+forever"). The hidden-git seed is exactly that kind of append-only log.
+
+**Cause.** Nothing in `prepareSource` ran the frozen bytes of a folder or file source through
+`scanSecrets` before writing them to disk or committing them; only the URL-source path (via the
+manifest's URL field) ever touched the secret inventory.
+
+**Fixed.** Every frozen file's whole content — folder walk, single file, or fetched URL body —
+now goes through the ONE inventory (`scanSecrets`/`SECRET_PATTERNS`, `src/validate.js`) before
+anything is written to disk. A hit refuses `source-carries-secret`, naming the path and the
+matched pattern name only — nothing about the secret's value, and nothing is created on disk
+for a source that fails the scan. Residual, named rather than papered over: a secret whose
+shape is not yet in the one inventory.
+
+**The lesson, stated plainly.** A live smoke of the real CLI, run by hand after the milestone
+was reported done, found a hard-line breach that a 2500-test green suite and two rounds of
+review did not — unit tests exercised the logic paths the author thought to write tests for;
+they did not exercise "point the real tool at a real secret and look at what's on disk after."
+
+## F163 — the M2b git-hooks breach: a copied `.git/hooks` ran the source repo's own code inside bareloop's process, before a token spent
+
+**2026-09-12, PRD item 33 M2b fix 7, `feat/item-33`.** M2b fix 7 added repo-source support:
+a source that is itself a git repo is copied WITH its history (`kind: 'repo'`), rather than
+frozen as a plain folder. Copying a repo's `.git` directory verbatim copies `.git/hooks` along
+with it. `prepareSource`'s own seed commit then ran `git commit` inside that copied tree —
+which means git ran whatever the SOURCE repo's `pre-commit`/`commit-msg`/`post-commit` hooks
+happened to contain, as arbitrary code, inside bareloop's own process, before a single token of
+the job had been spent.
+
+**Reproduced live.** A `pre-commit` hook was planted in a fixture source repo that writes a
+marker file on invocation; running `prepareSource` against that repo produced the marker file
+inside bareloop's tree — confirming the hook fired, not merely that it theoretically could.
+
+**Fixed with two independent layers**, because either alone is an incomplete fix: (1) the
+copied `hooks/` directory is deleted immediately after the `.git` copy, before any git command
+runs against the copied tree; (2) every git invocation this door makes pins `core.hooksPath` to
+a path that is never created, so a `core.hooksPath` value already sitting in the copied
+`.git/config` (pointing hooks somewhere other than the default `hooks/` dir) cannot reopen the
+same hole. Fail-first shown with each layer reverted alone — the hook fires with either layer
+missing, fires with neither present with both layers restored.
+
+**A second-order defect inside the same review: the first regression test written for this was
+itself wrong.** Its fixture-repo SETUP commit (creating the planted hook and the initial
+commit) fired the hooks as a side effect of setup, contaminating the proof before
+`prepareSource` ever ran — the test could read green regardless of whether the fix worked,
+because the hook had already fired during fixture construction. Corrected before landing;
+locked in as "a repo source carrying a pre-commit hook never runs it"
+(`tests/source.test.js`).
+
+**The lesson, stated plainly.** Copying a `.git` directory verbatim copies its executable
+surface, not just its history — a fix for this class needs to be proven both by disabling the
+mechanism (hooks stripped) and by closing the reopening path (`core.hooksPath` pinned), and a
+regression test for "hooks never fire" must itself be audited for firing hooks during its own
+setup.
+
+## F164 — repo sources are refused on any real JS repo carrying `node_modules` (live smoke, OPEN)
+
+**2026-09-12, PRD item 33 M2b live smoke, `feat/item-33`.** `node scripts/prep-source.mjs
+--source ~/PycharmProjects/adaptlearn --into <dir>` refused instantly: `source-symlink:
+node_modules/.bin/bare-agent is a symlink`. npm creates symlinks under `node_modules/.bin` for
+every installed package with a bin entry, so essentially any JS repo with dependencies
+installed trips this refusal on the first such symlink it walks.
+
+**Cause.** The symlink refusal (`source-symlink`) was written for the plain-folder path, where
+a symlink can silently widen the frozen copy to include content outside the declared source.
+Inside a repo source, the same check fires on ordinary npm plumbing that has nothing to do with
+widening the copy. The unit test suite never caught this because every fixture repo used in
+`tests/source.test.js` was built by hand with no `node_modules` directory at all.
+
+**Status: OPEN, rework owed.** Not fixed this session — named and left for a deliberate design
+decision (e.g. exempting `node_modules` the way repo sources are already exempt from the
+per-file size cap, or scoping the symlink refusal to plain-folder sources only) rather than a
+reflexive patch. Tracked in `docs/product/ITEM33-BUILD.md`.
+
+**The lesson, stated plainly.** A refusal rule correct for one source kind (plain folder) can
+be silently wrong for another (repo) when both paths share one code path — and a fixture suite
+that never constructs the real-world shape of its target (an installed JS repo) cannot catch
+the mismatch no matter how many tests it has.
+
+## F165 — the seed force-add freezes gitignored content, including this repo's own `.claude/`, into the copied tree (live smoke, OPEN)
+
+**2026-09-12, PRD item 33 M2b fix 6 live smoke, `feat/item-33`.** M2b fix 6 made the seed
+commit's `git add` run with `-f` (force) so that a source `.gitignore` could not silently drop
+files from the seed — correct for a plain folder, where "gitignored" has no meaning until
+bareloop's own hidden git is initialized. Applied to a repo source, the same `-f` forces in
+everything the SOURCE repo itself had chosen to gitignore.
+
+**Live-proven, not theoretical.** Running the repo-source path against a real 3 MB repo
+(`~/PycharmProjects/flowithmel`, 12 commits) produced a seed commit whose tree contains
+`.claude/remember/AGENT_RULES.md` and `.claude/settings.local.json` — both gitignored in that
+source repo. This repo's own CLAUDE.md states `.claude/` is never tracked, for exactly the
+reasons that make copying it here unwanted. On a JS repo the same `-f` would force in the
+entirety of a gitignored `node_modules`. Worse against the hard line this repo runs on: a
+gitignored `.env` sitting in a source repo would be copied into the tree and committed into the
+seed by this identical path, upstream of the F162 content-secret-scan fix rather than caught by
+it (the scan runs on frozen bytes, but a repo-source `.git` copy plus force-add is a second
+route bytes can reach the seed by).
+
+**Status: OPEN, rework owed.** hamr was asked to rule between two options: copy only what git
+already tracks in the source repo (drop `-f`, for repo sources specifically), or copy
+everything but keep gitignored files out of the SEED commit while still present on disk.
+Tracked in `docs/product/ITEM33-BUILD.md`, not started.
+
+**The lesson, stated plainly.** A fix correct for the plain-folder case (force past a
+`.gitignore` that would otherwise drop files silently) can be actively wrong for the repo case
+(force past a `.gitignore` a real project relies on to keep secrets and dependency trees out of
+version control) — a fix built for one source kind must be re-checked against every other
+source kind sharing its code path, not assumed to generalize.
+
+## F166 — what held in the same live smoke, and what stays unmeasured
+
+**2026-09-12, PRD item 33 M2b live smoke, `feat/item-33`.** Alongside the breaches and
+refusals above (F163, F164, F165), the same smoke session confirmed several paths hold as
+designed, and named two residuals that remain unmeasured or unfixed.
+
+**Held:**
+- **Plain folder:** 2 files frozen, hidden git initialized, the folder note printed
+  ("make a new folder, put only the file(s) this job needs in it..."), and a missing
+  destination parent refused cleanly with exit code 2.
+- **Real repo copy** (`~/PycharmProjects/flowithmel`, 3 MB, 12 commits): copied with history
+  intact (the original repo's HEAD commit is an ancestor of the seed commit), hooks stripped,
+  `core.hooksPath` pinned-but-unset on every git call, the original repo left untouched (HEAD
+  unchanged, 0 changed files against the source), 0.24s elapsed, 71.7 MB maxRSS, 14 files /
+  857,554 bytes copied.
+- **Real redirecting URL:** `http://github.com/hamr0/bareloop/raw/main/README.md` resolved to
+  `https://raw.githubusercontent.com/hamr0/bareloop/main/README.md`; the redirect and its
+  warning line printed as designed, so a login-page redirect cannot silently become the source.
+
+**Confirmed live as a real residual, not a theoretical one:** three `.jpg` files inside the
+smoked repo source were copied into the tree entirely unscanned for secrets, because the door
+skips the secret scan on binary files (F162's fix scans text content; it does not attempt to
+scan binary bytes for secret shapes). Named, not fixed this session.
+
+**Still unmeasured:** the cost of a big repo. A 15 MB repo tried in the same smoke was refused
+outright by the `node_modules`/symlink defect (F164) before any copying began, so the
+deliberate absence of a per-file size cap for repo sources (M2b fix 3: "repo sources exempt, a
+real repo legitimately carries large/binary files") has never actually been exercised against
+a repo large enough to test it. No measurement exists yet of copy time, disk, or memory
+behaviour at repo sizes where that exemption would matter.
+
+**The lesson, stated plainly.** A live smoke that finds breaches is doing its job, but it must
+also report what it could NOT test — a refusal earlier in the same run (F164) silently
+prevented the one measurement (big-repo cost) this smoke was also meant to produce, and that
+gap does not disappear just because the smoke otherwise reads as a good outcome.

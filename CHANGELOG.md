@@ -5,7 +5,103 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.25.0] — 2026-09-12
+
+### Added
+
+- **The source front door** (PRD item 33/M2) — a plain folder, a plain file, or one
+  `http(s)` URL now runs without a `--patient` git checkout: `prepareSource`
+  (`src/source.js`) freezes it into a hidden, scratch git tree bareloop owns (the person
+  never sees the repo), `proveDestination` proves a drop-off file is landable at $0 before
+  any token spends, and `copyOut` delivers the run's own output there once, on a minted
+  green, never overwriting. New CLI `scripts/prep-source.mjs`. `scripts/run-u.mjs` wires
+  both: a manifest-declared destination refuses before any token, and copies out on a
+  green (a refused copy-out never changes the verdict). The destination is a PER-RUN value
+  recorded in the manifest (`<into>/source.json`), never a signed job-spec field — a job
+  spec is a repeatable shape, signed once; nothing was added to `job.js`/`jobSpecHash`.
+  Exported: `prepareSource`, `proveDestination`, `copyOut`, `readSourceManifest`,
+  `frontDoorFromManifest`. `git()` (`src/kinds.js`) is now exported for reuse by this
+  module rather than re-spawned a second way.
+
+### Fixed
+
+- **Source front door (PRD item 33/M2 review):** `output` is now validated the ONE way
+  everywhere it is read or written (new `output-invalid` refusal) — a bare
+  `resolve(tree, output)` previously let a shape like `output/../../x` escape the frozen
+  tree; a hand-edited manifest carrying such a value is now treated as no front door at
+  all by `frontDoorFromManifest`, never handed to `copyOut` unvalidated. `prepareSource`
+  now proves the destination (`proveDestination`) BEFORE creating `into`, so a refused
+  destination leaves nothing on disk. `copyOut` takes an optional `into` (the run's
+  scratch root); `scripts/run-u.mjs`'s two call sites now pass `dirname(wd)` instead of
+  `wd`, so a destination inside the scratch area but outside the frozen tree is caught as
+  `destination-contained` instead of slipping through.
+- **Source front door hard-line defect (PRD item 33/M2, live-proven):** every frozen
+  file's content — a folder, a single file, or a fetched URL body — is now scanned for a
+  known secret shape (the same `scanSecrets` inventory, `src/validate.js`) BEFORE
+  anything is written under `into`; a hit refuses `source-carries-secret`, naming the
+  file(s) and pattern name(s) only, never the matched text, and leaves nothing on disk.
+  Previously the door scanned only the URL string, so a plain folder or file carrying a
+  real API key (e.g. an `.env`) was frozen into the tree and committed to the hidden git
+  seed untouched.
+- **Source front door, M2b review fixes 2–8 (PRD item 33):** `.env`/`.env.*` refused by
+  NAME whatever it contains (`source-env-file`), belt-and-braces beside the content scan;
+  a per-file `MAX_BUFFER` ceiling for folder and single-file sources (`source-file-
+  oversize`; repo sources exempt); the delivered file now carries the date
+  (`profile-2026-09-12.md`, `-2`/`-3` the same day, cap 99) — new exports
+  `datedDestination`/`pickDelivery`, used by both `proveDestination` and `copyOut` so the
+  two can never disagree; `copyOut` returns `{bytes, sha256, path}` and `run-u.mjs`
+  spine-records the real landed path (`destination-written {path, declared, bytes,
+  sha256}`); a URL's redirects are followed but never invisible — the final URL rides in
+  the manifest (`finalUrl`) and is printed by `prep-source`, and is secret-scanned like
+  the typed one; a nested `.git` anywhere below the root refuses `source-nested-repo`,
+  `git add` runs `-f` so a source `.gitignore` cannot drop a file from the seed, and the
+  seed is read back with `git ls-tree` and diffed against the manifest's file list
+  (`source-seed-incomplete` on a shortfall); a git repo root is now an allowed source
+  (`kind: 'repo'`) — copied with its history, working files at the tree root, seed on top
+  of existing history; a `.git` FILE (linked worktree/submodule) refuses
+  `source-is-linked-worktree`; `prep-source` prints a folder-blast-radius note (mirrored
+  in `bareloop.context.md`).
+- **Repo-source hard-line defect (live-proven during the M2b 7 review):** a copied
+  `.git/hooks` carried the SOURCE repo's own `pre-commit`/`commit-msg`/`post-commit`
+  scripts, and `git commit` ran them — arbitrary code from the source repo, executed
+  inside bareloop's own process, before a single token spent. Fixed: the copied hooks
+  directory is stripped after the `.git` copy, and every git call the door makes pins
+  `core.hooksPath` to a path that is never created, so a `core.hooksPath` set in the
+  copied `.git/config` cannot reopen the hole either.
+
+- **Source front door D1/D2/D3 rework (PRD item 33, hamr's rulings, 2026-09-12):**
+  - **D1 — repo sources copy only what git tracks** (hamr, verbatim: "copy only what git
+    tracks"; closes F164/F165): repo sources are enumerated with `git ls-files --stage` in
+    the source, never a filesystem walk; each tracked path's working-tree content is
+    frozen, and nothing untracked or gitignored is ever a candidate (npm
+    `node_modules/.bin/*` symlinks, this repo's own `.claude/`, a gitignored `.env`,
+    none of it reaches the tree or the seed). `git add -A` drops `-f` for repo sources
+    (kept for plain folder/file/URL sources). A gitlink (a real submodule) refuses
+    `source-nested-repo`; a tracked symlink refuses `source-symlink` only when it
+    resolves outside the source root — one staying inside is copied verbatim as a link.
+  - **D2 — secrets scanned inside binary content too** (closes the F166 residual): every
+    frozen file's content is scanned for secrets, binary files included, decoded `latin1`
+    (byte-preserving) instead of `utf8` — the same `SECRET_PATTERNS` inventory, no second
+    pattern list.
+  - **D3 — destination is a DIRECTORY, never a filename** (hamr's ruling, 2026-09-12): it
+    may already exist, need not be empty, and may sit inside the source itself
+    (`destination-in-source` is gone). A job may produce more than one file; `copyOut`
+    delivers every non-empty file under `output/` (excluding `output/.gitkeep`), each
+    under its own dated name, and returns `{files: [{path, bytes, sha256}]}` instead of a
+    single object. The single-file `output` manifest field and `output-invalid` validator
+    are removed — the escape vector they guarded is now closed structurally, since
+    `copyOut` reads `tree/output/` itself rather than a manifest-declared path. A repo
+    source's `destination` is recorded as the declared write fence and never proven or
+    copied into (`frontDoorFromManifest` returns `null` for a repo manifest) — wiring it
+    into the signed `writeScope` field is left to a later milestone. New refusal codes:
+    `destination-not-directory`, `destination-not-writable`, `destination-invalid`
+    (repo-destination type guard); retired: `output-invalid`,
+    `destination-output-required`, `destination-in-source`. `scripts/prep-source.mjs`
+    drops `--output`; `scripts/run-u.mjs`'s copy-out call site emits one
+    `destination-written` per delivered file.
+  - **D4 — measured a real 15 MB repo** (`~/PycharmProjects/adaptlearn`, the repo that
+    broke F164): 1296 files, 3.16 MB copied, 0.89s elapsed, ~84 MB maxRSS, no gitignored
+    or untracked content reached the tree or the seed. No size cap added.
 
 ## [0.24.0] — 2026-09-10
 

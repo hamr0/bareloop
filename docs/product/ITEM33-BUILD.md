@@ -1,0 +1,328 @@
+---
+type: reference
+title: "Item 33 build — non-code jobs and a judge beyond doc comments"
+status: active
+sources: [docs/product/PRD.md]
+---
+
+# Item 33 build
+
+The build plan for PRD item 33 (signed by hamr 2026-09-10). The PRD holds the rulings; this
+file holds the milestones, the call site of every clause, and what each milestone proves.
+Branch: `feat/item-33`. Builders are sonnet (strict pin); every milestone lands green on its own.
+
+## M1 — citation POC ($0 + one paid probe) — DONE 2026-09-11
+
+- $0: a deterministic `citeDecide` over 5 profiles of a public fictional CV
+  (career-ops `examples/cv-example.md`, MIT) × 4 judge behaviours; 16/16 tests; every rule
+  mutation-proven load-bearing. Substring matching beats line-wise (a CV summary is one line).
+- Paid: 5 haiku-4.5 locate calls through the real bare-agent seam, $0.0144. 4/5 as expected.
+  One false red: haiku dropped `**` from a quote. One hidden wrong number ("8x" for 2 weeks →
+  4 hours) that the POC author mislabeled clean and the judge passed with a real, related line.
+- hamr ruled two additions (2026-09-11): **format-blind matching** (markdown stripped both
+  sides, words must still match) and **numbers must match** (every number in a claim appears
+  in its source quote). Honest ceiling kept in writing: code proves a quote exists, not that
+  it supports the claim; a section-content rule ("soft skills are soft skills") is separate.
+- Throwaway code, never shipped (scratchpad). Logged as a finding when M5 lands.
+- 2026-09-11: both rules built in the POC and replayed at $0 over the saved haiku facts —
+  28/28 tests; case 5 now reds for the right reason (`number-unsupported`, not the `**`
+  artifact); no honest claim in the 5 real probe rows is redded by the number rule; number
+  words ("three") are not checked (digits only).
+
+## M2 — the source front door ($0) — DONE 2026-09-11
+
+**New module `src/source.js`**, every refusal a named `{stop, code}`, never a silent fallback:
+
+- `prepareSource({source, into, destination, output})`:
+  - `source` is an `http(s)` URL, an existing file, or an existing folder. Anything else →
+    `source-unreadable`. A folder that is itself a git repo root → `source-is-repo` (repo jobs
+    keep `--patient`; this door is for plain folders, files and URLs).
+  - URL: fetched ONCE with plain `fetch` — no credentials, no cookies, no custom headers;
+    deadline `PROVIDER_TIMEOUT_MS` (`src/clock.js`, reused, no new number); body capped at
+    `MAX_BUFFER` (`src/kinds.js`, reused); non-2xx → `source-fetch-failed` with the status;
+    a timeout REFUSES (`source-fetch-timeout`), never falls back; content-type must be text
+    (`text/*`, `application/json`, `application/xml`, `text/csv`) else `source-not-text`.
+  - Text only (hamr: "start with already supported files"): any file with a NUL byte in its
+    first 8 KB → `source-not-text`, naming every such file and pointing at hole H7. Symlinks →
+    `source-symlink` (named, not followed).
+  - `into` must NOT exist (fresh, never reused — the export worktree rule). Layout:
+    `<into>/tree/input/…` (the frozen copy), `<into>/tree/output/` (where the run writes),
+    `<into>/source.json` (the manifest, OUTSIDE the tree, so no worker can read or edit it).
+  - **Hidden git:** `git init` in `<into>/tree`, commit the seed with a neutralized identity
+    passed as `-c user.name=bareloop -c user.email=bareloop@localhost` (CI has no gitconfig),
+    never touching global config. The seed sha is recorded.
+  - The manifest: `{kind, source, fetchedAt, files:[{path, bytes, sha256}], seed, destination,
+    output}`. Secrets never enter it (the source is a path or a URL; a URL with userinfo or a
+    query key-shape is refused by the ONE secret inventory, `src/validate.js`).
+- `proveDestination(destination, {into})`: absolute path; parent exists and is writable; the
+  file does NOT exist (`destination-exists` — bareloop never overwrites a person's file);
+  not inside `into` or the source.
+- `copyOut({tree, output, destination})`: re-proves the destination, requires the output file
+  exists and is non-empty, copies it, returns `{bytes, sha256}`. Never overwrites.
+
+**Call sites (an engine with no caller is not the feature):**
+
+1. `scripts/prep-source.mjs` (new CLI): `--source --destination --into [--output name]`;
+   calls `prepareSource`; prints the tree path, seed, and the exact next command
+   (`run-interview` / `run-author --patient <into>/tree`). $0, no provider.
+2. **Manifest is the run instance; destination never signed** (mid-build correction,
+   2026-09-11, on hamr's question about export): a job spec is a repeatable SHAPE, signed
+   once (goal, checks, judge rules) — source and destination are a PER-RUN value, exactly the
+   way `bareloop run <bundle> --repo <path>` varies the repo without touching the bundle's
+   signature. Baking an absolute destination path into `job.js`/`jobSpecHash` would sign one
+   instance where the spec is meant to describe a shape. So `src/job.js`/`JOB_FIELDS`/
+   `jobSpecHash` carry NO destination field — the run instance lives entirely in the manifest
+   `prepareSource` already writes outside the tree (`kind, source, fetchedAt, files, seed,
+   destination, output`). The output's relative path (`output/<name>`) is what a LATER
+   milestone's signed close checks — nothing to add to the job schema now.
+3. `scripts/run-u.mjs`: `readSourceManifest(dirname(wd))` finds the manifest beside a
+   `prepareSource`-built patient's tree (`wd` IS `<into>/tree`, so its parent is `<into>`); a
+   patient the JOBS table points at directly carries none, and that absence IS "repo jobs
+   untouched" — nothing invents a destination for a job that never declared one. A manifest
+   that EXISTS but is unreadable/malformed is a named stop, never a silent skip.
+   `frontDoorFromManifest` reduces a present manifest to `{destination, output}` or `null`.
+   (a) before any token, when there is a front door, `proveDestination` — a refusal is a named
+   $0 stop; (b) on a minted `green` verdict (the only outcome string a graded close ever
+   mints — soft-green rides the same string, since the class lives on `spec.verdictType`,
+   never on `outcome`), `copyOut`, and a spine record `destination-written {path, bytes,
+   sha256}` or `destination-refused {code, detail}`. A refused copy-out never changes the
+   verdict (the verdict is the close's).
+4. NOT wired this milestone, named: `bareloop run` (bundle, `src/cli.js`) still requires
+   `--repo`; export of a front-door job is parked to after M5.
+
+**Proof:** behavioural tests on real git in temp dirs (neutralized identity, hermetic), a real
+local `node:http` server for the URL paths (200 text, 404, binary content-type, oversize,
+silent server → timeout refusal); every refusal code reached by a test; fail-first shown per
+changed test file. Suite, typecheck, build:types exit 0.
+
+**Landed** (`tests/source.test.js`, 29 tests, fail-first 1/1 files): every refusal code named
+above is reached — `into-exists`, `source-not-text` (folder + URL), `source-symlink`,
+`source-is-repo`, `source-fetch-failed`, `source-fetch-timeout` (injectable bound, never the
+600s production default), `source-fetch-oversize` (streamed past the REAL `MAX_BUFFER`
+ceiling, no crafted shortcut), `destination-output-required`, `destination-in-source`,
+`destination-not-absolute`, `destination-exists`, `destination-parent-missing`,
+`destination-parent-unwritable`, `destination-contained`, `destination-output-missing`,
+`destination-output-empty`, `source-manifest-invalid`. One gap, named rather than papered
+over: the two `scripts/run-u.mjs` call sites cannot be driven through the script itself
+without a live provider key past the JUDGES/key gate that runs before them (this repo makes
+no paid/model calls in its suite) — every piece of LOGIC at those call sites is proven
+directly, and one source-text test proves only that the script actually wires them.
+
+## M2b — review fixes (hamr, 2026-09-11) — DONE 2026-09-12
+
+An audit after M2 (hamr: "what did you gloss over?") found a live hard-line breach and gaps.
+Rulings and the fix list, in build order (all edit `src/source.js` — ONE builder at a time):
+
+1. **Secrets never enter the tree** — DONE. A live smoke put a `.env` carrying an
+   `sk-ant-`-shaped key into `input/` and the hidden-git seed. Fix: every frozen file's whole
+   content (folder, file, URL body) goes through the ONE inventory (`scanSecrets`) before
+   anything is written; a hit refuses `source-carries-secret`, naming path + pattern name
+   only, nothing created on disk. Residual: a secret whose shape is not in the inventory.
+2. **`.env` refused by name** (`.env`, `.env.*`), whatever its content (hamr: yes) — DONE
+   (`source-env-file`, folder walk / single file / URL-derived name alike).
+3. **16 MB cap PER FILE** (`MAX_BUFFER`, reused) for folder files and single files; the URL
+   body already has it. No folder-total cap (hamr's call) — DONE (`source-file-oversize`;
+   repo sources exempt, a real repo legitimately carries large/binary files).
+4. **Date in the delivered name** — DONE. `output/profile.md` lands as
+   `profile-YYYY-MM-DD.md` at the destination; a same-day second delivery gets `-2`, `-3`
+   (the work-branch rule), cap 99, past which `destination-exists`. Never overwrites. New
+   exports `datedDestination`/`pickDelivery`, used by both `proveDestination` (the $0
+   pre-flight) and `copyOut` (the delivery) so the two can never disagree; `copyOut` returns
+   `{bytes, sha256, path}` and `run-u.mjs` spine-records the real landed path
+   (`destination-written {path, declared, bytes, sha256}`).
+5. **Redirects visible** — DONE. `fetchOnce` returns `finalUrl`; it is secret-scanned the
+   same way the typed URL is, recorded in the manifest, and printed by `prep-source`
+   whenever it differs from what was typed, so a login page cannot become the source
+   unnoticed.
+6. **The seed holds every copied file** — DONE. `git add` runs `-f` so a `.gitignore` inside
+   the source cannot drop files from the seed; the seed is read back with
+   `git ls-tree -r --name-only HEAD` and diffed against the manifest's file list by name
+   (`source-seed-incomplete` on a shortfall). A nested `.git` anywhere below the root
+   refuses `source-nested-repo`.
+7. **Repo in, file out** (hamr: yes — the PR-review job) — DONE. A repo source
+   (`kind: 'repo'`) is COPIED with its history (never used in place), working files land at
+   the TREE ROOT (no `input/` prefix), `output/` is added, and the seed commit goes on top
+   of the existing history. A `.git` FILE (linked worktree/submodule) refuses
+   `source-is-linked-worktree` rather than silently committing into the original.
+   **Live-proven defect found and fixed during this review, not in the original fix list:**
+   a copied `.git/hooks` carries the SOURCE repo's own `pre-commit`/`commit-msg`/
+   `post-commit` scripts, and `git commit` ran them — arbitrary code from the source repo,
+   executed inside bareloop's own process, before a single token spent (reproduced live: a
+   planted `pre-commit` hook fired and left a marker file). Fixed with two independent
+   layers: the copied `hooks/` directory is stripped right after the `.git` copy, and every
+   git call this door makes pins `core.hooksPath` to a path that is never created, so a
+   `core.hooksPath` set in the copied `.git/config` pointing elsewhere cannot reopen the
+   hole either. Fail-first shown (hooks fired with either layer alone reverted; neither
+   fires with both in place); regression test locks it in
+   (`tests/source.test.js`, "a repo source carrying a pre-commit hook never runs it").
+   Its guards (the input stays untouched) come with M4.
+8. **The folder note** — DONE. `prep-source` prints, whenever the source is a folder: "make a
+   new folder, put only the file(s) this job needs in it, point bareloop at that — never your
+   original folder". Same line in `bareloop.context.md`; the panel (N6) note is still owed
+   (N6 itself is unbuilt).
+
+Also owed: the PRD item 33 tick for M1/M2/M2b, and a FINDINGS entry for the M1 citation POC,
+the M2 secrets breach, and the M2b hooks breach. Honest status of M2/M2b: built and
+unit/smoke-proven; it cannot run as a real job until M3 (the form) and M4 (non-code checks)
+exist; the run-u wiring is proven by source text only until the first real run.
+
+## Destination model corrected (hamr, 2026-09-12) — REWORK DONE 2026-09-12
+
+hamr ruled the Destination model tonight, in conversation, and explicitly approved recording
+it. Condensed, keeping his framing:
+
+- Source and Destination are ALWAYS asked, for both green and soft-green, repo and non-repo
+  alike.
+- Source can be a subdirectory or a single file.
+- **Destination is a DIRECTORY, never a filename.** It may already exist; it is a spot nothing
+  has been written into yet.
+- If the destination is the SAME directory as the source, changes are permitted inside that
+  directory and nowhere else ("i can limit your actions to a certain fix in a certain dir and
+  your output will also be there").
+- A job may produce MORE THAN ONE file (his example: a flight search producing one sheet for
+  "SFO→LAX red-eye" and another for "SFO under $700").
+- The AGENT names the output files: meaningful names, timestamped, so a new write never
+  overwrites an old one.
+- Repo jobs are UNCHANGED by all this: `writeScope` (the signed job field, "the fence is
+  operator law", `src/job.js:363`) already IS the destination for a repo job, and it is a LIST
+  of globs — so "you may write `/src/` and `/tests/`" is already expressible. Repo runs stand
+  on a work BRANCH (`prepareWorkBranch`, `src/planrun.js:1922`), never a worktree; a patient
+  with no branch is the named stop `branch-red`, no fallback. A PR-review job is just a repo job
+  whose output lands in the repo at the destination path.
+- Non-repo jobs keep the same shape, on a fresh folder with hidden git that bareloop owns.
+
+**REWORK DONE — what the M2/M2b door got wrong, and what changed** (this reworks only the NEW
+non-repo door built in M2/M2b; the existing repo flow's OWN semantics — `writeScope` as the
+fence — are untouched, which is how every green job to date ran):
+
+1. **DONE.** `destination` is a DIRECTORY now, not a single FILE path — `proveDestination`
+   proves the directory is usable (exists as a directory and writable, or creatable); it no
+   longer knows or cares about individual delivered file names, since those are not known
+   until the run produces them.
+2. **DONE.** A destination directory that already exists is legal (`destination-exists` is
+   retired as a prepare-time refusal for the destination itself — it survives only as
+   `copyOut`'s per-file same-day-slot exhaustion refusal, at delivery time). An existing
+   non-directory at the destination path refuses the new `destination-not-directory`.
+3. **DONE.** `destination-in-source` is gone — a destination inside the source (the same-dir
+   case) is legal for every kind, not just repo jobs.
+4. **DONE.** `copyOut` no longer takes an `output` parameter at all — it lists `tree/output/`
+   itself and delivers every non-empty file found there (excluding `output/.gitkeep`), each
+   under its own dated name via the SAME `datedDestination`/`pickDelivery` machinery (M2b item
+   4, unchanged). Returns `{files: [{path, bytes, sha256}]}` instead of a single object. The
+   single-file `output` manifest field and its `output-invalid` validator are removed entirely
+   — the escape vector they guarded (`output/../../x`) is now closed structurally, since
+   `copyOut` never reads a manifest-declared path.
+5. **DONE, repo destination.** A `kind: 'repo'` source's `destination` is recorded as the
+   declared WRITE FENCE and is never proven as a filesystem directory or copied into —
+   `frontDoorFromManifest` returns `null` for a repo manifest, so `proveDestination`/`copyOut`
+   never run against it. Wiring it into the signed `writeScope` field (`src/job.js:363`) is
+   explicitly left to M3/M4 — not built this session.
+
+The dated-name machinery already built (`datedDestination`/`pickDelivery`, M2b item 4) survived
+unchanged, exactly as predicted — it was the single-file, must-not-exist, outside-the-source
+assumptions AROUND it that needed to go.
+
+**F164/F165 — CLOSED 2026-09-12, D1 rework ("copy only what git tracks", hamr's ruling verbatim):**
+
+5. **Repo sources are refused on any real JS repo carrying `node_modules`** (F164) — CLOSED.
+   Repo sources are now enumerated with `git ls-files --stage` in the source, never a
+   filesystem walk. `node_modules/.bin/*` symlinks are untracked in any real JS repo and are
+   therefore never a candidate for the walk at all — the symlink refusal now only ever fires
+   on a TRACKED symlink resolving outside the source root. Re-run live against the exact repo
+   that broke this (`~/PycharmProjects/adaptlearn`, 15 MB, `node_modules` present): see D4
+   below — it now copies cleanly.
+6. **The seed force-add froze gitignored content into the copied tree for repo sources**
+   (F165) — CLOSED. hamr ruled "copy only what git tracks" (Option 1, verbatim). `git add -A`
+   drops `-f` for repo sources (kept for plain folder/file/URL sources, where a `.gitignore`
+   has no honest meaning yet); since only tracked files are ever candidates for the copy at
+   all, nothing gitignored in the source repo (`node_modules`, a gitignored `.env`, this
+   repo's own `.claude/`) can reach the tree or the seed by any route.
+
+**D2 — the F166 residual, CLOSED 2026-09-12:** every frozen file's content is now scanned for
+secrets, binary files included — the same `SECRET_PATTERNS` inventory, decoded `latin1`
+(byte-preserving) rather than `utf8` so an ASCII key inside a compiled artifact still matches.
+This only matters where binaries are admitted at all (a repo source; a plain folder/file still
+refuses binary content outright via `source-not-text`, unchanged).
+
+**D4 — measuring a real large repo, 2026-09-12 (the measurement F166's "unmeasured" note
+asked for):** `node scripts/prep-source.mjs --source ~/PycharmProjects/adaptlearn --into <dir>`
+— the exact 15 MB repo that refused outright under F164 — now completes cleanly: **1296 files,
+3,162,813 bytes (3.16 MB, less than the raw 15 MB since only TRACKED content is copied), 0.89s
+elapsed wall, ~104% CPU, 83,752 KB (~84 MB) maximum resident set size.** Verified: the copied
+tree's file count matches `git ls-files` in the source exactly (1296); no `node_modules`,
+`.env`, or `.claude/settings.local.json` (all gitignored in that repo) reached the copied tree
+or the hidden-git seed. No size cap is added — the numbers are unremarkable for a repo this
+size, and hamr rules on any future ceiling, not this session.
+
+## Live smoke, 2026-09-12 (M2b, hands-on after the fix list landed)
+
+A hands-on run of `scripts/prep-source.mjs` against real sources — a plain folder, a real
+3 MB/12-commit repo (`~/PycharmProjects/flowithmel`), a 15 MB repo (`~/PycharmProjects/
+adaptlearn`), and a real redirecting URL — after the M2b fix list was reported built and
+2503 unit tests were green.
+
+**Held:** plain folder froze 2 files, hidden git initialized, folder note printed, missing
+destination parent refused cleanly (exit code 2); the 3 MB repo copied with history intact
+(source HEAD is an ancestor of the seed), hooks stripped, `core.hooksPath` pinned-but-unset,
+original repo untouched (HEAD unchanged, 0 changed files), 0.24s / 71.7 MB maxRSS / 14 files /
+857,554 B; the redirecting URL resolved and printed its warning line.
+
+**Broke:** a real API key placed in a source file was frozen into the tree AND the hidden-git
+seed, uncaught (F162, fixed same session); a planted `pre-commit` hook in a copied repo's
+`.git/hooks` fired live inside bareloop's own process before a token spent (F163, fixed same
+session, two independent layers); the 15 MB repo (`adaptlearn`) was refused outright by the
+`node_modules` symlink defect (F164, OPEN) before any copy began; the 3 MB repo's seed
+committed gitignored `.claude/` content from the source (F165, OPEN).
+
+**Bottom line: the repo-source path does not work on a real JS repo today.** Every real
+JS repo tried (both the 3 MB and the 15 MB one) hit at least one of F164/F165; only a repo
+built by hand with no `node_modules` and no `.claude`/gitignored content would pass cleanly,
+which is exactly the shape none of the existing fixtures deviate from.
+
+**Confirmed live, not fixed:** three `.jpg` files in the smoked repo were copied unscanned for
+secrets — the door skips the secret scan on binary files (F166). Named residual, not addressed
+this session.
+
+**Unmeasured, not fixed:** the cost (copy time, disk, memory) of a large repo — the 15 MB repo
+was refused before any copying began (F164), so the deliberate absence of a per-file size cap
+for repo sources (M2b fix 3) has never been exercised at a size where it would matter. This
+stays open until a repo source can get past F164 far enough to be sized.
+
+> **2026-09-12, later the same day — pointer, not a rewrite of the record above:** F164 and
+> F165 are CLOSED by the D1 rework ("Destination model corrected" section, above); D4 there
+> records the same repo (`adaptlearn`) now measured cleanly. This paragraph and the ones above
+> it are left exactly as the live smoke found them — the historical record of what broke.
+
+## M3 — the intake form and confirm turn ($0 build, paid proof later)
+
+The six fields (Goal / Source / Destination / What success looks like / Guardrails / Judge
+examples — the last only when soft-green is picked); `src/authorflow.js` question sets
+re-shaped, answers still verbatim (`src/authorjob.js:298`); no language question (H5);
+the "here's what I understood" turn, 2 rounds max; the genre may never add a close stage the
+goal does not state (the `tsc --strict` stage in `mtv8jihy`). Detailed before it starts.
+
+## M4 — non-code checks and guards
+
+New kinds beside `LIVE_KINDS` (`src/kinds.js:142`, runners at `:1930`, catalogue
+`src/authoring.js:278+`, validator `:1496+`): output exists and non-empty; word / line / row
+count in range; named headings present; CSV named columns; JSON shape. Guards for plain-folder
+jobs: `input/` untouched; nothing written outside `output/`. H2: the output path may be absent
+at the seed. Detailed before it starts.
+
+## M5 — the judge
+
+The citation rule (format-blind, numbers must match, every output sentence covered) joins
+`JUDGE_RULES` (`src/judged.js:298`) beside the doc-comment rules; locate learns a prose
+prompt; calibration cases (10, floor 10/10) generated from the signer's judge examples AND
+the job's real input (`src/cardauthor.js`). Detailed before it starts.
+
+## M6 — web search
+
+A barebrowse verb (read, type, click to search; never submits a payment or booking form);
+the arbiter keeps its own record of what barebrowse returned; the close checks the output
+against that record. Detailed before it starts.
+
+## M7 — proof fires (paid, hamr's word each)
+
+Item 25 step (4): 31.5 calibration on a real bar; 31.4 green on gemini with
+`ANTHROPIC_API_KEY` unset; plus one plain-folder green and one soft-green end to end.

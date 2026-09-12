@@ -10,13 +10,19 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, ren
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { runJob } from '../src/run.js';
 import { jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { readShimArm } from '../src/readshim.js';
 import { closeStagesOf } from '../src/plan.js';
 import { resolveCloseTimeoutMs } from '../src/closetimeout.js';
 import { makeSpine } from '../src/spine.js';
+// PRD item 33/M2 — the source front door. `readSourceManifest` finds the
+// per-run instance a `prepareSource` patient carries beside its tree (never
+// signed into the job spec — a job is a repeatable SHAPE, the source/
+// destination a per-run value, exactly like `bareloop run <bundle> --repo
+// <path>` varies the repo without touching the bundle's signature).
+import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut } from '../src/source.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { runBehaviour, formatBehaviour } from '../src/behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
@@ -1286,6 +1292,42 @@ const closeStages = closeStagesOf(spec)?.length || 1;
 // on the run's own spine in the SAME seq order everything else does, rather
 // than a second, disconnected spine writer.
 const emit = makeSpine(spineFile);
+
+// PRD item 33/M2, call site 3(a) — a source-door manifest, when this patient
+// was PREPARED through `prepareSource` (`scripts/prep-source.mjs`), sits
+// beside its tree at `<into>/source.json`; `wd` IS `<into>/tree`, so its own
+// parent is `<into>`. A patient the JOBS table above points at directly
+// (every row today) never went through the front door and carries no
+// manifest — that absence IS "repo jobs untouched", never an invented
+// destination for a job that declared none. A manifest that EXISTS but
+// cannot be read or parsed is a named $0 stop, never a silent skip.
+const sourceManifest = await readSourceManifest(dirname(wd));
+if (sourceManifest.stop !== null) {
+  emit('destination-refused', { code: sourceManifest.code, detail: sourceManifest.stop });
+  emit('run-end', { outcome: 'escalated' });
+  console.error(`SOURCE-MANIFEST-RED — ${sourceManifest.stop}. See ${spineFile}`);
+  process.exit(1);
+}
+/** the front door's per-run instance, or null when there is none (no
+ * manifest, or a manifest that never declared a destination) — read ONCE,
+ * here, and reused at the copy-out call site below rather than re-read. */
+const frontDoor = frontDoorFromManifest(sourceManifest);
+if (frontDoor) {
+  // BEFORE ANY TOKEN (hamr's ruling, PRD item 33): a job that cannot land its
+  // output should never buy a worker turn first. `into: dirname(wd)` — review
+  // finding #3 — NOT `wd`: `wd` IS `<into>/tree`, so proving containment
+  // against `wd` alone let a destination at `<into>/profile.md` (inside the
+  // run's own scratch area, outside the frozen tree, but still bareloop's
+  // own scratch plumbing no destination should land in) slip through clean.
+  const dp = await proveDestination(frontDoor.destination, { into: dirname(wd) });
+  if (dp.stop !== null) {
+    emit('destination-refused', { code: dp.code, detail: dp.stop });
+    emit('run-end', { outcome: 'escalated' });
+    console.error(`DESTINATION-RED — ${dp.stop}. See ${spineFile}`);
+    process.exit(1);
+  }
+}
+
 const closeTimingResolved = await resolveCloseTimeoutMs({ job: spec, stages: closeStagesOf(spec) ?? [], cwd: wd, redact: redactSecrets });
 if (closeTimingResolved.timedOut) {
   const names = closeTimingResolved.timing.perStage.filter((s) => s.timedOut).map((s) => s.name).join(', ');
@@ -1573,6 +1615,37 @@ if (outcome === HITL_PAUSE) {
   })) console.log(l);
   console.log(`  (the same command without --approve re-prints this package — the checkpoint keeps for ${PAUSE_TTL_MS / 86_400_000} days)`);
 }
+
+// PRD item 33/M2, call site 3(b) — on a MINTED green only. `outcome` never
+// carries a distinct 'soft-green' string (src/run.js's own outcome union has
+// none): a judged close mints the same 'green' as a hard one, and the CLASS
+// lives on `spec.verdictType`/`REVIEW_DOOR_CLASSES` — so `outcome === 'green'`
+// already covers both, exactly as the spec's "green/soft-green" phrasing asks
+// for. A refused copy-out is reported beside the green it could not deliver
+// and NEVER changes `outcome` — the verdict is the close's, never this
+// module's to touch.
+if (outcome === 'green' && frontDoor) {
+  // `into: dirname(wd)` — same review finding #3 fix as the preflight above,
+  // so the two proofs of the same destination never disagree on what counts
+  // as "contained". D3 rework: `destination` is a DIRECTORY now, and a job
+  // may produce more than one file — `copyOut` delivers every non-empty file
+  // under `output/`, each under its own dated name, and returns the list.
+  const co = await copyOut({ tree: wd, into: dirname(wd), destination: frontDoor.destination });
+  if (co.stop === null) {
+    // `f.path`, never `frontDoor.destination` — each file lands under its
+    // OWN dated name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same
+    // day), so the declared directory is not the path anything actually
+    // wrote. The spine records what happened, not what was asked for.
+    for (const f of co.files) {
+      emit('destination-written', { path: f.path, declared: frontDoor.destination, bytes: f.bytes, sha256: f.sha256 });
+      console.log(`\nDESTINATION  written — ${f.path} (${f.bytes}B, sha256 ${f.sha256.slice(0, 12)}…)`);
+    }
+  } else {
+    emit('destination-refused', { code: co.code, detail: co.stop });
+    console.log(`\nDESTINATION  NOT written — ${co.code}: ${co.stop}`);
+  }
+}
+
 // ── THE REGISTRY ROW (2B), minted BEFORE the door is rendered because the door's own
 // text reads off it. A bridge FILE is not a registry ROW, and the review door answers
 // rows: with none, `--door --decide accept` reached `recordDoor`, found no green row for

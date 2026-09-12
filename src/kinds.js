@@ -485,9 +485,15 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
 /**
  * git, read-only, in a repository. Faults come back as `ok:false` with the
  * stderr — a caller decides whether that is a stop.
+ *
+ * Exported (PRD item 33/M2, `src/source.js`) so the hidden-git seed a plain
+ * folder/file/URL job runs against goes through the SAME spawn primitive as
+ * every other git read in this file — a second `spawn('git', …)` for the
+ * source front door would be a second instrument with its own timeout and
+ * buffer ceiling to keep in sync with this one.
  * @param {string} cwd @param {string[]} args
  */
-async function git(cwd, args) {
+export async function git(cwd, args) {
   const r = await sh('git', args, { cwd, timeoutMs: 120_000 });
   // git refusing IS "the close cannot run": the changed-set primitive is not an
   // optional enrichment, so a non-zero git carries FAILED rather than inheriting
