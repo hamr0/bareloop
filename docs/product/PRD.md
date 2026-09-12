@@ -831,6 +831,11 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     git bareloop owns. Rework owed on the M2/M2b non-repo door is tracked in
     `docs/product/ITEM33-BUILD.md`, not started, awaiting hamr's go.
 
+    **2026-09-12 — build progress.** M1 (citation POC), M2 (source front door) and M2b
+    (review fixes) landed — `docs/product/ITEM33-BUILD.md`. The repo-source path is **OPEN,
+    pending rework**: it does not hold on a real JS repo today (F161–F166,
+    `docs/product/ITEM33-BUILD.md`'s "REWORK OWED" section). M3–M7 not started.
+
 Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
 bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
 library's own values (3 / 120_000ms) rather than `run-u`'s operator-set values (4 /

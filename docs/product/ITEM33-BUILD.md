@@ -207,6 +207,60 @@ The dated-name machinery already built (`datedDestination`/`pickDelivery`, M2b i
 right idea and survives — it is the single-file, must-not-exist, outside-the-source assumptions
 underneath it that do not. NOT started, awaiting hamr's go.
 
+**REWORK OWED, cont. — two more found by a live smoke of the repo-source path, 2026-09-12:**
+
+5. **Repo sources are refused on any real JS repo carrying `node_modules`** (F164). The
+   symlink refusal (`source-symlink`) was written for the plain-folder path, where a symlink
+   can silently widen the frozen copy; inside a repo source the same check fires on ordinary
+   npm `.bin` symlinks, so essentially every real JS repo with dependencies installed is
+   refused before anything is copied. No fixture repo in `tests/source.test.js` has
+   `node_modules`, so unit tests never saw it. OPEN — awaiting a deliberate decision (exempt
+   `node_modules` for repo sources, or scope the symlink refusal to plain-folder sources only),
+   not a reflexive patch.
+6. **The seed force-add (M2b fix 6, `git add -f`) freezes gitignored content into the copied
+   tree for repo sources** (F165). Correct for a plain folder (nothing is gitignored there
+   yet); wrong for a repo, where `-f` forces in everything the SOURCE repo chose to ignore —
+   live-proven on a real repo where `.claude/remember/AGENT_RULES.md` and
+   `.claude/settings.local.json` landed in the seed. On a JS repo the same path would force in
+   `node_modules`; against the hard line, a gitignored `.env` reaches the seed by this route,
+   upstream of the F162 content-secret-scan. OPEN — hamr asked to rule between "copy only what
+   git already tracks" (drop `-f` for repo sources) and "copy everything, keep ignored files
+   out of the seed commit specifically." NOT started.
+
+## Live smoke, 2026-09-12 (M2b, hands-on after the fix list landed)
+
+A hands-on run of `scripts/prep-source.mjs` against real sources — a plain folder, a real
+3 MB/12-commit repo (`~/PycharmProjects/flowithmel`), a 15 MB repo (`~/PycharmProjects/
+adaptlearn`), and a real redirecting URL — after the M2b fix list was reported built and
+2503 unit tests were green.
+
+**Held:** plain folder froze 2 files, hidden git initialized, folder note printed, missing
+destination parent refused cleanly (exit code 2); the 3 MB repo copied with history intact
+(source HEAD is an ancestor of the seed), hooks stripped, `core.hooksPath` pinned-but-unset,
+original repo untouched (HEAD unchanged, 0 changed files), 0.24s / 71.7 MB maxRSS / 14 files /
+857,554 B; the redirecting URL resolved and printed its warning line.
+
+**Broke:** a real API key placed in a source file was frozen into the tree AND the hidden-git
+seed, uncaught (F162, fixed same session); a planted `pre-commit` hook in a copied repo's
+`.git/hooks` fired live inside bareloop's own process before a token spent (F163, fixed same
+session, two independent layers); the 15 MB repo (`adaptlearn`) was refused outright by the
+`node_modules` symlink defect (F164, OPEN) before any copy began; the 3 MB repo's seed
+committed gitignored `.claude/` content from the source (F165, OPEN).
+
+**Bottom line: the repo-source path does not work on a real JS repo today.** Every real
+JS repo tried (both the 3 MB and the 15 MB one) hit at least one of F164/F165; only a repo
+built by hand with no `node_modules` and no `.claude`/gitignored content would pass cleanly,
+which is exactly the shape none of the existing fixtures deviate from.
+
+**Confirmed live, not fixed:** three `.jpg` files in the smoked repo were copied unscanned for
+secrets — the door skips the secret scan on binary files (F166). Named residual, not addressed
+this session.
+
+**Unmeasured, not fixed:** the cost (copy time, disk, memory) of a large repo — the 15 MB repo
+was refused before any copying began (F164), so the deliberate absence of a per-file size cap
+for repo sources (M2b fix 3) has never been exercised at a size where it would matter. This
+stays open until a repo source can get past F164 far enough to be sized.
+
 ## M3 — the intake form and confirm turn ($0 build, paid proof later)
 
 The six fields (Goal / Source / Destination / What success looks like / Guardrails / Judge
