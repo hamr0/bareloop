@@ -108,39 +108,63 @@ without a live provider key past the JUDGES/key gate that runs before them (this
 no paid/model calls in its suite) — every piece of LOGIC at those call sites is proven
 directly, and one source-text test proves only that the script actually wires them.
 
-## M2b — review fixes (hamr, 2026-09-11) — IN PROGRESS
+## M2b — review fixes (hamr, 2026-09-11) — DONE 2026-09-12
 
 An audit after M2 (hamr: "what did you gloss over?") found a live hard-line breach and gaps.
 Rulings and the fix list, in build order (all edit `src/source.js` — ONE builder at a time):
 
-1. **Secrets never enter the tree** — BUILDING. A live smoke put a `.env` carrying an
+1. **Secrets never enter the tree** — DONE. A live smoke put a `.env` carrying an
    `sk-ant-`-shaped key into `input/` and the hidden-git seed. Fix: every frozen file's whole
    content (folder, file, URL body) goes through the ONE inventory (`scanSecrets`) before
    anything is written; a hit refuses `source-carries-secret`, naming path + pattern name
    only, nothing created on disk. Residual: a secret whose shape is not in the inventory.
-2. **`.env` refused by name** (`.env`, `.env.*`), whatever its content (hamr: yes).
+2. **`.env` refused by name** (`.env`, `.env.*`), whatever its content (hamr: yes) — DONE
+   (`source-env-file`, folder walk / single file / URL-derived name alike).
 3. **16 MB cap PER FILE** (`MAX_BUFFER`, reused) for folder files and single files; the URL
-   body already has it. No folder-total cap (hamr's call).
-4. **Date in the delivered name** — `output/profile.md` lands as `profile-YYYY-MM-DD.md` at
-   the destination; a same-day second delivery gets `-2`, `-3` (the work-branch rule). Never
-   overwrites. The spine records the real path.
-5. **Redirects visible** — the final URL after redirects is recorded in the manifest and
-   printed, so a login page cannot become the source unnoticed.
-6. **The seed holds every copied file** — a `.gitignore` inside the source must not drop files
-   from the seed (manifest file list == `git ls-tree` of the seed, checked); a nested `.git`
-   anywhere below the root refuses `source-nested-repo`.
-7. **Repo in, file out** (hamr: yes — the PR-review job) — a repo source is COPIED with its
-   history (never used in place), gets the same `output/`, manifest, destination and copy-out.
-   Its guards (the repo stays untouched) come with M4.
-8. **The folder note** (hamr): `prep-source` prints, whenever the source is a folder: "make a
+   body already has it. No folder-total cap (hamr's call) — DONE (`source-file-oversize`;
+   repo sources exempt, a real repo legitimately carries large/binary files).
+4. **Date in the delivered name** — DONE. `output/profile.md` lands as
+   `profile-YYYY-MM-DD.md` at the destination; a same-day second delivery gets `-2`, `-3`
+   (the work-branch rule), cap 99, past which `destination-exists`. Never overwrites. New
+   exports `datedDestination`/`pickDelivery`, used by both `proveDestination` (the $0
+   pre-flight) and `copyOut` (the delivery) so the two can never disagree; `copyOut` returns
+   `{bytes, sha256, path}` and `run-u.mjs` spine-records the real landed path
+   (`destination-written {path, declared, bytes, sha256}`).
+5. **Redirects visible** — DONE. `fetchOnce` returns `finalUrl`; it is secret-scanned the
+   same way the typed URL is, recorded in the manifest, and printed by `prep-source`
+   whenever it differs from what was typed, so a login page cannot become the source
+   unnoticed.
+6. **The seed holds every copied file** — DONE. `git add` runs `-f` so a `.gitignore` inside
+   the source cannot drop files from the seed; the seed is read back with
+   `git ls-tree -r --name-only HEAD` and diffed against the manifest's file list by name
+   (`source-seed-incomplete` on a shortfall). A nested `.git` anywhere below the root
+   refuses `source-nested-repo`.
+7. **Repo in, file out** (hamr: yes — the PR-review job) — DONE. A repo source
+   (`kind: 'repo'`) is COPIED with its history (never used in place), working files land at
+   the TREE ROOT (no `input/` prefix), `output/` is added, and the seed commit goes on top
+   of the existing history. A `.git` FILE (linked worktree/submodule) refuses
+   `source-is-linked-worktree` rather than silently committing into the original.
+   **Live-proven defect found and fixed during this review, not in the original fix list:**
+   a copied `.git/hooks` carries the SOURCE repo's own `pre-commit`/`commit-msg`/
+   `post-commit` scripts, and `git commit` ran them — arbitrary code from the source repo,
+   executed inside bareloop's own process, before a single token spent (reproduced live: a
+   planted `pre-commit` hook fired and left a marker file). Fixed with two independent
+   layers: the copied `hooks/` directory is stripped right after the `.git` copy, and every
+   git call this door makes pins `core.hooksPath` to a path that is never created, so a
+   `core.hooksPath` set in the copied `.git/config` pointing elsewhere cannot reopen the
+   hole either. Fail-first shown (hooks fired with either layer alone reverted; neither
+   fires with both in place); regression test locks it in
+   (`tests/source.test.js`, "a repo source carrying a pre-commit hook never runs it").
+   Its guards (the input stays untouched) come with M4.
+8. **The folder note** — DONE. `prep-source` prints, whenever the source is a folder: "make a
    new folder, put only the file(s) this job needs in it, point bareloop at that — never your
-   original folder". Same line in `bareloop.context.md`; the panel (N6) shows it beside the
-   Source field.
+   original folder". Same line in `bareloop.context.md`; the panel (N6) note is still owed
+   (N6 itself is unbuilt).
 
-Also owed: the PRD item 33 tick for M1/M2/M2b, and a FINDINGS entry for the M1 citation POC
-and the M2 secrets breach. Honest status of M2: built and unit/smoke-proven; it cannot run as
-a real job until M3 (the form) and M4 (non-code checks) exist; the run-u wiring is proven by
-source text only until the first real run.
+Also owed: the PRD item 33 tick for M1/M2/M2b, and a FINDINGS entry for the M1 citation POC,
+the M2 secrets breach, and the M2b hooks breach. Honest status of M2/M2b: built and
+unit/smoke-proven; it cannot run as a real job until M3 (the form) and M4 (non-code checks)
+exist; the run-u wiring is proven by source text only until the first real run.
 
 ## M3 — the intake form and confirm turn ($0 build, paid proof later)
 

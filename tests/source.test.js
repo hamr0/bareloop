@@ -25,7 +25,15 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import {
   prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest,
+  datedDestination, pickDelivery,
 } from '../src/source.js';
+
+/** the same neutralized identity `src/source.js` uses — CI has no gitconfig
+ * (F136: the suite runs hermetic, empty `HOME`), so a fixture repo that lets
+ * git look for one reds there while passing locally. */
+const GIT_ID = ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false'];
+/** @param {string} cwd @param {string[]} args */
+const gitFix = (cwd, args) => execFileSync('git', [...GIT_ID, ...args], { cwd, encoding: 'utf8' });
 
 // ── fixtures ──────────────────────────────────────────────────────────────
 
@@ -132,18 +140,29 @@ test('prepareSource: a folder with a NUL byte in a file refuses source-not-text,
   assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
 });
 
-test('prepareSource: a folder with a secret-shaped .env refuses source-carries-secret, into absent, the key never appears in the refusal (live-proven defect: the front door used to scan only the URL string)', async () => {
+test('prepareSource: a folder with a secret-shaped key in a non-.env file refuses source-carries-secret, into absent, the key never appears in the refusal (live-proven defect: the front door used to scan only the URL string)', async () => {
   const source = tmp('bareloop-src-secret-folder-');
   const fakeKey = 'sk-ant-api03-' + 'A'.repeat(60);
-  writeFileSync(join(source, '.env'), `ANTHROPIC_API_KEY=${fakeKey}\n`);
+  writeFileSync(join(source, 'notes.md'), `ANTHROPIC_API_KEY=${fakeKey}\n`);
   writeFileSync(join(source, 'clean.txt'), 'nothing to see here');
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
   const r = await prepareSource({ source, into });
   assert.equal(r.code, 'source-carries-secret');
-  assert.match(r.stop, /\.env/, 'the refusal names the FILE that carried the secret');
+  assert.match(r.stop, /notes\.md/, 'the refusal names the FILE that carried the secret');
   assert.doesNotMatch(r.stop, new RegExp(fakeKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the matched secret text must never appear in the refusal');
-  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree — `.env` is never copied, never committed to the hidden seed');
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree — the secret is never copied, never committed to the hidden seed');
+});
+
+test('prepareSource: a folder with an .env file refuses source-env-file by NAME alone, whatever it contains (M2b fix 2)', async () => {
+  const source = tmp('bareloop-src-envfile-');
+  writeFileSync(join(source, '.env'), 'NOT_A_SECRET_SHAPE=plain-value\n');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-env-file');
+  assert.match(r.stop, /\.env/);
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
 });
 
 test('prepareSource: a single-file source carrying a Gemini-shaped key refuses source-carries-secret, into absent, key never in the refusal', async () => {
@@ -194,14 +213,181 @@ test('prepareSource: the SOURCE ITSELF being a symlink refuses source-symlink, n
   assert.ok(!existsSync(into));
 });
 
-test('prepareSource: a folder that is itself a git repo root refuses source-is-repo', async () => {
+test('prepareSource: a git repo source is COPIED with its history to the tree root, kind "repo", output/ added, seed on top (M2b fix 7)', async () => {
   const source = tmp('bareloop-src-repo-');
-  execFileSync('git', ['init', '-q'], { cwd: source });
+  gitFix(source, ['init', '-q']);
   writeFileSync(join(source, 'a.txt'), 'x');
+  mkdirSync(join(source, 'src'), { recursive: true });
+  writeFileSync(join(source, 'src', 'index.js'), 'export const x = 1;\n');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'the history that must survive']);
+  const originalHead = gitFix(source, ['rev-parse', 'HEAD']).trim();
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
   const r = await prepareSource({ source, into });
-  assert.equal(r.code, 'source-is-repo');
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.kind, 'repo');
+  const tree = join(into, 'tree');
+  // the working files sit at the TREE ROOT, never under input/ — a worker
+  // reviewing a PR needs the repo where a repo is expected to be
+  assert.ok(existsSync(join(tree, 'a.txt')), 'a repo source lands at the tree root');
+  assert.ok(existsSync(join(tree, 'src', 'index.js')));
+  assert.ok(!existsSync(join(tree, 'input')), 'a repo source has no input/ prefix');
+  assert.ok(existsSync(join(tree, 'output', '.gitkeep')), 'output/ is added the same way it is for every other kind');
+  assert.ok(existsSync(join(into, 'source.json')), 'the manifest still lives outside the tree');
+
+  // the history SURVIVED: the original commit is an ancestor of the seed
+  execFileSync('git', ['-C', tree, 'merge-base', '--is-ancestor', originalHead, r.manifest.seed]);
+  assert.notEqual(r.manifest.seed, originalHead, 'the seed is a NEW commit on top, holding output/');
+  // and the original repo was never touched (patients are copies, always)
+  assert.equal(gitFix(source, ['rev-parse', 'HEAD']).trim(), originalHead);
+  assert.ok(!existsSync(join(source, 'output')), 'the original repo never grows an output/');
+});
+
+test('prepareSource: a repo source carrying a pre-commit hook never runs it (live-proven defect: a copied .git/hooks is arbitrary code from the source repo)', async () => {
+  const source = tmp('bareloop-src-repo-hook-');
+  gitFix(source, ['init', '-q']);
+  const proof = join(tmp('bareloop-hook-proof-'), 'PROOF-HOOK-RAN');
+  mkdirSync(join(source, '.git', 'hooks'), { recursive: true });
+  for (const name of ['pre-commit', 'commit-msg', 'post-commit']) {
+    writeFileSync(join(source, '.git', 'hooks', name), `#!/bin/sh\ntouch '${proof}'\nexit 0\n`, { mode: 0o755 });
+  }
+  writeFileSync(join(source, 'a.txt'), 'x');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'seed with hooks armed']);
+  // the SETUP commit above fires these same hooks against the SOURCE repo
+  // itself (a real fixture repo really does run its own hooks) — clear the
+  // proof here so only `prepareSource`'s own seed commit, against the COPY,
+  // can leave it behind
+  rmSync(proof, { force: true });
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.ok(!existsSync(proof), 'no copied hook fired while bareloop committed the seed');
+  assert.ok(!existsSync(join(into, 'tree', '.git', 'hooks', 'pre-commit')), 'the copied hooks directory is stripped, not merely bypassed');
+});
+
+test('prepareSource: a repo whose .git is a FILE (linked worktree / submodule) refuses source-is-linked-worktree — a copy would commit into the original', async () => {
+  const source = tmp('bareloop-src-worktree-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  writeFileSync(join(source, '.git'), 'gitdir: /somewhere/else/.git/worktrees/wt\n');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-is-linked-worktree');
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
+});
+
+test('prepareSource: a nested .git BELOW the root refuses source-nested-repo (M2b fix 6) — for a plain folder and for a repo source alike', async () => {
+  const folder = tmp('bareloop-src-nested-');
+  mkdirSync(join(folder, 'vendor', 'lib'), { recursive: true });
+  writeFileSync(join(folder, 'a.txt'), 'x');
+  gitFix(join(folder, 'vendor', 'lib'), ['init', '-q']);
+  const r1 = await prepareSource({ source: folder, into: join(tmp('bareloop-into-parent-'), 'job1') });
+  assert.equal(r1.code, 'source-nested-repo');
+
+  const repo = tmp('bareloop-src-repo-nested-');
+  gitFix(repo, ['init', '-q']);
+  writeFileSync(join(repo, 'a.txt'), 'x');
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'root']);
+  mkdirSync(join(repo, 'vendor'), { recursive: true });
+  gitFix(join(repo, 'vendor'), ['init', '-q']);
+  const r2 = await prepareSource({ source: repo, into: join(tmp('bareloop-into-parent-'), 'job2') });
+  assert.equal(r2.code, 'source-nested-repo', 'the ROOT .git is exempt for a repo source; a nested one never is');
+});
+
+test('prepareSource: a .gitignore inside the source cannot drop a file from the seed (M2b fix 6 — git add -f, then the seed is READ BACK and diffed)', async () => {
+  const source = tmp('bareloop-src-ignored-');
+  writeFileSync(join(source, '.gitignore'), 'secret-notes.md\nbuild/\n');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  writeFileSync(join(source, 'secret-notes.md'), 'the file a .gitignore would have dropped');
+  mkdirSync(join(source, 'build'), { recursive: true });
+  writeFileSync(join(source, 'build', 'out.txt'), 'also ignored');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  const inSeed = execFileSync('git', ['-C', join(into, 'tree'), 'ls-tree', '-r', '--name-only', 'HEAD'], { encoding: 'utf8' })
+    .split('\n').map((l) => l.trim()).filter(Boolean);
+  for (const rel of ['input/a.txt', 'input/secret-notes.md', 'input/build/out.txt', 'input/.gitignore']) {
+    assert.ok(inSeed.includes(rel), `${rel} must be in the seed — a file on disk but absent from it would read as the WORKER's write: seed holds ${inSeed.join(', ')}`);
+  }
+  // and the manifest's own list is exactly what the seed carries
+  const manifestPaths = r.manifest.files.map((/** @type {any} */ f) => `input/${f.path}`).sort();
+  assert.deepEqual(manifestPaths, inSeed.filter((x) => x !== 'output/.gitkeep').sort());
+});
+
+test('prepareSource: an environment file refuses source-env-file by NAME, whatever it holds (M2b fix 2) — folder, single file, and a URL path', async () => {
+  // content deliberately BORING: no known secret shape, so only the NAME rule
+  // can be what refuses here (the content scan would let this through)
+  const folder = tmp('bareloop-src-env-');
+  writeFileSync(join(folder, 'a.txt'), 'x');
+  writeFileSync(join(folder, '.env.local'), 'GREETING=hello\n');
+  const r1 = await prepareSource({ source: folder, into: join(tmp('bareloop-into-parent-'), 'job1') });
+  assert.equal(r1.code, 'source-env-file');
+
+  const dir = tmp('bareloop-src-env-file-');
+  writeFileSync(join(dir, '.env'), 'GREETING=hello\n');
+  const r2 = await prepareSource({ source: join(dir, '.env'), into: join(tmp('bareloop-into-parent-'), 'job2') });
+  assert.equal(r2.code, 'source-env-file');
+
+  const srv = await serverWith((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('GREETING=hello\n'); });
+  try {
+    const r3 = await prepareSource({ source: srv.url('/config/.env'), into: join(tmp('bareloop-into-parent-'), 'job3') });
+    assert.equal(r3.code, 'source-env-file');
+  } finally { await srv.close(); }
+});
+
+test('prepareSource: a file over the REAL MAX_BUFFER refuses source-file-oversize (M2b fix 3) — folder file and single file', { timeout: 60_000 }, async () => {
+  const { MAX_BUFFER } = await import('../src/kinds.js');
+  const big = Buffer.alloc(MAX_BUFFER + 1024, 0x61); // past the REAL ceiling, no crafted shortcut
+  const folder = tmp('bareloop-src-big-');
+  writeFileSync(join(folder, 'ok.txt'), 'small');
+  writeFileSync(join(folder, 'huge.txt'), big);
+  const r1 = await prepareSource({ source: folder, into: join(tmp('bareloop-into-parent-'), 'job1') });
+  assert.equal(r1.code, 'source-file-oversize');
+  assert.match(r1.stop, /huge\.txt/, 'the refusal names the file');
+
+  const r2 = await prepareSource({ source: join(folder, 'huge.txt'), into: join(tmp('bareloop-into-parent-'), 'job2') });
+  assert.equal(r2.code, 'source-file-oversize');
+});
+
+test('prepareSource: a file just UNDER the ceiling passes (the per-file cap does not false-positive)', { timeout: 60_000 }, async () => {
+  const { MAX_BUFFER } = await import('../src/kinds.js');
+  const folder = tmp('bareloop-src-nearly-big-');
+  writeFileSync(join(folder, 'nearly.txt'), Buffer.alloc(MAX_BUFFER - 1024, 0x61));
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+  const r = await prepareSource({ source: folder, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.files[0].bytes, MAX_BUFFER - 1024);
+});
+
+test('prepareSource: a REAL 302 redirect is followed but recorded — finalUrl rides into the manifest (M2b fix 5)', async () => {
+  const srv = await serverWith((req, res) => {
+    if (req.url === '/start') { res.writeHead(302, { location: '/landed/page.md' }); res.end(); return; }
+    res.writeHead(200, { 'content-type': 'text/markdown' });
+    res.end('# the page you actually got\n');
+  });
+  try {
+    const into = join(tmp('bareloop-into-parent-'), 'job1');
+    const typed = srv.url('/start');
+    const r = await prepareSource({ source: typed, into });
+    assert.equal(r.stop, null, r.stop ?? undefined);
+    assert.equal(r.manifest.source, typed, 'what the person typed is kept verbatim');
+    assert.equal(r.manifest.finalUrl, srv.url('/landed/page.md'), 'and where the bytes actually came from is recorded beside it');
+    assert.ok(existsSync(join(into, 'tree', 'input', 'page.md')), 'the frozen name comes from the FINAL url, not the typed one');
+  } finally { await srv.close(); }
+});
+
+test('prepareSource: no redirect means no finalUrl field at all (absence reported as absence, never a duplicate of source)', async () => {
+  const srv = await serverWith((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('hi'); });
+  try {
+    const into = join(tmp('bareloop-into-parent-'), 'job1');
+    const r = await prepareSource({ source: srv.url('/plain.txt'), into });
+    assert.equal(r.manifest.finalUrl, srv.url('/plain.txt'));
+  } finally { await srv.close(); }
 });
 
 test('prepareSource: destination and output are required together', async () => {
@@ -308,12 +494,28 @@ test('frontDoorFromManifest: a hand-edited manifest with an escaping output is t
 
 // ── review finding #2: destination proven at SETUP time, not just in-run ──
 
-test('prepareSource: an already-existing destination refuses destination-exists at prepare time, and `into` is never created', async () => {
+test('prepareSource: a bare existing destination does not block prep — the delivered name is dated, so it never collides with the bare file (M2b fix 4)', async () => {
   const source = tmp('bareloop-src-');
   writeFileSync(join(source, 'a.txt'), 'x');
   const destParent = tmp('bareloop-dest-parent-');
   const destination = join(destParent, 'already-there.md');
   writeFileSync(destination, 'do not touch');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into, destination, output: 'output/already-there.md' });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(readFileSync(destination, 'utf8'), 'do not touch', 'the bare file itself is never touched');
+});
+
+test('prepareSource: every same-day dated slot already taken refuses destination-exists at prepare time, and `into` is never created', async () => {
+  const source = tmp('bareloop-src-');
+  writeFileSync(join(source, 'a.txt'), 'x');
+  const destParent = tmp('bareloop-dest-parent-');
+  const destination = join(destParent, 'already-there.md');
+  const now = new Date();
+  // fill EVERY same-day slot (`pickDelivery` tries -1 through -99) so the
+  // refusal is real, not just pushed to the next free suffix
+  for (let n = 1; n <= 99; n++) writeFileSync(datedDestination(destination, now, n), 'taken');
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
   const r = await prepareSource({ source, into, destination, output: 'output/already-there.md' });
@@ -453,13 +655,47 @@ test('proveDestination: a relative path refuses destination-not-absolute', async
   assert.equal(r.code, 'destination-not-absolute');
 });
 
-test('proveDestination: an existing file refuses destination-exists (never overwrite)', async () => {
+test('proveDestination: an existing file at the BARE name does NOT block — the delivered name is dated (M2b fix 4)', async () => {
   const into = tmp('bareloop-into-');
   const destParent = tmp('bareloop-dest-');
   const destination = join(destParent, 'already-there.txt');
-  writeFileSync(destination, 'do not touch');
+  writeFileSync(destination, 'the person\'s own file, untouched');
+  const r = await proveDestination(destination, { into });
+  assert.equal(r.stop, null, 'bareloop never writes this exact name, so it was never in the way');
+  assert.equal(readFileSync(destination, 'utf8'), 'the person\'s own file, untouched');
+});
+
+test('proveDestination: every same-day slot taken refuses destination-exists (the cap, never a silent overwrite)', async () => {
+  const into = tmp('bareloop-into-');
+  const destParent = tmp('bareloop-dest-');
+  const destination = join(destParent, 'profile.md');
+  const now = new Date();
+  for (let n = 1; n <= 99; n++) writeFileSync(datedDestination(destination, now, n), 'taken');
   const r = await proveDestination(destination, { into });
   assert.equal(r.code, 'destination-exists');
+});
+
+test('datedDestination: the delivered name carries the day, then -2/-3 for a same-day repeat', () => {
+  const now = new Date(2026, 8, 12); // month is 0-based: September
+  assert.equal(datedDestination('/a/b/profile.md', now, 1), '/a/b/profile-2026-09-12.md');
+  assert.equal(datedDestination('/a/b/profile.md', now, 2), '/a/b/profile-2026-09-12-2.md');
+  assert.equal(datedDestination('/a/b/profile.md', now, 3), '/a/b/profile-2026-09-12-3.md');
+  // no extension, and a dotted stem — the LAST dot is the extension boundary
+  assert.equal(datedDestination('/a/b/README', now, 1), '/a/b/README-2026-09-12');
+  assert.equal(datedDestination('/a/b/report.final.csv', now, 1), '/a/b/report.final-2026-09-12.csv');
+  // a leading-dot name is a NAME, not an extension
+  assert.equal(datedDestination('/a/b/.profile', now, 1), '/a/b/.profile-2026-09-12');
+});
+
+test('pickDelivery: skips the names already taken today and hands back the first free one', () => {
+  const destParent = tmp('bareloop-dest-');
+  const destination = join(destParent, 'profile.md');
+  const now = new Date();
+  const first = pickDelivery(destination, now);
+  assert.equal(first.path, datedDestination(destination, now, 1));
+  writeFileSync(first.path, 'delivered');
+  const second = pickDelivery(destination, now);
+  assert.equal(second.path, datedDestination(destination, now, 2));
 });
 
 test('proveDestination: a missing parent directory refuses destination-parent-missing', async () => {
@@ -500,14 +736,19 @@ test('copyOut: copies the produced file, matches bytes/sha256, and never overwri
   assert.equal(r1.stop, null, r1.stop ?? undefined);
   assert.equal(r1.bytes, Buffer.byteLength(body));
   assert.equal(r1.sha256, sha256(Buffer.from(body)));
-  assert.equal(readFileSync(destination, 'utf8'), body);
+  // M2b fix 4: the file lands under its DATED name, and the path it took
+  // comes back — the declared name is never what anything wrote
+  assert.equal(r1.path, datedDestination(destination, new Date(), 1));
+  assert.ok(!existsSync(destination), 'the bare declared name is never written');
+  assert.equal(readFileSync(r1.path, 'utf8'), body);
 
-  // a second copyOut against the SAME destination must never clobber it, even
-  // though the source file is unchanged — bareloop never overwrites
+  // a second copyOut the SAME day must never clobber the first — it lands at -2
   writeFileSync(join(tree, 'output', 'result.md'), 'a different run wrote this');
   const r2 = await copyOut({ tree, output: 'output/result.md', destination });
-  assert.equal(r2.code, 'destination-exists');
-  assert.equal(readFileSync(destination, 'utf8'), body, 'the original delivered file must be untouched');
+  assert.equal(r2.stop, null, r2.stop ?? undefined);
+  assert.equal(r2.path, datedDestination(destination, new Date(), 2));
+  assert.equal(readFileSync(r1.path, 'utf8'), body, 'the first delivered file must be untouched');
+  assert.equal(readFileSync(r2.path, 'utf8'), 'a different run wrote this');
 });
 
 test('copyOut: a missing output file refuses destination-output-missing', async () => {
@@ -581,6 +822,6 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
   assert.match(src, /const dp = await proveDestination\(frontDoor\.destination, \{ into: dirname\(wd\) \}\)/, 'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
   assert.match(src, /if \(outcome === 'green' && frontDoor\)/, 'the copy-out gate fires on the ONE outcome string a graded close mints');
   assert.match(src, /const co = await copyOut\(\{ tree: wd, into: dirname\(wd\), output: frontDoor\.output, destination: frontDoor\.destination \}\)/, 'the copy-out call site, same scratch-root containment proof');
-  assert.match(src, /emit\('destination-written'/);
+  assert.match(src, /emit\('destination-written', \{ path: co\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one');
   assert.match(src, /emit\('destination-refused'/);
 });

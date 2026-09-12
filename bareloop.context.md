@@ -2931,6 +2931,12 @@ const prepared = await prepareSource({
 Or the CLI: `node scripts/prep-source.mjs --source <path-or-url> --into <dir> [--destination
 <absolute-path> --output <name>]` — prints the tree path, the seed, and the exact next command.
 
+> **If your source is a folder, read this first (hamr's ruling):** make a new folder, put
+> only the file(s) this job needs in it, point bareloop at that — never your original
+> folder. Everything in the folder you name is frozen, read, and paid for. `prep-source`
+> prints the same line on every folder prep, and the panel (N6) shows it beside the Source
+> field.
+
 **Layout.** `<into>/tree/input/…` is the frozen copy; `<into>/tree/output/` is empty (a
 `.gitkeep` seeds it) and is where the run writes; `<into>/source.json` is the manifest,
 OUTSIDE the tree — no worker verb can ever read or edit it. One hidden commit, authored
@@ -2943,9 +2949,35 @@ ONCE with plain `fetch` — no credentials, no cookies, no custom headers — un
 never a second number. Content-type must be `text/*`, `application/json`, or
 `application/xml`. A local file or folder must be plain text (a NUL byte in the first 8KB of
 any file refuses the whole prep, naming every offending file) and must contain no symlinks
-(named, never followed) — a folder that is itself a git repo root is refused too (`source-is-
-repo`; that shape keeps its `--patient`, this door is for plain material). PDF and Word input
-have no reader here (hole H7, PRD item 33) — logged, not built.
+(named, never followed). Each file has its OWN `MAX_BUFFER` ceiling (`source-file-oversize`)
+— there is no folder TOTAL cap, hamr's call. A file named `.env` or `.env.*` is refused by
+NAME whatever it contains (`source-env-file`), belt-and-braces beside the content scan below.
+A `.git` found anywhere BELOW the root is a nested repo and refuses (`source-nested-repo`):
+its objects are a second history nobody declared, and the seed could not hold them honestly.
+PDF and Word input have no reader here (hole H7, PRD item 33) — logged, not built.
+
+**A git repo IS an allowed source** (hamr: yes — the PR-review job). It is COPIED with its
+history, never used in place (the patients-are-copies rule): the working files land at the
+TREE ROOT rather than under `input/`, `.git` is copied verbatim, `output/` is added, and the
+seed commit goes on TOP of the existing history — so `manifest.kind === 'repo'` and the
+worker gets a real repo to review. Its guards (the input stays untouched) arrive with M4. A
+`.git` that is a FILE, not a directory — a linked worktree or a submodule — refuses
+`source-is-linked-worktree`: its real git directory lives elsewhere, and a copy would
+silently commit into the original. Text-only and the per-file ceiling do not apply to a repo
+source (a real repo legitimately carries binaries); binary files there are hashed into the
+manifest but NOT secret-scanned — a named residual.
+
+**A URL's redirects are followed but never invisible.** The URL the body actually came from
+rides into the manifest as `finalUrl` and is printed by `prep-source` whenever it differs
+from what was typed, so a link that quietly lands on a login or error page is something a
+person can see before a token spends. The final URL is secret-scanned the same way the typed
+one is.
+
+**The seed holds every frozen file, and that is CHECKED, not hoped.** `git add` runs with
+`-f`, so a `.gitignore` inside the source cannot drop files from the seed (a file present on
+disk but absent from the seed would read to a close as the worker having written it); then
+the seed is read back with `git ls-tree -r --name-only HEAD` and diffed against the manifest's
+own file list by name. A shortfall refuses `source-seed-incomplete`.
 
 **Every frozen file's content is scanned for a known secret shape before anything is
 written under `into`** (a folder, a single file, or a fetched URL body — the SAME inventory
@@ -2959,7 +2991,8 @@ is a shape-based check, not a filename denylist: a secret whose shape is not in 
 residual, not this fix's job to close.
 
 **Every refusal is a named `{stop, code}`, never a throw and never silent:** `source-
-unreadable`, `source-is-repo`, `source-symlink`, `source-not-text`, `source-fetch-failed`,
+unreadable`, `source-symlink`, `source-env-file`, `source-file-oversize`,
+`source-nested-repo`, `source-is-linked-worktree`, `source-seed-incomplete`, `source-git-failed`, `source-not-text`, `source-fetch-failed`,
 `source-fetch-timeout`, `source-fetch-oversize`, `source-carries-secret`, `into-exists`, `destination-output-
 required`, `output-invalid`, `destination-in-source`, `destination-not-absolute`,
 `destination-exists`, `destination-parent-missing`, `destination-parent-unwritable`,
@@ -2984,6 +3017,17 @@ destination are proven at job start, $0): when `destination` is given, `prepareS
 sitting inside the scratch area but outside the frozen tree — e.g. `<into>/profile.md` — is
 also caught as `destination-contained`, not just one strictly inside `tree`. `run-u.mjs`'s two
 call sites pass `dirname(wd)` (`wd` IS `<into>/tree`) as `into` for exactly this reason.
+
+**The delivered file carries the date, and nothing is ever overwritten.** A destination of
+`/home/me/profile.md` LANDS as `/home/me/profile-2026-09-12.md`; a second delivery the same
+day lands as `profile-2026-09-12-2.md`, then `-3` (the work-branch collision rule), up to
+`-99` before `destination-exists`. `datedDestination(destination, now, n)` and
+`pickDelivery(destination, now?)` are exported and are what BOTH `proveDestination` (the $0
+pre-flight) and `copyOut` (the delivery) call, so the two can never disagree about what
+"landable" means. `copyOut` returns the path it actually wrote (`{bytes, sha256, path}`) and
+`run-u.mjs` spine-records THAT (`destination-written {path, declared, bytes, sha256}`) — the
+declared path is not the path anything wrote. A file already sitting at the bare
+`profile.md` therefore does not block a run: it is not a name bareloop will ever use.
 
 **The destination is a PER-RUN value, never a signed job-spec field.** A job spec is a
 repeatable SHAPE (goal, checks, judge rules), signed once; source and destination vary per

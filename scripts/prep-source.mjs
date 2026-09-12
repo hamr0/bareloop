@@ -54,11 +54,26 @@ if (!source || !into) {
     process.exitCode = 2;
   } else {
     console.log(`tree      ${result.tree}`);
+    console.log(`kind      ${result.manifest.kind}`);
     console.log(`manifest  ${result.manifestPath}`);
     console.log(`seed      ${result.manifest.seed}`);
     console.log(`files     ${result.manifest.files.length} (${result.manifest.files.reduce((n, f) => n + f.bytes, 0)}B)`);
+    // M2b fix 5 — a redirect must never be invisible: a link that quietly
+    // lands on a login page, an error page, or a different host is something a
+    // person has to be able to SEE before a single token spends.
+    if (result.manifest.finalUrl && result.manifest.finalUrl !== result.manifest.source) {
+      console.log(`redirected  ${result.manifest.source}\n         →  ${result.manifest.finalUrl}   (CHECK this is the page you meant — a redirect can land on a login or error page)`);
+    }
     if (result.manifest.destination) {
       console.log(`destination  ${result.manifest.destination}  (output/  ${result.manifest.output})`);
+    }
+    // M2b fix 8 (hamr's ruling, verbatim in substance): the blast radius of a
+    // folder source is the whole folder — everything in it is frozen, read and
+    // judged. Said here, in `bareloop.context.md`, and beside the panel's
+    // Source field (N6).
+    if (result.manifest.kind === 'folder') {
+      console.log('\nnote: make a new folder, put only the file(s) this job needs in it, point bareloop');
+      console.log('      at that — never your original folder.');
     }
     console.log('\nnext:');
     console.log(`  node scripts/run-interview.mjs --patient ${result.tree}`);

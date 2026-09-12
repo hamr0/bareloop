@@ -24,7 +24,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile, lstat, stat, access, copyFile, constants as fsConstants } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile, lstat, stat, access, copyFile, cp, open, rm, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { git } from './kinds.js';
 import { MAX_BUFFER } from './kinds.js';
@@ -43,11 +43,35 @@ import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.j
  * with the job. */
 const GIT_IDENTITY = ['-c', 'user.name=bareloop', '-c', 'user.email=bareloop@localhost', '-c', 'commit.gpgsign=false'];
 
+/** a live-proven defect (found reviewing M2b fix 7): a copied `.git/hooks`
+ * carries the SOURCE repo's own scripts, and `git commit` runs them —
+ * `pre-commit`/`commit-msg`/`post-commit` are arbitrary code, and copying a
+ * repo source would otherwise execute whatever the original author put
+ * there, inside bareloop's own process, before a single token spends. The
+ * hooks directory is stripped after the `.git` copy (below) AND every git
+ * call this door makes pins `core.hooksPath` to a path that is never
+ * created, so a `core.hooksPath` set in the copied `.git/config` to point
+ * somewhere else on disk cannot resurrect the hole either. Belt and braces,
+ * not redundant: either alone leaves a way back in. */
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null/bareloop-no-hooks'];
+
 /** content-types this door accepts for a URL source (hamr: "start with
  * already supported files") — `text/*` covers `text/csv` already; it is kept
  * spelled out because the PRD ruling names it explicitly and a reader
  * checking this list against that ruling should find it there verbatim. */
 const TEXT_CONTENT_TYPES = [/^text\//, /^application\/json/, /^application\/xml/];
+
+/** an environment file, refused by NAME whatever it contains (hamr's ruling,
+ * PRD item 33/M2b fix 2). The content scan (`scanFilesForSecrets`) catches a
+ * key it KNOWS the shape of; this catches the file people keep keys in even
+ * when the shape is one nobody inventoried yet — the two are belt and braces,
+ * not duplicates. */
+const ENV_FILE = /^\.env($|\.)/;
+
+/** how many same-day deliveries one destination name can take before the door
+ * gives up (`profile-2026-09-12.md`, `-2`, … `-99`). A cap, never a silent
+ * overwrite: past it, `destination-exists`. */
+const MAX_SAME_DAY = 99;
 
 /** @param {string} code @param {string} stop @returns {SourceRefusal} */
 const refuse = (code, stop) => ({ stop, code });
@@ -100,6 +124,25 @@ function hasNulByte(buf) {
   return false;
 }
 
+/**
+ * Sniff a file's first 8KB for a NUL byte WITHOUT reading the whole file — a
+ * folder source may legally carry a file right up against `MAX_BUFFER`, and
+ * reading it twice (once to sniff, once to freeze) doubles the cost of the
+ * cheapest check here for nothing.
+ * @param {string} path
+ * @returns {Promise<boolean>}
+ */
+async function sniffNul(path) {
+  const fh = await open(path, 'r');
+  try {
+    const buf = Buffer.alloc(8192);
+    const { bytesRead } = await fh.read(buf, 0, 8192, 0);
+    return hasNulByte(buf.subarray(0, bytesRead));
+  } finally {
+    await fh.close();
+  }
+}
+
 /** @param {Buffer} buf @returns {string} */
 const sha256Hex = (buf) => createHash('sha256').update(buf).digest('hex');
 
@@ -117,49 +160,61 @@ const sha256Hex = (buf) => createHash('sha256').update(buf).digest('hex');
  * leak into a refusal, a manifest, stdout, or a log. Whole-file content is
  * decoded and tested, never a sampled prefix (the NUL sniff samples 8KB; a
  * secret check must not — a key can sit anywhere in a large file).
- * @param {{rel: string, buf: Buffer}[]} files
- * @returns {{rel: string, names: string[]}[]} one entry per file that hit,
- *   empty when none did
+ * @param {string} text one file's decoded content
+ * @returns {string[]} the names of every pattern that hit, empty when none did
  */
-function scanFilesForSecrets(files) {
-  const hits = [];
-  for (const f of files) {
-    const text = f.buf.toString('utf8');
-    const names = SECRET_PATTERN_NAMES.filter((_, i) => SECRET_PATTERNS[i].test(text));
-    if (names.length) hits.push({ rel: f.rel, names });
-  }
-  return hits;
+function secretPatternNames(text) {
+  return SECRET_PATTERN_NAMES.filter((_, i) => SECRET_PATTERNS[i].test(text));
 }
 
 /**
- * Walk a folder recursively, refusing on the first symlink or NUL-byte file
- * it finds. Returns every REGULAR file, relative to `root`. A symlink is
- * named and never followed (PRD ruling) — walking into it would silently
- * widen the frozen copy to whatever the link points at, which nobody signed.
+ * Walk a folder recursively, refusing on the first symlink, nested repo,
+ * environment file, oversize file or (plain folders only) binary file it
+ * finds. Returns every REGULAR file, relative to `root`.
+ *
+ * A symlink is named and never followed (PRD ruling) — walking into it would
+ * silently widen the frozen copy to whatever the link points at, which nobody
+ * signed. A `.git` below the root is a NESTED repo (M2b fix 6): its objects
+ * are a second history nobody declared, and `git add` would either swallow it
+ * as a gitlink or drop its files entirely, so the seed would not hold what the
+ * manifest says it holds. `repo: true` (a repo source, M2b fix 7) exempts only
+ * the ROOT `.git` — that one IS the history being copied — and lifts the
+ * text-only and per-file-size rules, because a real repo legitimately carries
+ * binaries and large files; every other refusal still applies.
  * @param {string} root
+ * @param {{repo?: boolean}} [o]
  * @returns {Promise<{stop: null, files: string[]}|SourceRefusal>}
  */
-async function walkFolder(root) {
+async function walkFolder(root, { repo = false } = {}) {
   /** @type {string[]} */
   const files = [];
   /** @type {string[]} */
   const notText = [];
+  /** @type {string[]} */
+  const oversize = [];
   /** @param {string} dir @param {string} rel */
   async function walk(dir, rel) {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const e of entries) {
       const relPath = rel ? `${rel}/${e.name}` : e.name;
       if (e.isSymbolicLink()) return refuse('source-symlink', `${relPath} is a symlink — named, never followed (a followed link would silently widen the frozen copy to whatever it points at)`);
+      if (e.name === '.git') {
+        if (repo && rel === '') continue; // the root history this source IS
+        return refuse('source-nested-repo', `${relPath} is a nested git repo — refused, because the seed commit cannot hold a second history honestly (the files under it would be swallowed as a gitlink or dropped outright, and the manifest would then claim bytes the seed does not carry)`);
+      }
+      if (ENV_FILE.test(e.name)) {
+        return refuse('source-env-file', `${relPath} is an environment file — refused by NAME, whatever it contains (hard line: secrets never enter the tree)`);
+      }
       if (e.isDirectory()) {
-        // a nested `.git` is not this door's business (only the SOURCE ROOT is
-        // checked for `source-is-repo`) — a plain folder that happens to
-        // contain a vendored repo is still a plain folder from here
         const sub = await walk(join(dir, e.name), relPath);
         if (sub) return sub;
       } else if (e.isFile()) {
-        const buf = await readFile(join(dir, e.name));
-        if (hasNulByte(buf)) notText.push(relPath);
-        else files.push(relPath);
+        if (!repo) {
+          const st = await stat(join(dir, e.name));
+          if (st.size > MAX_BUFFER) { oversize.push(`${relPath} (${st.size}B)`); continue; }
+          if (await sniffNul(join(dir, e.name))) { notText.push(relPath); continue; }
+        }
+        files.push(relPath);
       }
       // neither file, dir, nor symlink (a socket, a fifo) — silently skipped;
       // nothing this door reads or writes can be one
@@ -168,6 +223,9 @@ async function walkFolder(root) {
   }
   const walkStop = await walk(root, '');
   if (walkStop) return walkStop;
+  if (oversize.length) {
+    return refuse('source-file-oversize', `${oversize.length} file(s) are over the ${MAX_BUFFER}B per-file ceiling — a source door freezes what a run can actually read, never a file it would only ever see a truncated prefix of: ${oversize.join(', ')}`);
+  }
   if (notText.length) {
     return refuse('source-not-text', `${notText.length} file(s) carry a NUL byte in their first 8KB — text only for now (hole H7: PDF/Word input needs a reader this door does not have): ${notText.join(', ')}`);
   }
@@ -185,7 +243,11 @@ async function walkFolder(root) {
  * paid the memory cost this exists to cap.
  * @param {string} url
  * @param {number} timeoutMs
- * @returns {Promise<{stop: null, buf: Buffer, contentType: string}|SourceRefusal>}
+ * Redirects are FOLLOWED but never invisible (M2b fix 5): the URL the body
+ * actually came from (`res.url`) rides back out, into the manifest and onto
+ * `prep-source`'s stdout, so a link that quietly lands on a login page or a
+ * different host is something a person can SEE before a single token spends.
+ * @returns {Promise<{stop: null, buf: Buffer, contentType: string, finalUrl: string}|SourceRefusal>}
  */
 async function fetchOnce(url, timeoutMs) {
   const ac = new AbortController();
@@ -224,7 +286,7 @@ async function fetchOnce(url, timeoutMs) {
     }
     chunks.push(value);
   }
-  return { stop: null, buf: Buffer.concat(chunks), contentType };
+  return { stop: null, buf: Buffer.concat(chunks), contentType, finalUrl: res.url || url };
 }
 
 /**
@@ -269,7 +331,7 @@ export async function prepareSource({ source, into, destination, output, fetchTi
   }
 
   const isUrl = /^https?:\/\//i.test(source);
-  /** @type {{kind: 'url'|'file'|'folder', files: {rel: string, buf: Buffer}[]}} */
+  /** @type {{kind: 'url'|'file'|'folder'|'repo', files: {rel: string, abs?: string, buf?: Buffer}[], root?: string, finalUrl?: string}} */
   let frozen;
 
   if (isUrl) {
@@ -283,29 +345,67 @@ export async function prepareSource({ source, into, destination, output, fetchTi
     }
     const fetched = await fetchOnce(source, fetchTimeoutMs);
     if (fetched.stop !== null) return fetched;
+    // the URL the body ACTUALLY came from, after any redirect (M2b fix 5) —
+    // scanned the same way the typed one was, because a redirect target is a
+    // string this door is about to write into the manifest. Reviewed and
+    // deliberately NOT also re-checked for embedded credentials the way the
+    // typed URL is: proven live (this session) that `fetch`'s own redirect
+    // handling in 'cors' mode (the default this door uses) already returns a
+    // network error — `source-fetch-failed` — for any redirect whose target
+    // carries a `user:pass@host` userinfo, so a second check here would be
+    // unreachable dead code, never provable by a real test.
+    if (scanSecrets(fetched.finalUrl).length) {
+      return refuse('source-unreadable', 'the URL redirected to a location carrying a known secret-token shape — secrets never enter the tree/manifest (hard line #3)');
+    }
     // no reliable filename off a URL in general — the last path segment when
     // there is one, else a fixed name; either way ONE file, never a listing
-    const last = u.pathname.split('/').filter(Boolean).at(-1);
+    const last = new URL(fetched.finalUrl).pathname.split('/').filter(Boolean).at(-1);
     const rel = last || 'source.txt';
-    frozen = { kind: 'url', files: [{ rel, buf: fetched.buf }] };
+    if (ENV_FILE.test(rel)) {
+      return refuse('source-env-file', `${fetched.finalUrl} names an environment file — refused by NAME, whatever it contains (hard line: secrets never enter the tree)`);
+    }
+    frozen = { kind: 'url', files: [{ rel, buf: fetched.buf }], finalUrl: fetched.finalUrl };
   } else {
     const sourceAbs = resolve(source);
     let st;
     try { st = await lstat(sourceAbs); } catch { return refuse('source-unreadable', `${source} does not exist or cannot be read`); }
     if (st.isSymbolicLink()) return refuse('source-symlink', `${source} is a symlink — named, never followed`);
     if (st.isDirectory()) {
-      if (existsSync(join(sourceAbs, '.git'))) {
-        return refuse('source-is-repo', `${source} is itself a git repo root — repo jobs keep --patient; this door is for plain folders, files and URLs`);
+      // M2b fix 7 (hamr: yes — the PR-review job): a git repo IS an allowed
+      // source now. It is COPIED with its history, never used in place (the
+      // patients-are-copies rule), and gets the same `output/`, manifest,
+      // destination and copy-out every other source gets. Its own guards
+      // (the input stays untouched) arrive with M4.
+      const dotGit = join(sourceAbs, '.git');
+      let isRepo = false;
+      if (existsSync(dotGit)) {
+        // a `.git` FILE (a linked worktree or a submodule) points its gitdir
+        // somewhere else entirely — copying it would aim every git command,
+        // the seed commit included, at the ORIGINAL repo. Refused, never
+        // followed, for the same reason a symlink is.
+        if (!(await lstat(dotGit)).isDirectory()) {
+          return refuse('source-is-linked-worktree', `${source}/.git is a file, not a directory — this is a linked worktree or a submodule, whose real git directory lives elsewhere; point the door at the repo itself (a copy would silently commit into the original)`);
+        }
+        isRepo = true;
       }
-      const walked = await walkFolder(sourceAbs);
+      const walked = await walkFolder(sourceAbs, { repo: isRepo });
       if (walked.stop !== null) return walked;
-      const files = [];
-      for (const rel of walked.files) files.push({ rel, buf: await readFile(join(sourceAbs, rel)) });
-      frozen = { kind: 'folder', files };
+      frozen = {
+        kind: isRepo ? 'repo' : 'folder',
+        root: sourceAbs,
+        files: walked.files.map((rel) => ({ rel, abs: join(sourceAbs, rel) })),
+      };
     } else if (st.isFile()) {
+      const name = /** @type {string} */ (source.split(sep).at(-1) ?? source);
+      if (ENV_FILE.test(name)) {
+        return refuse('source-env-file', `${source} is an environment file — refused by NAME, whatever it contains (hard line: secrets never enter the tree)`);
+      }
+      if (st.size > MAX_BUFFER) {
+        return refuse('source-file-oversize', `${source} is ${st.size}B, over the ${MAX_BUFFER}B per-file ceiling — a source door freezes what a run can actually read, never a file it would only ever see a truncated prefix of`);
+      }
       const buf = await readFile(sourceAbs);
-      if (hasNulByte(buf)) return refuse('source-not-text', `${source} carries a NUL byte in its first 8KB — text only for now (hole H7)`);
-      frozen = { kind: 'file', files: [{ rel: /** @type {string} */ (source.split(sep).at(-1) ?? source), buf }] };
+      if (hasNulByte(buf.subarray(0, 8192))) return refuse('source-not-text', `${source} carries a NUL byte in its first 8KB — text only for now (hole H7)`);
+      frozen = { kind: 'file', files: [{ rel: name, buf }] };
     } else {
       return refuse('source-unreadable', `${source} is neither a regular file, a folder, nor an http(s) URL`);
     }
@@ -319,47 +419,98 @@ export async function prepareSource({ source, into, destination, output, fetchTi
     }
   }
 
+  // a repo source keeps its own shape (the history is the point, and a
+  // worker reviewing a PR needs the repo AT the tree root); every other kind
+  // is frozen under `input/`, leaving `output/` as the only place a run writes
+  const underInput = frozen.kind !== 'repo';
+  /** @param {string} rel */
+  const treeRel = (rel) => (underInput ? `input/${rel}` : rel);
+
   // hard line (CLAUDE.md): secrets never enter the tree, the spine, the
   // configs, or the ledger — an append-only log that captures a key captures
   // it forever. Every frozen file's content is scanned BEFORE anything is
   // written under `into` (no mkdir has run yet — a refusal here leaves
   // nothing on disk, `into` itself included). The matched text is never
-  // read into this refusal — only the file path and the pattern name.
-  const secretHits = scanFilesForSecrets(frozen.files);
+  // read into this refusal — only the file path and the pattern name. One
+  // file at a time: a repo source can be far larger than memory if every
+  // buffer is held at once. Known hole, named not papered over: a BINARY
+  // file inside a repo source is hashed but not scanned (decoding arbitrary
+  // bytes as text finds nothing a pattern was written for), so a key stored
+  // inside e.g. a compiled artifact is not caught here.
+  /** @type {{rel: string, names: string[]}[]} */
+  const secretHits = [];
+  /** @type {{path: string, bytes: number, sha256: string}[]} */
+  const fileMeta = [];
+  for (const f of frozen.files) {
+    const buf = f.buf ?? await readFile(/** @type {string} */ (f.abs));
+    fileMeta.push({ path: f.rel, bytes: buf.length, sha256: sha256Hex(buf) });
+    if (hasNulByte(buf.subarray(0, 8192))) continue;
+    const names = secretPatternNames(buf.toString('utf8'));
+    if (names.length) secretHits.push({ rel: f.rel, names });
+  }
   if (secretHits.length) {
     const detail = secretHits.map((h) => `${h.rel} (${h.names.join(', ')})`).join('; ');
     return refuse('source-carries-secret', `${secretHits.length} file(s) carry a known secret shape — refused before anything was written (hard line #3, secrets never enter the tree): ${detail}`);
   }
 
   const treeDir = join(intoAbs, 'tree');
-  const inputDir = join(treeDir, 'input');
   const outputDir = join(treeDir, 'output');
-  await mkdir(inputDir, { recursive: true });
+  await mkdir(treeDir, { recursive: true });
+  if (frozen.kind === 'repo') {
+    // the history, copied verbatim — `verbatimSymlinks` so git's own internal
+    // links are never dereferenced into copies of what they point at
+    await cp(join(/** @type {string} */ (frozen.root), '.git'), join(treeDir, '.git'), { recursive: true, verbatimSymlinks: true });
+    // strip the copied hooks (see NO_HOOKS above) — `force: true` because a
+    // repo with no hooks configured has no `hooks/` to remove at all
+    await rm(join(treeDir, '.git', 'hooks'), { recursive: true, force: true });
+  }
   await mkdir(outputDir, { recursive: true });
   // git tracks no empty directories — a `.gitkeep` is what makes `output/`
   // actually exist in the seed commit the close measures changes against
   await writeFile(join(outputDir, '.gitkeep'), '');
   for (const f of frozen.files) {
-    const dest = join(inputDir, f.rel);
+    const dest = join(treeDir, treeRel(f.rel));
     await mkdir(dirname(dest), { recursive: true });
-    await writeFile(dest, f.buf);
+    if (f.buf) await writeFile(dest, f.buf);
+    else await copyFile(/** @type {string} */ (f.abs), dest);
   }
 
-  const init = await git(treeDir, ['init', '-q']);
-  if (!init.ok) return refuse('source-git-failed', `git init failed in ${treeDir}: ${init.err}`);
-  const add = await git(treeDir, ['add', '-A']);
+  if (frozen.kind !== 'repo') {
+    const init = await git(treeDir, ['init', '-q']);
+    if (!init.ok) return refuse('source-git-failed', `git init failed in ${treeDir}: ${init.err}`);
+  }
+  // `-f` (M2b fix 6): a `.gitignore` INSIDE the source must never decide what
+  // the seed holds. Every file this door froze is a file it promised in the
+  // manifest, and a close measures the run's writes against the seed — a file
+  // present on disk but absent from the seed would read as the worker having
+  // written it.
+  const add = await git(treeDir, [...NO_HOOKS, 'add', '-A', '-f']);
   if (!add.ok) return refuse('source-git-failed', `git add failed in ${treeDir}: ${add.err}`);
-  const commit = await git(treeDir, [...GIT_IDENTITY, 'commit', '-q', '-m', 'bareloop: source front door seed']);
+  const commit = await git(treeDir, [...GIT_IDENTITY, ...NO_HOOKS, 'commit', '-q', '-m', 'bareloop: source front door seed']);
   if (!commit.ok) return refuse('source-git-failed', `git commit failed in ${treeDir}: ${commit.err}`);
   const head = await git(treeDir, ['rev-parse', 'HEAD']);
   if (!head.ok) return refuse('source-git-failed', `git rev-parse HEAD failed in ${treeDir}: ${head.err}`);
   const seed = head.out.trim();
 
+  // M2b fix 6, the CHECK rather than the hope: the manifest says the seed
+  // holds these files, so read the seed back and prove it does. A bare
+  // emptiness check would miss partial omission (memory: a completeness guard
+  // built on an emptiness check misses exactly this), so the two sets are
+  // diffed, both ways, by name.
+  const listed = await git(treeDir, ['ls-tree', '-r', '--name-only', 'HEAD']);
+  if (!listed.ok) return refuse('source-git-failed', `git ls-tree failed in ${treeDir}: ${listed.err}`);
+  const inSeed = new Set(listed.out.split('\n').map((l) => l.trim()).filter(Boolean));
+  const missing = fileMeta.map((f) => treeRel(f.path)).filter((p) => !inSeed.has(p));
+  if (missing.length) {
+    return refuse('source-seed-incomplete', `${missing.length} frozen file(s) are missing from the seed commit — the manifest would claim bytes the seed does not carry, and a close would read them as the worker's own writes: ${missing.join(', ')}`);
+  }
+
   const manifest = {
     kind: frozen.kind,
     source,
+    ...(frozen.finalUrl === undefined ? {} : { finalUrl: frozen.finalUrl }),
     fetchedAt: new Date().toISOString(),
-    files: frozen.files.map((f) => ({ path: f.rel, bytes: f.buf.length, sha256: sha256Hex(f.buf) })),
+    files: fileMeta,
     seed,
     destination: destination ?? null,
     output: output ?? null,
@@ -368,6 +519,50 @@ export async function prepareSource({ source, into, destination, output, fetchTi
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   return { stop: null, into: intoAbs, tree: treeDir, manifestPath, manifest };
+}
+
+/**
+ * The delivered name (M2b fix 4): a destination of `/home/me/profile.md` lands
+ * as `/home/me/profile-2026-09-12.md`, and a SECOND delivery the same day as
+ * `profile-2026-09-12-2.md`, `-3`, … (the work-branch collision rule, the same
+ * spelling `prepareWorkBranch` uses). The date is the delivery's, not the
+ * run's: what a person wants to know opening the folder later is when the file
+ * arrived.
+ *
+ * Nothing is ever overwritten, which is why the name is computed rather than
+ * taken: a plain `profile.md` would eventually collide with the person's own
+ * file or a previous run's, and the only honest answers to a collision are
+ * "refuse" or "a new name" — hamr picked a new name.
+ * @param {string} destination the absolute path as declared
+ * @param {Date} now
+ * @param {number} n 1 = the plain dated name, 2+ = the same-day suffix
+ * @returns {string}
+ */
+export function datedDestination(destination, now, n) {
+  const dir = dirname(destination);
+  const base = destination.slice(dir.length + 1);
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : '';
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return join(dir, `${stem}-${day}${n > 1 ? `-${n}` : ''}${ext}`);
+}
+
+/**
+ * The first dated name that is free, or a refusal when every same-day slot up
+ * to `MAX_SAME_DAY` is taken. Used by BOTH `proveDestination` (the $0
+ * pre-flight) and `copyOut` (the delivery), so the two can never disagree
+ * about what "landable" means.
+ * @param {string} destination
+ * @param {Date} [now]
+ * @returns {{stop: null, path: string}|SourceRefusal}
+ */
+export function pickDelivery(destination, now = new Date()) {
+  for (let n = 1; n <= MAX_SAME_DAY; n++) {
+    const candidate = datedDestination(destination, now, n);
+    if (!existsSync(candidate)) return { stop: null, path: candidate };
+  }
+  return refuse('destination-exists', `every same-day name for ${destination} is taken (up to -${MAX_SAME_DAY}) — bareloop never overwrites a person's file`);
 }
 
 /**
@@ -393,9 +588,12 @@ export async function proveDestination(destination, { into }) {
   if (destAbs === intoAbs || destAbs.startsWith(`${intoAbs}${sep}`)) {
     return refuse('destination-contained', `${destination} sits inside ${into} — the drop-off point may never be inside the run's own scratch tree`);
   }
-  if (existsSync(destAbs)) {
-    return refuse('destination-exists', `${destination} already exists — bareloop never overwrites a person's file`);
-  }
+  // M2b fix 4: the file that actually lands is the DATED name, so an existing
+  // `profile.md` is not in the way — an existing `profile-<today>.md` only
+  // pushes the delivery to `-2`. The refusal is real but narrow: every
+  // same-day slot taken.
+  const pick = pickDelivery(destAbs);
+  if (pick.stop !== null) return pick;
   const parent = dirname(destAbs);
   let pstat;
   try { pstat = await stat(parent); } catch {
@@ -426,14 +624,20 @@ export async function proveDestination(destination, { into }) {
  * refuse `destination-contained`, which a containment check against `tree`
  * alone cannot see. Omitted, it defaults to `tree` (the pre-fix behaviour),
  * for direct callers that only ever had a tree, never an `into`.
+ * The file lands under its DATED name (`profile-2026-09-12.md`, then `-2`,
+ * `-3` the same day — M2b fix 4), never the bare `destination` as typed, and
+ * the path it actually took rides back out so the spine records the real one.
  * @param {{tree: string, into?: string, output: string, destination: string}} o
- * @returns {Promise<{stop: null, bytes: number, sha256: string}|SourceRefusal>}
+ * @returns {Promise<{stop: null, bytes: number, sha256: string, path: string}|SourceRefusal>}
  */
 export async function copyOut({ tree, into, output, destination }) {
   const ov = validateOutput(output);
   if (ov.stop !== null) return ov;
   const prove = await proveDestination(destination, { into: into ?? tree });
   if (prove.stop !== null) return prove;
+  const pick = pickDelivery(resolve(destination));
+  if (pick.stop !== null) return pick;
+  const landing = pick.path;
   const outputPath = resolve(tree, output);
   let buf;
   try { buf = await readFile(outputPath); } catch {
@@ -449,12 +653,12 @@ export async function copyOut({ tree, into, output, destination }) {
   // that window); a mutation that drops it survives every test in this file
   // for exactly that reason, and is a known, accepted survivor, not a gap.
   try {
-    await copyFile(outputPath, destination, fsConstants.COPYFILE_EXCL);
+    await copyFile(outputPath, landing, fsConstants.COPYFILE_EXCL);
   } catch (e) {
-    if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${destination} already exists — bareloop never overwrites a person's file`);
-    return refuse('destination-write-failed', `copying to ${destination} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
+    if (/** @type {any} */ (e)?.code === 'EEXIST') return refuse('destination-exists', `${landing} already exists — bareloop never overwrites a person's file`);
+    return refuse('destination-write-failed', `copying to ${landing} failed: ${/** @type {Error} */ (e)?.message ?? String(e)}`);
   }
-  return { stop: null, bytes: buf.length, sha256: sha256Hex(buf) };
+  return { stop: null, bytes: buf.length, sha256: sha256Hex(buf), path: landing };
 }
 
 /**

@@ -1630,8 +1630,12 @@ if (outcome === 'green' && frontDoor) {
   // as "contained".
   const co = await copyOut({ tree: wd, into: dirname(wd), output: frontDoor.output, destination: frontDoor.destination });
   if (co.stop === null) {
-    emit('destination-written', { path: frontDoor.destination, bytes: co.bytes, sha256: co.sha256 });
-    console.log(`\nDESTINATION  written — ${frontDoor.destination} (${co.bytes}B, sha256 ${co.sha256.slice(0, 12)}…)`);
+    // `co.path`, never `frontDoor.destination` — the file lands under its
+    // DATED name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same day), so
+    // the declared path is not the path anything actually wrote. The spine
+    // records what happened, not what was asked for.
+    emit('destination-written', { path: co.path, declared: frontDoor.destination, bytes: co.bytes, sha256: co.sha256 });
+    console.log(`\nDESTINATION  written — ${co.path} (${co.bytes}B, sha256 ${co.sha256.slice(0, 12)}…)`);
   } else {
     emit('destination-refused', { code: co.code, detail: co.stop });
     console.log(`\nDESTINATION  NOT written — ${co.code}: ${co.stop}`);

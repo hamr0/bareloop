@@ -43,6 +43,31 @@ feature lands, **patch** = docs, fixes, scaffolding.
   Previously the door scanned only the URL string, so a plain folder or file carrying a
   real API key (e.g. an `.env`) was frozen into the tree and committed to the hidden git
   seed untouched.
+- **Source front door, M2b review fixes 2–8 (PRD item 33):** `.env`/`.env.*` refused by
+  NAME whatever it contains (`source-env-file`), belt-and-braces beside the content scan;
+  a per-file `MAX_BUFFER` ceiling for folder and single-file sources (`source-file-
+  oversize`; repo sources exempt); the delivered file now carries the date
+  (`profile-2026-09-12.md`, `-2`/`-3` the same day, cap 99) — new exports
+  `datedDestination`/`pickDelivery`, used by both `proveDestination` and `copyOut` so the
+  two can never disagree; `copyOut` returns `{bytes, sha256, path}` and `run-u.mjs`
+  spine-records the real landed path (`destination-written {path, declared, bytes,
+  sha256}`); a URL's redirects are followed but never invisible — the final URL rides in
+  the manifest (`finalUrl`) and is printed by `prep-source`, and is secret-scanned like
+  the typed one; a nested `.git` anywhere below the root refuses `source-nested-repo`,
+  `git add` runs `-f` so a source `.gitignore` cannot drop a file from the seed, and the
+  seed is read back with `git ls-tree` and diffed against the manifest's file list
+  (`source-seed-incomplete` on a shortfall); a git repo root is now an allowed source
+  (`kind: 'repo'`) — copied with its history, working files at the tree root, seed on top
+  of existing history; a `.git` FILE (linked worktree/submodule) refuses
+  `source-is-linked-worktree`; `prep-source` prints a folder-blast-radius note (mirrored
+  in `bareloop.context.md`).
+- **Repo-source hard-line defect (live-proven during the M2b 7 review):** a copied
+  `.git/hooks` carried the SOURCE repo's own `pre-commit`/`commit-msg`/`post-commit`
+  scripts, and `git commit` ran them — arbitrary code from the source repo, executed
+  inside bareloop's own process, before a single token spent. Fixed: the copied hooks
+  directory is stripped after the `.git` copy, and every git call the door makes pins
+  `core.hooksPath` to a path that is never created, so a `core.hooksPath` set in the
+  copied `.git/config` cannot reopen the hole either.
 
 ## [0.24.0] — 2026-09-10
 
