@@ -871,6 +871,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     customer-facing text; (9) proof is one live DeepSeek (`deepseek-flash`) interview,
     depending on item 34's L17.
 
+    **2026-09-13 — signed goal** (hamr): the separate goal question is dropped; the confirm
+    turn drafts the signed goal from Goal + What success looks like, and the person signs
+    after the 2-round conversation — docs/product/ITEM33-BUILD.md M3.
+
 34. **Item 34 — loose ends housed** (hamr, 2026-09-13: every open end gets fix / keep /
     backlog / remove).
 

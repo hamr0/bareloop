@@ -357,6 +357,20 @@ EXISTING audit records — no new record format.
 5. **Two-round cap, sign-or-restart.** After 2 confirm rounds it drafts anyway; any still-open
    questions are shown at signing. If the person does not sign, they rerun the questions from
    the start.
+
+   **Addendum (hamr, 2026-09-13, picked option B): the separate signed-goal question is
+   dropped.** Today `scripts/run-interview.mjs` (~line 432) asks, in the job settings part
+   after the form, "The GOAL — what the run is judged on… say everything you'll check", and
+   that answer becomes the signed job spec's `goal`, which the planner and worker read as
+   their target (`src/planrun.js:683` and `:2848`). With the unified form it overlapped the
+   form's Goal and "What success looks like" fields. New rule: in the confirm turn, the AI
+   drafts the signed goal sentence from the person's Goal and "What success looks like"
+   answers; the sentence must name every check the close will judge (the same list the
+   confirm turn already shows, ruling 6 below). The person confirms or fixes it within the
+   confirm turn's 2-round cap (ruling 5 above); the job is signed after that conversation,
+   goal included — the person signs the whole spec, as today. The interview no longer asks
+   for the goal separately. Built in M3 piece 4 (the confirm turn), not yet.
+
 6. **No hand-authored check matcher.** "A genre never adds a check the goal did not ask for"
    (the `tsc --strict` stage in run `mtv8jihy`) is enforced by a prompt register at the
    composer PLUS the confirm turn listing every check it plans before drafting — no code
