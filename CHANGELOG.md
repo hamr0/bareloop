@@ -19,6 +19,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
   whole repo in memory at once — the streaming scan design exists to avoid exactly that).
   `copyFile`'s mode-bit preservation is kept explicitly (`stat` + `chmod` on the frozen
   file), verified not to regress.
+- **The documented-exports guard now reads the doc instead of a hand-typed array (F167,
+  PRD item 34 L4):** `tests/index.test.js`'s "documented public surface" test used to check
+  a list of names copied out of `bareloop.context.md` by hand — the same class of bug that
+  let `datedDestination`/`pickDelivery` ship `undefined` in v0.25.0 while the guard stayed
+  green. `documentedExportNames` now parses the doc live (import-block examples, Public API
+  section headings, `Menus exported:` lists, and tight "X is/are exported" proximity) and
+  found two more real gaps the hand list missed: `cliMain` and (already fixed) the two
+  source-front-door helpers. Covers the doc's explicit export-marker idioms, not every
+  function mentioned in flowing prose — a broader sweep was tried and produced 21 false
+  positives out of 97 candidates on this doc, noise a regex cannot safely resolve.
 - **`SCOUT_LABEL` gains a third state in `scripts/run-u.mjs` (PRD item 34 L2):** an explicit
   `--scout on` used to print the identical "scout ON (default)" text as no flag at all,
   indistinguishable in printed logs/re-invocation lines — which matters for the
