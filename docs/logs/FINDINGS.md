@@ -11924,3 +11924,105 @@ behaviour at repo sizes where that exemption would matter.
 also report what it could NOT test — a refusal earlier in the same run (F164) silently
 prevented the one measurement (big-repo cost) this smoke was also meant to produce, and that
 gap does not disappear just because the smoke otherwise reads as a good outcome.
+
+## F167 — a published contract doc promised two exports the package never shipped
+
+**2026-09-12/13, v0.25.0 published (merge a56d290), `fix/export-source-helpers`.**
+`bareloop.context.md` (around the `copyOut`/delivery section) documents `datedDestination(destination,
+now, n)` and `pickDelivery(destination, now?)` as package-root exports, unchanged from M2b.
+`src/source.js` exported both, but `src/index.js`'s re-export line at a56d290 carried only five
+of `src/source.js`'s seven exports — `prepareSource`, `proveDestination`, `copyOut`,
+`readSourceManifest`, `frontDoorFromManifest` — leaving `datedDestination` and `pickDelivery`
+out. `import { datedDestination, pickDelivery } from 'bareloop'` gave `undefined` on the
+published v0.25.0 package.
+
+**Cause.** `tests/index.test.js` already carried a guard test, "the documented public surface is
+actually exported from `src/index.js`," but its `documented` array is a hand-typed list copied
+from the docs by a prior session, not derived from `bareloop.context.md` itself — the two new
+names were never added to that list when M2b shipped them. The guard read green while the
+contract it exists to protect was false.
+
+**Missed by:** the test suite (the guard's list didn't include the names), `/branch-review` on
+`feat/item-33` (last-review record sha c9fb22b, verdict ready), and the `/release` docs sweep.
+Caught only by the post-publish check of the real npm package in a clean consumer — the
+standing project rule that a documented export must be checked importable from the actual
+published package root, not just the source tree.
+
+**Fix.** fd96af9 added both names to the `src/index.js` re-export and to the guard's
+`documented` list, plus a second test asserting identity against `src/source.js`'s own
+functions (not a re-derivation). Fail-first proven: both new assertions read red against the
+a56d290 `src/index.js`. Shipped as v0.25.1 (release commit a37d4a3, PR #39, merge eb715ab).
+
+**Status: fixed for these two names; the guard CLASS stays open.** The `documented` list is
+still hand-maintained prose-to-array, not generated from `bareloop.context.md` — the next name
+added to the doc without a matching array entry can slip through the same way. Not proposing or
+building a fix here; naming it as an open gap.
+
+**The lesson, stated plainly.** A guard whose list is typed by hand checks the list, not the
+contract it's supposed to enforce; only the published artifact imported in a clean consumer
+tests what adopters actually get. And because npm versions are immutable, a defect in a
+published doc's promised surface costs a whole patch release to correct, not an edit.
+
+## F168 — a gate launched while a builder's suite was still running (caught before overlap)
+
+**2026-09-12, `fix/export-source-helpers`, operator-reported from the orchestrating session
+(not independently verifiable from git — no spine/log artifact of this session survives to
+check against).** The orchestrator launched a detached `typecheck` → `build:types` → `npm test`
+chain while the export-fix builder subagent's own `node scripts/hermetic.mjs` suite (started
+~55s earlier) was still running. The quiet-machine check
+(`pgrep -x node -a | grep -E -- '--test|hermetic'`) ran in the SAME command as the launch, so it
+printed the live suite in its own output without gating on it.
+
+**Caught, not landed.** The orchestrator read the printed output, killed its own chain by
+process group while it was still in `tsc` (before reaching its own test step), and waited for a
+debounced quiet machine before relaunching. No two suites overlapped; no phantom result was
+read or reported.
+
+**The lesson, stated plainly.** A quiet-machine check must GATE the launch — a separate step, or
+`&&`-guarded on its own exit — never just print beside it; a check whose result nobody branches
+on is prose, not a guard. This is the same doctrine already on record that two concurrent
+`node --test` runs manufacture phantom failures — this entry is the case where the check
+existed but wasn't wired to stop anything.
+
+## F169 — the local AGENT_RULES.md copy changed with no known writer (OPEN, unexplained)
+
+**2026-09-12/13, `.claude/remember/AGENT_RULES.md`.** This file is an untracked local copy of
+the canonical `~/PycharmProjects/hamr0/AGENT_RULES.md`. Its md5 was reported as
+`3ee3f597bbf8240625d21be480d3255a` at an orchestrator pre-refactor snapshot, and this session
+finds it at `e887e76f78d1973e2593e0e13034b34a` (mtime 2026-09-12 21:51:47 +0200) — matching the
+"pre-branch-review snapshot" hash reported the next morning. It currently does not byte-match
+the canonical copy (`cmp` diverges at byte 4796, line 63).
+
+**Cause: unknown.** The `/refactor` ledger worker reported `AGENT_RULES.md ... UNCHANGED`
+against the `3ee3f597` baseline at its own exit; the review-time hash already differed by then.
+Either the change landed after the worker's check ran, or the worker's own exit comparison did
+not actually recompute that file's hash — not determined by this session. No action in this
+session's own work was intended to write that file. Nothing shipped is affected: the file is
+untracked, gitignored, and not part of the npm tarball.
+
+**Status: OPEN — writer unknown.**
+
+**The lesson, stated plainly.** An md5 scope proof only protects the files whose change someone
+actually goes and investigates; a changed hash that turns up outside the expected set must be
+chased down, not just reported and left.
+
+## F170 — the auto-mode classifier blocked the admin merge again, with CI green and an explicit "push"
+
+**2026-09-13, PR #39 (`fix/export-source-helpers` → `main`).** Both CI runs on this PR came back
+green on headSha `a37d4a3d…` (`push` and `pull_request` events, both `conclusion: success`).
+hamr had said "push," authorizing the push → PR → merge → tag → publish sequence end to end.
+
+**What happened.** `gh pr merge 39 --admin --merge --delete-branch` run from the session was
+denied by the Claude Code auto-mode classifier ("Merge Without Review"), even though
+`/branch-review` had already recorded `verdict: ready` at f4e12fc (`.claude/remember/last-review.md`:
+sha f4e12fc, branch fix/export-source-helpers, level medium, blockers none). hamr ran the same
+command himself with `!`; the merge landed as eb715ab.
+
+**This is a recurrence.** The same classifier denial happened before, on 2026-08-25, and again
+ran only on hamr's explicit word on 2026-09-02. The classifier has no visibility into
+`.claude/remember/last-review.md` — a recorded, passing review is invisible to it regardless of
+how recent or thorough.
+
+**The lesson, stated plainly.** Budget the `!` fallback line into every release hand-off as the
+default expectation, not a surprise — the classifier's notion of "reviewed" is not the repo's,
+and there is no fix in this repo that changes that.
