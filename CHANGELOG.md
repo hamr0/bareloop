@@ -31,6 +31,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **`run-author.mjs`'s `language-unsupported` stop is now counted admission demand (item 34
+  loose-end fix on M3):** the check used to print the refusal and `process.exit(1)` before the
+  run's spine even existed, so nothing recorded it. The spine is now bootstrapped first (before
+  any provider is resolved, before the API key is read, before any spend) and the stop is
+  emitted through the same `refusalEvents()` channel every other refusal in the script uses,
+  so it folds into `src/ledger.js`'s `classifyIncidents` admission count instead of vanishing.
+  `run-interview.mjs`'s own printed line for the same stop no longer claims "the refusal IS the
+  record" — that script keeps no spine of its own, so it now says plainly that nothing here
+  recorded it, and points at `run-author.mjs` for the one that does.
 - **Scan-then-freeze TOCTOU closed in the source front door (PRD item 34 L1):**
   `prepareSource`'s folder/repo path used to hash+secret-scan each file's bytes once, then
   re-read the same file a SECOND time off disk (`copyFile`) to freeze it into the hidden

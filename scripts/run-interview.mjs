@@ -137,7 +137,15 @@ if (langResult.kind === 'language-unsupported') {
   console.log(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
   console.log(r.detail);
   for (const o of r.options) console.log(`  · ${o}`);
-  console.log('\nNothing was asked and nothing was written — the refusal IS the record.');
+  // Honest, not "the refusal IS the record": THIS script has no spine (D10 —
+  // a spine here would be a new record format) and writes nothing at all, so
+  // there is nothing anywhere that counts this stop as demand. Only
+  // run-author.mjs's OWN language check (item 34 M3 loose-end fix) — reached
+  // by running that script directly, past this one — records a
+  // job-red/request-red a person or a tally can find later.
+  console.log('\nNothing was asked and nothing was written, and nothing here recorded this stop: run-interview.mjs keeps no '
+    + 'spine of its own. run-author.mjs, run directly against the same --patient, is what records a language-unsupported '
+    + 'stop as counted demand.');
   process.exit(1);
 }
 const LANG = langResult.kind === 'resolved' ? langResult.lang : 'none-detected';

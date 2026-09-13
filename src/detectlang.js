@@ -173,7 +173,13 @@ export function detectLanguage(sourcePath) {
     }
 
     const language = languages[0];
-    const manifest = ruleLabel(/** @type {any} */ (matched.find((m) => m.language === language)));
+    const matchedRule = matched.find((m) => m.language === language);
+    // `matched` was just built from `languages`, so this find always succeeds —
+    // narrowed with a real runtime check rather than an `any`/`!` cast, so a
+    // future refactor that breaks the invariant reds loudly instead of typing
+    // past it.
+    if (!matchedRule) throw new Error(`unreachable: "${language}" matched from its own manifest list`);
+    const manifest = ruleLabel(matchedRule);
     if (GENRE_LANGUAGES.includes(language)) {
       return { kind: 'resolved', lang: language, dir, manifest };
     }

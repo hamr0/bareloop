@@ -118,6 +118,30 @@ const PATIENT = resolve(/** @type {string} */ (patientArg));
 if (!existsSync(PATIENT)) die(`--patient ${PATIENT} does not exist — the scout reads a repository off the machine, never out of prose`);
 const OUT = resolve(/** @type {string} */ (outArg));
 
+// ── THE SPINE, BOOTSTRAPPED FIRST — before anything that can refuse, before
+// any provider is resolved or built, and before the API key is even read.
+// Moved here (out of its old position, further down, right before the first
+// paid span) so that EVERY refusal this script can produce — starting with
+// the language check immediately below — has somewhere to record itself. A
+// `die()` before this point is still bare stderr+exit(2): those are pure
+// operator/config errors (missing flags, a bad number) with no spine to
+// write into yet and nothing they represent counts as demand.
+mkdirSync(OUT, { recursive: true });
+const runid = Date.now().toString(36);
+const spineFile = join(OUT, `author-${runid}.jsonl`);
+/** the spine: one JSONL line per event, appended. This runner owns it, exactly
+ * as the shell owns `runJob`'s — `authorjob.js` emits nothing itself.
+ * @param {string} type @param {any} [data] */
+const emit = (type, data = {}) => {
+  appendFileSync(spineFile, `${JSON.stringify({ type, ts: new Date().toISOString(), ...data })}\n`);
+};
+/** @param {string} name @param {any} body */
+const writeOut = (name, body) => {
+  const f = join(OUT, name);
+  writeFileSync(f, `${JSON.stringify(body, null, 2)}\n`);
+  return f;
+};
+
 // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
 // $0, no provider, run BEFORE the API key is even read — this script must
 // reach here on `--patient` alone, with no `--lang` needed. Same four
@@ -128,9 +152,16 @@ const OUT = resolve(/** @type {string} */ (outArg));
 //   - `ambiguous`             — two languages' manifests at the same level;
 //                               stopped here with the honest list (the
 //                               confirm-turn UI to ask a person is later M3).
+//                               An OPERATOR FIX (point --patient at the right
+//                               subfolder), never demand — no spine record.
 //   - `language-unsupported`  — a known manifest with no genre data yet;
 //                               stopped here, before the API key check, so a
 //                               job that can never be authored costs nothing.
+//                               COUNTED DEMAND: emitted through the same
+//                               `refusalEvents()` channel every other refusal
+//                               in this script uses, so it folds into the
+//                               ledger's admission count (src/ledger.js
+//                               `classifyIncidents`) instead of vanishing.
 //   - `resolved` / `no-code-job` — carried into `lang` below exactly where
 //     the old `--lang` value flowed; `no-code-job` reads as `'none-detected'`,
 //     which the existing GENRE_LANGUAGES check further down refuses on its
@@ -148,7 +179,14 @@ if (langResult.kind === 'language-unsupported') {
   console.log(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
   console.log(r.detail);
   for (const o of r.options) console.log(`  · ${o}`);
-  console.log('\nNothing was written — the refusal IS the record.');
+  for (const e of refusalEvents(r)) emit(e.type, e);
+  console.log(`\nRecorded as admission demand in the spine: ${spineFile}`);
+  // A stop this early has no `authored`/`signing` result to fall through to —
+  // the rest of this file's flow assumes a resolved language, a provider and
+  // a spec draft, none of which exist yet. `process.exitCode` plus falling
+  // through would require wrapping everything below in a guard, which is the
+  // rewrite the task asked not to make; `process.exit(1)` is kept here,
+  // deliberately, rather than reworked into that shape.
   process.exit(1);
 }
 const LANG = langResult.kind === 'resolved' ? langResult.lang : 'none-detected';
@@ -243,22 +281,6 @@ if (!apiKey) { console.error(`${AUTHOR_ENV_KEY} not set (secrets load from the e
 const judgeKeyFor = (/** @type {string} */ providerName) => (
   process.env.JUDGE_API_KEY ?? process.env[resolveProvider(providerName).envKey]
 );
-
-mkdirSync(OUT, { recursive: true });
-const runid = Date.now().toString(36);
-const spineFile = join(OUT, `author-${runid}.jsonl`);
-/** the spine: one JSONL line per event, appended. This runner owns it, exactly
- * as the shell owns `runJob`'s — `authorjob.js` emits nothing itself.
- * @param {string} type @param {any} [data] */
-const emit = (type, data = {}) => {
-  appendFileSync(spineFile, `${JSON.stringify({ type, ts: new Date().toISOString(), ...data })}\n`);
-};
-/** @param {string} name @param {any} body */
-const writeOut = (name, body) => {
-  const f = join(OUT, name);
-  writeFileSync(f, `${JSON.stringify(body, null, 2)}\n`);
-  return f;
-};
 
 /** F6 — an unpriced call makes the TOTAL unknown, and unknown is reported as
  * UNKNOWN. `?? 0` launders unknown into $0, and a bare floor that reads as exact

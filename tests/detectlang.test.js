@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, rmSync,
+  mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -18,6 +18,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { detectLanguage } from '../src/detectlang.js';
 import { assembleSpec, prepareSigning, GENRE } from '../src/authorjob.js';
 import { classGuards } from '../src/authoring.js';
+import { classifyIncidents } from '../src/ledger.js';
 
 const RUN_INTERVIEW = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
 const RUN_AUTHOR = new URL('../scripts/run-author.mjs', import.meta.url).pathname;
@@ -219,6 +220,42 @@ test('run-interview.mjs reaches the interview from --patient alone — no --lang
   const m = /lang\s+js/.exec(text);
   assert.ok(m, text);
   assert.ok(!/--lang/.test(text.slice(0, m.index)), 'no --lang usage text should have been needed to get this far');
+});
+
+// ── 11. the language-unsupported stop is COUNTED DEMAND, not a silent exit ───
+
+test('run-author.mjs on a language-unsupported patient records job-red/request-red in its own spine (counted admission demand, item 34 M3 loose end fix)', () => {
+  const patient = freshDir();
+  write(patient, { 'go.mod': 'module x\n' });
+  const out = join(base, 'out-ra-lang-red');
+  const r = spawnSync(process.execPath, [
+    RUN_AUTHOR, '--patient', patient,
+    '--answers', join(base, 'answers-never-read.json'),
+    '--draft', join(base, 'draft-never-read.json'),
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000 });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.notEqual(r.status, 0, text);
+  assert.match(text, /language-unsupported/, text);
+
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 1, `expected exactly one spine file written to ${out}: ${JSON.stringify(spineFiles)}`);
+  const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+  const jobRed = events.find((e) => e.type === 'job-red' && e.code === 'request-red');
+  assert.ok(jobRed, `no job-red/request-red event found in the spine: ${JSON.stringify(events)}`);
+  assert.equal(jobRed.verb, 'language-unsupported');
+  assert.equal(jobRed.lib, 'bareloop', 'the SAME REFUSAL_LIB every other bareloop-catalogue refusal stamps');
+
+  // nothing paid ran before the stop — no provider was ever built or called
+  assert.ok(!events.some((e) => e.type === 'author-start'), 'author-start must not appear — the run stopped before the provider was constructed');
+  assert.ok(!events.some((e) => e.type === 'author-cost'), 'no metered call may have happened before this refusal');
+
+  // and the ledger counts it as admission demand, the same channel every other
+  // refusal in this pipeline is counted through (src/ledger.js classifyIncidents)
+  const occs = classifyIncidents(events, { spine: spineFiles[0] });
+  const admitted = occs.find((o) => o.class === 'request-red' && o.lib === 'bareloop' && o.verb === 'language-unsupported');
+  assert.ok(admitted, `classifyIncidents did not count the language-unsupported stop as demand: ${JSON.stringify(occs)}`);
 });
 
 test('run-author.mjs reaches the API-key check from --patient alone — no --lang needed (E2E)', () => {
