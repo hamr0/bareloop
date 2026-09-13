@@ -1471,6 +1471,298 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
   return { ...r, declaration: r.artifact };
 }
 
+// ── THE CONFIRM TURN (PRD item 33 M3 piece 4) ───────────────────────────────
+//
+// The confirm turn drafts a PLAN — checks it will compose, protections
+// (always-on guards, never named in the goal), and one signed goal sentence —
+// from the person's own free-text answers plus the read-only survey/listing
+// the scout or seed-read already paid for, THEN shows it back and lets the
+// person confirm, fix (up to the 2-round cap, ruling 5), type the goal
+// themselves, or start over. No hand-authored matcher ever compares the goal
+// against the checks (ruling 6) — the model states its own plan, in the
+// model-facing prompt below, and the person is the one judgement that
+// accepts it.
+
+export const CONFIRM_TOOL_NAME = 'confirm_plan';
+
+/** Acknowledgement text the confirm tool's `execute` returns — mirrors
+ * {@link DECLARATION_ACK}'s role: an output channel that records and
+ * acknowledges, takes no action, and ends the call the moment it fires
+ * (`makeLoopGenerate` stops the loop on any tool execute). */
+export const CONFIRM_ACK = 'plan received';
+
+/** the confirm channel's own STRUCTURE_INSTRUCTION_TOOL analogue, shown after
+ * a malformed reply so the retry names the ONE required shape rather than
+ * repeating the whole system prompt */
+export const CONFIRM_STRUCTURE_INSTRUCTION = `Your reply did not deliver exactly one plan through the ${CONFIRM_TOOL_NAME} tool. `
+  + 'Call it exactly once, with the whole plan as its arguments: checks, protections, one goal sentence, and any '
+  + 'genuinely missing questions.';
+
+/** @type {Record<string, any>} */
+const CONFIRM_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    checks: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      description: 'the mechanical checks you plan to compose, each one traceable to something the Goal or What '
+        + 'success looks like answers actually asked for — never a check invented beyond them',
+    },
+    protections: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      description: 'the ALWAYS-ON guards that run regardless of what was asked (changed-from-seed, '
+        + 'no-suppressions, every mandatory guard) — listed for transparency, never composed as a check and never '
+        + 'named in the goal sentence',
+    },
+    goal: {
+      type: 'string',
+      minLength: 1,
+      description: 'ONE sentence naming every listed check (never the protections) — this becomes the signed '
+        + "job spec's goal",
+    },
+    questions: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      description: 'anything genuinely missing from the person\'s answers that you need to plan honestly — never '
+        + 'asked to double-check something already answered',
+    },
+  },
+  required: ['checks', 'protections', 'goal', 'questions'],
+  additionalProperties: false,
+});
+
+/** The output channel. It records and acknowledges; it takes no action.
+ * @param {{calls: any[]}} box */
+export function confirmTool(box) {
+  return {
+    name: CONFIRM_TOOL_NAME,
+    description: 'Deliver the drafted plan: the checks you will compose, the always-on protections, one goal '
+      + 'sentence, and any genuinely missing questions. Call this exactly once.',
+    parameters: CONFIRM_SCHEMA,
+    execute: async (/** @type {any} */ args) => { box.calls.push(args); return CONFIRM_ACK; },
+  };
+}
+
+/** THE CONFIRM CHANNEL — the one this turn uses, over the shared
+ * {@link askStructured} ladder, exactly as {@link declarationChannel} is for
+ * the authoring call. */
+const confirmChannel = () => ({
+  name: CONFIRM_TOOL_NAME,
+  instruction: CONFIRM_STRUCTURE_INSTRUCTION,
+  textPath: 'plan',
+  tool: (/** @type {{calls: any[]}} */ box) => confirmTool(box),
+});
+
+/**
+ * The confirm turn's system prompt (model-facing, registered — a commit
+ * touching this needs Failure/Addresses/Corrects labels, `src/promptregisters.js`).
+ * States ruling 6 ("a genre never adds a check the goal did not ask for") as
+ * an ORDER to the model itself, the same register {@link AUTHOR_SYSTEM} and
+ * {@link CLASS_STATEMENTS} already use, rather than a code matcher over prose.
+ */
+export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
+  + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose, the '
+  + 'always-on protections that run regardless, and one signed goal sentence. You never propose a check the Goal '
+  + 'or What-success-looks-like answers did not ask for — a genre never adds a check the goal did not ask for '
+  + "(run mtv8jihy drafted an unasked tsc --strict stage; that is exactly the mistake this order exists to prevent). "
+  + 'Guards/protections (changed-from-seed, no-suppressions, and every mandatory guard) are ALWAYS on: list them '
+  + 'separately as protections, never as checks, and never name them in the goal sentence. The goal sentence names '
+  + 'every check you listed and nothing more. Ask a question only where an answer is genuinely missing — never to '
+  + 'double-check something already answered. You cannot read anything and you cannot run anything: everything you '
+  + 'know is in the message you are given.';
+
+/**
+ * The confirm turn's per-round prompt (model-facing, registered). Shows the
+ * person's own answers with their labels (the signed table's Field/Holds
+ * pairing, same as {@link authorPrompt}'s interview block), the survey or
+ * listing already paid for, the write fence, the detected language, "worse
+ * than before" when the person gave one (repo only), and — on a fix round —
+ * what the person asked to change.
+ * @param {{answers: Record<string|number, string>, questions: Record<string|number, string>,
+ *   labels?: Record<string|number, string>, facts?: any, listing?: string|null,
+ *   writeScope?: string[]|null, isRepo: boolean, lang: string, worseThanBefore?: string,
+ *   fixText?: string|null}} o
+ */
+export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null }) {
+  const lines = ['THE PERSON\'S OWN ANSWERS (a non-engineer; read exactly what they wrote, invent nothing beyond it):'];
+  for (const k of Object.keys(questions)) {
+    const label = labels[k] ? ` (${labels[k]})` : '';
+    lines.push(`Q${k}${label}. ${questions[k]}`);
+    lines.push(`A${k}. ${answers?.[k] ?? '(no answer)'}`);
+  }
+  if (isRepo && worseThanBefore) {
+    lines.push('', `WORSE THAN BEFORE (a constraint the person named, repo jobs only): ${worseThanBefore}`);
+  }
+  lines.push('', `LANGUAGE: ${lang}`);
+  if (writeScope) lines.push(`WRITE SCOPE (the fence — the run may write only here): ${writeScope.join(', ')}`);
+  if (facts) lines.push('', `READ-ONLY SURVEY:\n${JSON.stringify(facts)}`);
+  if (listing) lines.push('', `SEED LISTING:\n${listing}`);
+  if (fixText) lines.push('', `THE PERSON ASKED FOR A CHANGE: ${fixText}`, 'Revise the plan and resubmit.');
+  return lines.join('\n');
+}
+
+/**
+ * ONE confirm-turn round-trip: capStop, then one structured ask over the
+ * confirm channel. Split out of {@link runConfirmTurn} only so the ceiling
+ * check and the ask sit beside each other exactly once.
+ * @param {{convo: any[], generate: Function, mode: 'tool'|'text', book: ReturnType<typeof makeCostBook>, label: string}} o
+ * @returns {Promise<{plan: any, convo: any[], providerError: string|null, red: Red|null, budget: 'cap-halt'|'pricing-red'|null}>}
+ */
+async function askConfirmPlan({ convo, generate, mode, book, label }) {
+  const halt = book.capStop();
+  if (halt) return { plan: null, convo, providerError: null, red: null, budget: halt };
+  const r = await askStructured({ messages: convo, generate, mode, retries: MAX_STRUCTURE_RETRIES, label, book, channel: confirmChannel() });
+  return { plan: r.artifact, convo: r.convo, providerError: r.providerError, red: r.red, budget: r.budget };
+}
+
+/**
+ * THE CONFIRM TURN: the $0 half (worse-than-before for a repo, a language
+ * pick when `lang` carries `detectLanguage`'s own `ambiguous` shape), then up
+ * to 2 PAID rounds (ruling 5) of draft → show → the person's menu pick
+ * (ruling 5 addendum). `ask` is the ONE interactive seam — an async function
+ * from a "what's being asked" descriptor to the person's answer, or `null`
+ * meaning input ended (the same signal `scripts/run-interview.mjs`'s own
+ * `nextLine()` already uses) — never a process exit here, because this is a
+ * library function, not a script. A `null` at ANY ask stops the whole turn as
+ * `confirm-abandoned`, spending nothing beyond whatever rounds already ran.
+ *
+ * D3's shape is enforced by the loop bound alone (`round <= 2`), never a
+ * counter checked after the fact: a "fix" on round 2 returns immediately —
+ * there is no 3rd call to make.
+ *
+ * @param {{verdictType: string, answers: Record<string|number, string>,
+ *   questions: Record<string|number, string>, labels?: Record<string|number, string>,
+ *   facts?: any, listing?: string|null, writeScope?: string[]|null, isRepo: boolean,
+ *   lang: string|{kind: 'ambiguous', candidates: string[], dir: string},
+ *   generate: Function, book: ReturnType<typeof makeCostBook>,
+ *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
+ *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text'}} o
+ * @returns {Promise<{ok: boolean,
+ *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
+ *   rounds: number,
+ *   accepted: {goal: string, checks: string[], protections: string[], lang: string,
+ *     worseThanBefore: string, openQuestions: string[]}|null,
+ *   reds: Red[], cost: any}>}
+ */
+export async function runConfirmTurn({
+  verdictType, answers, questions, labels = {}, facts = null, listing = null, writeScope = null,
+  isRepo, lang, generate, book, ask, onPhase = () => {}, mode = 'tool',
+}) {
+  /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
+  /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
+  const base = () => ({ ok: false, stop: null, rounds: 0, accepted: null, reds: [], cost: book.report() });
+  /** @param {number} rounds @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
+  const abandon = (rounds) => ({ ...base(), stop: /** @type {ConfirmStop} */ ('confirm-abandoned'), rounds, cost: book.report() });
+
+  // ── the $0 half, entirely before any token spends (D7) ────────────────────
+  let worseThanBefore = '';
+  if (isRepo) {
+    onPhase('confirm-worse-than-before');
+    const wtb = await ask({ kind: 'worseThanBefore', field: WORSE_THAN_BEFORE_FIELD });
+    if (wtb === null) return abandon(0);
+    worseThanBefore = redactSecrets(String(wtb).trim());
+  }
+
+  /** @type {string} */
+  let resolvedLang = typeof lang === 'string' ? lang : '';
+  if (lang && typeof lang === 'object' && lang.kind === 'ambiguous') {
+    onPhase('confirm-language-pick', { candidates: lang.candidates });
+    const pick = await ask({ kind: 'language', field: LANGUAGE_PICK_FIELD, candidates: lang.candidates });
+    if (pick === null) return abandon(0);
+    resolvedLang = String(pick);
+  }
+
+  // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
+  /** @type {string[]} */
+  const openQuestions = [];
+  /** @type {string|null} */
+  let fixText = null;
+  let convo = [{
+    role: 'user',
+    content: confirmPrompt({
+      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore,
+    }),
+  }];
+
+  for (let round = 1; round <= 2; round += 1) {
+    if (fixText) {
+      convo = [...convo, { role: 'user', content: confirmPrompt({
+        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText,
+      }) }];
+    }
+    onPhase('confirm-round', { round });
+    const label = round === 1 ? 'confirm' : `confirm#${round}`;
+    const r = await askConfirmPlan({ convo, generate, mode, book, label });
+    convo = r.convo;
+
+    if (r.budget) return { ...base(), stop: r.budget, rounds: round - 1, cost: book.report() };
+    if (r.providerError) return { ...base(), stop: /** @type {ConfirmStop} */ ('provider-red'), rounds: round, reds: [{ code: 'provider-red', path: label, detail: redactSecrets(r.providerError) }], cost: book.report() };
+    if (!r.plan) return { ...base(), stop: /** @type {ConfirmStop} */ ('artifact-red'), rounds: round, reds: [/** @type {Red} */ (r.red)], cost: book.report() };
+
+    // "Unpriced is never free" (F6): a plan can arrive structurally fine on a
+    // call whose OWN cost came back unknown. Nothing downstream ever makes
+    // another call to discover that (a "confirm" pick is the last call this
+    // turn ever makes), so it is checked HERE, once, right after the call
+    // that might have caused it — never silently accepted as a signable plan
+    // whose ceiling can no longer be enforced.
+    const postCallHalt = book.capStop();
+    if (postCallHalt) return { ...base(), stop: postCallHalt, rounds: round, cost: book.report() };
+
+    onPhase('confirm-done', { round, plan: r.plan });
+    const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan: r.plan });
+    if (picked === null) return abandon(round);
+    if (picked === 'start-over') return { ...base(), stop: /** @type {ConfirmStop} */ ('confirm-restart'), rounds: round, cost: book.report() };
+
+    if (picked === 'confirm') {
+      return {
+        ok: true, stop: null, rounds: round,
+        accepted: {
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...(r.plan.protections ?? [])],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions],
+        },
+        reds: [], cost: book.report(),
+      };
+    }
+
+    if (picked === 'type-goal') {
+      const typed = await ask({ kind: 'goal' });
+      if (typed === null) return abandon(round);
+      return {
+        ok: true, stop: null, rounds: round,
+        accepted: {
+          goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...(r.plan.protections ?? [])],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions],
+        },
+        reds: [], cost: book.report(),
+      };
+    }
+
+    // picked === 'fix'
+    const fix = await ask({ kind: 'fix' });
+    if (fix === null) return abandon(round);
+    const redactedFix = redactSecrets(String(fix).trim());
+    openQuestions.push(redactedFix);
+    if (round === 2) {
+      // D3: after round 2 a "fix" is passed to the composer verbatim (via
+      // openQuestions, shown at signing) — there is no 3rd call.
+      return {
+        ok: true, stop: null, rounds: round,
+        accepted: {
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...(r.plan.protections ?? [])],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions],
+        },
+        reds: [], cost: book.report(),
+      };
+    }
+    fixText = redactedFix;
+  }
+  // unreachable: the loop above always returns by round 2 — kept only so a
+  // future edit that breaks that invariant fails loudly rather than falling
+  // through to `undefined`.
+  throw new Error('[authorflow] runConfirmTurn fell through its 2-round cap without returning');
+}
+
 /**
  * THE AUTHORING FLOW.
  *
