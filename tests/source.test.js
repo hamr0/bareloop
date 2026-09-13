@@ -494,6 +494,77 @@ test('prepareSource: an untracked node_modules symlink INSIDE the subfolder does
   assert.ok(!existsSync(join(into, 'tree', 'packages', 'api', 'node_modules')), 'the untracked node_modules directory is never a candidate at all');
 });
 
+// ── hamr's ruling A (PRD item 34 loose end, 2026-09-13): a subfolder git ───
+// tracks NOTHING under must refuse, never freeze an empty claim ────────────
+
+test('prepareSource: a GITIGNORED subfolder inside a repo refuses source-untracked-in-repo, and never creates `into`', async () => {
+  const repo = tmp('bareloop-src-subdir-ignored-');
+  mkdirSync(join(repo, 'tracked'), { recursive: true });
+  mkdirSync(join(repo, 'data'), { recursive: true });
+  writeFileSync(join(repo, 'tracked', 'a.txt'), 'x');
+  writeFileSync(join(repo, '.gitignore'), 'data/\n');
+  writeFileSync(join(repo, 'data', 'notes.txt'), 'the person\'s own input');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  const source = join(repo, 'data');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-untracked-in-repo');
+  assert.match(r.stop, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
+});
+
+test('prepareSource: an UNTRACKED (not gitignored, simply never committed) subfolder inside a repo also refuses source-untracked-in-repo', async () => {
+  const repo = tmp('bareloop-src-subdir-untracked-');
+  mkdirSync(join(repo, 'tracked'), { recursive: true });
+  mkdirSync(join(repo, 'data'), { recursive: true });
+  writeFileSync(join(repo, 'tracked', 'a.txt'), 'x');
+  writeFileSync(join(repo, 'data', 'notes.txt'), 'never added or committed');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', 'tracked/a.txt']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  const source = join(repo, 'data');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-untracked-in-repo');
+  assert.ok(!existsSync(into));
+});
+
+test('prepareSource: a subfolder with AT LEAST ONE tracked file underneath it stays green (existing partially-ignored-folder behaviour, unchanged)', async () => {
+  const repo = tmp('bareloop-src-subdir-partial-');
+  mkdirSync(join(repo, 'pkg'), { recursive: true });
+  writeFileSync(join(repo, 'pkg', 'tracked.txt'), 'kept');
+  writeFileSync(join(repo, 'pkg', '.gitignore'), 'ignored.txt\n');
+  writeFileSync(join(repo, 'pkg', 'ignored.txt'), 'dropped by the source repo\'s own .gitignore');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  const source = join(repo, 'pkg');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.kind, 'repo');
+  assert.equal(r.manifest.sourceSubdir, 'pkg');
+  assert.ok(existsSync(join(into, 'tree', 'pkg', 'tracked.txt')));
+  assert.ok(!existsSync(join(into, 'tree', 'pkg', 'ignored.txt')), 'the gitignored file is still never copied — only the refusal rule is new, not the tracked-only freeze itself');
+});
+
+test('prepareSource: a repo-ROOT source is exempt from source-untracked-in-repo even with nothing tracked at all', async () => {
+  const repo = tmp('bareloop-src-root-empty-');
+  gitFix(repo, ['init', '-q']);
+  writeFileSync(join(repo, 'untracked.txt'), 'never added');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source: repo, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.kind, 'repo');
+  assert.equal(r.manifest.sourceSubdir, '', 'Source IS the repo root — the empty-subdir exemption applies');
+});
+
 test('prepareSource: a NESTED .git FILE in an ancestor (above the subfolder) still refuses source-is-linked-worktree', async () => {
   const outer = tmp('bareloop-src-nested-worktree-');
   mkdirSync(join(outer, 'sub'), { recursive: true });

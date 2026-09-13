@@ -106,6 +106,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
   whole repo in memory at once — the streaming scan design exists to avoid exactly that).
   `copyFile`'s mode-bit preservation is kept explicitly (`stat` + `chmod` on the frozen
   file), verified not to regress.
+- **A gitignored/untracked subfolder inside a repo no longer freezes into an empty
+  claim (hamr's ruling A, PRD item 34 loose end, 2026-09-13):** the ruling-2 addendum's
+  "a Source subfolder is a repo job" rework froze the WHOLE repo's tracked files, but
+  `listRepoFiles` only ever returns tracked paths — when Source itself is a subfolder git
+  tracks nothing under (`.gitignore`'d, or simply never committed), the freeze used to
+  succeed anyway with a `kind: 'repo'` tree holding none of Source's own files, silently
+  vanishing the person's input. `prepareSource` now refuses `source-untracked-in-repo`
+  before `into` is created — a repo-root Source, and a subfolder with at least one tracked
+  file underneath it, are unaffected.
 - **The documented-exports guard now reads the doc instead of a hand-typed array (F167,
   PRD item 34 L4):** `tests/index.test.js`'s "documented public surface" test used to check
   a list of names copied out of `bareloop.context.md` by hand — the same class of bug that

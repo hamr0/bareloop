@@ -3094,7 +3094,12 @@ worker gets a real repo to review. Its guards (the input stays untouched) arrive
 `.git` that is a FILE, not a directory — a linked worktree or a submodule — refuses
 `source-is-linked-worktree`: its real git directory lives elsewhere, and a copy would
 silently commit into the original. Text-only and the per-file ceiling do not apply to a repo
-source (a real repo legitimately carries binaries).
+source (a real repo legitimately carries binaries). A Source that is a SUBFOLDER inside a repo
+is a repo job too (ruling 2 addendum, 2026-09-13, option A) — the whole repo's tracked files
+freeze, not just the subfolder. When that subfolder is itself gitignored or simply untracked,
+git tracks nothing under it at all, so the freeze would otherwise silently succeed holding
+none of the person's own files — refused instead (ruling A, 2026-09-13) as
+`source-untracked-in-repo`: commit the files, or point Source at a folder outside the repo.
 
 **A repo source copies only what git tracks** (D1 rework, hamr's ruling verbatim: "copy only
 what git tracks" — closes F164/F165). Files are enumerated with `git ls-files --stage` in the
@@ -3141,7 +3146,8 @@ residual, not this fix's job to close.
 
 **Every refusal is a named `{stop, code}`, never a throw and never silent:** `source-
 unreadable`, `source-symlink`, `source-env-file`, `source-file-oversize`,
-`source-nested-repo`, `source-is-linked-worktree`, `source-seed-incomplete`, `source-git-failed`, `source-not-text`, `source-fetch-failed`,
+`source-nested-repo`, `source-is-linked-worktree`, `source-untracked-in-repo`,
+`source-seed-incomplete`, `source-git-failed`, `source-not-text`, `source-fetch-failed`,
 `source-fetch-timeout`, `source-fetch-oversize`, `source-carries-secret`, `into-exists`,
 `destination-invalid`, `destination-not-absolute`, `destination-not-directory`,
 `destination-not-writable`, `destination-contained`, `destination-parent-missing`,

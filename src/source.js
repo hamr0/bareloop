@@ -514,6 +514,21 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
         // subfolder. Recorded in the manifest (below) for later use; nothing
         // downstream reads it yet — the fence/scope wiring is a later piece.
         const sourceSubdir = relative(repoRoot, sourceAbs).split(sep).join('/');
+        // hamr's ruling A (PRD item 34 loose end, 2026-09-13, live-proven at
+        // $0): the ruling-2 addendum above freezes the WHOLE repo whenever
+        // Source is a subfolder, but `listRepoFiles` only ever returns
+        // TRACKED paths — when the subfolder itself is gitignored or simply
+        // untracked, NONE of its own files are among them, and the freeze
+        // silently succeeds with a `kind: 'repo'` tree that holds nothing the
+        // person actually pointed Source at. Refused here, before `into` is
+        // created and before a single byte is scanned or written — a repo
+        // ROOT source (`sourceSubdir === ''`) is exempt (it always has the
+        // whole tracked tree by definition), and a subfolder with AT LEAST
+        // ONE tracked file underneath it is unaffected (that is the existing,
+        // unchanged "partially-ignored files inside a tracked folder" case).
+        if (sourceSubdir !== '' && !walked.files.some((f) => f.rel === sourceSubdir || f.rel.startsWith(`${sourceSubdir}/`))) {
+          return refuse('source-untracked-in-repo', `${sourceAbs} is inside the git repo at ${repoRoot}, but git does not track anything in it, so a repo job would not see its files — commit the files, or point Source at a folder outside the repo`);
+        }
         frozen = {
           kind: 'repo', root: repoRoot, files: walked.files, sourceSubdir,
         };
