@@ -293,13 +293,61 @@ stays open until a repo source can get past F164 far enough to be sized.
 > records the same repo (`adaptlearn`) now measured cleanly. This paragraph and the ones above
 > it are left exactly as the live smoke found them — the historical record of what broke.
 
-## M3 — the intake form and confirm turn ($0 build, paid proof later)
+## M3 — the intake form and confirm turn (DETAILED 2026-09-13, not started)
 
-The six fields (Goal / Source / Destination / What success looks like / Guardrails / Judge
-examples — the last only when soft-green is picked); `src/authorflow.js` question sets
-re-shaped, answers still verbatim (`src/authorjob.js:298`); no language question (H5);
-the "here's what I understood" turn, 2 rounds max; the genre may never add a close stage the
-goal does not state (the `tsc --strict` stage in `mtv8jihy`). Detailed before it starts.
+The form is the SAME 6 fields for green and soft-green: Goal / Source / Destination / What
+success looks like / Guardrails / Judge examples (one pass, one fail, and why; multi-line, its
+own box; shown ONLY when soft-green is picked). This is not open for discussion — it is
+PRD item 33's 2026-09-10 signed ruling ("The intake form (RULED)", `docs/product/PRD.md`).
+Judge examples replace today's soft-green Q6+Q7 (`src/authorflow.js` `SOFTGREEN_QUESTIONS`,
+line 254); the "why" lines are what the rubric card compiles from. Q5 ("worse than before")
+folds into Guardrails; the confirm turn asks it only for a repo source. Two base rules always
+on (output non-empty; citation rule). Calibration is 10 cases from judge examples + real
+input, floor 10/10, 5 injection styles. The confirm turn and accepted answers land in the
+EXISTING audit records — no new record format.
+
+**Rulings (hamr, 2026-09-13):**
+
+1. **Where the form lives.** The terminal interview, `scripts/run-interview.mjs`, reshaped to
+   the 6 fields. `src/authorflow.js` stays the one source of the question sets; the script
+   only prints what the library hands it. The panel comes later on the same library.
+2. **Source/Destination replace `--patient`.** They are the first two form fields and REPLACE
+   the `--patient` flag (`scripts/run-interview.mjs:30`, `scripts/run-author.mjs` usage line
+   19). Each is proven mechanically, $0, the moment it is entered (`prepareSource`/
+   `proveDestination`, `src/source.js`). For a repo source, Destination fills the signed
+   `writeScope` field (`src/job.js:363` — "the fence is operator law") — the list of globs the
+   run may write. Destination stays per-run, never signed (M2's 2026-09-11 ruling), except that
+   a repo job's `writeScope` IS the fence.
+3. **Language is detected, never asked.** A code job's checks always run the repo's OWN tools
+   in the repo's own language, so language is a fact of the repo, not a choice: `package.json`
+   present → js; `pyproject.toml` or `setup.py` present → python; both present → the confirm
+   turn asks which part the job is about; neither → not a code-genre job. This replaces the
+   `--lang` flag (default `js`) in `scripts/run-interview.mjs` (line 58, `LANG = langArg ??
+   'js'`) and `scripts/run-author.mjs` (line 102, same pattern). What language currently
+   drives, and must still be fed by detection rather than a flag: `src/authoring.js`'s TYPES
+   genre per-language data — `GENRE_LANGUAGES = ['js', 'python']` (line 499), suppression
+   patterns and file extensions in the `TYPES_GENRE.languages` table, genre-owned env such as
+   Python's `MYPYPATH` (`genreEnv`, line 848), and checker-output instruments (`genreInstruments`,
+   line 912).
+4. **The confirm turn is paid, inside the authoring budget.** It is a call INSIDE the same
+   `--budget` ceiling (no default); it reuses the scout's survey rather than reading the source
+   a second time.
+5. **Two-round cap, sign-or-restart.** After 2 confirm rounds it drafts anyway; any still-open
+   questions are shown at signing. If the person does not sign, they rerun the questions from
+   the start.
+6. **No hand-authored check matcher.** "A genre never adds a check the goal did not ask for"
+   (the `tsc --strict` stage in run `mtv8jihy`) is enforced by a prompt register at the
+   composer PLUS the confirm turn listing every check it plans before drafting — no code
+   matcher over prose (same reason as the no-shell law).
+7. **Scope of M3's deliverable.** A repo job works end to end. A plain-folder job gets the form
+   and the confirm turn, then an honest named stop: no checks for this kind of job yet (M4).
+8. **hitl stays out of the form and everywhere customer-facing.** Removed from the gate; no
+   plans to revive; code kept only for reuse; never shown in the form, CLI usage/help, or error
+   text — see item 34's L19 for the customer-facing cleanup this still owes
+   (`docs/product/PRD.md`). The M3 form offers green and soft-green only.
+9. **Proof.** The M3 build is $0 with tests; at the end, ONE live interview on a repo job runs
+   on DeepSeek (`deepseek-flash`), paid, only on hamr's word at that time. It depends on item
+   34's L17 (authoring provider selectable) landing first.
 
 ## M4 — non-code checks and guards
 

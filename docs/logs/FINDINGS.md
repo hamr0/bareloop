@@ -11859,6 +11859,9 @@ be silently wrong for another (repo) when both paths share one code path — and
 that never constructs the real-world shape of its target (an installed JS repo) cannot catch
 the mismatch no matter how many tests it has.
 
+> **2026-09-13 — pointer:** CLOSED 2026-09-12 by the D1 rework, see
+> `docs/product/ITEM33-BUILD.md` "Destination model corrected".
+
 ## F165 — the seed force-add freezes gitignored content, including this repo's own `.claude/`, into the copied tree (live smoke, OPEN)
 
 **2026-09-12, PRD item 33 M2b fix 6 live smoke, `feat/item-33`.** M2b fix 6 made the seed
@@ -11888,6 +11891,9 @@ Tracked in `docs/product/ITEM33-BUILD.md`, not started.
 (force past a `.gitignore` a real project relies on to keep secrets and dependency trees out of
 version control) — a fix built for one source kind must be re-checked against every other
 source kind sharing its code path, not assumed to generalize.
+
+> **2026-09-13 — pointer:** CLOSED 2026-09-12 by the D1 rework, see
+> `docs/product/ITEM33-BUILD.md` "Destination model corrected".
 
 ## F166 — what held in the same live smoke, and what stays unmeasured
 
@@ -12006,6 +12012,9 @@ untracked, gitignored, and not part of the npm tarball.
 actually goes and investigates; a changed hash that turns up outside the expected set must be
 chased down, not just reported and left.
 
+> **2026-09-13 — CLOSED — hamr:** the local AGENT_RULES.md copy gets frequent updates and
+> `.claude/` is gitignored; a changed hash on it is expected, not an unknown writer.
+
 ## F170 — the auto-mode classifier blocked the admin merge again, with CI green and an explicit "push"
 
 **2026-09-13, PR #39 (`fix/export-source-helpers` → `main`).** Both CI runs on this PR came back
@@ -12026,3 +12035,40 @@ how recent or thorough.
 **The lesson, stated plainly.** Budget the `!` fallback line into every release hand-off as the
 default expectation, not a surprise — the classifier's notion of "reviewed" is not the repo's,
 and there is no fix in this repo that changes that.
+
+## F171 — `deepseek-chat`, the settled secondary model, is no longer served
+
+**2026-09-13.** Facts:
+
+- A $0 `GET https://api.deepseek.com/models` with the account's key returned HTTP 200 listing
+  exactly two ids: `deepseek-flash`, `deepseek-v4-pro`. No `deepseek-chat`.
+- DeepSeek's pricing page (api-docs.deepseek.com/quick_start/pricing, read via a web fetch,
+  2026-09-13; page facts, not verified by a billed call), per 1M tokens: `deepseek-flash`
+  input cache-hit $0.006 / cache-miss $0.30 / output $1.20 at peak; `deepseek-v4-pro` $0.044 /
+  $1.32 / $3.96 at peak; off-peak is half (peak 01:00–04:00 and 06:00–10:00 UTC, Mon–Fri). Its
+  docs page says legacy names `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are served
+  by DeepSeek-V4.1-Flash at the Flash price.
+- bareloop still names `deepseek-chat` in `src/providers.js` (tier table, both tiers, lines
+  50–51, plus the per-model request-key entry line 102), `src/job.js` (line 138, "THE secondary
+  provider"), `scripts/run-u.mjs` (line 1221), `bareloop.context.md` (lines 76, 80, 166),
+  `CHANGELOG.md`, `docs/product/UPSTREAM-ASKS.md`, and several tests (`tests/providers.test.js`,
+  `tests/judge-model-pin.test.js`, `tests/run-author.test.js`, `tests/cardauthor.test.js`,
+  `tests/calibrate.test.js`).
+- bare-agent's `resolveRates` (`node_modules/bare-agent/src/loop.js:125`) only recognizes a
+  model id containing "haiku" or "sonnet"; any DeepSeek model id matches neither and prices at
+  the Sonnet-tier `DEFAULT_RATES` guess ($0.003/$0.015 per 1K = $3 in / $15 out per 1M, line
+  106), stamped `source: 'default'` — about 10x over the Flash list price. Over-reporting is
+  the safe direction (a cap halts early, never overspends). hamr keeps this (item 34's L16,
+  F113 stands).
+- The F149 per-model request-key gating (`legacyMaxTokens`, `src/providers.js:102`) was
+  measured on `deepseek-chat` only; it must be re-verified on `deepseek-flash` before any paid
+  DeepSeek run relies on it.
+- F150's green (run `pm48w5az`, `docs/logs/FINDINGS.md` "first non-Anthropic GREEN") is on a
+  model id that is no longer served; it proves the loop on DeepSeek as it was, not on
+  `deepseek-flash`.
+
+**Ruling (hamr, 2026-09-13):** switch to V4.1 = `deepseek-flash` (item 34's L16), on the fix
+branch.
+
+**The lesson, stated plainly.** A vendor model id is not a stable fact; a settled provider
+choice needs its id re-checked ($0 model list) before every paid fire.

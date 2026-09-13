@@ -269,6 +269,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     `null` today (F110). **2026-09-05 (hamr: agreed):** not a build — the signature is minted at
     run time by `scripts/run-u.mjs`, so it clears itself the next time aurora fires under
     hamr's in-turn sign. Nothing to schedule.
+
+    > **2026-09-13 — pointer:** see item 34's L13 — REMOVED, not a task.
 13. ~~4 `jobs/*.json` stale doc-path strings~~ — **DONE 2026-08-30** (hamr's word): the four
     `description` strings now point at `docs/product/{TESTGEN,TYPES}-PREREG.md`; the two
     `docs/logs/` preregs moved to `docs/product/` beside the other eight (index + live links
@@ -292,6 +294,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     explicitly so their baselines keep the condition they were established under — no
     re-baseline required or paid.
 18. **Flake-name capture** — held until the peer says "load window open" verbatim.
+
+    > **2026-09-13 — pointer:** see item 34's L14 — the peer hold is void, run once at $0.
 19. ~~**Housekeeping** — delete branches `bareagent-0381-bump`, `reorg-v2-test`~~ — **DONE
     2026-08-27** (`bareagent-0381-bump` deleted locally; `reorg-v2-test` already gone from
     local and remote); broad-`git add` workflow rule (stage by explicit path while a reorg
@@ -310,6 +314,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     human stage is not deleted; it is COPIED (never imported) into the sibling product
     `fwdloop` as its mid-flow `ask` step. bareloop keeps `human-confirms` as the end-of-close
     pause it already is. No code change here.
+
+    > **2026-09-13 — pointer, supersedes the "so the class can be reopened later" wording
+    > above:** hamr — `hitl` is removed from the gate, no revival plans, code kept for reuse
+    > only, never shown anywhere customer-facing (item 34's L19).
 22. **LIBRARY_CONVENTIONS gap — DONE 2026-08-30**: 26/36 rules already met, 8 N/A; this
     branch adds context.md §Which-mode/§Extension-contract/§Threat-model, per-dependency
     justification in CLAUDE.md, `.env.example`. PARKED with reason: `src/types.js` central
@@ -408,6 +416,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     → (1) the item 33 interview → (2) item 33 written and the bareloop/fwdloop split ruled →
     (3) item 33 built → (4) proof fires: 31.5 calibration on a real bar, 31.4 on gemini →
     (5) the panel (N6), shaped by 1–3 → (6) the reuse-lift proof LAST. See item 33.
+
+    **2026-09-13 — (3) detailed:** item 33 build continues as: fix branch for item 34 → M3 →
+    M4 → M5 → M6 → M7 proof fires → (5) the panel → (6) reuse-lift proof last.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
@@ -836,10 +847,53 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     pending rework**: it does not hold on a real JS repo today (F161–F166,
     `docs/product/ITEM33-BUILD.md`'s "REWORK OWED" section). M3–M7 not started.
 
-Parked pending measurement: read compaction; stale-slice usage; context-headroom meter;
-bundle-runner knob mirroring — `bareloop run`'s `capRuns`/`closeTimeoutMs` default to the
-library's own values (3 / 120_000ms) rather than `run-u`'s operator-set values (4 /
-900_000ms), the numbers this job's bench base rate was established under (F130).
+    > **2026-09-13 — pointer:** F164/F165 CLOSED 2026-09-12 by the D1 rework —
+    > `docs/product/ITEM33-BUILD.md` "Destination model corrected" section and its D4
+    > measurement. The line above is left as the record of what the build stood at that day.
+
+    **2026-09-13 — M3 detailed** (hamr; `docs/product/ITEM33-BUILD.md` "M3 — the intake form
+    and confirm turn", DETAILED, not started). Rulings 1–9: (1) form lives in
+    `scripts/run-interview.mjs`, `src/authorflow.js` stays the one question-set source; (2)
+    Source/Destination replace `--patient`, proven $0 at entry, Destination feeds `writeScope`
+    for repo jobs; (3) language is DETECTED from the repo (`package.json`/`pyproject.toml`/
+    `setup.py`), never asked, replacing `--lang`; (4) the confirm turn is paid, inside the
+    authoring budget, reusing the scout's survey; (5) 2-round cap, drafts anyway, open
+    questions shown at signing; (6) no check the goal didn't ask for — a prompt register plus
+    a pre-draft listing, never a prose matcher; (7) M3 ships a working repo job, a plain-folder
+    job gets an honest named stop (checks come in M4); (8) hitl stays out of the form and all
+    customer-facing text; (9) proof is one live DeepSeek (`deepseek-flash`) interview,
+    depending on item 34's L17.
+
+34. **Item 34 — loose ends housed** (hamr, 2026-09-13: every open end gets fix / keep /
+    backlog / remove).
+
+    | L | Item | Ruling | Where |
+    |---|---|---|---|
+    | L1 | `src/source.js` folder/repo sources read each file twice (scan, then `copyFile`) | FIX — freeze must write the exact bytes that were secret-scanned | fix-ledger bullet |
+    | L2 | `scripts/run-u.mjs` `SCOUT_LABEL` prints "(default)" even when `--scout on` was passed explicitly | FIX | fix-ledger bullet |
+    | L3 | `closeScriptCandidateToken` (`src/validate.js:124`) treats an `npx @scope/pkg` token as a script path, so such a close can never be signed | KEEP as a documented limit — fails safe, no job uses it | document in `bareloop.context.md`, drop the ledger bullet, on the fix branch |
+    | L4 | F167's guard class: `tests/index.test.js`'s documented-exports list is hand-typed | FIX — read the names from `bareloop.context.md` instead | fix-ledger bullet |
+    | L5 | F169 — local AGENT_RULES.md copy changed with no known writer | FIX — closed: the local copy updates often and `.claude/` is gitignored, not a mystery | this commit |
+    | L6 | Stale OPEN markers for F164/F165 | FIX — dated pointers | this commit |
+    | L7 | F130 bundle-runner knob mirroring: `bareloop run` defaults `capRuns`/`closeTimeoutMs` to the library's 3 / 120_000ms instead of the operator-set 4 / 900_000ms | FIX — a limit that comes from a default is a silent second ceiling; the bundle must carry the signed numbers | moves out of "Parked pending measurement" |
+    | L8 | Context-headroom meter | BACKLOG (undecided, not immediate) — never built, 0 overflows in 147 runs | |
+    | L9 | Read compaction — bare-agent has the primitive (`Loop({trim})`, `node_modules/bare-agent/src/loop.js`), bareloop never wired it | BACKLOG (undecided, not immediate) — trimming breaks the prompt-cache prefix, saving unmeasured | |
+    | L10 | Counting stale-slice serves — the stale-serve itself is BUILT and stays (`src/readshim.js`) | BACKLOG (undecided, not immediate) — only the measurement is backlog | |
+    | L11 | H7 PDF/Word input | KEEP parked — re-open when a real job needs it | |
+    | L12 | G4 tripwire (item 23; 0 of 4 litectx passes → scope the planted row) | KEEP | |
+    | L13 | Item 12 (aurora run-time signature) | REMOVED — not a task; it clears itself at aurora's next run | |
+    | L14 | Item 18 flake-name capture | RUN once — the peer hold is void (that session is gone); run $0 now under ~4x load on `tests/watchdog.test.js`, `tests/ralph.test.js`, `tests/stall.test.js`; result recorded in FINDINGS when it completes, then item 18 closes | |
+    | L15 | Model-output truncation classification | KEEP, RULED — stays `provider-red` under F122's frozen "2A" tripwire (2nd paid occurrence → `effort:'low'` for sonnet + bring reclassification to hamr); not an open question | |
+    | L16 | DeepSeek pricing default (F113) | KEEP as the estimated default, no rate tables of our own. MODEL SWAP: `deepseek-chat` is no longer served — pick V4.1 = `deepseek-flash` | see F171 |
+    | L17 | Job authoring still pinned to Anthropic: `scripts/run-author.mjs` hardcodes `PROVIDER_NAME = 'anthropic-api'` (line 77) for the scout and the drafter, and `scripts/run-interview.mjs` writes `provider: 'anthropic-api'` (line 281) into every draft | FIX — authoring must pick its provider from the same table as the worker, DeepSeek included (different from item 32, which freed only the judge) | fix branch |
+    | L18 | Proof runs | KEEP — M7, plus M3's DeepSeek proof | |
+    | L19 | hitl still shows to customers: `bareloop.context.md` (34 mentions), and the usage text of `scripts/run-author.mjs` / `scripts/run-interview.mjs` | FIX — remove from all customer-facing text; code stays | fix branch |
+
+    Fix branch: L1, L2, L3 (doc note), L4, L7, L16 (model swap), L17, L19 — one branch,
+    reviewed and released on its own, BEFORE the M3 build.
+
+Parked pending measurement: read compaction; stale-slice usage; context-headroom meter —
+now item 34's L8–L10 above.
 Dead, never re-raise: rates passthrough (F113 ruling), W4 stale-index build (F112, retired on
 the build list), refuse-to-price preflight, memory/recall harness.
 
