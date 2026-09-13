@@ -612,6 +612,19 @@ export async function authorCloseForJob({
         + '(bound to AUTHOR_SYSTEM)');
     }
     const confirmBook = makeCostBook({ ceilingUsd, onCall });
+    // THE CEILING FOLDS IN PRIOR SPEND (the standing hard line's money form,
+    // F1). The scout is the FIRST paid stage — its calls are absorbed here,
+    // BEFORE `runConfirmTurn` ever asks `book.capStop()`, so a scout that
+    // already spent most (or all) of the ceiling is visible to the confirm
+    // turn's own pre-call check, and a scout call that came back unpriced
+    // (`costUsd: null`) taints `spendComplete` here too — "unpriced is never
+    // free" applies to the confirm turn's OWN calls exactly as it already
+    // does to the author call's. `absorb` never fires `onCall` (see
+    // `makeCostBook`'s own doc): these calls were already reported once, when
+    // the scout made them.
+    const scoutCallCount = (survey?.calls ?? []).length;
+    const scoutRawCount = (survey?.raws ?? []).length;
+    confirmBook.absorb(survey?.calls ?? [], survey?.raws ?? []);
     onPhase('confirm', {});
     const confirm = await runConfirmTurn({
       verdictType: picked, answers: interview.answers, questions: questions ?? questionsFor(picked),
@@ -630,8 +643,15 @@ export async function authorCloseForJob({
     }
     confirmed = confirm.accepted;
     lang = confirmed.lang;
-    confirmPriorCalls = confirm.cost.calls;
-    confirmPriorRaws = confirmBook.raws();
+    // ONLY the confirm turn's OWN new calls travel onward as `priorCalls` —
+    // never the scout entries this same book absorbed two lines above.
+    // `authorClose` (below, via `authorFn`) absorbs `scout.calls`/`scout.raws`
+    // itself; handing it the scout's calls a SECOND time (folded inside
+    // `confirmBook`'s own report) would double-count the scout's spend in the
+    // author call's own ceiling check — the exact bug this fix must not
+    // reintroduce while fixing the other one.
+    confirmPriorCalls = confirmBook.report().calls.slice(scoutCallCount);
+    confirmPriorRaws = confirmBook.raws().slice(scoutRawCount);
   }
 
   /** @type {any} */
