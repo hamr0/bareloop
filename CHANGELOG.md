@@ -46,6 +46,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
   legal as of this change but not yet proven live — that is M3's DeepSeek proof run, not
   this one.
 
+### Docs
+
+- **`npx @scope/pkg`-shaped close commands documented as a KNOWN, KEPT limit (PRD item 34
+  L3):** `closeScriptCandidateToken`'s path-shaped test (`src/validate.js`) reads a scoped
+  package name as a script path because it contains `/`, so such a close can never be
+  signed — `bareloop.context.md` now says so next to the scope note it belongs beside. Not
+  fixed: it fails safe and no shipped job uses the shape.
+
 ### Changed
 
 - **DeepSeek secondary model swap (F171, PRD item 34 L16):** `deepseek-chat` is no longer

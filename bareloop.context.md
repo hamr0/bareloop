@@ -2669,6 +2669,15 @@ scope, on both halves, exactly as before. The shape test itself
 demand so the demand and the detectors can never drift apart about which stages are in
 scope.
 
+**Documented limit (PRD item 34 L3):** `npx` is one of the recognized interpreters, and the
+path-shaped test only asks for a `/` or a known script extension — so a close command like
+`npx @scope/pkg` reads its scoped package name (`@scope/pkg`) as the addressable token,
+because it contains a `/`. That token is not a real file on disk, so `signCloseScripts`
+finds nothing to hash and such a close can never be signed. This is KEPT as a documented
+limit, not fixed: it fails safe (a close that cannot be signed cannot run unsigned either)
+and no shipped job uses an `npx @scope/pkg`-shaped close command. Spell such a close as a
+script path (`node ./close/run-pkg.mjs`) or an unscoped command instead.
+
 | function | args → returns | notes |
 |---|---|---|
 | `absolutePathLiteralsOf(source)` | close script text → `string[]` | the scan itself (moved here from `src/bundle.js`, which now imports it) |
