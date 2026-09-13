@@ -246,9 +246,13 @@ if (scoutArg !== null && !Object.prototype.hasOwnProperty.call(SCOUT_NAMES, scou
   process.exit(2);
 }
 const SCOUT = scoutArg === null ? true : SCOUT_NAMES[scoutArg];
+// item 34 L2: three real states, three labels — an explicit `--scout on` used
+// to print the exact same "(default)" text as no flag at all, so a bench-log
+// auditor reading stdout could never tell "operator explicitly chose on" from
+// "no flag given" for that row (fix-ledger, 2026-09-05 @ c9f100d).
 const SCOUT_LABEL = scoutArg === null
   ? 'scout ON (default)'
-  : (SCOUT ? 'scout ON (default)' : 'scout OFF (--scout off — operator probe; planner drafts blind)');
+  : (SCOUT ? 'scout ON (--scout on — operator explicit)' : 'scout OFF (--scout off — operator probe; planner drafts blind)');
 /** every re-invocation this script PRINTS carries the arm — the SHIM_TAIL rule,
  * so a resume never silently drops it and runs the default under the arm's label. */
 const SCOUT_TAIL = scoutArg !== null && !SCOUT ? ' --scout off' : '';

@@ -19,6 +19,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
   whole repo in memory at once — the streaming scan design exists to avoid exactly that).
   `copyFile`'s mode-bit preservation is kept explicitly (`stat` + `chmod` on the frozen
   file), verified not to regress.
+- **`SCOUT_LABEL` gains a third state in `scripts/run-u.mjs` (PRD item 34 L2):** an explicit
+  `--scout on` used to print the identical "scout ON (default)" text as no flag at all,
+  indistinguishable in printed logs/re-invocation lines — which matters for the
+  SCOUT-CONTRAST bench row's provenance. It now prints `scout ON (--scout on — operator
+  explicit)`, distinct from the true default and from `--scout off`'s unchanged label.
 
 ### Changed
 
