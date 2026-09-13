@@ -318,6 +318,18 @@ EXISTING audit records — no new record format.
    `writeScope` field (`src/job.js:363` — "the fence is operator law") — the list of globs the
    run may write. Destination stays per-run, never signed (M2's 2026-09-11 ruling), except that
    a repo job's `writeScope` IS the fence.
+
+   **Addendum (hamr, 2026-09-13, picked option A):** a Source that is a subfolder inside a
+   git repo is a REPO job, not a plain-folder job. The whole repo's tracked files are copied
+   (the same `kind: 'repo'` freeze `prepareSource` already does for a repo root), the language
+   comes from the nearest manifest walking up to the repo root (ruling 3, point 1, below), and
+   the Destination fence (`writeScope` globs) is written relative to the repo root. Why:
+   `looksLikeRepoSource` (`src/source.js:97-104`) currently treats a folder as a repo only when
+   `.git` sits directly inside it, so a monorepo package like `myrepo/packages/api` fell to the
+   plain-folder path — which hits the M4 "no checks yet" stop, and copies file by file, where
+   untracked `node_modules` symlinks would refuse again (the F164 class). Not built yet; it is
+   the next code change after piece 3 below (commits 421d730, 51998dc, c61f7ae built the
+   root-only rule this addendum changes).
 3. **Language is detected, never asked.** A code job's checks always run the repo's OWN tools
    in the repo's own language, so language is a fact of the repo, not a choice: `package.json`
    present → js; `pyproject.toml` or `setup.py` present → python; both present → the confirm
