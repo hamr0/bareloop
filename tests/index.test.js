@@ -47,6 +47,9 @@
 // list, exported so an exported bundle inherits one spelling) `` — "exported"
 // there describes "bundle", not this name; its real export, `CHECKPOINT_OUTCOMES`,
 // is separately captured by pattern 3).
+//
+// Item 34 L20 (2026-09-13, owner's option A): the export list now equals exactly what
+// this document names — see the two-way guard test below.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -110,48 +113,38 @@ export function documentedExportNames(doc) {
   return [...found].sort();
 }
 
-test('the documented public surface is actually exported from src/index.js', () => {
+// PRD item 34 L20 (owner's option A): the export list IS the documented contract, both
+// ways. A prior pass (item 34 L4, F167 above) only ever checked one direction —
+// documented names are really exported — which is how 169 of `src/index.js`'s 255
+// exports went undocumented without ever failing a test (reported, not silently
+// papered over, in that pass). This pass pruned every one of those 169 down to the
+// ~91 the doc actually discusses (adding a marker next to each) and dropped the
+// other ~78 from `src/index.js` outright (breaking change, see CHANGELOG). The two
+// directions below are now both guarded: a name added to `src/index.js` without a
+// doc marker reds here just as loudly as a documented name that stops being
+// exported — neither side of the contract can drift again without this test
+// catching it.
+//
+// Two exclusions, both pre-existing (see the block comment atop this file for why
+// the extractor cannot structurally credit either): `main` is the doc's PRE-rename
+// local name for `cliMain` (the real export), and `resumableOutcomes` is a name the
+// doc's "exported" sentence attributes to "bundle", not to this symbol — its real
+// export, `CHECKPOINT_OUTCOMES`, is picked up separately by the extractor's own
+// "Menus exported:" pattern.
+const TWO_WAY_EXCLUSIONS = new Set(['main', 'resumableOutcomes']);
+
+test('the export list equals the documented contract, both directions (item 34 L20)', () => {
   const doc = readFileSync(CONTEXT_DOC, 'utf8');
   const documented = documentedExportNames(doc);
   assert.ok(documented.length > 20, `the extractor found suspiciously few names (${documented.length}) — it likely broke against the doc's current shape`);
-  const missing = documented.filter((n) => bareloop[n] === undefined);
-  assert.deepEqual(missing, [], `documented but not exported — the adopter contract is false: ${missing.join(', ')}`);
-});
 
-// PRD item 34 L4 follow-up: the SWITCH to reading the doc live (F167, above) covered
-// fewer names than the hand list it replaced — the hand list named ~52 exported
-// symbols, the extractor derived ~50, because 37 of them sat in the doc's flowing
-// prose with no marker idiom the extractor reads (e.g. "`mintBridge(meta, record)`
-// builds a new entry..." never says "exported"). The extractor silently stopped
-// covering them; nothing reasserted it. `bareloop.context.md` now carries an
-// explicit marker for each of the 37 (an `import { ... } from 'bareloop'` example,
-// or a tight "`X` is/are exported" sentence, next to their existing prose) — this
-// pins that they stay derived, so a future doc edit that drops a marker reds HERE
-// rather than silently narrowing the guard again.
-//
-// This is deliberately SCOPED to these 37, not a full reverse guard (every real
-// export documented): a live count found 169 of `src/index.js`'s 255 exports still
-// undocumented by any marker idiom — far past a doc-rewrite this fix's own scope,
-// reported to hamr rather than papered over with a blanket assertion.
-test('the 37 names restored by item 34 L4 stay DERIVED from the real doc, not silently dropped again', () => {
-  const restored = [
-    'runStages', 'globToPrefix', 'scanSecrets',
-    'classifyIncidents', 'foldLedger', 'ledgerDeltas', 'LEDGER_CLASSES',
-    'BRIDGE_SCHEMA', 'validateBridge', 'listingRow', 'loadGate', 'mintBridge',
-    'appendGreen', 'appendRed', 'loadBridge', 'loadRegistry', 'saveBridge',
-    'makeRegistry', 'registryExists', 'renderListing', 'selectionPrompt',
-    'QUARANTINED_VERDICTS', 'quarantinesCredit', 'newestEligibleVersion',
-    'reuseEligibility', 'recordDoor', 'applyDoorDecision',
-    'validateEnvelope', 'resolveTrySpec', 'resolveReuse', 'reuseSpecHash',
-    'selectBridge', 'runReuse', 'REUSE_GRADED_RED', 'readResume', 'resumeTreeGate',
-  ];
-  const doc = readFileSync(CONTEXT_DOC, 'utf8');
-  const documented = new Set(documentedExportNames(doc));
-  const dropped = restored.filter((n) => !documented.has(n));
-  assert.deepEqual(dropped, [], `no longer derived from the doc — the marker for these was lost: ${dropped.join(', ')}`);
-  // and every one of them is a REAL export, same rule as the guard above
-  const missing = restored.filter((n) => bareloop[n] === undefined);
-  assert.deepEqual(missing, [], `restored as "documented" but not actually exported: ${missing.join(', ')}`);
+  const exported = Object.keys(bareloop);
+
+  const documentedNotExported = documented.filter((n) => bareloop[n] === undefined);
+  assert.deepEqual(documentedNotExported, [], `documented but not exported — the adopter contract is false: ${documentedNotExported.join(', ')}`);
+
+  const exportedNotDocumented = exported.filter((n) => !documented.includes(n) && !TWO_WAY_EXCLUSIONS.has(n));
+  assert.deepEqual(exportedNotDocumented, [], `exported but not documented — the export list has drifted past the contract: ${exportedNotDocumented.join(', ')}`);
 });
 
 test('documentedExportNames: the four idioms it reads, on a small fixture (fail-first proof for the extractor itself)', () => {

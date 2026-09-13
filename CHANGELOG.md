@@ -29,6 +29,20 @@ feature lands, **patch** = docs, fixes, scaffolding.
   source-front-door helpers. Covers the doc's explicit export-marker idioms, not every
   function mentioned in flowing prose — a broader sweep was tried and produced 21 false
   positives out of 97 candidates on this doc, noise a regex cannot safely resolve.
+- **The export list now equals the documented contract exactly, guarded both ways (PRD
+  item 34 L20):** the 91 undocumented names that were genuinely discussed in
+  `bareloop.context.md` prose (the "Close authoring", "Bundles", "THE REVIEW DOOR", "The
+  reuse ENVELOPE" and ledger sections — none of which used per-function `###` headings, so
+  the extractor's marker idioms could not credit any name in them) now carry an explicit
+  `import { ... } from 'bareloop'` marker next to their existing prose, including
+  `JUDGED_MARKER` (previously undocumented anywhere despite being required by every close
+  script this repo ships and by `exportBundle`'s `close-import-unexported` legality check).
+  `tests/index.test.js`'s guard is now a full two-way check — every export must be
+  documented and every documented name must be exported — replacing the one-directional
+  guard and the item-34-L4-scoped "37 restored" test, both now fully subsumed. Two
+  exclusions carry forward unchanged: `main` (the doc's pre-rename local name for the real
+  export `cliMain`) and `resumableOutcomes` (its own "exported" sentence describes "bundle",
+  not this name — the real export is `CHECKPOINT_OUTCOMES`).
 - **The doc-reading extractor's own coverage gap closed (PRD item 34 L4 follow-up):** the
   switch to reading `bareloop.context.md` live covered fewer names than the hand-typed array
   it replaced — 37 exported names (`mintBridge`, `appendGreen`, `BRIDGE_SCHEMA`, the rest of
@@ -81,6 +95,38 @@ feature lands, **patch** = docs, fixes, scaffolding.
   refusal a person sees when they pick an off-menu verdict class is unchanged (it names the
   class and fwdloop by design). `tests/hitl-hidden.test.js` pins the doc and both scripts
   case-insensitively hitl-free.
+
+### Removed
+
+- **BREAKING: 78 undocumented names dropped from the `src/index.js` root export list (PRD
+  item 34 L20, owner's option A):** a live audit found 169 of 255 root exports had zero real
+  citation in `bareloop.context.md`; 91 of those were genuinely discussed in the doc's
+  prose and gained an explicit marker (see Fixed, below) instead of being dropped, but the
+  remaining 78 had no adopter-facing mention anywhere and no in-repo consumer reaching them
+  through the package root — a name imported directly from `import { x } from 'bareloop'`
+  and nothing else. Every dropped name's own module is untouched; only the root re-export
+  is gone, and each is still importable from its own submodule path (e.g. `src/text.js`)
+  for anyone who was reaching in that way already. Dropped: `artifactHash`, `authorPrompt`,
+  `BASELINES`, `CALIBRATION_LABEL`, `cardCasesPrompt`, `CASE_VERDICTS`, `CATALOGUE_KINDS`,
+  `CATALOGUE_LIVE_KINDS`, `changedSet`, `classifySurvey`, `classMenu`, `CLASS_STATEMENTS`,
+  `CLOSE_DECL_FIELDS`, `closeGrade`, `compareExpectation`, `COMPILE_SYSTEM`,
+  `createReadShim`, `declarationSchema`, `DECLARED_CLOSE_CLASSES`, `DECLARED_GAP_KEEP`,
+  `DECLARED_GAP_PREFIX`, `DECLARED_GENRES`, `defaultJudgeLoop`, `DIRECTIONS`, `doorAgeGate`,
+  `doorRecordOf`, `EXIT_GREEN`, `EXIT_RED`, `EXIT_STOP`, `factsResist`, `GENRE`,
+  `GENRE_LANGUAGES`, `genreOwnedEnvNames`, `GREEN_QUESTIONS`, `guardNames`,
+  `HITL_DECISION_RED`, `HITL_PAUSE`, `HUMAN_CHECKPOINTS`, `INJECTION_CARD`,
+  `isDeclaredClose`, `JUDGED_FLOOR_KIND`, `JUDGE_MAX_TOKENS`, `LIVE_CLASSES`,
+  `LOCATE_AXES`, `LOCATE_LABEL`, `locatePrompt`, `makeLoopGenerate`, `makeSeedTrees`,
+  `MAX_PROPOSAL_RETRIES`, `MAX_STAGES`, `normalizeDeclaration`, `prepareWorkBranch`,
+  `PROPOSAL_LABEL`, `proposalSchema`, `proposalTool`, `PROPOSAL_TOOL_NAME`,
+  `QUARANTINED_CODE`, `QUESTION_SETS`, `RAW_TRIM_MARKER`, `READ_SHIM_ARMS`,
+  `readShimStrategy`, `REFUSAL_CATEGORY`, `REFUSAL_LIB`, `REVIEW_DOOR`, `seedFileList`,
+  `seedListing`, `shapeForkName`, `SOFTGREEN_QUESTIONS`, `SURVEY_CAUSES`, `TYPES_GENRE`,
+  `TYPES_GENRE_TEMPLATE`, `validateCard`, `validateFacts`, `validateJudgedArtifacts`,
+  `VERDICT_CLASSES`, `WORK_BRANCH_PREFIX`, `WORK_BRANCH_RE`, `wrapReadTool`. No in-repo
+  importer reached any of these through the package root (verified against every
+  `from '../src/index.js'` / `from './index.js'` / `from 'bareloop'` site in the tree), so
+  nothing else in this repo needed a path change.
 
 ## [0.25.1] — 2026-09-13
 

@@ -52,7 +52,7 @@ export {
   BRIDGE_SCHEMA, validateBridge, deriveStatus, listingRow, loadGate,
   mintBridge, appendGreen, appendRed,
   loadBridge, loadRegistry, saveBridge, makeRegistry, registryExists,
-  QUARANTINED_VERDICTS, QUARANTINED_CODE, quarantinesCredit, newestEligibleVersion, reuseEligibility, recordDoor,
+  QUARANTINED_VERDICTS, quarantinesCredit, newestEligibleVersion, reuseEligibility, recordDoor,
 } from './bridges.js';
 export { renderListing, selectionPrompt } from './selection.js';
 // Layer 3 modules 4+5 — the D7 envelope and the reuse runner. `runReuse` composes
@@ -81,7 +81,7 @@ export { renderListing, selectionPrompt } from './selection.js';
 // at a review door, and a door with no row to act on can only describe a held learning
 // credit it has no way to release. STORAGE ONLY — nothing here selects, promotes or reuses
 // a bridge; those stay parked on `layer-3-reuse`.
-export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow, shapeForkName } from './reuse.js';
+export { validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse, REUSE_GRADED_RED, readResume, resumeTreeGate, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS, checkpointAgeGate, applyDoorDecision, writeRunGreenRow } from './reuse.js';
 // BA-21 pricing provenance rides out with the ledger because it is the same job: reading
 // a run's own spend record honestly. `rateProvenance`/`spendProvenance` answer "how much of
 // this was priced by a rate nobody vouched for" — REPORTING ONLY, no halt, no refusal.
@@ -95,7 +95,7 @@ export { classifyIncidents, foldLedger, ledgerDeltas, updateLedger, LEDGER_CLASS
 // runner that resumes reads the branch off the dead spine and may want to verify it is
 // still there before spending anything. The runner applies the rule itself either way —
 // neither export is a way to opt out of it.
-export { workBranchName, prepareWorkBranch, WORK_BRANCH_PREFIX, WORK_BRANCH_RE } from './workbranch.js';
+export { workBranchName } from './workbranch.js';
 // THE READ SHIM (arm-gated, OFF by default via `runJob`'s `readShim`). The cap is exported
 // because bareloop.context.md names it, and documented-but-unexported is a false contract;
 // the wrapper goes with it so a caller building its own worker seam wraps the SAME ledger
@@ -105,7 +105,7 @@ export { workBranchName, prepareWorkBranch, WORK_BRANCH_PREFIX, WORK_BRANCH_RE }
 // `readShimArm` is exported for the same reason the cap is: a battery driver has to be able
 // to name and check the arm it is about to run BEFORE it launches, and the legal set living
 // only inside a runner would leave the driver guessing at spellings the guard will reject.
-export { createReadShim, wrapReadTool, readShimArm, readShimStrategy, READ_SHIM_CAP, READ_SHIM_STRATEGY, READ_SHIM_DIFF_STRATEGY, READ_SHIM_ARMS } from './readshim.js';
+export { readShimArm, READ_SHIM_CAP, READ_SHIM_STRATEGY, READ_SHIM_DIFF_STRATEGY } from './readshim.js';
 // ── CLOSE AUTHORING v1 (gate 4) — the user declares what done means ──────────
 // The public surface is settled ONCE, here, at M4 (M2's header flagged the
 // naming collision and deferred it rather than exporting piecemeal).
@@ -123,12 +123,12 @@ export { createReadShim, wrapReadTool, readShimArm, readShimStrategy, READ_SHIM_
 // gate (that is what `prepareSigning` does with them), and `seedAtHead` because
 // D8's seed is READ at run start rather than typed into a spec.
 export {
-  runDeclaredClose, runStage, seedRead, seedAtHead, seedListing, changedSet, makeSeedTrees,
-  LIVE_KINDS, STOP_FAULTS, JUDGED_MARKER, EXIT_GREEN, EXIT_RED, EXIT_STOP,
+  runDeclaredClose, runStage, seedRead, seedAtHead,
+  LIVE_KINDS, STOP_FAULTS, JUDGED_MARKER,
   // N4 slice 1 — the hitl surface an adopting runner needs: the three doors, the
   // gate that reads a signer's answer (and refuses an empty one), and the seed
   // exemption ruling 8 states.
-  HUMAN_DECISIONS, SEED_EXEMPT_KINDS, JUDGED_FLOOR_KIND, normalizeHumanRuling, resolveHumanRuling,
+  HUMAN_DECISIONS, SEED_EXEMPT_KINDS, normalizeHumanRuling, resolveHumanRuling,
   // SOFTGREEN module 2 — the judged stage's own arbiter-owned bounds. An adopter
   // wiring `judgeProvider` needs both numbers to reason about what a judged close
   // can cost: one paid call per artifact, at most one retry each.
@@ -136,7 +136,7 @@ export {
   // SOFTGREEN module 8 — the REVIEW DOOR's vocabulary: the record type a run
   // writes when it ends at the door, which terminals open one, which classes open
   // one unasked, and the mechanical-only rule an `accept` re-proves against.
-  REVIEW_DOOR, DOOR_OPEN_OUTCOMES, REVIEW_DOOR_CLASSES, doorOpens, mechanicalStages,
+  DOOR_OPEN_OUTCOMES, REVIEW_DOOR_CLASSES, doorOpens, mechanicalStages,
 } from './kinds.js';
 // SOFTGREEN module 8 — the door's ANSWERING half. A run OPENS the door on its own
 // spine and ends; a person answers minutes or days later, from another process, so
@@ -144,7 +144,7 @@ export {
 // it re-proves the tree for an `accept`, releases a held judged green through
 // module 6's registry half, and refuses an expired door under the same 60-day TTL a
 // hitl checkpoint keeps. It never returns, writes or implies a verdict.
-export { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
+export { answerReviewDoor } from './reviewdoor.js';
 // SOFTGREEN module 1 — the judged floor's core. The pieces an adopter (and an
 // integrating UI) genuinely needs: `resolveJudge` (PRD item 32.1 — WHICH model
 // grades a job: the spec's signed `judge` override, else the job's own worker
@@ -157,13 +157,13 @@ export { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // runner reaches it through `runPlan`'s `judgeProvider`, and it is exported so a
 // caller building its own harness does not spell a second one.
 export {
-  JUDGE_MODEL, resolveJudge, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES, LOCATE_LABEL,
-  validateCard, validateFacts, locatePrompt, runLocate, decide, defaultJudgeLoop,
+  JUDGE_MODEL, resolveJudge, JUDGE_RULES, JUDGE_RULE_IDS,
+  runLocate, decide,
   // SOFTGREEN module 4 — what a legal SIGNED calibration set is. The SIZE is
   // hamr's own ruling and a size change is a spec-level threshold change;
   // `expectedOf` is the ONE reduction of a `decide()` result to the shape a case
   // stores, so a calibration harness compares one shape rather than two.
-  CALIBRATION_SIZE, CASE_VERDICTS, validateCalibrationSet, validateJudgedArtifacts, expectedOf,
+  CALIBRATION_SIZE, validateCalibrationSet, expectedOf,
 } from './judged.js';
 // SOFTGREEN module 4 — the COMPILE. Q6 becomes the rubric card and Q7 becomes the
 // frozen calibration set, both on the D5 shown-and-fixed path: the LLM proposes
@@ -173,8 +173,6 @@ export {
 // line or a case is a re-sign like every other spec edit.
 export {
   proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts,
-  proposalSchema, proposalTool, cardCasesPrompt,
-  PROPOSAL_TOOL_NAME, PROPOSAL_LABEL, MAX_PROPOSAL_RETRIES, COMPILE_SYSTEM,
 } from './cardauthor.js';
 // SOFTGREEN module 5 — THE CALIBRATION GATE. `runCalibration` grades the whole
 // pipe (locate + decide) over the signed ten and the five arbiter-owned injection
@@ -185,22 +183,21 @@ export {
 // on trust. `INJECTION_LOCATE_BATTERY` and `INJECTION_CARD` are ARBITER-OWNED
 // constants: no signer authors them and nothing stores them in a spec.
 export {
-  runCalibration, compareExpectation, factsResist, artifactHash,
-  INJECTION_LOCATE_BATTERY, INJECTION_CARD, CALIBRATION_LABEL, CASUALTY_AXES,
+  runCalibration,
+  INJECTION_LOCATE_BATTERY, CASUALTY_AXES,
 } from './calibrate.js';
 // M2 — what a declaration may SAY, and whether one said it legally. The
 // catalogue and the genre are DATA an integrating UI renders (the kind menu, the
 // guard batteries it must show the user under D5 and cannot let them remove).
 export {
-  validateDeclaration, normalizeDeclaration, KIND_CATALOGUE, CATALOGUE_KINDS, CATALOGUE_LIVE_KINDS,
-  LOCKED_KINDS, TYPES_GENRE, TYPES_GENRE_TEMPLATE, GENRE_LANGUAGES, genreEnv, genreOwnedEnvNames,
+  validateDeclaration, KIND_CATALOGUE,
+  LOCKED_KINDS, genreEnv,
   // how the genre's own tools PRINT — genre property for the same reason the
   // suppression battery is (2026-08-09, run msmbpjk6)
   genreInstruments,
-  DIRECTIONS, BASELINES, MAX_STAGES,
   // the verdict-class surface (PRD v1.57 §1–§2): the radio's own menu, the guard
   // battery keyed off it, and the ceiling that makes the pick a promise
-  VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES, CLASS_BATTERIES, classGuards, classMenu, closeCeiling,
+  LOCKED_CLASSES, CLASS_BATTERIES, classGuards, closeCeiling,
   // ruling 5 as data: the kinds no agent may ever be offered as an in-run ruler
   NEVER_OFFERED_KINDS,
 } from './authoring.js';
@@ -208,27 +205,26 @@ export {
 // loop; `runAuthorScout`/`buildSeedListing` are exported because a caller that
 // already paid for a survey passes it back in rather than buying a second one.
 export {
-  runAuthorScout, buildSeedListing, seedFileList, classifySurvey, AUTHOR_SCOUT_VERBS,
+  runAuthorScout, buildSeedListing, AUTHOR_SCOUT_VERBS,
   // the malformed-class retry ladder: the hardcoded ceiling, the typed causes it
   // reads, and the closed set of causes that may fire it (2026-08-09, PRD v1.58)
-  SCOUT_ATTEMPTS, SURVEY_CAUSES, SCOUT_RETRY_CAUSES,
+  SCOUT_ATTEMPTS, SCOUT_RETRY_CAUSES,
 } from './authorscout.js';
 /** the ONE scrubbed-persist boundary for a model's raw output, and its announced
  * bound — exported because every future writer of a raw must reach for this one
  * rather than spell a second scrub (PRD v1.58) */
-export { scrubRaw, RAW_PERSIST_MAX, RAW_TRIM_MARKER } from './text.js';
+export { scrubRaw, RAW_PERSIST_MAX } from './text.js';
 export {
-  authorClose, authorPrompt, declarationSchema, makeLoopGenerate, MAX_REVISIONS,
-  QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, CLASS_STATEMENTS, questionsFor, requiredAnswersFor,
+  authorClose, MAX_REVISIONS,
+  questionsFor, requiredAnswersFor,
 } from './authorflow.js';
 // M4a — the runtime bridge. `validateCloseDecl` is the spec-level gate (the job
 // validator's own branch calls it); `runDeclaredStages` is the executor seam a
 // runner other than `runPlan` would need; `closeStagesOf` is the ONE staging
 // every close consumer reads, widened to both fields.
 export {
-  validateCloseDecl, runDeclaredStages, declaredStages, isDeclaredClose, guardNames, closeGrade,
-  DECLARED_GENRES, DECLARED_GAP_PREFIX, DECLARED_GAP_KEEP, DECLARED_CLOSE_CLASSES, CLOSE_DECL_FIELDS,
-  HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED, HUMAN_CHECKPOINTS,
+  validateCloseDecl, runDeclaredStages, declaredStages,
+  HUMAN_PAUSE,
 } from './declaredclose.js';
 export { closeStagesOf } from './plan.js';
 // Build-list item 2 (2026-08-23) — the run behaviour summary: a report-only
@@ -247,7 +243,7 @@ export { replayRun, formatReplay } from './replay.js';
 // never signs — the approvals array and the human's word are unchanged.
 export {
   runInterview, authorCloseForJob, assembleSpec, prepareSigning, refusalEvents, refuseLockedKind,
-  GENRE, REFUSAL_LIB, REFUSAL_CATEGORY, AUTHORED_SPEC_FIELDS,
+  AUTHORED_SPEC_FIELDS,
 } from './authorjob.js';
 // PRD build-list item 5 (TODO #8) — the prompt-register inventory: every file
 // known to carry model-facing prompt/instruction text, and the predicate a

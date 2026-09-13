@@ -163,6 +163,12 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
 | `escalation` | `{ mode: "decision-ready" }` | the pain channel is not optional |
 
+`resolveWorkerModel` (`src/job.js`, referenced above) is exported (item 34 L20):
+
+```js
+import { resolveWorkerModel } from 'bareloop';
+```
+
 **The plan shape — the only shape** (Layer 2, design record 2026-07-21). The AGENT authors
 the step plan at run time (gated by `validatePlan`); the human signs only:
 
@@ -553,6 +559,33 @@ it (a direct `validatePlan` caller may pass its own array); omitted, it derives 
 signed `writeScope` alone, never a free-text fallback. Menus exported: `EXIT_TYPES`, `MAX_EXITS_PER_STEP`, `MAX_PLAN_STEPS`, `WRITE_VERBS` — plus `stageClose` and `closeStagesOf`.
 
 ### Close authoring — the user declares what done means (`src/kinds.js`, `src/authoring.js`, `src/authorscout.js`, `src/authorflow.js`, `src/declaredclose.js`, `src/authorjob.js`)
+
+Every function and constant this section discusses by name is exported at the package root
+(item 34 L20 — the export list equals what this document names):
+
+```js
+import {
+  authorClose, authorCloseForJob, AUTHORED_SPEC_FIELDS, AUTHOR_SCOUT_VERBS, assembleSpec,
+  buildSeedListing, CALIBRATION_SIZE, CASUALTY_AXES, CLASS_BATTERIES, classGuards,
+  closeCeiling, decide, declaredStages, DOOR_OPEN_OUTCOMES, doorOpens, expectedOf,
+  foldJudgedArtifacts, genreEnv, genreInstruments, HUMAN_DECISIONS, HUMAN_PAUSE,
+  INJECTION_LOCATE_BATTERY, JUDGE_ATTEMPTS, JUDGED_MARKER, JUDGE_RULE_IDS, JUDGE_RULES,
+  KIND_CATALOGUE, LIVE_KINDS, LOCKED_CLASSES, LOCKED_KINDS, MAX_JUDGED_PATHS, MAX_REVISIONS,
+  mechanicalStages, NEVER_OFFERED_KINDS, normalizeHumanRuling, prepareSigning,
+  proposeJudgedArtifacts, questionsFor, RAW_PERSIST_MAX, readShimArm, READ_SHIM_CAP,
+  READ_SHIM_DIFF_STRATEGY, READ_SHIM_STRATEGY, refusalEvents, refuseLockedKind,
+  requiredAnswersFor, REVIEW_DOOR_CLASSES, runAuthorScout, runCalibration, runClose,
+  runDeclaredClose, runDeclaredStages, runInterview, runLocate, runStage, SCOUT_ATTEMPTS,
+  SCOUT_RETRY_CAUSES, scrubRaw, seedAtHead, SEED_EXEMPT_KINDS, seedRead, signJudgedArtifacts,
+  STOP_FAULTS, validateCalibrationSet, validateCloseDecl, validateDeclaration,
+  ACCOUNTED_ROUND_TYPES,
+} from 'bareloop';
+```
+
+`JUDGED_MARKER` (`src/kinds.js`) is the one identity every close script in this repo imports
+(and every close script an exported bundle ships, since `exportBundle` rewrites a close
+script's `from '../src/kinds.js'` to `from 'bareloop'` at export time) — it is a required
+root export even though this doc had never named it before item 34 L20.
 
 The one layer where a human still wrote code. A close used to be a hand-written script
 per patient; now the user PICKS A VERDICT CLASS, answers that class's questions, and an LLM
@@ -1675,6 +1708,12 @@ never as a close TYPE, so there is one live expression of it rather than two.
 
 ### THE REVIEW DOOR — the three doors at the END of a run (softgreen module 8, PRD v1.71 §3)
 
+`answerReviewDoor` (`src/reviewdoor.js`) is exported (item 34 L20):
+
+```js
+import { answerReviewDoor } from 'bareloop';
+```
+
 The pause machinery re-homed: the same doors, the same evidence package and the same 60-day TTL,
 one level OUT — from a stage inside the close to the door at the end of a run.
 
@@ -1887,7 +1926,7 @@ Exported from the package root:
 ```js
 import {
   validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse,
-  REUSE_GRADED_RED,
+  REUSE_GRADED_RED, checkpointAgeGate, PAUSE_TTL_MS, writeRunGreenRow,
 } from 'bareloop';
 ```
 
@@ -2245,6 +2284,13 @@ and reshaping the run being signed, and `runner-start`'s recorded `argv` is reda
 write site — the spine is append-only, so a scan after the bytes land is too late.
 
 ### `updateLedger({ ledgerFile, spineFiles })` → `{ appended, fold }` — `src/ledger.js`
+
+`rateProvenance`, `spendProvenance` and `VOUCHED_RATE_SOURCES` are exported alongside it
+(item 34 L20):
+
+```js
+import { rateProvenance, spendProvenance, VOUCHED_RATE_SOURCES } from 'bareloop';
+```
 
 The upstream ledger: spines fold into ONE append-only incident JSONL both the consumer
 (workflow health) and the maintainer (upstream asks) read. Spines stay ground truth —
@@ -2658,6 +2704,18 @@ checkout that never fetched) is a **skip**, printed and exited 0: a missing base
 not a rule violation, never a red.
 
 ### Bundles — export a job, run it elsewhere (`src/bundle.js`, `src/cli.js`, `bin/bareloop.mjs`)
+
+Every function this section discusses by name is exported at the package root
+(item 34 L20):
+
+```js
+import {
+  absolutePathLiteralsOf, appendHistory, bless, bundleHash, checkBundleDeps,
+  checkCloseAbsolutePaths, checkCloseByteSignature, checkEnvelope, checkStageByteSignature,
+  exportBundle, hashCloseScriptBytes, readBundle, readCloseScripts, resolveBundleSpec,
+  signCloseScripts, verifyBlessing,
+} from 'bareloop';
+```
 
 `docs/product/EXPORT-BUILD.md` (frozen build spec, 2026-09-05). A **bundle** is a plain
 directory that ships a proven job — spec, close scripts, and registry history — so it can
