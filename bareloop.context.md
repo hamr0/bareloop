@@ -872,14 +872,37 @@ is exactly what F87 forbids.
 `runInterview` is a pure function over answers with no prompt loop in it, so until
 `scripts/run-interview.mjs` existed the only way in was to hand-write an `answers.json` and a
 spec draft — precisely the SWE tax this product refuses. That script is the half that ASKS
-(`--patient <repoPath> --verdict <class> --provider <anthropic-api|openai-api|gemini-api|clipipe-subscription>
---out <outdir> [--budget <usd>] [--lang js]`, default `js`), and it is deliberately GLUE: **it
+(`--verdict <class> --provider <anthropic-api|openai-api|gemini-api|clipipe-subscription>
+--out <outdir> [--budget <usd>]`), and it is deliberately GLUE: **it
 calls no provider at all**, so a whole interview costs $0 and no model ever sees it. `--provider`
 is REQUIRED with NO default — bareloop is LLM-agnostic, and defaulting it would silently re-lock
 every interview onto one vendor; missing or empty dies loud, at the door, naming the same menu
 `src/job.js`'s own validator admits. It is written into the draft's `provider` field, so
 `scripts/run-author.mjs` needs no flag of its own — it resolves whatever the interview wrote
-down. Everything load-bearing in it is borrowed rather than respelled —
+down.
+
+**Source and Destination are the interview's own FIRST TWO QUESTIONS, and they REPLACE
+`--patient`** (PRD item 33 M3, ruling 2, `docs/product/ITEM33-BUILD.md`). Source — "a local
+folder, subfolder or file, or one URL the machine can reach" — is asked first and checked
+against the machine ($0) the moment it is typed; language is then detected from it the same
+way it always was (below), never asked. Destination is asked second, and its SHAPE depends on
+what Source turned out to be (the SAME rule `prepareSource` itself uses to route this,
+`looksLikeRepoSource`, `src/source.js` — never a second, hand-typed copy of it): for a REPO
+source (a local directory carrying its own `.git`), Destination IS the write fence — the
+question this interview used to ask separately, later, as "The FENCE"; that later question is
+GONE, and `draft.writeScope` is parsed straight out of the Destination answer. For every other
+kind (a plain folder, a single file, or a URL), Destination is an absolute DIRECTORY, re-asked
+in a loop (via `proveDestination`) until it is one the machine can actually write into. Either
+way, the moment both are answered the script calls `prepareSource({source, into, destination})`
+itself — the SAME $0 freeze `scripts/prep-source.mjs` performs, under a fresh `into` scratch
+root nested inside `--out` — and everything downstream (the class's own questions, the job
+spec's `description`, and the `--source` handed to `run-author.mjs`) reads the PREPARED COPY,
+never the original Source again (patients are copies, always). A Source one level inside a
+repo (a subfolder with no `.git` of its own) is, by this same rule, NOT a repo source — it
+freezes as a plain folder, the authoritative outcome `prepareSource`'s own walk agrees with. A
+non-repo source gets Source and Destination proven and frozen and then an honest named stop:
+bareloop's check catalogue is code-genre only today (ruling 7 → M4); the prepared copy stays on
+disk regardless. Everything load-bearing in it is borrowed rather than respelled —
 the QUESTIONS are the library's frozen sets (`questionsFor` / `requiredAnswersFor`), printed as
 handed over and never re-worded, re-ordered or re-numbered by the script; the REFUSALS are
 `runInterview`'s; the SCRUB is `redactSecrets` at capture AND again at the library's own ingest,
@@ -924,12 +947,14 @@ into a success one process up.
 **Both scripts speak exit codes, and an adopter wrapping them in CI reads them:**
 
 - `run-interview.mjs` — **0** the interview finished (and, when it spawned the paid step, that
-  step's own status is what you get, never a flattened 0); **1** a REFUSAL — a locked class, the
-  library's own reds over the answers, or a spec draft that does not validate; **2**
-  operator/config — usage, a missing or non-existent `--patient`, a present-but-empty `--lang`,
-  a malformed `--budget`, stdin ending mid-interview, or a child that could not be started;
-  **3** a LEAK that `scanSecrets` found in a file it had just written (count and path only —
-  echoing the matched string is the same leak, one hop on).
+  step's own status is what you get, never a flattened 0); **1** a REFUSAL — a locked class, a
+  language-unsupported Source, a non-repo Source's honest M4 stop, the library's own reds over
+  the answers, a Source/Destination `prepareSource`/`proveDestination` refusal, or a spec draft
+  that does not validate; **2** operator/config — usage, a present `--patient` or `--lang` (both
+  removed), a nonexistent Source, an ambiguous-language Source, a malformed `--budget`, stdin
+  ending mid-interview, or a child that could not be started; **3** a LEAK that `scanSecrets`
+  found in a file it had just written (count and path only — echoing the matched string is the
+  same leak, one hop on).
 - `run-author.mjs` — **1** a refusal or a failed gate; **2** operator/config; **3** a leak;
   **4** a CRASH inside the paid span. **3 deliberately OVERRIDES a 4**: a secret sitting in a
   written file is the harder line of the two, and the crash keeps both of its own louder
@@ -3150,7 +3175,9 @@ on a green then that would be the place agent allowed to do changes") — it nam
 FENCE inside the copied repo, the signed `writeScope` field's job (`src/job.js:363`), never a
 filesystem drop-off point. It is recorded as declared, never proven by `proveDestination` and
 never handed to `copyOut` (`frontDoorFromManifest` returns `null` for a repo manifest).
-Wiring it into `writeScope` is M3/M4's job, not this door's.
+Wiring it into `writeScope` landed at M3, ruling 2 — `scripts/run-interview.mjs` parses its own
+Destination answer straight into `draft.writeScope` for a repo Source; this door itself still
+only records what it was told, unvalidated, exactly as before.
 
 **Every non-empty file under `output/` is delivered, each under its OWN dated name, and
 nothing is ever overwritten.** A file named `profile.md` LANDS as `profile-2026-09-12.md`

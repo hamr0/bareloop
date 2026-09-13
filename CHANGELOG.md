@@ -9,6 +9,28 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **Source and Destination replace `--patient` (PRD item 33 M3, ruling 2):**
+  `scripts/run-interview.mjs` now asks Source and Destination as its own first two interactive
+  questions, before the picked verdict class's frozen set — never a `--patient` flag. Each is
+  proven mechanically, $0, the moment it is answered: Source is checked against the machine and
+  (for a local directory) language-detected immediately; Destination's SHAPE depends on what
+  Source turned out to be (the same `looksLikeRepoSource` rule `prepareSource` itself uses to
+  route this, now exported from `src/source.js` rather than duplicated) — for a repo Source, the
+  answer IS the write fence and fills `draft.writeScope` directly (the separate "FENCE" question
+  is gone); for every other kind, it is re-asked in a loop until it names an absolute, writable
+  directory (`proveDestination`). The moment both are answered, the interview calls
+  `prepareSource` itself to freeze Source into a hidden scratch copy under a fresh `into` nested
+  inside `--out`, and everything downstream — the class's own questions, the job spec's
+  `description`, and the `--source` handed to `scripts/run-author.mjs` — reads that PREPARED
+  COPY, never the original again. A non-repo Source gets Source and Destination proven and
+  frozen and then an honest named stop: bareloop's check catalogue is code-genre only today
+  (ruling 7 → M4); the prepared copy stays on disk regardless. `scripts/run-author.mjs` gains
+  `--source <tree>`, replacing `--patient <repoPath>`: it must be a tree a source door already
+  prepared (`readSourceManifest(dirname(source))` finds a manifest of kind `'repo'` beside it) —
+  an unprepared path dies loud naming the exact `scripts/prep-source.mjs` command to run first,
+  and a prepared non-repo source gets the same honest M4 stop, now recorded to the spine as
+  counted demand. `scripts/prep-source.mjs`'s printed next-step command follows suit.
+
 - **Language auto-detection (PRD item 33 M3, ruling 3):** `src/detectlang.js`'s `detectLanguage`
   reads a code job's language off its own repository — `package.json` → js (TypeScript
   included), `pyproject.toml`/`setup.py` → python — walking up from the Source folder to the
@@ -24,8 +46,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Removed
 
+- **BREAKING: `--patient` is gone from `scripts/run-interview.mjs` and `scripts/run-author.mjs`
+  (PRD item 33 M3, ruling 2).** `run-interview.mjs` asks Source (and Destination) as its own
+  first questions instead; `run-author.mjs` takes `--source <tree>`, which must be a prepared
+  copy (see "Added", above). Passing `--patient` to either script now is a loud, explicit
+  refusal naming its replacement, rather than a silently-ignored or misrouted flag.
 - **BREAKING: `--lang` is gone from `scripts/run-interview.mjs` and `scripts/run-author.mjs`.**
-  Language is now auto-detected from `--patient`'s own repository (see "Added", above) — it is
+  Language is now auto-detected from Source's own repository (see "Added", above) — it is
   a fact of the repo, never a flag a person sets. Passing `--lang` now is a loud, explicit
   refusal naming the flag and why, rather than a silently-ignored no-op.
 

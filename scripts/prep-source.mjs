@@ -72,7 +72,6 @@ if (!source || !into) {
       console.log('      at that — never your original folder.');
     }
     console.log('\nnext:');
-    console.log(`  node scripts/run-interview.mjs --patient ${result.tree}`);
-    console.log(`  node scripts/run-author.mjs --patient ${result.tree} ...`);
+    console.log(`  node scripts/run-author.mjs --source ${result.tree} ...`);
   }
 }
