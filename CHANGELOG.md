@@ -101,12 +101,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **BREAKING: 78 undocumented names dropped from the `src/index.js` root export list (PRD
   item 34 L20, owner's option A):** a live audit found 169 of 255 root exports had zero real
   citation in `bareloop.context.md`; 91 of those were genuinely discussed in the doc's
-  prose and gained an explicit marker (see Fixed, below) instead of being dropped, but the
+  prose and gained an explicit marker (see Fixed, above) instead of being dropped, but the
   remaining 78 had no adopter-facing mention anywhere and no in-repo consumer reaching them
   through the package root — a name imported directly from `import { x } from 'bareloop'`
   and nothing else. Every dropped name's own module is untouched; only the root re-export
-  is gone, and each is still importable from its own submodule path (e.g. `src/text.js`)
-  for anyone who was reaching in that way already. Dropped: `artifactHash`, `authorPrompt`,
+  is gone, and each still exists inside its own module for the library's own internal use —
+  but `package.json`'s `exports` map only `"."` to `src/index.js`, so a package user can no
+  longer reach any of them, including via a submodule path such as `src/text.js`. Dropped:
+  `artifactHash`, `authorPrompt`,
   `BASELINES`, `CALIBRATION_LABEL`, `cardCasesPrompt`, `CASE_VERDICTS`, `CATALOGUE_KINDS`,
   `CATALOGUE_LIVE_KINDS`, `changedSet`, `classifySurvey`, `classMenu`, `CLASS_STATEMENTS`,
   `CLOSE_DECL_FIELDS`, `closeGrade`, `compareExpectation`, `COMPILE_SYSTEM`,
