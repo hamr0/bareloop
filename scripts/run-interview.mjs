@@ -28,7 +28,7 @@
 //
 //   node scripts/run-interview.mjs \
 //     --patient /path/to/repo --verdict soft-green --provider anthropic-api \
-//     --out /path/to/outdir [--budget 2.50] [--lang js]
+//     --out /path/to/outdir [--budget 2.50]
 //
 //   --provider     REQUIRED, NO DEFAULT (PRD item 34 L17): bareloop is
 //                  LLM-agnostic, and a default here would silently lock every
@@ -48,6 +48,7 @@ import {
 import { validateJob, PROVIDERS } from '../src/job.js';
 import { resolveProvider } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
+import { detectLanguage } from '../src/detectlang.js';
 import { parseCeiling, ceilingLine } from './author-readout.mjs';
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
@@ -57,18 +58,15 @@ const patientArg = arg('patient');
 const outArg = arg('out');
 const verdictArg = arg('verdict');
 const providerArg = arg('provider');
-// An ABSENT `--lang` takes the default; a PRESENT one with no value is an operator
-// error and stops LOUD, on the same rule the ceiling below is parsed by. `?? 'js'`
-// alone would not catch it — `arg` returns the EMPTY STRING for a flag typed with
-// nothing after it, and nullish-coalescing passes an empty string straight through.
-// The consequence was not cosmetic: `--lang` and its value are printed as the NEXT
-// STEP's command, and an empty value collapses them into `--lang  --budget 2.5`, so
-// the copy-pasted command hands run-author the word `--budget` as its language.
-const langArg = arg('lang');
-if (langArg !== null && langArg.trim() === '') {
-  die('--lang was given with no value — pass a language (e.g. `--lang js`), or omit the flag to take the default. It is NOT defaulted here: the flag and its value are printed back as the paid step\'s own command, and an empty one silently eats the flag that follows it.');
+// `--lang` IS GONE (PRD item 33 M3, ruling 3): language is a FACT of the
+// repository, read off its own manifest, never a flag a person sets. A
+// `--lang` on the command line now is an operator error, stopped loud rather
+// than silently ignored — the old default (`js`) would otherwise keep
+// working by accident and hide that the flag no longer does anything.
+if (arg('lang') !== null) {
+  die('--lang is no longer a flag — language is auto-detected from --patient\'s own manifest '
+    + '(package.json/pyproject.toml/setup.py), never asked or set (PRD item 33 M3, ruling 3). Drop --lang and rerun.');
 }
-const LANG = langArg ?? 'js';
 /** the AUTHORING ceiling, parsed by the same rule `run-author.mjs` parses it with
  * (`parseCeiling`): absent is UNBOUNDED and announced, a malformed value is an
  * error rather than a silent fallback. It is not stored in anything — it is handed
@@ -77,7 +75,7 @@ const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget
 
 if (!patientArg || !outArg || verdictArg === null || !providerArg) {
   die('usage: node scripts/run-interview.mjs --patient <repoPath> '
-    + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>] [--lang js]`);
+    + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>]`);
 }
 if (budgetError) die(budgetError);
 // the menu is handed over ENUMERATED — an unknown value is a typo, refused as one.
@@ -105,6 +103,44 @@ const PATIENT = resolve(/** @type {string} */ (patientArg));
 // wrong price (run-author.mjs makes the same check for the same reason).
 if (!existsSync(PATIENT)) die(`--patient ${PATIENT} does not exist — the close is authored against a repository on this machine, never out of prose`);
 const OUT = resolve(/** @type {string} */ (outArg));
+
+// ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
+// $0, no provider: reads the repo's own manifest, nearest wins, walking up to
+// the repo root. Two of the four outcomes stop the interview before a single
+// question, on the same "counted demand, never a silent fallback" rule the
+// old `--lang` comment already named:
+//   - `ambiguous`             — two different languages' manifests at the same
+//                               level; the confirm-turn UI that would ask a
+//                               person to pick is a later M3 piece, so for now
+//                               this stops with the honest list rather than
+//                               guessing one.
+//   - `language-unsupported`  — a known manifest (go.mod, Cargo.toml, ...)
+//                               this catalogue has no genre data for yet.
+//                               Refusing HERE, before any question, saves the
+//                               person answering a form for a job that would
+//                               only be refused later anyway.
+// The other two outcomes are not errors and do not stop anything:
+//   - `resolved`      — 'js' or 'python', carried through exactly where the
+//                       old `--lang` value flowed.
+//   - `no-code-job`   — no manifest anywhere in the walk. NOT a refusal (M3
+//                       ruling 7): a plain-folder job still gets the form; it
+//                       only gets an honest "no checks yet" stop later (M4).
+const langResult = detectLanguage(PATIENT);
+if (langResult.kind === 'ambiguous') {
+  die(`${PATIENT} has more than one language's manifest at the same (nearest) level: ${langResult.candidates.join(', ')} `
+    + `(in ${langResult.dir}). Picking one interactively is a later build (PRD item 33 M3, ruling 3, point 3) — for `
+    + 'now, point --patient at the specific subfolder for the language this job is about, or remove the other '
+    + 'manifest, and rerun.');
+}
+if (langResult.kind === 'language-unsupported') {
+  const r = langResult.refusal;
+  console.log(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
+  console.log(r.detail);
+  for (const o of r.options) console.log(`  · ${o}`);
+  console.log('\nNothing was asked and nothing was written — the refusal IS the record.');
+  process.exit(1);
+}
+const LANG = langResult.kind === 'resolved' ? langResult.lang : 'none-detected';
 
 // ── the OFF-MENU classes refuse BEFORE a single question ─────────────────────
 // Not this script's rule and not this script's words: `runInterview` is the
@@ -355,7 +391,7 @@ if (leaks.length) {
 const RUN_AUTHOR = fileURLToPath(new URL('./run-author.mjs', import.meta.url));
 const childArgs = [
   '--patient', PATIENT, '--answers', answersFile, '--draft', draftFile,
-  '--verdict', VERDICT, '--out', OUT, '--lang', LANG,
+  '--verdict', VERDICT, '--out', OUT,
   ...(CEILING_USD === null ? [] : ['--budget', String(CEILING_USD)]),
 ];
 say('');

@@ -7,6 +7,28 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Language auto-detection (PRD item 33 M3, ruling 3):** `src/detectlang.js`'s `detectLanguage`
+  reads a code job's language off its own repository — `package.json` → js (TypeScript
+  included), `pyproject.toml`/`setup.py` → python — walking up from the Source folder to the
+  nearest ancestor manifest, never past the repository root (the nearest `.git`). A known
+  manifest this catalogue has no genre data for yet (`go.mod`, `Cargo.toml`, `pom.xml`,
+  `build.gradle(.kts)`, `*.csproj`/`*.sln`, `composer.json`) is a named `language-unsupported`
+  stop — never a silent fallback to js — carrying a `Refusal` shaped exactly like
+  `src/authorjob.js`'s own (`REFUSAL_LIB`/`REFUSAL_CATEGORY`, `request-red`). Two manifests at
+  the same nearest level is a named `ambiguous` result listing both; no manifest anywhere is
+  `no-code-job`, which is NOT an error (a plain-folder job still gets the form; M4 gives it
+  checks). The whole known-language table is one data list, keyed against `GENRE_LANGUAGES`
+  (`src/authoring.js`) — a later language landing there (M3b) needs no new code path here.
+
+### Removed
+
+- **BREAKING: `--lang` is gone from `scripts/run-interview.mjs` and `scripts/run-author.mjs`.**
+  Language is now auto-detected from `--patient`'s own repository (see "Added", above) — it is
+  a fact of the repo, never a flag a person sets. Passing `--lang` now is a loud, explicit
+  refusal naming the flag and why, rather than a silently-ignored no-op.
+
 ### Fixed
 
 - **Scan-then-freeze TOCTOU closed in the source front door (PRD item 34 L1):**

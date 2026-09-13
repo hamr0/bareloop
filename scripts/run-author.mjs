@@ -17,7 +17,7 @@
 //
 //   node scripts/run-author.mjs \
 //     --patient /path/to/repo --answers answers.json --draft specdraft.json \
-//     --verdict green --out /path/to/outdir [--lang js] [--timeout 300000] \
+//     --verdict green --out /path/to/outdir [--timeout 300000] \
 //     [--budget 2.50]
 //
 //   --budget       THE AUTHORING CEILING, in dollars, and it has NO DEFAULT. The
@@ -61,6 +61,7 @@ import { makeLoopGenerate } from '../src/authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { scanSecrets } from '../src/validate.js';
+import { detectLanguage } from '../src/detectlang.js';
 import { closeJudges } from '../src/kinds.js';
 import { resolveProvider, makeProvider } from '../src/providers.js';
 import { tallyCalls } from '../src/text.js';
@@ -81,15 +82,13 @@ const answersArg = arg('answers');
 const draftArg = arg('draft');
 const outArg = arg('out');
 const verdictArg = arg('verdict');
-// Same rule as the interview that hands this script its command line: absent takes
-// the default, present-with-no-value stops LOUD. A silently empty language reaches
-// the genre lookup as "" and dies there anyway, but as a genre-data error rather
-// than as the argv typo it is.
-const langArg = arg('lang');
-if (langArg !== null && langArg.trim() === '') {
-  die('--lang was given with no value — pass a language (e.g. `--lang js`), or omit the flag to take the default');
+// `--lang` IS GONE (PRD item 33 M3, ruling 3): language is a FACT of the
+// repository, read off its own manifest, never a flag a person sets. Stopped
+// loud rather than silently ignored, same rule the interview script applies.
+if (arg('lang') !== null) {
+  die('--lang is no longer a flag — language is auto-detected from --patient\'s own manifest '
+    + '(package.json/pyproject.toml/setup.py), never asked or set (PRD item 33 M3, ruling 3). Drop --lang and rerun.');
 }
-const LANG = langArg ?? 'js';
 const timeoutArg = arg('timeout');
 const TIMEOUT_MS = timeoutArg === null ? DEFAULT_TIMEOUT_MS : Number(timeoutArg);
 /** NO DEFAULT, deliberately: `null` is "nobody set one" and means UNBOUNDED. It
@@ -101,7 +100,7 @@ const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget
 
 if (!patientArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
   die('usage: node scripts/run-author.mjs --patient <repoPath> --answers <answers.json> --draft <specdraft.json> '
-    + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--lang js] [--timeout <ms>] [--budget <usd>]`);
+    + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--timeout <ms>] [--budget <usd>]`);
 }
 // A malformed ceiling dies at the door rather than silently reading as absent.
 if (budgetError) die(budgetError);
@@ -118,6 +117,41 @@ if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) die(`--timeout ${timeoutArg
 const PATIENT = resolve(/** @type {string} */ (patientArg));
 if (!existsSync(PATIENT)) die(`--patient ${PATIENT} does not exist — the scout reads a repository off the machine, never out of prose`);
 const OUT = resolve(/** @type {string} */ (outArg));
+
+// ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
+// $0, no provider, run BEFORE the API key is even read — this script must
+// reach here on `--patient` alone, with no `--lang` needed. Same four
+// outcomes `run-interview.mjs` reads (that script normally catches the two
+// that stop something first, but this script is also runnable standalone
+// against a hand-written answers.json/specdraft.json, so it repeats the same
+// two early stops rather than relying on the interview having run first):
+//   - `ambiguous`             — two languages' manifests at the same level;
+//                               stopped here with the honest list (the
+//                               confirm-turn UI to ask a person is later M3).
+//   - `language-unsupported`  — a known manifest with no genre data yet;
+//                               stopped here, before the API key check, so a
+//                               job that can never be authored costs nothing.
+//   - `resolved` / `no-code-job` — carried into `lang` below exactly where
+//     the old `--lang` value flowed; `no-code-job` reads as `'none-detected'`,
+//     which the existing GENRE_LANGUAGES check further down refuses on its
+//     own (M3 ruling 7: a plain-folder job is not an error here, it is simply
+//     not a code-genre job this pipeline can close yet).
+const langResult = detectLanguage(PATIENT);
+if (langResult.kind === 'ambiguous') {
+  die(`${PATIENT} has more than one language's manifest at the same (nearest) level: ${langResult.candidates.join(', ')} `
+    + `(in ${langResult.dir}). Picking one interactively is a later build (PRD item 33 M3, ruling 3, point 3) — for `
+    + 'now, point --patient at the specific subfolder for the language this job is about, or remove the other '
+    + 'manifest, and rerun.');
+}
+if (langResult.kind === 'language-unsupported') {
+  const r = langResult.refusal;
+  console.log(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
+  console.log(r.detail);
+  for (const o of r.options) console.log(`  · ${o}`);
+  console.log('\nNothing was written — the refusal IS the record.');
+  process.exit(1);
+}
+const LANG = langResult.kind === 'resolved' ? langResult.lang : 'none-detected';
 
 /** @param {string} label @param {string} file */
 const readJson = (label, file) => {
