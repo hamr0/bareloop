@@ -293,4 +293,7 @@ export { main as cliMain } from './cli.js';
 // source.mjs` and `scripts/run-u.mjs` are two separate call sites reaching
 // for the SAME functions — an adopter building a third has to reach the same
 // module, not a re-derivation of it.
-export { prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest } from './source.js';
+export {
+  prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest,
+  datedDestination, pickDelivery,
+} from './source.js';

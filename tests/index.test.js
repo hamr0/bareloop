@@ -16,6 +16,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as bareloop from '../src/index.js';
+import * as source from '../src/source.js';
 
 test('the documented public surface is actually exported from src/index.js', () => {
   // Named in bareloop.context.md / CHANGELOG.md as adopter-reachable API.
@@ -43,9 +44,24 @@ test('the documented public surface is actually exported from src/index.js', () 
     'validateEnvelope', 'resolveTrySpec', 'resolveReuse', 'reuseSpecHash', 'selectBridge', 'runReuse', 'REUSE_GRADED_RED',
     // module C — resume after a kill
     'readResume', 'resumeTreeGate',
+    // PRD item 33/M2 source front door — bareloop.context.md (~line 3057) names
+    // these two as exported; a clean-consumer check of the published v0.25.0
+    // found them missing from the package-root re-export (src/index.js only
+    // re-exported five of the seven source.js names it documented).
+    'datedDestination', 'pickDelivery',
   ];
   const missing = documented.filter((n) => bareloop[n] === undefined);
   assert.deepEqual(missing, [], `documented but not exported — the adopter contract is false: ${missing.join(', ')}`);
+});
+
+test('datedDestination and pickDelivery are importable from the package root and are the source.js functions', () => {
+  // `package.json`'s `exports`/`main` both point at `src/index.js` — that is
+  // the actual package-root entry an adopter's `import { x } from 'bareloop'`
+  // resolves to, not `src/source.js` directly.
+  assert.equal(typeof bareloop.datedDestination, 'function');
+  assert.equal(typeof bareloop.pickDelivery, 'function');
+  assert.equal(bareloop.datedDestination, source.datedDestination, 're-export must be the same function, not a re-derivation');
+  assert.equal(bareloop.pickDelivery, source.pickDelivery, 're-export must be the same function, not a re-derivation');
 });
 
 test('the three names S9 found missing are the shapes the docs promise', () => {
