@@ -38,10 +38,11 @@
 //                               reported so a caller can stop rather than
 //                               guess.
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readdirSync, statSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { GENRE_LANGUAGES } from './authoring.js';
 import { GENRE, REFUSAL_CATEGORY, REFUSAL_LIB } from './authorjob.js';
+import { nearestGitAncestor } from './source.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
 /** @typedef {{kind: 'request-red', verb: string|null, path: string, detail: string,
@@ -85,6 +86,12 @@ function ruleLabel(rule) {
  * `.git` is a file). When no `.git` exists anywhere above `start`, the walk
  * is exactly `[start]` — this module never reads above the folder it was
  * asked about when there is no repo boundary to stop it honestly.
+ *
+ * The boundary itself is `nearestGitAncestor` (`src/source.js`) — the ONE
+ * walk-up-for-`.git` rule, shared with `looksLikeRepoSource`/`prepareSource`'s
+ * own repo-root routing (PRD item 33 M3 ruling 2 addendum) — this function
+ * only turns that single boundary into the full chain of directories a
+ * manifest search walks.
  * @param {string} start
  * @returns {string[]}
  */
@@ -98,7 +105,8 @@ function walkChain(start) {
     if (parent === d) break; // filesystem root
     d = parent;
   }
-  const repoRootIdx = chain.findIndex((dir) => existsSync(join(dir, '.git')));
+  const boundary = nearestGitAncestor(chain[0]);
+  const repoRootIdx = boundary === null ? -1 : chain.indexOf(boundary.dir);
   return repoRootIdx === -1 ? [chain[0]] : chain.slice(0, repoRootIdx + 1);
 }
 

@@ -25,7 +25,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
-import { dirname, join, resolve, sep, basename } from 'node:path';
+import { dirname, join, relative, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
 import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
@@ -77,6 +77,37 @@ const MAX_SAME_DAY = 99;
 const refuse = (code, stop) => ({ stop, code });
 
 /**
+ * Walk from `startDir` upward — inclusive — to the NEAREST ancestor whose own
+ * directory carries a `.git` entry, whether that entry is a real repo
+ * directory or a linked-worktree/submodule FILE (the caller decides what a
+ * file means for it). `null` when no ancestor up to the filesystem root has
+ * one. ONE helper for "find the repo boundary walking up", shared by
+ * {@link looksLikeRepoSource} and `prepareSource`'s own authoritative routing
+ * below (PRD item 33 M3 ruling 2 addendum, 2026-09-13: a Source that is a
+ * SUBFOLDER inside a git repo is a repo job, not a plain-folder one — the
+ * boundary is the nearest ancestor's `.git`, never only a `.git` sitting
+ * directly inside Source itself) and reused by `src/detectlang.js`'s own
+ * upward walk (`walkChain`), which only needs the boundary directory, not
+ * which kind of `.git` it is — never three copies of this rule.
+ * @param {string} startDir an absolute directory to start the walk FROM
+ * @returns {{dir: string, isFile: boolean}|null}
+ */
+export function nearestGitAncestor(startDir) {
+  let dir = resolve(startDir);
+  for (;;) {
+    const dotGit = join(dir, '.git');
+    if (existsSync(dotGit)) {
+      let isFile = false;
+      try { isFile = !lstatSync(dotGit).isDirectory(); } catch { /* raced away between exists and lstat — treated as a directory below, the pre-existing walk's own behaviour */ }
+      return { dir, isFile };
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null; // reached the filesystem root
+    dir = parent;
+  }
+}
+
+/**
  * A CHEAP peek (a stat, never a read) at whether `source` is going to turn
  * out to be a REPO source — the ONE rule for that question, shared by
  * `prepareSource` (which routes the destination check below before the real
@@ -84,13 +115,16 @@ const refuse = (code, stop) => ({ stop, code });
  * (PRD item 33 M3 ruling 2), which has to know BEFORE Source is even frozen
  * whether Destination fills the write fence or a delivery directory. Never a
  * second, hand-typed copy of this test: a URL is never a repo; a local path
- * is a repo source only when it is a DIRECTORY carrying a `.git` entry
- * directly (a subfolder one level inside a repo has no `.git` of its own and
- * is therefore NOT a repo source by this rule — it freezes as a plain
- * folder, the same authoritative outcome the real walk below produces for
- * it). An unreadable path is reported properly by the real walk; this peek
- * only has to agree with that walk closely enough to route correctly, never
- * to replace it.
+ * is a repo source only when it is a DIRECTORY, and the NEAREST ancestor
+ * (Source itself, or an ancestor above it — ruling 2's 2026-09-13 addendum)
+ * carries a `.git` DIRECTORY. A nearest `.git` that is a FILE (a linked
+ * worktree or a submodule) is NOT repo-like here — the real walk below
+ * refuses `source-is-linked-worktree` for that case, and this peek must
+ * agree closely enough to route the destination question correctly rather
+ * than offer the write-fence wording for a source that is about to be
+ * refused. An unreadable path is reported properly by the real walk; this
+ * peek only has to agree with that walk closely enough to route correctly,
+ * never to replace it.
  * @param {string} source
  * @returns {boolean}
  */
@@ -99,7 +133,9 @@ export function looksLikeRepoSource(source) {
   try {
     const abs = resolve(source);
     const st = lstatSync(abs);
-    return st.isDirectory() && existsSync(join(abs, '.git'));
+    if (!st.isDirectory()) return false;
+    const found = nearestGitAncestor(abs);
+    return found !== null && !found.isFile;
   } catch { return false; }
 }
 
@@ -403,7 +439,7 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
     }
   }
 
-  /** @type {{kind: 'url'|'file'|'folder'|'repo', files: {rel: string, abs?: string, buf?: Buffer, symlinkTarget?: string}[], root?: string, finalUrl?: string}} */
+  /** @type {{kind: 'url'|'file'|'folder'|'repo', files: {rel: string, abs?: string, buf?: Buffer, symlinkTarget?: string}[], root?: string, finalUrl?: string, sourceSubdir?: string}} */
   let frozen;
 
   if (isUrl) {
@@ -448,22 +484,39 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
       // patients-are-copies rule), and gets the same `output/`, manifest,
       // destination and copy-out every other source gets. Its own guards
       // (the input stays untouched) arrive with M4.
-      const dotGit = join(sourceAbs, '.git');
-      let isRepo = false;
-      if (existsSync(dotGit)) {
+      //
+      // RULING 2 ADDENDUM (hamr, 2026-09-13, option A): a Source that is a
+      // SUBFOLDER inside a git repo IS a repo job — the boundary is the
+      // NEAREST ancestor's `.git`, found by walking UP from Source, never
+      // only a `.git` sitting directly inside Source itself (a monorepo
+      // package like `myrepo/packages/api` used to fall to the plain-folder
+      // path below, which has no checks yet and would hit untracked
+      // `node_modules` symlinks as a refusal, F164's class). The WHOLE
+      // repo's tracked files are frozen — `listRepoFiles(repoRoot)`, not just
+      // the subfolder — exactly as for a repo-ROOT source today.
+      const found = nearestGitAncestor(sourceAbs);
+      if (found !== null && found.isFile) {
         // a `.git` FILE (a linked worktree or a submodule) points its gitdir
         // somewhere else entirely — copying it would aim every git command,
         // the seed commit included, at the ORIGINAL repo. Refused, never
-        // followed, for the same reason a symlink is.
-        if (!(await lstat(dotGit)).isDirectory()) {
-          return refuse('source-is-linked-worktree', `${source}/.git is a file, not a directory — this is a linked worktree or a submodule, whose real git directory lives elsewhere; point the door at the repo itself (a copy would silently commit into the original)`);
-        }
-        isRepo = true;
+        // followed, for the same reason a symlink is. `found.dir` is the
+        // ancestor that actually carries the file — Source itself when
+        // Source IS that ancestor, an ancestor ABOVE Source otherwise.
+        return refuse('source-is-linked-worktree', `${found.dir}/.git is a file, not a directory — this is a linked worktree or a submodule, whose real git directory lives elsewhere; point the door at the repo itself (a copy would silently commit into the original)`);
       }
+      const isRepo = found !== null;
       if (isRepo) {
-        const walked = await listRepoFiles(sourceAbs);
+        const repoRoot = /** @type {{dir: string}} */ (found).dir;
+        const walked = await listRepoFiles(repoRoot);
         if (walked.stop !== null) return walked;
-        frozen = { kind: 'repo', root: sourceAbs, files: walked.files };
+        // Source's own path relative to the repo root — '' when Source IS
+        // the repo root, a real subpath (e.g. "packages/api") when it is a
+        // subfolder. Recorded in the manifest (below) for later use; nothing
+        // downstream reads it yet — the fence/scope wiring is a later piece.
+        const sourceSubdir = relative(repoRoot, sourceAbs).split(sep).join('/');
+        frozen = {
+          kind: 'repo', root: repoRoot, files: walked.files, sourceSubdir,
+        };
       } else {
         const walked = await walkFolder(sourceAbs);
         if (walked.stop !== null) return walked;
@@ -625,6 +678,13 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   const manifest = {
     kind: frozen.kind,
     source,
+    // Source's own path relative to the repo root (ruling 2 addendum,
+    // 2026-09-13) — '' when Source IS the repo root, a real subpath (e.g.
+    // "packages/api") when it is a subfolder frozen as part of the WHOLE
+    // repo. A NEW field beside the existing ones: `source` above keeps its
+    // existing meaning (the original Source path, untouched), and nothing
+    // downstream reads `sourceSubdir` yet — recorded here, wired later.
+    ...(frozen.sourceSubdir === undefined ? {} : { sourceSubdir: frozen.sourceSubdir }),
     ...(frozen.finalUrl === undefined ? {} : { finalUrl: frozen.finalUrl }),
     fetchedAt: new Date().toISOString(),
     files: fileMeta,

@@ -262,6 +262,19 @@ test('a repo Source: Destination fills writeScope DIRECTLY, and no separate FENC
   assert.ok(destAt !== -1 && firstQAt !== -1 && destAt < firstQAt, 'Destination is asked before the class questions');
 });
 
+test('a SUBFOLDER Source inside a repo takes the REPO route: it asks the repo Destination wording and writes writeScope, relative to the repo root (ruling 2 addendum, 2026-09-13)', () => {
+  const out = outDir();
+  const subfolder = join(repoBase, 'src');
+  const r = interview({ out, lines: session(CLASS, { source: subfolder, destination: 'src/**' }) });
+  assert.equal(r.code, 0, r.out);
+  // the REPO wording, not the plain-directory one — same field the repo-root
+  // fixture above gets, because a subfolder Source is a repo job now
+  assert.ok(r.out.includes(DESTINATION_FIELD_REPO.prompt), 'a subfolder Source gets the repo Destination wording');
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.deepEqual(draft.writeScope, ['src/**']);
+  assert.match(r.out, /kind {5}repo/, 'the prepared source freezes as kind "repo", not "folder"');
+});
+
 test('the printed hand-off gives run-author.mjs --source, never --patient', () => {
   const out = outDir();
   const r = interview({ out, lines: session(CLASS) });
