@@ -5,6 +5,17 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **DeepSeek secondary model swap (F171, PRD item 34 L16):** `deepseek-chat` is no longer
+  served by DeepSeek's API (a live `/models` call returned only `deepseek-flash` and
+  `deepseek-v4-pro`). The `openai-api` tier table (`src/providers.js`) and its per-model
+  `legacyMaxTokens` request-key gating now name `deepseek-flash`. F149's gating measurement
+  was taken on `deepseek-chat` and is carried forward UNVERIFIED on `deepseek-flash`;
+  pricing stays the estimated default (F113 unchanged).
+
 ## [0.25.1] — 2026-09-13
 
 ### Fixed

@@ -876,7 +876,7 @@ test('the stamped judge is the one HANDED IN, not a library constant — the who
   // graded it. Hand in a different judge and both the record and the set hash must
   // move with it, or the "which judge certified this floor?" question the whole
   // recalibration guard rests on has an answer nobody can trust.
-  const other = 'deepseek-chat';
+  const other = 'deepseek-flash';
   const r = await runCalibration({ judgeModel: other, cases: CASES(), card: CARD(), judgeLoop: honest().loop });
   assert.equal(r.ok, true, 'an honest judge still passes — the identity is a stamp, not a bar');
   assert.equal(r.judgeModel, other, 'the record carries the judge that graded, not the historical pin');

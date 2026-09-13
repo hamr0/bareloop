@@ -1218,9 +1218,10 @@ const provider = makeProvider(spec.provider, { apiKey: workerApiKey, model: MODE
 // ONLY when the SPEC named it: a `--model haiku` probe keeps its old reach (the
 // top-level provider), never silently widening into every step's tier. The tier
 // table itself comes from `providerEntry` (src/providers.js) — for openai-api
-// today that means BOTH tiers resolve to the same `deepseek-chat` id (hamr's
-// ruling, PRD 30.7: one secondary provider, not a menu), so a `--model haiku`
-// probe against an openai-api job harmlessly re-resolves to the same model.
+// today that means BOTH tiers resolve to the same `deepseek-flash` id (hamr's
+// ruling, PRD 30.7: one secondary provider, not a menu; swapped from the
+// retired `deepseek-chat`, F171), so a `--model haiku` probe against an
+// openai-api job harmlessly re-resolves to the same model.
 const TIER_MODELS = modelResolution.source === 'spec' ? { ...providerEntry.tiers, sonnet: MODEL } : providerEntry.tiers;
 /** @type {Record<string, any>} */
 const tierCache = {};

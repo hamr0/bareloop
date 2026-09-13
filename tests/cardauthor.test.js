@@ -495,8 +495,8 @@ test('validateJudgedArtifacts refuses a card and a set independently, and names 
 
 test('the stored calibration carries the judge HANDED IN, not a library constant', async () => {
   const signed = signJudgedArtifacts({ proposal: PROPOSAL(), fix: null });
-  const folded = foldJudgedArtifacts(closeDecl(), { judgeModel: 'deepseek-chat', card: signed.card, cases: signed.cases });
-  assert.equal(folded.calibration.judgeModel, 'deepseek-chat');
+  const folded = foldJudgedArtifacts(closeDecl(), { judgeModel: 'deepseek-flash', card: signed.card, cases: signed.cases });
+  assert.equal(folded.calibration.judgeModel, 'deepseek-flash');
   assert.notEqual(folded.calibration.judgeModel, 'claude-haiku-4-5', 'the pre-item-32 pin is not what gets stored any more');
 });
 

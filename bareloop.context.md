@@ -73,11 +73,13 @@ inherited rule carries the green that minted it and the contrast that attributed
   `provider: 'openai-api'` (PRD item 28) takes the ordinary `Loop` path against an
   OpenAI-shaped endpoint, reads `OPENAI_API_KEY`, and accepts an optional job-level
   `baseUrl` (https, or http on loopback only; credentials in the URL are a red). Its one
-  admitted model is `deepseek-chat`, which earned the slot with a real paid green — no
-  endpoint or model enters the menu without its own clean paid probe. The provider table
+  admitted model is `deepseek-flash`, which earned the slot with a real paid green under
+  its retired predecessor `deepseek-chat` (F171: no longer served as of 2026-09-13,
+  swapped to `deepseek-flash`) — no endpoint or model enters the menu without its own
+  clean paid probe. The provider table
   lives in `src/providers.js` (`resolveProvider`/`makeProvider`/`buildRunnerProviders`);
   an unknown provider name THROWS there, it never falls back to a default. Per-model
-  request-key gating lives in that table: `deepseek-chat` sets bare-agent's
+  request-key gating lives in that table: `deepseek-flash` sets bare-agent's
   `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
   output cap that does not bind is a money hazard. `provider: 'gemini-api'` (PRD item 31.3)
   takes the same `Loop` path, reads `GEMINI_API_KEY`, and maps two real tiers
@@ -163,7 +165,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 |---|---|---|
 | `job` | kebab-case slug | |
 | `description` | non-empty string | |
-| `provider` | `anthropic-api` \| `openai-api` \| `gemini-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-chat` today — see "Worker surface" above for its `baseUrl` field and per-model gating; `gemini-api` (PRD item 31.3) reads `GEMINI_API_KEY` and is ADMITTED-PENDING-PROBE — zero runs, and every launch says so (`PROBE_STATUS`/`probeWarningLines`); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
+| `provider` | `anthropic-api` \| `openai-api` \| `gemini-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-flash` today (F171: swapped from the retired `deepseek-chat`) — see "Worker surface" above for its `baseUrl` field and per-model gating; `gemini-api` (PRD item 31.3) reads `GEMINI_API_KEY` and is ADMITTED-PENDING-PROBE — zero runs, and every launch says so (`PROBE_STATUS`/`probeWarningLines`); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |

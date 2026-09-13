@@ -455,10 +455,10 @@ const judgeTwin = (draft) => new Promise((res, reject) => {
 test('a non-anthropic worker: the compose-time stamp and the calibration gate agree with EACH OTHER and with the job\'s real worker', async () => {
   const draft = { provider: 'openai-api' }; // no model, no judge override — DeepSeek via openai-api, item 30.7's secondary provider
   const { stamp, gate } = await judgeTwin(draft);
-  // the job's own worker resolves to deepseek-chat (openai-api's only tier) —
+  // the job's own worker resolves to deepseek-flash (openai-api's only tier) —
   // NOT anthropic's sonnet, which is what the old hardcoded PROVIDER_NAME/MODEL
   // stamped regardless of the draft's own provider.
-  assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-chat' });
+  assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-flash' });
   assert.deepEqual(gate, stamp, 'the calibration gate must certify the SAME identity the stamp promised — a mismatch is exactly the recalibration refusal this fixes');
 });
 
