@@ -34,6 +34,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
   indistinguishable in printed logs/re-invocation lines — which matters for the
   SCOUT-CONTRAST bench row's provenance. It now prints `scout ON (--scout on — operator
   explicit)`, distinct from the true default and from `--scout off`'s unchanged label.
+- **Job authoring is LLM-agnostic (PRD item 34 L17):** `scripts/run-author.mjs` no longer
+  forces `PROVIDER_NAME = 'anthropic-api'` for its scout and drafter — the identity is now
+  resolved from the operator's own draft (`resolveProvider(draft.provider)`), the same
+  no-flag/no-default rule `scripts/run-u.mjs` applies to the worker; a missing or
+  unrecognized draft provider dies loud, at $0, before any paid call, naming the known
+  table. `scripts/run-interview.mjs` gains a REQUIRED `--provider` flag with no default (a
+  default would silently re-lock every interview onto one vendor) and writes it into the
+  draft; the paid-step offer's key line and unset-key notice now name whichever provider's
+  own env var applies, never a hardcoded `ANTHROPIC_API_KEY`. Non-Anthropic drafting is
+  legal as of this change but not yet proven live — that is M3's DeepSeek proof run, not
+  this one.
 
 ### Changed
 

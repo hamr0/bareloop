@@ -27,8 +27,15 @@
 //   budgetUsd     the JOB's budget — what the RUN may spend, signed into the spec.
 //
 //   node scripts/run-interview.mjs \
-//     --patient /path/to/repo --verdict soft-green --out /path/to/outdir \
-//     [--budget 2.50] [--lang js]
+//     --patient /path/to/repo --verdict soft-green --provider anthropic-api \
+//     --out /path/to/outdir [--budget 2.50] [--lang js]
+//
+//   --provider     REQUIRED, NO DEFAULT (PRD item 34 L17): bareloop is
+//                  LLM-agnostic, and a default here would silently lock every
+//                  interview back onto one vendor. It is asked, once, and
+//                  written into the draft's `provider` field — run-author.mjs
+//                  then needs no flag of its own; it just resolves what this
+//                  wrote down.
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { spawnSync } from 'node:child_process';
@@ -38,7 +45,8 @@ import {
   runInterview, questionsFor, requiredAnswersFor,
   VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
-import { validateJob } from '../src/job.js';
+import { validateJob, PROVIDERS } from '../src/job.js';
+import { resolveProvider } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { parseCeiling, ceilingLine } from './author-readout.mjs';
 
@@ -48,6 +56,7 @@ const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 const patientArg = arg('patient');
 const outArg = arg('out');
 const verdictArg = arg('verdict');
+const providerArg = arg('provider');
 // An ABSENT `--lang` takes the default; a PRESENT one with no value is an operator
 // error and stops LOUD, on the same rule the ceiling below is parsed by. `?? 'js'`
 // alone would not catch it — `arg` returns the EMPTY STRING for a flag typed with
@@ -66,9 +75,9 @@ const LANG = langArg ?? 'js';
  * straight to the child, which is the process that spends it. */
 const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget'));
 
-if (!patientArg || !outArg || verdictArg === null) {
+if (!patientArg || !outArg || verdictArg === null || !providerArg) {
   die('usage: node scripts/run-interview.mjs --patient <repoPath> '
-    + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--budget <usd>] [--lang js]`);
+    + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>] [--lang js]`);
 }
 if (budgetError) die(budgetError);
 // the menu is handed over ENUMERATED — an unknown value is a typo, refused as one.
@@ -80,6 +89,15 @@ const VERDICT = /** @type {string} */ (verdictArg);
 // the CHECK stays against the full `VERDICT_CLASSES` (see above); the PRINTED text
 // names only the menu (item 34 L19: nothing customer-facing names an off-menu class).
 if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${MENU_CLASSES.join(' | ')}`);
+
+// NO DEFAULT (PRD item 34 L17) — a default here would silently re-lock every
+// interview onto one vendor. Missing or empty already died above, at the same
+// usage message every other required flag shares, listing the same menu
+// `src/job.js`'s own validator (`PROVIDERS`) admits. Membership is NOT
+// re-checked here beyond that: `validateJob`, a few lines below, already reds
+// an off-menu `provider` the same way it reds every other field — spelling
+// that check twice would be the second rule this file keeps refusing to write.
+const PROVIDER = /** @type {string} */ (providerArg);
 
 const PATIENT = resolve(/** @type {string} */ (patientArg));
 // asked HERE, before a person answers twenty questions: the scout reads a repository
@@ -191,6 +209,7 @@ const readNumber = async (where, field, parse, allowNull = false) => {
 say('INTERVIEW — your job, in your own words. Nothing here spends a cent.');
 say(`  patient  ${PATIENT}`);
 say(`  verdict  ${VERDICT}  (YOUR pick — the close this authors promises to stay at or below it)`);
+say(`  provider ${PROVIDER}`);
 say(`  lang     ${LANG}`);
 say(`  out      ${OUT}`);
 say(`  ${ceilingLine(CEILING_USD)}`);
@@ -279,8 +298,9 @@ const draft = {
   // a record LABEL, never a statement of intent: the goal above is where intent
   // lives, and this field only has to say which job's file you are looking at
   description: `${jobName} — authored through the bareloop interview (${VERDICT}, ${LANG}) against ${PATIENT}`,
-  // F48: only `anthropic-api` is a guaranteed peer, so it is stated rather than asked
-  provider: 'anthropic-api',
+  // bareloop is LLM-agnostic (PRD item 34 L17) — the operator's own pick, asked
+  // rather than defaulted, one vendor from the SAME table the worker draws from.
+  provider: PROVIDER,
   cadence: { unit: 'day', every: 1 },
   budgetUsd,
   ...(wallMin === null ? {} : { maxWallMs: Math.round(wallMin * 60_000) }),
@@ -343,21 +363,32 @@ say('NEXT — the paid step: a real scout over that repository and a real model 
 say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
 say('It stops at prepareSigning: it never signs, and it never runs the job.');
 say('');
-say(`  ANTHROPIC_API_KEY=... node scripts/run-author.mjs ${childArgs.join(' ')}`);
+// THE KEY NAME FOLLOWS THE CHOSEN PROVIDER (PRD item 34 L17) — no more
+// hardcoded `ANTHROPIC_API_KEY`. `PROVIDER` already passed `validateJob`
+// below by the time this prints, so `resolveProvider` here cannot throw on
+// anything this script itself let through; the try/catch is only for the
+// off-menu case `validateJob` reds but does not stop the write for (an
+// admitted-but-uncrafted table entry would otherwise crash this print).
+let providerEntry = null;
+try { providerEntry = resolveProvider(PROVIDER); } catch { providerEntry = null; }
+const providerEnvKey = providerEntry?.envKey ?? null;
+say(`  ${providerEnvKey ?? 'YOUR_PROVIDER_API_KEY'}=... node scripts/run-author.mjs ${childArgs.join(' ')}`);
 // NO KEY, NO OFFER. `run-author.mjs` refuses without one and exits 2 at its own
 // door, before a spine exists — so with the shell unkeyed this question has
 // exactly one possible outcome for the person, and putting it anyway spends
 // their attention on a choice they do not have. What is actionable instead is
 // the command above and the one line that says how to make it work.
-const KEYED = Boolean(process.env.ANTHROPIC_API_KEY);
+const KEYED = providerEnvKey !== null && Boolean(process.env[providerEnvKey]);
 if (!KEYED) {
   say('');
-  say('  (ANTHROPIC_API_KEY is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)');
+  say(providerEnvKey
+    ? `  (${providerEnvKey} is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)`
+    : `  (provider "${PROVIDER}" is not in the runnable table — run-author will refuse it loud; this is not a key problem)`);
   // The repair, in plain words and WITHOUT a command: which secret store a person
   // keeps their key in is theirs, and printing one specific incantation would be
   // this script guessing at their setup — while the one thing it must never do is
   // put a key anywhere a command line can be read from.
-  say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
+  if (providerEnvKey) say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
 }
 say('');
 // The default is NO, and it is the same lean the pause's doors take: the answer that

@@ -22,7 +22,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { capStop } from '../src/text.js';
@@ -392,8 +392,12 @@ test('exit code 4 is the CRASH, and nothing else in this runner claims it', () =
 // ? ... : null;` the calibration gate reads — and spliced into a real child
 // process alongside the actual `resolveJobJudge`/`resolveWorkerModel`
 // exports, so a regression here fails on the REAL wired bytes, not a stand-in.
-const PROVIDER_CONST_LINE = /^const PROVIDER_NAME = 'anthropic-api';$/m.exec(SRC)?.[0];
-const MODEL_CONST_LINE = /^const MODEL = resolveProvider\(PROVIDER_NAME\)\.tiers\.sonnet;$/m.exec(SRC)?.[0];
+// PRD item 34 L17: the authoring provider is no longer a hardcoded literal —
+// it is resolved from the DRAFT's own `provider` field, the same block that
+// dies loud on a missing/unresolvable one. Extracted whole (`let providerEntry;`
+// through the `baseUrl` line that closes it) so the twin below runs the REAL
+// resolution, not a re-typed stand-in of it.
+const PROVIDER_BLOCK = /\nconst providerEntry = \(\(\) => \{\n[\s\S]*?\nconst baseUrl = typeof draft\?\.baseUrl === 'string' \? draft\.baseUrl : undefined;\n/.exec(SRC)?.[0];
 const DRAFT_JUDGE = /const resolveDraftJudge = [\s\S]*?\nconst draftJudge = resolveDraftJudge\(draft\);/.exec(SRC)?.[0];
 const GATE_JUDGE = /const judge = judges\n[\s\S]*?: null;/.exec(SRC)?.[0];
 // the STAMP: the actual argument `authorCloseForJob` is called with — extracted
@@ -404,8 +408,9 @@ const GATE_JUDGE = /const judge = judges\n[\s\S]*?: null;/.exec(SRC)?.[0];
 const AUTHOR_JUDGE_ARG = /\n {4}judgeModel: [^,\n]+,\n/.exec(SRC)?.[0];
 
 test('the judge-identity block is still BOUNDED — the twin below reads exact statements, not the rest of the file', () => {
-  assert.ok(PROVIDER_CONST_LINE, 'the authoring provider constant moved or was reworded');
-  assert.ok(MODEL_CONST_LINE, 'the authoring model constant moved or was reworded');
+  assert.ok(PROVIDER_BLOCK, 'the authoring provider resolution moved or was reworded');
+  assert.match(PROVIDER_BLOCK, /resolveProvider\(draft\?\.provider\)/, 'the provider must be resolved from the DRAFT, never a hardcoded literal (item 34 L17)');
+  assert.ok(!/'anthropic-api'/.test(PROVIDER_BLOCK), 'a forced anthropic-api literal is back in the provider resolution');
   assert.ok(DRAFT_JUDGE, 'the draft-judge resolution moved — this guard no longer reads the code it guards');
   assert.match(DRAFT_JUDGE, /resolveJobJudge\(d, PROVIDER_NAME, resolveWorkerModel\)/, 'the compose-time identity must be resolved from the DRAFT, not the authoring identity');
   assert.match(DRAFT_JUDGE, /resolveDraftJudge\(draft\)/, 'and it must actually be called on the operator\'s draft');
@@ -431,9 +436,13 @@ const judgeTwin = (draft) => new Promise((res, reject) => {
     `import { resolveJobJudge } from ${JSON.stringify(join(REPO, 'src/judged.js'))};`,
     `import { resolveWorkerModel } from ${JSON.stringify(join(REPO, 'src/job.js'))};`,
     `import { resolveProvider } from ${JSON.stringify(join(REPO, 'src/providers.js'))};`,
-    /** @type {string} */ (PROVIDER_CONST_LINE),
-    /** @type {string} */ (MODEL_CONST_LINE),
+    // `die` is referenced only inside the provider block's catch arm, never
+    // called by any draft this twin is fed (every draft below names a real
+    // provider) — a no-op stand-in keeps that arm syntactically reachable
+    // without pulling in the real script's process.exit.
+    'const die = (m) => { throw new Error(m); };',
     `const draft = ${JSON.stringify(draft)};`,
+    /** @type {string} */ (PROVIDER_BLOCK),
     /** @type {string} */ (DRAFT_JUDGE),
     'const judges = true;',
     "const spec = { ...draft, verdictType: 'green', closeDecl: {} };", // the `assembleSpec` fold: provider/model/judge carried through unchanged
@@ -494,4 +503,49 @@ test('the resolved identity matches what scripts/run-u.mjs itself resolves at ru
   const { stamp, gate } = await judgeTwin(draft);
   assert.deepEqual(stamp, expected);
   assert.deepEqual(gate, expected);
+});
+
+// ── --provider comes from the DRAFT, at $0, before any paid call ────────────
+//
+// PRD item 34 L17 deleted the forced `PROVIDER_NAME = 'anthropic-api'` — the
+// scout's and drafter's identity is resolved from the draft's OWN `provider`
+// field. The die-loud path fires BEFORE the scout, before `apiKey` is even
+// checked, so this is provable with a real spawned process for $0: no key is
+// exported, and a real run never reaches the paid span.
+const SCRIPT = join(REPO, 'scripts/run-author.mjs');
+const runBase = mkdtempSync(join(tmpdir(), 'run-author-cli-'));
+process.on('exit', () => rmSync(runBase, { recursive: true, force: true }));
+let n = 0;
+
+/** @param {Record<string, unknown>} draft */
+const runAuthor = (draft) => {
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify(draft));
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--patient', REPO, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+};
+
+test('a draft with no provider field dies loud, at $0, before any paid call', () => {
+  const r = runAuthor({});
+  assert.equal(r.code, 2);
+  assert.match(r.text, /unknown provider/);
+  assert.doesNotMatch(r.text, /== close-authoring, run/, 'the header (and the spine it opens) must never print — this dies before either exists');
+});
+
+test('a draft naming a provider the factory does not know dies the same way, naming the known table', () => {
+  const r = runAuthor({ provider: 'made-up-vendor' });
+  assert.equal(r.code, 2);
+  assert.match(r.text, /unknown provider "made-up-vendor"/);
+  assert.match(r.text, /Known providers: anthropic-api, openai-api, gemini-api/);
+});
+
+test('there is no --provider FLAG on this script — the provider comes only from the draft', () => {
+  assert.doesNotMatch(SRC, /arg\('provider'\)/, 'run-author must never read its own --provider flag; run-interview owns that ask');
 });

@@ -46,6 +46,11 @@
 //   specdraft.json the OPERATOR half of a job-v1 spec — budgets, fence, cadence,
 //                  goal, tools, escalation. NO close, NO verdictType: the close is
 //                  what this pipeline authors, and the class comes from --verdict.
+//                  There is no --provider flag either: the scout's and the
+//                  drafter's provider is the draft's OWN `provider` field (PRD
+//                  item 34 L17) — `run-interview.mjs` asks for it and writes it
+//                  in; a draft missing one, or naming one the provider factory
+//                  does not know, dies here loud, listing the known table.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
@@ -63,21 +68,6 @@ import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
 } from './author-readout.mjs';
 
-// THE AUTHORING PROVIDER, through the ONE table (PRD item 32.2). This script
-// used to construct `AnthropicProvider` by name, twice — once for the drafter and
-// once for the judge — which is the scattering `src/providers.js` exists to stop.
-//
-// NOT YET SELECTABLE, and that is stated rather than implied: authoring still runs
-// on `anthropic-api`, because the drafting floor is a MODEL-TIER rule (PRD v1.36:
-// sonnet minimum) that no other provider has been screened against, and screening
-// it is a paid exercise nobody has run. What item 32 changes here is that the
-// identity now goes through the factory, so admitting a second authoring provider
-// is a table lookup and a flag rather than a rewrite. The remaining gap is logged
-// as a finding, never quietly carried.
-const PROVIDER_NAME = 'anthropic-api';
-// The same tier run-u drafts and works on. The declaration is authored by a
-// model, so the floor is the drafter floor (PRD v1.36: sonnet MINIMUM).
-const MODEL = resolveProvider(PROVIDER_NAME).tiers.sonnet;
 /** the close precheck / seed read spawns real toolchains; the slowest stage is a
  * suite. Headroom, not a budget — and it is passed EXPLICITLY rather than left
  * to a default, because a defaulted cap is a silent second ceiling. */
@@ -149,6 +139,32 @@ if (carried.length) {
     + 'silently overwritten, and a signed spec that does not contain what its author typed is the failure nobody sees.');
 }
 
+// THE AUTHORING PROVIDER (PRD item 34 L17) — resolved from the DRAFT's OWN
+// `provider` field, the same rule `scripts/run-u.mjs` applies to the worker
+// (`resolveProvider(spec.provider)`, no CLI flag, no default): authoring used
+// to hardcode `anthropic-api` for both the scout and the drafter, which is
+// exactly the scattering `src/providers.js`'s factory exists to stop. The
+// draft interview (`run-interview.mjs`) now asks for a provider the same way
+// it asks for everything else the operator owns; this script just resolves
+// whatever it wrote down. Missing or unrecognized dies here, loud, the same
+// message `resolveProvider` throws (it names the known table).
+//
+// STILL UNPROVEN LIVE past Anthropic: the drafting floor (PRD v1.36:
+// sonnet-tier minimum) has only ever run against `anthropic-api` in practice.
+// A DeepSeek draft is legal here today, but proving it is M3's DeepSeek proof
+// run, not this script.
+const providerEntry = (() => {
+  try { return resolveProvider(draft?.provider); } catch (e) { return die(/** @type {Error} */ (e).message); }
+})();
+const PROVIDER_NAME = /** @type {string} */ (draft.provider);
+// The same tier run-u drafts and works on. The declaration is authored by a
+// model, so the floor is the drafter floor (PRD v1.36: sonnet MINIMUM).
+const MODEL = /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).tiers.sonnet;
+// spec.baseUrl (PRD item 28, ruling (d)) — the same forwarding rule run-u
+// applies: forwarded only when the draft names one, every provider
+// constructor defaults it on its own when absent.
+const baseUrl = typeof draft?.baseUrl === 'string' ? draft.baseUrl : undefined;
+
 // THE JUDGE THIS RUN'S OWN WORKER RESOLVES TO (PRD item 32.1) — resolved ONCE,
 // here, from the DRAFT, and reused for BOTH the compose-time stamp (the
 // declaration-authoring call's own `judgeModel` argument, below) and the
@@ -183,7 +199,7 @@ const draftJudge = resolveDraftJudge(draft);
 
 // Secrets load from the environment; they never enter argv (a command line is
 // world-readable on /proc) and they are never printed.
-const AUTHOR_ENV_KEY = resolveProvider(PROVIDER_NAME).envKey;
+const AUTHOR_ENV_KEY = /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).envKey;
 const apiKey = process.env[AUTHOR_ENV_KEY];
 if (!apiKey) { console.error(`${AUTHOR_ENV_KEY} not set (secrets load from the environment — never the tree, never argv)`); process.exit(2); }
 /** The judge's key follows the RESOLVED judge provider's own env var, with
@@ -227,7 +243,7 @@ const costLine = (cost) => {
   return `$${cost.costUsd.toFixed(6)} across ${cost.calls?.length ?? 0} call(s) (spend complete)`;
 };
 
-console.log(`== close-authoring, run ${runid} ==  ${MODEL}`);
+console.log(`== close-authoring, run ${runid} ==  ${PROVIDER_NAME}/${MODEL}`);
 console.log(`  patient  ${PATIENT}`);
 console.log(`  verdict  ${VERDICT}  (the USER's pick — this run authors a close that promises to stay at or below it)`);
 console.log(`  lang     ${LANG}`);
@@ -240,8 +256,8 @@ console.log(`  timeout  ${TIMEOUT_MS}ms per close stage`);
 console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL });
-emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
+const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL, baseUrl });
+emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
 // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
 //

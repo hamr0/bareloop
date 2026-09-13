@@ -25,6 +25,8 @@ import {
   questionsFor, requiredAnswersFor, VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES,
   AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
+import { PROVIDERS } from '../src/job.js';
+import { resolveProvider } from '../src/providers.js';
 
 // The fixture class for every wizard test below: the LONGEST question set the
 // menu still offers, so a test that walks every question walks the widest one.
@@ -49,15 +51,30 @@ const outDir = () => join(base, `out-${n += 1}`);
  * whether the paid-step offer is put at all, and the default is unkeyed. The
  * scenarios that set one use a value no provider would accept — nothing here
  * talks to a provider, and every keyed scenario still answers the offer "n".
+ * `provider` defaults to `anthropic-api` (item 34 L17 made it a REQUIRED flag with
+ * no library default) — `null` omits `--provider` entirely, for the scenarios that
+ * test the missing-flag refusal itself.
  * @param {{verdict?: string, patient?: string, out: string, budget?: string|null,
- *   key?: string, lines: string[]}} o
+ *   provider?: string|null, key?: string, lines: string[]}} o
  */
-const interview = ({ verdict = CLASS, patient = base, out, budget = '2.50', key = '', lines }) => {
-  const args = ['--patient', patient, '--verdict', verdict, '--out', out, ...(budget === null ? [] : ['--budget', budget])];
+const interview = ({
+  verdict = CLASS, patient = base, out, budget = '2.50', provider = 'anthropic-api', key = '', lines,
+}) => {
+  const args = [
+    '--patient', patient, '--verdict', verdict, '--out', out,
+    ...(budget === null ? [] : ['--budget', budget]),
+    ...(provider === null ? [] : ['--provider', provider]),
+  ];
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf8', timeout: 120_000, input: `${lines.join('\n')}\n`,
-    // no key VALUE reaches this script and it must never need one
-    env: { ...process.env, ANTHROPIC_API_KEY: key },
+    // no key VALUE reaches this script and it must never need one. `key` only
+    // ever targets ANTHROPIC_API_KEY (the fixture default provider); the other
+    // two table entries are forced BLANK regardless of the real shell's own
+    // env, so a provider-swap scenario's "not set" reading can never depend on
+    // whatever happens to be exported in the machine actually running the test.
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
   });
   if (r.status === null) throw new Error(`run-interview.mjs never exited (${r.error?.code ?? r.signal ?? '?'}):\n${(r.stdout ?? '').slice(0, 400)}`);
   return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
@@ -251,6 +268,44 @@ test('an unknown verdict is a TYPO, refused with the menu handed over enumerated
   // (the includes() CHECK below this still runs against the full VERDICT_CLASSES).
   assert.match(r.out, new RegExp(`one of ${MENU_CLASSES.join(' \\| ')}`));
   assert.equal(existsSync(out), false);
+});
+
+// ══ --provider (PRD item 34 L17): required, no default, no re-lock ═══════════
+
+test('--provider is REQUIRED — missing it refuses at the usage door, naming the same menu src/job.js admits', () => {
+  const out = outDir();
+  const r = interview({ provider: null, out, lines: ['n'] });
+  assert.equal(r.code, 2);
+  assert.match(r.out, /^usage: node scripts\/run-interview\.mjs/);
+  assert.match(r.out, new RegExp(`--provider <${PROVIDERS.join('\\|')}>`), 'the usage line names the same menu src/job.js\'s own validator admits');
+  assert.equal(existsSync(out), false);
+});
+
+test('--provider given with no value refuses the same way — an empty flag is not a silent default', () => {
+  const out = outDir();
+  const r = interview({ provider: '', out, lines: ['n'] });
+  assert.equal(r.code, 2);
+  assert.match(r.out, /^usage: node scripts\/run-interview\.mjs/);
+  assert.equal(existsSync(out), false);
+});
+
+test('--provider lands in the draft VERBATIM, and no anthropic-api literal is forced on a different pick', () => {
+  const out = outDir();
+  const r = interview({ provider: 'openai-api', out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.equal(draft.provider, 'openai-api');
+});
+
+test('the offer\'s key name FOLLOWS the chosen provider, never a hardcoded ANTHROPIC_API_KEY', () => {
+  const out = outDir();
+  const r = interview({ provider: 'openai-api', out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  const envKey = resolveProvider('openai-api').envKey;
+  assert.equal(envKey, 'OPENAI_API_KEY');
+  assert.match(r.out, new RegExp(`${envKey} is not set in this shell`));
+  assert.match(r.out, new RegExp(`${envKey}=\\.\\.\\. node scripts/run-author\\.mjs`));
+  assert.doesNotMatch(r.out, /ANTHROPIC_API_KEY/, 'a different provider must never surface the old hardcoded key name');
 });
 
 test('a patient that is not on the machine refuses at the door, not after twenty questions', () => {

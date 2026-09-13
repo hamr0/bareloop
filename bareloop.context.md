@@ -837,9 +837,14 @@ is exactly what F87 forbids.
 `runInterview` is a pure function over answers with no prompt loop in it, so until
 `scripts/run-interview.mjs` existed the only way in was to hand-write an `answers.json` and a
 spec draft — precisely the SWE tax this product refuses. That script is the half that ASKS
-(`--patient <repoPath> --verdict <class> --out <outdir> [--budget <usd>] [--lang js]`, default
-`js`), and it is deliberately GLUE: **it calls no provider at all**, so a whole interview costs
-$0 and no model ever sees it. Everything load-bearing in it is borrowed rather than respelled —
+(`--patient <repoPath> --verdict <class> --provider <anthropic-api|openai-api|gemini-api|clipipe-subscription>
+--out <outdir> [--budget <usd>] [--lang js]`, default `js`), and it is deliberately GLUE: **it
+calls no provider at all**, so a whole interview costs $0 and no model ever sees it. `--provider`
+is REQUIRED with NO default — bareloop is LLM-agnostic, and defaulting it would silently re-lock
+every interview onto one vendor; missing or empty dies loud, at the door, naming the same menu
+`src/job.js`'s own validator admits. It is written into the draft's `provider` field, so
+`scripts/run-author.mjs` needs no flag of its own — it resolves whatever the interview wrote
+down. Everything load-bearing in it is borrowed rather than respelled —
 the QUESTIONS are the library's frozen sets (`questionsFor` / `requiredAnswersFor`), printed as
 handed over and never re-worded, re-ordered or re-numbered by the script; the REFUSALS are
 `runInterview`'s; the SCRUB is `redactSecrets` at capture AND again at the library's own ingest,
@@ -871,7 +876,9 @@ spends it.
 
 **It ends by OFFERING the paid step, and the offer's default is NO.** `run-author.mjs` is a
 DIFFERENT PROCESS under its own ceiling; the interview prints its exact command line (with
-`--budget` propagated only when one was given, and a note when `ANTHROPIC_API_KEY` is unset)
+`--budget` propagated only when one was given, and a note when the CHOSEN provider's own key —
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, resolved through the same provider table
+`run-author.mjs` and `run-u.mjs` share — is unset in this shell)
 before asking `Run it now? [y/N]`, so declining still leaves a command to paste and two files
 already on disk. Only an explicit yes spends — the answer that costs nothing is the one you get
 by saying nothing, the same lean the pause's doors take. On a yes it releases stdin before
