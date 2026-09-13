@@ -24,6 +24,15 @@ import { closeJudges, judgedStages, JUDGED_FLOOR_KIND } from '../src/kinds.js';
 const judgedStage = (name = 'verdict') => ({ name, kind: JUDGED_FLOOR_KIND, params: { paths: ['src/mod.js'] } });
 const cmdStage = (name = 'tests') => ({ name, kind: 'cmd-exit-zero', params: { cmd: 'npm test' } });
 
+// Pins the WIRING (the judge key is read from JUDGE_API_KEY / judgeEntry.envKey
+// and gates the judge demand and provider construction), never a specific local
+// variable spelling — a behaviour-preserving rename must not break this suite.
+function judgeKeyIdentifier(src) {
+  const m = src.match(/const (\w+) = process\.env\.JUDGE_API_KEY \?\? process\.env\[judgeEntry\.envKey\];/);
+  assert.ok(m, 'the judge key follows the RESOLVED judge provider\'s own env var, with the role-named override in front');
+  return m[1];
+}
+
 // ── the predicate ───────────────────────────────────────────────────────────
 
 test('a close with no judged stage does not judge — the mechanical green case, which must run on the worker key alone', () => {
@@ -83,11 +92,10 @@ test('scripts/run-u.mjs demands the WORKER key unconditionally and the JUDGE key
     'the judge demand asks the shared predicate');
   // Item 32.1 resolves WHICH model judges before deciding whether a key is
   // demanded for it, so the demand now reads a resolved-provider key
-  // (`judgeApiKey`, following `judgeEntry.envKey`) rather than the pre-item-32
-  // `apiKey` local that assumed the judge was always Anthropic.
-  assert.match(src, /const judgeApiKey = process\.env\.JUDGE_API_KEY \?\? process\.env\[judgeEntry\.envKey\];/,
-    'the judge key follows the RESOLVED judge provider\'s own env var, with the role-named override in front');
-  assert.match(src, /if \(JUDGES && !judgeApiKey\)/,
+  // (following `judgeEntry.envKey`) rather than the pre-item-32 `apiKey`
+  // local that assumed the judge was always Anthropic.
+  const judgeKeyIdent = judgeKeyIdentifier(src);
+  assert.match(src, new RegExp(`if \\(JUDGES && !${judgeKeyIdent}\\)`),
     'and fires only when the close actually judges');
   assert.ok(!/kind === JUDGED_FLOOR_KIND/.test(src),
     'the runner holds NO open-coded copy of the judged-stage predicate');
@@ -111,7 +119,8 @@ test('the judge provider is built through the factory only when its key exists �
   // judge identity `resolveJudge` handed back — never a literal `AnthropicProvider`
   // import standing in for "the judge".
   const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
-  assert.match(src, /const judgeProvider = judgeApiKey\s*\n\s*\? makeProvider\(judge\.provider, \{ apiKey: judgeApiKey, model: judge\.model/,
+  const judgeKeyIdent = judgeKeyIdentifier(src);
+  assert.match(src, new RegExp(`const judgeProvider = ${judgeKeyIdent}\\s*\\n\\s*\\? makeProvider\\(judge\\.provider, \\{ apiKey: ${judgeKeyIdent}, model: judge\\.model`),
     'a provider constructed with apiKey:undefined would fail at CALL time, deep in a close, after the run has been paid for — and it is built through the SAME factory the worker uses, never a hardcoded class');
   assert.match(src, /: null;/, 'the null branch survives: no key, no provider, never one holding undefined');
   assert.ok(!/new AnthropicProvider/.test(src),

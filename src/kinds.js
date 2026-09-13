@@ -483,12 +483,14 @@ async function sh(cmd, args, { cwd, env: declared = {}, timeoutMs = DEFAULT_TIME
 }
 
 /**
- * git, read-only, in a repository. Faults come back as `ok:false` with the
- * stderr — a caller decides whether that is a stop.
+ * git, in a repository (reads by every caller in this file; `src/source.js`
+ * also uses it for the hidden-git seed's `init`/`add`/`commit`). Faults come
+ * back as `ok:false` with the stderr — a caller decides whether that is a
+ * stop.
  *
  * Exported (PRD item 33/M2, `src/source.js`) so the hidden-git seed a plain
  * folder/file/URL job runs against goes through the SAME spawn primitive as
- * every other git read in this file — a second `spawn('git', …)` for the
+ * every other git call in this file — a second `spawn('git', …)` for the
  * source front door would be a second instrument with its own timeout and
  * buffer ceiling to keep in sync with this one.
  * @param {string} cwd @param {string[]} args

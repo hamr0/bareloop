@@ -922,12 +922,27 @@ test('frontDoorFromManifest: a manifest present but with no destination declared
 // this test proves only that the script actually WIRES them, by source, since
 // that is the one thing the tests above cannot see.
 test('run-u.mjs wiring: both front-door call sites are wired to the real functions (source-text proof — see comment above)', async () => {
+  // Pins the WIRING SHAPE (which function feeds which, and the shared workdir/
+  // destination each call proves against), never the local variable spellings
+  // (`wd`, `frontDoor`, `dp`, `co`, …) — a behaviour-preserving rename must not
+  // break this suite, only a change to what calls what.
   const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
   assert.match(src, /import\s*\{\s*readSourceManifest,\s*frontDoorFromManifest,\s*proveDestination,\s*copyOut\s*\}\s*from\s*'\.\.\/src\/source\.js'/);
-  assert.match(src, /const sourceManifest = await readSourceManifest\(dirname\(wd\)\)/, 'the manifest must be read from the tree\'s own parent, before any token spends');
-  assert.match(src, /const dp = await proveDestination\(frontDoor\.destination, \{ into: dirname\(wd\) \}\)/, 'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
-  assert.match(src, /if \(outcome === 'green' && frontDoor\)/, 'the copy-out gate fires on the ONE outcome string a graded close mints');
-  assert.match(src, /const co = await copyOut\(\{ tree: wd, into: dirname\(wd\), destination: frontDoor\.destination \}\)/, 'the copy-out call site, same scratch-root containment proof');
+
+  const manifestCall = src.match(/const (\w+) = await readSourceManifest\(dirname\((\w+)\)\);/);
+  assert.ok(manifestCall, 'the manifest must be read from the tree\'s own parent, before any token spends');
+  const [, manifestVar, wdVar] = manifestCall;
+
+  const frontDoorCall = src.match(new RegExp(`const (\\w+) = frontDoorFromManifest\\(${manifestVar}\\);`));
+  assert.ok(frontDoorCall, 'the front door is derived from that same manifest read');
+  const [, frontDoorVar] = frontDoorCall;
+
+  assert.match(src, new RegExp(`const \\w+ = await proveDestination\\(${frontDoorVar}\\.destination, \\{ into: dirname\\(${wdVar}\\) \\}\\);`),
+    'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
+  assert.match(src, new RegExp(`if \\(outcome === 'green' && ${frontDoorVar}\\)`),
+    'the copy-out gate fires on the ONE outcome string a graded close mints');
+  assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into: dirname\\(${wdVar}\\), destination: ${frontDoorVar}\\.destination \\}\\);`),
+    'the copy-out call site, same scratch-root containment proof');
   assert.match(src, /emit\('destination-written', \{ path: f\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one, for EVERY file copyOut returns');
   assert.match(src, /emit\('destination-refused'/);
 });
