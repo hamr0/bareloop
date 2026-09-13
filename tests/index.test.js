@@ -118,6 +118,42 @@ test('the documented public surface is actually exported from src/index.js', () 
   assert.deepEqual(missing, [], `documented but not exported — the adopter contract is false: ${missing.join(', ')}`);
 });
 
+// PRD item 34 L4 follow-up: the SWITCH to reading the doc live (F167, above) covered
+// fewer names than the hand list it replaced — the hand list named ~52 exported
+// symbols, the extractor derived ~50, because 37 of them sat in the doc's flowing
+// prose with no marker idiom the extractor reads (e.g. "`mintBridge(meta, record)`
+// builds a new entry..." never says "exported"). The extractor silently stopped
+// covering them; nothing reasserted it. `bareloop.context.md` now carries an
+// explicit marker for each of the 37 (an `import { ... } from 'bareloop'` example,
+// or a tight "`X` is/are exported" sentence, next to their existing prose) — this
+// pins that they stay derived, so a future doc edit that drops a marker reds HERE
+// rather than silently narrowing the guard again.
+//
+// This is deliberately SCOPED to these 37, not a full reverse guard (every real
+// export documented): a live count found 169 of `src/index.js`'s 255 exports still
+// undocumented by any marker idiom — far past a doc-rewrite this fix's own scope,
+// reported to hamr rather than papered over with a blanket assertion.
+test('the 37 names restored by item 34 L4 stay DERIVED from the real doc, not silently dropped again', () => {
+  const restored = [
+    'runStages', 'globToPrefix', 'scanSecrets',
+    'classifyIncidents', 'foldLedger', 'ledgerDeltas', 'LEDGER_CLASSES',
+    'BRIDGE_SCHEMA', 'validateBridge', 'listingRow', 'loadGate', 'mintBridge',
+    'appendGreen', 'appendRed', 'loadBridge', 'loadRegistry', 'saveBridge',
+    'makeRegistry', 'registryExists', 'renderListing', 'selectionPrompt',
+    'QUARANTINED_VERDICTS', 'quarantinesCredit', 'newestEligibleVersion',
+    'reuseEligibility', 'recordDoor', 'applyDoorDecision',
+    'validateEnvelope', 'resolveTrySpec', 'resolveReuse', 'reuseSpecHash',
+    'selectBridge', 'runReuse', 'REUSE_GRADED_RED', 'readResume', 'resumeTreeGate',
+  ];
+  const doc = readFileSync(CONTEXT_DOC, 'utf8');
+  const documented = new Set(documentedExportNames(doc));
+  const dropped = restored.filter((n) => !documented.has(n));
+  assert.deepEqual(dropped, [], `no longer derived from the doc — the marker for these was lost: ${dropped.join(', ')}`);
+  // and every one of them is a REAL export, same rule as the guard above
+  const missing = restored.filter((n) => bareloop[n] === undefined);
+  assert.deepEqual(missing, [], `restored as "documented" but not actually exported: ${missing.join(', ')}`);
+});
+
 test('documentedExportNames: the four idioms it reads, on a small fixture (fail-first proof for the extractor itself)', () => {
   const fixture = [
     "import { alpha, beta } from 'bareloop';",

@@ -29,6 +29,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
   source-front-door helpers. Covers the doc's explicit export-marker idioms, not every
   function mentioned in flowing prose — a broader sweep was tried and produced 21 false
   positives out of 97 candidates on this doc, noise a regex cannot safely resolve.
+- **The doc-reading extractor's own coverage gap closed (PRD item 34 L4 follow-up):** the
+  switch to reading `bareloop.context.md` live covered fewer names than the hand-typed array
+  it replaced — 37 exported names (`mintBridge`, `appendGreen`, `BRIDGE_SCHEMA`, the rest of
+  the reuse registry, plus `runStages`/`globToPrefix`/`scanSecrets`/three ledger helpers) sat
+  in flowing prose with no marker idiom the extractor reads, so the guard silently stopped
+  covering them. `bareloop.context.md` now carries an explicit marker (an `import { ... }
+  from 'bareloop'` example, or a tight "X is/are exported" sentence) for each of the 37, and
+  `tests/index.test.js` pins that they stay derived. A live count found 169 of
+  `src/index.js`'s 255 exports still undocumented by any marker idiom — reported, not fixed
+  here; a full reverse guard (every real export documented) was considered and rejected as
+  out of this fix's scope.
 - **`SCOUT_LABEL` gains a third state in `scripts/run-u.mjs` (PRD item 34 L2):** an explicit
   `--scout on` used to print the identical "scout ON (default)" text as no flag at all,
   indistinguishable in printed logs/re-invocation lines — which matters for the

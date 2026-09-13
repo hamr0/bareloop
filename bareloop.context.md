@@ -428,8 +428,8 @@ per-stage graded numbers) on the close-fix loop. A governor may supply an option
 there is no planner at the close); it may never override the category or the outcome. Both
 modules are INTERNAL (not on the public surface), so a direct `ralph` caller uses
 `capRuns` — the strike rule reaches you through `runJob`/`runPlan`'s `strikeLimit`. `close` is an argv
-whose exit code is truth (`runClose` is also exported — **async since 0.6: `runClose` and
-`runStages` return Promises**; the child is awaited instead of spawnSync so a running close
+whose exit code is truth (`runClose` and `runStages` are also exported — **async since 0.6:
+both return Promises**; the child is awaited instead of spawnSync so a running close
 no longer freezes the host event loop (F68); every close semantic — timeout signal, output
 bounds, gap shape, exit bands — is byte-identical); the red gap text feeds the next
 iteration, tail-biased when bounded (400 head + 1500 tail — the assertion diff lives at
@@ -532,6 +532,8 @@ contract); returns the parsed spec on ok, `null` on any red. A spec carrying the
 generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`,
 `CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`, `STORE_VERBS`,
 `VERDICT_TYPES`, `LOCKED_VERDICTS` — plus `checkMenu` itself.
+`globToPrefix(scope)` and `scanSecrets(text)` are exported too — the write-scope prefix
+mapping and the one secret-shape sweep `validateJob` itself is built from (`src/validate.js`).
 
 ### `validatePlan(input, { job, maxStepRounds?, scopes? })` → `{ ok, reds, plan }` — `src/plan.js`
 
@@ -1735,6 +1737,23 @@ chain's ceiling); the WALL does not (F103).
 
 ### The reuse registry (Layer 3) — `src/bridges.js`, `src/selection.js`
 
+Every name below is exported from the package root:
+
+```js
+import {
+  BRIDGE_SCHEMA, QUARANTINED_VERDICTS, quarantinesCredit, deriveStatus, validateBridge,
+  mintBridge, appendGreen, appendRed, newestEligibleVersion, reuseEligibility, recordDoor,
+  applyDoorDecision, listingRow, loadGate, loadBridge, loadRegistry, saveBridge, makeRegistry,
+  registryExists, renderListing, selectionPrompt,
+} from 'bareloop';
+```
+
+`BRIDGE_SCHEMA` is the literal schema tag (`'bridge-v1'`) every stored entry carries and
+`validateBridge(input)` checks against — never throws on JSON text or plain parsed data,
+the same ingest contract `validateJob`/`validatePlan` hold; every failure is a named red,
+never a throw. `registryExists(dir)` is the one predicate `runReuse` and the CLI both ask
+before treating a path as a real registry, rather than conjuring one from a typo.
+
 A **bridge** is the plan a green actually executed, kept so the next run of the same SHAPE
 starts from it instead of cold. Storage is a directory of plain JSON files at an
 **operator-supplied path** — no database, no default location (a missing registry reds
@@ -1848,7 +1867,9 @@ draft anywhere in the prompt.
 
 **`renderListing(registry)` / `selectionPrompt(listing, ask)` — `src/selection.js`.** Pure
 text: they read no file, call no model and decide nothing. `renderListing` takes
-`loadRegistry`'s result (or a bare array) and renders one compact block per bridge — name,
+`loadRegistry`'s result (or a bare array), maps each entry through the exported
+`listingRow(bridge)` (the same per-entry summary — name, goal, status, counts, cost band —
+`renderListing` renders), and prints one compact block per bridge — name,
 the goal sentence it greened, status, greens/reds with the last outcome, and the cost/time
 BAND of its greens. An unknown cost or duration renders `UNKNOWN` and a partial aggregate
 says how many it skipped (never a `$0.00` that reads as exact); entries that could not be
@@ -1860,6 +1881,15 @@ selection CALL, the pin/shortlist/force-cold flow and the parse of the answer ar
 or `runReuse` below, which is the shipped one.
 
 ### The reuse ENVELOPE and `runReuse` (Layer 3, D7) — `src/reuse.js`
+
+Exported from the package root:
+
+```js
+import {
+  validateEnvelope, resolveTrySpec, resolveReuse, reuseSpecHash, selectBridge, runReuse,
+  REUSE_GRADED_RED,
+} from 'bareloop';
+```
 
 `runReuse` is `runJob` under an operator-signed **envelope**: try a stored workflow, then
 another, then draft cold — hamr's *"$5 and 30 mins x2 then start anew"*. It composes; it
@@ -1979,6 +2009,12 @@ signed for a different `--tries` is refused, and says so), the F67 outside watch
 the secrets scan.
 
 #### Resuming a killed run (module C)
+
+Exported from the package root: `readResume` and `resumeTreeGate` (both below).
+
+```js
+import { readResume, resumeTreeGate } from 'bareloop';
+```
 
 A reuse run is up to `tries + 1` full jobs long, so a kill mid-run is a real event and it
 must not cost the whole envelope. **`readResume(events, {deathAt?, direct?, resumableOutcomes?})`**
@@ -2244,8 +2280,15 @@ the same refusal emits, so counting the escalation too would double every refusa
 `close-verdict`/`artifact-red` stay worker stories, `pr-red` operator environment.
 `suggestedAsk` on every row is a template seed for an upstream ask — filing stays human;
 status rows (`open → filed → fixed → consumed`) are human-appended, and the fold shows
-the latest per key. Pure pieces exported for custom folds: `classifyIncidents(events,
-{spine?})`, `foldLedger(rows)`, `ledgerDeltas(fold, occurrences)`. Riding with them,
+the latest per key. Pure pieces exported for custom folds:
+
+```js
+import { classifyIncidents, foldLedger, ledgerDeltas, LEDGER_CLASSES } from 'bareloop';
+```
+
+`classifyIncidents(events, {spine?})` classifies raw events; `foldLedger(rows)` derives the
+per-key fold; `ledgerDeltas(fold, occurrences)` reads what changed since the last pass;
+`LEDGER_CLASSES` is the frozen menu above. Riding with them,
 and deliberately NOT a ledger class: `rateProvenance(record)` → `vouched|guessed|unpriced|unknown`
 and `spendProvenance(events)` → per-provenance `{rounds, usd, unpricedRounds}` buckets answer
 "how much of this run's spend was priced by a rate nobody vouched for" (BA-21 — see *Every cost
