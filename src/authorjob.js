@@ -419,7 +419,7 @@ function composerRefusal(reds) {
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
- *   authorFn?: Function, authorOpts?: object,
+ *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
  *   closeDecl: any, seedRef: string|null, authoring: any, judged: any, reds: Red[],
@@ -429,6 +429,11 @@ export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
+  // Q2 IS GONE from the numbered interview (PRD item 33 M3 piece 3) — the
+  // fence it used to describe in prose is now Destination's own proven
+  // `writeScope`, and this is what carries it into the composer prompt
+  // (`authorPrompt`'s `writeScopeBlock`) instead of letting it vanish.
+  writeScope = null,
   // THE JUDGE IDENTITY (PRD item 32.1), required only on the path that actually
   // composes a judged stage — the stored calibration set carries the judge that
   // certified it, and there is no library pin to fall back to. Absent on a purely
@@ -558,7 +563,7 @@ export async function authorCloseForJob({
   const authored = await authorFn({
     workdir, seedRef: seed, lang, verdictType: picked,
     answers: interview.answers, questions: questions ?? questionsFor(picked),
-    scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, ...authorOpts,
+    scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope, ...authorOpts,
   });
 
   if (!authored.ok) {

@@ -154,16 +154,18 @@ test('module 3 ruling 4 — softgreen INHERITS green\'s guard battery: the same 
 
 // ── 3. the seven questions ──────────────────────────────────────────────────
 
-test('module 3 §4.6 — the softgreen interview is green\'s five BYTE FOR BYTE, plus Q6 and Q7', () => {
+test('module 3 §4.6 — the softgreen interview is green\'s three BYTE FOR BYTE, plus Judge Examples (PRD item 33 M3 piece 3)', () => {
   const qs = questionsFor('soft-green');
-  assert.equal(Object.keys(qs).length, 7, 'nothing hardcodes the count anywhere else — the library reports it');
+  assert.equal(Object.keys(qs).length, 4, 'nothing hardcodes the count anywhere else — the library reports it');
   for (const [n, q] of Object.entries(GREEN_QUESTIONS)) {
     assert.equal(qs[n], q, `question ${n} is green's own string, byte for byte`);
   }
-  assert.equal(qs[6], 'When you judge the result yourself, what separates a pass from a fail? Name the few things '
-    + 'you actually look for.');
-  assert.equal(qs[7], 'Give one example you\'d pass and one you\'d fail, and say why.');
-  assert.deepEqual(requiredAnswersFor('soft-green'), [1, 2, 3, 4, 5, 6, 7]);
+  // Judge Examples replaces the old Q6+Q7: one field, Q7's wording verbatim —
+  // the old Q6 ("what separates a pass from a fail") is retired as its own
+  // question, since the "why" half of a real pass/fail pair is what the
+  // rubric card now compiles from (cardauthor.js).
+  assert.equal(qs[4], 'Give one example you\'d pass and one you\'d fail, and say why.');
+  assert.deepEqual(requiredAnswersFor('soft-green'), [1, 2, 3, 4]);
   assert.equal(QUESTION_SETS['soft-green'].locked, false);
   assert.equal(QUESTION_SETS['soft-green'].questions, SOFTGREEN_QUESTIONS);
 });
@@ -175,7 +177,7 @@ test('module 3 — the composer statement exists and says what a softgreen close
   assert.match(s, /mechanical/i, 'mechanical first is stated as an ORDER, the way hitl\'s is');
 });
 
-test('module 3 — the Q6/Q7 answers reach the composer verbatim, the way hitl\'s Q6 does', () => {
+test('module 3 — the Judge Examples answer reaches the composer verbatim, the way hitl\'s last answer does', () => {
   const answers = Object.fromEntries(requiredAnswersFor('soft-green').map((n) => [n, `answer ${n}`]));
   const p = authorPrompt({
     answers,
@@ -186,9 +188,8 @@ test('module 3 — the Q6/Q7 answers reach the composer verbatim, the way hitl\'
     verdictType: 'soft-green',
     guards: classGuards({ verdictType: 'soft-green', lang: 'js' }),
   });
-  assert.ok(p.includes(questionsFor('soft-green')[6]), 'the rubric question travels into the brief');
-  assert.ok(p.includes(questionsFor('soft-green')[7]), 'and so does the calibration question');
-  assert.ok(p.includes('A7. answer 7'), 'with the person\'s own words beside it');
+  assert.ok(p.includes(questionsFor('soft-green')[4]), 'the judge-examples question travels into the brief');
+  assert.ok(p.includes('A4. answer 4'), 'with the person\'s own words beside it');
 });
 
 // ── 4. the composer's menu is CLASS-SCOPED ──────────────────────────────────

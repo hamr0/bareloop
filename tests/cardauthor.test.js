@@ -85,14 +85,15 @@ const closeDecl = (/** @type {any} */ over = {}) => ({
   ...over,
 });
 
+// PRD item 33 M3 piece 3: the green trio is 1-3 and Judge Examples is the
+// soft-green quartet's own 4th key (`SOFTGREEN_JUDGE_EXAMPLES_KEY`) — the old
+// Q6+Q7 pair is now this ONE answer, Q7's wording, with the "why" half.
 const ANSWERS = () => ({
   1: 'document every exported function',
-  2: 'src/ changes; nothing else',
-  3: 'the tests must not change',
-  4: 'I read the file',
-  5: 'if the docs are wrong',
-  6: 'every exported function has a doc block, and every parameter is described',
-  7: 'I would pass a function with a full JSDoc block; I would fail one with no comment at all.',
+  2: 'I read the file',
+  3: 'the tests must not change, and nothing counts as worse if the docs are wrong',
+  4: 'I would pass a function with a full JSDoc block, every exported function has a doc block and every '
+    + 'parameter is described; I would fail one with no comment at all.',
 });
 
 /** a scripted model boundary that delivers the proposal through the tool */
@@ -137,16 +138,15 @@ test('the schema pins the SIZE both ways — ten is hamr\'s number, not a sugges
   assert.deepEqual(s.properties.cases.items.properties.expect.properties.verdict.enum, [...CASE_VERDICTS]);
 });
 
-test('the compile prompt carries Q6 and Q7 VERBATIM, and the rulebook it must select from', () => {
+test('the compile prompt carries the Judge Examples answer VERBATIM, and the rulebook it must select from', () => {
   const p = cardCasesPrompt({ answers: ANSWERS() });
-  assert.ok(p.includes(ANSWERS()[6]), 'Q6\'s answer reaches the compiler unedited');
-  assert.ok(p.includes(ANSWERS()[7]), 'Q7\'s answer reaches the compiler unedited');
+  assert.ok(p.includes(ANSWERS()[4]), 'the Judge Examples answer reaches the compiler unedited');
   for (const id of JUDGE_RULE_IDS) assert.ok(p.includes(id), `the rulebook names ${id}`);
 });
 
 // ── 2. THE CARD ─────────────────────────────────────────────────────────────
 
-test('Q6 compiles to a card validateCard accepts — the same gate the runner uses', () => {
+test('the Judge Examples answer compiles to a card validateCard accepts — the same gate the runner uses', () => {
   const r = signJudgedArtifacts({ proposal: PROPOSAL() });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.equal(validateCard(r.card).ok, true);

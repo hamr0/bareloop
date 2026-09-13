@@ -44,8 +44,32 @@ feature lands, **patch** = docs, fixes, scaffolding.
   checks). The whole known-language table is one data list, keyed against `GENRE_LANGUAGES`
   (`src/authoring.js`) — a later language landing there (M3b) needs no new code path here.
 
+- **The question sets become the unified intake form (PRD item 33 M3 piece 3, signed ruling
+  "The intake form (RULED)").** `src/authorflow.js` reshapes the green/soft-green/hitl question
+  sets to the ruled 6-field form: Source and Destination (already asked as mechanical fields
+  since M3 piece 2) plus a free-text trio — Goal (unchanged: "What do you want done?"), What
+  success looks like (unchanged: "How do you check today whether it's working?"), and Guardrails
+  (the old "must not change" and "worse than before" questions JOINED into one field, numbered
+  contiguously 1-3). Soft-green adds a fourth field, Judge Examples ("Give one example you'd
+  pass and one you'd fail, and say why" — the old Q7 verbatim; the old Q6 is retired as its own
+  question, since the "why" half of a real pass/fail pair is what `cardauthor.js`'s rubric
+  compile already read it for). hitl (never shown, kept in code) renumbers the same way. Source
+  and Destination's own wording now also lives in `src/authorflow.js` (`SOURCE_FIELD`,
+  `DESTINATION_FIELD_REPO`, `DESTINATION_FIELD_PLAIN`, `destinationFieldFor`), so
+  `scripts/run-interview.mjs` prints library text for all six fields, none of its own. What the
+  old Q2 used to tell the composer (which files change, which are read-only) now reaches
+  `authorPrompt` through a new optional `writeScope` parameter (`writeScopeBlock`), fed from
+  Destination's own proven write-scope fence end to end (`authorClose` → `authorCloseForJob` →
+  `scripts/run-author.mjs`'s `draft.writeScope`) rather than silently vanishing.
+
 ### Removed
 
+- **BREAKING: soft-green's rubric-card/calibration answer keys change shape (PRD item 33 M3
+  piece 3).** The old two-question pair (`answers[6]`, `answers[7]`) is now ONE answer at key
+  `4` (`SOFTGREEN_JUDGE_EXAMPLES_KEY`) — `src/cardauthor.js`'s `cardCasesPrompt` reads that one
+  key instead. Any hand-authored `answers.json` from before this change needs its keys
+  reshaped: green's old five (1-5) become three (1-3, Guardrails absorbing the old 3 and 5);
+  soft-green's old seven (1-7) become four (1-4).
 - **BREAKING: `--patient` is gone from `scripts/run-interview.mjs` and `scripts/run-author.mjs`
   (PRD item 33 M3, ruling 2).** `run-interview.mjs` asks Source (and Destination) as its own
   first questions instead; `run-author.mjs` takes `--source <tree>`, which must be a prepared

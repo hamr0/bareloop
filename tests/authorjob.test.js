@@ -109,20 +109,22 @@ const SPEC_DRAFT = {
   escalation: { mode: 'decision-ready' },
 };
 
+// PRD item 33 M3 piece 3: the green trio is Goal / Success / Guardrails —
+// Source and Destination (the old Q2) are MECHANICAL fields, proven against
+// the machine, and never a numbered answer here.
 const ANSWERS = {
   1: 'Make the type checker stop complaining about the mailer.',
-  2: 'The files under src.',
-  3: 'Please do not touch the tests.',
-  4: 'I run the checker by hand and read the list of complaints.',
-  5: 'If the complaints only went quiet because something was told to look the other way.',
+  2: 'I run the checker by hand and read the list of complaints.',
+  3: 'Please do not touch the tests, and it counts as worse if the complaints only went quiet because something '
+    + 'was told to look the other way.',
 };
 
 /** the same interview, for the class that buys a THIRD paid seam (the rubric and
- * calibration compile). Q6/Q7 are soft-green's own two extra questions. */
+ * calibration compile). Key 4 is soft-green's own Judge Examples question. */
 const JUDGED_ANSWERS = {
   ...ANSWERS,
-  6: 'Whether every exported function reads like somebody meant it to be read.',
-  7: 'I would pass a documented function and fail an undocumented one.',
+  4: 'I would pass a documented function and fail an undocumented one — whether every exported function reads '
+    + 'like somebody meant it to be read.',
 };
 
 /** a declaration carrying a judged stage — what makes the compile seam reachable */
@@ -182,28 +184,29 @@ test('a LOCKED class refuses at ADMISSION, BEFORE its questions run — counted 
 });
 
 test('the interview asks NOTHING about a genre and NOTHING about the repo — an unasked answer is not a slot', () => {
-  const { 5: _five, ...four } = ANSWERS;
-  assert.ok(runInterview({ verdictType: 'green', answers: four, repoPath: '/tmp/x' })
-    .reds.some((x) => x.path === 'answers.5'), 'every question in the set is required');
+  const { 3: _three, ...twoOfThree } = ANSWERS;
+  assert.ok(runInterview({ verdictType: 'green', answers: twoOfThree, repoPath: '/tmp/x' })
+    .reds.some((x) => x.path === 'answers.3'), 'every question in the set is required');
   // an answer to a question NOBODY ASKED is not read by anything — the genre confirm
-  // is not a slot any more, and neither is the repo question hamr dropped. "no" to
-  // either cannot refuse a job, and neither can enter the record.
-  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 6: 'no', 7: 'no' }, repoPath: '/tmp/x' });
+  // is not a slot any more, and neither is the repo question hamr dropped (now
+  // mechanical Source/Destination, not a numbered answer at all). "no" to either
+  // cannot refuse a job, and neither can enter the record.
+  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 4: 'no', 5: 'no' }, repoPath: '/tmp/x' });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.equal(r.refusal, null);
-  assert.equal(Object.hasOwn(r.answers, '6'), false, 'an unasked answer never enters the record');
-  assert.equal(Object.hasOwn(r.answers, '7'), false);
+  assert.equal(Object.hasOwn(r.answers, '4'), false, 'an unasked answer never enters the record');
+  assert.equal(Object.hasOwn(r.answers, '5'), false);
   const asked = Object.values(questionsFor('green')).join(' ');
   assert.ok(!/type[- ]?fix|type checker/i.test(asked), asked);
   assert.ok(!/repo|repository/i.test(asked), 'the repository is repoPath — structured input, never a prose answer');
 });
 
 test('an unfinished interview is REDS, never demand — an incomplete form is not a user asking for a capability', () => {
-  const { 4: _dropped, ...partial } = ANSWERS;
+  const { 2: _dropped, ...partial } = ANSWERS;
   const r = runInterview({ verdictType: 'green', answers: partial, repoPath: '/tmp/x' });
   assert.equal(r.ok, false);
   assert.equal(r.refusal, null, 'a missing answer must not inflate the admission evidence');
-  assert.ok(r.reds.some((x) => x.path === 'answers.4'));
+  assert.ok(r.reds.some((x) => x.path === 'answers.2'));
 });
 
 test('D13: a job with NO repository is refused — all three validity gates rest on a git seed', () => {

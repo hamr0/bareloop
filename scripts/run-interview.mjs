@@ -10,8 +10,13 @@
 //
 // THIS SCRIPT IS GLUE, and deliberately thin:
 //   - the QUESTIONS are the library's frozen sets (`questionsFor` /
-//     `requiredAnswersFor`, keyed by verdict class). Never re-worded here, never
-//     re-ordered, never stored — the script prints what the library hands it;
+//     `requiredAnswersFor`, keyed by verdict class), now the RESHAPED unified
+//     form (PRD item 33 M3 piece 3): Goal / Success / Guardrails, soft-green
+//     adding Judge Examples. Source and Destination are MECHANICAL fields —
+//     proven against the machine rather than typed — and their wording is
+//     ALSO the library's (`SOURCE_FIELD`, `destinationFieldFor`,
+//     `src/authorflow.js`), so this script prints what the library hands it
+//     for all six fields, never re-worded here, never re-ordered, never stored;
 //   - the REFUSALS are the library's (`runInterview`): a locked class refuses at
 //     admission as counted demand, an unfinished interview reds by question number;
 //   - the SCRUB is the library's: what lands on disk is `runInterview`'s own
@@ -57,6 +62,7 @@ import {
   runInterview, questionsFor, requiredAnswersFor,
   VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
+import { SOURCE_FIELD, destinationFieldFor } from '../src/authorflow.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
 import { resolveProvider } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
@@ -235,7 +241,9 @@ if (LOCKED_CLASSES.includes(VERDICT) || UNLISTED_CLASSES.includes(VERDICT)) {
 // ── 1. SOURCE — the form's first field (PRD item 33 M3, ruling 2) ────────────
 say('');
 say('── SOURCE ' + '─'.repeat(58));
-say('A local folder, subfolder or file, or one URL the machine can reach (no login, no setup).');
+// LIBRARY WORDING (PRD item 33 M3 piece 3, ruling 1) — this script prints what
+// `src/authorflow.js` hands it and writes none of its own.
+say(SOURCE_FIELD.prompt);
 const sourceRaw = await readAnswer('the source',
   'Source is required — this is what the job reads. Again:');
 const isUrl = /^https?:\/\//i.test(sourceRaw);
@@ -318,14 +326,14 @@ say('');
 say('── DESTINATION ' + '─'.repeat(53));
 /** @type {string} */
 let destinationRaw;
+// LIBRARY WORDING (PRD item 33 M3 piece 3, ruling 1) — printed from
+// `src/authorflow.js`'s own field, not re-typed here.
+const destinationField = destinationFieldFor(IS_REPO);
 if (IS_REPO) {
-  say('Which files the worker is allowed to WRITE — everything else is read-only.');
-  say('Patterns are relative to the repo root, comma-separated (e.g. `src/**`). The run works on a copy of the');
-  say('repo, so absolute paths are refused. The agent may narrow this and may never widen it.');
+  say(destinationField.prompt);
   destinationRaw = await readAnswer('the destination', 'the destination is not optional: a run with no fence is ungated spend. Again:');
 } else {
-  say('A LOCAL DIRECTORY the run may write into — never a filename. It may already exist. If it is the same');
-  say('directory as Source, changes are permitted there and nowhere else. Type an absolute path.');
+  say(destinationField.prompt);
   for (;;) {
     const raw = await readAnswer('the destination', 'the destination is not optional — a run that cannot land its result should never spend. Again:');
     // NEVER resolved against cwd here: `proveDestination` itself refuses a
@@ -414,6 +422,13 @@ say('');
 // reference standing where an instruction belongs. The RULE is unchanged — the goal
 // must state everything the close will check — and so is its price, now named as a
 // price rather than as a citation.
+//
+// KNOWN OVERLAP, NOT FIXED HERE (PRD item 33 M3 piece 3): the form's own free-text
+// question 1 (see GREEN_QUESTIONS in src/authorflow.js) is now the Goal field, so
+// this operator question asks a near-duplicate of it again, right after the recap
+// just printed the person's own answer back. Neither is ruled to merge (this
+// piece's task is the question SETS, not the operator's half), so both stand;
+// flagged rather than papered over.
 say('The GOAL — what the run is judged on at the end. In one or two sentences: what must be true at the end for');
 say('this to count as done? Say everything you\'ll check — anything you leave out here still gets checked at the');
 say('very end, and finding it only then wastes the run\'s money.');

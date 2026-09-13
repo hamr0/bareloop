@@ -44,7 +44,7 @@ import {
   REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
   QUESTION_SETS, GREEN_QUESTIONS, questionsFor, requiredAnswersFor, CLASS_STATEMENTS,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
-  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt,
+  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
   applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
 } from '../src/authorflow.js';
@@ -178,10 +178,10 @@ test('question sets: the GREEN set asks nothing about a genre and nothing about 
   const numbers = Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b);
   // CONTIGUOUS FROM 1, which is the load-bearing half: the number a person is shown
   // is the key their answer is filed under, so a deletion renumbers rather than
-  // leaving a hole. Two slots have gone this way — D13's genre confirm, and the
-  // repo question hamr dropped once `--patient` made it a second answer for a fact
-  // the machine already holds.
-  assert.deepEqual(numbers, [1, 2, 3, 4, 5]);
+  // leaving a hole. PRD item 33 M3 piece 3 shrank the set to THREE (Goal, Success,
+  // Guardrails) — Source and Destination (the old "which files" half of Q2) are now
+  // MECHANICAL fields proven against the machine, never a numbered free-text slot.
+  assert.deepEqual(numbers, [1, 2, 3]);
   assert.deepEqual(requiredAnswersFor('green'), numbers);
   const all = Object.values(GREEN_QUESTIONS).join(' ');
   assert.ok(!/type[- ]?fix|type checker|TYPES/i.test(all), `a genre-specific slot survives: ${all}`);
@@ -218,6 +218,44 @@ test('the prompt STATES the declared class — this is where genre understanding
   assert.throws(() => authorPrompt({ ...args }), /verdict class/i);
   assert.throws(() => authorPrompt({ ...args, verdictType: 'chartreuse' }), /chartreuse/);
   for (const c of LOCKED_CLASSES) assert.throws(() => authorPrompt({ ...args, verdictType: c }), new RegExp(c));
+});
+
+// PRD item 33 M3 piece 3: Q2 (which files change, which are read-only) is gone
+// from the numbered interview; `writeScope` is how that information now reaches
+// the composer instead of silently vanishing.
+test('writeScopeBlock states the write fence, and THROWS on an empty one rather than stating nothing', () => {
+  const block = writeScopeBlock(['src/**', 'tests/**']);
+  assert.match(block, /WHAT MAY CHANGE, AND WHAT IS ONLY READ/);
+  assert.match(block, /src\/\*\*/);
+  assert.match(block, /tests\/\*\*/);
+  assert.match(block, /READ-ONLY/);
+  assert.throws(() => writeScopeBlock([]), /non-empty writeScope/);
+  assert.throws(() => writeScopeBlock(/** @type {any} */ (null)), /non-empty writeScope/);
+});
+
+test('authorPrompt carries writeScope in place of the old Q2 — the composer still learns what may change', () => {
+  const withScope = authorPrompt({
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+    writeScope: ['src/**'],
+  });
+  assert.ok(withScope.includes('WHAT MAY CHANGE, AND WHAT IS ONLY READ'), 'the fence block is present');
+  assert.ok(withScope.includes('src/**'), 'the real fence pattern travels in, not a placeholder');
+  // a caller that predates the reshape (no writeScope passed) is byte-identical
+  // apart from the missing block — nothing else about the prompt moves
+  const withoutScope = authorPrompt({
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  });
+  assert.ok(!withoutScope.includes('WHAT MAY CHANGE, AND WHAT IS ONLY READ'), 'no writeScope, no block — never a fabricated fence');
+});
+
+test('authorClose: writeScope reaches the composer prompt end to end (never just the standalone helper)', async () => {
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  await authorClose({ ...baseArgs(), verdictType: 'green', generate, seedReadFn: scriptSeedRead().fn, writeScope: ['src/mailer.js'] });
+  assert.ok(calls.length >= 1, 'the author call was made');
+  const sent = JSON.stringify(calls[0]);
+  assert.ok(sent.includes('src/mailer.js'), 'the real fence reaches the model, not a placeholder');
 });
 
 test('authorClose: a LOCKED or unknown class refuses at $0, before any token', async () => {

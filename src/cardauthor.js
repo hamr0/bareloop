@@ -3,13 +3,22 @@
 // plus the 2026-08-18 threshold addendum).
 //
 // Module 1 built the judged floor's core, module 2 wired the stage into a close,
-// module 3 opened the class and asked the two extra questions. Nothing compiled
-// their answers. This module does exactly that and nothing more:
+// module 3 opened the class and asked the extra question. Nothing compiled its
+// answer. This module does exactly that and nothing more:
 //
-//   Q6  → THE RUBRIC CARD      (§4.3) — the person's own pass/fail lines, as
-//                                ENUMERATED items over the arbiter's own rulebook.
-//   Q7  → THE CALIBRATION SET  (§4.4) — TEN cases, frozen, that the whole pipe
-//                                must grade before the close is signable.
+//   Judge Examples  → THE RUBRIC CARD      (§4.3) — the person's own pass/fail
+//                       lines, as ENUMERATED items over the arbiter's own
+//                       rulebook, compiled from the "why" half of their answer.
+//                   → THE CALIBRATION SET  (§4.4) — TEN cases, frozen, that the
+//                       whole pipe must grade before the close is signable.
+//
+// PRD item 33 M3 piece 3 (2026-09-13): the old Q6 ("what separates a pass from
+// a fail?") and Q7 ("give one you'd pass and one you'd fail, and say why")
+// merged into ONE form field, Judge Examples — Q7's wording, verbatim
+// (`SOFTGREEN_JUDGE_EXAMPLES_KEY`/`JUDGE_EXAMPLES_QUESTION`, `authorflow.js`).
+// Q6 is not lost: the "why" lines of a real pass/fail pair are what this
+// module already compiled a card FROM, and asking the differentiator twice —
+// once in the abstract, once against a real example — was the double-ask.
 //
 // ── THE D5 PATH, AND WHY IT IS THIS ONE ─────────────────────────────────────
 //
@@ -62,7 +71,7 @@
 import {
   JUDGE_RULE_IDS, JUDGE_RULES, CALIBRATION_SIZE, CASE_VERDICTS, validateJudgedArtifacts,
 } from './judged.js';
-import { askStructured, makeCostBook } from './authorflow.js';
+import { askStructured, makeCostBook, SOFTGREEN_JUDGE_EXAMPLES_KEY, JUDGE_EXAMPLES_QUESTION } from './authorflow.js';
 import { judgedStages } from './kinds.js';
 import { isObj, redactSecrets } from './validate.js';
 
@@ -204,8 +213,12 @@ export const COMPILE_SYSTEM = 'You compile a person\'s own words into a rubric a
   + 'is fixed and you select from it.';
 
 /**
- * The compile prompt. Q6's and Q7's answers travel VERBATIM — they are the whole
- * input, and paraphrasing a lay answer is how a rubric stops being the person's.
+ * The compile prompt. The Judge Examples answer travels VERBATIM — it is the
+ * whole input, and paraphrasing a lay answer is how a rubric stops being the
+ * person's. PRD item 33 M3 piece 3: this used to be two answers (Q6+Q7);
+ * `SOFTGREEN_JUDGE_EXAMPLES_KEY` is the ONE key both the interview and this
+ * compile now read, so a future renumbering of the form moves both readers
+ * together rather than drifting.
  *
  * The rulebook is rendered from `JUDGE_RULES` itself rather than restated, for
  * the reason the catalogue block is rendered from the catalogue: the prompt and
@@ -213,8 +226,8 @@ export const COMPILE_SYSTEM = 'You compile a person\'s own words into a rubric a
  * @param {{answers: Record<string|number, any>, questions?: Record<string|number, string>}} o
  */
 export function cardCasesPrompt({ answers, questions = {} }) {
-  const q6 = questions[6] ?? 'When you judge the result yourself, what separates a pass from a fail?';
-  const q7 = questions[7] ?? 'Give one example you\'d pass and one you\'d fail, and say why.';
+  const qKey = SOFTGREEN_JUDGE_EXAMPLES_KEY;
+  const q = questions[qKey] ?? JUDGE_EXAMPLES_QUESTION;
   const rules = JUDGE_RULE_IDS.map((id) => `- ${id}\n    the facts it reads: ${JUDGE_RULES[id].ask.trim().split('\n')[0].trim()}`);
 
   return `You are compiling ONE person's answers into the two artifacts a judged close is signed with.
@@ -222,13 +235,10 @@ export function cardCasesPrompt({ answers, questions = {} }) {
 They are not a software engineer. They described what they look for in their own words, and your whole job is to
 express that over the rulebook below — never to add a standard they did not state, and never to drop one they did.
 
-THEIR ANSWERS — verbatim, and the only input you have
+THEIR ANSWER — verbatim, and the only input you have
 
-Q6. ${q6}
-A6. ${answers?.[6] ?? '(no answer given)'}
-
-Q7. ${q7}
-A7. ${answers?.[7] ?? '(no answer given)'}
+Q${qKey}. ${q}
+A${qKey}. ${answers?.[qKey] ?? '(no answer given)'}
 
 ---
 
@@ -407,7 +417,7 @@ export function foldJudgedArtifacts(closeDecl, { card, cases, judgeModel }) {
 // ── 6. THE PAID SEAM ────────────────────────────────────────────────────────
 
 /**
- * ONE compile call: the person's Q6 and Q7 in, a proposal out.
+ * ONE compile call: the person's Judge Examples answer in, a proposal out.
  *
  * It buys ONE artifact through ONE channel, and the malformed-emission ladder is
  * the SHARED one (`askStructured`) rather than a second copy — a second ladder is

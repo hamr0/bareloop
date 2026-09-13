@@ -35,6 +35,7 @@ import {
 } from '../src/authorjob.js';
 import { PROVIDERS } from '../src/job.js';
 import { resolveProvider } from '../src/providers.js';
+import { SOURCE_FIELD, DESTINATION_FIELD_REPO } from '../src/authorflow.js';
 
 // The fixture class for every wizard test below: the LONGEST question set the
 // menu still offers, so a test that walks every question walks the widest one.
@@ -175,6 +176,47 @@ test('tripwire: the script SPELLS no question of its own', () => {
   }
   assert.match(src, /questionsFor\(/, 'it asks the library for them');
   assert.match(src, /requiredAnswersFor\(/, 'and for which of them are required');
+});
+
+// ══ THE UNIFIED FORM'S ORDER (PRD item 33 M3 piece 3) ══════════════════════════
+
+test('the GREEN interview shows exactly Source, Destination, Goal, Success, Guardrails, in that order, and never Judge Examples', () => {
+  const out = outDir();
+  const r = interview({ verdict: 'green', out, lines: session('green') });
+  assert.equal(r.code, 0, r.out);
+  const q = questionsFor('green');
+  const order = [SOURCE_FIELD.prompt, DESTINATION_FIELD_REPO.prompt, q[1], q[2], q[3]];
+  let at = -1;
+  for (const text of order) {
+    const seen = r.out.indexOf(text);
+    assert.ok(seen > at, `expected to find ${JSON.stringify(text.slice(0, 40))}... after position ${at}`);
+    at = seen;
+  }
+  const judgeQ = questionsFor('soft-green')[requiredAnswersFor('soft-green').length];
+  assert.ok(!r.out.includes(judgeQ), 'a green interview never shows the Judge Examples question');
+});
+
+test('the SOFT-GREEN interview shows Source, Destination, Goal, Success, Guardrails, then Judge Examples LAST', () => {
+  const out = outDir();
+  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
+  assert.equal(r.code, 0, r.out);
+  const q = questionsFor('soft-green');
+  const judgeKey = requiredAnswersFor('soft-green').at(-1);
+  const order = [SOURCE_FIELD.prompt, DESTINATION_FIELD_REPO.prompt, q[1], q[2], q[3], q[judgeKey]];
+  let at = -1;
+  for (const text of order) {
+    const seen = r.out.indexOf(text);
+    assert.ok(seen > at, `expected to find ${JSON.stringify(text.slice(0, 40))}... after position ${at}`);
+    at = seen;
+  }
+});
+
+test('the script prints the LIBRARY\'s Source/Destination wording, not its own — changing the library string changes the printed prompt', () => {
+  const out = outDir();
+  const r = interview({ verdict: 'green', out, lines: session('green') });
+  assert.equal(r.code, 0, r.out);
+  assert.ok(r.out.includes(SOURCE_FIELD.prompt), 'the Source prompt printed is the library\'s own string');
+  assert.ok(r.out.includes(DESTINATION_FIELD_REPO.prompt), 'the Destination prompt printed is the library\'s own string');
 });
 
 // ══ SOURCE / DESTINATION (PRD item 33 M3, ruling 2) ════════════════════════════
@@ -362,19 +404,19 @@ test('a secret typed into an answer is SCRUBBED by the library seam before it re
 
 // ══ the refusals, all of them for $0 ═══════════════════════════════════════════
 
-test('the SOFT-GREEN class runs its own seven-question interview, derived from the library', () => {
+test('the SOFT-GREEN class runs its own four-question interview, derived from the library', () => {
   // This slot used to hold the locked-class refusal, with soft-green as its
   // exemplar. Softgreen module 3 admitted the class, so the refusal is unreachable
   // (`LOCKED_CLASSES` is empty and the script's branch keys on it) and what
   // replaces it is the positive the admission bought: the script asks the class's
-  // own set, one at a time, and files every answer — including the two the judged
-  // floor needs (the rubric card and the calibration set, compiled at module 4).
+  // own set, one at a time, and files every answer — including the one the judged
+  // floor needs (Judge Examples, compiled at module 4, PRD item 33 M3 piece 3).
   assert.deepEqual([...LOCKED_CLASSES], [], 'nothing left to refuse');
   const out = outDir();
   const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
   assert.equal(r.code, 0, r.out);
   const nums = requiredAnswersFor('soft-green');
-  assert.equal(nums.length, requiredAnswersFor('green').length + 2, 'green\'s set plus the card and the calibration ask');
+  assert.equal(nums.length, requiredAnswersFor('green').length + 1, 'green\'s trio plus Judge Examples');
   const qs = questionsFor('soft-green');
   for (const q of nums) assert.ok(r.out.includes(`${q}. ${qs[q]}`), `question ${q} is asked verbatim`);
   assert.match(r.out, new RegExp(`── ${nums.length} of ${nums.length} `));

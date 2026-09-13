@@ -153,108 +153,137 @@ export const STRUCTURE_INSTRUCTION_TEXT = 'Your reply could not be read as one J
   + 'Reply with ONLY the JSON object, in a single fenced block, and nothing else.';
 
 /**
- * THE INTERVIEW, KEYED BY VERDICT CLASS (hamr's ruling, PRD v1.57 §2).
+ * THE UNIFIED INTAKE FORM (PRD item 33 M3 piece 3, `docs/product/ITEM33-BUILD.md`
+ * "M3", and the 2026-09-10 signed ruling "The intake form (RULED)" in
+ * `docs/product/PRD.md` item 33). Motivated by run `mtv8jihy` (F159): the OLD
+ * five-question green set produced a rubric compiled onto doc-comment rules —
+ * the wrong bar for what the person actually asked — because Q2 asked in prose
+ * for a decision the machine can prove instead, and Q3/Q5 asked the same "what
+ * must not go wrong" question twice from two directions.
  *
- * One question set per GENRE has no terminating shape — genres are a fat long
- * tail that cannot be enumerated, and TYPES was the first specimen rather than
- * the pattern. One set per verdict CLASS has exactly three. Genre understanding
- * does not disappear: it moves into the COMPOSITION over the kind catalogue
- * (`CLASS_STATEMENTS` below, rendered into the authoring prompt), which is the
- * layer already built to hold it — the authoring call composes owned kinds and
- * cannot emit anything else (D2/D3), so a genre it has never seen is a
- * composition problem, not a catalogue problem.
+ * THE SAME SIX FIELDS FOR GREEN AND SOFT-GREEN, in the order a person sees them:
  *
- * The GREEN set descends from questions 1–6 of the frozen TYPES set (prereg §5).
- * TWO slots have been deleted since, both because the interview was ASKING FOR
- * SOMETHING IT ALREADY HAD or already knew:
+ *   Source            replaces the read half of the old Q2 — MECHANICAL, proven
+ *                      against the machine ($0), never typed as free prose.
+ *   Destination        replaces the change half of the old Q2 (and, for a repo
+ *                      source, IS the signed `writeScope` fence) — MECHANICAL,
+ *                      same reason.
+ *   Goal               the old Q1, unchanged: "What do you want done?"
+ *   What success looks like   the old Q4, unchanged: a machine-countable check.
+ *   Guardrails         the old Q3 ("must not change") and Q5 ("worse than
+ *                      before") JOINED into one field — they were always one
+ *                      decision answered twice, and Q5 already only mattered for
+ *                      a repo source (the M3 confirm turn, not built in this
+ *                      piece, is where the repo-only half of it gets asked again
+ *                      if needed).
+ *   Judge examples     soft-green only — the old Q7 verbatim ("one you'd pass and
+ *                      one you'd fail, and say why"). The old Q6 ("what separates
+ *                      a pass from a fail") is retired as its own question: the
+ *                      "why" lines of a real pass/fail pair are what the rubric
+ *                      card compiles from (`cardauthor.js`), and asking the
+ *                      differentiator twice — once in the abstract, once against
+ *                      a real example — is the same double-ask Q3/Q5 already were.
  *
- *   - D13's genre CONFIRM ("this looks like a type-fixing job, correct?") —
- *     superseded in full: the interview never asks about a genre again, and the
- *     refusal it carried MOVED to the composer, on the same counted
- *     `request-red` path (see `authorCloseForJob`);
- *   - "Is there a code repo I can look at? Where?" — DROPPED on hamr's ruling
- *     after he drove the terminal interview himself (2026-08-15, verbatim: *"drop
- *     Q6"*). The repository is a MANDATORY, STRUCTURED input already —
- *     `runInterview`'s own `repoPath`, which the runner takes from `--patient` and
- *     refuses to start without. Asking a person to re-type in prose a path the
- *     machine is holding in a variable is the SWE tax this product refuses, and
- *     it invites a second, drifting answer for the same fact (hamr's own answer
- *     on the live run was *"Yes — the patient itself."*). Nothing downstream lost
- *     anything: the scout reads `repoPath`, never the answer.
+ * SOURCE and DESTINATION ARE MECHANICAL FIELDS, not entries in the numbered
+ * question record below: `runInterview`'s `answers` dict is what a close's
+ * composer prompt quotes verbatim (Q<n>/A<n>), and quoting a machine-proven fact
+ * back at the model as if a person had typed it would be the model reading a
+ * fabricated conversation. Their WORDING still lives here (`SOURCE_FIELD`,
+ * `DESTINATION_FIELD_REPO`, `DESTINATION_FIELD_PLAIN`, immediately below) so
+ * `scripts/run-interview.mjs` prints library text and nothing of its own, exactly
+ * as ruling 1 requires for the free-text questions.
  *
- * Question 2 was WIDENED in the same ruling: it now asks for the read-or-draw-from
- * files as well as the ones that change. The two halves belong in one answer
- * because they are one decision for the person answering — what the work touches,
- * and what it touches only to look at.
- *
- * The five that remain are genre-neutral, which is why every generalisation so far
- * has deleted a slot rather than reworded one. They are NUMBERED CONTIGUOUSLY from
- * 1: the number a person sees is the key their answer is filed under, and a gap
- * would be a hole in a form nobody can explain.
+ * The free-text trio (soon quartet, soft-green only) IS numbered contiguously
+ * from 1 — the number a person sees is the key their answer is filed under, and
+ * that is what `questionsFor`/`requiredAnswersFor`/`QUESTION_SETS` still expose,
+ * unchanged in shape, to every existing caller.
+ */
+export const SOURCE_FIELD = Object.freeze({
+  id: 'source',
+  kind: 'mechanical',
+  label: 'Source',
+  prompt: 'A local folder, subfolder or file, or one URL the machine can reach (no login, no setup).',
+});
+
+/** Destination's wording when Source resolved to a git repo: the answer IS the
+ * signed `writeScope` fence (ITEM33-BUILD.md M3 ruling 2). */
+export const DESTINATION_FIELD_REPO = Object.freeze({
+  id: 'destination',
+  kind: 'mechanical',
+  label: 'Destination',
+  prompt: 'Which files the worker is allowed to WRITE — everything else is read-only.\n'
+    + 'Patterns are relative to the repo root, comma-separated (e.g. `src/**`). The run works on a copy of the\n'
+    + 'repo, so absolute paths are refused. The agent may narrow this and may never widen it.',
+});
+
+/** Destination's wording for every other kind of Source (a plain folder, a
+ * file, a URL): a directory the run may write into, never a filename
+ * (2026-09-12 Destination correction, PRD item 33). */
+export const DESTINATION_FIELD_PLAIN = Object.freeze({
+  id: 'destination',
+  kind: 'mechanical',
+  label: 'Destination',
+  prompt: 'A LOCAL DIRECTORY the run may write into — never a filename. It may already exist. If it is the same\n'
+    + 'directory as Source, changes are permitted there and nowhere else. Type an absolute path.',
+});
+
+/** @param {boolean} isRepo @returns {typeof DESTINATION_FIELD_REPO} */
+export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_REPO : DESTINATION_FIELD_PLAIN; }
+
+/**
+ * THE FREE-TEXT TRIO EVERY CLASS SHARES: Goal, Success, Guardrails — numbered
+ * contiguously from 1. This is what `answers[1..3]` are filed under for every
+ * class; soft-green appends a fourth (`SOFTGREEN_QUESTIONS`) and hitl appends a
+ * different fourth (`HITL_QUESTIONS`), each its own next number rather than a
+ * fixed one, so a future trim of this trio renumbers instead of leaving a gap.
  */
 export const GREEN_QUESTIONS = Object.freeze({
   1: 'What do you want done?',
-  2: 'Which files or folders should change? And which files should the work read or draw from (they stay untouched)?',
-  3: 'Is there anything that must not change?',
-  4: 'How do you check today whether it\'s working?',
-  5: 'What would make you say this came back worse than before?',
+  2: 'How do you check today whether it\'s working?',
+  3: 'Is there anything that must not change? And what would make you say this came back worse than before?',
 });
 
-/**
- * THE HITL SET (N4 slice 1) — the green questions BYTE FOR BYTE, plus one.
- *
- * The five are unchanged deliberately rather than economically: the
- * mechanical-first composition law (2026-08-07) says every hitl close is
- * *deterministic stages first, judge minimal, human last*, so a hitl job needs
- * exactly the same mechanical facts a green one does — what changes, what must
- * not, how it is checked today, what "worse" looks like. Rewording them would
- * fork one interview into two that drift.
- *
- * The last one is the only thing the green set cannot supply, and it is not a
- * flourish: `human-confirms` requires an `ask` — the question the signer answers
- * at the end of the run — and nothing else in the interview names it. Without it
- * the composer would have to invent what a person is deciding, which is the one
- * thing a human stage must never have done for it. It is the SPREAD's next number
- * rather than a fixed one, so a green-side deletion renumbers it instead of
- * leaving a gap (it was 7 while the green set held six, and is 6 now it holds five).
- */
-export const HITL_QUESTIONS = Object.freeze({
-  ...GREEN_QUESTIONS,
-  6: 'When you look at the finished result yourself, what are you deciding?',
-});
+/** The key Guardrails' merged question and Judge Examples both prove out at:
+ * green holds exactly 3 free-text slots, so 4 is the next number for both the
+ * soft-green and hitl extensions below — computed, never hardcoded twice. */
+const NEXT_FREE_TEXT_KEY = Object.keys(GREEN_QUESTIONS).length + 1;
+
+/** The soft-green quartet's own key for Judge Examples — exported so
+ * `cardauthor.js` reads the SAME number this module files the answer under,
+ * rather than a second, hand-typed "6"/"7". */
+export const SOFTGREEN_JUDGE_EXAMPLES_KEY = NEXT_FREE_TEXT_KEY;
+
+/** The Judge Examples question, verbatim the old Q7 (PRD item 33 M3 piece 3:
+ * the old Q6 is retired — the "why" half of a real pass/fail pair is what the
+ * rubric card now compiles from). Exported so `cardauthor.js`'s prompt and this
+ * module's own `SOFTGREEN_QUESTIONS` render the identical string. */
+export const JUDGE_EXAMPLES_QUESTION = 'Give one example you\'d pass and one you\'d fail, and say why.';
 
 /**
- * THE SOFTGREEN SET (module 3, design record §4.6) — the green questions BYTE
- * FOR BYTE, plus TWO.
- *
- * Same discipline as the hitl set, and for the same reason: a softgreen close is
- * *mechanical stages first, the judged stage after* (§4.5), so a softgreen job
- * needs every mechanical fact a green one does. No renumbering of the green set,
- * no genre question, nothing reworded.
- *
- * The two additions are the only things the green set cannot supply, and neither
- * is a flourish — they are the judged floor's two REQUIRED inputs:
- *   - Q6 becomes the RUBRIC CARD (§4.3): the person's own pass/fail lines,
- *     compiled into enumerated items, signed, and enumerated in the spec hash.
- *     The documented ceiling rides with it — the judge catches violations of
- *     STATED card items only, and the fix for a miss is a new card line and a
- *     re-sign, never a smarter judge.
- *   - Q7 becomes the frozen CALIBRATION SET (§4.4): the whole pipe must grade it
- *     correctly before the close is signable.
- * Both are asked in the person's own terms — an example they would pass and one
- * they would fail, not a rubric they are asked to write — because compiling a lay
- * answer into extractable items is the LLM's job (D5, proposed-and-signed) and
- * asking the person to do it is the SWE tax this product refuses.
- *
- * What the two answers COMPILE INTO is module 4. This module carries them
- * exactly as the hitl set carries its own last answer: they ride in `answers`,
- * they reach the composer verbatim through the prompt's interview block, and
- * nothing here derives anything from them.
+ * THE SOFTGREEN SET — the green trio plus Judge Examples. A judged close needs
+ * exactly this one more thing the green set cannot supply: a real pass/fail
+ * pair in the person's own words, which module 4 (`cardauthor.js`) compiles
+ * into the signed rubric card and the frozen calibration set. It rides in
+ * `answers` and reaches the composer verbatim through the prompt's interview
+ * block, exactly as every other free-text answer does — this module derives
+ * nothing from it.
  */
 export const SOFTGREEN_QUESTIONS = Object.freeze({
   ...GREEN_QUESTIONS,
-  6: 'When you judge the result yourself, what separates a pass from a fail? Name the few things you actually look for.',
-  7: 'Give one example you\'d pass and one you\'d fail, and say why.',
+  [SOFTGREEN_JUDGE_EXAMPLES_KEY]: JUDGE_EXAMPLES_QUESTION,
+});
+
+/**
+ * THE HITL SET (N4 slice 1, kept in code only — never offered in the form or
+ * anywhere customer-facing, PRD item 33 M3 ruling 8) — the green trio plus one.
+ * `human-confirms` requires an `ask`, the question the signer answers at the
+ * end of the run, and nothing else in the interview names it; without it the
+ * composer would have to invent what a person is deciding. It is the green
+ * set's next number, not a fixed one, so a green-side trim renumbers it too.
+ */
+export const HITL_QUESTIONS = Object.freeze({
+  ...GREEN_QUESTIONS,
+  [NEXT_FREE_TEXT_KEY]: 'When you look at the finished result yourself, what are you deciding?',
 });
 
 /**
@@ -738,6 +767,35 @@ export function lawsBlock() {
 }
 
 /**
+ * WHAT MAY CHANGE, AND WHAT IS ONLY READ — replaces the old Q2 (PRD item 33 M3
+ * piece 3). Q2 used to ask the person, in prose, which files change and which
+ * are read-only; that decision is now Destination, PROVEN against the
+ * repository rather than typed (`docs/product/ITEM33-BUILD.md` "M3", ruling 2),
+ * and for a repo source Destination's answer IS the signed `writeScope` fence.
+ * This states that fact to the composer instead of letting it vanish along
+ * with Q2 — the same "nothing the composer received before may silently
+ * disappear" rule `applyGenreEnv` already keeps for a dropped env var.
+ *
+ * THROWS on an empty `writeScope`: Destination is a MANDATORY fence
+ * (`run-interview.mjs` refuses an empty answer at capture), so a caller
+ * reaching this with nothing to state is a bareloop wiring bug, not a job with
+ * no fence — a composer told it may change everything guards nothing.
+ * @param {string[]} writeScope
+ */
+export function writeScopeBlock(writeScope) {
+  if (!Array.isArray(writeScope) || writeScope.length === 0) {
+    throw new Error('[authorflow] writeScopeBlock needs a non-empty writeScope — Destination is the fence and a '
+      + 'composer call with nothing to state is a bareloop wiring bug, not a job authored with no fence');
+  }
+  return `WHAT MAY CHANGE, AND WHAT IS ONLY READ\n\n`
+    + 'The person\'s own Destination answer is a write fence, proven against the repository rather than typed as '
+    + 'prose. You may only change files matching one of these patterns:\n\n'
+    + `${writeScope.map((p) => `  - ${p}`).join('\n')}\n\n`
+    + 'Everything else in the facts object and the listing below is READ-ONLY: you may look at it, and any command '
+    + 'you run may read it, but no stage you declare may write, move or delete it.';
+}
+
+/**
  * The whole authoring prompt, as one string.
  *
  * Two people fed this brief and neither of them is the model: a person who is not
@@ -749,12 +807,21 @@ export function lawsBlock() {
  * the one thing that tells the composer what DONE is allowed to mean here; a
  * defaulted class would be the prompt answering a question the user was asked.
  *
+ * `writeScope` carries what the old Q2 used to (PRD item 33 M3 piece 3): Q2 is
+ * gone from the numbered interview, so what may change and what is read-only
+ * reaches the composer through {@link writeScopeBlock} instead, fed from
+ * Destination's own proven fence — never silently dropped.
+ *
  * @param {{answers: Record<string|number, string>, questions?: Record<string|number, string>,
  *   facts: any, listingBlock: string, lang: string, verdictType: string,
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
- *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>}} o
+ *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
+ *   writeScope?: string[]|null}} o
  */
-export function authorPrompt({ answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards, ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE }) {
+export function authorPrompt({
+  answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
+  ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null,
+}) {
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
     throw new Error(`[authorflow] the authoring prompt needs the verdict class the user picked, and "${verdictType}" `
@@ -819,6 +886,10 @@ measure anything.`;
     // composer reads that plus the catalogue and works the rest out.
     `WHAT THE PERSON DECLARED "DONE" TO MEAN — their answer, not yours\n\n${statement}`,
     `THE INTERVIEW — the person's own words\n\n${interview}`,
+    // Q2 IS GONE (PRD item 33 M3 piece 3) — what it used to carry (which files
+    // change, which are read-only) is proven against the machine now, not typed,
+    // and this is where that proof reaches the composer instead of vanishing.
+    ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
     `THE FACTS OBJECT — from a read-only survey of the repository\n\n${JSON.stringify(facts, null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
     // CLASS-SCOPED (softgreen module 3): the composer for a green job is never
@@ -1309,11 +1380,17 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   maxRevisions?: number, structureRetries?: number,
- *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>}} o
+ *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,
   answers, questions = GREEN_QUESTIONS,
+  // Q2 IS GONE from the numbered interview (PRD item 33 M3 piece 3) — this is
+  // what carries its information into the prompt instead (`writeScopeBlock`).
+  // Optional and defaulted to `null` so every caller that predates the reshape
+  // still runs byte-identical; a REAL caller (`authorCloseForJob`) always
+  // passes the repo's proven `writeScope`.
+  writeScope = null,
   scout, listing = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
@@ -1487,7 +1564,7 @@ export async function authorClose({
   // ── the grounded loop ─────────────────────────────────────────────────────
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
-    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue,
+    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];

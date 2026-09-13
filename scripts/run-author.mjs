@@ -487,6 +487,12 @@ try {
     // so admitting a class (softgreen module 3 did exactly that) does not leave
     // this line silently handing its questions back as `null`.
     questions: LIVE_CLASSES.includes(VERDICT) ? questionsFor(VERDICT) : null,
+    // Q2 IS GONE (PRD item 33 M3 piece 3) — the operator's own `writeScope`
+    // (Destination's proven fence, `run-interview.mjs`) is what tells the
+    // composer what may change and what is read-only now; a draft with no
+    // fence is not this script's business to invent one for, so an absent or
+    // malformed field travels as `null` and `authorPrompt` simply states nothing.
+    writeScope: Array.isArray(draft.writeScope) ? draft.writeScope : null,
     provider,
     generate: makeLoopGenerate(provider),
     // ONE number, both paid seams (the survey's and the declaration loop's) — the
