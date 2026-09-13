@@ -400,5 +400,7 @@ against that record. Detailed before it starts.
 
 ## M7 — proof fires (paid, hamr's word each)
 
-Item 25 step (4): 31.5 calibration on a real bar; 31.4 green on gemini with
-`ANTHROPIC_API_KEY` unset; plus one plain-folder green and one soft-green end to end.
+Item 25 step (4): 31.5 calibration on a real bar; 31.4 green on DeepSeek (`deepseek-flash`)
+with `ANTHROPIC_API_KEY` unset; plus one plain-folder green and one soft-green end to end.
+
+2026-09-13 (hamr): 31.4 runs on DeepSeek, not gemini — one secondary provider.

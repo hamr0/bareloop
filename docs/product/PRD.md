@@ -424,6 +424,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     **2026-09-13 — (3) detailed:** item 33 build continues as: fix branch for item 34 → M3 →
     M3b → M4 → M5 → M6 → M7 proof fires → (5) the panel → (6) reuse-lift proof last.
 
+    **2026-09-13 — (4) amended** (hamr): 31.4's proof runs on DeepSeek (`deepseek-flash`),
+    not gemini.
+
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
     POC's negative scenario N4 (`docs/product/EXPORT-BUILD.md`): `jobSpecHash` covers
