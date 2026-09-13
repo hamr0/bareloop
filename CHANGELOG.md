@@ -7,6 +7,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Scan-then-freeze TOCTOU closed in the source front door (PRD item 34 L1):**
+  `prepareSource`'s folder/repo path used to hash+secret-scan each file's bytes once, then
+  re-read the same file a SECOND time off disk (`copyFile`) to freeze it into the hidden
+  tree — a window where a file changed on disk between the two reads would have its secret
+  scan run against different bytes than the ones actually frozen. The freeze step now
+  re-hashes its own (second) read and refuses (`source-changed-after-scan`) on any mismatch
+  against the scan-time hash, rather than caching every file's buffer (which would hold a
+  whole repo in memory at once — the streaming scan design exists to avoid exactly that).
+  `copyFile`'s mode-bit preservation is kept explicitly (`stat` + `chmod` on the frozen
+  file), verified not to regress.
+
 ### Changed
 
 - **DeepSeek secondary model swap (F171, PRD item 34 L16):** `deepseek-chat` is no longer

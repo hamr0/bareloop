@@ -24,7 +24,7 @@
 
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile, lstat, stat, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
 import { MAX_BUFFER } from './kinds.js';
@@ -529,12 +529,38 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   // git tracks no empty directories — a `.gitkeep` is what makes `output/`
   // actually exist in the seed commit the close measures changes against
   await writeFile(join(outputDir, '.gitkeep'), '');
-  for (const f of frozen.files) {
+  // TOCTOU close (item 34 L1, fix-ledger `src/source.js:506,537`): a folder/
+  // repo file's bytes were hashed and secret-scanned ABOVE, from one read —
+  // then re-read a SECOND time here via `copyFile`, off disk, to freeze into
+  // the tree. A file swapped on disk between the two reads would have its
+  // secret scan run against bytes different from the ones actually frozen —
+  // exactly the gap the hard line (secrets never enter the tree) exists to
+  // close. Fixed by re-verifying, not by caching every buffer: caching would
+  // hold a whole repo's bytes in memory at once (the streaming design above
+  // this loop exists precisely to avoid that for a repo source "far larger
+  // than memory"). Instead, this second read is hashed again and compared
+  // against `fileMeta`'s scan-time `sha256` (same index, same file order as
+  // the scan loop above) — a match means the bytes frozen ARE the bytes
+  // scanned; a mismatch refuses rather than silently freezing content the
+  // scan never saw. `copyFile` also preserved the source file's mode bits
+  // (verified: 0o755 in, 0o755 out; a plain `writeFile` defaults to 0o644),
+  // so the replacement chmod's the destination from a fresh `stat` to keep
+  // that behaviour unchanged.
+  for (let i = 0; i < frozen.files.length; i += 1) {
+    const f = frozen.files[i];
     const dest = join(treeDir, treeRel(f.rel));
     await mkdir(dirname(dest), { recursive: true });
-    if (f.buf) await writeFile(dest, f.buf);
-    else if (f.symlinkTarget !== undefined) await symlink(f.symlinkTarget, dest);
-    else await copyFile(/** @type {string} */ (f.abs), dest);
+    if (f.buf) { await writeFile(dest, f.buf); continue; }
+    if (f.symlinkTarget !== undefined) { await symlink(f.symlinkTarget, dest); continue; }
+    const [freshBuf, srcStat] = await Promise.all([
+      readFile(/** @type {string} */ (f.abs)),
+      stat(/** @type {string} */ (f.abs)),
+    ]);
+    if (sha256Hex(freshBuf) !== fileMeta[i].sha256) {
+      return refuse('source-changed-after-scan', `${f.rel} changed on disk after its secret scan — refused rather than freezing bytes the scan never saw (hard line #3)`);
+    }
+    await writeFile(dest, freshBuf);
+    await chmod(dest, srcStat.mode & 0o777);
   }
 
   if (frozen.kind !== 'repo') {
