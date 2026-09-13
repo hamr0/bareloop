@@ -900,6 +900,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | L18 | Proof runs | KEEP — M7, plus M3's DeepSeek proof | |
     | L19 | hitl still shows to customers: `bareloop.context.md` (34 mentions), and the usage text of `scripts/run-author.mjs` / `scripts/run-interview.mjs` | FIX — remove from all customer-facing text; code stays | 314f0ca (+ 384f4ad test update) |
     | L20 | `src/index.js` exported 255 names; the test's marker check credited 86 as documented. Of the other 169, 91 were already described in the doc's prose but lacked a marker, and 78 were mentioned nowhere. | FIX, option A — document the names a user of the package needs; stop exporting the rest, so the public list is what the doc covers. Breaking change for anyone importing a removed name. | `6189eff` — 91 names got markers, 78 dropped from the root export (255 → 177), `tests/index.test.js` now guards both ways (every export documented, every documented name exported). |
+    | L21 | 2026-09-13: an untracked/ignored subfolder inside a repo froze as `kind: 'repo'` holding none of Source's own files | FIX — refused as `source-untracked-in-repo` for now (ruling A, 2026-09-13); revisit option B (freeze it as a plain folder on hidden git) once M4 gives plain-folder jobs their own checks | 95c1948 |
 
     Fix branch: L1, L2, L3 (doc note), L4, L16 (model swap), L17, L19, L20 — one branch,
     reviewed and released on its own, BEFORE the M3 build.

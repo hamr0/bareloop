@@ -330,6 +330,11 @@ EXISTING audit records — no new record format.
    untracked `node_modules` symlinks would refuse again (the F164 class). Not built yet; it is
    the next code change after piece 3 below (commits 421d730, 51998dc, c61f7ae built the
    root-only rule this addendum changes).
+
+   **2026-09-13 — pointer:** landed in 2a020d8. A gap surfaced after: when the subfolder
+   itself is untracked or gitignored, the whole-repo freeze held none of Source's own
+   files — refused as `source-untracked-in-repo` for now (PRD item 34, L21); option B
+   (freeze it as a plain folder on hidden git instead) is deferred to M4.
 3. **Language is detected, never asked.** A code job's checks always run the repo's OWN tools
    in the repo's own language, so language is a fact of the repo, not a choice: `package.json`
    present → js; `pyproject.toml` or `setup.py` present → python; both present → the confirm
