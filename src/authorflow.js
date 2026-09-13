@@ -423,6 +423,75 @@ export function requiredAnswersFor(verdictType) { return [...questionSet(verdict
  * @param {string} verdictType @returns {Record<string|number, string>} */
 export function labelsFor(verdictType) { return questionSet(verdictType).labels; }
 
+// ── CONFIRM TURN — person-facing wording (PRD item 33 M3 piece 4) ──────────
+//
+// These three are the $0, no-provider half of the confirm turn (D7): asked
+// before the scout ever runs, so a missing person at end of input stops at
+// $0 rather than after a paid call. FROZEN wording, exactly like SOURCE_FIELD
+// and DESTINATION_FIELD_* above — a caller prints these verbatim, never
+// rewords or reorders them.
+
+/**
+ * Asked ONLY for a repo source (ruling 2 addendum's D7) — a plain folder or a
+ * URL has no "before" a repo's own history gives it to compare against. This
+ * is the OLD Q5 wording, verbatim ("What would make you say this came back
+ * worse than before?"), which M3 piece 3's reshape folded into Guardrails —
+ * it survives here as its OWN field because the confirm turn (ruling 5's
+ * 2026-09-13 addendum) includes it as a constraint only when the person
+ * actually gave one, and folding it silently into the Guardrails free-text
+ * slot would lose that "present or absent" distinction. An empty answer is
+ * "nothing beyond what Guardrails already said" and is not required — see
+ * the frozen-wording test below: this phrase appears NOWHERE in
+ * {@link questionsFor}'s own sets, so a caller cannot double-ask it by
+ * reading the wrong table.
+ */
+export const WORSE_THAN_BEFORE_FIELD = Object.freeze({
+  id: 'worseThanBefore',
+  kind: 'mechanical',
+  label: 'Worse than before',
+  prompt: 'What would make you say this came back worse than before?',
+});
+
+/**
+ * Asked ONLY when `src/detectlang.js`'s `detectLanguage` reports its
+ * `ambiguous` outcome — two supported languages' manifests at the same
+ * (nearest) directory level (M3 ruling 3, point 3). The candidate list is
+ * NOT embedded here: it travels with the caller's own `ambiguous` result
+ * (`langResult.candidates`), so this module never hand-types a second copy
+ * of the supported-language set. An unsupported pick still goes through the
+ * existing `language-unsupported` refusal — this field only offers a choice
+ * among the candidates `detectLanguage` actually found.
+ */
+export const LANGUAGE_PICK_FIELD = Object.freeze({
+  id: 'language',
+  kind: 'mechanical',
+  label: 'Language',
+  prompt: 'This repo has more than one supported language\'s manifest at the same level. Which one is this job about?',
+});
+
+/**
+ * THE CONFIRM TURN'S MENU — a structured CHOICE the person picks from after
+ * each round, never free text matched against a pattern (ruling 6's "no
+ * hand-authored check matcher" reasoning applies here too: the person's own
+ * reply is read as one of these four keys, never parsed for intent).
+ *   confirm     — sign the plan and the drafted goal sentence as shown.
+ *   fix         — free text describing what to change; feeds round r+1, up
+ *                 to the 2-round cap (ruling 5); after round 2 a "fix" is
+ *                 passed to the composer verbatim and shown at signing as an
+ *                 open question rather than spending a 3rd call (D3).
+ *   type-goal   — the person's own sentence REPLACES the drafted goal,
+ *                 verbatim (redacted); everything else in the plan stands.
+ *   start-over  — abandon this confirm turn; the person reruns the
+ *                 interview from the beginning (`confirm-restart`).
+ * @type {Record<'confirm'|'fix'|'type-goal'|'start-over', string>}
+ */
+export const CONFIRM_MENU = Object.freeze({
+  confirm: 'Confirm — sign this plan and goal as shown',
+  fix: 'Fix — describe what to change',
+  'type-goal': 'Type the goal sentence yourself',
+  'start-over': 'Start over — rerun the interview from the beginning',
+});
+
 export const AUTHOR_SYSTEM = 'You compose the DEFINITION OF DONE for an automated job: a declaration over a fixed '
   + 'catalogue of stage kinds whose implementations already exist. You never write code, a script, a shell fragment, '
   + 'a new kind, or a new parameter name. You cannot read anything and you cannot run anything: everything you know '

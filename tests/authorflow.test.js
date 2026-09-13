@@ -42,7 +42,9 @@ import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
   MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
   REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
-  QUESTION_SETS, GREEN_QUESTIONS, questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS,
+  QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS,
+  questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS,
+  WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
   catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
@@ -250,6 +252,42 @@ test('labelsFor mirrors questionsFor: same admission rule, and soft-green\'s fou
   // hitl's own fourth question has no row in the signed table — no fabricated label
   assert.deepEqual(labelsFor('hitl'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
   assert.throws(() => labelsFor('chartreuse'), /chartreuse/);
+});
+
+// PRD item 33 M3 piece 4 (the confirm turn, D6/ruling 5 addendum): "worse than
+// before" is a SEPARATE, repo-only confirm-turn field, never folded back into
+// any of the three numbered free-text sets — a caller reading the wrong table
+// could otherwise double-ask it.
+test('the retired "worse than before" wording is nowhere in any questionsFor(*) set', () => {
+  for (const set of [GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS]) {
+    const all = Object.values(set).join(' ');
+    assert.ok(!/worse than before/i.test(all), `a numbered set carries the retired wording: ${all}`);
+  }
+});
+
+// The confirm turn's own person-facing wording (piece 4) — frozen, like
+// SOURCE_FIELD/DESTINATION_FIELD_* above: exact shape, exact text.
+test('WORSE_THAN_BEFORE_FIELD is the old Q5 wording, verbatim, as its own mechanical field', () => {
+  assert.deepEqual(WORSE_THAN_BEFORE_FIELD, {
+    id: 'worseThanBefore',
+    kind: 'mechanical',
+    label: 'Worse than before',
+    prompt: 'What would make you say this came back worse than before?',
+  });
+  assert.ok(Object.isFrozen(WORSE_THAN_BEFORE_FIELD));
+});
+
+test('LANGUAGE_PICK_FIELD names no candidates of its own — the caller supplies detectLanguage\'s own list', () => {
+  assert.equal(LANGUAGE_PICK_FIELD.id, 'language');
+  assert.equal(LANGUAGE_PICK_FIELD.kind, 'mechanical');
+  assert.match(LANGUAGE_PICK_FIELD.prompt, /which one is this job about/i);
+  assert.ok(Object.isFrozen(LANGUAGE_PICK_FIELD));
+});
+
+test('CONFIRM_MENU is a structured four-way choice, never a matcher over free text', () => {
+  assert.deepEqual(Object.keys(CONFIRM_MENU), ['confirm', 'fix', 'type-goal', 'start-over']);
+  for (const v of Object.values(CONFIRM_MENU)) assert.equal(typeof v, 'string');
+  assert.ok(Object.isFrozen(CONFIRM_MENU));
 });
 
 // PRD item 33 M3 piece 3: Q2 (which files change, which are read-only) is gone
