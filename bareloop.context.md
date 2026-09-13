@@ -15,25 +15,13 @@
 > close's MECHANICAL stages only — never a judged floor, never a person. Shipped in v0.12.0
 > (2026-08-23); see CHANGELOG `## [0.12.0]` onward for the softgreen rung and the fixes/rungs
 > that followed through v0.15.0. **The plan shape is the ONLY shape**: the legacy
-> operator-authored `steps[]` path, config-v1 and the draft-PR hitl step were deleted
+> operator-authored `steps[]` path, config-v1 and its draft-PR step were deleted
 > 2026-07-26 (PRD v1.32), so `interpret`, `validateConfig` and `extractRules` are gone from
 > the public surface — a breaking change. Runs on two worker surfaces — the API `Loop` and,
 > for `clipipe-subscription`, the CLI's native tool channel (module 4d). API sections fill in
 > as build-ladder rungs land (PRD §10). What is settled — the boundary, the architecture, the
 > refusals, the constraints — is settled for good. Per LIBRARY_CONVENTIONS §3 this file ships
 > with the package and is the complete adopter contract; the README is only the pitch.
-
-> **LEGACY — `hitl` (retired by design, PRD Addendum v1.71, 2026-08-17).** `hitl` remains
-> ADMITTED in code today — `VERDICT_TYPES` still lists it, the `human-confirms` stage kind is
-> still live (never offered, at-most-once, must be last), and the two `hitl-*` terminals
-> (`hitl-pause`, `hitl-decision-red`) still exist and still work exactly as documented
-> wherever this file describes them below. It is retired as a *design direction*, not deleted
-> as *code*: `LOCKED_CLASSES` is empty, so nothing refuses a `hitl` job today, but new
-> integrations should target `green` / `soft-green` plus the review door instead — that pair
-> is the forward path for anything needing a person's judgement, and `hitl`'s removal is a
-> future breaking change, not yet scheduled. Records: PRD Addendum v1.71,
-> `docs/product/2026-08-17-softgreen-review-door-design.md` (repo-only, not shipped);
-> evidence F102–F105.
 
 ## What this is
 
@@ -58,10 +46,8 @@ inherited rule carries the green that minted it and the contrast that attributed
   truth, `src/kinds.js` `LIVE_KINDS`) is the default and the only class with a live-proven
   paid run. `soft-green` (a judged floor behind a signed calibration gate, plus a review
   door) is fully admitted (`VERDICT_TYPES`, `src/job.js:106`) but has never rendered a live
-  verdict — see `## Public API` → "THE JUDGED FLOOR" and "THE REVIEW DOOR" below. `hitl` is
-  LEGACY: still admitted (removal is a future breaking change) but retired as a design
-  (PRD Addendum v1.71); its pause machinery lives on as the review door, not as a class to
-  pick for new jobs.
+  verdict — see `## Public API` → "THE JUDGED FLOOR" and "THE REVIEW DOOR" below. `green` and
+  `soft-green` are the only classes on offer for new jobs.
 - **Worker surface — how the agent runs:** `provider: 'anthropic-api'` (the default, the
   only one with an operational guarantee, F48) drives `bare-agent`'s `Loop` and takes the
   shell-owned `provider` binding. `provider: 'clipipe-subscription'` (`src/job.js:135`)
@@ -183,8 +169,8 @@ the step plan at run time (gated by `validatePlan`); the human signs only:
 | field | shape | notes |
 |---|---|---|
 | `goal` | non-empty text | what the agent plans against |
-| `verdictType` | `green` \| `soft-green` \| `hitl` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **All three still VALIDATE and RUN** — `LOCKED_VERDICTS` is empty, so nothing reds `request-red` on the class itself, and an existing spec of any class executes. **But AUTHORING offers two: `green` and `soft-green` (`MENU_CLASSES`).** `soft-green` has its judged floor (`judged-floor`, signed rubric card + calibration gate) and is the forward path for a job needing judgement, paired with the end-of-run review door; `hitl` is RETIRED and UNLISTED (`UNLISTED_CLASSES`, PRD item 31.1) — the class moved to fwdloop, so `runInterview` refuses a hitl pick as counted demand and no new hitl job can be drafted, while its battery, its runtime and an already-signed hitl spec are untouched and still work exactly as documented here. The three lists are DIFFERENT facts: `LOCKED_CLASSES` (no battery — cannot validate or run; empty today), `UNLISTED_CLASSES` (built and runnable, never offered — `['hitl']`), `MENU_CLASSES` (what authoring offers). Every `request-red` (e.g. for a locked TOOL verb, not a verdict class) also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
-| `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs?, direction? }, ...]` (PRD v1.28), or a close object (table below) | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; a `gold`/`rubric`/`hitl` object close still VALIDATES (`CLOSE_TYPES`) but the plan flow refuses all three at runtime as `close-unsupported` — an object close names no command to run. The modern route to a judged or human-decided close is a staged `closeDecl` (`judged-floor` / `human-confirms` stage kinds), not this object form |
+| `verdictType` | `green` \| `soft-green` | declared radio, never inferred (`VERDICT_TYPES`, frozen). **AUTHORING offers both (`MENU_CLASSES`).** `soft-green` has its judged floor (`judged-floor`, signed rubric card + calibration gate) and is the forward path for a job needing judgement, paired with the end-of-run review door. Every `request-red` (e.g. for a locked TOOL verb, not a verdict class) also carries `lib` — the territory the demand lands against, stamped at the emit site (`verdictType` → `bareloop`, a locked tool verb → `bare-agent`): the ledger keys and its `suggestedAsk` seed on it, so a bareloop-catalogue refusal never files as an upstream ask |
+| `close` | **an ORDERED LIST of named stages** `[{ name, cmd, expect, judged?, gapKeep?, offer?, needs?, direction? }, ...]` (PRD v1.28), or a close object (table below) | the destination, the only thing hand-authored; the check menu DERIVES from it (below). The plan flow executes a staged close directly and adapts a bare `predicate` object into a one-stage list; an object close names no command to run, so the plan flow refuses one at runtime as `close-unsupported`. The modern route to a judged or human-decided close is a staged `closeDecl` (`judged-floor` / `human-confirms` stage kinds), not this object form |
 | `closeDecl` | **the AUTHORED close** `{ genre: "TYPES", lang: "js"\|"python", stages: [{ name, kind, params }], notes? }` | the ALTERNATIVE to `close`, and the point of the close-authoring rung: the user answers an interview and an LLM composes a DECLARATION over kinds whose implementations we own — never a script, never a shell fragment, never a new kind. **`close` and `closeDecl` are alternatives**: declaring both reds `close-duplicated` (two closes are two arbiters). It is HARD-class by construction (`CLASS_BY_CLOSE.declared`), so a locked verdict on one reds `close-hierarchy` as well as `request-red`. The declaration is validated by `validateCloseDecl`; the TREE-GROUNDED half of that gate (the path rule, and the scoped-job derivation that arms the F84 one-population law) is DEFERRED at spec-validation time — a job spec is validated with no repository in hand — and the runner re-runs it GROUNDED against the real seed before any stage and before any token. It stores the counting RULE and never a number (D12): there is no seed field, and `baseline: "seed"` is measured at each run's own HEAD |
 | `checks` | **RETIRED** (PRD v1.28/v1.32) | hand-authored checks are gone, not merely discouraged: declaring `checks` reds `checks-derived` by name. The check menu is DERIVED from the close's own stages instead — see **Staged close** below. The hazard this removes is measured, not theoretical: job #5's three hand-written checks were re-implementations of three stages the close already ran, and a hand-carved copy can drift LENIENT (the worker passes the operator's ruler and fails the real inspection) |
 | `tools` | optional unique subset of `TOOL_MENU` (14 verbs, below) | the CEILING every plan step's grant must fit inside (omitting it means the full menu — and the hash is taken over that RESOLVED form, so a `TOOL_MENU` widening flips an omitted-`tools` spec's hash and forces a re-sign; see `jobSpecHash`, MED-1); `run` is `LOCKED_TOOLS` and reds `request-red` — locked-but-listed, and the red IS the admission evidence the ledger tallies (a typo stays `invalid-value`). A ceiling of write-class and store-class verbs ONLY reds `invalid-value`: the scout surveys read-only, so it would be handed an empty menu and survey blind |
@@ -280,19 +266,17 @@ a few explicit requirements rather than prose. Preflight already names every sta
 **Close types and the hierarchy — the OBJECT form, which the plan flow only partially
 supports** (a close is data, never code; verdict-class laundering is a named red
 `close-hierarchy`). The go-forward shape is the staged list above; a `predicate` object is
-legal shorthand for a one-stage list and the plan flow adapts it, but `gold`/`rubric`/`hitl`
+legal shorthand for a one-stage list and the plan flow adapts it, but `gold`/`rubric`
 validate and then refuse at runtime (`close-unsupported`) regardless of verdict class — the
-plan flow has never executed an object close beyond `predicate`. `hitl` (LEGACY) is a STAGE
-(`human-confirms` inside a `closeDecl`) and `soft-green`'s judged floor is likewise a STAGE
-(`judged-floor` inside a `closeDecl`) — never close TYPES — so both OBJECT forms below stay
-refused at runtime exactly as they were:
+plan flow has never executed an object close beyond `predicate`. `soft-green`'s judged floor
+is a STAGE (`judged-floor` inside a `closeDecl`) — never a close TYPE — so both OBJECT forms
+below stay refused at runtime exactly as they were:
 
 | type | fields (exact — extras red) | legal class |
 |---|---|---|
 | `predicate` | `cmd`, `expect` (int exit code), `judged?`, `gapKeep?` | `hard` |
 | `gold` | `expected`, `compare: exact\|json-equal` | `hard` |
 | `rubric` | `criteria` | `soft` only — can never mint automatically |
-| `hitl` | `prompt` | `hitl` — a human IS the close |
 
 **`judged` — the judgment-rendered signal (optional, `predicate` only; PRD v1.11 / F17).**
 `{ pattern: string, min: int >= 1 }` — a regex with **exactly one** capture group (zero and
@@ -320,7 +304,7 @@ exactly the state a fix job starts from — falls under the floor and is escalat
 instrument crash at precheck, before the worker it hired ever runs. `# tests (\d+)` and
 `^ℹ tests (\d+)$` hold on a red tree; `(\d+) passed` does not (F40).
 
-Omitting it is legal (a linter, a `hitl` close, have nothing to count) and stamps
+Omitting it is legal (a linter has nothing to count) and stamps
 `unaudited: true` on the verdict plus a `close-unaudited` spine event: **the blind spot is
 named, never assumed away.** The agent-drafted workflow config cannot express `judged` —
 it is the arbiter's own honesty check (unknown-field red, enforced per section at every
@@ -410,7 +394,7 @@ missing or non-plan-shape job fails CLOSED). `closeStagesOf(job)` is the ONE sta
 every check-menu consumer shares — it reads whichever close field the spec carries:
 `closeDecl` → its declared stages (each enriched with the arbiter's own `gapKeep`), else
 `stageClose(close)` (array → itself; legacy object predicate → its one-stage list, named
-`close`; gold/rubric/hitl → null). A consumer reading `close` alone would see a declared
+`close`; gold/rubric → null). A consumer reading `close` alone would see a declared
 job as closeless and offer the drafter an empty check menu. The `secret-literal` sweep is
 defense-in-depth against known token shapes — env-only loading remains the law, not the
 sweep.
@@ -576,11 +560,10 @@ everything else refuses honestly, and every refusal is COUNTED.
 
 **The verdict class is the USER's answer (PRD v1.57 §1), and it DRIVES the authoring.**
 `verdictType` is a declared radio the preflight validates, never inferred:
-`VERDICT_CLASSES` = `green` | `soft-green` | `hitl`, with `LOCKED_CLASSES` = **empty** —
+`MENU_CLASSES` = `green` | `soft-green`, with `LOCKED_CLASSES` = **empty** —
 `soft-green` shipped its judged floor in v0.12.0 (2026-08-23) and is fully admitted
-alongside `green`; `hitl` is LEGACY (retired as a class by the 2026-08-17 design, PRD
-Addendum v1.71) but still admitted too, since removal is a future breaking change. The
-review door (`accept`/`rerun`/`pause`) that re-homes hitl's pause machinery is shipped and
+alongside `green`. The
+review door (`accept`/`rerun`/`pause`) is shipped and
 live — always on for `soft-green`, opt-in for `green` via `reviewDoor: true` /
 `--review-door`. A future LOCKED_CLASSES entry would still return a counted `request-red`
 refusal at ADMISSION — before that class's questions are ever asked. The
@@ -594,7 +577,7 @@ a step, or test it without a provider.
 
 | step | call | what it is |
 |---|---|---|
-| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. THREE frozen question sets keyed by verdict class (`QUESTION_SETS`; `questionsFor(cls)` / `requiredAnswersFor(cls)`), all three sets still EXIST, but the interview ADMITS only what is on the menu: nothing is locked today (`LOCKED_CLASSES` is empty) and `hitl` is UNLISTED (PRD item 31.1), so `runInterview({verdictType:'hitl'})` returns a refusal rather than `ok:true` — ask `MENU_CLASSES` which classes can be authored, never this sentence. The interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost two slots since it was frozen (D13's genre confirm, then the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input and asking for it again invites a second, drifting answer for a fact the machine already holds), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today the green set is five questions, answers keyed by number; the RETIRED, UNLISTED `hitl` set (still readable via `questionsFor`, never authorable) is those five byte for byte plus one more (what the signer is deciding when they look at the result — `human-confirms`' `ask`), which is the spread's next number and moves with a green-side deletion; the `soft-green` set is likewise those five plus two more — Q6 the signed rubric card (what separates a pass from a fail) and Q7 the frozen calibration set (one example to pass, one to fail) — the judged floor's two required inputs. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
+| interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. The interview ADMITS only what is on the menu (`MENU_CLASSES`): nothing is locked today (`LOCKED_CLASSES` is empty), and any pick off the menu returns a refusal rather than `ok:true` — ask `MENU_CLASSES` which classes can be authored, never this sentence. The interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost two slots since it was frozen (D13's genre confirm, then the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input and asking for it again invites a second, drifting answer for a fact the machine already holds), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today the green set is five questions, answers keyed by number; the `soft-green` set is those five plus two more — Q6 the signed rubric card (what separates a pass from a fail) and Q7 the frozen calibration set (one example to pass, one to fail) — the judged floor's two required inputs. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
 | survey | `runAuthorScout({ workdir, provider, attempts?, ceilingUsd? })` → `{ state, facts, reason, meta, raw, raws, calls, budgetStop }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes. Up to `SCOUT_ATTEMPTS` (**3**, hardcoded — PRD v1.58) attempts: `attempts` is TIGHTEN-ONLY and CLAMPS rather than throws (floor **1**, because a scout that never ran is an ABSENT nobody can act on), the direction every cap in this system runs in. **A retry fires on the typed MALFORMED class alone** (`SCOUT_RETRY_CAUSES` = `empty` \| `unparseable`); what is excluded is excluded for a reason — `call-failed` covers transport and `truncated:max_tokens`, both provider-red with NO redraft; `short` is F59's cut-off population and already has its own instrument INSIDE the attempt; `non-object` and `empty-object` are valid JSON with wrong or vacuous content, which is a SEMANTIC failure, and F38/F39 measured what re-asking one buys (the same distribution, sampled twice) — that is the self-healing line, and it is not crossed here. The re-ask is TOOLLESS over the conversation the survey already produced (the repository was already read; only the emission was unreadable) and names the mechanical parse error and nothing else. **There is no JSON repair behind it and there never will be** — a repairer decides what the model MEANT and writes it down as though the model had said it, in the one artefact whose whole job is to be honest about what a repository contains. `meta.attempts` / `meta.attemptsAllowed` record what was paid for; every attempt is metered under its own label (`author-scout`, `author-scout#2`, …) and leaves its raw behind. **`ceilingUsd` is the operator's money ceiling** (PRD v1.62) — checked BETWEEN attempts and before F59's reserved round, so no paid call escapes it; `null`/absent is UNBOUNDED, and a non-null non-finite value THROWS (the shared `capStop` seam — see `authorClose` below). When it ends the ladder, `budgetStop` names which stop (`cap-halt` \| `pricing-red`) and a survey that was never asked for carries the typed cause `not-funded` — deliberately OUTSIDE `SCOUT_RETRY_CAUSES`, because a retry is precisely what the cap forbade |
 | listing | `buildSeedListing({ workdir, seedRef, sourcePaths, testPaths })` | mechanical, `$0`, no model. `files` is the WHOLE tree (what the validator judges paths against); `block` is scoped to the survey's own paths and capped in ANNOUNCED tiers (what the prompt carries). Handing the validator the scoped half would make a job scoped to `src/` read as whole-tree and silently disarm the one-population law |
 | authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate, ceilingUsd? })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2) — a passed `maxRevisions` is TIGHTEN-ONLY, so a caller may LOWER that ceiling and never buy more revise rounds than the constant (floor **0**: one authoring call with no revise round is a legal ask, and unlimited revising would launder thrash as adaptation) — early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close. The return carries **`raws`**: what every model call actually SAID, the scout's attempts absorbed together with the declaration's, in the cost book's own order and under the same labels it meters. Each is `{ label, attempt, bytes, trimmed, text, cause, reason }` through the ONE persist helper (`scrubRaw` — redacted over the ONE `SECRET_PATTERNS` inventory, since a raw is the record most likely in this system to carry a live credential; bounded at `RAW_PERSIST_MAX` (8000) with the trim ANNOUNCING its own full size, and the cut walked back off a continuation byte so a multi-byte character is never split). `raws` is present on EVERY path **including the `$0` preflight refusals** — the path that spends nothing more is exactly the one whose evidence used to vanish with the process. `iterations` records what each turn MEANT (declaration, validation, seed read); `raws` records what it SAID, and a malformation is only ever visible in the second. **`ceilingUsd` is the same operator ceiling the survey took** — the scout's spend is ABSORBED into this loop's cost book before its first call is weighed, so spend already incurred folds in and re-entering cannot silently widen it. It is checked immediately before EVERY paid call (the author call, each revise, and each malformed-emission retry). **A MALFORMED ceiling is an ERROR, not a silent unbounded run** (v1.64 §3): the seam every ceiling read goes through (`capStop`, `src/text.js`) THROWS on a non-null non-finite value — `'2.50'`, `NaN`, `Infinity`, `true`, `{}` — before the first paid call, and the throw propagates uncaught rather than being caught into an ABSENT survey, because a caught one would hand you the very silent-unbounded run it exists to prevent. `null`/omitted is the STATED operator choice for unbounded; `0` and negatives are finite, legal, and cap-halt immediately. The advertised ceiling and the enforced ceiling can therefore never be different numbers. A `cap-halt` here can arrive with `ok:true` — a close that was already validated and measured survives the money stop, exactly as a late provider casualty does |
@@ -932,9 +915,9 @@ the EMIT SITE, so `classifyIncidents` files it against bareloop's own catalogue 
 decision-ready `escalation` under `close-unauthorable`, which is in the ledger's excluded
 set precisely because the demand is already counted once. A refusal that is a STOP rather
 than demand (a broken instrument, a close with nothing to do) emits the escalation ALONE.
-**Known limit, stated:** v1's derivation cannot tell `soft-green` from `hitl` and does not
-try — both refuse under one verb (`non-green-verdict`), because naming which locked class a
-job belongs to would be a guess about prose.
+**Known limit, stated:** v1's derivation cannot tell `soft-green` from an off-menu verdict
+class and does not try — both refuse under one verb (`non-green-verdict`), because naming
+which locked class a job belongs to would be a guess about prose.
 
 **At run time** the declared close is executed by the kind executor, never compiled down to
 shell (that would turn owned kinds back into authored strings — the exact thing D3 makes
@@ -1049,8 +1032,8 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
 plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red | pricing-red |
-provider-red | interpreter-red | cap-halt | wall-halt | step-stalled | hitl-pause |
-hitl-decision-red | step-red:<id> | runner-drained`.
+provider-red | interpreter-red | cap-halt | wall-halt | step-stalled |
+step-red:<id> | runner-drained`.
 
 **`runner-drained` (F140/PRD item 28(c))** is a distinct class from every outcome above: it is
 NOT `runJob`'s own return value, it is a `beforeExit` backstop's terminal, emitted from outside
@@ -1127,8 +1110,9 @@ knob, not a product default — the spec names no scout, so the signed hash is u
 `--read-shim`: an unrecognised value exits 2 at argv, and every re-invocation the runner prints
 carries `--scout off` when set, so a resume never silently drops the arm.
 
-**The two hitl terminals (N4 slice 1, doors re-cut 2026-08-18)** are the class's whole surface
-at this layer, and each is a CLEAN exit (`spendComplete` stays true — only the two casualties floor). `hitl-pause` is a
+**The review door's two checkpoint terminals (N4 slice 1, doors re-cut 2026-08-18)** are the
+class's whole surface at this layer, and each is a CLEAN exit (`spendComplete` stays true —
+only the two casualties floor). The pause terminal is a
 decision-ready CHECKPOINT: the close reached a stage no machine can render, so the run stops
 holding everything it has done, emits the evidence package (every mechanical stage's result, the
 close's own `ask`, and the changed paths — bounded, trim announced), and the clock stops with
@@ -1137,12 +1121,12 @@ exported bundle inherits one spelling), and `checkpointAgeGate` refuses one olde
 `PAUSE_TTL_MS` (60 days) by NAMING the age and the TTL. The signer's own `pause` door mints
 that SAME terminal, with `humanDecision: 'pause'` and an explicit `gap: null` on the record: no
 fix loop, no worker round, nothing spent, the rerun allowance untouched, and the checkpoint left
-exactly as it was. `hitl-decision-red` refuses a decision the run cannot act on — a word that is
-not one of the three doors, a `rerun` with empty text, or a decision handed to a close with no
-human stage — before anything is spent. Neither demotes a bridge, and both are excluded from the
-ledger's escalation counting.
+exactly as it was. The decision-refusal terminal refuses a decision the run cannot act on — a
+word that is not one of the three doors, a `rerun` with empty text, or a decision handed to a
+close with no matching stage — before anything is spent. Neither demotes a bridge, and both are
+excluded from the ledger's escalation counting.
 
-There was a third terminal, `hitl-cancel`, for a `cancel` door that no longer exists (hamr,
+There was a third terminal, for a `cancel` door that no longer exists (hamr,
 2026-08-17: *"pause can resume — that would be more honest"*). Nothing mints it and no constant
 exports it; the ledger still RECOGNISES the bare string so a spine written before the change
 reads as governance rather than as a counted capability gap. An unresumed pause expiring under
@@ -1166,8 +1150,8 @@ the byte-identical question again. The two markers are deliberately not one: the
 "spends" the ruling for THIS leg's close readings the moment it opens, while whether the person
 must be asked AGAIN depends on work actually having been bought.
 
-A leg handed BOTH a fresh `humanRuling` and a `heldRuling` is refused (`hitl-decision-red`,
-naming the held decision) before anything costs anything: two answers to one question is
+A leg handed BOTH a fresh `humanRuling` and a `heldRuling` is refused (the decision-refusal
+terminal, naming the held decision) before anything costs anything: two answers to one question is
 ambiguity, not a merge. `resolveHumanRuling(fresh, held)` is the exported seam that decides this
 (and whether the leg is a fresh engagement, below), so a runner cannot admit what a run refuses.
 
@@ -1296,7 +1280,7 @@ never replans) — plus at most ONE arbiter-granted extra on a second variance s
 REAL close and governed by the close TREND rule below (`capRuns`, default 3, survives only as
 its blind fallback). `plan-executed` (the plan-as-executed record, design law #2) lands on the
 spine on every path that executed steps. Additional outcomes: `already-green |
-plan-red | check-red | close-red | wall-halt | hitl-pause | hitl-decision-red`.
+plan-red | check-red | close-red | wall-halt`.
 A `human-confirms` stage is caught at BOTH close seams — the precheck (reaching a person there
 means the machine half already passes on the untouched tree, so pausing costs $0 where drafting
 a plan first would spend a budget to arrive at the same question) and the post-steps close. Worker prompts hold the v1.12 §5 contract
@@ -1676,9 +1660,9 @@ about its task, beside the absolute-path law it is the twin of — both are fenc
 cannot infer. It renders for EVERY worker on every grant (a worker granted only `write` gets
 no component strategy paragraph at all and must still be told). The fence is unchanged; what
 changed is that the rule is stated instead of learned one refusal at a time, which cost a real
-run the rounds of a bounded attempt. N2 bounds (honest): `gold`/`rubric`/`hitl` OBJECT
-closes refuse `close-unsupported` — N4's hitl is a `human-confirms` STAGE inside a `closeDecl`,
-never a close TYPE, so there is one live expression of hitl rather than two.
+run the rounds of a bounded attempt. N2 bounds (honest): `gold`/`rubric` OBJECT
+closes refuse `close-unsupported` — a `human-confirms` STAGE lives inside a `closeDecl`,
+never as a close TYPE, so there is one live expression of it rather than two.
 
 ### THE REVIEW DOOR — the three doors at the END of a run (softgreen module 8, PRD v1.71 §3)
 
@@ -1780,7 +1764,7 @@ it is simply worth nothing yet. A held green does not count in `deriveStatus` (a
 only greens are held derives `null` and renders `HELD`, never `NO-GREEN`), and
 `reuseEligibility(bridge)` / `newestEligibleVersion(bridge)` refuse it for reuse **with a
 stated reason** — the same visible-skip discipline an unreadable registry file gets.
-`green` and `hitl` are untouched, byte for byte: the key is ABSENT, because the hold is about
+`green` is untouched, byte for byte: the key is ABSENT, because the hold is about
 the young JUDGE, not about every class that is not green. `QUARANTINED_VERDICTS` is the one
 list; `quarantinesCredit(verdictType)` is the one predicate. The class travels on the green
 record as `verdictType` — an unrecognised value REDS rather than falling through to unheld.
@@ -2017,7 +2001,8 @@ semantics are byte-unchanged (PRD v1.46 §3):
   plan is on the spine with nothing decided against them. **The set is the CALLER's** — the
   parameter stays a parameter, and its empty default is what the reuse loop's own graded-row
   semantics depend on — but the canonical ANSWER is exported as **`CHECKPOINT_OUTCOMES`**
-  (`['cap-halt', 'wall-halt', 'step-stalled', 'hitl-pause']`), and the reference runner
+  (`['cap-halt', 'wall-halt', 'step-stalled', ...]`, plus the pause checkpoint's own outcome),
+  and the reference runner
   CONSUMES it rather than keeping a copy. The first two are governance halts — an operator-owned allowance ran
   out. `step-stalled` joined them 2026-08-13 on hamr's ruling (PRD v1.64 §1): it is the one
   terminal whose OWN escalation already offers *"retry the run"*, nothing about the work on
@@ -2059,7 +2044,7 @@ watchdog `--wall-ms 0`, which it defaulted to `null` and armed no deadline at al
 still advertising one. The refusal names the lever: raise `maxWallMs`, which moves the spec hash
 and is re-signed.
 
-**A `hitl-pause` checkpoint is answered on the same command line** (N4, 2026-08-12 §5.2 — the
+**A pause checkpoint is answered on the same command line** (N4, 2026-08-12 §5.2 — the
 terminal is the v1 surface; the panel is N6's). The reference runner takes
 `--decide accept|rerun|pause` with `--text` for the rerun door, gated on the SAME
 `--approve <specHash>` signature the run itself is signed with (ruling 4: the spec hash is the
@@ -2245,7 +2230,7 @@ time), `step-stalled` (the stall fuse firing is our governance, not an observed 
 failure), `step-variance` (a planning story), `gate-red`/`smoke-red` (governance working
 as intended / already counted — and `gate-red` is no longer minted anywhere in this library,
 kept listed because this set is EXECUTABLE: dropping a name would not delete the category, it
-would re-file any future emission of it as a counted capability gap), `hitl-close`/`close-unsupported`/`close-unauthorable` (by design — and the last one
+would re-file any future emission of it as a counted capability gap), the legacy human-close terminal/`close-unsupported`/`close-unauthorable` (by design — and the last one
 is excluded for a SECOND reason: its demand is already counted once as the `request-red`
 the same refusal emits, so counting the escalation too would double every refusal),
 `close-timeout`/`close-killed`/`close-crashed` (the arbiter's own named terminals, F17);

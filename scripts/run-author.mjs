@@ -31,14 +31,14 @@
 //                  unbounded run must be a VISIBLE operator choice, never a state
 //                  arrived at by omission.
 //
-//   --verdict      THE RADIO (PRD v1.57 §1): green | soft-green | hitl. It is the
+//   --verdict      THE RADIO (PRD v1.57 §1): green | soft-green. It is the
 //                  USER's answer, so it is asked rather than defaulted — a
 //                  defaulted class would be this script answering a question the
-//                  person was asked. v1 admits `green`; the other two return the
-//                  honest counted refusal.
+//                  person was asked.
 //   answers.json   {"1": "...", ...}  the picked class's own frozen questions,
 //                  keyed by the LIBRARY's own numbers (`requiredAnswersFor`) —
-//                  green: five, hitl: those five plus the signer's ask. Never a
+//                  green: five, soft-green: those five plus two more (the signed
+//                  rubric card and the frozen calibration set). Never a
 //                  count spelled here: two slots have already been deleted (D13's
 //                  genre confirm, then the repo question hamr dropped once the
 //                  mandatory --patient made it redundant), and a hardcoded number
@@ -50,7 +50,7 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } fr
 import { join, resolve } from 'node:path';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
-  VERDICT_CLASSES, LIVE_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
+  VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
@@ -111,15 +111,18 @@ const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget
 
 if (!patientArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
   die('usage: node scripts/run-author.mjs --patient <repoPath> --answers <answers.json> --draft <specdraft.json> '
-    + `--verdict <${VERDICT_CLASSES.join('|')}> --out <outdir> [--lang js] [--timeout <ms>] [--budget <usd>]`);
+    + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--lang js] [--timeout <ms>] [--budget <usd>]`);
 }
 // A malformed ceiling dies at the door rather than silently reading as absent.
 if (budgetError) die(budgetError);
 // the menu is handed over enumerated; an unknown value is a typo, and the
 // interview refuses it as one (a LOCKED class is a different answer — it reaches
-// the pipeline and comes back as counted demand)
+// the pipeline and comes back as counted demand). The CHECK stays against the
+// full `VERDICT_CLASSES` (so an off-menu pick reaches the pipeline's counted
+// refusal rather than dying here as a typo); the PRINTED text names only the
+// menu (item 34 L19: nothing customer-facing names an off-menu class).
 const VERDICT = /** @type {string} */ (verdictArg);
-if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${VERDICT_CLASSES.join(' | ')}`);
+if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${MENU_CLASSES.join(' | ')}`);
 if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) die(`--timeout ${timeoutArg} is not a positive number of milliseconds`);
 
 const PATIENT = resolve(/** @type {string} */ (patientArg));

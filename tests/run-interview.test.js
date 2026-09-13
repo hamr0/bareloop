@@ -247,7 +247,9 @@ test('an unknown verdict is a TYPO, refused with the menu handed over enumerated
   const out = outDir();
   const r = interview({ verdict: 'greenish', out, lines: ['n'] });
   assert.equal(r.code, 2);
-  assert.match(r.out, new RegExp(`one of ${VERDICT_CLASSES.join(' \\| ')}`));
+  // item 34 L19: the printed text names only the menu, never an off-menu class
+  // (the includes() CHECK below this still runs against the full VERDICT_CLASSES).
+  assert.match(r.out, new RegExp(`one of ${MENU_CLASSES.join(' \\| ')}`));
   assert.equal(existsSync(out), false);
 });
 

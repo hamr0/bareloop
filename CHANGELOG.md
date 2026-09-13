@@ -15,6 +15,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `legacyMaxTokens` request-key gating now name `deepseek-flash`. F149's gating measurement
   was taken on `deepseek-chat` and is carried forward UNVERIFIED on `deepseek-flash`;
   pricing stays the estimated default (F113 unchanged).
+- **`hitl` removed from every customer-facing surface (PRD item 34 L19):** `bareloop.context.md`,
+  and the usage/help text of `scripts/run-author.mjs` and `scripts/run-interview.mjs`, no
+  longer name `hitl` anywhere. The class, its terminals (`hitl-pause`, `hitl-decision-red`,
+  the legacy human-close terminal) and its `human-confirms` stage kind are untouched in code —
+  kept admitted for reuse, never revived, never shown to a customer again. The counted-demand
+  refusal a person sees when they pick an off-menu verdict class is unchanged (it names the
+  class and fwdloop by design). `tests/hitl-hidden.test.js` pins the doc and both scripts
+  case-insensitively hitl-free.
 
 ## [0.25.1] — 2026-09-13
 

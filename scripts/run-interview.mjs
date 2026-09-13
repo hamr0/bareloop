@@ -27,7 +27,7 @@
 //   budgetUsd     the JOB's budget — what the RUN may spend, signed into the spec.
 //
 //   node scripts/run-interview.mjs \
-//     --patient /path/to/repo --verdict hitl --out /path/to/outdir \
+//     --patient /path/to/repo --verdict soft-green --out /path/to/outdir \
 //     [--budget 2.50] [--lang js]
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -77,7 +77,9 @@ if (budgetError) die(budgetError);
 // the right list for the typo check for exactly that reason — narrowing it to the
 // menu here would turn counted demand into an unrecorded typo (PRD item 31.1).
 const VERDICT = /** @type {string} */ (verdictArg);
-if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${VERDICT_CLASSES.join(' | ')}`);
+// the CHECK stays against the full `VERDICT_CLASSES` (see above); the PRINTED text
+// names only the menu (item 34 L19: nothing customer-facing names an off-menu class).
+if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${MENU_CLASSES.join(' | ')}`);
 
 const PATIENT = resolve(/** @type {string} */ (patientArg));
 // asked HERE, before a person answers twenty questions: the scout reads a repository
