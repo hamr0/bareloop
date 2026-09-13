@@ -255,11 +255,12 @@ if (!isUrl && !existsSync(SOURCE)) {
 }
 // the SAME rule `prepareSource` uses to route its own destination check
 // (`looksLikeRepoSource`, `src/source.js`) — never a second, hand-typed copy
-// of it. A Source that is a SUBFOLDER one level inside a repo has no `.git`
-// of its own and is therefore NOT a repo source by this rule: it freezes as
-// a plain folder (kind 'folder'), the same authoritative outcome
-// `prepareSource`'s own walk produces for it — reported, never fought,
-// below.
+// of it. A Source that is a SUBFOLDER inside a git repo IS a repo source
+// (PRD item 33 M3 ruling 2 addendum, 2026-09-13, landed 2a020d8): the
+// boundary walks up to the NEAREST ancestor's `.git`, not only a `.git`
+// sitting directly inside Source itself. It freezes as a repo (kind
+// 'repo'), the same authoritative outcome `prepareSource`'s own walk
+// produces for it — reported, never fought, below.
 const IS_REPO = looksLikeRepoSource(SOURCE);
 
 // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
