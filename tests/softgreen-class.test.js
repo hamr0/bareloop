@@ -160,11 +160,13 @@ test('module 3 §4.6 — the softgreen interview is green\'s three BYTE FOR BYTE
   for (const [n, q] of Object.entries(GREEN_QUESTIONS)) {
     assert.equal(qs[n], q, `question ${n} is green's own string, byte for byte`);
   }
-  // Judge Examples replaces the old Q6+Q7: one field, Q7's wording verbatim —
-  // the old Q6 ("what separates a pass from a fail") is retired as its own
-  // question, since the "why" half of a real pass/fail pair is what the
-  // rubric card now compiles from (cardauthor.js).
-  assert.equal(qs[4], 'Give one example you\'d pass and one you\'d fail, and say why.');
+  // Judge Examples replaces the old Q6+Q7: one field, whose text is now the
+  // signed table's own "Holds" column, verbatim (PRD item 33 M3 piece 3's
+  // wording fix) — not the old worded Q7 ("Give one example you'd pass and
+  // one you'd fail, and say why."). The old Q6 ("what separates a pass from a
+  // fail") is retired as its own question, since the "why" half of a real
+  // pass/fail pair is what the rubric card now compiles from (cardauthor.js).
+  assert.equal(qs[4], 'one pass, one fail, and why');
   assert.deepEqual(requiredAnswersFor('soft-green'), [1, 2, 3, 4]);
   assert.equal(QUESTION_SETS['soft-green'].locked, false);
   assert.equal(QUESTION_SETS['soft-green'].questions, SOFTGREEN_QUESTIONS);

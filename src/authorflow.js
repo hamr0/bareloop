@@ -231,16 +231,46 @@ export const DESTINATION_FIELD_PLAIN = Object.freeze({
 export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_REPO : DESTINATION_FIELD_PLAIN; }
 
 /**
- * THE FREE-TEXT TRIO EVERY CLASS SHARES: Goal, Success, Guardrails — numbered
- * contiguously from 1. This is what `answers[1..3]` are filed under for every
- * class; soft-green appends a fourth (`SOFTGREEN_QUESTIONS`) and hitl appends a
- * different fourth (`HITL_QUESTIONS`), each its own next number rather than a
- * fixed one, so a future trim of this trio renumbers instead of leaving a gap.
+ * THE FREE-TEXT TRIO EVERY CLASS SHARES: Goal, What success looks like,
+ * Guardrails — numbered contiguously from 1. This is what `answers[1..3]` are
+ * filed under for every class; soft-green appends a fourth
+ * (`SOFTGREEN_QUESTIONS`) and hitl appends a different fourth
+ * (`HITL_QUESTIONS`), each its own next number rather than a fixed one, so a
+ * future trim of this trio renumbers instead of leaving a gap.
+ *
+ * THE TEXT IS THE SIGNED TABLE'S "Holds" COLUMN, VERBATIM (PRD item 33's
+ * 2026-09-10 "The intake form (RULED)" ruling, `docs/product/PRD.md`) — not the
+ * old worded questions ("What do you want done?", "How do you check today
+ * whether it's working?", "...worse than before?"). Motivated by run `mtv8jihy`
+ * (F159, `docs/logs/FINDINGS.md`): a rulebook this prompt commit did not touch
+ * still had to compile against a card built from a person's actual bar, and the
+ * old wording never matched what got signed — this reshape (commit 1ac4d05)
+ * trimmed the SET to three slots but left their PROSE unreconciled with the
+ * table it was meant to realize. `FIELD_LABELS` (below) carries the matching
+ * label for each key, so a caller wanting BOTH shows them together — see
+ * `authorPrompt`'s interview block and `scripts/run-interview.mjs`.
  */
 export const GREEN_QUESTIONS = Object.freeze({
-  1: 'What do you want done?',
-  2: 'How do you check today whether it\'s working?',
-  3: 'Is there anything that must not change? And what would make you say this came back worse than before?',
+  1: 'what you want to achieve',
+  2: 'checks a machine can count',
+  3: 'what must not happen or change',
+});
+
+/**
+ * The signed table's own label for each of {@link GREEN_QUESTIONS}' keys — "the
+ * Field column", where {@link GREEN_QUESTIONS} is "the Holds column". Kept as a
+ * SEPARATE map rather than folding the label into the question string itself:
+ * every existing caller of `questionsFor`/`requiredAnswersFor`/`QUESTION_SETS`
+ * (`src/authorjob.js`, `src/cardauthor.js`, `scripts/run-interview.mjs`) treats
+ * a question as a plain string handed verbatim into a prompt or a `Q<n>. `
+ * line, and folding a label in would change that shape for every one of them.
+ * A caller that wants the label calls {@link labelsFor} exactly the way it
+ * calls `questionsFor` — additive, nothing existing breaks.
+ */
+export const FIELD_LABELS = Object.freeze({
+  1: 'Goal',
+  2: 'What success looks like',
+  3: 'Guardrails',
 });
 
 /** The key Guardrails' merged question and Judge Examples both prove out at:
@@ -253,11 +283,18 @@ const NEXT_FREE_TEXT_KEY = Object.keys(GREEN_QUESTIONS).length + 1;
  * rather than a second, hand-typed "6"/"7". */
 export const SOFTGREEN_JUDGE_EXAMPLES_KEY = NEXT_FREE_TEXT_KEY;
 
-/** The Judge Examples question, verbatim the old Q7 (PRD item 33 M3 piece 3:
- * the old Q6 is retired — the "why" half of a real pass/fail pair is what the
- * rubric card now compiles from). Exported so `cardauthor.js`'s prompt and this
- * module's own `SOFTGREEN_QUESTIONS` render the identical string. */
-export const JUDGE_EXAMPLES_QUESTION = 'Give one example you\'d pass and one you\'d fail, and say why.';
+/** The Judge Examples question — the signed table's own Holds text, verbatim
+ * ("one pass, one fail, and why"), not the old worded Q7 ("Give one example
+ * you'd pass and one you'd fail, and say why."). Exported so `cardauthor.js`'s
+ * prompt and this module's own `SOFTGREEN_QUESTIONS` render the identical
+ * string; its label ("Judge examples") lives in `SOFTGREEN_FIELD_LABELS`. */
+export const JUDGE_EXAMPLES_QUESTION = 'one pass, one fail, and why';
+
+/** {@link FIELD_LABELS} plus Judge Examples' own label, for the soft-green set. */
+export const SOFTGREEN_FIELD_LABELS = Object.freeze({
+  ...FIELD_LABELS,
+  [SOFTGREEN_JUDGE_EXAMPLES_KEY]: 'Judge examples',
+});
 
 /**
  * THE SOFTGREEN SET — the green trio plus Judge Examples. A judged close needs
@@ -294,22 +331,30 @@ export const HITL_QUESTIONS = Object.freeze({
  * distinction, at the interview layer) — and a locked class refuses at ADMISSION,
  * before its questions run, so the two readers throw rather than hand back
  * nothing. A fourth class arrives locked, and the machinery is here for it.
- * @type {Record<string, {locked: boolean, questions: Record<string|number, string>|null, required: readonly number[]|null}>}
+ * `labels` travels ALONGSIDE `questions`, one label per key that the signed
+ * table names one for (PRD item 33 M3 piece 3's wording fix) — hitl's own
+ * fourth question has no table row (it is never customer-facing, ruling 8) and
+ * so carries none; a reader finding no label for a key falls back to showing
+ * none, never a fabricated one.
+ * @type {Record<string, {locked: boolean, questions: Record<string|number, string>|null, labels: Record<string|number, string>, required: readonly number[]|null}>}
  */
 export const QUESTION_SETS = Object.freeze({
   green: Object.freeze({
     locked: false,
     questions: GREEN_QUESTIONS,
+    labels: FIELD_LABELS,
     required: Object.freeze(Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
   'soft-green': Object.freeze({
     locked: false,
     questions: SOFTGREEN_QUESTIONS,
+    labels: SOFTGREEN_FIELD_LABELS,
     required: Object.freeze(Object.keys(SOFTGREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
   hitl: Object.freeze({
     locked: false,
     questions: HITL_QUESTIONS,
+    labels: FIELD_LABELS,
     required: Object.freeze(Object.keys(HITL_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
 });
@@ -352,7 +397,7 @@ export const CLASS_STATEMENTS = Object.freeze({
     + 'no command can hold.',
 });
 
-/** @param {string} verdictType @returns {{locked: boolean, questions: any, required: any}} */
+/** @param {string} verdictType @returns {{locked: boolean, questions: any, labels: any, required: any}} */
 function questionSet(verdictType) {
   const set = Object.hasOwn(QUESTION_SETS, String(verdictType)) ? QUESTION_SETS[String(verdictType)] : null;
   if (!set) throw new Error(`no interview set for verdict class "${verdictType}" — one of ${VERDICT_CLASSES.join(', ')}`);
@@ -371,6 +416,12 @@ export function questionsFor(verdictType) { return questionSet(verdictType).ques
 /** The question numbers whose answer must be present for that class's interview
  * to be finished. @param {string} verdictType @returns {number[]} */
 export function requiredAnswersFor(verdictType) { return [...questionSet(verdictType).required]; }
+/** The signed table's label for each of that class's question keys (PRD item
+ * 33's "The intake form (RULED)" ruling) — a key with no table row (hitl's own
+ * fourth) is simply absent, never a fabricated label. Throws on the same locked
+ * or unknown class {@link questionsFor} does, for the same reason.
+ * @param {string} verdictType @returns {Record<string|number, string>} */
+export function labelsFor(verdictType) { return questionSet(verdictType).labels; }
 
 export const AUTHOR_SYSTEM = 'You compose the DEFINITION OF DONE for an automated job: a declaration over a fixed '
   + 'catalogue of stage kinds whose implementations already exist. You never write code, a script, a shell fragment, '
@@ -827,8 +878,15 @@ export function authorPrompt({
     throw new Error(`[authorflow] the authoring prompt needs the verdict class the user picked, and "${verdictType}" `
       + `composes nothing here — v1 composes ${Object.entries(CLASS_STATEMENTS).filter(([, v]) => v).map(([k]) => k).join(', ')} only`);
   }
+  // The signed table's own label for each key (PRD item 33 M3 piece 3's wording
+  // fix), shown beside the question so the composer reads the same Field/Holds
+  // pairing a person sees at the terminal. `verdictType` is already checked
+  // against `CLASS_STATEMENTS` above and that set's keys are exactly
+  // `QUESTION_SETS`'s, so `labelsFor` cannot throw here. A key with no label
+  // (hitl's own fourth question has no signed-table row) is shown with none.
+  const labels = labelsFor(String(verdictType));
   const interview = Object.entries(questions)
-    .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
+    .map(([n, q]) => `Q${n}${labels[n] ? ` (${labels[n]})` : ''}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
     .join('\n\n');
 
   const role = `You are composing the close for one job.

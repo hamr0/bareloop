@@ -62,7 +62,9 @@ import {
   runInterview, questionsFor, requiredAnswersFor,
   VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
-import { SOURCE_FIELD, destinationFieldFor } from '../src/authorflow.js';
+import {
+  SOURCE_FIELD, destinationFieldFor, labelsFor,
+} from '../src/authorflow.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
 import { resolveProvider } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
@@ -388,6 +390,7 @@ const TREE = prep.tree;
 const writeScope = destinationRaw.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 
 const QUESTIONS = questionsFor(VERDICT);
+const LABELS = labelsFor(VERDICT);
 const REQUIRED = requiredAnswersFor(VERDICT);
 say('');
 say(`  asks     ${REQUIRED.length} frozen question(s) for this class, then the numbers and names the job spec needs`);
@@ -400,6 +403,12 @@ for (const n of REQUIRED) {
   asked += 1;
   say('');
   say(`── ${asked} of ${REQUIRED.length} ${'─'.repeat(Math.max(0, 56 - String(asked).length))}`);
+  // the FIELD LABEL, from the signed table (PRD item 33 M3 piece 3's wording
+  // fix) — printed on its own line so the literal `${n}. ${QUESTIONS[n]}` below
+  // stays byte-identical to what the library holds, which is what the wizard
+  // test suite (`tests/run-interview.test.js`) asserts verbatim and in order.
+  // A key with no signed-table row prints no label.
+  if (LABELS[n]) say(LABELS[n]);
   // the frozen wording, printed as the library holds it. Numbered by the library's
   // own key, so the number a person sees is the number their answer is filed under.
   say(`${n}. ${QUESTIONS[n]}`);
@@ -433,7 +442,7 @@ say('The GOAL — what the run is judged on at the end. In one or two sentences:
 say('this to count as done? Say everything you\'ll check — anything you leave out here still gets checked at the');
 say('very end, and finding it only then wastes the run\'s money.');
 say('Your own answers, to save you scrolling:');
-for (const n of REQUIRED.slice(0, 3)) say(`  ${n}. ${QUESTIONS[n]}  →  ${answers[n].split('\n').join(' ')}`);
+for (const n of REQUIRED.slice(0, 3)) say(`  ${n}. ${LABELS[n] ? `${LABELS[n]} — ` : ''}${QUESTIONS[n]}  →  ${answers[n].split('\n').join(' ')}`);
 const goal = await readAnswer('the goal', 'the goal is what the close judges against — there is no run without one. Again:');
 
 say('');

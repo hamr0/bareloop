@@ -35,7 +35,7 @@ import {
 } from '../src/authorjob.js';
 import { PROVIDERS } from '../src/job.js';
 import { resolveProvider } from '../src/providers.js';
-import { SOURCE_FIELD, DESTINATION_FIELD_REPO } from '../src/authorflow.js';
+import { SOURCE_FIELD, DESTINATION_FIELD_REPO, labelsFor } from '../src/authorflow.js';
 
 // The fixture class for every wizard test below: the LONGEST question set the
 // menu still offers, so a test that walks every question walks the widest one.
@@ -209,6 +209,33 @@ test('the SOFT-GREEN interview shows Source, Destination, Goal, Success, Guardra
     assert.ok(seen > at, `expected to find ${JSON.stringify(text.slice(0, 40))}... after position ${at}`);
     at = seen;
   }
+});
+
+test('the SOFT-GREEN interview shows each free-text field\'s LABEL, in order, from the signed table (PRD item 33 M3 piece 3 wording fix)', () => {
+  const out = outDir();
+  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
+  assert.equal(r.code, 0, r.out);
+  const labels = labelsFor('soft-green');
+  assert.deepEqual(labels, {
+    1: 'Goal', 2: 'What success looks like', 3: 'Guardrails', 4: 'Judge examples',
+  });
+  // Source and Destination already have their own section headers (── SOURCE ──,
+  // ── DESTINATION ──); this asserts the ORDER of the SECTIONS plus the newly-shown
+  // labels for the four free-text fields, together, exactly as a person sees them.
+  const order = ['── SOURCE', '── DESTINATION', labels[1], labels[2], labels[3], labels[4]];
+  let at = -1;
+  for (const text of order) {
+    const seen = r.out.indexOf(text);
+    assert.ok(seen > at, `expected to find ${JSON.stringify(text)} after position ${at}`);
+    at = seen;
+  }
+});
+
+test('"worse than before" is gone from the form entirely (PRD item 33 M3 piece 3 wording fix — it moves to the confirm turn, piece 4, repo-only, not built here)', () => {
+  const out = outDir();
+  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /worse than before/i);
 });
 
 test('the script prints the LIBRARY\'s Source/Destination wording, not its own — changing the library string changes the printed prompt', () => {

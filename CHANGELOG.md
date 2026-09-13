@@ -47,20 +47,25 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **The question sets become the unified intake form (PRD item 33 M3 piece 3, signed ruling
   "The intake form (RULED)").** `src/authorflow.js` reshapes the green/soft-green/hitl question
   sets to the ruled 6-field form: Source and Destination (already asked as mechanical fields
-  since M3 piece 2) plus a free-text trio — Goal (unchanged: "What do you want done?"), What
-  success looks like (unchanged: "How do you check today whether it's working?"), and Guardrails
-  (the old "must not change" and "worse than before" questions JOINED into one field, numbered
-  contiguously 1-3). Soft-green adds a fourth field, Judge Examples ("Give one example you'd
-  pass and one you'd fail, and say why" — the old Q7 verbatim; the old Q6 is retired as its own
-  question, since the "why" half of a real pass/fail pair is what `cardauthor.js`'s rubric
-  compile already read it for). hitl (never shown, kept in code) renumbers the same way. Source
-  and Destination's own wording now also lives in `src/authorflow.js` (`SOURCE_FIELD`,
-  `DESTINATION_FIELD_REPO`, `DESTINATION_FIELD_PLAIN`, `destinationFieldFor`), so
-  `scripts/run-interview.mjs` prints library text for all six fields, none of its own. What the
-  old Q2 used to tell the composer (which files change, which are read-only) now reaches
-  `authorPrompt` through a new optional `writeScope` parameter (`writeScopeBlock`), fed from
-  Destination's own proven write-scope fence end to end (`authorClose` → `authorCloseForJob` →
-  `scripts/run-author.mjs`'s `draft.writeScope`) rather than silently vanishing.
+  since M3 piece 2) plus a free-text trio, numbered contiguously 1-3, whose text is now the
+  signed table's own "Holds" column, VERBATIM: Goal ("what you want to achieve"), What success
+  looks like ("checks a machine can count"), and Guardrails ("what must not happen or change" —
+  the old "must not change" and "worse than before" questions JOINED into one field; "worse than
+  before" is gone from the form entirely, moving to the confirm turn, piece 4, repo-only, not
+  built yet). Soft-green adds a fourth field, Judge Examples ("one pass, one fail, and why" — the
+  old Q6 is retired as its own question, since the "why" half of a real pass/fail pair is what
+  `cardauthor.js`'s rubric compile already read it for). Each field's LABEL (Goal / What success
+  looks like / Guardrails / Judge examples) is shown for the first time too — a new `labelsFor`
+  reader alongside `questionsFor`/`requiredAnswersFor`, and the composer's own interview block
+  now shows the label with each answer. hitl (never shown, kept in code) renumbers the same way,
+  with no signed-table label for its own fourth question. Source and Destination's own wording
+  now also lives in `src/authorflow.js` (`SOURCE_FIELD`, `DESTINATION_FIELD_REPO`,
+  `DESTINATION_FIELD_PLAIN`, `destinationFieldFor`), so `scripts/run-interview.mjs` prints
+  library text for all six fields, none of its own. What the old Q2 used to tell the composer
+  (which files change, which are read-only) now reaches `authorPrompt` through a new optional
+  `writeScope` parameter (`writeScopeBlock`), fed from Destination's own proven write-scope
+  fence end to end (`authorClose` → `authorCloseForJob` → `scripts/run-author.mjs`'s
+  `draft.writeScope`) rather than silently vanishing.
 
 ### Removed
 

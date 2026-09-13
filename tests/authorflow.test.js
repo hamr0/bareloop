@@ -42,7 +42,7 @@ import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
   MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
   REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
-  QUESTION_SETS, GREEN_QUESTIONS, questionsFor, requiredAnswersFor, CLASS_STATEMENTS,
+  QUESTION_SETS, GREEN_QUESTIONS, questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
   catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
@@ -186,7 +186,17 @@ test('question sets: the GREEN set asks nothing about a genre and nothing about 
   const all = Object.values(GREEN_QUESTIONS).join(' ');
   assert.ok(!/type[- ]?fix|type checker|TYPES/i.test(all), `a genre-specific slot survives: ${all}`);
   assert.ok(!/repo|repository/i.test(all), `the repo arrives as repoPath, never as prose: ${all}`);
-  for (const q of Object.values(GREEN_QUESTIONS)) assert.ok(q.trim().endsWith('?'), q);
+  // PRD item 33 M3 piece 3's wording fix: the text is the signed table's own
+  // "Holds" column, VERBATIM — not the old worded questions (F159's fix, commit
+  // 1ac4d05, only reshaped the SET; this is the wording half). No trailing "?":
+  // these are what the field HOLDS, read beside its label (FIELD_LABELS), not a
+  // question typed at a person.
+  assert.deepEqual(GREEN_QUESTIONS, {
+    1: 'what you want to achieve',
+    2: 'checks a machine can count',
+    3: 'what must not happen or change',
+  });
+  assert.ok(!/worse than before/i.test(all), `the retired "worse than before" half survives: ${all}`);
 });
 
 test('question sets: an UNKNOWN class has no questions to run, and asking for them THROWS', () => {
@@ -218,6 +228,28 @@ test('the prompt STATES the declared class — this is where genre understanding
   assert.throws(() => authorPrompt({ ...args }), /verdict class/i);
   assert.throws(() => authorPrompt({ ...args, verdictType: 'chartreuse' }), /chartreuse/);
   for (const c of LOCKED_CLASSES) assert.throws(() => authorPrompt({ ...args, verdictType: c }), new RegExp(c));
+});
+
+// PRD item 33 M3 piece 3's wording fix: the composer sees the same Field/Holds
+// pairing a person does — a label with each answer, never a bare Q<n>.
+test('the interview block carries each field\'s LABEL beside its question, from the signed table', () => {
+  const p = authorPrompt({
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  });
+  assert.match(p, /Q1 \(Goal\)\. what you want to achieve/);
+  assert.match(p, /Q2 \(What success looks like\)\. checks a machine can count/);
+  assert.match(p, /Q3 \(Guardrails\)\. what must not happen or change/);
+});
+
+test('labelsFor mirrors questionsFor: same admission rule, and soft-green\'s fourth label is "Judge examples"', () => {
+  assert.deepEqual(labelsFor('green'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
+  assert.deepEqual(labelsFor('soft-green'), {
+    1: 'Goal', 2: 'What success looks like', 3: 'Guardrails', 4: 'Judge examples',
+  });
+  // hitl's own fourth question has no row in the signed table — no fabricated label
+  assert.deepEqual(labelsFor('hitl'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
+  assert.throws(() => labelsFor('chartreuse'), /chartreuse/);
 });
 
 // PRD item 33 M3 piece 3: Q2 (which files change, which are read-only) is gone
