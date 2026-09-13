@@ -20,12 +20,15 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import {
+  readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { capStop } from '../src/text.js';
+import { prepareSource } from '../src/source.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -517,6 +520,26 @@ const runBase = mkdtempSync(join(tmpdir(), 'run-author-cli-'));
 process.on('exit', () => rmSync(runBase, { recursive: true, force: true }));
 let n = 0;
 
+/** the same neutralized identity `src/source.js`/`tests/source.test.js` use — CI
+ * has no gitconfig (F136: hermetic, empty `HOME`). */
+const GIT_ID = ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false'];
+/** @param {string} cwd @param {string[]} args */
+const gitFix = (cwd, args) => execFileSync('git', [...GIT_ID, ...args], { cwd, encoding: 'utf8' });
+
+/** `--source` REPLACED `--patient` (PRD item 33 M3, ruling 2): every call site
+ * below must hand `run-author.mjs` a PREPARED tree, never a raw repo path — a
+ * small, fast, real git repo (never the whole `REPO`) is prepared ONCE here
+ * and reused, since none of these tests care about its content, only that
+ * language detection resolves 'js' and the manifest says kind 'repo'. */
+const provisionRepo = mkdtempSync(join(runBase, 'provision-'));
+writeFileSync(join(provisionRepo, 'package.json'), '{}');
+gitFix(provisionRepo, ['init', '-q']);
+gitFix(provisionRepo, ['add', '-A']);
+gitFix(provisionRepo, ['commit', '-q', '-m', 'seed']);
+const provisioned = await prepareSource({ source: provisionRepo, into: join(runBase, 'provision-into') });
+assert.equal(provisioned.stop, null, provisioned.stop ?? undefined);
+const PREPARED_TREE = provisioned.tree;
+
 /** @param {Record<string, unknown>} draft */
 const runAuthor = (draft) => {
   const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
@@ -526,7 +549,7 @@ const runAuthor = (draft) => {
   writeFileSync(draftFile, JSON.stringify(draft));
   const out = join(dir, 'out');
   const r = spawnSync(process.execPath, [
-    SCRIPT, '--patient', REPO, '--answers', answersFile, '--draft', draftFile,
+    SCRIPT, '--source', PREPARED_TREE, '--answers', answersFile, '--draft', draftFile,
     '--verdict', 'green', '--out', out,
   ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
   return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}` };
@@ -548,4 +571,74 @@ test('a draft naming a provider the factory does not know dies the same way, nam
 
 test('there is no --provider FLAG on this script — the provider comes only from the draft', () => {
   assert.doesNotMatch(SRC, /arg\('provider'\)/, 'run-author must never read its own --provider flag; run-interview owns that ask');
+});
+
+// ── --source REPLACES --patient (PRD item 33 M3, ruling 2) ──────────────────
+
+test('--patient is refused, loud — --source replaced it', () => {
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, '{}');
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--patient', PREPARED_TREE, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  assert.equal(r.status, 2);
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.match(text, /--patient is no longer a flag/);
+  assert.match(text, /use --source <tree>/);
+  assert.equal(existsSync(out), false);
+});
+
+test('--source that was never prepared through the source front door dies loud, naming the exact command to fix it', () => {
+  const unprepared = mkdtempSync(join(runBase, 'unprepared-'));
+  writeFileSync(join(unprepared, 'package.json'), '{}');
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, '{}');
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', unprepared, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  assert.equal(r.status, 2);
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.match(text, /was never prepared through the source front door/);
+  assert.match(text, /node scripts\/prep-source\.mjs --source <path-or-url> --into <dir>/, 'the exact command to run first is quoted');
+  assert.match(text, /--source <dir>\/tree/);
+  // no spine was ever opened — this is a config error, same standing as every
+  // other argv/config die() in this script
+  assert.equal(existsSync(out) && readdirSync(out).some((f) => f.startsWith('author-')), false);
+});
+
+test('a --source prepared from a NON-repo (a plain folder) stops honestly (M3 ruling 7 → M4), recorded as counted demand', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, '{}');
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 1, text);
+  assert.match(text, /bareloop has no checks for this kind/);
+  assert.match(text, /M3 ruling 7 → M4/);
+
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 1, 'the spine still opens — this IS counted demand, not a config error');
+  const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(events.some((e) => e.type === 'job-red' && e.code === 'request-red'), JSON.stringify(events));
+  assert.ok(events.some((e) => e.type === 'author-end'), 'a spine with no author-end reads as a run still in flight');
 });

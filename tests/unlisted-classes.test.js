@@ -126,7 +126,7 @@ test('an unknown class is still a TYPO red, not a withdrawal refusal — the two
 test('run-interview.mjs refuses an unlisted class BEFORE asking a single question', () => {
   const out = mkdtempSync(join(tmpdir(), 'unlisted-'));
   try {
-    const r = spawnSync(process.execPath, [SCRIPT, '--patient', tmpdir(), '--verdict', 'hitl', '--provider', 'anthropic-api', '--out', join(out, 'o')], {
+    const r = spawnSync(process.execPath, [SCRIPT, '--verdict', 'hitl', '--provider', 'anthropic-api', '--out', join(out, 'o')], {
       encoding: 'utf8', input: '', env: { ...process.env, ANTHROPIC_API_KEY: '' },
     });
     assert.equal(r.status, 1, 'an off-menu pick is a non-zero exit — the wizard wrote nothing');
@@ -154,7 +154,7 @@ test('an unlisted class is still admissible INPUT — a typo dies earlier, and d
   // The typo check deliberately reads VERDICT_CLASSES (the whole menu), not the
   // offered subset: narrowing it would turn COUNTED DEMAND into an unrecorded
   // typo, and the demand ledger is what the verdict-classes rung reads.
-  const r = spawnSync(process.execPath, [SCRIPT, '--patient', tmpdir(), '--verdict', 'not-a-class', '--provider', 'anthropic-api', '--out', '/tmp/none'], {
+  const r = spawnSync(process.execPath, [SCRIPT, '--verdict', 'not-a-class', '--provider', 'anthropic-api', '--out', '/tmp/none'], {
     encoding: 'utf8',
   });
   const said = `${r.stdout}${r.stderr}`;

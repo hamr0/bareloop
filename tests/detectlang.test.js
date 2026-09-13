@@ -19,6 +19,7 @@ import { detectLanguage } from '../src/detectlang.js';
 import { assembleSpec, prepareSigning, GENRE } from '../src/authorjob.js';
 import { classGuards } from '../src/authoring.js';
 import { classifyIncidents } from '../src/ledger.js';
+import { prepareSource } from '../src/source.js';
 
 const RUN_INTERVIEW = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
 const RUN_AUTHOR = new URL('../scripts/run-author.mjs', import.meta.url).pathname;
@@ -184,15 +185,16 @@ test('a Source that is a FILE detects from its parent folder', () => {
 });
 
 // ── 8. --lang is REFUSED, loud, by both scripts ───────────────────────────────
+//
+// `--lang` dies BEFORE either script even looks at its Source/`--source` —
+// no prepared tree is needed to prove this.
 
 for (const [name, script, extraArgs] of [
   ['run-interview.mjs', RUN_INTERVIEW, ['--verdict', 'green', '--provider', 'anthropic-api', '--out', join(base, 'out-ri-lang')]],
-  ['run-author.mjs', RUN_AUTHOR, ['--answers', join(base, 'answers-missing.json'), '--draft', join(base, 'draft-missing.json'), '--verdict', 'green', '--out', join(base, 'out-ra-lang')]],
+  ['run-author.mjs', RUN_AUTHOR, ['--source', join(base, 'never-read'), '--answers', join(base, 'answers-missing.json'), '--draft', join(base, 'draft-missing.json'), '--verdict', 'green', '--out', join(base, 'out-ra-lang')]],
 ]) {
   test(`${name} refuses --lang — the flag is gone, never silently ignored`, () => {
-    const patient = freshDir();
-    write(patient, { 'package.json': '{}' });
-    const r = spawnSync(process.execPath, [script, '--patient', patient, ...extraArgs, '--lang', 'js'], {
+    const r = spawnSync(process.execPath, [script, ...extraArgs, '--lang', 'js'], {
       encoding: 'utf8', timeout: 30_000, input: '',
     });
     assert.notEqual(r.status, 0, `${name} --lang exit: ${JSON.stringify({ code: r.status, out: r.stdout, err: r.stderr })}`);
@@ -202,16 +204,36 @@ for (const [name, script, extraArgs] of [
   });
 }
 
-// ── 9. E2E: both scripts resolve language from --patient with NO --lang ──────
+// ── PREPARE — every `run-author.mjs` scenario below needs a REAL prepared
+//    tree (PRD item 33 M3, ruling 2: `--source` must carry a manifest of kind
+//    'repo' beside it), never a raw directory the way `--patient` accepted.
+// Uses the file's own `git()` helper (neutralized identity, above) so a repo
+// built for language detection can also be frozen through `prepareSource`.
+/** a real git repo at `dir` (already written), frozen through `prepareSource`
+ * into a fresh tree — returns that tree, ready to hand `run-author.mjs` as
+ * `--source`.
+ * @param {string} dir */
+async function prep(dir) {
+  git(dir, ['init', '-q', '-b', 'main']);
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-q', '-m', 'seed']);
+  const into = join(base, `into-${n += 1}`);
+  const r = await prepareSource({ source: dir, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  return r.tree;
+}
 
-test('run-interview.mjs reaches the interview from --patient alone — no --lang needed (E2E)', () => {
+// ── 9. E2E: run-interview.mjs resolves language from an interactively-typed
+//    Source, with NO --lang needed ───────────────────────────────────────────
+
+test('run-interview.mjs reaches the interview from an interactively-typed Source — no --lang needed (E2E)', () => {
   const patient = freshDir();
   write(patient, { 'package.json': '{}' });
   const out = join(base, 'out-ri-e2e');
   const r = spawnSync(process.execPath, [
-    RUN_INTERVIEW, '--patient', patient, '--verdict', 'green', '--provider', 'anthropic-api', '--out', out,
+    RUN_INTERVIEW, '--verdict', 'green', '--provider', 'anthropic-api', '--out', out,
   ], {
-    encoding: 'utf8', timeout: 30_000, input: '\n', // end input immediately — proves it got PAST arg parsing into the interview
+    encoding: 'utf8', timeout: 30_000, input: `${patient}\n\n`, // Source, then end input — proves it got PAST arg parsing into the interview
     env: { ...process.env, ANTHROPIC_API_KEY: '' },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -224,12 +246,13 @@ test('run-interview.mjs reaches the interview from --patient alone — no --lang
 
 // ── 11. the language-unsupported stop is COUNTED DEMAND, not a silent exit ───
 
-test('run-author.mjs on a language-unsupported patient records job-red/request-red in its own spine (counted admission demand, item 34 M3 loose end fix)', () => {
+test('run-author.mjs on a language-unsupported --source records job-red/request-red in its own spine (counted admission demand, item 34 M3 loose end fix)', async () => {
   const patient = freshDir();
   write(patient, { 'go.mod': 'module x\n' });
+  const tree = await prep(patient);
   const out = join(base, 'out-ra-lang-red');
   const r = spawnSync(process.execPath, [
-    RUN_AUTHOR, '--patient', patient,
+    RUN_AUTHOR, '--source', tree,
     '--answers', join(base, 'answers-never-read.json'),
     '--draft', join(base, 'draft-never-read.json'),
     '--verdict', 'green', '--out', out,
@@ -258,9 +281,10 @@ test('run-author.mjs on a language-unsupported patient records job-red/request-r
   assert.ok(admitted, `classifyIncidents did not count the language-unsupported stop as demand: ${JSON.stringify(occs)}`);
 });
 
-test('run-author.mjs reaches the API-key check from --patient alone — no --lang needed (E2E)', () => {
+test('run-author.mjs reaches the API-key check from a prepared --source alone — no --lang needed (E2E)', async () => {
   const patient = freshDir();
   write(patient, { 'package.json': '{}' });
+  const tree = await prep(patient);
   const answers = join(base, 'answers-e2e.json');
   const draft = join(base, 'draft-e2e.json');
   writeFileSync(answers, JSON.stringify({ 1: 'a', 2: 'b', 3: 'c', 4: 'd', 5: 'e' }));
@@ -271,7 +295,7 @@ test('run-author.mjs reaches the API-key check from --patient alone — no --lan
   }));
   const out = join(base, 'out-ra-e2e');
   const r = spawnSync(process.execPath, [
-    RUN_AUTHOR, '--patient', patient, '--answers', answers, '--draft', draft,
+    RUN_AUTHOR, '--source', tree, '--answers', answers, '--draft', draft,
     '--verdict', 'green', '--out', out,
   ], {
     encoding: 'utf8', timeout: 30_000,
@@ -279,7 +303,7 @@ test('run-author.mjs reaches the API-key check from --patient alone — no --lan
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   // dies at the (pre-existing) missing-key check — proof it got THAT far,
-  // meaning language resolution from --patient succeeded without --lang
+  // meaning language resolution from --source succeeded without --lang
   assert.notEqual(r.status, 0);
   assert.match(text, /ANTHROPIC_API_KEY not set/, text);
   assert.ok(!/--lang was given|is no longer a flag/.test(text), 'must not have died on the --lang path');

@@ -16,9 +16,19 @@
 // counted demand against bareloop's own catalogue, never an error to swallow.
 //
 //   node scripts/run-author.mjs \
-//     --patient /path/to/repo --answers answers.json --draft specdraft.json \
+//     --source /path/to/prepared/tree --answers answers.json --draft specdraft.json \
 //     --verdict green --out /path/to/outdir [--timeout 300000] \
 //     [--budget 2.50]
+//
+//   --source       REPLACES --patient (PRD item 33 M3, ruling 2). It must be a
+//                  PREPARED tree — the `tree/` a source door already froze
+//                  (`scripts/prep-source.mjs`, or `run-interview.mjs`'s own
+//                  Source/Destination questions): `readSourceManifest(dirname
+//                  (source))` must find a manifest of kind 'repo' beside it.
+//                  An unprepared path dies loud, naming the exact command to
+//                  prepare one first; a prepared NON-repo source (a plain
+//                  folder/file/URL) stops with the same honest "no checks yet"
+//                  message `run-interview.mjs` gives (M3 ruling 7 → M4).
 //
 //   --budget       THE AUTHORING CEILING, in dollars, and it has NO DEFAULT. The
 //                  pipeline pays for a survey (up to three attempts plus a
@@ -52,7 +62,7 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
   VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
@@ -64,6 +74,7 @@ import { scanSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
 import { closeJudges } from '../src/kinds.js';
 import { resolveProvider, makeProvider } from '../src/providers.js';
+import { readSourceManifest } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
@@ -77,7 +88,14 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
 const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 
-const patientArg = arg('patient');
+// `--patient` IS GONE (PRD item 33 M3, ruling 2): `--source` replaces it, and
+// must be a PREPARED tree — see the usage comment above. Stopped loud rather
+// than silently ignored, the same rule `--lang`'s removal already applies.
+if (arg('patient') !== null) {
+  die('--patient is no longer a flag — use --source <tree>, the prepared copy a source door produces '
+    + '(scripts/prep-source.mjs, or run-interview.mjs\'s own Source/Destination questions). PRD item 33 M3, ruling 2.');
+}
+const sourceArg = arg('source');
 const answersArg = arg('answers');
 const draftArg = arg('draft');
 const outArg = arg('out');
@@ -86,7 +104,7 @@ const verdictArg = arg('verdict');
 // repository, read off its own manifest, never a flag a person sets. Stopped
 // loud rather than silently ignored, same rule the interview script applies.
 if (arg('lang') !== null) {
-  die('--lang is no longer a flag — language is auto-detected from --patient\'s own manifest '
+  die('--lang is no longer a flag — language is auto-detected from --source\'s own manifest '
     + '(package.json/pyproject.toml/setup.py), never asked or set (PRD item 33 M3, ruling 3). Drop --lang and rerun.');
 }
 const timeoutArg = arg('timeout');
@@ -98,8 +116,8 @@ const TIMEOUT_MS = timeoutArg === null ? DEFAULT_TIMEOUT_MS : Number(timeoutArg)
  * home a test can reach. */
 const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget'));
 
-if (!patientArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
-  die('usage: node scripts/run-author.mjs --patient <repoPath> --answers <answers.json> --draft <specdraft.json> '
+if (!sourceArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
+  die('usage: node scripts/run-author.mjs --source <tree> --answers <answers.json> --draft <specdraft.json> '
     + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--timeout <ms>] [--budget <usd>]`);
 }
 // A malformed ceiling dies at the door rather than silently reading as absent.
@@ -114,18 +132,18 @@ const VERDICT = /** @type {string} */ (verdictArg);
 if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${MENU_CLASSES.join(' | ')}`);
 if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) die(`--timeout ${timeoutArg} is not a positive number of milliseconds`);
 
-const PATIENT = resolve(/** @type {string} */ (patientArg));
-if (!existsSync(PATIENT)) die(`--patient ${PATIENT} does not exist — the scout reads a repository off the machine, never out of prose`);
+const SOURCE = resolve(/** @type {string} */ (sourceArg));
+if (!existsSync(SOURCE)) die(`--source ${SOURCE} does not exist — the scout reads a prepared source tree off the machine, never out of prose`);
 const OUT = resolve(/** @type {string} */ (outArg));
 
 // ── THE SPINE, BOOTSTRAPPED FIRST — before anything that can refuse, before
 // any provider is resolved or built, and before the API key is even read.
 // Moved here (out of its old position, further down, right before the first
 // paid span) so that EVERY refusal this script can produce — starting with
-// the language check immediately below — has somewhere to record itself. A
-// `die()` before this point is still bare stderr+exit(2): those are pure
-// operator/config errors (missing flags, a bad number) with no spine to
-// write into yet and nothing they represent counts as demand.
+// the manifest and language checks immediately below — has somewhere to
+// record itself. A `die()` before this point is still bare stderr+exit(2):
+// those are pure operator/config errors (missing flags, a bad number) with
+// no spine to write into yet and nothing they represent counts as demand.
 mkdirSync(OUT, { recursive: true });
 const runid = Date.now().toString(36);
 const spineFile = join(OUT, `author-${runid}.jsonl`);
@@ -142,17 +160,53 @@ const writeOut = (name, body) => {
   return f;
 };
 
+// ── --SOURCE MUST BE A PREPARED TREE (PRD item 33 M3, ruling 2) ─────────────
+// `--source` replaced `--patient`; it is no longer just "a repository on the
+// machine" — it must be the FROZEN COPY a source door already produced
+// (`scripts/prep-source.mjs`, or `run-interview.mjs`'s own Source/Destination
+// questions), so `dirname(SOURCE)` (the door's own `into`) carries a
+// `source.json` manifest right beside `tree/`, which IS `SOURCE` here. A
+// config error (never prepared, or a manifest that cannot be read) dies
+// loud, before the API key is even read — same standing as every other
+// argv/config `die()` in this file. A manifest that EXISTS but names a
+// NON-repo kind (a plain folder/file/URL) is a different thing entirely: the
+// source was prepared correctly, and there is simply no check catalogue for
+// it yet (M3 ruling 7 → M4) — that IS counted demand, so it is recorded to
+// the spine rather than dying silently.
+const manifestRead = await readSourceManifest(dirname(SOURCE));
+if (manifestRead.stop !== null) {
+  die(`--source ${SOURCE}: ${manifestRead.code} — ${manifestRead.stop}`);
+}
+if (!manifestRead.present) {
+  die(`--source ${SOURCE} was never prepared through the source front door — no source.json beside it. Prepare it first:\n`
+    + '  node scripts/prep-source.mjs --source <path-or-url> --into <dir>\n'
+    + 'then rerun this script with --source <dir>/tree.');
+}
+if (manifestRead.manifest.kind !== 'repo') {
+  console.log(`Source is not a code repository — it is a plain ${manifestRead.manifest.kind} job. bareloop has no checks for this kind`);
+  console.log('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build). Nothing was authored.');
+  const red = {
+    code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',
+    detail: `--source ${SOURCE} freezes a "${manifestRead.manifest.kind}" job — the close catalogue is code-genre only today.`,
+  };
+  emit('job-red', red);
+  emit('author-end', { outcome: 'not-authored', stop: 'non-code-source' });
+  console.log(`\nspine      ${spineFile}`);
+  process.exit(1);
+}
+
 // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
 // $0, no provider, run BEFORE the API key is even read — this script must
-// reach here on `--patient` alone, with no `--lang` needed. Same four
-// outcomes `run-interview.mjs` reads (that script normally catches the two
-// that stop something first, but this script is also runnable standalone
+// reach here on `--source` alone, with no `--lang` needed. Run against the
+// PREPARED TREE, never the original patient the door froze it from. Same
+// four outcomes `run-interview.mjs` reads (that script normally catches the
+// two that stop something first, but this script is also runnable standalone
 // against a hand-written answers.json/specdraft.json, so it repeats the same
 // two early stops rather than relying on the interview having run first):
 //   - `ambiguous`             — two languages' manifests at the same level;
 //                               stopped here with the honest list (the
 //                               confirm-turn UI to ask a person is later M3).
-//                               An OPERATOR FIX (point --patient at the right
+//                               An OPERATOR FIX (point --source at the right
 //                               subfolder), never demand — no spine record.
 //   - `language-unsupported`  — a known manifest with no genre data yet;
 //                               stopped here, before the API key check, so a
@@ -167,11 +221,11 @@ const writeOut = (name, body) => {
 //     which the existing GENRE_LANGUAGES check further down refuses on its
 //     own (M3 ruling 7: a plain-folder job is not an error here, it is simply
 //     not a code-genre job this pipeline can close yet).
-const langResult = detectLanguage(PATIENT);
+const langResult = detectLanguage(SOURCE);
 if (langResult.kind === 'ambiguous') {
-  die(`${PATIENT} has more than one language's manifest at the same (nearest) level: ${langResult.candidates.join(', ')} `
+  die(`${SOURCE} has more than one language's manifest at the same (nearest) level: ${langResult.candidates.join(', ')} `
     + `(in ${langResult.dir}). Picking one interactively is a later build (PRD item 33 M3, ruling 3, point 3) — for `
-    + 'now, point --patient at the specific subfolder for the language this job is about, or remove the other '
+    + 'now, prepare --source against the specific subfolder for the language this job is about, or remove the other '
     + 'manifest, and rerun.');
 }
 if (langResult.kind === 'language-unsupported') {
@@ -300,7 +354,7 @@ const costLine = (cost) => {
 };
 
 console.log(`== close-authoring, run ${runid} ==  ${PROVIDER_NAME}/${MODEL}`);
-console.log(`  patient  ${PATIENT}`);
+console.log(`  source   ${SOURCE}`);
 console.log(`  verdict  ${VERDICT}  (the USER's pick — this run authors a close that promises to stay at or below it)`);
 console.log(`  lang     ${LANG}`);
 console.log(`  draft    ${resolve(/** @type {string} */ (draftArg))} (job "${draft?.job ?? '?'}")`);
@@ -313,7 +367,7 @@ console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
 const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL, baseUrl });
-emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
+emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
 // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
 //
@@ -425,7 +479,7 @@ try {
     judgeModel: draftJudge.model,
     answers,
     verdictType: VERDICT,
-    repoPath: PATIENT,
+    repoPath: SOURCE,
     lang: LANG,
     // the picked class's own frozen set — a LOCKED class never reaches here, it
     // refuses at admission before its questions are ever asked, and asking for a
@@ -589,7 +643,7 @@ try {
         console.log('  this is the only gate that spends money, and it runs after every free one.');
       }
       const signing = await prepareSigning({
-        spec, workdir: PATIENT, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
+        spec, workdir: SOURCE, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
         // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
         // the spec that just passed above would fail the gate that signs it
         shellCapUsd: spec.budgetUsd,
