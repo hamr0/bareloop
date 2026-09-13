@@ -109,7 +109,10 @@ import {
   GENRE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
-import { QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook } from './authorflow.js';
+import {
+  QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
+  runConfirmTurn, WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD,
+} from './authorflow.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
@@ -420,10 +423,13 @@ function composerRefusal(reds) {
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
- *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object}} o
+ *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
+ *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
+ *   confirmGenerate?: Function|null, isRepo?: boolean,
+ *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
  *   closeDecl: any, seedRef: string|null, authoring: any, judged: any, reds: Red[],
- *   stop: string|null, cost: any, interview: any}>}
+ *   stop: string|null, cost: any, interview: any, confirmed: any}>}
  */
 export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
@@ -453,11 +459,30 @@ export async function authorCloseForJob({
   // signed as proposed, and `signJudgedArtifacts` records which of the two
   // happened rather than leaving a reader to guess.
   signerFix = null, proposeFn = proposeJudgedArtifacts, compileOpts = {},
+  // PRD item 33 M3 piece 4 — the confirm turn. ALL FOUR default to nothing so
+  // every existing caller runs byte-identical: `ask` absent means no confirm
+  // turn runs at all, exactly as before this piece existed.
+  //   ask            the ONE interactive seam (see `runConfirmTurn`'s own doc)
+  //                  — its ABSENCE is the switch that turns the whole confirm
+  //                  turn off, never a boolean flag next to it.
+  //   confirmGenerate a SEPARATE model boundary from `generate`: the authoring
+  //                  call is bound to AUTHOR_SYSTEM and the confirm call is
+  //                  bound to CONFIRM_SYSTEM — reusing `generate` would run the
+  //                  wrong system prompt silently.
+  //   isRepo         whether Source resolved to a repo (`looksLikeRepoSource`)
+  //                  — gates the repo-only "worse than before" $0 question and
+  //                  whether a confirm turn runs at all (M3 ruling 7: a
+  //                  plain-folder job's confirm turn is a LATER piece).
+  //   langResult     `src/detectlang.js`'s own result — only its `ambiguous`
+  //                  shape matters here (a $0 language pick before the scout,
+  //                  D7); every other kind leaves `lang` exactly as given.
+  ask = null, confirmGenerate = null, isRepo = false, langResult = null,
 }) {
   /** @type {any} */
   const base = {
     ok: false, refusal: null, verdictType: null, closeDecl: null, seedRef: null,
     authoring: null, judged: null, reds: [], stop: null, cost: null, interview: null,
+    confirmed: null,
   };
 
   const interview = runInterview({ answers, verdictType, repoPath, questions });
@@ -467,6 +492,27 @@ export async function authorCloseForJob({
   }
   const workdir = /** @type {string} */ (interview.repoPath);
   const picked = /** @type {string} */ (interview.verdictType);
+
+  // ── THE CONFIRM TURN'S $0 HALF (PRD item 33 M3 piece 4, D7) ────────────────
+  // Entirely BEFORE the scout: a missing person here stops at $0, never after a
+  // paid survey. `ask` ABSENT is the whole confirm turn's off switch — every
+  // caller that predates this piece (or a caller that never wires an
+  // interactive seam) reaches the genre check below exactly as it always did.
+  let worseThanBefore = '';
+  if (ask) {
+    if (isRepo) {
+      onPhase('confirm-worse-than-before', {});
+      const wtb = await ask({ kind: 'worseThanBefore', field: WORSE_THAN_BEFORE_FIELD });
+      if (wtb === null) return { ...base, interview, reds: [], stop: 'confirm-abandoned' };
+      worseThanBefore = redactSecrets(String(wtb).trim());
+    }
+    if (langResult?.kind === 'ambiguous') {
+      onPhase('confirm-language-pick', { candidates: langResult.candidates });
+      const pick = await ask({ kind: 'language', field: LANGUAGE_PICK_FIELD, candidates: langResult.candidates });
+      if (pick === null) return { ...base, interview, reds: [], stop: 'confirm-abandoned' };
+      lang = String(pick);
+    }
+  }
 
   if (!GENRE_LANGUAGES.includes(lang)) {
     // THE GENRE REFUSAL, at the composer. This used to be a plain wiring red;
@@ -542,6 +588,52 @@ export async function authorCloseForJob({
     // back with anything to author from.
     onPhase('scout-done', { state: survey?.state ?? null, facts: Object.keys(survey?.facts ?? {}).length });
   }
+
+  // ── THE CONFIRM TURN'S PAID HALF (PRD item 33 M3 piece 4) ──────────────────
+  // Slotted between the scout and the listing: it reuses the scout's own
+  // survey (ruling 4 — never a second read of the source) and needs nothing
+  // the listing would add. Runs ONLY when `ask` is wired AND this is a repo
+  // job AND the survey actually came back PRESENT — an ABSENT survey means
+  // `authorFn` below refuses at its own $0 preflight (`scout-absent` or its
+  // budget-stop variants) exactly as it always has; drafting a plan from
+  // facts that never arrived would be worse than that honest refusal, so the
+  // confirm turn is skipped rather than run against nothing. A plain-folder
+  // job's confirm turn (no survey at all, D5) is a LATER piece.
+  /** @type {any} */
+  let confirmed = null;
+  /** @type {any[]} */
+  let confirmPriorCalls = [];
+  /** @type {any[]} */
+  let confirmPriorRaws = [];
+  if (ask && isRepo && survey?.state === 'PRESENT') {
+    if (typeof confirmGenerate !== 'function') {
+      throw new Error('[authorjob] authorCloseForJob was given `ask` for a repo job but no `confirmGenerate` — the '
+        + 'confirm turn needs its OWN model boundary (bound to CONFIRM_SYSTEM), never the authoring `generate` '
+        + '(bound to AUTHOR_SYSTEM)');
+    }
+    const confirmBook = makeCostBook({ ceilingUsd, onCall });
+    onPhase('confirm', {});
+    const confirm = await runConfirmTurn({
+      verdictType: picked, answers: interview.answers, questions: questions ?? questionsFor(picked),
+      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore,
+      generate: confirmGenerate, book: confirmBook, ask, onPhase,
+    });
+    // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
+    // per round when a plan arrives) — this is the WRAPPER's own line, once,
+    // saying how the whole turn ended.
+    onPhase('confirm-turn-done', { ok: confirm.ok, stop: confirm.stop, rounds: confirm.rounds });
+    if (!confirm.ok) {
+      return {
+        ...base, interview, verdictType: picked, seedRef: seed,
+        reds: confirm.reds, stop: confirm.stop, cost: confirm.cost,
+      };
+    }
+    confirmed = confirm.accepted;
+    lang = confirmed.lang;
+    confirmPriorCalls = confirm.cost.calls;
+    confirmPriorRaws = confirmBook.raws();
+  }
+
   /** @type {any} */
   let seeds = listing;
   if (seeds == null) {
@@ -563,7 +655,9 @@ export async function authorCloseForJob({
   const authored = await authorFn({
     workdir, seedRef: seed, lang, verdictType: picked,
     answers: interview.answers, questions: questions ?? questionsFor(picked),
-    scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope, ...authorOpts,
+    scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
+    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed,
+    ...authorOpts,
   });
 
   if (!authored.ok) {
@@ -695,6 +789,7 @@ export async function authorCloseForJob({
       stop: authored.stop,
       cost: book.report(),
       interview,
+      confirmed,
     };
   }
 
@@ -710,6 +805,7 @@ export async function authorCloseForJob({
     stop: authored.stop,
     cost: authored.cost,
     interview,
+    confirmed,
   };
 }
 

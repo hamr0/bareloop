@@ -916,6 +916,32 @@ export function writeScopeBlock(writeScope) {
 }
 
 /**
+ * THE CONFIRMED-PLAN BLOCK (PRD item 33 M3 piece 4) — present only when the
+ * person already ran a confirm turn (`runConfirmTurn`'s `accepted`). States
+ * the composition law as an ORDER over the ACCEPTED checks, exactly the
+ * pattern {@link writeScopeBlock} already is for the fence: "compose these
+ * checks and no other" rather than a code matcher over the goal prose
+ * (ruling 6). Protections are restated as unchanged, never as checks to add.
+ * Open questions the person's own fix rounds left unresolved (D3) are named
+ * so the composer states them in notes rather than silently deciding them.
+ * @param {{checks: string[], protections: string[], openQuestions?: string[]}} confirmed
+ */
+export function confirmedBlock(confirmed) {
+  const checks = confirmed.checks ?? [];
+  const protections = confirmed.protections ?? [];
+  const openQuestions = confirmed.openQuestions ?? [];
+  return 'THE CONFIRMED PLAN — the person already saw and confirmed this in the confirm turn\n\n'
+    + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
+    + 'neither do you:\n\n'
+    + `${checks.map((c) => `  - ${c}`).join('\n') || '  (none)'}\n\n`
+    + 'These protections are already always-on and unchanged by this plan — never compose one of these as a check:\n\n'
+    + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n\n`
+    + (openQuestions.length
+      ? `OPEN QUESTIONS the confirm turn could not resolve (state these in your notes, never decide them silently):\n\n${openQuestions.map((q) => `  - ${q}`).join('\n')}`
+      : 'The confirm turn left no open questions.');
+}
+
+/**
  * The whole authoring prompt, as one string.
  *
  * Two people fed this brief and neither of them is the model: a person who is not
@@ -936,11 +962,16 @@ export function writeScopeBlock(writeScope) {
  *   facts: any, listingBlock: string, lang: string, verdictType: string,
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
- *   writeScope?: string[]|null}} o
+ *   writeScope?: string[]|null,
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[]}|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
   ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null,
+  // PRD item 33 M3 piece 4: ABSENT for every caller that predates the confirm
+  // turn (or ran without `ask`) — byte-identical prompt, nothing added. Present
+  // only when a confirm turn actually ran and the person accepted a plan.
+  confirmed = null,
 }) {
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
@@ -1017,6 +1048,7 @@ measure anything.`;
     // change, which are read-only) is proven against the machine now, not typed,
     // and this is where that proof reaches the composer instead of vanishing.
     ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
+    ...(confirmed ? [confirmedBlock(confirmed)] : []),
     `THE FACTS OBJECT — from a read-only survey of the repository\n\n${JSON.stringify(facts, null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
     // CLASS-SCOPED (softgreen module 3): the composer for a green job is never
@@ -1637,7 +1669,8 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   lang: string|{kind: 'ambiguous', candidates: string[], dir: string},
  *   generate: Function, book: ReturnType<typeof makeCostBook>,
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
- *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text'}} o
+ *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
+ *   worseThanBefore?: string}} o
  * @returns {Promise<{ok: boolean,
  *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
  *   rounds: number,
@@ -1648,6 +1681,13 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
 export async function runConfirmTurn({
   verdictType, answers, questions, labels = {}, facts = null, listing = null, writeScope = null,
   isRepo, lang, generate, book, ask, onPhase = () => {}, mode = 'tool',
+  // `undefined` (the default) means "ask me" — every S2 caller (nothing
+  // pre-resolves this). A caller that already asked worseThanBefore itself
+  // (`authorCloseForJob`'s own $0 phase, run BEFORE the scout per D7) passes
+  // the resolved string straight through, and this turn asks nothing a
+  // second time. `''` is a legal resolved answer ("nothing beyond
+  // Guardrails") and is NOT the same as "ask me" — only `undefined` is.
+  worseThanBefore: presetWorseThanBefore = undefined,
 }) {
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
@@ -1656,8 +1696,11 @@ export async function runConfirmTurn({
   const abandon = (rounds) => ({ ...base(), stop: /** @type {ConfirmStop} */ ('confirm-abandoned'), rounds, cost: book.report() });
 
   // ── the $0 half, entirely before any token spends (D7) ────────────────────
+  /** @type {string} */
   let worseThanBefore = '';
-  if (isRepo) {
+  if (presetWorseThanBefore !== undefined) {
+    worseThanBefore = presetWorseThanBefore;
+  } else if (isRepo) {
     onPhase('confirm-worse-than-before');
     const wtb = await ask({ kind: 'worseThanBefore', field: WORSE_THAN_BEFORE_FIELD });
     if (wtb === null) return abandon(0);
@@ -1799,7 +1842,10 @@ export async function runConfirmTurn({
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   maxRevisions?: number, structureRetries?: number,
- *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null}} o
+ *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
+ *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
+ *   priorRaws?: any[]|null,
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[]}|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,
@@ -1811,6 +1857,17 @@ export async function authorClose({
   // passes the repo's proven `writeScope`.
   writeScope = null,
   scout, listing = null,
+  // PRD item 33 M3 piece 4: the confirm turn's own paid calls — absorbed
+  // BESIDE the scout's, below, so the ONE ceiling this run advertised is the
+  // one it enforces (the standing hard line's money form): a confirm turn
+  // that already spent half the ceiling must not let the author call spend
+  // as if it never happened. `null`/absent is every caller that ran no
+  // confirm turn — byte-identical to today.
+  priorCalls = null, priorRaws = null,
+  // The confirm turn's ACCEPTED plan (`runConfirmTurn`'s `accepted`), fed
+  // straight into `authorPrompt`'s `confirmedBlock`. `null` is every caller
+  // that ran no confirm turn — the prompt is then byte-identical to today.
+  confirmed = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
   // The two REPORTING seams, defaulted to nothing so every existing caller is
@@ -1847,6 +1904,7 @@ export async function authorClose({
   // that spends nothing more: run mslhn707 refused at the $0 preflight below,
   // and the survey text that would have said WHY died with the process.
   book.absorb(scout?.calls ?? [], scout?.raws ?? []);
+  book.absorb(priorCalls ?? [], priorRaws ?? []);
   /** @type {any} */
   const base = {
     ok: false, declaration: null, seedRead: null, iterations: [], reds: [], cost: book.report(),
@@ -1983,7 +2041,7 @@ export async function authorClose({
   // ── the grounded loop ─────────────────────────────────────────────────────
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
-    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope,
+    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];

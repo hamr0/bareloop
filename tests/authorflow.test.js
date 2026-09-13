@@ -46,7 +46,7 @@ import {
   questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS,
   WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
-  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock,
+  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
   applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
 } from '../src/authorflow.js';
@@ -318,6 +318,53 @@ test('authorPrompt carries writeScope in place of the old Q2 — the composer st
     listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
   });
   assert.ok(!withoutScope.includes('WHAT MAY CHANGE, AND WHAT IS ONLY READ'), 'no writeScope, no block — never a fabricated fence');
+});
+
+// PRD item 33 M3 piece 4: `confirmed` is ABSENT for every caller that ran no
+// confirm turn — the prompt must be byte-identical to before this param
+// existed. Present, it adds exactly one new block.
+test('authorPrompt: confirmed is byte-identical when absent, adds exactly the confirmedBlock when present', () => {
+  const args = {
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  };
+  const withoutConfirmed = authorPrompt({ ...args });
+  const withoutConfirmedAgain = authorPrompt({ ...args, confirmed: null });
+  assert.equal(withoutConfirmed, withoutConfirmedAgain, 'an explicit null is the same as omitting it entirely');
+  assert.ok(!withoutConfirmed.includes('THE CONFIRMED PLAN'));
+
+  const confirmed = { checks: ['tests stay green'], protections: ['no-suppressions'], openQuestions: ['also check the CLI'] };
+  const withConfirmed = authorPrompt({ ...args, confirmed });
+  assert.ok(withConfirmed.includes('THE CONFIRMED PLAN'));
+  assert.ok(withConfirmed.includes('tests stay green'));
+  assert.ok(withConfirmed.includes('no-suppressions'));
+  assert.ok(withConfirmed.includes('also check the CLI'));
+  // nothing else about the prompt moved — the whole rest of the string is
+  // still there, just with one block inserted
+  assert.equal(withConfirmed.replace(confirmedBlock(confirmed) + '\n\n---\n\n', ''), withoutConfirmed);
+});
+
+test('authorClose: priorCalls/priorRaws (the confirm turn\'s own spend) are absorbed beside the scout\'s', async () => {
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({
+    ...baseArgs(), verdictType: 'green', generate, seedReadFn: scriptSeedRead().fn,
+    ceilingUsd: 1, priorCalls: [{ label: 'confirm', costUsd: 0.5, unpricedRounds: 0 }],
+  });
+  assert.ok(calls.length >= 1, 'the author call still fires — 0.5 absorbed leaves room under a $1 ceiling');
+  const ownSpend = calls.length * 0.01;
+  assert.equal(r.cost.knownUsd, Number((0.5 + ownSpend).toFixed(6)), 'the absorbed call is IN the total');
+  assert.ok(r.cost.calls.some((c) => c.label === 'confirm'), 'the confirm call shows up by its own label in the cost report');
+});
+
+test('authorClose: priorCalls that already spend the ceiling cap-halts BEFORE the author call — FAIL-FIRST proof lives in tests/authorjob.test.js', async () => {
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({
+    ...baseArgs(), verdictType: 'green', generate, seedReadFn: scriptSeedRead().fn,
+    ceilingUsd: 0.5, priorCalls: [{ label: 'confirm', costUsd: 0.5, unpricedRounds: 0 }],
+  });
+  assert.equal(calls.length, 0, 'the author call was never made — the ceiling was already spent by the confirm turn');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'cap-halt');
 });
 
 test('authorClose: writeScope reaches the composer prompt end to end (never just the standalone helper)', async () => {

@@ -26,7 +26,7 @@ import {
   GENRE, REFUSAL_LIB, REFUSAL_CATEGORY, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
 } from '../src/authorjob.js';
 import { validateJob, jobSpecHash, checkApproval } from '../src/job.js';
-import { questionsFor } from '../src/authorflow.js';
+import { questionsFor, CONFIRM_TOOL_NAME } from '../src/authorflow.js';
 import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scanSecrets } from '../src/validate.js';
 import { classGuards } from '../src/authoring.js';
@@ -687,6 +687,159 @@ const SURVEY = (dir) => ({
     typecheck: { cmd: 'node', args: ['check.mjs'], cwd: null, env: {}, source: 'package.json', inferred: false },
   },
   meta: { bytes: 900, rounds: 2, bounded: false, recovered: false, error: null },
+});
+
+// ── PRD item 33 M3 piece 4: the confirm turn, wired into authorCloseForJob ──
+
+/** a scripted CONFIRM model: calls the confirm tool exactly once per round,
+ * mirroring `scriptedDeclarer` but over the confirm channel */
+const scriptedConfirmer = (/** @type {any[]} */ plans, /** @type {number} */ costUsd = 0.4) => {
+  let i = 0;
+  return async (/** @type {any[]} */ _messages, /** @type {any[]} */ tools) => {
+    const p = plans[Math.min(i, plans.length - 1)];
+    i += 1;
+    const tool = tools.find((/** @type {any} */ t) => t.name === CONFIRM_TOOL_NAME);
+    if (tool) await tool.execute(p);
+    return { text: '', metrics: { costUsd, unpricedRounds: 0 } };
+  };
+};
+
+/** a scripted interactive `ask` — consumes scripted answers, `null` past the end */
+const scriptedAsk = (/** @type {any[]} */ script) => {
+  let i = 0;
+  return async () => (i < script.length ? script[i++] : null);
+};
+
+const CONFIRM_PLAN = { checks: ['tests stay green'], protections: ['no-suppressions'], goal: 'Keep it green.', questions: [] };
+
+test('confirm turn: wires into the phase order between scout-done and listing, repo + survey PRESENT + ask', async (t) => {
+  const p = makePatient(t);
+  /** @type {string[]} */
+  const phases = [];
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN]),
+    onPhase: (/** @type {string} */ n) => phases.push(n),
+    scoutFn: async () => SURVEY(p.dir),
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    authorFn: async () => ({ ok: false, declaration: null, reds: [], stop: 'max-revisions', cost: null }),
+  });
+  assert.equal(r.ok, false, 'the authorFn stub decides nothing here — the phases do');
+  const idx = (/** @type {string} */ n) => phases.indexOf(n);
+  assert.ok(idx('scout-done') < idx('confirm'), 'confirm starts only after the scout is known');
+  assert.ok(idx('confirm') < idx('confirm-round'));
+  assert.ok(idx('confirm-round') < idx('confirm-done'));
+  assert.ok(idx('confirm-done') < idx('confirm-turn-done'));
+  assert.ok(idx('confirm-turn-done') < idx('listing'), 'confirm finishes before the listing is built');
+});
+
+test('confirm turn: an ABSENT survey (state !== PRESENT) skips confirm entirely, even with ask + isRepo', async (t) => {
+  const p = makePatient(t);
+  /** @type {string[]} */
+  const phases = [];
+  let confirmCalled = false;
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: async () => { confirmCalled = true; return { text: '', metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
+    onPhase: (/** @type {string} */ n) => phases.push(n),
+    scoutFn: async () => ({ state: 'ABSENT', facts: null, reason: 'the ladder never produced a fact', calls: [], raws: [] }),
+  });
+  assert.ok(!phases.includes('confirm'), 'no confirm phase at all when the survey never came back');
+  assert.equal(confirmCalled, false, 'the confirm model boundary is never invoked either');
+  assert.equal(r.ok, false);
+  // the EXISTING $0 preflight in authorClose refuses this exactly as it always
+  // has — confirm being skipped changes nothing about that refusal
+  assert.equal(r.stop, 'precheck');
+});
+
+test('confirm turn: callers passing no `ask` behave exactly as today — no confirm phase, no confirmGenerate needed', async (t) => {
+  const p = makePatient(t);
+  /** @type {string[]} */
+  const phases = [];
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, // isRepo alone, with no `ask`, must not turn confirm on
+    onPhase: (/** @type {string} */ n) => phases.push(n),
+    scoutFn: async () => SURVEY(p.dir),
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    authorFn: async () => ({ ok: false, declaration: null, reds: [], stop: 'max-revisions', cost: null }),
+  });
+  assert.deepEqual(phases, ['scout', 'scout-done', 'listing', 'listing-done', 'author'],
+    'byte-identical phase list to the pre-confirm-turn behaviour — no confirm anything (no "seed" here: seedRef was supplied)');
+  assert.equal(r.ok, false);
+});
+
+test('confirm turn: scout $0.40 + confirm $0.40 under a $0.80 ceiling leaves nothing for the author call — cap-halt against the REAL authorClose', async (t) => {
+  const p = makePatient(t);
+  const scoutWithCost = { ...SURVEY(p.dir), calls: [{ label: 'author-scout', costUsd: 0.4, unpricedRounds: 0 }] };
+  const declarer = scriptedDeclarer([{ stages: DECL().stages, notes: [] }]);
+  let authorCallCount = 0;
+  const countingDeclarer = async (/** @type {any[]} */ m, /** @type {any[]} */ t2) => { authorCallCount += 1; return declarer(m, t2); };
+  const r = await authorCloseForJob({
+    // authorFn is left at its DEFAULT (the real authorClose) — this proves the
+    // wiring in authorCloseForJob itself, not a stub standing in for it.
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ceilingUsd: 0.8,
+    ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN], 0.4),
+    scout: scoutWithCost,
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    generate: countingDeclarer,
+  });
+  assert.equal(authorCallCount, 0, 'the author call was never made — scout ($0.40) + confirm ($0.40) already spent the $0.80 ceiling');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'cap-halt');
+});
+
+test('confirm turn: FAIL-FIRST — removing authorCloseForJob\'s priorCalls wiring lets the author call fire past the same ceiling', async (t) => {
+  const p = makePatient(t);
+  const scoutWithCost = { ...SURVEY(p.dir), calls: [{ label: 'author-scout', costUsd: 0.4, unpricedRounds: 0 }] };
+  let authorCallCount = 0;
+  const countingDeclarer = async (/** @type {any[]} */ m, /** @type {any[]} */ t2) => {
+    authorCallCount += 1;
+    return scriptedDeclarer([{ stages: DECL().stages, notes: [] }])(m, t2);
+  };
+  // simulate the un-wired state directly: authorFn that does NOT forward
+  // priorCalls/priorRaws through to authorClose (exactly what authorCloseForJob
+  // would do if its own `priorCalls: confirmPriorCalls, priorRaws: ...` line
+  // were removed) — everything else about the call is identical.
+  const { authorClose } = await import('../src/authorflow.js');
+  const unwiredAuthorFn = (/** @type {any} */ o) => authorClose({ ...o, priorCalls: undefined, priorRaws: undefined });
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ceilingUsd: 0.8,
+    ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN], 0.4),
+    scout: scoutWithCost,
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    generate: countingDeclarer,
+    authorFn: unwiredAuthorFn,
+  });
+  assert.ok(authorCallCount > 0, 'WITHOUT the priorCalls absorb the author call fires at least once — this is the red the real wiring prevents above');
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+});
+
+test('confirm turn: an ambiguous language pick lands in closeDecl.lang', async (t) => {
+  const p = makePatient(t);
+  // called with lang:'python' (a wrong/placeholder starting guess — a caller
+  // ahead of the ambiguous detection has to pass SOMETHING); the $0 language
+  // pick overrides it to 'js', and the guards/declaration below are JS-shaped
+  // to prove the OVERRIDE actually took (a mismatched genre battery would
+  // validation-red, as it correctly does when the override is missing).
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'python', seedRef: p.seed,
+    isRepo: true, langResult: { kind: 'ambiguous', candidates: ['js', 'python'], dir: p.dir },
+    ask: scriptedAsk(['nothing worse', 'js', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN]),
+    scoutFn: async () => SURVEY(p.dir),
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    generate: scriptedDeclarer([{ stages: DECL().stages, notes: [] }]),
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.equal(r.closeDecl.lang, 'js', 'the person\'s $0 pick, not the lang argument authorCloseForJob was called with');
+  assert.equal(r.confirmed?.lang, 'js');
 });
 
 test('WHOLE PIPELINE: seven answers in, a validateJob-green spec with a hash out', async (t) => {
