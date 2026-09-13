@@ -392,6 +392,31 @@ EXISTING audit records — no new record format.
 
    See M3b (below, right after M3) for the language guards that ride on top of this detection.
 
+   **Addendum (hamr, 2026-09-13) — M3 piece 4 (the confirm turn) open decisions ruled:**
+   - **D5 = A.** A PLAIN-FOLDER source runs NO scout (the scout's register is code-only,
+     `src/authorscout.js:207`). Its confirm turn reads the $0 seed listing of the frozen tree,
+     spends only its own calls, then the honest named stop "no checks for this kind of job yet
+     (M4)".
+   - **D6 = A.** Ruling 6 above ("a genre never adds a check the goal did not ask for") wins
+     over `TYPES_GENRE_TEMPLATE` (`src/authoring.js:483-497`): skeleton WORK stages (typecheck,
+     typecheck-outside, tests-kept, suite-green) are composed ONLY when a confirmed check asks
+     for them; the strict form of the checker likewise applies only when a confirmed check asks
+     for strict typing (run `mtv8jihy`'s unasked `tsc --strict` stage is the case this cures).
+     The GUARDS (changed-from-seed, no-suppressions, and every mandatory/MECHANICAL guard) stay
+     always on, are listed in the confirm turn as PROTECTIONS (not checks), and are not named in
+     the goal. Enforcement is prompt register only (template wording + confirmed-checks block),
+     never a code matcher over prose.
+   - Defaults taken (hamr did not object): **D1 = A** (the confirm turn runs inside
+     `scripts/run-author.mjs`, via a library function with an injected `ask` seam;
+     run-interview stays provider-free). **D2 = A** (a goal already present in a draft seeds
+     round 1's starting sentence; the confirmed goal replaces it; `goal` does not join
+     `AUTHORED_SPEC_FIELDS`). **D3 = A** (at most 2 model calls; a round-2 "fix" is passed to
+     the composer verbatim and shown at signing as an open question; the menu also offers
+     "type the goal sentence yourself"). **D4 = A** (open questions are shown in run-author's
+     "SIGNING PREPARED" readout from `authored.json`; the signed spec format does not change).
+     **D7 = A** (the $0 questions — language pick when ambiguous, "worse than before" for a
+     repo — are asked BEFORE the scout, so a missing person at end of input stops at $0).
+
 ## M3b — language guards
 
 Languages are detected from the repo by code (M3, ruling 3 above), never asked. Beyond js and

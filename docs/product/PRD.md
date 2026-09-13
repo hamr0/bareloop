@@ -427,6 +427,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     **2026-09-13 — (4) amended** (hamr): 31.4's proof runs on DeepSeek (`deepseek-flash`),
     not gemini.
 
+    **2026-09-13 — M3 piece 4 (the confirm turn) open decisions ruled** (D5=A, D6=A, D1-D4/D7
+    defaults taken) — see `docs/product/ITEM33-BUILD.md` M3 ruling 5's addendum for detail.
+
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
     POC's negative scenario N4 (`docs/product/EXPORT-BUILD.md`): `jobSpecHash` covers
