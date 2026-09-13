@@ -329,6 +329,16 @@ EXISTING audit records — no new record format.
    patterns and file extensions in the `TYPES_GENRE.languages` table, genre-owned env such as
    Python's `MYPYPATH` (`genreEnv`, line 848), and checker-output instruments (`genreInstruments`,
    line 912).
+
+   Five detection points (hamr, 2026-09-13):
+   (1) code reads the manifest at the Source folder, walking up to the repo root — nearest
+   wins (`package.json` → js, TypeScript included; `pyproject.toml`/`setup.py` → python);
+   (2) known list only — an unknown language is a named "language not supported yet" stop,
+   counted as demand, never a silent fallback to js;
+   (3) two manifests at the same level → the confirm turn asks the person;
+   (4) the language is shown in the confirm turn and signed as `closeDecl.lang`
+   (`src/authorjob.js` ~line 595);
+   (5) the seed read breaks a wrong-language checker at signing.
 4. **The confirm turn is paid, inside the authoring budget.** It is a call INSIDE the same
    `--budget` ceiling (no default); it reuses the scout's survey rather than reading the source
    a second time.
@@ -348,6 +358,24 @@ EXISTING audit records — no new record format.
 9. **Proof.** The M3 build is $0 with tests; at the end, ONE live interview on a repo job runs
    on DeepSeek (`deepseek-flash`), paid, only on hamr's word at that time. It depends on item
    34's L17 (authoring provider selectable) landing first.
+
+   See M3b (below, right after M3) for the language guards that ride on top of this detection.
+
+## M3b — language guards
+
+Languages are detected from the repo by code (M3, ruling 3 above), never asked. Beyond js and
+python, add the top 5: Java, C#, Go, Rust, PHP.
+
+Each language gets its own cheat list (ways a model can fake past the type checker/linter —
+e.g. suppression comments) plus its own checker data. This data is genre-owned, never written
+by the model (same rule as M3's per-language TYPES genre tables — `GENRE_LANGUAGES`,
+`TYPES_GENRE.languages`, `genreEnv`, `genreInstruments` in `src/authoring.js`).
+
+Proof per language: a $0 guard proof on a real public repo (any public repo is fine; install
+each language's toolchain as needed), then ONE small paid proof run on `deepseek-flash`, fired
+only on hamr's word at that time.
+
+Order: right after M3, before M4.
 
 ## M4 — non-code checks and guards
 

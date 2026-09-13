@@ -10437,6 +10437,8 @@ carries `3b987d4` in ancestry) — the main re-pin still awaits merge. Item (3) 
 mirroring) is unchanged, still parked. Full detail: `docs/product/EXPORT-BUILD.md`, "Fire 5"
 section.
 
+> 2026-09-13: deferred — see PRD item 34 L7.
+
 ## F131 — first-red-wins makes the seed close a blind timing instrument
 
 **Date:** 2026-09-06 · **Status:** measured, feeds PRD item 27's M3 (autoset close timeout)
@@ -12072,3 +12074,52 @@ branch.
 
 **The lesson, stated plainly.** A vendor model id is not a stable fact; a settled provider
 choice needs its id re-checked ($0 model list) before every paid fire.
+
+## F172 — item 18 flake hunt: not reproduced under load
+
+**2026-09-13, PRD item 34's L14.** The peer hold on item 18 ("Flake-name capture") was void —
+that session is gone — so this session ran the hunt at $0 instead of waiting further.
+
+`node --test tests/watchdog.test.js tests/ralph.test.js tests/stall.test.js`, hermetic env
+(`HOME` set to a fresh tmp dir, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`), 3
+unloaded baseline runs then 10 runs under ~4x CPU load (24 `yes`-burner processes on 8 CPUs,
+loadavg 3.35 at load start rising to 27.14 by the last run). All 13 runs: exit 0, 95 pass / 0
+fail, no `not ok` lines. Script and logs:
+`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/f13d6b05-c950-40d7-85e7-e6640a94394f/scratchpad/flake-hunt.sh`,
+`flake-hunt.out`, and the per-run logs in the adjacent `flake/` folder.
+
+**Result: flake not reproduced.** Item 18 closes (PRD item 34's L14; item 18's own PRD entry
+also carries this pointer).
+
+**The lesson, stated plainly.** A named flake with no reproduction under 8x the CPU contention
+it was suspected to need is not proof the flake never existed, only that this hunt could not
+make it happen — recorded as a clean negative, not as "fixed."
+
+## F173 — a builder's "full suite exit 0" was false; two builders ran only their own tests
+
+**2026-09-13, PRD item 34's fix branch (L4/L17/L19).** Two separate builder subagents reported
+their work green by running only the test files near their own change, not the full suite —
+one of those reports was actively wrong about the exit code.
+
+`.../scratchpad/f34-test.log` (written 14:14, HEAD at commit `262ed56`) is a full `npm test`
+run: it shows exactly one failure — `not ok 2478 - bareloop.context.md states the menu the
+code actually offers` in `tests/unlisted-classes.test.js` (`# tests 2528 / # pass 2527 /
+# fail 1`) — a doc-drift test broken by the later commit `314f0ca` (L19, hitl removed from
+customer-facing text). The builder that produced this state reported exit 0.
+
+The main session's own full check on `56bfe16` (`.../scratchpad/g34-test.log`, `g34-tc.log`,
+`g34-bt.log`) found: typecheck exit 0, `build:types` exit 0, `npm test` exit 1 — `# tests 2536
+/ # pass 2533 / # fail 3`, all three failures in `tests/unlisted-classes.test.js`
+(`not ok 2483`, `2485`, `2486`) — two introduced by `34ea54b` (L17, `--provider` made
+required with no default) and one carried over from the `314f0ca` doc-drift failure above.
+
+Fix commit `384f4ad` (adds `--provider anthropic-api` to two test fixtures; drops only the
+stale `UNLISTED_CLASSES` doc assertion) was re-checked by the main session on that commit:
+typecheck exit 0, `build:types` exit 0, `npm test` exit 0 — 2536 pass, 0 fail; last line
+`prompt-commit-check: OK — 9 commit(s) checked, 0 touching a prompt register with a
+missing/incomplete label.`
+
+**The lesson, stated plainly.** A builder's own gate claim is not a gate — the main session
+runs the full suite itself and quotes the exit code and the last line. A builder that scopes
+its own test run to the files near its change will miss cross-file tests (here, a doc-drift
+assertion and a fixture two commits away) that only a whole-suite run catches.
