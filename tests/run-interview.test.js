@@ -11,13 +11,21 @@
 // The instrument is the REAL script with a SCRIPTED stdin: it never reads a key and
 // never spawns the paid child (every scenario answers the final offer with "n" or
 // ends input, and the default is no). Nothing here talks to a provider.
+//
+// SOURCE AND DESTINATION (PRD item 33 M3, ruling 2) are the interview's own first
+// two questions now — there is no `--patient` flag any more. `repoBase` below is a
+// REAL git repository (neutralized identity, the same rule `tests/source.test.js`
+// uses — CI has no gitconfig), because a repo Source is what makes Destination mean
+// the write fence, which is the shape every pre-existing test here already assumed.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 // the LIBRARY's own frozen sets — the expectations below are DERIVED from them, so a
 // question that is ever re-worded moves the test with it instead of leaving a stale
 // literal that passes while the person is asked something else
@@ -43,6 +51,23 @@ let n = 0;
 /** a fresh out dir per scenario, so "nothing was written" is a real assertion */
 const outDir = () => join(base, `out-${n += 1}`);
 
+/** the same neutralized identity `src/source.js`/`tests/source.test.js` use — CI
+ * has no gitconfig (F136: the suite runs hermetic, empty `HOME`). */
+const GIT_ID = ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false'];
+/** @param {string} cwd @param {string[]} args */
+const gitFix = (cwd, args) => execFileSync('git', [...GIT_ID, ...args], { cwd, encoding: 'utf8' });
+
+/** the REAL git repo the wizard tests point Source at — `package.json` so
+ * language detection resolves 'js' (never left to the empty-repo "no-code-job"
+ * reading, which a bug in the repo/non-repo routing could hide behind). */
+const repoBase = mkdtempSync(join(base, 'repo-'));
+writeFileSync(join(repoBase, 'package.json'), '{}');
+mkdirSync(join(repoBase, 'src'), { recursive: true });
+writeFileSync(join(repoBase, 'src', 'index.js'), 'export const x = 1;\n');
+gitFix(repoBase, ['init', '-q']);
+gitFix(repoBase, ['add', '-A']);
+gitFix(repoBase, ['commit', '-q', '-m', 'seed']);
+
 /**
  * Drive the real script with a scripted stdin. `lines` are typed one per line; a
  * free-text answer is ended by an empty string, exactly as a person ends one with a
@@ -54,14 +79,14 @@ const outDir = () => join(base, `out-${n += 1}`);
  * `provider` defaults to `anthropic-api` (item 34 L17 made it a REQUIRED flag with
  * no library default) — `null` omits `--provider` entirely, for the scenarios that
  * test the missing-flag refusal itself.
- * @param {{verdict?: string, patient?: string, out: string, budget?: string|null,
+ * @param {{verdict?: string, out: string, budget?: string|null,
  *   provider?: string|null, key?: string, lines: string[]}} o
  */
 const interview = ({
-  verdict = CLASS, patient = base, out, budget = '2.50', provider = 'anthropic-api', key = '', lines,
+  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', key = '', lines,
 }) => {
   const args = [
-    '--patient', patient, '--verdict', verdict, '--out', out,
+    '--verdict', verdict, '--out', out,
     ...(budget === null ? [] : ['--budget', budget]),
     ...(provider === null ? [] : ['--provider', provider]),
   ];
@@ -82,12 +107,16 @@ const interview = ({
 
 /** one free-text answer: the text, then the blank line that ends it */
 const a = (/** @type {string} */ s) => [s, ''];
+/** the SOURCE + DESTINATION pair every complete session starts with (PRD item 33
+ * M3, ruling 2) — `source` defaults to the real repo fixture above, `destination`
+ * to a fence glob (repo Source: Destination IS the write fence). */
+const front = (over = {}) => [...a(over.source ?? repoBase), ...a(over.destination ?? 'src/**')];
 /** a complete, valid session for a class, ending with "n" at the paid-step offer */
 const session = (verdict, over = {}) => [
+  ...front(over),
   ...requiredAnswersFor(verdict).flatMap((q) => a(`answer to question ${q}`)),
   ...a(over.job ?? 'litectx-maintainer'),
   ...a(over.goal ?? 'Make src/ pass the checker with no suppressions and the suite still green.'),
-  ...a(over.scope ?? 'src/**'),
   ...a(over.budget ?? '5'),
   ...a(over.wall ?? '30'),
   over.run ?? 'n',
@@ -148,6 +177,97 @@ test('tripwire: the script SPELLS no question of its own', () => {
   assert.match(src, /requiredAnswersFor\(/, 'and for which of them are required');
 });
 
+// ══ SOURCE / DESTINATION (PRD item 33 M3, ruling 2) ════════════════════════════
+
+test('a repo Source: Destination fills writeScope DIRECTLY, and no separate FENCE question is ever asked', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS, { destination: 'src/**, tests/**' }) });
+  assert.equal(r.code, 0, r.out);
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.deepEqual(draft.writeScope, ['src/**', 'tests/**']);
+  assert.doesNotMatch(r.out, /The FENCE: which files the worker is allowed to WRITE/, 'no second, separate fence question — Destination already asked it');
+  // and it is asked as DESTINATION, up front, BEFORE the class's own questions
+  assert.match(r.out, /── DESTINATION/);
+  const destAt = r.out.indexOf('── DESTINATION');
+  const firstQAt = r.out.indexOf('── 1 of ');
+  assert.ok(destAt !== -1 && firstQAt !== -1 && destAt < firstQAt, 'Destination is asked before the class questions');
+});
+
+test('the printed hand-off gives run-author.mjs --source, never --patient', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  const treeLine = /^ {2}tree {5}(\S+)/m.exec(r.out)?.[1];
+  assert.ok(treeLine, `the prepared tree path was not printed:\n${r.out}`);
+  assert.ok(existsSync(treeLine), `the printed tree path does not exist on disk: ${treeLine}`);
+  assert.match(r.out, new RegExp(`run-author\\.mjs --source ${treeLine.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} `));
+  assert.doesNotMatch(r.out, /--patient/);
+});
+
+test('the original repo Source is never touched — prepareSource COPIES, it never writes back', () => {
+  const out = outDir();
+  const before = readFileSync(join(repoBase, 'package.json'), 'utf8');
+  const beforeHead = gitFix(repoBase, ['rev-parse', 'HEAD']).trim();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.equal(readFileSync(join(repoBase, 'package.json'), 'utf8'), before);
+  assert.equal(gitFix(repoBase, ['rev-parse', 'HEAD']).trim(), beforeHead, 'the original repo\'s HEAD must not move');
+});
+
+test('a non-repo Source (a plain folder): the form stops right after Source/Destination — the honest M4 gap', () => {
+  const out = outDir();
+  const folder = mkdtempSync(join(base, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const destDir = mkdtempSync(join(base, 'plain-dest-'));
+  const r = interview({ out, lines: [...a(folder), ...a(destDir), 'n'] });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /bareloop has no checks for this kind/);
+  assert.match(r.out, /M3 ruling 7 → M4/);
+  assert.doesNotMatch(r.out, /── 1 of /, 'the class questions never start — nothing here is authored for a job with no close catalogue yet');
+  assert.equal(existsSync(join(out, 'specdraft.json')), false);
+});
+
+test('a bad Destination (not absolute) is a NAMED refusal and the question is RE-ASKED, never silently fixed', () => {
+  const out = outDir();
+  const folder = mkdtempSync(join(base, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const goodDest = mkdtempSync(join(base, 'plain-dest-'));
+  const r = interview({ out, lines: [...a(folder), ...a('relative/dir'), ...a(goodDest), 'n'] });
+  assert.match(r.out, /destination-not-absolute/);
+  // and it recovered — the retry loop accepted the SECOND, valid answer and
+  // reached the (honest, non-repo) stop rather than exiting on the bad one
+  assert.match(r.out, /bareloop has no checks for this kind/);
+});
+
+test('language detection still runs on the ORIGINAL Source path — an unsupported manifest stops before any question, uncounted', () => {
+  const out = outDir();
+  const goRepo = mkdtempSync(join(base, 'go-repo-'));
+  writeFileSync(join(goRepo, 'go.mod'), 'module example.com/x\n');
+  gitFix(goRepo, ['init', '-q']);
+  gitFix(goRepo, ['add', '-A']);
+  gitFix(goRepo, ['commit', '-q', '-m', 'go']);
+  const r = interview({ out, lines: [...a(goRepo), 'n'] });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /REFUSED \(request-red\)/);
+  assert.match(r.out, /language-unsupported/);
+  assert.doesNotMatch(r.out, /── DESTINATION/, 'stops before Destination is even asked');
+  assert.match(r.out, /run-interview\.mjs keeps no/, 'this script has no spine — the stop says so, plainly');
+});
+
+test('--patient is refused, loud — Source replaced it', () => {
+  const out = outDir();
+  const args = ['--patient', repoBase, '--verdict', CLASS, '--provider', 'anthropic-api', '--out', out];
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
+    encoding: 'utf8', timeout: 30_000, input: 'n\n',
+    env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
+  });
+  assert.equal(r.status, 2);
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.match(text, /--patient is no longer a flag/);
+  assert.match(text, /Source is now the interview's first question/);
+  assert.equal(existsSync(out), false);
+});
+
 // ══ what lands on disk ═════════════════════════════════════════════════════════
 
 test('it writes exactly what run-author.mjs consumes: the answers, and the OPERATOR half of a spec', () => {
@@ -176,7 +296,7 @@ test('it writes exactly what run-author.mjs consumes: the answers, and the OPERA
   assert.equal(draft.tools, undefined, 'an omitted menu hashes as the concrete current TOOL_MENU (MED-1) — naming one here would freeze today\'s list into the operator\'s half');
 
   // and the exact command that consumes them, with both files named
-  assert.match(r.out, new RegExp(`run-author\\.mjs .*--answers ${join(out, 'answers.json')}`));
+  assert.match(r.out, new RegExp(`run-author\\.mjs --source .* --answers ${join(out, 'answers.json')}`));
   assert.match(r.out, new RegExp(`--draft ${join(out, 'specdraft.json')}`));
   assert.match(r.out, new RegExp(`--verdict ${CLASS}`));
   assert.match(r.out, /--budget 2\.5\b/, 'the authoring ceiling travels to the process that spends it');
@@ -196,7 +316,7 @@ test('an unbounded authoring run is ANNOUNCED rather than arrived at by omission
   const r = interview({ out, budget: null, lines: session(CLASS) });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /budget +UNBOUNDED/);
-  const cmd = r.out.split('\n').find((l) => l.includes('run-author.mjs --patient')) ?? '';
+  const cmd = r.out.split('\n').find((l) => l.includes('run-author.mjs --source'));
   assert.ok(cmd, 'the paid step is still offered');
   assert.doesNotMatch(cmd, /--budget/, 'and no ceiling is invented for the child either — unbounded is passed on as unbounded');
 });
@@ -213,9 +333,10 @@ test('the wall is ASKED, and `none` records the unbounded choice as a choice', (
 test('a multi-line answer survives as the person typed it', () => {
   const out = outDir();
   const lines = [
+    ...front(),
     ...requiredAnswersFor(CLASS).slice(0, 1).flatMap(() => ['first line', 'second line', '']),
     ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
-    ...a('litectx-maintainer'), ...a('a goal'), ...a('src/**'), ...a('5'), ...a('30'), 'n',
+    ...a('litectx-maintainer'), ...a('a goal'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
@@ -226,9 +347,10 @@ test('a secret typed into an answer is SCRUBBED by the library seam before it re
   const out = outDir();
   const key = `sk-${'a1b2c3d4e5f6g7h8'.repeat(2)}`;
   const lines = [
+    ...front(),
     ...a(`the token is ${key}`),
     ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
-    ...a('litectx-maintainer'), ...a('a goal'), ...a('src/**'), ...a('5'), ...a('30'), 'n',
+    ...a('litectx-maintainer'), ...a('a goal'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
@@ -308,9 +430,9 @@ test('the offer\'s key name FOLLOWS the chosen provider, never a hardcoded ANTHR
   assert.doesNotMatch(r.out, /ANTHROPIC_API_KEY/, 'a different provider must never surface the old hardcoded key name');
 });
 
-test('a patient that is not on the machine refuses at the door, not after twenty questions', () => {
+test('a Source that is not on the machine refuses at the door, not after any class question', () => {
   const out = outDir();
-  const r = interview({ patient: join(base, 'no-such-repo'), out, lines: ['n'] });
+  const r = interview({ out, lines: [...a(join(base, 'no-such-repo')), 'n'] });
   assert.equal(r.code, 2);
   assert.match(r.out, /does not exist/);
   assert.doesNotMatch(r.out, /── 1 of /);
@@ -319,10 +441,11 @@ test('a patient that is not on the machine refuses at the door, not after twenty
 test('a blank answer is RE-ASKED with the rule named — never accepted, never filled in', () => {
   const out = outDir();
   const lines = [
+    ...front(),
     '', '', // two blank lines at question 1: the answer is empty, twice
     ...a('finally an answer'),
     ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
-    ...a('litectx-maintainer'), ...a('a goal'), ...a('src/**'), ...a('5'), ...a('30'), 'n',
+    ...a('litectx-maintainer'), ...a('a goal'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
@@ -333,8 +456,9 @@ test('a blank answer is RE-ASKED with the rule named — never accepted, never f
 test('a number that is not a number is re-asked, and the field is named', () => {
   const out = outDir();
   const lines = [
+    ...front(),
     ...requiredAnswersFor(CLASS).flatMap((q) => a(`answer to question ${q}`)),
-    ...a('litectx-maintainer'), ...a('a goal'), ...a('src/**'),
+    ...a('litectx-maintainer'), ...a('a goal'),
     ...a('five dollars'), ...a('5'),
     ...a('30'), 'n',
   ];
@@ -347,11 +471,16 @@ test('a number that is not a number is re-asked, and the field is named', () => 
 
 test('stdin ending mid-interview writes NOTHING — a half-collected set that looks finished is the failure nobody sees', () => {
   const out = outDir();
-  const r = interview({ out, lines: [...a('one answer'), ...a('another')] });
+  const r = interview({ out, lines: [...front(), ...a('one answer'), ...a('another')] });
   assert.equal(r.code, 2);
   assert.match(r.out, /INPUT ENDED/);
   assert.match(r.out, /question 3/, 'and it says exactly where it stopped');
-  assert.equal(existsSync(out), false);
+  // `out` itself may already hold the PREPARED SOURCE tree by this point (Source
+  // and Destination are proven, and the copy frozen, BEFORE the class questions
+  // that ended early) — what must never exist is the answers/draft pair the
+  // interview writes only once it actually finishes.
+  assert.equal(existsSync(join(out, 'answers.json')), false);
+  assert.equal(existsSync(join(out, 'specdraft.json')), false);
 });
 
 test('a draft the JOB VALIDATOR would refuse is refused HERE, for $0, before the paid step is offered', () => {
@@ -364,8 +493,8 @@ test('a draft the JOB VALIDATOR would refuse is refused HERE, for $0, before the
   assert.match(r.out, /THE SPEC DRAFT DOES NOT VALIDATE/);
   assert.match(r.out, /invalid-value at job/);
   assert.match(r.out, /bounds at maxWallMs/);
-  assert.doesNotMatch(r.out, /run-author\.mjs --patient/, 'the paid step is not offered over a draft that cannot be signed');
-  assert.equal(existsSync(out), false);
+  assert.doesNotMatch(r.out, /run-author\.mjs --source/, 'the paid step is not offered over a draft that cannot be signed');
+  assert.equal(existsSync(join(out, 'specdraft.json')), false);
 });
 
 test('tripwire: the draft\'s validity is the LIBRARY\'s reading, and the authored half is filtered by NAME', () => {

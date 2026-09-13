@@ -23,7 +23,7 @@
 // on rather than catch.
 
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, lstatSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
@@ -75,6 +75,33 @@ const MAX_SAME_DAY = 99;
 
 /** @param {string} code @param {string} stop @returns {SourceRefusal} */
 const refuse = (code, stop) => ({ stop, code });
+
+/**
+ * A CHEAP peek (a stat, never a read) at whether `source` is going to turn
+ * out to be a REPO source — the ONE rule for that question, shared by
+ * `prepareSource` (which routes the destination check below before the real
+ * walk further down decides authoritatively) and `scripts/run-interview.mjs`
+ * (PRD item 33 M3 ruling 2), which has to know BEFORE Source is even frozen
+ * whether Destination fills the write fence or a delivery directory. Never a
+ * second, hand-typed copy of this test: a URL is never a repo; a local path
+ * is a repo source only when it is a DIRECTORY carrying a `.git` entry
+ * directly (a subfolder one level inside a repo has no `.git` of its own and
+ * is therefore NOT a repo source by this rule — it freezes as a plain
+ * folder, the same authoritative outcome the real walk below produces for
+ * it). An unreadable path is reported properly by the real walk; this peek
+ * only has to agree with that walk closely enough to route correctly, never
+ * to replace it.
+ * @param {string} source
+ * @returns {boolean}
+ */
+export function looksLikeRepoSource(source) {
+  if (/^https?:\/\//i.test(source)) return false;
+  try {
+    const abs = resolve(source);
+    const st = lstatSync(abs);
+    return st.isDirectory() && existsSync(join(abs, '.git'));
+  } catch { return false; }
+}
 
 /** @param {Buffer} buf @returns {boolean} */
 function hasNulByte(buf) {
@@ -351,22 +378,14 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
     return refuse('into-exists', `${intoAbs} already exists — a source door writes a FRESH tree, never reuses one (the export worktree rule)`);
   }
   const isUrl = /^https?:\/\//i.test(source);
-  // a CHEAP peek (a stat, never a read) at whether this source is going to
-  // turn out to be a repo — needed here, before the source is actually
-  // walked below, because a repo source's destination takes a DIFFERENT path
-  // (the write-fence recording above) than every other kind's (the directory
-  // proof). The real walk below makes the authoritative kind determination
-  // (and refuses source-is-linked-worktree when `.git` is a file); this peek
+  // needed here, before the source is actually walked below, because a repo
+  // source's destination takes a DIFFERENT path (the write-fence recording
+  // above) than every other kind's (the directory proof). The real walk
+  // below makes the authoritative kind determination (and refuses
+  // source-is-linked-worktree when `.git` is a file); `looksLikeRepoSource`
   // only has to agree with it closely enough to route the destination check
   // correctly, and it does — both read the same `.git` existence test.
-  let looksLikeRepoSource = false;
-  if (!isUrl) {
-    try {
-      const peekAbs = resolve(source);
-      const peekStat = await lstat(peekAbs);
-      looksLikeRepoSource = peekStat.isDirectory() && existsSync(join(peekAbs, '.git'));
-    } catch { /* an unreadable source is reported properly by the real walk below */ }
-  }
+  const isRepoLike = looksLikeRepoSource(source);
   // hamr's ruling (PRD item 33): source AND destination are proven at job
   // start, $0 — and review finding #2 sharpens WHEN: before `into` is
   // created, never after, so a refused destination leaves nothing on disk
@@ -374,7 +393,7 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   // its result). Order matters here: this runs before any source is read,
   // fetched, or walked.
   if (destination !== undefined) {
-    if (looksLikeRepoSource) {
+    if (isRepoLike) {
       if (typeof destination !== 'string' || destination.length === 0) {
         return refuse('destination-invalid', 'destination must be a non-empty value — a repo source records it as the declared write fence, wired into writeScope in a later milestone');
       }
