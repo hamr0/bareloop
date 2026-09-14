@@ -987,7 +987,10 @@ into a success one process up.
 - `run-author.mjs` — **1** a refusal or a failed gate (this now includes the confirm turn's own
   `confirm-abandoned`/`confirm-restart` stops — input ended, or the person chose to start over,
   both counted through the same generic "not-authored" branch every other authoring refusal
-  uses); **2** operator/config; **3** a leak; **4** a CRASH inside the paid span. **3
+  uses, and `source-deps-missing` — the prepared copy's `package.json` lists dependencies with
+  no `node_modules`, refused at $0 before the scout and before the provider/key are even
+  checked, naming the exact install command); **2** operator/config; **3** a leak; **4** a
+  CRASH inside the paid span. **3
   deliberately OVERRIDES a 4**: a secret sitting in a written file is the harder line of the
   two, and the crash keeps both of its own louder channels — the whole error on stderr and its
   own `author-crash` spine record. **This script is now interactive** (step S4): the confirm
@@ -3222,6 +3225,27 @@ freeze loop never trusts a buffer read a moment earlier), `into-exists`,
 `destination-write-failed`, `source-manifest-unreadable`, `source-manifest-invalid`. A
 refusal never throws, never overwrites a person's file, and never lands a destination inside
 the run's own scratch tree.
+
+**`prepareSource` copies ONLY git-tracked files** (hamr's ruling, unchanged) — a JS/TS repo's
+prepared copy therefore never carries `node_modules`, and every close stage that needs a tool
+(`tsc`, a test runner) would instrument-stop with nothing telling the person why. bareloop
+NEVER runs an install itself — it only ever touches gated primitives, never a shell-out to
+`npm`/`pnpm`/`yarn`/`bun` on the person's behalf. `missingDependencies` is exported ($0,
+JS/TS only for now — other languages return `null`, M3b's job): it takes `(treeDir,
+sourceSubdir?)` and walks from `sourceSubdir` up to `treeDir` (the same nearest-manifest rule
+`detectLanguage` uses, done independently to avoid a `source.js` ⇄ `detectlang.js` import
+cycle), and when the nearest `package.json` names a non-empty `dependencies`/`devDependencies`
+with no sibling `node_modules`, it returns `{manager, command, reason}` — the exact install
+line (`npm ci`/`pnpm install --frozen-lockfile`/`yarn install --frozen-lockfile`/`bun install
+--frozen-lockfile` by lockfile, else `npm install`), `cd`-prefixed for a subfolder job. An
+invalid `package.json`, no manifest found, or `node_modules` already present all return `null`
+— "cannot tell" is never a fabricated gap. `run-interview.mjs` prints the gap and the exact
+command right after `prepareSource` succeeds, and re-checks it at the hand-off: a still-open
+gap suppresses the "Run it now?" offer entirely (the same shape the unkeyed-shell gate already
+uses) rather than spending on a run that would only instrument-stop. `run-author.mjs` refuses
+`source-deps-missing` (a `request-red`, routed through the same `refusalEvents()` channel
+`language-unsupported` uses) at $0, before the scout and before the provider/key are even
+read.
 
 **Destination is a DIRECTORY, never a filename** (D3 rework, hamr's ruling, 2026-09-12,
 condensed in `docs/product/ITEM33-BUILD.md`). It may already exist and need not be empty; it

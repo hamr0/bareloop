@@ -9,6 +9,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **PRD item 33 close-out — `prepareSource` freezes tracked files only, so a JS/TS repo's
+  prepared copy never carried `node_modules`, and every close stage needing a tool (`tsc`, a
+  test runner) instrument-stopped with nothing telling the person why.** bareloop never runs an
+  install itself (hamr's ruling, 2026-09-14, option A): `missingDependencies` (`src/source.js`,
+  exported) is a pure, $0, JS/TS-only detector that names the exact install command.
+  `scripts/run-interview.mjs` prints it right after `prepareSource` succeeds and again at the
+  hand-off, where a still-open gap suppresses the "Run it now?" offer entirely.
+  `scripts/run-author.mjs` refuses `source-deps-missing` at $0, before the scout and before the
+  provider/key are even read. Not yet proven live end to end (the detector and the refusal
+  paths are each proven directly; a real `npm ci` against a real prepared copy of a real repo
+  confirmed the hidden git's seed stays clean when the source's `.gitignore` ignores
+  `node_modules` — see the build report for the gap this does NOT cover, a repo whose
+  `.gitignore` does not ignore `node_modules`).
 - **PRD item 33 close-out (L17) — the authoring interview never admitted an endpoint, so a
   DeepSeek draft (`--provider openai-api`) authored against api.openai.com instead.**
   `scripts/run-interview.mjs` now takes an optional `--base-url <url>` flag (no default; absent
