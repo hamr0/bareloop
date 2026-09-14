@@ -78,6 +78,27 @@ export function rubricLines({ closeDecl }) {
 }
 
 /**
+ * THE CONFIRM TURN'S OPEN QUESTIONS (PRD item 33 M3 piece 4, ruling 5's D3
+ * addendum) — shown at the SIGNING readout, from `authored.json`'s own
+ * `confirmed.openQuestions`, never added to the signed spec format itself
+ * (D4: the closeDecl's `notes` are the model's own record; this is the
+ * person's "fix" text from a round that hit the 2-round cap, ruling 5,
+ * passed to the composer verbatim rather than spending a 3rd call, D3). A
+ * close with none is shown as `(none)` rather than an empty line — the
+ * absence is itself part of what the signer reads before signing.
+ * @param {{openQuestions?: string[]}|null} confirmed `authored.confirmed`
+ * @returns {string[]}
+ */
+export function openQuestionLines(confirmed) {
+  const qs = confirmed?.openQuestions ?? [];
+  if (!qs.length) return ['open questions  (none)'];
+  const lines = [`open questions  ${qs.length} — the confirm turn hit its 2-round cap with a "fix" still pending; read `
+    + 'these before you sign'];
+  for (const q of qs) lines.push(`  ? ${q}`);
+  return lines;
+}
+
+/**
  * THE CALIBRATION GATE'S OWN READOUT — the one gate that spends money, and the
  * one whose rows a signer has to read case by case.
  *

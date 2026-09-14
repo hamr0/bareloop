@@ -153,108 +153,174 @@ export const STRUCTURE_INSTRUCTION_TEXT = 'Your reply could not be read as one J
   + 'Reply with ONLY the JSON object, in a single fenced block, and nothing else.';
 
 /**
- * THE INTERVIEW, KEYED BY VERDICT CLASS (hamr's ruling, PRD v1.57 §2).
+ * THE UNIFIED INTAKE FORM (PRD item 33 M3 piece 3, `docs/product/ITEM33-BUILD.md`
+ * "M3", and the 2026-09-10 signed ruling "The intake form (RULED)" in
+ * `docs/product/PRD.md` item 33). Motivated by run `mtv8jihy` (F159): the OLD
+ * five-question green set produced a rubric compiled onto doc-comment rules —
+ * the wrong bar for what the person actually asked — because Q2 asked in prose
+ * for a decision the machine can prove instead, and Q3/Q5 asked the same "what
+ * must not go wrong" question twice from two directions.
  *
- * One question set per GENRE has no terminating shape — genres are a fat long
- * tail that cannot be enumerated, and TYPES was the first specimen rather than
- * the pattern. One set per verdict CLASS has exactly three. Genre understanding
- * does not disappear: it moves into the COMPOSITION over the kind catalogue
- * (`CLASS_STATEMENTS` below, rendered into the authoring prompt), which is the
- * layer already built to hold it — the authoring call composes owned kinds and
- * cannot emit anything else (D2/D3), so a genre it has never seen is a
- * composition problem, not a catalogue problem.
+ * THE SAME SIX FIELDS FOR GREEN AND SOFT-GREEN, in the order a person sees them:
  *
- * The GREEN set descends from questions 1–6 of the frozen TYPES set (prereg §5).
- * TWO slots have been deleted since, both because the interview was ASKING FOR
- * SOMETHING IT ALREADY HAD or already knew:
+ *   Source            replaces the read half of the old Q2 — MECHANICAL, proven
+ *                      against the machine ($0), never typed as free prose.
+ *   Destination        replaces the change half of the old Q2 (and, for a repo
+ *                      source, IS the signed `writeScope` fence) — MECHANICAL,
+ *                      same reason.
+ *   Goal               the old Q1, unchanged: "What do you want done?"
+ *   What success looks like   the old Q4, unchanged: a machine-countable check.
+ *   Guardrails         the old Q3 ("must not change") and Q5 ("worse than
+ *                      before") JOINED into one field — they were always one
+ *                      decision answered twice, and Q5 already only mattered for
+ *                      a repo source (the M3 confirm turn, not built in this
+ *                      piece, is where the repo-only half of it gets asked again
+ *                      if needed).
+ *   Judge examples     soft-green only — the old Q7 verbatim ("one you'd pass and
+ *                      one you'd fail, and say why"). The old Q6 ("what separates
+ *                      a pass from a fail") is retired as its own question: the
+ *                      "why" lines of a real pass/fail pair are what the rubric
+ *                      card compiles from (`cardauthor.js`), and asking the
+ *                      differentiator twice — once in the abstract, once against
+ *                      a real example — is the same double-ask Q3/Q5 already were.
  *
- *   - D13's genre CONFIRM ("this looks like a type-fixing job, correct?") —
- *     superseded in full: the interview never asks about a genre again, and the
- *     refusal it carried MOVED to the composer, on the same counted
- *     `request-red` path (see `authorCloseForJob`);
- *   - "Is there a code repo I can look at? Where?" — DROPPED on hamr's ruling
- *     after he drove the terminal interview himself (2026-08-15, verbatim: *"drop
- *     Q6"*). The repository is a MANDATORY, STRUCTURED input already —
- *     `runInterview`'s own `repoPath`, which the runner takes from `--patient` and
- *     refuses to start without. Asking a person to re-type in prose a path the
- *     machine is holding in a variable is the SWE tax this product refuses, and
- *     it invites a second, drifting answer for the same fact (hamr's own answer
- *     on the live run was *"Yes — the patient itself."*). Nothing downstream lost
- *     anything: the scout reads `repoPath`, never the answer.
+ * SOURCE and DESTINATION ARE MECHANICAL FIELDS, not entries in the numbered
+ * question record below: `runInterview`'s `answers` dict is what a close's
+ * composer prompt quotes verbatim (Q<n>/A<n>), and quoting a machine-proven fact
+ * back at the model as if a person had typed it would be the model reading a
+ * fabricated conversation. Their WORDING still lives here (`SOURCE_FIELD`,
+ * `DESTINATION_FIELD_REPO`, `DESTINATION_FIELD_PLAIN`, immediately below) so
+ * `scripts/run-interview.mjs` prints library text and nothing of its own, exactly
+ * as ruling 1 requires for the free-text questions.
  *
- * Question 2 was WIDENED in the same ruling: it now asks for the read-or-draw-from
- * files as well as the ones that change. The two halves belong in one answer
- * because they are one decision for the person answering — what the work touches,
- * and what it touches only to look at.
+ * The free-text trio (soon quartet, soft-green only) IS numbered contiguously
+ * from 1 — the number a person sees is the key their answer is filed under, and
+ * that is what `questionsFor`/`requiredAnswersFor`/`QUESTION_SETS` still expose,
+ * unchanged in shape, to every existing caller.
+ */
+export const SOURCE_FIELD = Object.freeze({
+  id: 'source',
+  kind: 'mechanical',
+  label: 'Source',
+  prompt: 'A local folder, subfolder or file, or one URL the machine can reach (no login, no setup).',
+});
+
+/** Destination's wording when Source resolved to a git repo: the answer IS the
+ * signed `writeScope` fence (ITEM33-BUILD.md M3 ruling 2). */
+export const DESTINATION_FIELD_REPO = Object.freeze({
+  id: 'destination',
+  kind: 'mechanical',
+  label: 'Destination',
+  prompt: 'Which files the worker is allowed to WRITE — everything else is read-only.\n'
+    + 'Patterns are relative to the repo root, comma-separated (e.g. `src/**`). The run works on a copy of the\n'
+    + 'repo, so absolute paths are refused. The agent may narrow this and may never widen it.',
+});
+
+/** Destination's wording for every other kind of Source (a plain folder, a
+ * file, a URL): a directory the run may write into, never a filename
+ * (2026-09-12 Destination correction, PRD item 33). */
+export const DESTINATION_FIELD_PLAIN = Object.freeze({
+  id: 'destination',
+  kind: 'mechanical',
+  label: 'Destination',
+  prompt: 'A LOCAL DIRECTORY the run may write into — never a filename. It may already exist. If it is the same\n'
+    + 'directory as Source, changes are permitted there and nowhere else. Type an absolute path.',
+});
+
+/** @param {boolean} isRepo @returns {typeof DESTINATION_FIELD_REPO} */
+export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_REPO : DESTINATION_FIELD_PLAIN; }
+
+/**
+ * THE FREE-TEXT TRIO EVERY CLASS SHARES: Goal, What success looks like,
+ * Guardrails — numbered contiguously from 1. This is what `answers[1..3]` are
+ * filed under for every class; soft-green appends a fourth
+ * (`SOFTGREEN_QUESTIONS`) and hitl appends a different fourth
+ * (`HITL_QUESTIONS`), each its own next number rather than a fixed one, so a
+ * future trim of this trio renumbers instead of leaving a gap.
  *
- * The five that remain are genre-neutral, which is why every generalisation so far
- * has deleted a slot rather than reworded one. They are NUMBERED CONTIGUOUSLY from
- * 1: the number a person sees is the key their answer is filed under, and a gap
- * would be a hole in a form nobody can explain.
+ * THE TEXT IS THE SIGNED TABLE'S "Holds" COLUMN, VERBATIM (PRD item 33's
+ * 2026-09-10 "The intake form (RULED)" ruling, `docs/product/PRD.md`) — not the
+ * old worded questions ("What do you want done?", "How do you check today
+ * whether it's working?", "...worse than before?"). Motivated by run `mtv8jihy`
+ * (F159, `docs/logs/FINDINGS.md`): a rulebook this prompt commit did not touch
+ * still had to compile against a card built from a person's actual bar, and the
+ * old wording never matched what got signed — this reshape (commit 1ac4d05)
+ * trimmed the SET to three slots but left their PROSE unreconciled with the
+ * table it was meant to realize. `FIELD_LABELS` (below) carries the matching
+ * label for each key, so a caller wanting BOTH shows them together — see
+ * `authorPrompt`'s interview block and `scripts/run-interview.mjs`.
  */
 export const GREEN_QUESTIONS = Object.freeze({
-  1: 'What do you want done?',
-  2: 'Which files or folders should change? And which files should the work read or draw from (they stay untouched)?',
-  3: 'Is there anything that must not change?',
-  4: 'How do you check today whether it\'s working?',
-  5: 'What would make you say this came back worse than before?',
+  1: 'what you want to achieve',
+  2: 'checks a machine can count',
+  3: 'what must not happen or change',
 });
 
 /**
- * THE HITL SET (N4 slice 1) — the green questions BYTE FOR BYTE, plus one.
- *
- * The five are unchanged deliberately rather than economically: the
- * mechanical-first composition law (2026-08-07) says every hitl close is
- * *deterministic stages first, judge minimal, human last*, so a hitl job needs
- * exactly the same mechanical facts a green one does — what changes, what must
- * not, how it is checked today, what "worse" looks like. Rewording them would
- * fork one interview into two that drift.
- *
- * The last one is the only thing the green set cannot supply, and it is not a
- * flourish: `human-confirms` requires an `ask` — the question the signer answers
- * at the end of the run — and nothing else in the interview names it. Without it
- * the composer would have to invent what a person is deciding, which is the one
- * thing a human stage must never have done for it. It is the SPREAD's next number
- * rather than a fixed one, so a green-side deletion renumbers it instead of
- * leaving a gap (it was 7 while the green set held six, and is 6 now it holds five).
+ * The signed table's own label for each of {@link GREEN_QUESTIONS}' keys — "the
+ * Field column", where {@link GREEN_QUESTIONS} is "the Holds column". Kept as a
+ * SEPARATE map rather than folding the label into the question string itself:
+ * every existing caller of `questionsFor`/`requiredAnswersFor`/`QUESTION_SETS`
+ * (`src/authorjob.js`, `src/cardauthor.js`, `scripts/run-interview.mjs`) treats
+ * a question as a plain string handed verbatim into a prompt or a `Q<n>. `
+ * line, and folding a label in would change that shape for every one of them.
+ * A caller that wants the label calls {@link labelsFor} exactly the way it
+ * calls `questionsFor` — additive, nothing existing breaks.
  */
-export const HITL_QUESTIONS = Object.freeze({
-  ...GREEN_QUESTIONS,
-  6: 'When you look at the finished result yourself, what are you deciding?',
+export const FIELD_LABELS = Object.freeze({
+  1: 'Goal',
+  2: 'What success looks like',
+  3: 'Guardrails',
+});
+
+/** The key Guardrails' merged question and Judge Examples both prove out at:
+ * green holds exactly 3 free-text slots, so 4 is the next number for both the
+ * soft-green and hitl extensions below — computed, never hardcoded twice. */
+const NEXT_FREE_TEXT_KEY = Object.keys(GREEN_QUESTIONS).length + 1;
+
+/** The soft-green quartet's own key for Judge Examples — exported so
+ * `cardauthor.js` reads the SAME number this module files the answer under,
+ * rather than a second, hand-typed "6"/"7". */
+export const SOFTGREEN_JUDGE_EXAMPLES_KEY = NEXT_FREE_TEXT_KEY;
+
+/** The Judge Examples question — the signed table's own Holds text, verbatim
+ * ("one pass, one fail, and why"), not the old worded Q7 ("Give one example
+ * you'd pass and one you'd fail, and say why."). Exported so `cardauthor.js`'s
+ * prompt and this module's own `SOFTGREEN_QUESTIONS` render the identical
+ * string; its label ("Judge examples") lives in `SOFTGREEN_FIELD_LABELS`. */
+export const JUDGE_EXAMPLES_QUESTION = 'one pass, one fail, and why';
+
+/** {@link FIELD_LABELS} plus Judge Examples' own label, for the soft-green set. */
+export const SOFTGREEN_FIELD_LABELS = Object.freeze({
+  ...FIELD_LABELS,
+  [SOFTGREEN_JUDGE_EXAMPLES_KEY]: 'Judge examples',
 });
 
 /**
- * THE SOFTGREEN SET (module 3, design record §4.6) — the green questions BYTE
- * FOR BYTE, plus TWO.
- *
- * Same discipline as the hitl set, and for the same reason: a softgreen close is
- * *mechanical stages first, the judged stage after* (§4.5), so a softgreen job
- * needs every mechanical fact a green one does. No renumbering of the green set,
- * no genre question, nothing reworded.
- *
- * The two additions are the only things the green set cannot supply, and neither
- * is a flourish — they are the judged floor's two REQUIRED inputs:
- *   - Q6 becomes the RUBRIC CARD (§4.3): the person's own pass/fail lines,
- *     compiled into enumerated items, signed, and enumerated in the spec hash.
- *     The documented ceiling rides with it — the judge catches violations of
- *     STATED card items only, and the fix for a miss is a new card line and a
- *     re-sign, never a smarter judge.
- *   - Q7 becomes the frozen CALIBRATION SET (§4.4): the whole pipe must grade it
- *     correctly before the close is signable.
- * Both are asked in the person's own terms — an example they would pass and one
- * they would fail, not a rubric they are asked to write — because compiling a lay
- * answer into extractable items is the LLM's job (D5, proposed-and-signed) and
- * asking the person to do it is the SWE tax this product refuses.
- *
- * What the two answers COMPILE INTO is module 4. This module carries them
- * exactly as the hitl set carries its own last answer: they ride in `answers`,
- * they reach the composer verbatim through the prompt's interview block, and
- * nothing here derives anything from them.
+ * THE SOFTGREEN SET — the green trio plus Judge Examples. A judged close needs
+ * exactly this one more thing the green set cannot supply: a real pass/fail
+ * pair in the person's own words, which module 4 (`cardauthor.js`) compiles
+ * into the signed rubric card and the frozen calibration set. It rides in
+ * `answers` and reaches the composer verbatim through the prompt's interview
+ * block, exactly as every other free-text answer does — this module derives
+ * nothing from it.
  */
 export const SOFTGREEN_QUESTIONS = Object.freeze({
   ...GREEN_QUESTIONS,
-  6: 'When you judge the result yourself, what separates a pass from a fail? Name the few things you actually look for.',
-  7: 'Give one example you\'d pass and one you\'d fail, and say why.',
+  [SOFTGREEN_JUDGE_EXAMPLES_KEY]: JUDGE_EXAMPLES_QUESTION,
+});
+
+/**
+ * THE HITL SET (N4 slice 1, kept in code only — never offered in the form or
+ * anywhere customer-facing, PRD item 33 M3 ruling 8) — the green trio plus one.
+ * `human-confirms` requires an `ask`, the question the signer answers at the
+ * end of the run, and nothing else in the interview names it; without it the
+ * composer would have to invent what a person is deciding. It is the green
+ * set's next number, not a fixed one, so a green-side trim renumbers it too.
+ */
+export const HITL_QUESTIONS = Object.freeze({
+  ...GREEN_QUESTIONS,
+  [NEXT_FREE_TEXT_KEY]: 'When you look at the finished result yourself, what are you deciding?',
 });
 
 /**
@@ -265,22 +331,30 @@ export const SOFTGREEN_QUESTIONS = Object.freeze({
  * distinction, at the interview layer) — and a locked class refuses at ADMISSION,
  * before its questions run, so the two readers throw rather than hand back
  * nothing. A fourth class arrives locked, and the machinery is here for it.
- * @type {Record<string, {locked: boolean, questions: Record<string|number, string>|null, required: readonly number[]|null}>}
+ * `labels` travels ALONGSIDE `questions`, one label per key that the signed
+ * table names one for (PRD item 33 M3 piece 3's wording fix) — hitl's own
+ * fourth question has no table row (it is never customer-facing, ruling 8) and
+ * so carries none; a reader finding no label for a key falls back to showing
+ * none, never a fabricated one.
+ * @type {Record<string, {locked: boolean, questions: Record<string|number, string>|null, labels: Record<string|number, string>, required: readonly number[]|null}>}
  */
 export const QUESTION_SETS = Object.freeze({
   green: Object.freeze({
     locked: false,
     questions: GREEN_QUESTIONS,
+    labels: FIELD_LABELS,
     required: Object.freeze(Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
   'soft-green': Object.freeze({
     locked: false,
     questions: SOFTGREEN_QUESTIONS,
+    labels: SOFTGREEN_FIELD_LABELS,
     required: Object.freeze(Object.keys(SOFTGREEN_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
   hitl: Object.freeze({
     locked: false,
     questions: HITL_QUESTIONS,
+    labels: FIELD_LABELS,
     required: Object.freeze(Object.keys(HITL_QUESTIONS).map(Number).sort((a, b) => a - b)),
   }),
 });
@@ -323,7 +397,7 @@ export const CLASS_STATEMENTS = Object.freeze({
     + 'no command can hold.',
 });
 
-/** @param {string} verdictType @returns {{locked: boolean, questions: any, required: any}} */
+/** @param {string} verdictType @returns {{locked: boolean, questions: any, labels: any, required: any}} */
 function questionSet(verdictType) {
   const set = Object.hasOwn(QUESTION_SETS, String(verdictType)) ? QUESTION_SETS[String(verdictType)] : null;
   if (!set) throw new Error(`no interview set for verdict class "${verdictType}" — one of ${VERDICT_CLASSES.join(', ')}`);
@@ -342,6 +416,128 @@ export function questionsFor(verdictType) { return questionSet(verdictType).ques
 /** The question numbers whose answer must be present for that class's interview
  * to be finished. @param {string} verdictType @returns {number[]} */
 export function requiredAnswersFor(verdictType) { return [...questionSet(verdictType).required]; }
+/** The signed table's label for each of that class's question keys (PRD item
+ * 33's "The intake form (RULED)" ruling) — a key with no table row (hitl's own
+ * fourth) is simply absent, never a fabricated label. Throws on the same locked
+ * or unknown class {@link questionsFor} does, for the same reason.
+ * @param {string} verdictType @returns {Record<string|number, string>} */
+export function labelsFor(verdictType) { return questionSet(verdictType).labels; }
+
+// ── CONFIRM TURN — person-facing wording (PRD item 33 M3 piece 4) ──────────
+//
+// These three are the $0, no-provider half of the confirm turn (D7): asked
+// before the scout ever runs, so a missing person at end of input stops at
+// $0 rather than after a paid call. FROZEN wording, exactly like SOURCE_FIELD
+// and DESTINATION_FIELD_* above — a caller prints these verbatim, never
+// rewords or reorders them.
+
+/**
+ * Asked ONLY for a repo source (ruling 2 addendum's D7) — a plain folder or a
+ * URL has no "before" a repo's own history gives it to compare against. This
+ * is the OLD Q5 wording, verbatim ("What would make you say this came back
+ * worse than before?"), which M3 piece 3's reshape folded into Guardrails —
+ * it survives here as its OWN field because the confirm turn (ruling 5's
+ * 2026-09-13 addendum) includes it as a constraint only when the person
+ * actually gave one, and folding it silently into the Guardrails free-text
+ * slot would lose that "present or absent" distinction. An empty answer is
+ * "nothing beyond what Guardrails already said" and is not required — see
+ * the frozen-wording test below: this phrase appears NOWHERE in
+ * {@link questionsFor}'s own sets, so a caller cannot double-ask it by
+ * reading the wrong table.
+ */
+export const WORSE_THAN_BEFORE_FIELD = Object.freeze({
+  id: 'worseThanBefore',
+  kind: 'mechanical',
+  label: 'Worse than before',
+  prompt: 'What would make you say this came back worse than before?',
+});
+
+/**
+ * Asked ONLY when `src/detectlang.js`'s `detectLanguage` reports its
+ * `ambiguous` outcome — two supported languages' manifests at the same
+ * (nearest) directory level (M3 ruling 3, point 3). The candidate list is
+ * NOT embedded here: it travels with the caller's own `ambiguous` result
+ * (`langResult.candidates`), so this module never hand-types a second copy
+ * of the supported-language set. An unsupported pick still goes through the
+ * existing `language-unsupported` refusal — this field only offers a choice
+ * among the candidates `detectLanguage` actually found.
+ */
+export const LANGUAGE_PICK_FIELD = Object.freeze({
+  id: 'language',
+  kind: 'mechanical',
+  label: 'Language',
+  prompt: 'This repo has more than one supported language\'s manifest at the same level. Which one is this job about?',
+});
+
+/**
+ * THE CONFIRM TURN'S MENU — a structured CHOICE the person picks from after
+ * each round, never free text matched against a pattern (ruling 6's "no
+ * hand-authored check matcher" reasoning applies here too: the person's own
+ * reply is read as one of these four keys, never parsed for intent).
+ *   confirm     — sign the plan and the drafted goal sentence as shown.
+ *   fix         — free text describing what to change; feeds round r+1, up
+ *                 to the 2-round cap (ruling 5); after round 2 a "fix" is
+ *                 passed to the composer verbatim and shown at signing as an
+ *                 open question rather than spending a 3rd call (D3).
+ *   type-goal   — the person's own sentence REPLACES the drafted goal,
+ *                 verbatim (redacted); everything else in the plan stands.
+ *   start-over  — abandon this confirm turn; the person reruns the
+ *                 interview from the beginning (`confirm-restart`).
+ * @type {Record<'confirm'|'fix'|'type-goal'|'start-over', string>}
+ */
+export const CONFIRM_MENU = Object.freeze({
+  confirm: 'Confirm — sign this plan and goal as shown',
+  fix: 'Fix — describe what to change',
+  'type-goal': 'Type the goal sentence yourself',
+  'start-over': 'Start over — rerun the interview from the beginning',
+});
+
+/**
+ * PLAIN-ENGLISH lines for the guards `classGuards` can compose, keyed by
+ * guard NAME — frozen beside {@link CONFIRM_MENU} because both are constants
+ * the confirm turn shows a person verbatim. One entry per guard that exists
+ * in `MECHANICAL_GUARDS` (`src/authoring.js`); {@link confirmProtections}
+ * throws if a guard `classGuards` hands back has no line here, so a battery
+ * that grows a guard fails loudly instead of showing a blank description.
+ * @type {Record<string, string>}
+ */
+export const GUARD_DESCRIPTIONS = Object.freeze({
+  'changed-from-seed': 'the run must actually change at least one file in scope — a close that reports done '
+    + 'without touching anything is refused',
+  'no-suppressions': 'the run may not silence a checker instead of fixing what it flags (things like @ts-ignore, '
+    + 'eslint-disable, or # type: ignore) — none of those may appear in the diff',
+});
+
+/**
+ * THE REAL PROTECTIONS a person is shown, and what {@link runConfirmTurn}
+ * records as `accepted.protections` — fixes finding #1 from live run
+ * mu0voeo4 (2026-09-14): the confirm turn used to show whatever prose the
+ * MODEL invented for `protections`, and that run's model invented a
+ * "behavior-preservation guard" this build cannot check — no kind in the
+ * catalogue can verify runtime behaviour, and the author call's own note
+ * elsewhere says outright that behaviour-preservation is not composed here.
+ * This reads the SAME guards `classGuards` will actually compose into the
+ * close — one source, never a second hand-typed list — rendered through the
+ * frozen line in {@link GUARD_DESCRIPTIONS}, plus the write fence (a real,
+ * signed fence — {@link writeScopeBlock}'s own subject) when one is set.
+ * @param {{verdictType: string, lang: string, writeScope?: string[]|null}} o
+ * @returns {string[]}
+ */
+export function confirmProtections({ verdictType, lang, writeScope = null }) {
+  const guards = classGuards({ verdictType, lang });
+  const lines = guards.map((g) => {
+    const desc = GUARD_DESCRIPTIONS[g.name];
+    if (!desc) {
+      throw new Error(`[authorflow] guard "${g.name}" has no line in GUARD_DESCRIPTIONS — every real guard shown to `
+        + 'a person needs one, frozen beside CONFIRM_MENU');
+    }
+    return `${g.name} — ${desc}`;
+  });
+  if (Array.isArray(writeScope) && writeScope.length > 0) {
+    lines.push(`write fence — the run may only change files matching: ${writeScope.join(', ')}`);
+  }
+  return lines;
+}
 
 export const AUTHOR_SYSTEM = 'You compose the DEFINITION OF DONE for an automated job: a declaration over a fixed '
   + 'catalogue of stage kinds whose implementations already exist. You never write code, a script, a shell fragment, '
@@ -738,6 +934,70 @@ export function lawsBlock() {
 }
 
 /**
+ * WHAT MAY CHANGE, AND WHAT IS ONLY READ — replaces the old Q2 (PRD item 33 M3
+ * piece 3). Q2 used to ask the person, in prose, which files change and which
+ * are read-only; that decision is now Destination, PROVEN against the
+ * repository rather than typed (`docs/product/ITEM33-BUILD.md` "M3", ruling 2),
+ * and for a repo source Destination's answer IS the signed `writeScope` fence.
+ * This states that fact to the composer instead of letting it vanish along
+ * with Q2 — the same "nothing the composer received before may silently
+ * disappear" rule `applyGenreEnv` already keeps for a dropped env var.
+ *
+ * THROWS on an empty `writeScope`: Destination is a MANDATORY fence
+ * (`run-interview.mjs` refuses an empty answer at capture), so a caller
+ * reaching this with nothing to state is a bareloop wiring bug, not a job with
+ * no fence — a composer told it may change everything guards nothing.
+ * @param {string[]} writeScope
+ */
+export function writeScopeBlock(writeScope) {
+  if (!Array.isArray(writeScope) || writeScope.length === 0) {
+    throw new Error('[authorflow] writeScopeBlock needs a non-empty writeScope — Destination is the fence and a '
+      + 'composer call with nothing to state is a bareloop wiring bug, not a job authored with no fence');
+  }
+  return `WHAT MAY CHANGE, AND WHAT IS ONLY READ\n\n`
+    + 'The person\'s own Destination answer is a write fence, proven against the repository rather than typed as '
+    + 'prose. You may only change files matching one of these patterns:\n\n'
+    + `${writeScope.map((p) => `  - ${p}`).join('\n')}\n\n`
+    + 'Everything else in the facts object and the listing below is READ-ONLY: you may look at it, and any command '
+    + 'you run may read it, but no stage you declare may write, move or delete it.';
+}
+
+/**
+ * THE CONFIRMED-PLAN BLOCK (PRD item 33 M3 piece 4) — present only when the
+ * person already ran a confirm turn (`runConfirmTurn`'s `accepted`). States
+ * the composition law as an ORDER over the ACCEPTED checks, exactly the
+ * pattern {@link writeScopeBlock} already is for the fence: "compose these
+ * checks and no other" rather than a code matcher over the goal prose
+ * (ruling 6). Protections are restated as unchanged, never as checks to add.
+ * Open questions the person's own fix rounds left unresolved (D3) are named
+ * so the composer states them in notes rather than silently deciding them.
+ * `notChecked` (fix #1, run mu0voeo4) is anything the person asked for that
+ * no listed check can verify — shown so the composer names the gap in its
+ * own notes rather than the plan quietly reading as if everything asked for
+ * is covered.
+ * @param {{checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}} confirmed
+ */
+export function confirmedBlock(confirmed) {
+  const checks = confirmed.checks ?? [];
+  const protections = confirmed.protections ?? [];
+  const openQuestions = confirmed.openQuestions ?? [];
+  const notChecked = confirmed.notChecked ?? [];
+  return 'THE CONFIRMED PLAN — the person already saw and confirmed this in the confirm turn\n\n'
+    + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
+    + 'neither do you:\n\n'
+    + `${checks.map((c) => `  - ${c}`).join('\n') || '  (none)'}\n\n`
+    + 'These protections are already always-on and unchanged by this plan — never compose one of these as a check:\n\n'
+    + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n\n`
+    + (notChecked.length
+      ? 'THE PERSON ASKED FOR THESE, BUT NOTHING CHECKS THEM (state these in your notes — never silently claim they '
+        + `are covered):\n\n${notChecked.map((n) => `  - ${n}`).join('\n')}\n\n`
+      : '')
+    + (openQuestions.length
+      ? `OPEN QUESTIONS the confirm turn could not resolve (state these in your notes, never decide them silently):\n\n${openQuestions.map((q) => `  - ${q}`).join('\n')}`
+      : 'The confirm turn left no open questions.');
+}
+
+/**
  * The whole authoring prompt, as one string.
  *
  * Two people fed this brief and neither of them is the model: a person who is not
@@ -749,19 +1009,40 @@ export function lawsBlock() {
  * the one thing that tells the composer what DONE is allowed to mean here; a
  * defaulted class would be the prompt answering a question the user was asked.
  *
+ * `writeScope` carries what the old Q2 used to (PRD item 33 M3 piece 3): Q2 is
+ * gone from the numbered interview, so what may change and what is read-only
+ * reaches the composer through {@link writeScopeBlock} instead, fed from
+ * Destination's own proven fence — never silently dropped.
+ *
  * @param {{answers: Record<string|number, string>, questions?: Record<string|number, string>,
  *   facts: any, listingBlock: string, lang: string, verdictType: string,
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
- *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>}} o
+ *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
+ *   writeScope?: string[]|null,
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}|null}} o
  */
-export function authorPrompt({ answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards, ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE }) {
+export function authorPrompt({
+  answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
+  ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null,
+  // PRD item 33 M3 piece 4: ABSENT for every caller that predates the confirm
+  // turn (or ran without `ask`) — byte-identical prompt, nothing added. Present
+  // only when a confirm turn actually ran and the person accepted a plan.
+  confirmed = null,
+}) {
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
     throw new Error(`[authorflow] the authoring prompt needs the verdict class the user picked, and "${verdictType}" `
       + `composes nothing here — v1 composes ${Object.entries(CLASS_STATEMENTS).filter(([, v]) => v).map(([k]) => k).join(', ')} only`);
   }
+  // The signed table's own label for each key (PRD item 33 M3 piece 3's wording
+  // fix), shown beside the question so the composer reads the same Field/Holds
+  // pairing a person sees at the terminal. `verdictType` is already checked
+  // against `CLASS_STATEMENTS` above and that set's keys are exactly
+  // `QUESTION_SETS`'s, so `labelsFor` cannot throw here. A key with no label
+  // (hitl's own fourth question has no signed-table row) is shown with none.
+  const labels = labelsFor(String(verdictType));
   const interview = Object.entries(questions)
-    .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
+    .map(([n, q]) => `Q${n}${labels[n] ? ` (${labels[n]})` : ''}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
     .join('\n\n');
 
   const role = `You are composing the close for one job.
@@ -819,6 +1100,11 @@ measure anything.`;
     // composer reads that plus the catalogue and works the rest out.
     `WHAT THE PERSON DECLARED "DONE" TO MEAN — their answer, not yours\n\n${statement}`,
     `THE INTERVIEW — the person's own words\n\n${interview}`,
+    // Q2 IS GONE (PRD item 33 M3 piece 3) — what it used to carry (which files
+    // change, which are read-only) is proven against the machine now, not typed,
+    // and this is where that proof reaches the composer instead of vanishing.
+    ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
+    ...(confirmed ? [confirmedBlock(confirmed)] : []),
     `THE FACTS OBJECT — from a read-only survey of the repository\n\n${JSON.stringify(facts, null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
     // CLASS-SCOPED (softgreen module 3): the composer for a green job is never
@@ -1273,6 +1559,320 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
   return { ...r, declaration: r.artifact };
 }
 
+// ── THE CONFIRM TURN (PRD item 33 M3 piece 4) ───────────────────────────────
+//
+// The confirm turn drafts a PLAN — checks it will compose, protections
+// (always-on guards, never named in the goal), and one signed goal sentence —
+// from the person's own free-text answers plus the read-only survey/listing
+// the scout or seed-read already paid for, THEN shows it back and lets the
+// person confirm, fix (up to the 2-round cap, ruling 5), type the goal
+// themselves, or start over. No hand-authored matcher ever compares the goal
+// against the checks (ruling 6) — the model states its own plan, in the
+// model-facing prompt below, and the person is the one judgement that
+// accepts it.
+
+export const CONFIRM_TOOL_NAME = 'confirm_plan';
+
+/** Acknowledgement text the confirm tool's `execute` returns — mirrors
+ * {@link DECLARATION_ACK}'s role: an output channel that records and
+ * acknowledges, takes no action, and ends the call the moment it fires
+ * (`makeLoopGenerate` stops the loop on any tool execute). */
+export const CONFIRM_ACK = 'plan received';
+
+/** the confirm channel's own STRUCTURE_INSTRUCTION_TOOL analogue, shown after
+ * a malformed reply so the retry names the ONE required shape rather than
+ * repeating the whole system prompt */
+export const CONFIRM_STRUCTURE_INSTRUCTION = `Your reply did not deliver exactly one plan through the ${CONFIRM_TOOL_NAME} tool. `
+  + 'Call it exactly once, with the whole plan as its arguments: checks, one goal sentence, anything not covered '
+  + 'by a check, and any genuinely missing questions.';
+
+/** @type {Record<string, any>} */
+const CONFIRM_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    checks: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      description: 'the mechanical checks you plan to compose, each one traceable to something the Goal or What '
+        + 'success looks like answers actually asked for — never a check invented beyond them',
+    },
+    goal: {
+      type: 'string',
+      minLength: 1,
+      description: 'ONE sentence naming every listed check (never a protection or guard — those are not yours to '
+        + "name) — this becomes the signed job spec's goal",
+    },
+    notChecked: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      description: 'anything the person asked for (in the Goal, What success looks like, Guardrails, or '
+        + 'worse-than-before answers) that none of your listed checks can verify — named plainly in the person\'s '
+        + 'own words; an empty list means every ask is covered by a listed check',
+    },
+    questions: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      description: 'anything genuinely missing from the person\'s answers that you need to plan honestly — never '
+        + 'asked to double-check something already answered',
+    },
+  },
+  required: ['checks', 'goal', 'notChecked', 'questions'],
+  additionalProperties: false,
+});
+
+/** The output channel. It records and acknowledges; it takes no action.
+ * @param {{calls: any[]}} box */
+export function confirmTool(box) {
+  return {
+    name: CONFIRM_TOOL_NAME,
+    description: 'Deliver the drafted plan: the checks you will compose, one goal sentence, anything the person '
+      + 'asked for that no check covers, and any genuinely missing questions. Call this exactly once.',
+    parameters: CONFIRM_SCHEMA,
+    execute: async (/** @type {any} */ args) => { box.calls.push(args); return CONFIRM_ACK; },
+  };
+}
+
+/** THE CONFIRM CHANNEL — the one this turn uses, over the shared
+ * {@link askStructured} ladder, exactly as {@link declarationChannel} is for
+ * the authoring call. */
+const confirmChannel = () => ({
+  name: CONFIRM_TOOL_NAME,
+  instruction: CONFIRM_STRUCTURE_INSTRUCTION,
+  textPath: 'plan',
+  tool: (/** @type {{calls: any[]}} */ box) => confirmTool(box),
+});
+
+/**
+ * The confirm turn's system prompt (model-facing, registered — a commit
+ * touching this needs Failure/Addresses/Corrects labels, `src/promptregisters.js`).
+ * States ruling 6 ("a genre never adds a check the goal did not ask for") as
+ * an ORDER to the model itself, the same register {@link AUTHOR_SYSTEM} and
+ * {@link CLASS_STATEMENTS} already use, rather than a code matcher over prose.
+ */
+export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
+  + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
+  + 'signed goal sentence. You never propose a check the Goal or What-success-looks-like answers did not ask for '
+  + '— a genre never adds a check the goal did not ask for (run mtv8jihy drafted an unasked tsc --strict stage; '
+  + 'that is exactly the mistake this order exists to prevent). The always-on guards (changed-from-seed, '
+  + 'no-suppressions, and every mandatory guard) and the write fence are shown to the person by the SYSTEM, never '
+  + 'by you: you never claim, name, or list a protection or guard of your own — that is not your call to state, and '
+  + 'a protection is never a check and never named in the goal sentence. The goal sentence names every check you '
+  + 'listed and nothing more. For anything the person asked for that none of your listed checks can verify, name it '
+  + 'plainly in `notChecked`, in the person\'s own words — never omit a gap to make the plan look complete; '
+  + 'over-reporting a gap is always the safe direction. Ask a question only where an answer is genuinely missing — '
+  + 'never to double-check something already answered. You cannot read anything and you cannot run anything: '
+  + 'everything you know is in the message you are given.';
+
+/**
+ * The confirm turn's per-round prompt (model-facing, registered). Shows the
+ * person's own answers with their labels (the signed table's Field/Holds
+ * pairing, same as {@link authorPrompt}'s interview block), the survey or
+ * listing already paid for, the write fence, the detected language, "worse
+ * than before" when the person gave one (repo only), and — on a fix round —
+ * what the person asked to change.
+ * @param {{answers: Record<string|number, string>, questions: Record<string|number, string>,
+ *   labels?: Record<string|number, string>, facts?: any, listing?: string|null,
+ *   writeScope?: string[]|null, isRepo: boolean, lang: string, worseThanBefore?: string,
+ *   fixText?: string|null}} o
+ */
+export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null }) {
+  const lines = ['THE PERSON\'S OWN ANSWERS (a non-engineer; read exactly what they wrote, invent nothing beyond it):'];
+  for (const k of Object.keys(questions)) {
+    const label = labels[k] ? ` (${labels[k]})` : '';
+    lines.push(`Q${k}${label}. ${questions[k]}`);
+    lines.push(`A${k}. ${answers?.[k] ?? '(no answer)'}`);
+  }
+  if (isRepo && worseThanBefore) {
+    lines.push('', `WORSE THAN BEFORE (a constraint the person named, repo jobs only): ${worseThanBefore}`);
+  }
+  lines.push('', `LANGUAGE: ${lang}`);
+  if (writeScope) lines.push(`WRITE SCOPE (the fence — the run may write only here): ${writeScope.join(', ')}`);
+  if (facts) lines.push('', `READ-ONLY SURVEY:\n${JSON.stringify(facts)}`);
+  if (listing) lines.push('', `SEED LISTING:\n${listing}`);
+  if (fixText) lines.push('', `THE PERSON ASKED FOR A CHANGE: ${fixText}`, 'Revise the plan and resubmit.');
+  return lines.join('\n');
+}
+
+/**
+ * ONE confirm-turn round-trip: capStop, then one structured ask over the
+ * confirm channel. Split out of {@link runConfirmTurn} only so the ceiling
+ * check and the ask sit beside each other exactly once.
+ * @param {{convo: any[], generate: Function, mode: 'tool'|'text', book: ReturnType<typeof makeCostBook>, label: string}} o
+ * @returns {Promise<{plan: any, convo: any[], providerError: string|null, red: Red|null, budget: 'cap-halt'|'pricing-red'|null}>}
+ */
+async function askConfirmPlan({ convo, generate, mode, book, label }) {
+  const halt = book.capStop();
+  if (halt) return { plan: null, convo, providerError: null, red: null, budget: halt };
+  const r = await askStructured({ messages: convo, generate, mode, retries: MAX_STRUCTURE_RETRIES, label, book, channel: confirmChannel() });
+  return { plan: r.artifact, convo: r.convo, providerError: r.providerError, red: r.red, budget: r.budget };
+}
+
+/**
+ * THE CONFIRM TURN: the $0 half (worse-than-before for a repo, a language
+ * pick when `lang` carries `detectLanguage`'s own `ambiguous` shape), then up
+ * to 2 PAID rounds (ruling 5) of draft → show → the person's menu pick
+ * (ruling 5 addendum). `ask` is the ONE interactive seam — an async function
+ * from a "what's being asked" descriptor to the person's answer, or `null`
+ * meaning input ended (the same signal `scripts/run-interview.mjs`'s own
+ * `nextLine()` already uses) — never a process exit here, because this is a
+ * library function, not a script. A `null` at ANY ask stops the whole turn as
+ * `confirm-abandoned`, spending nothing beyond whatever rounds already ran.
+ *
+ * D3's shape is enforced by the loop bound alone (`round <= 2`), never a
+ * counter checked after the fact: a "fix" on round 2 returns immediately —
+ * there is no 3rd call to make.
+ *
+ * @param {{verdictType: string, answers: Record<string|number, string>,
+ *   questions: Record<string|number, string>, labels?: Record<string|number, string>,
+ *   facts?: any, listing?: string|null, writeScope?: string[]|null, isRepo: boolean,
+ *   lang: string|{kind: 'ambiguous', candidates: string[], dir: string},
+ *   generate: Function, book: ReturnType<typeof makeCostBook>,
+ *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
+ *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
+ *   worseThanBefore?: string}} o
+ * @returns {Promise<{ok: boolean,
+ *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
+ *   rounds: number,
+ *   accepted: {goal: string, checks: string[], protections: string[], lang: string,
+ *     worseThanBefore: string, openQuestions: string[], notChecked: string[]}|null,
+ *   reds: Red[], cost: any}>}
+ */
+export async function runConfirmTurn({
+  verdictType, answers, questions, labels = {}, facts = null, listing = null, writeScope = null,
+  isRepo, lang, generate, book, ask, onPhase = () => {}, mode = 'tool',
+  // `undefined` (the default) means "ask me" — every S2 caller (nothing
+  // pre-resolves this). A caller that already asked worseThanBefore itself
+  // (`authorCloseForJob`'s own $0 phase, run BEFORE the scout per D7) passes
+  // the resolved string straight through, and this turn asks nothing a
+  // second time. `''` is a legal resolved answer ("nothing beyond
+  // Guardrails") and is NOT the same as "ask me" — only `undefined` is.
+  worseThanBefore: presetWorseThanBefore = undefined,
+}) {
+  /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
+  /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
+  const base = () => ({ ok: false, stop: null, rounds: 0, accepted: null, reds: [], cost: book.report() });
+  /** @param {number} rounds @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
+  const abandon = (rounds) => ({ ...base(), stop: /** @type {ConfirmStop} */ ('confirm-abandoned'), rounds, cost: book.report() });
+
+  // ── the $0 half, entirely before any token spends (D7) ────────────────────
+  /** @type {string} */
+  let worseThanBefore = '';
+  if (presetWorseThanBefore !== undefined) {
+    worseThanBefore = presetWorseThanBefore;
+  } else if (isRepo) {
+    onPhase('confirm-worse-than-before');
+    const wtb = await ask({ kind: 'worseThanBefore', field: WORSE_THAN_BEFORE_FIELD });
+    if (wtb === null) return abandon(0);
+    worseThanBefore = redactSecrets(String(wtb).trim());
+  }
+
+  /** @type {string} */
+  let resolvedLang = typeof lang === 'string' ? lang : '';
+  if (lang && typeof lang === 'object' && lang.kind === 'ambiguous') {
+    onPhase('confirm-language-pick', { candidates: lang.candidates });
+    const pick = await ask({ kind: 'language', field: LANGUAGE_PICK_FIELD, candidates: lang.candidates });
+    if (pick === null) return abandon(0);
+    resolvedLang = String(pick);
+  }
+
+  // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
+  /** @type {string[]} */
+  const openQuestions = [];
+  /** @type {string|null} */
+  let fixText = null;
+  let convo = [{
+    role: 'user',
+    content: confirmPrompt({
+      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore,
+    }),
+  }];
+
+  for (let round = 1; round <= 2; round += 1) {
+    if (fixText) {
+      convo = [...convo, { role: 'user', content: confirmPrompt({
+        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText,
+      }) }];
+    }
+    onPhase('confirm-round', { round });
+    const label = round === 1 ? 'confirm' : `confirm#${round}`;
+    const r = await askConfirmPlan({ convo, generate, mode, book, label });
+    convo = r.convo;
+
+    if (r.budget) return { ...base(), stop: r.budget, rounds: round - 1, cost: book.report() };
+    if (r.providerError) return { ...base(), stop: /** @type {ConfirmStop} */ ('provider-red'), rounds: round, reds: [{ code: 'provider-red', path: label, detail: redactSecrets(r.providerError) }], cost: book.report() };
+    if (!r.plan) return { ...base(), stop: /** @type {ConfirmStop} */ ('artifact-red'), rounds: round, reds: [/** @type {Red} */ (r.red)], cost: book.report() };
+
+    // "Unpriced is never free" (F6): a plan can arrive structurally fine on a
+    // call whose OWN cost came back unknown. Nothing downstream ever makes
+    // another call to discover that (a "confirm" pick is the last call this
+    // turn ever makes), so it is checked HERE, once, right after the call
+    // that might have caused it — never silently accepted as a signable plan
+    // whose ceiling can no longer be enforced.
+    const postCallHalt = book.capStop();
+    if (postCallHalt) return { ...base(), stop: postCallHalt, rounds: round, cost: book.report() };
+
+    // THE REAL PROTECTIONS (fix #1, run mu0voeo4, 2026-09-14): never the
+    // model's `protections` prose — the schema no longer even asks the model
+    // for one — but the guards `classGuards` will actually compose, plus the
+    // write fence. `notChecked` is the model's own honest gap list, carried
+    // through unchanged.
+    const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope });
+    const notChecked = [...(r.plan.notChecked ?? [])];
+    const plan = { ...r.plan, protections, notChecked };
+    onPhase('confirm-done', { round, plan });
+    const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan });
+    if (picked === null) return abandon(round);
+    if (picked === 'start-over') return { ...base(), stop: /** @type {ConfirmStop} */ ('confirm-restart'), rounds: round, cost: book.report() };
+
+    if (picked === 'confirm') {
+      return {
+        ok: true, stop: null, rounds: round,
+        accepted: {
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+        },
+        reds: [], cost: book.report(),
+      };
+    }
+
+    if (picked === 'type-goal') {
+      const typed = await ask({ kind: 'goal' });
+      if (typed === null) return abandon(round);
+      return {
+        ok: true, stop: null, rounds: round,
+        accepted: {
+          goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+        },
+        reds: [], cost: book.report(),
+      };
+    }
+
+    // picked === 'fix'
+    const fix = await ask({ kind: 'fix' });
+    if (fix === null) return abandon(round);
+    const redactedFix = redactSecrets(String(fix).trim());
+    openQuestions.push(redactedFix);
+    if (round === 2) {
+      // D3: after round 2 a "fix" is passed to the composer verbatim (via
+      // openQuestions, shown at signing) — there is no 3rd call.
+      return {
+        ok: true, stop: null, rounds: round,
+        accepted: {
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+        },
+        reds: [], cost: book.report(),
+      };
+    }
+    fixText = redactedFix;
+  }
+  // unreachable: the loop above always returns by round 2 — kept only so a
+  // future edit that breaks that invariant fails loudly rather than falling
+  // through to `undefined`.
+  throw new Error('[authorflow] runConfirmTurn fell through its 2-round cap without returning');
+}
+
 /**
  * THE AUTHORING FLOW.
  *
@@ -1309,12 +1909,32 @@ async function askDeclaration({ messages, generate, mode, retries, label, book, 
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   maxRevisions?: number, structureRetries?: number,
- *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>}} o
+ *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
+ *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
+ *   priorRaws?: any[]|null,
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,
   answers, questions = GREEN_QUESTIONS,
+  // Q2 IS GONE from the numbered interview (PRD item 33 M3 piece 3) — this is
+  // what carries its information into the prompt instead (`writeScopeBlock`).
+  // Optional and defaulted to `null` so every caller that predates the reshape
+  // still runs byte-identical; a REAL caller (`authorCloseForJob`) always
+  // passes the repo's proven `writeScope`.
+  writeScope = null,
   scout, listing = null,
+  // PRD item 33 M3 piece 4: the confirm turn's own paid calls — absorbed
+  // BESIDE the scout's, below, so the ONE ceiling this run advertised is the
+  // one it enforces (the standing hard line's money form): a confirm turn
+  // that already spent half the ceiling must not let the author call spend
+  // as if it never happened. `null`/absent is every caller that ran no
+  // confirm turn — byte-identical to today.
+  priorCalls = null, priorRaws = null,
+  // The confirm turn's ACCEPTED plan (`runConfirmTurn`'s `accepted`), fed
+  // straight into `authorPrompt`'s `confirmedBlock`. `null` is every caller
+  // that ran no confirm turn — the prompt is then byte-identical to today.
+  confirmed = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
   // The two REPORTING seams, defaulted to nothing so every existing caller is
@@ -1351,6 +1971,7 @@ export async function authorClose({
   // that spends nothing more: run mslhn707 refused at the $0 preflight below,
   // and the survey text that would have said WHY died with the process.
   book.absorb(scout?.calls ?? [], scout?.raws ?? []);
+  book.absorb(priorCalls ?? [], priorRaws ?? []);
   /** @type {any} */
   const base = {
     ok: false, declaration: null, seedRead: null, iterations: [], reds: [], cost: book.report(),
@@ -1487,7 +2108,7 @@ export async function authorClose({
   // ── the grounded loop ─────────────────────────────────────────────────────
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
-    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue,
+    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];

@@ -473,24 +473,42 @@ export function deniedCommandReason(cmd) {
 // ── 2. THE TYPES GENRE ───────────────────────────────────────────────────────
 
 /**
- * THE FROZEN TYPES GENRE TEMPLATE — prereg addendum 3's six policy points,
- * VERBATIM. The suite reads the prereg and compares BYTES, so a paraphrase here
- * fails the build rather than quietly changing what every future close is
- * authored against. It deliberately carries no repo-specific command, path, env
- * value or regex: round 2 measured that stating the LAW still leaves the model
- * to find the VALUE, and that is the axis the build must keep live.
+ * THE TYPES GENRE TEMPLATE — six policy points, VERBATIM against
+ * `docs/product/ITEM33-BUILD.md`'s own frozen block (PRD item 33 M3 piece 4,
+ * D6 = A ruling, 2026-09-14). This SUPERSEDES the original prereg-frozen
+ * version (`docs/logs/2026-08-08-close-authoring-gate2-poc-prereg.md`,
+ * addendum 3, the closed record — never edited): that version stated the
+ * WORK-stage skeleton (typecheck, typecheck-outside, tests-kept,
+ * suite-green) and the checker's STRICT form as UNCONDITIONAL law, which
+ * conflicted with ruling 6's "a genre never adds a check the goal did not
+ * ask for" — run mtv8jihy's unasked `tsc --strict` stage is the case this
+ * cures. Composing those stages/strictness only for a CONFIRMED check
+ * (never a code matcher over prose, same reasoning as the no-shell law) is
+ * enforced here, in the prompt; the GUARDS (changed-from-seed,
+ * no-suppressions) are enforced separately and structurally
+ * (`classGuards` + `validateDeclaration`'s `guards-absent` red), so making
+ * the WORK stages conditional here changes nothing about their own
+ * always-on status. The suite reads the SIGNED block and compares BYTES, so
+ * a paraphrase here fails the build rather than quietly changing what every
+ * future close is authored against. It deliberately carries no
+ * repo-specific command, path, env value or regex: round 2 measured that
+ * stating the LAW still leaves the model to find the VALUE, and that is the
+ * axis the build must keep live.
  */
-export const TYPES_GENRE_TEMPLATE = `1. The graded instrument is the STRICT form of the language's type checker, regardless of what
-   the repo's own scripts run. If the repo's script omits strictness, the close adds it.
+export const TYPES_GENRE_TEMPLATE = `1. The STRICT form of the language's type checker is used only when a confirmed check — or,
+   absent a confirm turn, the goal and interview answers — asks for strict typing; otherwise the
+   checker runs at whatever strictness the repo's own scripts already use.
 2. Tools are invoked so their binaries actually resolve — through the project's own package
    runner or language module runner, never a bare binary name.
-3. The stage skeleton, in first-red-wins order: changed-from-seed (guard) → typecheck (error
-   count IN the target scope, baseline 0, lower-is-better) → typecheck-outside (error count
-   OUTSIDE the target scope, baseline measured at seed, a ceiling — required whenever the job
-   scopes to a subset of the tree; omitted only for whole-tree jobs) → tests-kept (a floor on
-   tests that actually EXECUTED, baseline at seed, higher-is-better; a skipped or deselected
-   test did not run and must not count) → suite-green (the suite exits clean AND reports zero
-   failing tests — two assertions) → no-suppressions (guard).
+3. The WORK stages — typecheck (error count IN the target scope, baseline 0, lower-is-better),
+   typecheck-outside (error count OUTSIDE the target scope, baseline measured at seed, a
+   ceiling — required whenever a typecheck stage is scoped to a subset of the tree), tests-kept
+   (a floor on tests that actually EXECUTED, baseline at seed, higher-is-better; a skipped or
+   deselected test did not run and must not count), and suite-green (the suite exits clean AND
+   reports zero failing tests — two assertions) — are composed ONLY for the checks a confirmed
+   plan asked for (or, absent a confirm turn, the goal and interview answers). The GUARDS —
+   changed-from-seed and no-suppressions — are composed always, first-red-wins:
+   changed-from-seed before every WORK stage, no-suppressions last.
 4. One population per stage — two structurally different counts never share a stage.
 5. The checker must judge the PATIENT's own tree: if imports could resolve to an installed or
    editable copy elsewhere, the environment is set so they resolve inside the patient.

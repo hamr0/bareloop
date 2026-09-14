@@ -318,6 +318,23 @@ EXISTING audit records — no new record format.
    `writeScope` field (`src/job.js:363` — "the fence is operator law") — the list of globs the
    run may write. Destination stays per-run, never signed (M2's 2026-09-11 ruling), except that
    a repo job's `writeScope` IS the fence.
+
+   **Addendum (hamr, 2026-09-13, picked option A):** a Source that is a subfolder inside a
+   git repo is a REPO job, not a plain-folder job. The whole repo's tracked files are copied
+   (the same `kind: 'repo'` freeze `prepareSource` already does for a repo root), the language
+   comes from the nearest manifest walking up to the repo root (ruling 3, point 1, below), and
+   the Destination fence (`writeScope` globs) is written relative to the repo root. Why:
+   `looksLikeRepoSource` (`src/source.js:97-104`) currently treats a folder as a repo only when
+   `.git` sits directly inside it, so a monorepo package like `myrepo/packages/api` fell to the
+   plain-folder path — which hits the M4 "no checks yet" stop, and copies file by file, where
+   untracked `node_modules` symlinks would refuse again (the F164 class). Not built yet; it is
+   the next code change after piece 3 below (commits 421d730, 51998dc, c61f7ae built the
+   root-only rule this addendum changes).
+
+   **2026-09-13 — pointer:** landed in 2a020d8. A gap surfaced after: when the subfolder
+   itself is untracked or gitignored, the whole-repo freeze held none of Source's own
+   files — refused as `source-untracked-in-repo` for now (PRD item 34, L21); option B
+   (freeze it as a plain folder on hidden git instead) is deferred to M4.
 3. **Language is detected, never asked.** A code job's checks always run the repo's OWN tools
    in the repo's own language, so language is a fact of the repo, not a choice: `package.json`
    present → js; `pyproject.toml` or `setup.py` present → python; both present → the confirm
@@ -329,12 +346,36 @@ EXISTING audit records — no new record format.
    patterns and file extensions in the `TYPES_GENRE.languages` table, genre-owned env such as
    Python's `MYPYPATH` (`genreEnv`, line 848), and checker-output instruments (`genreInstruments`,
    line 912).
+
+   Five detection points (hamr, 2026-09-13):
+   (1) code reads the manifest at the Source folder, walking up to the repo root — nearest
+   wins (`package.json` → js, TypeScript included; `pyproject.toml`/`setup.py` → python);
+   (2) known list only — an unknown language is a named "language not supported yet" stop,
+   counted as demand, never a silent fallback to js;
+   (3) two manifests at the same level → the confirm turn asks the person;
+   (4) the language is shown in the confirm turn and signed as `closeDecl.lang`
+   (`src/authorjob.js` ~line 595);
+   (5) the seed read breaks a wrong-language checker at signing.
 4. **The confirm turn is paid, inside the authoring budget.** It is a call INSIDE the same
    `--budget` ceiling (no default); it reuses the scout's survey rather than reading the source
    a second time.
 5. **Two-round cap, sign-or-restart.** After 2 confirm rounds it drafts anyway; any still-open
    questions are shown at signing. If the person does not sign, they rerun the questions from
    the start.
+
+   **Addendum (hamr, 2026-09-13, picked option B): the separate signed-goal question is
+   dropped.** Today `scripts/run-interview.mjs` (~line 432) asks, in the job settings part
+   after the form, "The GOAL — what the run is judged on… say everything you'll check", and
+   that answer becomes the signed job spec's `goal`, which the planner and worker read as
+   their target (`src/planrun.js:683` and `:2848`). With the unified form it overlapped the
+   form's Goal and "What success looks like" fields. New rule: in the confirm turn, the AI
+   drafts the signed goal sentence from the person's Goal and "What success looks like"
+   answers; the sentence must name every check the close will judge (the same list the
+   confirm turn already shows, ruling 6 below). The person confirms or fixes it within the
+   confirm turn's 2-round cap (ruling 5 above); the job is signed after that conversation,
+   goal included — the person signs the whole spec, as today. The interview no longer asks
+   for the goal separately. Built in M3 piece 4 (the confirm turn), not yet.
+
 6. **No hand-authored check matcher.** "A genre never adds a check the goal did not ask for"
    (the `tsc --strict` stage in run `mtv8jihy`) is enforced by a prompt register at the
    composer PLUS the confirm turn listing every check it plans before drafting — no code
@@ -348,6 +389,97 @@ EXISTING audit records — no new record format.
 9. **Proof.** The M3 build is $0 with tests; at the end, ONE live interview on a repo job runs
    on DeepSeek (`deepseek-flash`), paid, only on hamr's word at that time. It depends on item
    34's L17 (authoring provider selectable) landing first.
+
+   See M3b (below, right after M3) for the language guards that ride on top of this detection.
+
+   **Addendum (hamr, 2026-09-13) — M3 piece 4 (the confirm turn) open decisions ruled:**
+   - **D5 = A.** A PLAIN-FOLDER source runs NO scout (the scout's register is code-only,
+     `src/authorscout.js:207`). Its confirm turn reads the $0 seed listing of the frozen tree,
+     spends only its own calls, then the honest named stop "no checks for this kind of job yet
+     (M4)".
+   - **D6 = A.** Ruling 6 above ("a genre never adds a check the goal did not ask for") wins
+     over `TYPES_GENRE_TEMPLATE` (`src/authoring.js:483-497`): skeleton WORK stages (typecheck,
+     typecheck-outside, tests-kept, suite-green) are composed ONLY when a confirmed check asks
+     for them; the strict form of the checker likewise applies only when a confirmed check asks
+     for strict typing (run `mtv8jihy`'s unasked `tsc --strict` stage is the case this cures).
+     The GUARDS (changed-from-seed, no-suppressions, and every mandatory/MECHANICAL guard) stay
+     always on, are listed in the confirm turn as PROTECTIONS (not checks), and are not named in
+     the goal. Enforcement is prompt register only (template wording + confirmed-checks block),
+     never a code matcher over prose.
+   - Defaults taken (hamr did not object): **D1 = A** (the confirm turn runs inside
+     `scripts/run-author.mjs`, via a library function with an injected `ask` seam;
+     run-interview stays provider-free). **D2 = A** (a goal already present in a draft seeds
+     round 1's starting sentence; the confirmed goal replaces it; `goal` does not join
+     `AUTHORED_SPEC_FIELDS`).
+
+     **Correction (hamr, 2026-09-14): D2 = A was never built, and is now dropped, not
+     deferred.** A draft written by `run-interview`'s own interview never carries a goal any
+     more (the 2026-09-13 addendum above, "the separate signed-goal question is dropped"), so
+     there is no draft-authored goal left to seed round 1's starting sentence with — an old
+     draft's goal, if one exists on disk, is replaced outright by the confirmed goal
+     (`scripts/run-author.mjs:813`, `if (authored.confirmed?.goal) draft.goal = ...`). The line
+     above is left as the record of what was ruled, not rewritten; this paragraph is the
+     correction.
+
+     **D3 = A** (at most 2 model calls; a round-2 "fix" is passed to
+     the composer verbatim and shown at signing as an open question; the menu also offers
+     "type the goal sentence yourself"). **D4 = A** (open questions are shown in run-author's
+     "SIGNING PREPARED" readout from `authored.json`; the signed spec format does not change).
+     **D7 = A** (the $0 questions — language pick when ambiguous, "worse than before" for a
+     repo — are asked BEFORE the scout, so a missing person at end of input stops at $0).
+
+   **Addendum (hamr, 2026-09-14) — D6 = A, "replace it":** the S3 STOP over
+   `TYPES_GENRE_TEMPLATE` (above) is resolved. hamr's ruling: replace the frozen template text
+   itself so its WORK-stage skeleton and STRICT-checker mandate are no longer unconditional law
+   — composed only when a confirmed check (or, absent a confirm turn, the goal/interview
+   answers) asks for them. This SUPERSEDES
+   `docs/logs/2026-08-08-close-authoring-gate2-poc-prereg.md`'s addendum 3 frozen block for the
+   product going forward (that record is closed and is never edited — this is a pointer, not a
+   rewrite). The GUARDS (changed-from-seed, no-suppressions) are unaffected: they are enforced
+   structurally (`classGuards` + `validateDeclaration`'s `guards-absent` red), never by this
+   prompt text, so they stay always-on regardless of what the template says.
+
+**The TYPES genre template (D6=A, 2026-09-14):**
+
+1. The STRICT form of the language's type checker is used only when a confirmed check — or,
+   absent a confirm turn, the goal and interview answers — asks for strict typing; otherwise the
+   checker runs at whatever strictness the repo's own scripts already use.
+2. Tools are invoked so their binaries actually resolve — through the project's own package
+   runner or language module runner, never a bare binary name.
+3. The WORK stages — typecheck (error count IN the target scope, baseline 0, lower-is-better),
+   typecheck-outside (error count OUTSIDE the target scope, baseline measured at seed, a
+   ceiling — required whenever a typecheck stage is scoped to a subset of the tree), tests-kept
+   (a floor on tests that actually EXECUTED, baseline at seed, higher-is-better; a skipped or
+   deselected test did not run and must not count), and suite-green (the suite exits clean AND
+   reports zero failing tests — two assertions) — are composed ONLY for the checks a confirmed
+   plan asked for (or, absent a confirm turn, the goal and interview answers). The GUARDS —
+   changed-from-seed and no-suppressions — are composed always, first-red-wins:
+   changed-from-seed before every WORK stage, no-suppressions last.
+4. One population per stage — two structurally different counts never share a stage.
+5. The checker must judge the PATIENT's own tree: if imports could resolve to an installed or
+   editable copy elsewhere, the environment is set so they resolve inside the patient.
+6. A number the tool did not report is unknown, never zero.
+
+**2026-09-14 — pointer:** hamr ruled this branch (`fix/item34-loose-ends`) stops here for
+`/branch-review` → `/release`; the M3 close-out list (open items owed before M3b) is written
+into `docs/product/PRD.md`'s item 33 build-order addenda, dated 2026-09-14 — see there for the
+list, not duplicated here.
+
+## M3b — language guards
+
+Languages are detected from the repo by code (M3, ruling 3 above), never asked. Beyond js and
+python, add the top 5: Java, C#, Go, Rust, PHP.
+
+Each language gets its own cheat list (ways a model can fake past the type checker/linter —
+e.g. suppression comments) plus its own checker data. This data is genre-owned, never written
+by the model (same rule as M3's per-language TYPES genre tables — `GENRE_LANGUAGES`,
+`TYPES_GENRE.languages`, `genreEnv`, `genreInstruments` in `src/authoring.js`).
+
+Proof per language: a $0 guard proof on a real public repo (any public repo is fine; install
+each language's toolchain as needed), then ONE small paid proof run on `deepseek-flash`, fired
+only on hamr's word at that time.
+
+Order: right after M3, before M4.
 
 ## M4 — non-code checks and guards
 
@@ -372,5 +504,7 @@ against that record. Detailed before it starts.
 
 ## M7 — proof fires (paid, hamr's word each)
 
-Item 25 step (4): 31.5 calibration on a real bar; 31.4 green on gemini with
-`ANTHROPIC_API_KEY` unset; plus one plain-folder green and one soft-green end to end.
+Item 25 step (4): 31.5 calibration on a real bar; 31.4 green on DeepSeek (`deepseek-flash`)
+with `ANTHROPIC_API_KEY` unset; plus one plain-folder green and one soft-green end to end.
+
+2026-09-13 (hamr): 31.4 runs on DeepSeek, not gemini — one secondary provider.

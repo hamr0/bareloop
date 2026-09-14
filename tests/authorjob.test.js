@@ -26,7 +26,7 @@ import {
   GENRE, REFUSAL_LIB, REFUSAL_CATEGORY, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
 } from '../src/authorjob.js';
 import { validateJob, jobSpecHash, checkApproval } from '../src/job.js';
-import { questionsFor } from '../src/authorflow.js';
+import { questionsFor, CONFIRM_TOOL_NAME } from '../src/authorflow.js';
 import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scanSecrets } from '../src/validate.js';
 import { classGuards } from '../src/authoring.js';
@@ -109,20 +109,22 @@ const SPEC_DRAFT = {
   escalation: { mode: 'decision-ready' },
 };
 
+// PRD item 33 M3 piece 3: the green trio is Goal / Success / Guardrails —
+// Source and Destination (the old Q2) are MECHANICAL fields, proven against
+// the machine, and never a numbered answer here.
 const ANSWERS = {
   1: 'Make the type checker stop complaining about the mailer.',
-  2: 'The files under src.',
-  3: 'Please do not touch the tests.',
-  4: 'I run the checker by hand and read the list of complaints.',
-  5: 'If the complaints only went quiet because something was told to look the other way.',
+  2: 'I run the checker by hand and read the list of complaints.',
+  3: 'Please do not touch the tests, and it counts as worse if the complaints only went quiet because something '
+    + 'was told to look the other way.',
 };
 
 /** the same interview, for the class that buys a THIRD paid seam (the rubric and
- * calibration compile). Q6/Q7 are soft-green's own two extra questions. */
+ * calibration compile). Key 4 is soft-green's own Judge Examples question. */
 const JUDGED_ANSWERS = {
   ...ANSWERS,
-  6: 'Whether every exported function reads like somebody meant it to be read.',
-  7: 'I would pass a documented function and fail an undocumented one.',
+  4: 'I would pass a documented function and fail an undocumented one — whether every exported function reads '
+    + 'like somebody meant it to be read.',
 };
 
 /** a declaration carrying a judged stage — what makes the compile seam reachable */
@@ -182,28 +184,29 @@ test('a LOCKED class refuses at ADMISSION, BEFORE its questions run — counted 
 });
 
 test('the interview asks NOTHING about a genre and NOTHING about the repo — an unasked answer is not a slot', () => {
-  const { 5: _five, ...four } = ANSWERS;
-  assert.ok(runInterview({ verdictType: 'green', answers: four, repoPath: '/tmp/x' })
-    .reds.some((x) => x.path === 'answers.5'), 'every question in the set is required');
+  const { 3: _three, ...twoOfThree } = ANSWERS;
+  assert.ok(runInterview({ verdictType: 'green', answers: twoOfThree, repoPath: '/tmp/x' })
+    .reds.some((x) => x.path === 'answers.3'), 'every question in the set is required');
   // an answer to a question NOBODY ASKED is not read by anything — the genre confirm
-  // is not a slot any more, and neither is the repo question hamr dropped. "no" to
-  // either cannot refuse a job, and neither can enter the record.
-  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 6: 'no', 7: 'no' }, repoPath: '/tmp/x' });
+  // is not a slot any more, and neither is the repo question hamr dropped (now
+  // mechanical Source/Destination, not a numbered answer at all). "no" to either
+  // cannot refuse a job, and neither can enter the record.
+  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 4: 'no', 5: 'no' }, repoPath: '/tmp/x' });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.equal(r.refusal, null);
-  assert.equal(Object.hasOwn(r.answers, '6'), false, 'an unasked answer never enters the record');
-  assert.equal(Object.hasOwn(r.answers, '7'), false);
+  assert.equal(Object.hasOwn(r.answers, '4'), false, 'an unasked answer never enters the record');
+  assert.equal(Object.hasOwn(r.answers, '5'), false);
   const asked = Object.values(questionsFor('green')).join(' ');
   assert.ok(!/type[- ]?fix|type checker/i.test(asked), asked);
   assert.ok(!/repo|repository/i.test(asked), 'the repository is repoPath — structured input, never a prose answer');
 });
 
 test('an unfinished interview is REDS, never demand — an incomplete form is not a user asking for a capability', () => {
-  const { 4: _dropped, ...partial } = ANSWERS;
+  const { 2: _dropped, ...partial } = ANSWERS;
   const r = runInterview({ verdictType: 'green', answers: partial, repoPath: '/tmp/x' });
   assert.equal(r.ok, false);
   assert.equal(r.refusal, null, 'a missing answer must not inflate the admission evidence');
-  assert.ok(r.reds.some((x) => x.path === 'answers.4'));
+  assert.ok(r.reds.some((x) => x.path === 'answers.2'));
 });
 
 test('D13: a job with NO repository is refused — all three validity gates rest on a git seed', () => {
@@ -684,6 +687,282 @@ const SURVEY = (dir) => ({
     typecheck: { cmd: 'node', args: ['check.mjs'], cwd: null, env: {}, source: 'package.json', inferred: false },
   },
   meta: { bytes: 900, rounds: 2, bounded: false, recovered: false, error: null },
+});
+
+// ── PRD item 33 M3 piece 4: the confirm turn, wired into authorCloseForJob ──
+
+/** a scripted CONFIRM model: calls the confirm tool exactly once per round,
+ * mirroring `scriptedDeclarer` but over the confirm channel */
+const scriptedConfirmer = (/** @type {any[]} */ plans, /** @type {number} */ costUsd = 0.4) => {
+  let i = 0;
+  return async (/** @type {any[]} */ _messages, /** @type {any[]} */ tools) => {
+    const p = plans[Math.min(i, plans.length - 1)];
+    i += 1;
+    const tool = tools.find((/** @type {any} */ t) => t.name === CONFIRM_TOOL_NAME);
+    if (tool) await tool.execute(p);
+    return { text: '', metrics: { costUsd, unpricedRounds: 0 } };
+  };
+};
+
+/** a scripted interactive `ask` — consumes scripted answers, `null` past the end */
+const scriptedAsk = (/** @type {any[]} */ script) => {
+  let i = 0;
+  return async () => (i < script.length ? script[i++] : null);
+};
+
+const CONFIRM_PLAN = { checks: ['tests stay green'], goal: 'Keep it green.', questions: [], notChecked: [] };
+
+test('confirm turn: wires into the phase order between scout-done and listing, repo + survey PRESENT + ask', async (t) => {
+  const p = makePatient(t);
+  /** @type {string[]} */
+  const phases = [];
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN]),
+    onPhase: (/** @type {string} */ n) => phases.push(n),
+    scoutFn: async () => SURVEY(p.dir),
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    authorFn: async () => ({ ok: false, declaration: null, reds: [], stop: 'max-revisions', cost: null }),
+  });
+  assert.equal(r.ok, false, 'the authorFn stub decides nothing here — the phases do');
+  const idx = (/** @type {string} */ n) => phases.indexOf(n);
+  assert.ok(idx('scout-done') < idx('confirm'), 'confirm starts only after the scout is known');
+  assert.ok(idx('confirm') < idx('confirm-round'));
+  assert.ok(idx('confirm-round') < idx('confirm-done'));
+  assert.ok(idx('confirm-done') < idx('confirm-turn-done'));
+  assert.ok(idx('confirm-turn-done') < idx('listing'), 'confirm finishes before the listing is built');
+});
+
+test('confirm turn: an ABSENT survey (state !== PRESENT) skips confirm entirely, even with ask + isRepo', async (t) => {
+  const p = makePatient(t);
+  /** @type {string[]} */
+  const phases = [];
+  let confirmCalled = false;
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: async () => { confirmCalled = true; return { text: '', metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
+    onPhase: (/** @type {string} */ n) => phases.push(n),
+    scoutFn: async () => ({ state: 'ABSENT', facts: null, reason: 'the ladder never produced a fact', calls: [], raws: [] }),
+  });
+  assert.ok(!phases.includes('confirm'), 'no confirm phase at all when the survey never came back');
+  assert.equal(confirmCalled, false, 'the confirm model boundary is never invoked either');
+  assert.equal(r.ok, false);
+  // the EXISTING $0 preflight in authorClose refuses this exactly as it always
+  // has — confirm being skipped changes nothing about that refusal
+  assert.equal(r.stop, 'precheck');
+});
+
+test('confirm turn: callers passing no `ask` behave exactly as today — no confirm phase, no confirmGenerate needed', async (t) => {
+  const p = makePatient(t);
+  /** @type {string[]} */
+  const phases = [];
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, // isRepo alone, with no `ask`, must not turn confirm on
+    onPhase: (/** @type {string} */ n) => phases.push(n),
+    scoutFn: async () => SURVEY(p.dir),
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    authorFn: async () => ({ ok: false, declaration: null, reds: [], stop: 'max-revisions', cost: null }),
+  });
+  assert.deepEqual(phases, ['scout', 'scout-done', 'listing', 'listing-done', 'author'],
+    'byte-identical phase list to the pre-confirm-turn behaviour — no confirm anything (no "seed" here: seedRef was supplied)');
+  assert.equal(r.ok, false);
+});
+
+test('confirm turn: scout $0.40 + confirm $0.40 at a $0.80 ceiling cap-halts the CONFIRM turn itself — the author call is never reached', async (t) => {
+  // F1 (this piece, part 2): once the confirm turn's OWN book absorbs the
+  // scout's spend (below), this combined-total breach is caught at the
+  // EARLIEST possible point — inside the confirm turn's own post-call
+  // `capStop()` — never later at the author call's own preflight. `authorFn`
+  // is left at its default (the real `authorClose`) to prove it is genuinely
+  // never invoked, not merely stubbed into refusing.
+  const p = makePatient(t);
+  const scoutWithCost = { ...SURVEY(p.dir), calls: [{ label: 'author-scout', costUsd: 0.4, unpricedRounds: 0 }] };
+  const declarer = scriptedDeclarer([{ stages: DECL().stages, notes: [] }]);
+  let authorCallCount = 0;
+  const countingDeclarer = async (/** @type {any[]} */ m, /** @type {any[]} */ t2) => { authorCallCount += 1; return declarer(m, t2); };
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ceilingUsd: 0.8,
+    ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN], 0.4),
+    scout: scoutWithCost,
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    generate: countingDeclarer,
+  });
+  assert.equal(authorCallCount, 0, 'the author call was never made — scout ($0.40) + confirm ($0.40) already spent the $0.80 ceiling');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'cap-halt');
+});
+
+// F1 (this piece, part 2) — a budget defect in the S3 wiring: `authorCloseForJob`
+// built the confirm turn's OWN cost book with NOTHING absorbed into it, so the
+// confirm turn's own `capStop()` checks never saw the scout's prior spend while
+// deciding whether to make ITS OWN calls. The author call (the expensive one)
+// stayed protected — `authorClose` always absorbed `scout.calls` — but the
+// confirm turn itself could still spend a call it should have refused, because
+// its own book thought it had the WHOLE ceiling rather than what was left.
+//
+// FAIL-FIRST shape: with the scout ($0.30) and confirm's own accepted round
+// ($0.30) together at $0.60 against a $0.601 ceiling, there is only $0.001 of
+// headroom left — enough for the bookkeeping to notice on the very next
+// metered call, never enough for a second one. A bad first declaration (an
+// absolute `cmd`, which validation always denies) forces a REVISE round —
+// authorClose's own second declaration call. Correctly wired, the confirm
+// turn's spend travels into authorClose's book (via `priorCalls`/`priorRaws`),
+// so that second call is refused before it is made (`authorCallCount === 1`,
+// `stop === 'cap-halt'`). Drop that wiring (simulating the pre-fix state) and
+// authorClose's book only ever sees the scout's $0.30 — comfortably under
+// $0.601 even after two calls — so the revise round fires anyway
+// (`authorCallCount === 2`, `r.ok === true`): the ceiling silently loosened
+// the moment the confirm turn's own spend went uncounted.
+test('confirm turn: FAIL-FIRST — dropping authorCloseForJob\'s priorCalls lets a REVISE call fire past the true combined ceiling', async (t) => {
+  const p = makePatient(t);
+  const scoutWithCost = { ...SURVEY(p.dir), calls: [{ label: 'author-scout', costUsd: 0.3, unpricedRounds: 0 }] };
+  const badDecl = {
+    genre: GENRE, lang: 'js',
+    stages: [guards(['src/'])[0], { name: 'verdict', kind: 'command-exit', params: { cmd: '/opt/x/bin/tsc', args: [], expectExit: 0 } }, guards(['src/'])[1]],
+  };
+  const goodDecl = { ...DECL(), notes: [] };
+  // a FRESH counting declarer per run — each wraps its OWN `scriptedDeclarer`
+  // instance (bad first, then good), so its internal index resets between the
+  // wired and unwired calls below rather than always replaying the bad one.
+  const makeCountingDeclarer = () => {
+    let count = 0;
+    const declarer = scriptedDeclarer([{ ...badDecl, notes: [] }, goodDecl]);
+    const generate = async (/** @type {any[]} */ m, /** @type {any[]} */ t2) => { count += 1; return declarer(m, t2); };
+    return { generate, count: () => count };
+  };
+  // `ask`/`confirmGenerate` are FRESH closures per run (each carries its own
+  // scripted-index state) — sharing one instance across both calls below
+  // would let the second run's confirm turn silently consume the first run's
+  // already-exhausted script and abandon before ever reaching the author
+  // stage, which would falsely read as "0 author calls" either way.
+  const args = () => ({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ceilingUsd: 0.601,
+    ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN], 0.3),
+    scout: scoutWithCost,
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+  });
+  const wiredDeclarer = makeCountingDeclarer();
+  const wired = await authorCloseForJob({ ...args(), generate: wiredDeclarer.generate });
+  assert.equal(wiredDeclarer.count(), 1, 'wired: the revise round is refused before it is made — one declaration call only');
+  assert.equal(wired.ok, false);
+  assert.equal(wired.stop, 'cap-halt');
+
+  // simulate the un-wired (pre-fix) state directly: authorFn that does NOT
+  // forward priorCalls/priorRaws through to authorClose — everything else
+  // about the call is identical.
+  const { authorClose } = await import('../src/authorflow.js');
+  const unwiredAuthorFn = (/** @type {any} */ o) => authorClose({ ...o, priorCalls: undefined, priorRaws: undefined });
+  const unwiredDeclarer = makeCountingDeclarer();
+  const unwired = await authorCloseForJob({
+    ...args(), generate: unwiredDeclarer.generate, authorFn: unwiredAuthorFn,
+  });
+  // 3, not 2: `authorClose`'s revise loop does not stop the instant a
+  // declaration validates — it only stops at `MAX_REVISIONS` or once a
+  // repeated (`canonical`-identical) declaration proves nothing would change,
+  // and the scripted declarer above clamps to `goodDecl` for every call past
+  // the first. So the honest count here is THREE real paid calls happening
+  // where the wired run above allowed only one — the confirm turn's spend
+  // going uncounted let TWO extra calls fire, not merely one.
+  assert.equal(unwiredDeclarer.count(), 3, 'WITHOUT the priorCalls absorb, extra revise calls fire past the true combined ceiling');
+  assert.equal(unwired.ok, true, JSON.stringify(unwired.reds));
+});
+
+test('confirm turn: a scout that already spent the whole ceiling costs the confirm turn ZERO calls — cap-halt before the first ask', async (t) => {
+  const p = makePatient(t);
+  // the scout alone is AT the ceiling — nothing is left for even one confirm
+  // round, and the fix means the confirm turn's own book knows that before
+  // its first `capStop()` check, not after wasting a call to find out.
+  const scoutAtCeiling = { ...SURVEY(p.dir), calls: [{ label: 'author-scout', costUsd: 0.8, unpricedRounds: 0 }] };
+  let confirmCallCount = 0;
+  const countingConfirmer = async (/** @type {any[]} */ m, /** @type {any[]} */ t2) => {
+    confirmCallCount += 1;
+    return scriptedConfirmer([CONFIRM_PLAN])(m, t2);
+  };
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ceilingUsd: 0.8,
+    ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: countingConfirmer,
+    scout: scoutAtCeiling,
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+  });
+  assert.equal(confirmCallCount, 0, 'the scout alone already spent the whole ceiling — the confirm turn makes no call at all');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'cap-halt');
+});
+
+test('confirm turn: a scout call with a null costUsd stops the confirm turn pricing-red BEFORE any confirm call — unpriced is never free', async (t) => {
+  const p = makePatient(t);
+  const scoutUnpriced = { ...SURVEY(p.dir), calls: [{ label: 'author-scout', costUsd: null, unpricedRounds: 1 }] };
+  let confirmCallCount = 0;
+  const countingConfirmer = async (/** @type {any[]} */ m, /** @type {any[]} */ t2) => {
+    confirmCallCount += 1;
+    return scriptedConfirmer([CONFIRM_PLAN])(m, t2);
+  };
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ceilingUsd: 1,
+    ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: countingConfirmer,
+    scout: scoutUnpriced,
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+  });
+  assert.equal(confirmCallCount, 0, 'an unpriced scout call must stop the confirm turn before it ever asks the model, not merely after');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'pricing-red');
+});
+
+test('confirm turn: scout $0.40 + confirm $0.40 — the FINAL reported spend is $0.80, never $1.20 from a doubled scout absorb', async (t) => {
+  // The confirm turn's own book absorbs the scout's calls (F1's fix) so its
+  // OWN capStop sees the true total; `priorCalls`/`priorRaws` handed onward to
+  // authorClose must then carry ONLY the confirm turn's own new calls, never
+  // the scout's again — otherwise the scout's $0.40 is counted twice the
+  // moment a real author call is reached (F1's second, easy-to-reintroduce bug).
+  const p = makePatient(t);
+  const scoutWithCost = { ...SURVEY(p.dir), calls: [{ label: 'author-scout', costUsd: 0.4, unpricedRounds: 0 }] };
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
+    isRepo: true, ceilingUsd: 0.8,
+    ask: scriptedAsk(['nothing worse', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN], 0.4),
+    scout: scoutWithCost,
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+  });
+  // the turn cap-halts (scout + confirm together are AT the ceiling) before
+  // ever reaching authorClose — `confirm.cost`, returned here as `r.cost`, is
+  // the one place the doubled-scout bug would show up as $1.20 instead of $0.80.
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'cap-halt');
+  assert.equal(r.cost.calls.length, 2, 'exactly the scout call and the one confirm call — the scout must never appear twice');
+  assert.equal(r.cost.knownUsd, 0.8, `total counted spend must be $0.80, not $1.20 — got ${r.cost.knownUsd}`);
+});
+
+test('confirm turn: an ambiguous language pick lands in closeDecl.lang', async (t) => {
+  const p = makePatient(t);
+  // called with lang:'python' (a wrong/placeholder starting guess — a caller
+  // ahead of the ambiguous detection has to pass SOMETHING); the $0 language
+  // pick overrides it to 'js', and the guards/declaration below are JS-shaped
+  // to prove the OVERRIDE actually took (a mismatched genre battery would
+  // validation-red, as it correctly does when the override is missing).
+  const r = await authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'python', seedRef: p.seed,
+    isRepo: true, langResult: { kind: 'ambiguous', candidates: ['js', 'python'], dir: p.dir },
+    ask: scriptedAsk(['nothing worse', 'js', 'confirm']),
+    confirmGenerate: scriptedConfirmer([CONFIRM_PLAN]),
+    scoutFn: async () => SURVEY(p.dir),
+    listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
+    generate: scriptedDeclarer([{ stages: DECL().stages, notes: [] }]),
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  assert.equal(r.closeDecl.lang, 'js', 'the person\'s $0 pick, not the lang argument authorCloseForJob was called with');
+  assert.equal(r.confirmed?.lang, 'js');
 });
 
 test('WHOLE PIPELINE: seven answers in, a validateJob-green spec with a hash out', async (t) => {

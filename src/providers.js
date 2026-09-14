@@ -45,10 +45,17 @@ export const ANTHROPIC_TIER_MODELS = Object.freeze({
  * of a single-model provider, not a second model masquerading as `haiku`.
  * If DeepSeek (or a future openai-api entrant) ever ships a genuinely
  * cheaper tier model, this is where it would earn its own `haiku` id.
+ *
+ * MODEL SWAP (F171, item 34 L16, hamr 2026-09-13): `deepseek-chat` is no
+ * longer served — a live `/models` call returned only `deepseek-flash` and
+ * `deepseek-v4-pro`. Switched to `deepseek-flash` (DeepSeek V4.1). F149's
+ * `legacyMaxTokens` measurement (asked 64 output tokens, got 665/608) was
+ * taken on `deepseek-chat` and is UNVERIFIED on `deepseek-flash` — kept on
+ * below as the fail-safe (over-capping direction is safe; see F171).
  */
 export const OPENAI_TIER_MODELS = Object.freeze({
-  sonnet: 'deepseek-chat',
-  haiku: 'deepseek-chat',
+  sonnet: 'deepseek-flash',
+  haiku: 'deepseek-flash',
 });
 
 /**
@@ -97,9 +104,14 @@ export const PROBE_STATUS = Object.freeze({
  *
  * A model with no entry here gets `{}` — bare-agent's own default
  * (`max_completion_tokens`, GPT-5-safe) applies, unmodified.
+ *
+ * F171 (2026-09-13): `deepseek-chat` was retired and swapped for
+ * `deepseek-flash` (item 34 L16). This gating was measured on
+ * `deepseek-chat` only and carried forward onto `deepseek-flash`
+ * UNVERIFIED — re-verify before any paid DeepSeek run relies on it.
  */
 const OPENAI_MODEL_OPTIONS = Object.freeze({
-  'deepseek-chat': Object.freeze({ legacyMaxTokens: true }),
+  'deepseek-flash': Object.freeze({ legacyMaxTokens: true }),
 });
 
 /**

@@ -40,6 +40,7 @@ import {
 } from '../src/authoring.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+  openQuestionLines,
 } from '../scripts/author-readout.mjs';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
@@ -186,11 +187,16 @@ test('catalogue: the catalogue option is LOAD-BEARING — a narrowed catalogue r
 
 // ── the TYPES genre template: FROZEN TEXT ────────────────────────────────────
 
-test('genre template: byte-identical to the prereg\'s frozen policy text', () => {
-  const doc = readFileSync(join(REPO, 'docs/logs/2026-08-08-close-authoring-gate2-poc-prereg.md'), 'utf8');
+// PRD item 33 M3 piece 4, D6 = A ruling (2026-09-14): the frozen template's
+// source of truth MOVED from the prereg (closed, never edited) to
+// docs/product/ITEM33-BUILD.md's own dated block — this re-pins to that new
+// location, same extractor shape (marker line, skip blanks, collect until
+// the next blank line).
+test('genre template: byte-identical to ITEM33-BUILD.md\'s own frozen block (D6=A, 2026-09-14)', () => {
+  const doc = readFileSync(join(REPO, 'docs/product/ITEM33-BUILD.md'), 'utf8');
   const lines = doc.split('\n');
-  const marker = lines.findIndex((l) => l.startsWith('**The frozen TYPES genre template'));
-  assert.notEqual(marker, -1, 'the prereg no longer carries the frozen template marker — the source of truth moved');
+  const marker = lines.findIndex((l) => l.startsWith('**The TYPES genre template (D6=A'));
+  assert.notEqual(marker, -1, 'ITEM33-BUILD.md no longer carries the frozen template marker — the source of truth moved');
   let i = marker + 1;
   while (i < lines.length && lines[i].trim() === '') i++;
   const block = [];
@@ -1576,6 +1582,20 @@ test('calibration readout: itemized rows, never an aggregate — and a casualty 
   assert.match(calibrationLines({ stop: 'calibration-missing' })[0], /no calibration set is stored/);
   assert.match(calibrationLines({ stop: 'no-judge' })[0], /never ran/);
   assert.match(calibrationLines(null)[0], /not reached/);
+});
+
+// PRD item 33 M3 piece 4, step S4 — the confirm turn's open questions, shown at
+// the SIGNING readout (D4: the signed spec format itself does not change).
+test('openQuestionLines: none is shown as an explicit "(none)", never a silent absence', () => {
+  assert.deepEqual(openQuestionLines(null), ['open questions  (none)']);
+  assert.deepEqual(openQuestionLines({ openQuestions: [] }), ['open questions  (none)']);
+});
+
+test('openQuestionLines: each fix-round question is its own line, counted', () => {
+  const lines = openQuestionLines({ openQuestions: ['also check the CLI', 'make it stricter'] });
+  assert.match(lines[0], /open questions {2}2/);
+  assert.ok(lines.some((l) => l.includes('also check the CLI')));
+  assert.ok(lines.some((l) => l.includes('make it stricter')));
 });
 
 test('phaseLine renders the compile and the paid gate, including the scrub announcement', () => {

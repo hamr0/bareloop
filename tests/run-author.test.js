@@ -20,12 +20,15 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import {
+  readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { capStop } from '../src/text.js';
+import { prepareSource } from '../src/source.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -392,8 +395,12 @@ test('exit code 4 is the CRASH, and nothing else in this runner claims it', () =
 // ? ... : null;` the calibration gate reads — and spliced into a real child
 // process alongside the actual `resolveJobJudge`/`resolveWorkerModel`
 // exports, so a regression here fails on the REAL wired bytes, not a stand-in.
-const PROVIDER_CONST_LINE = /^const PROVIDER_NAME = 'anthropic-api';$/m.exec(SRC)?.[0];
-const MODEL_CONST_LINE = /^const MODEL = resolveProvider\(PROVIDER_NAME\)\.tiers\.sonnet;$/m.exec(SRC)?.[0];
+// PRD item 34 L17: the authoring provider is no longer a hardcoded literal —
+// it is resolved from the DRAFT's own `provider` field, the same block that
+// dies loud on a missing/unresolvable one. Extracted whole (`let providerEntry;`
+// through the `baseUrl` line that closes it) so the twin below runs the REAL
+// resolution, not a re-typed stand-in of it.
+const PROVIDER_BLOCK = /\nconst providerEntry = \(\(\) => \{\n[\s\S]*?\nconst baseUrl = typeof draft\?\.baseUrl === 'string' \? draft\.baseUrl : undefined;\n/.exec(SRC)?.[0];
 const DRAFT_JUDGE = /const resolveDraftJudge = [\s\S]*?\nconst draftJudge = resolveDraftJudge\(draft\);/.exec(SRC)?.[0];
 const GATE_JUDGE = /const judge = judges\n[\s\S]*?: null;/.exec(SRC)?.[0];
 // the STAMP: the actual argument `authorCloseForJob` is called with — extracted
@@ -404,8 +411,9 @@ const GATE_JUDGE = /const judge = judges\n[\s\S]*?: null;/.exec(SRC)?.[0];
 const AUTHOR_JUDGE_ARG = /\n {4}judgeModel: [^,\n]+,\n/.exec(SRC)?.[0];
 
 test('the judge-identity block is still BOUNDED — the twin below reads exact statements, not the rest of the file', () => {
-  assert.ok(PROVIDER_CONST_LINE, 'the authoring provider constant moved or was reworded');
-  assert.ok(MODEL_CONST_LINE, 'the authoring model constant moved or was reworded');
+  assert.ok(PROVIDER_BLOCK, 'the authoring provider resolution moved or was reworded');
+  assert.match(PROVIDER_BLOCK, /resolveProvider\(draft\?\.provider\)/, 'the provider must be resolved from the DRAFT, never a hardcoded literal (item 34 L17)');
+  assert.ok(!/'anthropic-api'/.test(PROVIDER_BLOCK), 'a forced anthropic-api literal is back in the provider resolution');
   assert.ok(DRAFT_JUDGE, 'the draft-judge resolution moved — this guard no longer reads the code it guards');
   assert.match(DRAFT_JUDGE, /resolveJobJudge\(d, PROVIDER_NAME, resolveWorkerModel\)/, 'the compose-time identity must be resolved from the DRAFT, not the authoring identity');
   assert.match(DRAFT_JUDGE, /resolveDraftJudge\(draft\)/, 'and it must actually be called on the operator\'s draft');
@@ -431,9 +439,13 @@ const judgeTwin = (draft) => new Promise((res, reject) => {
     `import { resolveJobJudge } from ${JSON.stringify(join(REPO, 'src/judged.js'))};`,
     `import { resolveWorkerModel } from ${JSON.stringify(join(REPO, 'src/job.js'))};`,
     `import { resolveProvider } from ${JSON.stringify(join(REPO, 'src/providers.js'))};`,
-    /** @type {string} */ (PROVIDER_CONST_LINE),
-    /** @type {string} */ (MODEL_CONST_LINE),
+    // `die` is referenced only inside the provider block's catch arm, never
+    // called by any draft this twin is fed (every draft below names a real
+    // provider) — a no-op stand-in keeps that arm syntactically reachable
+    // without pulling in the real script's process.exit.
+    'const die = (m) => { throw new Error(m); };',
     `const draft = ${JSON.stringify(draft)};`,
+    /** @type {string} */ (PROVIDER_BLOCK),
     /** @type {string} */ (DRAFT_JUDGE),
     'const judges = true;',
     "const spec = { ...draft, verdictType: 'green', closeDecl: {} };", // the `assembleSpec` fold: provider/model/judge carried through unchanged
@@ -455,10 +467,10 @@ const judgeTwin = (draft) => new Promise((res, reject) => {
 test('a non-anthropic worker: the compose-time stamp and the calibration gate agree with EACH OTHER and with the job\'s real worker', async () => {
   const draft = { provider: 'openai-api' }; // no model, no judge override — DeepSeek via openai-api, item 30.7's secondary provider
   const { stamp, gate } = await judgeTwin(draft);
-  // the job's own worker resolves to deepseek-chat (openai-api's only tier) —
+  // the job's own worker resolves to deepseek-flash (openai-api's only tier) —
   // NOT anthropic's sonnet, which is what the old hardcoded PROVIDER_NAME/MODEL
   // stamped regardless of the draft's own provider.
-  assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-chat' });
+  assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-flash' });
   assert.deepEqual(gate, stamp, 'the calibration gate must certify the SAME identity the stamp promised — a mismatch is exactly the recalibration refusal this fixes');
 });
 
@@ -494,4 +506,238 @@ test('the resolved identity matches what scripts/run-u.mjs itself resolves at ru
   const { stamp, gate } = await judgeTwin(draft);
   assert.deepEqual(stamp, expected);
   assert.deepEqual(gate, expected);
+});
+
+// ── --provider comes from the DRAFT, at $0, before any paid call ────────────
+//
+// PRD item 34 L17 deleted the forced `PROVIDER_NAME = 'anthropic-api'` — the
+// scout's and drafter's identity is resolved from the draft's OWN `provider`
+// field. The die-loud path fires BEFORE the scout, before `apiKey` is even
+// checked, so this is provable with a real spawned process for $0: no key is
+// exported, and a real run never reaches the paid span.
+const SCRIPT = join(REPO, 'scripts/run-author.mjs');
+const runBase = mkdtempSync(join(tmpdir(), 'run-author-cli-'));
+process.on('exit', () => rmSync(runBase, { recursive: true, force: true }));
+let n = 0;
+
+/** the same neutralized identity `src/source.js`/`tests/source.test.js` use — CI
+ * has no gitconfig (F136: hermetic, empty `HOME`). */
+const GIT_ID = ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false'];
+/** @param {string} cwd @param {string[]} args */
+const gitFix = (cwd, args) => execFileSync('git', [...GIT_ID, ...args], { cwd, encoding: 'utf8' });
+
+/** `--source` REPLACED `--patient` (PRD item 33 M3, ruling 2): every call site
+ * below must hand `run-author.mjs` a PREPARED tree, never a raw repo path — a
+ * small, fast, real git repo (never the whole `REPO`) is prepared ONCE here
+ * and reused, since none of these tests care about its content, only that
+ * language detection resolves 'js' and the manifest says kind 'repo'. */
+const provisionRepo = mkdtempSync(join(runBase, 'provision-'));
+writeFileSync(join(provisionRepo, 'package.json'), '{}');
+gitFix(provisionRepo, ['init', '-q']);
+gitFix(provisionRepo, ['add', '-A']);
+gitFix(provisionRepo, ['commit', '-q', '-m', 'seed']);
+const provisioned = await prepareSource({ source: provisionRepo, into: join(runBase, 'provision-into') });
+assert.equal(provisioned.stop, null, provisioned.stop ?? undefined);
+const PREPARED_TREE = provisioned.tree;
+
+/** @param {Record<string, unknown>} draft */
+const runAuthor = (draft) => {
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify(draft));
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', PREPARED_TREE, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+};
+
+test('a draft with no provider field dies loud, at $0, before any paid call', () => {
+  const r = runAuthor({});
+  assert.equal(r.code, 2);
+  assert.match(r.text, /unknown provider/);
+  assert.doesNotMatch(r.text, /== close-authoring, run/, 'the header (and the spine it opens) must never print — this dies before either exists');
+});
+
+test('a draft naming a provider the factory does not know dies the same way, naming the known table', () => {
+  const r = runAuthor({ provider: 'made-up-vendor' });
+  assert.equal(r.code, 2);
+  assert.match(r.text, /unknown provider "made-up-vendor"/);
+  assert.match(r.text, /Known providers: anthropic-api, openai-api, gemini-api/);
+});
+
+test('there is no --provider FLAG on this script — the provider comes only from the draft', () => {
+  assert.doesNotMatch(SRC, /arg\('provider'\)/, 'run-author must never read its own --provider flag; run-interview owns that ask');
+});
+
+// ── --source REPLACES --patient (PRD item 33 M3, ruling 2) ──────────────────
+
+test('--patient is refused, loud — --source replaced it', () => {
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, '{}');
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--patient', PREPARED_TREE, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  assert.equal(r.status, 2);
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.match(text, /--patient is no longer a flag/);
+  assert.match(text, /use --source <tree>/);
+  assert.equal(existsSync(out), false);
+});
+
+test('--source that was never prepared through the source front door dies loud, naming the exact command to fix it', () => {
+  const unprepared = mkdtempSync(join(runBase, 'unprepared-'));
+  writeFileSync(join(unprepared, 'package.json'), '{}');
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, '{}');
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', unprepared, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  assert.equal(r.status, 2);
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.match(text, /was never prepared through the source front door/);
+  assert.match(text, /node scripts\/prep-source\.mjs --source <path-or-url> --into <dir>/, 'the exact command to run first is quoted');
+  assert.match(text, /--source <dir>\/tree/);
+  // no spine was ever opened — this is a config error, same standing as every
+  // other argv/config die() in this script
+  assert.equal(existsSync(out) && readdirSync(out).some((f) => f.startsWith('author-')), false);
+});
+
+// PRD item 33 M3 piece 4, step S6 (D5 = A): the "no checks yet" stop MOVED
+// from before the key check to after the confirm turn — a plain-folder job
+// now needs a real provider connection (the confirm turn is paid) before it
+// can even reach that stop. This suite pays for nothing, so the far side of
+// that move (the confirm turn actually running, and the stop landing after
+// it) is unit-tested on `runConfirmTurn` directly (confirmturn.test.js) and
+// pinned from source below — what THIS test proves at $0 is that the stop
+// genuinely no longer fires before the key gate.
+test('a --source prepared from a NON-repo (a plain folder), with a valid provider but no key, now dies at the API KEY CHECK — the old early stop is gone', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  // a REAL provider is needed to reach the key check at all — the old fixture's
+  // empty draft ('{}') died even earlier (unknown provider) once the plain-folder
+  // stop moved past provider resolution
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 2, text);
+  assert.match(text, /ANTHROPIC_API_KEY not set/);
+  assert.doesNotMatch(text, /bareloop has no checks for this kind/, 'the old early stop must not fire before the key check any more');
+  // no spine FILE at all — `appendFileSync` inside `emit` creates it lazily on
+  // its first write, and `author-start` (the first emit in this file) fires
+  // AFTER the key check, so nothing ever wrote to it
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 0, 'no event ever reached the spine before the key gate — the file was never created');
+});
+
+// The far side of the move — pinned from SOURCE, for the same reason the
+// governance/kill/sign blocks above are: it is reachable only past a real
+// key and a real model call, which this suite never pays for.
+const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+
+test('the plain-folder branch is still BOUNDED — this guard reads the branch, not the rest of the file', () => {
+  assert.ok(PLAIN_FOLDER_BLOCK, 'the plain-folder branch moved — this guard no longer reads the code it guards');
+  assert.ok(!/authorCloseForJob/.test(PLAIN_FOLDER_BLOCK), 'the plain-folder branch must never run the repo-shaped authorCloseForJob');
+});
+
+test('a plain-folder job runs NO SCOUT and its confirm turn is isRepo:false, over a manual listing — never authorCloseForJob\'s survey', () => {
+  assert.ok(PLAIN_FOLDER_BLOCK);
+  assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /runAuthorScout|scoutFn/, 'no scout for a plain folder (D5) — its register is code-only');
+  assert.match(PLAIN_FOLDER_BLOCK, /runConfirmTurn\(\{/);
+  assert.match(PLAIN_FOLDER_BLOCK, /isRepo: false/);
+  assert.match(PLAIN_FOLDER_BLOCK, /facts: null, listing: listingBlock/);
+});
+
+test('the plain-folder branch NEVER falls through into the repo-shaped try block — every path out of it exits', () => {
+  assert.ok(PLAIN_FOLDER_BLOCK);
+  const exits = [...PLAIN_FOLDER_BLOCK.matchAll(/process\.exit\(1\)/g)].length;
+  assert.ok(exits >= 2, `expected an exit on both the confirm-turn-not-ok path and the confirmed "no checks yet" path (saw ${exits})`);
+});
+
+test('the plain-folder "no checks yet" stop only fires AFTER a confirmed plan — a stop still named request-red/non-code-source, unchanged from before the move', () => {
+  assert.ok(PLAIN_FOLDER_BLOCK);
+  const confirmDoneAt = PLAIN_FOLDER_BLOCK.indexOf('if (!confirm.ok)');
+  const stopAt = PLAIN_FOLDER_BLOCK.indexOf("verb: 'non-code-source'");
+  assert.ok(confirmDoneAt !== -1 && stopAt !== -1 && confirmDoneAt < stopAt,
+    'the confirm-turn check must come BEFORE the non-code-source stop — a plan the person never confirmed must never reach it');
+  assert.match(PLAIN_FOLDER_BLOCK, /code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',/);
+  assert.match(PLAIN_FOLDER_BLOCK, /outcome: 'not-authored', stop: 'non-code-source'/);
+});
+
+// ── PRD item 33 M3 piece 4, step S4 — run-author.mjs becomes INTERACTIVE ────
+//
+// The confirm turn (`runConfirmTurn`, via `authorCloseForJob`) is this
+// script's one interactive seam. Pinned from SOURCE for the same reason the
+// blocks above are: the wiring is reachable only after a real scout and a
+// real model call, which this suite never pays for.
+
+test('ambiguous language no longer dies — it travels through as langResult, for the confirm turn\'s own $0 ask (D7)', () => {
+  assert.ok(!/langResult\.kind === 'ambiguous'\) \{\s*\n\s*die\(/.test(SRC),
+    'an ambiguous-language die() came back — the confirm turn (D7) is what asks this now, before the scout');
+  assert.match(SRC, /langResult\.kind === 'ambiguous' \? langResult\.candidates\[0\]/,
+    'LANG needs a placeholder for the ambiguous case — the person\'s real pick lands in closeDecl.lang via the confirm turn');
+});
+
+test('the confirm turn is wired into the authorCloseForJob call: ask, its OWN confirmGenerate, isRepo, langResult', () => {
+  const CALL = /const authored = await authorCloseForJob\(\{[\s\S]*?\n {2}\}\);/.exec(SRC)?.[0];
+  assert.ok(CALL, 'the authorCloseForJob call moved — this guard no longer reads the code it guards');
+  assert.match(CALL, /\bask, confirmGenerate, isRepo: true, langResult,/);
+  // the confirm turn's model boundary must be its OWN — bound to CONFIRM_SYSTEM,
+  // never the authoring `generate` (bound to AUTHOR_SYSTEM); reusing `generate`
+  // would run the wrong system prompt silently
+  assert.match(SRC, /const confirmGenerate = makeLoopGenerate\(provider, \{ system: CONFIRM_SYSTEM \}\);/);
+  assert.doesNotMatch(CALL, /confirmGenerate: generate\b/, 'the confirm turn must never reuse the AUTHOR_SYSTEM-bound generate');
+});
+
+test('rl.close() runs in a finally around the whole paid span — never inline at one exit path only', () => {
+  const finallyBlock = /\} finally \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+  assert.ok(finallyBlock, 'no finally block follows the crash catch');
+  assert.match(finallyBlock, /rl\.close\(\)/);
+  assert.match(finallyBlock, /catch \{/, 'closing the interactive seam must not crash the readout it follows (F70)');
+});
+
+test('the confirm turn\'s accepted goal lands on the DRAFT before assembleSpec — goal stays an operator field (D2)', () => {
+  const idx = SRC.indexOf('authored.confirmed?.goal');
+  const assembleAt = SRC.indexOf('const spec = assembleSpec(draft, authored);');
+  assert.ok(idx !== -1 && assembleAt !== -1 && idx < assembleAt,
+    'draft.goal must be set from the confirm turn\'s accepted goal BEFORE assembleSpec reads the draft');
+  assert.match(SRC, /draft\.goal = redactSecrets\(String\(authored\.confirmed\.goal\)\);/);
+});
+
+test('the signing readout prints the confirm turn\'s open questions (D4: the signed spec format itself is unchanged)', () => {
+  assert.match(SRC, /openQuestionLines\(authored\.confirmed\)/);
+  const specAt = SRC.indexOf('const specFile = writeOut');
+  const idx = SRC.indexOf('openQuestionLines(authored.confirmed)');
+  assert.ok(specAt !== -1 && idx > specAt, 'the open questions print in the signing readout, not before the spec is written');
+});
+
+test('confirm-abandoned and confirm-restart get their own friendlier console line, and both still reach author-end via the generic stop', () => {
+  assert.match(SRC, /authored\.stop === 'confirm-abandoned' \|\| authored\.stop === 'confirm-restart'/);
+  const NOT_AUTHORED = /if \(!authored\.ok\) \{[\s\S]*?\n {2}\}/.exec(SRC)?.[0];
+  assert.ok(NOT_AUTHORED);
+  assert.match(NOT_AUTHORED, /emit\('author-end', \{ outcome: 'not-authored', stop: authored\.stop \}\);/,
+    'confirm-abandoned/confirm-restart fall through this generic branch — author-end records the real stop either way');
 });

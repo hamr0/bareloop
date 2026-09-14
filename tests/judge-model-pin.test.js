@@ -142,9 +142,9 @@ test('the fold stores the HANDED-IN judge identity beside the cases — never a 
   // come back unchanged.
   const out = foldJudgedArtifacts(
     { genre: 'types', lang: 'js', stages: [{ name: 'docs-read-well', kind: 'judged-floor', params: {} }] },
-    { card: CARD, cases: [{ id: 'pass-1', artifact: ARTIFACT, expect: { verdict: 'pass', reds: [] } }], judgeModel: 'deepseek-chat' },
+    { card: CARD, cases: [{ id: 'pass-1', artifact: ARTIFACT, expect: { verdict: 'pass', reds: [] } }], judgeModel: 'deepseek-flash' },
   );
-  assert.equal(out.calibration.judgeModel, 'deepseek-chat', 'the resolved identity, not the constant');
+  assert.equal(out.calibration.judgeModel, 'deepseek-flash', 'the resolved identity, not the constant');
   assert.equal(out.calibration.cases.length, 1, 'and the cases still land where they always did');
 });
 
@@ -259,7 +259,7 @@ test('the recalibration guard fires across a PROVIDER change: a spec calibrated 
   // later, the SAME spec's `judge` override is signed onto a different
   // provider (an operator moving the job's judge to DeepSeek) — resolved
   // through the identical seam, never a literal string
-  const laterJudge = resolveJudge({ specJudge: { provider: 'deepseek-api', model: 'deepseek-chat' }, workerProvider: 'anthropic-api', workerModel: JUDGE_MODEL });
+  const laterJudge = resolveJudge({ specJudge: { provider: 'deepseek-api', model: 'deepseek-flash' }, workerProvider: 'anthropic-api', workerModel: JUDGE_MODEL });
   assert.notEqual(laterJudge.provider, signedJudge.provider, 'the fixture is really crossing a provider boundary');
 
   const r = await runStage(stages.find((s) => s.kind === 'judged-floor'), CTX(wd, { judgeModel: laterJudge.model }));

@@ -135,8 +135,9 @@ export const CADENCE_UNITS = Object.freeze(['hour', 'day', 'week']);
  * rows on the cost axis, and budgets sized for one do not transfer. */
 /** PRD item 28 (2026-09-06/09-09): `openai-api` — an OpenAI-shaped provider,
  * constructed via `src/providers.js`'s factory. hamr's ruling (PRD 30.7):
- * `deepseek-chat` is THE secondary provider (one, not a menu of half-tested
- * models); the factory's tier table is where that lives, not this menu.
+ * `deepseek-flash` is THE secondary provider (one, not a menu of half-tested
+ * models; F171, item 34 L16: swapped from the retired `deepseek-chat`); the
+ * factory's tier table is where that lives, not this menu.
  *
  * PRD item 31.3 (hamr, 2026-09-09: *"anthropic, openai, gemini drop ollama for
  * now"*): `gemini-api` joins. That is bareloop matching bare-agent's own

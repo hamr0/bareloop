@@ -246,9 +246,13 @@ if (scoutArg !== null && !Object.prototype.hasOwnProperty.call(SCOUT_NAMES, scou
   process.exit(2);
 }
 const SCOUT = scoutArg === null ? true : SCOUT_NAMES[scoutArg];
+// item 34 L2: three real states, three labels — an explicit `--scout on` used
+// to print the exact same "(default)" text as no flag at all, so a bench-log
+// auditor reading stdout could never tell "operator explicitly chose on" from
+// "no flag given" for that row (fix-ledger, 2026-09-05 @ c9f100d).
 const SCOUT_LABEL = scoutArg === null
   ? 'scout ON (default)'
-  : (SCOUT ? 'scout ON (default)' : 'scout OFF (--scout off — operator probe; planner drafts blind)');
+  : (SCOUT ? 'scout ON (--scout on — operator explicit)' : 'scout OFF (--scout off — operator probe; planner drafts blind)');
 /** every re-invocation this script PRINTS carries the arm — the SHIM_TAIL rule,
  * so a resume never silently drops it and runs the default under the arm's label. */
 const SCOUT_TAIL = scoutArg !== null && !SCOUT ? ' --scout off' : '';
@@ -1218,9 +1222,10 @@ const provider = makeProvider(spec.provider, { apiKey: workerApiKey, model: MODE
 // ONLY when the SPEC named it: a `--model haiku` probe keeps its old reach (the
 // top-level provider), never silently widening into every step's tier. The tier
 // table itself comes from `providerEntry` (src/providers.js) — for openai-api
-// today that means BOTH tiers resolve to the same `deepseek-chat` id (hamr's
-// ruling, PRD 30.7: one secondary provider, not a menu), so a `--model haiku`
-// probe against an openai-api job harmlessly re-resolves to the same model.
+// today that means BOTH tiers resolve to the same `deepseek-flash` id (hamr's
+// ruling, PRD 30.7: one secondary provider, not a menu; swapped from the
+// retired `deepseek-chat`, F171), so a `--model haiku` probe against an
+// openai-api job harmlessly re-resolves to the same model.
 const TIER_MODELS = modelResolution.source === 'spec' ? { ...providerEntry.tiers, sonnet: MODEL } : providerEntry.tiers;
 /** @type {Record<string, any>} */
 const tierCache = {};

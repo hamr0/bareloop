@@ -16,9 +16,19 @@
 // counted demand against bareloop's own catalogue, never an error to swallow.
 //
 //   node scripts/run-author.mjs \
-//     --patient /path/to/repo --answers answers.json --draft specdraft.json \
-//     --verdict green --out /path/to/outdir [--lang js] [--timeout 300000] \
+//     --source /path/to/prepared/tree --answers answers.json --draft specdraft.json \
+//     --verdict green --out /path/to/outdir [--timeout 300000] \
 //     [--budget 2.50]
+//
+//   --source       REPLACES --patient (PRD item 33 M3, ruling 2). It must be a
+//                  PREPARED tree — the `tree/` a source door already froze
+//                  (`scripts/prep-source.mjs`, or `run-interview.mjs`'s own
+//                  Source/Destination questions): `readSourceManifest(dirname
+//                  (source))` must find a manifest of kind 'repo' beside it.
+//                  An unprepared path dies loud, naming the exact command to
+//                  prepare one first; a prepared NON-repo source (a plain
+//                  folder/file/URL) stops with the same honest "no checks yet"
+//                  message `run-interview.mjs` gives (M3 ruling 7 → M4).
 //
 //   --budget       THE AUTHORING CEILING, in dollars, and it has NO DEFAULT. The
 //                  pipeline pays for a survey (up to three attempts plus a
@@ -31,14 +41,14 @@
 //                  unbounded run must be a VISIBLE operator choice, never a state
 //                  arrived at by omission.
 //
-//   --verdict      THE RADIO (PRD v1.57 §1): green | soft-green | hitl. It is the
+//   --verdict      THE RADIO (PRD v1.57 §1): green | soft-green. It is the
 //                  USER's answer, so it is asked rather than defaulted — a
 //                  defaulted class would be this script answering a question the
-//                  person was asked. v1 admits `green`; the other two return the
-//                  honest counted refusal.
+//                  person was asked.
 //   answers.json   {"1": "...", ...}  the picked class's own frozen questions,
 //                  keyed by the LIBRARY's own numbers (`requiredAnswersFor`) —
-//                  green: five, hitl: those five plus the signer's ask. Never a
+//                  green: five, soft-green: those five plus two more (the signed
+//                  rubric card and the frozen calibration set). Never a
 //                  count spelled here: two slots have already been deleted (D13's
 //                  genre confirm, then the repo question hamr dropped once the
 //                  mandatory --patient made it redundant), and a hardcoded number
@@ -46,38 +56,34 @@
 //   specdraft.json the OPERATOR half of a job-v1 spec — budgets, fence, cadence,
 //                  goal, tools, escalation. NO close, NO verdictType: the close is
 //                  what this pipeline authors, and the class comes from --verdict.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+//                  There is no --provider flag either: the scout's and the
+//                  drafter's provider is the draft's OWN `provider` field (PRD
+//                  item 34 L17) — `run-interview.mjs` asks for it and writes it
+//                  in; a draft missing one, or naming one the provider factory
+//                  does not know, dies here loud, listing the known table.
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { dirname, join, resolve, relative, sep } from 'node:path';
+import { createInterface } from 'node:readline';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
-  VERDICT_CLASSES, LIVE_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
+  VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
-import { makeLoopGenerate } from '../src/authorflow.js';
+import {
+  makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM, runConfirmTurn, makeCostBook,
+} from '../src/authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
-import { scanSecrets } from '../src/validate.js';
+import { scanSecrets, redactSecrets } from '../src/validate.js';
+import { detectLanguage } from '../src/detectlang.js';
 import { closeJudges } from '../src/kinds.js';
 import { resolveProvider, makeProvider } from '../src/providers.js';
+import { readSourceManifest } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+  openQuestionLines,
 } from './author-readout.mjs';
 
-// THE AUTHORING PROVIDER, through the ONE table (PRD item 32.2). This script
-// used to construct `AnthropicProvider` by name, twice — once for the drafter and
-// once for the judge — which is the scattering `src/providers.js` exists to stop.
-//
-// NOT YET SELECTABLE, and that is stated rather than implied: authoring still runs
-// on `anthropic-api`, because the drafting floor is a MODEL-TIER rule (PRD v1.36:
-// sonnet minimum) that no other provider has been screened against, and screening
-// it is a paid exercise nobody has run. What item 32 changes here is that the
-// identity now goes through the factory, so admitting a second authoring provider
-// is a table lookup and a flag rather than a rewrite. The remaining gap is logged
-// as a finding, never quietly carried.
-const PROVIDER_NAME = 'anthropic-api';
-// The same tier run-u drafts and works on. The declaration is authored by a
-// model, so the floor is the drafter floor (PRD v1.36: sonnet MINIMUM).
-const MODEL = resolveProvider(PROVIDER_NAME).tiers.sonnet;
 /** the close precheck / seed read spawns real toolchains; the slowest stage is a
  * suite. Headroom, not a budget — and it is passed EXPLICITLY rather than left
  * to a default, because a defaulted cap is a silent second ceiling. */
@@ -86,20 +92,25 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
 const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 
-const patientArg = arg('patient');
+// `--patient` IS GONE (PRD item 33 M3, ruling 2): `--source` replaces it, and
+// must be a PREPARED tree — see the usage comment above. Stopped loud rather
+// than silently ignored, the same rule `--lang`'s removal already applies.
+if (arg('patient') !== null) {
+  die('--patient is no longer a flag — use --source <tree>, the prepared copy a source door produces '
+    + '(scripts/prep-source.mjs, or run-interview.mjs\'s own Source/Destination questions). PRD item 33 M3, ruling 2.');
+}
+const sourceArg = arg('source');
 const answersArg = arg('answers');
 const draftArg = arg('draft');
 const outArg = arg('out');
 const verdictArg = arg('verdict');
-// Same rule as the interview that hands this script its command line: absent takes
-// the default, present-with-no-value stops LOUD. A silently empty language reaches
-// the genre lookup as "" and dies there anyway, but as a genre-data error rather
-// than as the argv typo it is.
-const langArg = arg('lang');
-if (langArg !== null && langArg.trim() === '') {
-  die('--lang was given with no value — pass a language (e.g. `--lang js`), or omit the flag to take the default');
+// `--lang` IS GONE (PRD item 33 M3, ruling 3): language is a FACT of the
+// repository, read off its own manifest, never a flag a person sets. Stopped
+// loud rather than silently ignored, same rule the interview script applies.
+if (arg('lang') !== null) {
+  die('--lang is no longer a flag — language is auto-detected from --source\'s own manifest '
+    + '(package.json/pyproject.toml/setup.py), never asked or set (PRD item 33 M3, ruling 3). Drop --lang and rerun.');
 }
-const LANG = langArg ?? 'js';
 const timeoutArg = arg('timeout');
 const TIMEOUT_MS = timeoutArg === null ? DEFAULT_TIMEOUT_MS : Number(timeoutArg);
 /** NO DEFAULT, deliberately: `null` is "nobody set one" and means UNBOUNDED. It
@@ -109,22 +120,145 @@ const TIMEOUT_MS = timeoutArg === null ? DEFAULT_TIMEOUT_MS : Number(timeoutArg)
  * home a test can reach. */
 const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget'));
 
-if (!patientArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
-  die('usage: node scripts/run-author.mjs --patient <repoPath> --answers <answers.json> --draft <specdraft.json> '
-    + `--verdict <${VERDICT_CLASSES.join('|')}> --out <outdir> [--lang js] [--timeout <ms>] [--budget <usd>]`);
+if (!sourceArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
+  die('usage: node scripts/run-author.mjs --source <tree> --answers <answers.json> --draft <specdraft.json> '
+    + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--timeout <ms>] [--budget <usd>]`);
 }
 // A malformed ceiling dies at the door rather than silently reading as absent.
 if (budgetError) die(budgetError);
 // the menu is handed over enumerated; an unknown value is a typo, and the
 // interview refuses it as one (a LOCKED class is a different answer — it reaches
-// the pipeline and comes back as counted demand)
+// the pipeline and comes back as counted demand). The CHECK stays against the
+// full `VERDICT_CLASSES` (so an off-menu pick reaches the pipeline's counted
+// refusal rather than dying here as a typo); the PRINTED text names only the
+// menu (item 34 L19: nothing customer-facing names an off-menu class).
 const VERDICT = /** @type {string} */ (verdictArg);
-if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${VERDICT_CLASSES.join(' | ')}`);
+if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${MENU_CLASSES.join(' | ')}`);
 if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) die(`--timeout ${timeoutArg} is not a positive number of milliseconds`);
 
-const PATIENT = resolve(/** @type {string} */ (patientArg));
-if (!existsSync(PATIENT)) die(`--patient ${PATIENT} does not exist — the scout reads a repository off the machine, never out of prose`);
+const SOURCE = resolve(/** @type {string} */ (sourceArg));
+if (!existsSync(SOURCE)) die(`--source ${SOURCE} does not exist — the scout reads a prepared source tree off the machine, never out of prose`);
 const OUT = resolve(/** @type {string} */ (outArg));
+
+// ── THE SPINE, BOOTSTRAPPED FIRST — before anything that can refuse, before
+// any provider is resolved or built, and before the API key is even read.
+// Moved here (out of its old position, further down, right before the first
+// paid span) so that EVERY refusal this script can produce — starting with
+// the manifest and language checks immediately below — has somewhere to
+// record itself. A `die()` before this point is still bare stderr+exit(2):
+// those are pure operator/config errors (missing flags, a bad number) with
+// no spine to write into yet and nothing they represent counts as demand.
+mkdirSync(OUT, { recursive: true });
+const runid = Date.now().toString(36);
+const spineFile = join(OUT, `author-${runid}.jsonl`);
+/** the spine: one JSONL line per event, appended. This runner owns it, exactly
+ * as the shell owns `runJob`'s — `authorjob.js` emits nothing itself.
+ * @param {string} type @param {any} [data] */
+const emit = (type, data = {}) => {
+  appendFileSync(spineFile, `${JSON.stringify({ type, ts: new Date().toISOString(), ...data })}\n`);
+};
+/** @param {string} name @param {any} body */
+const writeOut = (name, body) => {
+  const f = join(OUT, name);
+  writeFileSync(f, `${JSON.stringify(body, null, 2)}\n`);
+  return f;
+};
+
+// ── --SOURCE MUST BE A PREPARED TREE (PRD item 33 M3, ruling 2) ─────────────
+// `--source` replaced `--patient`; it is no longer just "a repository on the
+// machine" — it must be the FROZEN COPY a source door already produced
+// (`scripts/prep-source.mjs`, or `run-interview.mjs`'s own Source/Destination
+// questions), so `dirname(SOURCE)` (the door's own `into`) carries a
+// `source.json` manifest right beside `tree/`, which IS `SOURCE` here. A
+// config error (never prepared, or a manifest that cannot be read) dies
+// loud, before the API key is even read — same standing as every other
+// argv/config `die()` in this file.
+const manifestRead = await readSourceManifest(dirname(SOURCE));
+if (manifestRead.stop !== null) {
+  die(`--source ${SOURCE}: ${manifestRead.code} — ${manifestRead.stop}`);
+}
+if (!manifestRead.present) {
+  die(`--source ${SOURCE} was never prepared through the source front door — no source.json beside it. Prepare it first:\n`
+    + '  node scripts/prep-source.mjs --source <path-or-url> --into <dir>\n'
+    + 'then rerun this script with --source <dir>/tree.');
+}
+// A manifest that EXISTS but names a NON-repo kind (a plain folder/file/URL)
+// is a different thing entirely: the source was prepared correctly, and
+// there is simply no check catalogue for it yet (M3 ruling 7 → M4). PRD item
+// 33 M3 piece 4, step S6 (D5 = A): that honest stop no longer lands HERE —
+// it MOVES to after the confirm turn (below, past the key check and the
+// interactive seam), because a plain-folder job still gets a confirm turn
+// (over the $0 seed listing, no scout) before the "no checks yet" gap is
+// the last word. `IS_REPO_SOURCE` gates the language-detection block right
+// below (a plain folder has no genre to detect) and the branch further down
+// that decides which of the two paths this run actually takes.
+const IS_REPO_SOURCE = manifestRead.manifest.kind === 'repo';
+
+// ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
+// $0, no provider, run BEFORE the API key is even read — this script must
+// reach here on `--source` alone, with no `--lang` needed. Run against the
+// PREPARED TREE, never the original patient the door froze it from. Same
+// four outcomes `run-interview.mjs` reads (that script normally catches the
+// two that stop something first, but this script is also runnable standalone
+// against a hand-written answers.json/specdraft.json, so it repeats the same
+// two early stops rather than relying on the interview having run first):
+//   - `ambiguous`             — two languages' manifests at the same level;
+//                               stopped here with the honest list (the
+//                               confirm-turn UI to ask a person is later M3).
+//                               An OPERATOR FIX (point --source at the right
+//                               subfolder), never demand — no spine record.
+//   - `language-unsupported`  — a known manifest with no genre data yet;
+//                               stopped here, before the API key check, so a
+//                               job that can never be authored costs nothing.
+//                               COUNTED DEMAND: emitted through the same
+//                               `refusalEvents()` channel every other refusal
+//                               in this script uses, so it folds into the
+//                               ledger's admission count (src/ledger.js
+//                               `classifyIncidents`) instead of vanishing.
+//   - `resolved` / `no-code-job` — carried into `lang` below exactly where
+//     the old `--lang` value flowed; `no-code-job` reads as `'none-detected'`,
+//     which the existing GENRE_LANGUAGES check further down refuses on its
+//     own (M3 ruling 7: a plain-folder job is not an error here, it is simply
+//     not a code-genre job this pipeline can close yet).
+// Only meaningful for a REPO source (PRD item 33 M3 piece 4, step S6): a
+// plain folder has no genre to detect and no code-shaped manifest to walk —
+// `LANG`/`langResult` stay at their "nothing to see" values and the confirm
+// turn further down runs with `isRepo: false` (D5), which is what already
+// skips the repo-only "worse than before" ask and the language pick alike.
+let langResult = /** @type {ReturnType<typeof detectLanguage>|null} */ (null);
+let LANG = 'none-detected';
+if (IS_REPO_SOURCE) {
+  langResult = detectLanguage(SOURCE);
+  // AMBIGUOUS NO LONGER DIES (PRD item 33 M3 piece 4, step S4): the confirm
+  // turn's own $0 half asks the person which language this job is about,
+  // BEFORE the scout (D7) — `langResult` travels into `authorCloseForJob`
+  // below exactly as it is here, and its `ambiguous` shape is what triggers
+  // that ask. `LANG` below is a placeholder for this outcome only: whatever
+  // the person picks interactively is what actually lands in `closeDecl.lang`.
+  if (langResult.kind === 'language-unsupported') {
+    const r = langResult.refusal;
+    console.log(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
+    console.log(r.detail);
+    for (const o of r.options) console.log(`  · ${o}`);
+    for (const e of refusalEvents(r)) emit(e.type, e);
+    console.log(`\nRecorded as admission demand in the spine: ${spineFile}`);
+    // A stop this early has no `authored`/`signing` result to fall through to —
+    // the rest of this file's flow assumes a resolved language, a provider and
+    // a spec draft, none of which exist yet. `process.exitCode` plus falling
+    // through would require wrapping everything below in a guard, which is the
+    // rewrite the task asked not to make; `process.exit(1)` is kept here,
+    // deliberately, rather than reworked into that shape.
+    process.exit(1);
+  }
+  LANG = langResult.kind === 'resolved' ? langResult.lang
+    : langResult.kind === 'ambiguous' ? langResult.candidates[0]
+      : 'none-detected';
+  if (langResult.kind === 'ambiguous') {
+    console.log(`Source has more than one supported language's manifest at the same (nearest) level: `
+      + `${langResult.candidates.join(', ')} (in ${langResult.dir}).`);
+    console.log('This will be asked, interactively, in the confirm turn below — before any paid call.');
+  }
+}
 
 /** @param {string} label @param {string} file */
 const readJson = (label, file) => {
@@ -145,6 +279,32 @@ if (carried.length) {
     + 'The close is what this pipeline authors and the class comes from --verdict; a draft that names either would be '
     + 'silently overwritten, and a signed spec that does not contain what its author typed is the failure nobody sees.');
 }
+
+// THE AUTHORING PROVIDER (PRD item 34 L17) — resolved from the DRAFT's OWN
+// `provider` field, the same rule `scripts/run-u.mjs` applies to the worker
+// (`resolveProvider(spec.provider)`, no CLI flag, no default): authoring used
+// to hardcode `anthropic-api` for both the scout and the drafter, which is
+// exactly the scattering `src/providers.js`'s factory exists to stop. The
+// draft interview (`run-interview.mjs`) now asks for a provider the same way
+// it asks for everything else the operator owns; this script just resolves
+// whatever it wrote down. Missing or unrecognized dies here, loud, the same
+// message `resolveProvider` throws (it names the known table).
+//
+// STILL UNPROVEN LIVE past Anthropic: the drafting floor (PRD v1.36:
+// sonnet-tier minimum) has only ever run against `anthropic-api` in practice.
+// A DeepSeek draft is legal here today, but proving it is M3's DeepSeek proof
+// run, not this script.
+const providerEntry = (() => {
+  try { return resolveProvider(draft?.provider); } catch (e) { return die(/** @type {Error} */ (e).message); }
+})();
+const PROVIDER_NAME = /** @type {string} */ (draft.provider);
+// The same tier run-u drafts and works on. The declaration is authored by a
+// model, so the floor is the drafter floor (PRD v1.36: sonnet MINIMUM).
+const MODEL = /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).tiers.sonnet;
+// spec.baseUrl (PRD item 28, ruling (d)) — the same forwarding rule run-u
+// applies: forwarded only when the draft names one, every provider
+// constructor defaults it on its own when absent.
+const baseUrl = typeof draft?.baseUrl === 'string' ? draft.baseUrl : undefined;
 
 // THE JUDGE THIS RUN'S OWN WORKER RESOLVES TO (PRD item 32.1) — resolved ONCE,
 // here, from the DRAFT, and reused for BOTH the compose-time stamp (the
@@ -180,7 +340,7 @@ const draftJudge = resolveDraftJudge(draft);
 
 // Secrets load from the environment; they never enter argv (a command line is
 // world-readable on /proc) and they are never printed.
-const AUTHOR_ENV_KEY = resolveProvider(PROVIDER_NAME).envKey;
+const AUTHOR_ENV_KEY = /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).envKey;
 const apiKey = process.env[AUTHOR_ENV_KEY];
 if (!apiKey) { console.error(`${AUTHOR_ENV_KEY} not set (secrets load from the environment — never the tree, never argv)`); process.exit(2); }
 /** The judge's key follows the RESOLVED judge provider's own env var, with
@@ -190,22 +350,6 @@ if (!apiKey) { console.error(`${AUTHOR_ENV_KEY} not set (secrets load from the e
 const judgeKeyFor = (/** @type {string} */ providerName) => (
   process.env.JUDGE_API_KEY ?? process.env[resolveProvider(providerName).envKey]
 );
-
-mkdirSync(OUT, { recursive: true });
-const runid = Date.now().toString(36);
-const spineFile = join(OUT, `author-${runid}.jsonl`);
-/** the spine: one JSONL line per event, appended. This runner owns it, exactly
- * as the shell owns `runJob`'s — `authorjob.js` emits nothing itself.
- * @param {string} type @param {any} [data] */
-const emit = (type, data = {}) => {
-  appendFileSync(spineFile, `${JSON.stringify({ type, ts: new Date().toISOString(), ...data })}\n`);
-};
-/** @param {string} name @param {any} body */
-const writeOut = (name, body) => {
-  const f = join(OUT, name);
-  writeFileSync(f, `${JSON.stringify(body, null, 2)}\n`);
-  return f;
-};
 
 /** F6 — an unpriced call makes the TOTAL unknown, and unknown is reported as
  * UNKNOWN. `?? 0` launders unknown into $0, and a bare floor that reads as exact
@@ -224,8 +368,8 @@ const costLine = (cost) => {
   return `$${cost.costUsd.toFixed(6)} across ${cost.calls?.length ?? 0} call(s) (spend complete)`;
 };
 
-console.log(`== close-authoring, run ${runid} ==  ${MODEL}`);
-console.log(`  patient  ${PATIENT}`);
+console.log(`== close-authoring, run ${runid} ==  ${PROVIDER_NAME}/${MODEL}`);
+console.log(`  source   ${SOURCE}`);
 console.log(`  verdict  ${VERDICT}  (the USER's pick — this run authors a close that promises to stay at or below it)`);
 console.log(`  lang     ${LANG}`);
 console.log(`  draft    ${resolve(/** @type {string} */ (draftArg))} (job "${draft?.job ?? '?'}")`);
@@ -237,8 +381,8 @@ console.log(`  timeout  ${TIMEOUT_MS}ms per close stage`);
 console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL });
-emit('author-start', { runid, patient: PATIENT, lang: LANG, verdictType: VERDICT, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
+const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL, baseUrl });
+emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
 // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
 //
@@ -321,6 +465,192 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   });
 }
 
+// ── THE ONE INTERACTIVE SEAM (PRD item 33 M3 piece 4, step S4) ───────────────
+// The confirm turn (`runConfirmTurn`, wired below through `authorCloseForJob`)
+// is the ONLY interactive part of this script — the survey, the declaration
+// loop and D9's gates are all unattended. `terminal: false` for the same
+// reason `run-interview.mjs` uses it (that script's own `nextLine`,
+// scripts/run-interview.mjs:142-160): the TTY's own canonical mode already
+// gives backspace and echo, and a piped stdin (a scripted session, a test)
+// behaves identically either way — this is copied from that idiom rather
+// than re-invented.
+const rl = createInterface({ input: process.stdin, terminal: false });
+const rlLines = rl[Symbol.asyncIterator]();
+/** @returns {Promise<string|null>} the next line, or null at end of input —
+ * the same "input ended" signal `run-interview.mjs`'s own `nextLine` uses. */
+const nextLine = async () => {
+  const { value, done } = await rlLines.next();
+  if (done) { console.log(); return null; }
+  // a TTY echoes what a person types; a pipe does not, and a scripted
+  // session is being logged by definition — same rule, same reason.
+  if (!process.stdin.isTTY) console.log(redactSecrets(String(value)));
+  return String(value);
+};
+/** one free-text answer, possibly several lines; a blank line ends it.
+ * `allowBlank` lets the FIRST line be blank — `worseThanBefore`'s "nothing
+ * beyond Guardrails" is a legal, non-required answer, unlike every other
+ * free-text step below.
+ * @param {boolean} allowBlank @returns {Promise<string|null>} */
+const readFreeText = async (allowBlank) => {
+  /** @type {string[]} */
+  const got = [];
+  for (;;) {
+    process.stdout.write(got.length ? '  … ' : '  > ');
+    const l = await nextLine();
+    if (l === null) return got.length ? redactSecrets(got.join('\n').trim()) : null;
+    if (String(l).trim() === '') { if (got.length || allowBlank) break; continue; }
+    got.push(String(l));
+  }
+  // SCRUBBED AT CAPTURE (same rule as run-interview.mjs's own readAnswer): no
+  // raw keystroke reaches anywhere — a prompt, a spine record, a file on
+  // disk — by a route that does not go through the one redactor first.
+  return redactSecrets(got.join('\n').trim());
+};
+/** `runConfirmTurn`'s own `ask` seam — one async function from "what's being
+ * asked" to the person's answer, or `null` meaning input ended (never a
+ * process exit here: this is a library call, and the library decides what a
+ * `null` means at each step — `confirm-abandoned` for every kind except the
+ * menu's `start-over`, which is a distinct explicit pick).
+ * @param {{kind: string, [k: string]: any}} step @returns {Promise<string|null>} */
+const ask = async (step) => {
+  console.log('');
+  if (step.kind === 'worseThanBefore') {
+    console.log(step.field.prompt);
+    console.log('  (press Enter on a blank line for "nothing beyond Guardrails")');
+    return readFreeText(true);
+  }
+  if (step.kind === 'language') {
+    console.log(step.field.prompt);
+    for (const c of step.candidates ?? []) console.log(`  · ${c}`);
+    return readFreeText(false);
+  }
+  if (step.kind === 'menu') {
+    const p = step.plan ?? {};
+    console.log('THE PLAN — read before you pick:');
+    console.log(`  goal          ${JSON.stringify(p.goal ?? '')}`);
+    console.log('  checks it will compose:');
+    for (const c of p.checks ?? []) console.log(`    · ${c}`);
+    console.log('  protections (always-on guards, never named in the goal):');
+    for (const g of p.protections ?? []) console.log(`    · ${g}`);
+    if ((p.notChecked ?? []).length) {
+      console.log('  you asked for these, but nothing checks them:');
+      for (const n of p.notChecked ?? []) console.log(`    · ${n}`);
+    }
+    if ((p.questions ?? []).length) {
+      console.log('  open questions:');
+      for (const q of p.questions ?? []) console.log(`    ? ${q}`);
+    }
+    const keys = /** @type {(keyof typeof CONFIRM_MENU)[]} */ (Object.keys(CONFIRM_MENU));
+    keys.forEach((k, i) => console.log(`  ${i + 1}. ${CONFIRM_MENU[k]}`));
+    for (;;) {
+      process.stdout.write(`  pick [1-${keys.length} or the word]: `);
+      const l = await nextLine();
+      if (l === null) return null;
+      const raw = String(l).trim().toLowerCase();
+      const byIndex = keys[Number(raw) - 1];
+      if (byIndex) return byIndex;
+      if (/** @type {string[]} */ (keys).includes(raw)) return raw;
+      console.log(`  not a choice — type a number 1-${keys.length}, or one of: ${keys.join(', ')}`);
+    }
+  }
+  if (step.kind === 'goal') {
+    console.log('Type the goal sentence yourself — it REPLACES the drafted one; the checks and protections stand.');
+    return readFreeText(false);
+  }
+  if (step.kind === 'fix') {
+    console.log('What should change? Describe the fix — it feeds the next round (up to 2 rounds total).');
+    return readFreeText(false);
+  }
+  return null;
+};
+/** the confirm turn's OWN model boundary (PRD item 33 M3 ruling 5 addendum) —
+ * bound to `CONFIRM_SYSTEM`, never the authoring `generate` above (that one
+ * is bound to `AUTHOR_SYSTEM`). Same provider instance, a different system
+ * prompt: reusing `generate` would run the wrong system prompt silently. */
+const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
+
+// ── PLAIN-FOLDER SOURCE: NO SCOUT, A CONFIRM TURN OVER THE SEED LISTING, THEN
+// THE HONEST "NO CHECKS YET" STOP (PRD item 33 M3 piece 4, step S6, D5 = A) ──
+// This branch NEVER falls through to the repo-shaped try/catch below —
+// `process.exit(1)` at its end (or inside `runConfirmTurn`'s own abandon
+// paths) guarantees that, the same way every other early stop in this file
+// does. A plain folder gets no scout (its register is code-only,
+// `src/authorscout.js`) — the listing below is a mechanical directory walk
+// of the FROZEN tree, never survey facts, and the confirm turn runs with
+// `isRepo: false` (skips the repo-only "worse than before" ask and the
+// language pick alike, exactly as `runConfirmTurn` already does for a
+// repo-with-resolved-language job).
+if (!IS_REPO_SOURCE) {
+  /** a $0, no-git listing of the frozen tree — the same "files that actually
+   * exist" idea `buildSeedListing` gives a repo job, built by hand here
+   * because there is no git seedRef to list from. Capped the same order of
+   * magnitude as the repo listing's own LIST_CAP so a very large plain
+   * folder cannot blow the prompt open.
+   * @param {string} dir @param {number} cap @returns {string[]} */
+  const listPlainFolder = (dir, cap = 2000) => {
+    /** @type {string[]} */
+    const out = [];
+    const walk = (/** @type {string} */ d) => {
+      if (out.length >= cap) return;
+      for (const entry of readdirSync(d, { withFileTypes: true })) {
+        if (out.length >= cap) return;
+        const full = join(d, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else out.push(relative(SOURCE, full).split(sep).join('/'));
+      }
+    };
+    walk(dir);
+    return out;
+  };
+  const files = listPlainFolder(SOURCE);
+  const listingBlock = [
+    'FILES THAT ACTUALLY EXIST IN THE FROZEN TREE — listed mechanically (a plain directory walk,',
+    'never a survey): a path not in this list DOES NOT EXIST, whatever it sounds like it should be called.',
+    '',
+    ...files.map((f) => `  ${f}`),
+  ].join('\n');
+  onPhase('confirm', {});
+  const confirmBook = makeCostBook({ ceilingUsd: CEILING_USD, onCall });
+  const confirm = await runConfirmTurn({
+    verdictType: VERDICT, answers, questions: LIVE_CLASSES.includes(VERDICT) ? questionsFor(VERDICT) : null,
+    facts: null, listing: listingBlock, writeScope: null, isRepo: false, lang: LANG,
+    generate: confirmGenerate, book: confirmBook, ask, onPhase,
+  });
+  onPhase('confirm-turn-done', { ok: confirm.ok, stop: confirm.stop, rounds: confirm.rounds });
+  writeOut('authored.json', {
+    ok: false, confirmed: confirm.ok ? confirm.accepted : null,
+    stop: confirm.ok ? 'non-code-source' : confirm.stop, cost: confirm.cost, reds: confirm.reds,
+  });
+  if (!confirm.ok) {
+    // the confirm turn itself did not reach a signable plan (abandoned, a
+    // cap/pricing stop, a provider/artifact red, or the person chose to
+    // start over) — THAT is the stop this run ends on, never silently
+    // overwritten by the "no checks yet" one below, which only applies to a
+    // plan the person actually confirmed.
+    console.log(`\n${String(confirm.stop).toUpperCase()} — the confirm turn did not produce a signed plan.`);
+    for (const red of confirm.reds ?? []) {
+      console.log(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
+      emit('job-red', red);
+    }
+    emit('author-end', { outcome: 'not-authored', stop: confirm.stop });
+    console.log(`\nspine      ${spineFile}`);
+    process.exit(1);
+  }
+  // the person CONFIRMED a plan for a job this build still cannot close — the
+  // SAME honest stop this used to give before any question was even asked,
+  // now given after the confirm turn instead (D5).
+  console.log(`Source is not a code repository — it is a plain ${manifestRead.manifest.kind} job. bareloop has no checks for this kind`);
+  console.log('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build). Nothing was authored.');
+  const red = {
+    code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',
+    detail: `--source ${SOURCE} freezes a "${manifestRead.manifest.kind}" job — the close catalogue is code-genre only today.`,
+  };
+  emit('job-red', red);
+  emit('author-end', { outcome: 'not-authored', stop: 'non-code-source' });
+  console.log(`\nspine      ${spineFile}`);
+  process.exit(1);
+}
+
 // ── EVERYTHING PAID FOR, INSIDE ONE CATCH ────────────────────────────────────
 // The span from here to the end of the main flow is the fallible one: a real
 // scout, a real model call, and a real toolchain per close stage. When it threw,
@@ -350,7 +680,7 @@ try {
     judgeModel: draftJudge.model,
     answers,
     verdictType: VERDICT,
-    repoPath: PATIENT,
+    repoPath: SOURCE,
     lang: LANG,
     // the picked class's own frozen set — a LOCKED class never reaches here, it
     // refuses at admission before its questions are ever asked, and asking for a
@@ -358,6 +688,12 @@ try {
     // so admitting a class (softgreen module 3 did exactly that) does not leave
     // this line silently handing its questions back as `null`.
     questions: LIVE_CLASSES.includes(VERDICT) ? questionsFor(VERDICT) : null,
+    // Q2 IS GONE (PRD item 33 M3 piece 3) — the operator's own `writeScope`
+    // (Destination's proven fence, `run-interview.mjs`) is what tells the
+    // composer what may change and what is read-only now; a draft with no
+    // fence is not this script's business to invent one for, so an absent or
+    // malformed field travels as `null` and `authorPrompt` simply states nothing.
+    writeScope: Array.isArray(draft.writeScope) ? draft.writeScope : null,
     provider,
     generate: makeLoopGenerate(provider),
     // ONE number, both paid seams (the survey's and the declaration loop's) — the
@@ -366,6 +702,13 @@ try {
     // …and the two reporting seams. The library emits nothing itself (the
     // `runJob` → `runPlan` shape): this runner owns the spine and the terminal.
     onPhase, onCall,
+    // PRD item 33 M3 piece 4 (step S4) — the confirm turn. `isRepo: true` is
+    // safe unconditionally here: the manifest.kind !== 'repo' stop above
+    // (before the key is even read) already refused every non-repo source,
+    // so every path that reaches this call is a repo job. `langResult`
+    // travels through unchanged — its `ambiguous` shape is what the confirm
+    // turn's own $0 half (D7) asks about, before the scout.
+    ask, confirmGenerate, isRepo: true, langResult,
   });
   const authoredFile = writeOut('authored.json', authored);
   emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });
@@ -373,6 +716,20 @@ try {
   console.log(`authoring  ${authored.ok ? 'OK' : 'NOT OK'}  stop=${authored.stop ?? 'none'}  seed=${authored.seedRef ?? 'unread'}`);
   console.log(`cost       ${costLine(authored.cost)}`);
   console.log(`written    ${authoredFile}`);
+
+  // THE CONFIRM TURN'S OWN STOPS (PRD item 33 M3 piece 4, step S4) — neither is
+  // a refusal (`authored.refusal` is null on both) and neither is a red
+  // (`authored.reds` is empty on both), so without this they would otherwise
+  // fall through the generic "no refusal and no reds" line below. `author-end`
+  // still records the stop either way (the generic branch further down carries
+  // it through `stop: authored.stop` regardless) — this is only the FRIENDLIER
+  // console line, said once, in the person's own words.
+  if (authored.stop === 'confirm-abandoned' || authored.stop === 'confirm-restart') {
+    console.log(`\n${authored.stop.toUpperCase()} — the confirm turn did not produce a signed plan.`);
+    console.log(authored.stop === 'confirm-abandoned'
+      ? '  input ended before you answered — nothing was signed, nothing runs, and nothing beyond this line is written.'
+      : '  you chose to start over — rerun the interview from the beginning with the answers you want to change.');
+  }
 
   // THE GOVERNANCE STOP, read out on BOTH paths. A money stop can land with a
   // signable close already authored and measured (`ok:true` — the cap tripped
@@ -443,6 +800,19 @@ try {
     emit('author-end', { outcome: 'not-authored', stop: authored.stop });
     process.exitCode = 1;
   } else {
+    // PRD item 33 M3, ruling 5 addendum (step S4): the confirm turn drafts the
+    // signed goal sentence and the person confirms/fixes it there — the
+    // interview's own separate goal question is what this REPLACES (D2's
+    // "the confirmed goal replaces it"). `goal` stays an OPERATOR field
+    // (D2: it does not join `AUTHORED_SPEC_FIELDS`), so it is set on the
+    // DRAFT here, before assembling, exactly where the interview's own
+    // answer would otherwise have landed. Absent only if this authoring run
+    // predates the confirm turn's own `ask` wiring (`authored.confirmed` is
+    // `null` for every caller that runs no confirm turn) — the draft's own
+    // goal (if any) then stands untouched.
+    if (authored.confirmed?.goal) {
+      draft.goal = redactSecrets(String(authored.confirmed.goal));
+    }
     // ── 2. the operator's half + the authored half → one spec ──────────────────
     const spec = assembleSpec(draft, authored);
     const specFile = writeOut('resolved-spec.json', spec);
@@ -455,12 +825,13 @@ try {
     // and a readout no test can reach is a readout nothing checks.
     for (const l of declarationLines(spec)) console.log(l);
     // …and, for a close that JUDGES, the two artifacts the judge is signed with.
-    // NAMED DEFERRAL, said out loud rather than implied: this script is
-    // non-interactive (answers in, files out), so it does not offer the D5 fix
-    // step — the proposal is signed AS PROPOSED. The library seam exists
-    // (`authorCloseForJob({signerFix})`) and the interactive surface is the
-    // interview's and the UI's (N6), which is the same split the guard battery
-    // already lives under here: shown, not edited at this surface.
+    // NAMED DEFERRAL, said out loud rather than implied: this script's ONE
+    // interactive seam is the confirm turn above (PRD item 33 M3 piece 4,
+    // step S4) — it does not ALSO offer the D5 fix step here, so the
+    // proposal is signed AS PROPOSED. The library seam exists
+    // (`authorCloseForJob({signerFix})`) and the interactive surface for IT
+    // is the interview's and the UI's (N6), which is the same split the
+    // guard battery already lives under here: shown, not edited at this surface.
     const rubric = rubricLines(spec);
     if (rubric.length) {
       for (const l of rubric) console.log(l);
@@ -514,7 +885,7 @@ try {
         console.log('  this is the only gate that spends money, and it runs after every free one.');
       }
       const signing = await prepareSigning({
-        spec, workdir: PATIENT, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
+        spec, workdir: SOURCE, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
         // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
         // the spec that just passed above would fail the gate that signs it
         shellCapUsd: spec.budgetUsd,
@@ -613,6 +984,7 @@ try {
         console.log('\nSIGNING PREPARED — NOT SIGNED. This script stops here, by design.');
         console.log(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
         console.log('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
+        for (const l of openQuestionLines(authored.confirmed)) console.log(`  ${l}`);
         emit('author-end', { outcome: 'prepared', specHash: hash });
       }
     }
@@ -651,6 +1023,13 @@ try {
   // leak). A crash is none of those: it is the run failing to reach a verdict at
   // all, and sharing an exit code with a refusal would file a bug as a result.
   process.exitCode = 4;
+} finally {
+  // `rl.close()` here, not inline at every exit path above: this file has
+  // MANY of those (a refusal, a failed gate, a signed readout, a crash), and
+  // a reader left open on ANY of them is a process that never lets go of
+  // stdin. BEST-EFFORT (F70's rule again) — closing the interactive seam must
+  // never take the readout it follows down with it.
+  try { rl.close(); } catch { /* see onPhase */ }
 }
 
 // The hard line, on the artifacts this run just wrote. Count and PATH only —

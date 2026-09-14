@@ -23,9 +23,9 @@
 // on rather than catch.
 
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile, lstat, stat, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
-import { dirname, join, resolve, sep, basename } from 'node:path';
+import { existsSync, lstatSync } from 'node:fs';
+import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
+import { dirname, join, relative, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
 import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
@@ -75,6 +75,69 @@ const MAX_SAME_DAY = 99;
 
 /** @param {string} code @param {string} stop @returns {SourceRefusal} */
 const refuse = (code, stop) => ({ stop, code });
+
+/**
+ * Walk from `startDir` upward — inclusive — to the NEAREST ancestor whose own
+ * directory carries a `.git` entry, whether that entry is a real repo
+ * directory or a linked-worktree/submodule FILE (the caller decides what a
+ * file means for it). `null` when no ancestor up to the filesystem root has
+ * one. ONE helper for "find the repo boundary walking up", shared by
+ * {@link looksLikeRepoSource} and `prepareSource`'s own authoritative routing
+ * below (PRD item 33 M3 ruling 2 addendum, 2026-09-13: a Source that is a
+ * SUBFOLDER inside a git repo is a repo job, not a plain-folder one — the
+ * boundary is the nearest ancestor's `.git`, never only a `.git` sitting
+ * directly inside Source itself) and reused by `src/detectlang.js`'s own
+ * upward walk (`walkChain`), which only needs the boundary directory, not
+ * which kind of `.git` it is — never three copies of this rule.
+ * @param {string} startDir an absolute directory to start the walk FROM
+ * @returns {{dir: string, isFile: boolean}|null}
+ */
+export function nearestGitAncestor(startDir) {
+  let dir = resolve(startDir);
+  for (;;) {
+    const dotGit = join(dir, '.git');
+    if (existsSync(dotGit)) {
+      let isFile = false;
+      try { isFile = !lstatSync(dotGit).isDirectory(); } catch { /* raced away between exists and lstat — treated as a directory below, the pre-existing walk's own behaviour */ }
+      return { dir, isFile };
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null; // reached the filesystem root
+    dir = parent;
+  }
+}
+
+/**
+ * A CHEAP peek (a stat, never a read) at whether `source` is going to turn
+ * out to be a REPO source — the ONE rule for that question, shared by
+ * `prepareSource` (which routes the destination check below before the real
+ * walk further down decides authoritatively) and `scripts/run-interview.mjs`
+ * (PRD item 33 M3 ruling 2), which has to know BEFORE Source is even frozen
+ * whether Destination fills the write fence or a delivery directory. Never a
+ * second, hand-typed copy of this test: a URL is never a repo; a local path
+ * is a repo source only when it is a DIRECTORY, and the NEAREST ancestor
+ * (Source itself, or an ancestor above it — ruling 2's 2026-09-13 addendum)
+ * carries a `.git` DIRECTORY. A nearest `.git` that is a FILE (a linked
+ * worktree or a submodule) is NOT repo-like here — the real walk below
+ * refuses `source-is-linked-worktree` for that case, and this peek must
+ * agree closely enough to route the destination question correctly rather
+ * than offer the write-fence wording for a source that is about to be
+ * refused. An unreadable path is reported properly by the real walk; this
+ * peek only has to agree with that walk closely enough to route correctly,
+ * never to replace it.
+ * @param {string} source
+ * @returns {boolean}
+ */
+export function looksLikeRepoSource(source) {
+  if (/^https?:\/\//i.test(source)) return false;
+  try {
+    const abs = resolve(source);
+    const st = lstatSync(abs);
+    if (!st.isDirectory()) return false;
+    const found = nearestGitAncestor(abs);
+    return found !== null && !found.isFile;
+  } catch { return false; }
+}
 
 /** @param {Buffer} buf @returns {boolean} */
 function hasNulByte(buf) {
@@ -351,22 +414,14 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
     return refuse('into-exists', `${intoAbs} already exists — a source door writes a FRESH tree, never reuses one (the export worktree rule)`);
   }
   const isUrl = /^https?:\/\//i.test(source);
-  // a CHEAP peek (a stat, never a read) at whether this source is going to
-  // turn out to be a repo — needed here, before the source is actually
-  // walked below, because a repo source's destination takes a DIFFERENT path
-  // (the write-fence recording above) than every other kind's (the directory
-  // proof). The real walk below makes the authoritative kind determination
-  // (and refuses source-is-linked-worktree when `.git` is a file); this peek
+  // needed here, before the source is actually walked below, because a repo
+  // source's destination takes a DIFFERENT path (the write-fence recording
+  // above) than every other kind's (the directory proof). The real walk
+  // below makes the authoritative kind determination (and refuses
+  // source-is-linked-worktree when `.git` is a file); `looksLikeRepoSource`
   // only has to agree with it closely enough to route the destination check
   // correctly, and it does — both read the same `.git` existence test.
-  let looksLikeRepoSource = false;
-  if (!isUrl) {
-    try {
-      const peekAbs = resolve(source);
-      const peekStat = await lstat(peekAbs);
-      looksLikeRepoSource = peekStat.isDirectory() && existsSync(join(peekAbs, '.git'));
-    } catch { /* an unreadable source is reported properly by the real walk below */ }
-  }
+  const isRepoLike = looksLikeRepoSource(source);
   // hamr's ruling (PRD item 33): source AND destination are proven at job
   // start, $0 — and review finding #2 sharpens WHEN: before `into` is
   // created, never after, so a refused destination leaves nothing on disk
@@ -374,7 +429,7 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   // its result). Order matters here: this runs before any source is read,
   // fetched, or walked.
   if (destination !== undefined) {
-    if (looksLikeRepoSource) {
+    if (isRepoLike) {
       if (typeof destination !== 'string' || destination.length === 0) {
         return refuse('destination-invalid', 'destination must be a non-empty value — a repo source records it as the declared write fence, wired into writeScope in a later milestone');
       }
@@ -384,7 +439,7 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
     }
   }
 
-  /** @type {{kind: 'url'|'file'|'folder'|'repo', files: {rel: string, abs?: string, buf?: Buffer, symlinkTarget?: string}[], root?: string, finalUrl?: string}} */
+  /** @type {{kind: 'url'|'file'|'folder'|'repo', files: {rel: string, abs?: string, buf?: Buffer, symlinkTarget?: string}[], root?: string, finalUrl?: string, sourceSubdir?: string}} */
   let frozen;
 
   if (isUrl) {
@@ -429,22 +484,54 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
       // patients-are-copies rule), and gets the same `output/`, manifest,
       // destination and copy-out every other source gets. Its own guards
       // (the input stays untouched) arrive with M4.
-      const dotGit = join(sourceAbs, '.git');
-      let isRepo = false;
-      if (existsSync(dotGit)) {
+      //
+      // RULING 2 ADDENDUM (hamr, 2026-09-13, option A): a Source that is a
+      // SUBFOLDER inside a git repo IS a repo job — the boundary is the
+      // NEAREST ancestor's `.git`, found by walking UP from Source, never
+      // only a `.git` sitting directly inside Source itself (a monorepo
+      // package like `myrepo/packages/api` used to fall to the plain-folder
+      // path below, which has no checks yet and would hit untracked
+      // `node_modules` symlinks as a refusal, F164's class). The WHOLE
+      // repo's tracked files are frozen — `listRepoFiles(repoRoot)`, not just
+      // the subfolder — exactly as for a repo-ROOT source today.
+      const found = nearestGitAncestor(sourceAbs);
+      if (found !== null && found.isFile) {
         // a `.git` FILE (a linked worktree or a submodule) points its gitdir
         // somewhere else entirely — copying it would aim every git command,
         // the seed commit included, at the ORIGINAL repo. Refused, never
-        // followed, for the same reason a symlink is.
-        if (!(await lstat(dotGit)).isDirectory()) {
-          return refuse('source-is-linked-worktree', `${source}/.git is a file, not a directory — this is a linked worktree or a submodule, whose real git directory lives elsewhere; point the door at the repo itself (a copy would silently commit into the original)`);
-        }
-        isRepo = true;
+        // followed, for the same reason a symlink is. `found.dir` is the
+        // ancestor that actually carries the file — Source itself when
+        // Source IS that ancestor, an ancestor ABOVE Source otherwise.
+        return refuse('source-is-linked-worktree', `${found.dir}/.git is a file, not a directory — this is a linked worktree or a submodule, whose real git directory lives elsewhere; point the door at the repo itself (a copy would silently commit into the original)`);
       }
+      const isRepo = found !== null;
       if (isRepo) {
-        const walked = await listRepoFiles(sourceAbs);
+        const repoRoot = /** @type {{dir: string}} */ (found).dir;
+        const walked = await listRepoFiles(repoRoot);
         if (walked.stop !== null) return walked;
-        frozen = { kind: 'repo', root: sourceAbs, files: walked.files };
+        // Source's own path relative to the repo root — '' when Source IS
+        // the repo root, a real subpath (e.g. "packages/api") when it is a
+        // subfolder. Recorded in the manifest (below) for later use; nothing
+        // downstream reads it yet — the fence/scope wiring is a later piece.
+        const sourceSubdir = relative(repoRoot, sourceAbs).split(sep).join('/');
+        // hamr's ruling A (PRD item 34 loose end, 2026-09-13, live-proven at
+        // $0): the ruling-2 addendum above freezes the WHOLE repo whenever
+        // Source is a subfolder, but `listRepoFiles` only ever returns
+        // TRACKED paths — when the subfolder itself is gitignored or simply
+        // untracked, NONE of its own files are among them, and the freeze
+        // silently succeeds with a `kind: 'repo'` tree that holds nothing the
+        // person actually pointed Source at. Refused here, before `into` is
+        // created and before a single byte is scanned or written — a repo
+        // ROOT source (`sourceSubdir === ''`) is exempt (it always has the
+        // whole tracked tree by definition), and a subfolder with AT LEAST
+        // ONE tracked file underneath it is unaffected (that is the existing,
+        // unchanged "partially-ignored files inside a tracked folder" case).
+        if (sourceSubdir !== '' && !walked.files.some((f) => f.rel === sourceSubdir || f.rel.startsWith(`${sourceSubdir}/`))) {
+          return refuse('source-untracked-in-repo', `${sourceAbs} is inside the git repo at ${repoRoot}, but git does not track anything in it, so a repo job would not see its files — commit the files, or point Source at a folder outside the repo`);
+        }
+        frozen = {
+          kind: 'repo', root: repoRoot, files: walked.files, sourceSubdir,
+        };
       } else {
         const walked = await walkFolder(sourceAbs);
         if (walked.stop !== null) return walked;
@@ -529,12 +616,38 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   // git tracks no empty directories — a `.gitkeep` is what makes `output/`
   // actually exist in the seed commit the close measures changes against
   await writeFile(join(outputDir, '.gitkeep'), '');
-  for (const f of frozen.files) {
+  // TOCTOU close (item 34 L1, fix-ledger `src/source.js:506,537`): a folder/
+  // repo file's bytes were hashed and secret-scanned ABOVE, from one read —
+  // then re-read a SECOND time here via `copyFile`, off disk, to freeze into
+  // the tree. A file swapped on disk between the two reads would have its
+  // secret scan run against bytes different from the ones actually frozen —
+  // exactly the gap the hard line (secrets never enter the tree) exists to
+  // close. Fixed by re-verifying, not by caching every buffer: caching would
+  // hold a whole repo's bytes in memory at once (the streaming design above
+  // this loop exists precisely to avoid that for a repo source "far larger
+  // than memory"). Instead, this second read is hashed again and compared
+  // against `fileMeta`'s scan-time `sha256` (same index, same file order as
+  // the scan loop above) — a match means the bytes frozen ARE the bytes
+  // scanned; a mismatch refuses rather than silently freezing content the
+  // scan never saw. `copyFile` also preserved the source file's mode bits
+  // (verified: 0o755 in, 0o755 out; a plain `writeFile` defaults to 0o644),
+  // so the replacement chmod's the destination from a fresh `stat` to keep
+  // that behaviour unchanged.
+  for (let i = 0; i < frozen.files.length; i += 1) {
+    const f = frozen.files[i];
     const dest = join(treeDir, treeRel(f.rel));
     await mkdir(dirname(dest), { recursive: true });
-    if (f.buf) await writeFile(dest, f.buf);
-    else if (f.symlinkTarget !== undefined) await symlink(f.symlinkTarget, dest);
-    else await copyFile(/** @type {string} */ (f.abs), dest);
+    if (f.buf) { await writeFile(dest, f.buf); continue; }
+    if (f.symlinkTarget !== undefined) { await symlink(f.symlinkTarget, dest); continue; }
+    const [freshBuf, srcStat] = await Promise.all([
+      readFile(/** @type {string} */ (f.abs)),
+      stat(/** @type {string} */ (f.abs)),
+    ]);
+    if (sha256Hex(freshBuf) !== fileMeta[i].sha256) {
+      return refuse('source-changed-after-scan', `${f.rel} changed on disk after its secret scan — refused rather than freezing bytes the scan never saw (hard line #3)`);
+    }
+    await writeFile(dest, freshBuf);
+    await chmod(dest, srcStat.mode & 0o777);
   }
 
   if (frozen.kind !== 'repo') {
@@ -580,6 +693,13 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   const manifest = {
     kind: frozen.kind,
     source,
+    // Source's own path relative to the repo root (ruling 2 addendum,
+    // 2026-09-13) — '' when Source IS the repo root, a real subpath (e.g.
+    // "packages/api") when it is a subfolder frozen as part of the WHOLE
+    // repo. A NEW field beside the existing ones: `source` above keeps its
+    // existing meaning (the original Source path, untouched), and nothing
+    // downstream reads `sourceSubdir` yet — recorded here, wired later.
+    ...(frozen.sourceSubdir === undefined ? {} : { sourceSubdir: frozen.sourceSubdir }),
     ...(frozen.finalUrl === undefined ? {} : { finalUrl: frozen.finalUrl }),
     fetchedAt: new Date().toISOString(),
     files: fileMeta,

@@ -17,7 +17,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync, readFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync, readFileSync, chmodSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -25,7 +25,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import {
   prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest,
-  datedDestination, pickDelivery,
+  datedDestination, pickDelivery, looksLikeRepoSource, nearestGitAncestor,
 } from '../src/source.js';
 
 /** the same neutralized identity `src/source.js` uses — CI has no gitconfig
@@ -94,6 +94,57 @@ test('prepareSource: a plain folder freezes into tree/input, tree/output exists,
   assert.equal(byPath['a.txt'].sha256, sha256(Buffer.from('hello')));
   assert.equal(byPath['a.txt'].bytes, 5);
   assert.equal(byPath['sub/b.md'].sha256, sha256(Buffer.from('# hi')));
+});
+
+test('prepareSource: a folder file swapped on disk AFTER its secret scan is refused, never frozen with bytes the scan never saw (item 34 L1, TOCTOU close)', async () => {
+  const source = tmp('bareloop-src-race-');
+  // widen the window between "a.txt is scanned" and "a.txt is frozen": the
+  // scan loop and the freeze loop each walk every file in order, so more
+  // files between them means more real async I/O (mkdir, other reads) the
+  // event loop can interleave a background write into.
+  writeFileSync(join(source, 'a.txt'), 'scanned-content');
+  for (let i = 0; i < 24; i += 1) writeFileSync(join(source, `pad-${i}.txt`), `pad ${i}`.repeat(200));
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  let toggling = true;
+  let n = 0;
+  // fires on every macrotask boundary for as long as prepareSource is in
+  // flight — a real race, not a scripted single swap: it keeps flipping
+  // a.txt's content throughout the whole scan/freeze window so the fix is
+  // proven against the actual async interleaving, not a hand-timed guess.
+  const toggle = () => {
+    if (!toggling) return;
+    n += 1;
+    writeFileSync(join(source, 'a.txt'), `swapped-content-${n}`);
+    setImmediate(toggle);
+  };
+  setImmediate(toggle);
+
+  const r = await prepareSource({ source, into });
+  toggling = false;
+
+  assert.equal(r.code, 'source-changed-after-scan',
+    `expected the race to be CAUGHT; got ${JSON.stringify({ stop: r.stop, code: r.code })} — `
+    + 'this can be a rare, real miss if the toggle never landed inside the freeze window on this '
+    + 'run (n stayed 1 for the whole call); the fix worked if it never silently froze mismatched bytes');
+  assert.match(/** @type {string} */ (r.stop), /a\.txt/);
+  // the hard line's own promise, unbroken by this new refusal path either:
+  // a refusal never leaves a partial tree the worker could read from.
+  assert.ok(!existsSync(join(into, 'tree', 'input', 'a.txt')) || readFileSync(join(into, 'tree', 'input', 'a.txt'), 'utf8') !== 'scanned-content',
+    'if a.txt reached the tree at all it must never be the STALE bytes the scan judged');
+});
+
+test('prepareSource: a folder file\'s executable mode bit survives the freeze (the L1 fix reads bytes with readFile+writeFile, not copyFile — mode must be carried explicitly)', async () => {
+  const source = tmp('bareloop-src-mode-');
+  const script = join(source, 'run.sh');
+  writeFileSync(script, '#!/bin/sh\necho hi\n', { mode: 0o755 });
+  chmodSync(script, 0o755);
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  const frozenMode = statSync(join(into, 'tree', 'input', 'run.sh')).mode & 0o777;
+  assert.equal(frozenMode, 0o755, `expected the executable bit to survive the freeze, got ${frozenMode.toString(8)}`);
 });
 
 test('prepareSource: a single file source freezes as one file under tree/input', async () => {
@@ -379,6 +430,186 @@ test('prepareSource: a repo whose .git is a FILE (linked worktree / submodule) r
   const r = await prepareSource({ source, into });
   assert.equal(r.code, 'source-is-linked-worktree');
   assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
+});
+
+// ── ruling 2 addendum (2026-09-13): a Source inside a repo IS a repo job ────
+
+test('prepareSource: a SUBFOLDER Source inside a repo is a REPO job — the whole tracked repo is copied, not just the subfolder', async () => {
+  const repo = tmp('bareloop-src-monorepo-');
+  mkdirSync(join(repo, 'packages', 'api'), { recursive: true });
+  writeFileSync(join(repo, 'README.md'), 'root file, outside the subfolder');
+  writeFileSync(join(repo, 'packages', 'api', 'index.js'), 'module.exports = 1;\n');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'monorepo seed']);
+  const source = join(repo, 'packages', 'api');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.kind, 'repo', 'a subfolder Source freezes as a repo job, not a plain folder');
+  // the WHOLE repo's tracked files are frozen — the root-level README, outside
+  // the subfolder, must be present alongside the subfolder's own file
+  assert.ok(existsSync(join(into, 'tree', 'README.md')), 'a file OUTSIDE the subfolder is still copied — the whole repo, not just the subfolder');
+  assert.ok(existsSync(join(into, 'tree', 'packages', 'api', 'index.js')));
+  // the manifest records Source's own path relative to the repo root, as a
+  // NEW field beside the existing ones — `source` itself is untouched
+  assert.equal(r.manifest.source, source, 'the original Source path is recorded unchanged');
+  assert.equal(r.manifest.sourceSubdir, 'packages/api');
+  // the original repo is never touched
+  assert.equal(gitFix(repo, ['status', '--porcelain']).trim(), '', 'the original repo has no uncommitted changes from the copy');
+  assert.ok(existsSync(join(repo, '.git')), 'the original .git is untouched, never moved or altered');
+});
+
+test('prepareSource: a SUBFOLDER Source at the repo root itself records an EMPTY sourceSubdir', async () => {
+  const repo = tmp('bareloop-src-rootsubdir-');
+  writeFileSync(join(repo, 'a.txt'), 'x');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source: repo, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.sourceSubdir, '', 'Source IS the repo root — the relative path is empty, not omitted');
+});
+
+test('prepareSource: an untracked node_modules symlink INSIDE the subfolder does not refuse — only git-tracked files are ever candidates (F164 class)', async () => {
+  const repo = tmp('bareloop-src-monorepo-symlink-');
+  mkdirSync(join(repo, 'packages', 'api', 'node_modules'), { recursive: true });
+  writeFileSync(join(repo, 'packages', 'api', 'index.js'), 'module.exports = 1;\n');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', 'packages/api/index.js']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  // an UNTRACKED symlink under the subfolder's own node_modules — never
+  // `git add`ed, so it is never a candidate at all under the D1 tracked-only
+  // enumeration (`listRepoFiles`) the repo route now takes for this Source
+  symlinkSync('/nonexistent-target', join(repo, 'packages', 'api', 'node_modules', '.bin-fixture'));
+  const source = join(repo, 'packages', 'api');
+  const into = join(tmp('bareloop-into-parent-'), 'job2');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.kind, 'repo');
+  assert.ok(!existsSync(join(into, 'tree', 'packages', 'api', 'node_modules')), 'the untracked node_modules directory is never a candidate at all');
+});
+
+// ── hamr's ruling A (PRD item 34 loose end, 2026-09-13): a subfolder git ───
+// tracks NOTHING under must refuse, never freeze an empty claim ────────────
+
+test('prepareSource: a GITIGNORED subfolder inside a repo refuses source-untracked-in-repo, and never creates `into`', async () => {
+  const repo = tmp('bareloop-src-subdir-ignored-');
+  mkdirSync(join(repo, 'tracked'), { recursive: true });
+  mkdirSync(join(repo, 'data'), { recursive: true });
+  writeFileSync(join(repo, 'tracked', 'a.txt'), 'x');
+  writeFileSync(join(repo, '.gitignore'), 'data/\n');
+  writeFileSync(join(repo, 'data', 'notes.txt'), 'the person\'s own input');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  const source = join(repo, 'data');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-untracked-in-repo');
+  assert.match(r.stop, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
+});
+
+test('prepareSource: an UNTRACKED (not gitignored, simply never committed) subfolder inside a repo also refuses source-untracked-in-repo', async () => {
+  const repo = tmp('bareloop-src-subdir-untracked-');
+  mkdirSync(join(repo, 'tracked'), { recursive: true });
+  mkdirSync(join(repo, 'data'), { recursive: true });
+  writeFileSync(join(repo, 'tracked', 'a.txt'), 'x');
+  writeFileSync(join(repo, 'data', 'notes.txt'), 'never added or committed');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', 'tracked/a.txt']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  const source = join(repo, 'data');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-untracked-in-repo');
+  assert.ok(!existsSync(into));
+});
+
+test('prepareSource: a subfolder with AT LEAST ONE tracked file underneath it stays green (existing partially-ignored-folder behaviour, unchanged)', async () => {
+  const repo = tmp('bareloop-src-subdir-partial-');
+  mkdirSync(join(repo, 'pkg'), { recursive: true });
+  writeFileSync(join(repo, 'pkg', 'tracked.txt'), 'kept');
+  writeFileSync(join(repo, 'pkg', '.gitignore'), 'ignored.txt\n');
+  writeFileSync(join(repo, 'pkg', 'ignored.txt'), 'dropped by the source repo\'s own .gitignore');
+  gitFix(repo, ['init', '-q']);
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  const source = join(repo, 'pkg');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.kind, 'repo');
+  assert.equal(r.manifest.sourceSubdir, 'pkg');
+  assert.ok(existsSync(join(into, 'tree', 'pkg', 'tracked.txt')));
+  assert.ok(!existsSync(join(into, 'tree', 'pkg', 'ignored.txt')), 'the gitignored file is still never copied — only the refusal rule is new, not the tracked-only freeze itself');
+});
+
+test('prepareSource: a repo-ROOT source is exempt from source-untracked-in-repo even with nothing tracked at all', async () => {
+  const repo = tmp('bareloop-src-root-empty-');
+  gitFix(repo, ['init', '-q']);
+  writeFileSync(join(repo, 'untracked.txt'), 'never added');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source: repo, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(r.manifest.kind, 'repo');
+  assert.equal(r.manifest.sourceSubdir, '', 'Source IS the repo root — the empty-subdir exemption applies');
+});
+
+test('prepareSource: a NESTED .git FILE in an ancestor (above the subfolder) still refuses source-is-linked-worktree', async () => {
+  const outer = tmp('bareloop-src-nested-worktree-');
+  mkdirSync(join(outer, 'sub'), { recursive: true });
+  writeFileSync(join(outer, 'sub', 'a.txt'), 'x');
+  writeFileSync(join(outer, '.git'), 'gitdir: /somewhere/else/.git/worktrees/wt\n');
+  const source = join(outer, 'sub');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.code, 'source-is-linked-worktree');
+  assert.ok(!existsSync(into), 'a refused prep never builds a partial tree');
+});
+
+test('nearestGitAncestor: walks up to the nearest ancestor carrying a .git, distinguishing a directory from a file', async () => {
+  const repo = tmp('bareloop-src-nga-repo-');
+  mkdirSync(join(repo, 'a', 'b'), { recursive: true });
+  gitFix(repo, ['init', '-q']);
+  assert.deepEqual(nearestGitAncestor(join(repo, 'a', 'b')), { dir: repo, isFile: false });
+  assert.deepEqual(nearestGitAncestor(repo), { dir: repo, isFile: false });
+
+  const worktree = tmp('bareloop-src-nga-worktree-');
+  writeFileSync(join(worktree, '.git'), 'gitdir: /elsewhere\n');
+  assert.deepEqual(nearestGitAncestor(worktree), { dir: worktree, isFile: true });
+
+  const plain = tmp('bareloop-src-nga-plain-');
+  assert.equal(nearestGitAncestor(plain), null);
+});
+
+test('looksLikeRepoSource: a subfolder inside a repo IS repo-like now (walks up); a nested .git FILE ancestor is NOT (it refuses instead)', async () => {
+  const repo = tmp('bareloop-src-llrs-repo-');
+  mkdirSync(join(repo, 'packages', 'api'), { recursive: true });
+  gitFix(repo, ['init', '-q']);
+  writeFileSync(join(repo, 'a.txt'), 'x');
+  gitFix(repo, ['add', '-A']);
+  gitFix(repo, ['commit', '-q', '-m', 'seed']);
+  assert.equal(looksLikeRepoSource(join(repo, 'packages', 'api')), true);
+
+  const worktreeOuter = tmp('bareloop-src-llrs-worktree-');
+  mkdirSync(join(worktreeOuter, 'sub'), { recursive: true });
+  writeFileSync(join(worktreeOuter, '.git'), 'gitdir: /somewhere/else\n');
+  assert.equal(looksLikeRepoSource(join(worktreeOuter, 'sub')), false, 'a linked-worktree ancestor is not repo-like — the real walk refuses it instead');
+
+  const plain = tmp('bareloop-src-llrs-plain-');
+  mkdirSync(join(plain, 'sub'), { recursive: true });
+  assert.equal(looksLikeRepoSource(join(plain, 'sub')), false, 'no .git anywhere above — a plain folder, unchanged');
 });
 
 test('prepareSource: a nested .git BELOW the root refuses source-nested-repo for a plain folder (M2b fix 6)', async () => {

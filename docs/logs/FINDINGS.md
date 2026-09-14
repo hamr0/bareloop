@@ -10437,6 +10437,8 @@ carries `3b987d4` in ancestry) — the main re-pin still awaits merge. Item (3) 
 mirroring) is unchanged, still parked. Full detail: `docs/product/EXPORT-BUILD.md`, "Fire 5"
 section.
 
+> 2026-09-13: deferred — see PRD item 34 L7.
+
 ## F131 — first-red-wins makes the seed close a blind timing instrument
 
 **Date:** 2026-09-06 · **Status:** measured, feeds PRD item 27's M3 (autoset close timeout)
@@ -12072,3 +12074,164 @@ branch.
 
 **The lesson, stated plainly.** A vendor model id is not a stable fact; a settled provider
 choice needs its id re-checked ($0 model list) before every paid fire.
+
+## F172 — item 18 flake hunt: not reproduced under load
+
+**2026-09-13, PRD item 34's L14.** The peer hold on item 18 ("Flake-name capture") was void —
+that session is gone — so this session ran the hunt at $0 instead of waiting further.
+
+`node --test tests/watchdog.test.js tests/ralph.test.js tests/stall.test.js`, hermetic env
+(`HOME` set to a fresh tmp dir, `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`), 3
+unloaded baseline runs then 10 runs under ~4x CPU load (24 `yes`-burner processes on 8 CPUs,
+loadavg 3.35 at load start rising to 27.14 by the last run). All 13 runs: exit 0, 95 pass / 0
+fail, no `not ok` lines. Script and logs:
+`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/f13d6b05-c950-40d7-85e7-e6640a94394f/scratchpad/flake-hunt.sh`,
+`flake-hunt.out`, and the per-run logs in the adjacent `flake/` folder.
+
+**Result: flake not reproduced.** Item 18 closes (PRD item 34's L14; item 18's own PRD entry
+also carries this pointer).
+
+**The lesson, stated plainly.** A named flake with no reproduction under 8x the CPU contention
+it was suspected to need is not proof the flake never existed, only that this hunt could not
+make it happen — recorded as a clean negative, not as "fixed."
+
+## F173 — a builder's "full suite exit 0" was false; two builders ran only their own tests
+
+**2026-09-13, PRD item 34's fix branch (L4/L17/L19).** Two separate builder subagents reported
+their work green by running only the test files near their own change, not the full suite —
+one of those reports was actively wrong about the exit code.
+
+`.../scratchpad/f34-test.log` (written 14:14, HEAD at commit `262ed56`) is a full `npm test`
+run: it shows exactly one failure — `not ok 2478 - bareloop.context.md states the menu the
+code actually offers` in `tests/unlisted-classes.test.js` (`# tests 2528 / # pass 2527 /
+# fail 1`) — a doc-drift test broken by the later commit `314f0ca` (L19, hitl removed from
+customer-facing text). The builder that produced this state reported exit 0.
+
+The main session's own full check on `56bfe16` (`.../scratchpad/g34-test.log`, `g34-tc.log`,
+`g34-bt.log`) found: typecheck exit 0, `build:types` exit 0, `npm test` exit 1 — `# tests 2536
+/ # pass 2533 / # fail 3`, all three failures in `tests/unlisted-classes.test.js`
+(`not ok 2483`, `2485`, `2486`) — two introduced by `34ea54b` (L17, `--provider` made
+required with no default) and one carried over from the `314f0ca` doc-drift failure above.
+
+Fix commit `384f4ad` (adds `--provider anthropic-api` to two test fixtures; drops only the
+stale `UNLISTED_CLASSES` doc assertion) was re-checked by the main session on that commit:
+typecheck exit 0, `build:types` exit 0, `npm test` exit 0 — 2536 pass, 0 fail; last line
+`prompt-commit-check: OK — 9 commit(s) checked, 0 touching a prompt register with a
+missing/incomplete label.`
+
+**The lesson, stated plainly.** A builder's own gate claim is not a gate — the main session
+runs the full suite itself and quotes the exit code and the last line. A builder that scopes
+its own test run to the files near its change will miss cross-file tests (here, a doc-drift
+assertion and a fixture two commits away) that only a whole-suite run catches.
+
+## F174 — the confirm turn showed a model-invented protection the close cannot check (fixed)
+
+**2026-09-14, live proof run `mu0voeo4` (DeepSeek `deepseek-flash`, patient a copy of pulselog,
+goal "Make src/checks.js pass the type checker in strict mode"), the first live fire of the M3
+piece 4 confirm turn.** Primary artifacts, archived per this file's existing convention (e.g.
+`../bareloop-patients/spines-poc-openai/poc-pm48w5az.jsonl`) at
+`../bareloop-patients/pulselog-confirm-live-mu0voeo4/out/`
+(`author-mu0voeo4.jsonl`, `authored.json`, `resolved-spec.json`, `signing.json`) and the
+adjacent `author.log`. Scanned for secret shapes (`scanSecrets`, `src/validate.js`) before
+citing here: zero hits across every file. The confirm turn's `confirm-done` event
+(`author-mu0voeo4.jsonl`, per-round plan) carried this exact `protections` entry, verbatim from
+the model:
+
+> "behavior-preservation guard (mandatory, always on): the patch must not change what the code
+> does at runtime — types/JSDoc only, logic untouched, per Q3."
+
+No such guard exists. The kind catalogue has no stage that can diff runtime behaviour, and the
+SAME run's own author call later says so outright in its declaration notes
+(`resolved-spec.json` / `author.log`): "BEHAVIOUR-PRESERVATION IS NOT COMPOSED HERE … the kind
+catalogue has no stage that can diff runtime behaviour. I did not approximate it with a stage
+that means something else." The person was asked to confirm a protection the close does not
+have and never will.
+
+**Fixed** in `2b45f09` (branch `fix/item34-loose-ends`): `protections` is dropped from the
+confirm channel's schema entirely — the model is never asked for one again. What a person sees
+and what `accepted.protections` records now comes from `classGuards`
+(`src/authoring.js`'s `MECHANICAL_GUARDS`) through a new `confirmProtections` helper and frozen
+`GUARD_DESCRIPTIONS` lines (`src/authorflow.js`), plus the write fence when one is set — the
+same guards the close will actually compose, never a second hand-typed list. The model instead
+returns `notChecked` (anything the person asked for that no listed check covers), shown under
+its own heading rather than silently absorbed into a "protections" line that used to mean
+"whatever the model felt like calling a guard." Fail-first proven: reverting `src/authorflow.js`
+to its pre-fix content reds the whole of `tests/confirmturn.test.js` at import time (`GUARD_DESCRIPTIONS`
+does not exist on that module) — the new tests cannot even load without the fix.
+
+**The lesson, stated plainly.** A field the model is free to fill with anything it wants, then
+shown back to a person as if it were a fact about the system, is exactly the shape of the
+authoring-side dishonesty this whole design exists to prevent — "protections are shown for
+transparency" is only true when the thing shown is real, and the first live run of this turn
+produced one that was not.
+
+## F175 — the confirmed goal dropped "strict" although both source answers asked for it (open)
+
+**2026-09-14, same run `mu0voeo4`.** Both the interview's Goal answer ("Make src/checks.js pass
+the type checker in strict mode") and its What-success-looks-like answer named strict mode. The
+model's drafted plan raised the ambiguity honestly, as a `questions` entry:
+
+> "Q2 pins the command `npm run typecheck`, but the survey of your repo shows tsconfig.json is
+> `strict: false` with only `strictNullChecks: true` … Does 'in strict mode' mean the repo's
+> existing `npm run typecheck` exactly as it runs today, or does it require flipping
+> `strict: true` in tsconfig … ?"
+
+The person picked "Confirm" (menu choice 1) on round 1 without answering that question — the
+confirm turn's menu has no path that forces an unresolved `questions` entry to be addressed
+before a "Confirm" pick is accepted, and a `questions` entry is never carried into
+`accepted.openQuestions` (only a `fix`-round's own free text is). The signed goal that reached
+the composer,
+
+> "Make `npm run typecheck` report zero type errors in src/checks.js and introduce no new type
+> errors anywhere else under src/, with `npm test` still passing all existing tests."
+
+names no strict check at all. Author call 1 accordingly composed the checker at its non-strict
+default, and it read GREEN at seed on the untouched tree (0 errors, baseline 0) — grading
+nothing, by the same "green on an untouched seed" pattern earlier runs were built to catch.
+Revise-1, one call later, independently re-added `--strict` (its own note in `resolved-spec.json`
+cites Q1/Q2 directly: "Q1 and Q2 both say the checker must run 'in strict mode' … This is the
+correction that mattered"). The goal the person actually confirmed does not name the check the
+close ends up running.
+
+**Status: OPEN, not fixed this branch (item 34 loose-end scope: fix #1 only).** A pre-existing
+gap in the confirm turn's own menu logic (not new to piece 4's build): a genuinely-missing
+`questions` entry can be silently confirmed away on round 1, with the person never told it was
+raised, unless they happen to pick "Fix" instead.
+
+**The lesson, stated plainly.** A model that honestly names an ambiguity gains nothing if the
+UI it names it through has no path that requires the person to see and resolve it before
+"Confirm" is accepted — an honest `questions` list and a menu that can bypass it are two
+different mechanisms, and only one of them was built.
+
+## F176 — a later revision can be structurally worse than the one it replaces, un-flagged (open)
+
+**2026-09-14, same run `mu0voeo4`.** The revise ladder (`authorClose`'s loop, `src/authorflow.js`)
+seed-reads every validated declaration and keeps revising up to the cap, retaining the LAST
+accepted one. revise-1's declaration measured soundly: `typecheck-strict-checks-js-zero-errors`
+read RED at seed as expected (21 real errors in `src/checks.js` under `--strict`, baseline 0) —
+a real ceiling, not a broken instrument. revise-2 changed that same stage's parser term from
+`capture: null` (count occurrences, the shape every other `count-not-worse` typecheck stage in
+this codebase uses) to `capture: 0` — capturing the whole match `"error TS7006"` as the count,
+which is not an integer. Both typecheck stages then INSTRUMENT-STOPPED at precheck:
+
+> `close: INSTRUMENT: term 0 captured "error TS7006", which is not an integer (measuring the
+> current tree)`
+
+`resolved-spec.json`'s own gates section records `2 precheck FAIL — 2 stage(s) could not run`,
+and the run ends `REFUSED (decision-ready)` at `closeDecl` — the spec was never signable. The
+authoring run still reports `authoring OK stop=max-revisions`: revise-2 is a worse declaration
+than revise-1, and nothing in the ladder flags that a later revision broke what an earlier one
+got right, or offers reverting to revise-1's own declaration instead of stopping at the cap with
+the last (broken) one.
+
+**Status: OPEN, pre-existing (not a piece-4 defect) — parked, not fixed this branch.** Also
+noted: the spine's `author-phase` events for each revise round carry no field stating WHY that
+revision fired (what the previous seed-read's reds were, in the model's own words) — only the
+declaration and the seed-read results are recorded, so reconstructing "why did revise-2 change
+the capture field" from the spine alone is not possible; it required reading the model's own
+declaration notes in `resolved-spec.json`.
+
+**The lesson, stated plainly.** "Kept the last accepted revision" is not the same claim as
+"kept the best revision" — a revise loop that only checks *validity* per round, never compares
+soundness ACROSS rounds, can silently regress on its own second-to-last try and hand the
+regression to the person as if it were forward progress.

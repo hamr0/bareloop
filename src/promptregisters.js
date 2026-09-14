@@ -45,6 +45,12 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/authorflow.js', name: 'STRUCTURE_INSTRUCTION_TOOL' }),
   Object.freeze({ file: 'src/authorflow.js', name: 'STRUCTURE_INSTRUCTION_TEXT' }),
 
+  // src/authorflow.js — the confirm turn (PRD item 33 M3 piece 4)
+  Object.freeze({ file: 'src/authorflow.js', name: 'CONFIRM_SYSTEM' }),
+  Object.freeze({ file: 'src/authorflow.js', name: 'confirmPrompt() (inline template, not a const)' }),
+  Object.freeze({ file: 'src/authorflow.js', name: 'CONFIRM_STRUCTURE_INSTRUCTION' }),
+  Object.freeze({ file: 'src/authorflow.js', name: 'confirmedBlock() (inline template, not a const — feeds authorPrompt)' }),
+
   // src/judged.js — the softgreen judge's locate prompt (spine + per-rule asks)
   Object.freeze({ file: 'src/judged.js', name: 'PROMPT_HEAD' }),
   Object.freeze({ file: 'src/judged.js', name: 'PROMPT_TAIL' }),

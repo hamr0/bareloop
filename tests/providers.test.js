@@ -42,13 +42,13 @@ test('resolveProvider("anthropic-api") yields the AnthropicProvider ctor, its ow
   assert.deepEqual({ ...ANTHROPIC_TIER_MODELS }, { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' });
 });
 
-test('resolveProvider("openai-api") yields the OpenAIProvider ctor, OPENAI_API_KEY, and deepseek-chat on both tiers (hamr\'s ruling: one secondary provider, not a menu)', async () => {
+test('resolveProvider("openai-api") yields the OpenAIProvider ctor, OPENAI_API_KEY, and deepseek-flash on both tiers (hamr\'s ruling: one secondary provider, not a menu)', async () => {
   const { OpenAIProvider } = await import('bare-agent/providers');
   const entry = resolveProvider('openai-api');
   assert.equal(entry.ctor, OpenAIProvider);
   assert.equal(entry.envKey, 'OPENAI_API_KEY');
-  assert.deepEqual({ ...entry.tiers }, { sonnet: 'deepseek-chat', haiku: 'deepseek-chat' });
-  assert.deepEqual({ ...OPENAI_TIER_MODELS }, { sonnet: 'deepseek-chat', haiku: 'deepseek-chat' });
+  assert.deepEqual({ ...entry.tiers }, { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' });
+  assert.deepEqual({ ...OPENAI_TIER_MODELS }, { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' });
 });
 
 test('resolveProvider on an unknown name throws a NAMED error — no silent default (the resolveRates lesson)', () => {
@@ -65,8 +65,8 @@ test('makeProvider constructs with exposeErrorBody:true unconditionally (F153)',
   assert.equal(p.model, 'claude-sonnet-5');
 });
 
-test('the deepseek-chat entry carries the legacy-max-tokens flag (F149: DeepSeek silently ignores max_completion_tokens, asked 64 got 665/608) — the anthropic entry does not', () => {
-  const deepseek = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-chat' });
+test('the deepseek-flash entry carries the legacy-max-tokens flag (F149: DeepSeek silently ignores max_completion_tokens, asked 64 got 665/608) — the anthropic entry does not', () => {
+  const deepseek = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
   assert.equal(deepseek.legacyMaxTokens, true, 'an output cap that does not bind is a money hazard — this MUST bind');
   const anthropic = makeProvider('anthropic-api', { apiKey: 'k', model: 'claude-sonnet-5' });
   assert.notEqual(anthropic.legacyMaxTokens, true, 'Anthropic has only ever had one request key — nothing to gate, ever');
@@ -78,9 +78,9 @@ test('an openai-api model with no table entry gets no legacy-key override — ba
 });
 
 test('makeProvider forwards baseUrl only when given', () => {
-  const withUrl = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-chat', baseUrl: 'https://gateway.example/v1' });
+  const withUrl = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash', baseUrl: 'https://gateway.example/v1' });
   assert.equal(withUrl.baseUrl, 'https://gateway.example/v1');
-  const withoutUrl = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-chat' });
+  const withoutUrl = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
   assert.equal(withoutUrl.baseUrl, 'https://api.openai.com/v1', 'bare-agent\'s own OpenAIProvider default, untouched');
 });
 
@@ -102,13 +102,13 @@ test('buildRunnerProviders: providerFor(tier) reuses the top-level provider when
   const { provider, providerFor } = buildRunnerProviders({
     providerName: 'openai-api',
     apiKey: 'worker-key',
-    model: 'deepseek-chat',
-    tierModels: { sonnet: 'deepseek-chat', haiku: 'deepseek-chat' },
+    model: 'deepseek-flash',
+    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
   });
   assert.equal(providerFor('sonnet'), provider, 'same model id -> the SAME instance, not a rebuild');
-  assert.equal(providerFor('haiku'), provider, 'deepseek-chat on both tiers -> the same instance too');
+  assert.equal(providerFor('haiku'), provider, 'deepseek-flash on both tiers -> the same instance too');
 });
 
 test('buildRunnerProviders: with no judgeProviderName override, the judge DEFAULTS to the worker\'s own provider (PRD item 32.1)', async () => {
@@ -116,8 +116,8 @@ test('buildRunnerProviders: with no judgeProviderName override, the judge DEFAUL
   const { judgeProvider } = buildRunnerProviders({
     providerName: 'openai-api',
     apiKey: 'worker-key',
-    model: 'deepseek-chat',
-    tierModels: { sonnet: 'deepseek-chat', haiku: 'deepseek-chat' },
+    model: 'deepseek-flash',
+    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
   });
@@ -132,8 +132,8 @@ test('buildRunnerProviders: an explicit judgeProviderName override builds THAT p
   const { provider, judgeProvider } = buildRunnerProviders({
     providerName: 'openai-api',
     apiKey: 'worker-key',
-    model: 'deepseek-chat',
-    tierModels: { sonnet: 'deepseek-chat', haiku: 'deepseek-chat' },
+    model: 'deepseek-flash',
+    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
     judgeProviderName: 'anthropic-api',
@@ -193,7 +193,7 @@ const BASE_SPEC = {
   job: 'openai-probe',
   description: 'a job on the secondary provider',
   provider: 'openai-api',
-  model: 'deepseek-chat',
+  model: 'deepseek-flash',
   cadence: { unit: 'day', every: 1 },
   budgetUsd: 1.5,
   writeScope: ['src/**', 'test/**'],

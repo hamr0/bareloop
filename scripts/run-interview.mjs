@@ -10,8 +10,13 @@
 //
 // THIS SCRIPT IS GLUE, and deliberately thin:
 //   - the QUESTIONS are the library's frozen sets (`questionsFor` /
-//     `requiredAnswersFor`, keyed by verdict class). Never re-worded here, never
-//     re-ordered, never stored — the script prints what the library hands it;
+//     `requiredAnswersFor`, keyed by verdict class), now the RESHAPED unified
+//     form (PRD item 33 M3 piece 3): Goal / Success / Guardrails, soft-green
+//     adding Judge Examples. Source and Destination are MECHANICAL fields —
+//     proven against the machine rather than typed — and their wording is
+//     ALSO the library's (`SOURCE_FIELD`, `destinationFieldFor`,
+//     `src/authorflow.js`), so this script prints what the library hands it
+//     for all six fields, never re-worded here, never re-ordered, never stored;
 //   - the REFUSALS are the library's (`runInterview`): a locked class refuses at
 //     admission as counted demand, an unfinished interview reds by question number;
 //   - the SCRUB is the library's: what lands on disk is `runInterview`'s own
@@ -27,48 +32,80 @@
 //   budgetUsd     the JOB's budget — what the RUN may spend, signed into the spec.
 //
 //   node scripts/run-interview.mjs \
-//     --patient /path/to/repo --verdict hitl --out /path/to/outdir \
-//     [--budget 2.50] [--lang js]
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
+//     --verdict soft-green --provider anthropic-api \
+//     --out /path/to/outdir [--budget 2.50]
+//
+//   --provider     REQUIRED, NO DEFAULT (PRD item 34 L17): bareloop is
+//                  LLM-agnostic, and a default here would silently lock every
+//                  interview back onto one vendor. It is asked, once, and
+//                  written into the draft's `provider` field — run-author.mjs
+//                  then needs no flag of its own; it just resolves what this
+//                  wrote down.
+//
+// SOURCE AND DESTINATION REPLACE --patient (PRD item 33 M3, ruling 2,
+// `docs/product/ITEM33-BUILD.md` "M3 — the intake form and confirm turn"): they
+// are now the interview's own FIRST TWO QUESTIONS, asked before the picked
+// class's frozen set, each proven mechanically for $0 the moment it is
+// answered (`prepareSource`/`proveDestination`, `src/source.js`). For a repo
+// source, Destination fills the signed `writeScope` field — the fence
+// question this used to ask separately is GONE, folded into Destination. A
+// non-repo source gets the form up to here and then an honest named stop:
+// bareloop has no checks for that kind of job yet (ruling 7 → M4).
+import {
+  writeFileSync, mkdirSync, existsSync, readFileSync, statSync,
+} from 'node:fs';
 import { createInterface } from 'node:readline';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import {
   runInterview, questionsFor, requiredAnswersFor,
-  VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS,
+  VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS, CONFIRM_AUTHORED_FIELDS,
+  PLAIN_FOLDER_DEFERRED_FIELDS,
 } from '../src/authorjob.js';
-import { validateJob } from '../src/job.js';
+import {
+  SOURCE_FIELD, destinationFieldFor, labelsFor,
+} from '../src/authorflow.js';
+import { validateJob, PROVIDERS } from '../src/job.js';
+import { resolveProvider } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
+import { detectLanguage } from '../src/detectlang.js';
+import { prepareSource, proveDestination, looksLikeRepoSource } from '../src/source.js';
 import { parseCeiling, ceilingLine } from './author-readout.mjs';
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
 const die = (/** @type {string} */ m) => { console.error(m); process.exit(2); };
 
-const patientArg = arg('patient');
+// `--patient` IS GONE (PRD item 33 M3, ruling 2): Source and Destination are
+// asked as the interview's own first two questions now, and each is proven
+// against the machine the moment it is typed — never a flag handed on the
+// command line. Stopped loud rather than silently ignored, the same rule
+// `--lang`'s removal already applies below.
+if (arg('patient') !== null) {
+  die('--patient is no longer a flag — Source is now the interview\'s first question '
+    + '(PRD item 33 M3, ruling 2). Drop --patient and rerun; you will be asked for the source there.');
+}
 const outArg = arg('out');
 const verdictArg = arg('verdict');
-// An ABSENT `--lang` takes the default; a PRESENT one with no value is an operator
-// error and stops LOUD, on the same rule the ceiling below is parsed by. `?? 'js'`
-// alone would not catch it — `arg` returns the EMPTY STRING for a flag typed with
-// nothing after it, and nullish-coalescing passes an empty string straight through.
-// The consequence was not cosmetic: `--lang` and its value are printed as the NEXT
-// STEP's command, and an empty value collapses them into `--lang  --budget 2.5`, so
-// the copy-pasted command hands run-author the word `--budget` as its language.
-const langArg = arg('lang');
-if (langArg !== null && langArg.trim() === '') {
-  die('--lang was given with no value — pass a language (e.g. `--lang js`), or omit the flag to take the default. It is NOT defaulted here: the flag and its value are printed back as the paid step\'s own command, and an empty one silently eats the flag that follows it.');
+const providerArg = arg('provider');
+// `--lang` IS GONE (PRD item 33 M3, ruling 3): language is a FACT of the
+// repository, read off its own manifest, never a flag a person sets. A
+// `--lang` on the command line now is an operator error, stopped loud rather
+// than silently ignored — the old default (`js`) would otherwise keep
+// working by accident and hide that the flag no longer does anything.
+if (arg('lang') !== null) {
+  die('--lang is no longer a flag — language is auto-detected from Source\'s own manifest '
+    + '(package.json/pyproject.toml/setup.py), never asked or set (PRD item 33 M3, ruling 3). Drop --lang and rerun.');
 }
-const LANG = langArg ?? 'js';
 /** the AUTHORING ceiling, parsed by the same rule `run-author.mjs` parses it with
  * (`parseCeiling`): absent is UNBOUNDED and announced, a malformed value is an
  * error rather than a silent fallback. It is not stored in anything — it is handed
  * straight to the child, which is the process that spends it. */
 const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget'));
 
-if (!patientArg || !outArg || verdictArg === null) {
-  die('usage: node scripts/run-interview.mjs --patient <repoPath> '
-    + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--budget <usd>] [--lang js]`);
+if (!outArg || verdictArg === null || !providerArg) {
+  die('usage: node scripts/run-interview.mjs '
+    + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>]`);
 }
 if (budgetError) die(budgetError);
 // the menu is handed over ENUMERATED — an unknown value is a typo, refused as one.
@@ -77,32 +114,26 @@ if (budgetError) die(budgetError);
 // the right list for the typo check for exactly that reason — narrowing it to the
 // menu here would turn counted demand into an unrecorded typo (PRD item 31.1).
 const VERDICT = /** @type {string} */ (verdictArg);
-if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${VERDICT_CLASSES.join(' | ')}`);
+// the CHECK stays against the full `VERDICT_CLASSES` (see above); the PRINTED text
+// names only the menu (item 34 L19: nothing customer-facing names an off-menu class).
+if (!VERDICT_CLASSES.includes(VERDICT)) die(`--verdict ${VERDICT} is not a verdict class — one of ${MENU_CLASSES.join(' | ')}`);
 
-const PATIENT = resolve(/** @type {string} */ (patientArg));
-// asked HERE, before a person answers twenty questions: the scout reads a repository
-// off the machine, and finding out it is not there afterwards is a true answer at the
-// wrong price (run-author.mjs makes the same check for the same reason).
-if (!existsSync(PATIENT)) die(`--patient ${PATIENT} does not exist — the close is authored against a repository on this machine, never out of prose`);
+// NO DEFAULT (PRD item 34 L17) — a default here would silently re-lock every
+// interview onto one vendor. Missing or empty already died above, at the same
+// usage message every other required flag shares, listing the same menu
+// `src/job.js`'s own validator (`PROVIDERS`) admits. Membership is NOT
+// re-checked here beyond that: `validateJob`, a few lines below, already reds
+// an off-menu `provider` the same way it reds every other field — spelling
+// that check twice would be the second rule this file keeps refusing to write.
+const PROVIDER = /** @type {string} */ (providerArg);
+
 const OUT = resolve(/** @type {string} */ (outArg));
-
-// ── the OFF-MENU classes refuse BEFORE a single question ─────────────────────
-// Not this script's rule and not this script's words: `runInterview` is the
-// admission path, and a locked pick comes back as a `request-red` refusal that is
-// COUNTED demand for the class. Asking its questions first would be an interview
-// for a job nothing here can close.
-if (LOCKED_CLASSES.includes(VERDICT) || UNLISTED_CLASSES.includes(VERDICT)) {
-  const iv = runInterview({ answers: {}, verdictType: VERDICT, repoPath: PATIENT });
-  const r = iv.refusal;
-  console.log(`REFUSED (${r?.kind ?? 'request-red'})  verb=${r?.verb ?? VERDICT}  path=${r?.path ?? 'verdictType'}`);
-  console.log(r?.detail ?? '');
-  for (const o of r?.options ?? []) console.log(`  · ${o}`);
-  console.log('\nNothing was asked and nothing was written — the refusal IS the record.');
-  process.exit(1);
-}
-
-const QUESTIONS = questionsFor(VERDICT);
-const REQUIRED = requiredAnswersFor(VERDICT);
+/** the source door's own scratch root, fresh and unique per interview run —
+ * created by `prepareSource` itself (never here: `into-exists` is its own
+ * refusal for a reason), so only the PATH is decided up front. Under `--out`
+ * per PRD item 33 M3 ruling 2. */
+const runid = Date.now().toString(36);
+const INTO = join(OUT, `source-${runid}`);
 
 // ── the terminal ─────────────────────────────────────────────────────────────
 // `terminal: false` on purpose: the TTY's own canonical mode gives backspace and
@@ -185,18 +216,202 @@ const readNumber = async (where, field, parse, allowNull = false) => {
   }
 };
 
-// ── the header ───────────────────────────────────────────────────────────────
+// ── the header (the part known before the interview starts) ─────────────────
 say('INTERVIEW — your job, in your own words. Nothing here spends a cent.');
-say(`  patient  ${PATIENT}`);
 say(`  verdict  ${VERDICT}  (YOUR pick — the close this authors promises to stay at or below it)`);
-say(`  lang     ${LANG}`);
+say(`  provider ${PROVIDER}`);
 say(`  out      ${OUT}`);
 say(`  ${ceilingLine(CEILING_USD)}`);
-say(`  asks     ${REQUIRED.length} frozen question(s) for this class, then the numbers and names the job spec needs`);
 say('  no model is called from here: this collects your answers and hands them to run-author.mjs, which does the paid part under the ceiling above');
 say('  (answers can be several lines — press Enter on an empty line, i.e. Enter twice, to finish an answer)');
 
-// ── 1. the class's own frozen questions, one at a time ───────────────────────
+// ── the OFF-MENU classes refuse BEFORE a single question, Source included ────
+// Not this script's rule and not this script's words: `runInterview` is the
+// admission path, and a locked pick comes back as a `request-red` refusal that is
+// COUNTED demand for the class. Asking Source (which proves against the machine
+// and can itself cost real disk I/O) for a job nothing here can close is an
+// interview at the wrong price.
+if (LOCKED_CLASSES.includes(VERDICT) || UNLISTED_CLASSES.includes(VERDICT)) {
+  const iv = runInterview({ answers: {}, verdictType: VERDICT });
+  const r = iv.refusal;
+  say(`REFUSED (${r?.kind ?? 'request-red'})  verb=${r?.verb ?? VERDICT}  path=${r?.path ?? 'verdictType'}`);
+  say(r?.detail ?? '');
+  for (const o of r?.options ?? []) say(`  · ${o}`);
+  say('\nNothing was asked and nothing was written — the refusal IS the record.');
+  process.exit(1);
+}
+
+// ── 1. SOURCE — the form's first field (PRD item 33 M3, ruling 2) ────────────
+say('');
+say('── SOURCE ' + '─'.repeat(58));
+// LIBRARY WORDING (PRD item 33 M3 piece 3, ruling 1) — this script prints what
+// `src/authorflow.js` hands it and writes none of its own.
+say(SOURCE_FIELD.prompt);
+const sourceRaw = await readAnswer('the source',
+  'Source is required — this is what the job reads. Again:');
+const isUrl = /^https?:\/\//i.test(sourceRaw);
+const SOURCE = isUrl ? sourceRaw : resolve(sourceRaw);
+if (!isUrl && !existsSync(SOURCE)) {
+  die(`${SOURCE} does not exist — Source is a folder, subfolder, file, or URL bareloop can actually read.`);
+}
+// the SAME rule `prepareSource` uses to route its own destination check
+// (`looksLikeRepoSource`, `src/source.js`) — never a second, hand-typed copy
+// of it. A Source that is a SUBFOLDER inside a git repo IS a repo source
+// (PRD item 33 M3 ruling 2 addendum, 2026-09-13, landed 2a020d8): the
+// boundary walks up to the NEAREST ancestor's `.git`, not only a `.git`
+// sitting directly inside Source itself. It freezes as a repo (kind
+// 'repo'), the same authoritative outcome `prepareSource`'s own walk
+// produces for it — reported, never fought, below.
+const IS_REPO = looksLikeRepoSource(SOURCE);
+
+// ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
+// $0, no provider: reads the repo's own manifest, nearest wins, walking up to
+// the repo root. Only run for a local DIRECTORY source — a URL or a single
+// file skips detection entirely (M3 ruling 2/3: "not a code job"). Two of the
+// four outcomes stop the interview before a single class question, on the
+// same "counted demand, never a silent fallback" rule the old `--lang`
+// comment already named:
+//   - `ambiguous`             — two different languages' manifests at the same
+//                               level; this script stays PROVIDER-FREE (D1),
+//                               so it does not ask which one here — it says
+//                               so and continues the form. The confirm turn
+//                               (`run-author.mjs`, step S4) asks the person,
+//                               interactively, before any paid call (D7).
+//   - `language-unsupported`  — a known manifest (go.mod, Cargo.toml, ...)
+//                               this catalogue has no genre data for yet.
+//                               Refusing HERE, before any question, saves the
+//                               person answering a form for a job that would
+//                               only be refused later anyway.
+// The other two outcomes are not errors and do not stop anything:
+//   - `resolved`      — 'js' or 'python', carried through exactly where the
+//                       old `--lang` value flowed.
+//   - `no-code-job`   — no manifest anywhere in the walk. NOT a refusal (M3
+//                       ruling 7): a plain-folder job still gets the form; it
+//                       only gets an honest "no checks yet" stop later (M4).
+let LANG = 'none-detected';
+if (!isUrl && statSync(SOURCE).isDirectory()) {
+  const langResult = detectLanguage(SOURCE);
+  if (langResult.kind === 'ambiguous') {
+    // NO LONGER DIES (PRD item 33 M3 piece 4, step S5): `LANG` takes the
+    // first candidate as a placeholder — this script never signs anything
+    // and never writes `lang` anywhere the placeholder could be mistaken for
+    // the real pick; `run-author.mjs`'s own confirm turn resolves it for
+    // real, interactively, before the scout (D7), and that pick — not this
+    // one — is what lands in `closeDecl.lang`.
+    say(`Source has more than one supported language's manifest at the same (nearest) level: `
+      + `${langResult.candidates.join(', ')} (in ${langResult.dir}).`);
+    say('Which one this job is about will be asked in the confirm turn, before any paid call, when you run run-author.mjs.');
+    LANG = langResult.candidates[0];
+  } else if (langResult.kind === 'language-unsupported') {
+    const r = langResult.refusal;
+    say(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
+    say(r.detail);
+    for (const o of r.options) say(`  · ${o}`);
+    // Honest, not "the refusal IS the record": THIS script has no spine (D10 —
+    // a spine here would be a new record format) and writes nothing at all, so
+    // there is nothing anywhere that counts this stop as demand. Only
+    // run-author.mjs's OWN language check (item 34 M3 loose-end fix) — reached
+    // by running that script directly against a prepared --source — is what
+    // records a language-unsupported stop as counted demand.
+    say('\nNothing was asked and nothing was written, and nothing here recorded this stop: run-interview.mjs keeps no '
+      + 'spine of its own. run-author.mjs, run directly against a prepared --source, is what records a language-unsupported '
+      + 'stop as counted demand.');
+    process.exit(1);
+  } else {
+    LANG = langResult.kind === 'resolved' ? langResult.lang : 'none-detected';
+  }
+}
+say(`  source   ${SOURCE}`);
+say(`  lang     ${LANG}`);
+
+// ── 2. DESTINATION — the form's second field (PRD item 33 M3, ruling 2) ─────
+// For a REPO source: the answer IS the write fence (`writeScope`) — exactly
+// the FENCE question this interview used to ask separately, later, in the
+// operator's half. That later question is GONE; `draft.writeScope` comes
+// from here now.
+// For every other kind: an absolute DIRECTORY the run may write into (never
+// a filename) — proven against the machine, in a loop, so a bad answer is
+// RE-ASKED rather than a hard exit (the same idiom every other answer in this
+// script already uses).
+say('');
+say('── DESTINATION ' + '─'.repeat(53));
+/** @type {string} */
+let destinationRaw;
+// LIBRARY WORDING (PRD item 33 M3 piece 3, ruling 1) — printed from
+// `src/authorflow.js`'s own field, not re-typed here.
+const destinationField = destinationFieldFor(IS_REPO);
+if (IS_REPO) {
+  say(destinationField.prompt);
+  destinationRaw = await readAnswer('the destination', 'the destination is not optional: a run with no fence is ungated spend. Again:');
+} else {
+  say(destinationField.prompt);
+  for (;;) {
+    const raw = await readAnswer('the destination', 'the destination is not optional — a run that cannot land its result should never spend. Again:');
+    // NEVER resolved against cwd here: `proveDestination` itself refuses a
+    // relative answer by name (`destination-not-absolute`) — pre-resolving
+    // would silently turn a person's typo'd relative path into an absolute
+    // one on their behalf, the exact "never accepted, never filled in" rule
+    // every other answer in this script already keeps.
+    const dp = await proveDestination(raw, { into: INTO });
+    if (dp.stop === null) { destinationRaw = raw; break; }
+    say(`  ${dp.code}: ${dp.stop}`);
+  }
+}
+
+// ── prepareSource — $0, no provider, BEFORE any class question (M3 ruling 2) ─
+// Freezes Source into a hidden, scratch copy this job actually works from —
+// H1's fix, the person never sees the git repo — and (for a non-repo source)
+// re-proves Destination one more time against the machine, right before it
+// matters, closing the gap between the interactive check above and the
+// authoritative one `prepareSource` itself makes.
+say('');
+say(`preparing the source — a hidden, frozen copy this job works from ($0, no provider)…`);
+const prep = await prepareSource({ source: SOURCE, into: INTO, destination: destinationRaw });
+if (prep.stop !== null) {
+  const field = prep.code.startsWith('destination') ? 'Destination' : prep.code === 'into-exists' ? 'the prepared copy' : 'Source';
+  say(`REFUSED (${prep.code})  field=${field}`);
+  say(prep.stop);
+  say('\nNothing was authored.');
+  process.exit(1);
+}
+say(`  tree     ${prep.tree}`);
+say(`  kind     ${prep.manifest.kind}`);
+say(`  seed     ${prep.manifest.seed}`);
+
+// ── ruling 7 → D5 = A (PRD item 33 M3 piece 4, step S6): a non-repo source
+// no longer stops HERE. bareloop's checks/close catalogue is still
+// code-genre only today (M4 builds the non-code checks), but the honest
+// "no checks yet" stop moves to AFTER the confirm turn — `run-author.mjs`,
+// not this script, is where it now lands, once a plain folder's confirm
+// turn has run over the $0 seed listing (D5). This script stays
+// PROVIDER-FREE (D1): it has nothing of its own to stop for any more.
+const IS_PLAIN_FOLDER = prep.manifest.kind !== 'repo';
+if (IS_PLAIN_FOLDER) {
+  say('');
+  say(`Source is not a code repository — it is a plain ${prep.manifest.kind} job. bareloop has no checks for this kind`);
+  say('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build), but the form continues: the');
+  say('confirm turn still runs (D5), over the seed listing rather than a scout, when you run run-author.mjs.');
+}
+
+// From here on, EVERYTHING that used to read the original patient path reads
+// the PREPARED COPY instead (`prep.tree`) — the original is never touched
+// again (patients are copies, always).
+const TREE = prep.tree;
+// `writeScope` IS Destination's proven fence for a REPO source (ruling 2) —
+// for a plain folder, Destination is an OUTPUT directory, never a fence, and
+// this build authors no close for that kind of job at all (D5), so the
+// draft below carries NO `writeScope` field for one (`PLAIN_FOLDER_DEFERRED_
+// FIELDS`, `src/authorjob.js`) rather than a meaningless one derived from an
+// output path.
+const writeScope = IS_PLAIN_FOLDER ? null : destinationRaw.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+
+const QUESTIONS = questionsFor(VERDICT);
+const LABELS = labelsFor(VERDICT);
+const REQUIRED = requiredAnswersFor(VERDICT);
+say('');
+say(`  asks     ${REQUIRED.length} frozen question(s) for this class, then the numbers and names the job spec needs`);
+
+// ── 3. the class's own frozen questions, one at a time ───────────────────────
 /** @type {Record<string, string>} */
 const answers = {};
 let asked = 0;
@@ -204,6 +419,12 @@ for (const n of REQUIRED) {
   asked += 1;
   say('');
   say(`── ${asked} of ${REQUIRED.length} ${'─'.repeat(Math.max(0, 56 - String(asked).length))}`);
+  // the FIELD LABEL, from the signed table (PRD item 33 M3 piece 3's wording
+  // fix) — printed on its own line so the literal `${n}. ${QUESTIONS[n]}` below
+  // stays byte-identical to what the library holds, which is what the wizard
+  // test suite (`tests/run-interview.test.js`) asserts verbatim and in order.
+  // A key with no signed-table row prints no label.
+  if (LABELS[n]) say(LABELS[n]);
   // the frozen wording, printed as the library holds it. Numbered by the library's
   // own key, so the number a person sees is the number their answer is filed under.
   say(`${n}. ${QUESTIONS[n]}`);
@@ -211,35 +432,28 @@ for (const n of REQUIRED) {
     'that one is required — every question in this class\'s set has to be answered before a close can be authored from it. Again:');
 }
 
-// ── 2. the OPERATOR's half of the spec — the part nothing authors for you ────
+// ── 4. the OPERATOR's half of the spec — the part nothing authors for you ────
 say('');
 say('── THE JOB SPEC — the operator\'s half, and nothing here authors it for you ──');
-say('  the close is what run-author writes; these are the fence, the money and the clock it runs under.');
+say('  the close is what run-author writes; these are the money and the clock it runs under.');
 say('');
 say('The NAME of this job: kebab-case, letters and digits and dashes (e.g. `litectx-maintainer`).');
 say('It names the spec file you sign, the branch the run works on, and the spine it writes.');
 const jobName = await readAnswer('the job name',
   'the job needs a name — it is what the spec file, the run\'s work branch and its spine are all called. Again:');
 say('');
-// F87 said in plain words, which is the only form it can be said in HERE: the person
-// answering is not reading the findings, and a finding number in a prompt is a private
-// reference standing where an instruction belongs. The RULE is unchanged — the goal
-// must state everything the close will check — and so is its price, now named as a
-// price rather than as a citation.
-say('The GOAL — what the run is judged on at the end. In one or two sentences: what must be true at the end for');
-say('this to count as done? Say everything you\'ll check — anything you leave out here still gets checked at the');
-say('very end, and finding it only then wastes the run\'s money.');
-say('Your own answers, to save you scrolling:');
-for (const n of REQUIRED.slice(0, 3)) say(`  ${n}. ${QUESTIONS[n]}  →  ${answers[n].split('\n').join(' ')}`);
-const goal = await readAnswer('the goal', 'the goal is what the close judges against — there is no run without one. Again:');
-
-say('');
-say('The FENCE: which files the worker is allowed to WRITE — everything else is read-only.');
-say('Patterns are relative to the repo root, comma-separated (e.g. `src/**`). The run works on a copy of the');
-say('repo, so absolute paths are refused. The agent may narrow this and may never widen it.');
-const scopeText = await readAnswer('the write scope', 'the fence is not optional: a run with no fence is ungated spend. Again:');
-const writeScope = scopeText.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
-
+// THE GOAL QUESTION IS GONE (PRD item 33 M3, ruling 5's 2026-09-13 addendum,
+// D2 = option B): it used to be asked HERE, as a near-duplicate of the form's
+// own Goal field, right after the recap printed the person's own answer back
+// (F87's overlap, named but not fixed at the time). It is not merged away —
+// it is REPLACED: the confirm turn (`runConfirmTurn`, wired into
+// `scripts/run-author.mjs`, step S4) drafts the signed goal sentence from
+// the person's Goal/Success answers, shows every check it names, and the
+// person confirms or fixes it there, within its own 2-round cap. This script
+// writes NO `goal` field at all — `run-author.mjs` sets `draft.goal` from
+// the confirm turn's accepted plan before assembling the spec. `goal` never
+// joins `AUTHORED_SPEC_FIELDS` (it stays an operator field by the letter of
+// the rule); it is simply not THIS script's to ask for any more.
 say('');
 say(`The JOB's budget, in dollars — what the RUN may spend. This is NOT the authoring ceiling above (${ceilingLine(CEILING_USD).replace(/^budget\s+/, '')}).`);
 const budgetUsd = await readNumber('the job budget', 'budgetUsd', (s) => Number(s));
@@ -250,12 +464,13 @@ say('an unbounded run is legal and must be a VISIBLE choice, so it is asked rath
 say('Type a number of minutes, or the word `none` to run with no wall at all.');
 const wallMin = await readNumber('the wall', 'maxWallMs', (s) => (/^none$/i.test(s) ? null : Number(s)), true);
 
-// ── 3. what gets written ─────────────────────────────────────────────────────
+// ── 5. what gets written ─────────────────────────────────────────────────────
 // THE LIBRARY'S OWN READING of the answers, not the raw keystrokes: `runInterview`
 // validates completeness against the class's required set and scrubs every answer at
 // INGEST (an answer becomes a prompt ingredient, a spine record and a signed artefact
-// all at once, and a log that captures a key captures it forever).
-const iv = runInterview({ answers, verdictType: VERDICT, repoPath: PATIENT });
+// all at once, and a log that captures a key captures it forever). `repoPath` is the
+// PREPARED COPY (`TREE`), never the original Source.
+const iv = runInterview({ answers, verdictType: VERDICT, repoPath: TREE });
 if (!iv.ok) {
   say('');
   if (iv.refusal) {
@@ -270,20 +485,28 @@ if (!iv.ok) {
 
 /** the OPERATOR half, and only that half. `close`, `closeDecl` and `verdictType` are
  * what the pipeline authors (`AUTHORED_SPEC_FIELDS`); a draft carrying any of them is
- * refused by `assembleSpec` rather than merged over, so this must not write one. */
+ * refused by `assembleSpec` rather than merged over, so this must not write one.
+ * `goal` is DELIBERATELY ABSENT too (PRD item 33 M3, ruling 5's addendum, step S5) —
+ * not because this script authors it, but because it no longer asks for it: the
+ * confirm turn drafts and confirms the goal sentence, and `run-author.mjs` writes
+ * `draft.goal` from that before assembling the spec (`CONFIRM_AUTHORED_FIELDS`). */
 const draft = {
   schema: 'job-v1',
   job: jobName,
-  // a record LABEL, never a statement of intent: the goal above is where intent
-  // lives, and this field only has to say which job's file you are looking at
-  description: `${jobName} — authored through the bareloop interview (${VERDICT}, ${LANG}) against ${PATIENT}`,
-  // F48: only `anthropic-api` is a guaranteed peer, so it is stated rather than asked
-  provider: 'anthropic-api',
+  // a record LABEL, never a statement of intent — the confirm turn's own
+  // drafted goal sentence is where intent lives, and this field only has to
+  // say which job's file you are looking at. Against the PREPARED COPY,
+  // never the original Source.
+  description: `${jobName} — authored through the bareloop interview (${VERDICT}, ${LANG}) against ${TREE}`,
+  // bareloop is LLM-agnostic (PRD item 34 L17) — the operator's own pick, asked
+  // rather than defaulted, one vendor from the SAME table the worker draws from.
+  provider: PROVIDER,
   cadence: { unit: 'day', every: 1 },
   budgetUsd,
   ...(wallMin === null ? {} : { maxWallMs: Math.round(wallMin * 60_000) }),
-  writeScope,
-  goal: redactSecrets(goal),
+  // ABSENT for a plain folder (`writeScope === null`, D5/step S6) — never a
+  // meaningless fence derived from an output directory.
+  ...(writeScope === null ? {} : { writeScope }),
   escalation: { mode: 'decision-ready' },
   // `tools` is deliberately OMITTED: an omitted menu hashes as the concrete current
   // TOOL_MENU (MED-1), which pins WHICH menu was signed and makes a widening flip the
@@ -293,10 +516,18 @@ const draft = {
 // THE SAME VALIDATOR that will judge this after the paid call, run now for $0. Its
 // reds about the AUTHORED half are expected — that half does not exist yet, by
 // design — so they are filtered BY FIELD NAME off `AUTHORED_SPEC_FIELDS` rather than
-// by re-listing them here. Everything else is a typo the person can fix in a second
-// now, or pay a scout and a model call to discover.
+// by re-listing them here. `CONFIRM_AUTHORED_FIELDS` (just `goal`) joins the same
+// filter for the same reason: this draft has no goal yet either, and `validateJob`
+// would otherwise red `missing-required` at a field the confirm turn — not this
+// script — is what fills in (step S5). `PLAIN_FOLDER_DEFERRED_FIELDS` (just
+// `writeScope`) joins it too (step S6): a repo draft always carries one, so this
+// is a no-op there, and a plain-folder draft's own `missing-required` at
+// `writeScope` is likewise expected — nothing in this build fills that in for a
+// plain-folder job at all yet (M4). Everything else is a typo the person can fix
+// in a second now, or pay a scout and a model call to discover.
 const draftReds = validateJob(draft, { shellCapUsd: draft.budgetUsd }).reds
-  .filter((r) => !AUTHORED_SPEC_FIELDS.some((f) => String(r.path) === f || String(r.path).startsWith(`${f}.`)));
+  .filter((r) => ![...AUTHORED_SPEC_FIELDS, ...CONFIRM_AUTHORED_FIELDS, ...PLAIN_FOLDER_DEFERRED_FIELDS]
+    .some((f) => String(r.path) === f || String(r.path).startsWith(`${f}.`)));
 if (draftReds.length) {
   say('');
   say(`THE SPEC DRAFT DOES NOT VALIDATE — ${draftReds.length} red(s), found for $0 rather than after a paid call:`);
@@ -317,8 +548,9 @@ say(`written  ${answersFile}   the ${REQUIRED.length} answers, in the shape run-
 say(`written  ${draftFile}   the operator half — no close and no verdictType: those are what run-author authors`);
 say(`  job      ${draft.job}`);
 say(`  budget   $${draft.budgetUsd} for the RUN  ·  wall ${draft.maxWallMs === undefined ? 'UNBOUNDED (you said none — no outside deadline)' : `${draft.maxWallMs / 60_000}min`}`);
-say(`  fence    ${draft.writeScope.join(', ')}`);
-say(`  goal     ${JSON.stringify(draft.goal)}`);
+say(`  fence    ${draft.writeScope ? draft.writeScope.join(', ') : '(none — a plain-folder job has no fence yet, M4)'}`);
+// no goal line here — the confirm turn (run-author.mjs, step S4) drafts and
+// confirms the goal sentence next; this draft carries none yet
 
 // The hard line, on the two files this run just wrote. Count and PATH only — echoing
 // a matched secret to stdout is the same leak, one hop on.
@@ -329,33 +561,57 @@ if (leaks.length) {
   process.exit(3); // distinct from 2 (operator/config) and 1 (a refusal)
 }
 
-// ── 4. the paid step, which is a DIFFERENT process under a DIFFERENT ceiling ─
+// ── 6. the paid step, which is a DIFFERENT process under a DIFFERENT ceiling ─
 const RUN_AUTHOR = fileURLToPath(new URL('./run-author.mjs', import.meta.url));
 const childArgs = [
-  '--patient', PATIENT, '--answers', answersFile, '--draft', draftFile,
-  '--verdict', VERDICT, '--out', OUT, '--lang', LANG,
+  '--source', TREE, '--answers', answersFile, '--draft', draftFile,
+  '--verdict', VERDICT, '--out', OUT,
   ...(CEILING_USD === null ? [] : ['--budget', String(CEILING_USD)]),
 ];
 say('');
-say('NEXT — the paid step: a real scout over that repository and a real model filling the declaration form.');
-say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
-say('It stops at prepareSigning: it never signs, and it never runs the job.');
+// Repo and plain-folder sources hand off to genuinely different pipelines
+// (D5=A, item 33 M3 piece 4): a repo gets a real scout and stops at
+// prepareSigning; a plain folder gets NO scout at all — the confirm turn
+// reads the file list, and run-author stops at the M4 wall ("no checks for
+// this kind of job yet") before signing is ever reached. Saying "scout" or
+// "prepareSigning" for a plain folder would describe a run that cannot
+// happen on this source.
+if (IS_REPO) {
+  say('NEXT — the paid step: a real scout over that repository and a real model filling the declaration form.');
+  say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
+  say('It stops at prepareSigning: it never signs, and it never runs the job.');
+} else {
+  say('NEXT — the paid step: a real model reads the file list and walks you through the confirm turn. There is no scout for a plain folder.');
+  say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
+  say('After you confirm, it stops: no checks for this kind of job yet (M4). It never signs and never runs the job.');
+}
 say('');
-say(`  ANTHROPIC_API_KEY=... node scripts/run-author.mjs ${childArgs.join(' ')}`);
+// THE KEY NAME FOLLOWS THE CHOSEN PROVIDER (PRD item 34 L17) — no more
+// hardcoded `ANTHROPIC_API_KEY`. `PROVIDER` already passed `validateJob`
+// below by the time this prints, so `resolveProvider` here cannot throw on
+// anything this script itself let through; the try/catch is only for the
+// off-menu case `validateJob` reds but does not stop the write for (an
+// admitted-but-uncrafted table entry would otherwise crash this print).
+let providerEntry = null;
+try { providerEntry = resolveProvider(PROVIDER); } catch { providerEntry = null; }
+const providerEnvKey = providerEntry?.envKey ?? null;
+say(`  ${providerEnvKey ?? 'YOUR_PROVIDER_API_KEY'}=... node scripts/run-author.mjs ${childArgs.join(' ')}`);
 // NO KEY, NO OFFER. `run-author.mjs` refuses without one and exits 2 at its own
 // door, before a spine exists — so with the shell unkeyed this question has
 // exactly one possible outcome for the person, and putting it anyway spends
 // their attention on a choice they do not have. What is actionable instead is
 // the command above and the one line that says how to make it work.
-const KEYED = Boolean(process.env.ANTHROPIC_API_KEY);
+const KEYED = providerEnvKey !== null && Boolean(process.env[providerEnvKey]);
 if (!KEYED) {
   say('');
-  say('  (ANTHROPIC_API_KEY is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)');
+  say(providerEnvKey
+    ? `  (${providerEnvKey} is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)`
+    : `  (provider "${PROVIDER}" is not in the runnable table — run-author will refuse it loud; this is not a key problem)`);
   // The repair, in plain words and WITHOUT a command: which secret store a person
   // keeps their key in is theirs, and printing one specific incantation would be
   // this script guessing at their setup — while the one thing it must never do is
   // put a key anywhere a command line can be read from.
-  say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
+  if (providerEnvKey) say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
 }
 say('');
 // The default is NO, and it is the same lean the pause's doors take: the answer that

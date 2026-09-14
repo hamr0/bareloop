@@ -781,7 +781,7 @@ test('NO ceiling is unbounded here too — an absent number is a stated operator
 
 // ── 8. THE COMPILE, WIRED INTO THE DRIVER ───────────────────────────────────
 
-test('authorCloseForJob compiles Q6/Q7 into the close for a judged declaration', async (t) => {
+test('authorCloseForJob compiles the Judge Examples answer into the close for a judged declaration', async (t) => {
   const p = makePatient(t);
   const declaration = { stages: sgClose({ cases: null }).stages, notes: [] };
   // the composer's own draft card is a DRAFT — the signed one replaces it
@@ -790,11 +790,12 @@ test('authorCloseForJob compiles Q6/Q7 into the close for a judged declaration',
   /** @type {any[]} */
   const phases = [];
   const r = await authorCloseForJob({
+    // PRD item 33 M3 piece 3: the green trio is 1-3, Judge Examples is 4 —
+    // the old Q6+Q7 pair is now this one answer.
     answers: {
-      1: 'document the exported functions', 2: 'src/', 3: 'do not touch tests',
-      4: 'I read the file', 5: 'if the docs are wrong',
-      6: 'every exported function has a doc block and every parameter is described',
-      7: 'I would pass a documented function and fail an undocumented one.',
+      1: 'document the exported functions', 2: 'I read the file', 3: 'do not touch tests, and it is worse if the docs are wrong',
+      4: 'I would pass a documented function and fail an undocumented one — every exported function has a doc '
+        + 'block and every parameter is described.',
     },
     verdictType: 'soft-green',
     repoPath: p.dir,
@@ -807,8 +808,9 @@ test('authorCloseForJob compiles Q6/Q7 into the close for a judged declaration',
     onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]),
     authorFn: async () => ({ ok: true, declaration, reds: [], stop: null, cost: { calls: [{ label: 'author', costUsd: 0.02, unpricedRounds: 0 }] }, genreEnv: { applied: {} } }),
     proposeFn: async (/** @type {any} */ o) => {
-      // the compile is asked with the person's OWN answers, verbatim
-      assert.equal(o.answers[6], 'every exported function has a doc block and every parameter is described');
+      // the compile is asked with the person's OWN answer, verbatim
+      assert.equal(o.answers[4], 'I would pass a documented function and fail an undocumented one — every '
+        + 'exported function has a doc block and every parameter is described.');
       o.book.absorb([{ label: 'judged-compile', costUsd: 0.03, unpricedRounds: 0 }]);
       return { ok: true, proposal, reds: [], stop: null, attempts: 1 };
     },
@@ -876,7 +878,7 @@ test('the stamped judge is the one HANDED IN, not a library constant — the who
   // graded it. Hand in a different judge and both the record and the set hash must
   // move with it, or the "which judge certified this floor?" question the whole
   // recalibration guard rests on has an answer nobody can trust.
-  const other = 'deepseek-chat';
+  const other = 'deepseek-flash';
   const r = await runCalibration({ judgeModel: other, cases: CASES(), card: CARD(), judgeLoop: honest().loop });
   assert.equal(r.ok, true, 'an honest judge still passes — the identity is a stamp, not a bar');
   assert.equal(r.judgeModel, other, 'the record carries the judge that graded, not the historical pin');

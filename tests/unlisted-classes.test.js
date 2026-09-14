@@ -126,7 +126,7 @@ test('an unknown class is still a TYPO red, not a withdrawal refusal — the two
 test('run-interview.mjs refuses an unlisted class BEFORE asking a single question', () => {
   const out = mkdtempSync(join(tmpdir(), 'unlisted-'));
   try {
-    const r = spawnSync(process.execPath, [SCRIPT, '--patient', tmpdir(), '--verdict', 'hitl', '--out', join(out, 'o')], {
+    const r = spawnSync(process.execPath, [SCRIPT, '--verdict', 'hitl', '--provider', 'anthropic-api', '--out', join(out, 'o')], {
       encoding: 'utf8', input: '', env: { ...process.env, ANTHROPIC_API_KEY: '' },
     });
     assert.equal(r.status, 1, 'an off-menu pick is a non-zero exit — the wizard wrote nothing');
@@ -154,7 +154,7 @@ test('an unlisted class is still admissible INPUT — a typo dies earlier, and d
   // The typo check deliberately reads VERDICT_CLASSES (the whole menu), not the
   // offered subset: narrowing it would turn COUNTED DEMAND into an unrecorded
   // typo, and the demand ledger is what the verdict-classes rung reads.
-  const r = spawnSync(process.execPath, [SCRIPT, '--patient', tmpdir(), '--verdict', 'not-a-class', '--out', '/tmp/none'], {
+  const r = spawnSync(process.execPath, [SCRIPT, '--verdict', 'not-a-class', '--provider', 'anthropic-api', '--out', '/tmp/none'], {
     encoding: 'utf8',
   });
   const said = `${r.stdout}${r.stderr}`;
@@ -175,8 +175,12 @@ test('an unlisted class is still admissible INPUT — a typo dies earlier, and d
 test('bareloop.context.md states the menu the code actually offers', () => {
   const contract = readFileSync(new URL('../bareloop.context.md', import.meta.url), 'utf8');
 
-  // the withdrawal must be stated, by name, in the field the adopter reads
-  assert.match(contract, /UNLISTED_CLASSES/, 'the contract names the list that withdrew hitl');
+  // item 34 L19 (hamr, 2026-09-13) supersedes the 31.2 requirement below this
+  // one: hitl is removed from every customer-facing surface, no revival, and
+  // must never be NAMED here even to explain its withdrawal — so this test no
+  // longer asserts for `UNLISTED_CLASSES` (tests/hitl-hidden.test.js is what
+  // now enforces the no-"hitl" rule on this file). The contract still must
+  // name the menu it actually offers.
   assert.match(contract, /MENU_CLASSES/, 'and the list an adopter should ask for');
 
   // and the claim that started this must never come back

@@ -5,6 +5,309 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.26.0] — 2026-09-14
+
+### Added
+
+- **Source and Destination replace `--patient` (PRD item 33 M3, ruling 2):**
+  `scripts/run-interview.mjs` now asks Source and Destination as its own first two interactive
+  questions, before the picked verdict class's frozen set — never a `--patient` flag. Each is
+  proven mechanically, $0, the moment it is answered: Source is checked against the machine and
+  (for a local directory) language-detected immediately; Destination's SHAPE depends on what
+  Source turned out to be (the same `looksLikeRepoSource` rule `prepareSource` itself uses to
+  route this, now exported from `src/source.js` rather than duplicated) — for a repo Source, the
+  answer IS the write fence and fills `draft.writeScope` directly (the separate "FENCE" question
+  is gone); for every other kind, it is re-asked in a loop until it names an absolute, writable
+  directory (`proveDestination`). The moment both are answered, the interview calls
+  `prepareSource` itself to freeze Source into a hidden scratch copy under a fresh `into` nested
+  inside `--out`, and everything downstream — the class's own questions, the job spec's
+  `description`, and the `--source` handed to `scripts/run-author.mjs` — reads that PREPARED
+  COPY, never the original again. A non-repo Source gets Source and Destination proven and
+  frozen and then an honest named stop: bareloop's check catalogue is code-genre only today
+  (ruling 7 → M4); the prepared copy stays on disk regardless. `scripts/run-author.mjs` gains
+  `--source <tree>`, replacing `--patient <repoPath>`: it must be a tree a source door already
+  prepared (`readSourceManifest(dirname(source))` finds a manifest of kind `'repo'` beside it) —
+  an unprepared path dies loud naming the exact `scripts/prep-source.mjs` command to run first,
+  and a prepared non-repo source gets the same honest M4 stop, now recorded to the spine as
+  counted demand. `scripts/prep-source.mjs`'s printed next-step command follows suit.
+
+- **A Source inside a repo (e.g. a monorepo package) is now a repo job (hamr's ruling A, PRD
+  item 34 loose end):** `looksLikeRepoSource`/`prepareSource` (`src/source.js`) used to treat a
+  folder as a repo source only when `.git` sat directly inside it, so a Source like
+  `myrepo/packages/api` fell to the plain-folder path (no checks yet, M4) and could hit an
+  untracked `node_modules` symlink as a refusal. A new `nearestGitAncestor(startDir)` walks up
+  from a directory to the nearest ancestor carrying a `.git` entry (a real repo directory, or a
+  linked-worktree/submodule file) — the one walk now shared by `looksLikeRepoSource`,
+  `prepareSource`'s own routing, and `src/detectlang.js`'s boundary walk, replacing three
+  separate copies. `prepareSource`'s directory branch freezes the WHOLE found repo's tracked
+  files when Source is a subfolder, exactly as it already did for a repo-root Source; the
+  manifest gains a `sourceSubdir` field (Source's path relative to the repo root, `''` at the
+  root) for a later piece to wire into scope — nothing reads it yet. Edge case, reported not
+  solved: a Source pointed at a deep folder under a large repo (e.g. one's whole home directory)
+  now freezes that WHOLE repo's tracked files, with no size or depth limit to catch it.
+
+- **Language auto-detection (PRD item 33 M3, ruling 3):** `src/detectlang.js`'s `detectLanguage`
+  reads a code job's language off its own repository — `package.json` → js (TypeScript
+  included), `pyproject.toml`/`setup.py` → python — walking up from the Source folder to the
+  nearest ancestor manifest, never past the repository root (the nearest `.git`). A known
+  manifest this catalogue has no genre data for yet (`go.mod`, `Cargo.toml`, `pom.xml`,
+  `build.gradle(.kts)`, `*.csproj`/`*.sln`, `composer.json`) is a named `language-unsupported`
+  stop — never a silent fallback to js — carrying a `Refusal` shaped exactly like
+  `src/authorjob.js`'s own (`REFUSAL_LIB`/`REFUSAL_CATEGORY`, `request-red`). Two manifests at
+  the same nearest level is a named `ambiguous` result listing both; no manifest anywhere is
+  `no-code-job`, which is NOT an error (a plain-folder job still gets the form; M4 gives it
+  checks). The whole known-language table is one data list, keyed against `GENRE_LANGUAGES`
+  (`src/authoring.js`) — a later language landing there (M3b) needs no new code path here.
+
+- **The question sets become the unified intake form (PRD item 33 M3 piece 3, signed ruling
+  "The intake form (RULED)").** `src/authorflow.js` reshapes the green/soft-green/hitl question
+  sets to the ruled 6-field form: Source and Destination (already asked as mechanical fields
+  since M3 piece 2) plus a free-text trio, numbered contiguously 1-3, whose text is now the
+  signed table's own "Holds" column, VERBATIM: Goal ("what you want to achieve"), What success
+  looks like ("checks a machine can count"), and Guardrails ("what must not happen or change" —
+  the old "must not change" and "worse than before" questions JOINED into one field; "worse than
+  before" is gone from the form entirely, moving to the confirm turn, piece 4, repo-only — now
+  built, see below). Soft-green adds a fourth field, Judge Examples ("one pass, one fail, and why" — the
+  old Q6 is retired as its own question, since the "why" half of a real pass/fail pair is what
+  `cardauthor.js`'s rubric compile already read it for). Each field's LABEL (Goal / What success
+  looks like / Guardrails / Judge examples) is shown for the first time too — a new `labelsFor`
+  reader alongside `questionsFor`/`requiredAnswersFor`, and the composer's own interview block
+  now shows the label with each answer. hitl (never shown, kept in code) renumbers the same way,
+  with no signed-table label for its own fourth question. Source and Destination's own wording
+  now also lives in `src/authorflow.js` (`SOURCE_FIELD`, `DESTINATION_FIELD_REPO`,
+  `DESTINATION_FIELD_PLAIN`, `destinationFieldFor`), so `scripts/run-interview.mjs` prints
+  library text for all six fields, none of its own. What the old Q2 used to tell the composer
+  (which files change, which are read-only) now reaches `authorPrompt` through a new optional
+  `writeScope` parameter (`writeScopeBlock`), fed from Destination's own proven write-scope
+  fence end to end (`authorClose` → `authorCloseForJob` → `scripts/run-author.mjs`'s
+  `draft.writeScope`) rather than silently vanishing.
+
+- **The confirm turn (PRD item 33 M3 piece 4).** After the survey, `scripts/run-author.mjs`
+  now runs a paid, interactive confirm turn (`runConfirmTurn`, `src/authorjob.js` →
+  `src/authorflow.js`) before authoring: a $0 half (repo-only "worse than before", an
+  ambiguous-language pick, both asked BEFORE the scout) followed by up to 2 paid rounds where
+  the model drafts a plan — every check it will compose, the always-on guards as PROTECTIONS
+  (never named in the goal), and one signed goal sentence — and the person confirms it, fixes
+  it, types the goal themselves, or starts over. No hand-authored matcher ever compares the
+  goal against the checks (ruling 6) — the model states its own plan and the person is the one
+  judgement that accepts it. `scripts/run-interview.mjs` asks no separate goal question any
+  more (ruling 5's addendum, D2 = option B) and no longer dies on an ambiguous-language Source
+  (it defers the pick to the confirm turn, D7); `run-author.mjs`'s own ambiguous-language die()
+  is likewise gone. The confirm turn's own cost book absorbs the scout's prior spend (and its
+  own `costUsd: null` calls) before its first `capStop()` check, so a scout that already spent
+  most of the ceiling is visible to it immediately — only the confirm turn's OWN new calls
+  travel onward to `authorClose` as `priorCalls`/`priorRaws`, never the scout's a second time.
+  `run-author.mjs` is now interactive: a readline `ask` seam (same idiom as
+  `run-interview.mjs`'s own), closed in a `finally` around the whole paid span. The confirm
+  turn's open questions (a round-2 "fix" passed to the composer verbatim) print at the SIGNING
+  PREPARED readout (`openQuestionLines`, `scripts/author-readout.mjs`) — the signed spec format
+  itself is unchanged. `authorClose` gains a `confirmed` plan fed into `authorPrompt`'s new
+  `confirmedBlock` ("compose these checks and no other"). Every existing caller of
+  `authorCloseForJob`/`authorClose`/`authorPrompt` that passes no `ask` runs byte-identical to
+  before this piece existed. **`TYPES_GENRE_TEMPLATE` now composes its WORK stages only for a
+  confirmed check (D6 = A, "replace it", item 33 step S7):** the frozen TYPES genre template's
+  old unconditional work-stage skeleton (`typecheck`, `typecheck-outside`, `tests-kept`,
+  `suite-green`) and unconditional STRICT-checker mandate conflicted with ruling 6 ("a genre
+  never adds a check the goal did not ask for") for exactly the case run mtv8jihy surfaced (an
+  unasked `tsc --strict` stage). The STRICT form of the checker, and the WORK stages themselves,
+  are now composed only when a confirmed check — or, absent a confirm turn, the goal and
+  interview answers — asks for them; the GUARDS (`changed-from-seed`, `no-suppressions`) stay
+  always on, unaffected, since they are enforced structurally (`classGuards` +
+  `validateDeclaration`'s guards-absent red), never by this prompt text. The template is prompt
+  text handed to the authoring model only — never hashed into a signed spec, `closeDecl`, bundle
+  manifest, or bench row signature — so this edit changes nothing about an already-signed close.
+  `tests/authoring.test.js`'s byte-identity test is re-pinned to the new frozen block.
+  `scripts/run-interview.mjs` asks no separate GOAL question any more (ruling 5's
+  addendum, D2 = option B) and no longer dies on an ambiguous-language Source (D7 defers the
+  pick to the confirm turn); its own $0 validator pass filters both `goal`
+  (`CONFIRM_AUTHORED_FIELDS`) and, for a plain-folder job, `writeScope`
+  (`PLAIN_FOLDER_DEFERRED_FIELDS`, both `src/authorjob.js`) reds the same way it already filters
+  `AUTHORED_SPEC_FIELDS`'s. **A plain-folder Source no longer stops the interview at all (PRD
+  item 33 M3 piece 4, step S6, D5 = A ruling):** the form continues — class questions, job name,
+  budget, wall, and the offer — and the draft is written with no `writeScope` (Destination there
+  is an output directory, never a fence). The honest "no checks yet" stop (ruling 7 → M4) moves
+  to `run-author.mjs`, which now runs a plain-folder job's confirm turn too — over a $0, no-git
+  listing of the frozen tree rather than a scout (D5: the scout's register is code-only) — before
+  giving that same stop. If the confirm turn itself does not reach a signed plan, that stop
+  stands instead; the non-code-source stop only fires once a person actually confirmed one.
+
+### Removed
+
+- **BREAKING: soft-green's rubric-card/calibration answer keys change shape (PRD item 33 M3
+  piece 3).** The old two-question pair (`answers[6]`, `answers[7]`) is now ONE answer at key
+  `4` (`SOFTGREEN_JUDGE_EXAMPLES_KEY`) — `src/cardauthor.js`'s `cardCasesPrompt` reads that one
+  key instead. Any hand-authored `answers.json` from before this change needs its keys
+  reshaped: green's old five (1-5) become three (1-3, Guardrails absorbing the old 3 and 5);
+  soft-green's old seven (1-7) become four (1-4).
+- **BREAKING: `--patient` is gone from `scripts/run-interview.mjs` and `scripts/run-author.mjs`
+  (PRD item 33 M3, ruling 2).** `run-interview.mjs` asks Source (and Destination) as its own
+  first questions instead; `run-author.mjs` takes `--source <tree>`, which must be a prepared
+  copy (see "Added", above). Passing `--patient` to either script now is a loud, explicit
+  refusal naming its replacement, rather than a silently-ignored or misrouted flag.
+- **BREAKING: `--lang` is gone from `scripts/run-interview.mjs` and `scripts/run-author.mjs`.**
+  Language is now auto-detected from Source's own repository (see "Added", above) — it is
+  a fact of the repo, never a flag a person sets. Passing `--lang` now is a loud, explicit
+  refusal naming the flag and why, rather than a silently-ignored no-op.
+
+### Fixed
+
+- **The confirm turn's "protections" now come from code, never the model (item 34 loose-end
+  fix, finding #1 from live run mu0voeo4):** the confirm turn used to display whatever prose the
+  model invented for `protections`, and one live run invented a "behavior-preservation guard"
+  this build has no way to check (no kind in the catalogue can verify runtime behaviour). The
+  model is no longer asked for `protections` at all — the schema dropped the field — and what a
+  person sees and what gets recorded as `accepted.protections` is now rendered from the SAME
+  guards `classGuards` will actually compose (`src/authoring.js`'s `MECHANICAL_GUARDS`), through
+  a frozen plain-English line per guard (`GUARD_DESCRIPTIONS`, `src/authorflow.js`), plus the
+  write fence when one is set. The model instead returns `notChecked` — anything the person asked
+  for that no listed check can verify — shown under its own heading in the menu and in the
+  composer's confirmed-plan block, never silently dropped.
+- **`run-interview.mjs`'s paid-step hand-off no longer describes a scout a plain folder
+  never gets (item 34 loose-end fix):** since 21561cf (D5=A), a non-repo Source gets no
+  scout — the confirm turn reads the file list and `run-author.mjs` stops at the M4 wall
+  ("no checks for this kind of job yet") before signing is ever reached. The hand-off text
+  printed the repo-only wording ("a real scout over that repository", "It stops at
+  prepareSigning") for every source regardless. A plain-folder session now prints its own
+  line naming the confirm turn and the M4 stop; a repo session's wording is unchanged.
+- **`run-author.mjs`'s `language-unsupported` stop is now counted admission demand (item 34
+  loose-end fix on M3):** the check used to print the refusal and `process.exit(1)` before the
+  run's spine even existed, so nothing recorded it. The spine is now bootstrapped first (before
+  any provider is resolved, before the API key is read, before any spend) and the stop is
+  emitted through the same `refusalEvents()` channel every other refusal in the script uses,
+  so it folds into `src/ledger.js`'s `classifyIncidents` admission count instead of vanishing.
+  `run-interview.mjs`'s own printed line for the same stop no longer claims "the refusal IS the
+  record" — that script keeps no spine of its own, so it now says plainly that nothing here
+  recorded it, and points at `run-author.mjs` for the one that does.
+- **Scan-then-freeze TOCTOU closed in the source front door (PRD item 34 L1):**
+  `prepareSource`'s folder/repo path used to hash+secret-scan each file's bytes once, then
+  re-read the same file a SECOND time off disk (`copyFile`) to freeze it into the hidden
+  tree — a window where a file changed on disk between the two reads would have its secret
+  scan run against different bytes than the ones actually frozen. The freeze step now
+  re-hashes its own (second) read and refuses (`source-changed-after-scan`) on any mismatch
+  against the scan-time hash, rather than caching every file's buffer (which would hold a
+  whole repo in memory at once — the streaming scan design exists to avoid exactly that).
+  `copyFile`'s mode-bit preservation is kept explicitly (`stat` + `chmod` on the frozen
+  file), verified not to regress.
+- **A gitignored/untracked subfolder inside a repo no longer freezes into an empty
+  claim (hamr's ruling A, PRD item 34 loose end, 2026-09-13):** the ruling-2 addendum's
+  "a Source subfolder is a repo job" rework froze the WHOLE repo's tracked files, but
+  `listRepoFiles` only ever returns tracked paths — when Source itself is a subfolder git
+  tracks nothing under (`.gitignore`'d, or simply never committed), the freeze used to
+  succeed anyway with a `kind: 'repo'` tree holding none of Source's own files, silently
+  vanishing the person's input. `prepareSource` now refuses `source-untracked-in-repo`
+  before `into` is created — a repo-root Source, and a subfolder with at least one tracked
+  file underneath it, are unaffected.
+- **The documented-exports guard now reads the doc instead of a hand-typed array (F167,
+  PRD item 34 L4):** `tests/index.test.js`'s "documented public surface" test used to check
+  a list of names copied out of `bareloop.context.md` by hand — the same class of bug that
+  let `datedDestination`/`pickDelivery` ship `undefined` in v0.25.0 while the guard stayed
+  green. `documentedExportNames` now parses the doc live (import-block examples, Public API
+  section headings, `Menus exported:` lists, and tight "X is/are exported" proximity) and
+  found two more real gaps the hand list missed: `cliMain` and (already fixed) the two
+  source-front-door helpers. Covers the doc's explicit export-marker idioms, not every
+  function mentioned in flowing prose — a broader sweep was tried and produced 21 false
+  positives out of 97 candidates on this doc, noise a regex cannot safely resolve.
+- **The export list now equals the documented contract exactly, guarded both ways (PRD
+  item 34 L20):** the 91 undocumented names that were genuinely discussed in
+  `bareloop.context.md` prose (the "Close authoring", "Bundles", "THE REVIEW DOOR", "The
+  reuse ENVELOPE" and ledger sections — none of which used per-function `###` headings, so
+  the extractor's marker idioms could not credit any name in them) now carry an explicit
+  `import { ... } from 'bareloop'` marker next to their existing prose, including
+  `JUDGED_MARKER` (previously undocumented anywhere despite being required by every close
+  script this repo ships and by `exportBundle`'s `close-import-unexported` legality check).
+  `tests/index.test.js`'s guard is now a full two-way check — every export must be
+  documented and every documented name must be exported — replacing the one-directional
+  guard and the item-34-L4-scoped "37 restored" test, both now fully subsumed. Two
+  exclusions carry forward unchanged: `main` (the doc's pre-rename local name for the real
+  export `cliMain`) and `resumableOutcomes` (its own "exported" sentence describes "bundle",
+  not this name — the real export is `CHECKPOINT_OUTCOMES`).
+- **The doc-reading extractor's own coverage gap closed (PRD item 34 L4 follow-up):** the
+  switch to reading `bareloop.context.md` live covered fewer names than the hand-typed array
+  it replaced — 37 exported names (`mintBridge`, `appendGreen`, `BRIDGE_SCHEMA`, the rest of
+  the reuse registry, plus `runStages`/`globToPrefix`/`scanSecrets`/three ledger helpers) sat
+  in flowing prose with no marker idiom the extractor reads, so the guard silently stopped
+  covering them. `bareloop.context.md` now carries an explicit marker (an `import { ... }
+  from 'bareloop'` example, or a tight "X is/are exported" sentence) for each of the 37, and
+  `tests/index.test.js` pins that they stay derived. A live count found 169 of
+  `src/index.js`'s 255 exports still undocumented by any marker idiom — reported, not fixed
+  here; a full reverse guard (every real export documented) was considered and rejected as
+  out of this fix's scope.
+- **`SCOUT_LABEL` gains a third state in `scripts/run-u.mjs` (PRD item 34 L2):** an explicit
+  `--scout on` used to print the identical "scout ON (default)" text as no flag at all,
+  indistinguishable in printed logs/re-invocation lines — which matters for the
+  SCOUT-CONTRAST bench row's provenance. It now prints `scout ON (--scout on — operator
+  explicit)`, distinct from the true default and from `--scout off`'s unchanged label.
+- **Job authoring is LLM-agnostic (PRD item 34 L17):** `scripts/run-author.mjs` no longer
+  forces `PROVIDER_NAME = 'anthropic-api'` for its scout and drafter — the identity is now
+  resolved from the operator's own draft (`resolveProvider(draft.provider)`), the same
+  no-flag/no-default rule `scripts/run-u.mjs` applies to the worker; a missing or
+  unrecognized draft provider dies loud, at $0, before any paid call, naming the known
+  table. `scripts/run-interview.mjs` gains a REQUIRED `--provider` flag with no default (a
+  default would silently re-lock every interview onto one vendor) and writes it into the
+  draft; the paid-step offer's key line and unset-key notice now name whichever provider's
+  own env var applies, never a hardcoded `ANTHROPIC_API_KEY`. Non-Anthropic drafting is
+  legal as of this change but not yet proven live — that is M3's DeepSeek proof run, not
+  this one.
+
+### Docs
+
+- **`npx @scope/pkg`-shaped close commands documented as a KNOWN, KEPT limit (PRD item 34
+  L3):** `closeScriptCandidateToken`'s path-shaped test (`src/validate.js`) reads a scoped
+  package name as a script path because it contains `/`, so such a close can never be
+  signed — `bareloop.context.md` now says so next to the scope note it belongs beside. Not
+  fixed: it fails safe and no shipped job uses the shape.
+
+### Changed
+
+- **DeepSeek secondary model swap (F171, PRD item 34 L16):** `deepseek-chat` is no longer
+  served by DeepSeek's API (a live `/models` call returned only `deepseek-flash` and
+  `deepseek-v4-pro`). The `openai-api` tier table (`src/providers.js`) and its per-model
+  `legacyMaxTokens` request-key gating now name `deepseek-flash`. F149's gating measurement
+  was taken on `deepseek-chat` and is carried forward UNVERIFIED on `deepseek-flash`;
+  pricing stays the estimated default (F113 unchanged).
+- **`hitl` removed from every customer-facing surface (PRD item 34 L19):** `bareloop.context.md`,
+  and the usage/help text of `scripts/run-author.mjs` and `scripts/run-interview.mjs`, no
+  longer name `hitl` anywhere. The class, its terminals (`hitl-pause`, `hitl-decision-red`,
+  the legacy human-close terminal) and its `human-confirms` stage kind are untouched in code —
+  kept admitted for reuse, never revived, never shown to a customer again. The counted-demand
+  refusal a person sees when they pick an off-menu verdict class is unchanged (it names the
+  class and fwdloop by design). `tests/hitl-hidden.test.js` pins the doc and both scripts
+  case-insensitively hitl-free.
+
+### Removed
+
+- **BREAKING: 78 undocumented names dropped from the `src/index.js` root export list (PRD
+  item 34 L20, owner's option A):** a live audit found 169 of 255 root exports had zero real
+  citation in `bareloop.context.md`; 91 of those were genuinely discussed in the doc's
+  prose and gained an explicit marker (see Fixed, above) instead of being dropped, but the
+  remaining 78 had no adopter-facing mention anywhere and no in-repo consumer reaching them
+  through the package root — a name imported directly from `import { x } from 'bareloop'`
+  and nothing else. Every dropped name's own module is untouched; only the root re-export
+  is gone, and each still exists inside its own module for the library's own internal use —
+  but `package.json`'s `exports` map only `"."` to `src/index.js`, so a package user can no
+  longer reach any of them, including via a submodule path such as `src/text.js`. Dropped:
+  `artifactHash`, `authorPrompt`,
+  `BASELINES`, `CALIBRATION_LABEL`, `cardCasesPrompt`, `CASE_VERDICTS`, `CATALOGUE_KINDS`,
+  `CATALOGUE_LIVE_KINDS`, `changedSet`, `classifySurvey`, `classMenu`, `CLASS_STATEMENTS`,
+  `CLOSE_DECL_FIELDS`, `closeGrade`, `compareExpectation`, `COMPILE_SYSTEM`,
+  `createReadShim`, `declarationSchema`, `DECLARED_CLOSE_CLASSES`, `DECLARED_GAP_KEEP`,
+  `DECLARED_GAP_PREFIX`, `DECLARED_GENRES`, `defaultJudgeLoop`, `DIRECTIONS`, `doorAgeGate`,
+  `doorRecordOf`, `EXIT_GREEN`, `EXIT_RED`, `EXIT_STOP`, `factsResist`, `GENRE`,
+  `GENRE_LANGUAGES`, `genreOwnedEnvNames`, `GREEN_QUESTIONS`, `guardNames`,
+  `HITL_DECISION_RED`, `HITL_PAUSE`, `HUMAN_CHECKPOINTS`, `INJECTION_CARD`,
+  `isDeclaredClose`, `JUDGED_FLOOR_KIND`, `JUDGE_MAX_TOKENS`, `LIVE_CLASSES`,
+  `LOCATE_AXES`, `LOCATE_LABEL`, `locatePrompt`, `makeLoopGenerate`, `makeSeedTrees`,
+  `MAX_PROPOSAL_RETRIES`, `MAX_STAGES`, `normalizeDeclaration`, `prepareWorkBranch`,
+  `PROPOSAL_LABEL`, `proposalSchema`, `proposalTool`, `PROPOSAL_TOOL_NAME`,
+  `QUARANTINED_CODE`, `QUESTION_SETS`, `RAW_TRIM_MARKER`, `READ_SHIM_ARMS`,
+  `readShimStrategy`, `REFUSAL_CATEGORY`, `REFUSAL_LIB`, `REVIEW_DOOR`, `seedFileList`,
+  `seedListing`, `shapeForkName`, `SOFTGREEN_QUESTIONS`, `SURVEY_CAUSES`, `TYPES_GENRE`,
+  `TYPES_GENRE_TEMPLATE`, `validateCard`, `validateFacts`, `validateJudgedArtifacts`,
+  `VERDICT_CLASSES`, `WORK_BRANCH_PREFIX`, `WORK_BRANCH_RE`, `wrapReadTool`. No in-repo
+  importer reached any of these through the package root (verified against every
+  `from '../src/index.js'` / `from './index.js'` / `from 'bareloop'` site in the tree), so
+  nothing else in this repo needed a path change.
+
 ## [0.25.1] — 2026-09-13
 
 ### Fixed

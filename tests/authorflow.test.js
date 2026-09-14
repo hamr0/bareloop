@@ -42,9 +42,11 @@ import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
   MAX_REVISIONS, MAX_STRUCTURE_RETRIES, REVISE_GAP_CAP, REVISE_RED_CAP,
   REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
-  QUESTION_SETS, GREEN_QUESTIONS, questionsFor, requiredAnswersFor, CLASS_STATEMENTS,
+  QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS,
+  questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS,
+  WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
-  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt,
+  catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
   applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
 } from '../src/authorflow.js';
@@ -178,15 +180,25 @@ test('question sets: the GREEN set asks nothing about a genre and nothing about 
   const numbers = Object.keys(GREEN_QUESTIONS).map(Number).sort((a, b) => a - b);
   // CONTIGUOUS FROM 1, which is the load-bearing half: the number a person is shown
   // is the key their answer is filed under, so a deletion renumbers rather than
-  // leaving a hole. Two slots have gone this way — D13's genre confirm, and the
-  // repo question hamr dropped once `--patient` made it a second answer for a fact
-  // the machine already holds.
-  assert.deepEqual(numbers, [1, 2, 3, 4, 5]);
+  // leaving a hole. PRD item 33 M3 piece 3 shrank the set to THREE (Goal, Success,
+  // Guardrails) — Source and Destination (the old "which files" half of Q2) are now
+  // MECHANICAL fields proven against the machine, never a numbered free-text slot.
+  assert.deepEqual(numbers, [1, 2, 3]);
   assert.deepEqual(requiredAnswersFor('green'), numbers);
   const all = Object.values(GREEN_QUESTIONS).join(' ');
   assert.ok(!/type[- ]?fix|type checker|TYPES/i.test(all), `a genre-specific slot survives: ${all}`);
   assert.ok(!/repo|repository/i.test(all), `the repo arrives as repoPath, never as prose: ${all}`);
-  for (const q of Object.values(GREEN_QUESTIONS)) assert.ok(q.trim().endsWith('?'), q);
+  // PRD item 33 M3 piece 3's wording fix: the text is the signed table's own
+  // "Holds" column, VERBATIM — not the old worded questions (F159's fix, commit
+  // 1ac4d05, only reshaped the SET; this is the wording half). No trailing "?":
+  // these are what the field HOLDS, read beside its label (FIELD_LABELS), not a
+  // question typed at a person.
+  assert.deepEqual(GREEN_QUESTIONS, {
+    1: 'what you want to achieve',
+    2: 'checks a machine can count',
+    3: 'what must not happen or change',
+  });
+  assert.ok(!/worse than before/i.test(all), `the retired "worse than before" half survives: ${all}`);
 });
 
 test('question sets: an UNKNOWN class has no questions to run, and asking for them THROWS', () => {
@@ -218,6 +230,158 @@ test('the prompt STATES the declared class — this is where genre understanding
   assert.throws(() => authorPrompt({ ...args }), /verdict class/i);
   assert.throws(() => authorPrompt({ ...args, verdictType: 'chartreuse' }), /chartreuse/);
   for (const c of LOCKED_CLASSES) assert.throws(() => authorPrompt({ ...args, verdictType: c }), new RegExp(c));
+});
+
+// PRD item 33 M3 piece 3's wording fix: the composer sees the same Field/Holds
+// pairing a person does — a label with each answer, never a bare Q<n>.
+test('the interview block carries each field\'s LABEL beside its question, from the signed table', () => {
+  const p = authorPrompt({
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  });
+  assert.match(p, /Q1 \(Goal\)\. what you want to achieve/);
+  assert.match(p, /Q2 \(What success looks like\)\. checks a machine can count/);
+  assert.match(p, /Q3 \(Guardrails\)\. what must not happen or change/);
+});
+
+test('labelsFor mirrors questionsFor: same admission rule, and soft-green\'s fourth label is "Judge examples"', () => {
+  assert.deepEqual(labelsFor('green'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
+  assert.deepEqual(labelsFor('soft-green'), {
+    1: 'Goal', 2: 'What success looks like', 3: 'Guardrails', 4: 'Judge examples',
+  });
+  // hitl's own fourth question has no row in the signed table — no fabricated label
+  assert.deepEqual(labelsFor('hitl'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
+  assert.throws(() => labelsFor('chartreuse'), /chartreuse/);
+});
+
+// PRD item 33 M3 piece 4 (the confirm turn, D6/ruling 5 addendum): "worse than
+// before" is a SEPARATE, repo-only confirm-turn field, never folded back into
+// any of the three numbered free-text sets — a caller reading the wrong table
+// could otherwise double-ask it.
+test('the retired "worse than before" wording is nowhere in any questionsFor(*) set', () => {
+  for (const set of [GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS]) {
+    const all = Object.values(set).join(' ');
+    assert.ok(!/worse than before/i.test(all), `a numbered set carries the retired wording: ${all}`);
+  }
+});
+
+// The confirm turn's own person-facing wording (piece 4) — frozen, like
+// SOURCE_FIELD/DESTINATION_FIELD_* above: exact shape, exact text.
+test('WORSE_THAN_BEFORE_FIELD is the old Q5 wording, verbatim, as its own mechanical field', () => {
+  assert.deepEqual(WORSE_THAN_BEFORE_FIELD, {
+    id: 'worseThanBefore',
+    kind: 'mechanical',
+    label: 'Worse than before',
+    prompt: 'What would make you say this came back worse than before?',
+  });
+  assert.ok(Object.isFrozen(WORSE_THAN_BEFORE_FIELD));
+});
+
+test('LANGUAGE_PICK_FIELD names no candidates of its own — the caller supplies detectLanguage\'s own list', () => {
+  assert.equal(LANGUAGE_PICK_FIELD.id, 'language');
+  assert.equal(LANGUAGE_PICK_FIELD.kind, 'mechanical');
+  assert.match(LANGUAGE_PICK_FIELD.prompt, /which one is this job about/i);
+  assert.ok(Object.isFrozen(LANGUAGE_PICK_FIELD));
+});
+
+test('CONFIRM_MENU is a structured four-way choice, never a matcher over free text', () => {
+  assert.deepEqual(Object.keys(CONFIRM_MENU), ['confirm', 'fix', 'type-goal', 'start-over']);
+  for (const v of Object.values(CONFIRM_MENU)) assert.equal(typeof v, 'string');
+  assert.ok(Object.isFrozen(CONFIRM_MENU));
+});
+
+// PRD item 33 M3 piece 3: Q2 (which files change, which are read-only) is gone
+// from the numbered interview; `writeScope` is how that information now reaches
+// the composer instead of silently vanishing.
+test('writeScopeBlock states the write fence, and THROWS on an empty one rather than stating nothing', () => {
+  const block = writeScopeBlock(['src/**', 'tests/**']);
+  assert.match(block, /WHAT MAY CHANGE, AND WHAT IS ONLY READ/);
+  assert.match(block, /src\/\*\*/);
+  assert.match(block, /tests\/\*\*/);
+  assert.match(block, /READ-ONLY/);
+  assert.throws(() => writeScopeBlock([]), /non-empty writeScope/);
+  assert.throws(() => writeScopeBlock(/** @type {any} */ (null)), /non-empty writeScope/);
+});
+
+test('authorPrompt carries writeScope in place of the old Q2 — the composer still learns what may change', () => {
+  const withScope = authorPrompt({
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+    writeScope: ['src/**'],
+  });
+  assert.ok(withScope.includes('WHAT MAY CHANGE, AND WHAT IS ONLY READ'), 'the fence block is present');
+  assert.ok(withScope.includes('src/**'), 'the real fence pattern travels in, not a placeholder');
+  // a caller that predates the reshape (no writeScope passed) is byte-identical
+  // apart from the missing block — nothing else about the prompt moves
+  const withoutScope = authorPrompt({
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  });
+  assert.ok(!withoutScope.includes('WHAT MAY CHANGE, AND WHAT IS ONLY READ'), 'no writeScope, no block — never a fabricated fence');
+});
+
+// PRD item 33 M3 piece 4: `confirmed` is ABSENT for every caller that ran no
+// confirm turn — the prompt must be byte-identical to before this param
+// existed. Present, it adds exactly one new block.
+test('authorPrompt: confirmed is byte-identical when absent, adds exactly the confirmedBlock when present', () => {
+  const args = {
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  };
+  const withoutConfirmed = authorPrompt({ ...args });
+  const withoutConfirmedAgain = authorPrompt({ ...args, confirmed: null });
+  assert.equal(withoutConfirmed, withoutConfirmedAgain, 'an explicit null is the same as omitting it entirely');
+  assert.ok(!withoutConfirmed.includes('THE CONFIRMED PLAN'));
+
+  const confirmed = { checks: ['tests stay green'], protections: ['no-suppressions'], openQuestions: ['also check the CLI'] };
+  const withConfirmed = authorPrompt({ ...args, confirmed });
+  assert.ok(withConfirmed.includes('THE CONFIRMED PLAN'));
+  assert.ok(withConfirmed.includes('tests stay green'));
+  assert.ok(withConfirmed.includes('no-suppressions'));
+  assert.ok(withConfirmed.includes('also check the CLI'));
+  // nothing else about the prompt moved — the whole rest of the string is
+  // still there, just with one block inserted
+  assert.equal(withConfirmed.replace(confirmedBlock(confirmed) + '\n\n---\n\n', ''), withoutConfirmed);
+});
+
+test('confirmedBlock renders notChecked when present, and nothing extra when absent (fix #1, run mu0voeo4)', () => {
+  const withGap = confirmedBlock({ checks: ['a'], protections: ['b'], notChecked: ['a human review of the diff'] });
+  assert.match(withGap, /THE PERSON ASKED FOR THESE, BUT NOTHING CHECKS THEM/);
+  assert.match(withGap, /a human review of the diff/);
+
+  const withoutGap = confirmedBlock({ checks: ['a'], protections: ['b'] });
+  assert.ok(!withoutGap.includes('THE PERSON ASKED FOR THESE'));
+});
+
+test('authorClose: priorCalls/priorRaws (the confirm turn\'s own spend) are absorbed beside the scout\'s', async () => {
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({
+    ...baseArgs(), verdictType: 'green', generate, seedReadFn: scriptSeedRead().fn,
+    ceilingUsd: 1, priorCalls: [{ label: 'confirm', costUsd: 0.5, unpricedRounds: 0 }],
+  });
+  assert.ok(calls.length >= 1, 'the author call still fires — 0.5 absorbed leaves room under a $1 ceiling');
+  const ownSpend = calls.length * 0.01;
+  assert.equal(r.cost.knownUsd, Number((0.5 + ownSpend).toFixed(6)), 'the absorbed call is IN the total');
+  assert.ok(r.cost.calls.some((c) => c.label === 'confirm'), 'the confirm call shows up by its own label in the cost report');
+});
+
+test('authorClose: priorCalls that already spend the ceiling cap-halts BEFORE the author call — FAIL-FIRST proof lives in tests/authorjob.test.js', async () => {
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  const r = await authorClose({
+    ...baseArgs(), verdictType: 'green', generate, seedReadFn: scriptSeedRead().fn,
+    ceilingUsd: 0.5, priorCalls: [{ label: 'confirm', costUsd: 0.5, unpricedRounds: 0 }],
+  });
+  assert.equal(calls.length, 0, 'the author call was never made — the ceiling was already spent by the confirm turn');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'cap-halt');
+});
+
+test('authorClose: writeScope reaches the composer prompt end to end (never just the standalone helper)', async () => {
+  const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
+  await authorClose({ ...baseArgs(), verdictType: 'green', generate, seedReadFn: scriptSeedRead().fn, writeScope: ['src/mailer.js'] });
+  assert.ok(calls.length >= 1, 'the author call was made');
+  const sent = JSON.stringify(calls[0]);
+  assert.ok(sent.includes('src/mailer.js'), 'the real fence reaches the model, not a placeholder');
 });
 
 test('authorClose: a LOCKED or unknown class refuses at $0, before any token', async () => {
@@ -329,7 +493,7 @@ test('the authoring prompt carries the genre template, the catalogue and the FIL
     listingBlock: 'FILES THAT ACTUALLY EXIST', lang: 'js', guards: greenGuards('js'),
     ownedEnvNames: genreOwnedEnvNames('js'), verdictType: 'green',
   });
-  assert.match(p, /The graded instrument is the STRICT form/, 'the frozen TYPES template is law for the declaration');
+  assert.match(p, /The STRICT form of the language's type checker/, 'the TYPES template is law for the declaration (D6=A, 2026-09-14 wording)');
   // the catalogue this prompt names is the PICKED CLASS's menu (softgreen module
   // 3), not the whole live set: a green job is never shown a kind whose pick
   // would red as `class-ceiling` after the call was paid for.
