@@ -436,6 +436,28 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     frozen block (supersedes the prereg's addendum 3 for the product; that closed record is
     never edited).
 
+    **2026-09-14 — next round starts with the M3 close-out:** this branch
+    (`fix/item34-loose-ends`) stops here and goes to `/branch-review` → `/release`; the fresh
+    branch after it opens with the M3 close-out list below, before M3b. See
+    `docs/product/ITEM33-BUILD.md` M3's dated pointer for detail on each row.
+    - [ ] Ruling 7 (a repo job works end to end) not yet met — the one live fire ended
+      broken-close, blocked by L24/F176.
+    - [ ] Ruling 5's round-2 open-question path — see item 34's L23/F175 (not duplicated here).
+    - [ ] Release-order deviation: M3 pieces were built on the fix branch instead of after its
+      release, per item 34's own line below.
+    - [ ] L17 ("authoring provider selectable") is provider-selectable but not DeepSeek-reachable
+      from the form — `scripts/run-interview.mjs` never asks for or writes `baseUrl`.
+    - [ ] `prepareSource` freezes tracked files only — a repo job's toolchain (e.g.
+      `node_modules`) is absent from the prepared tree, undocumented in the interview/hand-off.
+    - [ ] The real person path (`run-interview` → spawned `run-author` reading the keyboard) has
+      never run live — ruling 9's proof is still owed.
+    - [ ] The plain-folder confirm turn (D5) and soft-green jobs through the confirm turn are
+      stub-tested only, never run live.
+    - [ ] `bareloop.context.md` does not describe commit 2b45f09's change (`classGuards` +
+      write-fence protections, the model's `notChecked` list).
+    - [ ] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed
+      in `src/promptregisters.js`'s `PROMPT_REGISTERS` — decide whether to add it.
+
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
     POC's negative scenario N4 (`docs/product/EXPORT-BUILD.md`): `jobSpecHash` covers

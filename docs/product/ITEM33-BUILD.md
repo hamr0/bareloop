@@ -410,7 +410,18 @@ EXISTING audit records — no new record format.
      `scripts/run-author.mjs`, via a library function with an injected `ask` seam;
      run-interview stays provider-free). **D2 = A** (a goal already present in a draft seeds
      round 1's starting sentence; the confirmed goal replaces it; `goal` does not join
-     `AUTHORED_SPEC_FIELDS`). **D3 = A** (at most 2 model calls; a round-2 "fix" is passed to
+     `AUTHORED_SPEC_FIELDS`).
+
+     **Correction (hamr, 2026-09-14): D2 = A was never built, and is now dropped, not
+     deferred.** A draft written by `run-interview`'s own interview never carries a goal any
+     more (the 2026-09-13 addendum above, "the separate signed-goal question is dropped"), so
+     there is no draft-authored goal left to seed round 1's starting sentence with — an old
+     draft's goal, if one exists on disk, is replaced outright by the confirmed goal
+     (`scripts/run-author.mjs:813`, `if (authored.confirmed?.goal) draft.goal = ...`). The line
+     above is left as the record of what was ruled, not rewritten; this paragraph is the
+     correction.
+
+     **D3 = A** (at most 2 model calls; a round-2 "fix" is passed to
      the composer verbatim and shown at signing as an open question; the menu also offers
      "type the goal sentence yourself"). **D4 = A** (open questions are shown in run-author's
      "SIGNING PREPARED" readout from `authored.json`; the signed spec format does not change).
@@ -448,6 +459,11 @@ EXISTING audit records — no new record format.
 5. The checker must judge the PATIENT's own tree: if imports could resolve to an installed or
    editable copy elsewhere, the environment is set so they resolve inside the patient.
 6. A number the tool did not report is unknown, never zero.
+
+**2026-09-14 — pointer:** hamr ruled this branch (`fix/item34-loose-ends`) stops here for
+`/branch-review` → `/release`; the M3 close-out list (open items owed before M3b) is written
+into `docs/product/PRD.md`'s item 33 build-order addenda, dated 2026-09-14 — see there for the
+list, not duplicated here.
 
 ## M3b — language guards
 
