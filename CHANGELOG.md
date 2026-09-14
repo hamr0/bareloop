@@ -9,20 +9,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
-- **F177 follow-up — a signed fence could also name `node_modules` directly, or reach a nested
-  `node_modules` through an otherwise-legal fence, invisibly to `changedSet`.**
-  `scopeContained` (`src/validate.js`) now refuses `node_modules` as a whole fence/scope
-  segment (hamr's ruling, 2026-09-14, option B). bareguard's `fs.deny` cannot express "at any
-  depth" (exact prefix-containment only), so the runtime belt for a NESTED `node_modules` uses
-  the supported `tools.denyArgPatterns` hook instead (`NODE_MODULES_PATH_PATTERN`,
-  `src/planrun.js`). Not yet proven live.
-- **F178 — a signed fence could name `.git` directly, letting a worker write git's own files
-  (refs, the seed, `.git/info/exclude`) invisibly to `changedSet`.** `scopeContained`
-  (`src/validate.js`, the one containment law `validateJob` and `validatePlan` both go through)
-  now refuses any fence/scope whose normalized prefix has a whole path segment equal to `.git`
-  (hamr's ruling, 2026-09-14, option B) — a look-alike like `.github`/`my.git` stays admitted.
-  The worker Gate's `fs.deny` (`arbiterDeny`, `src/planrun.js`) adds the workdir's own `.git` as
-  a runtime belt. Not yet proven live.
+- **F178/F177 — a signed fence could name `.git` or `node_modules` directly (or reach a nested
+  `node_modules` through an otherwise-legal fence), letting writes there go invisibly to
+  `changedSet`.** `scopeContained` (`src/validate.js`, the one containment law `validateJob`
+  and `validatePlan` both go through) now refuses any fence/scope whose normalized prefix has a
+  whole path segment equal to `.git` or `node_modules` (hamr's ruling, 2026-09-14, option B) —
+  a look-alike like `.github`/`my.git`/`node_modules_util` stays admitted. The runtime belt for
+  a NESTED `node_modules` a legal fence can still reach uses `tools.denyArgPatterns`
+  (`FORBIDDEN_WRITE_SEGMENT_PATTERN`, `src/planrun.js`), scoped to `write`/`edit` only —
+  bareguard's `fs.deny` was tried first for `.git` and reverted: it blocks ALL fs actions,
+  reads included, which silently over-blocked (caught by the full gate's own drift test,
+  `tests/tools.test.js`); `fs.deny` is never used for either book now. Not yet proven live.
 - **F177 — a repo source whose tracked `.gitignore` did not mention `node_modules` let
   installed packages read as the worker's own writes.** `changedSet` (`src/kinds.js`) unions
   the tracked diff with `git ls-files --others --exclude-standard`, so an unignored

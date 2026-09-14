@@ -12329,6 +12329,15 @@ REAL `runPlan`/`mkWorker` wiring — a scripted worker attempts an off-script wr
 reverting the wiring). `authorscout.js`'s read-only scout Gate was checked and left alone (no
 write verb ever granted, so no `node_modules` write can reach it either). Not yet proven live.
 
+**2026-09-14 second update — the runtime belt's MECHANISM changed (never its coverage), same
+session, see F178's dated update below for the full account.** The `tools.denyArgPatterns`
+choice above was correct and unchanged. What was wrong was housing `.git` in `fs.deny` (F178's
+first version) — that mistake never touched this node_modules mechanism, `node_modules` was
+`tools.denyArgPatterns`-only from the start. `NODE_MODULES_PATH_PATTERN` was folded into the
+new combined `FORBIDDEN_WRITE_SEGMENT_PATTERN` (`/(?:\.git|node_modules)/` as the segment
+alternation) so both books share one pattern and one doc comment rather than two that could
+drift. Tests updated to a single combined Gate test; see F178's update for the full test list.
+
 ## F178 — a signed fence could reach inside .git (fixed in code)
 
 Nothing stopped a signed job's `writeScope` (or a workflow step's narrower `scope`/exit
@@ -12387,3 +12396,44 @@ against the reverted function), `tests/job.test.js` (two new `RED_CASES` rows th
 — not a hand-typed mirror of it, so the test actually exercises `src/planrun.js`'s own code and
 was proven to fail-first when the function's `.git` entry was reverted). **Not yet proven
 live** — a real end-to-end run attempting a `.git` write has not been executed.
+
+**2026-09-14 update — DESIGN ERROR in the runtime belt above, caught by the main session's full
+gate (`npm test`), fixed same session.** `fs.deny` blocks ALL fs actions, reads included
+(`node_modules/bareguard/src/primitives/fs.js:43` "paths/prefixes denied for all fs actions",
+checked at `:62-66` before the read/write split ever runs) — so putting `.git` in `fs.deny`
+(the `arbiterDeny` mechanism above) silently also blocked the worker from READING `.git`, which
+hamr never ruled (his ruling was block WRITING; reading stays allowed). The regression surfaced
+as a real test failure, not a hypothetical: `tests/tools.test.js`'s persona/fence-drift guard
+("the worker's rendered system prompt names the arbiter's books and forbids reading them") greps
+`src/planrun.js` for the literal `deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) =>
+join(workdir, s))]` and reds when that spelling drifts — exactly what happened, because the
+worker's persona never claims `.git`/`node_modules` as a denied BOOK the way it does the gate
+audit / `.smoke` / `.litectx`, and it would have been lying about the fence if it had (reads of
+those two were never denied).
+
+**Fixed by moving `.git` off `fs.deny` entirely and onto the SAME `tools.denyArgPatterns`
+mechanism F177's `node_modules` belt already used** (that mechanism was always correct — see
+F177's own dated update above). `arbiterDeny` was removed (nothing else needed it); the gate's
+`deny` list is spelled directly again as `[auditPath, ...ARBITER_BOOK_STORES.map((s) =>
+join(workdir, s))]`, restoring the exact literal `tests/tools.test.js` greps for. The
+`node_modules`-only pattern was widened into one combined `FORBIDDEN_WRITE_SEGMENT_PATTERN`
+matching a whole `.git` OR `node_modules` path segment, wired into `tools.denyArgPatterns` for
+`write`/`edit` only — `read` never reaches it, by construction (the map only has `write`/`edit`
+keys).
+
+Tests rewritten (not the failing `tests/tools.test.js`, which needed no change and now passes
+again unmodified): one consolidated `tests/planrun.test.js` Gate test proves, through a real
+bareguard `Gate` driven by the real exported pattern, that a write/edit into `.git` or a nested
+`node_modules` is denied (rule `tools.denyArgPatterns`, not `fs.deny`), that a READ of
+`.git/HEAD` and a read inside `node_modules` are both ALLOWED, that look-alikes
+(`.github`, `.gitignore`, `my.git`, `node_modules_util`) stay admitted, and that an ordinary
+in-fence write is unaffected. Fail-first proven twice: once by reverting the pattern itself
+(caught a scoping bug in the test's own first draft — a `writeScope` narrower than `.git`'s real
+location made the write fail on `fs.writeScope` regardless of the pattern, silently proving
+nothing; corrected to a whole-workdir `writeScope`, modeling the belt's real job as a defense
+against a VALIDATOR regression, since `.git` is never legitimately in-fence in the first place).
+`npm run typecheck` and the targeted files (`tests/tools.test.js`, `tests/validate.test.js`,
+`tests/job.test.js`, `tests/plan.test.js`, `tests/planrun.test.js`) all reconfirmed green after
+the fix — no full `npm test` run from this builder session; the main session's own full gate is
+what surfaced the original regression and is the instrument that will confirm this fix at the
+next full-suite run. Still not yet proven live end to end.

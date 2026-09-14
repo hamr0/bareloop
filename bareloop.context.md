@@ -3385,20 +3385,18 @@ under it — this is a passthrough, not a jail.
   denies the gate audit path and every `ARBITER_BOOK_STORES` path under the workdir
   (`src/authorscout.js:295`); a plan step's read scope is the workdir alone
   (`src/planrun.js:1894`).
-- **A signed fence can never name `.git` (F178).** `scopeContained` (`src/validate.js`,
-  design law #1's own function — `validateJob`'s `writeScope` and `validatePlan`'s step
-  `scope`/exit `target`/`path` all go through it) refuses any fence/scope whose normalized
-  prefix has a whole path segment equal to `.git` — `.git/**`, `a/.git/**`, but not a
-  look-alike like `.github/**` or `my.git/**`. The worker Gate's `fs.deny` list
-  (`arbiterDeny(workdir, auditPath)`, `src/planrun.js`) adds `join(workdir, '.git')` as a
-  runtime belt behind that rule.
-- **A signed fence can never name `node_modules` either (F177's follow-up to F178).** The
-  same `scopeContained` rule refuses `node_modules` as a whole path segment too. That alone
-  cannot catch a NESTED `node_modules` reachable through an otherwise-legal fence (a monorepo
-  package scope, or one a worker creates fresh during the run) — bareguard's `fs.deny` is
-  exact prefix-containment only, no glob. The runtime belt for that case is
-  `tools.denyArgPatterns` (`NODE_MODULES_PATH_PATTERN`, `src/planrun.js`): keyed to
-  `write`/`edit`, matched against the serialized action's `path` field, whole-segment only.
+- **A signed fence can never name `.git` or `node_modules` (F178/F177).** `scopeContained`
+  (`src/validate.js`, design law #1's own function — `validateJob`'s `writeScope` and
+  `validatePlan`'s step `scope`/exit `target`/`path` all go through it) refuses any fence/scope
+  whose normalized prefix has a whole path segment equal to `.git` or `node_modules` — not a
+  look-alike like `.github/**`, `my.git/**`, or `node_modules_util/**`. That alone cannot catch
+  a NESTED `node_modules` reachable through an otherwise-legal fence (a monorepo package scope,
+  or one a worker creates fresh during the run) — bareguard's `fs.deny` is exact
+  prefix-containment only, no glob, so it cannot express "at any depth" even if it were used
+  here. **`fs.deny` is deliberately NOT used for either book**: it blocks ALL fs actions,
+  reads included, and hamr's ruling blocks WRITING only — reading stays allowed. The runtime
+  belt is `tools.denyArgPatterns` (`FORBIDDEN_WRITE_SEGMENT_PATTERN`, `src/planrun.js`): keyed
+  to `write`/`edit` ONLY, matched against the serialized action's `path` field, whole-segment.
 
 **What it does not guarantee:** no network egress control and no container/VM isolation —
 this repo has neither built nor documented either. `CLOSE_ENV_DENY`'s deny rule matches

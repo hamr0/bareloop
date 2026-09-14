@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rateSourceFields, arbiterDeny, NODE_MODULES_PATH_PATTERN } from '../src/planrun.js';
+import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rateSourceFields, FORBIDDEN_WRITE_SEGMENT_PATTERN } from '../src/planrun.js';
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
@@ -5210,75 +5210,75 @@ test('a ceiling that DOES offer the retrieval pair passes the capping arm', asyn
   rmSync(wd, { recursive: true, force: true });
 });
 
-test('F178: the real bareguard Gate denies a write inside the workdir\'s own .git, driven by mkWorker\'s OWN exported deny-list builder — not a hand-copied mirror', async (t) => {
-  const wd = mkdtempSync(join(tmpdir(), 'f178-git-deny-'));
-  t.after(() => rmSync(wd, { recursive: true, force: true }));
-  initPatientRepo(wd);
-  mkdirSync(join(wd, 'src'));
-  const auditPath = join(wd, GATE_AUDIT_FILE);
-  // arbiterDeny IS the function mkWorker calls to build its Gate's fs.deny —
-  // calling it here (rather than re-typing the array) is what makes this test
-  // actually exercise src/planrun.js's own code, not a fixture that happens to
-  // agree with it today and silently stops meaning anything the day it drifts.
-  const deny = arbiterDeny(wd, auditPath);
-  assert.ok(deny.includes(join(wd, '.git')), 'sanity: arbiterDeny really does name .git');
-  const gate = new Gate({
-    fs: {
-      writeScope: [join(wd, 'src')],
-      readScope: [wd],
-      deny,
-    },
-    audit: { path: null }, // fileless — this test asserts the DECISION, not the audit file
-  });
-
-  const gitWrite = await gate.check({ type: 'write', path: join(wd, '.git', 'config') });
-  assert.equal(gitWrite.outcome, 'deny', 'a write inside .git must be denied');
-  assert.equal(gitWrite.rule, 'fs.deny', 'denied by the fs.deny rule (bareguard node_modules/bareguard/src/primitives/fs.js:62-68), not writeScope');
-
-  const nestedGitWrite = await gate.check({ type: 'write', path: join(wd, '.git', 'refs', 'heads', 'main') });
-  assert.equal(nestedGitWrite.outcome, 'deny', 'a write anywhere UNDER .git must be denied — fs.deny is prefix-containment (within()), not a single-file check');
-
-  // and the fence still works normally for an in-scope write — the .git deny
-  // is additive, it must never narrow the signed fence itself
-  const scopedWrite = await gate.check({ type: 'write', path: join(wd, 'src', 'mod.mjs') });
-  assert.equal(scopedWrite.outcome, 'allow', 'an ordinary in-fence write must still be allowed');
-});
-
-test('F177 follow-up: the real bareguard Gate denies a write to a NESTED node_modules inside an otherwise-legal fence, via the REAL exported NODE_MODULES_PATH_PATTERN', async (t) => {
-  const wd = mkdtempSync(join(tmpdir(), 'f177-nm-deny-'));
+test('F178/F177: the real bareguard Gate denies WRITE/EDIT into .git or a NESTED node_modules, driven by the REAL exported FORBIDDEN_WRITE_SEGMENT_PATTERN — but never blocks a READ of either (the coordinator\'s design correction: fs.deny would have blocked reads too, which was never ruled)', async (t) => {
+  const wd = mkdtempSync(join(tmpdir(), 'f178-f177-deny-'));
   t.after(() => rmSync(wd, { recursive: true, force: true }));
   initPatientRepo(wd);
   mkdirSync(join(wd, 'packages', 'api'), { recursive: true });
   const auditPath = join(wd, GATE_AUDIT_FILE);
-  // the SAME shape mkWorker builds: a legitimate fence ('packages/api/**') that
-  // fsCheck alone cannot stop from reaching a NESTED node_modules — writeScope
-  // is a static prefix, and 'packages/api/node_modules/x.js' is genuinely under it
+  // the SAME shape mkWorker builds: fs.deny spells from ARBITER_BOOK_STORES
+  // alone (no .git, no node_modules — those are write/edit-only, never a
+  // blanket fs deny, which would also block READS); the segment pattern is
+  // the write/edit belt, wired through tools.denyArgPatterns.
+  //
+  // writeScope is the WHOLE workdir here — deliberately. `.git` is NEVER
+  // legitimately inside a signed fence (`scopeContained` refuses that at
+  // declaration time), so this pattern is a belt for a VALIDATOR REGRESSION;
+  // a narrower writeScope (e.g. just 'packages/api') would let fs.writeScope
+  // deny the .git path on its own and the test would prove nothing about the
+  // denyArgPatterns belt at all. `packages/api/node_modules` is the opposite
+  // case — genuinely, legitimately in-fence — so a whole-workdir scope proves
+  // that case too, at least as strictly as a narrower one would.
   const gate = new Gate({
     fs: {
-      writeScope: [join(wd, 'packages', 'api')],
+      writeScope: [wd],
       readScope: [wd],
-      deny: arbiterDeny(wd, auditPath),
+      deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(wd, s))],
     },
-    tools: { denyArgPatterns: { write: [NODE_MODULES_PATH_PATTERN], edit: [NODE_MODULES_PATH_PATTERN] } },
-    audit: { path: null },
+    tools: { denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN] } },
+    audit: { path: null }, // fileless — this test asserts the DECISION, not the audit file
   });
 
+  // WRITE/EDIT into .git — denied, at any depth
+  const gitWrite = await gate.check({ type: 'write', path: join(wd, '.git', 'config') });
+  assert.equal(gitWrite.outcome, 'deny', 'a write inside .git must be denied');
+  assert.equal(gitWrite.rule, 'tools.denyArgPatterns', 'denied by the denyArgPatterns hook, not fs.deny (fs.deny would also block reads — never ruled)');
+  const nestedGitWrite = await gate.check({ type: 'write', path: join(wd, '.git', 'refs', 'heads', 'main') });
+  assert.equal(nestedGitWrite.outcome, 'deny', 'a write anywhere UNDER .git must be denied');
+  const gitEdit = await gate.check({ type: 'edit', path: join(wd, '.git', 'config'), args: { bytes: 4 } });
+  assert.equal(gitEdit.outcome, 'deny', 'an edit inside .git must be denied the same way as a write');
+
+  // WRITE/EDIT into a NESTED node_modules (genuinely inside the signed fence,
+  // which fs.writeScope alone cannot stop) — denied
   const nmWrite = await gate.check({ type: 'write', path: join(wd, 'packages', 'api', 'node_modules', 'left-pad', 'index.js') });
   assert.equal(nmWrite.outcome, 'deny', 'a write into a NESTED node_modules must be denied even though the path is genuinely inside the signed fence');
-  assert.equal(nmWrite.rule, 'tools.denyArgPatterns', 'denied by the denyArgPatterns hook (fs.writeScope alone cannot express this — it is a genuinely in-fence path)');
-
-  // an edit is judged by the SAME fence (bareguard FS_TYPES) — prove the pattern is wired for edit too
+  assert.equal(nmWrite.rule, 'tools.denyArgPatterns');
   const nmEdit = await gate.check({ type: 'edit', path: join(wd, 'packages', 'api', 'node_modules', 'left-pad', 'index.js'), args: { bytes: 4 } });
   assert.equal(nmEdit.outcome, 'deny', 'an edit into node_modules must be denied the same way as a write');
 
-  // and an ordinary in-fence write, sibling to node_modules, is still allowed —
-  // the pattern is additive, it must never narrow the signed fence itself
-  const scopedWrite = await gate.check({ type: 'write', path: join(wd, 'packages', 'api', 'src', 'mod.mjs') });
-  assert.equal(scopedWrite.outcome, 'allow', 'an ordinary in-fence write outside node_modules must still be allowed');
+  // READS of the SAME paths are NOT denied — hamr ruled block WRITING, never
+  // reading, and fs.deny (which WOULD have blocked these) is deliberately
+  // never used for .git/node_modules (see the pattern's own doc comment)
+  const gitRead = await gate.check({ type: 'read', path: join(wd, '.git', 'HEAD') });
+  assert.equal(gitRead.outcome, 'allow', 'reading .git/HEAD must be allowed — only writing is ruled out');
+  const nmRead = await gate.check({ type: 'read', path: join(wd, 'packages', 'api', 'node_modules', 'left-pad', 'index.js') });
+  assert.equal(nmRead.outcome, 'allow', 'reading inside node_modules must be allowed — only writing is ruled out');
 
-  // a look-alike directory name must NOT false-positive (whole-segment match only)
-  const lookalike = await gate.check({ type: 'write', path: join(wd, 'packages', 'api', 'node_modules_util', 'x.js') });
-  assert.equal(lookalike.outcome, 'allow', 'node_modules_util is a DIFFERENT directory — must stay admitted');
+  // and an ordinary in-fence write, sibling to both, is still allowed — the
+  // pattern is additive, it must never narrow the signed fence itself
+  const scopedWrite = await gate.check({ type: 'write', path: join(wd, 'packages', 'api', 'src', 'mod.mjs') });
+  assert.equal(scopedWrite.outcome, 'allow', 'an ordinary in-fence write outside .git/node_modules must still be allowed');
+
+  // look-alike directory/file names must NOT false-positive (whole-segment match only)
+  for (const p of [
+    join(wd, 'packages', 'api', '.github', 'workflows', 'ci.yml'),
+    join(wd, 'packages', 'api', '.gitignore'),
+    join(wd, 'packages', 'api', 'my.git', 'x.js'),
+    join(wd, 'packages', 'api', 'node_modules_util', 'x.js'),
+  ]) {
+    const lookalike = await gate.check({ type: 'write', path: p });
+    assert.equal(lookalike.outcome, 'allow', `${p} is a look-alike, not .git/node_modules itself — must stay admitted`);
+  }
 });
 
 test('LOOP path: a write into a NESTED node_modules is denied through the REAL runPlan/mkWorker wiring, not just the standalone pattern (F177 follow-up to F178)', async (t) => {
