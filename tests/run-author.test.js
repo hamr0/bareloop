@@ -21,7 +21,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync,
+  readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync, mkdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
@@ -740,4 +740,75 @@ test('confirm-abandoned and confirm-restart get their own friendlier console lin
   assert.ok(NOT_AUTHORED);
   assert.match(NOT_AUTHORED, /emit\('author-end', \{ outcome: 'not-authored', stop: authored\.stop \}\);/,
     'confirm-abandoned/confirm-restart fall through this generic branch — author-end records the real stop either way');
+});
+
+// ── install-gap refusal (PRD item 33 close-out, hamr's ruling 2026-09-14) ───
+// `prepareSource` copies only git-tracked files, so a JS/TS repo's copy never
+// carries `node_modules`. run-author.mjs must refuse at $0 — before the scout,
+// before even the provider/key gates below it in the file — naming the exact
+// command, and it must be routed through the SAME `refusalEvents()` channel
+// `language-unsupported` uses (a real `job-red`/`escalation` pair on the
+// spine), never an ad-hoc print.
+
+test('a --source prepared from a repo whose package.json lists dependencies with no node_modules refuses source-deps-missing, at $0, before the provider/key gates', async () => {
+  const depsRepo = mkdtempSync(join(runBase, 'deps-repo2-'));
+  writeFileSync(join(depsRepo, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  gitFix(depsRepo, ['init', '-q']);
+  gitFix(depsRepo, ['add', '-A']);
+  gitFix(depsRepo, ['commit', '-q', '-m', 'seed']);
+  const prep = await prepareSource({ source: depsRepo, into: join(runBase, `deps-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  // no `provider` field at all — proves this refusal fires BEFORE provider
+  // resolution (which would otherwise die 'unknown provider' first)
+  writeFileSync(draftFile, '{}');
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 1, text);
+  assert.match(text, /REFUSED \(request-red\)  verb=source-deps-missing/);
+  assert.match(text, /npm ci|npm install/, 'the exact install command is named');
+  assert.doesNotMatch(text, /unknown provider/, 'this must refuse BEFORE the provider is even resolved');
+  assert.doesNotMatch(text, /== close-authoring, run/, 'no scout header — no paid span was ever entered');
+
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 1, 'the $0 refusal is still counted admission demand — it writes to the spine');
+  const lines = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(lines.some((e) => e.type === 'job-red' && e.verb === 'source-deps-missing'));
+  assert.ok(lines.some((e) => e.type === 'escalation' && e.category === 'close-unauthorable'));
+});
+
+test('a --source prepared from a repo whose deps ARE already installed never refuses source-deps-missing', async () => {
+  const nmRepo = mkdtempSync(join(runBase, 'deps-repo-havenm-'));
+  writeFileSync(join(nmRepo, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  mkdirSync(join(nmRepo, 'node_modules', 'left'), { recursive: true });
+  writeFileSync(join(nmRepo, 'node_modules', 'left', 'index.js'), 'module.exports = 1;\n');
+  gitFix(nmRepo, ['init', '-q']);
+  gitFix(nmRepo, ['add', '-A']);
+  gitFix(nmRepo, ['commit', '-q', '-m', 'seed']);
+  const prep = await prepareSource({ source: nmRepo, into: join(runBase, `havenm-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+
+  const r = (() => {
+    const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+    const answersFile = join(dir, 'answers.json');
+    const draftFile = join(dir, 'specdraft.json');
+    writeFileSync(answersFile, '{}');
+    writeFileSync(draftFile, '{}'); // still no provider — reaches the SAME 'unknown provider' die either way
+    const out = join(dir, 'out');
+    return spawnSync(process.execPath, [
+      SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+      '--verdict', 'green', '--out', out,
+    ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  })();
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.doesNotMatch(text, /source-deps-missing/);
+  assert.match(text, /unknown provider/, 'falls through to the next $0 gate exactly as it would without this build');
 });

@@ -67,6 +67,7 @@ import { createInterface } from 'node:readline';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
   VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
+  REFUSAL_LIB, REFUSAL_CATEGORY,
 } from '../src/authorjob.js';
 import {
   makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM, runConfirmTurn, makeCostBook,
@@ -77,7 +78,7 @@ import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
 import { closeJudges } from '../src/kinds.js';
 import { resolveProvider, makeProvider } from '../src/providers.js';
-import { readSourceManifest } from '../src/source.js';
+import { readSourceManifest, missingDependencies } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
@@ -257,6 +258,36 @@ if (IS_REPO_SOURCE) {
     console.log(`Source has more than one supported language's manifest at the same (nearest) level: `
       + `${langResult.candidates.join(', ')} (in ${langResult.dir}).`);
     console.log('This will be asked, interactively, in the confirm turn below — before any paid call.');
+  }
+
+  // ── item 33 close-out: the install gap, refused at $0 (hamr's ruling
+  // 2026-09-14, option A) ── `prepareSource` copies only git-tracked files, so
+  // a JS/TS repo's copy never carries `node_modules`, and every close stage
+  // needing a tool (`tsc`, a test runner) would instrument-stop. bareloop
+  // never runs an install itself — this refuses BEFORE the scout, before the
+  // API key is even read, naming the exact command the person runs themselves
+  // in the copy. Routed through the same `refusalEvents()` channel every other
+  // $0 refusal in this script uses (the `language-unsupported` block above),
+  // never an ad-hoc print, so it folds into the ledger's admission count the
+  // same way.
+  const depsGap = missingDependencies(SOURCE, manifestRead.manifest.sourceSubdir ?? '');
+  if (depsGap) {
+    const detail = `${SOURCE} has a package.json listing dependencies but the copy has no node_modules (${depsGap.reason}) — every `
+      + 'close stage needing a tool would instrument-stop. bareloop never runs an install itself; run this in the copy, then rerun '
+      + `run-author.mjs against the same --source:\n  cd ${SOURCE} && ${depsGap.command}`;
+    const refusal = {
+      kind: 'request-red', verb: 'source-deps-missing', path: 'source', detail,
+      options: [`run \`${depsGap.command}\` inside ${SOURCE}, then rerun run-author.mjs with the same --source`],
+      red: {
+        code: 'request-red', path: 'source', detail, verb: 'source-deps-missing', lib: REFUSAL_LIB, category: REFUSAL_CATEGORY,
+      },
+    };
+    console.log(`REFUSED (${refusal.kind})  verb=${refusal.verb}  path=${refusal.path}`);
+    console.log(refusal.detail);
+    for (const o of refusal.options) console.log(`  · ${o}`);
+    for (const e of refusalEvents(refusal)) emit(e.type, e);
+    console.log(`\nRecorded as admission demand in the spine: ${spineFile}`);
+    process.exit(1);
   }
 }
 

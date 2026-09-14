@@ -23,7 +23,7 @@
 // on rather than catch.
 
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
@@ -710,6 +710,102 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   return { stop: null, into: intoAbs, tree: treeDir, manifestPath, manifest };
+}
+
+/**
+ * The install command a lockfile in `dir` implies — checked in a fixed order
+ * so a tree carrying more than one lockfile still picks exactly one command,
+ * deterministically. `npm install` (no lockfile match) is the fallback, never
+ * a refusal — a repo can legally have dependencies with no committed
+ * lockfile.
+ * @type {ReadonlyArray<{file: string, command: string}>}
+ */
+const LOCKFILE_COMMANDS = Object.freeze([
+  Object.freeze({ file: 'package-lock.json', command: 'npm ci' }),
+  Object.freeze({ file: 'npm-shrinkwrap.json', command: 'npm ci' }),
+  Object.freeze({ file: 'pnpm-lock.yaml', command: 'pnpm install --frozen-lockfile' }),
+  Object.freeze({ file: 'yarn.lock', command: 'yarn install --frozen-lockfile' }),
+  Object.freeze({ file: 'bun.lockb', command: 'bun install --frozen-lockfile' }),
+  Object.freeze({ file: 'bun.lock', command: 'bun install --frozen-lockfile' }),
+]);
+
+/**
+ * THE INSTALL-GAP DETECTOR (PRD item 33 close-out, `docs/product/PRD.md:450-452`,
+ * hamr's ruling 2026-09-14, option A): `prepareSource` copies ONLY git-tracked
+ * files (hamr's ruling, `docs/product/ITEM33-BUILD.md:225-239` — unchanged by
+ * this function), so a JS/TS repo's prepared copy never carries `node_modules`,
+ * and every close stage needing a tool (`tsc`, a test runner) instrument-stops
+ * with nothing telling the person why. bareloop NEVER runs an install itself —
+ * it only ever touches gated primitives, and a shell-out to `npm`/etc from
+ * inside this module would be exactly the verb hamr's law reserves for the
+ * worker's own granted tools, never the arbiter-side machinery that decides
+ * whether a run even starts. This is a pure, $0 DETECTOR: it names the gap and
+ * the exact command a person runs THEMSELVES in the copy, then returns.
+ *
+ * JS/TS ONLY for now — a repo in another detected language returns `null`
+ * here unconditionally (no `package.json` to find), which is the correct
+ * "nothing to report" reading, not a gap in this function; per-language
+ * dependency-gap data for other languages is M3b's job
+ * (`docs/product/ITEM33-BUILD.md`, "M3b"), not this one's.
+ *
+ * SUBFOLDER-AS-REPO (ruling 2 addendum, commit 2a020d8): a subfolder job
+ * freezes the WHOLE repo, so `package.json` may sit at the repo root, at the
+ * subfolder itself, or anywhere between — the SAME nearest-manifest-walking-up
+ * rule `detectLanguage` (`src/detectlang.js`) applies, done independently here
+ * (not by importing `detectLanguage`) to avoid a `source.js` ⇄ `detectlang.js`
+ * import cycle, since `detectlang.js` already imports `nearestGitAncestor`
+ * from this module.
+ *
+ * @param {string} treeDir the prepared tree's root (`prepareSource`'s
+ *   returned `tree`, e.g. `<into>/tree` — a REPO source sits directly at this
+ *   root; every other kind sits under `input/` inside it and has no repo
+ *   dependency story yet, so callers only need this for a `kind: 'repo'`
+ *   manifest)
+ * @param {string} [sourceSubdir] the manifest's own `sourceSubdir` ('' or
+ *   undefined when Source IS the repo root)
+ * @returns {{manager: string, command: string, reason: string}|null} `null`
+ *   when there is nothing to report: no JS/TS manifest found walking up from
+ *   `sourceSubdir` to `treeDir`, the nearest one found has no dependencies,
+ *   `node_modules` is already there, or the manifest cannot even be read as
+ *   JSON (an invalid `package.json` is "cannot tell", never a false alarm).
+ */
+export function missingDependencies(treeDir, sourceSubdir = '') {
+  const root = resolve(treeDir);
+  let dir = sourceSubdir ? resolve(root, sourceSubdir) : root;
+  /** @type {string[]} */
+  const chain = [];
+  for (;;) {
+    chain.push(dir);
+    if (dir === root) break;
+    const parent = dirname(dir);
+    if (parent === dir) break; // filesystem root — safety only, never reachable under `root`
+    dir = parent;
+  }
+
+  for (const d of chain) {
+    const pkgPath = join(d, 'package.json');
+    if (!existsSync(pkgPath)) continue;
+    let pkg;
+    try {
+      pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    } catch {
+      return null; // cannot tell — an invalid package.json is not a fabricated gap
+    }
+    if (pkg === null || typeof pkg !== 'object' || Array.isArray(pkg)) return null;
+    const depCount = Object.keys(pkg.dependencies ?? {}).length + Object.keys(pkg.devDependencies ?? {}).length;
+    if (depCount === 0) return null; // a manifest with nothing to install is not a gap
+    if (existsSync(join(d, 'node_modules'))) return null;
+
+    const lock = LOCKFILE_COMMANDS.find((l) => existsSync(join(d, l.file)));
+    const installCmd = lock ? lock.command : 'npm install';
+    const rel = relative(root, d).split(sep).join('/');
+    return {
+      manager: installCmd.split(' ')[0],
+      command: rel === '' ? installCmd : `cd ${rel} && ${installCmd}`,
+      reason: `${rel === '' ? 'package.json' : `${rel}/package.json`} lists dependencies but the copy has no node_modules`,
+    };
+  }
+  return null;
 }
 
 /**

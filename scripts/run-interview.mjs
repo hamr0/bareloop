@@ -88,7 +88,7 @@ import { validateJob, validateBaseUrl, PROVIDERS } from '../src/job.js';
 import { resolveProvider, probeWarningLines } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
-import { prepareSource, proveDestination, looksLikeRepoSource } from '../src/source.js';
+import { prepareSource, proveDestination, looksLikeRepoSource, missingDependencies } from '../src/source.js';
 import { parseCeiling, ceilingLine } from './author-readout.mjs';
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
@@ -418,6 +418,21 @@ say(`  tree     ${prep.tree}`);
 say(`  kind     ${prep.manifest.kind}`);
 say(`  seed     ${prep.manifest.seed}`);
 
+// ── item 33 close-out: the install gap, named at $0 (hamr's ruling 2026-09-14,
+// option A) ── `prepareSource` copies only git-tracked files, so a JS/TS
+// repo's copy never carries `node_modules`. bareloop NEVER runs an install
+// itself — it names the gap and the exact command, and the person runs it
+// themselves in the copy, then reruns.
+const depsGap = prep.manifest.kind === 'repo'
+  ? missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '')
+  : null;
+if (depsGap) {
+  say('');
+  say(`  The copy above has no installed packages (${depsGap.reason}).`);
+  say('  bareloop never runs an install itself — run this in the copy, then rerun this command:');
+  say(`    cd ${prep.tree} && ${depsGap.command}`);
+}
+
 // ── ruling 7 → D5 = A (PRD item 33 M3 piece 4, step S6): a non-repo source
 // no longer stops HERE. bareloop's checks/close catalogue is still
 // code-genre only today (M4 builds the non-code checks), but the honest
@@ -665,13 +680,28 @@ if (!KEYED) {
   // put a key anywhere a command line can be read from.
   if (providerEnvKey) say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
 }
+// re-checked at the hand-off, not just once right after prepareSource: this is
+// the LAST $0 point before the offer below could spend on a run that would
+// only instrument-stop at its first tool-needing close stage. Still fires ⇒
+// no offer, the same shape the KEYED gate above already uses.
+const depsGapAtHandoff = prep.manifest.kind === 'repo'
+  ? missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '')
+  : null;
+if (depsGapAtHandoff) {
+  say('');
+  say(`  The copy still has no installed packages (${depsGapAtHandoff.reason}) — run-author would only instrument-stop on it.`);
+  say(`    cd ${prep.tree} && ${depsGapAtHandoff.command}`);
+  say('  then run run-author.mjs yourself with the command above.');
+}
 say('');
 // The default is NO, and it is the same lean the pause's doors take: the answer that
 // costs nothing is the one you get by saying nothing. Only an explicit yes spends.
-// Unkeyed, the offer is never made and the answer is the default one — not a
-// refusal typed on the person's behalf, but the only answer the state admits.
+// Unkeyed, or with an unresolved install gap, the offer is never made and the
+// answer is the default one — not a refusal typed on the person's behalf, but
+// the only answer the state admits.
+const OFFERABLE = KEYED && !depsGapAtHandoff;
 let answer = '';
-if (KEYED) {
+if (OFFERABLE) {
   prompt('Run it now? [y/N] ');
   const l = await nextLine();
   answer = l === null ? '' : String(l).trim().toLowerCase();
@@ -682,9 +712,11 @@ if (KEYED) {
 rl.close();
 if (answer !== 'y' && answer !== 'yes') {
   say('');
-  say(KEYED
+  say(OFFERABLE
     ? 'Not run. The command above is yours to fire when you are ready — the two files are already on disk.'
-    : 'Not offered — there is no key in this shell to run it with. The command above is yours to fire once you set one; the two files are already on disk.');
+    : !KEYED
+      ? 'Not offered — there is no key in this shell to run it with. The command above is yours to fire once you set one; the two files are already on disk.'
+      : 'Not offered — the copy still has no installed packages. Install them, then fire the command above yourself; the two files are already on disk.');
   // F71 — never process.exit() after output: exit() can discard queued stdout.
   process.exitCode = 0;
 } else {

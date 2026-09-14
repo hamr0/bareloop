@@ -808,3 +808,56 @@ test('the two files are on disk EITHER WAY — the offer is the only thing the k
     assert.ok(existsSync(join(out, 'specdraft.json')), `${out} lost its draft`);
   }
 });
+
+// ══ install-gap detector (PRD item 33 close-out, hamr's ruling 2026-09-14) ═════
+// `prepareSource` copies only git-tracked files, so a JS/TS repo's copy never
+// carries `node_modules`. This script must name the gap and the exact command
+// at $0, and must never OFFER to start the paid step over a copy that would
+// only instrument-stop.
+
+/** a repo fixture with a package.json that DECLARES dependencies but ships no
+ * lockfile and no node_modules — `missingDependencies` must fire `npm install`. */
+const depsRepo = mkdtempSync(join(base, 'repo-deps-'));
+writeFileSync(join(depsRepo, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+mkdirSync(join(depsRepo, 'src'), { recursive: true });
+writeFileSync(join(depsRepo, 'src', 'index.js'), 'export const x = 1;\n');
+gitFix(depsRepo, ['init', '-q']);
+gitFix(depsRepo, ['add', '-A']);
+gitFix(depsRepo, ['commit', '-q', '-m', 'seed']);
+
+test('a repo Source whose package.json lists dependencies with no node_modules: the exact install command is printed right after the seed line', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS, { source: depsRepo }) });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /The copy above has no installed packages/);
+  assert.match(r.out, /cd .+tree && npm install/, 'the printed command names the copy\'s own tree path, not a bare "npm install"');
+});
+
+test('a repo Source whose package.json lists dependencies with no node_modules: no "start it now" offer, even with a key in the shell', () => {
+  const out = outDir();
+  const r = interview({ out, key: 'sk-test-not-a-real-key', lines: session(CLASS, { source: depsRepo }) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /Run it now\?/, 'the offer must never be made over a copy missing its dependencies');
+  assert.match(r.out, /Not offered — the copy still has no installed packages/);
+  assert.match(r.out, /run-author\.mjs/, 'the command to fire once installed is still printed');
+});
+
+test('a repo Source with dependencies but node_modules ALREADY present: no install-gap message, offer proceeds normally', () => {
+  const nmRepo = mkdtempSync(join(base, 'repo-deps-havenm-'));
+  writeFileSync(join(nmRepo, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  // `prepareSource` copies only TRACKED files, so `node_modules` has to be
+  // committed here (unrealistic for a real project, but the only way to land
+  // it in the prepared copy without this test running a real install) to
+  // prove the detector's own true/false split — the real-install, real-copy
+  // live proof (a real `npm ci` in a real prepared tree) is done separately,
+  // outside the test suite (see the build report).
+  mkdirSync(join(nmRepo, 'node_modules', 'left'), { recursive: true });
+  writeFileSync(join(nmRepo, 'node_modules', 'left', 'index.js'), 'module.exports = 1;\n');
+  gitFix(nmRepo, ['init', '-q']);
+  gitFix(nmRepo, ['add', '-A']);
+  gitFix(nmRepo, ['commit', '-q', '-m', 'seed']);
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS, { source: nmRepo }) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /has no installed packages/);
+});
