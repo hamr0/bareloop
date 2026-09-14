@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.26.0] — 2026-09-14
 
 ### Added
 
@@ -30,6 +30,21 @@ feature lands, **patch** = docs, fixes, scaffolding.
   an unprepared path dies loud naming the exact `scripts/prep-source.mjs` command to run first,
   and a prepared non-repo source gets the same honest M4 stop, now recorded to the spine as
   counted demand. `scripts/prep-source.mjs`'s printed next-step command follows suit.
+
+- **A Source inside a repo (e.g. a monorepo package) is now a repo job (hamr's ruling A, PRD
+  item 34 loose end):** `looksLikeRepoSource`/`prepareSource` (`src/source.js`) used to treat a
+  folder as a repo source only when `.git` sat directly inside it, so a Source like
+  `myrepo/packages/api` fell to the plain-folder path (no checks yet, M4) and could hit an
+  untracked `node_modules` symlink as a refusal. A new `nearestGitAncestor(startDir)` walks up
+  from a directory to the nearest ancestor carrying a `.git` entry (a real repo directory, or a
+  linked-worktree/submodule file) — the one walk now shared by `looksLikeRepoSource`,
+  `prepareSource`'s own routing, and `src/detectlang.js`'s boundary walk, replacing three
+  separate copies. `prepareSource`'s directory branch freezes the WHOLE found repo's tracked
+  files when Source is a subfolder, exactly as it already did for a repo-root Source; the
+  manifest gains a `sourceSubdir` field (Source's path relative to the repo root, `''` at the
+  root) for a later piece to wire into scope — nothing reads it yet. Edge case, reported not
+  solved: a Source pointed at a deep folder under a large repo (e.g. one's whole home directory)
+  now freezes that WHOLE repo's tracked files, with no size or depth limit to catch it.
 
 - **Language auto-detection (PRD item 33 M3, ruling 3):** `src/detectlang.js`'s `detectLanguage`
   reads a code job's language off its own repository — `package.json` → js (TypeScript
@@ -89,10 +104,20 @@ feature lands, **patch** = docs, fixes, scaffolding.
   itself is unchanged. `authorClose` gains a `confirmed` plan fed into `authorPrompt`'s new
   `confirmedBlock` ("compose these checks and no other"). Every existing caller of
   `authorCloseForJob`/`authorClose`/`authorPrompt` that passes no `ask` runs byte-identical to
-  before this piece existed. `TYPES_GENRE_TEMPLATE`'s own unconditional work-stage skeleton
-  (ruling 6's intent for the TYPES genre specifically) is a known, reported, NOT-YET-RULED
-  tension — the frozen prereg byte-pin (`tests/authoring.test.js`) was left untouched pending
-  hamr's word. `scripts/run-interview.mjs` asks no separate GOAL question any more (ruling 5's
+  before this piece existed. **`TYPES_GENRE_TEMPLATE` now composes its WORK stages only for a
+  confirmed check (D6 = A, "replace it", item 33 step S7):** the frozen TYPES genre template's
+  old unconditional work-stage skeleton (`typecheck`, `typecheck-outside`, `tests-kept`,
+  `suite-green`) and unconditional STRICT-checker mandate conflicted with ruling 6 ("a genre
+  never adds a check the goal did not ask for") for exactly the case run mtv8jihy surfaced (an
+  unasked `tsc --strict` stage). The STRICT form of the checker, and the WORK stages themselves,
+  are now composed only when a confirmed check — or, absent a confirm turn, the goal and
+  interview answers — asks for them; the GUARDS (`changed-from-seed`, `no-suppressions`) stay
+  always on, unaffected, since they are enforced structurally (`classGuards` +
+  `validateDeclaration`'s guards-absent red), never by this prompt text. The template is prompt
+  text handed to the authoring model only — never hashed into a signed spec, `closeDecl`, bundle
+  manifest, or bench row signature — so this edit changes nothing about an already-signed close.
+  `tests/authoring.test.js`'s byte-identity test is re-pinned to the new frozen block.
+  `scripts/run-interview.mjs` asks no separate GOAL question any more (ruling 5's
   addendum, D2 = option B) and no longer dies on an ambiguous-language Source (D7 defers the
   pick to the confirm turn); its own $0 validator pass filters both `goal`
   (`CONFIRM_AUTHORED_FIELDS`) and, for a plain-folder job, `writeScope`
