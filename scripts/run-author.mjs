@@ -61,14 +61,16 @@
 //                  item 34 L17) — `run-interview.mjs` asks for it and writes it
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { dirname, join, resolve, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
   VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
-import { makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM } from '../src/authorflow.js';
+import {
+  makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM, runConfirmTurn, makeCostBook,
+} from '../src/authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
@@ -170,11 +172,7 @@ const writeOut = (name, body) => {
 // `source.json` manifest right beside `tree/`, which IS `SOURCE` here. A
 // config error (never prepared, or a manifest that cannot be read) dies
 // loud, before the API key is even read — same standing as every other
-// argv/config `die()` in this file. A manifest that EXISTS but names a
-// NON-repo kind (a plain folder/file/URL) is a different thing entirely: the
-// source was prepared correctly, and there is simply no check catalogue for
-// it yet (M3 ruling 7 → M4) — that IS counted demand, so it is recorded to
-// the spine rather than dying silently.
+// argv/config `die()` in this file.
 const manifestRead = await readSourceManifest(dirname(SOURCE));
 if (manifestRead.stop !== null) {
   die(`--source ${SOURCE}: ${manifestRead.code} — ${manifestRead.stop}`);
@@ -184,18 +182,17 @@ if (!manifestRead.present) {
     + '  node scripts/prep-source.mjs --source <path-or-url> --into <dir>\n'
     + 'then rerun this script with --source <dir>/tree.');
 }
-if (manifestRead.manifest.kind !== 'repo') {
-  console.log(`Source is not a code repository — it is a plain ${manifestRead.manifest.kind} job. bareloop has no checks for this kind`);
-  console.log('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build). Nothing was authored.');
-  const red = {
-    code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',
-    detail: `--source ${SOURCE} freezes a "${manifestRead.manifest.kind}" job — the close catalogue is code-genre only today.`,
-  };
-  emit('job-red', red);
-  emit('author-end', { outcome: 'not-authored', stop: 'non-code-source' });
-  console.log(`\nspine      ${spineFile}`);
-  process.exit(1);
-}
+// A manifest that EXISTS but names a NON-repo kind (a plain folder/file/URL)
+// is a different thing entirely: the source was prepared correctly, and
+// there is simply no check catalogue for it yet (M3 ruling 7 → M4). PRD item
+// 33 M3 piece 4, step S6 (D5 = A): that honest stop no longer lands HERE —
+// it MOVES to after the confirm turn (below, past the key check and the
+// interactive seam), because a plain-folder job still gets a confirm turn
+// (over the $0 seed listing, no scout) before the "no checks yet" gap is
+// the last word. `IS_REPO_SOURCE` gates the language-detection block right
+// below (a plain folder has no genre to detect) and the branch further down
+// that decides which of the two paths this run actually takes.
+const IS_REPO_SOURCE = manifestRead.manifest.kind === 'repo';
 
 // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
 // $0, no provider, run BEFORE the API key is even read — this script must
@@ -223,35 +220,44 @@ if (manifestRead.manifest.kind !== 'repo') {
 //     which the existing GENRE_LANGUAGES check further down refuses on its
 //     own (M3 ruling 7: a plain-folder job is not an error here, it is simply
 //     not a code-genre job this pipeline can close yet).
-const langResult = detectLanguage(SOURCE);
-// AMBIGUOUS NO LONGER DIES (PRD item 33 M3 piece 4, step S4): the confirm
-// turn's own $0 half asks the person which language this job is about,
-// BEFORE the scout (D7) — `langResult` travels into `authorCloseForJob`
-// below exactly as it is here, and its `ambiguous` shape is what triggers
-// that ask. `LANG` below is a placeholder for this outcome only: whatever
-// the person picks interactively is what actually lands in `closeDecl.lang`.
-if (langResult.kind === 'language-unsupported') {
-  const r = langResult.refusal;
-  console.log(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
-  console.log(r.detail);
-  for (const o of r.options) console.log(`  · ${o}`);
-  for (const e of refusalEvents(r)) emit(e.type, e);
-  console.log(`\nRecorded as admission demand in the spine: ${spineFile}`);
-  // A stop this early has no `authored`/`signing` result to fall through to —
-  // the rest of this file's flow assumes a resolved language, a provider and
-  // a spec draft, none of which exist yet. `process.exitCode` plus falling
-  // through would require wrapping everything below in a guard, which is the
-  // rewrite the task asked not to make; `process.exit(1)` is kept here,
-  // deliberately, rather than reworked into that shape.
-  process.exit(1);
-}
-const LANG = langResult.kind === 'resolved' ? langResult.lang
-  : langResult.kind === 'ambiguous' ? langResult.candidates[0]
-    : 'none-detected';
-if (langResult.kind === 'ambiguous') {
-  console.log(`Source has more than one supported language's manifest at the same (nearest) level: `
-    + `${langResult.candidates.join(', ')} (in ${langResult.dir}).`);
-  console.log('This will be asked, interactively, in the confirm turn below — before any paid call.');
+// Only meaningful for a REPO source (PRD item 33 M3 piece 4, step S6): a
+// plain folder has no genre to detect and no code-shaped manifest to walk —
+// `LANG`/`langResult` stay at their "nothing to see" values and the confirm
+// turn further down runs with `isRepo: false` (D5), which is what already
+// skips the repo-only "worse than before" ask and the language pick alike.
+let langResult = /** @type {ReturnType<typeof detectLanguage>|null} */ (null);
+let LANG = 'none-detected';
+if (IS_REPO_SOURCE) {
+  langResult = detectLanguage(SOURCE);
+  // AMBIGUOUS NO LONGER DIES (PRD item 33 M3 piece 4, step S4): the confirm
+  // turn's own $0 half asks the person which language this job is about,
+  // BEFORE the scout (D7) — `langResult` travels into `authorCloseForJob`
+  // below exactly as it is here, and its `ambiguous` shape is what triggers
+  // that ask. `LANG` below is a placeholder for this outcome only: whatever
+  // the person picks interactively is what actually lands in `closeDecl.lang`.
+  if (langResult.kind === 'language-unsupported') {
+    const r = langResult.refusal;
+    console.log(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
+    console.log(r.detail);
+    for (const o of r.options) console.log(`  · ${o}`);
+    for (const e of refusalEvents(r)) emit(e.type, e);
+    console.log(`\nRecorded as admission demand in the spine: ${spineFile}`);
+    // A stop this early has no `authored`/`signing` result to fall through to —
+    // the rest of this file's flow assumes a resolved language, a provider and
+    // a spec draft, none of which exist yet. `process.exitCode` plus falling
+    // through would require wrapping everything below in a guard, which is the
+    // rewrite the task asked not to make; `process.exit(1)` is kept here,
+    // deliberately, rather than reworked into that shape.
+    process.exit(1);
+  }
+  LANG = langResult.kind === 'resolved' ? langResult.lang
+    : langResult.kind === 'ambiguous' ? langResult.candidates[0]
+      : 'none-detected';
+  if (langResult.kind === 'ambiguous') {
+    console.log(`Source has more than one supported language's manifest at the same (nearest) level: `
+      + `${langResult.candidates.join(', ')} (in ${langResult.dir}).`);
+    console.log('This will be asked, interactively, in the confirm turn below — before any paid call.');
+  }
 }
 
 /** @param {string} label @param {string} file */
@@ -558,6 +564,88 @@ const ask = async (step) => {
  * is bound to `AUTHOR_SYSTEM`). Same provider instance, a different system
  * prompt: reusing `generate` would run the wrong system prompt silently. */
 const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
+
+// ── PLAIN-FOLDER SOURCE: NO SCOUT, A CONFIRM TURN OVER THE SEED LISTING, THEN
+// THE HONEST "NO CHECKS YET" STOP (PRD item 33 M3 piece 4, step S6, D5 = A) ──
+// This branch NEVER falls through to the repo-shaped try/catch below —
+// `process.exit(1)` at its end (or inside `runConfirmTurn`'s own abandon
+// paths) guarantees that, the same way every other early stop in this file
+// does. A plain folder gets no scout (its register is code-only,
+// `src/authorscout.js`) — the listing below is a mechanical directory walk
+// of the FROZEN tree, never survey facts, and the confirm turn runs with
+// `isRepo: false` (skips the repo-only "worse than before" ask and the
+// language pick alike, exactly as `runConfirmTurn` already does for a
+// repo-with-resolved-language job).
+if (!IS_REPO_SOURCE) {
+  /** a $0, no-git listing of the frozen tree — the same "files that actually
+   * exist" idea `buildSeedListing` gives a repo job, built by hand here
+   * because there is no git seedRef to list from. Capped the same order of
+   * magnitude as the repo listing's own LIST_CAP so a very large plain
+   * folder cannot blow the prompt open.
+   * @param {string} dir @param {number} cap @returns {string[]} */
+  const listPlainFolder = (dir, cap = 2000) => {
+    /** @type {string[]} */
+    const out = [];
+    const walk = (/** @type {string} */ d) => {
+      if (out.length >= cap) return;
+      for (const entry of readdirSync(d, { withFileTypes: true })) {
+        if (out.length >= cap) return;
+        const full = join(d, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else out.push(relative(SOURCE, full).split(sep).join('/'));
+      }
+    };
+    walk(dir);
+    return out;
+  };
+  const files = listPlainFolder(SOURCE);
+  const listingBlock = [
+    'FILES THAT ACTUALLY EXIST IN THE FROZEN TREE — listed mechanically (a plain directory walk,',
+    'never a survey): a path not in this list DOES NOT EXIST, whatever it sounds like it should be called.',
+    '',
+    ...files.map((f) => `  ${f}`),
+  ].join('\n');
+  onPhase('confirm', {});
+  const confirmBook = makeCostBook({ ceilingUsd: CEILING_USD, onCall });
+  const confirm = await runConfirmTurn({
+    verdictType: VERDICT, answers, questions: LIVE_CLASSES.includes(VERDICT) ? questionsFor(VERDICT) : null,
+    facts: null, listing: listingBlock, writeScope: null, isRepo: false, lang: LANG,
+    generate: confirmGenerate, book: confirmBook, ask, onPhase,
+  });
+  onPhase('confirm-turn-done', { ok: confirm.ok, stop: confirm.stop, rounds: confirm.rounds });
+  writeOut('authored.json', {
+    ok: false, confirmed: confirm.ok ? confirm.accepted : null,
+    stop: confirm.ok ? 'non-code-source' : confirm.stop, cost: confirm.cost, reds: confirm.reds,
+  });
+  if (!confirm.ok) {
+    // the confirm turn itself did not reach a signable plan (abandoned, a
+    // cap/pricing stop, a provider/artifact red, or the person chose to
+    // start over) — THAT is the stop this run ends on, never silently
+    // overwritten by the "no checks yet" one below, which only applies to a
+    // plan the person actually confirmed.
+    console.log(`\n${String(confirm.stop).toUpperCase()} — the confirm turn did not produce a signed plan.`);
+    for (const red of confirm.reds ?? []) {
+      console.log(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
+      emit('job-red', red);
+    }
+    emit('author-end', { outcome: 'not-authored', stop: confirm.stop });
+    console.log(`\nspine      ${spineFile}`);
+    process.exit(1);
+  }
+  // the person CONFIRMED a plan for a job this build still cannot close — the
+  // SAME honest stop this used to give before any question was even asked,
+  // now given after the confirm turn instead (D5).
+  console.log(`Source is not a code repository — it is a plain ${manifestRead.manifest.kind} job. bareloop has no checks for this kind`);
+  console.log('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build). Nothing was authored.');
+  const red = {
+    code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',
+    detail: `--source ${SOURCE} freezes a "${manifestRead.manifest.kind}" job — the close catalogue is code-genre only today.`,
+  };
+  emit('job-red', red);
+  emit('author-end', { outcome: 'not-authored', stop: 'non-code-source' });
+  console.log(`\nspine      ${spineFile}`);
+  process.exit(1);
+}
 
 // ── EVERYTHING PAID FOR, INSIDE ONE CATCH ────────────────────────────────────
 // The span from here to the end of the main flow is the fallible one: a real

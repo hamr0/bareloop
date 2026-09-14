@@ -616,7 +616,15 @@ test('--source that was never prepared through the source front door dies loud, 
   assert.equal(existsSync(out) && readdirSync(out).some((f) => f.startsWith('author-')), false);
 });
 
-test('a --source prepared from a NON-repo (a plain folder) stops honestly (M3 ruling 7 → M4), recorded as counted demand', async () => {
+// PRD item 33 M3 piece 4, step S6 (D5 = A): the "no checks yet" stop MOVED
+// from before the key check to after the confirm turn — a plain-folder job
+// now needs a real provider connection (the confirm turn is paid) before it
+// can even reach that stop. This suite pays for nothing, so the far side of
+// that move (the confirm turn actually running, and the stop landing after
+// it) is unit-tested on `runConfirmTurn` directly (confirmturn.test.js) and
+// pinned from source below — what THIS test proves at $0 is that the stop
+// genuinely no longer fires before the key gate.
+test('a --source prepared from a NON-repo (a plain folder), with a valid provider but no key, now dies at the API KEY CHECK — the old early stop is gone', async () => {
   const folder = mkdtempSync(join(runBase, 'plain-folder-'));
   writeFileSync(join(folder, 'a.txt'), 'hello');
   const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
@@ -625,22 +633,58 @@ test('a --source prepared from a NON-repo (a plain folder) stops honestly (M3 ru
   const answersFile = join(dir, 'answers.json');
   const draftFile = join(dir, 'specdraft.json');
   writeFileSync(answersFile, '{}');
-  writeFileSync(draftFile, '{}');
+  // a REAL provider is needed to reach the key check at all — the old fixture's
+  // empty draft ('{}') died even earlier (unknown provider) once the plain-folder
+  // stop moved past provider resolution
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
   const out = join(dir, 'out');
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
     '--verdict', 'green', '--out', out,
-  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
-  assert.equal(r.status, 1, text);
-  assert.match(text, /bareloop has no checks for this kind/);
-  assert.match(text, /M3 ruling 7 → M4/);
-
+  assert.equal(r.status, 2, text);
+  assert.match(text, /ANTHROPIC_API_KEY not set/);
+  assert.doesNotMatch(text, /bareloop has no checks for this kind/, 'the old early stop must not fire before the key check any more');
+  // no spine FILE at all — `appendFileSync` inside `emit` creates it lazily on
+  // its first write, and `author-start` (the first emit in this file) fires
+  // AFTER the key check, so nothing ever wrote to it
   const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
-  assert.equal(spineFiles.length, 1, 'the spine still opens — this IS counted demand, not a config error');
-  const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  assert.ok(events.some((e) => e.type === 'job-red' && e.code === 'request-red'), JSON.stringify(events));
-  assert.ok(events.some((e) => e.type === 'author-end'), 'a spine with no author-end reads as a run still in flight');
+  assert.equal(spineFiles.length, 0, 'no event ever reached the spine before the key gate — the file was never created');
+});
+
+// The far side of the move — pinned from SOURCE, for the same reason the
+// governance/kill/sign blocks above are: it is reachable only past a real
+// key and a real model call, which this suite never pays for.
+const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+
+test('the plain-folder branch is still BOUNDED — this guard reads the branch, not the rest of the file', () => {
+  assert.ok(PLAIN_FOLDER_BLOCK, 'the plain-folder branch moved — this guard no longer reads the code it guards');
+  assert.ok(!/authorCloseForJob/.test(PLAIN_FOLDER_BLOCK), 'the plain-folder branch must never run the repo-shaped authorCloseForJob');
+});
+
+test('a plain-folder job runs NO SCOUT and its confirm turn is isRepo:false, over a manual listing — never authorCloseForJob\'s survey', () => {
+  assert.ok(PLAIN_FOLDER_BLOCK);
+  assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /runAuthorScout|scoutFn/, 'no scout for a plain folder (D5) — its register is code-only');
+  assert.match(PLAIN_FOLDER_BLOCK, /runConfirmTurn\(\{/);
+  assert.match(PLAIN_FOLDER_BLOCK, /isRepo: false/);
+  assert.match(PLAIN_FOLDER_BLOCK, /facts: null, listing: listingBlock/);
+});
+
+test('the plain-folder branch NEVER falls through into the repo-shaped try block — every path out of it exits', () => {
+  assert.ok(PLAIN_FOLDER_BLOCK);
+  const exits = [...PLAIN_FOLDER_BLOCK.matchAll(/process\.exit\(1\)/g)].length;
+  assert.ok(exits >= 2, `expected an exit on both the confirm-turn-not-ok path and the confirmed "no checks yet" path (saw ${exits})`);
+});
+
+test('the plain-folder "no checks yet" stop only fires AFTER a confirmed plan — a stop still named request-red/non-code-source, unchanged from before the move', () => {
+  assert.ok(PLAIN_FOLDER_BLOCK);
+  const confirmDoneAt = PLAIN_FOLDER_BLOCK.indexOf('if (!confirm.ok)');
+  const stopAt = PLAIN_FOLDER_BLOCK.indexOf("verb: 'non-code-source'");
+  assert.ok(confirmDoneAt !== -1 && stopAt !== -1 && confirmDoneAt < stopAt,
+    'the confirm-turn check must come BEFORE the non-code-source stop — a plan the person never confirmed must never reach it');
+  assert.match(PLAIN_FOLDER_BLOCK, /code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',/);
+  assert.match(PLAIN_FOLDER_BLOCK, /outcome: 'not-authored', stop: 'non-code-source'/);
 });
 
 // ── PRD item 33 M3 piece 4, step S4 — run-author.mjs becomes INTERACTIVE ────

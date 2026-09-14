@@ -300,17 +300,29 @@ test('the original repo Source is never touched — prepareSource COPIES, it nev
   assert.equal(gitFix(repoBase, ['rev-parse', 'HEAD']).trim(), beforeHead, 'the original repo\'s HEAD must not move');
 });
 
-test('a non-repo Source (a plain folder): the form stops right after Source/Destination — the honest M4 gap', () => {
+// PRD item 33 M3 piece 4, step S6 (D5 = A): the form no longer STOPS for a
+// plain folder — it continues, and the honest "no checks yet" gap moves to
+// AFTER the confirm turn, in run-author.mjs (D5's own stop, over the $0 seed
+// listing rather than a scout).
+test('a non-repo Source (a plain folder): the form CONTINUES (D5=A) — no writeScope in the draft, M4\'s stop moves to run-author.mjs', () => {
   const out = outDir();
   const folder = mkdtempSync(join(base, 'plain-folder-'));
   writeFileSync(join(folder, 'a.txt'), 'hello');
   const destDir = mkdtempSync(join(base, 'plain-dest-'));
-  const r = interview({ out, lines: [...a(folder), ...a(destDir), 'n'] });
-  assert.equal(r.code, 1, r.out);
+  const lines = [
+    ...a(folder), ...a(destDir),
+    ...requiredAnswersFor(CLASS).flatMap((q) => a(`answer to question ${q}`)),
+    ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
+  ];
+  const r = interview({ out, lines });
+  assert.equal(r.code, 0, r.out);
   assert.match(r.out, /bareloop has no checks for this kind/);
-  assert.match(r.out, /M3 ruling 7 → M4/);
-  assert.doesNotMatch(r.out, /── 1 of /, 'the class questions never start — nothing here is authored for a job with no close catalogue yet');
-  assert.equal(existsSync(join(out, 'specdraft.json')), false);
+  assert.match(r.out, /the form continues/i);
+  assert.match(r.out, /confirm turn still runs \(D5\)/);
+  assert.match(r.out, /── 1 of /, 'the class questions DO start now (D5) — only run-author.mjs stops on this kind of job');
+  assert.ok(existsSync(join(out, 'specdraft.json')), 'the draft IS written — a plain-folder job is not refused here any more');
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.equal(draft.writeScope, undefined, 'a plain-folder job has no fence yet (PLAIN_FOLDER_DEFERRED_FIELDS) — never one derived from the output directory');
 });
 
 test('a bad Destination (not absolute) is a NAMED refusal and the question is RE-ASKED, never silently fixed', () => {

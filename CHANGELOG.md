@@ -92,7 +92,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
   before this piece existed. `TYPES_GENRE_TEMPLATE`'s own unconditional work-stage skeleton
   (ruling 6's intent for the TYPES genre specifically) is a known, reported, NOT-YET-RULED
   tension — the frozen prereg byte-pin (`tests/authoring.test.js`) was left untouched pending
-  hamr's word.
+  hamr's word. `scripts/run-interview.mjs` asks no separate GOAL question any more (ruling 5's
+  addendum, D2 = option B) and no longer dies on an ambiguous-language Source (D7 defers the
+  pick to the confirm turn); its own $0 validator pass filters both `goal`
+  (`CONFIRM_AUTHORED_FIELDS`) and, for a plain-folder job, `writeScope`
+  (`PLAIN_FOLDER_DEFERRED_FIELDS`, both `src/authorjob.js`) reds the same way it already filters
+  `AUTHORED_SPEC_FIELDS`'s. **A plain-folder Source no longer stops the interview at all (PRD
+  item 33 M3 piece 4, step S6, D5 = A ruling):** the form continues — class questions, job name,
+  budget, wall, and the offer — and the draft is written with no `writeScope` (Destination there
+  is an output directory, never a fence). The honest "no checks yet" stop (ruling 7 → M4) moves
+  to `run-author.mjs`, which now runs a plain-folder job's confirm turn too — over a $0, no-git
+  listing of the frozen tree rather than a scout (D5: the scout's register is code-only) — before
+  giving that same stop. If the confirm turn itself does not reach a signed plan, that stop
+  stands instead; the non-code-source stop only fires once a person actually confirmed one.
 
 ### Removed
 

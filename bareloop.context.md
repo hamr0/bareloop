@@ -902,9 +902,14 @@ spec's `description`, and the `--source` handed to `run-author.mjs`) reads the P
 never the original Source again (patients are copies, always). A Source one level inside a
 repo (a subfolder with no `.git` of its own) is, by this same rule, NOT a repo source — it
 freezes as a plain folder, the authoritative outcome `prepareSource`'s own walk agrees with. A
-non-repo source gets Source and Destination proven and frozen and then an honest named stop:
-bareloop's check catalogue is code-genre only today (ruling 7 → M4); the prepared copy stays on
-disk regardless. Everything load-bearing in it is borrowed rather than respelled —
+non-repo source gets Source and Destination proven and frozen and then, since PRD item 33 M3
+piece 4 step S6 (D5 = A), the FORM CONTINUES — the class's own questions, job name, budget and
+wall are all still asked, and the draft is still written, with no `writeScope` field
+(`PLAIN_FOLDER_DEFERRED_FIELDS`, `src/authorjob.js` — Destination there is an output directory,
+never a fence). The honest named stop (bareloop's check catalogue is code-genre only today,
+ruling 7 → M4) no longer lands HERE — it moves to `run-author.mjs`, AFTER a confirm turn over
+the $0 seed listing (no scout — D5's register is code-only). Everything load-bearing in it is
+borrowed rather than respelled —
 the QUESTIONS are the library's frozen sets (`questionsFor` / `requiredAnswersFor`), printed as
 handed over and never re-worded, re-ordered or re-numbered by the script; the REFUSALS are
 `runInterview`'s; the SCRUB is `redactSecrets` at capture AND again at the library's own ingest,
@@ -975,7 +980,13 @@ into a success one process up.
   turn (`runConfirmTurn`, `src/authorflow.js`) asks, over a readline `ask` seam bound to stdin,
   who wrote what and lets the person confirm the plan, fix it (up to 2 rounds), type the goal
   themselves, or start over — everything else (the survey, the declaration loop, D9's gates)
-  stays unattended. `rl.close()` runs in a `finally` around the whole paid span.
+  stays unattended. `rl.close()` runs in a `finally` around the whole paid span. **A plain-folder
+  Source (step S6, D5 = A) runs NO scout** — its own confirm turn runs over a $0, no-git
+  directory listing of the frozen tree instead, then the SAME honest "no checks yet" stop this
+  script always gave (`request-red`/`non-code-source`), now given AFTER that confirm turn rather
+  than before the API key is even read. If the confirm turn itself does not reach a signed plan
+  (abandoned, a cap/pricing stop, a provider/artifact red, or "start over"), THAT is the stop —
+  the non-code-source one only fires once a plan was actually confirmed.
 
 **A crash inside the paid span leaves a BODY.** The fallible span — from just after
 `author-start` to the end of the main flow — sits in ONE try/catch that RETRIES NOTHING and

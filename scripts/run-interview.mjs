@@ -61,6 +61,7 @@ import { resolve, join } from 'node:path';
 import {
   runInterview, questionsFor, requiredAnswersFor,
   VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS, CONFIRM_AUTHORED_FIELDS,
+  PLAIN_FOLDER_DEFERRED_FIELDS,
 } from '../src/authorjob.js';
 import {
   SOURCE_FIELD, destinationFieldFor, labelsFor,
@@ -377,25 +378,32 @@ say(`  tree     ${prep.tree}`);
 say(`  kind     ${prep.manifest.kind}`);
 say(`  seed     ${prep.manifest.seed}`);
 
-// ── ruling 7: a non-repo source gets the form up to here, then an honest stop ─
-// bareloop's checks/close catalogue is code-genre only today (M4 builds the
-// non-code checks). Source and Destination are both proven and frozen — the
-// prepared copy is real and stays on disk — but nothing downstream of here
-// (the class's own questions, a job spec, a signable close) exists yet for
-// this kind of job.
-if (prep.manifest.kind !== 'repo') {
+// ── ruling 7 → D5 = A (PRD item 33 M3 piece 4, step S6): a non-repo source
+// no longer stops HERE. bareloop's checks/close catalogue is still
+// code-genre only today (M4 builds the non-code checks), but the honest
+// "no checks yet" stop moves to AFTER the confirm turn — `run-author.mjs`,
+// not this script, is where it now lands, once a plain folder's confirm
+// turn has run over the $0 seed listing (D5). This script stays
+// PROVIDER-FREE (D1): it has nothing of its own to stop for any more.
+const IS_PLAIN_FOLDER = prep.manifest.kind !== 'repo';
+if (IS_PLAIN_FOLDER) {
   say('');
   say(`Source is not a code repository — it is a plain ${prep.manifest.kind} job. bareloop has no checks for this kind`);
-  say('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build). Nothing was authored.');
-  say(`The prepared copy is at ${prep.tree} (manifest ${prep.manifestPath}), if you want to look at what was frozen.`);
-  process.exit(1);
+  say('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build), but the form continues: the');
+  say('confirm turn still runs (D5), over the seed listing rather than a scout, when you run run-author.mjs.');
 }
 
 // From here on, EVERYTHING that used to read the original patient path reads
 // the PREPARED COPY instead (`prep.tree`) — the original is never touched
 // again (patients are copies, always).
 const TREE = prep.tree;
-const writeScope = destinationRaw.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+// `writeScope` IS Destination's proven fence for a REPO source (ruling 2) —
+// for a plain folder, Destination is an OUTPUT directory, never a fence, and
+// this build authors no close for that kind of job at all (D5), so the
+// draft below carries NO `writeScope` field for one (`PLAIN_FOLDER_DEFERRED_
+// FIELDS`, `src/authorjob.js`) rather than a meaningless one derived from an
+// output path.
+const writeScope = IS_PLAIN_FOLDER ? null : destinationRaw.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 
 const QUESTIONS = questionsFor(VERDICT);
 const LABELS = labelsFor(VERDICT);
@@ -496,7 +504,9 @@ const draft = {
   cadence: { unit: 'day', every: 1 },
   budgetUsd,
   ...(wallMin === null ? {} : { maxWallMs: Math.round(wallMin * 60_000) }),
-  writeScope,
+  // ABSENT for a plain folder (`writeScope === null`, D5/step S6) — never a
+  // meaningless fence derived from an output directory.
+  ...(writeScope === null ? {} : { writeScope }),
   escalation: { mode: 'decision-ready' },
   // `tools` is deliberately OMITTED: an omitted menu hashes as the concrete current
   // TOOL_MENU (MED-1), which pins WHICH menu was signed and makes a widening flip the
@@ -509,10 +519,14 @@ const draft = {
 // by re-listing them here. `CONFIRM_AUTHORED_FIELDS` (just `goal`) joins the same
 // filter for the same reason: this draft has no goal yet either, and `validateJob`
 // would otherwise red `missing-required` at a field the confirm turn — not this
-// script — is what fills in (step S5). Everything else is a typo the person can fix
+// script — is what fills in (step S5). `PLAIN_FOLDER_DEFERRED_FIELDS` (just
+// `writeScope`) joins it too (step S6): a repo draft always carries one, so this
+// is a no-op there, and a plain-folder draft's own `missing-required` at
+// `writeScope` is likewise expected — nothing in this build fills that in for a
+// plain-folder job at all yet (M4). Everything else is a typo the person can fix
 // in a second now, or pay a scout and a model call to discover.
 const draftReds = validateJob(draft, { shellCapUsd: draft.budgetUsd }).reds
-  .filter((r) => ![...AUTHORED_SPEC_FIELDS, ...CONFIRM_AUTHORED_FIELDS]
+  .filter((r) => ![...AUTHORED_SPEC_FIELDS, ...CONFIRM_AUTHORED_FIELDS, ...PLAIN_FOLDER_DEFERRED_FIELDS]
     .some((f) => String(r.path) === f || String(r.path).startsWith(`${f}.`)));
 if (draftReds.length) {
   say('');
@@ -534,7 +548,7 @@ say(`written  ${answersFile}   the ${REQUIRED.length} answers, in the shape run-
 say(`written  ${draftFile}   the operator half — no close and no verdictType: those are what run-author authors`);
 say(`  job      ${draft.job}`);
 say(`  budget   $${draft.budgetUsd} for the RUN  ·  wall ${draft.maxWallMs === undefined ? 'UNBOUNDED (you said none — no outside deadline)' : `${draft.maxWallMs / 60_000}min`}`);
-say(`  fence    ${draft.writeScope.join(', ')}`);
+say(`  fence    ${draft.writeScope ? draft.writeScope.join(', ') : '(none — a plain-folder job has no fence yet, M4)'}`);
 // no goal line here — the confirm turn (run-author.mjs, step S4) drafts and
 // confirms the goal sentence next; this draft carries none yet
 

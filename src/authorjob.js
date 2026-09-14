@@ -866,6 +866,20 @@ export const AUTHORED_SPEC_FIELDS = Object.freeze(['close', 'closeDecl', 'verdic
 // hand-types the field name `'goal'` a second time.
 export const CONFIRM_AUTHORED_FIELDS = Object.freeze(['goal']);
 
+// PRD item 33 M3 piece 4, step S6 (D5 = A: a plain-folder source runs no
+// scout, and its confirm turn ends in the honest "no checks yet" stop, M4).
+// `writeScope` is the signed fence for a REPO job (Destination's own proven
+// answer IS it); for a plain folder, Destination is an OUTPUT directory, not
+// a fence, and this build authors no close for that kind of job at all — so
+// `scripts/run-interview.mjs` writes no `writeScope` field for one. Named
+// here, separately from `CONFIRM_AUTHORED_FIELDS`, because nothing in THIS
+// build ever fills it in for a plain-folder draft (goal, above, IS always
+// filled in later, by the confirm turn) — it stays absent until M4 gives a
+// plain-folder job a fence of its own kind. Filtering it unconditionally in
+// the $0 validator pass is harmless for a repo draft, which always carries
+// one: there is never a `writeScope` red left to filter there.
+export const PLAIN_FOLDER_DEFERRED_FIELDS = Object.freeze(['writeScope']);
+
 /**
  * Fold an authored close into the OPERATOR's own half of the spec.
  *
