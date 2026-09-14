@@ -486,6 +486,41 @@ export function arbiterDeny(workdir, auditPath) {
 }
 
 /**
+ * F177's follow-up to F178 (hamr, option B, 2026-09-14) — the runtime belt for
+ * a `node_modules` write bareguard's `fs.deny` cannot express on its own.
+ * `.git` sits at exactly one place (the workdir root), so `arbiterDeny` covers
+ * it with a single exact prefix; `node_modules` can nest at ANY depth inside
+ * an otherwise-legal fence (a monorepo package scope like `packages/api/**`
+ * reaching its own `node_modules`, possibly one the worker creates fresh
+ * during the run — a directory `fs.deny`'s static prefix list cannot name in
+ * advance). bareguard's `fs.deny` is exact prefix-containment only — no glob,
+ * no path-segment match — confirmed by reading `within()`
+ * (node_modules/bareguard/src/primitives/fs.js:26-31): it does `p === b ||
+ * p.startsWith(b + '/')` against each configured entry, nothing else.
+ * `node_modules/bareguard/src/glob.js`'s `matchAny`/`globToRegex` exist in the
+ * same package but `fs.js` never imports them — no glob support reaches this
+ * primitive today.
+ *
+ * `tools.denyArgPatterns` (`node_modules/bareguard/src/primitives/tools.js`,
+ * step 3 of `Gate#_stepEval` — the SAME step `fsCheck` runs at, checked right
+ * after it in the `??` chain, `node_modules/bareguard/src/gate.js`) is the
+ * supported hook used instead: a RegExp tested against
+ * `JSON.stringify(action)`, keyed by `action.type` so it only ever applies to
+ * `write`/`edit`. Because `fsCheck` runs first in that same `??` chain, this
+ * pattern is reached ONLY when the path already passed `writeScope`/`deny` —
+ * exactly the residual case (an in-fence path that still carries a
+ * `node_modules` segment). It is safe to match the WHOLE serialized action
+ * (not just a `path` field in isolation) because bareloop's own action shape
+ * (`toolAction`, src/tools.js) never carries a write's byte CONTENT in the
+ * action object — `args.bytes` is a length, not the text — so there is no
+ * written-file-content collision risk the way there would be for bareguard's
+ * own `content.denyPatterns` primitive (which explicitly strips payload
+ * fields for exactly that reason).
+ * @type {RegExp}
+ */
+export const NODE_MODULES_PATH_PATTERN = /"path":"(?:(?:[^"\\]|\\.)*\/)?node_modules(?:\/|")/;
+
+/**
  * @param {string | null | undefined} gap the step's last exit gap text
  * @returns {string} the labelled block, or '' when there is nothing to show
  */
@@ -2270,6 +2305,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         readScope: [workdir],
         deny: arbiterDeny(workdir, auditPath),
       },
+      // F177's follow-up to F178: the node_modules runtime belt. Reached only
+      // when a write/edit path already cleared fs.writeScope/deny above (step
+      // 3's fsCheck runs first in the SAME `??` chain, node_modules/bareguard/
+      // src/gate.js) — i.e. only the residual case of an in-fence path that
+      // still carries a node_modules segment (see NODE_MODULES_PATH_PATTERN).
+      tools: { denyArgPatterns: { write: [NODE_MODULES_PATH_PATTERN], edit: [NODE_MODULES_PATH_PATTERN] } },
       budget: { maxCostUsd: Math.max(remainingUsd(), 0.0001) },
       limits: { maxTurns },
       audit: { path: auditPath },

@@ -130,3 +130,18 @@ test('scopeContained still admits ".git"-like names that are not the whole segme
     assert.equal(scopeContained(ok), true, `${JSON.stringify(ok)} is a look-alike, not .git itself — must stay admitted`);
   }
 });
+
+// F177's follow-up to F178 (hamr, option B, 2026-09-14): a fence naming
+// node_modules directly is the same class of gap — installs are the person's
+// job now, and anything a worker writes there is invisible to changedSet.
+test('scopeContained rejects a fence naming "node_modules" as a whole path segment, at any depth', () => {
+  for (const bad of ['node_modules/**', 'node_modules', 'packages/api/node_modules/**', 'a/node_modules/b/**']) {
+    assert.equal(scopeContained(bad), false, `${JSON.stringify(bad)} must not be contained — node_modules is arbiter territory`);
+  }
+});
+
+test('scopeContained still admits "node_modules"-like names that are not the whole segment "node_modules"', () => {
+  for (const ok of ['node_modules_util/**', 'src/my_node_modules/**', 'src/node_modules.bak/**']) {
+    assert.equal(scopeContained(ok), true, `${JSON.stringify(ok)} is a look-alike, not node_modules itself — must stay admitted`);
+  }
+});

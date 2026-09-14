@@ -112,6 +112,10 @@ const RED_CASES = [
   // closes that door even before the wiring lands.
   ['fence naming .git directly', (j) => { j.writeScope = ['.git/**']; }, 'invalid-value:writeScope'],
   ['fence naming .git nested under an otherwise-legal prefix', (j) => { j.writeScope = ['a/.git/**']; }, 'invalid-value:writeScope'],
+  // F177's follow-up to F178: a fence naming node_modules directly is refused
+  // the same way — installs are the person's job now (F177), and anything a
+  // worker writes there is invisible to changedSet.
+  ['fence naming node_modules directly', (j) => { j.writeScope = ['node_modules/**']; }, 'invalid-value:writeScope'],
 
   // -- the environment label (declared keys only, V3) --
   ['unknown condition key', (j) => { j.conditions.weather = 'sunny'; }, 'unknown-field:conditions.weather'],

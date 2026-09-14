@@ -9,6 +9,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F177 follow-up — a signed fence could also name `node_modules` directly, or reach a nested
+  `node_modules` through an otherwise-legal fence, invisibly to `changedSet`.**
+  `scopeContained` (`src/validate.js`) now refuses `node_modules` as a whole fence/scope
+  segment (hamr's ruling, 2026-09-14, option B). bareguard's `fs.deny` cannot express "at any
+  depth" (exact prefix-containment only), so the runtime belt for a NESTED `node_modules` uses
+  the supported `tools.denyArgPatterns` hook instead (`NODE_MODULES_PATH_PATTERN`,
+  `src/planrun.js`). Not yet proven live.
 - **F178 — a signed fence could name `.git` directly, letting a worker write git's own files
   (refs, the seed, `.git/info/exclude`) invisibly to `changedSet`.** `scopeContained`
   (`src/validate.js`, the one containment law `validateJob` and `validatePlan` both go through)

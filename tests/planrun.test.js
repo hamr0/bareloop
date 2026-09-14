@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rateSourceFields, arbiterDeny } from '../src/planrun.js';
+import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rateSourceFields, arbiterDeny, NODE_MODULES_PATH_PATTERN } from '../src/planrun.js';
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
@@ -5242,4 +5242,66 @@ test('F178: the real bareguard Gate denies a write inside the workdir\'s own .gi
   // is additive, it must never narrow the signed fence itself
   const scopedWrite = await gate.check({ type: 'write', path: join(wd, 'src', 'mod.mjs') });
   assert.equal(scopedWrite.outcome, 'allow', 'an ordinary in-fence write must still be allowed');
+});
+
+test('F177 follow-up: the real bareguard Gate denies a write to a NESTED node_modules inside an otherwise-legal fence, via the REAL exported NODE_MODULES_PATH_PATTERN', async (t) => {
+  const wd = mkdtempSync(join(tmpdir(), 'f177-nm-deny-'));
+  t.after(() => rmSync(wd, { recursive: true, force: true }));
+  initPatientRepo(wd);
+  mkdirSync(join(wd, 'packages', 'api'), { recursive: true });
+  const auditPath = join(wd, GATE_AUDIT_FILE);
+  // the SAME shape mkWorker builds: a legitimate fence ('packages/api/**') that
+  // fsCheck alone cannot stop from reaching a NESTED node_modules — writeScope
+  // is a static prefix, and 'packages/api/node_modules/x.js' is genuinely under it
+  const gate = new Gate({
+    fs: {
+      writeScope: [join(wd, 'packages', 'api')],
+      readScope: [wd],
+      deny: arbiterDeny(wd, auditPath),
+    },
+    tools: { denyArgPatterns: { write: [NODE_MODULES_PATH_PATTERN], edit: [NODE_MODULES_PATH_PATTERN] } },
+    audit: { path: null },
+  });
+
+  const nmWrite = await gate.check({ type: 'write', path: join(wd, 'packages', 'api', 'node_modules', 'left-pad', 'index.js') });
+  assert.equal(nmWrite.outcome, 'deny', 'a write into a NESTED node_modules must be denied even though the path is genuinely inside the signed fence');
+  assert.equal(nmWrite.rule, 'tools.denyArgPatterns', 'denied by the denyArgPatterns hook (fs.writeScope alone cannot express this — it is a genuinely in-fence path)');
+
+  // an edit is judged by the SAME fence (bareguard FS_TYPES) — prove the pattern is wired for edit too
+  const nmEdit = await gate.check({ type: 'edit', path: join(wd, 'packages', 'api', 'node_modules', 'left-pad', 'index.js'), args: { bytes: 4 } });
+  assert.equal(nmEdit.outcome, 'deny', 'an edit into node_modules must be denied the same way as a write');
+
+  // and an ordinary in-fence write, sibling to node_modules, is still allowed —
+  // the pattern is additive, it must never narrow the signed fence itself
+  const scopedWrite = await gate.check({ type: 'write', path: join(wd, 'packages', 'api', 'src', 'mod.mjs') });
+  assert.equal(scopedWrite.outcome, 'allow', 'an ordinary in-fence write outside node_modules must still be allowed');
+
+  // a look-alike directory name must NOT false-positive (whole-segment match only)
+  const lookalike = await gate.check({ type: 'write', path: join(wd, 'packages', 'api', 'node_modules_util', 'x.js') });
+  assert.equal(lookalike.outcome, 'allow', 'node_modules_util is a DIFFERENT directory — must stay admitted');
+});
+
+test('LOOP path: a write into a NESTED node_modules is denied through the REAL runPlan/mkWorker wiring, not just the standalone pattern (F177 follow-up to F178)', async (t) => {
+  const wd = makePatient(t);
+  mkdirSync(join(wd, 'pkg'));
+  const job = JOB(wd, { writeScope: ['pkg/**'] });
+  const jv = validateJob(job);
+  assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
+  const evilPath = join(wd, 'pkg', 'node_modules', 'evil.js');
+  // the step's DECLARED target is legal (pkg/mod.mjs) — the worker's ACTUAL
+  // tool call is what goes off-script and attempts the node_modules write,
+  // exactly the shape the runtime belt exists for (a clean plan, a worker
+  // that doesn't stay on its own declared target)
+  const provider = scriptedProvider([
+    { text: 'pkg/ is empty' },                                                    // scout
+    { text: JSON.stringify({ schema: 'plan-v1', steps: [{
+      id: 'write-nm', action: 'write pkg/mod.mjs', tools: ['write'], rounds: 6, target: 'pkg/mod.mjs',
+      exit: [{ type: 'tree-changed', scope: 'pkg/**' }],
+    }] }) },                                                                        // plan draft
+    { toolCalls: [tcall('t1', 'shell_write', { path: evilPath, content: 'evil\n' })] }, // off-script attempt
+    { text: 'tried to write into node_modules' },
+  ]);
+  const { events, emit } = collector();
+  await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 1, remainingUsd: () => 1.5 }).catch(() => {});
+  assert.ok(!existsSync(evilPath), 'the node_modules write was DENIED even though the path is genuinely inside the signed pkg/** fence');
 });

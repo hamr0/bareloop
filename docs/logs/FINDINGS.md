@@ -12300,6 +12300,35 @@ directory — the two causes are indistinguishable to `changedSet` by constructi
 that decides what a worker may touch is the only place this gap can close, never the exclude
 file.
 
+**2026-09-14 update — fixed in code (hamr's ruling, option B, same session as F178).**
+`scopeContained` (`src/validate.js`) now refuses any signed fence naming a `node_modules` path
+segment directly (`FORBIDDEN_SCOPE_SEGMENTS`), the same inexpressible-at-declaration-time
+treatment F178 gives `.git`. The residual gap this paragraph names above — a legal fence like
+`packages/api/**` reaching a NESTED `node_modules` beneath it, one a worker can create fresh
+during the run — needed a second, separate mechanism: read bareguard's `fs.deny`
+(`node_modules/bareguard/src/primitives/fs.js:26-31`, `within()`) and confirmed it is exact
+prefix-containment only — no glob, no path-segment match, no predicate hook; `matchAny`/
+`globToRegex` exist in the same package (`glob.js`) but `fs.js` never imports them. The
+supported hook used instead is `tools.denyArgPatterns` (`node_modules/bareguard/src/
+primitives/tools.js`, step 3 of `Gate#_stepEval`, the SAME step `fsCheck` runs at and checked
+right after it in the `??` chain, `node_modules/bareguard/src/gate.js`) — keyed by `action.type`
+so it applies to `write`/`edit` only, and reached ONLY when the path already cleared
+`fs.writeScope`/`fs.deny`, i.e. exactly the residual in-fence-but-nested case. The new
+`NODE_MODULES_PATH_PATTERN` (`src/planrun.js`) matches a whole `node_modules` path SEGMENT in
+the serialized action's `path` field (a look-alike like `node_modules_util` stays admitted).
+Matching the WHOLE serialized action carries no risk of a false match from a worker's WRITTEN
+TEXT, unlike bareguard's own `content.denyPatterns` primitive: bareloop's action shape
+(`toolAction`, `src/tools.js`) never carries a write's byte content in the action object —
+`args.bytes` is a length, not the text.
+
+Tests: `tests/validate.test.js` (whole-segment rejection + look-alikes, fail-first),
+`tests/job.test.js` (a `RED_CASES` row through the real `validateJob`), `tests/planrun.test.js`
+(a real bareguard `Gate` proving the nested-node_modules deny both standalone and through the
+REAL `runPlan`/`mkWorker` wiring — a scripted worker attempts an off-script write into
+`pkg/node_modules/` while its declared plan target is elsewhere; both fail-first proven by
+reverting the wiring). `authorscout.js`'s read-only scout Gate was checked and left alone (no
+write verb ever granted, so no `node_modules` write can reach it either). Not yet proven live.
+
 ## F178 — a signed fence could reach inside .git (fixed in code)
 
 Nothing stopped a signed job's `writeScope` (or a workflow step's narrower `scope`/exit
