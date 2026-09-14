@@ -9,6 +9,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **PRD item 33 close-out (L17) — the authoring interview never admitted an endpoint, so a
+  DeepSeek draft (`--provider openai-api`) authored against api.openai.com instead.**
+  `scripts/run-interview.mjs` now takes an optional `--base-url <url>` flag (no default; absent
+  leaves the draft's `baseUrl` field out entirely, never `null`/`''`) and validates it through
+  the existing `validateJob` `baseUrl` rule at $0 before writing anything. The interview's
+  header, the hand-off command, and `scripts/run-author.mjs`'s own start banner/`author-start`
+  event now name the endpoint when one is set; the key hint still points at the provider's own
+  env var (`OPENAI_API_KEY` for a DeepSeek endpoint) since there is no separate
+  endpoint-specific key. Not yet proven live.
 - **F176 — the revise ladder kept a later revision even when it measured worse than an earlier
   one.** `authorClose` (`src/authorflow.js`) now tracks every MEASURED (validated + seed-read)
   iteration and falls back to the NEWEST SOUND one — a real red/green verdict, never an

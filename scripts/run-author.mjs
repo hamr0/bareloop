@@ -368,7 +368,7 @@ const costLine = (cost) => {
   return `$${cost.costUsd.toFixed(6)} across ${cost.calls?.length ?? 0} call(s) (spend complete)`;
 };
 
-console.log(`== close-authoring, run ${runid} ==  ${PROVIDER_NAME}/${MODEL}`);
+console.log(`== close-authoring, run ${runid} ==  ${PROVIDER_NAME}/${MODEL}${baseUrl === undefined ? '' : `  (endpoint ${redactSecrets(baseUrl)})`}`);
 console.log(`  source   ${SOURCE}`);
 console.log(`  verdict  ${VERDICT}  (the USER's pick — this run authors a close that promises to stay at or below it)`);
 console.log(`  lang     ${LANG}`);
@@ -382,7 +382,7 @@ console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
 const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL, baseUrl });
-emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
+emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, baseUrl: baseUrl ?? null, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
 // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
 //

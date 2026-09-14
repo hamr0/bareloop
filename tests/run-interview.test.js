@@ -81,15 +81,16 @@ gitFix(repoBase, ['commit', '-q', '-m', 'seed']);
  * no library default) — `null` omits `--provider` entirely, for the scenarios that
  * test the missing-flag refusal itself.
  * @param {{verdict?: string, out: string, budget?: string|null,
- *   provider?: string|null, key?: string, lines: string[]}} o
+ *   provider?: string|null, baseUrl?: string|null, key?: string, lines: string[]}} o
  */
 const interview = ({
-  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', key = '', lines,
+  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', baseUrl = null, key = '', lines,
 }) => {
   const args = [
     '--verdict', verdict, '--out', out,
     ...(budget === null ? [] : ['--budget', budget]),
     ...(provider === null ? [] : ['--provider', provider]),
+    ...(baseUrl === null ? [] : ['--base-url', baseUrl]),
   ];
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf8', timeout: 120_000, input: `${lines.join('\n')}\n`,
@@ -598,6 +599,58 @@ test('the offer\'s key name FOLLOWS the chosen provider, never a hardcoded ANTHR
   assert.match(r.out, new RegExp(`${envKey} is not set in this shell`));
   assert.match(r.out, new RegExp(`${envKey}=\\.\\.\\. node scripts/run-author\\.mjs`));
   assert.doesNotMatch(r.out, /ANTHROPIC_API_KEY/, 'a different provider must never surface the old hardcoded key name');
+});
+
+// ══ --base-url (PRD item 33 close-out: L17 named the provider but never the
+// endpoint) — OPTIONAL, no default, DeepSeek reached through openai-api ═══════
+
+test('--base-url given: the draft carries baseUrl VERBATIM, alongside provider', () => {
+  const out = outDir();
+  const DEEPSEEK_URL = 'https://api.deepseek.com/v1';
+  const r = interview({ provider: 'openai-api', baseUrl: DEEPSEEK_URL, out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.equal(draft.provider, 'openai-api');
+  assert.equal(draft.baseUrl, DEEPSEEK_URL);
+});
+
+test('--base-url absent: the draft has no baseUrl KEY at all — never null, never empty string', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.equal('baseUrl' in draft, false, 'an absent flag must leave the field OUT of the draft, not written as null/\'\'');
+});
+
+test('--base-url http:// to a public host refuses at $0, through the SAME validateJob rule every other field takes — nothing written', () => {
+  const out = outDir();
+  const r = interview({
+    provider: 'openai-api', baseUrl: 'http://gateway.example.com/v1', out, lines: session(CLASS),
+  });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /THE SPEC DRAFT DOES NOT VALIDATE/);
+  assert.match(r.out, /baseUrl/);
+  assert.match(r.out, /https:\/\//, 'the validator\'s own message names the rule (https:// required)');
+  assert.match(r.out, /Nothing was written/);
+  assert.equal(existsSync(join(out, 'specdraft.json')), false);
+  assert.equal(existsSync(join(out, 'answers.json')), false);
+});
+
+test('the hand-off names the endpoint and points the key hint at OPENAI_API_KEY — no separate endpoint-specific key variable', () => {
+  const out = outDir();
+  const DEEPSEEK_URL = 'https://api.deepseek.com/v1';
+  const r = interview({ provider: 'openai-api', baseUrl: DEEPSEEK_URL, out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, new RegExp(`endpoint\\s+${DEEPSEEK_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.match(r.out, /OPENAI_API_KEY/);
+  assert.match(r.out, /there is no separate endpoint-specific key variable/);
+});
+
+test('--base-url never appears when the flag was never given — the hand-off carries no stale endpoint hint', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /endpoint-specific key variable/);
 });
 
 test('a Source that is not on the machine refuses at the door, not after any class question', () => {

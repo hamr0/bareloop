@@ -875,13 +875,24 @@ is exactly what F87 forbids.
 `scripts/run-interview.mjs` existed the only way in was to hand-write an `answers.json` and a
 spec draft — precisely the SWE tax this product refuses. That script is the half that ASKS
 (`--verdict <class> --provider <anthropic-api|openai-api|gemini-api|clipipe-subscription>
---out <outdir> [--budget <usd>]`), and it is deliberately GLUE: **it
+--out <outdir> [--budget <usd>] [--base-url <url>]`), and it is deliberately GLUE: **it
 calls no provider at all**, so a whole interview costs $0 and no model ever sees it. `--provider`
 is REQUIRED with NO default — bareloop is LLM-agnostic, and defaulting it would silently re-lock
 every interview onto one vendor; missing or empty dies loud, at the door, naming the same menu
 `src/job.js`'s own validator admits. It is written into the draft's `provider` field, so
 `scripts/run-author.mjs` needs no flag of its own — it resolves whatever the interview wrote
 down.
+
+`--base-url` is OPTIONAL with NO default (PRD item 33 close-out — L17 named the provider but
+never admitted the endpoint): a provider name's table entry (`src/providers.js`) can be reached
+through an OpenAI-compatible gateway other than its own default host — DeepSeek, today's one
+secondary, is reached as `--provider openai-api --base-url https://api.deepseek.com/v1`. Absent,
+the draft carries NO `baseUrl` field at all (never `null`, never `''`) and every provider
+constructor defaults its own endpoint. When given, it lands in the draft's `baseUrl` field
+beside `provider` and passes through the SAME `validateJob` pass every other field takes below,
+at $0: `http://` to a public host, an embedded `user:pass@`, or an unparseable string reds there,
+before anything is written. The key still follows the PROVIDER, not the endpoint — a DeepSeek
+draft's key still loads from `OPENAI_API_KEY`, and the hand-off says so.
 
 **Source and Destination are the interview's own FIRST TWO QUESTIONS, and they REPLACE
 `--patient`** (PRD item 33 M3, ruling 2, `docs/product/ITEM33-BUILD.md`). Source — "a local

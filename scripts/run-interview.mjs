@@ -33,7 +33,7 @@
 //
 //   node scripts/run-interview.mjs \
 //     --verdict soft-green --provider anthropic-api \
-//     --out /path/to/outdir [--budget 2.50]
+//     --out /path/to/outdir [--budget 2.50] [--base-url https://api.deepseek.com/v1]
 //
 //   --provider     REQUIRED, NO DEFAULT (PRD item 34 L17): bareloop is
 //                  LLM-agnostic, and a default here would silently lock every
@@ -41,6 +41,24 @@
 //                  written into the draft's `provider` field — run-author.mjs
 //                  then needs no flag of its own; it just resolves what this
 //                  wrote down.
+//
+//   --base-url     OPTIONAL, NO DEFAULT (PRD item 33 close-out, "authoring
+//                  provider selectable" — L17 named the provider but never
+//                  admitted the endpoint): the table entry a provider name
+//                  resolves to (`src/providers.js`) can be reached through an
+//                  OpenAI-compatible gateway other than its own default host —
+//                  DeepSeek, today's one secondary, is reached as
+//                  `--provider openai-api --base-url https://api.deepseek.com/v1`.
+//                  Absent, the field is left OUT of the draft entirely (never
+//                  written as `null`/`''`): every provider constructor already
+//                  defaults its own endpoint when none is given. When given, it
+//                  goes into the draft's `baseUrl` field beside `provider` and
+//                  through the SAME `validateJob` pass every other field takes
+//                  below — an `http://` URL to a public host, an embedded
+//                  `user:pass@`, or an unparseable string reds at $0, before
+//                  anything is written (`src/job.js`'s existing `baseUrl` rule,
+//                  PRD item 28 ruling (d): https:// required, http:// admitted
+//                  only to a loopback host, never a credential in the URL).
 //
 // SOURCE AND DESTINATION REPLACE --patient (PRD item 33 M3, ruling 2,
 // `docs/product/ITEM33-BUILD.md` "M3 — the intake form and confirm turn"): they
@@ -67,7 +85,7 @@ import {
   SOURCE_FIELD, destinationFieldFor, labelsFor,
 } from '../src/authorflow.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
-import { resolveProvider } from '../src/providers.js';
+import { resolveProvider, probeWarningLines } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
 import { prepareSource, proveDestination, looksLikeRepoSource } from '../src/source.js';
@@ -88,6 +106,15 @@ if (arg('patient') !== null) {
 const outArg = arg('out');
 const verdictArg = arg('verdict');
 const providerArg = arg('provider');
+// OPTIONAL, NO DEFAULT (see the header comment above) — `null` means the flag
+// was never given at all, and the draft carries no `baseUrl` field for that
+// case (not `null`, not `''`: an absent field vs. an empty one mean different
+// things to `validateJob`). `''` (the flag given with nothing after it) is a
+// real, deliberate operator input — it is NOT special-cased here, and reds
+// below through the same `validateJob` pass every other field takes, the same
+// way an empty `--verdict`/`--provider` value already does elsewhere in this
+// file.
+const baseUrlArg = arg('base-url');
 // `--lang` IS GONE (PRD item 33 M3, ruling 3): language is a FACT of the
 // repository, read off its own manifest, never a flag a person sets. A
 // `--lang` on the command line now is an operator error, stopped loud rather
@@ -105,7 +132,7 @@ const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget
 
 if (!outArg || verdictArg === null || !providerArg) {
   die('usage: node scripts/run-interview.mjs '
-    + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>]`);
+    + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>] [--base-url <url>]`);
 }
 if (budgetError) die(budgetError);
 // the menu is handed over ENUMERATED — an unknown value is a typo, refused as one.
@@ -219,11 +246,14 @@ const readNumber = async (where, field, parse, allowNull = false) => {
 // ── the header (the part known before the interview starts) ─────────────────
 say('INTERVIEW — your job, in your own words. Nothing here spends a cent.');
 say(`  verdict  ${VERDICT}  (YOUR pick — the close this authors promises to stay at or below it)`);
-say(`  provider ${PROVIDER}`);
+say(`  provider ${PROVIDER}${baseUrlArg === null ? '' : `  (endpoint ${baseUrlArg})`}`);
 say(`  out      ${OUT}`);
 say(`  ${ceilingLine(CEILING_USD)}`);
 say('  no model is called from here: this collects your answers and hands them to run-author.mjs, which does the paid part under the ceiling above');
 say('  (answers can be several lines — press Enter on an empty line, i.e. Enter twice, to finish an answer)');
+// PRD item 31.3's probe rule, same warning `scripts/run-u.mjs` already prints
+// at launch — never a refusal, just visible before money is about to be spent.
+for (const line of probeWarningLines(PROVIDER) ?? []) say(`  ${line}`);
 
 // ── the OFF-MENU classes refuse BEFORE a single question, Source included ────
 // Not this script's rule and not this script's words: `runInterview` is the
@@ -501,6 +531,10 @@ const draft = {
   // bareloop is LLM-agnostic (PRD item 34 L17) — the operator's own pick, asked
   // rather than defaulted, one vendor from the SAME table the worker draws from.
   provider: PROVIDER,
+  // ABSENT when `--base-url` was never given (`baseUrlArg === null`) — never
+  // written as `null`/`''`; every provider constructor defaults its own
+  // endpoint on its own in that case (PRD item 28 ruling (d)).
+  ...(baseUrlArg === null ? {} : { baseUrl: baseUrlArg }),
   cadence: { unit: 'day', every: 1 },
   budgetUsd,
   ...(wallMin === null ? {} : { maxWallMs: Math.round(wallMin * 60_000) }),
@@ -549,6 +583,7 @@ say(`written  ${draftFile}   the operator half — no close and no verdictType: 
 say(`  job      ${draft.job}`);
 say(`  budget   $${draft.budgetUsd} for the RUN  ·  wall ${draft.maxWallMs === undefined ? 'UNBOUNDED (you said none — no outside deadline)' : `${draft.maxWallMs / 60_000}min`}`);
 say(`  fence    ${draft.writeScope ? draft.writeScope.join(', ') : '(none — a plain-folder job has no fence yet, M4)'}`);
+if (draft.baseUrl !== undefined) say(`  endpoint ${draft.baseUrl}`);
 // no goal line here — the confirm turn (run-author.mjs, step S4) drafts and
 // confirms the goal sentence next; this draft carries none yet
 
@@ -596,6 +631,13 @@ let providerEntry = null;
 try { providerEntry = resolveProvider(PROVIDER); } catch { providerEntry = null; }
 const providerEnvKey = providerEntry?.envKey ?? null;
 say(`  ${providerEnvKey ?? 'YOUR_PROVIDER_API_KEY'}=... node scripts/run-author.mjs ${childArgs.join(' ')}`);
+// An `openai-api` + `baseUrl` draft (DeepSeek, today's one secondary, reached
+// this way) still reads its key from `OPENAI_API_KEY` — there is no separate
+// "DeepSeek key" env var, and a person pointed only at the command above could
+// reasonably miss that. Said once, plainly, never a key VALUE.
+if (draft.baseUrl !== undefined && providerEnvKey) {
+  say(`  (the endpoint above is reached through the "${PROVIDER}" table entry, so its key still goes in ${providerEnvKey} — there is no separate endpoint-specific key variable)`);
+}
 // NO KEY, NO OFFER. `run-author.mjs` refuses without one and exits 2 at its own
 // door, before a spine exists — so with the shell unkeyed this question has
 // exactly one possible outcome for the person, and putting it anyway spends
