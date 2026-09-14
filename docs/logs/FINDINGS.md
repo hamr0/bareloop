@@ -12249,3 +12249,53 @@ live. `authorClose` falls back to the newest measured-sound iteration when the l
 instrument-stopped; `stop` is unchanged and the swap is reported (`fellBack`, an `onPhase`
 event, and the terminal readout). The spine's own `author-phase` events still carry no field
 stating WHY a given revision fired — that half of this finding stays open.
+
+## F177 — installed packages read as worker writes when the repo does not gitignore node_modules (fixed in code)
+
+A repo source's copy (`prepareSource`, `src/source.js:411`) holds only git-tracked files. The
+person now installs packages into the copy themselves (`missingDependencies`,
+`source-deps-missing`, commit 941cf7d). Live-verified on a real copy of `~/PycharmProjects/
+pulselog`: its tracked `.gitignore` does not mention `node_modules`, so once packages were
+installed in the copy, `git ls-files --others --exclude-standard` listed all 247 installed
+files as untracked. `changedSet` (`src/kinds.js:601-621`) unions the tracked diff with exactly
+that `ls-files --others` output, so `changed-from-seed` read those 247 files as the worker's
+own writes on a tree the worker never touched.
+
+**hamr's ruling (2026-09-14, option A):** hide `node_modules` in bareloop's OWN copy, never in
+the source repo's tracked files. The person's `.gitignore` — and everything else git-tracked —
+stays byte-identical to what they committed; only the copy's PRIVATE exclude gets a line added.
+
+**Fixed in code, commit 496bb54.** `prepareSource`'s repo-source branch appends `node_modules/`
+to the copy's `.git/info/exclude` (path resolved via `git rev-parse --git-path info/exclude`
+rather than assumed — a worktree layout keeps that file in the common dir, not the per-worktree
+one) right after the `.git` copy and hook strip, before the seed commit. Idempotent: a line
+already present (carried over from the source repo's own private exclude, since `.git` is
+copied wholesale) is left alone rather than duplicated. Plain folder/file/URL sources are
+unaffected — they have no `.git` of their own to carry a private exclude, and their
+`.gitignore` was already deliberately powerless over what the seed holds (M2b fix 6). **Not
+yet proven live** — verified against real git plumbing in tests (`tests/source.test.js`), not
+against a real run.
+
+`changedSet` runs directly in the prepared tree (`workdir` in `src/planrun.js:1764`) — there is
+no worktree in bareloop's own runner. `prepareWorkBranch` (`src/workbranch.js`) only checks out
+a branch IN PLACE in that same directory (`git checkout -b`); it never creates a git worktree.
+So the copy's `.git/info/exclude` is read by the same `git ls-files --others` call that
+`changedSet` makes, in the same directory, with no common-dir indirection to prove.
+
+**A gap this fix does NOT close, stated plainly rather than fixed (hamr's ask, not this
+builder's call).** Nothing stops a write-capable worker from writing INTO `node_modules`
+itself, when the job's signed `writeScope` fence is broad enough to reach it (e.g. a monorepo
+package scope like `packages/api/**` whose own `node_modules` sits inside it). The gate's
+`fs.deny` list (`src/planrun.js:2251`) excludes only the gate-audit file and the two arbiter
+book stores (`ARBITER_BOOK_STORES` = `.smoke`, `.litectx`, `src/kinds.js`); it names nothing
+about `node_modules`. Such a write IS captured by the gate's own audit log
+(`gate-audit.jsonl`), but it is invisible to `changedSet` — both TODAY, whenever the source
+repo's own tracked `.gitignore` already ignores `node_modules` (the common case), and AFTER
+this fix, always. This is arbiter territory (the deny-list is a signed-behaviour surface) and
+is reported, not fixed here.
+
+**The lesson, stated plainly.** Hiding a directory from git so an operator-caused side effect
+(package install) reads correctly also hides any WORKER write that happens to land in the same
+directory — the two causes are indistinguishable to `changedSet` by construction, so the fence
+that decides what a worker may touch is the only place this gap can close, never the exclude
+file.

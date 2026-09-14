@@ -9,6 +9,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F177 — a repo source whose tracked `.gitignore` did not mention `node_modules` let
+  installed packages read as the worker's own writes.** `changedSet` (`src/kinds.js`) unions
+  the tracked diff with `git ls-files --others --exclude-standard`, so an unignored
+  `node_modules` installed into the copy (live-verified: 247 files on a real copy of pulselog)
+  read as changes the worker made. `prepareSource` now hides `node_modules` in the copy's own
+  PRIVATE `.git/info/exclude` (hamr's ruling, 2026-09-14, option A) — the source repo's tracked
+  files, `.gitignore` included, are never touched. Not yet proven live.
 - **PRD item 33 close-out — `prepareSource` freezes tracked files only, so a JS/TS repo's
   prepared copy never carried `node_modules`, and every close stage needing a tool (`tsc`, a
   test runner) instrument-stopped with nothing telling the person why.** bareloop never runs an

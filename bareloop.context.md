@@ -3245,7 +3245,10 @@ gap suppresses the "Run it now?" offer entirely (the same shape the unkeyed-shel
 uses) rather than spending on a run that would only instrument-stop. `run-author.mjs` refuses
 `source-deps-missing` (a `request-red`, routed through the same `refusalEvents()` channel
 `language-unsupported` uses) at $0, before the scout and before the provider/key are even
-read.
+read. Once the person installs packages into the copy themselves, `prepareSource` has already
+hidden `node_modules` from `changedSet` via the copy's own PRIVATE `.git/info/exclude` (F177),
+so those installed files never read as the worker's own writes — the source repo's tracked
+`.gitignore` is never touched.
 
 **Destination is a DIRECTORY, never a filename** (D3 rework, hamr's ruling, 2026-09-12,
 condensed in `docs/product/ITEM33-BUILD.md`). It may already exist and need not be empty; it
