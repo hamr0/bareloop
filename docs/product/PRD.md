@@ -446,7 +446,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     - [ ] Release-order deviation: M3 pieces were built on the fix branch instead of after its
       release, per item 34's own line below.
     - [ ] L17 ("authoring provider selectable") is provider-selectable but not DeepSeek-reachable
-      from the form — `scripts/run-interview.mjs` never asks for or writes `baseUrl`.
+      from the form — `scripts/run-interview.mjs` never asks for or writes `baseUrl`. — fixed:
+      `--base-url` flag (commit e91e37f), not yet proven live.
     - [ ] `prepareSource` freezes tracked files only — a repo job's toolchain (e.g.
       `node_modules`) is absent from the prepared tree, undocumented in the interview/hand-off.
     - [ ] The real person path (`run-interview` → spawned `run-author` reading the keyboard) has
