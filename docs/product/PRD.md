@@ -453,8 +453,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
       never run live — ruling 9's proof is still owed.
     - [ ] The plain-folder confirm turn (D5) and soft-green jobs through the confirm turn are
       stub-tested only, never run live.
-    - [ ] `bareloop.context.md` does not describe commit 2b45f09's change (`classGuards` +
-      write-fence protections, the model's `notChecked` list).
+    - [x] `bareloop.context.md` does not describe commit 2b45f09's change (`classGuards` +
+      write-fence protections, the model's `notChecked` list). — fixed in the v0.26.0 docs follow-up
     - [ ] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed
       in `src/promptregisters.js`'s `PROMPT_REGISTERS` — decide whether to add it.
 

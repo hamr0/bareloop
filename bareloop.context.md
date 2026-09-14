@@ -890,7 +890,8 @@ against the machine ($0) the moment it is typed; language is then detected from 
 way it always was (below), never asked. Destination is asked second, and its SHAPE depends on
 what Source turned out to be (the SAME rule `prepareSource` itself uses to route this,
 `looksLikeRepoSource`, `src/source.js` — never a second, hand-typed copy of it): for a REPO
-source (a local directory carrying its own `.git`), Destination IS the write fence — the
+source (a local directory whose nearest ancestor, walking up, carries a `.git` directory —
+Source itself or one it sits inside), Destination IS the write fence — the
 question this interview used to ask separately, later, as "The FENCE"; that later question is
 GONE, and `draft.writeScope` is parsed straight out of the Destination answer. For every other
 kind (a plain folder, a single file, or a URL), Destination is an absolute DIRECTORY, re-asked
@@ -900,8 +901,10 @@ itself — the SAME $0 freeze `scripts/prep-source.mjs` performs, under a fresh 
 root nested inside `--out` — and everything downstream (the class's own questions, the job
 spec's `description`, and the `--source` handed to `run-author.mjs`) reads the PREPARED COPY,
 never the original Source again (patients are copies, always). A Source one level inside a
-repo (a subfolder with no `.git` of its own) is, by this same rule, NOT a repo source — it
-freezes as a plain folder, the authoritative outcome `prepareSource`'s own walk agrees with. A
+repo — a subfolder with no `.git` of its own — IS a repo source, routed to the whole repo's
+tracked files by the nearest-ancestor walk `nearestGitAncestor` shares with `prepareSource`
+(ruling 2 addendum, 2026-09-13; see the repo-source section below for the full rule and the
+untracked-subfolder refusal). A
 non-repo source gets Source and Destination proven and frozen and then, since PRD item 33 M3
 piece 4 step S6 (D5 = A), the FORM CONTINUES — the class's own questions, job name, budget and
 wall are all still asked, and the draft is still written, with no `writeScope` field
@@ -987,6 +990,20 @@ into a success one process up.
   than before the API key is even read. If the confirm turn itself does not reach a signed plan
   (abandoned, a cap/pricing stop, a provider/artifact red, or "start over"), THAT is the stop —
   the non-code-source one only fires once a plan was actually confirmed.
+
+**The protections a person is shown in the confirm turn come from CODE, never the model**
+(fix #1, live run mu0voeo4, 2026-09-14 — a run once showed a model-invented "behavior-
+preservation guard" no kind in the catalogue can check). The model is no longer even asked
+for `protections`: the confirm tool's schema dropped the field. What the menu displays and
+what lands in `accepted.protections`/`confirmedBlock` is rendered by `confirmProtections`
+(`src/authorflow.js`) from the SAME guards `classGuards` (`src/authoring.js`) will actually
+compose, each through a frozen plain-English line in `GUARD_DESCRIPTIONS` — beside
+`CONFIRM_MENU` — plus the write fence when one is set; a guard with no line there throws
+rather than showing a blank description. The model instead returns `notChecked`: anything
+the person asked for that no listed check can verify, in the person's own words, never
+silently dropped. It is shown under its own heading in the menu (`scripts/run-author.mjs`)
+and threaded through to `accepted.notChecked` and `confirmedBlock`'s own "THE PERSON ASKED
+FOR THESE, BUT NOTHING CHECKS THEM" section for the composer.
 
 **A crash inside the paid span leaves a BODY.** The fallible span — from just after
 `author-start` to the end of the main flow — sits in ONE try/catch that RETRIES NOTHING and
@@ -3174,7 +3191,10 @@ residual, not this fix's job to close.
 unreadable`, `source-symlink`, `source-env-file`, `source-file-oversize`,
 `source-nested-repo`, `source-is-linked-worktree`, `source-untracked-in-repo`,
 `source-seed-incomplete`, `source-git-failed`, `source-not-text`, `source-fetch-failed`,
-`source-fetch-timeout`, `source-fetch-oversize`, `source-carries-secret`, `into-exists`,
+`source-fetch-timeout`, `source-fetch-oversize`, `source-carries-secret`,
+`source-changed-after-scan` (a file's bytes changed on disk between the scan and the freeze
+— item 34 L1's TOCTOU close, re-verified by hash rather than cached, so a repo source's
+freeze loop never trusts a buffer read a moment earlier), `into-exists`,
 `destination-invalid`, `destination-not-absolute`, `destination-not-directory`,
 `destination-not-writable`, `destination-contained`, `destination-parent-missing`,
 `destination-parent-unwritable`, `destination-exists`, `destination-output-missing`,
