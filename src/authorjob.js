@@ -848,6 +848,24 @@ export async function authorCloseForJob({
 // the same way one carrying a raw `close` array is.
 export const AUTHORED_SPEC_FIELDS = Object.freeze(['close', 'closeDecl', 'verdictType', 'sha256', 'closeTimeoutMs']);
 
+// `goal` IS DIFFERENT from the fields above, and deliberately kept in its own
+// list (PRD item 33 M3, ruling 5's 2026-09-13 addendum, D2 = option B). It is
+// NOT authored by anything in this file — `assembleSpec` above passes it
+// through from the draft untouched, exactly as it always has — so it is not
+// one of `AUTHORED_SPEC_FIELDS` and `assembleSpec` does not refuse a draft
+// that carries it. What changed is WHO writes it: `scripts/run-interview.mjs`
+// no longer asks a separate goal question (that question is GONE, step S5),
+// and `scripts/run-author.mjs` instead sets `draft.goal` from the confirm
+// turn's own accepted plan (`authored.confirmed.goal`, step S4) before
+// calling `assembleSpec`. A draft written by `run-interview.mjs` therefore
+// has NO `goal` field at all, and `validateJob`'s $0 pass over that draft
+// (the same pass that already filters `AUTHORED_SPEC_FIELDS`'s reds, since
+// that half does not exist yet either) would otherwise red `missing-required`
+// at `goal` for a field the interview never had a chance to fill. This is
+// the ONE library constant that filter reads for that field, so no caller
+// hand-types the field name `'goal'` a second time.
+export const CONFIRM_AUTHORED_FIELDS = Object.freeze(['goal']);
+
 /**
  * Fold an authored close into the OPERATOR's own half of the spec.
  *

@@ -112,12 +112,16 @@ const a = (/** @type {string} */ s) => [s, ''];
  * M3, ruling 2) — `source` defaults to the real repo fixture above, `destination`
  * to a fence glob (repo Source: Destination IS the write fence). */
 const front = (over = {}) => [...a(over.source ?? repoBase), ...a(over.destination ?? 'src/**')];
-/** a complete, valid session for a class, ending with "n" at the paid-step offer */
+/** a complete, valid session for a class, ending with "n" at the paid-step offer.
+ * NO GOAL LINE (PRD item 33 M3 piece 4, step S5): the interview no longer asks a
+ * separate goal question — the confirm turn (run-author.mjs) drafts and confirms
+ * it instead. A session that still scripted one would silently shift every line
+ * after it onto the wrong prompt (see the FAIL-FIRST test below, which is exactly
+ * how that shift was caught while updating this fixture). */
 const session = (verdict, over = {}) => [
   ...front(over),
   ...requiredAnswersFor(verdict).flatMap((q) => a(`answer to question ${q}`)),
   ...a(over.job ?? 'litectx-maintainer'),
-  ...a(over.goal ?? 'Make src/ pass the checker with no suppressions and the suite still green.'),
   ...a(over.budget ?? '5'),
   ...a(over.wall ?? '30'),
   over.run ?? 'n',
@@ -231,7 +235,7 @@ test('the SOFT-GREEN interview shows each free-text field\'s LABEL, in order, fr
   }
 });
 
-test('"worse than before" is gone from the form entirely (PRD item 33 M3 piece 3 wording fix — it moves to the confirm turn, piece 4, repo-only, not built here)', () => {
+test('"worse than before" is gone from the form entirely (PRD item 33 M3 piece 3 wording fix — it is asked by the confirm turn instead, run-author.mjs, repo-only, never by THIS script)', () => {
   const out = outDir();
   const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
   assert.equal(r.code, 0, r.out);
@@ -336,6 +340,30 @@ test('language detection still runs on the ORIGINAL Source path — an unsupport
   assert.match(r.out, /run-interview\.mjs keeps no/, 'this script has no spine — the stop says so, plainly');
 });
 
+// PRD item 33 M3 piece 4, step S5 — ambiguous language no longer dies here; it
+// travels through as a placeholder LANG and the confirm turn (run-author.mjs)
+// resolves it for real, interactively, before the scout (D7).
+test('an ambiguous language (two manifests at the same level) no longer dies — the interview continues, the pick is deferred to the confirm turn', () => {
+  const out = outDir();
+  const ambiguousRepo = mkdtempSync(join(base, 'ambiguous-repo-'));
+  writeFileSync(join(ambiguousRepo, 'package.json'), '{}');
+  writeFileSync(join(ambiguousRepo, 'pyproject.toml'), '[project]\nname = "x"\n');
+  mkdirSync(join(ambiguousRepo, 'src'), { recursive: true });
+  writeFileSync(join(ambiguousRepo, 'src', 'index.js'), 'export const x = 1;\n');
+  gitFix(ambiguousRepo, ['init', '-q']);
+  gitFix(ambiguousRepo, ['add', '-A']);
+  gitFix(ambiguousRepo, ['commit', '-q', '-m', 'ambiguous']);
+  const r = interview({ out, lines: session(CLASS, { source: ambiguousRepo }) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /Picking one interactively is a later build/, 'the old die() message must be gone');
+  assert.match(r.out, /more than one supported language's manifest/);
+  assert.match(r.out, /asked in the confirm turn/, 'the interview says WHERE this gets resolved, and defers rather than guessing');
+  // the interview reaches Destination, the class questions and the write, exactly
+  // as a resolved-language session would — nothing here stops early
+  assert.match(r.out, /── DESTINATION/);
+  assert.ok(existsSync(join(out, 'specdraft.json')), 'the draft is still written — ambiguity here is not a refusal');
+});
+
 test('--patient is refused, loud — Source replaced it', () => {
   const out = outDir();
   const args = ['--patient', repoBase, '--verdict', CLASS, '--provider', 'anthropic-api', '--out', out];
@@ -376,12 +404,30 @@ test('it writes exactly what run-author.mjs consumes: the answers, and the OPERA
     assert.equal(draft[f], undefined, `${f} is the AUTHORED half — a draft carrying it is refused by assembleSpec, never merged over`);
   }
   assert.equal(draft.tools, undefined, 'an omitted menu hashes as the concrete current TOOL_MENU (MED-1) — naming one here would freeze today\'s list into the operator\'s half');
+  // PRD item 33 M3 piece 4, step S5: the interview writes NO goal at all — the
+  // confirm turn (run-author.mjs) drafts and confirms it, and sets draft.goal
+  // itself from the accepted plan before assembleSpec.
+  assert.equal(draft.goal, undefined, 'goal is set later by run-author.mjs from the confirm turn\'s own accepted plan — this script asks no goal question at all');
 
   // and the exact command that consumes them, with both files named
   assert.match(r.out, new RegExp(`run-author\\.mjs --source .* --answers ${join(out, 'answers.json')}`));
   assert.match(r.out, new RegExp(`--draft ${join(out, 'specdraft.json')}`));
   assert.match(r.out, new RegExp(`--verdict ${CLASS}`));
   assert.match(r.out, /--budget 2\.5\b/, 'the authoring ceiling travels to the process that spends it');
+});
+
+// PRD item 33 M3, ruling 5's 2026-09-13 addendum (D2 = option B), step S5 —
+// FAIL-FIRST against the pre-S5 script (see the commit message: reverting
+// this line and rerunning reds it, because the old script printed exactly
+// this prompt and wrote `goal` onto the draft).
+test('the GOAL question is never asked — the confirm turn drafts and confirms it instead', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /The GOAL — what the run is judged on/, 'the interview\'s own separate goal question must be gone');
+  assert.doesNotMatch(r.out, /the goal is what the close judges against/, 're-ask wording for a question that is no longer asked');
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.equal(draft.goal, undefined);
 });
 
 test('the two ceilings are never the same number on screen: the AUTHORING one and the JOB\'s', () => {
@@ -418,7 +464,7 @@ test('a multi-line answer survives as the person typed it', () => {
     ...front(),
     ...requiredAnswersFor(CLASS).slice(0, 1).flatMap(() => ['first line', 'second line', '']),
     ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
-    ...a('litectx-maintainer'), ...a('a goal'), ...a('5'), ...a('30'), 'n',
+    ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
@@ -432,7 +478,7 @@ test('a secret typed into an answer is SCRUBBED by the library seam before it re
     ...front(),
     ...a(`the token is ${key}`),
     ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
-    ...a('litectx-maintainer'), ...a('a goal'), ...a('5'), ...a('30'), 'n',
+    ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
@@ -527,7 +573,7 @@ test('a blank answer is RE-ASKED with the rule named — never accepted, never f
     '', '', // two blank lines at question 1: the answer is empty, twice
     ...a('finally an answer'),
     ...requiredAnswersFor(CLASS).slice(1).flatMap((q) => a(`answer to question ${q}`)),
-    ...a('litectx-maintainer'), ...a('a goal'), ...a('5'), ...a('30'), 'n',
+    ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
@@ -540,7 +586,7 @@ test('a number that is not a number is re-asked, and the field is named', () => 
   const lines = [
     ...front(),
     ...requiredAnswersFor(CLASS).flatMap((q) => a(`answer to question ${q}`)),
-    ...a('litectx-maintainer'), ...a('a goal'),
+    ...a('litectx-maintainer'),
     ...a('five dollars'), ...a('5'),
     ...a('30'), 'n',
   ];
@@ -625,10 +671,11 @@ test('the offer names the key it will need, without ever printing one — and sa
   assert.match(r.out, /ANTHROPIC_API_KEY=\.\.\. node scripts\/run-author\.mjs/, 'the command shows the shape, never a value');
   assert.match(r.out, /set the key in the shell you run it from/, 'the explainer says what to DO, not only what is wrong');
   // and it never guesses at WHICH secret store, nor prints a command that would
-  // put a key on a readable command line
-  // named commands only — a bare word like "pass" appears in ordinary prose (the
-  // goal answer itself says "pass the checker"), and a guard that matches that is
-  // matching the wrong thing
+  // put a key on a readable command line — named commands only, never a bare
+  // word like "pass" that could appear in ordinary prose elsewhere in the
+  // transcript (the interview no longer asks a goal question that used to say
+  // "pass the checker", step S5, but the rule stands regardless of what any
+  // one session's answers happen to contain)
   assert.doesNotMatch(r.out, /pass show|gpg |security find-generic-password|1password|op read|export ANTHROPIC_API_KEY=\S/);
 });
 

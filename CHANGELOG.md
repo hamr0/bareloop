@@ -51,8 +51,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
   signed table's own "Holds" column, VERBATIM: Goal ("what you want to achieve"), What success
   looks like ("checks a machine can count"), and Guardrails ("what must not happen or change" —
   the old "must not change" and "worse than before" questions JOINED into one field; "worse than
-  before" is gone from the form entirely, moving to the confirm turn, piece 4, repo-only, not
-  built yet). Soft-green adds a fourth field, Judge Examples ("one pass, one fail, and why" — the
+  before" is gone from the form entirely, moving to the confirm turn, piece 4, repo-only — now
+  built, see below). Soft-green adds a fourth field, Judge Examples ("one pass, one fail, and why" — the
   old Q6 is retired as its own question, since the "why" half of a real pass/fail pair is what
   `cardauthor.js`'s rubric compile already read it for). Each field's LABEL (Goal / What success
   looks like / Guardrails / Judge examples) is shown for the first time too — a new `labelsFor`
@@ -66,6 +66,33 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `writeScope` parameter (`writeScopeBlock`), fed from Destination's own proven write-scope
   fence end to end (`authorClose` → `authorCloseForJob` → `scripts/run-author.mjs`'s
   `draft.writeScope`) rather than silently vanishing.
+
+- **The confirm turn (PRD item 33 M3 piece 4).** After the survey, `scripts/run-author.mjs`
+  now runs a paid, interactive confirm turn (`runConfirmTurn`, `src/authorjob.js` →
+  `src/authorflow.js`) before authoring: a $0 half (repo-only "worse than before", an
+  ambiguous-language pick, both asked BEFORE the scout) followed by up to 2 paid rounds where
+  the model drafts a plan — every check it will compose, the always-on guards as PROTECTIONS
+  (never named in the goal), and one signed goal sentence — and the person confirms it, fixes
+  it, types the goal themselves, or starts over. No hand-authored matcher ever compares the
+  goal against the checks (ruling 6) — the model states its own plan and the person is the one
+  judgement that accepts it. `scripts/run-interview.mjs` asks no separate goal question any
+  more (ruling 5's addendum, D2 = option B) and no longer dies on an ambiguous-language Source
+  (it defers the pick to the confirm turn, D7); `run-author.mjs`'s own ambiguous-language die()
+  is likewise gone. The confirm turn's own cost book absorbs the scout's prior spend (and its
+  own `costUsd: null` calls) before its first `capStop()` check, so a scout that already spent
+  most of the ceiling is visible to it immediately — only the confirm turn's OWN new calls
+  travel onward to `authorClose` as `priorCalls`/`priorRaws`, never the scout's a second time.
+  `run-author.mjs` is now interactive: a readline `ask` seam (same idiom as
+  `run-interview.mjs`'s own), closed in a `finally` around the whole paid span. The confirm
+  turn's open questions (a round-2 "fix" passed to the composer verbatim) print at the SIGNING
+  PREPARED readout (`openQuestionLines`, `scripts/author-readout.mjs`) — the signed spec format
+  itself is unchanged. `authorClose` gains a `confirmed` plan fed into `authorPrompt`'s new
+  `confirmedBlock` ("compose these checks and no other"). Every existing caller of
+  `authorCloseForJob`/`authorClose`/`authorPrompt` that passes no `ask` runs byte-identical to
+  before this piece existed. `TYPES_GENRE_TEMPLATE`'s own unconditional work-stage skeleton
+  (ruling 6's intent for the TYPES genre specifically) is a known, reported, NOT-YET-RULED
+  tension — the frozen prereg byte-pin (`tests/authoring.test.js`) was left untouched pending
+  hamr's word.
 
 ### Removed
 

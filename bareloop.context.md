@@ -953,14 +953,29 @@ into a success one process up.
   language-unsupported Source, a non-repo Source's honest M4 stop, the library's own reds over
   the answers, a Source/Destination `prepareSource`/`proveDestination` refusal, or a spec draft
   that does not validate; **2** operator/config — usage, a present `--patient` or `--lang` (both
-  removed), a nonexistent Source, an ambiguous-language Source, a malformed `--budget`, stdin
-  ending mid-interview, or a child that could not be started; **3** a LEAK that `scanSecrets`
-  found in a file it had just written (count and path only — echoing the matched string is the
-  same leak, one hop on).
-- `run-author.mjs` — **1** a refusal or a failed gate; **2** operator/config; **3** a leak;
-  **4** a CRASH inside the paid span. **3 deliberately OVERRIDES a 4**: a secret sitting in a
-  written file is the harder line of the two, and the crash keeps both of its own louder
-  channels — the whole error on stderr and its own `author-crash` spine record.
+  removed), a nonexistent Source, a malformed `--budget`, stdin ending mid-interview, or a child
+  that could not be started; **3** a LEAK that `scanSecrets` found in a file it had just written
+  (count and path only — echoing the matched string is the same leak, one hop on). An
+  **ambiguous-language Source no longer dies here** (PRD item 33 M3 piece 4, step S5): this
+  script stays PROVIDER-FREE (D1), so it says which two manifests it saw and continues the form
+  with a placeholder `LANG` — the confirm turn (`run-author.mjs`, below) asks the person which
+  one interactively, before the scout (D7), and that pick — not this placeholder — is what lands
+  in `closeDecl.lang`. The interview also asks **no goal question** any more (ruling 5's 2026-
+  09-13 addendum, D2 = option B): the confirm turn drafts the signed goal sentence from the
+  Goal/Success answers and the person confirms or fixes it there; `specdraft.json` carries no
+  `goal` field at all (`CONFIRM_AUTHORED_FIELDS`, `src/authorjob.js` — the `$0` validator pass
+  filters its reds the same way it already filters `AUTHORED_SPEC_FIELDS`'s).
+- `run-author.mjs` — **1** a refusal or a failed gate (this now includes the confirm turn's own
+  `confirm-abandoned`/`confirm-restart` stops — input ended, or the person chose to start over,
+  both counted through the same generic "not-authored" branch every other authoring refusal
+  uses); **2** operator/config; **3** a leak; **4** a CRASH inside the paid span. **3
+  deliberately OVERRIDES a 4**: a secret sitting in a written file is the harder line of the
+  two, and the crash keeps both of its own louder channels — the whole error on stderr and its
+  own `author-crash` spine record. **This script is now interactive** (step S4): the confirm
+  turn (`runConfirmTurn`, `src/authorflow.js`) asks, over a readline `ask` seam bound to stdin,
+  who wrote what and lets the person confirm the plan, fix it (up to 2 rounds), type the goal
+  themselves, or start over — everything else (the survey, the declaration loop, D9's gates)
+  stays unattended. `rl.close()` runs in a `finally` around the whole paid span.
 
 **A crash inside the paid span leaves a BODY.** The fallible span — from just after
 `author-start` to the end of the main flow — sits in ONE try/catch that RETRIES NOTHING and

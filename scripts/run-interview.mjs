@@ -60,7 +60,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import {
   runInterview, questionsFor, requiredAnswersFor,
-  VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS,
+  VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES, AUTHORED_SPEC_FIELDS, CONFIRM_AUTHORED_FIELDS,
 } from '../src/authorjob.js';
 import {
   SOURCE_FIELD, destinationFieldFor, labelsFor,
@@ -271,10 +271,11 @@ const IS_REPO = looksLikeRepoSource(SOURCE);
 // same "counted demand, never a silent fallback" rule the old `--lang`
 // comment already named:
 //   - `ambiguous`             — two different languages' manifests at the same
-//                               level; the confirm-turn UI that would ask a
-//                               person to pick is a later M3 piece, so for now
-//                               this stops with the honest list rather than
-//                               guessing one.
+//                               level; this script stays PROVIDER-FREE (D1),
+//                               so it does not ask which one here — it says
+//                               so and continues the form. The confirm turn
+//                               (`run-author.mjs`, step S4) asks the person,
+//                               interactively, before any paid call (D7).
 //   - `language-unsupported`  — a known manifest (go.mod, Cargo.toml, ...)
 //                               this catalogue has no genre data for yet.
 //                               Refusing HERE, before any question, saves the
@@ -290,12 +291,17 @@ let LANG = 'none-detected';
 if (!isUrl && statSync(SOURCE).isDirectory()) {
   const langResult = detectLanguage(SOURCE);
   if (langResult.kind === 'ambiguous') {
-    die(`${SOURCE} has more than one language's manifest at the same (nearest) level: ${langResult.candidates.join(', ')} `
-      + `(in ${langResult.dir}). Picking one interactively is a later build (PRD item 33 M3, ruling 3, point 3) — for `
-      + 'now, point Source at the specific subfolder for the language this job is about, or remove the other '
-      + 'manifest, and rerun.');
-  }
-  if (langResult.kind === 'language-unsupported') {
+    // NO LONGER DIES (PRD item 33 M3 piece 4, step S5): `LANG` takes the
+    // first candidate as a placeholder — this script never signs anything
+    // and never writes `lang` anywhere the placeholder could be mistaken for
+    // the real pick; `run-author.mjs`'s own confirm turn resolves it for
+    // real, interactively, before the scout (D7), and that pick — not this
+    // one — is what lands in `closeDecl.lang`.
+    say(`Source has more than one supported language's manifest at the same (nearest) level: `
+      + `${langResult.candidates.join(', ')} (in ${langResult.dir}).`);
+    say('Which one this job is about will be asked in the confirm turn, before any paid call, when you run run-author.mjs.');
+    LANG = langResult.candidates[0];
+  } else if (langResult.kind === 'language-unsupported') {
     const r = langResult.refusal;
     say(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
     say(r.detail);
@@ -310,8 +316,9 @@ if (!isUrl && statSync(SOURCE).isDirectory()) {
       + 'spine of its own. run-author.mjs, run directly against a prepared --source, is what records a language-unsupported '
       + 'stop as counted demand.');
     process.exit(1);
+  } else {
+    LANG = langResult.kind === 'resolved' ? langResult.lang : 'none-detected';
   }
-  LANG = langResult.kind === 'resolved' ? langResult.lang : 'none-detected';
 }
 say(`  source   ${SOURCE}`);
 say(`  lang     ${LANG}`);
@@ -427,25 +434,18 @@ say('It names the spec file you sign, the branch the run works on, and the spine
 const jobName = await readAnswer('the job name',
   'the job needs a name — it is what the spec file, the run\'s work branch and its spine are all called. Again:');
 say('');
-// F87 said in plain words, which is the only form it can be said in HERE: the person
-// answering is not reading the findings, and a finding number in a prompt is a private
-// reference standing where an instruction belongs. The RULE is unchanged — the goal
-// must state everything the close will check — and so is its price, now named as a
-// price rather than as a citation.
-//
-// KNOWN OVERLAP, NOT FIXED HERE (PRD item 33 M3 piece 3): the form's own free-text
-// question 1 (see GREEN_QUESTIONS in src/authorflow.js) is now the Goal field, so
-// this operator question asks a near-duplicate of it again, right after the recap
-// just printed the person's own answer back. Neither is ruled to merge (this
-// piece's task is the question SETS, not the operator's half), so both stand;
-// flagged rather than papered over.
-say('The GOAL — what the run is judged on at the end. In one or two sentences: what must be true at the end for');
-say('this to count as done? Say everything you\'ll check — anything you leave out here still gets checked at the');
-say('very end, and finding it only then wastes the run\'s money.');
-say('Your own answers, to save you scrolling:');
-for (const n of REQUIRED.slice(0, 3)) say(`  ${n}. ${LABELS[n] ? `${LABELS[n]} — ` : ''}${QUESTIONS[n]}  →  ${answers[n].split('\n').join(' ')}`);
-const goal = await readAnswer('the goal', 'the goal is what the close judges against — there is no run without one. Again:');
-
+// THE GOAL QUESTION IS GONE (PRD item 33 M3, ruling 5's 2026-09-13 addendum,
+// D2 = option B): it used to be asked HERE, as a near-duplicate of the form's
+// own Goal field, right after the recap printed the person's own answer back
+// (F87's overlap, named but not fixed at the time). It is not merged away —
+// it is REPLACED: the confirm turn (`runConfirmTurn`, wired into
+// `scripts/run-author.mjs`, step S4) drafts the signed goal sentence from
+// the person's Goal/Success answers, shows every check it names, and the
+// person confirms or fixes it there, within its own 2-round cap. This script
+// writes NO `goal` field at all — `run-author.mjs` sets `draft.goal` from
+// the confirm turn's accepted plan before assembling the spec. `goal` never
+// joins `AUTHORED_SPEC_FIELDS` (it stays an operator field by the letter of
+// the rule); it is simply not THIS script's to ask for any more.
 say('');
 say(`The JOB's budget, in dollars — what the RUN may spend. This is NOT the authoring ceiling above (${ceilingLine(CEILING_USD).replace(/^budget\s+/, '')}).`);
 const budgetUsd = await readNumber('the job budget', 'budgetUsd', (s) => Number(s));
@@ -477,13 +477,18 @@ if (!iv.ok) {
 
 /** the OPERATOR half, and only that half. `close`, `closeDecl` and `verdictType` are
  * what the pipeline authors (`AUTHORED_SPEC_FIELDS`); a draft carrying any of them is
- * refused by `assembleSpec` rather than merged over, so this must not write one. */
+ * refused by `assembleSpec` rather than merged over, so this must not write one.
+ * `goal` is DELIBERATELY ABSENT too (PRD item 33 M3, ruling 5's addendum, step S5) —
+ * not because this script authors it, but because it no longer asks for it: the
+ * confirm turn drafts and confirms the goal sentence, and `run-author.mjs` writes
+ * `draft.goal` from that before assembling the spec (`CONFIRM_AUTHORED_FIELDS`). */
 const draft = {
   schema: 'job-v1',
   job: jobName,
-  // a record LABEL, never a statement of intent: the goal above is where intent
-  // lives, and this field only has to say which job's file you are looking at.
-  // Against the PREPARED COPY, never the original Source.
+  // a record LABEL, never a statement of intent — the confirm turn's own
+  // drafted goal sentence is where intent lives, and this field only has to
+  // say which job's file you are looking at. Against the PREPARED COPY,
+  // never the original Source.
   description: `${jobName} — authored through the bareloop interview (${VERDICT}, ${LANG}) against ${TREE}`,
   // bareloop is LLM-agnostic (PRD item 34 L17) — the operator's own pick, asked
   // rather than defaulted, one vendor from the SAME table the worker draws from.
@@ -492,7 +497,6 @@ const draft = {
   budgetUsd,
   ...(wallMin === null ? {} : { maxWallMs: Math.round(wallMin * 60_000) }),
   writeScope,
-  goal: redactSecrets(goal),
   escalation: { mode: 'decision-ready' },
   // `tools` is deliberately OMITTED: an omitted menu hashes as the concrete current
   // TOOL_MENU (MED-1), which pins WHICH menu was signed and makes a widening flip the
@@ -502,10 +506,14 @@ const draft = {
 // THE SAME VALIDATOR that will judge this after the paid call, run now for $0. Its
 // reds about the AUTHORED half are expected — that half does not exist yet, by
 // design — so they are filtered BY FIELD NAME off `AUTHORED_SPEC_FIELDS` rather than
-// by re-listing them here. Everything else is a typo the person can fix in a second
-// now, or pay a scout and a model call to discover.
+// by re-listing them here. `CONFIRM_AUTHORED_FIELDS` (just `goal`) joins the same
+// filter for the same reason: this draft has no goal yet either, and `validateJob`
+// would otherwise red `missing-required` at a field the confirm turn — not this
+// script — is what fills in (step S5). Everything else is a typo the person can fix
+// in a second now, or pay a scout and a model call to discover.
 const draftReds = validateJob(draft, { shellCapUsd: draft.budgetUsd }).reds
-  .filter((r) => !AUTHORED_SPEC_FIELDS.some((f) => String(r.path) === f || String(r.path).startsWith(`${f}.`)));
+  .filter((r) => ![...AUTHORED_SPEC_FIELDS, ...CONFIRM_AUTHORED_FIELDS]
+    .some((f) => String(r.path) === f || String(r.path).startsWith(`${f}.`)));
 if (draftReds.length) {
   say('');
   say(`THE SPEC DRAFT DOES NOT VALIDATE — ${draftReds.length} red(s), found for $0 rather than after a paid call:`);
@@ -527,7 +535,8 @@ say(`written  ${draftFile}   the operator half — no close and no verdictType: 
 say(`  job      ${draft.job}`);
 say(`  budget   $${draft.budgetUsd} for the RUN  ·  wall ${draft.maxWallMs === undefined ? 'UNBOUNDED (you said none — no outside deadline)' : `${draft.maxWallMs / 60_000}min`}`);
 say(`  fence    ${draft.writeScope.join(', ')}`);
-say(`  goal     ${JSON.stringify(draft.goal)}`);
+// no goal line here — the confirm turn (run-author.mjs, step S4) drafts and
+// confirms the goal sentence next; this draft carries none yet
 
 // The hard line, on the two files this run just wrote. Count and PATH only — echoing
 // a matched secret to stdout is the same leak, one hop on.
