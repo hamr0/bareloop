@@ -710,7 +710,7 @@ const scriptedAsk = (/** @type {any[]} */ script) => {
   return async () => (i < script.length ? script[i++] : null);
 };
 
-const CONFIRM_PLAN = { checks: ['tests stay green'], protections: ['no-suppressions'], goal: 'Keep it green.', questions: [] };
+const CONFIRM_PLAN = { checks: ['tests stay green'], goal: 'Keep it green.', questions: [], notChecked: [] };
 
 test('confirm turn: wires into the phase order between scout-done and listing, repo + survey PRESENT + ask', async (t) => {
   const p = makePatient(t);

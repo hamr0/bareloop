@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {
   runConfirmTurn, CONFIRM_TOOL_NAME, CONFIRM_ACK, CONFIRM_SYSTEM, confirmPrompt,
   makeCostBook, WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
-  GREEN_QUESTIONS, FIELD_LABELS,
+  GREEN_QUESTIONS, FIELD_LABELS, confirmProtections, GUARD_DESCRIPTIONS,
 } from '../src/authorflow.js';
 import { redactSecrets } from '../src/validate.js';
 
@@ -51,7 +51,11 @@ function scriptAsk(script) {
   return { ask, seen };
 }
 
-const PLAN_ONE = { checks: ['tests stay green'], protections: ['no-suppressions'], goal: 'Keep the tests green.', questions: [] };
+// The model is NEVER asked for `protections` any more (fix #1, run mu0voeo4)
+// — the schema has no such field — but a stub model in these tests can still
+// try to smuggle one in through the tool call, and that must be ignored
+// (never shown, never recorded). `notChecked` IS a real model field now.
+const PLAN_ONE = { checks: ['tests stay green'], goal: 'Keep the tests green.', questions: [], notChecked: [] };
 
 const baseArgs = (over = {}) => ({
   verdictType: 'green',
@@ -67,6 +71,11 @@ const baseArgs = (over = {}) => ({
   ...over,
 });
 
+/** the REAL protections for `baseArgs()`'s own class/lang/writeScope — computed
+ * from code, never hand-typed twice, so this file cannot drift from
+ * {@link confirmProtections}'s own wording. */
+const BASE_PROTECTIONS = confirmProtections({ verdictType: 'green', lang: 'js', writeScope: ['src/**'] });
+
 test('(a) confirm on round 1 costs exactly one model call', async () => {
   const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
   const { ask, seen } = scriptAsk(['', 'confirm']); // worseThanBefore, then the menu pick
@@ -77,8 +86,8 @@ test('(a) confirm on round 1 costs exactly one model call', async () => {
   assert.equal(r.stop, null);
   assert.equal(r.rounds, 1);
   assert.deepEqual(r.accepted, {
-    goal: 'Keep the tests green.', checks: ['tests stay green'], protections: ['no-suppressions'],
-    lang: 'js', worseThanBefore: '', openQuestions: [],
+    goal: 'Keep the tests green.', checks: ['tests stay green'], protections: BASE_PROTECTIONS,
+    lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [],
   });
   assert.equal(seen[0].kind, 'worseThanBefore');
   assert.equal(seen[1].kind, 'menu');
@@ -158,7 +167,7 @@ test('(g) an ambiguous language offers exactly the candidates detectLanguage fou
 });
 
 test('(h) a drafted goal naming none of the listed checks is still accepted — no code matcher (ruling 6)', async () => {
-  const oddPlan = { checks: ['tests stay green'], protections: [], goal: 'Ship it.', questions: [] };
+  const oddPlan = { checks: ['tests stay green'], goal: 'Ship it.', questions: [], notChecked: [] };
   const { generate } = scriptConfirmGenerate([{ plan: oddPlan }]);
   const { ask } = scriptAsk(['', 'confirm']);
   const book = makeCostBook({ ceilingUsd: null });
@@ -187,7 +196,70 @@ test('(j) "type the goal yourself" replaces the drafted goal, redacted, and keep
   assert.equal(r.ok, true);
   assert.equal(r.accepted?.goal, 'My own goal sentence.');
   assert.deepEqual(r.accepted?.checks, PLAN_ONE.checks);
-  assert.deepEqual(r.accepted?.protections, PLAN_ONE.protections);
+  assert.deepEqual(r.accepted?.protections, BASE_PROTECTIONS);
+});
+
+// ── fix #1 (run mu0voeo4, 2026-09-14): protections come from CODE, never the
+// model ──────────────────────────────────────────────────────────────────────
+
+test('a model-invented "protection" (e.g. a behavior-preservation guard this build cannot check) is never shown or recorded', async () => {
+  const inventedPlan = {
+    checks: ['tests stay green'], goal: 'Keep the tests green.', questions: [], notChecked: [],
+    // a stub model trying to smuggle back a `protections` field anyway (the
+    // exact shape run mu0voeo4 produced) — must be ignored entirely.
+    protections: ['behavior-preservation guard (mandatory, always on): the patch must not change what the code does at runtime'],
+  };
+  const { generate } = scriptConfirmGenerate([{ plan: inventedPlan }]);
+  const seenPlans = [];
+  const { ask } = scriptAsk(['', 'confirm']);
+  const wrappedAsk = async (/** @type {any} */ step) => {
+    if (step.kind === 'menu') seenPlans.push(step.plan);
+    return ask(step);
+  };
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask: wrappedAsk });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.accepted?.protections, BASE_PROTECTIONS);
+  assert.ok(!r.accepted?.protections.some((p) => p.includes('behavior-preservation')), 'the invented protection never reaches accepted');
+  assert.deepEqual(seenPlans[0].protections, BASE_PROTECTIONS, 'the menu shows the REAL guard list, not the model\'s invented one');
+  assert.ok(!JSON.stringify(seenPlans[0]).includes('behavior-preservation'), 'the invented text never even reaches the displayed plan');
+});
+
+test('the real protections equal classGuards\' own guard list (+ the write fence when set, absent when not)', async () => {
+  const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
+  const seenPlans = [];
+  const { ask } = scriptAsk(['', 'confirm']);
+  const wrappedAsk = async (/** @type {any} */ step) => {
+    if (step.kind === 'menu') seenPlans.push(step.plan);
+    return ask(step);
+  };
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs({ writeScope: null }), generate, book, ask: wrappedAsk });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.accepted?.protections, ['changed-from-seed', 'no-suppressions'].map(
+    (name) => `${name} — ${GUARD_DESCRIPTIONS[name]}`,
+  ));
+  assert.ok(!r.accepted?.protections.some((p) => p.startsWith('write fence')), 'no fence line when writeScope is not set');
+  assert.deepEqual(seenPlans[0].protections, r.accepted?.protections);
+});
+
+test('notChecked lines from the model are carried through to accepted and to what the menu displays', async () => {
+  const planWithGap = {
+    checks: ['tests stay green'], goal: 'Keep the tests green.', questions: [],
+    notChecked: ['that the fix looks good to a human reviewer'],
+  };
+  const { generate } = scriptConfirmGenerate([{ plan: planWithGap }]);
+  const seenPlans = [];
+  const { ask } = scriptAsk(['', 'confirm']);
+  const wrappedAsk = async (/** @type {any} */ step) => {
+    if (step.kind === 'menu') seenPlans.push(step.plan);
+    return ask(step);
+  };
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask: wrappedAsk });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.accepted?.notChecked, planWithGap.notChecked);
+  assert.deepEqual(seenPlans[0].notChecked, planWithGap.notChecked);
 });
 
 test('start-over stops the whole turn as confirm-restart, never a signable accept', async () => {
@@ -225,7 +297,13 @@ test('a reply with no confirm-tool call is artifact-red', async () => {
 test('CONFIRM_SYSTEM states ruling 6 (no unasked check) and cites run mtv8jihy', () => {
   assert.match(CONFIRM_SYSTEM, /never propose a check the goal.*did not ask for/i);
   assert.match(CONFIRM_SYSTEM, /mtv8jihy/);
-  assert.match(CONFIRM_SYSTEM, /never as checks, and never name them in the goal/i);
+  assert.match(CONFIRM_SYSTEM, /a protection is never a check and never named in the goal sentence/i);
+});
+
+test('CONFIRM_SYSTEM (fix #1, run mu0voeo4) orders the model to never claim its own protection/guard, and to report gaps honestly', () => {
+  assert.match(CONFIRM_SYSTEM, /never claim, name, or list a protection or guard of your own/i);
+  assert.match(CONFIRM_SYSTEM, /`notChecked`/);
+  assert.match(CONFIRM_SYSTEM, /never omit a gap to make the plan look complete/i);
 });
 
 test('confirmPrompt shows each answer beside its label, and worse-than-before only when present', () => {

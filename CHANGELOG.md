@@ -126,6 +126,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **The confirm turn's "protections" now come from code, never the model (item 34 loose-end
+  fix, finding #1 from live run mu0voeo4):** the confirm turn used to display whatever prose the
+  model invented for `protections`, and one live run invented a "behavior-preservation guard"
+  this build has no way to check (no kind in the catalogue can verify runtime behaviour). The
+  model is no longer asked for `protections` at all — the schema dropped the field — and what a
+  person sees and what gets recorded as `accepted.protections` is now rendered from the SAME
+  guards `classGuards` will actually compose (`src/authoring.js`'s `MECHANICAL_GUARDS`), through
+  a frozen plain-English line per guard (`GUARD_DESCRIPTIONS`, `src/authorflow.js`), plus the
+  write fence when one is set. The model instead returns `notChecked` — anything the person asked
+  for that no listed check can verify — shown under its own heading in the menu and in the
+  composer's confirmed-plan block, never silently dropped.
 - **`run-interview.mjs`'s paid-step hand-off no longer describes a scout a plain folder
   never gets (item 34 loose-end fix):** since 21561cf (D5=A), a non-repo Source gets no
   scout — the confirm turn reads the file list and `run-author.mjs` stops at the M4 wall

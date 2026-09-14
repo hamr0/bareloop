@@ -492,6 +492,53 @@ export const CONFIRM_MENU = Object.freeze({
   'start-over': 'Start over — rerun the interview from the beginning',
 });
 
+/**
+ * PLAIN-ENGLISH lines for the guards `classGuards` can compose, keyed by
+ * guard NAME — frozen beside {@link CONFIRM_MENU} because both are constants
+ * the confirm turn shows a person verbatim. One entry per guard that exists
+ * in `MECHANICAL_GUARDS` (`src/authoring.js`); {@link confirmProtections}
+ * throws if a guard `classGuards` hands back has no line here, so a battery
+ * that grows a guard fails loudly instead of showing a blank description.
+ * @type {Record<string, string>}
+ */
+export const GUARD_DESCRIPTIONS = Object.freeze({
+  'changed-from-seed': 'the run must actually change at least one file in scope — a close that reports done '
+    + 'without touching anything is refused',
+  'no-suppressions': 'the run may not silence a checker instead of fixing what it flags (things like @ts-ignore, '
+    + 'eslint-disable, or # type: ignore) — none of those may appear in the diff',
+});
+
+/**
+ * THE REAL PROTECTIONS a person is shown, and what {@link runConfirmTurn}
+ * records as `accepted.protections` — fixes finding #1 from live run
+ * mu0voeo4 (2026-09-14): the confirm turn used to show whatever prose the
+ * MODEL invented for `protections`, and that run's model invented a
+ * "behavior-preservation guard" this build cannot check — no kind in the
+ * catalogue can verify runtime behaviour, and the author call's own note
+ * elsewhere says outright that behaviour-preservation is not composed here.
+ * This reads the SAME guards `classGuards` will actually compose into the
+ * close — one source, never a second hand-typed list — rendered through the
+ * frozen line in {@link GUARD_DESCRIPTIONS}, plus the write fence (a real,
+ * signed fence — {@link writeScopeBlock}'s own subject) when one is set.
+ * @param {{verdictType: string, lang: string, writeScope?: string[]|null}} o
+ * @returns {string[]}
+ */
+export function confirmProtections({ verdictType, lang, writeScope = null }) {
+  const guards = classGuards({ verdictType, lang });
+  const lines = guards.map((g) => {
+    const desc = GUARD_DESCRIPTIONS[g.name];
+    if (!desc) {
+      throw new Error(`[authorflow] guard "${g.name}" has no line in GUARD_DESCRIPTIONS — every real guard shown to `
+        + 'a person needs one, frozen beside CONFIRM_MENU');
+    }
+    return `${g.name} — ${desc}`;
+  });
+  if (Array.isArray(writeScope) && writeScope.length > 0) {
+    lines.push(`write fence — the run may only change files matching: ${writeScope.join(', ')}`);
+  }
+  return lines;
+}
+
 export const AUTHOR_SYSTEM = 'You compose the DEFINITION OF DONE for an automated job: a declaration over a fixed '
   + 'catalogue of stage kinds whose implementations already exist. You never write code, a script, a shell fragment, '
   + 'a new kind, or a new parameter name. You cannot read anything and you cannot run anything: everything you know '
@@ -924,18 +971,27 @@ export function writeScopeBlock(writeScope) {
  * (ruling 6). Protections are restated as unchanged, never as checks to add.
  * Open questions the person's own fix rounds left unresolved (D3) are named
  * so the composer states them in notes rather than silently deciding them.
- * @param {{checks: string[], protections: string[], openQuestions?: string[]}} confirmed
+ * `notChecked` (fix #1, run mu0voeo4) is anything the person asked for that
+ * no listed check can verify — shown so the composer names the gap in its
+ * own notes rather than the plan quietly reading as if everything asked for
+ * is covered.
+ * @param {{checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}} confirmed
  */
 export function confirmedBlock(confirmed) {
   const checks = confirmed.checks ?? [];
   const protections = confirmed.protections ?? [];
   const openQuestions = confirmed.openQuestions ?? [];
+  const notChecked = confirmed.notChecked ?? [];
   return 'THE CONFIRMED PLAN — the person already saw and confirmed this in the confirm turn\n\n'
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
     + `${checks.map((c) => `  - ${c}`).join('\n') || '  (none)'}\n\n`
     + 'These protections are already always-on and unchanged by this plan — never compose one of these as a check:\n\n'
     + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n\n`
+    + (notChecked.length
+      ? 'THE PERSON ASKED FOR THESE, BUT NOTHING CHECKS THEM (state these in your notes — never silently claim they '
+        + `are covered):\n\n${notChecked.map((n) => `  - ${n}`).join('\n')}\n\n`
+      : '')
     + (openQuestions.length
       ? `OPEN QUESTIONS the confirm turn could not resolve (state these in your notes, never decide them silently):\n\n${openQuestions.map((q) => `  - ${q}`).join('\n')}`
       : 'The confirm turn left no open questions.');
@@ -963,7 +1019,7 @@ export function confirmedBlock(confirmed) {
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
  *   writeScope?: string[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[]}|null}} o
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
@@ -1527,8 +1583,8 @@ export const CONFIRM_ACK = 'plan received';
  * a malformed reply so the retry names the ONE required shape rather than
  * repeating the whole system prompt */
 export const CONFIRM_STRUCTURE_INSTRUCTION = `Your reply did not deliver exactly one plan through the ${CONFIRM_TOOL_NAME} tool. `
-  + 'Call it exactly once, with the whole plan as its arguments: checks, protections, one goal sentence, and any '
-  + 'genuinely missing questions.';
+  + 'Call it exactly once, with the whole plan as its arguments: checks, one goal sentence, anything not covered '
+  + 'by a check, and any genuinely missing questions.';
 
 /** @type {Record<string, any>} */
 const CONFIRM_SCHEMA = Object.freeze({
@@ -1540,18 +1596,18 @@ const CONFIRM_SCHEMA = Object.freeze({
       description: 'the mechanical checks you plan to compose, each one traceable to something the Goal or What '
         + 'success looks like answers actually asked for — never a check invented beyond them',
     },
-    protections: {
-      type: 'array',
-      items: { type: 'string', minLength: 1 },
-      description: 'the ALWAYS-ON guards that run regardless of what was asked (changed-from-seed, '
-        + 'no-suppressions, every mandatory guard) — listed for transparency, never composed as a check and never '
-        + 'named in the goal sentence',
-    },
     goal: {
       type: 'string',
       minLength: 1,
-      description: 'ONE sentence naming every listed check (never the protections) — this becomes the signed '
-        + "job spec's goal",
+      description: 'ONE sentence naming every listed check (never a protection or guard — those are not yours to '
+        + "name) — this becomes the signed job spec's goal",
+    },
+    notChecked: {
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+      description: 'anything the person asked for (in the Goal, What success looks like, Guardrails, or '
+        + 'worse-than-before answers) that none of your listed checks can verify — named plainly in the person\'s '
+        + 'own words; an empty list means every ask is covered by a listed check',
     },
     questions: {
       type: 'array',
@@ -1560,7 +1616,7 @@ const CONFIRM_SCHEMA = Object.freeze({
         + 'asked to double-check something already answered',
     },
   },
-  required: ['checks', 'protections', 'goal', 'questions'],
+  required: ['checks', 'goal', 'notChecked', 'questions'],
   additionalProperties: false,
 });
 
@@ -1569,8 +1625,8 @@ const CONFIRM_SCHEMA = Object.freeze({
 export function confirmTool(box) {
   return {
     name: CONFIRM_TOOL_NAME,
-    description: 'Deliver the drafted plan: the checks you will compose, the always-on protections, one goal '
-      + 'sentence, and any genuinely missing questions. Call this exactly once.',
+    description: 'Deliver the drafted plan: the checks you will compose, one goal sentence, anything the person '
+      + 'asked for that no check covers, and any genuinely missing questions. Call this exactly once.',
     parameters: CONFIRM_SCHEMA,
     execute: async (/** @type {any} */ args) => { box.calls.push(args); return CONFIRM_ACK; },
   };
@@ -1594,15 +1650,18 @@ const confirmChannel = () => ({
  * {@link CLASS_STATEMENTS} already use, rather than a code matcher over prose.
  */
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
-  + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose, the '
-  + 'always-on protections that run regardless, and one signed goal sentence. You never propose a check the Goal '
-  + 'or What-success-looks-like answers did not ask for — a genre never adds a check the goal did not ask for '
-  + "(run mtv8jihy drafted an unasked tsc --strict stage; that is exactly the mistake this order exists to prevent). "
-  + 'Guards/protections (changed-from-seed, no-suppressions, and every mandatory guard) are ALWAYS on: list them '
-  + 'separately as protections, never as checks, and never name them in the goal sentence. The goal sentence names '
-  + 'every check you listed and nothing more. Ask a question only where an answer is genuinely missing — never to '
-  + 'double-check something already answered. You cannot read anything and you cannot run anything: everything you '
-  + 'know is in the message you are given.';
+  + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
+  + 'signed goal sentence. You never propose a check the Goal or What-success-looks-like answers did not ask for '
+  + '— a genre never adds a check the goal did not ask for (run mtv8jihy drafted an unasked tsc --strict stage; '
+  + 'that is exactly the mistake this order exists to prevent). The always-on guards (changed-from-seed, '
+  + 'no-suppressions, and every mandatory guard) and the write fence are shown to the person by the SYSTEM, never '
+  + 'by you: you never claim, name, or list a protection or guard of your own — that is not your call to state, and '
+  + 'a protection is never a check and never named in the goal sentence. The goal sentence names every check you '
+  + 'listed and nothing more. For anything the person asked for that none of your listed checks can verify, name it '
+  + 'plainly in `notChecked`, in the person\'s own words — never omit a gap to make the plan look complete; '
+  + 'over-reporting a gap is always the safe direction. Ask a question only where an answer is genuinely missing — '
+  + 'never to double-check something already answered. You cannot read anything and you cannot run anything: '
+  + 'everything you know is in the message you are given.';
 
 /**
  * The confirm turn's per-round prompt (model-facing, registered). Shows the
@@ -1675,7 +1734,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
  *   rounds: number,
  *   accepted: {goal: string, checks: string[], protections: string[], lang: string,
- *     worseThanBefore: string, openQuestions: string[]}|null,
+ *     worseThanBefore: string, openQuestions: string[], notChecked: string[]}|null,
  *   reds: Red[], cost: any}>}
  */
 export async function runConfirmTurn({
@@ -1752,8 +1811,16 @@ export async function runConfirmTurn({
     const postCallHalt = book.capStop();
     if (postCallHalt) return { ...base(), stop: postCallHalt, rounds: round, cost: book.report() };
 
-    onPhase('confirm-done', { round, plan: r.plan });
-    const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan: r.plan });
+    // THE REAL PROTECTIONS (fix #1, run mu0voeo4, 2026-09-14): never the
+    // model's `protections` prose — the schema no longer even asks the model
+    // for one — but the guards `classGuards` will actually compose, plus the
+    // write fence. `notChecked` is the model's own honest gap list, carried
+    // through unchanged.
+    const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope });
+    const notChecked = [...(r.plan.notChecked ?? [])];
+    const plan = { ...r.plan, protections, notChecked };
+    onPhase('confirm-done', { round, plan });
+    const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan });
     if (picked === null) return abandon(round);
     if (picked === 'start-over') return { ...base(), stop: /** @type {ConfirmStop} */ ('confirm-restart'), rounds: round, cost: book.report() };
 
@@ -1761,8 +1828,8 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...(r.plan.protections ?? [])],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions],
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
       };
@@ -1774,8 +1841,8 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...(r.plan.protections ?? [])],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions],
+          goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
       };
@@ -1792,8 +1859,8 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...(r.plan.protections ?? [])],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions],
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
       };
@@ -1845,7 +1912,7 @@ export async function runConfirmTurn({
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[]}|null}} o
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,

@@ -344,6 +344,15 @@ test('authorPrompt: confirmed is byte-identical when absent, adds exactly the co
   assert.equal(withConfirmed.replace(confirmedBlock(confirmed) + '\n\n---\n\n', ''), withoutConfirmed);
 });
 
+test('confirmedBlock renders notChecked when present, and nothing extra when absent (fix #1, run mu0voeo4)', () => {
+  const withGap = confirmedBlock({ checks: ['a'], protections: ['b'], notChecked: ['a human review of the diff'] });
+  assert.match(withGap, /THE PERSON ASKED FOR THESE, BUT NOTHING CHECKS THEM/);
+  assert.match(withGap, /a human review of the diff/);
+
+  const withoutGap = confirmedBlock({ checks: ['a'], protections: ['b'] });
+  assert.ok(!withoutGap.includes('THE PERSON ASKED FOR THESE'));
+});
+
 test('authorClose: priorCalls/priorRaws (the confirm turn\'s own spend) are absorbed beside the scout\'s', async () => {
   const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
   const r = await authorClose({

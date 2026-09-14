@@ -532,6 +532,10 @@ const ask = async (step) => {
     for (const c of p.checks ?? []) console.log(`    · ${c}`);
     console.log('  protections (always-on guards, never named in the goal):');
     for (const g of p.protections ?? []) console.log(`    · ${g}`);
+    if ((p.notChecked ?? []).length) {
+      console.log('  you asked for these, but nothing checks them:');
+      for (const n of p.notChecked ?? []) console.log(`    · ${n}`);
+    }
     if ((p.questions ?? []).length) {
       console.log('  open questions:');
       for (const q of p.questions ?? []) console.log(`    ? ${q}`);
