@@ -40,6 +40,7 @@ import {
 } from '../src/authoring.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+  openQuestionLines,
 } from '../scripts/author-readout.mjs';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
@@ -1576,6 +1577,20 @@ test('calibration readout: itemized rows, never an aggregate — and a casualty 
   assert.match(calibrationLines({ stop: 'calibration-missing' })[0], /no calibration set is stored/);
   assert.match(calibrationLines({ stop: 'no-judge' })[0], /never ran/);
   assert.match(calibrationLines(null)[0], /not reached/);
+});
+
+// PRD item 33 M3 piece 4, step S4 — the confirm turn's open questions, shown at
+// the SIGNING readout (D4: the signed spec format itself does not change).
+test('openQuestionLines: none is shown as an explicit "(none)", never a silent absence', () => {
+  assert.deepEqual(openQuestionLines(null), ['open questions  (none)']);
+  assert.deepEqual(openQuestionLines({ openQuestions: [] }), ['open questions  (none)']);
+});
+
+test('openQuestionLines: each fix-round question is its own line, counted', () => {
+  const lines = openQuestionLines({ openQuestions: ['also check the CLI', 'make it stricter'] });
+  assert.match(lines[0], /open questions {2}2/);
+  assert.ok(lines.some((l) => l.includes('also check the CLI')));
+  assert.ok(lines.some((l) => l.includes('make it stricter')));
 });
 
 test('phaseLine renders the compile and the paid gate, including the scrub announcement', () => {

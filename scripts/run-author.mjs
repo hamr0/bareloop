@@ -63,14 +63,15 @@
 //                  does not know, dies here loud, listing the known table.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
   VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
-import { makeLoopGenerate } from '../src/authorflow.js';
+import { makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM } from '../src/authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
-import { scanSecrets } from '../src/validate.js';
+import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
 import { closeJudges } from '../src/kinds.js';
 import { resolveProvider, makeProvider } from '../src/providers.js';
@@ -78,6 +79,7 @@ import { readSourceManifest } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
+  openQuestionLines,
 } from './author-readout.mjs';
 
 /** the close precheck / seed read spawns real toolchains; the slowest stage is a
@@ -222,12 +224,12 @@ if (manifestRead.manifest.kind !== 'repo') {
 //     own (M3 ruling 7: a plain-folder job is not an error here, it is simply
 //     not a code-genre job this pipeline can close yet).
 const langResult = detectLanguage(SOURCE);
-if (langResult.kind === 'ambiguous') {
-  die(`${SOURCE} has more than one language's manifest at the same (nearest) level: ${langResult.candidates.join(', ')} `
-    + `(in ${langResult.dir}). Picking one interactively is a later build (PRD item 33 M3, ruling 3, point 3) — for `
-    + 'now, prepare --source against the specific subfolder for the language this job is about, or remove the other '
-    + 'manifest, and rerun.');
-}
+// AMBIGUOUS NO LONGER DIES (PRD item 33 M3 piece 4, step S4): the confirm
+// turn's own $0 half asks the person which language this job is about,
+// BEFORE the scout (D7) — `langResult` travels into `authorCloseForJob`
+// below exactly as it is here, and its `ambiguous` shape is what triggers
+// that ask. `LANG` below is a placeholder for this outcome only: whatever
+// the person picks interactively is what actually lands in `closeDecl.lang`.
 if (langResult.kind === 'language-unsupported') {
   const r = langResult.refusal;
   console.log(`REFUSED (${r.kind})  verb=${r.verb}  path=${r.path}`);
@@ -243,7 +245,14 @@ if (langResult.kind === 'language-unsupported') {
   // deliberately, rather than reworked into that shape.
   process.exit(1);
 }
-const LANG = langResult.kind === 'resolved' ? langResult.lang : 'none-detected';
+const LANG = langResult.kind === 'resolved' ? langResult.lang
+  : langResult.kind === 'ambiguous' ? langResult.candidates[0]
+    : 'none-detected';
+if (langResult.kind === 'ambiguous') {
+  console.log(`Source has more than one supported language's manifest at the same (nearest) level: `
+    + `${langResult.candidates.join(', ')} (in ${langResult.dir}).`);
+  console.log('This will be asked, interactively, in the confirm turn below — before any paid call.');
+}
 
 /** @param {string} label @param {string} file */
 const readJson = (label, file) => {
@@ -450,6 +459,106 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   });
 }
 
+// ── THE ONE INTERACTIVE SEAM (PRD item 33 M3 piece 4, step S4) ───────────────
+// The confirm turn (`runConfirmTurn`, wired below through `authorCloseForJob`)
+// is the ONLY interactive part of this script — the survey, the declaration
+// loop and D9's gates are all unattended. `terminal: false` for the same
+// reason `run-interview.mjs` uses it (that script's own `nextLine`,
+// scripts/run-interview.mjs:142-160): the TTY's own canonical mode already
+// gives backspace and echo, and a piped stdin (a scripted session, a test)
+// behaves identically either way — this is copied from that idiom rather
+// than re-invented.
+const rl = createInterface({ input: process.stdin, terminal: false });
+const rlLines = rl[Symbol.asyncIterator]();
+/** @returns {Promise<string|null>} the next line, or null at end of input —
+ * the same "input ended" signal `run-interview.mjs`'s own `nextLine` uses. */
+const nextLine = async () => {
+  const { value, done } = await rlLines.next();
+  if (done) { console.log(); return null; }
+  // a TTY echoes what a person types; a pipe does not, and a scripted
+  // session is being logged by definition — same rule, same reason.
+  if (!process.stdin.isTTY) console.log(redactSecrets(String(value)));
+  return String(value);
+};
+/** one free-text answer, possibly several lines; a blank line ends it.
+ * `allowBlank` lets the FIRST line be blank — `worseThanBefore`'s "nothing
+ * beyond Guardrails" is a legal, non-required answer, unlike every other
+ * free-text step below.
+ * @param {boolean} allowBlank @returns {Promise<string|null>} */
+const readFreeText = async (allowBlank) => {
+  /** @type {string[]} */
+  const got = [];
+  for (;;) {
+    process.stdout.write(got.length ? '  … ' : '  > ');
+    const l = await nextLine();
+    if (l === null) return got.length ? redactSecrets(got.join('\n').trim()) : null;
+    if (String(l).trim() === '') { if (got.length || allowBlank) break; continue; }
+    got.push(String(l));
+  }
+  // SCRUBBED AT CAPTURE (same rule as run-interview.mjs's own readAnswer): no
+  // raw keystroke reaches anywhere — a prompt, a spine record, a file on
+  // disk — by a route that does not go through the one redactor first.
+  return redactSecrets(got.join('\n').trim());
+};
+/** `runConfirmTurn`'s own `ask` seam — one async function from "what's being
+ * asked" to the person's answer, or `null` meaning input ended (never a
+ * process exit here: this is a library call, and the library decides what a
+ * `null` means at each step — `confirm-abandoned` for every kind except the
+ * menu's `start-over`, which is a distinct explicit pick).
+ * @param {{kind: string, [k: string]: any}} step @returns {Promise<string|null>} */
+const ask = async (step) => {
+  console.log('');
+  if (step.kind === 'worseThanBefore') {
+    console.log(step.field.prompt);
+    console.log('  (press Enter on a blank line for "nothing beyond Guardrails")');
+    return readFreeText(true);
+  }
+  if (step.kind === 'language') {
+    console.log(step.field.prompt);
+    for (const c of step.candidates ?? []) console.log(`  · ${c}`);
+    return readFreeText(false);
+  }
+  if (step.kind === 'menu') {
+    const p = step.plan ?? {};
+    console.log('THE PLAN — read before you pick:');
+    console.log(`  goal          ${JSON.stringify(p.goal ?? '')}`);
+    console.log('  checks it will compose:');
+    for (const c of p.checks ?? []) console.log(`    · ${c}`);
+    console.log('  protections (always-on guards, never named in the goal):');
+    for (const g of p.protections ?? []) console.log(`    · ${g}`);
+    if ((p.questions ?? []).length) {
+      console.log('  open questions:');
+      for (const q of p.questions ?? []) console.log(`    ? ${q}`);
+    }
+    const keys = /** @type {(keyof typeof CONFIRM_MENU)[]} */ (Object.keys(CONFIRM_MENU));
+    keys.forEach((k, i) => console.log(`  ${i + 1}. ${CONFIRM_MENU[k]}`));
+    for (;;) {
+      process.stdout.write(`  pick [1-${keys.length} or the word]: `);
+      const l = await nextLine();
+      if (l === null) return null;
+      const raw = String(l).trim().toLowerCase();
+      const byIndex = keys[Number(raw) - 1];
+      if (byIndex) return byIndex;
+      if (/** @type {string[]} */ (keys).includes(raw)) return raw;
+      console.log(`  not a choice — type a number 1-${keys.length}, or one of: ${keys.join(', ')}`);
+    }
+  }
+  if (step.kind === 'goal') {
+    console.log('Type the goal sentence yourself — it REPLACES the drafted one; the checks and protections stand.');
+    return readFreeText(false);
+  }
+  if (step.kind === 'fix') {
+    console.log('What should change? Describe the fix — it feeds the next round (up to 2 rounds total).');
+    return readFreeText(false);
+  }
+  return null;
+};
+/** the confirm turn's OWN model boundary (PRD item 33 M3 ruling 5 addendum) —
+ * bound to `CONFIRM_SYSTEM`, never the authoring `generate` above (that one
+ * is bound to `AUTHOR_SYSTEM`). Same provider instance, a different system
+ * prompt: reusing `generate` would run the wrong system prompt silently. */
+const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
+
 // ── EVERYTHING PAID FOR, INSIDE ONE CATCH ────────────────────────────────────
 // The span from here to the end of the main flow is the fallible one: a real
 // scout, a real model call, and a real toolchain per close stage. When it threw,
@@ -501,6 +610,13 @@ try {
     // …and the two reporting seams. The library emits nothing itself (the
     // `runJob` → `runPlan` shape): this runner owns the spine and the terminal.
     onPhase, onCall,
+    // PRD item 33 M3 piece 4 (step S4) — the confirm turn. `isRepo: true` is
+    // safe unconditionally here: the manifest.kind !== 'repo' stop above
+    // (before the key is even read) already refused every non-repo source,
+    // so every path that reaches this call is a repo job. `langResult`
+    // travels through unchanged — its `ambiguous` shape is what the confirm
+    // turn's own $0 half (D7) asks about, before the scout.
+    ask, confirmGenerate, isRepo: true, langResult,
   });
   const authoredFile = writeOut('authored.json', authored);
   emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });
@@ -508,6 +624,20 @@ try {
   console.log(`authoring  ${authored.ok ? 'OK' : 'NOT OK'}  stop=${authored.stop ?? 'none'}  seed=${authored.seedRef ?? 'unread'}`);
   console.log(`cost       ${costLine(authored.cost)}`);
   console.log(`written    ${authoredFile}`);
+
+  // THE CONFIRM TURN'S OWN STOPS (PRD item 33 M3 piece 4, step S4) — neither is
+  // a refusal (`authored.refusal` is null on both) and neither is a red
+  // (`authored.reds` is empty on both), so without this they would otherwise
+  // fall through the generic "no refusal and no reds" line below. `author-end`
+  // still records the stop either way (the generic branch further down carries
+  // it through `stop: authored.stop` regardless) — this is only the FRIENDLIER
+  // console line, said once, in the person's own words.
+  if (authored.stop === 'confirm-abandoned' || authored.stop === 'confirm-restart') {
+    console.log(`\n${authored.stop.toUpperCase()} — the confirm turn did not produce a signed plan.`);
+    console.log(authored.stop === 'confirm-abandoned'
+      ? '  input ended before you answered — nothing was signed, nothing runs, and nothing beyond this line is written.'
+      : '  you chose to start over — rerun the interview from the beginning with the answers you want to change.');
+  }
 
   // THE GOVERNANCE STOP, read out on BOTH paths. A money stop can land with a
   // signable close already authored and measured (`ok:true` — the cap tripped
@@ -578,6 +708,19 @@ try {
     emit('author-end', { outcome: 'not-authored', stop: authored.stop });
     process.exitCode = 1;
   } else {
+    // PRD item 33 M3, ruling 5 addendum (step S4): the confirm turn drafts the
+    // signed goal sentence and the person confirms/fixes it there — the
+    // interview's own separate goal question is what this REPLACES (D2's
+    // "the confirmed goal replaces it"). `goal` stays an OPERATOR field
+    // (D2: it does not join `AUTHORED_SPEC_FIELDS`), so it is set on the
+    // DRAFT here, before assembling, exactly where the interview's own
+    // answer would otherwise have landed. Absent only if this authoring run
+    // predates the confirm turn's own `ask` wiring (`authored.confirmed` is
+    // `null` for every caller that runs no confirm turn) — the draft's own
+    // goal (if any) then stands untouched.
+    if (authored.confirmed?.goal) {
+      draft.goal = redactSecrets(String(authored.confirmed.goal));
+    }
     // ── 2. the operator's half + the authored half → one spec ──────────────────
     const spec = assembleSpec(draft, authored);
     const specFile = writeOut('resolved-spec.json', spec);
@@ -590,12 +733,13 @@ try {
     // and a readout no test can reach is a readout nothing checks.
     for (const l of declarationLines(spec)) console.log(l);
     // …and, for a close that JUDGES, the two artifacts the judge is signed with.
-    // NAMED DEFERRAL, said out loud rather than implied: this script is
-    // non-interactive (answers in, files out), so it does not offer the D5 fix
-    // step — the proposal is signed AS PROPOSED. The library seam exists
-    // (`authorCloseForJob({signerFix})`) and the interactive surface is the
-    // interview's and the UI's (N6), which is the same split the guard battery
-    // already lives under here: shown, not edited at this surface.
+    // NAMED DEFERRAL, said out loud rather than implied: this script's ONE
+    // interactive seam is the confirm turn above (PRD item 33 M3 piece 4,
+    // step S4) — it does not ALSO offer the D5 fix step here, so the
+    // proposal is signed AS PROPOSED. The library seam exists
+    // (`authorCloseForJob({signerFix})`) and the interactive surface for IT
+    // is the interview's and the UI's (N6), which is the same split the
+    // guard battery already lives under here: shown, not edited at this surface.
     const rubric = rubricLines(spec);
     if (rubric.length) {
       for (const l of rubric) console.log(l);
@@ -748,6 +892,7 @@ try {
         console.log('\nSIGNING PREPARED — NOT SIGNED. This script stops here, by design.');
         console.log(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
         console.log('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
+        for (const l of openQuestionLines(authored.confirmed)) console.log(`  ${l}`);
         emit('author-end', { outcome: 'prepared', specHash: hash });
       }
     }
@@ -786,6 +931,13 @@ try {
   // leak). A crash is none of those: it is the run failing to reach a verdict at
   // all, and sharing an exit code with a refusal would file a bug as a result.
   process.exitCode = 4;
+} finally {
+  // `rl.close()` here, not inline at every exit path above: this file has
+  // MANY of those (a refusal, a failed gate, a signed readout, a crash), and
+  // a reader left open on ANY of them is a process that never lets go of
+  // stdin. BEST-EFFORT (F70's rule again) — closing the interactive seam must
+  // never take the readout it follows down with it.
+  try { rl.close(); } catch { /* see onPhase */ }
 }
 
 // The hard line, on the artifacts this run just wrote. Count and PATH only —

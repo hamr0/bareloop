@@ -642,3 +642,58 @@ test('a --source prepared from a NON-repo (a plain folder) stops honestly (M3 ru
   assert.ok(events.some((e) => e.type === 'job-red' && e.code === 'request-red'), JSON.stringify(events));
   assert.ok(events.some((e) => e.type === 'author-end'), 'a spine with no author-end reads as a run still in flight');
 });
+
+// ── PRD item 33 M3 piece 4, step S4 — run-author.mjs becomes INTERACTIVE ────
+//
+// The confirm turn (`runConfirmTurn`, via `authorCloseForJob`) is this
+// script's one interactive seam. Pinned from SOURCE for the same reason the
+// blocks above are: the wiring is reachable only after a real scout and a
+// real model call, which this suite never pays for.
+
+test('ambiguous language no longer dies — it travels through as langResult, for the confirm turn\'s own $0 ask (D7)', () => {
+  assert.ok(!/langResult\.kind === 'ambiguous'\) \{\s*\n\s*die\(/.test(SRC),
+    'an ambiguous-language die() came back — the confirm turn (D7) is what asks this now, before the scout');
+  assert.match(SRC, /langResult\.kind === 'ambiguous' \? langResult\.candidates\[0\]/,
+    'LANG needs a placeholder for the ambiguous case — the person\'s real pick lands in closeDecl.lang via the confirm turn');
+});
+
+test('the confirm turn is wired into the authorCloseForJob call: ask, its OWN confirmGenerate, isRepo, langResult', () => {
+  const CALL = /const authored = await authorCloseForJob\(\{[\s\S]*?\n {2}\}\);/.exec(SRC)?.[0];
+  assert.ok(CALL, 'the authorCloseForJob call moved — this guard no longer reads the code it guards');
+  assert.match(CALL, /\bask, confirmGenerate, isRepo: true, langResult,/);
+  // the confirm turn's model boundary must be its OWN — bound to CONFIRM_SYSTEM,
+  // never the authoring `generate` (bound to AUTHOR_SYSTEM); reusing `generate`
+  // would run the wrong system prompt silently
+  assert.match(SRC, /const confirmGenerate = makeLoopGenerate\(provider, \{ system: CONFIRM_SYSTEM \}\);/);
+  assert.doesNotMatch(CALL, /confirmGenerate: generate\b/, 'the confirm turn must never reuse the AUTHOR_SYSTEM-bound generate');
+});
+
+test('rl.close() runs in a finally around the whole paid span — never inline at one exit path only', () => {
+  const finallyBlock = /\} finally \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+  assert.ok(finallyBlock, 'no finally block follows the crash catch');
+  assert.match(finallyBlock, /rl\.close\(\)/);
+  assert.match(finallyBlock, /catch \{/, 'closing the interactive seam must not crash the readout it follows (F70)');
+});
+
+test('the confirm turn\'s accepted goal lands on the DRAFT before assembleSpec — goal stays an operator field (D2)', () => {
+  const idx = SRC.indexOf('authored.confirmed?.goal');
+  const assembleAt = SRC.indexOf('const spec = assembleSpec(draft, authored);');
+  assert.ok(idx !== -1 && assembleAt !== -1 && idx < assembleAt,
+    'draft.goal must be set from the confirm turn\'s accepted goal BEFORE assembleSpec reads the draft');
+  assert.match(SRC, /draft\.goal = redactSecrets\(String\(authored\.confirmed\.goal\)\);/);
+});
+
+test('the signing readout prints the confirm turn\'s open questions (D4: the signed spec format itself is unchanged)', () => {
+  assert.match(SRC, /openQuestionLines\(authored\.confirmed\)/);
+  const specAt = SRC.indexOf('const specFile = writeOut');
+  const idx = SRC.indexOf('openQuestionLines(authored.confirmed)');
+  assert.ok(specAt !== -1 && idx > specAt, 'the open questions print in the signing readout, not before the spec is written');
+});
+
+test('confirm-abandoned and confirm-restart get their own friendlier console line, and both still reach author-end via the generic stop', () => {
+  assert.match(SRC, /authored\.stop === 'confirm-abandoned' \|\| authored\.stop === 'confirm-restart'/);
+  const NOT_AUTHORED = /if \(!authored\.ok\) \{[\s\S]*?\n {2}\}/.exec(SRC)?.[0];
+  assert.ok(NOT_AUTHORED);
+  assert.match(NOT_AUTHORED, /emit\('author-end', \{ outcome: 'not-authored', stop: authored\.stop \}\);/,
+    'confirm-abandoned/confirm-restart fall through this generic branch — author-end records the real stop either way');
+});
