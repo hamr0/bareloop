@@ -81,7 +81,7 @@ import { readSourceManifest } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines,
+  openQuestionLines, fellBackLines,
 } from './author-readout.mjs';
 
 /** the close precheck / seed read spawns real toolchains; the slowest stage is a
@@ -716,6 +716,7 @@ try {
   console.log(`authoring  ${authored.ok ? 'OK' : 'NOT OK'}  stop=${authored.stop ?? 'none'}  seed=${authored.seedRef ?? 'unread'}`);
   console.log(`cost       ${costLine(authored.cost)}`);
   console.log(`written    ${authoredFile}`);
+  for (const l of fellBackLines(authored.authoring)) console.log(l);
 
   // THE CONFIRM TURN'S OWN STOPS (PRD item 33 M3 piece 4, step S4) — neither is
   // a refusal (`authored.refusal` is null on both) and neither is a red

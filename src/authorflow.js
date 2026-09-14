@@ -1884,7 +1884,13 @@ export async function runConfirmTurn({
  * The return is deliberately complete rather than tidy:
  *   - `ok` is true iff a declaration passed validation and was measured;
  *   - `declaration` is the LAST ACCEPTED one, genre-env injected — the exact form
- *     that will run and that the signature will cover;
+ *     that will run and that the signature will cover; unless F176's fallback
+ *     fired (see `fellBack`), in which case it is the newest SOUND accepted one
+ *     instead — a "last accepted" close whose seed read instrument-stopped is
+ *     never handed to a signer as though it were the best close this run found;
+ *   - `fellBack` is `null` unless the fallback above fired, in which case it names
+ *     `{from, to, brokenStages}` — which iteration was dropped, which one now
+ *     stands, and which of the dropped one's stages instrument-stopped;
  *   - `reds` is what the LAST validated iteration said. `ok:true` with a non-empty
  *     `reds` means the final revision was rejected and the previous close stands:
  *     the rejection is reported, never hidden, and never silently shipped either;
@@ -2129,6 +2135,19 @@ export async function authorClose({
   let stop = 'max-revisions';
   /** @type {{stage: string, name: string}[]} */
   let droppedEnv = [];
+  // F176: every MEASURED iteration (validated + seed-read, never a
+  // validation-rejected one), kept in call order, so a later revision that
+  // broke what an earlier one got right can be detected and reverted rather
+  // than silently kept because it happened to be last. Each entry carries its
+  // OWN droppedEnv — the single `droppedEnv` variable above is overwritten by
+  // every measured iteration and would mismatch a fallen-back iteration.
+  /** @type {{label: string, declaration: any, seedRead: any[], droppedEnv: {stage: string, name: string}[]}[]} */
+  const measuredIterations = [];
+  /** a measured iteration is SOUND when none of its seed-read rows instrument-stopped
+   * (hamr's ruling, 2026-09-14, option A) — a real red/green verdict is sound, a
+   * broken instrument is not.
+   * @param {any[]} rows @returns {boolean} */
+  const isSoundMeasurement = (rows) => Array.isArray(rows) && rows.every((r) => r?.verdict !== 'instrument-stop');
 
   /**
    * THE GOVERNANCE STOP'S OWN RED. It names the CAP and the SPEND, because the
@@ -2275,6 +2294,7 @@ export async function authorClose({
         acceptedSeedRead = rows;
         finalFrom = label;
         measured = renderSeedReadBlock(rows);
+        measuredIterations.push({ label, declaration: injected.declaration, seedRead: rows, droppedEnv: injected.dropped });
       }
 
       if (i === revisionCap) { stop = 'max-revisions'; break; }
@@ -2293,6 +2313,43 @@ export async function authorClose({
     }
   } finally {
     await seedTrees.cleanup();
+  }
+
+  // F176 (hamr's ruling, 2026-09-14, option A): "kept the last accepted
+  // revision" is not the same claim as "kept the best revision" — a revise
+  // loop that only checks validity per round, never soundness ACROSS rounds,
+  // can silently regress on its own last try. If the last MEASURED iteration
+  // is not sound (an instrument-stop, not a real red/green verdict) and an
+  // earlier measured iteration IS sound, fall back to the NEWEST sound one:
+  // its declaration, its seedRead, its own finalFrom label, and its own
+  // droppedEnv — never the module-level `droppedEnv`, which the unsound last
+  // iteration already overwrote. `stop` itself is never changed: whatever
+  // stopped the ladder still stopped it for the reason it stopped it, this
+  // only changes WHICH close is reported as the one that stands. Said loudly,
+  // never silently: `fellBack` names it and `onPhase` reports it as it
+  // happens, so a caller emitting phases to a spine or a terminal cannot miss
+  // it by reading only `declaration`/`seedRead`/`finalFrom`.
+  /** @type {{from: string, to: string, brokenStages: string[]}|null} */
+  let fellBack = null;
+  if (measuredIterations.length) {
+    const last = measuredIterations[measuredIterations.length - 1];
+    if (!isSoundMeasurement(last.seedRead)) {
+      for (let k = measuredIterations.length - 2; k >= 0; k -= 1) {
+        const candidate = measuredIterations[k];
+        if (isSoundMeasurement(candidate.seedRead)) {
+          const brokenStages = last.seedRead
+            .filter((/** @type {any} */ r) => r?.verdict === 'instrument-stop')
+            .map((/** @type {any} */ r) => r.stage);
+          fellBack = { from: last.label, to: candidate.label, brokenStages };
+          accepted = candidate.declaration;
+          acceptedSeedRead = candidate.seedRead;
+          finalFrom = candidate.label;
+          droppedEnv = candidate.droppedEnv;
+          onPhase('author-fallback', fellBack);
+          break;
+        }
+      }
+    }
   }
 
   const reds = fatal.length ? fatal : (lastValidation && !lastValidation.ok ? lastValidation.reds : []);
@@ -2318,6 +2375,11 @@ export async function authorClose({
     listing: seeds,
     genreEnv: { ...base.genreEnv, dropped: droppedEnv },
     finalFrom,
+    // F176: null on every path where the last measured iteration was itself
+    // sound, or where no measured iteration exists — byte-identical to today.
+    // Non-null names WHICH iteration was dropped, WHICH one now stands, and
+    // WHICH stages broke on the dropped one, so this is never a silent swap.
+    fellBack,
     stop,
     revisions: Math.max(0, iterations.length - 1),
   };

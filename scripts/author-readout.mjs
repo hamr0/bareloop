@@ -42,6 +42,24 @@ export function declarationLines({ goal, closeDecl }) {
 }
 
 /**
+ * F176'S FALLBACK, SAID OUT LOUD — the revise ladder kept the NEWEST SOUND
+ * declaration rather than the last one it happened to try, because "kept the
+ * last accepted revision" is not the same claim as "kept the best revision"
+ * (docs/logs/FINDINGS.md F176). Absent on every run where the fallback never
+ * fired (the overwhelming majority), which is why this returns an EMPTY list
+ * rather than a "no fallback" line — a green close has nothing to say here and
+ * printing it every run would be noise, not information.
+ * @param {{fellBack?: {from: string, to: string, brokenStages: string[]}|null}|null} authoring `authored.authoring`
+ * @returns {string[]}
+ */
+export function fellBackLines(authoring) {
+  const fb = authoring?.fellBack;
+  if (!fb) return [];
+  const stages = fb.brokenStages?.length ? fb.brokenStages.join(', ') : '(unnamed)';
+  return [`FELL BACK  ${fb.from} broke ${fb.brokenStages?.length ?? 0} check(s) (${stages}) — kept ${fb.to} instead`];
+}
+
+/**
  * THE TWO SIGNED JUDGED ARTIFACTS, as a person reads them before signing
  * (softgreen modules 4+5). Absent on a close that judges nothing, which is why
  * this returns an EMPTY list rather than a "no card" line: a green close has no

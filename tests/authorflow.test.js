@@ -1332,6 +1332,137 @@ test('authorClose: a last revision that REGRESSES keeps the last accepted close 
   assert.ok(r.reds.some((/** @type {any} */ x) => x.code === 'guard-missing'), 'the rejected revision is reported, never hidden');
 });
 
+// ── 6b. F176 — a later revision that measures WORSE (instrument-stops) than an
+// earlier one must not be kept just because it was last. Row shapes below are
+// copied from the real archived run that found this (`mu0voeo4`,
+// docs/logs/FINDINGS.md F176): a `count-not-worse` stage instrument-stops with
+// `exitCode: 97` and a `stop` detail naming the broken parser term — never a
+// hand-invented shape.
+
+/** a seed-read stub whose verdict per CALL matches the real F176 row shapes:
+ * call 1 (author) and call 2 (revise-1) sound-green, call 3 (revise-2) every
+ * stage instrument-stops, exactly as `typecheck-strict-checks-js-zero-errors`
+ * and its outside-scope twin both did in the real run. */
+function f176SeedRead() {
+  let call = 0;
+  /** @type {any[][]} */
+  const seen = [];
+  const fn = async (/** @type {any} */ declaration) => {
+    call += 1;
+    const rows = declaration.stages.map((/** @type {any} */ s) => (call === 3
+      ? {
+        verdict: 'instrument-stop', exitCode: 97, value: null, baseline: null, baselineSource: null,
+        gapLines: ['TEST:: INSTRUMENT: term 0 captured "error TS7006", which is not an integer'], judged: true,
+        stage: s.name, kind: s.kind,
+        detail: { stop: 'INSTRUMENT: term 0 captured "error TS7006", which is not an integer', fault: 'crashed' },
+      }
+      : {
+        verdict: 'green', exitCode: 0, value: 0, baseline: 0, baselineSource: null, gapLines: [], judged: true,
+        stage: s.name, kind: s.kind, detail: {},
+      }));
+    seen.push(rows);
+    return rows;
+  };
+  return { fn, seen };
+}
+
+test('authorClose (F176): revise-2 instrument-stops after revise-1 measured sound — falls back to the NEWEST sound iteration', async () => {
+  const decl1 = { ...goodDeclaration(), notes: ['author'] };
+  const decl2 = { ...goodDeclaration(), notes: ['revise-1'] };
+  const decl3 = { ...goodDeclaration(), notes: ['revise-2'] };
+  const { generate } = scriptGenerate([{ declaration: decl1 }, { declaration: decl2 }, { declaration: decl3 }]);
+  const { fn, seen } = f176SeedRead();
+  /** @type {any[]} */
+  const phases = [];
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, onPhase: (phase, data) => phases.push({ phase, data }) });
+
+  // proves all THREE calls actually happened (author AND revise-1 sound, so
+  // "newest sound" — revise-1, not the oldest sound one, author — is what the
+  // fallback logic is actually proving)
+  assert.equal(seen.length, 3);
+
+  assert.equal(r.ok, true);
+  assert.equal(r.stop, 'max-revisions', 'the stop reason itself is never changed by the fallback');
+  assert.equal(r.finalFrom, 'revise-1');
+  assert.deepEqual(r.declaration.notes, ['revise-1']);
+  assert.deepEqual(r.seedRead, seen[1], 'the returned seedRead is revise-1\'s OWN measured rows, not revise-2\'s');
+  assert.ok(r.fellBack);
+  assert.equal(r.fellBack.from, 'revise-2');
+  assert.equal(r.fellBack.to, 'revise-1');
+  assert.ok(r.fellBack.brokenStages.length > 0, 'names which stage(s) instrument-stopped on the dropped iteration');
+  for (const s of r.fellBack.brokenStages) assert.ok(decl3.stages.some((/** @type {any} */ st) => st.name === s));
+
+  // every measured iteration is still in the full honest record
+  const measuredCalls = r.iterations.filter((/** @type {any} */ it) => Array.isArray(it.seedRead)).map((/** @type {any} */ it) => it.call);
+  assert.deepEqual(measuredCalls, ['author', 'revise-1', 'revise-2']);
+
+  // said LOUDLY: an onPhase event fires for the fallback
+  const fallbackPhase = phases.find((/** @type {any} */ p) => p.phase === 'author-fallback');
+  assert.ok(fallbackPhase, 'the fallback is reported through onPhase, not only in the return value');
+  assert.deepEqual(fallbackPhase.data, r.fellBack);
+});
+
+test('authorClose (F176): the last measured iteration IS sound — byte-identical to today, fellBack is null', async () => {
+  const decl1 = { ...goodDeclaration(), notes: ['author'] };
+  const decl2 = { ...goodDeclaration(), notes: ['revise-1'] };
+  const { generate } = scriptGenerate([{ declaration: decl1 }, { declaration: decl2 }]);
+  const { fn } = scriptSeedRead(); // every stage 'red' by default — sound (a real verdict, never instrument-stop)
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, maxRevisions: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(r.finalFrom, 'revise-1');
+  assert.equal(r.fellBack, null);
+});
+
+test('authorClose (F176): NO measured iteration is sound — unchanged (accepted stays the last one, honestly unsound)', async () => {
+  const decl1 = { ...goodDeclaration(), notes: ['author'] };
+  const decl2 = { ...goodDeclaration(), notes: ['revise-1'] };
+  const { generate } = scriptGenerate([{ declaration: decl1 }, { declaration: decl2 }]);
+  const fn = async (/** @type {any} */ declaration) => declaration.stages.map((/** @type {any} */ s) => ({
+    verdict: 'instrument-stop', exitCode: 97, value: null, baseline: null, baselineSource: null,
+    gapLines: ['TEST:: INSTRUMENT: always broken'], judged: true, stage: s.name, kind: s.kind,
+    detail: { stop: 'INSTRUMENT: always broken', fault: 'crashed' },
+  }));
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, maxRevisions: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(r.finalFrom, 'revise-1', 'no sound iteration exists to fall back to — the last one stands');
+  assert.equal(r.fellBack, null);
+});
+
+test('authorClose (F176): droppedEnv on a fallback is read from the FALLEN-BACK iteration, not left at whatever the dropped iteration set', async () => {
+  // A model-declared genre-owned env name (MYPYPATH for python) reds at
+  // VALIDATION (`genre-owned-env`) before it ever reaches applyGenreEnv, so a
+  // measured iteration's `dropped` is always `[]` in practice — there is no
+  // declaration a model can legally submit that reaches measurement with a
+  // non-empty `dropped`. This test pins the field's PLUMBING (it is read per
+  // iteration from `measuredIterations[k].droppedEnv`, never from the
+  // module-level `droppedEnv` the dropped iteration last overwrote) rather
+  // than a distinguishing non-empty value, which the validator makes
+  // unreachable by construction.
+  const decl1 = { ...goodDeclaration('python'), notes: ['author'] };
+  const decl2 = { ...goodDeclaration('python'), notes: ['revise-2'] };
+  const { generate } = scriptGenerate([{ declaration: decl1 }, { declaration: decl2 }]);
+  let call = 0;
+  const fn = async (/** @type {any} */ declaration) => {
+    call += 1;
+    return declaration.stages.map((/** @type {any} */ s) => (call === 2
+      ? {
+        verdict: 'instrument-stop', exitCode: 97, value: null, baseline: null, baselineSource: null,
+        gapLines: ['TEST:: INSTRUMENT: broke'], judged: true, stage: s.name, kind: s.kind,
+        detail: { stop: 'INSTRUMENT: broke', fault: 'crashed' },
+      }
+      : {
+        verdict: 'green', exitCode: 0, value: 0, baseline: 0, baselineSource: null, gapLines: [], judged: true,
+        stage: s.name, kind: s.kind, detail: {},
+      }));
+  };
+  const r = await authorClose({
+    ...baseArgs(), lang: /** @type {any} */ ('python'), generate, seedReadFn: fn, maxRevisions: 1,
+  });
+  assert.equal(r.finalFrom, 'author');
+  assert.ok(r.fellBack);
+  assert.deepEqual(r.genreEnv.dropped, [], 'no model-declared conflict on either iteration, so both are legitimately empty');
+});
+
 // ── 7. the text fallback, and the consequence of an inexpressible locked kind ─
 
 test('the text fallback parses a fenced declaration and is the ONLY locked-kind demand channel', async () => {
