@@ -93,7 +93,10 @@ test('(a) confirm on round 1 costs exactly one model call', async () => {
   assert.equal(seen[1].kind, 'menu');
 });
 
-test('(b) fix,fix costs exactly 2 calls (never 3) and round-2\'s fix lands in openQuestions — FAIL-FIRST', async () => {
+test('(b) fix,fix costs exactly 2 calls (never 3), and ONLY round-2\'s own fix lands in openQuestions — FAIL-FIRST', async () => {
+  // F175 ledger fix: round 1's "fix" text is the ANSWER to round 2's redraft
+  // — round 2's plan is the response to it — so it must never itself land in
+  // openQuestions. Only round 2's OWN terminal "fix" (D3: no 3rd call) does.
   const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }, { plan: { ...PLAN_ONE, goal: 'Keep the tests green, round 2.' } }]);
   const { ask } = scriptAsk(['', 'fix', 'make it stricter', 'fix', 'also check the CLI']);
   const book = makeCostBook({ ceilingUsd: null });
@@ -102,9 +105,55 @@ test('(b) fix,fix costs exactly 2 calls (never 3) and round-2\'s fix lands in op
   assert.equal(r.ok, true);
   assert.equal(r.stop, null);
   assert.equal(r.rounds, 2);
-  assert.deepEqual(r.accepted?.openQuestions, ['make it stricter', 'also check the CLI']);
+  assert.deepEqual(r.accepted?.openQuestions, ['also check the CLI'], 'round 1\'s "make it stricter" is superseded, never carried');
   // round 2's plan is passed to the composer VERBATIM (D3) — never re-asked a 3rd time
   assert.equal(r.accepted?.goal, 'Keep the tests green, round 2.');
+});
+
+// ── F175 (docs/logs/FINDINGS.md) — the model's honestly-raised `questions`
+// never reached `accepted.openQuestions`, so a genuinely missing answer could
+// be confirmed away silently. Every accepting path now carries the model's
+// own `questions` from the plan being ACCEPTED.
+
+test('(b2) F175 ledger scenario: round-1 fix superseded, round-2 plan has NO questions of its own → openQuestions is []', async () => {
+  const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }, { plan: { ...PLAN_ONE, goal: 'Keep the tests green, round 2.' } }]);
+  const { ask } = scriptAsk(['', 'fix', 'make it stricter', 'confirm']);
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.accepted?.openQuestions, []);
+});
+
+test('(b3) F175: a round-1 plan\'s honest `questions` entry rides through when the person picks Confirm on round 1', async () => {
+  const planWithQuestion = {
+    ...PLAN_ONE,
+    questions: ['Does "in strict mode" mean tsconfig\'s existing setting, or flipping strict:true?'],
+  };
+  const { generate } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
+  const { ask } = scriptAsk(['', 'confirm']);
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.accepted?.openQuestions, [planWithQuestion.questions[0]]);
+});
+
+test('(b4) F175: round-2 fix path carries round-2\'s OWN questions first, then the person\'s fix text', async () => {
+  const round2Plan = { ...PLAN_ONE, questions: ['still unclear whether X or Y'] };
+  const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }, { plan: round2Plan }]);
+  const { ask } = scriptAsk(['', 'fix', 'make it stricter', 'fix', 'also check the CLI']);
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  assert.deepEqual(r.accepted?.openQuestions, ['still unclear whether X or Y', 'also check the CLI']);
+});
+
+test('(b5) F175: "type the goal yourself" still carries the drafted plan\'s own questions', async () => {
+  const planWithQuestion = { ...PLAN_ONE, questions: ['is the CLI in or out of scope?'] };
+  const { generate } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
+  const { ask } = scriptAsk(['', 'type-goal', 'My own goal sentence.']);
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.accepted?.openQuestions, [planWithQuestion.questions[0]]);
 });
 
 test('(c) a book already at its ceiling from absorbed scout calls costs 0 confirm calls and cap-halts', async () => {
@@ -179,7 +228,11 @@ test('(h) a drafted goal naming none of the listed checks is still accepted — 
 test('(i) a secret typed into a fix is redacted before it reaches openQuestions or the next round\'s prompt', async () => {
   const secretFix = 'use sk-ant-api03-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-abcdAA';
   const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }, { plan: PLAN_ONE }]);
-  const { ask } = scriptAsk(['', 'fix', secretFix, 'confirm']);
+  // round 1's OWN fix text feeds round 2's PROMPT (checked below); round 2's
+  // fix text (F175: the only one that can still land in openQuestions, since
+  // round 1's is superseded by the redraft it fed) is what the first
+  // assertion checks — the same secret string covers both redaction points.
+  const { ask } = scriptAsk(['', 'fix', secretFix, 'fix', secretFix]);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.accepted?.openQuestions[0], redactSecrets(secretFix));

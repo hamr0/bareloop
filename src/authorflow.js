@@ -1776,10 +1776,18 @@ export async function runConfirmTurn({
   }
 
   // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
-  /** @type {string[]} */
-  const openQuestions = [];
   /** @type {string|null} */
   let fixText = null;
+  /** F175: `accepted.openQuestions` carries the model's OWN `questions` from
+   * the plan being ACCEPTED — never a prior, superseded round's — secret-
+   * redacted like every other model/person string on this turn. `fixText`
+   * (round 1's own "fix" text) is a SEPARATE mechanism that only feeds round
+   * 2's redraft; it must never land in `openQuestions` on its own — round 2's
+   * plan is the answer to it, and its own `questions` (if it still has any)
+   * are what actually carries forward.
+   * @param {any} plan @returns {string[]} */
+  const questionsFromPlan = (plan) => (Array.isArray(plan?.questions) ? plan.questions : [])
+    .map((/** @type {any} */ q) => redactSecrets(String(q)));
   let convo = [{
     role: 'user',
     content: confirmPrompt({
@@ -1829,7 +1837,7 @@ export async function runConfirmTurn({
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore, openQuestions: questionsFromPlan(r.plan), notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
       };
@@ -1842,7 +1850,7 @@ export async function runConfirmTurn({
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore, openQuestions: questionsFromPlan(r.plan), notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
       };
@@ -1852,15 +1860,17 @@ export async function runConfirmTurn({
     const fix = await ask({ kind: 'fix' });
     if (fix === null) return abandon(round);
     const redactedFix = redactSecrets(String(fix).trim());
-    openQuestions.push(redactedFix);
     if (round === 2) {
       // D3: after round 2 a "fix" is passed to the composer verbatim (via
-      // openQuestions, shown at signing) — there is no 3rd call.
+      // openQuestions, shown at signing) — there is no 3rd call. F175: the
+      // MODEL's own questions from THIS round's plan come first, then the
+      // person's still-pending fix text — order matters (model asked first,
+      // person spoke last) and neither is dropped.
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...questionsFromPlan(r.plan), redactedFix], notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
       };
