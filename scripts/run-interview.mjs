@@ -84,7 +84,7 @@ import {
 import {
   SOURCE_FIELD, destinationFieldFor, labelsFor,
 } from '../src/authorflow.js';
-import { validateJob, PROVIDERS } from '../src/job.js';
+import { validateJob, validateBaseUrl, PROVIDERS } from '../src/job.js';
 import { resolveProvider, probeWarningLines } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
@@ -135,6 +135,16 @@ if (!outArg || verdictArg === null || !providerArg) {
     + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>] [--base-url <url>]`);
 }
 if (budgetError) die(budgetError);
+// VALIDATED HERE, before a single line of the interview prints (never left to
+// wait for `validateJob`'s pass over the finished draft, far below) — a typo
+// must not cost the person the whole interview. `validateBaseUrl` is the ONE
+// spelling of the shape rule (`src/job.js`), reused rather than re-checked by
+// hand. The message NEVER echoes the raw value: it may carry credentials
+// (`user:pass@host`), and naming the rule that refused it is enough.
+if (baseUrlArg !== null) {
+  const baseUrlErr = validateBaseUrl(baseUrlArg);
+  if (baseUrlErr) die(`--base-url invalid — ${baseUrlErr}`);
+}
 // the menu is handed over ENUMERATED — an unknown value is a typo, refused as one.
 // A LOCKED or UNLISTED class is a different answer entirely: it is admissible
 // input, and the LIBRARY refuses it below as counted demand. `VERDICT_CLASSES` is

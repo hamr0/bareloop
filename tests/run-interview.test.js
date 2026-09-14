@@ -622,18 +622,42 @@ test('--base-url absent: the draft has no baseUrl KEY at all — never null, nev
   assert.equal('baseUrl' in draft, false, 'an absent flag must leave the field OUT of the draft, not written as null/\'\'');
 });
 
-test('--base-url http:// to a public host refuses at $0, through the SAME validateJob rule every other field takes — nothing written', () => {
+// The two tests below cover the follow-up fix: a bad `--base-url` used to
+// refuse only at the END of the interview (through `validateJob`, after
+// source prep, every question, budget and wall). It now refuses at flag-parse
+// time, sharing `src/job.js`'s `validateBaseUrl` rule, before a single line of
+// the interview is printed — a typo must not cost the whole interview, and a
+// credential-carrying URL must never be echoed to the terminal before the
+// refusal (`redactSecrets` does NOT mask a `user:pass@host` URL — confirmed
+// separately, out of scope for this fix, so the die() message must not repeat
+// the raw value at all).
+
+test('--base-url http:// to a public host refuses BEFORE the first interview question — nothing written, no session consumed', () => {
   const out = outDir();
+  // no scripted answers at all — proving refusal-before-any-question by
+  // construction (an empty session cannot satisfy even the first prompt), not
+  // just by matching text in the output.
   const r = interview({
-    provider: 'openai-api', baseUrl: 'http://gateway.example.com/v1', out, lines: session(CLASS),
+    provider: 'openai-api', baseUrl: 'http://gateway.example.com/v1', out, lines: [],
   });
-  assert.equal(r.code, 1, r.out);
-  assert.match(r.out, /THE SPEC DRAFT DOES NOT VALIDATE/);
-  assert.match(r.out, /baseUrl/);
-  assert.match(r.out, /https:\/\//, 'the validator\'s own message names the rule (https:// required)');
-  assert.match(r.out, /Nothing was written/);
-  assert.equal(existsSync(join(out, 'specdraft.json')), false);
-  assert.equal(existsSync(join(out, 'answers.json')), false);
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /--base-url invalid/);
+  assert.match(r.out, /https:\/\//, 'the shared validateBaseUrl rule names itself (https:// required)');
+  assert.doesNotMatch(r.out, /── SOURCE/, 'died before the Source section — no question was ever asked');
+  assert.doesNotMatch(r.out, /── 1 of /);
+  assert.equal(existsSync(out), false, 'nothing was written at all — not even the out dir');
+});
+
+test('--base-url carrying credentials refuses BEFORE anything prints, and the credential itself never reaches stdout/stderr', () => {
+  const out = outDir();
+  const CREDENTIAL_URL = 'https://bob:hunter2secretpass@api.deepseek.com/v1';
+  const r = interview({ provider: 'openai-api', baseUrl: CREDENTIAL_URL, out, lines: [] });
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /--base-url invalid/);
+  assert.match(r.out, /no embedded credentials/, 'the rule is named');
+  assert.doesNotMatch(r.out, /hunter2secretpass/, 'the credential itself must never be echoed, in either direction of the refusal');
+  assert.doesNotMatch(r.out, /── SOURCE/, 'died before the Source section — no question was ever asked');
+  assert.equal(existsSync(out), false);
 });
 
 test('the hand-off names the endpoint and points the key hint at OPENAI_API_KEY — no separate endpoint-specific key variable', () => {
