@@ -126,6 +126,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **`run-interview.mjs`'s paid-step hand-off no longer describes a scout a plain folder
+  never gets (item 34 loose-end fix):** since 21561cf (D5=A), a non-repo Source gets no
+  scout — the confirm turn reads the file list and `run-author.mjs` stops at the M4 wall
+  ("no checks for this kind of job yet") before signing is ever reached. The hand-off text
+  printed the repo-only wording ("a real scout over that repository", "It stops at
+  prepareSigning") for every source regardless. A plain-folder session now prints its own
+  line naming the confirm turn and the M4 stop; a repo session's wording is unchanged.
 - **`run-author.mjs`'s `language-unsupported` stop is now counted admission demand (item 34
   loose-end fix on M3):** the check used to print the refusal and `process.exit(1)` before the
   run's spine even existed, so nothing recorded it. The spine is now bootstrapped first (before

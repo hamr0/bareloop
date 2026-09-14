@@ -569,9 +569,22 @@ const childArgs = [
   ...(CEILING_USD === null ? [] : ['--budget', String(CEILING_USD)]),
 ];
 say('');
-say('NEXT — the paid step: a real scout over that repository and a real model filling the declaration form.');
-say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
-say('It stops at prepareSigning: it never signs, and it never runs the job.');
+// Repo and plain-folder sources hand off to genuinely different pipelines
+// (D5=A, item 33 M3 piece 4): a repo gets a real scout and stops at
+// prepareSigning; a plain folder gets NO scout at all — the confirm turn
+// reads the file list, and run-author stops at the M4 wall ("no checks for
+// this kind of job yet") before signing is ever reached. Saying "scout" or
+// "prepareSigning" for a plain folder would describe a run that cannot
+// happen on this source.
+if (IS_REPO) {
+  say('NEXT — the paid step: a real scout over that repository and a real model filling the declaration form.');
+  say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
+  say('It stops at prepareSigning: it never signs, and it never runs the job.');
+} else {
+  say('NEXT — the paid step: a real model reads the file list and walks you through the confirm turn. There is no scout for a plain folder.');
+  say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
+  say('After you confirm, it stops: no checks for this kind of job yet (M4). It never signs and never runs the job.');
+}
 say('');
 // THE KEY NAME FOLLOWS THE CHOSEN PROVIDER (PRD item 34 L17) — no more
 // hardcoded `ANTHROPIC_API_KEY`. `PROVIDER` already passed `validateJob`

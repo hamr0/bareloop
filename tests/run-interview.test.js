@@ -325,6 +325,36 @@ test('a non-repo Source (a plain folder): the form CONTINUES (D5=A) — no write
   assert.equal(draft.writeScope, undefined, 'a plain-folder job has no fence yet (PLAIN_FOLDER_DEFERRED_FIELDS) — never one derived from the output directory');
 });
 
+// PRD item 34 loose end: a plain folder gets NO scout (D5=A, 21561cf) — the
+// hand-off text describing the paid step must say so, never describe the
+// repo-only scout/prepareSigning pipeline that this source never reaches.
+test('a non-repo Source: the hand-off describes the confirm turn and the M4 stop, never a scout or prepareSigning', () => {
+  const out = outDir();
+  const folder = mkdtempSync(join(base, 'plain-folder-handoff-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const destDir = mkdtempSync(join(base, 'plain-dest-handoff-'));
+  const lines = [
+    ...a(folder), ...a(destDir),
+    ...requiredAnswersFor(CLASS).flatMap((q) => a(`answer to question ${q}`)),
+    ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
+  ];
+  const r = interview({ out, lines });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /a real model reads the file list and walks you through the confirm turn/);
+  assert.match(r.out, /There is no scout for a plain folder/);
+  assert.match(r.out, /no checks for this kind of job yet \(M4\)/);
+  assert.doesNotMatch(r.out, /a real scout over that repository/);
+  assert.doesNotMatch(r.out, /It stops at prepareSigning/);
+});
+
+test('a repo Source: the hand-off still describes the real scout and stops at prepareSigning, byte for byte', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /NEXT — the paid step: a real scout over that repository and a real model filling the declaration form\./);
+  assert.match(r.out, /It stops at prepareSigning: it never signs, and it never runs the job\./);
+});
+
 test('a bad Destination (not absolute) is a NAMED refusal and the question is RE-ASKED, never silently fixed', () => {
   const out = outDir();
   const folder = mkdtempSync(join(base, 'plain-folder-'));
