@@ -12203,6 +12203,14 @@ UI it names it through has no path that requires the person to see and resolve i
 "Confirm" is accepted — an honest `questions` list and a menu that can bypass it are two
 different mechanisms, and only one of them was built.
 
+**2026-09-14, `fix/m3-closeout` (commit 245437c):** fixed in code with tests, not yet proven
+live. `runConfirmTurn` now carries the model's own `questions` from the plan being accepted
+into `accepted.openQuestions` on every accepting path, and a related ledger bug (round 1's
+"fix" text surviving into a round-2 acceptance it was already answered by) is corrected too.
+The confirm-turn's menu still offers "Confirm" without forcing a raised question to be
+resolved first — that half of this finding stays open; only the silent-drop half (the
+question never reaching the signed spec's own record at all) is fixed here.
+
 ## F176 — a later revision can be structurally worse than the one it replaces, un-flagged (open)
 
 **2026-09-14, same run `mu0voeo4`.** The revise ladder (`authorClose`'s loop, `src/authorflow.js`)
@@ -12235,3 +12243,9 @@ declaration notes in `resolved-spec.json`.
 "kept the best revision" — a revise loop that only checks *validity* per round, never compares
 soundness ACROSS rounds, can silently regress on its own second-to-last try and hand the
 regression to the person as if it were forward progress.
+
+**2026-09-14, `fix/m3-closeout` (commit 5a83507):** fixed in code with tests, not yet proven
+live. `authorClose` falls back to the newest measured-sound iteration when the last one
+instrument-stopped; `stop` is unchanged and the swap is reported (`fellBack`, an `onPhase`
+event, and the terminal readout). The spine's own `author-phase` events still carry no field
+stating WHY a given revision fired — that half of this finding stays open.

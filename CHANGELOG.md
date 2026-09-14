@@ -5,6 +5,23 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **F176 — the revise ladder kept a later revision even when it measured worse than an earlier
+  one.** `authorClose` (`src/authorflow.js`) now tracks every MEASURED (validated + seed-read)
+  iteration and falls back to the NEWEST SOUND one — a real red/green verdict, never an
+  instrument-stop — when the last measured iteration is unsound and an earlier one is not.
+  `stop` is never changed; the swap is reported via a new `fellBack` return field, an
+  `onPhase('author-fallback', …)` event, and the terminal signing readout. Not yet proven live.
+- **F175 — the confirm turn's own honestly-raised `questions` never reached
+  `accepted.openQuestions`.** `runConfirmTurn` now carries the model's own `questions` from the
+  plan being accepted into `accepted.openQuestions` on every accepting path (confirm, type-goal,
+  the round-2 "fix" terminal), and fixes a related ledger bug where round 1's "fix" text (the
+  answer to round 2's redraft) was carried forward even after round 2 was accepted outright. Not
+  yet proven live.
+
 ## [0.26.0] — 2026-09-14
 
 ### Added
