@@ -12128,10 +12128,9 @@ assertion and a fixture two commits away) that only a whole-suite run catches.
 
 **2026-09-14, live proof run `mu0voeo4` (DeepSeek `deepseek-flash`, patient a copy of pulselog,
 goal "Make src/checks.js pass the type checker in strict mode"), the first live fire of the M3
-piece 4 confirm turn.** Primary artifacts (this session's own scratchpad, per the F172/F173
-convention of citing the path actually captured rather than inventing a copy location — nothing
-in the repo currently archives run spines):
-`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/4807b88d-5930-4c50-be0a-c458bc3fb34f/scratchpad/live/out/`
+piece 4 confirm turn.** Primary artifacts, archived per this file's existing convention (e.g.
+`../bareloop-patients/spines-poc-openai/poc-pm48w5az.jsonl`) at
+`../bareloop-patients/pulselog-confirm-live-mu0voeo4/out/`
 (`author-mu0voeo4.jsonl`, `authored.json`, `resolved-spec.json`, `signing.json`) and the
 adjacent `author.log`. Scanned for secret shapes (`scanSecrets`, `src/validate.js`) before
 citing here: zero hits across every file. The confirm turn's `confirm-done` event
