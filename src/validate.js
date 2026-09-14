@@ -42,10 +42,24 @@ export function globToPrefix(scope) {
 }
 
 /**
+ * Path segments a fence/scope may never contain, checked WHOLE-SEGMENT
+ * (`prefix.split('/')`), never substring — a look-alike (`.github`,
+ * `.gitignore`, `my.git`) is a DIFFERENT name and stays admitted. F178's
+ * ruling (hamr, option B, 2026-09-14): a signed fence naming `.git` could let
+ * a worker write git's own files (refs, the seed, `info/exclude`) and hide
+ * those writes from `changedSet`. Inexpressible at declaration time, the same
+ * law #1 already applies to `..`.
+ * @type {readonly string[]}
+ */
+export const FORBIDDEN_SCOPE_SEGMENTS = Object.freeze(['.git']);
+
+/**
  * A scope may never reach the arbiter's inputs (design law #1): it must
  * resolve to a PROPER subdirectory of the run directory. Absolute paths and
  * ".." segments escape it; "." / "./**" cover the whole run directory — where
  * the close suite lives. Windows spellings ("..\", "C:\") count as escapes.
+ * A `.git` segment anywhere in the prefix is refused too (F178, see
+ * {@link FORBIDDEN_SCOPE_SEGMENTS}).
  * Exported for the job validator: the operator's outer fence obeys the SAME
  * law through the same code — two containment transforms would be the F9
  * red-class one level up.
@@ -59,7 +73,8 @@ export function scopeContained(s) {
   // that normalizes to something absolute can never pass (defense in depth
   // against a future globToPrefix regression; the un-gameable gate, law #1).
   if (prefix === '' || prefix === '.' || prefix.startsWith('/') || /^[a-zA-Z]:/.test(prefix)) return false;
-  return prefix.split('/').every((seg) => seg !== '..');
+  const segments = prefix.split('/');
+  return segments.every((seg) => seg !== '..' && !FORBIDDEN_SCOPE_SEGMENTS.includes(seg));
 }
 
 /** Shared with the job validator — one definition of "a JSON object" for both

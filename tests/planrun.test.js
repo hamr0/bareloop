@@ -13,13 +13,18 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rateSourceFields } from '../src/planrun.js';
+import { runPlan, planPrompt, closeGapBlock, boundedNote, BOUND_REASON_MAX, rateSourceFields, arbiterDeny } from '../src/planrun.js';
 import { ralph, boundGap, GAP_KEEP_TRIM_MARKER } from '../src/ralph.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory, initPatientRepo, currentBranch, localBranches, reply } from './helpers.js';
 import { scanSecrets } from '../src/validate.js';
 import { signCloseScripts, hashCloseScriptBytes } from '../src/close-integrity.js';
+// F178/F177: the real bareguard Gate, driven with the EXACT fs config shape
+// mkWorker builds (src/planrun.js), to prove the runtime belt with no fixture
+// standing in for bareguard's own fs primitive.
+import { Gate } from 'bareguard';
+import { GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from '../src/kinds.js';
 // the check gap's ONE ceiling — the backstop test below derives both arms from it
 // rather than respelling 12000, so a change to the constant moves the test with it
 import { CHECK_GAP_MAX } from '../src/exits.js';
@@ -5203,4 +5208,38 @@ test('a ceiling that DOES offer the retrieval pair passes the capping arm', asyn
     .catch(() => {});
   assert.ok(reached, 'a ceiling offering recall+get satisfies G1 — the guard must not fire');
   rmSync(wd, { recursive: true, force: true });
+});
+
+test('F178: the real bareguard Gate denies a write inside the workdir\'s own .git, driven by mkWorker\'s OWN exported deny-list builder — not a hand-copied mirror', async (t) => {
+  const wd = mkdtempSync(join(tmpdir(), 'f178-git-deny-'));
+  t.after(() => rmSync(wd, { recursive: true, force: true }));
+  initPatientRepo(wd);
+  mkdirSync(join(wd, 'src'));
+  const auditPath = join(wd, GATE_AUDIT_FILE);
+  // arbiterDeny IS the function mkWorker calls to build its Gate's fs.deny —
+  // calling it here (rather than re-typing the array) is what makes this test
+  // actually exercise src/planrun.js's own code, not a fixture that happens to
+  // agree with it today and silently stops meaning anything the day it drifts.
+  const deny = arbiterDeny(wd, auditPath);
+  assert.ok(deny.includes(join(wd, '.git')), 'sanity: arbiterDeny really does name .git');
+  const gate = new Gate({
+    fs: {
+      writeScope: [join(wd, 'src')],
+      readScope: [wd],
+      deny,
+    },
+    audit: { path: null }, // fileless — this test asserts the DECISION, not the audit file
+  });
+
+  const gitWrite = await gate.check({ type: 'write', path: join(wd, '.git', 'config') });
+  assert.equal(gitWrite.outcome, 'deny', 'a write inside .git must be denied');
+  assert.equal(gitWrite.rule, 'fs.deny', 'denied by the fs.deny rule (bareguard node_modules/bareguard/src/primitives/fs.js:62-68), not writeScope');
+
+  const nestedGitWrite = await gate.check({ type: 'write', path: join(wd, '.git', 'refs', 'heads', 'main') });
+  assert.equal(nestedGitWrite.outcome, 'deny', 'a write anywhere UNDER .git must be denied — fs.deny is prefix-containment (within()), not a single-file check');
+
+  // and the fence still works normally for an in-scope write — the .git deny
+  // is additive, it must never narrow the signed fence itself
+  const scopedWrite = await gate.check({ type: 'write', path: join(wd, 'src', 'mod.mjs') });
+  assert.equal(scopedWrite.outcome, 'allow', 'an ordinary in-fence write must still be allowed');
 });

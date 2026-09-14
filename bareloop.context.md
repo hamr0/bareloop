@@ -3385,6 +3385,13 @@ under it — this is a passthrough, not a jail.
   denies the gate audit path and every `ARBITER_BOOK_STORES` path under the workdir
   (`src/authorscout.js:295`); a plan step's read scope is the workdir alone
   (`src/planrun.js:1894`).
+- **A signed fence can never name `.git` (F178).** `scopeContained` (`src/validate.js`,
+  design law #1's own function — `validateJob`'s `writeScope` and `validatePlan`'s step
+  `scope`/exit `target`/`path` all go through it) refuses any fence/scope whose normalized
+  prefix has a whole path segment equal to `.git` — `.git/**`, `a/.git/**`, but not a
+  look-alike like `.github/**` or `my.git/**`. The worker Gate's `fs.deny` list
+  (`arbiterDeny(workdir, auditPath)`, `src/planrun.js`) adds `join(workdir, '.git')` as a
+  runtime belt behind that rule.
 
 **What it does not guarantee:** no network egress control and no container/VM isolation —
 this repo has neither built nor documented either. `CLOSE_ENV_DENY`'s deny rule matches

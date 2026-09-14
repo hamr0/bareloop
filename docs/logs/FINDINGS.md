@@ -12299,3 +12299,62 @@ is reported, not fixed here.
 directory — the two causes are indistinguishable to `changedSet` by construction, so the fence
 that decides what a worker may touch is the only place this gap can close, never the exclude
 file.
+
+## F178 — a signed fence could reach inside .git (fixed in code)
+
+Nothing stopped a signed job's `writeScope` (or a workflow step's narrower `scope`/exit
+`target`) from naming `.git` directly — `.git/**`, or a nested spelling like `a/.git/**` under
+an otherwise-legal prefix. `scopeContained` (`src/validate.js:54`, the ONE containment law both
+`validateJob` and `validatePlan` go through, PRD design law #1) rejected absolute paths, `..`
+segments and drive letters, but had no opinion about `.git` as a path segment. A worker granted
+such a fence could write git's own files directly — refs, the seed commit, `.git/info/exclude`
+(the very file F177's fix just started writing to) — and every one of those writes is INVISIBLE
+to `changedSet` (`src/kinds.js:601-621`, a tracked-diff ∪ `git ls-files --others` union that
+never inspects `.git` itself), so the arbiter's own "what did the worker do" reader could be
+fed a lie by the worker rewriting the repository underneath it.
+
+**hamr's ruling (2026-09-14, option B): block both, fix now.** Order: this item first (own
+commit), then the F177 `node_modules` gap (own commit, see the dated update on F177 above).
+Tighten-only, same session, branch `fix/m3-closeout`.
+
+**Fixed in code.** Two layers, same shape as every other fence law in this file:
+  - **Declaration-time (the real stop):** `scopeContained` now refuses any prefix whose
+    normalized path has a whole SEGMENT equal to `.git` (`FORBIDDEN_SCOPE_SEGMENTS`,
+    `src/validate.js`) — whole-segment only, so a look-alike (`.github`, `.gitignore`,
+    `my.git`) is a DIFFERENT name and stays admitted. Every call site (`job.js:386`'s
+    `writeScope`, `plan.js`'s step `scope`/exit `target`/`path`) goes through this one
+    function, so the rule lands everywhere a fence or scope is legality-checked without a
+    second, driftable copy (the F9 red-class this function already exists to prevent).
+  - **Runtime belt:** the worker Gate's `fs.deny` list (built by the new `arbiterDeny(workdir,
+    auditPath)`, `src/planrun.js`, called from `mkWorker`) now includes `join(workdir, '.git')`
+    beside the gate-audit file and the two arbiter book stores. bareguard's `fs.deny` is exact
+    prefix-containment (`within()`, `node_modules/bareguard/src/primitives/fs.js:26-31`), so one
+    entry at the workdir root covers the whole `.git` tree — there is exactly one `.git` per
+    repo, always at the workdir root, unlike `node_modules` which can nest at any depth (see
+    the F177 update above for why that gap needs a different mechanism). This belt is
+    UNREACHABLE through the shipped path today (the declaration-time rule already refuses any
+    fence that could reach it) — kept anyway as defense-in-depth against a future validator
+    regression, the same posture `mkWorker`'s work-branch hard rule already takes for a
+    different precondition.
+  - `authorscout.js`'s read-only scout Gate (`defaultSurveyor`) was checked and left alone: its
+    `writeScope` is always `[]` (no write verb is ever granted there), so no write of any kind
+    — `.git` included — can reach it regardless of the deny list; adding the entry would be
+    inert.
+  - `proveDestination`'s repo-source branch (`src/source.js:469-472`) does not yet validate a
+    Destination answer at all beyond non-empty — the comment there says wiring Destination into
+    `writeScope` is a later milestone (M3/M4). Traced where a real job's `writeScope` actually
+    gets its value today: the AUTHORING DRAFT sets it (`authorjob.js`'s `writeScope` param,
+    composed via `writeScopeBlock`), and every draft is `validateJob`-checked before it can be
+    signed — so a Destination of `.git`, wired in later exactly as planned, is already caught at
+    that one choke point without touching `proveDestination` today. Confirmed with a dedicated
+    `validateJob` test (`tests/job.test.js`) asserting `writeScope: ['.git/**']` reds
+    `invalid-value:writeScope`.
+  - Audited every `jobs/*.json` spec and `tests/` fixture for a fence naming `.git` or
+    `node_modules`: none found.
+
+Tests: `tests/validate.test.js` (whole-segment rejection + look-alikes admitted, both fail-first
+against the reverted function), `tests/job.test.js` (two new `RED_CASES` rows through the real
+`validateJob`), `tests/planrun.test.js` (a real bareguard `Gate`, driven by `arbiterDeny` itself
+— not a hand-typed mirror of it, so the test actually exercises `src/planrun.js`'s own code and
+was proven to fail-first when the function's `.git` entry was reverted). **Not yet proven
+live** — a real end-to-end run attempting a `.git` write has not been executed.

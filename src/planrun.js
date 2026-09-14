@@ -11,7 +11,9 @@
 // absolute repo root, its target, prior steps' artifacts labeled by id, its
 // gap, and a cut-off notice. It NEVER sees the budget, the close command, a
 // check's command, the validator, other steps' grants, or the arbiter's books
-// (fs.deny on the gate audit / .smoke / .litectx, unchanged).
+// (fs.deny on the gate audit / .smoke / .litectx / the workdir's own .git,
+// unchanged — F178, the runtime belt behind the validator's scopeContained
+// rejection of any signed fence naming `.git`).
 
 import { createRequire } from 'node:module';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -466,6 +468,24 @@ const REPLAN_GAP_KEEP = '\\S';
  * one. A labelled empty section would be an invitation to explain an absence the
  * run never observed (a stall never judged its exits at all).
  *
+ * The worker Gate's fs.deny list — the arbiter's books (the gate audit file
+ * itself, `.smoke`, `.litectx`) plus the workdir's own `.git` (F178, hamr's
+ * option B ruling 2026-09-14): a signed fence can never NAME `.git`
+ * (`scopeContained`, src/validate.js) so this line is a belt, not the primary
+ * stop — but it is what actually reaches bareguard's Gate at runtime, so it is
+ * exported and called from ONE place (mkWorker below) rather than re-typed,
+ * for the same reason `globToPrefix` is shared between the legality rule and
+ * the enforcement mapping: a second, drifting copy is how a fence validates
+ * green and means something else at runtime (the F9 red-class).
+ * @param {string} workdir absolute repo root
+ * @param {string} auditPath absolute path to this run's gate-audit.jsonl
+ * @returns {string[]}
+ */
+export function arbiterDeny(workdir, auditPath) {
+  return [auditPath, join(workdir, '.git'), ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))];
+}
+
+/**
  * @param {string | null | undefined} gap the step's last exit gap text
  * @returns {string} the labelled block, or '' when there is nothing to show
  */
@@ -2248,7 +2268,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // uses), so this can only tighten, never widen
         writeScope: writable ? (fence ?? fencePrefixes) : [],
         readScope: [workdir],
-        deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))],
+        deny: arbiterDeny(workdir, auditPath),
       },
       budget: { maxCostUsd: Math.max(remainingUsd(), 0.0001) },
       limits: { maxTurns },

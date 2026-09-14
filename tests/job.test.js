@@ -106,6 +106,12 @@ const RED_CASES = [
   ['fence with a mid-path wildcard (inexpressible in enforcement, F9)', (j) => { j.writeScope = ['src/*/gen/**']; }, 'invalid-value:writeScope'],
   ['absolute fence', (j) => { j.writeScope = ['/etc/**']; }, 'invalid-value:writeScope'],
   ['whole-run-dir fence (the close lives there)', (j) => { j.writeScope = ['./**']; }, 'invalid-value:writeScope'],
+  // F178 (hamr, option B, 2026-09-14): a fence naming .git is arbiter territory —
+  // this is the choke point a Destination of ".git" would ALSO have to clear once
+  // it is wired into writeScope (src/source.js:442), so refusing it here already
+  // closes that door even before the wiring lands.
+  ['fence naming .git directly', (j) => { j.writeScope = ['.git/**']; }, 'invalid-value:writeScope'],
+  ['fence naming .git nested under an otherwise-legal prefix', (j) => { j.writeScope = ['a/.git/**']; }, 'invalid-value:writeScope'],
 
   // -- the environment label (declared keys only, V3) --
   ['unknown condition key', (j) => { j.conditions.weather = 'sunny'; }, 'unknown-field:conditions.weather'],

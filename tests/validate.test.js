@@ -113,3 +113,20 @@ test('scopeContained rejects every escape spelling and accepts the equivalent co
     assert.ok(!globToPrefix(ok).startsWith('/'), 'and never normalizes to an absolute prefix');
   }
 });
+
+// F178 (hamr, option B, 2026-09-14): a signed fence could name `.git` directly
+// and let a worker write git's own files, hidden from `changedSet`. WHOLE-SEGMENT
+// rejection only — a look-alike name (`.github`, `.gitignore`, `my.git`) is a
+// DIFFERENT directory and must stay admitted, or the rule would false-red a
+// perfectly ordinary fence.
+test('scopeContained rejects a fence naming ".git" as a whole path segment, at any depth', () => {
+  for (const bad of ['.git/**', '.git', 'a/.git/b/**', 'a/.git/**', 'x/y/.git']) {
+    assert.equal(scopeContained(bad), false, `${JSON.stringify(bad)} must not be contained — .git is arbiter territory`);
+  }
+});
+
+test('scopeContained still admits ".git"-like names that are not the whole segment ".git"', () => {
+  for (const ok of ['.github/**', '.gitignore', 'my.git/**', 'src/dot.git.bak/**']) {
+    assert.equal(scopeContained(ok), true, `${JSON.stringify(ok)} is a look-alike, not .git itself — must stay admitted`);
+  }
+});

@@ -9,6 +9,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F178 — a signed fence could name `.git` directly, letting a worker write git's own files
+  (refs, the seed, `.git/info/exclude`) invisibly to `changedSet`.** `scopeContained`
+  (`src/validate.js`, the one containment law `validateJob` and `validatePlan` both go through)
+  now refuses any fence/scope whose normalized prefix has a whole path segment equal to `.git`
+  (hamr's ruling, 2026-09-14, option B) — a look-alike like `.github`/`my.git` stays admitted.
+  The worker Gate's `fs.deny` (`arbiterDeny`, `src/planrun.js`) adds the workdir's own `.git` as
+  a runtime belt. Not yet proven live.
 - **F177 — a repo source whose tracked `.gitignore` did not mention `node_modules` let
   installed packages read as the worker's own writes.** `changedSet` (`src/kinds.js`) unions
   the tracked diff with `git ls-files --others --exclude-standard`, so an unignored
