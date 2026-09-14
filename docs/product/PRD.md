@@ -450,7 +450,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
       `--base-url` flag (commit e91e37f), not yet proven live.
     - [ ] `prepareSource` freezes tracked files only — a repo job's toolchain (e.g.
       `node_modules`) is absent from the prepared tree, undocumented in the interview/hand-off.
-      — fixed: `$0` stop names the install command (commit 4285e22), not yet proven live.
+      — fixed: `$0` stop names the install command (commit 941cf7d), not yet proven live.
     - [ ] The real person path (`run-interview` → spawned `run-author` reading the keyboard) has
       never run live — ruling 9's proof is still owed.
     - [ ] The plain-folder confirm turn (D5) and soft-green jobs through the confirm turn are
