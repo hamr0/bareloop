@@ -77,6 +77,43 @@ const MAX_SAME_DAY = 99;
 const refuse = (code, stop) => ({ stop, code });
 
 /**
+ * F177 / hamr's ruling (2026-09-14, option A): a `kind: 'repo'` copy's own
+ * `node_modules/` stays hidden from `changedSet` (src/kinds.js) even when the
+ * SOURCE repo's tracked `.gitignore` does not mention it — the person
+ * installs packages into the copy themselves (`missingDependencies`,
+ * `source-deps-missing`), and an unignored `node_modules` then reads as 247
+ * files of "the worker's own writes" (live-verified against a real copy of
+ * pulselog). The fix writes into the copy's PRIVATE exclude file
+ * (`.git/info/exclude`, resolved via `--git-path` rather than assumed —
+ * worktree layouts keep it in the common dir, not the per-worktree one) —
+ * never the tracked `.gitignore` — so the source repo's own files, including
+ * its `.gitignore` bytes, are never touched. Idempotent: an existing
+ * `node_modules/` line is left alone rather than duplicated.
+ *
+ * Plain folder/file/URL sources never call this — they have no `.git` of
+ * their own to carry a private exclude, and (M2b fix 6, above) their
+ * `.gitignore` is deliberately powerless over what the seed holds at all.
+ * @param {string} treeDir
+ * @returns {Promise<SourceRefusal|null>}
+ */
+async function hideNodeModulesInCopy(treeDir) {
+  const gp = await git(treeDir, ['rev-parse', '--git-path', 'info/exclude']);
+  if (!gp.ok) return refuse('source-git-failed', `git rev-parse --git-path info/exclude failed in ${treeDir}: ${gp.err}`);
+  const excludeRel = gp.out.trim().split('\n')[0].trim();
+  if (!excludeRel) return refuse('source-git-failed', `git rev-parse --git-path info/exclude returned nothing in ${treeDir}`);
+  const excludePath = join(treeDir, excludeRel);
+  await mkdir(dirname(excludePath), { recursive: true });
+  let existing = '';
+  try { existing = await readFile(excludePath, 'utf8'); } catch { /* no exclude file yet — created fresh below */ }
+  const hasLine = existing.split('\n').some((l) => l.trim() === 'node_modules/');
+  if (!hasLine) {
+    const sep = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+    await writeFile(excludePath, `${existing}${sep}node_modules/\n`);
+  }
+  return null;
+}
+
+/**
  * Walk from `startDir` upward — inclusive — to the NEAREST ancestor whose own
  * directory carries a `.git` entry, whether that entry is a real repo
  * directory or a linked-worktree/submodule FILE (the caller decides what a
@@ -611,6 +648,10 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
     // strip the copied hooks (see NO_HOOKS above) — `force: true` because a
     // repo with no hooks configured has no `hooks/` to remove at all
     await rm(join(treeDir, '.git', 'hooks'), { recursive: true, force: true });
+    // F177: hide the copy's own future `node_modules/` before the seed is
+    // committed below — see `hideNodeModulesInCopy`'s docstring
+    const hideStop = await hideNodeModulesInCopy(treeDir);
+    if (hideStop !== null) return hideStop;
   }
   await mkdir(outputDir, { recursive: true });
   // git tracks no empty directories — a `.gitkeep` is what makes `output/`

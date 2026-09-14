@@ -337,6 +337,71 @@ test('prepareSource: a node_modules/.bin-shaped symlink (untracked, as npm actua
   assert.ok(!existsSync(join(into, 'tree', 'node_modules')), 'node_modules is untracked and must never reach the copy at all');
 });
 
+// ── F177: the copy's own future node_modules stays hidden from changedSet ──
+// hamr's ruling (2026-09-14, option A): a repo source whose TRACKED
+// .gitignore does not mention node_modules would otherwise have every file
+// the person installs into the COPY (missingDependencies) read as the
+// worker's own writes by `changedSet` (src/kinds.js) — live-verified on a
+// real copy of pulselog at 247 files. The fix writes only into the copy's
+// PRIVATE `.git/info/exclude`; the tracked `.gitignore` bytes are untouched.
+
+test('F177: a repo whose tracked .gitignore does not mention node_modules — installed packages in the COPY are invisible to changedSet, but a real new file is still caught', async () => {
+  const source = tmp('bareloop-src-repo-f177-');
+  gitFix(source, ['init', '-q']);
+  writeFileSync(join(source, '.gitignore'), 'dist/\n'); // deliberately does NOT mention node_modules
+  writeFileSync(join(source, 'package.json'), '{"name":"x","dependencies":{"y":"1.0.0"}}\n');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'root, no node_modules in .gitignore']);
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  const tree = join(into, 'tree');
+
+  // the tracked .gitignore bytes reached the copy byte-identical — never rewritten
+  assert.equal(readFileSync(join(tree, '.gitignore'), 'utf8'), readFileSync(join(source, '.gitignore'), 'utf8'));
+
+  // simulate the person installing packages in the COPY, same shape npm uses
+  mkdirSync(join(tree, 'node_modules', 'some-pkg'), { recursive: true });
+  writeFileSync(join(tree, 'node_modules', 'some-pkg', 'index.js'), 'module.exports = 1;\n');
+  writeFileSync(join(tree, 'node_modules', '.package-lock.json'), '{}\n');
+  // and a real, unrelated new file outside node_modules — must still be caught
+  writeFileSync(join(tree, 'src.new.js'), 'export const x = 1;\n');
+
+  const others = execFileSync('git', ['-C', tree, 'ls-files', '--others', '--exclude-standard'], { encoding: 'utf8' })
+    .split('\n').map((l) => l.trim()).filter(Boolean);
+  assert.deepEqual(others, ['src.new.js'], 'node_modules must be fully hidden from git itself, not merely filtered downstream');
+
+  const { changedSet } = await import('../src/kinds.js');
+  const cs = await changedSet(tree, r.manifest.seed);
+  assert.equal(cs.stop, null, cs.stop ?? undefined);
+  assert.deepEqual(cs.paths, ['src.new.js'], 'the installed packages read as nothing; the real new file still reads as a change');
+});
+
+test('F177: the copy\'s private exclude file is idempotent — a line already carried over from the SOURCE repo\'s own info/exclude is not duplicated', async () => {
+  const source = tmp('bareloop-src-repo-f177-idem-');
+  gitFix(source, ['init', '-q']);
+  writeFileSync(join(source, 'a.txt'), 'x');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'root']);
+  // the SOURCE repo's own private exclude already carries the exact line this
+  // fix would add — `.git` is copied wholesale (src/source.js `cp(... '.git' ...)`)
+  // before the hide step runs, so this is the real path that exercises "already
+  // present", not a hand-written double of the fix's own file.
+  mkdirSync(join(source, '.git', 'info'), { recursive: true });
+  writeFileSync(join(source, '.git', 'info', 'exclude'), '# some local ignore\nnode_modules/\n');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  const tree = join(into, 'tree');
+  const excludeRel = execFileSync('git', ['-C', tree, 'rev-parse', '--git-path', 'info/exclude'], { encoding: 'utf8' }).trim();
+  const content = readFileSync(join(tree, excludeRel), 'utf8');
+  const lines = content.split('\n').filter((l) => l.trim() === 'node_modules/');
+  assert.equal(lines.length, 1, 'exactly one node_modules/ line, never duplicated');
+  assert.ok(content.includes('# some local ignore'), 'pre-existing exclude content is preserved, not overwritten');
+});
+
 test('prepareSource: a TRACKED symlink escaping the repo root refuses source-symlink; one that stays inside is copied verbatim as a link (D1)', async () => {
   const outside = tmp('bareloop-src-repo-symlink-outside-target-');
   writeFileSync(join(outside, 'secret.txt'), 'outside the source root');
