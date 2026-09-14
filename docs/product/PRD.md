@@ -430,6 +430,12 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     **2026-09-13 — M3 piece 4 (the confirm turn) open decisions ruled** (D5=A, D6=A, D1-D4/D7
     defaults taken) — see `docs/product/ITEM33-BUILD.md` M3 ruling 5's addendum for detail.
 
+    **2026-09-14 — D6 = A, "replace it"**: `TYPES_GENRE_TEMPLATE` (`src/authoring.js`)
+    rewritten so its WORK-stage skeleton and STRICT-checker mandate compose only for a
+    confirmed check — see `docs/product/ITEM33-BUILD.md` M3's dated addendum for the new
+    frozen block (supersedes the prereg's addendum 3 for the product; that closed record is
+    never edited).
+
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
     POC's negative scenario N4 (`docs/product/EXPORT-BUILD.md`): `jobSpecHash` covers

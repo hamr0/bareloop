@@ -187,11 +187,16 @@ test('catalogue: the catalogue option is LOAD-BEARING — a narrowed catalogue r
 
 // ── the TYPES genre template: FROZEN TEXT ────────────────────────────────────
 
-test('genre template: byte-identical to the prereg\'s frozen policy text', () => {
-  const doc = readFileSync(join(REPO, 'docs/logs/2026-08-08-close-authoring-gate2-poc-prereg.md'), 'utf8');
+// PRD item 33 M3 piece 4, D6 = A ruling (2026-09-14): the frozen template's
+// source of truth MOVED from the prereg (closed, never edited) to
+// docs/product/ITEM33-BUILD.md's own dated block — this re-pins to that new
+// location, same extractor shape (marker line, skip blanks, collect until
+// the next blank line).
+test('genre template: byte-identical to ITEM33-BUILD.md\'s own frozen block (D6=A, 2026-09-14)', () => {
+  const doc = readFileSync(join(REPO, 'docs/product/ITEM33-BUILD.md'), 'utf8');
   const lines = doc.split('\n');
-  const marker = lines.findIndex((l) => l.startsWith('**The frozen TYPES genre template'));
-  assert.notEqual(marker, -1, 'the prereg no longer carries the frozen template marker — the source of truth moved');
+  const marker = lines.findIndex((l) => l.startsWith('**The TYPES genre template (D6=A'));
+  assert.notEqual(marker, -1, 'ITEM33-BUILD.md no longer carries the frozen template marker — the source of truth moved');
   let i = marker + 1;
   while (i < lines.length && lines[i].trim() === '') i++;
   const block = [];

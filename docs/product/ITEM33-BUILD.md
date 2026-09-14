@@ -417,6 +417,38 @@ EXISTING audit records — no new record format.
      **D7 = A** (the $0 questions — language pick when ambiguous, "worse than before" for a
      repo — are asked BEFORE the scout, so a missing person at end of input stops at $0).
 
+   **Addendum (hamr, 2026-09-14) — D6 = A, "replace it":** the S3 STOP over
+   `TYPES_GENRE_TEMPLATE` (above) is resolved. hamr's ruling: replace the frozen template text
+   itself so its WORK-stage skeleton and STRICT-checker mandate are no longer unconditional law
+   — composed only when a confirmed check (or, absent a confirm turn, the goal/interview
+   answers) asks for them. This SUPERSEDES
+   `docs/logs/2026-08-08-close-authoring-gate2-poc-prereg.md`'s addendum 3 frozen block for the
+   product going forward (that record is closed and is never edited — this is a pointer, not a
+   rewrite). The GUARDS (changed-from-seed, no-suppressions) are unaffected: they are enforced
+   structurally (`classGuards` + `validateDeclaration`'s `guards-absent` red), never by this
+   prompt text, so they stay always-on regardless of what the template says.
+
+**The TYPES genre template (D6=A, 2026-09-14):**
+
+1. The STRICT form of the language's type checker is used only when a confirmed check — or,
+   absent a confirm turn, the goal and interview answers — asks for strict typing; otherwise the
+   checker runs at whatever strictness the repo's own scripts already use.
+2. Tools are invoked so their binaries actually resolve — through the project's own package
+   runner or language module runner, never a bare binary name.
+3. The WORK stages — typecheck (error count IN the target scope, baseline 0, lower-is-better),
+   typecheck-outside (error count OUTSIDE the target scope, baseline measured at seed, a
+   ceiling — required whenever a typecheck stage is scoped to a subset of the tree), tests-kept
+   (a floor on tests that actually EXECUTED, baseline at seed, higher-is-better; a skipped or
+   deselected test did not run and must not count), and suite-green (the suite exits clean AND
+   reports zero failing tests — two assertions) — are composed ONLY for the checks a confirmed
+   plan asked for (or, absent a confirm turn, the goal and interview answers). The GUARDS —
+   changed-from-seed and no-suppressions — are composed always, first-red-wins:
+   changed-from-seed before every WORK stage, no-suppressions last.
+4. One population per stage — two structurally different counts never share a stage.
+5. The checker must judge the PATIENT's own tree: if imports could resolve to an installed or
+   editable copy elsewhere, the environment is set so they resolve inside the patient.
+6. A number the tool did not report is unknown, never zero.
+
 ## M3b — language guards
 
 Languages are detected from the repo by code (M3, ruling 3 above), never asked. Beyond js and

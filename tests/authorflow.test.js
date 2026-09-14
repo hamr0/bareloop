@@ -484,7 +484,7 @@ test('the authoring prompt carries the genre template, the catalogue and the FIL
     listingBlock: 'FILES THAT ACTUALLY EXIST', lang: 'js', guards: greenGuards('js'),
     ownedEnvNames: genreOwnedEnvNames('js'), verdictType: 'green',
   });
-  assert.match(p, /The graded instrument is the STRICT form/, 'the frozen TYPES template is law for the declaration');
+  assert.match(p, /The STRICT form of the language's type checker/, 'the TYPES template is law for the declaration (D6=A, 2026-09-14 wording)');
   // the catalogue this prompt names is the PICKED CLASS's menu (softgreen module
   // 3), not the whole live set: a green job is never shown a kind whose pick
   // would red as `class-ceiling` after the call was paid for.
