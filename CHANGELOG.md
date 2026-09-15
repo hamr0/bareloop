@@ -9,6 +9,19 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F179/F180 — bare-agent 0.42.0's OpenAIProvider could throw a raw SyntaxError mid-call (a
+  malformed tool-call `arguments` string, `JSON.parse` with no try/catch), crashing past
+  `askStructured` and discarding an already-sound, already-measured declaration while the
+  billed call went unbooked.** `askStructured` (`src/authorflow.js`) now wraps its `generate`
+  call in try/catch, tested against a new shared predicate, `callCasualty` (`src/text.js`,
+  beside `priceOf`): a `HaltError` still re-raises (a governance exit, never laundered); an
+  ETIMEDOUT/TimeoutError-shaped throw or a JSON-mentioning SyntaxError lands as the same typed
+  `providerError` the resolved-`{error}` path already produced, booked at `costUsd: null`
+  (honest-unknown, never a complete-looking floor); anything else still crashes.
+  `authorscout.js`'s `settled` seam, which already hand-caught its own narrower idle-timeout
+  class, now delegates to the same predicate. No JSON repair, no new retry. Not yet proven live
+  (run `mu2bjmed` is the live crash this fixes; the corroborating upstream ask is BA-27 in
+  `docs/product/UPSTREAM-ASKS.md`).
 - **F178/F177 — a signed fence could name `.git` or `node_modules` directly (or reach a nested
   `node_modules` through an otherwise-legal fence), letting writes there go invisibly to
   `changedSet`.** `scopeContained` (`src/validate.js`, the one containment law `validateJob`

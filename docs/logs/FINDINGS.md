@@ -12485,6 +12485,16 @@ Candidate direction (unruled): wrap the tool-call parse (or the whole `generate`
 malformed-arguments SyntaxError becomes a typed, catchable provider-shape red instead of an
 uncaught crash, letting F176's fallback-to-newest-sound-iteration logic run.
 
+**2026-09-15 update — fixed in code, not yet proven live** (commit 318e066, `fix/m3-closeout`).
+`askStructured`'s `generate` call is now wrapped in try/catch, tested against `callCasualty`
+(`src/text.js`, new): a `HaltError` still re-raises (a governance exit, never laundered); an
+ETIMEDOUT/TimeoutError-shaped throw or a JSON-mentioning SyntaxError lands as the same typed
+`providerError` shape the resolved-`{error}` path already produced; anything else still crashes.
+`authorClose`'s existing `ask.providerError` handling (the F176-adjacent fallback described
+above) now runs on this class too, so the author call's already-measured, already-sound
+declaration is kept rather than discarded. No JSON repair, no retry added. Upstream: the
+corroborating entry is filed, BA-27 in `docs/product/UPSTREAM-ASKS.md`.
+
 ## F180 — the crashed call's spend is not booked; the run's total cost is under-reported (open)
 
 Same run (mu2bjmed). The revise-1 HTTP response came back (the parse happens on
@@ -12509,6 +12519,16 @@ under-reporting is the unsafe direction for a cap.
 Candidate direction (unruled): book (or at least mark incomplete) the pre-throw response data —
 including `usage` when the transport returns it — before the tool-call argument parse can
 crash the call.
+
+**2026-09-15 update — fixed in code, not yet proven live** (commit 318e066, `fix/m3-closeout`).
+The same `askStructured` try/catch that fixes F179 now also books the crashed call before
+returning: `book.add(label, { error: reason }, attempts)` runs inside the catch, exactly the
+resolved-`{error}` path's own shape, so `priceOf({error: reason})` reads `costUsd: null` and the
+tally's `spendComplete` reads `false` — never the complete-looking floor `mu2bjmed` recorded.
+This does NOT recover the crashed call's `usage`: bare-agent's own throw still discards it before
+it can reach `book.add` (that half is upstream's to fix, BA-27 in
+`docs/product/UPSTREAM-ASKS.md` — filed, not landed). The mitigation here makes the total read
+honestly-incomplete rather than falsely complete; it does not make it complete.
 
 ## F181 — a key with an embedded newline crashes inside the paid span instead of refusing at $0 (open)
 
