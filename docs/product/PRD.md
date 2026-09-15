@@ -473,8 +473,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
       stub-tested only, never run live.
     - [x] `bareloop.context.md` does not describe commit 2b45f09's change (`classGuards` +
       write-fence protections, the model's `notChecked` list). — fixed in the v0.26.0 docs follow-up
-    - [ ] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed
-      in `src/promptregisters.js`'s `PROMPT_REGISTERS` — decide whether to add it.
+    - [x] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed
+      in `src/promptregisters.js`'s `PROMPT_REGISTERS` — decide whether to add it. — added,
+      commit 3761644.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export

@@ -33,6 +33,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **Item 6 — `src/authoring.js`'s `TYPES_GENRE_TEMPLATE` (model-facing prompt text,
+  interpolated verbatim into the authoring prompt) was missing from `src/
+  promptregisters.js`'s `PROMPT_REGISTERS` inventory entirely.** Added; no other prompt content
+  found in that file. `docs/product/PRD.md`'s item 33 close-out box ticked.
 - **F182 — the interview never waited for the install, so "Run it now?" was unreachable for a
   repo that needs packages.** `scripts/run-interview.mjs` printed the install-gap message right
   after `prepareSource` and fell straight through to the class questions, only re-checking
