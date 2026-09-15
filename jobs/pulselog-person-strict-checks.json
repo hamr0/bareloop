@@ -1,0 +1,226 @@
+{
+  "schema": "job-v1",
+  "job": "pulselog-strict-checks",
+  "description": "pulselog-strict-checks — authored through the bareloop interview (green, js) against /home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/tree",
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 5,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "src/**"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Under `npx tsc --noEmit --strict`, src/checks.js reports zero type errors and no other file in src/ gains a type error it did not already have, and `npm test` still reports all existing tests passing.",
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/"
+          ]
+        }
+      },
+      {
+        "name": "typecheck-checks-strict",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--noEmit",
+            "--strict"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "src/checks.js"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0,
+          "timeoutMs": 300000
+        }
+      },
+      {
+        "name": "typecheck-outside-checks",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--noEmit",
+            "--strict"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "src/"
+            ],
+            "excludePrefixes": [
+              "src/checks.js"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": "seed",
+          "timeoutMs": 300000
+        }
+      },
+      {
+        "name": "tests-executed-floor",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed",
+          "timeoutMs": 600000
+        }
+      },
+      {
+        "name": "suite-green",
+        "kind": "command-exit",
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "expectExit": 0,
+          "timeoutMs": 600000
+        }
+      },
+      {
+        "name": "suite-zero-failures",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0,
+          "timeoutMs": 600000
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "Ordering: the two structural/guard stages (changed-from-seed, then the two tsc stages, then the three test stages, with no-suppressions last) put cheap static checks ahead of the expensive `npm test` runs, and the always-on guards are kept at the ends the genre fixes.",
+      "Strictness: the confirmed plan explicitly names `npx tsc --noEmit --strict`, so both typecheck stages pass --strict on the command line. Note this OVERRIDES the repo's own tsconfig, which the survey reports as strict:false (with only strictNullChecks:true); the seed baseline for typecheck-outside is therefore measured under --strict too, and may be non-zero for reasons unrelated to src/checks.js.",
+      "Typecheck binaries resolve through `npx` (never a bare `tsc`), and the tests through the project's own script `npm test` (node --test). No env is set: the survey lists envNeeds as [] and nothing in the required-to-run sense depends on an external variable (PULSELOG_STAGE/PULSELOG_SUBJECT are child-process contract variables set by the code, not needed here).",
+      "The tsc term uses the genre-measured PIPED shape `error TS\\d+` (tallied, aggregate sum, whole-output), because tsc prints a different line on a terminal than down a pipe; it is anchored on the code so both path spellings (the `path(line,col):` form and the `path:line:col -` form) are read.",
+      "Scope split: `typecheck-checks-strict` counts only error lines whose file path is src/checks.js (the goal's target, ceiling 0); `typecheck-outside-checks` counts error lines under src/ but NOT src/checks.js, with the ceiling taken as this run's own seed baseline. These are two distinct populations and therefore two distinct stage names/series.",
+      "The confirmed plan's `suite-green` is described as TWO assertions (clean exit AND zero failing tests). The catalogue has no kind that makes two assertions in one stage, so I composed it as two stages with distinct names: `suite-green` is the command-exit assertion (npm test exits 0) and `suite-zero-failures` is the fail-count assertion (the TAP `# fail N` figure must be exactly 0). Neither is approximated; each is its own mechanical measurement.",
+      "`tests-executed-floor` counts the TAP `# tests N` EXECUTED figure, not passes, so a suite that silently stopped running cannot satisfy it; it is a floor against the seed baseline. Caveat recorded from the survey: test/backup.test.js snapshots and skips cleanly on Node older than 22.5, so on an older runtime the executed count is genuinely lower — a run-to-run runtime change could move this number for reasons unrelated to the change. Both baselines are measured on the same run's starting point, which mitigates but does not fully remove a runner-version difference between seed and final.",
+      "The counting stages that concern the test suite declare their population as the test/ tree (read off the seed listing). The TAP summary line itself carries no file path, so the figure read is the whole-suite number the runner printed; the scope is declared to satisfy the one-population rule, not to filter the summary figure.",
+      "ASKED FOR BUT NOT MACHINE-CHECKED, stated rather than silently claimed: (a) 'Do not edit or delete tests' — not directly checkable by any kind here; it is only INDIRECTLY fenced, because changed-from-seed allows changes only under src/, so any edit to a test/ file turns the close red. A deletion of a src/ file would also be invisible to that prefix rule (deletion under src/ still lies inside the fence); only the executed-test floor and the fail count give partial protection. (b) 'Do not change what the code does' — behavioural equivalence is a judgement, not a count; omitted entirely. (c) 'No ts-ignore comments and no any casts' — partially covered by the always-on no-suppressions guard, but ONLY for lines ADDED in this run across .js/.mjs/.cjs files; pre-existing suppressions, and any `any` spelling the guard's regex does not match, are not covered.",
+      "tsconfig includes only src/**/*.js, so the typecheck stages cannot and do not see type errors in test/ (a JSDoc bug in a test file would not fail any stage here) — the survey records this; no stage was invented to cover it, since the plan did not ask.",
+      "`npx tsc` and `npm test` were both confirmed present in the facts object (package.json scripts.typecheck = \"tsc --noEmit\", scripts.test = \"node --test\"), so no stage depends on a tool the repository does not have."
+    ]
+  }
+}

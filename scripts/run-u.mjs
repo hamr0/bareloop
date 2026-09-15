@@ -102,6 +102,19 @@ const JOBS = {
     spine: 'pulselog-author-live-bareloop',
     seed: '92d71a7c1253f8f2430e2d308ecfef01c826b5c2',
   },
+  // the first spec authored through the PERSON path (run-interview.mjs →
+  // run-author.mjs, DeepSeek deepseek-flash, run mu2js0c0) rather than the
+  // AUTHOR path above — hash fc3d5a1b… (resolved-spec.json copied verbatim into
+  // jobs/, re-verified before and after the copy). workdir is the M2 source
+  // front door's own prepareSource copy (source-mu2bglzc/tree), not the patient's
+  // top level, so the spine dir lands nested one level deeper than its neighbours'
+  // — noted, not a defect in this row.
+  'pulselog-person-strict': {
+    spec: 'pulselog-person-strict-checks.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/tree',
+    spine: 'pulselog-person-live-2-bareloop',
+    seed: 'b57e692c000570e7586787f2d2e3b027a5fa6011',
+  },
   'baremobile-types': {
     spec: 'baremobile-u-types.json',
     workdir: '/home/hamr/PycharmProjects/bareloop-patients/baremobile-u',
