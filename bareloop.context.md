@@ -3240,9 +3240,16 @@ line (`npm ci`/`pnpm install --frozen-lockfile`/`yarn install --frozen-lockfile`
 --frozen-lockfile` by lockfile, else `npm install`), `cd`-prefixed for a subfolder job. An
 invalid `package.json`, no manifest found, or `node_modules` already present all return `null`
 — "cannot tell" is never a fabricated gap. `run-interview.mjs` prints the gap and the exact
-command right after `prepareSource` succeeds, and re-checks it at the hand-off: a still-open
-gap suppresses the "Run it now?" offer entirely (the same shape the unkeyed-shell gate already
-uses) rather than spending on a run that would only instrument-stop. `run-author.mjs` refuses
+command right after `prepareSource` succeeds, and now PAUSES there (F182 fix, 2026-09-15):
+"Press Enter once it has finished to check again, or type skip to carry on without it" —
+Enter re-runs `missingDependencies` on the spot ("packages found — carrying on." or "still
+missing (…) — try again, or type skip to carry on without it.", looping), `skip` (or end of
+input, treated the same) carries on unresolved. It re-checks once more at the hand-off: a
+still-open gap suppresses the "Run it now?" offer entirely (the same shape the unkeyed-shell
+gate already uses) rather than spending on a run that would only instrument-stop — this is
+what the pause makes reachable: before the fix the interview fell straight through to the
+class questions and only ever re-checked once, too late for the offer to ever fire.
+`run-author.mjs` refuses
 `source-deps-missing` (a `request-red`, routed through the same `refusalEvents()` channel
 `language-unsupported` uses) at $0, before the scout and before the provider/key are even
 read. Once the person installs packages into the copy themselves, `prepareSource` has already

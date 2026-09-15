@@ -33,6 +33,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F182 — the interview never waited for the install, so "Run it now?" was unreachable for a
+  repo that needs packages.** `scripts/run-interview.mjs` printed the install-gap message right
+  after `prepareSource` and fell straight through to the class questions, only re-checking
+  `missingDependencies` once, at hand-off — too late for the offer to ever fire. It now pauses
+  right there and loops on the same check (`"Press Enter once it has finished to check again, or
+  type skip to carry on without it: "`), printing `"packages found — carrying on."` on a
+  resolved recheck; `skip` or end of input carries on unresolved, same as before. Also drops the
+  misleading "then rerun this command" wording, which pointed at restarting the whole interview
+  when only the install is needed. Not yet proven live.
 - **F179 — a malformed tool-call JSON on the FIRST authoring call had no earlier sound
   declaration to fall back to, so 318e066's provider-red stopped the run outright.** hamr's
   2026-09-15 ruling: retry, never repair. `withMalformedToolCallShim` (`src/authorflow.js`,

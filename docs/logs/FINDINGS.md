@@ -12648,6 +12648,21 @@ Candidate direction (unruled): either pause the interview with an explicit promp
 printing the install gap (re-checking before continuing), or drop the "rerun this command"
 wording in favor of "install in another terminal, then answer the offer below."
 
+**2026-09-15 update — fixed in code (commit 6240ff9, `fix/m3-closeout`), not yet proven live.**
+Took candidate direction (a): the interview now pauses right where the gap is printed and loops
+on the same `missingDependencies` check, `("Press Enter once it has finished to check again, or
+type skip to carry on without it: ")`, printing `"packages found — carrying on."` on a resolved
+recheck or `"still missing (<reason>) — try again, or type skip to carry on without it."` and
+re-prompting otherwise; `skip` or end of input carries on unresolved (never an infinite loop —
+the hand-off's own re-check and its existing "Not offered" wording are unchanged, still the last
+$0 gate). The wrong "then rerun this command" wording is gone, replaced with "run this in the
+copy, in another terminal." Five new scenarios in `tests/run-interview.test.js` cover skip,
+still-missing retry, a real recheck success (via a new interactive-stdin test driver that creates
+`node_modules` in the prepared copy between two prompts), EOF during the pause, and the no-gap
+case; the two pre-existing deps-gap tests were updated for the pause step now sitting earlier in
+their transcript. Mutation-checked: disabling the recheck (always reading "resolved") is killed
+by the still-missing-retry test. Not yet run against a real live interview end to end.
+
 ## F183 — the confirm turn's "you asked for these, but nothing checks them" list contradicts the code-derived protections printed right above it (open)
 
 Run mu2bjmed, confirm round 2 plan (spine `author-phase` `confirm-done` round 2).
