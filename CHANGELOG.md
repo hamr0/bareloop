@@ -15,9 +15,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
   wired into `makeLoopGenerate`) is a delegate provider (`Object.create`, never a mutation of
   the shared instance) whose `_request` strips a malformed tool call out of the raw response
   BEFORE `generate()`'s own `JSON.parse` can throw on it, so the round comes back PRICED on
-  bare-agent's own real usage instead of crashing. `askStructured` reads the resulting
-  zero-tool-call round through its EXISTING malformed-emission retry ladder
-  (`MAX_STRUCTURE_RETRIES`, no new cap), tagged with a new `malformed-tool-call-arguments` axis.
+  bare-agent's own real usage instead of crashing. `askStructured` reads the resulting round
+  through its EXISTING malformed-emission retry ladder (`MAX_STRUCTURE_RETRIES`, no new cap),
+  tagged with a new `malformed-tool-call-arguments` axis — checked BEFORE the accept path and
+  regardless of how many calls survived the strip, so a reply carrying a malformed call
+  alongside a valid one is never accepted either (follow-up fix, same day, review-caught).
   Scoped to `makeLoopGenerate` only — the authoring declaration calls and the confirm turn; the
   scout and the worker path build their own provider wiring and still only get 318e066's stop
   (an open gap). Not yet proven live.

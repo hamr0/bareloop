@@ -12509,11 +12509,22 @@ REPAIRED, reusing `askStructured`'s EXISTING malformed-emission retry ladder
 never a mutation of the shared instance) whose `_request` strips a malformed tool call out of the
 RAW response BEFORE `generate()`'s own `JSON.parse` ever reaches it — bare-agent's own usage
 normalization, stop-reason mapping, and the Loop's own pricing/metrics all run unchanged on the
-real response, so the round comes back PRICED (real `usage`) with zero tool calls instead of
-throwing. `askStructured` reads that as its own pre-existing "no declaration call" shape, tagged
-with a new `malformed-tool-call-arguments` axis, and retries through the same ladder that already
-handles `no-declaration-tool-call`. Nothing ever repairs, trims, or re-parses the model's
-arguments string.
+real response, so the round comes back PRICED (real `usage`) with the malformed call(s) removed
+instead of throwing — zero surviving calls on a single-call reply, but a reply carrying MULTIPLE
+tool calls can leave one or more valid calls surviving alongside the stripped one(s).
+`askStructured` checks for the shim's own `malformedToolCall` marker FIRST, before it ever looks
+at how many calls survived, tagged with a new `malformed-tool-call-arguments` axis, and retries
+through the same ladder that already handles `no-declaration-tool-call`. Nothing ever repairs,
+trims, or re-parses the model's arguments string.
+
+**Follow-up (2026-09-15, same day, review-caught) — a mixed reply is never accepted either**
+(commit e9e2839, `fix/m3-closeout`). The first cut of this fix checked `malformedToolCall` only when
+`box.calls.length === 0`, so a reply carrying TWO declaration calls — one malformed, one valid —
+left exactly one surviving call after the strip and that valid call was silently ACCEPTED. Before
+96866d5 a two-call reply was ALWAYS `multiple-declaration-tool-calls`, never an accept, so this
+widened what a malformed reply could get through. `askStructured` now checks
+`r?.malformedToolCall` before the `box.calls.length === 1` accept, unconditionally on the survivor
+count — nothing from a reply that carried a malformed call is ever accepted.
 
 SCOPE: `makeLoopGenerate` only — the authoring declaration calls (`scripts/run-author.mjs:729`)
 and the confirm turn (`scripts/run-author.mjs:601`). The scout (`src/authorscout.js`, its own
