@@ -88,7 +88,6 @@ import { redactSecrets } from './validate.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
-const { OpenAIProvider } = require('bare-agent/providers');
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
 
@@ -1413,67 +1412,6 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
 }
 
 /**
- * F179 STOPGAP — bare-agent upstream ask BA-27 (docs/product/UPSTREAM-ASKS.md).
- * `OpenAIProvider.generate` (`node_modules/bare-agent/src/provider-openai.js:132-136`)
- * does `JSON.parse(tc.function.arguments)` with no try/catch, so a model's
- * malformed tool-call arguments throw a raw SyntaxError AFTER the billed HTTP
- * round rather than resolving. 318e066 (F179/F180) caught that throw as a call
- * casualty, but a casualty on the FIRST call of a run has no earlier sound
- * declaration to fall back to and stops the run outright. hamr's 2026-09-15
- * ruling: RETRY, never repair — reuse `askStructured`'s existing malformed-
- * emission retry ladder (bounded by `MAX_STRUCTURE_RETRIES`), never a second cap.
- *
- * This wraps ONLY `_request` (never `generate` itself) so bare-agent's own usage
- * normalization, stop-reason mapping, and the Loop's own pricing/metrics all run
- * UNCHANGED on the real response: the shim strips a malformed tool call out of
- * the raw payload BEFORE `generate()`'s own `JSON.parse` ever reaches it, so the
- * round comes back priced (real `usage`) with zero tool calls instead of
- * throwing — `askStructured` then reads that as "no declaration call" (F179's
- * retry path) rather than losing the round to an uncaught throw. Nothing here
- * ever repairs, trims, or re-parses the malformed arguments string — it is
- * removed, not fixed, and the caller is told to re-send the call whole.
- *
- * A delegate (`Object.create(provider)`), never a mutation of the shared
- * instance: every other provider call site (worker/planrun, the scout) keeps
- * the SAME `provider` object, untouched. A non-`OpenAIProvider` passes through
- * byte-identical — this class of throw is specific to that one provider's
- * request/parse seam.
- *
- * DELETE this shim in the same change that bumps to a bare-agent release whose
- * `OpenAIProvider.generate` no longer throws on malformed tool-call JSON.
- * @param {any} provider
- * @returns {{ provider: any, malformed: () => {name: string|undefined, error: string}|null }}
- */
-function withMalformedToolCallShim(provider) {
-  if (!(provider instanceof OpenAIProvider)) return { provider, malformed: () => null };
-  /** @type {{name: string|undefined, error: string}|null} */
-  let first = null;
-  const delegate = Object.create(provider);
-  delegate._request = async (/** @type {string} */ path, /** @type {any} */ body, /** @type {any} */ timeoutMs, /** @type {any} */ deadlineMs) => {
-    const data = await provider._request(path, body, timeoutMs, deadlineMs);
-    const choice = data?.choices?.[0];
-    const msg = choice?.message;
-    const calls = msg?.tool_calls;
-    if (!Array.isArray(calls) || calls.length === 0) return data;
-    const kept = [];
-    for (const tc of calls) {
-      const raw = tc?.function?.arguments;
-      let bad = null;
-      if (typeof raw === 'string') {
-        try { JSON.parse(raw); } catch (e) { bad = String(/** @type {any} */ (e)?.message ?? e); }
-      }
-      if (bad === null) { kept.push(tc); continue; }
-      if (!first) first = { name: tc?.function?.name, error: bad };
-    }
-    if (kept.length === calls.length) return data;
-    const choices = data.choices.slice();
-    choices[0] = { ...choice, message: { ...msg, tool_calls: kept } };
-    return { ...data, choices };
-  };
-  return { provider: delegate, malformed: () => first };
-}
-
-/**
  * The default model boundary: one bare-agent Loop per call, with the declaration
  * tool wired to END the call the moment it is used. The tool is an OUTPUT
  * CHANNEL, not a step in a conversation, so the round that would acknowledge its
@@ -1490,11 +1428,7 @@ function withMalformedToolCallShim(provider) {
  */
 export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS } = {}) {
   return async (/** @type {any[]} */ messages, /** @type {any[]} */ tools, /** @type {any} */ opts = {}) => {
-    // F179 — see withMalformedToolCallShim: a plain pass-through for every
-    // provider except OpenAIProvider, whose malformed-tool-call throw this
-    // stopgap turns into an honest zero-tool-call round instead.
-    const shim = withMalformedToolCallShim(provider);
-    const loop = new Loop({ provider: shim.provider, system });
+    const loop = new Loop({ provider, system });
     const wired = tools.map((t) => ({
       ...t,
       execute: async (/** @type {any} */ a) => { const r = await t.execute(a); loop.stop(); return r; },
@@ -1504,9 +1438,11 @@ export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens =
     // answers hangs the process forever otherwise. `...opts` still spreads AFTER
     // it, so a caller that ever needs a tighter number for one call may pass it —
     // tighten-only, and nothing does today.
-    const r = await loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...opts });
-    const bad = shim.malformed();
-    return bad ? { ...r, malformedToolCall: bad } : r;
+    // F179 — bare-agent 0.43.0's OpenAIProvider/Ollama generate() no longer
+    // throws on a malformed tool-call arguments string (BA-27): it returns the
+    // round priced with `toolCalls: []` plus its own `malformedToolCall` marker,
+    // which `Loop.run` surfaces unchanged on its return. No local shim needed.
+    return loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...opts });
   };
 }
 
@@ -1561,17 +1497,18 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     // two must offer one set of kinds, or the composer reads about a kind it
     // cannot call — or worse, calls one the ceiling will refuse after we paid.
     const tools = mode === 'tool' ? [channel.tool(box)] : [];
-    // F179/F180 — bare-agent 0.42.0's OpenAIProvider.generate can THROW mid-call
-    // (a raw SyntaxError off a malformed tool-call arguments string, parsed with
-    // no try/catch) rather than resolve with `{error}` the way a settled
-    // provider-shape casualty normally does. Unwrapped, that throw escaped this
-    // function entirely — discarding a sound prior declaration (F179) and
-    // skipping `book.add` so the billed call went unbooked (F180). `callCasualty`
-    // is the SAME predicate `authorscout.js`'s `settled` uses for its narrower
-    // idle-timeout seam (src/text.js, beside `priceOf`): a HaltError or an
-    // unrecognised throw re-raises unchanged — only an admitted casualty class
-    // lands here as the same `{error}` shape the resolved-error path already
-    // books and returns below.
+    // F179/F180 — bare-agent 0.42.0's OpenAIProvider.generate used to THROW
+    // mid-call (a raw SyntaxError off a malformed tool-call arguments string,
+    // parsed with no try/catch) rather than resolve with `{error}` the way a
+    // settled provider-shape casualty normally does; 0.43.0 fixed that class
+    // upstream (BA-27), so `callCasualty` no longer admits a SyntaxError at
+    // all (its branch was dead code and was removed). This try/catch stays
+    // for the class it was ALSO built to cover: `callCasualty` is the SAME
+    // predicate `authorscout.js`'s `settled` uses for its idle-timeout seam
+    // (src/text.js, beside `priceOf`) — a HaltError or an unrecognised throw
+    // re-raises unchanged; only an admitted casualty class lands here as the
+    // same `{error}` shape the resolved-error path already books and returns
+    // below.
     let r;
     try {
       r = await generate(convo, tools, {});
@@ -1591,23 +1528,23 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     }
 
     if (mode === 'tool') {
-      // F179 (2026-09-15 ruling) — retry, never repair. `withMalformedToolCallShim`
-      // (makeLoopGenerate) already priced this round on the real usage and
-      // stripped the unparseable call(s) before they could throw; this ladder's
-      // EXISTING malformed-emission retry (below) is the whole mechanism — no
-      // new cap, no second pricing path, nothing here ever re-parses or edits
-      // the model's arguments. The raw malformed string itself is never
-      // persisted, only the parser's own error message, scrubbed like every
-      // other model-authored text on this trail.
+      // F179 (2026-09-15 ruling) — retry, never repair. bare-agent 0.43.0
+      // (BA-27) already priced this round on the real usage and returns it
+      // with `toolCalls: []` plus its own `malformedToolCall` marker instead
+      // of throwing; this ladder's EXISTING malformed-emission retry (below)
+      // is the whole mechanism — no new cap, no second pricing path, nothing
+      // here ever re-parses or edits the model's arguments. The raw malformed
+      // string itself is never persisted, only the parser's own error
+      // message, scrubbed like every other model-authored text on this trail.
       //
       // Checked BEFORE the `box.calls.length === 1` accept and REGARDLESS of
-      // how many calls survived the strip (0 or more): a reply carrying one
-      // malformed call ALONGSIDE one valid one would otherwise leave
-      // `box.calls.length === 1` after the shim strips the bad one, and the
-      // surviving valid call would be silently accepted — before this fix, a
-      // two-call reply was ALWAYS the 'multiple-declaration-tool-calls' red,
-      // never an accept, so that would widen what this ladder takes from a
-      // malformed reply. Nothing from a malformed reply is ever accepted.
+      // how many calls survived (0 or more — bare-agent's `parseToolCalls` is
+      // itself all-or-nothing, BA-27, so a real provider always returns 0 on
+      // a malformed round): before this fix, a two-call reply was ALWAYS the
+      // 'multiple-declaration-tool-calls' red, never an accept, so a
+      // malformed call riding alongside a valid one must not widen what this
+      // ladder takes from a malformed reply. Nothing from a malformed reply
+      // is ever accepted.
       if (r?.malformedToolCall) {
         red = {
           code: 'artifact-red',

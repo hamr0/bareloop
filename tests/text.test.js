@@ -205,11 +205,15 @@ test('capStop: a breach that is CERTAIN outranks a blindness that is not — cap
 // ── callCasualty: the ONE predicate for "was this throw a call casualty" ────
 //
 // F179/F180 (docs/logs/FINDINGS.md): bare-agent 0.42.0's OpenAIProvider.generate
-// can throw a raw SyntaxError mid-call (a malformed tool-call arguments string,
-// JSON.parse with no try/catch) rather than resolve with `{error}`. This widens
-// the ONE seam `authorscout.js`'s `settled` already narrowed for its own
-// idle-timeout class to also admit that SyntaxError class, and `askStructured`
-// (src/authorflow.js) reuses the same predicate for its own generate seam.
+// used to throw a raw SyntaxError mid-call (a malformed tool-call arguments
+// string, JSON.parse with no try/catch) rather than resolve with `{error}`, and
+// this predicate used to admit that class too. bare-agent 0.43.0 fixed it
+// upstream (BA-27) — no provider bareloop constructs can still throw a JSON
+// SyntaxError out of generate() after a billed round, so that branch was
+// removed as dead code; the two tests below pin that it stays removed. The
+// idle-timeout class remains: `authorscout.js`'s `settled` narrows a rejected
+// `loop.run()` to it, and `askStructured` (src/authorflow.js) reuses the same
+// predicate for its own generate seam.
 
 test('callCasualty: a HaltError is NEVER admitted — a governance exit is not a transport casualty', async () => {
   const { HaltError } = await import('bare-agent');
@@ -228,10 +232,9 @@ test('callCasualty: a TimeoutError-named error is admitted even without the ETIM
   assert.equal(callCasualty(err), 'total duration deadline');
 });
 
-test('callCasualty: a malformed tool-call-arguments SyntaxError is admitted, prefixed to name the class', () => {
+test('callCasualty: a JSON-mentioning SyntaxError is NOT admitted (F179 branch removed, bare-agent 0.43.0 fixed BA-27 upstream)', () => {
   const err = new SyntaxError('Unexpected non-whitespace character after JSON at position 5734');
-  assert.equal(callCasualty(err), 'malformed tool-call arguments from the provider: '
-    + 'Unexpected non-whitespace character after JSON at position 5734');
+  assert.equal(callCasualty(err), null);
 });
 
 test('callCasualty: a SyntaxError whose message does not mention JSON is NOT admitted', () => {
