@@ -25,7 +25,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync, spawn } from 'node:child_process';
 // the LIBRARY's own frozen sets — the expectations below are DERIVED from them, so a
 // question that is ever re-worded moves the test with it instead of leaving a stale
 // literal that passes while the person is asked something else
@@ -107,6 +107,50 @@ const interview = ({
   return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 };
 
+/**
+ * A truly INTERACTIVE driver, for the one scenario that needs a real side effect
+ * (creating `node_modules` in the prepared copy) to land BETWEEN two prompts —
+ * `spawnSync`/`interview()` above feed the whole scripted transcript up front and
+ * cannot do that. `steps` run in order; each optionally waits for a pattern to
+ * appear in the output so far, then optionally runs an action (e.g. writing a
+ * file into the tree path captured from an earlier step), then optionally sends
+ * one line. Polls, capped at 20s per wait — a step that never arrives is a test
+ * failure, not a hang.
+ * @param {{verdict?: string, out: string, key?: string, provider?: string,
+ *   steps: {wait?: RegExp, action?: (out: string) => void, send?: string}[]}} o
+ */
+const interviewInteractive = async ({
+  verdict = CLASS, out, key = '', provider = 'anthropic-api', steps,
+}) => {
+  const args = ['--verdict', verdict, '--out', out, '--budget', '2.50', '--provider', provider];
+  const child = spawn(process.execPath, [SCRIPT, ...args], {
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  let buf = '';
+  child.stdout.on('data', (d) => { buf += d.toString(); });
+  child.stderr.on('data', (d) => { buf += d.toString(); });
+  const waitFor = async (re) => {
+    const deadline = Date.now() + 20_000;
+    while (!re.test(buf)) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${re} in:\n${buf.slice(0, 2000)}`);
+      // eslint-disable-next-line no-await-in-loop -- a deliberate poll, not a batch
+      await new Promise((r) => { setTimeout(r, 20); });
+    }
+  };
+  for (const step of steps) {
+    if (step.wait) await waitFor(step.wait); // eslint-disable-line no-await-in-loop
+    if (step.action) step.action(buf);
+    if (step.send !== undefined) child.stdin.write(`${step.send}\n`);
+  }
+  const code = await new Promise((resolve) => {
+    const killTimer = setTimeout(() => { child.kill(); resolve(null); }, 20_000);
+    child.on('exit', (c) => { clearTimeout(killTimer); resolve(c); });
+  });
+  return { code, out: buf };
+};
+
 /** one free-text answer: the text, then the blank line that ends it */
 const a = (/** @type {string} */ s) => [s, ''];
 /** the SOURCE + DESTINATION pair every complete session starts with (PRD item 33
@@ -121,6 +165,21 @@ const front = (over = {}) => [...a(over.source ?? repoBase), ...a(over.destinati
  * how that shift was caught while updating this fixture). */
 const session = (verdict, over = {}) => [
   ...front(over),
+  ...requiredAnswersFor(verdict).flatMap((q) => a(`answer to question ${q}`)),
+  ...a(over.job ?? 'litectx-maintainer'),
+  ...a(over.budget ?? '5'),
+  ...a(over.wall ?? '30'),
+  over.run ?? 'n',
+];
+
+/** the same complete session, with the F182 install-gap PAUSE's lines spliced in
+ * right after Source/Destination (before the class questions) — where the pause
+ * actually sits. `pauseAnswers` are single lines (the pause reads one line per
+ * loop turn with no blank terminator, unlike every free-text answer around it):
+ * e.g. `['skip']`, or `['', 'skip']` for "still missing, then give up". */
+const sessionWithPause = (verdict, pauseAnswers, over = {}) => [
+  ...front(over),
+  ...pauseAnswers,
   ...requiredAnswersFor(verdict).flatMap((q) => a(`answer to question ${q}`)),
   ...a(over.job ?? 'litectx-maintainer'),
   ...a(over.budget ?? '5'),
@@ -827,7 +886,7 @@ gitFix(depsRepo, ['commit', '-q', '-m', 'seed']);
 
 test('a repo Source whose package.json lists dependencies with no node_modules: the exact install command is printed right after the seed line', () => {
   const out = outDir();
-  const r = interview({ out, lines: session(CLASS, { source: depsRepo }) });
+  const r = interview({ out, lines: sessionWithPause(CLASS, ['skip'], { source: depsRepo }) });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /The copy above has no installed packages/);
   assert.match(r.out, /cd .+tree && npm install/, 'the printed command names the copy\'s own tree path, not a bare "npm install"');
@@ -835,11 +894,103 @@ test('a repo Source whose package.json lists dependencies with no node_modules: 
 
 test('a repo Source whose package.json lists dependencies with no node_modules: no "start it now" offer, even with a key in the shell', () => {
   const out = outDir();
-  const r = interview({ out, key: 'sk-test-not-a-real-key', lines: session(CLASS, { source: depsRepo }) });
+  const r = interview({ out, key: 'sk-test-not-a-real-key', lines: sessionWithPause(CLASS, ['skip'], { source: depsRepo }) });
   assert.equal(r.code, 0, r.out);
   assert.doesNotMatch(r.out, /Run it now\?/, 'the offer must never be made over a copy missing its dependencies');
   assert.match(r.out, /Not offered — the copy still has no installed packages/);
   assert.match(r.out, /run-author\.mjs/, 'the command to fire once installed is still printed');
+});
+
+// ══ F182 — the pause: "Run it now?" is now reachable ══════════════════════════
+// `scripts/run-interview.mjs` now waits right where the gap is printed instead of
+// falling straight through to the class questions and only re-checking once, too
+// late to ever offer.
+
+test('F182 (a): gap + skip — the interview continues past the pause with no recheck message, and hand-off says not offered', () => {
+  const out = outDir();
+  const r = interview({
+    out, key: 'sk-test-not-a-real-key', lines: sessionWithPause(CLASS, ['skip'], { source: depsRepo }),
+  });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Press Enter once it has finished to check again, or type skip to carry on without it: /);
+  assert.doesNotMatch(r.out, /still missing/);
+  assert.doesNotMatch(r.out, /packages found/);
+  assert.doesNotMatch(r.out, /Run it now\?/);
+  assert.match(r.out, /Not offered — the copy still has no installed packages/);
+});
+
+test('F182 (b): gap + Enter while still missing — prints "still missing" and re-prompts, then skip carries on', () => {
+  const out = outDir();
+  const r = interview({
+    out, key: 'sk-test-not-a-real-key', lines: sessionWithPause(CLASS, ['', 'skip'], { source: depsRepo }),
+  });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /still missing \(.*no node_modules\) — try again, or type skip to carry on without it\./);
+  assert.doesNotMatch(r.out, /Run it now\?/);
+  assert.match(r.out, /Not offered — the copy still has no installed packages/);
+});
+
+test('F182 (c): gap + the copy gets its node_modules + Enter — "packages found", then the offer is actually reachable', async () => {
+  const out = outDir();
+  // front() (Source, Destination) plus one '' line for the pause's Enter —
+  // the rest is sent by the interactive driver's own steps below, one prompt
+  // at a time, so the node_modules side effect can land in between.
+  // Every free-text answer (class questions, job name, budget, wall) is
+  // terminated by its own blank line — `a()` already shapes that.
+  const rest = [
+    ...requiredAnswersFor(CLASS).flatMap((q) => a(`answer to question ${q}`)),
+    ...a('litectx-maintainer'), ...a('5'), ...a('30'),
+  ];
+  const r = await interviewInteractive({
+    out,
+    key: 'sk-test-not-a-real-key',
+    steps: [
+      // front() (Source, Destination) only — the pause's own '' (Enter) line is
+      // deliberately held back and sent as its OWN step below, after the
+      // node_modules side effect, so it cannot be consumed early.
+      { send: front({ source: depsRepo }).join('\n') },
+      { wait: /Press Enter once it has finished to check again/ },
+      {
+        action: (bufSoFar) => {
+          const treeLine = /^ {2}tree {5}(\S+)/m.exec(bufSoFar)?.[1];
+          assert.ok(treeLine, `tree path not printed yet:\n${bufSoFar}`);
+          // exactly what `missingDependencies` looks for (src/source.js): a
+          // `node_modules` directory at the same level as the package.json it
+          // found — never a real install, just the directory's presence.
+          mkdirSync(join(treeLine, 'node_modules', 'left'), { recursive: true });
+          writeFileSync(join(treeLine, 'node_modules', 'left', 'index.js'), 'module.exports = 1;\n');
+        },
+      },
+      { send: '' }, // the Enter — sent only now that node_modules actually exists
+      { wait: /packages found — carrying on\./ },
+      { send: rest.join('\n') },
+      { wait: /Run it now\? \[y\/N\] / },
+      { send: 'n' },
+    ],
+  });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /packages found — carrying on\./);
+  assert.match(r.out, /Run it now\? \[y\/N\] /, 'F182: the offer is reachable once the gap is resolved in the loop, not just when there was never a gap');
+  assert.doesNotMatch(r.out, /Not offered — the copy still has no installed packages/);
+});
+
+test('F182 (d): gap + EOF on stdin during the pause — no infinite loop, ends the interview rather than hanging', () => {
+  const out = outDir();
+  // ONLY front() — input ends right at the pause's first prompt, with nothing
+  // queued after it (the real EOF case: a piped/non-interactive session that
+  // simply has no more lines). Must not hang the 120s test timeout.
+  const r = interview({ out, lines: [...front({ source: depsRepo })] });
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /INPUT ENDED/, 'EOF during the pause behaves like `skip` and lets the rest of the (now-exhausted) interview end honestly, not hang');
+  assert.doesNotMatch(r.out, /still missing/, 'EOF must not be read as a recheck attempt in a loop');
+});
+
+test('F182 (e): no gap at all — no pause prompt is ever printed', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /Press Enter once it has finished/);
+  assert.doesNotMatch(r.out, /has no installed packages/);
 });
 
 test('a repo Source with dependencies but node_modules ALREADY present: no install-gap message, offer proceeds normally', () => {

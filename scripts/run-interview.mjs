@@ -418,19 +418,38 @@ say(`  tree     ${prep.tree}`);
 say(`  kind     ${prep.manifest.kind}`);
 say(`  seed     ${prep.manifest.seed}`);
 
-// ── item 33 close-out: the install gap, named at $0 (hamr's ruling 2026-09-14,
-// option A) ── `prepareSource` copies only git-tracked files, so a JS/TS
-// repo's copy never carries `node_modules`. bareloop NEVER runs an install
-// itself — it names the gap and the exact command, and the person runs it
-// themselves in the copy, then reruns.
+// ── item 33 close-out: the install gap, named at $0, and WAITED FOR (F182 fix,
+// hamr's ruling 2026-09-14 option A, candidate direction (a)) ── `prepareSource`
+// copies only git-tracked files, so a JS/TS repo's copy never carries
+// `node_modules`. bareloop NEVER runs an install itself — it names the gap and
+// the exact command, and the person runs it themselves, in another terminal,
+// in the copy. This script now PAUSES right here and re-checks, so the
+// "Run it now?" offer at hand-off (below) is actually reachable once the
+// install finishes — F182: previously the interview fell straight through to
+// the class questions and only re-checked once, too late to ever offer.
 const depsGap = prep.manifest.kind === 'repo'
   ? missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '')
   : null;
 if (depsGap) {
   say('');
   say(`  The copy above has no installed packages (${depsGap.reason}).`);
-  say('  bareloop never runs an install itself — run this in the copy, then rerun this command:');
+  say('  bareloop never runs an install itself — run this in the copy, in another terminal:');
   say(`    cd ${prep.tree} && ${depsGap.command}`);
+  say('');
+  // Loops on the SAME check `missingDependencies` above already ran — never a
+  // second, hand-typed copy of the rule. `skip` (or end of input) carries on
+  // exactly as before this fix: the hand-off re-check further down still
+  // suppresses the offer and says so. Any other line (including a blank
+  // Enter) re-checks rather than being treated as a typo — the only way to
+  // stop waiting is the one word `skip`.
+  for (;;) {
+    prompt('  Press Enter once it has finished to check again, or type skip to carry on without it: ');
+    const l = await nextLine();
+    if (l === null || String(l).trim().toLowerCase() === 'skip') break;
+    const recheck = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
+    if (!recheck) { say('  packages found — carrying on.'); break; }
+    say(`  still missing (${recheck.reason}) — try again, or type skip to carry on without it.`);
+  }
 }
 
 // ── ruling 7 → D5 = A (PRD item 33 M3 piece 4, step S6): a non-repo source
