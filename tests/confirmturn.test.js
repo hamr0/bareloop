@@ -10,6 +10,7 @@ import {
   runConfirmTurn, CONFIRM_TOOL_NAME, CONFIRM_ACK, CONFIRM_SYSTEM, confirmPrompt,
   makeCostBook, WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
   GREEN_QUESTIONS, FIELD_LABELS, confirmProtections, GUARD_DESCRIPTIONS,
+  makeLoopGenerate, MAX_STRUCTURE_RETRIES,
 } from '../src/authorflow.js';
 import { redactSecrets } from '../src/validate.js';
 
@@ -396,4 +397,74 @@ test('WORSE_THAN_BEFORE_FIELD / LANGUAGE_PICK_FIELD / CONFIRM_MENU are handed th
   assert.equal(seen[1].field, CONFIRM_MENU);
   void LANGUAGE_PICK_FIELD; // exercised in test (g) above via the ambiguous-language path
   void CONFIRM_ACK;
+});
+
+// ── F179 (2026-09-15 ruling, retry not repair) — the confirm turn also goes
+// through makeLoopGenerate (scripts/run-author.mjs:601's `confirmGenerate`),
+// so a malformed tool-call reply on the confirm channel must retry through the
+// SAME existing ladder (askStructured's MAX_STRUCTURE_RETRIES), never crash
+// the confirm round. Modelled on authorflow.test.js's own F179 makeLoopGenerate
+// tests, scoped here to the confirm channel/tool name instead.
+
+test('runConfirmTurn (F179): a REAL OpenAIProvider malformed tool-call reply retries via the existing ladder within round 1 — never lost as a run-ending crash', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  let call = 0;
+  const okArgs = JSON.stringify(PLAN_ONE);
+  provider._request = async () => {
+    call += 1;
+    const args = call === 1 ? `${okArgs}}` : okArgs; // round 1: valid JSON + trailing brace
+    return {
+      choices: [{
+        message: { content: '', tool_calls: [{ id: `c${call}`, function: { name: CONFIRM_TOOL_NAME, arguments: args } }] },
+        finish_reason: 'tool_calls',
+      }],
+      usage: { prompt_tokens: 100, completion_tokens: 30 },
+      model: 'deepseek-flash',
+    };
+  };
+  const generate = makeLoopGenerate(provider);
+  const { ask } = scriptAsk(['', 'confirm']); // worseThanBefore, then the menu pick
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+
+  assert.equal(call, 2, 'the malformed-JSON retry happened WITHIN confirm round 1 — not a 2nd confirm round');
+  assert.equal(r.ok, true, 'the sound 2nd attempt is what the confirm turn accepts');
+  assert.equal(r.rounds, 1, 'still one confirm round shown to the person — the retry is internal to askStructured');
+  assert.deepEqual(r.accepted, {
+    goal: 'Keep the tests green.', checks: ['tests stay green'], protections: BASE_PROTECTIONS,
+    lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [],
+  });
+  const report = book.report();
+  assert.equal(report.calls.length, 2, 'both the malformed and the sound call are booked');
+  for (const c of report.calls) assert.equal(typeof c.costUsd, 'number', 'F179 2026-09-15: priced off real usage, never a null-cost casualty for this path');
+});
+
+test('runConfirmTurn (F179): every attempt malformed exhausts the retry ladder inside round 1 and reads as the confirm turn\'s own artifact-red stop, never a crash', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  let call = 0;
+  provider._request = async () => {
+    call += 1;
+    return {
+      choices: [{
+        message: { content: '', tool_calls: [{ id: `c${call}`, function: { name: CONFIRM_TOOL_NAME, arguments: `${JSON.stringify(PLAN_ONE)}}` } }] },
+        finish_reason: 'tool_calls',
+      }],
+      usage: { prompt_tokens: 100, completion_tokens: 30 },
+      model: 'deepseek-flash',
+    };
+  };
+  const generate = makeLoopGenerate(provider);
+  const { ask } = scriptAsk(['']); // worseThanBefore only — no menu pick reached
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+
+  assert.equal(call, 1 + MAX_STRUCTURE_RETRIES, 'the ladder ran to its existing cap, no new cap');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'artifact-red');
+  assert.equal(r.reds[0]?.axis, 'malformed-tool-call-arguments');
+  const report = book.report();
+  assert.equal(report.calls.length, 1 + MAX_STRUCTURE_RETRIES);
+  assert.equal(report.spendComplete, true, 'every attempt priced — none fell back to a null-cost casualty');
 });

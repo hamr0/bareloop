@@ -88,6 +88,7 @@ import { redactSecrets } from './validate.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
+const { OpenAIProvider } = require('bare-agent/providers');
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
 
@@ -1412,6 +1413,67 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
 }
 
 /**
+ * F179 STOPGAP — bare-agent upstream ask BA-27 (docs/product/UPSTREAM-ASKS.md).
+ * `OpenAIProvider.generate` (`node_modules/bare-agent/src/provider-openai.js:132-136`)
+ * does `JSON.parse(tc.function.arguments)` with no try/catch, so a model's
+ * malformed tool-call arguments throw a raw SyntaxError AFTER the billed HTTP
+ * round rather than resolving. 318e066 (F179/F180) caught that throw as a call
+ * casualty, but a casualty on the FIRST call of a run has no earlier sound
+ * declaration to fall back to and stops the run outright. hamr's 2026-09-15
+ * ruling: RETRY, never repair — reuse `askStructured`'s existing malformed-
+ * emission retry ladder (bounded by `MAX_STRUCTURE_RETRIES`), never a second cap.
+ *
+ * This wraps ONLY `_request` (never `generate` itself) so bare-agent's own usage
+ * normalization, stop-reason mapping, and the Loop's own pricing/metrics all run
+ * UNCHANGED on the real response: the shim strips a malformed tool call out of
+ * the raw payload BEFORE `generate()`'s own `JSON.parse` ever reaches it, so the
+ * round comes back priced (real `usage`) with zero tool calls instead of
+ * throwing — `askStructured` then reads that as "no declaration call" (F179's
+ * retry path) rather than losing the round to an uncaught throw. Nothing here
+ * ever repairs, trims, or re-parses the malformed arguments string — it is
+ * removed, not fixed, and the caller is told to re-send the call whole.
+ *
+ * A delegate (`Object.create(provider)`), never a mutation of the shared
+ * instance: every other provider call site (worker/planrun, the scout) keeps
+ * the SAME `provider` object, untouched. A non-`OpenAIProvider` passes through
+ * byte-identical — this class of throw is specific to that one provider's
+ * request/parse seam.
+ *
+ * DELETE this shim in the same change that bumps to a bare-agent release whose
+ * `OpenAIProvider.generate` no longer throws on malformed tool-call JSON.
+ * @param {any} provider
+ * @returns {{ provider: any, malformed: () => {name: string|undefined, error: string}|null }}
+ */
+function withMalformedToolCallShim(provider) {
+  if (!(provider instanceof OpenAIProvider)) return { provider, malformed: () => null };
+  /** @type {{name: string|undefined, error: string}|null} */
+  let first = null;
+  const delegate = Object.create(provider);
+  delegate._request = async (/** @type {string} */ path, /** @type {any} */ body, /** @type {any} */ timeoutMs, /** @type {any} */ deadlineMs) => {
+    const data = await provider._request(path, body, timeoutMs, deadlineMs);
+    const choice = data?.choices?.[0];
+    const msg = choice?.message;
+    const calls = msg?.tool_calls;
+    if (!Array.isArray(calls) || calls.length === 0) return data;
+    const kept = [];
+    for (const tc of calls) {
+      const raw = tc?.function?.arguments;
+      let bad = null;
+      if (typeof raw === 'string') {
+        try { JSON.parse(raw); } catch (e) { bad = String(/** @type {any} */ (e)?.message ?? e); }
+      }
+      if (bad === null) { kept.push(tc); continue; }
+      if (!first) first = { name: tc?.function?.name, error: bad };
+    }
+    if (kept.length === calls.length) return data;
+    const choices = data.choices.slice();
+    choices[0] = { ...choice, message: { ...msg, tool_calls: kept } };
+    return { ...data, choices };
+  };
+  return { provider: delegate, malformed: () => first };
+}
+
+/**
  * The default model boundary: one bare-agent Loop per call, with the declaration
  * tool wired to END the call the moment it is used. The tool is an OUTPUT
  * CHANNEL, not a step in a conversation, so the round that would acknowledge its
@@ -1428,7 +1490,11 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
  */
 export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS } = {}) {
   return async (/** @type {any[]} */ messages, /** @type {any[]} */ tools, /** @type {any} */ opts = {}) => {
-    const loop = new Loop({ provider, system });
+    // F179 — see withMalformedToolCallShim: a plain pass-through for every
+    // provider except OpenAIProvider, whose malformed-tool-call throw this
+    // stopgap turns into an honest zero-tool-call round instead.
+    const shim = withMalformedToolCallShim(provider);
+    const loop = new Loop({ provider: shim.provider, system });
     const wired = tools.map((t) => ({
       ...t,
       execute: async (/** @type {any} */ a) => { const r = await t.execute(a); loop.stop(); return r; },
@@ -1438,7 +1504,9 @@ export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens =
     // answers hangs the process forever otherwise. `...opts` still spreads AFTER
     // it, so a caller that ever needs a tighter number for one call may pass it —
     // tighten-only, and nothing does today.
-    return loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...opts });
+    const r = await loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...opts });
+    const bad = shim.malformed();
+    return bad ? { ...r, malformedToolCall: bad } : r;
   };
 }
 
@@ -1524,14 +1592,32 @@ export async function askStructured({ messages, generate, mode, retries, label, 
 
     if (mode === 'tool') {
       if (box.calls.length === 1) return { artifact: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
-      red = {
-        code: 'artifact-red',
-        path: channel.name,
-        detail: box.calls.length === 0
-          ? `the reply delivered no ${channel.name} call — structure is enforced, prose is never parsed`
-          : `the reply delivered ${box.calls.length} ${channel.name} calls; exactly one is expected`,
-        axis: box.calls.length === 0 ? 'no-declaration-tool-call' : 'multiple-declaration-tool-calls',
-      };
+      // F179 (2026-09-15 ruling) — retry, never repair. `withMalformedToolCallShim`
+      // (makeLoopGenerate) already priced this round on the real usage and
+      // stripped the unparseable call before it could throw; this ladder's
+      // EXISTING malformed-emission retry (below) is the whole mechanism — no
+      // new cap, no second pricing path, nothing here ever re-parses or edits
+      // the model's arguments. The raw malformed string itself is never
+      // persisted, only the parser's own error message, scrubbed like every
+      // other model-authored text on this trail.
+      if (box.calls.length === 0 && r?.malformedToolCall) {
+        red = {
+          code: 'artifact-red',
+          path: channel.name,
+          detail: `the reply's ${channel.name} call arguments were not valid JSON `
+            + `(${redactSecrets(String(r.malformedToolCall.error))}) — nothing is repaired; the call must be re-sent whole`,
+          axis: 'malformed-tool-call-arguments',
+        };
+      } else {
+        red = {
+          code: 'artifact-red',
+          path: channel.name,
+          detail: box.calls.length === 0
+            ? `the reply delivered no ${channel.name} call — structure is enforced, prose is never parsed`
+            : `the reply delivered ${box.calls.length} ${channel.name} calls; exactly one is expected`,
+          axis: box.calls.length === 0 ? 'no-declaration-tool-call' : 'multiple-declaration-tool-calls',
+        };
+      }
     } else {
       // THE FALLBACK PATH — providers without tool mode only. The ONE shipped
       // parser, never a second one.
