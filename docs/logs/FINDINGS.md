@@ -12879,6 +12879,37 @@ only things stopping a worker from reading or reasoning about its own prior gate
 the deny DID fire once (see above) — showing the boundary is live, not theoretical, but also that
 the book sits inside the fenced territory it is supposed to be judging from outside. No fix proposed.
 
+**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
+live.** Fixed at the SOURCE, not by filtering `runBehaviour` on `run_id` (a single run
+legitimately spans several run_ids, so that would have been the wrong fix — and neither
+`scripts/run-u.mjs` nor `src/replay.js`'s `buildTimeline` gained one). Two parts: (a)
+`scripts/run-author.mjs` now archives its OWN gate audit out of the patient tree the moment
+authoring ends — a new `archiveGateAudit()` (idempotent, best-effort) renames
+`<tree>/gate-audit.jsonl` into the author out dir as `author-<runid>-gate-audit.jsonl` and
+prints the path beside the spine line; called from the `finally` block that every ordinary exit
+path and the crash catch already reach, and a second time explicitly before the one
+`process.exit()` path that bypasses `finally` (F181's judge-key refusal, added earlier the same
+day). (b) `scripts/run-u.mjs` now moves any STALE audit aside at launch, right after `coldReset`
+and before this run's own Gate ever opens: a new exported `moveStaleGateAudit(wd, spineDir,
+runid)` (`scripts/u-patient.mjs`, beside the existing shared `coldReset`) renames
+`<wd>/gate-audit.jsonl` into the spine dir as `pre-<runid>-gate-audit.jsonl` when one is found —
+at that point in the flow it is provably not this run's, because coldReset just proved the tree
+could not have produced one since the seed reset. Deliberately NOT called on the resume (`dead`)
+branch: a halted run's own gate audit already sitting in the tree it resumes into is that SAME
+run's prior leg, not a stranger's — moving it aside there would recreate the bug one leg early.
+The end-of-run rename (`gate-audit.jsonl` -> `u-<runid>-gate-audit.jsonl`) is unchanged and now
+only ever carries this run's own rows, because nothing else can have written to that path
+between the move and the run's own Gate opening. Tests: `tests/gate-audit-hygiene.test.js` drives
+`moveStaleGateAudit` directly against a real tmpdir (moves a stale file, returns its new path and
+content, no-ops when nothing is there) and pins both scripts' wiring from source (the finally-block
+call, the pre-exit() call, the after-`coldReset`-only-on-the-cold-branch call, the resume branch's
+deliberate absence of the call, and that no `run_id` filter was bolted onto `runBehaviour`).
+Mutation-tested: disabling `moveStaleGateAudit`'s body, removing either `archiveGateAudit()` call
+site, and removing the `run-u.mjs` call site each sent exactly the wiring test that names that
+site red; restored via `cp` from a scratchpad backup each time. Not yet proven live — no real
+authoring run followed by a real worker run against the same patient has exercised this path
+since the fix landed.
+
 ## F187 — run-u's printed approval-invocation hint always names `ANTHROPIC_API_KEY`, regardless of the job's actual provider (open)
 
 Found 2026-09-15 in the same session. `scripts/run-u.mjs:929` builds the printed "run it" command

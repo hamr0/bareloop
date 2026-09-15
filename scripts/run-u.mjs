@@ -51,7 +51,7 @@ import { HITL_PAUSE } from '../src/declaredclose.js';
 // is the seam that answers one. Same rulebook, one level out.
 import { answerReviewDoor, doorRecordOf, doorAgeGate } from '../src/reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
-import { coldReset } from './u-patient.mjs';
+import { coldReset, moveStaleGateAudit } from './u-patient.mjs';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.mjs';
@@ -1238,6 +1238,15 @@ if (dead) {
   // cold row runs THIS reset rather than a second spelling of it.
   const cold = coldReset(wd, SEED);
   console.log(`patient reset — clean at ${cold.head}, store ${cold.storeRemoved ? 'removed (cold)' : 'was already absent (cold)'}`);
+  // F186 — AFTER coldReset and BEFORE this run's own Gate ever opens (which
+  // writes to this same path), any gate-audit.jsonl still sitting in the
+  // tree is provably not this run's (see moveStaleGateAudit's own doc) —
+  // move it aside now, so the end-of-run rename below (`gate-audit.jsonl`
+  // -> `u-<runid>-gate-audit.jsonl`) only ever carries THIS run's rows. Not
+  // called on the RESUME (`dead`) branch above — a halted run's own gate
+  // audit already in the tree it resumes into is that SAME run's prior leg.
+  const preFile = moveStaleGateAudit(wd, spineDir, runid);
+  if (preFile) console.log(`gate audit — a stale file was already sitting in the patient tree (not this run's); moved aside to ${preFile}`);
 }
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];

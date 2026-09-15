@@ -58,6 +58,16 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `ANTHROPIC_API_KEY`, regardless of the job's actual provider.** A job on `openai-api`
   (DeepSeek) printed the wrong variable name to set. `invoke()` now reads `providerEntry.envKey`
   — the same resolved name the real key check at launch already uses. Not yet proven live.
+- **F186 — the printed BEHAVIOUR line (and any replay) counted tool calls from EVERY run that
+  ever touched the patient tree, not just the run being read, because the authoring scout's gate
+  audit is written directly into the patient tree and the tree's `.gitignore` denies `*.jsonl`,
+  so a cold reset never removes it.** Fixed at the source, never by filtering `runBehaviour` on
+  `run_id` (a single run legitimately spans several). `scripts/run-author.mjs` now archives its
+  own gate audit out of the patient tree the moment authoring ends (`archiveGateAudit()`, called
+  from `finally` and once more before the one `process.exit()` path that skips it).
+  `scripts/run-u.mjs` now moves any stale audit aside right after `coldReset`, before its own
+  Gate ever opens (`moveStaleGateAudit`, new export from `scripts/u-patient.mjs`) — never on the
+  resume branch, where the tree's audit is that same run's own prior leg. Not yet proven live.
 - **F179 — a malformed tool-call JSON on the FIRST authoring call had no earlier sound
   declaration to fall back to, so 318e066's provider-red stopped the run outright.** hamr's
   2026-09-15 ruling: retry, never repair. `withMalformedToolCallShim` (`src/authorflow.js`,

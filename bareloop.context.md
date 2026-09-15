@@ -2464,6 +2464,20 @@ objects will not be caught by this. `scripts/behaviour-readout.mjs <gate-audit.j
 prints the block for one run or every run_id found in the file, skipping malformed lines with
 a count rather than throwing.
 
+**F186 (2026-09-15) — the "run's own gate-audit JSONL" claim above was FALSE for a while, at the
+file-hygiene layer, never inside `runBehaviour` itself.** The authoring scout's gate audit
+(`src/authorscout.js`'s `defaultSurveyor`) writes directly into the patient tree at its root
+(`<workdir>/gate-audit.jsonl`), and the tree's own `.gitignore` denies `*.jsonl`, so
+`scripts/run-u.mjs`'s cold reset (`git clean -fd`, no `-x`) never removed it — the file
+accreted rows from every authoring scout AND every worker run that had ever touched the tree,
+and `run-u.mjs`'s end-of-run rename claimed the WHOLE accreted file as "this run's own audit"
+with no filtering. The fix is at the source, never a `run_id` filter bolted onto `runBehaviour`
+(a single run legitimately spans several run_ids): `scripts/run-author.mjs` archives its own
+audit out of the tree the moment authoring ends; `scripts/run-u.mjs` moves any stale audit
+aside right after `coldReset`, before its own Gate ever opens (never on a resume, where the
+tree's audit is that same run's own prior leg). With both halves in place, the file this
+section describes really is scoped to the one run reading it, restoring the claim above.
+
 ```js
 import { runBehaviour, formatBehaviour } from 'bareloop';
 const events = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.parse);

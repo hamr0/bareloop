@@ -61,7 +61,9 @@
 //                  item 34 L17) — `run-interview.mjs` asks for it and writes it
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import {
+  readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, renameSync,
+} from 'node:fs';
 import { dirname, join, resolve, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
@@ -76,7 +78,7 @@ import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
-import { closeJudges } from '../src/kinds.js';
+import { closeJudges, GATE_AUDIT_FILE } from '../src/kinds.js';
 import { resolveProvider, makeProvider, apiKeyProblem } from '../src/providers.js';
 import { readSourceManifest, missingDependencies } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
@@ -163,6 +165,38 @@ const writeOut = (name, body) => {
   const f = join(OUT, name);
   writeFileSync(f, `${JSON.stringify(body, null, 2)}\n`);
   return f;
+};
+
+// F186 — the scout's gate audit (`src/authorscout.js`'s `defaultSurveyor`,
+// default `auditPath = join(workdir, GATE_AUDIT_FILE)`) writes the
+// arbiter's own book DIRECTLY INTO THE PATIENT TREE, at its root — the same
+// place `scripts/run-u.mjs` later looks for a fresh worker run's own audit.
+// The patient's `.gitignore` denies `*.jsonl`, so a cold `git clean -fd`
+// never removes it: it survives across every authoring run against the
+// same tree, accreting rows from every run_id that has ever touched it,
+// until something moves it out of the way. `run-u.mjs`'s own half of this
+// fix (item 3b) moves a STALE audit aside at launch; this half archives
+// THIS run's own audit OUT of the tree the moment authoring is done, so a
+// later run — authoring or worker — never finds it there at all.
+//
+// Idempotent by construction (checks `existsSync` itself) so it is safe to
+// call from more than one exit path without double-moving or throwing on
+// the second call. Best-effort: a rename failure is reported, never thrown
+// — the same F70 reasoning the crash handler already follows (a report
+// that can itself crash defeats the report).
+let gateAuditArchived = false;
+const archiveGateAudit = () => {
+  if (gateAuditArchived) return;
+  gateAuditArchived = true;
+  const treeAudit = join(SOURCE, GATE_AUDIT_FILE);
+  if (!existsSync(treeAudit)) return;
+  const archived = join(OUT, `author-${runid}-${GATE_AUDIT_FILE}`);
+  try {
+    renameSync(treeAudit, archived);
+    console.log(`gate audit ${archived} (moved out of the patient tree — F186)`);
+  } catch (e) {
+    console.error(`gate audit could not be archived out of the patient tree: ${/** @type {any} */ (e)?.message ?? e}`);
+  }
 };
 
 // ── --SOURCE MUST BE A PREPARED TREE (PRD item 33 M3, ruling 2) ─────────────
@@ -928,6 +962,11 @@ try {
         if (judgeKeyProblem) {
           const judgeEnvName = process.env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : resolveProvider(judge.provider).envKey;
           console.error(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
+          // F186 — the scout above already ran and may have left its own gate
+          // audit in the tree; this is a process.exit() path, which skips the
+          // finally block below (and the common tail after it), so it is
+          // archived here explicitly rather than relying on either.
+          archiveGateAudit();
           process.exit(2);
         }
       }
@@ -1084,6 +1123,13 @@ try {
   // stdin. BEST-EFFORT (F70's rule again) — closing the interactive seam must
   // never take the readout it follows down with it.
   try { rl.close(); } catch { /* see onPhase */ }
+  // F186 — same reasoning, same place: EVERY exit path that reaches this
+  // finally (a refusal, a failed gate, a signed readout, or the crash catch
+  // above) may have run the scout, and the scout's gate audit must never be
+  // left in the patient tree for a later run to inherit. archiveGateAudit()
+  // is idempotent, so this is safe even on the one path (the judge-key
+  // refusal above) that already called it before exiting early.
+  archiveGateAudit();
 }
 
 // The hard line, on the artifacts this run just wrote. Count and PATH only —
