@@ -53,6 +53,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
   (`ANTHROPIC_API_KEY`), and `scripts/run-interview.mjs`'s `KEYED` offer gate (a malformed key
   no longer counts as keyed). Every refusal names the env var and the reason class, never the
   value. Not yet proven live.
+- **F187 — `scripts/run-u.mjs`'s printed invocation hints (the "approve and run" line and the
+  sleep-inhibitor wrapper line, both built through the shared `invoke()` helper) always named
+  `ANTHROPIC_API_KEY`, regardless of the job's actual provider.** A job on `openai-api`
+  (DeepSeek) printed the wrong variable name to set. `invoke()` now reads `providerEntry.envKey`
+  — the same resolved name the real key check at launch already uses. Not yet proven live.
 - **F179 — a malformed tool-call JSON on the FIRST authoring call had no earlier sound
   declaration to fall back to, so 318e066's provider-red stopped the run outright.** hamr's
   2026-09-15 ruling: retry, never repair. `withMalformedToolCallShim` (`src/authorflow.js`,

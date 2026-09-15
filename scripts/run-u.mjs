@@ -926,7 +926,13 @@ if (arg('approve') !== specHash) {
   // costs a cycle, never toward the one that mints a green nobody read). A pause WITH
   // a ruling is shown the ruling back — including the words that will BE the gap —
   // and one invocation to sign.
-  const invoke = (/** @type {string} */ tail) => `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
+  // F187 — this hint used to hardcode ANTHROPIC_API_KEY, so a job on a
+  // different provider (e.g. openai-api/DeepSeek) printed the WRONG variable
+  // name to set: a person pasting it verbatim hit a $0 refusal naming the
+  // right key only by accident of the runner's own generic error message,
+  // never from this hint. `providerEntry.envKey` is the same resolved name
+  // the real key check at launch (`:1157-1158` below) reads.
+  const invoke = (/** @type {string} */ tail) => `  ${providerEntry.envKey}=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
   /** the door the operator has already picked, as flags — hoisted out of the else
    * below so the inhibitor line at the bottom can print the WHOLE command rather
    * than a shape the operator has to assemble. Empty on an ordinary run and on the

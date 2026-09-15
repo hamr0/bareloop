@@ -12901,6 +12901,19 @@ L17 entry referenced in the 2026-09-13 episode) for the interview path; run-u's 
 hint was not carried along. No other `ANTHROPIC_API_KEY` literal exists in `scripts/run-u.mjs` — this
 is the only hardcoded site, just fanned out to several printed lines through the shared helper.
 
+**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
+live.** The one hardcoded `ANTHROPIC_API_KEY` literal (the `invoke()` helper) now reads
+`providerEntry.envKey` — the SAME resolved name the real key check at launch already reads,
+already in scope well before `invoke()` is defined. Every printed line that fans out from
+`invoke()` (the "To approve and run" line, the `systemd-inhibit` wrapper line, the rerun/accept/
+pause door lines) now names the job's real provider key. Test: `tests/run-u-key-hint.test.js`
+drives the real script through its preview path (no `--approve`, nothing spends) for the
+`bareguard-types-deepseek` job (`openai-api`) and asserts `OPENAI_API_KEY` appears and
+`ANTHROPIC_API_KEY` does not anywhere in the preview output, plus the converse for the
+`aurora-spawner` job (`anthropic-api`) to pin that the fix did not flip every job to one name.
+Mutation-tested: reverting the substitution sent 1 of the 2 new tests red; restored via `cp`
+from a scratchpad backup. Not yet proven live.
+
 ## F188 — the no-suppressions cast guard matches a value-cast but not the same unchecked cast written as a typed callback parameter (open)
 
 Found 2026-09-15 reading run `mu2p83go`'s close history. Iteration 2 of the revise loop redded on
