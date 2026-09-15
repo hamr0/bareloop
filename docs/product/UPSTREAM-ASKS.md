@@ -2721,3 +2721,17 @@ strips a malformed tool call out of the raw response before bare-agent's own `JS
 throw on it, so the round returns priced instead of crashing and bareloop's existing
 malformed-emission retry ladder can re-ask. This shim is deleted in the same change that bumps to
 a bare-agent release whose `OpenAIProvider.generate` no longer throws on malformed tool-call JSON.
+
+**2026-09-15 update — SHIPPED in bare-agent 0.43.0.** Verified against the installed source:
+`OpenAIProvider`/`OllamaProvider.generate` (`provider-openai.js`, `provider-ollama.js`) now parse
+tool calls through a shared `parseToolCalls` helper (`provider-toolcalls.js`) that never throws —
+on the first unparseable call it returns `toolCalls: []` for the whole round plus its own
+`malformedToolCall: {name, error}` marker, with `usage`/`model` still flowing so the round is
+priced; `Loop.run` (`loop.js`) surfaces that marker unchanged on its return. This is the ask
+exactly as filed (a typed, catchable shape carrying the already-billed usage), via a marker rather
+than a rejected `ProviderError` — bareloop's local shim, `withMalformedToolCallShim`
+(`src/authorflow.js`), is deleted in commit `22c7ae9`, the same change that bumps `bare-agent` to
+`^0.43.0`. `callCasualty`'s SyntaxError admission (`src/text.js`) is also deleted as dead code in
+that commit: no provider bareloop constructs can still throw a JSON SyntaxError out of `generate()`
+after a billed round (Anthropic/Gemini never had the class; every provider's raw-HTTP-body parse
+was already guarded). Closed.

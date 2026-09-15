@@ -12534,6 +12534,29 @@ an OPEN GAP, not yet fixed for those two paths. This fix itself is also NOT YET 
 tests only, against a real `OpenAIProvider` instance with `_request` stubbed at the transport
 seam — no live provider run since).
 
+**2026-09-15 update — the upstream fix shipped, bareloop's local shim deleted, still NOT YET
+PROVEN LIVE** (commit `22c7ae9`, `fix/m3-closeout`). `bare-agent` bumped `^0.42.0` -> `^0.43.0`,
+which ships BA-27: `OpenAIProvider`/`OllamaProvider.generate` no longer throw on a malformed
+tool-call arguments string, and no longer need the local strip either — the shared
+`parseToolCalls` helper (bare-agent's own `provider-toolcalls.js`) returns the round priced
+(real `usage`) with `toolCalls: []` plus a `malformedToolCall: {name, error}` marker, which
+`Loop.run` surfaces unchanged on its return. `withMalformedToolCallShim` (`src/authorflow.js`,
+96866d5's stopgap) is deleted; `makeLoopGenerate` calls `loop.run()` directly again;
+`askStructured`'s `r?.malformedToolCall` check (e9e2839, unchanged) now reads bare-agent's own
+field instead of the shim's. `callCasualty`'s SyntaxError admission (`src/text.js`) is deleted as
+dead code in the same commit — read every provider bareloop constructs
+(`AnthropicProvider`/`OpenAIProvider`/`GeminiProvider`, `src/providers.js`) against the installed
+0.43.0 source and confirmed none can still throw a JSON SyntaxError out of `generate()` after a
+billed round (Anthropic/Gemini read tool-call arguments as already-parsed objects; every
+provider's raw-HTTP-body parse in `_request` is already try/catch-wrapped into a plain `Error`);
+bareloop never streams a provider response. Tests adapted to exercise the real mechanism through a
+real `OpenAIProvider` instance (`_request` stubbed, no shim); mutation-tested (deleting
+`askStructured`'s `r?.malformedToolCall` check sent 5 tests red, restored). SCOPE is unchanged —
+the scout and the worker path are still not wired to this retry ladder (the scout's own silent
+classification gap is now pinned by a test, `tests/authorscout.test.js`; the worker path's gap is
+newly named as F184). This is STILL NOT PROVEN LIVE: no real provider run has exercised the
+0.43.0 code path since the bump — unit tests only.
+
 ## F180 — the crashed call's spend is not booked; the run's total cost is under-reported (open)
 
 Same run (mu2bjmed). The revise-1 HTTP response came back (the parse happens on
@@ -12569,7 +12592,13 @@ it can reach `book.add` (that half is upstream's to fix, BA-27 in
 `docs/product/UPSTREAM-ASKS.md` — filed, not landed). The mitigation here makes the total read
 honestly-incomplete rather than falsely complete; it does not make it complete.
 
-## F181 — a key with an embedded newline crashes inside the paid span instead of refusing at $0 (open)
+**2026-09-15 update — the specific manifestation this finding named is now moot** (commit
+`22c7ae9`, `fix/m3-closeout`, `bare-agent` bumped to `^0.43.0`). BA-27 landed: a malformed
+tool-call round no longer throws and no longer loses `usage` — it returns priced, so the crashed-
+call-loses-spend mechanism this finding described cannot happen anymore for THIS cause (a
+malformed tool-call arguments string). 318e066's booking mitigation (above) stays in place as the
+general safety net for every other admitted casualty class (ETIMEDOUT/TimeoutError) that can still
+reject a call after this repo's own `book.add` seam runs. Not proven live (same caveat as F179).
 
 Run mu2bcn7c, spine
 `/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live/out/author-mu2bcn7c.jsonl`.
@@ -12638,3 +12667,50 @@ person reading the confirm turn is told a guard is absent when the code already 
 Candidate direction (unruled): derive `notChecked` from the same code-side protections list the
 confirm turn already prints, by set-difference against the person's asks, rather than letting
 the model state it freeform.
+
+## F184 — a malformed tool-call round on the worker path ends an attempt with nothing on the spine naming it (open)
+
+Found 2026-09-15 while bumping `bare-agent` to 0.43.0 and closing out F179/F180. Scoped read, not
+a live run: `src/planrun.js`'s worker `ask()` (the Loop-path surface, `src/planrun.js:2783-2815`,
+distinct from the native/CLIPipe `ask()` at `:2598-2629`, which is a different transport and out
+of scope here) reads only `r.error` off the `loop.run()` return (`:2806`, `if (r.error) { ... }`)
+and otherwise returns `r` unexamined (`:2814`). It never reads `r.malformedToolCall` — bare-agent
+0.43.0's own field (BA-27, `node_modules/bare-agent/src/loop.js:854-856`), surfaced only on
+`Loop.run()`'s FINAL return, never per-round: the per-round `onLlmResult` metering payload
+(`node_modules/bare-agent/src/loop.js:905-923`) carries `model`/`usage`/`costUsd`/`stopReason`/
+etc. but no `malformedToolCall` field, so bareloop's own round-level spine record
+(`src/planrun.js`'s `metered` callback, ~`:2680-2716`) cannot see it either — the only place the
+marker ever reaches bareloop code is the value `ask()` throws away.
+
+The caller, `middle()` (`src/planrun.js:3308-3320`), does `const r = await w.ask([...])` then
+`lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX)` — the ONLY thing kept from the round. If
+the model's tool call on its final turn is malformed, bare-agent 0.43.0 returns that round with
+`toolCalls: []`, `text: ''` (a JSON-only tool-call reply carries no separate text), `error: null`,
+and `malformedToolCall: {name, error}` — the Loop reads a toolCalls-empty round as the model's own
+"done" (no more tool calls to execute) and returns rather than retrying, exactly as `askStructured`
+(`src/authorflow.js`) is built to notice and re-ask, but nothing on the worker path plays that
+role. `lastText` becomes empty, `judge()` (`src/planrun.js:3323-3348`) then runs the step's real
+exit checks against a workdir the attempt never touched, and the ordinary `needs_revision` +
+`exit-eval` failing-check gap is what reaches the spine (`:3339`, `emit('exit-eval', ...)`) — the
+same shape a ROUND THAT SIMPLY PRODUCED NO USEFUL WORK would leave. A billed round whose real
+cause was a malformed-JSON transport casualty is indistinguishable, on the spine, from the model
+genuinely failing the step — the operator reading a killed/looping run's spine has no way to tell
+"the model tried and the wire garbled it" from "the model didn't try," and the ladder's strike
+governor (two strikes force a replan, MEMORY.md) counts this round exactly like a real failed
+attempt even though nothing the worker could have done differently would have helped.
+
+Not the same population BA-27 fixed for: F179's own SCOPE note already says the worker path (and
+the scout) are OUT OF SCOPE for the `askStructured` retry ladder — this finding is that the
+upstream fix landing does not, by itself, give the worker path anywhere to route the marker either;
+`ask()` simply never looks. (The scout has the same blind spot — pinned by a new test this same
+commit, `tests/authorscout.test.js`, "a REAL OpenAIProvider survey round with a malformed tool
+call is classified as an ordinary EMPTY survey" — but the scout's classification at least lands in
+an EXISTING named cause (`SURVEY_CAUSES.EMPTY`) that retries under `SCOUT_RETRY_CAUSES`; the
+worker path has no retry or named cause at all, only a generic failing-exit-check gap.)
+
+Candidate direction (unruled): `ask()` could read `r.malformedToolCall` when `r.toolCalls` came
+back empty and `r.text` is empty too, and emit a distinct spine event (or fold it into
+`attempt-bounded`'s existing `cause` taxonomy, e.g. `cause: 'malformed-tool-call'`) naming the
+transport class — never retried automatically (that is arbiter-adjacent: it would change how many
+rounds an attempt actually gets), but at minimum VISIBLE, the same honesty bar F179/F180 set for
+the authoring path.

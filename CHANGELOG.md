@@ -7,6 +7,30 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Changed
+
+- **`bare-agent` bumped `^0.42.0` → `^0.43.0`.** Ships BA-27 (bareloop's own corroborating
+  upstream ask, `docs/product/UPSTREAM-ASKS.md`): `OpenAIProvider`/`OllamaProvider.generate` no
+  longer throw a raw `SyntaxError` when a model's tool-call `arguments` string is malformed JSON —
+  the shared `parseToolCalls` helper returns the round priced (real `usage`) with `toolCalls: []`
+  plus its own `malformedToolCall: {name, error}` marker instead, and `Loop.run` surfaces that
+  marker unchanged on its return. No other package changed (`package-lock.json` diff is
+  `bare-agent` only).
+
+### Removed
+
+- **`withMalformedToolCallShim`, bareloop's local F179 stopgap (`src/authorflow.js`, added
+  2026-09-15 commit `96866d5`).** Deleted now that bare-agent 0.43.0 fixes BA-27 upstream —
+  `makeLoopGenerate` calls `loop.run()` directly again, no delegate provider. `askStructured`'s
+  `r?.malformedToolCall` check (`e9e2839`) is unchanged and now reads bare-agent's own field.
+- **`callCasualty`'s SyntaxError admission (`src/text.js`)**, dead code once no provider bareloop
+  constructs (`AnthropicProvider`, `OpenAIProvider`, `GeminiProvider` — `src/providers.js`) can
+  still throw a JSON `SyntaxError` out of `generate()` after a billed round: verified against
+  0.43.0's installed source that Anthropic and Gemini read tool-call arguments as already-parsed
+  objects (nothing to `JSON.parse` in their response paths), and every provider's raw-HTTP-body
+  parse is already try/catch-wrapped inside `_request`. The idle-timeout (ETIMEDOUT/TimeoutError)
+  admission is unchanged.
+
 ### Fixed
 
 - **F179 — a malformed tool-call JSON on the FIRST authoring call had no earlier sound
