@@ -175,6 +175,18 @@ export const SECRET_PATTERNS = [
   // length by Google's own issuance format). Admitted with the gemini-api
   // provider (PRD item 31.3, F160) — was missing on this branch until then.
   /(?<![A-Za-z0-9_-])AIza[0-9A-Za-z_-]{35}/,
+  // URL userinfo credentials: `scheme://user:password@host` (a gateway/proxy
+  // endpoint pasted with its credentials inline, e.g. `baseUrl`). Matches
+  // ONLY the `user:password` span, gated on a `://` lookbehind and an `@`
+  // lookahead so the scheme and host stay OUTSIDE the match — redact()
+  // replaces the whole match, and this shape's own redaction promise is
+  // "keep the scheme and host readable, mask the credentials", never the
+  // whole URL. The `://` lookbehind is what keeps this from ever matching
+  // `git@github.com:org/repo` (SSH syntax, no `://`) or a bare email address
+  // (no scheme at all); requiring a `:password` after the username is what
+  // keeps it from matching `scheme://user@host` (no password — nothing to
+  // redact there, and no false positive on a userinfo-less URL).
+  /(?<=:\/\/)[A-Za-z0-9._%+-]+:[^:@/\s]+(?=@)/,
 ];
 const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
 
@@ -191,6 +203,7 @@ export const SECRET_PATTERN_NAMES = [
   'AWS access key ID (AKIA)',
   'Slack token (xox)',
   'Google/Gemini API key (AIza)',
+  'URL userinfo credentials (scheme://user:pass@)',
 ];
 
 /**

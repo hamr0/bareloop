@@ -540,6 +540,10 @@ generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_CO
 `VERDICT_TYPES`, `LOCKED_VERDICTS` — plus `checkMenu` itself.
 `globToPrefix(scope)` and `scanSecrets(text)` are exported too — the write-scope prefix
 mapping and the one secret-shape sweep `validateJob` itself is built from (`src/validate.js`).
+`SECRET_PATTERNS`/`redactSecrets` share that ONE inventory (F189, 2026-09-15 added a
+`scheme://user:pass@host` shape, matching only the userinfo span so redaction keeps the
+scheme and host readable — detection and redaction must never disagree about what a secret
+looks like, so there is exactly one list, never a second private pattern anywhere).
 
 ### `validatePlan(input, { job, maxStepRounds?, scopes? })` → `{ ok, reds, plan }` — `src/plan.js`
 

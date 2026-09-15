@@ -68,6 +68,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `scripts/run-u.mjs` now moves any stale audit aside right after `coldReset`, before its own
   Gate ever opens (`moveStaleGateAudit`, new export from `scripts/u-patient.mjs`) — never on the
   resume branch, where the tree's audit is that same run's own prior leg. Not yet proven live.
+- **F189 — `redactSecrets` did not mask a URL's embedded userinfo credentials
+  (`scheme://user:pass@host`).** `SECRET_PATTERNS` (`src/validate.js`, the one shape inventory
+  behind detection AND redaction) gains one entry, matching only the `user:pass` span (a `://`
+  lookbehind, an `@` lookahead) so the scheme and host stay readable through the mask. Never
+  matches SSH remote syntax, a bare email address, or a userinfo-less URL. Monotonic — checked
+  against every `jobs/*.json` spec and the existing test suite before landing, zero new reds. Not
+  yet proven live.
 - **F179 — a malformed tool-call JSON on the FIRST authoring call had no earlier sound
   declaration to fall back to, so 318e066's provider-red stopped the run outright.** hamr's
   2026-09-15 ruling: retry, never repair. `withMalformedToolCallShim` (`src/authorflow.js`,
