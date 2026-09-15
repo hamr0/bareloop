@@ -2367,6 +2367,50 @@ test('makeLoopGenerate (F179): EVERY attempt malformed (1 + MAX_STRUCTURE_RETRIE
   for (const c of report.calls) assert.equal(typeof c.costUsd, 'number');
 });
 
+// F179 follow-up (2026-09-15 review) — a reply carrying TWO declaration calls,
+// one valid and one malformed, must NOT be accepted just because the shim's
+// strip leaves `box.calls.length === 1`. Before 96866d5 a two-call reply was
+// ALWAYS 'multiple-declaration-tool-calls' — never an accept — so a malformed
+// call riding alongside a valid one must not widen what this ladder takes
+// from a malformed reply: `r?.malformedToolCall` now overrides the accept
+// check regardless of how many calls survived the strip.
+test('askStructured (F179 follow-up): TWO tool calls in one reply, one valid + one malformed — never accepted, even though the strip leaves exactly one surviving call', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const decl = goodDeclaration();
+  provider._request = async () => ({
+    choices: [{
+      message: {
+        content: '',
+        tool_calls: [
+          { id: 'call_1', function: { name: DECLARATION_TOOL_NAME, arguments: JSON.stringify(decl) } }, // valid
+          { id: 'call_2', function: { name: DECLARATION_TOOL_NAME, arguments: `${JSON.stringify(decl)}}` } }, // malformed
+        ],
+      },
+      finish_reason: 'tool_calls',
+    }],
+    usage: { prompt_tokens: 120, completion_tokens: 40 },
+    model: 'deepseek-flash',
+  });
+
+  const generate = makeLoopGenerate(provider);
+  const book = makeCostBook();
+  /** @type {{calls: any[]}} */
+  const box = { calls: [] };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'call declare_close exactly once', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate, mode: 'tool', retries: 0, label: 'author', book, channel,
+  });
+
+  assert.equal(r.artifact, null, 'the surviving valid call is never accepted just because one of its two siblings was malformed');
+  assert.equal(r.red?.axis, 'malformed-tool-call-arguments');
+
+  const report = book.report();
+  assert.equal(report.calls.length, 1);
+  assert.equal(typeof report.calls[0].costUsd, 'number', 'the round is priced off real usage');
+});
+
 test('makeLoopGenerate (F179): the ceiling sees the first PRICED malformed call — a retry is NOT made once it trips', async () => {
   const { OpenAIProvider } = await import('bare-agent/providers');
   const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });

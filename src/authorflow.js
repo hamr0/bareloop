@@ -1591,16 +1591,24 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     }
 
     if (mode === 'tool') {
-      if (box.calls.length === 1) return { artifact: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
       // F179 (2026-09-15 ruling) — retry, never repair. `withMalformedToolCallShim`
       // (makeLoopGenerate) already priced this round on the real usage and
-      // stripped the unparseable call before it could throw; this ladder's
+      // stripped the unparseable call(s) before they could throw; this ladder's
       // EXISTING malformed-emission retry (below) is the whole mechanism — no
       // new cap, no second pricing path, nothing here ever re-parses or edits
       // the model's arguments. The raw malformed string itself is never
       // persisted, only the parser's own error message, scrubbed like every
       // other model-authored text on this trail.
-      if (box.calls.length === 0 && r?.malformedToolCall) {
+      //
+      // Checked BEFORE the `box.calls.length === 1` accept and REGARDLESS of
+      // how many calls survived the strip (0 or more): a reply carrying one
+      // malformed call ALONGSIDE one valid one would otherwise leave
+      // `box.calls.length === 1` after the shim strips the bad one, and the
+      // surviving valid call would be silently accepted — before this fix, a
+      // two-call reply was ALWAYS the 'multiple-declaration-tool-calls' red,
+      // never an accept, so that would widen what this ladder takes from a
+      // malformed reply. Nothing from a malformed reply is ever accepted.
+      if (r?.malformedToolCall) {
         red = {
           code: 'artifact-red',
           path: channel.name,
@@ -1608,6 +1616,8 @@ export async function askStructured({ messages, generate, mode, retries, label, 
             + `(${redactSecrets(String(r.malformedToolCall.error))}) — nothing is repaired; the call must be re-sent whole`,
           axis: 'malformed-tool-call-arguments',
         };
+      } else if (box.calls.length === 1) {
+        return { artifact: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
       } else {
         red = {
           code: 'artifact-red',
