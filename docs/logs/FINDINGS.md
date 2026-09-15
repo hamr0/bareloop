@@ -12250,6 +12250,20 @@ instrument-stopped; `stop` is unchanged and the swap is reported (`fellBack`, an
 event, and the terminal readout). The spine's own `author-phase` events still carry no field
 stating WHY a given revision fired — that half of this finding stays open.
 
+**2026-09-15 update — the fallback fired live a second time** (run `mu2qmept`, transcript
+`~/Downloads/pro3.txt` lines 145-161, spine
+`/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-3/out/author-mu2qmept.jsonl`).
+revise-1's seed-read came back with no instrument-stop (both reds were the expected
+`changed-from-seed` and `typecheck-checksjs-strict-errors`, everything else green) — a sound
+declaration in hand, same as F176's original mu0voeo4 account. revise-2 was still called after
+that sound revise-1 and this time instrument-stopped two stages
+(`tests-executed-kept`, `tests-zero-failures`); `author-fallback {"from":"revise-2",
+"to":"revise-1","brokenStages":["tests-executed-kept","tests-zero-failures"]}` fired and the run
+kept revise-1. The fallback mechanism itself is now proven live; the part of this finding that
+"the ladder always spends to its cap" still stands unchanged — revise-1 was already sound and
+revise-2 was paid for anyway (`revise-2 — $0.529054 across 6 call(s)` total, up from revise-1's
+own lower running total).
+
 ## F177 — installed packages read as worker writes when the repo does not gitignore node_modules (fixed in code)
 
 A repo source's copy (`prepareSource`, `src/source.js:411`) holds only git-tracked files. The
@@ -12557,6 +12571,14 @@ classification gap is now pinned by a test, `tests/authorscout.test.js`; the wor
 newly named as F184). This is STILL NOT PROVEN LIVE: no real provider run has exercised the
 0.43.0 code path since the bump — unit tests only.
 
+**2026-09-15 update — still NOT proven live.** Two more live runs today (`mu2p83go`, signed run
+via run-u; `mu2qmept`, the real person-path interview) both completed with zero malformed
+tool-call events on their spines (grepped `author-mu2qmept.jsonl` for `malformed`: 0 hits).
+`mu2qmept` did hit an `author-scout-recovery` call (spine ts `2026-09-15T13:59:38.611Z`,
+`$0.139132 across 2 call(s)`) — that is a distinct mechanism (a short-blob scout recovery,
+`src/authorscout.js:556`), not the malformed-tool-call-arguments class this finding names, and
+it carries no `malformedToolCall` marker. This finding stays open, unproven live.
+
 ## F180 — the crashed call's spend is not booked; the run's total cost is under-reported (open)
 
 Same run (mu2bjmed). The revise-1 HTTP response came back (the parse happens on
@@ -12663,6 +12685,16 @@ case; the two pre-existing deps-gap tests were updated for the pause step now si
 their transcript. Mutation-checked: disabling the recheck (always reading "resolved") is killed
 by the still-missing-retry test. Not yet run against a real live interview end to end.
 
+**2026-09-15 update — PROVEN LIVE, run `mu2qmept`** (transcript `~/Downloads/pro3.txt` lines
+24-28, spine `author-mu2qmept.jsonl`). The interview paused right after printing the install gap
+(`"Press Enter once it has finished to check again, or type skip to carry on without it:"`,
+line 28); `npm ci` was run in the prepared copy from a second shell — by the main session, on the
+person's behalf, not by the person themselves — and Enter on the paused prompt read the recheck
+as resolved (`"packages found — carrying on."`). The interview then reached the "Run it now?"
+offer (line 71) and the person answered yes: `run-author.mjs` was spawned reading the keyboard
+(ruling 9's hand-off), the first time this path has run live end to end. The pause/recheck loop,
+the corrected wording, and the reachable offer are all confirmed working as fixed.
+
 ## F183 — the confirm turn's "you asked for these, but nothing checks them" list contradicts the code-derived protections printed right above it (open)
 
 Run mu2bjmed, confirm round 2 plan (spine `author-phase` `confirm-done` round 2).
@@ -12682,6 +12714,16 @@ person reading the confirm turn is told a guard is absent when the code already 
 Candidate direction (unruled): derive `notChecked` from the same code-side protections list the
 confirm turn already prints, by set-difference against the person's asks, rather than letting
 the model state it freeform.
+
+**2026-09-15 update — RECURRED, this time in confirm ROUND 1** (run `mu2qmept`, transcript
+`~/Downloads/pro3.txt` lines 97-112, spine `author-mu2qmept.jsonl` `author-phase` `confirm-done`
+round 1 — mu2bjmed's occurrence was round 2). The same two false claims recurred: `notChecked`
+listed "Do not edit or delete tests" and "No ts-ignore comments and no any casts" while the
+protections list printed directly above already named `no-suppressions` (covers `@ts-ignore`)
+and the write fence `src/**` (`test/` sits outside it, already refusing test edits). "No any
+casts" and "Do not change what the code does" were genuinely unchecked, same as before. Still
+open — the candidate fix (derive `notChecked` by set-difference against the code-side list) has
+not been built.
 
 ## F184 — a malformed tool-call round on the worker path ends an attempt with nothing on the spine naming it (open)
 
