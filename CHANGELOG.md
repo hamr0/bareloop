@@ -42,6 +42,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
   resolved recheck; `skip` or end of input carries on unresolved, same as before. Also drops the
   misleading "then rerun this command" wording, which pointed at restarting the whole interview
   when only the install is needed. Not yet proven live.
+- **F181 — a key with an embedded newline (or other control character, or stray whitespace)
+  read as "set" by every presence-only key check and then crashed Node's own header-encode
+  (`ERR_INVALID_CHAR`) inside the paid span, rather than refusing at $0.** One exported pure
+  helper, `apiKeyProblem(value)` (`src/providers.js`, beside the provider table), reports a
+  plain-English reason (or `null`) for a value carrying CR, LF, TAB, another C0/DEL control
+  character, or leading/trailing whitespace — it never trims or repairs. Wired at every door
+  that already presence-checks a key: `scripts/run-author.mjs` (worker and judge keys),
+  `scripts/run-u.mjs` (worker and judge keys), `src/cli.js`'s `bareloop run`
+  (`ANTHROPIC_API_KEY`), and `scripts/run-interview.mjs`'s `KEYED` offer gate (a malformed key
+  no longer counts as keyed). Every refusal names the env var and the reason class, never the
+  value. Not yet proven live.
 - **F179 — a malformed tool-call JSON on the FIRST authoring call had no earlier sound
   declaration to fall back to, so 318e066's provider-red stopped the run outright.** hamr's
   2026-09-15 ruling: retry, never repair. `withMalformedToolCallShim` (`src/authorflow.js`,

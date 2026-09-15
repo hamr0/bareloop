@@ -12622,6 +12622,8 @@ malformed tool-call arguments string). 318e066's booking mitigation (above) stay
 general safety net for every other admitted casualty class (ETIMEDOUT/TimeoutError) that can still
 reject a call after this repo's own `book.add` seam runs. Not proven live (same caveat as F179).
 
+## F181 — a key with an embedded newline crashes inside the paid span instead of refusing at $0 (open)
+
 Run mu2bcn7c, spine
 `/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live/out/author-mu2bcn7c.jsonl`.
 The operator's secret-store entry printed two lines, so `OPENAI_API_KEY` held key + `"\n"` + a
@@ -12643,6 +12645,28 @@ Never include or describe the key or the metadata line's content in any record o
 Candidate direction (unruled): trim/validate the resolved API key value (reject embedded control
 characters) before constructing the request, so this class refuses at $0 instead of crashing
 mid-span.
+
+**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
+live.** One exported pure helper, `apiKeyProblem(value)` (`src/providers.js`, beside the
+provider table), reports `null` for a clean value or a plain-English reason for a value that
+carries CR, LF, TAB, any other C0/DEL control character, or leading/trailing whitespace — it
+NEVER trims or repairs (retry-never-repair, in spirit: refuse, don't guess). Wired at every door
+that presence-checks a key: `scripts/run-author.mjs` (worker key, and the judge key when
+`closeJudges` is true), `scripts/run-u.mjs` (worker key, and the judge key when `JUDGES`),
+`src/cli.js`'s `bareloop run` (`ANTHROPIC_API_KEY`), and `scripts/run-interview.mjs`'s `KEYED`
+gate (a malformed key no longer counts as keyed; the offer names the reason, never the value).
+Every refusal names the env var and the reason class only — never the value, never a substring
+of it. Also restored this finding's own header (`## F181 …`), which commit `28380e2` deleted by
+mistake while inserting the F180/F179 dated updates immediately above it — the body text
+survived, orphaned under F180's heading, until this update put the header back. Unit tests
+(`tests/providers.test.js`) cover the clean/newline/CR/tab/leading-space/trailing-space/generic-
+control-char cases and the never-trims contract; a script-level test
+(`tests/run-author.test.js`, `'a key with an embedded newline refuses at $0…'`) drives the real
+script end to end with `ANTHROPIC_API_KEY: 'sk-test\nmeta'` (dummy value) and asserts exit 2,
+the exact reason text, no spine file, and no echo of the key. Mutation-tested: disabling the
+line-break check alone sent 3 tests red across the two suites; restored via `cp` from a
+scratchpad backup, never `git checkout`. Not yet proven live — no real provider run has
+exercised this refusal path since it was added.
 
 ## F182 — the interview never waits for the install, so "Run it now?" is unreachable for a repo that needs packages (open)
 

@@ -653,6 +653,39 @@ test('a --source prepared from a NON-repo (a plain folder), with a valid provide
   assert.equal(spineFiles.length, 0, 'no event ever reached the spine before the key gate — the file was never created');
 });
 
+// F181 — a key that IS set (so the presence check above passes) but carries
+// an embedded line break must refuse at $0, before any provider is
+// constructed and before any spine record exists — never crash mid-call.
+// Dummy value only ("sk-test\nmeta"), never a real secret shape.
+test('a key with an embedded newline refuses at $0 — before any spine record exists', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: 'sk-test\nmeta', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 2, text);
+  assert.match(text, /ANTHROPIC_API_KEY contains a line break/);
+  assert.doesNotMatch(text, /sk-test/, 'the key value itself must never be echoed');
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 0, 'no event ever reached the spine before the key gate — the file was never created');
+});
+
 // The far side of the move — pinned from SOURCE, for the same reason the
 // governance/kill/sign blocks above are: it is reachable only past a real
 // key and a real model call, which this suite never pays for.

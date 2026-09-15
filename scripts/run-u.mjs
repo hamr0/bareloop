@@ -44,7 +44,7 @@ import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKP
 // worker's already goes through. `tests/reviewdoor-u.test.js` greps this
 // file's own source to prove THIS runner actually wires the resolved judge
 // through `makeProvider` into `runJob` (not just that the library can).
-import { resolveProvider, makeProvider, probeWarningLines } from '../src/providers.js';
+import { resolveProvider, makeProvider, probeWarningLines, apiKeyProblem } from '../src/providers.js';
 import { loadRegistry, quarantinesCredit } from '../src/bridges.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
@@ -1156,6 +1156,12 @@ if (PAUSED && RULING === null) {
 // worker key IS `ANTHROPIC_API_KEY`, demanded as ever.
 const workerApiKey = process.env[providerEntry.envKey];
 if (!workerApiKey) { console.error(`${providerEntry.envKey} not set (secrets load from the environment — never the tree)`); process.exit(2); }
+// F181 — a key that reads as "set" above can still carry a line break/
+// control char/stray whitespace (a two-line secret-store entry, e.g.) and
+// crash Node's own header-encode inside the paid span. Refuse at the SAME
+// door, before any provider is constructed; never echo the value.
+const workerKeyProblem = apiKeyProblem(workerApiKey);
+if (workerKeyProblem) { console.error(`${providerEntry.envKey} ${workerKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`); process.exit(2); }
 const JUDGES = closeJudges(spec.closeDecl);
 // WHICH MODEL GRADES THIS JOB (PRD item 32.1). Resolved, never pinned: the
 // spec's signed `judge: {provider, model}` if it names one, else this job's own
@@ -1177,6 +1183,17 @@ if (JUDGES && !judgeApiKey) {
   console.error(`Neither JUDGE_API_KEY nor ${judgeEntry.envKey} is set — secrets load from the environment, never the tree.`);
   console.error('Refused at $0, BEFORE the worker spends anything: a judged run that discovers this at the close has paid for a verdict it cannot render.');
   process.exit(2);
+}
+// F181 — same door, second shape: a judge key that IS present can still be
+// malformed (line break/control char/stray whitespace). Checked only when
+// JUDGES (the key is only required then); never echoes the value.
+if (JUDGES) {
+  const judgeKeyProblem = apiKeyProblem(/** @type {string} */ (judgeApiKey));
+  if (judgeKeyProblem) {
+    const judgeEnvName = process.env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : judgeEntry.envKey;
+    console.error(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
+    process.exit(2);
+  }
 }
 
 // `wd`/`spineDir` are derived once, above the resume reader that needs them; only the

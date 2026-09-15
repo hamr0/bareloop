@@ -85,7 +85,7 @@ import {
   SOURCE_FIELD, destinationFieldFor, labelsFor,
 } from '../src/authorflow.js';
 import { validateJob, validateBaseUrl, PROVIDERS } from '../src/job.js';
-import { resolveProvider, probeWarningLines } from '../src/providers.js';
+import { resolveProvider, probeWarningLines, apiKeyProblem } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
 import { prepareSource, proveDestination, looksLikeRepoSource, missingDependencies } from '../src/source.js';
@@ -687,17 +687,27 @@ if (draft.baseUrl !== undefined && providerEnvKey) {
 // exactly one possible outcome for the person, and putting it anyway spends
 // their attention on a choice they do not have. What is actionable instead is
 // the command above and the one line that says how to make it work.
-const KEYED = providerEnvKey !== null && Boolean(process.env[providerEnvKey]);
+// F181 — a key that IS set can still carry a shape run-author will refuse
+// (a line break/control char/stray whitespace, e.g. a two-line secret-store
+// entry). A malformed key must not count as KEYED: this offer must read the
+// same "will it actually run" question run-author itself asks at its door.
+const rawKeyValue = providerEnvKey ? process.env[providerEnvKey] : undefined;
+const keyProblem = rawKeyValue ? apiKeyProblem(rawKeyValue) : null;
+const KEYED = providerEnvKey !== null && Boolean(rawKeyValue) && !keyProblem;
 if (!KEYED) {
   say('');
-  say(providerEnvKey
-    ? `  (${providerEnvKey} is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)`
-    : `  (provider "${PROVIDER}" is not in the runnable table — run-author will refuse it loud; this is not a key problem)`);
+  if (providerEnvKey && keyProblem) {
+    say(`  (${providerEnvKey} is set but ${keyProblem} — run-author refuses without a clean key; secrets are never trimmed or repaired, only reported)`);
+  } else {
+    say(providerEnvKey
+      ? `  (${providerEnvKey} is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)`
+      : `  (provider "${PROVIDER}" is not in the runnable table — run-author will refuse it loud; this is not a key problem)`);
+  }
   // The repair, in plain words and WITHOUT a command: which secret store a person
   // keeps their key in is theirs, and printing one specific incantation would be
   // this script guessing at their setup — while the one thing it must never do is
   // put a key anywhere a command line can be read from.
-  if (providerEnvKey) say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
+  if (providerEnvKey && !keyProblem) say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
 }
 // re-checked at the hand-off, not just once right after prepareSource: this is
 // the LAST $0 point before the offer below could spend on a run that would

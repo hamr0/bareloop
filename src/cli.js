@@ -33,7 +33,7 @@ import {
   exportBundle, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
   runJob, makeSpine, loadRegistry, listingRow, jobSpecHash, resolveWorkerModel, resolveJudge,
 } from './index.js';
-import { resolveProvider, buildRunnerProviders } from './providers.js';
+import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
 
 // The tier->model tables live in `src/providers.js` now (PRD item 28's
 // factory) — one seam instead of a copy hardcoded in each runner. A
@@ -274,6 +274,15 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
       if (readme) out(readme);
       out(`bundleHash: ${bundle.manifest.bundleHash}`);
       return 0;
+    }
+    // F181 — a key that reads as "set" above can still carry a line break/
+    // control char/stray whitespace and crash Node's own header-encode
+    // inside the paid span. Refused here, at the same door, before any
+    // provider is constructed; never echoes the value.
+    const keyProblem = apiKeyProblem(apiKey);
+    if (keyProblem) {
+      err(`ANTHROPIC_API_KEY ${keyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
+      return 1;
     }
     try {
       ({ provider, providerFor, judgeProvider, judgeModel } = buildProviders(apiKey, bundle.spec));

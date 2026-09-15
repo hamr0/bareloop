@@ -957,7 +957,9 @@ spends it.
 DIFFERENT PROCESS under its own ceiling; the interview prints its exact command line (with
 `--budget` propagated only when one was given, and a note when the CHOSEN provider's own key —
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, resolved through the same provider table
-`run-author.mjs` and `run-u.mjs` share — is unset in this shell)
+`run-author.mjs` and `run-u.mjs` share — is unset in this shell, OR set but MALFORMED: F181 — a
+value carrying a line break/control character/stray whitespace (a two-line secret-store entry,
+e.g.) reads a distinct reason via `apiKeyProblem` (`src/providers.js`), never the value)
 before asking `Run it now? [y/N]`, so declining still leaves a command to paste and two files
 already on disk. Only an explicit yes spends — the answer that costs nothing is the one you get
 by saying nothing, the same lean the pause's doors take. On a yes it releases stdin before

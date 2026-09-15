@@ -77,7 +77,7 @@ import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
 import { closeJudges } from '../src/kinds.js';
-import { resolveProvider, makeProvider } from '../src/providers.js';
+import { resolveProvider, makeProvider, apiKeyProblem } from '../src/providers.js';
 import { readSourceManifest, missingDependencies } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
@@ -374,6 +374,13 @@ const draftJudge = resolveDraftJudge(draft);
 const AUTHOR_ENV_KEY = /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).envKey;
 const apiKey = process.env[AUTHOR_ENV_KEY];
 if (!apiKey) { console.error(`${AUTHOR_ENV_KEY} not set (secrets load from the environment — never the tree, never argv)`); process.exit(2); }
+// F181 — a key that carries a line break/control char/stray whitespace (a
+// two-line secret-store entry, e.g.) reads as "set" by the presence check
+// above and then crashes Node's own header-encode inside the paid span. This
+// refuses at the SAME door, before any provider is constructed, and never
+// echoes the value or the reason's source.
+const AUTHOR_KEY_PROBLEM = apiKeyProblem(apiKey);
+if (AUTHOR_KEY_PROBLEM) { console.error(`${AUTHOR_ENV_KEY} ${AUTHOR_KEY_PROBLEM} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`); process.exit(2); }
 /** The judge's key follows the RESOLVED judge provider's own env var, with
  * `JUDGE_API_KEY` as the role-named override in front (PRD item 32.3) — the same
  * contract `scripts/run-u.mjs` keeps, so one story covers both surfaces. When the
@@ -909,6 +916,21 @@ try {
       const judge = judges
         ? resolveJobJudge(spec, PROVIDER_NAME, resolveWorkerModel)
         : null;
+      // F181 — the judge key is required exactly when `judges` is true (this
+      // script has no presence check on it today; adding one is out of this
+      // finding's scope). What this door DOES owe, the same as the worker
+      // key above: a resolved value that IS present but carries a shape an
+      // HTTP header cannot refuses here, before the calibration gate spends
+      // anything, rather than crashing mid-call.
+      if (judges) {
+        const judgeKeyValue = judgeKeyFor(judge.provider);
+        const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
+        if (judgeKeyProblem) {
+          const judgeEnvName = process.env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : resolveProvider(judge.provider).envKey;
+          console.error(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
+          process.exit(2);
+        }
+      }
       const judgeProvider = judge
         ? makeProvider(judge.provider, { apiKey: judgeKeyFor(judge.provider), model: judge.model })
         : null;

@@ -202,6 +202,42 @@ export function resolveProvider(providerName) {
 }
 
 /**
+ * Report whether a resolved API key VALUE (not its presence — every call
+ * site already presence-checks separately) carries a shape an HTTP header
+ * value cannot: F181 (`docs/logs/FINDINGS.md`) — a two-line secret-store
+ * entry put the key plus a trailing metadata line into `OPENAI_API_KEY`
+ * (`"<key>\nmeta"`), the presence-only check at every door passed, and Node
+ * crashed `TypeError [ERR_INVALID_CHAR]` inside its own header-encode at the
+ * FIRST paid call — after the run had already announced itself as spending,
+ * inside the paid span. curl tolerated the same value (HTTP 200 twice), so a
+ * curl probe is a blind instrument for this defect class.
+ *
+ * NEVER TRIMS OR REPAIRS — this reports a reason, it does not fix the value
+ * (hamr's retry-never-repair rule, in spirit: refuse loud, don't guess at
+ * what the operator's secret store meant). Every call site that gets a
+ * non-null reason back refuses at $0, in the SAME place and the SAME way it
+ * already refuses a missing key — this function only adds a second shape of
+ * refusal to a door that already had one.
+ *
+ * The checked shape is deliberately wider than what Node's own header
+ * encoder rejects (Node tolerates a bare tab in a header value): CR, LF, TAB,
+ * every other C0/DEL control character, and leading/trailing whitespace all
+ * refuse, because every one of them is evidence the resolved value is not a
+ * clean single-line secret — the same class of "reads as one plausible thing,
+ * is actually stale/wrong/multi-line" this finding named.
+ * @param {string} value the resolved key value — never logged, never echoed by any caller
+ * @returns {string|null} a plain-English reason class, or `null` when the value is clean
+ */
+export function apiKeyProblem(value) {
+  if (/[\r\n]/.test(value)) return 'contains a line break';
+  if (/\t/.test(value)) return 'contains a tab character';
+  // eslint-disable-next-line no-control-regex -- deliberately scanning C0/DEL controls
+  if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(value)) return 'contains a control character';
+  if (value !== value.trim()) return 'has leading or trailing whitespace';
+  return null;
+}
+
+/**
  * Construct ONE provider instance for `providerName`/`model`, applying
  * `exposeErrorBody: true` (F153 — every constructed provider, unconditionally)
  * and the model's own request-key gating (`paramsFor`). `baseUrl` (PRD item
