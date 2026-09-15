@@ -12714,3 +12714,29 @@ back empty and `r.text` is empty too, and emit a distinct spine event (or fold i
 transport class — never retried automatically (that is arbiter-adjacent: it would change how many
 rounds an attempt actually gets), but at minimum VISIBLE, the same honesty bar F179/F180 set for
 the authoring path.
+
+## F185 — an interview-authored repo job cannot be RUN by a person; it needs a developer hand-step (open)
+
+Found 2026-09-15 while sign-and-running the first PERSON-path spec (`jobs/pulselog-person-strict-checks.json`,
+precedent `edf755c`). `scripts/run-u.mjs` runs only jobs listed in its own hard-coded `JOBS` table
+(`scripts/run-u.mjs:65`); `--job <key>` (`scripts/run-u.mjs:273`, `const jobKey = arg('job') ?? 'aurora-spawner';`)
+resolves a `target` from that table, and the spec it loads is read off disk at a path built from the
+table's own `spec` field (`scripts/run-u.mjs:284`, `const specPath = fileURLToPath(new URL(\`../jobs/${target.spec}\`, import.meta.url));`),
+refusing by name if the file is not there (`:285-286`). There is no code path from a freshly authored
+spec into either the table or `jobs/` — both are edits a developer makes by hand.
+
+The PERSON authoring path (`scripts/run-interview.mjs` → `scripts/run-author.mjs`) never makes that
+edit either. `run-interview.mjs`'s end-of-interview offer ("Run it now?", `scripts/run-interview.mjs:705`)
+spawns `run-author.mjs` (`scripts/run-interview.mjs:724`, `spawnSync(process.execPath, [RUN_AUTHOR, ...childArgs], ...)`)
+— i.e. it runs the AUTHORING pipeline, never the job itself. `run-author.mjs`'s own successful end
+state prints "SIGNING PREPARED — NOT SIGNED. This script stops here, by design." (`scripts/run-author.mjs:1016`)
+followed by "read the seed evidence above; if the close measures your job, the signature is yours to
+give." (`:1018`) and stops — it names no command that signs or runs the resolved spec it just wrote to
+`out/resolved-spec.json`. The person is left holding a resolved, hash-stable spec file with no way to
+launch it: `run-u.mjs` will refuse any `--job` key that is not already in its table, and nothing tells
+the person that reaching a running job from here requires a developer to `cp` the spec into `jobs/`
+and add a `JOBS` row (exactly the two hand-edits this commit made, following precedent `01d66070`).
+
+So PRD item 33 M3 ruling 7 ("A repo job works end to end", `docs/product/ITEM33-BUILD.md:383`) is
+true only with a developer hand-step between authoring and running; it is not true end to end for a
+person acting alone through the shipped CLI surface. No fix proposed here.
