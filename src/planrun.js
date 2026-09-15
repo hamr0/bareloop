@@ -2811,6 +2811,30 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         err.lib = 'bare-agent';
         throw err;
       }
+      // F184 — bare-agent 0.43.0 (BA-27) returns a malformed final-turn tool
+      // call PRICED rather than throwing: `toolCalls: []`, `text: ''`,
+      // `error: null`, and its own `malformedToolCall: {name, error}`
+      // marker. Nothing below this point can tell that apart from the model
+      // genuinely producing no useful work — `middle()` reads `r.text` into
+      // `lastText`, which comes back empty either way, and the ordinary
+      // `needs_revision`/`exit-eval` gap is what reaches the spine. That is
+      // NOT changed here — no retry, no new cause on `attemptBounded`, no
+      // effect on strike/ladder/attempt counting or verdict routing (all
+      // arbiter-adjacent, none of this finding's scope). What was missing is
+      // VISIBILITY: this is the one place bareloop code ever sees the
+      // marker before `ask()` returns it unexamined, so a distinct spine
+      // record names the transport class here — the same honesty bar
+      // F179/F180 set for the authoring path, applied to the worker path.
+      if (r.malformedToolCall) {
+        const rawErr = String(r.malformedToolCall.error ?? '');
+        const scrubbedErr = scrub(rawErr);
+        const shownErr = scrubbedErr.length > BOUND_REASON_MAX
+          ? `${scrubbedErr.slice(0, BOUND_REASON_MAX)} [${GAP_TRIM_MARKER} ${scrubbedErr.length - BOUND_REASON_MAX} of ${scrubbedErr.length} characters withheld — the cap is ${BOUND_REASON_MAX}]`
+          : scrubbedErr;
+        emit('worker-malformed-tool-call', {
+          phase, iteration: roundIteration, name: scrub(String(r.malformedToolCall.name ?? '')), error: shownErr,
+        });
+      }
       return r;
     };
     return { ask, askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };

@@ -12796,6 +12796,34 @@ transport class — never retried automatically (that is arbiter-adjacent: it wo
 rounds an attempt actually gets), but at minimum VISIBLE, the same honesty bar F179/F180 set for
 the authoring path.
 
+**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
+live.** `ask()` (`src/planrun.js`) now reads `r.malformedToolCall` right where the marker already
+reaches bareloop code (after the existing `r.error` handling, so a `denied:`/halt/truncated/wiring
+error still takes its own existing lane unchanged), and emits ONE distinct spine record naming it:
+`worker-malformed-tool-call`, `{phase, iteration, name, error}` — `name`/`error` scrubbed through
+`redactSecrets` and the error text capped at `BOUND_REASON_MAX` with the existing
+`GAP_TRIM_MARKER` withheld-count convention, never a raw unbounded string. `ask()` then `return
+r;`s EXACTLY as before — no retry, no new `attemptBounded` cause, no change to strike/ladder/
+attempt counting or verdict routing (all arbiter-adjacent, explicitly out of this finding's
+scope): the ordinary `needs_revision`/`exit-eval` gap the finding describes still fires the same
+way for a malformed round as it did before this fix, now simply named on the spine alongside it.
+Checked for exhaustive spine-type readers that a new type could break (`replay.js`, every
+`scripts/*.mjs` `events.filter`) — every existing reader POSITIVELY matches specific types it
+wants (`e.type === 'worker-round'`, etc.) rather than enumerating a closed set, so a new type is
+invisible to all of them by construction; none needed a change.
+Test: `tests/worker-malformed-toolcall.test.js` drives the REAL bare-agent `Loop` against a REAL
+`OpenAIProvider` instance with `_request` stubbed at the transport seam (never a hand-rolled
+`scriptedProvider`, which returns pre-parsed `toolCalls` directly and cannot exercise bare-agent's
+own `parseToolCalls`/malformed-JSON detection at all) — the same idiom `tests/
+authorscout.test.js`'s analogous scout-side test uses. Proves: the record fires exactly once, with
+the right name/error/phase/iteration; nothing runs between the marker and the attempt ending (no
+retry); a genuinely-empty ordinary round (no malformed marker at all) never gets mis-flagged. Also
+proves the ordinary `exit-eval` gap still fires unchanged, for both the malformed round and the
+ordinary-empty control. Mutation-tested: disabling the `r.malformedToolCall` read sent the first
+test's marker-count assertion red (0 vs 1); restored via `cp` from a scratchpad backup. Not yet
+proven live — no real provider has produced a malformed tool call against the shipped worker path
+since this fix landed.
+
 ## F185 — an interview-authored repo job cannot be RUN by a person; it needs a developer hand-step (open)
 
 Found 2026-09-15 while sign-and-running the first PERSON-path spec (`jobs/pulselog-person-strict-checks.json`,

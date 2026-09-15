@@ -75,6 +75,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
   matches SSH remote syntax, a bare email address, or a userinfo-less URL. Monotonic — checked
   against every `jobs/*.json` spec and the existing test suite before landing, zero new reds. Not
   yet proven live.
+- **F184 — a malformed tool-call round on the WORKER path (`src/planrun.js`'s Loop-path `ask()`)
+  ended an attempt with nothing on the spine naming it — indistinguishable from the model
+  genuinely producing no useful work.** `ask()` now reads bare-agent 0.43.0's own
+  `r.malformedToolCall` marker (present since BA-27) and emits a distinct `worker-malformed-tool-
+  call` record (`{phase, iteration, name, error}`, scrubbed and length-capped) — visibility only:
+  no retry, no change to strikes/ladder/attempt counting/verdict routing, all arbiter-adjacent and
+  out of scope. Not yet proven live.
 - **F179 — a malformed tool-call JSON on the FIRST authoring call had no earlier sound
   declaration to fall back to, so 318e066's provider-red stopped the run outright.** hamr's
   2026-09-15 ruling: retry, never repair. `withMalformedToolCallShim` (`src/authorflow.js`,
