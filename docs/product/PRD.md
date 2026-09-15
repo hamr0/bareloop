@@ -458,9 +458,14 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
       — fixed: `$0` stop names the install command (commit 941cf7d), not yet proven live —
       plus F177 (commit 496bb54) and F178: a signed fence can no longer name `.git` or
       `node_modules`, and writes into a nested `node_modules` are denied (commits 0720a66,
-      3fda3a0, b884c3e), not yet proven live. — live: the install-gap pause and F177's
-      node_modules-not-a-worker-write fix (run `mu2p83go`, F185–F188); still owed: F178
-      (`.git`/`node_modules` write-fence denial) never exercised live.
+      3fda3a0, b884c3e), not yet proven live. — live: the install command named at $0 (person
+      runs 2026-09-15, both interviews ended "Not offered — the copy still has no installed
+      packages" — stash `2026-09-15-live-person-run-ba27.md` item 3, run `mu2bjmed`'s out dir);
+      the install-gap PAUSE itself (F182 fix), run `mu2qmept` (F182); F177 (installed packages
+      not counted as worker writes) — `npm ci` in the copy left `git status` at 0 lines (stash
+      item 3, tree `source-mu2bglzc`), and signed run `mu2p83go` then recorded only
+      `src/checks.js` as changed (F185–F188). Still owed: F178 (`.git`/`node_modules`
+      write-fence denial) never exercised live.
     - [x] The real person path (`run-interview` → spawned `run-author` reading the keyboard) has
       never run live — ruling 9's proof is still owed. **2026-09-15: proven live**, run
       `mu2qmept` (F182).
