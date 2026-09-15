@@ -12437,3 +12437,145 @@ against a VALIDATOR regression, since `.git` is never legitimately in-fence in t
 the fix — no full `npm test` run from this builder session; the main session's own full gate is
 what surfaced the original regression and is the instrument that will confirm this fix at the
 next full-suite run. Still not yet proven live end to end.
+
+## F179 — a malformed tool-call JSON from the provider crashed the paid authoring run and threw away a sound declaration (open)
+
+Run mu2bjmed, spine
+`/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/author-mu2bjmed.jsonl`.
+Live proof run of the real person path (PRD item 33 ruling 9), DeepSeek deepseek-flash,
+`openai-api` provider, patient = a `prepareSource` copy of `~/PycharmProjects/pulselog`.
+
+The first `author` call's declaration measured at the seed with 7 stages and NO instrument-stop
+(`changed-from-seed` red, `typecheck-checks-strict` red — both expected at seed — the other five
+green). So a sound declaration was in hand.
+
+The ladder then made call revise-1 (`author-phase` `author-call` `i:1 of:2`, ts
+`2026-09-15T07:02:34.070Z`). That call crashed: `SyntaxError: Unexpected non-whitespace
+character after JSON at position 5734 (line 1 column 5735)`, thrown from `JSON.parse
+(tc.function.arguments)` — `node_modules/bare-agent/src/provider-openai.js:135:23`
+(`OpenAIProvider.generate`, bare-agent 0.42.0, no try/catch around the parse) — propagating
+through `Loop.run` (`node_modules/bare-agent/src/loop.js:823:65`) → `askStructured`
+(`src/authorflow.js:1496:15`, `const r = await generate(convo, tools, {});` — no catch) →
+`askDeclaration` (`src/authorflow.js:1556:13`, `const r = await askStructured({...})`) →
+`authorClose` (`src/authorflow.js:2202:19`) → `authorCloseForJob`
+(`src/authorjob.js:675:20`). The full stack trace is captured verbatim in the spine's
+`author-crash` record (ts `2026-09-15T07:03:24.650Z`). Spine ends `author-crash` +
+`author-end{outcome:'crashed'}` (ts `2026-09-15T07:03:24.651Z`).
+
+F176's fallback (newest sound iteration) never ran, because the throw escaped `authorClose`
+entirely rather than being caught and compared against the prior sound iteration. Nothing
+signed.
+
+HYPOTHESIS (this run's own raw response was not kept): the model emitted a malformed tool-call
+`arguments` string with extra trailing structure. This is consistent with fwdloop's F28 sample —
+a peer repo's own finding, not this run's evidence — whose captured `arguments` string ended
+`..."matches": ["c2", "c3"]}}"` (one extra trailing brace), a shape that would read exactly as
+"non-whitespace character after JSON" the way this run's message does. fwdloop's session
+independently hit the same `bare-agent` 0.42.0 `SyntaxError` live 3 times on 2026-09-15 on
+deepseek-flash — three independent hits the same day across two repos is corroborating signal
+for the crash class, but it is still not this run's own raw text, which was never captured; the
+cause stays a hypothesis here.
+
+Doctrine touchpoints to cite: no JSON repair ever; the one mitigation this codebase already has
+for malformed JSON elsewhere (the judge) is a single retry, not applied here. Upstream: the
+upstream ask has been filed by fwdloop (its F28); bareloop is to add a corroborating
+UPSTREAM-ASKS entry (not done in this commit).
+
+Candidate direction (unruled): wrap the tool-call parse (or the whole `generate` call) so a
+malformed-arguments SyntaxError becomes a typed, catchable provider-shape red instead of an
+uncaught crash, letting F176's fallback-to-newest-sound-iteration logic run.
+
+## F180 — the crashed call's spend is not booked; the run's total cost is under-reported (open)
+
+Same run (mu2bjmed). The revise-1 HTTP response came back (the parse happens on
+`data.choices` after a 200), so that call was billed by the provider, but `book.add`
+(`src/authorflow.js:1498`, `book.add(attempt === 0 ? label : ..., r, attempts);`) runs only
+AFTER `generate` returns on line 1496 — since the throw happens inside `generate` (during
+`OpenAIProvider.generate`'s own tool-call mapping, before it returns), `book.add` for revise-1
+never executes. No `author-cost` row for revise-1 exists in the spine. The last `author-cost`
+row present is label `"author"`, `knownUsdSoFar: 0.62592`, `spendCompleteSoFar: true` (ts
+`2026-09-15T07:02:23.568Z`). The following `author-end` record carries no spend fields, and the
+run's terminal output printed no total.
+
+fwdloop's F28 names the same mechanism from its own side: the provider returns `data.usage`
+before the `JSON.parse` throw, and that usage value is lost with the throw — never reaching
+whatever books it, the same class this finding names for bareloop's `book.add` call.
+
+Why it matters: doctrine says a killed run gets its own honest cost, and unknown spend must
+read `spendComplete=false`, never a complete-looking floor. The last-recorded row here reads
+`spendCompleteSoFar: true` while a further, unbilled-on-paper call in fact spent money —
+under-reporting is the unsafe direction for a cap.
+
+Candidate direction (unruled): book (or at least mark incomplete) the pre-throw response data —
+including `usage` when the transport returns it — before the tool-call argument parse can
+crash the call.
+
+## F181 — a key with an embedded newline crashes inside the paid span instead of refusing at $0 (open)
+
+Run mu2bcn7c, spine
+`/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live/out/author-mu2bcn7c.jsonl`.
+The operator's secret-store entry printed two lines, so `OPENAI_API_KEY` held key + `"\n"` + a
+metadata line. Crash: `TypeError [ERR_INVALID_CHAR]: Invalid character in header content
+["Authorization"]` (`code: 'ERR_INVALID_CHAR'`), thrown from `transport.request(url, ...)` at
+`node_modules/bare-agent/src/provider-openai.js:205:29` (`OpenAIProvider._request`), at the
+first scout call (`author-phase` `scout`, ts `2026-09-15T06:52:08.661Z`; crash ts
+`2026-09-15T06:52:08.833Z`). No request left the machine ($0 spent — the crash is inside Node's
+own header-encode, before the socket is written to); no key value reached the spine (checked:
+grepped the spine for key-shaped strings, 0 hits).
+
+`run-author`'s key check is presence-only (checks the env var is set, not its shape). A curl
+probe built with the same two-line value returned HTTP 200 twice — curl tolerated the embedded
+newline — so a curl probe is a blind instrument for this defect class; a plain Node `https`
+request with the first line only (key with the trailing metadata stripped) returned 200.
+
+Never include or describe the key or the metadata line's content in any record of this finding.
+
+Candidate direction (unruled): trim/validate the resolved API key value (reject embedded control
+characters) before constructing the request, so this class refuses at $0 instead of crashing
+mid-span.
+
+## F182 — the interview never waits for the install, so "Run it now?" is unreachable for a repo that needs packages (open)
+
+`scripts/run-interview.mjs`. `prepareSource` runs right after Destination (:409). The install
+gap is printed at :426-434 (`"The copy above has no installed packages (...)"`, `"bareloop
+never runs an install itself — run this in the copy, then rerun this command:"`, then the
+`cd ... && <install command>` line) — but the script does not pause there; it falls straight
+through into the rest of the interview (the class/confirm questions), and only re-checks the
+same gap at hand-off, far later (:687-702, `depsGapAtHandoff`, re-run of the same
+`missingDependencies` check right before the offer). `OFFERABLE` (:702) is
+`KEYED && !depsGapAtHandoff`, so the still-open gap silently suppresses the "Run it now?" offer
+there instead.
+
+A freshly made copy of a JS repo with any dependencies therefore never gets the offer unless the
+person installs in a second terminal mid-interview, which nothing on screen tells them to do —
+the printed message says "then rerun this command," pointing at restarting the interview, which
+is not actually required (only the install is).
+
+Observed twice on 2026-09-15, `pulselog-person-live` and `pulselog-person-live-2`: in both, the
+person reached "Not offered — the copy still has no installed packages." The spawned
+`run-author` path (ruling 9's "reading the keyboard" hand-off) is therefore still unproven live
+in this build; `run-author` was fired by hand instead in both runs.
+
+Candidate direction (unruled): either pause the interview with an explicit prompt right after
+printing the install gap (re-checking before continuing), or drop the "rerun this command"
+wording in favor of "install in another terminal, then answer the offer below."
+
+## F183 — the confirm turn's "you asked for these, but nothing checks them" list contradicts the code-derived protections printed right above it (open)
+
+Run mu2bjmed, confirm round 2 plan (spine `author-phase` `confirm-done` round 2).
+`notChecked` listed "No ts-ignore comments" and "Do not edit or delete tests" while the
+protections list shown directly above it (the code-derived list, not model prose) included the
+no-suppressions guard (covers `@ts-ignore`) and the write fence `src/**` (`test/` sits outside
+that fence, so a test edit is already refused by the fence, independent of any check). Round 1's
+plan had instead correctly listed those same two items as CHECKED. Of the four `notChecked`
+items in round 2, two are false claims of an absent protection ("No ts-ignore comments", "Do not
+edit or delete tests"); "No any casts" and "Do not change what the code does" are genuinely
+unchecked.
+
+Same defect class as F174 (a model-invented protection), reversed in direction: there a model
+CLAIMED a protection that did not exist; here a model CLAIMS a real protection is MISSING. The
+person reading the confirm turn is told a guard is absent when the code already enforces it.
+
+Candidate direction (unruled): derive `notChecked` from the same code-side protections list the
+confirm turn already prints, by set-difference against the person's asks, rather than letting
+the model state it freeform.
