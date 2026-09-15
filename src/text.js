@@ -8,7 +8,11 @@
 // record, for the same reason again — a second writer that forgets the scrub is
 // a leak on the very trail the scrub exists to protect.
 
+import { createRequire } from 'node:module';
 import { redactSecrets } from './validate.js';
+
+const require = createRequire(import.meta.url);
+const { HaltError } = require('bare-agent');
 
 // A fence counts as the artifact's WRAPPER only when it opens within this many
 // lines of the response — the chatty-preamble shape ("Here's the fix:\n```…").
@@ -146,6 +150,39 @@ export function capStop({ ceilingUsd, knownUsd, spendComplete }) {
   }
   if (knownUsd >= ceilingUsd) return 'cap-halt';
   if (!spendComplete) return 'pricing-red';
+  return null;
+}
+
+/**
+ * THE ONE SPELLING of "was this throw a call casualty, or something else" —
+ * F179/F180's seam. `authorscout.js`'s `settled` already narrowed a rejected
+ * `loop.run()` to its own idle-timeout class (F152/PRD 30.4), with the same
+ * reasoning repeated here: swallowing every throw would launder a budget
+ * `HaltError`, a programming bug, or any other named terminal into "the call
+ * failed" — the exact class of dishonesty this repo refuses (an unknown
+ * reported as a known). This widens that ONE seam to a second class bare-agent
+ * 0.42.0 can throw mid-call rather than reject: `OpenAIProvider.generate`'s
+ * `JSON.parse(tc.function.arguments)` has no try/catch
+ * (`node_modules/bare-agent/src/provider-openai.js:132-136`), so a model's
+ * malformed tool-call arguments surface as a raw `SyntaxError` after the
+ * billed HTTP round (F179) — never caught anywhere in this codebase until now,
+ * and never repaired: the caller gets the reason, not a second parse attempt.
+ *
+ * A `HaltError` is deliberately excluded — it is bare-agent's own governance
+ * exit (a budget/turn cap), never a transport casualty, and this predicate
+ * must never launder one into a mere "the call failed" (the same rule the
+ * scout's own comment states for its narrower seam).
+ * @param {any} err
+ * @returns {string|null} a short reason when `err` is an admitted casualty class,
+ *   `null` for everything else (including `HaltError`) — the caller re-throws on `null`.
+ */
+export function callCasualty(err) {
+  if (err instanceof HaltError) return null;
+  const e = /** @type {any} */ (err);
+  if (e?.code === 'ETIMEDOUT' || e?.name === 'TimeoutError') return String(e?.message ?? e);
+  if (e?.name === 'SyntaxError' && /JSON/.test(String(e?.message ?? ''))) {
+    return `malformed tool-call arguments from the provider: ${String(e?.message ?? e)}`;
+  }
   return null;
 }
 

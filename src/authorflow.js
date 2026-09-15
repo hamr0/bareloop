@@ -83,7 +83,7 @@ import {
   validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
-import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop } from './text.js';
+import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
 
 const require = createRequire(import.meta.url);
@@ -1493,7 +1493,27 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     // two must offer one set of kinds, or the composer reads about a kind it
     // cannot call — or worse, calls one the ceiling will refuse after we paid.
     const tools = mode === 'tool' ? [channel.tool(box)] : [];
-    const r = await generate(convo, tools, {});
+    // F179/F180 — bare-agent 0.42.0's OpenAIProvider.generate can THROW mid-call
+    // (a raw SyntaxError off a malformed tool-call arguments string, parsed with
+    // no try/catch) rather than resolve with `{error}` the way a settled
+    // provider-shape casualty normally does. Unwrapped, that throw escaped this
+    // function entirely — discarding a sound prior declaration (F179) and
+    // skipping `book.add` so the billed call went unbooked (F180). `callCasualty`
+    // is the SAME predicate `authorscout.js`'s `settled` uses for its narrower
+    // idle-timeout seam (src/text.js, beside `priceOf`): a HaltError or an
+    // unrecognised throw re-raises unchanged — only an admitted casualty class
+    // lands here as the same `{error}` shape the resolved-error path already
+    // books and returns below.
+    let r;
+    try {
+      r = await generate(convo, tools, {});
+    } catch (e) {
+      const reason = callCasualty(e);
+      if (reason === null) throw e;
+      attempts += 1;
+      book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, { error: reason }, attempts);
+      return { artifact: null, attempts, convo, raw: '', providerError: reason, red: null, budget: null };
+    }
     attempts += 1;
     book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r, attempts);
     const raw = redactSecrets(String(r?.text ?? ''));

@@ -48,7 +48,7 @@ import {
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
   catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
-  applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
+  applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose, askStructured,
 } from '../src/authorflow.js';
 import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scrubRaw } from '../src/text.js';
@@ -106,7 +106,7 @@ function goodDeclaration(lang = 'js', targets = TARGETS) {
 /**
  * A scripted model boundary. Each entry either DELIVERS a declaration through
  * the tool (`declaration` / `declarations`) or delivers only text.
- * @param {{declaration?: any, declarations?: any[], text?: string, costUsd?: number|null, error?: string|null}[]} script
+ * @param {{declaration?: any, declarations?: any[], text?: string, costUsd?: number|null, error?: string|null, throws?: Error}[]} script
  */
 function scriptGenerate(script) {
   /** @type {any[]} */
@@ -114,6 +114,10 @@ function scriptGenerate(script) {
   const generate = async (/** @type {any} */ messages, /** @type {any} */ tools, /** @type {any} */ opts) => {
     const spec = script[Math.min(calls.length, script.length - 1)] ?? {};
     calls.push({ messages, tools, opts });
+    // F179 fixture support: a call that THROWS rather than resolves — the shape
+    // `askStructured`'s generate seam must survive without discarding a sound
+    // prior declaration (see the F176 fallback tests this ladder already has).
+    if (spec.throws) throw spec.throws;
     const tool = tools.find((/** @type {any} */ t) => t.name === DECLARATION_TOOL_NAME);
     const delivered = spec.declarations ?? (spec.declaration ? [spec.declaration] : []);
     if (tool) for (const d of delivered) await tool.execute(d);
@@ -2140,4 +2144,121 @@ test('authorClose: a provider casualty still leaves its raw on the trail', async
   assert.equal(r.stop, 'provider-red');
   assert.deepEqual(r.raws.map((x) => x.label), r.cost.calls.map((c) => c.label));
   assert.match(r.raws[0].text, /partial answer before the socket died/);
+});
+
+// ── F179/F180 — a malformed tool-call JSON no longer crashes the loop ──────
+//
+// Run mu2bjmed (docs/logs/FINDINGS.md F179/F180): bare-agent 0.42.0's
+// `OpenAIProvider.generate` does `JSON.parse(tc.function.arguments)` with no
+// try/catch, so a model's malformed tool-call arguments throw a raw
+// SyntaxError AFTER the billed HTTP round. Unwrapped, that throw escaped
+// `askStructured` entirely — discarding a sound prior declaration (F179) and
+// skipping `book.add`, so the billed call went unbooked (F180). `callCasualty`
+// (src/text.js) is the one predicate that admits this class (and the scout's
+// pre-existing idle-timeout class) without laundering anything else.
+
+test('askStructured (F179/F180): a REAL OpenAIProvider whose transport returns malformed tool-call JSON never throws — providerError names it, the call is booked at cost null', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  // stubbed at the LOWEST point short of a real socket: `_request` is the one
+  // method that talks to the transport — everything above it (temperature
+  // fallback, tool-call mapping, the JSON.parse that throws) is bare-agent's
+  // own real code, unmodified, exactly as it ran in mu2bjmed.
+  provider._request = async () => ({
+    choices: [{
+      message: {
+        content: '',
+        // valid JSON plus one extra trailing brace — the shape fwdloop's F28
+        // sample captured and this run's own message is consistent with
+        tool_calls: [{ id: 'call_1', function: { name: 'test_tool', arguments: '{"a":1}}' } }],
+      },
+      finish_reason: 'tool_calls',
+    }],
+    usage: { prompt_tokens: 120, completion_tokens: 40 },
+    model: 'deepseek-flash',
+  });
+
+  const generate = makeLoopGenerate(provider);
+  const book = makeCostBook();
+  const channel = {
+    name: 'test_tool',
+    instruction: 'call test_tool exactly once',
+    tool: (/** @type {{calls: any[]}} */ box) => ({
+      name: 'test_tool',
+      description: 'a test tool',
+      parameters: { type: 'object', properties: { a: { type: 'number' } } },
+      execute: async (/** @type {any} */ a) => { box.calls.push(a); return 'ack'; },
+    }),
+  };
+
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'hi' }], generate, mode: 'tool', retries: 0, label: 'author', book, channel,
+  });
+
+  assert.equal(r.artifact, null);
+  assert.ok(r.providerError, 'no throw escaped — a typed providerError came back instead');
+  assert.match(r.providerError, /malformed tool-call arguments/);
+  assert.match(r.providerError, /JSON/);
+
+  const report = book.report();
+  assert.equal(report.calls.length, 1, 'F180: the billed call IS booked, not skipped');
+  assert.equal(report.calls[0].label, 'author');
+  assert.equal(report.calls[0].costUsd, null, 'a casualty call has no knowable price');
+  assert.equal(report.spendComplete, false, 'a null-cost call makes the tally honest-incomplete, never a complete-looking floor');
+  assert.equal(report.nullCostCalls, 1);
+});
+
+test('authorClose (F179/F180 via the ladder): revise-1 throws the malformed-JSON SyntaxError — the author call\'s sound declaration is kept, not discarded', async () => {
+  const decl = goodDeclaration();
+  const badJson = new SyntaxError('Unexpected non-whitespace character after JSON at position 5734');
+  const { generate } = scriptGenerate([{ declaration: decl }, { throws: badJson }]);
+  const { fn } = scriptSeedRead(); // every stage 'red' — a real verdict, no instrument-stop: SOUND
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn });
+
+  assert.equal(r.ok, true, 'F179: the author call\'s already-measured, already-sound declaration is not thrown away');
+  assert.equal(r.stop, 'provider-red');
+  assert.equal(r.finalFrom, 'author');
+  // the RETURNED declaration is the validated/genre-injected one, not the raw
+  // scripted input verbatim (validateDeclaration/applyGenreEnv normalize the
+  // parser shape) — the stage names surviving is what proves it is still the
+  // author call's own declaration, never revise-1's (which never measured)
+  assert.deepEqual(r.declaration.stages.map((/** @type {any} */ s) => s.name), decl.stages.map((/** @type {any} */ s) => s.name));
+  assert.equal(r.cost.spendComplete, false, 'F180: the crashed revise-1 call still counts against the honest total');
+  assert.equal(r.cost.nullCostCalls, 1);
+  assert.ok(r.cost.calls.some((/** @type {any} */ c) => c.label === 'revise-1'), 'F180: the billed-but-crashed call IS in the book, not silently missing');
+});
+
+test('askStructured: a thrown TimeoutError-shaped error lands as providerError, cost null — same seam, the pre-existing casualty class', async () => {
+  const book = makeCostBook();
+  const err = /** @type {any} */ (new Error('idle socket'));
+  err.code = 'ETIMEDOUT';
+  const generate = async () => { throw err; };
+  const channel = { name: 't', instruction: 'x', tool: () => ({ name: 't', execute: async () => 'ack' }) };
+  const r = await askStructured({ messages: [], generate, mode: 'tool', retries: 0, label: 'author', book, channel });
+  assert.equal(r.artifact, null);
+  assert.equal(r.providerError, 'idle socket');
+  assert.equal(book.report().calls[0].costUsd, null);
+});
+
+test('askStructured: a thrown TypeError (a programming bug) still rejects — never laundered into a providerError', async () => {
+  const book = makeCostBook();
+  const generate = async () => { throw new TypeError('cannot read property of undefined'); };
+  const channel = { name: 't', instruction: 'x', tool: () => ({ name: 't', execute: async () => 'ack' }) };
+  await assert.rejects(
+    askStructured({ messages: [], generate, mode: 'tool', retries: 0, label: 'author', book, channel }),
+    TypeError,
+  );
+  assert.equal(book.report().calls.length, 0, 'an un-admitted throw never reaches book.add either');
+});
+
+test('askStructured: a HaltError-shaped throw still rejects — a governance halt is never laundered into a mere call failure', async () => {
+  const { HaltError } = await import('bare-agent');
+  const book = makeCostBook();
+  const generate = async () => { throw new HaltError('budget exhausted', { rule: 'test-rule' }); };
+  const channel = { name: 't', instruction: 'x', tool: () => ({ name: 't', execute: async () => 'ack' }) };
+  await assert.rejects(
+    askStructured({ messages: [], generate, mode: 'tool', retries: 0, label: 'author', book, channel }),
+    HaltError,
+  );
+  assert.equal(book.report().calls.length, 0);
 });

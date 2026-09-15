@@ -398,6 +398,34 @@ test('runAuthorScout: a throw from the loop is relayed AFTER cleanup', async () 
   assert.equal(seen.cleaned, 1, 'a leaked surveyor leaks a litectx handle and a gate');
 });
 
+// F179 widened `settled`'s admitted-casualty class past the idle-timeout it was
+// built for (src/text.js `callCasualty`, shared with `askStructured`): a
+// malformed tool-call-arguments SyntaxError is now ALSO a call that produced
+// nothing, so it lands as the same `call-failed` cause a rejected timeout
+// already did — never a crash out of `runAuthorScout`.
+
+test('runAuthorScout: a call throwing bare-agent\'s malformed-tool-call SyntaxError lands as call-failed, cost null — never a crash', async () => {
+  const { createSurveyor, seen } = stubSurveyor();
+  const badJson = new SyntaxError('Unexpected non-whitespace character after JSON at position 5734');
+  const createLoop = () => ({ run: async () => { throw badJson; }, stop: () => {} });
+  const r = await runAuthorScout({ workdir: '/w', createLoop, createSurveyor });
+  assert.equal(r.state, 'ABSENT');
+  assert.equal(r.cause, 'call-failed');
+  assert.match(r.reason, /malformed tool-call arguments/);
+  assert.equal(r.calls[0].costUsd, null, 'a rejected call has no knowable cost');
+  assert.equal(seen.cleaned, 1);
+});
+
+test('runAuthorScout: a thrown TypeError (a programming bug) still re-raises — callCasualty never launders it', async () => {
+  const { createSurveyor, seen } = stubSurveyor();
+  const createLoop = () => ({ run: async () => { throw new TypeError('cannot read property of undefined'); }, stop: () => {} });
+  await assert.rejects(
+    () => runAuthorScout({ workdir: '/w', createLoop, createSurveyor }),
+    TypeError,
+  );
+  assert.equal(seen.cleaned, 1);
+});
+
 // ── 4. the mechanical seed listing (L1) ─────────────────────────────────────
 
 test('seedFileList reads the SEED commit, never the working tree', async (t) => {
