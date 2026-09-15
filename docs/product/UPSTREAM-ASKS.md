@@ -2712,5 +2712,12 @@ typed `ProviderError` (`context.bound: 'malformed-tool-call'` or similar, follow
 own `context` convention) carrying the ALREADY-RECEIVED `usage` from `data.usage` — the response
 was billed and the caller should not lose that fact just because one tool call's arguments could
 not be parsed. No JSON repair, no retry — bareloop's own standing rule against both applies
-equally to the ask. bareloop consumes by version bump once it lands; no local shim beyond the
-containment above.
+equally to the ask. bareloop consumes by version bump once it lands.
+
+**2026-09-15 update:** run `mu2cnycb` showed the containment above is not enough on its own (a
+casualty on the FIRST authoring call has no sound declaration to fall back to). A second local
+stopgap, `withMalformedToolCallShim` (`src/authorflow.js`, wired into `makeLoopGenerate` only),
+strips a malformed tool call out of the raw response before bare-agent's own `JSON.parse` can
+throw on it, so the round returns priced instead of crashing and bareloop's existing
+malformed-emission retry ladder can re-ask. This shim is deleted in the same change that bumps to
+a bare-agent release whose `OpenAIProvider.generate` no longer throws on malformed tool-call JSON.

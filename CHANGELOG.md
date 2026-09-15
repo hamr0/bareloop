@@ -9,6 +9,18 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F179 — a malformed tool-call JSON on the FIRST authoring call had no earlier sound
+  declaration to fall back to, so 318e066's provider-red stopped the run outright.** hamr's
+  2026-09-15 ruling: retry, never repair. `withMalformedToolCallShim` (`src/authorflow.js`,
+  wired into `makeLoopGenerate`) is a delegate provider (`Object.create`, never a mutation of
+  the shared instance) whose `_request` strips a malformed tool call out of the raw response
+  BEFORE `generate()`'s own `JSON.parse` can throw on it, so the round comes back PRICED on
+  bare-agent's own real usage instead of crashing. `askStructured` reads the resulting
+  zero-tool-call round through its EXISTING malformed-emission retry ladder
+  (`MAX_STRUCTURE_RETRIES`, no new cap), tagged with a new `malformed-tool-call-arguments` axis.
+  Scoped to `makeLoopGenerate` only — the authoring declaration calls and the confirm turn; the
+  scout and the worker path build their own provider wiring and still only get 318e066's stop
+  (an open gap). Not yet proven live.
 - **F179/F180 — bare-agent 0.42.0's OpenAIProvider could throw a raw SyntaxError mid-call (a
   malformed tool-call `arguments` string, `JSON.parse` with no try/catch), crashing past
   `askStructured` and discarding an already-sound, already-measured declaration while the

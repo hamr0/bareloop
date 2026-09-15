@@ -12495,6 +12495,34 @@ above) now runs on this class too, so the author call's already-measured, alread
 declaration is kept rather than discarded. No JSON repair, no retry added. Upstream: the
 corroborating entry is filed, BA-27 in `docs/product/UPSTREAM-ASKS.md`.
 
+**2026-09-15 update — retry-not-repair shim added, not yet proven live** (commit 96866d5,
+`fix/m3-closeout`). 318e066 was not enough: live run mu2cnycb (2026-09-15, DeepSeek
+deepseek-flash) hit the malformed JSON on the FIRST `author` call. A casualty on the first call
+has no earlier sound declaration to fall back to, so `askStructured`'s `providerError` return
+stopped the run NOT OK — and a retry could not happen on that path anyway, because the call
+books `costUsd: null`, so `capStop` would answer pricing-red before any retry under a ceiling.
+
+hamr's 2026-09-15 ruling, verbatim intent: a malformed tool-call JSON gets RETRIED, NEVER
+REPAIRED, reusing `askStructured`'s EXISTING malformed-emission retry ladder
+(`MAX_STRUCTURE_RETRIES = 2`) — no new retry cap, no new number. `withMalformedToolCallShim`
+(`src/authorflow.js`, wired into `makeLoopGenerate`) is a delegate (`Object.create(provider)`,
+never a mutation of the shared instance) whose `_request` strips a malformed tool call out of the
+RAW response BEFORE `generate()`'s own `JSON.parse` ever reaches it — bare-agent's own usage
+normalization, stop-reason mapping, and the Loop's own pricing/metrics all run unchanged on the
+real response, so the round comes back PRICED (real `usage`) with zero tool calls instead of
+throwing. `askStructured` reads that as its own pre-existing "no declaration call" shape, tagged
+with a new `malformed-tool-call-arguments` axis, and retries through the same ladder that already
+handles `no-declaration-tool-call`. Nothing ever repairs, trims, or re-parses the model's
+arguments string.
+
+SCOPE: `makeLoopGenerate` only — the authoring declaration calls (`scripts/run-author.mjs:729`)
+and the confirm turn (`scripts/run-author.mjs:601`). The scout (`src/authorscout.js`, its own
+`Loop`) and the worker path (`src/planrun.js`, its own providers) are OUT OF SCOPE and still get
+only 318e066's `callCasualty` stop (a provider-red with `costUsd: null`, no retry) — this remains
+an OPEN GAP, not yet fixed for those two paths. This fix itself is also NOT YET PROVEN LIVE (unit
+tests only, against a real `OpenAIProvider` instance with `_request` stubbed at the transport
+seam — no live provider run since).
+
 ## F180 — the crashed call's spend is not booked; the run's total cost is under-reported (open)
 
 Same run (mu2bjmed). The revise-1 HTTP response came back (the parse happens on
