@@ -12740,3 +12740,110 @@ and add a `JOBS` row (exactly the two hand-edits this commit made, following pre
 So PRD item 33 M3 ruling 7 ("A repo job works end to end", `docs/product/ITEM33-BUILD.md:383`) is
 true only with a developer hand-step between authoring and running; it is not true end to end for a
 person acting alone through the shipped CLI surface. No fix proposed here.
+
+## F186 — the printed BEHAVIOUR line counts tool calls from every prior run that ever touched the patient tree, not just this run (open)
+
+Found 2026-09-15 reading run `mu2p83go` (the first signed PERSON-path repo job,
+`jobs/pulselog-person-strict-checks.json`) end to end. The run printed:
+
+```
+BEHAVIOUR  142 tool calls · 75 read, 44 grep, 21 edit, 2 recent
+           90 exact repeats (~63%)
+           2 denied
+```
+
+(`out/run-u-person-strict.log:29-31`). Re-deriving `runBehaviour` (`src/behaviour.js:89-105`) by hand
+over the run's own gate-audit file (`u-mu2p83go-gate-audit.jsonl`) with NO run_id filter reproduces
+this exact line: 142 total, 75 `shell_read`, 44 `shell_grep`, 21 `edit`, 2 `ctx_recent`, 90 repeats
+(63%), 2 denied. But the file holds SEVEN distinct `run_id`s, not one: three are earlier AUTHORING
+scouts against the same patient tree that same day (`79879ccf…` 06:56:56–06:57:28Z, `810490ed…`
+07:28:22–07:28:52Z, `4ebd08af…` 10:47:20–10:47:47Z), and only the remaining four (`bdbcf847…`,
+`2f561051…`, `c77c5d39…`, `8d52ced7…`, spanning 13:19:53Z–13:25:32Z) belong to run `mu2p83go` itself.
+Scoped to those four, this run's own behaviour was 82 tool calls (37 read, 23 grep, 21 edit, 1
+recent), 0 denied, 42 repeats (51%) — a materially different, and smaller, picture than what printed.
+
+Mechanism, each piece verified: the authoring scout's default gate-audit path is
+`join(workdir, GATE_AUDIT_FILE)` (`src/authorscout.js:319`, `GATE_AUDIT_FILE = 'gate-audit.jsonl'` at
+`src/kinds.js:597`) — i.e. it writes the arbiter's own book directly into the patient tree, at its
+root, the same place run-u later looks. The patient's `.gitignore:14` denies `*.jsonl`, so run-u's
+cold reset (`scripts/u-patient.mjs:30-37`, `git reset --hard <seed>` then `git clean -fd`, no `-x`)
+leaves that file untouched — it survives across every authoring scout AND the run itself, accreting
+rows from every run_id that has ever touched the tree since the last time something outside git
+removed it. `scripts/run-u.mjs:1532-1534` renames whatever is sitting at `<workdir>/gate-audit.jsonl`
+wholesale into `u-<runid>-gate-audit.jsonl` as "this run's own audit" with no filtering. Then
+`scripts/run-u.mjs:1818` calls `runBehaviour(audit)` with no `runId` — the comment directly above it
+states "`audit` is already scoped to this runid's file, never re-filtered here", which is the false
+assumption this finding traces: the FILE is named after this run, but its CONTENTS are not scoped to
+it. `src/replay.js:735` calls `runBehaviour(audit)` the same unscoped way inside `buildTimeline`, so a
+later replay of this same archived run carries the identical exposure, not just the live printout.
+
+Not affected: the verdict (the close stages judge the patient tree's actual diff, not the audit log,
+and never touched by this). The `21 edit` count IS correct for this run specifically — none of the
+three earlier authoring run_ids contain any `edit` action (their `action_types` are `llm`+`read`
+only, verified by tally), so all 21 edits in the printed total are genuinely mu2p83go's own. The 2
+`denied` rows are BOTH from the earliest authoring scout (`79879ccf…`, 06:57:02Z and 06:57:14Z — an
+`fs.deny` refusal of a `shell_read` on `tree/.litectx` and on `tree/gate-audit.jsonl` itself); run
+mu2p83go's own four run_ids have 0 denies between them, so the printed "2 denied" describes an
+earlier scout's behaviour, not this run's.
+
+This is the class this repo already has a name for: a harness slicing a shared append-only log must
+account for every writer inside its window (MEMORY.md, measurement discipline) — `runBehaviour`'s own
+`repeatKey` docstring (`src/behaviour.js:33-40`) explicitly rejects being "sharper than what the gate
+records", but nothing upstream of it enforces that the records handed in are the right slice.
+
+Separately, and part of the same finding: the authoring scout writing the arbiter's own book
+(`gate-audit.jsonl`) inside the worker's own patient tree at all is itself a proximity the fence has
+to actively police — `isArbiterBook` (`src/kinds.js:572-578`) and the fence's `fs.deny` list are the
+only things stopping a worker from reading or reasoning about its own prior gate history mid-run, and
+the deny DID fire once (see above) — showing the boundary is live, not theoretical, but also that
+the book sits inside the fenced territory it is supposed to be judging from outside. No fix proposed.
+
+## F187 — run-u's printed approval-invocation hint always names `ANTHROPIC_API_KEY`, regardless of the job's actual provider (open)
+
+Found 2026-09-15 in the same session. `scripts/run-u.mjs:929` builds the printed "run it" command
+with a hardcoded literal: `` `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}...` ``.
+That single `invoke()` helper is the one source for every printed launch hint in the approval flow —
+the rerun/accept/pause door lines (`:939-941`), the plain "To approve and run" line (`:948`), and both
+`systemd-inhibit` wrapper lines (`:963-967`, which print `env <the command above>` around the same
+`invoke()` output) — so the wrong variable name propagates to all of them, not one isolated line.
+
+The actual worker key read at run time is looked up generically: `providerEntry.envKey`
+(`scripts/run-u.mjs:1157-1158`, `process.env[providerEntry.envKey]`, erroring with that same resolved
+name if unset), where `providerEntry` comes from `resolveProvider(spec.provider)` (`:311`) against
+the provider table (`src/providers.js:155-171`). For `jobs/pulselog-person-strict-checks.json`
+(`"provider": "openai-api"`, run on DeepSeek deepseek-flash), the table entry's `envKey` is
+`OPENAI_API_KEY` (`src/providers.js:167`), not `ANTHROPIC_API_KEY`. A person copying the printed hint
+verbatim for this job gets `OPENAI_API_KEY not set (secrets load from the environment — never the
+tree)` at exit 2 — a $0 refusal before any provider call, but the wrong instruction for the provider
+they signed. Same class as the fix already made in `scripts/run-interview.mjs` (~:649-665, per the
+L17 entry referenced in the 2026-09-13 episode) for the interview path; run-u's own approval-preview
+hint was not carried along. No other `ANTHROPIC_API_KEY` literal exists in `scripts/run-u.mjs` — this
+is the only hardcoded site, just fanned out to several printed lines through the shared helper.
+
+## F188 — the no-suppressions cast guard matches a value-cast but not the same unchecked cast written as a typed callback parameter (open)
+
+Found 2026-09-15 reading run `mu2p83go`'s close history. Iteration 2 of the revise loop redded on
+`no-suppressions` for two occurrences of `const e = /** @type {NodeJS.ErrnoException} */ (err);` at
+`src/checks.js:57` and `:192` (`close-verdict` record, iteration 2, spine `u-mu2p83go.jsonl`). The
+worker's iteration-3 fix, which went green, rewrote both sites to annotate the callback's parameter
+directly instead: `` socket.once('error', (/** @type {NodeJS.ErrnoException} */ err) => finish(false,
+`${err.code || err.message} ...`)) `` — this exact form appears twice in the final green diff
+(`src/checks.js:98` and `:130`; `git diff b57e692 --stat` confirms the whole diff is `src/checks.js`
+only, +66/−9, matching the run's own report).
+
+The signed spec's `cast` guard regex (`jobs/pulselog-person-strict-checks.json:199-202`,
+`@type\s*\{.*\}\s*\*\/\s*\(`) requires the JSDoc comment to be followed by `(` — true for the
+value-cast form the worker was redded on (`*/ (err)`), false for the parameter-annotation form it
+replaced it with (`*/ err)` — the `(` there belongs to the arrow function's own parameter list, ahead
+of the comment, not after it. Re-running the exact regex against both final lines confirms neither
+matches, so the guard's own "shown-and-fixed" iteration 2 catch never re-fires against the iteration
+3 rewrite; it is a different textual shape carrying the same unchecked-narrowing intent, unmatched.
+
+Severity: low, not a cheat. `NodeJS.ErrnoException.code` is an optional field and both sites fall
+back to `err.message` (`err.code || err.message`), so the annotation is type-safe in practice even
+though the guard cannot see it; the job's stated ask was "no `ts-ignore` comments and no `any` casts"
+(`jobs/pulselog-person-strict-checks.json:221`), and a narrowing `@type` cast to a real type is
+neither. This is a guard-coverage gap in the fixed `cast` regex, not a signed-spec violation the
+guard was supposed to catch and missed by cheating; no widening is proposed here — the regex's
+admissibility is arbiter territory (a signed-spec field), not something this finding recommends
+changing.
