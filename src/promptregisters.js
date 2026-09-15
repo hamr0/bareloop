@@ -76,6 +76,14 @@ export const PROMPT_REGISTERS = Object.freeze([
 
   // src/planrun.js — the native-surface read-truncation strategy line
   Object.freeze({ file: 'src/planrun.js', name: 'NATIVE_READ_STRATEGY' }),
+
+  // src/authoring.js — the types-genre close template, interpolated verbatim
+  // into the authoring prompt (src/authorflow.js's assembled system message,
+  // "THE GENRE TEMPLATE" block) — model-facing law for a types-genre
+  // declaration, not merely internal genre-table data. Found missing from
+  // this inventory 2026-09-15 (item 6 close-out); no other exported const or
+  // inline template literal in this file carries prompt/instruction text.
+  Object.freeze({ file: 'src/authoring.js', name: 'TYPES_GENRE_TEMPLATE' }),
 ]);
 
 /** The distinct file paths carrying prompt registers, repo-root-relative with
