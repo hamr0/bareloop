@@ -441,17 +441,21 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     branch after it opens with the M3 close-out list below, before M3b. See
     `docs/product/ITEM33-BUILD.md` M3's dated pointer for detail on each row.
     - [ ] Ruling 7 (a repo job works end to end) not yet met — the one live fire ended
-      broken-close, blocked by L24/F176.
+      broken-close, blocked by L24/F176. — F176 fixed in code (commit 5a83507: the revise
+      ladder falls back to the newest sound iteration), not yet proven live.
     - [ ] Ruling 5's round-2 open-question path — see item 34's L23/F175 (not duplicated here).
-    - [ ] Release-order deviation: M3 pieces were built on the fix branch instead of after its
-      release, per item 34's own line below.
+      — fixed in code (commit 245437c), not yet proven live.
+    - [x] Release-order deviation: M3 pieces were built on the fix branch instead of after its
+      release, per item 34's own line below. — settled: v0.26.0 shipped.
     - [ ] L17 ("authoring provider selectable") is provider-selectable but not DeepSeek-reachable
       from the form — `scripts/run-interview.mjs` never asks for or writes `baseUrl`. — fixed:
       `--base-url` flag (commit e91e37f), not yet proven live.
     - [ ] `prepareSource` freezes tracked files only — a repo job's toolchain (e.g.
       `node_modules`) is absent from the prepared tree, undocumented in the interview/hand-off.
       — fixed: `$0` stop names the install command (commit 941cf7d), not yet proven live —
-      plus F177 (commit 496bb54).
+      plus F177 (commit 496bb54) and F178: a signed fence can no longer name `.git` or
+      `node_modules`, and writes into a nested `node_modules` are denied (commits 0720a66,
+      3fda3a0, b884c3e), not yet proven live.
     - [ ] The real person path (`run-interview` → spawned `run-author` reading the keyboard) has
       never run live — ruling 9's proof is still owed.
     - [ ] The plain-folder confirm turn (D5) and soft-green jobs through the confirm turn are
