@@ -146,6 +146,26 @@ test('SECRET_PATTERN_NAMES stays in lockstep with SECRET_PATTERNS — the URL-us
   assert.equal(SECRET_PATTERN_NAMES.at(-1), 'URL userinfo credentials (scheme://user:pass@)');
 });
 
+// F189 close-out (2026-09-16): the URL-userinfo pattern stays in the ONE
+// inventory but is marked redact-only, never a front-door refusal reason —
+// this test fails if SECRET_PATTERN_REDACT_ONLY ever drifts out of alignment
+// with SECRET_PATTERNS/SECRET_PATTERN_NAMES (length OR the one flagged entry).
+test('SECRET_PATTERN_REDACT_ONLY stays index-aligned with SECRET_PATTERNS/SECRET_PATTERN_NAMES, and only the URL-userinfo entry is flagged', async () => {
+  const { SECRET_PATTERNS, SECRET_PATTERN_NAMES, SECRET_PATTERN_REDACT_ONLY } = await import('../src/validate.js');
+  assert.equal(SECRET_PATTERN_REDACT_ONLY.length, SECRET_PATTERNS.length, 'same length as SECRET_PATTERNS');
+  assert.equal(SECRET_PATTERN_REDACT_ONLY.length, SECRET_PATTERN_NAMES.length, 'same length as SECRET_PATTERN_NAMES');
+  const flaggedNames = SECRET_PATTERN_NAMES.filter((_, i) => SECRET_PATTERN_REDACT_ONLY[i]);
+  assert.deepEqual(flaggedNames, ['URL userinfo credentials (scheme://user:pass@)'], 'exactly one redact-only entry, and it is the URL-userinfo shape');
+  assert.ok(Object.isFrozen(SECRET_PATTERN_REDACT_ONLY), 'the split metadata is frozen, like the inventory it describes');
+});
+
+test('redactSecrets still masks the URL-userinfo shape even though it is redact-only for the front door (no behaviour change from marking it)', () => {
+  const raw = 'connect to postgres://alice:s3cr3t@db.internal:5432/app';
+  const scrubbed = redactSecrets(raw);
+  assert.doesNotMatch(scrubbed, /alice:s3cr3t/);
+  assert.match(scrubbed, /postgres:\/\/.*@db\.internal:5432\/app/, 'scheme and host stay readable');
+});
+
 test('scopeContained rejects every escape spelling and accepts the equivalent contained ones — the belt behind globToPrefix', () => {
   for (const bad of ['/abs/**', '../up/**', './../up/**', '/**']) {
     assert.equal(scopeContained(bad), false, `${JSON.stringify(bad)} must not be contained`);

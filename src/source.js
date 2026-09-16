@@ -29,7 +29,7 @@ import { dirname, join, relative, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
 import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
-import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.js';
+import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES, SECRET_PATTERN_REDACT_ONLY } from './validate.js';
 
 /** @typedef {{stop: string, code: string}} SourceRefusal a named, non-throwing stop */
 
@@ -222,11 +222,17 @@ const sha256Hex = (buf) => createHash('sha256').update(buf).digest('hex');
  * leak into a refusal, a manifest, stdout, or a log. Whole-file content is
  * decoded and tested, never a sampled prefix (the NUL sniff samples 8KB; a
  * secret check must not — a key can sit anywhere in a large file).
+ *
+ * REDACT-ONLY entries (`SECRET_PATTERN_REDACT_ONLY`, src/validate.js — e.g.
+ * the F189 URL-userinfo shape) never reach this filter: they are masked
+ * elsewhere (`redactSecrets`) but are not a reason to refuse a SOURCE, whose
+ * front door this function gates (measured 2026-09-16: that one pattern alone
+ * made bareloop refuse 5 of 44 local repos, mostly doc/test fixtures).
  * @param {string} text one file's decoded content
- * @returns {string[]} the names of every pattern that hit, empty when none did
+ * @returns {string[]} the names of every front-door pattern that hit, empty when none did
  */
 function secretPatternNames(text) {
-  return SECRET_PATTERN_NAMES.filter((_, i) => SECRET_PATTERNS[i].test(text));
+  return SECRET_PATTERN_NAMES.filter((_, i) => !SECRET_PATTERN_REDACT_ONLY[i] && SECRET_PATTERNS[i].test(text));
 }
 
 /**

@@ -3231,6 +3231,14 @@ is a shape-based check, not a filename denylist: a secret whose shape is not in 
 (a plain database password in a `.env`, say) still passes through — a named, accepted
 residual, not this fix's job to close.
 
+**One `SECRET_PATTERNS` entry is REDACT-ONLY and never refuses a source here** (F189
+close-out, 2026-09-16): the `scheme://user:pass@host` shape is still masked everywhere
+bareloop prints or logs text (`redactSecrets`), but a $0 measurement found 5 of 44 local repos
+carry a tracked file matching it — mostly doc/test fixtures, not real credentials — so it was
+split out via `SECRET_PATTERN_REDACT_ONLY` (`src/validate.js`, a frozen array aligned by index
+with `SECRET_PATTERNS`/`SECRET_PATTERN_NAMES`) and excluded from this front-door check. Every
+other entry (a real API key shape) still refuses.
+
 **Every refusal is a named `{stop, code}`, never a throw and never silent:** `source-
 unreadable`, `source-symlink`, `source-env-file`, `source-file-oversize`,
 `source-nested-repo`, `source-is-linked-worktree`, `source-untracked-in-repo`,

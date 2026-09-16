@@ -33,6 +33,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F189 close-out — the URL-userinfo secret pattern added for redaction was also making
+  `prepareSource` REFUSE sources that carry it, not just mask it.** Measured at $0: 5 of 44
+  local repos under `~/PycharmProjects` carry a tracked file matching
+  `scheme://user:pass@host` (mostly doc/test fixtures, e.g. pulselog's
+  `test/backup.test.js` — the exact patient that greened live in run `mu2p83go`), so as shipped
+  this one pattern alone made bareloop refuse repos it previously accepted. hamr's ruling: keep
+  it for redaction, stop it refusing a source. Added `SECRET_PATTERN_REDACT_ONLY`
+  (`src/validate.js`), a frozen array index-aligned with `SECRET_PATTERNS`/
+  `SECRET_PATTERN_NAMES` naming which entries are redact-only; `prepareSource`'s
+  `secretPatternNames` (`src/source.js`) now skips them, `redactSecrets`/`sweepSecretLiterals`/
+  `scanSecrets` are unchanged. Not yet proven live (`docs/logs/FINDINGS.md` F189).
 - **Item 6 — `src/authoring.js`'s `TYPES_GENRE_TEMPLATE` (model-facing prompt text,
   interpolated verbatim into the authoring prompt) was missing from `src/
   promptregisters.js`'s `PROMPT_REGISTERS` inventory entirely.** Added; no other prompt content
