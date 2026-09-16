@@ -782,6 +782,22 @@ test('the signing readout prints the confirm turn\'s open questions (D4: the sig
   assert.ok(specAt !== -1 && idx > specAt, 'the open questions print in the signing readout, not before the spec is written');
 });
 
+test('F175 open half: the signing readout also prints the questions the person ANSWERED inline, beside the open ones', () => {
+  assert.match(SRC, /answeredQuestionLines\(authored\.confirmed\)/);
+  const specAt = SRC.indexOf('const specFile = writeOut');
+  const idx = SRC.indexOf('answeredQuestionLines(authored.confirmed)');
+  assert.ok(specAt !== -1 && idx > specAt, 'the answered questions print in the signing readout, not before the spec is written');
+});
+
+test('run-author.mjs\'s ask seam has a `kind: \'answer\'` branch (F175 open half) that shows the question, its index/total, and reads free text', () => {
+  const branch = /if \(step\.kind === 'answer'\) \{[\s\S]*?\n {2}\}/.exec(SRC)?.[0];
+  assert.ok(branch, 'no kind: "answer" branch found in the ask seam');
+  assert.match(branch, /step\.question/);
+  assert.match(branch, /step\.index/);
+  assert.match(branch, /step\.total/);
+  assert.match(branch, /readFreeText\(false\)/, 'a blank answer must re-ask, same as every other required free-text step');
+});
+
 test('confirm-abandoned and confirm-restart get their own friendlier console line, and both still reach author-end via the generic stop', () => {
   assert.match(SRC, /authored\.stop === 'confirm-abandoned' \|\| authored\.stop === 'confirm-restart'/);
   const NOT_AUTHORED = /if \(!authored\.ok\) \{[\s\S]*?\n {2}\}/.exec(SRC)?.[0];

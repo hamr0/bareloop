@@ -84,7 +84,7 @@ import { readSourceManifest, missingDependencies } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, fellBackLines,
+  openQuestionLines, answeredQuestionLines, fellBackLines,
 } from './author-readout.mjs';
 
 /** the close precheck / seed read spawns real toolchains; the slowest stage is a
@@ -625,6 +625,16 @@ const ask = async (step) => {
       console.log(`  not a choice — type a number 1-${keys.length}, or one of: ${keys.join(', ')}`);
     }
   }
+  if (step.kind === 'answer') {
+    // F175's open half (2026-09-16): the plan raised a question of its own —
+    // "Confirm"/"Type the goal yourself" cannot proceed until it is
+    // answered, right here, with no extra model call. A blank line re-asks
+    // the same question ("Start over" or "Fix" are the ways out).
+    console.log(`Question ${step.index} of ${step.total} the plan raised — it must be answered before the plan can `
+      + 'be signed (pick "Start over" or "Fix" instead if you cannot answer it):');
+    console.log(`  ? ${step.question}`);
+    return readFreeText(false);
+  }
   if (step.kind === 'goal') {
     console.log('Type the goal sentence yourself — it REPLACES the drafted one; the checks and protections stand.');
     return readFreeText(false);
@@ -1078,6 +1088,7 @@ try {
         console.log(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
         console.log('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
         for (const l of openQuestionLines(authored.confirmed)) console.log(`  ${l}`);
+        for (const l of answeredQuestionLines(authored.confirmed)) console.log(`  ${l}`);
         // F185 — the loose end this fix closes: until now this screen named no
         // command that actually RUNS the spec it just wrote, so reaching a
         // running job from here needed a developer to hand-add a JOBS row and

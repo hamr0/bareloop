@@ -88,10 +88,11 @@ test('(a) confirm on round 1 costs exactly one model call', async () => {
   assert.equal(r.rounds, 1);
   assert.deepEqual(r.accepted, {
     goal: 'Keep the tests green.', checks: ['tests stay green'], protections: BASE_PROTECTIONS,
-    lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [],
+    lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [], answeredQuestions: [],
   });
   assert.equal(seen[0].kind, 'worseThanBefore');
   assert.equal(seen[1].kind, 'menu');
+  assert.equal(seen.length, 2, 'a plan with no questions asks nothing beyond worseThanBefore + menu — behaviour byte-identical to before F175\'s open half');
 });
 
 test('(b) fix,fix costs exactly 2 calls (never 3), and ONLY round-2\'s own fix lands in openQuestions — FAIL-FIRST', async () => {
@@ -125,17 +126,49 @@ test('(b2) F175 ledger scenario: round-1 fix superseded, round-2 plan has NO que
   assert.deepEqual(r.accepted?.openQuestions, []);
 });
 
-test('(b3) F175: a round-1 plan\'s honest `questions` entry rides through when the person picks Confirm on round 1', async () => {
-  const planWithQuestion = {
-    ...PLAN_ONE,
-    questions: ['Does "in strict mode" mean tsconfig\'s existing setting, or flipping strict:true?'],
-  };
+test('(b3) F175 OPEN HALF: a round-1 plan\'s honest `questions` entry is FORCED before "Confirm" is accepted — one `kind: \'answer\'` ask per question, no extra model call, openQuestions ends empty', async () => {
+  const question = 'Does "in strict mode" mean tsconfig\'s existing setting, or flipping strict:true?';
+  const planWithQuestion = { ...PLAN_ONE, questions: [question] };
+  const { generate, calls } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
+  const { ask, seen } = scriptAsk(['', 'confirm', 'flipping strict:true']);
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  assert.equal(calls.length, 1, 'forcing the answer costs no extra model call');
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.accepted?.openQuestions, [], 'every raised question was answered, so none is left open');
+  assert.deepEqual(r.accepted?.answeredQuestions, [`Q: ${question}\nA: flipping strict:true`]);
+  const answerStep = seen.find((s) => s.kind === 'answer');
+  assert.ok(answerStep, 'the ask seam received a kind: "answer" step');
+  assert.equal(answerStep.question, question);
+  assert.equal(answerStep.index, 1);
+  assert.equal(answerStep.total, 1);
+});
+
+test('(b3b) F175 OPEN HALF: a blank answer re-asks the SAME question rather than accepting an empty answer', async () => {
+  const question = 'which command counts as the check?';
+  const planWithQuestion = { ...PLAN_ONE, questions: [question] };
   const { generate } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask, seen } = scriptAsk(['', 'confirm', '   ', 'npm run typecheck']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true);
-  assert.deepEqual(r.accepted?.openQuestions, [planWithQuestion.questions[0]]);
+  assert.deepEqual(r.accepted?.answeredQuestions, [`Q: ${question}\nA: npm run typecheck`]);
+  const answerSteps = seen.filter((s) => s.kind === 'answer');
+  assert.equal(answerSteps.length, 2, 'the blank answer re-asked the same question a second time');
+  assert.equal(answerSteps[0].question, question);
+  assert.equal(answerSteps[1].question, question);
+});
+
+test('(b3c) F175 OPEN HALF: a `null` from the forced answer ask abandons the turn, exactly like every other ask', async () => {
+  const planWithQuestion = { ...PLAN_ONE, questions: ['unanswerable here?'] };
+  const { generate, calls } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
+  const { ask } = scriptAsk(['', 'confirm']); // exhausted right after the menu pick — the answer ask gets null
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  assert.equal(calls.length, 1, 'the model call already happened — abandoning after it spends nothing further');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'confirm-abandoned');
+  assert.equal(r.accepted, null);
 });
 
 test('(b4) F175: round-2 fix path carries round-2\'s OWN questions first, then the person\'s fix text', async () => {
@@ -147,14 +180,18 @@ test('(b4) F175: round-2 fix path carries round-2\'s OWN questions first, then t
   assert.deepEqual(r.accepted?.openQuestions, ['still unclear whether X or Y', 'also check the CLI']);
 });
 
-test('(b5) F175: "type the goal yourself" still carries the drafted plan\'s own questions', async () => {
-  const planWithQuestion = { ...PLAN_ONE, questions: ['is the CLI in or out of scope?'] };
+test('(b5) F175 OPEN HALF: "type the goal yourself" forces the drafted plan\'s own question identically, and the typed goal still replaces the drafted one', async () => {
+  const question = 'is the CLI in or out of scope?';
+  const planWithQuestion = { ...PLAN_ONE, questions: [question] };
   const { generate } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
-  const { ask } = scriptAsk(['', 'type-goal', 'My own goal sentence.']);
+  const { ask, seen } = scriptAsk(['', 'type-goal', 'out of scope', 'My own goal sentence.']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true);
-  assert.deepEqual(r.accepted?.openQuestions, [planWithQuestion.questions[0]]);
+  assert.deepEqual(r.accepted?.openQuestions, []);
+  assert.deepEqual(r.accepted?.answeredQuestions, [`Q: ${question}\nA: out of scope`]);
+  assert.equal(r.accepted?.goal, 'My own goal sentence.', 'the typed goal still replaces the drafted one');
+  assert.deepEqual(seen.map((s) => s.kind), ['worseThanBefore', 'menu', 'answer', 'goal']);
 });
 
 test('(c) a book already at its ceiling from absorbed scout calls costs 0 confirm calls and cap-halts', async () => {
@@ -433,7 +470,7 @@ test('runConfirmTurn (F179): a REAL OpenAIProvider malformed tool-call reply ret
   assert.equal(r.rounds, 1, 'still one confirm round shown to the person — the retry is internal to askStructured');
   assert.deepEqual(r.accepted, {
     goal: 'Keep the tests green.', checks: ['tests stay green'], protections: BASE_PROTECTIONS,
-    lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [],
+    lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [], answeredQuestions: [],
   });
   const report = book.report();
   assert.equal(report.calls.length, 2, 'both the malformed and the sound call are booked');

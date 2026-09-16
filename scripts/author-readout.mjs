@@ -117,6 +117,26 @@ export function openQuestionLines(confirmed) {
 }
 
 /**
+ * F175's open half, said at the SIGNING readout too (run mu0voeo4, hamr's
+ * 2026-09-16 ruling) — every question the plan raised that "Confirm" or
+ * "Type the goal yourself" forced the person to answer inline, from
+ * `authored.json`'s own `confirmed.answeredQuestions`. Shown only when
+ * non-empty (the overwhelming majority of plans raise no question at all,
+ * and printing an empty block every run would be noise, not information) —
+ * unlike {@link openQuestionLines}, an empty list here says nothing, because
+ * absence is the ordinary case, not a fact the signer needs flagged.
+ * @param {{answeredQuestions?: string[]}|null} confirmed `authored.confirmed`
+ * @returns {string[]}
+ */
+export function answeredQuestionLines(confirmed) {
+  const qas = confirmed?.answeredQuestions ?? [];
+  if (!qas.length) return [];
+  const lines = [`answered questions  ${qas.length} — the plan raised these and the person answered them inline before signing`];
+  for (const qa of qas) for (const line of String(qa).split('\n')) lines.push(`  ${line}`);
+  return lines;
+}
+
+/**
  * THE CALIBRATION GATE'S OWN READOUT — the one gate that spends money, and the
  * one whose rows a signer has to read case by case.
  *

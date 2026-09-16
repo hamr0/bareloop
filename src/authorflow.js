@@ -470,6 +470,24 @@ export const LANGUAGE_PICK_FIELD = Object.freeze({
 });
 
 /**
+ * F175's open half (docs/logs/FINDINGS.md, run mu0voeo4), hamr's ruling
+ * (2026-09-16): "Confirm" and "Type the goal yourself" may not bypass a
+ * `questions` entry the model itself raised on the plan being accepted — the
+ * person answers it inline, one question at a time, with NO extra model
+ * call (the round cap and D3 are untouched). This is the `field` handed to
+ * `ask({kind: 'answer', ...})` for each forced question — `question`,
+ * `index` (1-based) and `total` ride alongside on the step itself, not on
+ * this frozen constant, because they differ per question within one turn.
+ */
+export const ANSWER_QUESTION_FIELD = Object.freeze({
+  id: 'answerQuestion',
+  kind: 'mechanical',
+  label: 'Answer',
+  prompt: 'The plan raised a question it could not resolve on its own. Answer it before the plan can be signed '
+    + '("Start over" or "Fix" are the ways out if you cannot answer it here).',
+});
+
+/**
  * THE CONFIRM TURN'S MENU — a structured CHOICE the person picks from after
  * each round, never free text matched against a pattern (ruling 6's "no
  * hand-authored check matcher" reasoning applies here too: the person's own
@@ -975,13 +993,21 @@ export function writeScopeBlock(writeScope) {
  * no listed check can verify — shown so the composer names the gap in its
  * own notes rather than the plan quietly reading as if everything asked for
  * is covered.
- * @param {{checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}} confirmed
+ * `answeredQuestions` (F175's open half, run mu0voeo4, hamr's 2026-09-16
+ * ruling) is every `Q:/A:` pair the person answered inline when a "Confirm"
+ * or "Type the goal yourself" pick forced a raised question before
+ * acceptance — BINDING, never re-decided by the composer, and a DIFFERENT
+ * meaning from `openQuestions` (which means "could not resolve"): the two
+ * never merge.
+ * @param {{checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[],
+ *   answeredQuestions?: string[]}} confirmed
  */
 export function confirmedBlock(confirmed) {
   const checks = confirmed.checks ?? [];
   const protections = confirmed.protections ?? [];
   const openQuestions = confirmed.openQuestions ?? [];
   const notChecked = confirmed.notChecked ?? [];
+  const answeredQuestions = confirmed.answeredQuestions ?? [];
   return 'THE CONFIRMED PLAN — the person already saw and confirmed this in the confirm turn\n\n'
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
@@ -991,6 +1017,9 @@ export function confirmedBlock(confirmed) {
     + (notChecked.length
       ? 'THE PERSON ASKED FOR THESE, BUT NOTHING CHECKS THEM (state these in your notes — never silently claim they '
         + `are covered):\n\n${notChecked.map((n) => `  - ${n}`).join('\n')}\n\n`
+      : '')
+    + (answeredQuestions.length
+      ? `QUESTIONS THE PERSON ANSWERED — these answers are binding; compose to them, never re-decide them:\n\n${answeredQuestions.map((a) => `  - ${a}`).join('\n')}\n\n`
       : '')
     + (openQuestions.length
       ? `OPEN QUESTIONS the confirm turn could not resolve (state these in your notes, never decide them silently):\n\n${openQuestions.map((q) => `  - ${q}`).join('\n')}`
@@ -1019,7 +1048,7 @@ export function confirmedBlock(confirmed) {
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
  *   writeScope?: string[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}|null}} o
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
@@ -1808,7 +1837,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
  *   rounds: number,
  *   accepted: {goal: string, checks: string[], protections: string[], lang: string,
- *     worseThanBefore: string, openQuestions: string[], notChecked: string[]}|null,
+ *     worseThanBefore: string, openQuestions: string[], notChecked: string[], answeredQuestions?: string[]}|null,
  *   reds: Red[], cost: any}>}
  */
 export async function runConfirmTurn({
@@ -1869,6 +1898,33 @@ export async function runConfirmTurn({
    * @param {any} plan @returns {string[]} */
   const questionsFromPlan = (plan) => (Array.isArray(plan?.questions) ? plan.questions : [])
     .map((/** @type {any} */ q) => redactSecrets(String(q)));
+  /**
+   * F175's open half (run mu0voeo4, hamr's 2026-09-16 ruling): "Confirm" and
+   * "Type the goal yourself" may not bypass a `questions` entry the plan
+   * being accepted raised — each is answered inline, in order, through the
+   * SAME `ask` seam, with a new `kind: 'answer'` step (NO extra model call:
+   * the round/D3 cap is untouched). A blank/whitespace answer is not an
+   * answer and re-asks the SAME question; a `null` from `ask` abandons,
+   * exactly like every other ask in this function. Returns the `Q:/A:`
+   * pairs in order, or `null` to mean abandon.
+   * @param {any} plan @returns {Promise<string[]|null>} */
+  const forceAnsweredQuestions = async (plan) => {
+    const qs = questionsFromPlan(plan);
+    /** @type {string[]} */
+    const answered = [];
+    for (let i = 0; i < qs.length; i += 1) {
+      const question = qs[i];
+      for (;;) {
+        const raw = await ask({ kind: 'answer', field: ANSWER_QUESTION_FIELD, question, index: i + 1, total: qs.length });
+        if (raw === null) return null;
+        const trimmed = redactSecrets(String(raw).trim());
+        if (trimmed === '') continue; // blank is not an answer — re-ask the same question
+        answered.push(`Q: ${question}\nA: ${trimmed}`);
+        break;
+      }
+    }
+    return answered;
+  };
   let convo = [{
     role: 'user',
     content: confirmPrompt({
@@ -1915,24 +1971,36 @@ export async function runConfirmTurn({
     if (picked === 'start-over') return { ...base(), stop: /** @type {ConfirmStop} */ ('confirm-restart'), rounds: round, cost: book.report() };
 
     if (picked === 'confirm') {
+      const answeredQuestions = await forceAnsweredQuestions(r.plan);
+      if (answeredQuestions === null) return abandon(round);
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: questionsFromPlan(r.plan), notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore,
+          // every question forced above was answered in order, so what's left
+          // unresolved is honestly empty — computed FROM questionsFromPlan
+          // rather than a hardcoded `[]`, so this stays true if the forcing
+          // design ever changes.
+          openQuestions: questionsFromPlan(r.plan).slice(answeredQuestions.length),
+          notChecked: [...notChecked], answeredQuestions,
         },
         reds: [], cost: book.report(),
       };
     }
 
     if (picked === 'type-goal') {
+      const answeredQuestions = await forceAnsweredQuestions(r.plan);
+      if (answeredQuestions === null) return abandon(round);
       const typed = await ask({ kind: 'goal' });
       if (typed === null) return abandon(round);
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: questionsFromPlan(r.plan), notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore,
+          openQuestions: questionsFromPlan(r.plan).slice(answeredQuestions.length),
+          notChecked: [...notChecked], answeredQuestions,
         },
         reds: [], cost: book.report(),
       };
@@ -2010,7 +2078,7 @@ export async function runConfirmTurn({
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}|null}} o
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,

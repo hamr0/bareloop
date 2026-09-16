@@ -40,7 +40,7 @@ import {
 } from '../src/authoring.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, fellBackLines,
+  openQuestionLines, answeredQuestionLines, fellBackLines,
 } from '../scripts/author-readout.mjs';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
@@ -1596,6 +1596,19 @@ test('openQuestionLines: each fix-round question is its own line, counted', () =
   assert.match(lines[0], /open questions {2}2/);
   assert.ok(lines.some((l) => l.includes('also check the CLI')));
   assert.ok(lines.some((l) => l.includes('make it stricter')));
+});
+
+// F175's open half (run mu0voeo4, hamr's 2026-09-16 ruling) — unlike
+// openQuestionLines, an EMPTY answeredQuestions list prints NOTHING: absence
+// is the ordinary case here (most plans raise no question), not a fact the
+// signer needs flagged.
+test('answeredQuestionLines: empty prints nothing, non-empty prints each Q:/A: pair', () => {
+  assert.deepEqual(answeredQuestionLines(null), []);
+  assert.deepEqual(answeredQuestionLines({ answeredQuestions: [] }), []);
+  const lines = answeredQuestionLines({ answeredQuestions: ['Q: strict mode?\nA: flip tsconfig strict:true'] });
+  assert.match(lines[0], /answered questions {2}1/);
+  assert.ok(lines.some((l) => l.includes('Q: strict mode?')));
+  assert.ok(lines.some((l) => l.includes('A: flip tsconfig strict:true')));
 });
 
 // F176: the revise ladder's fallback (a later revision instrument-stopped, an

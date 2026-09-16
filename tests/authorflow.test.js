@@ -357,6 +357,28 @@ test('confirmedBlock renders notChecked when present, and nothing extra when abs
   assert.ok(!withoutGap.includes('THE PERSON ASKED FOR THESE'));
 });
 
+// F175's open half (run mu0voeo4, hamr's 2026-09-16 ruling): the confirmed
+// block shows the Q:/A: pairs the person answered inline as BINDING, never
+// merged into (or worded like) `openQuestions` ("could not resolve" is a
+// different meaning), and is silent when there are none.
+test('confirmedBlock renders answeredQuestions as its own binding block, and nothing extra when absent (F175 open half)', () => {
+  const answeredQuestions = ['Q: strict mode meaning?\nA: flip tsconfig strict:true'];
+  const withAnswers = confirmedBlock({ checks: ['a'], protections: ['b'], answeredQuestions });
+  assert.match(withAnswers, /QUESTIONS THE PERSON ANSWERED — these answers are binding; compose to them, never re-decide them/);
+  assert.match(withAnswers, /flip tsconfig strict:true/);
+
+  const withoutAnswers = confirmedBlock({ checks: ['a'], protections: ['b'] });
+  assert.ok(!withoutAnswers.includes('QUESTIONS THE PERSON ANSWERED'));
+
+  // the two blocks are independent and never merge
+  const withBoth = confirmedBlock({
+    checks: ['a'], protections: ['b'], answeredQuestions, openQuestions: ['still unclear about Y'],
+  });
+  assert.match(withBoth, /QUESTIONS THE PERSON ANSWERED/);
+  assert.match(withBoth, /OPEN QUESTIONS the confirm turn could not resolve/);
+  assert.match(withBoth, /still unclear about Y/);
+});
+
 test('authorClose: priorCalls/priorRaws (the confirm turn\'s own spend) are absorbed beside the scout\'s', async () => {
   const { generate, calls } = scriptGenerate([{ declaration: goodDeclaration() }]);
   const r = await authorClose({
