@@ -13059,39 +13059,3 @@ neither. This is a guard-coverage gap in the fixed `cast` regex, not a signed-sp
 guard was supposed to catch and missed by cheating; no widening is proposed here — the regex's
 admissibility is arbiter territory (a signed-spec field), not something this finding recommends
 changing.
-
-## F189 — `redactSecrets` did not mask a URL's embedded userinfo credentials (fixed in code)
-
-Carried item, stash `2026-09-15-m3-closeout-branch.md:44`: `redactSecrets("https://bob:
-hunter2secretpass@api.deepseek.com/v1")` returned it unchanged. `src/validate.js`'s
-`SECRET_PATTERNS` — the ONE shape inventory that also drives `SECRET_RE`/`scanSecrets`/
-`sweepSecretLiterals` (the detection reds) — had five known-token shapes (`sk-`, `ghp_`,
-`github_pat_`, `AKIA`, `xox[bap]-`, `AIza`) but nothing that matched a bare `user:password@`
-span inside a URL, the shape a gateway/proxy `baseUrl` pasted with its credentials inline would
-carry. Note: `validateJob`'s own `baseUrl` field rule already reds ANY embedded userinfo
-outright (`tests/providers.test.js`'s `'baseUrl reds: embedded credentials'`, `'no embedded
-credentials'` in `scripts/run-interview.mjs`'s refusal) — this finding is about the SEPARATE
-detection/redaction inventory (`scanSecrets`/`sweepSecretLiterals`/`redactSecrets`), which any
-OTHER string in a spine, a close's output, or a signed document also goes through, and which had
-this specific gap regardless of the baseUrl-specific rule.
-
-**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
-live.** Added one entry to `SECRET_PATTERNS` (and its paired name to `SECRET_PATTERN_NAMES`):
-`/(?<=:\/\/)[A-Za-z0-9._%+-]+:[^:@/\s]+(?=@)/` — a `://` lookbehind and an `@` lookahead so the
-match is EXACTLY the `user:password` span, never the scheme or host either side of it (redact()
-replaces the whole match, and this shape's redaction promise is "keep the scheme and host
-readable, mask the credentials", never mask the whole URL). The `://` lookbehind is what keeps
-this from ever matching SSH remote syntax (`git@github.com:org/repo`, no `://`) or a bare email
-address (no scheme at all); requiring `:password` after the username is what keeps it from
-matching a userinfo-less URL (`scheme://user@host`, nothing to redact). Monotonic, checked before
-committing: ran `sweepSecretLiterals` over every `jobs/*.json` spec (0 new reds) and diffed
-`scanSecrets` results (old inventory vs new) across every file under `tests/`, `jobs/`, and
-`docs/` — the only new matches were inside the test fixtures this same commit added, and three
-pre-existing test fixtures (`tests/providers.test.js`, `tests/run-interview.test.js`,
-`tests/source.test.js`) that already assert a REFUSAL for those exact credentialed-URL strings
-through a different, earlier-firing mechanism (the `baseUrl` field rule / `prepareSource`'s
-credential check) — neither expects those strings to pass `sweepSecretLiterals`, so nothing that
-previously greened now reds. Tests: `tests/validate.test.js` (masks-and-keeps-scheme/host,
-idempotent-on-own-output, never matches SSH/email/userinfo-less-URL, `SECRET_PATTERN_NAMES`
-stays in lockstep). Mutation-tested: breaking the pattern's prefix sent 2 tests red; restored via
-`cp` from a scratchpad backup. Not yet proven live.

@@ -33,7 +33,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
-<<<<<<< HEAD
 - **F185 — an interview-authored repo job had no code path INTO `scripts/run-u.mjs`: a person
   finishing the authoring interview was left holding a signed, hash-stable `resolved-spec.json`
   with no way to run it, only a developer hand-step (`cp` the spec into `jobs/` + hand-add a
@@ -99,13 +98,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `scripts/run-u.mjs` now moves any stale audit aside right after `coldReset`, before its own
   Gate ever opens (`moveStaleGateAudit`, new export from `scripts/u-patient.mjs`) — never on the
   resume branch, where the tree's audit is that same run's own prior leg. Not yet proven live.
-- **F189 — `redactSecrets` did not mask a URL's embedded userinfo credentials
-  (`scheme://user:pass@host`).** `SECRET_PATTERNS` (`src/validate.js`, the one shape inventory
-  behind detection AND redaction) gains one entry, matching only the `user:pass` span (a `://`
-  lookbehind, an `@` lookahead) so the scheme and host stay readable through the mask. Never
-  matches SSH remote syntax, a bare email address, or a userinfo-less URL. Monotonic — checked
-  against every `jobs/*.json` spec and the existing test suite before landing, zero new reds. Not
-  yet proven live.
 - **F184 — a malformed tool-call round on the WORKER path (`src/planrun.js`'s Loop-path `ask()`)
   ended an attempt with nothing on the spine naming it — indistinguishable from the model
   genuinely producing no useful work.** `ask()` now reads bare-agent 0.43.0's own

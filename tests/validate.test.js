@@ -104,48 +104,6 @@ test('redactSecrets — the real redaction path the spine/close/prompt scrub rid
   assert.equal(redactSecrets(benign), benign, 'a non-matching near-miss must ride through byte-identical');
 });
 
-// Item 4 (2026-09-15) — `redactSecrets("scheme://user:pass@host")` used to
-// return it unchanged: the SECRET_PATTERNS inventory had nothing that
-// matched a URL's userinfo span. Added to the ONE inventory (never a
-// second, private pattern), so scanSecrets/sweepSecretLiterals gained the
-// same detection for free — the one-inventory rule this suite exists to
-// guard (BG-1: detection and redaction must never disagree).
-test('redactSecrets masks a URL\'s embedded userinfo credentials, keeping the scheme and host readable', () => {
-  const raw = 'https://bob:hunter2secretpass@api.deepseek.com/v1';
-  const scrubbed = redactSecrets(raw);
-  assert.notEqual(scrubbed, raw, 'the credentials must not survive byte-identical');
-  assert.match(scrubbed, /^https:\/\/\[REDACTED:/, 'the scheme stays readable, right up to the mask');
-  assert.match(scrubbed, /@api\.deepseek\.com\/v1$/, 'the host and path stay readable, right after the mask');
-  assert.doesNotMatch(scrubbed, /hunter2secretpass/, 'the password itself must not survive in any form');
-  assert.deepEqual(scanSecrets(scrubbed), [], 'nothing secret-shaped remains after redaction');
-});
-
-test('scanSecrets finds the URL-userinfo shape, and redactSecrets is idempotent on its own output', () => {
-  const raw = 'endpoint: postgres://alice:s3cr3t@db.internal:5432/app';
-  assert.deepEqual(scanSecrets(raw), ['alice:s3cr3t']);
-  const once = redactSecrets(raw);
-  const twice = redactSecrets(once);
-  assert.equal(once, twice, 'redacting an already-redacted string must be a no-op, not a double-mask');
-});
-
-test('the URL-userinfo pattern never matches SSH remote syntax, a bare email address, or a userinfo-less URL (no password to redact)', () => {
-  for (const benign of [
-    'git@github.com:org/repo', // SSH syntax — no "://", never a URL-userinfo match
-    'someone@example.com', // a bare email address
-    'https://user@host.example/path', // userinfo present, but NO password — nothing to redact
-    'https://host.example/path', // no userinfo at all
-  ]) {
-    assert.deepEqual(scanSecrets(benign), [], `${JSON.stringify(benign)} must not be flagged`);
-    assert.equal(redactSecrets(benign), benign, `${JSON.stringify(benign)} must ride through byte-identical`);
-  }
-});
-
-test('SECRET_PATTERN_NAMES stays in lockstep with SECRET_PATTERNS — the URL-userinfo entry got a name too', async () => {
-  const { SECRET_PATTERNS, SECRET_PATTERN_NAMES } = await import('../src/validate.js');
-  assert.equal(SECRET_PATTERN_NAMES.length, SECRET_PATTERNS.length);
-  assert.equal(SECRET_PATTERN_NAMES.at(-1), 'URL userinfo credentials (scheme://user:pass@)');
-});
-
 test('scopeContained rejects every escape spelling and accepts the equivalent contained ones — the belt behind globToPrefix', () => {
   for (const bad of ['/abs/**', '../up/**', './../up/**', '/**']) {
     assert.equal(scopeContained(bad), false, `${JSON.stringify(bad)} must not be contained`);
