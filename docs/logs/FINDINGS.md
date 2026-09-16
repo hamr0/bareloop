@@ -12719,7 +12719,7 @@ offer (line 71) and the person answered yes: `run-author.mjs` was spawned readin
 (ruling 9's hand-off), the first time this path has run live end to end. The pause/recheck loop,
 the corrected wording, and the reachable offer are all confirmed working as fixed.
 
-## F183 — the confirm turn's "you asked for these, but nothing checks them" list contradicts the code-derived protections printed right above it (open)
+## F183 — the confirm turn's "you asked for these, but nothing checks them" list contradicts the code-derived protections printed right above it (fixed in code, not yet proven live)
 
 Run mu2bjmed, confirm round 2 plan (spine `author-phase` `confirm-done` round 2).
 `notChecked` listed "No ts-ignore comments" and "Do not edit or delete tests" while the
@@ -12748,6 +12748,20 @@ and the write fence `src/**` (`test/` sits outside it, already refusing test edi
 casts" and "Do not change what the code does" were genuinely unchecked, same as before. Still
 open — the candidate fix (derive `notChecked` by set-difference against the code-side list) has
 not been built.
+
+**2026-09-16 update — FIXED IN CODE, ruling A (hamr, 2026-09-16), not yet proven live.** Option A
+(feed the real guard list and the real write fence into the confirm prompt as facts, instruct the
+model to leave anything already covered off `notChecked`) was chosen over option B (drop the
+model's `notChecked` list entirely, rejected — the model still writes it). `confirmProtections`
+(`src/authorflow.js`) already computed the real code-derived protections list for the person-facing
+display; that computation is now moved earlier in `runConfirmTurn` (before the round loop, right
+after `resolvedLang` is known) and the SAME list — never a second hand-typed spelling — is threaded
+into `confirmPrompt`'s model-facing prompt as an "ALREADY COVERED" block, with an instruction not to
+name anything on it in `notChecked`. `CONFIRM_SYSTEM` was updated to repeat the instruction and cite
+both prior occurrences (`mu2bjmed`, `mu2qmept`). The model still authors `notChecked` freely; nothing
+is made deterministic. Proven by `tests/confirmturn.test.js` (fail-first, mutation, and
+code-derivation tests). NOT yet run against a real provider — the actual reduction in false
+`notChecked` claims needs a live interview to confirm.
 
 ## F184 — a malformed tool-call round on the worker path ends an attempt with nothing on the spine naming it (open)
 

@@ -468,3 +468,58 @@ test('runConfirmTurn (F179): every attempt malformed exhausts the retry ladder i
   assert.equal(report.calls.length, 1 + MAX_STRUCTURE_RETRIES);
   assert.equal(report.spendComplete, true, 'every attempt priced — none fell back to a null-cost casualty');
 });
+
+// ── F183 (2026-09-16 ruling A, run mu2qmept) — the model drafts `notChecked`
+// WITHOUT ever being shown the real code-derived protections/write-fence, so
+// it can (and twice has) claimed a guard already enforced ("no-suppressions",
+// the write fence) is missing. The fix feeds the SAME code-derived list
+// {@link confirmProtections} already computes into the model-facing prompt,
+// with an instruction to leave anything already covered off `notChecked` —
+// never a second hand-typed list, never a deterministic notChecked.
+
+test('F183: confirmPrompt carries the real code-derived protections list and the exclude-covered instruction', () => {
+  const protections = confirmProtections({ verdictType: 'green', lang: 'js', writeScope: ['src/**'] });
+  const prompt = confirmPrompt({
+    answers: { 1: 'a', 2: 'b', 3: 'c' }, questions: GREEN_QUESTIONS, labels: FIELD_LABELS,
+    isRepo: true, lang: 'js', writeScope: ['src/**'], protections,
+  });
+  for (const line of protections) {
+    assert.ok(prompt.includes(line), `prompt must carry the real protection line verbatim: ${line}`);
+  }
+  assert.match(prompt, /already covered/i);
+  assert.match(prompt, /notChecked/);
+});
+
+test('F183: the protections fed into the prompt are CODE-DERIVED, not hardcoded — changing the guard/fence input changes the prompt', () => {
+  const protectionsA = confirmProtections({ verdictType: 'green', lang: 'js', writeScope: ['src/**'] });
+  const promptA = confirmPrompt({
+    answers: { 1: 'a' }, questions: { 1: 'q' }, labels: {}, isRepo: false, lang: 'js',
+    writeScope: ['src/**'], protections: protectionsA,
+  });
+  // a different write fence must change the rendered prompt
+  const protectionsB = confirmProtections({ verdictType: 'green', lang: 'js', writeScope: ['lib/**', 'docs/**'] });
+  const promptB = confirmPrompt({
+    answers: { 1: 'a' }, questions: { 1: 'q' }, labels: {}, isRepo: false, lang: 'js',
+    writeScope: ['lib/**', 'docs/**'], protections: protectionsB,
+  });
+  assert.notEqual(promptA, promptB);
+  assert.ok(promptB.includes('lib/**, docs/**'));
+  assert.ok(!promptA.includes('lib/**, docs/**'));
+});
+
+test('F183: runConfirmTurn feeds the model call itself (not just confirmPrompt in isolation) the real protections — the convo the model sees carries them', async () => {
+  const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
+  const { ask } = scriptAsk(['', 'confirm']);
+  const book = makeCostBook({ ceilingUsd: null });
+  await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  const firstCallMessages = calls[0].messages;
+  const userContent = firstCallMessages.map((/** @type {any} */ m) => m.content).join('\n');
+  for (const line of BASE_PROTECTIONS) {
+    assert.ok(userContent.includes(line), `the model's own prompt must carry: ${line}`);
+  }
+});
+
+test('F183: CONFIRM_SYSTEM instructs the model to check the shown protections/fence before naming something in notChecked, citing run mu2qmept', () => {
+  assert.match(CONFIRM_SYSTEM, /mu2qmept/);
+  assert.match(CONFIRM_SYSTEM, /already covered/i);
+});

@@ -33,6 +33,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F183 — the confirm turn's model-facing prompt never showed the model the real, code-derived
+  guards or write fence, so `notChecked` could (and twice live did, runs `mu2bjmed` and
+  `mu2qmept`) falsely claim an already-enforced protection was missing** (e.g. "no ts-ignore
+  comments" and "do not edit or delete tests", while `no-suppressions` and the write fence
+  already covered both). hamr's ruling A (2026-09-16): feed the real protections in as facts,
+  never drop the model's list. `confirmProtections`'s existing code-derived list (the same one
+  already shown to the person, `src/authorflow.js`) is now computed once, before the model
+  drafts, and threaded into `confirmPrompt`'s model-facing prompt as an "ALREADY COVERED" block;
+  `CONFIRM_SYSTEM` now orders the model to check that list before naming anything in
+  `notChecked`. The model still authors `notChecked` freely — nothing made deterministic, no
+  second hand-typed guard list. Not yet proven live (`docs/logs/FINDINGS.md` F183).
 - **F189 close-out — the URL-userinfo secret pattern added for redaction was also making
   `prepareSource` REFUSE sources that carry it, not just mask it.** Measured at $0: 5 of 44
   local repos under `~/PycharmProjects` carry a tracked file matching

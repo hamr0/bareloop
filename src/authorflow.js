@@ -1712,9 +1712,13 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
   + 'a protection is never a check and never named in the goal sentence. The goal sentence names every check you '
   + 'listed and nothing more. For anything the person asked for that none of your listed checks can verify, name it '
   + 'plainly in `notChecked`, in the person\'s own words — never omit a gap to make the plan look complete; '
-  + 'over-reporting a gap is always the safe direction. Ask a question only where an answer is genuinely missing — '
-  + 'never to double-check something already answered. You cannot read anything and you cannot run anything: '
-  + 'everything you know is in the message you are given.';
+  + 'over-reporting a gap is always the safe direction. Before you name anything in `notChecked`, check it against '
+  + 'the ALREADY COVERED list shown to you in the message below (the real guards and write fence this run will '
+  + 'apply) — anything already covered there never belongs in `notChecked`, even when the person asked for it in '
+  + 'their own words (runs mu2bjmed and mu2qmept both wrongly claimed the no-suppressions guard and the write fence '
+  + 'were missing when both were already enforced; check the list before writing the claim). Ask a question only '
+  + 'where an answer is genuinely missing — never to double-check something already answered. You cannot read '
+  + 'anything and you cannot run anything: everything you know is in the message you are given.';
 
 /**
  * The confirm turn's per-round prompt (model-facing, registered). Shows the
@@ -1723,12 +1727,20 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
  * listing already paid for, the write fence, the detected language, "worse
  * than before" when the person gave one (repo only), and — on a fix round —
  * what the person asked to change.
+ * F183 (2026-09-16, ruling A, run mu2qmept): also carries the REAL,
+ * code-derived `protections` list ({@link confirmProtections} — the same
+ * guards the close will actually compose plus the real write fence, never a
+ * second hand-typed list) as an ALREADY COVERED block, with the instruction
+ * that anything on it never belongs in `notChecked`. Twice live (mu2bjmed,
+ * mu2qmept) the model claimed a guard or the write fence was missing while
+ * blind to what was actually enforced — this is the fix: show it the facts
+ * before it drafts, never hand-write a matcher over its answer.
  * @param {{answers: Record<string|number, string>, questions: Record<string|number, string>,
  *   labels?: Record<string|number, string>, facts?: any, listing?: string|null,
  *   writeScope?: string[]|null, isRepo: boolean, lang: string, worseThanBefore?: string,
- *   fixText?: string|null}} o
+ *   fixText?: string|null, protections?: string[]}} o
  */
-export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null }) {
+export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [] }) {
   const lines = ['THE PERSON\'S OWN ANSWERS (a non-engineer; read exactly what they wrote, invent nothing beyond it):'];
   for (const k of Object.keys(questions)) {
     const label = labels[k] ? ` (${labels[k]})` : '';
@@ -1740,6 +1752,15 @@ export function confirmPrompt({ answers, questions, labels = {}, facts = null, l
   }
   lines.push('', `LANGUAGE: ${lang}`);
   if (writeScope) lines.push(`WRITE SCOPE (the fence — the run may write only here): ${writeScope.join(', ')}`);
+  if (protections.length > 0) {
+    lines.push(
+      '',
+      'ALREADY COVERED — these are real, always-on, and enforced by this run regardless of what you compose. '
+        + 'Never list anything already covered here in `notChecked`, even if the person asked for it in their own '
+        + 'words:',
+      ...protections.map((p) => `  - ${p}`),
+    );
+  }
   if (facts) lines.push('', `READ-ONLY SURVEY:\n${JSON.stringify(facts)}`);
   if (listing) lines.push('', `SEED LISTING:\n${listing}`);
   if (fixText) lines.push('', `THE PERSON ASKED FOR A CHANGE: ${fixText}`, 'Revise the plan and resubmit.');
@@ -1828,6 +1849,13 @@ export async function runConfirmTurn({
     resolvedLang = String(pick);
   }
 
+  // F183 (2026-09-16, ruling A): computed ONCE, before the model ever drafts,
+  // from the same source {@link confirmProtections} always used — fed into
+  // the prompt below so the model can check `notChecked` against it, and
+  // reused (never recomputed) after the call so the shown, prompted, and
+  // recorded protections are always the exact same list.
+  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope });
+
   // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
   /** @type {string|null} */
   let fixText = null;
@@ -1844,14 +1872,14 @@ export async function runConfirmTurn({
   let convo = [{
     role: 'user',
     content: confirmPrompt({
-      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore,
+      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections,
     }),
   }];
 
   for (let round = 1; round <= 2; round += 1) {
     if (fixText) {
       convo = [...convo, { role: 'user', content: confirmPrompt({
-        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText,
+        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections,
       }) }];
     }
     onPhase('confirm-round', { round });
@@ -1875,9 +1903,10 @@ export async function runConfirmTurn({
     // THE REAL PROTECTIONS (fix #1, run mu0voeo4, 2026-09-14): never the
     // model's `protections` prose — the schema no longer even asks the model
     // for one — but the guards `classGuards` will actually compose, plus the
-    // write fence. `notChecked` is the model's own honest gap list, carried
-    // through unchanged.
-    const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope });
+    // write fence. Computed once above (F183) and reused here unchanged, so
+    // the list the model was prompted with is byte-identical to the list
+    // shown at confirm-done and recorded on acceptance. `notChecked` is the
+    // model's own honest gap list, carried through unchanged.
     const notChecked = [...(r.plan.notChecked ?? [])];
     const plan = { ...r.plan, protections, notChecked };
     onPhase('confirm-done', { round, plan });

@@ -1027,6 +1027,16 @@ silently dropped. It is shown under its own heading in the menu (`scripts/run-au
 and threaded through to `accepted.notChecked` and `confirmedBlock`'s own "THE PERSON ASKED
 FOR THESE, BUT NOTHING CHECKS THEM" section for the composer.
 
+**The model drafting `notChecked` is now shown the SAME code-derived protections list before
+it drafts** (F183, ruling A, 2026-09-16 — live runs `mu2bjmed` and `mu2qmept` both had the
+model falsely claim an already-enforced guard or the write fence was missing, because it was
+never told what was actually enforced). `confirmProtections`'s output is computed once, before
+the paid round loop, and threaded into `confirmPrompt`'s model-facing prompt as an "ALREADY
+COVERED" block; `CONFIRM_SYSTEM` orders the model to check that list before naming anything in
+`notChecked`. The model still authors `notChecked` freely — this never makes the list
+deterministic, and it is still never a hand-typed second spelling of the guards. Not yet
+proven live.
+
 **`accepted.openQuestions` is the model's OWN honest `questions`, from the plan being
 ACCEPTED** (F175, fixed 2026-09-14) — never a prior, superseded round's, and never limited to
 a person's typed "fix" text as it used to be. On the round-2 "fix" terminal path (D3: there is
