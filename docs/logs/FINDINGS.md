@@ -12352,7 +12352,7 @@ new combined `FORBIDDEN_WRITE_SEGMENT_PATTERN` (`/(?:\.git|node_modules)/` as th
 alternation) so both books share one pattern and one doc comment rather than two that could
 drift. Tests updated to a single combined Gate test; see F178's update for the full test list.
 
-## F178 — a signed fence could reach inside .git (fixed in code)
+## F178 — a signed fence could reach inside .git (CLOSED — unreachable live by construction)
 
 Nothing stopped a signed job's `writeScope` (or a workflow step's narrower `scope`/exit
 `target`) from naming `.git` directly — `.git/**`, or a nested spelling like `a/.git/**` under
@@ -12451,6 +12451,22 @@ against a VALIDATOR regression, since `.git` is never legitimately in-fence in t
 the fix — no full `npm test` run from this builder session; the main session's own full gate is
 what surfaced the original regression and is the instrument that will confirm this fix at the
 next full-suite run. Still not yet proven live end to end.
+
+**2026-09-16 — CLOSED (hamr): unreachable live by construction.** Same shape as PRD item 30 row
+30.3 (F152, "impossible live by construction"). `scopeContained`'s `FORBIDDEN_SCOPE_SEGMENTS`
+(`src/validate.js`) refuses ANY fence naming a whole `.git` segment at DECLARATION time, before a
+job can even be signed — every call site a fence or scope is legality-checked through
+(`validateJob`'s `writeScope`, `validatePlan`'s step `scope`/exit `target`/`path`) goes through
+this one function, so no legally-signed job can ever carry a `.git`-reaching fence in the first
+place. That means the runtime belt above (`tools.denyArgPatterns`'s `FORBIDDEN_WRITE_SEGMENT_PATTERN`)
+can never fire on a real, signed run: the worker it would refuse never gets a Gate built with a
+`.git`-reaching `writeScope` to begin with. The belt stays exactly as its own text already says —
+defense-in-depth against a future VALIDATOR regression, not a path any real job takes today. A
+live proof of the belt firing would require deliberately reverting `scopeContained`'s rule first
+— i.e. proving a path no real job can take, which is not evidence about this build. Proof stays
+where it already was: the fail-first unit tests through a real bareguard `Gate`
+(`tests/planrun.test.js`), which exercise the belt directly rather than waiting for a signed job
+that structurally cannot reach it. No paid run follows from this closure.
 
 ## F179 — a malformed tool-call JSON from the provider crashed the paid authoring run and threw away a sound declaration (open)
 

@@ -464,11 +464,13 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     (`fix/item34-loose-ends`) stops here and goes to `/branch-review` → `/release`; the fresh
     branch after it opens with the M3 close-out list below, before M3b. See
     `docs/product/ITEM33-BUILD.md` M3's dated pointer for detail on each row.
-    - [ ] Ruling 7 (a repo job works end to end) not yet met — the one live fire ended
+    - [x] Ruling 7 (a repo job works end to end) not yet met — the one live fire ended
       broken-close, blocked by L24/F176. — F176 fixed in code (commit 5a83507: the revise
       ladder falls back to the newest sound iteration), not yet proven live. **2026-09-15:**
       signed run `mu2p83go` went green end to end (F185–F188); needs a developer hand-step to
-      run (F185, open) — still left UNTICKED, hamr decides.
+      run (F185, open) — still left UNTICKED, hamr decides. **2026-09-16 (hamr's word):** ticked
+      — run `mu2p83go` went green end to end, and F185's developer hand-step is closed by
+      `scripts/run-u.mjs --spec` (commit 110263a).
     - [ ] Ruling 5's round-2 open-question path — see item 34's L23/F175 (not duplicated here).
       — fixed in code (commit 245437c), not yet proven live.
     - [x] Release-order deviation: M3 pieces were built on the fix branch instead of after its
@@ -489,7 +491,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
       not counted as worker writes) — `npm ci` in the copy left `git status` at 0 lines (stash
       item 3, tree `source-mu2bglzc`), and signed run `mu2p83go` then recorded only
       `src/checks.js` as changed (F185–F188). Still owed: F178 (`.git`/`node_modules`
-      write-fence denial) never exercised live.
+      write-fence denial) never exercised live. **2026-09-16:** F178 CLOSED as unreachable-by-
+      construction (docs/logs/FINDINGS.md F178) — never exercised live, and never will be.
     - [x] The real person path (`run-interview` → spawned `run-author` reading the keyboard) has
       never run live — ruling 9's proof is still owed. **2026-09-15: proven live**, run
       `mu2qmept` (F182).
