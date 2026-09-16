@@ -12622,7 +12622,7 @@ malformed tool-call arguments string). 318e066's booking mitigation (above) stay
 general safety net for every other admitted casualty class (ETIMEDOUT/TimeoutError) that can still
 reject a call after this repo's own `book.add` seam runs. Not proven live (same caveat as F179).
 
-## F181 — a key with an embedded newline crashes inside the paid span instead of refusing at $0 (open)
+## F181 — a key with an embedded newline crashes inside the paid span instead of refusing at $0 (fixed in code, not yet proven live)
 
 Run mu2bcn7c, spine
 `/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live/out/author-mu2bcn7c.jsonl`.
@@ -12646,7 +12646,7 @@ Candidate direction (unruled): trim/validate the resolved API key value (reject 
 characters) before constructing the request, so this class refuses at $0 instead of crashing
 mid-span.
 
-**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
+**2026-09-15 update — fixed in code (commit `f4a65b7`, `fix/m3-closeout`), not yet proven
 live.** One exported pure helper, `apiKeyProblem(value)` (`src/providers.js`, beside the
 provider table), reports `null` for a clean value or a plain-English reason for a value that
 carries CR, LF, TAB, any other C0/DEL control character, or leading/trailing whitespace — it
@@ -12668,7 +12668,7 @@ line-break check alone sent 3 tests red across the two suites; restored via `cp`
 scratchpad backup, never `git checkout`. Not yet proven live — no real provider run has
 exercised this refusal path since it was added.
 
-## F182 — the interview never waits for the install, so "Run it now?" is unreachable for a repo that needs packages (open)
+## F182 — the interview never waits for the install, so "Run it now?" is unreachable for a repo that needs packages (fixed in code, proven live)
 
 `scripts/run-interview.mjs`. `prepareSource` runs right after Destination (:409). The install
 gap is printed at :426-434 (`"The copy above has no installed packages (...)"`, `"bareloop
