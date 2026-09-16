@@ -3364,6 +3364,22 @@ Not wired yet, named rather than silently absent: `bareloop run` (the exported b
 33/M5. The intake form that lets a person fill in Source/Destination through the authoring
 interview (rather than the CLI above) is item 33/M3, not yet built.
 
+**Running an authored spec needs no developer hand-step any more (F185, fixed 2026-09-16).**
+`scripts/run-u.mjs --spec <path to resolved-spec.json>` is an alternative to `--job <key>`
+(both, or neither, is a loud $0 refusal): it `validateJob`'s the spec on disk explicitly and
+early, then finds the ONE `source-*/` sibling directory beside it that carries a
+`source.json` (`run-interview.mjs` prepares the source door and invokes `run-author.mjs`
+against the same `--out`, so `resolved-spec.json` and `source-<runid>/{source.json,tree/}`
+are always siblings) and reads the workdir (`<that dir>/tree`) and seed off that SAME
+manifest `readSourceManifest` already serves elsewhere — never typed, guessed, or defaulted.
+No sibling, more than one, a missing seed, or a gone tree each refuse by name. Everything
+past that resolution — the `--approve <jobSpecHash>` signature, budget/wall ceilings,
+coldReset, the close-first precheck — is untouched: `--spec` only NAMES the job, exactly as
+a `--job` row does. `scripts/run-author.mjs`'s "SIGNING PREPARED — NOT SIGNED" screen now
+prints the ready-to-paste `--spec` command (real path, real `--approve <hash>`, the
+provider's real env-key per F187) — a person finishing the interview alone can reach a
+running job with no `jobs/` edit and no JOBS-table row.
+
 ## Architecture
 
 Three layers. An **outer shell** (dumb, permanent): per-run budget cap via bareguard,

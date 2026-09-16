@@ -12838,7 +12838,7 @@ test's marker-count assertion red (0 vs 1); restored via `cp` from a scratchpad 
 proven live — no real provider has produced a malformed tool call against the shipped worker path
 since this fix landed.
 
-## F185 — an interview-authored repo job cannot be RUN by a person; it needs a developer hand-step (open)
+## F185 — an interview-authored repo job cannot be RUN by a person; it needs a developer hand-step (fixed in code, not yet proven live)
 
 Found 2026-09-15 while sign-and-running the first PERSON-path spec (`jobs/pulselog-person-strict-checks.json`,
 precedent `edf755c`). `scripts/run-u.mjs` runs only jobs listed in its own hard-coded `JOBS` table
@@ -12863,6 +12863,51 @@ and add a `JOBS` row (exactly the two hand-edits this commit made, following pre
 So PRD item 33 M3 ruling 7 ("A repo job works end to end", `docs/product/ITEM33-BUILD.md:383`) is
 true only with a developer hand-step between authoring and running; it is not true end to end for a
 person acting alone through the shipped CLI surface. No fix proposed here.
+
+**Fixed 2026-09-16, hamr's ruling (option A):** `scripts/run-u.mjs` now accepts `--spec <path to
+resolved-spec.json>` as an alternative to `--job <key>` (giving both, or neither, is a loud $0
+refusal). It reads the SIGNED spec off that path directly (JSON-parsed, then `validateJob`'d
+explicitly and early — a `--job` row's spec is developer-vetted and only meets `validateJob` deep
+inside `runJob`; a `--spec` run gets the same check at $0, before a filesystem lookup or a preview
+line prints, since there is no developer standing between the person and the launch to have caught
+a malformed spec first). The workdir and the seed come from the prepared copy's OWN source manifest
+(`readSourceManifest`, `src/source.js` — the same reader `run-author.mjs` and `run-u.mjs`'s own
+in-run destination read already use): the one `source-*/` sibling directory beside the spec that
+carries a `source.json` IS the copy this spec was authored against (`run-interview.mjs` passes the
+SAME `--out` to both the source door and `run-author.mjs`, so `resolved-spec.json` and
+`source-<runid>/{source.json,tree/}` are always siblings). No sibling, more than one, a missing
+seed, or a gone tree (`tree/.git` absent) are each a named $0 refusal — never typed, guessed, or
+defaulted. The spine directory is derived by the SAME `join(wd, '..', <name>)` formula a `--job`
+row uses, with `<name>` computed as `${spec.job}-bareloop` (the spec's own signed job name) rather
+than hand-picked. Every re-invocation command this script prints (resume/door/reopen, the "revise
+the spec" hints) now goes through one `SELECTOR`/`SPEC_DESC` pair so a `--spec` run's own printed
+commands stay `--spec`, never silently fall back to `--job`.
+
+Nothing past spec/target resolution changed: the `--approve <jobSpecHash>` signature gate, the
+budget/wall ceilings, the work-branch rule, coldReset + the F186 stale-gate-audit move, and the
+close-first precheck all read `spec`/`specHash`/`target` exactly as before, whichever selector
+named them — `tests/spec-selector-u.test.js` proves the signature gate specifically (a wrong or
+absent `--approve` on the `--spec` path refuses/holds exactly as it does on `--job`).
+
+`scripts/run-author.mjs`'s "SIGNING PREPARED — NOT SIGNED" end screen now prints the exact
+ready-to-paste command (`<providerEntry.envKey>=... node scripts/run-u.mjs --spec <resolved-spec
+path> --approve <hash>`, the real key name per F187's rule) — the loose end this finding named:
+reaching a running job from here no longer needs a developer at all.
+
+Tests: `tests/spec-selector-u.test.js` (13 cases, driven through the real script's preview path per
+the `tests/hitl-u.test.js` idiom) — a valid `--spec` resolves the right workdir/seed; `--spec` +
+`--job` together refuses; neither refuses; a missing/unparseable/`validateJob`-failing spec
+refuses; no `source-*/` sibling, more than one, no seed, and a gone tree each refuse; a wrong
+`--approve` hash still refuses (exit 1) and an absent one still holds (exit 0, no run); the printed
+hash is `jobSpecHash` of the spec on disk, the same signature a `--job` run signs. All 13 fail
+against the pre-fix source (11 fail outright — `--spec` was silently ignored and the run fell back
+to the default `--job aurora-spawner` row; the other 2 happened to pass by coincidence of the same
+generic approve-gate text). Mutation-tested per added refusal (both-given, no-seed, gone-tree,
+ambiguous-siblings, validateJob-skip): each disabled check sent its own test red and no other;
+restored via `cp` from a scratchpad backup each time.
+
+Not yet proven live: no real provider has run a `--spec`-launched job since this fix landed —
+everything above is proven at $0 through the preview path and unit-level checks.
 
 ## F186 — the printed BEHAVIOUR line counts tool calls from every prior run that ever touched the patient tree, not just this run (open)
 

@@ -33,6 +33,21 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F185 — an interview-authored repo job had no code path INTO `scripts/run-u.mjs`: a person
+  finishing the authoring interview was left holding a signed, hash-stable `resolved-spec.json`
+  with no way to run it, only a developer hand-step (`cp` the spec into `jobs/` + hand-add a
+  `JOBS` row).** hamr's ruling (2026-09-16, option A): `scripts/run-u.mjs` now accepts `--spec
+  <path to resolved-spec.json>` as an alternative to `--job <key>` (giving both, or neither, is a
+  loud $0 refusal). It `validateJob`'s the spec explicitly and early, then reads the workdir and
+  seed off the prepared copy's OWN source manifest (`readSourceManifest`, `src/source.js` — the
+  same reader `run-author.mjs` already uses) — the one `source-*/` sibling directory beside the
+  spec that carries a `source.json`; never typed, guessed, or defaulted, and a missing/ambiguous
+  manifest or a gone tree each refuse by name. `scripts/run-author.mjs`'s "SIGNING PREPARED — NOT
+  SIGNED" end screen now prints the exact ready-to-paste run command (real spec path, real
+  `--approve <hash>`, the provider's real env-key name per F187). Every existing arbiter gate —
+  the `--approve` signature, the budget/wall ceilings, coldReset, the close-first precheck —
+  applies unchanged; `--spec` only NAMES the job. Not yet proven live (`docs/logs/FINDINGS.md`
+  F185).
 - **F183 — the confirm turn's model-facing prompt never showed the model the real, code-derived
   guards or write fence, so `notChecked` could (and twice live did, runs `mu2bjmed` and
   `mu2qmept`) falsely claim an already-enforced protection was missing** (e.g. "no ts-ignore

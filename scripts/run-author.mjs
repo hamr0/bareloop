@@ -1078,6 +1078,17 @@ try {
         console.log(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
         console.log('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
         for (const l of openQuestionLines(authored.confirmed)) console.log(`  ${l}`);
+        // F185 — the loose end this fix closes: until now this screen named no
+        // command that actually RUNS the spec it just wrote, so reaching a
+        // running job from here needed a developer to hand-add a JOBS row and
+        // copy this file into jobs/. scripts/run-u.mjs now accepts `--spec
+        // <path>` and reads this SAME prepared copy's own source manifest for
+        // the workdir and seed — so the command below is the whole of what a
+        // person needs to run their own job, nothing left to hand off.
+        // `providerEntry.envKey` (never a hardcoded ANTHROPIC_API_KEY) is the
+        // same F187 rule scripts/run-u.mjs's own hint already follows.
+        console.log('\nTo run it (the same signature and gates as any other job — nothing here bypasses them):');
+        console.log(`  ${providerEntry.envKey}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}`);
         emit('author-end', { outcome: 'prepared', specHash: hash });
       }
     }
