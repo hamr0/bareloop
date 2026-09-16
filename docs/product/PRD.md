@@ -106,6 +106,30 @@ self-adjusted budgets — ever (the agenticSeek smell). No UI before the headles
 job #1. No local-LLM work until the API path earns it. Not a general agent — a place where
 *repeated, verifiable* jobs get better at themselves (PRD.md:119-125).
 
+### §8a Deferred — unproven need
+
+Work gets built when the PRD calls for it or a LIVE failure produced it. A defect found by
+reading source, with no run ever hitting it, gets logged and parked — never built on the
+strength of the reading alone.
+
+- **F184** — a spine record for a malformed worker-path tool call. Found by reading
+  `src/planrun.js` while closing out F179/F180, no run has ever produced it. Shipped before this
+  rule existed; left in place as inert, visibility-only (`docs/logs/FINDINGS.md` F184).
+- **F188** — the no-suppressions cast guard misses an unchecked cast written as a typed callback
+  parameter rather than a value cast. Widening the detector is arbiter-adjacent (it changes what
+  a signed spec can admit) — parked to the close-authoring rung (`docs/logs/FINDINGS.md` F188).
+- **F189** — a URL-userinfo secret-redaction pattern. Invented work: no live failure ever hit the
+  gap it closed, and its own follow-on fix existed only to patch a side effect (refusing 5 of 44
+  local repos) that a live run never caught either. Both commits reverted 2026-09-16
+  (`docs/logs/FINDINGS.md` F189).
+- **F183's guard-description wording** — the confirm turn's "ALREADY COVERED" block undersells
+  `no-suppressions` (3 items shown, 7 for `js`/5 for `python` actually enforced) and is
+  language-blind. Measured live and by a paid ON/OFF probe to be the root cause of one surviving
+  false `notChecked` claim. Not built pending hamr's word (`docs/logs/FINDINGS.md` F183).
+- **F183's write-fence wording** — same shape of problem, not safely fixable by wording alone:
+  whether tests are covered by the fence depends on where they live relative to it, so a generic
+  wording claim would overclaim for some repo shapes (`docs/logs/FINDINGS.md` F183).
+
 ## §9 Risks and their pre-registered handles
 
 - **Rules don't generalize across non-identical runs** → job #1's first measurement; the lineage

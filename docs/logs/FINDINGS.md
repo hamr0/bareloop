@@ -12763,7 +12763,35 @@ is made deterministic. Proven by `tests/confirmturn.test.js` (fail-first, mutati
 code-derivation tests). NOT yet run against a real provider — the actual reduction in false
 `notChecked` claims needs a live interview to confirm.
 
-## F184 — a malformed tool-call round on the worker path ends an attempt with nothing on the spine naming it (open)
+**2026-09-16 update — proven live and measured; the fix is PARTIAL, root cause found, wording
+fix PARKED.** Live authoring run `mu3wqmnp` ($0.806198, 6 calls) showed the false "Do not edit or
+delete tests" entry GONE from `notChecked` — that half of the fix holds live. "No any casts" was
+still present as a false `notChecked` claim in the same run.
+
+A $0-then-paid ON/OFF probe isolated why: 20 confirm-turn calls on `deepseek-flash`, $0.66 total,
+same answers and inputs across both arms, only the guard's description line in the
+"ALREADY COVERED" block changed. With the CURRENT wording, the false "No any casts" claim fired
+5 of 10; with a wording that names the guard's real patterns instead, it fired 0 of 10. The
+unrelated "Do not edit or delete tests" claim served as the control and stayed roughly flat
+across both arms (~5/10 vs 6/10) — confirming the swing on "No any casts" tracks the wording
+change, not run-to-run noise.
+
+Root cause: `GUARD_DESCRIPTIONS['no-suppressions']` (`src/authorflow.js:507`) names only 3 items
+and is language-blind — it prints `"# type: ignore"`, a Python-only entry, on a JS job — while
+the real composed guard list is 7 patterns for `js` (`ts-ignore`, `ts-expect-error`,
+`ts-nocheck`, `eslint-disable`, `any`, `any-star`, `cast`) and 5 for `python`. The model reads a
+3-item, wrong-language description and reasonably concludes "no any casts" is not covered.
+
+This wording fix is NOT built. PARKED pending hamr's word (a PRD item — see
+`docs/product/PRD.md` §8a — never a drive-by fix folded into this pass).
+
+Also recorded, parked alongside it: the write-fence line has the same shape of problem but is
+NOT safely fixable by wording alone. Whether "tests" are covered by the fence depends on WHERE
+tests live relative to it — `test/` sits outside `src/**` in the pulselog patient, but a repo
+with `src/foo.test.js` would not be covered by the same fence, so a generic wording change
+("tests are protected by the write fence") would overclaim for that shape of repo.
+
+## F184 — a malformed tool-call round on the worker path ends an attempt with nothing on the spine naming it (fixed in code, not yet proven live)
 
 Found 2026-09-15 while bumping `bare-agent` to 0.43.0 and closing out F179/F180. Scoped read, not
 a live run: `src/planrun.js`'s worker `ask()` (the Loop-path surface, `src/planrun.js:2783-2815`,
@@ -12810,7 +12838,7 @@ transport class — never retried automatically (that is arbiter-adjacent: it wo
 rounds an attempt actually gets), but at minimum VISIBLE, the same honesty bar F179/F180 set for
 the authoring path.
 
-**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
+**2026-09-15 update — fixed in code (commit `5418a3a`, `fix/m3-closeout`), not yet proven
 live.** `ask()` (`src/planrun.js`) now reads `r.malformedToolCall` right where the marker already
 reaches bareloop code (after the existing `r.error` handling, so a `denied:`/halt/truncated/wiring
 error still takes its own existing lane unchanged), and emits ONE distinct spine record naming it:
@@ -12909,7 +12937,7 @@ restored via `cp` from a scratchpad backup each time.
 Not yet proven live: no real provider has run a `--spec`-launched job since this fix landed —
 everything above is proven at $0 through the preview path and unit-level checks.
 
-## F186 — the printed BEHAVIOUR line counts tool calls from every prior run that ever touched the patient tree, not just this run (open)
+## F186 — the printed BEHAVIOUR line counts tool calls from every prior run that ever touched the patient tree, not just this run (fixed in code, proven live)
 
 Found 2026-09-15 reading run `mu2p83go` (the first signed PERSON-path repo job,
 `jobs/pulselog-person-strict-checks.json`) end to end. The run printed:
@@ -12966,7 +12994,7 @@ only things stopping a worker from reading or reasoning about its own prior gate
 the deny DID fire once (see above) — showing the boundary is live, not theoretical, but also that
 the book sits inside the fenced territory it is supposed to be judging from outside. No fix proposed.
 
-**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
+**2026-09-15 update — fixed in code (commit `3596f2b`, `fix/m3-closeout`), not yet proven
 live.** Fixed at the SOURCE, not by filtering `runBehaviour` on `run_id` (a single run
 legitimately spans several run_ids, so that would have been the wrong fix — and neither
 `scripts/run-u.mjs` nor `src/replay.js`'s `buildTimeline` gained one). Two parts: (a)
@@ -12997,7 +13025,12 @@ site red; restored via `cp` from a scratchpad backup each time. Not yet proven l
 authoring run followed by a real worker run against the same patient has exercised this path
 since the fix landed.
 
-## F187 — run-u's printed approval-invocation hint always names `ANTHROPIC_API_KEY`, regardless of the job's actual provider (open)
+**2026-09-16 update — proven live, run `mu3wqmnp`.** The printed gate-audit line read:
+`gate audit /home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-3/out-f183/author-mu3wqmnp-gate-audit.jsonl
+(moved out of the patient tree — F186)` — the archived path sits outside the patient tree exactly
+as designed, confirming `archiveGateAudit()` fires on a real authoring run against a real patient.
+
+## F187 — run-u's printed approval-invocation hint always names `ANTHROPIC_API_KEY`, regardless of the job's actual provider (fixed in code, not yet proven live)
 
 Found 2026-09-15 in the same session. `scripts/run-u.mjs:929` builds the printed "run it" command
 with a hardcoded literal: `` `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}...` ``.
@@ -13019,7 +13052,7 @@ L17 entry referenced in the 2026-09-13 episode) for the interview path; run-u's 
 hint was not carried along. No other `ANTHROPIC_API_KEY` literal exists in `scripts/run-u.mjs` — this
 is the only hardcoded site, just fanned out to several printed lines through the shared helper.
 
-**2026-09-15 update — fixed in code (commit `<PENDING>`, `fix/m3-closeout`), not yet proven
+**2026-09-15 update — fixed in code (commit `93d1967`, `fix/m3-closeout`), not yet proven
 live.** The one hardcoded `ANTHROPIC_API_KEY` literal (the `invoke()` helper) now reads
 `providerEntry.envKey` — the SAME resolved name the real key check at launch already reads,
 already in scope well before `invoke()` is defined. Every printed line that fans out from
@@ -13059,3 +13092,38 @@ neither. This is a guard-coverage gap in the fixed `cast` regex, not a signed-sp
 guard was supposed to catch and missed by cheating; no widening is proposed here — the regex's
 admissibility is arbiter territory (a signed-spec field), not something this finding recommends
 changing.
+
+## F189 — `redactSecrets` did not mask a URL's embedded userinfo credentials (WITHDRAWN — reverted)
+
+Carried item, stash `2026-09-15-m3-closeout-branch.md:44`: `redactSecrets("https://bob:
+hunter2secretpass@api.deepseek.com/v1")` returned it unchanged. `src/validate.js`'s
+`SECRET_PATTERNS` — the ONE shape inventory that also drives `SECRET_RE`/`scanSecrets`/
+`sweepSecretLiterals` (the detection reds) — had five known-token shapes (`sk-`, `ghp_`,
+`github_pat_`, `AKIA`, `xox[bap]-`, `AIza`) but nothing that matched a bare `user:password@`
+span inside a URL. Note: `validateJob`'s own `baseUrl` field rule already reds ANY embedded
+userinfo outright — this finding was about the SEPARATE detection/redaction inventory.
+
+**2026-09-15 update — fixed in code (commit `9b5252e`, `fix/m3-closeout`).** Added one entry to
+`SECRET_PATTERNS` (and its paired name to `SECRET_PATTERN_NAMES`):
+`/(?<=:\/\/)[A-Za-z0-9._%+-]+:[^:@/\s]+(?=@)/`, redacting a URL's `user:password` span while
+keeping the scheme and host readable.
+
+**2026-09-16 update — the same pattern also drove `prepareSource`'s front-door refusal.**
+Measured at $0: of 44 local repos under `~/PycharmProjects`, 5 carried a tracked file matching
+this shape — `pulselog` (`test/backup.test.js`, the exact patient that greened live in run
+`mu2p83go`), plus `aurora`, `sawt`, `notes`, and bareloop itself — so as shipped this one
+pattern alone made bareloop refuse repos it had previously accepted, almost entirely on
+doc/test fixtures rather than real credentials. Close-out fix (commit `111d408`) added
+`SECRET_PATTERN_REDACT_ONLY` to keep the pattern for redaction while excusing it from the
+front-door refusal.
+
+**2026-09-16 — WITHDRAWN, both commits reverted (`873ed5c`, `07215d6`).** hamr's ruling: this
+finding was never produced by a live failure — it was invented work, found by reading
+`src/validate.js`'s source rather than by any run hitting the gap, and its own close-out fix
+exists only because the first fix's side effect (refusing 5 of 44 local repos, including the
+live patient pulselog) was itself never caught by a live run either. Both commits (`9b5252e`,
+`111d408`) are reverted; `src/validate.js`, `src/source.js`, `tests/validate.test.js`, and
+`tests/source.test.js` are back to their pre-batch state (commit `e355ea0`).
+`SECRET_PATTERN_REDACT_ONLY` no longer exists. This entry stays as a record of the whole
+episode, not as an open or fixed item — nothing here is built or planned; see
+`docs/product/PRD.md` §8a for the standing rule this episode fed back into the record.
