@@ -34,6 +34,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const SRC = readFileSync(join(REPO, 'scripts/run-author.mjs'), 'utf8');
 
+/** `archiveGateAudit`'s own catch: from its `try {` to the brace that closes the
+ * whole arrow function, so the guard below reads only this one catch, never the
+ * rest of the file. */
+const ARCHIVE_CATCH = /const archiveGateAudit = \(\) => \{[\s\S]*?\n\};\n/.exec(SRC)?.[0];
+
+// CLAUDE.md forbids `as any` / `@type {any}` casts anywhere in the repo.
+// archiveGateAudit's rename-failure catch (commit 3596f2b, F186) had one:
+// `/** @type {any} */ (e)?.message`. Fixed to narrow via NodeJS.ErrnoException,
+// matching the local idiom (src/ralph.js:252).
+test('archiveGateAudit narrows its catch error without an `any` cast (CLAUDE.md forbids `as any`/`@type {any}`)', () => {
+  assert.ok(ARCHIVE_CATCH, 'archiveGateAudit moved or was renamed — this guard no longer reads the code it guards');
+  assert.ok(!/@type \{any\}/.test(ARCHIVE_CATCH), 'an `any` cast is back in archiveGateAudit\'s catch');
+  assert.match(ARCHIVE_CATCH, /NodeJS\.ErrnoException/, 'the error should be narrowed via NodeJS.ErrnoException, the repo\'s existing idiom (src/ralph.js)');
+});
+
 /** the governance block: from its guard to the emit that closes it. Both ends are
  * INDENT-ANCHORED, because the whole flow now sits inside one `try {`: a pattern
  * closing on a bare `\n}\n` swallowed everything down to the catch's own brace and

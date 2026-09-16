@@ -195,7 +195,7 @@ const archiveGateAudit = () => {
     renameSync(treeAudit, archived);
     console.log(`gate audit ${archived} (moved out of the patient tree — F186)`);
   } catch (e) {
-    console.error(`gate audit could not be archived out of the patient tree: ${/** @type {any} */ (e)?.message ?? e}`);
+    console.error(`gate audit could not be archived out of the patient tree: ${/** @type {NodeJS.ErrnoException} */ (e)?.message ?? e}`);
   }
 };
 
