@@ -230,35 +230,6 @@ test('prepareSource: a single-file source carrying a Gemini-shaped key refuses s
   assert.ok(!existsSync(into));
 });
 
-// F189 close-out (2026-09-16, item A): the URL-userinfo pattern added for
-// redaction was also driving `prepareSource`'s front-door refusal — measured
-// $0: 5 of 44 local repos carry a tracked file matching it (mostly doc/test
-// fixtures), including pulselog's test/backup.test.js, the exact patient that
-// greened live in run mu2p83go. hamr's ruling: redact it, never refuse a
-// source over it. This is the fail-first shape: before the fix this refused
-// with source-carries-secret.
-test('prepareSource: a folder carrying a postgres URL with embedded userinfo credentials in a normal file is ADMITTED (F189 close-out — redact-only, not a front-door refusal)', async () => {
-  const source = tmp('bareloop-src-url-userinfo-');
-  writeFileSync(join(source, 'backup.test.js'), "const url = 'postgres://user:pass@localhost/db';\n");
-  const into = join(tmp('bareloop-into-parent-'), 'job1');
-
-  const r = await prepareSource({ source, into });
-  assert.equal(r.stop, null, r.stop ?? undefined);
-  assert.ok(existsSync(join(into, 'tree', 'input', 'backup.test.js')), 'the file is frozen into the tree, not refused');
-});
-
-test('prepareSource: a real API-key shape ALONGSIDE a URL-userinfo shape in the same file still refuses source-carries-secret (the redact-only carve-out is narrow to that one shape)', async () => {
-  const source = tmp('bareloop-src-mixed-secret-');
-  const fakeKey = 'sk-ant-api03-' + 'A'.repeat(60);
-  writeFileSync(join(source, 'config.txt'), `db=postgres://user:pass@localhost/db\nkey=${fakeKey}\n`);
-  const into = join(tmp('bareloop-into-parent-'), 'job1');
-
-  const r = await prepareSource({ source, into });
-  assert.equal(r.code, 'source-carries-secret');
-  assert.match(r.stop, /config\.txt/);
-  assert.doesNotMatch(r.stop, /URL userinfo/, 'the refusal names only the shape that actually gates the front door');
-});
-
 test('prepareSource: a clean folder with no secret-shaped content still prepares (no false positive)', async () => {
   const source = tmp('bareloop-src-clean-secret-check-');
   writeFileSync(join(source, 'readme.txt'), 'sk- is a fine word fragment but not a real key, and this has no AIza/ghp_/AKIA shape either');

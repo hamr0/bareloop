@@ -33,6 +33,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+<<<<<<< HEAD
 - **F185 — an interview-authored repo job had no code path INTO `scripts/run-u.mjs`: a person
   finishing the authoring interview was left holding a signed, hash-stable `resolved-spec.json`
   with no way to run it, only a developer hand-step (`cp` the spec into `jobs/` + hand-add a
@@ -59,17 +60,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `CONFIRM_SYSTEM` now orders the model to check that list before naming anything in
   `notChecked`. The model still authors `notChecked` freely — nothing made deterministic, no
   second hand-typed guard list. Not yet proven live (`docs/logs/FINDINGS.md` F183).
-- **F189 close-out — the URL-userinfo secret pattern added for redaction was also making
-  `prepareSource` REFUSE sources that carry it, not just mask it.** Measured at $0: 5 of 44
-  local repos under `~/PycharmProjects` carry a tracked file matching
-  `scheme://user:pass@host` (mostly doc/test fixtures, e.g. pulselog's
-  `test/backup.test.js` — the exact patient that greened live in run `mu2p83go`), so as shipped
-  this one pattern alone made bareloop refuse repos it previously accepted. hamr's ruling: keep
-  it for redaction, stop it refusing a source. Added `SECRET_PATTERN_REDACT_ONLY`
-  (`src/validate.js`), a frozen array index-aligned with `SECRET_PATTERNS`/
-  `SECRET_PATTERN_NAMES` naming which entries are redact-only; `prepareSource`'s
-  `secretPatternNames` (`src/source.js`) now skips them, `redactSecrets`/`sweepSecretLiterals`/
-  `scanSecrets` are unchanged. Not yet proven live (`docs/logs/FINDINGS.md` F189).
 - **Item 6 — `src/authoring.js`'s `TYPES_GENRE_TEMPLATE` (model-facing prompt text,
   interpolated verbatim into the authoring prompt) was missing from `src/
   promptregisters.js`'s `PROMPT_REGISTERS` inventory entirely.** Added; no other prompt content

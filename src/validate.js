@@ -207,38 +207,6 @@ export const SECRET_PATTERN_NAMES = [
 ];
 
 /**
- * Which `SECRET_PATTERNS` entries are REDACT-ONLY: still masked wherever
- * bareloop prints or logs text (`redactSecrets`, `sweepSecretLiterals`), but
- * never a reason to REFUSE a source at the front door (`prepareSource`'s
- * `secretPatternNames`, src/source.js). ONE inventory still drives both
- * detection and redaction — this is metadata ON that inventory, not a second
- * hand-typed list, and its index/name alignment with `SECRET_PATTERNS` /
- * `SECRET_PATTERN_NAMES` is proven by a test that fails if any of the three
- * arrays drift apart.
- *
- * F189 (2026-09-10) added the URL-userinfo pattern purely for redaction. Its
- * front-door refusal side effect was measured 2026-09-16 ($0, file names
- * only): 5 of 44 local repos under ~/PycharmProjects carry a tracked file
- * matching it — including pulselog's `test/backup.test.js`, the exact patient
- * that greened live in run mu2p83go — mostly doc/test fixtures, not real
- * credentials. As shipped, this one pattern made bareloop refuse repos it
- * previously accepted. hamr's ruling (2026-09-16): keep it for redaction,
- * stop it from refusing a source. Every other entry names a real, specific
- * token shape (a live key never belongs in a source at all) and stays a
- * front-door refusal.
- * @type {readonly boolean[]}
- */
-export const SECRET_PATTERN_REDACT_ONLY = Object.freeze([
-  false, // sk- prefixed API key
-  false, // GitHub personal access token (ghp_)
-  false, // GitHub fine-grained PAT (github_pat_)
-  false, // AWS access key ID (AKIA)
-  false, // Slack token (xox)
-  false, // Google/Gemini API key (AIza)
-  true,  // URL userinfo credentials (scheme://user:pass@) — F189, 2026-09-16
-]);
-
-/**
  * Scan a RAW text stream (a spine file, a close's output, a transcript) for
  * known secret shapes and return the literal matches. The ONE spelling of the
  * text-side scan, for the same reason SECRET_PATTERNS is the ONE inventory: a

@@ -13095,33 +13095,3 @@ previously greened now reds. Tests: `tests/validate.test.js` (masks-and-keeps-sc
 idempotent-on-own-output, never matches SSH/email/userinfo-less-URL, `SECRET_PATTERN_NAMES`
 stays in lockstep). Mutation-tested: breaking the pattern's prefix sent 2 tests red; restored via
 `cp` from a scratchpad backup. Not yet proven live.
-
-**2026-09-16 update — the redaction fix ALSO drove the front door's refusal, and had to be
-split back apart (fixed in code, `fix/m3-closeout`), not yet proven live.** The URL-userinfo
-pattern lives in `SECRET_PATTERNS`, the ONE inventory both `redactSecrets` and
-`prepareSource`'s `secretPatternNames` (src/source.js) read — so the redaction fix above also
-made `prepareSource` REFUSE any source carrying this shape in any file, with
-`source-carries-secret`. Measured at $0 (file names only, no content read): of 44 local repos
-under `~/PycharmProjects`, 5 carry at least one tracked file matching this shape — `pulselog`
-(`test/backup.test.js`, the exact patient that greened live in run `mu2p83go`), plus `aurora`
-(a docs file), `sawt` (an archived shell script), `notes` (12 files), and bareloop itself (7
-files). As shipped, this one pattern alone made bareloop refuse repos it previously accepted,
-almost entirely on doc/test fixtures rather than real credentials.
-
-hamr's ruling (2026-09-16): keep the pattern for REDACTION (mask `user:pass@` wherever
-bareloop prints or logs), stop it from refusing a source at the front door. Fix: added one
-frozen, index-aligned array, `SECRET_PATTERN_REDACT_ONLY` (`src/validate.js`), naming which
-`SECRET_PATTERNS` entries are redact-only — metadata ON the one inventory, not a second
-hand-typed list. `secretPatternNames()` (src/source.js, the function the front door reads)
-now skips redact-only entries; `redactSecrets`/`sweepSecretLiterals`/`scanSecrets` are
-unchanged and still mask/match the shape. Tests: `tests/validate.test.js`
-(`SECRET_PATTERN_REDACT_ONLY` stays index-aligned with `SECRET_PATTERNS`/
-`SECRET_PATTERN_NAMES`, exactly one entry flagged; `redactSecrets` still masks the shape);
-`tests/source.test.js` (the pulselog shape — a postgres URL with userinfo in a normal file —
-is now ADMITTED, fail-first proven; a real API-key shape alongside a URL-userinfo shape in the
-same file still REFUSES, so the carve-out is narrow to this one pattern). Monotonic check: ran
-every pre-existing `prepareSource` secret-refusal test (89/89 green) — nothing that previously
-refused now passes other than this one deliberate class. Mutation-tested: reverting
-`secretPatternNames` to test every pattern (not just non-redact-only ones) sent both new
-`tests/source.test.js` tests red; restored via `cp` from a scratchpad backup. Not yet proven
-live.
