@@ -980,8 +980,19 @@ try {
           process.exit(2);
         }
       }
+      // F190 — `baseUrl` rides along only when the judge is the SAME provider
+      // as the author/worker: a spec's `baseUrl` is the AUTHOR's endpoint, and
+      // handing it to a different vendor's client is the silent-misconfiguration
+      // class `endpointKey` exists to prevent (a DeepSeek key sent to the
+      // openai-api default host, e.g.). Mirrors `scripts/run-u.mjs`'s judge
+      // provider construction exactly — that is the ONE pattern; do not
+      // reinvent a second spelling of this conditional anywhere else.
       const judgeProvider = judge
-        ? makeProvider(judge.provider, { apiKey: judgeKeyFor(judge.provider), model: judge.model })
+        ? makeProvider(judge.provider, {
+          apiKey: judgeKeyFor(judge.provider),
+          model: judge.model,
+          baseUrl: judge.provider === PROVIDER_NAME ? baseUrl : undefined,
+        })
         : null;
       if (judges) {
         console.log(`\ncalibration gate — REAL judge calls at ${judge.model} on ${judge.provider}, one per case plus the injection battery.`);
