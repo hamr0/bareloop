@@ -497,7 +497,14 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
       never run live — ruling 9's proof is still owed. **2026-09-15: proven live**, run
       `mu2qmept` (F182).
     - [ ] The plain-folder confirm turn (D5) and soft-green jobs through the confirm turn are
-      stub-tested only, never run live.
+      stub-tested only, never run live. **2026-09-16:** both the plain-folder run and the
+      soft-green run fired live; both produced defects rather than a pass, so this row stays
+      UNTICKED. The soft-green run (`mu4hec9u`, `deepseek-flash`) is F190
+      (`docs/logs/FINDINGS.md`): the calibration gate's judge provider was built without the
+      job's `baseUrl`, sending a DeepSeek key to `openai-api`'s default host — fixed in code
+      (tests only, not yet re-proven live), plus a second, separate, unfixed defect logged in
+      the same entry (a failed judge `locate` call leaves no cause on the spine). The
+      plain-folder run's defect is not detailed here — see its own record for that.
     - [x] `bareloop.context.md` does not describe commit 2b45f09's change (`classGuards` +
       write-fence protections, the model's `notChecked` list). — fixed in the v0.26.0 docs follow-up
     - [x] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed

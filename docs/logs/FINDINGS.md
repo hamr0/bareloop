@@ -13143,3 +13143,72 @@ live patient pulselog) was itself never caught by a live run either. Both commit
 `SECRET_PATTERN_REDACT_ONLY` no longer exists. This entry stays as a record of the whole
 episode, not as an open or fixed item — nothing here is built or planned; see
 `docs/product/PRD.md` §8a for the standing rule this episode fed back into the record.
+
+## F190 — the authoring run's JUDGE provider was built without the job's baseUrl (fixed in code)
+
+Live run `mu4hec9u` (soft-green authoring, `deepseek-flash` via `https://api.deepseek.com/v1`,
+spine `bareloop-patients/pulselog-softgreen-live-out/author-mu4hec9u.jsonl`). The run reached
+the calibration gate — `author-scout`, `author-scout-recovery`, `confirm`, `author`, `revise-1`,
+`revise-2`, and `judged-compile` all priced normally, $0.690831 known across those 7 calls — then
+died `pricing-red` at `budgetUsd` on the calibration gate's first real call
+(`judged-locate:pass-arith-sum`), 0 of 10 calibration cases graded.
+
+**The spine evidence.** That 8th `author-cost` record reads `"costUsd": null, "unpricedRounds":
+0"`. `src/judged.js:852` (`runLocate`'s `out()` helper): `const { costUsd, unpricedRounds } = r
+=== null ? { costUsd: null, unpricedRounds: 0 } : priceOf(r);`. `unpricedRounds: 0` together with
+`costUsd: null` is specifically the `r === null` branch — the provider call produced no result
+object at all — not the `priceOf(r)` branch that reports a round nobody could price (that branch
+reports `unpricedRounds >= 1`). This pair means "the call returned nothing", never "an unpriced
+round happened."
+
+**Root cause.** `scripts/run-author.mjs` builds the AUTHOR provider at line 456 as
+`makeProvider(PROVIDER_NAME, { apiKey, model: MODEL, baseUrl })` — `baseUrl` forwarded. It built
+the JUDGE provider (line 984, before this fix) as `makeProvider(judge.provider, { apiKey:
+judgeKeyFor(judge.provider), model: judge.model })` — no `baseUrl` at all. `src/providers.js:249`
+(`makeProvider`) forwards a provider's endpoint onto its own `endpointKey` only when `baseUrl` is
+not `undefined`; absent, the constructor defaults its own endpoint (`OpenAIProvider`'s default is
+`https://api.openai.com/v1`, per `node_modules/bare-agent/src/provider-openai.js`). So the judge
+call went out to `openai-api`'s default host, carrying a DeepSeek key and the model id
+`deepseek-flash` — it failed, `runLocate` caught nothing sane back, and the run reported the
+unpriceable result as `pricing-red`.
+
+There are three `makeProvider` call sites for this exact judge construction across the codebase.
+Two were already correct: `scripts/run-u.mjs:1414-1415` (`baseUrl: judge.provider === spec.provider
+? baseUrl : undefined`) and `src/cli.js:111`'s `buildRunnerProviders` (`src/providers.js:301,317,319`,
+`judgeBaseUrl` threaded through). `scripts/run-author.mjs` was the one site that missed the
+pattern.
+
+**The fix (this commit).** `scripts/run-author.mjs`'s judge provider construction now forwards
+`baseUrl` exactly when the resolved judge provider equals the authoring provider (`PROVIDER_NAME`),
+and `undefined` otherwise — copied verbatim from `scripts/run-u.mjs`'s existing spelling, with a
+comment at the new site pointing back at it as the one pattern. The conditional is not incidental:
+`resolveJobJudge` (`src/judged.js:203`) defaults the judge's provider to the job's own worker
+provider, but a signed `judge: {provider, model}` may name a genuinely DIFFERENT vendor — handing
+that different vendor the author's endpoint would be the exact silent-misconfiguration class
+`endpointKey` exists to prevent (an unrelated API key sent to a host it was never issued for).
+Same-provider forwards; different-provider must not.
+
+**Consequence, plainly.** Until this fix, soft-green calibration could not complete on ANY
+non-default endpoint through `scripts/run-author.mjs` — DeepSeek included, the repo's own settled
+secondary provider — because the judge silently ran against `openai-api`'s stock host regardless
+of what `baseUrl` the job's spec carried. This blocked item 33's M5 and M7 soft-green proof for
+every job that is not plain `anthropic-api`/default-host `openai-api`.
+
+**Proof.** Fixed by tests only (`tests/run-author.test.js`) — a real child-process twin splices
+the actual `judgeProvider` construction statement out of `scripts/run-author.mjs` and runs it
+against the real `makeProvider`/`resolveProvider` (`src/providers.js`), reading the constructed
+instance's own `.baseUrl`. RED before the fix (reproduced the live defect verbatim: same-provider
+judge construction returned `https://api.openai.com/v1` where `https://api.deepseek.com/v1` was
+expected), GREEN after. **NOT yet re-run live** — no second `run-author.mjs` invocation against a
+real DeepSeek judge has confirmed the calibration gate now completes end to end.
+
+**A second, separate defect observed in the same run — logged, NOT fixed here.** A failed judge
+`locate` call leaves NO cause on the spine. There is no `provider-red` record, no error record,
+nothing naming why the call actually returned null — it surfaces only as the tail `pricing-red`
+at the calibration-gate summary, several lines and one `signing`/`escalation`/`job-red` record
+later. `src/judged.js`'s `LOCATE_AXES` (`PRICING`, `PROVIDER`, `ARTIFACT`) enumerates three
+distinct routes a locate call can fail through, and `runLocate`'s own `catch` arm
+(`src/judged.js:868-869`) does capture `{axis: LOCATE_AXES.PROVIDER, detail: 'the locate call
+failed: ...'}` when `loop.run()` itself throws — but nothing in this run's spine carries that axis
+or detail; only the generic `pricing-red` reached the log. The axis machinery existed and the run
+still could not say which one fired. Open for hamr's ruling; not built here.
