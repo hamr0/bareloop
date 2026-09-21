@@ -33,6 +33,27 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **F191 — a plain-folder source's confirm turn crashed live (run `mu4hc7sp`), leaving a
+  two-record spine (`author-start`, `author-phase confirm`) with no ending at all.**
+  `confirmProtections` computes protections via `classGuards` (`src/authoring.js`), which is
+  keyed by CODE LANGUAGE and throws on a plain folder's `lang: 'none-detected'` — a plain
+  folder has no language, so a confirm turn cannot honestly show real, code-derived protections
+  for one. `scripts/run-author.mjs` no longer runs a confirm turn over a plain folder at all:
+  the honest "no checks yet" stop now fires immediately after `author-start`, at $0 — no scout,
+  no confirm turn, no model call. The now-unreachable confirm-turn branch (~70 lines) is
+  deleted. Alongside it, the try/catch crash net (which used to start ~300 lines after
+  `author-start`, leaving exactly the gap this crash fell into) now opens immediately after the
+  spine exists, and its crash message reads the run's own metered-call list rather than
+  unconditionally claiming "died inside the paid span". Customer-facing text in
+  `scripts/run-interview.mjs`/`bareloop.context.md` that promised a plain-folder confirm turn
+  is corrected to match. Fail-first proven in tests (each of the three code changes shown red
+  against the prior commit, green after); a new live end-to-end test proves zero provider calls.
+  Not yet re-run against the original crashing patient (`docs/logs/FINDINGS.md` F191).
+- **F190 — fixed properly this pass.** The prior fix (commit 56bbee8) hand-copied
+  `scripts/run-u.mjs`'s same-provider `baseUrl` conditional a second time. Both the author and
+  judge provider constructions in `scripts/run-author.mjs` now go through `buildRunnerProviders`
+  (`src/providers.js`), the one seam `src/cli.js` already used — this file was the one call
+  site that had not adopted it. Not yet re-proven live (`docs/logs/FINDINGS.md` F190).
 - **F185 — an interview-authored repo job had no code path INTO `scripts/run-u.mjs`: a person
   finishing the authoring interview was left holding a signed, hash-stable `resolved-spec.json`
   with no way to run it, only a developer hand-step (`cp` the spec into `jobs/` + hand-add a

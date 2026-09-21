@@ -397,6 +397,17 @@ EXISTING audit records — no new record format.
      `src/authorscout.js:207`). Its confirm turn reads the $0 seed listing of the frozen tree,
      spends only its own calls, then the honest named stop "no checks for this kind of job yet
      (M4)".
+
+     **D5 amended (2026-09-21) — F191 (`docs/logs/FINDINGS.md`).** The confirm turn over a
+     plain folder is now GONE, not just cheap: live run `mu4hc7sp` crashed inside it —
+     `confirmProtections` computes protections via `classGuards` (`src/authoring.js`), which is
+     keyed by CODE LANGUAGE and throws on a plain folder's `lang: 'none-detected'`. A plain
+     folder has no language, so the confirm turn cannot honestly show real, code-derived
+     protections for one — D5's original premise (a plain folder gets a paid confirm turn
+     before the stop) is unreachable by construction, not a bug to guard around. The stop now
+     fires immediately after `author-start`, at $0: no scout, no confirm turn, no model call at
+     all. The outcome/stop shape is unchanged (`request-red`/`non-code-source`,
+     `author-end{outcome:'not-authored'}`).
    - **D6 = A.** Ruling 6 above ("a genre never adds a check the goal did not ask for") wins
      over `TYPES_GENRE_TEMPLATE` (`src/authoring.js:483-497`): skeleton WORK stages (typecheck,
      typecheck-outside, tests-kept, suite-green) are composed ONLY when a confirmed check asks

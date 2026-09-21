@@ -13144,7 +13144,7 @@ live patient pulselog) was itself never caught by a live run either. Both commit
 episode, not as an open or fixed item — nothing here is built or planned; see
 `docs/product/PRD.md` §8a for the standing rule this episode fed back into the record.
 
-## F190 — the authoring run's JUDGE provider was built without the job's baseUrl (fixed in code)
+## F190 — the authoring run's JUDGE provider was built without the job's baseUrl (fixed in code, routed through the one owner)
 
 Live run `mu4hec9u` (soft-green authoring, `deepseek-flash` via `https://api.deepseek.com/v1`,
 spine `bareloop-patients/pulselog-softgreen-live-out/author-mu4hec9u.jsonl`). The run reached
@@ -13212,3 +13212,117 @@ distinct routes a locate call can fail through, and `runLocate`'s own `catch` ar
 failed: ...'}` when `loop.run()` itself throws — but nothing in this run's spine carries that axis
 or detail; only the generic `pricing-red` reached the log. The axis machinery existed and the run
 still could not say which one fired. Open for hamr's ruling; not built here.
+
+**2026-09-21 update — fixed properly, routed through the one owner.** The fix above (commit
+56bbee8) hand-copied `scripts/run-u.mjs`'s same-provider conditional a SECOND time — a fix that
+copies a correct duplicate is still duplication ("one writer per piece of state" means route
+through the owner, MEMORY.md). Both the author provider (`scripts/run-author.mjs`'s own
+construction, previously a hand-rolled `makeProvider` call) and the judge provider now go through
+`buildRunnerProviders` (`src/providers.js`), the same seam `src/cli.js` already used — this file
+was the one call site that never adopted it. The author call's `judge*` args repeat the author's
+own identity (a throwaway: `buildRunnerProviders`' own reuse check returns the same `provider`
+instance rather than constructing a second one); the judge call's `providerName`/`apiKey`/`model`/
+`tierModels` half repeats the author's identity too, so its own `provider` return is unused, never
+a second live instance of the author's client. `tests/run-author.test.js`'s provider twin now
+splices the real construction statement into a child process against the real
+`buildRunnerProviders`, proving the fix against the real seam rather than a hand-typed paraphrase.
+Still **NOT re-run live** — no second `run-author.mjs` invocation against a real DeepSeek judge
+has confirmed the calibration gate now completes end to end.
+
+## F191 — a plain-folder source crashed inside the confirm turn, with no ending on the spine (fixed in code)
+
+**2026-09-21, live run `mu4hc7sp` (plain folder, patient
+`../bareloop-patients/plainfolder-live-1/`, `--verdict green`, DeepSeek `deepseek-flash` via
+`--provider openai-api --base-url https://api.deepseek.com/v1`, budget $1.50).** CRASHED, exit=1,
+$0 spent. Stack: `Error: no TYPES genre data for language "none-detected" — one of js, python` at
+`language` (`src/authoring.js:714`) ← `classGuards` (`src/authoring.js:834`) ←
+`confirmProtections` (`src/authorflow.js:545`) ← `runConfirmTurn` (`src/authorflow.js:1886`) ←
+`scripts/run-author.mjs:696`. The spine (`author-mu4hc7sp.jsonl`) had only 2 records
+(`author-start`, `author-phase confirm`) — no ending at all, byte-for-byte what a run still in
+flight looks like.
+
+**Root cause.** D5's original shape (PRD item 33 M3 piece 4, step S6, ITEM33-BUILD.md's 2026-09-13
+addendum): a plain-folder source runs no scout, but its confirm turn runs over a $0, no-git
+listing of the frozen tree, and only THEN gives the honest "no checks yet" stop once a plan is
+confirmed. F174's fix (this file, above) made the confirm turn show protections computed by
+`classGuards` — the SAME guards the close will actually compose — rather than a model-invented
+list. `classGuards` is keyed by CODE LANGUAGE, and a plain folder's `lang` resolves to
+`'none-detected'` (there is no code, so there is no language) — `classGuards` correctly THROWS
+rather than silently returning an empty guard list for a language it has no data for ("a guard
+that checks nothing reads clean exactly like one that checked correctly" — the design reason for
+throwing, not a bug). A correct fix in one place (F174: protections from `classGuards`, never the
+model) silently invalidated a ruling in another (D5: a plain folder gets a confirm turn) — nothing
+surfaced this until a plain-folder job actually ran live, because no prior test or run had
+exercised that combination.
+
+$0 proof (`node -e` calling `classGuards` directly, both `green` and `soft-green` verdict
+classes): both throw identically on `lang: 'none-detected'`, and both return
+`changed-from-seed,no-suppressions` on `lang: 'js'` — confirming `classGuards` itself is sound and
+verdict-class-independent; the defect is specifically the plain-folder/no-language combination,
+never reached before this run.
+
+**Fixed in code, this branch (fix/m3-closeout).** D5's premise — a plain-folder source gets a paid
+confirm turn before the honest stop — is unreachable by construction: the close catalogue is
+code-genre only, so no confirm turn over a plain folder could ever confirm a plan this build can
+close. The stop now fires immediately after `author-start`, at $0: no scout, no confirm turn, no
+model call at all. The now-unreachable confirm-turn code (`listPlainFolder`, `listingBlock`, the
+`runConfirmTurn` call and its aftermath, ~70 lines) is DELETED, not parked, along with the imports
+it alone used (`readdirSync`, `relative`, `sep`, `runConfirmTurn`, `makeCostBook`). The person now
+sees exactly: *"This is a plain folder, not a code project. bareloop can't check this kind of job
+yet. Nothing was spent and nothing was written."* The spine is exactly `author-start` →
+`author-end{outcome:'not-authored', stop:'non-code-source'}` — the same outcome/stop shape D5's
+original stop used, so nothing downstream that reads for that shape needs to change.
+
+**A second defect in the same gap, fixed alongside it: the crash net itself started too late.**
+`scripts/run-author.mjs`'s spine starts at `emit('author-start')`; the try/catch crash net used to
+start ~300 lines later, right before the repo-shaped scout/authoring call — reasoned (the file's
+own comment) as "the argv and config `die()` paths run before the spine file exists, and a crash
+record with no spine to land in is a record nobody can read". That reason expired the moment the
+spine started existing, at `author-start` itself, not ~300 lines later — the OLD plain-folder
+confirm-turn branch sat entirely inside that gap, which is exactly how this finding's crash left a
+two-record spine with no ending. The net now opens immediately after `author-start`. `rl` (the
+readline interface) and `metered` (the running call list) are hoisted to bindings declared ABOVE
+the try, rather than where they are constructed/used inside it — the `finally` block's
+`rl.close()` and the `catch` block's own spend check are SIBLINGS of the try, not nested inside
+it, so a binding made only inside the try would not exist there (a real scoping bug the naive move
+would have introduced, caught before it shipped). The crash message no longer claims "died inside
+the paid span" unconditionally — it now reads `metered.length` and says "before any paid call"
+when nothing was ever metered, true for the plain-folder stop and for any future $0-only stop this
+net comes to cover.
+
+**Customer-facing text fixed to match.** `scripts/run-interview.mjs` had two messages promising a
+plain folder "the confirm turn still runs (D5)" / "a real model reads the file list and walks you
+through the confirm turn" before the honest stop — both now say plainly that running
+`run-author.mjs` on this source stops right away, at $0, with no scout, no confirm turn, and no
+model call. `bareloop.context.md` and `src/authorjob.js`'s `PLAIN_FOLDER_DEFERRED_FIELDS` comment
+carried the same stale D5 description and were updated with a dated 2026-09-21 amendment pointing
+at this finding.
+
+**Proof.** Fail-first throughout: for each of the three code changes (F190's provider routing,
+this fix's confirm-turn deletion, and the crash-net move), the prior commit's `scripts/
+run-author.mjs` was restored with the NEW tests in place, showing them RED against the old code,
+then the fix was restored and the same tests GREEN. A new live end-to-end test
+(`tests/run-author.test.js`) spawns the real script against a real plain-folder source with a
+fake (never-dialled) API key, and asserts the spine is exactly `author-start`, `job-red`,
+`author-end` with `outcome:'not-authored'`/`stop:'non-code-source'`, and `authored.json`'s
+`cost: null` — proving zero provider calls, not just zero cost. **NOT yet re-run against the
+original crash's own patient** (`../bareloop-patients/plainfolder-live-1/`) — the fix is proven by
+a fresh test-suite patient and by the source-pinned guards, not by re-firing run `mu4hc7sp`'s exact
+job live again (that re-fire is the main session's to run, not this build's).
+
+**Also logged here, NOT built in this pass: `scripts/run-author.mjs` has no single owner for
+"the run ended".** The file has 12 separate `process.exit()` call sites and 8 separate
+`emit('author-end', ...)` call sites, each hand-spelling its own outcome/exit-code pair. This
+branch's fixes threaded the SAME outcome shape (`not-authored`/`non-code-source`) through the
+deleted confirm-turn path into the new $0 stop by hand, matching what was already there — but
+nothing stops a future call site from picking an exit code or outcome name that collides with, or
+drifts from, one of the other 11. hamr's ruling (stash `2026-09-21-m3-closeout-live-runs-ui-next.md`):
+"one owner for all 8 author-end writes" is NOT done in this step — it is the UI step's (N6) first
+job, done once, in the library, not patched again here.
+
+**The lesson, stated plainly.** A correct fix in one place (protections computed by `classGuards`,
+never invented by the model) can silently invalidate a design ruling made in another place (a
+plain folder gets a confirm turn) — nothing surfaces this until the untested combination actually
+runs. And a code boundary justified by a stated reason ("before the spine file exists") must be
+re-checked when the thing it depends on moves: the reason had expired ~300 lines before the
+boundary did, for as long as anyone had looked.

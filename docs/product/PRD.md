@@ -505,11 +505,30 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
       (tests only, not yet re-proven live), plus a second, separate, unfixed defect logged in
       the same entry (a failed judge `locate` call leaves no cause on the spine). The
       plain-folder run's defect is not detailed here — see its own record for that.
+      **2026-09-21:** the plain-folder run's defect is F191 (`docs/logs/FINDINGS.md`) — the
+      confirm turn crashed on a plain folder's `lang: 'none-detected'` (`classGuards` has no
+      language to key off). Fixed in code: the confirm turn over a plain folder is now gone
+      entirely (D5 amended, see `docs/product/ITEM33-BUILD.md`) — the stop fires immediately at
+      $0. F190 also fixed properly this pass, routed through `buildRunnerProviders` rather than
+      the hand-copied conditional. Both fail-first proven in tests, neither re-proven live.
     - [x] `bareloop.context.md` does not describe commit 2b45f09's change (`classGuards` +
       write-fence protections, the model's `notChecked` list). — fixed in the v0.26.0 docs follow-up
     - [x] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed
       in `src/promptregisters.js`'s `PROMPT_REGISTERS` — decide whether to add it. — added,
       commit 3761644.
+
+    **2026-09-21 — order amended, SUPERSEDES both lines above** (hamr: "we need to finish what
+    we have at hand, close the branch and start immediately on ui, and everything else that was
+    previously planned should come after ui and most likely will be solved while we are doing
+    ui, i expect a lot would surface with ui" — reason: "i can't see and i can't feel what you
+    are saying and it takes a mental effort to imagine"). This supersedes the **2026-09-10**
+    order above ("(5) the panel (N6), shaped by 1–3 → (6) the reuse-lift proof LAST") and the
+    **2026-09-13** detailing of it ("fix branch for item 34 → M3 → M3b → M4 → M5 → M6 → M7 proof
+    fires → (5) the panel → (6) reuse-lift proof last"). New order: close `fix/m3-closeout` →
+    the panel (N6) → M3b–M7 (and the reuse-lift proof) after, most of which is expected to
+    surface WHILE building the panel rather than needing to be planned first. Item 33's
+    interview and non-repo split are already done and signed, which is what the 2026-09-10
+    order's own reason for putting the panel last was conditioned on.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
