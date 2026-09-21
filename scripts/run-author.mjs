@@ -79,7 +79,7 @@ import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
 import { closeJudges, GATE_AUDIT_FILE } from '../src/kinds.js';
-import { resolveProvider, makeProvider, apiKeyProblem } from '../src/providers.js';
+import { resolveProvider, buildRunnerProviders, apiKeyProblem } from '../src/providers.js';
 import { readSourceManifest, missingDependencies } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
@@ -453,7 +453,18 @@ console.log(`  timeout  ${TIMEOUT_MS}ms per close stage`);
 console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL, baseUrl });
+// F190 (docs/logs/FINDINGS.md) — this used to be a hand-rolled `makeProvider`
+// call, a duplicate of the SAME construction `buildRunnerProviders` already
+// owns for `src/cli.js`. Routed through the one owner now: the judge half of
+// this call is a THROWAWAY (`judgeProviderName`/`judgeModel`/`judgeBaseUrl` all
+// equal the author's own identity, so `buildRunnerProviders`' own reuse check
+// returns the SAME instance as `provider` rather than constructing a second
+// one) — the real judge identity is not resolved until after `validateJob`,
+// further down, where a second call takes only its `.judgeProvider`.
+const { provider } = buildRunnerProviders({
+  providerName: PROVIDER_NAME, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl,
+  judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: PROVIDER_NAME, judgeBaseUrl: baseUrl,
+});
 emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, baseUrl: baseUrl ?? null, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
 // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
@@ -984,15 +995,21 @@ try {
       // as the author/worker: a spec's `baseUrl` is the AUTHOR's endpoint, and
       // handing it to a different vendor's client is the silent-misconfiguration
       // class `endpointKey` exists to prevent (a DeepSeek key sent to the
-      // openai-api default host, e.g.). Mirrors `scripts/run-u.mjs`'s judge
-      // provider construction exactly — that is the ONE pattern; do not
-      // reinvent a second spelling of this conditional anywhere else.
+      // openai-api default host, e.g.). Routed through `buildRunnerProviders`
+      // (the ONE owner of this construction — `src/cli.js` and, above,
+      // this file's own author provider) rather than a hand-rolled
+      // `makeProvider` call: the `providerName`/`apiKey`/`model`/`tierModels`/
+      // `baseUrl` half repeats the author's own identity (so its `provider`
+      // half of the return, unused here, is a throwaway — never a second live
+      // instance of the author's client), and the `judge*` half is this run's
+      // OWN resolved judge — the identical conditional `scripts/run-u.mjs`'s
+      // own call already applies.
       const judgeProvider = judge
-        ? makeProvider(judge.provider, {
-          apiKey: judgeKeyFor(judge.provider),
-          model: judge.model,
-          baseUrl: judge.provider === PROVIDER_NAME ? baseUrl : undefined,
-        })
+        ? buildRunnerProviders({
+          providerName: PROVIDER_NAME, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl,
+          judgeApiKey: judgeKeyFor(judge.provider), judgeModel: judge.model, judgeProviderName: judge.provider,
+          judgeBaseUrl: judge.provider === PROVIDER_NAME ? baseUrl : undefined,
+        }).judgeProvider
         : null;
       if (judges) {
         console.log(`\ncalibration gate — REAL judge calls at ${judge.model} on ${judge.provider}, one per case plus the injection battery.`);

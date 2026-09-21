@@ -529,47 +529,52 @@ test('the resolved identity matches what scripts/run-u.mjs itself resolves at ru
 // (`judged-locate:pass-arith-sum`) went to `openai-api`'s DEFAULT host
 // carrying a DeepSeek key and model id, because the judge provider was
 // constructed as `makeProvider(judge.provider, { apiKey, model })` — no
-// `baseUrl` — while the AUTHOR provider a few hundred lines earlier
-// (`const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL,
-// baseUrl });`, extracted below) already forwarded it correctly. The call
-// failed and returned null; the spine recorded `costUsd: null,
-// unpricedRounds: 0` — the `r === null` branch, not an unpriced round — and
-// the run died `pricing-red` with 0 of 10 calibration cases graded.
+// `baseUrl` — while the AUTHOR provider a few hundred lines earlier already
+// forwarded it correctly. The call failed and returned null; the spine
+// recorded `costUsd: null, unpricedRounds: 0` — the `r === null` branch, not
+// an unpriced round — and the run died `pricing-red` with 0 of 10
+// calibration cases graded.
 //
-// `scripts/run-u.mjs:1414-1415` already has the correct conditional
-// (`baseUrl: judge.provider === spec.provider ? baseUrl : undefined`) —
-// same-provider forwards the author's endpoint, a DIFFERENT provider gets
-// `undefined` so its own client defaults its own host, which is the exact
-// silent-misconfiguration `endpointKey` (`src/providers.js`) exists to
-// prevent. This twin extracts the ACTUAL `judgeProvider` construction
-// statement out of `scripts/run-author.mjs` and runs it in a real child
-// process against the REAL `makeProvider`/`resolveProvider` (`src/providers.js`)
-// — so it proves the constructed provider's own `.baseUrl` property, not a
-// re-typed paraphrase of the conditional.
+// **2026-09-21 update.** The original fix (commit 56bbee8) hand-copied
+// `scripts/run-u.mjs`'s same-provider conditional a SECOND time. Routed
+// through the ONE owner now (`buildRunnerProviders`, `src/providers.js`,
+// already `src/cli.js`'s own construction seam) — both the author provider
+// and this judge provider go through it. This twin extracts the ACTUAL
+// `judgeProvider` construction statement out of `scripts/run-author.mjs` and
+// runs it in a real child process against the REAL `buildRunnerProviders`/
+// `resolveProvider` (`src/providers.js`) — so it proves the constructed
+// provider's own `.baseUrl` property, not a re-typed paraphrase of the
+// conditional.
 const JUDGE_PROVIDER_ARG = /const judgeProvider = judge\n[\s\S]*?\n {8}: null;/.exec(SRC)?.[0];
-// the author's OWN provider construction (line ~456) — asserted UNCHANGED:
-// this fix touches only the judge seam, and a regression here (e.g. someone
-// "fixing" the author line too, or dropping its own baseUrl forwarding)
-// would be an unrelated, unreviewed change to a call site this finding never
-// named as broken.
-const AUTHOR_PROVIDER_LINE = /const provider = makeProvider\(PROVIDER_NAME, \{ apiKey, model: MODEL, baseUrl \}\);/.exec(SRC)?.[0];
+// the author's OWN provider construction (a few hundred lines earlier) —
+// asserted UNCHANGED: this fix touches only the judge seam, and a regression
+// here (e.g. someone "fixing" the author line too, or dropping its own
+// baseUrl forwarding) would be an unrelated, unreviewed change to a call site
+// this finding never named as broken.
+const AUTHOR_PROVIDER_LINE = /const \{ provider \} = buildRunnerProviders\(\{[\s\S]*?\n\}\);/.exec(SRC)?.[0];
 
 test('the judge-provider construction statement is still BOUNDED, and the author provider line is untouched', () => {
   assert.ok(JUDGE_PROVIDER_ARG, 'the judgeProvider construction moved or was reworded — this guard no longer reads the code it guards');
-  assert.match(JUDGE_PROVIDER_ARG, /baseUrl: judge\.provider === PROVIDER_NAME \? baseUrl : undefined/,
+  assert.match(JUDGE_PROVIDER_ARG, /buildRunnerProviders\(\{/, 'the judge provider must be routed through the one owner, not a hand-rolled makeProvider call');
+  assert.match(JUDGE_PROVIDER_ARG, /judgeBaseUrl: judge\.provider === PROVIDER_NAME \? baseUrl : undefined/,
     'the same-provider conditional (mirroring scripts/run-u.mjs) is gone from the judge provider construction');
   assert.ok(AUTHOR_PROVIDER_LINE, 'the author provider construction line moved or was reworded — F190 must not have touched this call site');
+  assert.match(AUTHOR_PROVIDER_LINE, /buildRunnerProviders\(\{/, 'the author provider must also be routed through the one owner (F190, 2026-09-21)');
 });
 
 /**
  * Actually CONSTRUCT a judge provider through the real `judgeProvider`
  * statement spliced out of `scripts/run-author.mjs`, in a real child process
- * against the real `makeProvider`/`resolveProvider` (`src/providers.js`), and
- * report the constructed instance's own `.baseUrl` (every table entry —
- * anthropic-api/openai-api/gemini-api — reads its endpoint into that exact
- * property; see `src/providers.js`'s table-comment). `judgeKeyFor` is stubbed
- * (a fixed fake string) because key RESOLUTION is F181's concern, not this
- * one — only the endpoint the constructed client ends up holding is at issue.
+ * against the real `buildRunnerProviders`/`resolveProvider`
+ * (`src/providers.js`), and report the constructed instance's own `.baseUrl`
+ * (every table entry — anthropic-api/openai-api/gemini-api — reads its
+ * endpoint into that exact property; see `src/providers.js`'s table-comment).
+ * `judgeKeyFor`/`apiKey` are stubbed (fixed fake strings, deliberately
+ * DIFFERENT from each other) because key RESOLUTION is F181's concern, not
+ * this one — only the endpoint the constructed client ends up holding is at
+ * issue. `providerEntry`/`MODEL` are resolved the same way the real script
+ * resolves them (`resolveProvider(PROVIDER_NAME)`, `.tiers.sonnet`) — never a
+ * hand-picked pair that could drift from what `run-author.mjs` itself does.
  * @param {{judgeProvider: string, judgeModel: string, providerName: string, authorBaseUrl: string|undefined}} args
  */
 const providerTwin = ({
@@ -578,10 +583,13 @@ const providerTwin = ({
   const dir = mkdtempSync(join(twinBase, 'provider-'));
   const file = join(dir, 'provider-twin.mjs');
   writeFileSync(file, [
-    `import { makeProvider } from ${JSON.stringify(join(REPO, 'src/providers.js'))};`,
+    `import { buildRunnerProviders, resolveProvider } from ${JSON.stringify(join(REPO, 'src/providers.js'))};`,
     "const judgeKeyFor = () => 'fake-judge-key';",
     `const judge = ${JSON.stringify({ provider: judgeProvider, model: judgeModel })};`,
     `const PROVIDER_NAME = ${JSON.stringify(providerName)};`,
+    "const apiKey = 'fake-author-key';",
+    'const providerEntry = resolveProvider(PROVIDER_NAME);',
+    'const MODEL = providerEntry.tiers.sonnet;',
     `const baseUrl = ${authorBaseUrl === undefined ? 'undefined' : JSON.stringify(authorBaseUrl)};`,
     /** @type {string} */ (JUDGE_PROVIDER_ARG),
     'console.log(JSON.stringify({ baseUrl: judgeProvider.baseUrl }));',
