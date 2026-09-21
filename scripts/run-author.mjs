@@ -707,7 +707,7 @@ const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
 // `author-start` → `author-end{outcome:'not-authored', stop:'non-code-source'}`.
 if (!IS_REPO_SOURCE) {
   const message = "This is a plain folder, not a code project. bareloop can't check this kind of "
-    + 'job yet. Nothing was spent and nothing was written.';
+    + 'job yet. Nothing was spent. Your source was not changed.';
   console.log(`\n${message}`);
   const red = {
     code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',

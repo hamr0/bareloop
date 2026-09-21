@@ -466,7 +466,7 @@ if (IS_PLAIN_FOLDER) {
   say('');
   say(`Source is not a code repository — it is a plain ${prep.manifest.kind} job. bareloop has no checks for this kind`);
   say('of job yet (a later build). The form continues, but running run-author.mjs will stop right away, at $0 —');
-  say('no confirm turn, no model call, nothing written.');
+  say('no confirm turn, no model call — nothing spent, and your source is not changed.');
 }
 
 // From here on, EVERYTHING that used to read the original patient path reads

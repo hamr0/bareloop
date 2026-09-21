@@ -875,7 +875,7 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.equal(r.status, 1, text);
-  assert.match(text, /This is a plain folder, not a code project\. bareloop can't check this kind of job yet\. Nothing was spent and nothing was written\./);
+  assert.match(text, /This is a plain folder, not a code project\. bareloop can't check this kind of job yet\. Nothing was spent\. Your source was not changed\./);
   const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
   assert.equal(spineFiles.length, 1);
   const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -924,7 +924,7 @@ test('the plain-folder "no checks yet" stop is still named request-red/non-code-
   assert.match(PLAIN_FOLDER_BLOCK, /outcome: 'not-authored', stop: 'non-code-source'/);
   assert.match(PLAIN_FOLDER_BLOCK, /This is a plain folder, not a code project\. bareloop can't check this kind of /,
     'the exact person-facing text F191 specifies');
-  assert.match(PLAIN_FOLDER_BLOCK, /Nothing was spent and nothing was written\./);
+  assert.match(PLAIN_FOLDER_BLOCK, /Nothing was spent\. Your source was not changed\./);
 });
 
 // ── PRD item 33 M3 piece 4, step S4 — run-author.mjs becomes INTERACTIVE ────

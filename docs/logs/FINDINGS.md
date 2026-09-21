@@ -13327,6 +13327,15 @@ runs. And a code boundary justified by a stated reason ("before the spine file e
 re-checked when the thing it depends on moves: the reason had expired ~300 lines before the
 boundary did, for as long as anyone had looked.
 
+**Correction, 2026-09-21 (same day, /debrief fix-all-4 batch).** The person-facing text quoted
+above ("Nothing was spent and nothing was written.") was itself false the moment it shipped: the
+same branch that wrote it also has this stop call `writeOut('authored.json', …)`, and a live run
+left a 379-byte `authored.json` in `--out`. Fixed in `scripts/run-author.mjs` and
+`scripts/run-interview.mjs` (the matching customer-facing line) to say "Nothing was spent. Your
+source was not changed." instead — true on both counts: no provider call, and the source tree
+untouched (only the operator's own `--out` directory gets a file). This finding's own quote above
+is left as written, since it is describing what a specific live run actually printed at the time.
+
 ## F192 — soft-green calibration refused 6/10 live: the judge reported has-doc red on every documented function, and the record cannot say why
 
 **2026-09-21, live run `mub2nboo`, `scripts/run-author.mjs`, `--verdict soft-green`, a pulselog
