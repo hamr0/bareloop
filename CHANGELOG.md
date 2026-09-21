@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.27.0] — 2026-09-21
 
 ### Changed
 
@@ -48,7 +48,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `scripts/run-interview.mjs`/`bareloop.context.md` that promised a plain-folder confirm turn
   is corrected to match. Fail-first proven in tests (each of the three code changes shown red
   against the prior commit, green after); a new live end-to-end test proves zero provider calls.
-  Not yet re-run against the original crashing patient (`docs/logs/FINDINGS.md` F191).
+  Three follow-up fixes landed in the same pass: the stop's own text claimed "Nothing was spent
+  and nothing was written," while the same branch writes `authored.json` into `--out` — both this
+  message and `scripts/run-interview.mjs`'s matching install-gap line now read "Nothing was spent.
+  Your source was not changed." (true on both counts: no provider call happens on this path, and
+  the source tree itself is never touched); an F71 regression (`process.exit(1)` right after a
+  `console.log`, which can discard already-queued stdout under a slow reader) was fixed back to
+  `process.exitCode = 1`; and a duplicate `spine <path>` print this exitCode fix's fall-through
+  briefly introduced was removed (the shared tail print already covers this exit path). Not yet
+  re-run against the original crashing patient (`docs/logs/FINDINGS.md` F191).
 - **F190 — fixed properly this pass.** The prior fix (commit 56bbee8) hand-copied
   `scripts/run-u.mjs`'s same-provider `baseUrl` conditional a second time. Both the author and
   judge provider constructions in `scripts/run-author.mjs` now go through `buildRunnerProviders`
@@ -205,6 +213,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
   the round-2 "fix" terminal), and fixes a related ledger bug where round 1's "fix" text (the
   answer to round 2's redraft) was carried forward even after round 2 was accepted outright. Not
   yet proven live.
+- **F175's open half — "Confirm" and "Type the goal yourself" could still accept a plan whose own
+  raised question was never answered, silently confirming a genuinely-missing answer away** (run
+  `mu0voeo4`; only the silent-drop half above was covered by the first F175 fix). hamr's
+  2026-09-16 ruling (option a): `runConfirmTurn`'s `confirm`/`type-goal` paths now force each
+  raised question through a new `kind: 'answer'` step before returning — no extra model call, a
+  blank answer re-asks the same question, `null` abandons like every other `ask`. Answers land in
+  a new `accepted.answeredQuestions` (Q:/A: pairs), kept separate from `openQuestions` (which
+  keeps its "could not resolve" meaning and is honestly empty on these two paths now).
+  `confirmedBlock` renders the answers as binding, and the SIGNING PREPARED readout
+  (`scripts/author-readout.mjs`'s new `answeredQuestionLines`) prints them when non-empty. The
+  `fix` path is unchanged. Not yet proven live.
 
 ## [0.26.0] — 2026-09-14
 
