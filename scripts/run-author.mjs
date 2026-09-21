@@ -62,7 +62,7 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import {
-  readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync,
+  readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -1158,7 +1158,17 @@ if (!IS_REPO_SOURCE) {
 
 // The hard line, on the artifacts this run just wrote. Count and PATH only —
 // echoing a matched secret to stdout is the same leak, one hop on.
-const written = [spineFile, join(OUT, 'authored.json'), join(OUT, 'resolved-spec.json'), join(OUT, 'signing.json')].filter((f) => existsSync(f));
+//
+// (discovered live, item 4 of the 2026-09-21 /debrief fix-all-4 batch): a
+// crash mid-writeOut can leave a path here naming something that EXISTS but
+// is NOT the file this run wrote (e.g. a pre-existing directory the write
+// tripped on) — `existsSync` alone is true for a directory, and
+// `readFileSync` on one throws EISDIR, uncaught, AFTER the try/catch above
+// already handled the real crash — a second, unrelated crash stealing the
+// first one's honest report. `statSync(f).isFile()` scopes this scan to
+// what was actually written, never what merely exists at that path.
+const written = [spineFile, join(OUT, 'authored.json'), join(OUT, 'resolved-spec.json'), join(OUT, 'signing.json')]
+  .filter((f) => existsSync(f) && statSync(f).isFile());
 const leaks = written.flatMap((f) => scanSecrets(readFileSync(f, 'utf8')).map(() => f));
 if (leaks.length) {
   console.log(`\nLEAK: ${leaks.length} secret-shaped string(s) across ${new Set(leaks).size} written file(s) — the hard line is broken; do NOT sign this spec`);

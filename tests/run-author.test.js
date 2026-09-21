@@ -890,6 +890,48 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
   assert.equal(authored.cost, null, 'not metered — this path never reached a model call');
 });
 
+// F191, item 4 (/debrief fix-all-4) — a REAL throw inside the previously-uncovered
+// region, with no test-only hook added to production code. `writeOut('authored.json',
+// …)` (`writeFileSync`) throws EISDIR when the path it targets already exists as a
+// DIRECTORY — pre-creating `<out>/authored.json/` as a directory before the run
+// forces the plain-folder branch's own `writeOut` call to throw for real, past
+// `author-start` and inside the try, exactly the region the adjacency test above
+// only proves is free of OTHER code — this proves the net actually catches
+// something thrown there.
+test('F191: a real throw inside the plain-folder branch (authored.json pre-exists as a directory) is caught by the crash net — author-crash, author-end{crashed}, exit 4', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  const out = join(dir, 'out');
+  mkdirSync(join(out, 'authored.json'), { recursive: true }); // the booby trap: a directory, not a file
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 4, text);
+  assert.match(text, /CRASHED — the authoring run died before any paid call\./, text);
+  assert.match(text, /written to the spine as author-crash \+ author-end\{outcome:'crashed'\}/, text);
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 1, text);
+  const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(events.map((e) => e.type), ['author-start', 'job-red', 'author-crash', 'author-end'],
+    'the plain-folder request-red still fires before the writeOut throw; then the crash net catches it');
+  assert.equal(events.at(-1).outcome, 'crashed');
+});
+
 // The far side of the move — pinned from SOURCE, for the same reason the
 // governance/kill/sign blocks above are: it is reachable only past a real
 // key and a real model call, which this suite never pays for.
