@@ -13326,3 +13326,53 @@ plain folder gets a confirm turn) — nothing surfaces this until the untested c
 runs. And a code boundary justified by a stated reason ("before the spine file exists") must be
 re-checked when the thing it depends on moves: the reason had expired ~300 lines before the
 boundary did, for as long as anyone had looked.
+
+## F192 — soft-green calibration refused 6/10 live: the judge reported has-doc red on every documented function, and the record cannot say why
+
+**2026-09-21, live run `mub2nboo`, `scripts/run-author.mjs`, `--verdict soft-green`, a pulselog
+copy (patient `../bareloop-patients/pulselog-softgreen-live-out`, source `mu4hdwqs`'s tree),
+`openai-api`/`deepseek-flash` via `https://api.deepseek.com/v1`, judge `deepseek-flash`, budget
+$1.50.** Total $1.123445 across 23 calls, spend complete; authoring $0.902285/7 calls. Exit 1,
+**SIGNING NOT PREPARED**, spec hash `9583a14f…` (not signable). This run is F190's live proof: the
+judge reached the right host and graded all 10 cases (the prior run, `mu4hec9u`, graded 0 of 10).
+
+**Calibration: 6 of 10 graded wrong.** Every miss includes a `has-doc` red on a function whose case
+artifact clearly carries a full JSDoc block — e.g. case `full-contract-pass`: `/**\n * Formats a
+byte count ...` sits directly above `function formatBytes(bytes, decimals = 1)`; the judge
+returned `{verdict: red, reds: ['has-doc·formatBytes']}`, wanted `pass`. Missed cases:
+`full-contract-pass`, `clamp-contract-pass`, `two-functions-pass` (also returns extra reds),
+`phantom-param-red` and `phantom-param-and-no-returns` (the expected `params` red was never
+raised — `has-doc` was raised instead), `omitted-param-red`. The 4 correctly graded cases were all
+red-expecting cases. `full-contract-pass`'s attempt 1 was itself a provider-red casualty; attempt 2
+graded (wrongly).
+
+**Code read ($0): no defect found in `decide()` or the calibration pipe.** `src/judged.js`'s
+`JUDGE_RULES['has-doc']` (~line 299) reds for exactly three reasons: (a) `locate`'s `docQuote` is
+null/empty, (b) `docQuote` lacks `/**`, (c) a `docQuote`/`declarationQuote` line isn't found
+verbatim (trimmed-line match) in the artifact (the `quoteReds`/`unquoted` check, ~lines 260–290).
+`decide()` (~line 931) and the calibration gate's `pipeOnce` (`src/calibrate.js` ~line 318) both
+pass `artifactText` correctly through to the rule. Reading the code alone does not show which of
+(a)/(b)/(c) is firing.
+
+**WHY UNKNOWN — the calibration record cannot say which of (a)/(b)/(c) fired.** The record keeps
+only the `{rule, fn}` address: `expectedOf` (`src/judged.js` ~line 620) deliberately drops `why`
+and `quote`, and the judge's raw `locate` facts (its actual `docQuote`) are written nowhere —
+not the spine, not `signing.json`, not `authored.json`. This is the same class of gap F190 logged
+as its own second, separate defect (a failed judge `locate` call leaves no cause on the spine):
+the gate's refusal cannot be diagnosed from its own record, on two different rules now.
+
+**History: soft-green calibration has never cleared a live run.** F159 (2026-09-10, gemini judge,
+1 of 10, wrong ruler — the rulebook could only judge doc comments and hamr's error-message bar was
+compiled onto it). F190 (2026-09-16, 0 of 10, judge built against the wrong host). F192 (today,
+4 of 10, right host, wrong verdicts on `has-doc`). Three runs, three different causes. Stated
+plainly, as the record actually shows it: no live pass for soft-green calibration exists in this
+file yet — not a stronger claim than that.
+
+**Next step when this is reopened — NOT built now** (hamr ruling "B", 2026-09-21: log it, keep it
+open in the PRD, close this branch, come back after the UI). First make the gate record the
+`locate` facts and each red's `why` per case, so a refusal is diagnosable from its own record
+rather than re-derived by hand. Then run one small paid probe to learn which of (a)/(b)/(c) fires
+against `deepseek-flash`. Given three different causes across three runs, look at soft-green
+calibration as a whole rather than patching one more rule in isolation.
+
+**Status: OPEN, parked by ruling, not built.**

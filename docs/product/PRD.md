@@ -511,6 +511,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
       entirely (D5 amended, see `docs/product/ITEM33-BUILD.md`) — the stop fires immediately at
       $0. F190 also fixed properly this pass, routed through `buildRunnerProviders` rather than
       the hand-copied conditional. Both fail-first proven in tests, neither re-proven live.
+    - [ ] Soft-green calibration: refused on every live run so far — OPEN, reopen after the UI
+      (N6), see FINDINGS F192 (hamr ruling B, 2026-09-21).
     - [x] `bareloop.context.md` does not describe commit 2b45f09's change (`classGuards` +
       write-fence protections, the model's `notChecked` list). — fixed in the v0.26.0 docs follow-up
     - [x] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed
