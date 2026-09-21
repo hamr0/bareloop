@@ -717,8 +717,8 @@ if (!IS_REPO_SOURCE) {
   writeOut('authored.json', { ok: false, confirmed: null, stop: 'non-code-source', cost: null, reds: [red] });
   emit('author-end', { outcome: 'not-authored', stop: 'non-code-source' });
   console.log(`\nspine      ${spineFile}`);
-  process.exit(1);
-}
+  process.exitCode = 1;
+} else {
 
 // ── THE REPO-SHAPED CONTINUATION OF THE SAME TRY THAT OPENED RIGHT AFTER
 // `author-start`, above — see that comment for why the net starts there and
@@ -1096,6 +1096,7 @@ if (!IS_REPO_SOURCE) {
       }
     }
   }
+}
 } catch (err) {
   // THE OPERATOR'S COPY FIRST, and whole — the same bytes the unhandled rejection
   // used to print, on the same stream. First because it must not depend on the two

@@ -893,7 +893,11 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
 // The far side of the move — pinned from SOURCE, for the same reason the
 // governance/kill/sign blocks above are: it is reachable only past a real
 // key and a real model call, which this suite never pays for.
-const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+// F71 fix: the branch now ends `} else {` (process.exitCode, never process.exit(),
+// so queued stdout survives a slow reader) rather than a bare `}` — the block
+// capture stops at that `else` seam, which is also the guarantee that nothing
+// below can fall through into the repo-shaped continuation.
+const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n\} else \{/.exec(SRC)?.[0];
 
 test('the plain-folder branch is still BOUNDED — this guard reads the branch, not the rest of the file', () => {
   assert.ok(PLAIN_FOLDER_BLOCK, 'the plain-folder branch moved — this guard no longer reads the code it guards');
@@ -912,10 +916,12 @@ test('a plain-folder job runs NO SCOUT and NO CONFIRM TURN — the stop is immed
   assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /confirmGenerate|generate:/, 'no model boundary is ever touched on this path');
 });
 
-test('the plain-folder branch has exactly ONE exit, and it is the honest $0 stop — never a fall-through into the repo-shaped flow', () => {
+test('the plain-folder branch has exactly ONE outcome, set via process.exitCode (F71) — and an else seam, never a fall-through into the repo-shaped flow', () => {
   assert.ok(PLAIN_FOLDER_BLOCK);
-  const exits = [...PLAIN_FOLDER_BLOCK.matchAll(/process\.exit\(1\)/g)].length;
-  assert.equal(exits, 1, `F191's stop is the ONLY way out of this branch now — no confirm turn, no second path (saw ${exits})`);
+  const exitCodes = [...PLAIN_FOLDER_BLOCK.matchAll(/process\.exitCode = 1/g)].length;
+  assert.equal(exitCodes, 1, `F191's stop is the ONLY way out of this branch now — no confirm turn, no second path (saw ${exitCodes})`);
+  assert.ok(!/process\.exit\(/.test(PLAIN_FOLDER_BLOCK), 'F71 — process.exit() after output can discard queued stdout; this stop must use process.exitCode');
+  assert.match(PLAIN_FOLDER_BLOCK, /\} else \{$/, 'the repo-shaped continuation must be gated behind an else, not merely follow the stop in source order');
 });
 
 test('the plain-folder "no checks yet" stop is still named request-red/non-code-source, and reaches author-end with zero provider calls', () => {
