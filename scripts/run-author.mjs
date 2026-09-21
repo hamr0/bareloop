@@ -219,14 +219,16 @@ if (!manifestRead.present) {
 }
 // A manifest that EXISTS but names a NON-repo kind (a plain folder/file/URL)
 // is a different thing entirely: the source was prepared correctly, and
-// there is simply no check catalogue for it yet (M3 ruling 7 → M4). PRD item
-// 33 M3 piece 4, step S6 (D5 = A): that honest stop no longer lands HERE —
-// it MOVES to after the confirm turn (below, past the key check and the
-// interactive seam), because a plain-folder job still gets a confirm turn
-// (over the $0 seed listing, no scout) before the "no checks yet" gap is
-// the last word. `IS_REPO_SOURCE` gates the language-detection block right
-// below (a plain folder has no genre to detect) and the branch further down
-// that decides which of the two paths this run actually takes.
+// there is simply no check catalogue for it yet (M3 ruling 7 → M4). F191
+// (D5 amended 2026-09-21): that honest stop fires immediately, right after
+// `author-start`, at $0 — no scout, no confirm turn, no model call. D5's
+// original shape (a plain-folder job gets a paid confirm turn first) is
+// unreachable by construction now that the close catalogue is code-genre
+// only, so no confirm turn over a plain folder could ever confirm a plan
+// this build can close (see the stop itself, below, for the full story).
+// `IS_REPO_SOURCE` gates the language-detection block right below (a plain
+// folder has no genre to detect) and the branch further down that decides
+// which of the two paths this run actually takes.
 const IS_REPO_SOURCE = manifestRead.manifest.kind === 'repo';
 
 // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
