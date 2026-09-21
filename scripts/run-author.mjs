@@ -467,12 +467,27 @@ const { provider } = buildRunnerProviders({
 });
 emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, baseUrl: baseUrl ?? null, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
-// ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
+// ── EVERYTHING FROM HERE IS INSIDE ONE CATCH (F191) ──────────────────────────
+// This USED TO start ~300 lines further down, right before the repo-shaped
+// scout/authoring call — reasoned as "the argv and config die() paths run
+// before the spine file exists, and a crash record with no spine to land in
+// is a record nobody can read". That reason expired the moment the spine
+// STARTED existing, one line above, at `author-start` — not ~300 lines later.
+// Live run `mu4hc7sp` (F191) proved the gap live: a crash inside the OLD
+// plain-folder confirm-turn branch (which used to sit between `author-start`
+// and the old net's start) left a two-record spine with no ending at all —
+// the exact "died and said nothing" failure this net exists to prevent.
+// Moving the net's start here closes that gap: EVERYTHING from `author-start`
+// on — the plain-folder stop below included — is now covered, whether or not
+// it spends a cent (the crash message below says which).
 //
-// Everything below reports; nothing below governs. The ceiling is enforced where
-// it always was — `capStop`, between metered calls, inside the library — and no
-// decision anywhere reads these.
-
+// `rl` and `metered` are declared here, OUTSIDE the try, rather than where
+// they are constructed/used below — the `catch`/`finally` blocks that read
+// them (the crash message's own spend check, and the reader-close, F71) are
+// SIBLINGS of the try, not nested inside it, so a binding made only inside
+// the try would not exist there.
+/** @type {ReturnType<typeof createInterface>|undefined} */
+let rl;
 /** EVERY METERED CALL, in the order they landed, in the ONE shape `costLine`
  * already reads. A second hand-spelled running total is exactly the pair this
  * file has already paid for once (the cap-halt/pricing-red type), so the totals
@@ -480,6 +495,13 @@ emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, 
  * own cost book uses — rather than accumulated a second time here.
  * @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
 const metered = [];
+try {
+  // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
+//
+// Everything below reports; nothing below governs. The ceiling is enforced where
+// it always was — `capStop`, between metered calls, inside the library — and no
+// decision anywhere reads these.
+
 /** the run's spend AS OF NOW, shaped exactly like a `makeCostBook().report()` so
  * `costLine` renders it with no second spelling. F6 rides intact: an unpriced
  * call makes `costUsd` null and the known half is reported as a `≥` floor. */
@@ -557,7 +579,7 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 // gives backspace and echo, and a piped stdin (a scripted session, a test)
 // behaves identically either way — this is copied from that idiom rather
 // than re-invented.
-const rl = createInterface({ input: process.stdin, terminal: false });
+rl = createInterface({ input: process.stdin, terminal: false });
 const rlLines = rl[Symbol.asyncIterator]();
 /** @returns {Promise<string|null>} the next line, or null at end of input —
  * the same "input ended" signal `run-interview.mjs`'s own `nextLine` uses. */
@@ -698,23 +720,11 @@ if (!IS_REPO_SOURCE) {
   process.exit(1);
 }
 
-// ── EVERYTHING PAID FOR, INSIDE ONE CATCH ────────────────────────────────────
-// The span from here to the end of the main flow is the fallible one: a real
-// scout, a real model call, and a real toolchain per close stage. When it threw,
-// the error went to the operator's terminal and the spine said NOTHING — one
-// `author-start` line and then silence, which is byte-for-byte what a run still
-// in flight looks like. A log that cannot tell a death from a hang is not a
-// record of either.
-//
-// Nothing ABOVE this line is inside it, deliberately: the argv and config `die()`
-// paths run before the spine file exists, and a crash record with no spine to
-// land in is a record nobody can read — those still stop loud on stderr and 2.
-//
-// The catch RETRIES NOTHING and SWALLOWS NOTHING. The operator still gets the
-// whole error, first and verbatim; the spine additionally gets a bounded, redacted
-// body saying the run died and roughly where.
-try {
-  // ── 1. answers → scout → the model fills the form → a close DECLARATION ──────
+// ── THE REPO-SHAPED CONTINUATION OF THE SAME TRY THAT OPENED RIGHT AFTER
+// `author-start`, above — see that comment for why the net starts there and
+// not here. What follows is: a real scout, a real model call, and a real
+// toolchain per close stage.
+// ── 1. answers → scout → the model fills the form → a close DECLARATION ──────
   // `provider` drives the scout; `generate` is the declaration model boundary (one
   // bare-agent Loop per call, the tool wired to end the call it is used in).
   const authored = await authorCloseForJob({
@@ -1091,7 +1101,14 @@ try {
   // used to print, on the same stream. First because it must not depend on the two
   // writes below succeeding: a diagnosis that reaches the person only if the disk
   // is writable is a diagnosis with a dependency nobody asked for.
-  console.error('\nCRASHED — the authoring run died inside the paid span. Nothing was signed, and nothing was retried.');
+  //
+  // F191 — the net now starts right after `author-start`, before ANY paid call
+  // (the plain-folder stop above spends nothing, ever). "died inside the paid
+  // span" was already false for that path and would be false again for any
+  // future $0-only stop this net comes to cover — `metered.length` (hoisted
+  // above the try for exactly this reason) says which happened, honestly,
+  // rather than a fixed claim baked into the message.
+  console.error(`\nCRASHED — the authoring run died ${metered.length ? 'inside the paid span' : 'before any paid call'}. Nothing was signed, and nothing was retried.`);
   console.error(err);
   // ...and the spine's copy, through the ONE persist boundary (`crashRecord` →
   // `scrubRaw` → the same `SECRET_PATTERNS` inventory the validator reds on). A

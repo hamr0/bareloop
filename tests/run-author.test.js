@@ -141,9 +141,33 @@ test('the paid span is inside a catch, and only the paid span is', () => {
   const start = SRC.indexOf("emit('author-start'");
   const tryAt = SRC.indexOf('\ntry {\n');
   assert.ok(start !== -1 && tryAt !== -1, 'the try/author-start pair moved');
-  assert.ok(start < tryAt, 'the try opens BEFORE author-start — a crash would have no spine to land in');
+  assert.ok(start < tryAt, 'author-start emits BEFORE the try opens — a crash would have no spine to land in');
   // and the paid call itself is inside it
   assert.ok(SRC.indexOf('authorCloseForJob({') > tryAt, 'the paid call sits outside the catch');
+});
+
+// F191 — the net USED TO start ~300 lines after `author-start` (right before
+// the repo-shaped `authorCloseForJob` call), leaving a real gap: everything
+// in between (the plain-folder confirm turn, among it) could throw with only
+// `author-start` on the spine and nothing saying the run had died. Live run
+// `mu4hc7sp` hit exactly that gap. This proves the net now starts
+// IMMEDIATELY after `author-start` — allowing only blank lines and comments
+// between them, never executable code that could throw uncaught.
+test('F191: the crash net starts IMMEDIATELY after author-start — no gap of executable code in between', () => {
+  const start = SRC.indexOf("emit('author-start'");
+  assert.ok(start !== -1);
+  const afterStart = SRC.indexOf('\n', start) + 1;
+  const between = SRC.slice(afterStart, SRC.indexOf('\ntry {\n', afterStart) + 1);
+  // strip line comments, block comments, and the two bindings that MUST be
+  // hoisted here (a plain `let`/`const` declaration with no call on its right
+  // side — nothing that can throw) — anything left over is a gap.
+  const codeOnly = between
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+    .replace(/^\s*let rl;\s*$/m, '')
+    .replace(/^\s*const metered = \[\];\s*$/m, '')
+    .trim();
+  assert.equal(codeOnly, '', `only comments and the two hoisted bindings may sit between author-start and the try — found: ${JSON.stringify(codeOnly.slice(0, 200))}`);
 });
 
 test('the catch writes a BODY: the crash and the end, each said once', () => {
@@ -159,6 +183,18 @@ test('the catch writes a BODY: the crash and the end, each said once', () => {
   // the detail is said ONCE. Re-spelling the error onto author-end is two
   // instruments over one fact, which this file has already paid for once.
   assert.ok(!/outcome: 'crashed',/.test(CATCH), 'author-end carries a second copy of the crash detail');
+});
+
+// F191 — the net now starts before any paid call can have happened (right
+// after author-start), so "died inside the paid span" is a claim that can be
+// FALSE the moment the net covers a $0-only stop. The message must say which
+// happened, honestly, off the run's own metered list.
+test('F191: the crash message is truthful about whether anything was ever paid for', () => {
+  assert.ok(CATCH);
+  assert.match(CATCH, /died \$\{metered\.length \? 'inside the paid span' : 'before any paid call'\}/,
+    'the crash message must read the real metered list, never a fixed claim baked into the string');
+  assert.doesNotMatch(CATCH, /died inside the paid span\. Nothing was signed/,
+    'the old fixed wording ("died inside the paid span", unconditionally) must be gone');
 });
 
 test('the catch does not swallow, does not retry, and does not exit()', () => {
@@ -199,10 +235,14 @@ test('the catch does not swallow, does not retry, and does not exit()', () => {
 // at all, because the real script installs these only AFTER the key guard, and
 // past that line every path costs real money.
 
-/** the progress/cost/kill region: from the metered list to the close of the
- * signal loop. INDENT-ANCHORED at both ends (`\n}` at column 0), the same
- * lesson the governance block above already paid for. */
-const KILL = /const metered = \[\];[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+/** the progress/cost/kill region: from `costSoFar` to the close of the signal
+ * loop. INDENT-ANCHORED at both ends (`\n}` at column 0), the same lesson the
+ * governance block above already paid for. F191 moved `const metered = [];`
+ * itself OUTSIDE the try (hoisted alongside `rl`, for the same
+ * catch/finally-is-a-sibling reason) — this region starts one declaration
+ * later than it used to, right after that hoist, so it never swallows the
+ * bare `try {` that now sits between them. */
+const KILL = /const costSoFar = \(\)[\s\S]*?\n\}\n/.exec(SRC)?.[0];
 /** F6's own renderer, extracted with it — the killed report must not spell the
  * spend a second way */
 const COSTLINE = /const costLine = \(cost\) => \{[\s\S]*?\n\};\n/.exec(SRC)?.[0];
@@ -304,6 +344,9 @@ const twin = (sig) => new Promise((resolve, reject) => {
     `const spineFile = ${JSON.stringify(spine)};`,
     'const CEILING_USD = 2.5;',
     "const emit = (type, data = {}) => { appendFileSync(spineFile, `${JSON.stringify({ type, ts: new Date().toISOString(), ...data })}\\n`); };",
+    // hoisted OUTSIDE the try in the real file (F191) — declared here in the
+    // test's own ~10 lines of scaffolding for the same reason.
+    'const metered = [];',
     COSTLINE,
     KILL,
     // one real paid call and one real phase, then hold the process open exactly
