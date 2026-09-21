@@ -804,6 +804,49 @@ test('a key with an embedded newline refuses at $0 — before any spine record e
   assert.equal(spineFiles.length, 0, 'no event ever reached the spine before the key gate — the file was never created');
 });
 
+// F191 (docs/logs/FINDINGS.md) — a REAL end-to-end run, past the key gate,
+// proving the plain-folder stop at $0 with a valid-shaped (but fake) key: no
+// provider is ever constructed against the network on this path (the stop
+// fires before any model call), so a fake key never gets used for real and
+// this test pays nothing.
+test('F191: a plain-folder source stops immediately at $0 — author-start then author-end, no scout, no confirm turn, no model call', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 1, text);
+  assert.match(text, /This is a plain folder, not a code project\. bareloop can't check this kind of job yet\. Nothing was spent and nothing was written\./);
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 1);
+  const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(events.map((e) => e.type), ['author-start', 'job-red', 'author-end'],
+    'exactly author-start, the request-red, then author-end — no author-phase, no author-cost: nothing was ever metered');
+  assert.equal(events.at(-1).outcome, 'not-authored');
+  assert.equal(events.at(-1).stop, 'non-code-source');
+  const authored = JSON.parse(readFileSync(join(out, 'authored.json'), 'utf8'));
+  assert.equal(authored.ok, false);
+  assert.equal(authored.confirmed, null);
+  assert.equal(authored.stop, 'non-code-source');
+  assert.equal(authored.cost, null, 'not metered — this path never reached a model call');
+});
+
 // The far side of the move — pinned from SOURCE, for the same reason the
 // governance/kill/sign blocks above are: it is reachable only past a real
 // key and a real model call, which this suite never pays for.
@@ -814,28 +857,31 @@ test('the plain-folder branch is still BOUNDED — this guard reads the branch, 
   assert.ok(!/authorCloseForJob/.test(PLAIN_FOLDER_BLOCK), 'the plain-folder branch must never run the repo-shaped authorCloseForJob');
 });
 
-test('a plain-folder job runs NO SCOUT and its confirm turn is isRepo:false, over a manual listing — never authorCloseForJob\'s survey', () => {
+// F191 (2026-09-21): the confirm turn over a plain folder is GONE — it is
+// unreachable by construction (a plain folder has no code language, and
+// `classGuards`/`confirmProtections` throws without one; live run
+// `mu4hc7sp` crashed inside exactly that). The stop now fires immediately,
+// at $0, with no scout and no model call at all.
+test('a plain-folder job runs NO SCOUT and NO CONFIRM TURN — the stop is immediate, at $0, no model call', () => {
   assert.ok(PLAIN_FOLDER_BLOCK);
   assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /runAuthorScout|scoutFn/, 'no scout for a plain folder (D5) — its register is code-only');
-  assert.match(PLAIN_FOLDER_BLOCK, /runConfirmTurn\(\{/);
-  assert.match(PLAIN_FOLDER_BLOCK, /isRepo: false/);
-  assert.match(PLAIN_FOLDER_BLOCK, /facts: null, listing: listingBlock/);
+  assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /runConfirmTurn\(/, 'F191 — the confirm turn is unreachable for a plain folder (no language for classGuards) and must never run here');
+  assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /confirmGenerate|generate:/, 'no model boundary is ever touched on this path');
 });
 
-test('the plain-folder branch NEVER falls through into the repo-shaped try block — every path out of it exits', () => {
+test('the plain-folder branch has exactly ONE exit, and it is the honest $0 stop — never a fall-through into the repo-shaped flow', () => {
   assert.ok(PLAIN_FOLDER_BLOCK);
   const exits = [...PLAIN_FOLDER_BLOCK.matchAll(/process\.exit\(1\)/g)].length;
-  assert.ok(exits >= 2, `expected an exit on both the confirm-turn-not-ok path and the confirmed "no checks yet" path (saw ${exits})`);
+  assert.equal(exits, 1, `F191's stop is the ONLY way out of this branch now — no confirm turn, no second path (saw ${exits})`);
 });
 
-test('the plain-folder "no checks yet" stop only fires AFTER a confirmed plan — a stop still named request-red/non-code-source, unchanged from before the move', () => {
+test('the plain-folder "no checks yet" stop is still named request-red/non-code-source, and reaches author-end with zero provider calls', () => {
   assert.ok(PLAIN_FOLDER_BLOCK);
-  const confirmDoneAt = PLAIN_FOLDER_BLOCK.indexOf('if (!confirm.ok)');
-  const stopAt = PLAIN_FOLDER_BLOCK.indexOf("verb: 'non-code-source'");
-  assert.ok(confirmDoneAt !== -1 && stopAt !== -1 && confirmDoneAt < stopAt,
-    'the confirm-turn check must come BEFORE the non-code-source stop — a plan the person never confirmed must never reach it');
   assert.match(PLAIN_FOLDER_BLOCK, /code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',/);
   assert.match(PLAIN_FOLDER_BLOCK, /outcome: 'not-authored', stop: 'non-code-source'/);
+  assert.match(PLAIN_FOLDER_BLOCK, /This is a plain folder, not a code project\. bareloop can't check this kind of /,
+    'the exact person-facing text F191 specifies');
+  assert.match(PLAIN_FOLDER_BLOCK, /Nothing was spent and nothing was written\./);
 });
 
 // ── PRD item 33 M3 piece 4, step S4 — run-author.mjs becomes INTERACTIVE ────

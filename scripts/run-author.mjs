@@ -62,9 +62,9 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import {
-  readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, renameSync,
+  readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync,
 } from 'node:fs';
-import { dirname, join, resolve, relative, sep } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
@@ -72,7 +72,7 @@ import {
   REFUSAL_LIB, REFUSAL_CATEGORY,
 } from '../src/authorjob.js';
 import {
-  makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM, runConfirmTurn, makeCostBook,
+  makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM,
 } from '../src/authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
@@ -662,83 +662,37 @@ const ask = async (step) => {
  * prompt: reusing `generate` would run the wrong system prompt silently. */
 const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
 
-// ── PLAIN-FOLDER SOURCE: NO SCOUT, A CONFIRM TURN OVER THE SEED LISTING, THEN
-// THE HONEST "NO CHECKS YET" STOP (PRD item 33 M3 piece 4, step S6, D5 = A) ──
-// This branch NEVER falls through to the repo-shaped try/catch below —
-// `process.exit(1)` at its end (or inside `runConfirmTurn`'s own abandon
-// paths) guarantees that, the same way every other early stop in this file
-// does. A plain folder gets no scout (its register is code-only,
-// `src/authorscout.js`) — the listing below is a mechanical directory walk
-// of the FROZEN tree, never survey facts, and the confirm turn runs with
-// `isRepo: false` (skips the repo-only "worse than before" ask and the
-// language pick alike, exactly as `runConfirmTurn` already does for a
-// repo-with-resolved-language job).
+// ── PLAIN-FOLDER SOURCE: A NAMED $0 STOP, NO MODEL CALL (F191; PRD item 33 M3
+// piece 4, step S6, D5 amended 2026-09-21) ──────────────────────────────────
+// This USED TO run the whole confirm turn first (over a $0 manual listing,
+// via `runConfirmTurn`), THEN give this stop once the person confirmed a plan
+// — D5's original shape. Live run `mu4hc7sp` (docs/logs/FINDINGS.md F191)
+// crashed inside that confirm turn instead: `confirmProtections`
+// (`src/authorflow.js`) calls `classGuards` (`src/authoring.js`), which is
+// keyed by CODE LANGUAGE and THROWS on a plain folder's `lang:
+// 'none-detected'` ("no TYPES genre data for language ...") — a plain folder
+// has no language, so the very computation the confirm turn needs to show
+// real, code-derived protections (F174's fix) cannot run for one. The crash
+// left a two-record spine (`author-start`, `author-phase confirm`) with no
+// ending at all.
+//
+// The fix is not a guard around that crash — it is recognizing D5's premise
+// (a plain folder gets a paid confirm turn before the honest "no checks yet"
+// stop) is now unreachable by construction: the close catalogue is code-genre
+// only, so no confirm turn over a plain folder could ever confirm a plan this
+// build can close. The stop fires HERE, immediately, at $0, no scout, no
+// confirm turn, no model call — a plain folder's spine is exactly
+// `author-start` → `author-end{outcome:'not-authored', stop:'non-code-source'}`.
 if (!IS_REPO_SOURCE) {
-  /** a $0, no-git listing of the frozen tree — the same "files that actually
-   * exist" idea `buildSeedListing` gives a repo job, built by hand here
-   * because there is no git seedRef to list from. Capped the same order of
-   * magnitude as the repo listing's own LIST_CAP so a very large plain
-   * folder cannot blow the prompt open.
-   * @param {string} dir @param {number} cap @returns {string[]} */
-  const listPlainFolder = (dir, cap = 2000) => {
-    /** @type {string[]} */
-    const out = [];
-    const walk = (/** @type {string} */ d) => {
-      if (out.length >= cap) return;
-      for (const entry of readdirSync(d, { withFileTypes: true })) {
-        if (out.length >= cap) return;
-        const full = join(d, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else out.push(relative(SOURCE, full).split(sep).join('/'));
-      }
-    };
-    walk(dir);
-    return out;
-  };
-  const files = listPlainFolder(SOURCE);
-  const listingBlock = [
-    'FILES THAT ACTUALLY EXIST IN THE FROZEN TREE — listed mechanically (a plain directory walk,',
-    'never a survey): a path not in this list DOES NOT EXIST, whatever it sounds like it should be called.',
-    '',
-    ...files.map((f) => `  ${f}`),
-  ].join('\n');
-  onPhase('confirm', {});
-  const confirmBook = makeCostBook({ ceilingUsd: CEILING_USD, onCall });
-  const confirm = await runConfirmTurn({
-    verdictType: VERDICT, answers, questions: LIVE_CLASSES.includes(VERDICT) ? questionsFor(VERDICT) : null,
-    facts: null, listing: listingBlock, writeScope: null, isRepo: false, lang: LANG,
-    generate: confirmGenerate, book: confirmBook, ask, onPhase,
-  });
-  onPhase('confirm-turn-done', { ok: confirm.ok, stop: confirm.stop, rounds: confirm.rounds });
-  writeOut('authored.json', {
-    ok: false, confirmed: confirm.ok ? confirm.accepted : null,
-    stop: confirm.ok ? 'non-code-source' : confirm.stop, cost: confirm.cost, reds: confirm.reds,
-  });
-  if (!confirm.ok) {
-    // the confirm turn itself did not reach a signable plan (abandoned, a
-    // cap/pricing stop, a provider/artifact red, or the person chose to
-    // start over) — THAT is the stop this run ends on, never silently
-    // overwritten by the "no checks yet" one below, which only applies to a
-    // plan the person actually confirmed.
-    console.log(`\n${String(confirm.stop).toUpperCase()} — the confirm turn did not produce a signed plan.`);
-    for (const red of confirm.reds ?? []) {
-      console.log(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
-      emit('job-red', red);
-    }
-    emit('author-end', { outcome: 'not-authored', stop: confirm.stop });
-    console.log(`\nspine      ${spineFile}`);
-    process.exit(1);
-  }
-  // the person CONFIRMED a plan for a job this build still cannot close — the
-  // SAME honest stop this used to give before any question was even asked,
-  // now given after the confirm turn instead (D5).
-  console.log(`Source is not a code repository — it is a plain ${manifestRead.manifest.kind} job. bareloop has no checks for this kind`);
-  console.log('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build). Nothing was authored.');
+  const message = "This is a plain folder, not a code project. bareloop can't check this kind of "
+    + 'job yet. Nothing was spent and nothing was written.';
+  console.log(`\n${message}`);
   const red = {
     code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',
     detail: `--source ${SOURCE} freezes a "${manifestRead.manifest.kind}" job — the close catalogue is code-genre only today.`,
   };
   emit('job-red', red);
+  writeOut('authored.json', { ok: false, confirmed: null, stop: 'non-code-source', cost: null, reds: [red] });
   emit('author-end', { outcome: 'not-authored', stop: 'non-code-source' });
   console.log(`\nspine      ${spineFile}`);
   process.exit(1);
