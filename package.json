@@ -23,7 +23,8 @@
     "test": "node scripts/hermetic.mjs && node scripts/prompt-commit-check.mjs --range origin/main..HEAD",
     "typecheck": "tsc --noEmit",
     "build:types": "tsc",
-    "prepublishOnly": "npm run build:types"
+    "prepublishOnly": "npm run build:types",
+    "check:lockfile": "node scripts/check-lockfile.mjs"
   },
   "dependencies": {
     "bare-agent": "^0.43.0",
