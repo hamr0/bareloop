@@ -8,7 +8,11 @@
 // record, for the same reason again — a second writer that forgets the scrub is
 // a leak on the very trail the scrub exists to protect.
 
+import { createRequire } from 'node:module';
 import { redactSecrets } from './validate.js';
+
+const require = createRequire(import.meta.url);
+const { HaltError } = require('bare-agent');
 
 // A fence counts as the artifact's WRAPPER only when it opens within this many
 // lines of the response — the chatty-preamble shape ("Here's the fix:\n```…").
@@ -146,6 +150,47 @@ export function capStop({ ceilingUsd, knownUsd, spendComplete }) {
   }
   if (knownUsd >= ceilingUsd) return 'cap-halt';
   if (!spendComplete) return 'pricing-red';
+  return null;
+}
+
+/**
+ * THE ONE SPELLING of "was this throw a call casualty, or something else" —
+ * F179/F180's seam. `authorscout.js`'s `settled` narrows a rejected
+ * `loop.run()` to this one class: swallowing every throw would launder a
+ * budget `HaltError`, a programming bug, or any other named terminal into
+ * "the call failed" — the exact class of dishonesty this repo refuses (an
+ * unknown reported as a known).
+ *
+ * bare-agent 0.42.0's `OpenAIProvider.generate` used to throw a raw
+ * `SyntaxError` from an unguarded `JSON.parse(tc.function.arguments)` after
+ * a billed HTTP round (F179/BA-27) — this predicate used to admit that class
+ * too. bare-agent 0.43.0 fixed it upstream (`parseToolCalls`, shared by
+ * OpenAIProvider and Ollama): a malformed tool-call arguments string now
+ * returns a priced round with `toolCalls: []` plus its own `malformedToolCall`
+ * marker instead of throwing. Verified against 0.43.0's installed source that
+ * no provider bareloop constructs (`AnthropicProvider`, `OpenAIProvider`,
+ * `GeminiProvider` — `src/providers.js`) can still throw a JSON `SyntaxError`
+ * out of `generate()` after a billed round: Anthropic and Gemini read tool-call
+ * arguments as already-parsed objects off their own response shape (nothing to
+ * `JSON.parse`), and every provider's raw-HTTP-body parse is already
+ * try/catch-wrapped inside `_request`, converted to a plain `Error` before it
+ * can reach here. bareloop never streams a provider response. So the
+ * SyntaxError branch this predicate used to carry is dead code and was
+ * removed in the same change that bumped to bare-agent 0.43.0 — re-add it (or
+ * a narrower successor) only if a real provider is found to reintroduce the
+ * class.
+ *
+ * A `HaltError` is deliberately excluded — it is bare-agent's own governance
+ * exit (a budget/turn cap), never a transport casualty, and this predicate
+ * must never launder one into a mere "the call failed".
+ * @param {any} err
+ * @returns {string|null} a short reason when `err` is an admitted casualty class,
+ *   `null` for everything else (including `HaltError`) — the caller re-throws on `null`.
+ */
+export function callCasualty(err) {
+  if (err instanceof HaltError) return null;
+  const e = /** @type {any} */ (err);
+  if (e?.code === 'ETIMEDOUT' || e?.name === 'TimeoutError') return String(e?.message ?? e);
   return null;
 }
 

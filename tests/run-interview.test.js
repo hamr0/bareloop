@@ -25,7 +25,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync, spawn } from 'node:child_process';
 // the LIBRARY's own frozen sets — the expectations below are DERIVED from them, so a
 // question that is ever re-worded moves the test with it instead of leaving a stale
 // literal that passes while the person is asked something else
@@ -81,15 +81,16 @@ gitFix(repoBase, ['commit', '-q', '-m', 'seed']);
  * no library default) — `null` omits `--provider` entirely, for the scenarios that
  * test the missing-flag refusal itself.
  * @param {{verdict?: string, out: string, budget?: string|null,
- *   provider?: string|null, key?: string, lines: string[]}} o
+ *   provider?: string|null, baseUrl?: string|null, key?: string, lines: string[]}} o
  */
 const interview = ({
-  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', key = '', lines,
+  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', baseUrl = null, key = '', lines,
 }) => {
   const args = [
     '--verdict', verdict, '--out', out,
     ...(budget === null ? [] : ['--budget', budget]),
     ...(provider === null ? [] : ['--provider', provider]),
+    ...(baseUrl === null ? [] : ['--base-url', baseUrl]),
   ];
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf8', timeout: 120_000, input: `${lines.join('\n')}\n`,
@@ -106,6 +107,50 @@ const interview = ({
   return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 };
 
+/**
+ * A truly INTERACTIVE driver, for the one scenario that needs a real side effect
+ * (creating `node_modules` in the prepared copy) to land BETWEEN two prompts —
+ * `spawnSync`/`interview()` above feed the whole scripted transcript up front and
+ * cannot do that. `steps` run in order; each optionally waits for a pattern to
+ * appear in the output so far, then optionally runs an action (e.g. writing a
+ * file into the tree path captured from an earlier step), then optionally sends
+ * one line. Polls, capped at 20s per wait — a step that never arrives is a test
+ * failure, not a hang.
+ * @param {{verdict?: string, out: string, key?: string, provider?: string,
+ *   steps: {wait?: RegExp, action?: (out: string) => void, send?: string}[]}} o
+ */
+const interviewInteractive = async ({
+  verdict = CLASS, out, key = '', provider = 'anthropic-api', steps,
+}) => {
+  const args = ['--verdict', verdict, '--out', out, '--budget', '2.50', '--provider', provider];
+  const child = spawn(process.execPath, [SCRIPT, ...args], {
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  let buf = '';
+  child.stdout.on('data', (d) => { buf += d.toString(); });
+  child.stderr.on('data', (d) => { buf += d.toString(); });
+  const waitFor = async (re) => {
+    const deadline = Date.now() + 20_000;
+    while (!re.test(buf)) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${re} in:\n${buf.slice(0, 2000)}`);
+      // eslint-disable-next-line no-await-in-loop -- a deliberate poll, not a batch
+      await new Promise((r) => { setTimeout(r, 20); });
+    }
+  };
+  for (const step of steps) {
+    if (step.wait) await waitFor(step.wait); // eslint-disable-line no-await-in-loop
+    if (step.action) step.action(buf);
+    if (step.send !== undefined) child.stdin.write(`${step.send}\n`);
+  }
+  const code = await new Promise((resolve) => {
+    const killTimer = setTimeout(() => { child.kill(); resolve(null); }, 20_000);
+    child.on('exit', (c) => { clearTimeout(killTimer); resolve(c); });
+  });
+  return { code, out: buf };
+};
+
 /** one free-text answer: the text, then the blank line that ends it */
 const a = (/** @type {string} */ s) => [s, ''];
 /** the SOURCE + DESTINATION pair every complete session starts with (PRD item 33
@@ -120,6 +165,21 @@ const front = (over = {}) => [...a(over.source ?? repoBase), ...a(over.destinati
  * how that shift was caught while updating this fixture). */
 const session = (verdict, over = {}) => [
   ...front(over),
+  ...requiredAnswersFor(verdict).flatMap((q) => a(`answer to question ${q}`)),
+  ...a(over.job ?? 'litectx-maintainer'),
+  ...a(over.budget ?? '5'),
+  ...a(over.wall ?? '30'),
+  over.run ?? 'n',
+];
+
+/** the same complete session, with the F182 install-gap PAUSE's lines spliced in
+ * right after Source/Destination (before the class questions) — where the pause
+ * actually sits. `pauseAnswers` are single lines (the pause reads one line per
+ * loop turn with no blank terminator, unlike every free-text answer around it):
+ * e.g. `['skip']`, or `['', 'skip']` for "still missing, then give up". */
+const sessionWithPause = (verdict, pauseAnswers, over = {}) => [
+  ...front(over),
+  ...pauseAnswers,
   ...requiredAnswersFor(verdict).flatMap((q) => a(`answer to question ${q}`)),
   ...a(over.job ?? 'litectx-maintainer'),
   ...a(over.budget ?? '5'),
@@ -304,7 +364,7 @@ test('the original repo Source is never touched — prepareSource COPIES, it nev
 // plain folder — it continues, and the honest "no checks yet" gap moves to
 // AFTER the confirm turn, in run-author.mjs (D5's own stop, over the $0 seed
 // listing rather than a scout).
-test('a non-repo Source (a plain folder): the form CONTINUES (D5=A) — no writeScope in the draft, M4\'s stop moves to run-author.mjs', () => {
+test('a non-repo Source (a plain folder): the form CONTINUES (D5=A) — no writeScope in the draft, the $0 stop moves to run-author.mjs (F191)', () => {
   const out = outDir();
   const folder = mkdtempSync(join(base, 'plain-folder-'));
   writeFileSync(join(folder, 'a.txt'), 'hello');
@@ -318,17 +378,19 @@ test('a non-repo Source (a plain folder): the form CONTINUES (D5=A) — no write
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /bareloop has no checks for this kind/);
   assert.match(r.out, /the form continues/i);
-  assert.match(r.out, /confirm turn still runs \(D5\)/);
+  assert.match(r.out, /stop right away, at \$0/);
+  assert.doesNotMatch(r.out, /confirm turn still runs/, 'F191 — the confirm turn is unreachable for a plain folder now, never promised');
   assert.match(r.out, /── 1 of /, 'the class questions DO start now (D5) — only run-author.mjs stops on this kind of job');
   assert.ok(existsSync(join(out, 'specdraft.json')), 'the draft IS written — a plain-folder job is not refused here any more');
   const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
   assert.equal(draft.writeScope, undefined, 'a plain-folder job has no fence yet (PLAIN_FOLDER_DEFERRED_FIELDS) — never one derived from the output directory');
 });
 
-// PRD item 34 loose end: a plain folder gets NO scout (D5=A, 21561cf) — the
-// hand-off text describing the paid step must say so, never describe the
-// repo-only scout/prepareSigning pipeline that this source never reaches.
-test('a non-repo Source: the hand-off describes the confirm turn and the M4 stop, never a scout or prepareSigning', () => {
+// F191 (2026-09-21): a plain folder gets NO scout AND NO confirm turn — the
+// hand-off text describing the paid step must say so, never promise a model
+// call or describe the repo-only scout/prepareSigning pipeline this source
+// never reaches.
+test('a non-repo Source: the hand-off says the $0 stop plainly, never a confirm turn, a scout, or prepareSigning', () => {
   const out = outDir();
   const folder = mkdtempSync(join(base, 'plain-folder-handoff-'));
   writeFileSync(join(folder, 'a.txt'), 'hello');
@@ -340,9 +402,9 @@ test('a non-repo Source: the hand-off describes the confirm turn and the M4 stop
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /a real model reads the file list and walks you through the confirm turn/);
-  assert.match(r.out, /There is no scout for a plain folder/);
-  assert.match(r.out, /no checks for this kind of job yet \(M4\)/);
+  assert.match(r.out, /stops right away, at \$0: no scout, no confirm turn, no model call/);
+  assert.match(r.out, /bareloop has no checks for this kind of job yet/);
+  assert.doesNotMatch(r.out, /walks you through the confirm turn/);
   assert.doesNotMatch(r.out, /a real scout over that repository/);
   assert.doesNotMatch(r.out, /It stops at prepareSigning/);
 });
@@ -600,6 +662,82 @@ test('the offer\'s key name FOLLOWS the chosen provider, never a hardcoded ANTHR
   assert.doesNotMatch(r.out, /ANTHROPIC_API_KEY/, 'a different provider must never surface the old hardcoded key name');
 });
 
+// ══ --base-url (PRD item 33 close-out: L17 named the provider but never the
+// endpoint) — OPTIONAL, no default, DeepSeek reached through openai-api ═══════
+
+test('--base-url given: the draft carries baseUrl VERBATIM, alongside provider', () => {
+  const out = outDir();
+  const DEEPSEEK_URL = 'https://api.deepseek.com/v1';
+  const r = interview({ provider: 'openai-api', baseUrl: DEEPSEEK_URL, out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.equal(draft.provider, 'openai-api');
+  assert.equal(draft.baseUrl, DEEPSEEK_URL);
+});
+
+test('--base-url absent: the draft has no baseUrl KEY at all — never null, never empty string', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
+  assert.equal('baseUrl' in draft, false, 'an absent flag must leave the field OUT of the draft, not written as null/\'\'');
+});
+
+// The two tests below cover the follow-up fix: a bad `--base-url` used to
+// refuse only at the END of the interview (through `validateJob`, after
+// source prep, every question, budget and wall). It now refuses at flag-parse
+// time, sharing `src/job.js`'s `validateBaseUrl` rule, before a single line of
+// the interview is printed — a typo must not cost the whole interview, and a
+// credential-carrying URL must never be echoed to the terminal before the
+// refusal (`redactSecrets` does NOT mask a `user:pass@host` URL — confirmed
+// separately, out of scope for this fix, so the die() message must not repeat
+// the raw value at all).
+
+test('--base-url http:// to a public host refuses BEFORE the first interview question — nothing written, no session consumed', () => {
+  const out = outDir();
+  // no scripted answers at all — proving refusal-before-any-question by
+  // construction (an empty session cannot satisfy even the first prompt), not
+  // just by matching text in the output.
+  const r = interview({
+    provider: 'openai-api', baseUrl: 'http://gateway.example.com/v1', out, lines: [],
+  });
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /--base-url invalid/);
+  assert.match(r.out, /https:\/\//, 'the shared validateBaseUrl rule names itself (https:// required)');
+  assert.doesNotMatch(r.out, /── SOURCE/, 'died before the Source section — no question was ever asked');
+  assert.doesNotMatch(r.out, /── 1 of /);
+  assert.equal(existsSync(out), false, 'nothing was written at all — not even the out dir');
+});
+
+test('--base-url carrying credentials refuses BEFORE anything prints, and the credential itself never reaches stdout/stderr', () => {
+  const out = outDir();
+  const CREDENTIAL_URL = 'https://bob:hunter2secretpass@api.deepseek.com/v1';
+  const r = interview({ provider: 'openai-api', baseUrl: CREDENTIAL_URL, out, lines: [] });
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /--base-url invalid/);
+  assert.match(r.out, /no embedded credentials/, 'the rule is named');
+  assert.doesNotMatch(r.out, /hunter2secretpass/, 'the credential itself must never be echoed, in either direction of the refusal');
+  assert.doesNotMatch(r.out, /── SOURCE/, 'died before the Source section — no question was ever asked');
+  assert.equal(existsSync(out), false);
+});
+
+test('the hand-off names the endpoint and points the key hint at OPENAI_API_KEY — no separate endpoint-specific key variable', () => {
+  const out = outDir();
+  const DEEPSEEK_URL = 'https://api.deepseek.com/v1';
+  const r = interview({ provider: 'openai-api', baseUrl: DEEPSEEK_URL, out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, new RegExp(`endpoint\\s+${DEEPSEEK_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.match(r.out, /OPENAI_API_KEY/);
+  assert.match(r.out, /there is no separate endpoint-specific key variable/);
+});
+
+test('--base-url never appears when the flag was never given — the hand-off carries no stale endpoint hint', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /endpoint-specific key variable/);
+});
+
 test('a Source that is not on the machine refuses at the door, not after any class question', () => {
   const out = outDir();
   const r = interview({ out, lines: [...a(join(base, 'no-such-repo')), 'n'] });
@@ -730,4 +868,149 @@ test('the two files are on disk EITHER WAY — the offer is the only thing the k
     assert.ok(existsSync(join(out, 'answers.json')), `${out} lost its answers`);
     assert.ok(existsSync(join(out, 'specdraft.json')), `${out} lost its draft`);
   }
+});
+
+// ══ install-gap detector (PRD item 33 close-out, hamr's ruling 2026-09-14) ═════
+// `prepareSource` copies only git-tracked files, so a JS/TS repo's copy never
+// carries `node_modules`. This script must name the gap and the exact command
+// at $0, and must never OFFER to start the paid step over a copy that would
+// only instrument-stop.
+
+/** a repo fixture with a package.json that DECLARES dependencies but ships no
+ * lockfile and no node_modules — `missingDependencies` must fire `npm install`. */
+const depsRepo = mkdtempSync(join(base, 'repo-deps-'));
+writeFileSync(join(depsRepo, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+mkdirSync(join(depsRepo, 'src'), { recursive: true });
+writeFileSync(join(depsRepo, 'src', 'index.js'), 'export const x = 1;\n');
+gitFix(depsRepo, ['init', '-q']);
+gitFix(depsRepo, ['add', '-A']);
+gitFix(depsRepo, ['commit', '-q', '-m', 'seed']);
+
+test('a repo Source whose package.json lists dependencies with no node_modules: the exact install command is printed right after the seed line', () => {
+  const out = outDir();
+  const r = interview({ out, lines: sessionWithPause(CLASS, ['skip'], { source: depsRepo }) });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /The copy above has no installed packages/);
+  assert.match(r.out, /cd .+tree && npm install/, 'the printed command names the copy\'s own tree path, not a bare "npm install"');
+});
+
+test('a repo Source whose package.json lists dependencies with no node_modules: no "start it now" offer, even with a key in the shell', () => {
+  const out = outDir();
+  const r = interview({ out, key: 'sk-test-not-a-real-key', lines: sessionWithPause(CLASS, ['skip'], { source: depsRepo }) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /Run it now\?/, 'the offer must never be made over a copy missing its dependencies');
+  assert.match(r.out, /Not offered — the copy still has no installed packages/);
+  assert.match(r.out, /run-author\.mjs/, 'the command to fire once installed is still printed');
+});
+
+// ══ F182 — the pause: "Run it now?" is now reachable ══════════════════════════
+// `scripts/run-interview.mjs` now waits right where the gap is printed instead of
+// falling straight through to the class questions and only re-checking once, too
+// late to ever offer.
+
+test('F182 (a): gap + skip — the interview continues past the pause with no recheck message, and hand-off says not offered', () => {
+  const out = outDir();
+  const r = interview({
+    out, key: 'sk-test-not-a-real-key', lines: sessionWithPause(CLASS, ['skip'], { source: depsRepo }),
+  });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Press Enter once it has finished to check again, or type skip to carry on without it: /);
+  assert.doesNotMatch(r.out, /still missing/);
+  assert.doesNotMatch(r.out, /packages found/);
+  assert.doesNotMatch(r.out, /Run it now\?/);
+  assert.match(r.out, /Not offered — the copy still has no installed packages/);
+});
+
+test('F182 (b): gap + Enter while still missing — prints "still missing" and re-prompts, then skip carries on', () => {
+  const out = outDir();
+  const r = interview({
+    out, key: 'sk-test-not-a-real-key', lines: sessionWithPause(CLASS, ['', 'skip'], { source: depsRepo }),
+  });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /still missing \(.*no node_modules\) — try again, or type skip to carry on without it\./);
+  assert.doesNotMatch(r.out, /Run it now\?/);
+  assert.match(r.out, /Not offered — the copy still has no installed packages/);
+});
+
+test('F182 (c): gap + the copy gets its node_modules + Enter — "packages found", then the offer is actually reachable', async () => {
+  const out = outDir();
+  // front() (Source, Destination) plus one '' line for the pause's Enter —
+  // the rest is sent by the interactive driver's own steps below, one prompt
+  // at a time, so the node_modules side effect can land in between.
+  // Every free-text answer (class questions, job name, budget, wall) is
+  // terminated by its own blank line — `a()` already shapes that.
+  const rest = [
+    ...requiredAnswersFor(CLASS).flatMap((q) => a(`answer to question ${q}`)),
+    ...a('litectx-maintainer'), ...a('5'), ...a('30'),
+  ];
+  const r = await interviewInteractive({
+    out,
+    key: 'sk-test-not-a-real-key',
+    steps: [
+      // front() (Source, Destination) only — the pause's own '' (Enter) line is
+      // deliberately held back and sent as its OWN step below, after the
+      // node_modules side effect, so it cannot be consumed early.
+      { send: front({ source: depsRepo }).join('\n') },
+      { wait: /Press Enter once it has finished to check again/ },
+      {
+        action: (bufSoFar) => {
+          const treeLine = /^ {2}tree {5}(\S+)/m.exec(bufSoFar)?.[1];
+          assert.ok(treeLine, `tree path not printed yet:\n${bufSoFar}`);
+          // exactly what `missingDependencies` looks for (src/source.js): a
+          // `node_modules` directory at the same level as the package.json it
+          // found — never a real install, just the directory's presence.
+          mkdirSync(join(treeLine, 'node_modules', 'left'), { recursive: true });
+          writeFileSync(join(treeLine, 'node_modules', 'left', 'index.js'), 'module.exports = 1;\n');
+        },
+      },
+      { send: '' }, // the Enter — sent only now that node_modules actually exists
+      { wait: /packages found — carrying on\./ },
+      { send: rest.join('\n') },
+      { wait: /Run it now\? \[y\/N\] / },
+      { send: 'n' },
+    ],
+  });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /packages found — carrying on\./);
+  assert.match(r.out, /Run it now\? \[y\/N\] /, 'F182: the offer is reachable once the gap is resolved in the loop, not just when there was never a gap');
+  assert.doesNotMatch(r.out, /Not offered — the copy still has no installed packages/);
+});
+
+test('F182 (d): gap + EOF on stdin during the pause — no infinite loop, ends the interview rather than hanging', () => {
+  const out = outDir();
+  // ONLY front() — input ends right at the pause's first prompt, with nothing
+  // queued after it (the real EOF case: a piped/non-interactive session that
+  // simply has no more lines). Must not hang the 120s test timeout.
+  const r = interview({ out, lines: [...front({ source: depsRepo })] });
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /INPUT ENDED/, 'EOF during the pause behaves like `skip` and lets the rest of the (now-exhausted) interview end honestly, not hang');
+  assert.doesNotMatch(r.out, /still missing/, 'EOF must not be read as a recheck attempt in a loop');
+});
+
+test('F182 (e): no gap at all — no pause prompt is ever printed', () => {
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /Press Enter once it has finished/);
+  assert.doesNotMatch(r.out, /has no installed packages/);
+});
+
+test('a repo Source with dependencies but node_modules ALREADY present: no install-gap message, offer proceeds normally', () => {
+  const nmRepo = mkdtempSync(join(base, 'repo-deps-havenm-'));
+  writeFileSync(join(nmRepo, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  // `prepareSource` copies only TRACKED files, so `node_modules` has to be
+  // committed here (unrealistic for a real project, but the only way to land
+  // it in the prepared copy without this test running a real install) to
+  // prove the detector's own true/false split — the real-install, real-copy
+  // live proof (a real `npm ci` in a real prepared tree) is done separately,
+  // outside the test suite (see the build report).
+  mkdirSync(join(nmRepo, 'node_modules', 'left'), { recursive: true });
+  writeFileSync(join(nmRepo, 'node_modules', 'left', 'index.js'), 'module.exports = 1;\n');
+  gitFix(nmRepo, ['init', '-q']);
+  gitFix(nmRepo, ['add', '-A']);
+  gitFix(nmRepo, ['commit', '-q', '-m', 'seed']);
+  const out = outDir();
+  const r = interview({ out, lines: session(CLASS, { source: nmRepo }) });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /has no installed packages/);
 });

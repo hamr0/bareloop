@@ -2667,3 +2667,71 @@ convention BA-25 already established. No new option, no behaviour change on the 
 is additive context on an error that is already thrown. bareloop consumes by version bump; the
 regex-on-message fallback in `src/ratelimit.js` stays as the graceful degradation for older
 bare-agent versions, never removed just because this lands.
+
+## BA-27 — `OpenAIProvider.generate`'s tool-call JSON.parse has no try/catch: a malformed `arguments` string throws a raw SyntaxError AFTER the billed round, and the response's `usage` is lost with it (2026-09-15, PRD item 33 live person-path run / F179, F180)
+
+### The defect, in bare-agent's own words against its own code
+
+`generate()` in `src/provider-openai.js` (0.42.0, lines ~132-136) maps `msg.tool_calls` with
+`arguments: JSON.parse(tc.function.arguments)`, unguarded. The HTTP round already completed (a 200
+came back, `data.usage` is sitting in scope) when the model emits a tool-call `arguments` string
+that is not valid JSON — the parse throws a raw `SyntaxError`, and because it is not caught, the
+function never reaches its `return`, so the caller receives neither `usage` nor any typed,
+catchable shape. The response was billed; nothing downstream can see that it was.
+
+**Primary ask filed by fwdloop** (its F28), which hit the identical class three times live the
+same day on `deepseek-flash`. This is bareloop's own corroborating evidence, not a duplicate ask —
+per this file's own upstream-vs-consumed split, the fix belongs at bare-agent, filed once, there.
+
+### bareloop's own evidence
+
+Run `mu2bjmed` (docs/logs/FINDINGS.md F179/F180): a live PRD item 33 person-path proof run,
+DeepSeek `deepseek-flash`, `openai-api` provider. The ladder's `revise-1` call crashed with
+`SyntaxError: Unexpected non-whitespace character after JSON at position 5734 (line 1 column
+5735)`, thrown from `JSON.parse(tc.function.arguments)` (`provider-openai.js:135:23`), propagating
+through `Loop.run` uncaught into bareloop's own top-level crash handler. The thrown error carries
+no `usage` — whatever the provider billed for that round is unrecoverable from the error object
+alone.
+
+### bareloop's local mitigation (this commit)
+
+Filing the upstream fix does not wait on it landing: `src/text.js`'s new `callCasualty` predicate
+admits this exact SyntaxError class (`err.name === 'SyntaxError' && /JSON/.test(err.message)`) at
+bareloop's own call seams (`askStructured` in `src/authorflow.js`, `settled` in
+`src/authorscout.js`), converting the throw into a typed, bookable `providerError` instead of an
+uncaught crash. This is containment at bareloop's boundary, not a fix to bare-agent's parse — it
+cannot recover the lost `usage`, so the crashed call still books at `costUsd: null` (the honest
+unknown, F6), never a guessed price. The real fix — wrapping the parse, attaching whatever `usage`
+the response carried to a typed, catchable error — stays upstream, at bare-agent.
+
+### Ask
+
+Wrap the tool-call `arguments` parse in `provider-openai.js` (and audit the equivalent path in
+`provider-anthropic.js`/`provider-gemini.js` for the same shape) in a try/catch that rejects with a
+typed `ProviderError` (`context.bound: 'malformed-tool-call'` or similar, following BA-25/BA-26's
+own `context` convention) carrying the ALREADY-RECEIVED `usage` from `data.usage` — the response
+was billed and the caller should not lose that fact just because one tool call's arguments could
+not be parsed. No JSON repair, no retry — bareloop's own standing rule against both applies
+equally to the ask. bareloop consumes by version bump once it lands.
+
+**2026-09-15 update:** run `mu2cnycb` showed the containment above is not enough on its own (a
+casualty on the FIRST authoring call has no sound declaration to fall back to). A second local
+stopgap, `withMalformedToolCallShim` (`src/authorflow.js`, wired into `makeLoopGenerate` only),
+strips a malformed tool call out of the raw response before bare-agent's own `JSON.parse` can
+throw on it, so the round returns priced instead of crashing and bareloop's existing
+malformed-emission retry ladder can re-ask. This shim is deleted in the same change that bumps to
+a bare-agent release whose `OpenAIProvider.generate` no longer throws on malformed tool-call JSON.
+
+**2026-09-15 update — SHIPPED in bare-agent 0.43.0.** Verified against the installed source:
+`OpenAIProvider`/`OllamaProvider.generate` (`provider-openai.js`, `provider-ollama.js`) now parse
+tool calls through a shared `parseToolCalls` helper (`provider-toolcalls.js`) that never throws —
+on the first unparseable call it returns `toolCalls: []` for the whole round plus its own
+`malformedToolCall: {name, error}` marker, with `usage`/`model` still flowing so the round is
+priced; `Loop.run` (`loop.js`) surfaces that marker unchanged on its return. This is the ask
+exactly as filed (a typed, catchable shape carrying the already-billed usage), via a marker rather
+than a rejected `ProviderError` — bareloop's local shim, `withMalformedToolCallShim`
+(`src/authorflow.js`), is deleted in commit `22c7ae9`, the same change that bumps `bare-agent` to
+`^0.43.0`. `callCasualty`'s SyntaxError admission (`src/text.js`) is also deleted as dead code in
+that commit: no provider bareloop constructs can still throw a JSON SyntaxError out of `generate()`
+after a billed round (Anthropic/Gemini never had the class; every provider's raw-HTTP-body parse
+was already guarded). Closed.

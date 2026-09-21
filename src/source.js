@@ -23,7 +23,7 @@
 // on rather than catch.
 
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
@@ -75,6 +75,43 @@ const MAX_SAME_DAY = 99;
 
 /** @param {string} code @param {string} stop @returns {SourceRefusal} */
 const refuse = (code, stop) => ({ stop, code });
+
+/**
+ * F177 / hamr's ruling (2026-09-14, option A): a `kind: 'repo'` copy's own
+ * `node_modules/` stays hidden from `changedSet` (src/kinds.js) even when the
+ * SOURCE repo's tracked `.gitignore` does not mention it — the person
+ * installs packages into the copy themselves (`missingDependencies`,
+ * `source-deps-missing`), and an unignored `node_modules` then reads as 247
+ * files of "the worker's own writes" (live-verified against a real copy of
+ * pulselog). The fix writes into the copy's PRIVATE exclude file
+ * (`.git/info/exclude`, resolved via `--git-path` rather than assumed —
+ * worktree layouts keep it in the common dir, not the per-worktree one) —
+ * never the tracked `.gitignore` — so the source repo's own files, including
+ * its `.gitignore` bytes, are never touched. Idempotent: an existing
+ * `node_modules/` line is left alone rather than duplicated.
+ *
+ * Plain folder/file/URL sources never call this — they have no `.git` of
+ * their own to carry a private exclude, and (M2b fix 6, above) their
+ * `.gitignore` is deliberately powerless over what the seed holds at all.
+ * @param {string} treeDir
+ * @returns {Promise<SourceRefusal|null>}
+ */
+async function hideNodeModulesInCopy(treeDir) {
+  const gp = await git(treeDir, ['rev-parse', '--git-path', 'info/exclude']);
+  if (!gp.ok) return refuse('source-git-failed', `git rev-parse --git-path info/exclude failed in ${treeDir}: ${gp.err}`);
+  const excludeRel = gp.out.trim().split('\n')[0].trim();
+  if (!excludeRel) return refuse('source-git-failed', `git rev-parse --git-path info/exclude returned nothing in ${treeDir}`);
+  const excludePath = join(treeDir, excludeRel);
+  await mkdir(dirname(excludePath), { recursive: true });
+  let existing = '';
+  try { existing = await readFile(excludePath, 'utf8'); } catch { /* no exclude file yet — created fresh below */ }
+  const hasLine = existing.split('\n').some((l) => l.trim() === 'node_modules/');
+  if (!hasLine) {
+    const sep = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+    await writeFile(excludePath, `${existing}${sep}node_modules/\n`);
+  }
+  return null;
+}
 
 /**
  * Walk from `startDir` upward — inclusive — to the NEAREST ancestor whose own
@@ -611,6 +648,10 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
     // strip the copied hooks (see NO_HOOKS above) — `force: true` because a
     // repo with no hooks configured has no `hooks/` to remove at all
     await rm(join(treeDir, '.git', 'hooks'), { recursive: true, force: true });
+    // F177: hide the copy's own future `node_modules/` before the seed is
+    // committed below — see `hideNodeModulesInCopy`'s docstring
+    const hideStop = await hideNodeModulesInCopy(treeDir);
+    if (hideStop !== null) return hideStop;
   }
   await mkdir(outputDir, { recursive: true });
   // git tracks no empty directories — a `.gitkeep` is what makes `output/`
@@ -710,6 +751,102 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   return { stop: null, into: intoAbs, tree: treeDir, manifestPath, manifest };
+}
+
+/**
+ * The install command a lockfile in `dir` implies — checked in a fixed order
+ * so a tree carrying more than one lockfile still picks exactly one command,
+ * deterministically. `npm install` (no lockfile match) is the fallback, never
+ * a refusal — a repo can legally have dependencies with no committed
+ * lockfile.
+ * @type {ReadonlyArray<{file: string, command: string}>}
+ */
+const LOCKFILE_COMMANDS = Object.freeze([
+  Object.freeze({ file: 'package-lock.json', command: 'npm ci' }),
+  Object.freeze({ file: 'npm-shrinkwrap.json', command: 'npm ci' }),
+  Object.freeze({ file: 'pnpm-lock.yaml', command: 'pnpm install --frozen-lockfile' }),
+  Object.freeze({ file: 'yarn.lock', command: 'yarn install --frozen-lockfile' }),
+  Object.freeze({ file: 'bun.lockb', command: 'bun install --frozen-lockfile' }),
+  Object.freeze({ file: 'bun.lock', command: 'bun install --frozen-lockfile' }),
+]);
+
+/**
+ * THE INSTALL-GAP DETECTOR (PRD item 33 close-out, `docs/product/PRD.md:450-452`,
+ * hamr's ruling 2026-09-14, option A): `prepareSource` copies ONLY git-tracked
+ * files (hamr's ruling, `docs/product/ITEM33-BUILD.md:225-239` — unchanged by
+ * this function), so a JS/TS repo's prepared copy never carries `node_modules`,
+ * and every close stage needing a tool (`tsc`, a test runner) instrument-stops
+ * with nothing telling the person why. bareloop NEVER runs an install itself —
+ * it only ever touches gated primitives, and a shell-out to `npm`/etc from
+ * inside this module would be exactly the verb hamr's law reserves for the
+ * worker's own granted tools, never the arbiter-side machinery that decides
+ * whether a run even starts. This is a pure, $0 DETECTOR: it names the gap and
+ * the exact command a person runs THEMSELVES in the copy, then returns.
+ *
+ * JS/TS ONLY for now — a repo in another detected language returns `null`
+ * here unconditionally (no `package.json` to find), which is the correct
+ * "nothing to report" reading, not a gap in this function; per-language
+ * dependency-gap data for other languages is M3b's job
+ * (`docs/product/ITEM33-BUILD.md`, "M3b"), not this one's.
+ *
+ * SUBFOLDER-AS-REPO (ruling 2 addendum, commit 2a020d8): a subfolder job
+ * freezes the WHOLE repo, so `package.json` may sit at the repo root, at the
+ * subfolder itself, or anywhere between — the SAME nearest-manifest-walking-up
+ * rule `detectLanguage` (`src/detectlang.js`) applies, done independently here
+ * (not by importing `detectLanguage`) to avoid a `source.js` ⇄ `detectlang.js`
+ * import cycle, since `detectlang.js` already imports `nearestGitAncestor`
+ * from this module.
+ *
+ * @param {string} treeDir the prepared tree's root (`prepareSource`'s
+ *   returned `tree`, e.g. `<into>/tree` — a REPO source sits directly at this
+ *   root; every other kind sits under `input/` inside it and has no repo
+ *   dependency story yet, so callers only need this for a `kind: 'repo'`
+ *   manifest)
+ * @param {string} [sourceSubdir] the manifest's own `sourceSubdir` ('' or
+ *   undefined when Source IS the repo root)
+ * @returns {{manager: string, command: string, reason: string}|null} `null`
+ *   when there is nothing to report: no JS/TS manifest found walking up from
+ *   `sourceSubdir` to `treeDir`, the nearest one found has no dependencies,
+ *   `node_modules` is already there, or the manifest cannot even be read as
+ *   JSON (an invalid `package.json` is "cannot tell", never a false alarm).
+ */
+export function missingDependencies(treeDir, sourceSubdir = '') {
+  const root = resolve(treeDir);
+  let dir = sourceSubdir ? resolve(root, sourceSubdir) : root;
+  /** @type {string[]} */
+  const chain = [];
+  for (;;) {
+    chain.push(dir);
+    if (dir === root) break;
+    const parent = dirname(dir);
+    if (parent === dir) break; // filesystem root — safety only, never reachable under `root`
+    dir = parent;
+  }
+
+  for (const d of chain) {
+    const pkgPath = join(d, 'package.json');
+    if (!existsSync(pkgPath)) continue;
+    let pkg;
+    try {
+      pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    } catch {
+      return null; // cannot tell — an invalid package.json is not a fabricated gap
+    }
+    if (pkg === null || typeof pkg !== 'object' || Array.isArray(pkg)) return null;
+    const depCount = Object.keys(pkg.dependencies ?? {}).length + Object.keys(pkg.devDependencies ?? {}).length;
+    if (depCount === 0) return null; // a manifest with nothing to install is not a gap
+    if (existsSync(join(d, 'node_modules'))) return null;
+
+    const lock = LOCKFILE_COMMANDS.find((l) => existsSync(join(d, l.file)));
+    const installCmd = lock ? lock.command : 'npm install';
+    const rel = relative(root, d).split(sep).join('/');
+    return {
+      manager: installCmd.split(' ')[0],
+      command: rel === '' ? installCmd : `cd ${rel} && ${installCmd}`,
+      reason: `${rel === '' ? 'package.json' : `${rel}/package.json`} lists dependencies but the copy has no node_modules`,
+    };
+  }
+  return null;
 }
 
 /**

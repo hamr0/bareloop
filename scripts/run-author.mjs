@@ -61,27 +61,30 @@
 //                  item 34 L17) — `run-interview.mjs` asks for it and writes it
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
-import { dirname, join, resolve, relative, sep } from 'node:path';
+import {
+  readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync,
+} from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   authorCloseForJob, assembleSpec, prepareSigning, refusalEvents,
   VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, questionsFor, AUTHORED_SPEC_FIELDS,
+  REFUSAL_LIB, REFUSAL_CATEGORY,
 } from '../src/authorjob.js';
 import {
-  makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM, runConfirmTurn, makeCostBook,
+  makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM,
 } from '../src/authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from '../src/judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from '../src/job.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
-import { closeJudges } from '../src/kinds.js';
-import { resolveProvider, makeProvider } from '../src/providers.js';
-import { readSourceManifest } from '../src/source.js';
+import { closeJudges, GATE_AUDIT_FILE } from '../src/kinds.js';
+import { resolveProvider, buildRunnerProviders, apiKeyProblem } from '../src/providers.js';
+import { readSourceManifest, missingDependencies } from '../src/source.js';
 import { tallyCalls } from '../src/text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines,
+  openQuestionLines, answeredQuestionLines, fellBackLines,
 } from './author-readout.mjs';
 
 /** the close precheck / seed read spawns real toolchains; the slowest stage is a
@@ -164,6 +167,38 @@ const writeOut = (name, body) => {
   return f;
 };
 
+// F186 — the scout's gate audit (`src/authorscout.js`'s `defaultSurveyor`,
+// default `auditPath = join(workdir, GATE_AUDIT_FILE)`) writes the
+// arbiter's own book DIRECTLY INTO THE PATIENT TREE, at its root — the same
+// place `scripts/run-u.mjs` later looks for a fresh worker run's own audit.
+// The patient's `.gitignore` denies `*.jsonl`, so a cold `git clean -fd`
+// never removes it: it survives across every authoring run against the
+// same tree, accreting rows from every run_id that has ever touched it,
+// until something moves it out of the way. `run-u.mjs`'s own half of this
+// fix (item 3b) moves a STALE audit aside at launch; this half archives
+// THIS run's own audit OUT of the tree the moment authoring is done, so a
+// later run — authoring or worker — never finds it there at all.
+//
+// Idempotent by construction (checks `existsSync` itself) so it is safe to
+// call from more than one exit path without double-moving or throwing on
+// the second call. Best-effort: a rename failure is reported, never thrown
+// — the same F70 reasoning the crash handler already follows (a report
+// that can itself crash defeats the report).
+let gateAuditArchived = false;
+const archiveGateAudit = () => {
+  if (gateAuditArchived) return;
+  gateAuditArchived = true;
+  const treeAudit = join(SOURCE, GATE_AUDIT_FILE);
+  if (!existsSync(treeAudit)) return;
+  const archived = join(OUT, `author-${runid}-${GATE_AUDIT_FILE}`);
+  try {
+    renameSync(treeAudit, archived);
+    console.log(`gate audit ${archived} (moved out of the patient tree — F186)`);
+  } catch (e) {
+    console.error(`gate audit could not be archived out of the patient tree: ${/** @type {NodeJS.ErrnoException} */ (e)?.message ?? e}`);
+  }
+};
+
 // ── --SOURCE MUST BE A PREPARED TREE (PRD item 33 M3, ruling 2) ─────────────
 // `--source` replaced `--patient`; it is no longer just "a repository on the
 // machine" — it must be the FROZEN COPY a source door already produced
@@ -184,14 +219,16 @@ if (!manifestRead.present) {
 }
 // A manifest that EXISTS but names a NON-repo kind (a plain folder/file/URL)
 // is a different thing entirely: the source was prepared correctly, and
-// there is simply no check catalogue for it yet (M3 ruling 7 → M4). PRD item
-// 33 M3 piece 4, step S6 (D5 = A): that honest stop no longer lands HERE —
-// it MOVES to after the confirm turn (below, past the key check and the
-// interactive seam), because a plain-folder job still gets a confirm turn
-// (over the $0 seed listing, no scout) before the "no checks yet" gap is
-// the last word. `IS_REPO_SOURCE` gates the language-detection block right
-// below (a plain folder has no genre to detect) and the branch further down
-// that decides which of the two paths this run actually takes.
+// there is simply no check catalogue for it yet (M3 ruling 7 → M4). F191
+// (D5 amended 2026-09-21): that honest stop fires immediately, right after
+// `author-start`, at $0 — no scout, no confirm turn, no model call. D5's
+// original shape (a plain-folder job gets a paid confirm turn first) is
+// unreachable by construction now that the close catalogue is code-genre
+// only, so no confirm turn over a plain folder could ever confirm a plan
+// this build can close (see the stop itself, below, for the full story).
+// `IS_REPO_SOURCE` gates the language-detection block right below (a plain
+// folder has no genre to detect) and the branch further down that decides
+// which of the two paths this run actually takes.
 const IS_REPO_SOURCE = manifestRead.manifest.kind === 'repo';
 
 // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
@@ -257,6 +294,36 @@ if (IS_REPO_SOURCE) {
     console.log(`Source has more than one supported language's manifest at the same (nearest) level: `
       + `${langResult.candidates.join(', ')} (in ${langResult.dir}).`);
     console.log('This will be asked, interactively, in the confirm turn below — before any paid call.');
+  }
+
+  // ── item 33 close-out: the install gap, refused at $0 (hamr's ruling
+  // 2026-09-14, option A) ── `prepareSource` copies only git-tracked files, so
+  // a JS/TS repo's copy never carries `node_modules`, and every close stage
+  // needing a tool (`tsc`, a test runner) would instrument-stop. bareloop
+  // never runs an install itself — this refuses BEFORE the scout, before the
+  // API key is even read, naming the exact command the person runs themselves
+  // in the copy. Routed through the same `refusalEvents()` channel every other
+  // $0 refusal in this script uses (the `language-unsupported` block above),
+  // never an ad-hoc print, so it folds into the ledger's admission count the
+  // same way.
+  const depsGap = missingDependencies(SOURCE, manifestRead.manifest.sourceSubdir ?? '');
+  if (depsGap) {
+    const detail = `${SOURCE} has a package.json listing dependencies but the copy has no node_modules (${depsGap.reason}) — every `
+      + 'close stage needing a tool would instrument-stop. bareloop never runs an install itself; run this in the copy, then rerun '
+      + `run-author.mjs against the same --source:\n  cd ${SOURCE} && ${depsGap.command}`;
+    const refusal = {
+      kind: 'request-red', verb: 'source-deps-missing', path: 'source', detail,
+      options: [`run \`${depsGap.command}\` inside ${SOURCE}, then rerun run-author.mjs with the same --source`],
+      red: {
+        code: 'request-red', path: 'source', detail, verb: 'source-deps-missing', lib: REFUSAL_LIB, category: REFUSAL_CATEGORY,
+      },
+    };
+    console.log(`REFUSED (${refusal.kind})  verb=${refusal.verb}  path=${refusal.path}`);
+    console.log(refusal.detail);
+    for (const o of refusal.options) console.log(`  · ${o}`);
+    for (const e of refusalEvents(refusal)) emit(e.type, e);
+    console.log(`\nRecorded as admission demand in the spine: ${spineFile}`);
+    process.exit(1);
   }
 }
 
@@ -343,6 +410,13 @@ const draftJudge = resolveDraftJudge(draft);
 const AUTHOR_ENV_KEY = /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).envKey;
 const apiKey = process.env[AUTHOR_ENV_KEY];
 if (!apiKey) { console.error(`${AUTHOR_ENV_KEY} not set (secrets load from the environment — never the tree, never argv)`); process.exit(2); }
+// F181 — a key that carries a line break/control char/stray whitespace (a
+// two-line secret-store entry, e.g.) reads as "set" by the presence check
+// above and then crashes Node's own header-encode inside the paid span. This
+// refuses at the SAME door, before any provider is constructed, and never
+// echoes the value or the reason's source.
+const AUTHOR_KEY_PROBLEM = apiKeyProblem(apiKey);
+if (AUTHOR_KEY_PROBLEM) { console.error(`${AUTHOR_ENV_KEY} ${AUTHOR_KEY_PROBLEM} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`); process.exit(2); }
 /** The judge's key follows the RESOLVED judge provider's own env var, with
  * `JUDGE_API_KEY` as the role-named override in front (PRD item 32.3) — the same
  * contract `scripts/run-u.mjs` keeps, so one story covers both surfaces. When the
@@ -368,7 +442,7 @@ const costLine = (cost) => {
   return `$${cost.costUsd.toFixed(6)} across ${cost.calls?.length ?? 0} call(s) (spend complete)`;
 };
 
-console.log(`== close-authoring, run ${runid} ==  ${PROVIDER_NAME}/${MODEL}`);
+console.log(`== close-authoring, run ${runid} ==  ${PROVIDER_NAME}/${MODEL}${baseUrl === undefined ? '' : `  (endpoint ${redactSecrets(baseUrl)})`}`);
 console.log(`  source   ${SOURCE}`);
 console.log(`  verdict  ${VERDICT}  (the USER's pick — this run authors a close that promises to stay at or below it)`);
 console.log(`  lang     ${LANG}`);
@@ -381,15 +455,41 @@ console.log(`  timeout  ${TIMEOUT_MS}ms per close stage`);
 console.log(`  ${ceilingLine(CEILING_USD)}`);
 console.log('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-const provider = makeProvider(PROVIDER_NAME, { apiKey, model: MODEL, baseUrl });
-emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
+// F190 (docs/logs/FINDINGS.md) — this used to be a hand-rolled `makeProvider`
+// call, a duplicate of the SAME construction `buildRunnerProviders` already
+// owns for `src/cli.js`. Routed through the one owner now: the judge half of
+// this call is a THROWAWAY (`judgeProviderName`/`judgeModel`/`judgeBaseUrl` all
+// equal the author's own identity, so `buildRunnerProviders`' own reuse check
+// returns the SAME instance as `provider` rather than constructing a second
+// one) — the real judge identity is not resolved until after `validateJob`,
+// further down, where a second call takes only its `.judgeProvider`.
+const { provider } = buildRunnerProviders({
+  providerName: PROVIDER_NAME, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl,
+  judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: PROVIDER_NAME, judgeBaseUrl: baseUrl,
+});
+emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, baseUrl: baseUrl ?? null, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
 
-// ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
+// ── EVERYTHING FROM HERE IS INSIDE ONE CATCH (F191) ──────────────────────────
+// This USED TO start ~300 lines further down, right before the repo-shaped
+// scout/authoring call — reasoned as "the argv and config die() paths run
+// before the spine file exists, and a crash record with no spine to land in
+// is a record nobody can read". That reason expired the moment the spine
+// STARTED existing, one line above, at `author-start` — not ~300 lines later.
+// Live run `mu4hc7sp` (F191) proved the gap live: a crash inside the OLD
+// plain-folder confirm-turn branch (which used to sit between `author-start`
+// and the old net's start) left a two-record spine with no ending at all —
+// the exact "died and said nothing" failure this net exists to prevent.
+// Moving the net's start here closes that gap: EVERYTHING from `author-start`
+// on — the plain-folder stop below included — is now covered, whether or not
+// it spends a cent (the crash message below says which).
 //
-// Everything below reports; nothing below governs. The ceiling is enforced where
-// it always was — `capStop`, between metered calls, inside the library — and no
-// decision anywhere reads these.
-
+// `rl` and `metered` are declared here, OUTSIDE the try, rather than where
+// they are constructed/used below — the `catch`/`finally` blocks that read
+// them (the crash message's own spend check, and the reader-close, F71) are
+// SIBLINGS of the try, not nested inside it, so a binding made only inside
+// the try would not exist there.
+/** @type {ReturnType<typeof createInterface>|undefined} */
+let rl;
 /** EVERY METERED CALL, in the order they landed, in the ONE shape `costLine`
  * already reads. A second hand-spelled running total is exactly the pair this
  * file has already paid for once (the cap-halt/pricing-red type), so the totals
@@ -397,6 +497,13 @@ emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, 
  * own cost book uses — rather than accumulated a second time here.
  * @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
 const metered = [];
+try {
+  // ── WHAT IS HAPPENING, AND WHAT IT HAS COST, WHILE IT IS STILL HAPPENING ─────
+//
+// Everything below reports; nothing below governs. The ceiling is enforced where
+// it always was — `capStop`, between metered calls, inside the library — and no
+// decision anywhere reads these.
+
 /** the run's spend AS OF NOW, shaped exactly like a `makeCostBook().report()` so
  * `costLine` renders it with no second spelling. F6 rides intact: an unpriced
  * call makes `costUsd` null and the known half is reported as a `≥` floor. */
@@ -474,7 +581,7 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 // gives backspace and echo, and a piped stdin (a scripted session, a test)
 // behaves identically either way — this is copied from that idiom rather
 // than re-invented.
-const rl = createInterface({ input: process.stdin, terminal: false });
+rl = createInterface({ input: process.stdin, terminal: false });
 const rlLines = rl[Symbol.asyncIterator]();
 /** @returns {Promise<string|null>} the next line, or null at end of input —
  * the same "input ended" signal `run-interview.mjs`'s own `nextLine` uses. */
@@ -553,6 +660,16 @@ const ask = async (step) => {
       console.log(`  not a choice — type a number 1-${keys.length}, or one of: ${keys.join(', ')}`);
     }
   }
+  if (step.kind === 'answer') {
+    // F175's open half (2026-09-16): the plan raised a question of its own —
+    // "Confirm"/"Type the goal yourself" cannot proceed until it is
+    // answered, right here, with no extra model call. A blank line re-asks
+    // the same question ("Start over" or "Fix" are the ways out).
+    console.log(`Question ${step.index} of ${step.total} the plan raised — it must be answered before the plan can `
+      + 'be signed (pick "Start over" or "Fix" instead if you cannot answer it):');
+    console.log(`  ? ${step.question}`);
+    return readFreeText(false);
+  }
   if (step.kind === 'goal') {
     console.log('Type the goal sentence yourself — it REPLACES the drafted one; the checks and protections stand.');
     return readFreeText(false);
@@ -569,105 +686,46 @@ const ask = async (step) => {
  * prompt: reusing `generate` would run the wrong system prompt silently. */
 const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
 
-// ── PLAIN-FOLDER SOURCE: NO SCOUT, A CONFIRM TURN OVER THE SEED LISTING, THEN
-// THE HONEST "NO CHECKS YET" STOP (PRD item 33 M3 piece 4, step S6, D5 = A) ──
-// This branch NEVER falls through to the repo-shaped try/catch below —
-// `process.exit(1)` at its end (or inside `runConfirmTurn`'s own abandon
-// paths) guarantees that, the same way every other early stop in this file
-// does. A plain folder gets no scout (its register is code-only,
-// `src/authorscout.js`) — the listing below is a mechanical directory walk
-// of the FROZEN tree, never survey facts, and the confirm turn runs with
-// `isRepo: false` (skips the repo-only "worse than before" ask and the
-// language pick alike, exactly as `runConfirmTurn` already does for a
-// repo-with-resolved-language job).
+// ── PLAIN-FOLDER SOURCE: A NAMED $0 STOP, NO MODEL CALL (F191; PRD item 33 M3
+// piece 4, step S6, D5 amended 2026-09-21) ──────────────────────────────────
+// This USED TO run the whole confirm turn first (over a $0 manual listing,
+// via `runConfirmTurn`), THEN give this stop once the person confirmed a plan
+// — D5's original shape. Live run `mu4hc7sp` (docs/logs/FINDINGS.md F191)
+// crashed inside that confirm turn instead: `confirmProtections`
+// (`src/authorflow.js`) calls `classGuards` (`src/authoring.js`), which is
+// keyed by CODE LANGUAGE and THROWS on a plain folder's `lang:
+// 'none-detected'` ("no TYPES genre data for language ...") — a plain folder
+// has no language, so the very computation the confirm turn needs to show
+// real, code-derived protections (F174's fix) cannot run for one. The crash
+// left a two-record spine (`author-start`, `author-phase confirm`) with no
+// ending at all.
+//
+// The fix is not a guard around that crash — it is recognizing D5's premise
+// (a plain folder gets a paid confirm turn before the honest "no checks yet"
+// stop) is now unreachable by construction: the close catalogue is code-genre
+// only, so no confirm turn over a plain folder could ever confirm a plan this
+// build can close. The stop fires HERE, immediately, at $0, no scout, no
+// confirm turn, no model call — a plain folder's spine is exactly
+// `author-start` → `author-end{outcome:'not-authored', stop:'non-code-source'}`.
 if (!IS_REPO_SOURCE) {
-  /** a $0, no-git listing of the frozen tree — the same "files that actually
-   * exist" idea `buildSeedListing` gives a repo job, built by hand here
-   * because there is no git seedRef to list from. Capped the same order of
-   * magnitude as the repo listing's own LIST_CAP so a very large plain
-   * folder cannot blow the prompt open.
-   * @param {string} dir @param {number} cap @returns {string[]} */
-  const listPlainFolder = (dir, cap = 2000) => {
-    /** @type {string[]} */
-    const out = [];
-    const walk = (/** @type {string} */ d) => {
-      if (out.length >= cap) return;
-      for (const entry of readdirSync(d, { withFileTypes: true })) {
-        if (out.length >= cap) return;
-        const full = join(d, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else out.push(relative(SOURCE, full).split(sep).join('/'));
-      }
-    };
-    walk(dir);
-    return out;
-  };
-  const files = listPlainFolder(SOURCE);
-  const listingBlock = [
-    'FILES THAT ACTUALLY EXIST IN THE FROZEN TREE — listed mechanically (a plain directory walk,',
-    'never a survey): a path not in this list DOES NOT EXIST, whatever it sounds like it should be called.',
-    '',
-    ...files.map((f) => `  ${f}`),
-  ].join('\n');
-  onPhase('confirm', {});
-  const confirmBook = makeCostBook({ ceilingUsd: CEILING_USD, onCall });
-  const confirm = await runConfirmTurn({
-    verdictType: VERDICT, answers, questions: LIVE_CLASSES.includes(VERDICT) ? questionsFor(VERDICT) : null,
-    facts: null, listing: listingBlock, writeScope: null, isRepo: false, lang: LANG,
-    generate: confirmGenerate, book: confirmBook, ask, onPhase,
-  });
-  onPhase('confirm-turn-done', { ok: confirm.ok, stop: confirm.stop, rounds: confirm.rounds });
-  writeOut('authored.json', {
-    ok: false, confirmed: confirm.ok ? confirm.accepted : null,
-    stop: confirm.ok ? 'non-code-source' : confirm.stop, cost: confirm.cost, reds: confirm.reds,
-  });
-  if (!confirm.ok) {
-    // the confirm turn itself did not reach a signable plan (abandoned, a
-    // cap/pricing stop, a provider/artifact red, or the person chose to
-    // start over) — THAT is the stop this run ends on, never silently
-    // overwritten by the "no checks yet" one below, which only applies to a
-    // plan the person actually confirmed.
-    console.log(`\n${String(confirm.stop).toUpperCase()} — the confirm turn did not produce a signed plan.`);
-    for (const red of confirm.reds ?? []) {
-      console.log(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
-      emit('job-red', red);
-    }
-    emit('author-end', { outcome: 'not-authored', stop: confirm.stop });
-    console.log(`\nspine      ${spineFile}`);
-    process.exit(1);
-  }
-  // the person CONFIRMED a plan for a job this build still cannot close — the
-  // SAME honest stop this used to give before any question was even asked,
-  // now given after the confirm turn instead (D5).
-  console.log(`Source is not a code repository — it is a plain ${manifestRead.manifest.kind} job. bareloop has no checks for this kind`);
-  console.log('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build). Nothing was authored.');
+  const message = "This is a plain folder, not a code project. bareloop can't check this kind of "
+    + 'job yet. Nothing was spent. Your source was not changed.';
+  console.log(`\n${message}`);
   const red = {
     code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',
     detail: `--source ${SOURCE} freezes a "${manifestRead.manifest.kind}" job — the close catalogue is code-genre only today.`,
   };
   emit('job-red', red);
+  writeOut('authored.json', { ok: false, confirmed: null, stop: 'non-code-source', cost: null, reds: [red] });
   emit('author-end', { outcome: 'not-authored', stop: 'non-code-source' });
-  console.log(`\nspine      ${spineFile}`);
-  process.exit(1);
-}
+  process.exitCode = 1;
+} else {
 
-// ── EVERYTHING PAID FOR, INSIDE ONE CATCH ────────────────────────────────────
-// The span from here to the end of the main flow is the fallible one: a real
-// scout, a real model call, and a real toolchain per close stage. When it threw,
-// the error went to the operator's terminal and the spine said NOTHING — one
-// `author-start` line and then silence, which is byte-for-byte what a run still
-// in flight looks like. A log that cannot tell a death from a hang is not a
-// record of either.
-//
-// Nothing ABOVE this line is inside it, deliberately: the argv and config `die()`
-// paths run before the spine file exists, and a crash record with no spine to
-// land in is a record nobody can read — those still stop loud on stderr and 2.
-//
-// The catch RETRIES NOTHING and SWALLOWS NOTHING. The operator still gets the
-// whole error, first and verbatim; the spine additionally gets a bounded, redacted
-// body saying the run died and roughly where.
-try {
-  // ── 1. answers → scout → the model fills the form → a close DECLARATION ──────
+// ── THE REPO-SHAPED CONTINUATION OF THE SAME TRY THAT OPENED RIGHT AFTER
+// `author-start`, above — see that comment for why the net starts there and
+// not here. What follows is: a real scout, a real model call, and a real
+// toolchain per close stage.
+// ── 1. answers → scout → the model fills the form → a close DECLARATION ──────
   // `provider` drives the scout; `generate` is the declaration model boundary (one
   // bare-agent Loop per call, the tool wired to end the call it is used in).
   const authored = await authorCloseForJob({
@@ -716,6 +774,7 @@ try {
   console.log(`authoring  ${authored.ok ? 'OK' : 'NOT OK'}  stop=${authored.stop ?? 'none'}  seed=${authored.seedRef ?? 'unread'}`);
   console.log(`cost       ${costLine(authored.cost)}`);
   console.log(`written    ${authoredFile}`);
+  for (const l of fellBackLines(authored.authoring)) console.log(l);
 
   // THE CONFIRM TURN'S OWN STOPS (PRD item 33 M3 piece 4, step S4) — neither is
   // a refusal (`authored.refusal` is null on both) and neither is a red
@@ -877,8 +936,45 @@ try {
       const judge = judges
         ? resolveJobJudge(spec, PROVIDER_NAME, resolveWorkerModel)
         : null;
+      // F181 — the judge key is required exactly when `judges` is true (this
+      // script has no presence check on it today; adding one is out of this
+      // finding's scope). What this door DOES owe, the same as the worker
+      // key above: a resolved value that IS present but carries a shape an
+      // HTTP header cannot refuses here, before the calibration gate spends
+      // anything, rather than crashing mid-call.
+      if (judges) {
+        const judgeKeyValue = judgeKeyFor(judge.provider);
+        const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
+        if (judgeKeyProblem) {
+          const judgeEnvName = process.env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : resolveProvider(judge.provider).envKey;
+          console.error(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
+          // F186 — the scout above already ran and may have left its own gate
+          // audit in the tree; this is a process.exit() path, which skips the
+          // finally block below (and the common tail after it), so it is
+          // archived here explicitly rather than relying on either.
+          archiveGateAudit();
+          process.exit(2);
+        }
+      }
+      // F190 — `baseUrl` rides along only when the judge is the SAME provider
+      // as the author/worker: a spec's `baseUrl` is the AUTHOR's endpoint, and
+      // handing it to a different vendor's client is the silent-misconfiguration
+      // class `endpointKey` exists to prevent (a DeepSeek key sent to the
+      // openai-api default host, e.g.). Routed through `buildRunnerProviders`
+      // (the ONE owner of this construction — `src/cli.js` and, above,
+      // this file's own author provider) rather than a hand-rolled
+      // `makeProvider` call: the `providerName`/`apiKey`/`model`/`tierModels`/
+      // `baseUrl` half repeats the author's own identity (so its `provider`
+      // half of the return, unused here, is a throwaway — never a second live
+      // instance of the author's client), and the `judge*` half is this run's
+      // OWN resolved judge — the identical conditional `scripts/run-u.mjs`'s
+      // own call already applies.
       const judgeProvider = judge
-        ? makeProvider(judge.provider, { apiKey: judgeKeyFor(judge.provider), model: judge.model })
+        ? buildRunnerProviders({
+          providerName: PROVIDER_NAME, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl,
+          judgeApiKey: judgeKeyFor(judge.provider), judgeModel: judge.model, judgeProviderName: judge.provider,
+          judgeBaseUrl: judge.provider === PROVIDER_NAME ? baseUrl : undefined,
+        }).judgeProvider
         : null;
       if (judges) {
         console.log(`\ncalibration gate — REAL judge calls at ${judge.model} on ${judge.provider}, one per case plus the injection battery.`);
@@ -985,16 +1081,36 @@ try {
         console.log(`  the resolved spec is ${specFile} and it hashes to ${hash}`);
         console.log('  read the seed evidence above; if the close measures your job, the signature is yours to give.');
         for (const l of openQuestionLines(authored.confirmed)) console.log(`  ${l}`);
+        for (const l of answeredQuestionLines(authored.confirmed)) console.log(`  ${l}`);
+        // F185 — the loose end this fix closes: until now this screen named no
+        // command that actually RUNS the spec it just wrote, so reaching a
+        // running job from here needed a developer to hand-add a JOBS row and
+        // copy this file into jobs/. scripts/run-u.mjs now accepts `--spec
+        // <path>` and reads this SAME prepared copy's own source manifest for
+        // the workdir and seed — so the command below is the whole of what a
+        // person needs to run their own job, nothing left to hand off.
+        // `providerEntry.envKey` (never a hardcoded ANTHROPIC_API_KEY) is the
+        // same F187 rule scripts/run-u.mjs's own hint already follows.
+        console.log('\nTo run it (the same signature and gates as any other job — nothing here bypasses them):');
+        console.log(`  ${providerEntry.envKey}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}`);
         emit('author-end', { outcome: 'prepared', specHash: hash });
       }
     }
   }
+}
 } catch (err) {
   // THE OPERATOR'S COPY FIRST, and whole — the same bytes the unhandled rejection
   // used to print, on the same stream. First because it must not depend on the two
   // writes below succeeding: a diagnosis that reaches the person only if the disk
   // is writable is a diagnosis with a dependency nobody asked for.
-  console.error('\nCRASHED — the authoring run died inside the paid span. Nothing was signed, and nothing was retried.');
+  //
+  // F191 — the net now starts right after `author-start`, before ANY paid call
+  // (the plain-folder stop above spends nothing, ever). "died inside the paid
+  // span" was already false for that path and would be false again for any
+  // future $0-only stop this net comes to cover — `metered.length` (hoisted
+  // above the try for exactly this reason) says which happened, honestly,
+  // rather than a fixed claim baked into the message.
+  console.error(`\nCRASHED — the authoring run died ${metered.length ? 'inside the paid span' : 'before any paid call'}. Nothing was signed, and nothing was retried.`);
   console.error(err);
   // ...and the spine's copy, through the ONE persist boundary (`crashRecord` →
   // `scrubRaw` → the same `SECRET_PATTERNS` inventory the validator reds on). A
@@ -1030,11 +1146,28 @@ try {
   // stdin. BEST-EFFORT (F70's rule again) — closing the interactive seam must
   // never take the readout it follows down with it.
   try { rl.close(); } catch { /* see onPhase */ }
+  // F186 — same reasoning, same place: EVERY exit path that reaches this
+  // finally (a refusal, a failed gate, a signed readout, or the crash catch
+  // above) may have run the scout, and the scout's gate audit must never be
+  // left in the patient tree for a later run to inherit. archiveGateAudit()
+  // is idempotent, so this is safe even on the one path (the judge-key
+  // refusal above) that already called it before exiting early.
+  archiveGateAudit();
 }
 
 // The hard line, on the artifacts this run just wrote. Count and PATH only —
 // echoing a matched secret to stdout is the same leak, one hop on.
-const written = [spineFile, join(OUT, 'authored.json'), join(OUT, 'resolved-spec.json'), join(OUT, 'signing.json')].filter((f) => existsSync(f));
+//
+// (discovered live, item 4 of the 2026-09-21 /debrief fix-all-4 batch): a
+// crash mid-writeOut can leave a path here naming something that EXISTS but
+// is NOT the file this run wrote (e.g. a pre-existing directory the write
+// tripped on) — `existsSync` alone is true for a directory, and
+// `readFileSync` on one throws EISDIR, uncaught, AFTER the try/catch above
+// already handled the real crash — a second, unrelated crash stealing the
+// first one's honest report. `statSync(f).isFile()` scopes this scan to
+// what was actually written, never what merely exists at that path.
+const written = [spineFile, join(OUT, 'authored.json'), join(OUT, 'resolved-spec.json'), join(OUT, 'signing.json')]
+  .filter((f) => existsSync(f) && statSync(f).isFile());
 const leaks = written.flatMap((f) => scanSecrets(readFileSync(f, 'utf8')).map(() => f));
 if (leaks.length) {
   console.log(`\nLEAK: ${leaks.length} secret-shaped string(s) across ${new Set(leaks).size} written file(s) — the hard line is broken; do NOT sign this spec`);

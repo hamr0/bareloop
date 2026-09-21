@@ -31,7 +31,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { AGGREGATES, SIGNS, MAX_TERMS, EXIT_GREEN, EXIT_RED, EXIT_STOP } from '../src/kinds.js';
 import {
@@ -48,7 +48,7 @@ import {
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
   catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
-  applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose,
+  applyGenreEnv, resolveSourcePrefixes, makeCostBook, makeLoopGenerate, authorClose, askStructured,
 } from '../src/authorflow.js';
 import { SCOUT_ATTEMPTS } from '../src/authorscout.js';
 import { scrubRaw } from '../src/text.js';
@@ -106,7 +106,7 @@ function goodDeclaration(lang = 'js', targets = TARGETS) {
 /**
  * A scripted model boundary. Each entry either DELIVERS a declaration through
  * the tool (`declaration` / `declarations`) or delivers only text.
- * @param {{declaration?: any, declarations?: any[], text?: string, costUsd?: number|null, error?: string|null}[]} script
+ * @param {{declaration?: any, declarations?: any[], text?: string, costUsd?: number|null, error?: string|null, throws?: Error}[]} script
  */
 function scriptGenerate(script) {
   /** @type {any[]} */
@@ -114,6 +114,10 @@ function scriptGenerate(script) {
   const generate = async (/** @type {any} */ messages, /** @type {any} */ tools, /** @type {any} */ opts) => {
     const spec = script[Math.min(calls.length, script.length - 1)] ?? {};
     calls.push({ messages, tools, opts });
+    // F179 fixture support: a call that THROWS rather than resolves — the shape
+    // `askStructured`'s generate seam must survive without discarding a sound
+    // prior declaration (see the F176 fallback tests this ladder already has).
+    if (spec.throws) throw spec.throws;
     const tool = tools.find((/** @type {any} */ t) => t.name === DECLARATION_TOOL_NAME);
     const delivered = spec.declarations ?? (spec.declaration ? [spec.declaration] : []);
     if (tool) for (const d of delivered) await tool.execute(d);
@@ -351,6 +355,28 @@ test('confirmedBlock renders notChecked when present, and nothing extra when abs
 
   const withoutGap = confirmedBlock({ checks: ['a'], protections: ['b'] });
   assert.ok(!withoutGap.includes('THE PERSON ASKED FOR THESE'));
+});
+
+// F175's open half (run mu0voeo4, hamr's 2026-09-16 ruling): the confirmed
+// block shows the Q:/A: pairs the person answered inline as BINDING, never
+// merged into (or worded like) `openQuestions` ("could not resolve" is a
+// different meaning), and is silent when there are none.
+test('confirmedBlock renders answeredQuestions as its own binding block, and nothing extra when absent (F175 open half)', () => {
+  const answeredQuestions = ['Q: strict mode meaning?\nA: flip tsconfig strict:true'];
+  const withAnswers = confirmedBlock({ checks: ['a'], protections: ['b'], answeredQuestions });
+  assert.match(withAnswers, /QUESTIONS THE PERSON ANSWERED — these answers are binding; compose to them, never re-decide them/);
+  assert.match(withAnswers, /flip tsconfig strict:true/);
+
+  const withoutAnswers = confirmedBlock({ checks: ['a'], protections: ['b'] });
+  assert.ok(!withoutAnswers.includes('QUESTIONS THE PERSON ANSWERED'));
+
+  // the two blocks are independent and never merge
+  const withBoth = confirmedBlock({
+    checks: ['a'], protections: ['b'], answeredQuestions, openQuestions: ['still unclear about Y'],
+  });
+  assert.match(withBoth, /QUESTIONS THE PERSON ANSWERED/);
+  assert.match(withBoth, /OPEN QUESTIONS the confirm turn could not resolve/);
+  assert.match(withBoth, /still unclear about Y/);
 });
 
 test('authorClose: priorCalls/priorRaws (the confirm turn\'s own spend) are absorbed beside the scout\'s', async () => {
@@ -1332,6 +1358,137 @@ test('authorClose: a last revision that REGRESSES keeps the last accepted close 
   assert.ok(r.reds.some((/** @type {any} */ x) => x.code === 'guard-missing'), 'the rejected revision is reported, never hidden');
 });
 
+// ── 6b. F176 — a later revision that measures WORSE (instrument-stops) than an
+// earlier one must not be kept just because it was last. Row shapes below are
+// copied from the real archived run that found this (`mu0voeo4`,
+// docs/logs/FINDINGS.md F176): a `count-not-worse` stage instrument-stops with
+// `exitCode: 97` and a `stop` detail naming the broken parser term — never a
+// hand-invented shape.
+
+/** a seed-read stub whose verdict per CALL matches the real F176 row shapes:
+ * call 1 (author) and call 2 (revise-1) sound-green, call 3 (revise-2) every
+ * stage instrument-stops, exactly as `typecheck-strict-checks-js-zero-errors`
+ * and its outside-scope twin both did in the real run. */
+function f176SeedRead() {
+  let call = 0;
+  /** @type {any[][]} */
+  const seen = [];
+  const fn = async (/** @type {any} */ declaration) => {
+    call += 1;
+    const rows = declaration.stages.map((/** @type {any} */ s) => (call === 3
+      ? {
+        verdict: 'instrument-stop', exitCode: 97, value: null, baseline: null, baselineSource: null,
+        gapLines: ['TEST:: INSTRUMENT: term 0 captured "error TS7006", which is not an integer'], judged: true,
+        stage: s.name, kind: s.kind,
+        detail: { stop: 'INSTRUMENT: term 0 captured "error TS7006", which is not an integer', fault: 'crashed' },
+      }
+      : {
+        verdict: 'green', exitCode: 0, value: 0, baseline: 0, baselineSource: null, gapLines: [], judged: true,
+        stage: s.name, kind: s.kind, detail: {},
+      }));
+    seen.push(rows);
+    return rows;
+  };
+  return { fn, seen };
+}
+
+test('authorClose (F176): revise-2 instrument-stops after revise-1 measured sound — falls back to the NEWEST sound iteration', async () => {
+  const decl1 = { ...goodDeclaration(), notes: ['author'] };
+  const decl2 = { ...goodDeclaration(), notes: ['revise-1'] };
+  const decl3 = { ...goodDeclaration(), notes: ['revise-2'] };
+  const { generate } = scriptGenerate([{ declaration: decl1 }, { declaration: decl2 }, { declaration: decl3 }]);
+  const { fn, seen } = f176SeedRead();
+  /** @type {any[]} */
+  const phases = [];
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, onPhase: (phase, data) => phases.push({ phase, data }) });
+
+  // proves all THREE calls actually happened (author AND revise-1 sound, so
+  // "newest sound" — revise-1, not the oldest sound one, author — is what the
+  // fallback logic is actually proving)
+  assert.equal(seen.length, 3);
+
+  assert.equal(r.ok, true);
+  assert.equal(r.stop, 'max-revisions', 'the stop reason itself is never changed by the fallback');
+  assert.equal(r.finalFrom, 'revise-1');
+  assert.deepEqual(r.declaration.notes, ['revise-1']);
+  assert.deepEqual(r.seedRead, seen[1], 'the returned seedRead is revise-1\'s OWN measured rows, not revise-2\'s');
+  assert.ok(r.fellBack);
+  assert.equal(r.fellBack.from, 'revise-2');
+  assert.equal(r.fellBack.to, 'revise-1');
+  assert.ok(r.fellBack.brokenStages.length > 0, 'names which stage(s) instrument-stopped on the dropped iteration');
+  for (const s of r.fellBack.brokenStages) assert.ok(decl3.stages.some((/** @type {any} */ st) => st.name === s));
+
+  // every measured iteration is still in the full honest record
+  const measuredCalls = r.iterations.filter((/** @type {any} */ it) => Array.isArray(it.seedRead)).map((/** @type {any} */ it) => it.call);
+  assert.deepEqual(measuredCalls, ['author', 'revise-1', 'revise-2']);
+
+  // said LOUDLY: an onPhase event fires for the fallback
+  const fallbackPhase = phases.find((/** @type {any} */ p) => p.phase === 'author-fallback');
+  assert.ok(fallbackPhase, 'the fallback is reported through onPhase, not only in the return value');
+  assert.deepEqual(fallbackPhase.data, r.fellBack);
+});
+
+test('authorClose (F176): the last measured iteration IS sound — byte-identical to today, fellBack is null', async () => {
+  const decl1 = { ...goodDeclaration(), notes: ['author'] };
+  const decl2 = { ...goodDeclaration(), notes: ['revise-1'] };
+  const { generate } = scriptGenerate([{ declaration: decl1 }, { declaration: decl2 }]);
+  const { fn } = scriptSeedRead(); // every stage 'red' by default — sound (a real verdict, never instrument-stop)
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, maxRevisions: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(r.finalFrom, 'revise-1');
+  assert.equal(r.fellBack, null);
+});
+
+test('authorClose (F176): NO measured iteration is sound — unchanged (accepted stays the last one, honestly unsound)', async () => {
+  const decl1 = { ...goodDeclaration(), notes: ['author'] };
+  const decl2 = { ...goodDeclaration(), notes: ['revise-1'] };
+  const { generate } = scriptGenerate([{ declaration: decl1 }, { declaration: decl2 }]);
+  const fn = async (/** @type {any} */ declaration) => declaration.stages.map((/** @type {any} */ s) => ({
+    verdict: 'instrument-stop', exitCode: 97, value: null, baseline: null, baselineSource: null,
+    gapLines: ['TEST:: INSTRUMENT: always broken'], judged: true, stage: s.name, kind: s.kind,
+    detail: { stop: 'INSTRUMENT: always broken', fault: 'crashed' },
+  }));
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn, maxRevisions: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(r.finalFrom, 'revise-1', 'no sound iteration exists to fall back to — the last one stands');
+  assert.equal(r.fellBack, null);
+});
+
+test('authorClose (F176): droppedEnv on a fallback is read from the FALLEN-BACK iteration, not left at whatever the dropped iteration set', async () => {
+  // A model-declared genre-owned env name (MYPYPATH for python) reds at
+  // VALIDATION (`genre-owned-env`) before it ever reaches applyGenreEnv, so a
+  // measured iteration's `dropped` is always `[]` in practice — there is no
+  // declaration a model can legally submit that reaches measurement with a
+  // non-empty `dropped`. This test pins the field's PLUMBING (it is read per
+  // iteration from `measuredIterations[k].droppedEnv`, never from the
+  // module-level `droppedEnv` the dropped iteration last overwrote) rather
+  // than a distinguishing non-empty value, which the validator makes
+  // unreachable by construction.
+  const decl1 = { ...goodDeclaration('python'), notes: ['author'] };
+  const decl2 = { ...goodDeclaration('python'), notes: ['revise-2'] };
+  const { generate } = scriptGenerate([{ declaration: decl1 }, { declaration: decl2 }]);
+  let call = 0;
+  const fn = async (/** @type {any} */ declaration) => {
+    call += 1;
+    return declaration.stages.map((/** @type {any} */ s) => (call === 2
+      ? {
+        verdict: 'instrument-stop', exitCode: 97, value: null, baseline: null, baselineSource: null,
+        gapLines: ['TEST:: INSTRUMENT: broke'], judged: true, stage: s.name, kind: s.kind,
+        detail: { stop: 'INSTRUMENT: broke', fault: 'crashed' },
+      }
+      : {
+        verdict: 'green', exitCode: 0, value: 0, baseline: 0, baselineSource: null, gapLines: [], judged: true,
+        stage: s.name, kind: s.kind, detail: {},
+      }));
+  };
+  const r = await authorClose({
+    ...baseArgs(), lang: /** @type {any} */ ('python'), generate, seedReadFn: fn, maxRevisions: 1,
+  });
+  assert.equal(r.finalFrom, 'author');
+  assert.ok(r.fellBack);
+  assert.deepEqual(r.genreEnv.dropped, [], 'no model-declared conflict on either iteration, so both are legitimately empty');
+});
+
 // ── 7. the text fallback, and the consequence of an inexpressible locked kind ─
 
 test('the text fallback parses a fenced declaration and is the ONLY locked-kind demand channel', async () => {
@@ -2009,4 +2166,321 @@ test('authorClose: a provider casualty still leaves its raw on the trail', async
   assert.equal(r.stop, 'provider-red');
   assert.deepEqual(r.raws.map((x) => x.label), r.cost.calls.map((c) => c.label));
   assert.match(r.raws[0].text, /partial answer before the socket died/);
+});
+
+// ── F179/F180 — a malformed tool-call JSON no longer crashes the loop ──────
+//
+// Run mu2bjmed (docs/logs/FINDINGS.md F179/F180): bare-agent 0.42.0's
+// `OpenAIProvider.generate` used to do `JSON.parse(tc.function.arguments)`
+// with no try/catch, so a model's malformed tool-call arguments threw a raw
+// SyntaxError AFTER the billed HTTP round. Unwrapped, that throw escaped
+// `askStructured` entirely — discarding a sound prior declaration (F179) and
+// skipping `book.add`, so the billed call went unbooked (F180). bare-agent
+// 0.43.0 fixed the root cause upstream (BA-27, `parseToolCalls` shared by
+// OpenAIProvider/Ollama): a malformed tool-call arguments string now returns
+// a priced round with `toolCalls: []` plus its own `malformedToolCall`
+// marker instead of throwing — `Loop.run` surfaces that marker unchanged on
+// its return. bareloop's local `withMalformedToolCallShim` stopgap
+// (2026-09-15, commit 96866d5) is deleted; these tests now exercise the REAL
+// upstream mechanism through a real `OpenAIProvider` instance (only `_request`
+// stubbed, the transport seam) and a real `Loop` via `makeLoopGenerate`.
+// `callCasualty` (src/text.js) keeps only the idle-timeout admission — the
+// SyntaxError branch it used to carry is dead code now that no provider
+// bareloop constructs can throw a JSON SyntaxError out of `generate()`.
+
+test('askStructured (F179, real bare-agent 0.43.0 upstream fix — RETRY not repair): a REAL OpenAIProvider whose transport returns malformed tool-call JSON never throws — with no retries left it reads as artifact-red, the call is booked at a REAL priced cost (never null)', async () => {
+  // bare-agent 0.43.0's OpenAIProvider.generate (BA-27) parses tool calls via
+  // the shared `parseToolCalls` helper: on the first unparseable call it
+  // returns `toolCalls: []` plus a `malformedToolCall` marker, with usage/model
+  // still flowing — the round is priced, never thrown. askStructured reads
+  // that as its own pre-existing 'no declaration call' shape, tagged with the
+  // malformed-tool-call-arguments axis so a caller can tell the two apart.
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  // stubbed at the LOWEST point short of a real socket: `_request` is the one
+  // method that talks to the transport — everything above it (temperature
+  // fallback, tool-call mapping, the JSON.parse that used to throw) is
+  // bare-agent's own real code, unmodified, exactly as it ran in mu2bjmed.
+  provider._request = async () => ({
+    choices: [{
+      message: {
+        content: '',
+        // valid JSON plus one extra trailing brace — the shape fwdloop's F28
+        // sample captured and this run's own message is consistent with
+        tool_calls: [{ id: 'call_1', function: { name: 'test_tool', arguments: '{"a":1}}' } }],
+      },
+      finish_reason: 'tool_calls',
+    }],
+    usage: { prompt_tokens: 120, completion_tokens: 40 },
+    model: 'deepseek-flash',
+  });
+
+  const generate = makeLoopGenerate(provider);
+  const book = makeCostBook();
+  const channel = {
+    name: 'test_tool',
+    instruction: 'call test_tool exactly once',
+    tool: (/** @type {{calls: any[]}} */ box) => ({
+      name: 'test_tool',
+      description: 'a test tool',
+      parameters: { type: 'object', properties: { a: { type: 'number' } } },
+      execute: async (/** @type {any} */ a) => { box.calls.push(a); return 'ack'; },
+    }),
+  };
+
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'hi' }], generate, mode: 'tool', retries: 0, label: 'author', book, channel,
+  });
+
+  assert.equal(r.artifact, null);
+  assert.equal(r.providerError, null, 'no throw escaped, and there is no retry left — this is an artifact-red, not a provider casualty');
+  assert.equal(r.red?.axis, 'malformed-tool-call-arguments');
+  assert.match(r.red?.detail ?? '', /not valid JSON/);
+  assert.match(r.red?.detail ?? '', /nothing is repaired/);
+
+  const report = book.report();
+  assert.equal(report.calls.length, 1, 'F180: the billed call IS booked, not skipped');
+  assert.equal(report.calls[0].label, 'author');
+  assert.equal(typeof report.calls[0].costUsd, 'number', 'F179 2026-09-15: the round is PRICED off real usage — never a null-cost casualty for this path any more');
+  assert.equal(report.spendComplete, true);
+  assert.equal(report.nullCostCalls, 0);
+});
+
+// bare-agent 0.43.0 (BA-27) fixed the malformed-tool-call SyntaxError upstream
+// (see callCasualty in src/text.js — its SyntaxError branch was removed as
+// dead code, no provider bareloop constructs can still throw it), so this
+// authorClose-level fallback-to-newest-sound-iteration coverage (F176/F179)
+// is exercised here through an admitted casualty class that IS still real
+// (an idle-socket ETIMEDOUT), not the retired SyntaxError shape.
+test('authorClose (F179/F180 via the ladder): revise-1 throws an ETIMEDOUT casualty — the author call\'s sound declaration is kept, not discarded', async () => {
+  const decl = goodDeclaration();
+  const idleTimeout = /** @type {any} */ (new Error('idle socket'));
+  idleTimeout.code = 'ETIMEDOUT';
+  const { generate } = scriptGenerate([{ declaration: decl }, { throws: idleTimeout }]);
+  const { fn } = scriptSeedRead(); // every stage 'red' — a real verdict, no instrument-stop: SOUND
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: fn });
+
+  assert.equal(r.ok, true, 'F179: the author call\'s already-measured, already-sound declaration is not thrown away');
+  assert.equal(r.stop, 'provider-red');
+  assert.equal(r.finalFrom, 'author');
+  // the RETURNED declaration is the validated/genre-injected one, not the raw
+  // scripted input verbatim (validateDeclaration/applyGenreEnv normalize the
+  // parser shape) — the stage names surviving is what proves it is still the
+  // author call's own declaration, never revise-1's (which never measured)
+  assert.deepEqual(r.declaration.stages.map((/** @type {any} */ s) => s.name), decl.stages.map((/** @type {any} */ s) => s.name));
+  assert.equal(r.cost.spendComplete, false, 'F180: the crashed revise-1 call still counts against the honest total');
+  assert.equal(r.cost.nullCostCalls, 1);
+  assert.ok(r.cost.calls.some((/** @type {any} */ c) => c.label === 'revise-1'), 'F180: the billed-but-crashed call IS in the book, not silently missing');
+});
+
+test('askStructured: a thrown TimeoutError-shaped error lands as providerError, cost null — same seam, the pre-existing casualty class', async () => {
+  const book = makeCostBook();
+  const err = /** @type {any} */ (new Error('idle socket'));
+  err.code = 'ETIMEDOUT';
+  const generate = async () => { throw err; };
+  const channel = { name: 't', instruction: 'x', tool: () => ({ name: 't', execute: async () => 'ack' }) };
+  const r = await askStructured({ messages: [], generate, mode: 'tool', retries: 0, label: 'author', book, channel });
+  assert.equal(r.artifact, null);
+  assert.equal(r.providerError, 'idle socket');
+  assert.equal(book.report().calls[0].costUsd, null);
+});
+
+test('askStructured: a thrown TypeError (a programming bug) still rejects — never laundered into a providerError', async () => {
+  const book = makeCostBook();
+  const generate = async () => { throw new TypeError('cannot read property of undefined'); };
+  const channel = { name: 't', instruction: 'x', tool: () => ({ name: 't', execute: async () => 'ack' }) };
+  await assert.rejects(
+    askStructured({ messages: [], generate, mode: 'tool', retries: 0, label: 'author', book, channel }),
+    TypeError,
+  );
+  assert.equal(book.report().calls.length, 0, 'an un-admitted throw never reaches book.add either');
+});
+
+test('askStructured: a HaltError-shaped throw still rejects — a governance halt is never laundered into a mere call failure', async () => {
+  const { HaltError } = await import('bare-agent');
+  const book = makeCostBook();
+  const generate = async () => { throw new HaltError('budget exhausted', { rule: 'test-rule' }); };
+  const channel = { name: 't', instruction: 'x', tool: () => ({ name: 't', execute: async () => 'ack' }) };
+  await assert.rejects(
+    askStructured({ messages: [], generate, mode: 'tool', retries: 0, label: 'author', book, channel }),
+    HaltError,
+  );
+  assert.equal(book.report().calls.length, 0);
+});
+
+// ── F179 2026-09-15 ruling — RETRY, never repair ────────────────────────────
+//
+// Run mu2cnycb: bare-agent 0.42.0's OpenAIProvider.generate threw the malformed
+// tool-call SyntaxError on the FIRST author call, so 318e066's provider-red
+// stopped the run with no sound declaration to fall back to. bare-agent 0.43.0
+// (BA-27) fixed this upstream: `OpenAIProvider.generate` returns the round
+// priced (real usage/metrics) with zero tool calls plus its own
+// `malformedToolCall` marker instead of throwing — askStructured's EXISTING
+// malformed-emission retry ladder (MAX_STRUCTURE_RETRIES) re-asks exactly as
+// it already does for 'no-declaration-tool-call'. No local shim involved.
+
+/** the shape `OpenAIProvider._request` resolves with — one choice, one tool call. */
+const openaiChoice = (/** @type {string} */ toolName, /** @type {string} */ argsJson) => ({
+  choices: [{
+    message: { content: '', tool_calls: [{ id: 'call_1', function: { name: toolName, arguments: argsJson } }] },
+    finish_reason: 'tool_calls',
+  }],
+  usage: { prompt_tokens: 120, completion_tokens: 40 },
+  model: 'deepseek-flash',
+});
+
+test('makeLoopGenerate (F179): a REAL OpenAIProvider malformed tool-call round 1, valid round 2 — the sound declaration lands on the 2nd call, both calls priced, the reject block names malformed arguments', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const decl = goodDeclaration();
+  let call = 0;
+  // stubbed at the LOWEST point short of a real socket: `_request` is bare-agent's
+  // own transport seam — everything above it (temperature fallback, tool-call
+  // mapping, the JSON.parse that would otherwise throw) is real, unmodified code.
+  provider._request = async () => {
+    call += 1;
+    if (call === 1) return openaiChoice(DECLARATION_TOOL_NAME, `${JSON.stringify(decl)}}`); // valid JSON + trailing brace
+    return openaiChoice(DECLARATION_TOOL_NAME, JSON.stringify(decl));
+  };
+
+  const generate = makeLoopGenerate(provider);
+  const book = makeCostBook();
+  /** @type {{calls: any[]}} */
+  const box = { calls: [] };
+  const channel = {
+    name: DECLARATION_TOOL_NAME,
+    instruction: 'call declare_close exactly once',
+    tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b),
+  };
+
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate, mode: 'tool', retries: 2, label: 'author', book, channel,
+  });
+
+  assert.deepEqual(r.artifact, decl, 'the artifact is the 2nd (sound) call\'s own declaration');
+  assert.equal(call, 2, 'exactly two provider rounds — the retry ladder, not a third');
+
+  const report = book.report();
+  assert.equal(report.calls.length, 2, 'both rounds are booked');
+  for (const c of report.calls) assert.equal(typeof c.costUsd, 'number', 'a malformed-but-priced round still carries a numeric costUsd');
+  assert.equal(report.spendComplete, true);
+
+  // the convo sent on the 2nd call carries the reject block naming malformed args
+  const secondCallUserMsgs = r.convo.filter((/** @type {any} */ m) => m.role === 'user').map((/** @type {any} */ m) => m.content).join('\n');
+  assert.match(secondCallUserMsgs, /not valid JSON/);
+  assert.match(secondCallUserMsgs, /nothing is repaired/);
+});
+
+test('makeLoopGenerate (F179): EVERY attempt malformed (1 + MAX_STRUCTURE_RETRIES) — no throw, artifact null, red axis malformed-tool-call-arguments, every call priced; NO-REPAIR PIN', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const decl = goodDeclaration();
+  // the malformed string becomes valid JSON if you strip the trailing `}` —
+  // the NO-REPAIR pin below proves that never happens.
+  const badArgs = `${JSON.stringify(decl)}}`;
+  provider._request = async () => openaiChoice(DECLARATION_TOOL_NAME, badArgs);
+
+  const generate = makeLoopGenerate(provider);
+  const book = makeCostBook();
+  /** @type {{calls: any[]}} */
+  const box = { calls: [] };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'call declare_close exactly once', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate, mode: 'tool', retries: MAX_STRUCTURE_RETRIES, label: 'author', book, channel,
+  });
+
+  assert.equal(r.artifact, null, 'NO-REPAIR PIN: never healed by stripping the trailing brace');
+  assert.equal(r.red?.axis, 'malformed-tool-call-arguments');
+  assert.equal(box.calls.length, 0, 'the malformed call never reached the declaration tool\'s execute');
+
+  const report = book.report();
+  assert.equal(report.calls.length, 1 + MAX_STRUCTURE_RETRIES, 'every attempt is priced and booked');
+  for (const c of report.calls) assert.equal(typeof c.costUsd, 'number');
+});
+
+// F179 follow-up (2026-09-15 review) — a reply carrying TWO declaration calls,
+// one valid and one malformed, must NOT be accepted. bare-agent 0.43.0's
+// `parseToolCalls` is itself all-or-nothing (BA-27): on the FIRST unparseable
+// call it returns `toolCalls: []` for the WHOLE round, so a real provider can
+// never leave one surviving call after a strip the way the old local shim
+// could. `r?.malformedToolCall` still overrides the accept check regardless of
+// survivor count — this test pins that a two-call reply (one valid, one
+// malformed) is never accepted, whichever call order the provider returns.
+test('askStructured (F179 follow-up): TWO tool calls in one reply, one valid + one malformed — never accepted', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const decl = goodDeclaration();
+  provider._request = async () => ({
+    choices: [{
+      message: {
+        content: '',
+        tool_calls: [
+          { id: 'call_1', function: { name: DECLARATION_TOOL_NAME, arguments: JSON.stringify(decl) } }, // valid
+          { id: 'call_2', function: { name: DECLARATION_TOOL_NAME, arguments: `${JSON.stringify(decl)}}` } }, // malformed
+        ],
+      },
+      finish_reason: 'tool_calls',
+    }],
+    usage: { prompt_tokens: 120, completion_tokens: 40 },
+    model: 'deepseek-flash',
+  });
+
+  const generate = makeLoopGenerate(provider);
+  const book = makeCostBook();
+  /** @type {{calls: any[]}} */
+  const box = { calls: [] };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'call declare_close exactly once', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate, mode: 'tool', retries: 0, label: 'author', book, channel,
+  });
+
+  assert.equal(r.artifact, null, 'the surviving valid call is never accepted just because one of its two siblings was malformed');
+  assert.equal(r.red?.axis, 'malformed-tool-call-arguments');
+
+  const report = book.report();
+  assert.equal(report.calls.length, 1);
+  assert.equal(typeof report.calls[0].costUsd, 'number', 'the round is priced off real usage');
+});
+
+test('makeLoopGenerate (F179): the ceiling sees the first PRICED malformed call — a retry is NOT made once it trips', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const decl = goodDeclaration();
+  let call = 0;
+  provider._request = async () => { call += 1; return openaiChoice(DECLARATION_TOOL_NAME, `${JSON.stringify(decl)}}`); };
+
+  const generate = makeLoopGenerate(provider);
+  // a tiny ceiling the first priced (malformed) call already exceeds
+  const book = makeCostBook({ ceilingUsd: 0.0000001 });
+  /** @type {{calls: any[]}} */
+  const box = { calls: [] };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'call declare_close exactly once', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate, mode: 'tool', retries: MAX_STRUCTURE_RETRIES, label: 'author', book, channel,
+  });
+
+  assert.equal(call, 1, 'the cap sees the priced malformed call and refuses the retry — no 2nd round');
+  assert.equal(r.budget, 'cap-halt');
+  assert.equal(r.artifact, null);
+});
+
+test('makeLoopGenerate (F179): a VALID reply is untouched — no side-channel field, artifact accepted on the first call', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const decl = goodDeclaration();
+  provider._request = async () => openaiChoice(DECLARATION_TOOL_NAME, JSON.stringify(decl));
+
+  const generate = makeLoopGenerate(provider);
+  const book = makeCostBook();
+  /** @type {{calls: any[]}} */
+  const box = { calls: [] };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'call declare_close exactly once', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate, mode: 'tool', retries: 2, label: 'author', book, channel,
+  });
+  assert.deepEqual(r.artifact, decl);
+  assert.equal(book.report().calls.length, 1);
 });

@@ -54,7 +54,7 @@ import { seedListing, GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from './kinds.js';
 import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from './tools.js';
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
-import { extractArtifact, priceOf, scrubRaw, stampRaw, tallyCalls, capStop } from './text.js';
+import { extractArtifact, priceOf, scrubRaw, stampRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
 
 const require = createRequire(import.meta.url);
@@ -448,20 +448,25 @@ export async function runAuthorScout({
    * under the EXISTING `call-failed` cause. Without this seam a rejection would
    * escape uncaught to `run-author.mjs`'s top-level crash handler instead of the
    * honest, already-typed terminal this module was built to report through.
+   *
+   * The admitted-casualty test is `callCasualty` (`src/text.js`, beside
+   * `priceOf`) — the SAME predicate `askStructured` (`src/authorflow.js`, F179)
+   * uses for its own generate seam, widened past the idle-timeout class this
+   * comment originally named to also admit a malformed tool-call-arguments
+   * SyntaxError (F179's class): both are "a call that produced nothing", the
+   * definition `call-failed` already carries. Swallowing every throw would
+   * launder a budget HaltError, a programming bug, or any other named terminal
+   * into "the survey call failed" — the exact class of dishonesty this repo
+   * refuses (an unknown reported as a known) — so anything `callCasualty` does
+   * not admit still re-raises and is relayed after cleanup, as it was before
+   * this seam existed.
    * @param {Promise<any>} p @returns {Promise<any>}
    */
   const settled = async (p) => {
     try { return await p; } catch (e) {
-      // ONLY the call's own deadline lands here. Swallowing every throw would
-      // launder a budget HaltError, a programming bug, or any other named
-      // terminal into "the survey call failed" — the exact class of dishonesty
-      // this repo refuses (an unknown reported as a known). A timeout is the one
-      // throw this seam exists for: it IS a call that produced nothing, which is
-      // what `call-failed` already means. Everything else re-raises and is
-      // relayed after cleanup, as it was before this seam existed.
-      const err = /** @type {any} */ (e);
-      if (err?.code !== 'ETIMEDOUT' && err?.name !== 'TimeoutError') throw e;
-      return { error: String(err?.message ?? err) };
+      const reason = callCasualty(e);
+      if (reason === null) throw e;
+      return { error: reason };
     }
   };
 

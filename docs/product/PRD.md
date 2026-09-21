@@ -106,6 +106,30 @@ self-adjusted budgets — ever (the agenticSeek smell). No UI before the headles
 job #1. No local-LLM work until the API path earns it. Not a general agent — a place where
 *repeated, verifiable* jobs get better at themselves (PRD.md:119-125).
 
+### §8a Deferred — unproven need
+
+Work gets built when the PRD calls for it or a LIVE failure produced it. A defect found by
+reading source, with no run ever hitting it, gets logged and parked — never built on the
+strength of the reading alone.
+
+- **F184** — a spine record for a malformed worker-path tool call. Found by reading
+  `src/planrun.js` while closing out F179/F180, no run has ever produced it. Shipped before this
+  rule existed; left in place as inert, visibility-only (`docs/logs/FINDINGS.md` F184).
+- **F188** — the no-suppressions cast guard misses an unchecked cast written as a typed callback
+  parameter rather than a value cast. Widening the detector is arbiter-adjacent (it changes what
+  a signed spec can admit) — parked to the close-authoring rung (`docs/logs/FINDINGS.md` F188).
+- **F189** — a URL-userinfo secret-redaction pattern. Invented work: no live failure ever hit the
+  gap it closed, and its own follow-on fix existed only to patch a side effect (refusing 5 of 44
+  local repos) that a live run never caught either. Both commits reverted 2026-09-16
+  (`docs/logs/FINDINGS.md` F189).
+- **F183's guard-description wording** — the confirm turn's "ALREADY COVERED" block undersells
+  `no-suppressions` (3 items shown, 7 for `js`/5 for `python` actually enforced) and is
+  language-blind. Measured live and by a paid ON/OFF probe to be the root cause of one surviving
+  false `notChecked` claim. Not built pending hamr's word (`docs/logs/FINDINGS.md` F183).
+- **F183's write-fence wording** — same shape of problem, not safely fixable by wording alone:
+  whether tests are covered by the fence depends on where they live relative to it, so a generic
+  wording claim would overclaim for some repo shapes (`docs/logs/FINDINGS.md` F183).
+
 ## §9 Risks and their pre-registered handles
 
 - **Rules don't generalize across non-identical runs** → job #1's first measurement; the lineage
@@ -440,23 +464,73 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     (`fix/item34-loose-ends`) stops here and goes to `/branch-review` → `/release`; the fresh
     branch after it opens with the M3 close-out list below, before M3b. See
     `docs/product/ITEM33-BUILD.md` M3's dated pointer for detail on each row.
-    - [ ] Ruling 7 (a repo job works end to end) not yet met — the one live fire ended
-      broken-close, blocked by L24/F176.
+    - [x] Ruling 7 (a repo job works end to end) not yet met — the one live fire ended
+      broken-close, blocked by L24/F176. — F176 fixed in code (commit 5a83507: the revise
+      ladder falls back to the newest sound iteration), not yet proven live. **2026-09-15:**
+      signed run `mu2p83go` went green end to end (F185–F188); needs a developer hand-step to
+      run (F185, open) — still left UNTICKED, hamr decides. **2026-09-16 (hamr's word):** ticked
+      — run `mu2p83go` went green end to end, and F185's developer hand-step is closed by
+      `scripts/run-u.mjs --spec` (commit 110263a).
     - [ ] Ruling 5's round-2 open-question path — see item 34's L23/F175 (not duplicated here).
-    - [ ] Release-order deviation: M3 pieces were built on the fix branch instead of after its
-      release, per item 34's own line below.
-    - [ ] L17 ("authoring provider selectable") is provider-selectable but not DeepSeek-reachable
-      from the form — `scripts/run-interview.mjs` never asks for or writes `baseUrl`.
+      — fixed in code (commit 245437c), not yet proven live.
+    - [x] Release-order deviation: M3 pieces were built on the fix branch instead of after its
+      release, per item 34's own line below. — settled: v0.26.0 shipped.
+    - [x] L17 ("authoring provider selectable") is provider-selectable but not DeepSeek-reachable
+      from the form — `scripts/run-interview.mjs` never asks for or writes `baseUrl`. — fixed:
+      `--base-url` flag (commit e91e37f). **2026-09-15: proven live**, runs `mu2js0c0`,
+      `mu2qmept` (FINDINGS).
     - [ ] `prepareSource` freezes tracked files only — a repo job's toolchain (e.g.
       `node_modules`) is absent from the prepared tree, undocumented in the interview/hand-off.
-    - [ ] The real person path (`run-interview` → spawned `run-author` reading the keyboard) has
-      never run live — ruling 9's proof is still owed.
+      — fixed: `$0` stop names the install command (commit 941cf7d), not yet proven live —
+      plus F177 (commit 496bb54) and F178: a signed fence can no longer name `.git` or
+      `node_modules`, and writes into a nested `node_modules` are denied (commits 0720a66,
+      3fda3a0, b884c3e), not yet proven live. — live: the install command named at $0 (person
+      runs 2026-09-15, both interviews ended "Not offered — the copy still has no installed
+      packages" — stash `2026-09-15-live-person-run-ba27.md` item 3, run `mu2bjmed`'s out dir);
+      the install-gap PAUSE itself (F182 fix), run `mu2qmept` (F182); F177 (installed packages
+      not counted as worker writes) — `npm ci` in the copy left `git status` at 0 lines (stash
+      item 3, tree `source-mu2bglzc`), and signed run `mu2p83go` then recorded only
+      `src/checks.js` as changed (F185–F188). Still owed: F178 (`.git`/`node_modules`
+      write-fence denial) never exercised live. **2026-09-16:** F178 CLOSED as unreachable-by-
+      construction (docs/logs/FINDINGS.md F178) — never exercised live, and never will be.
+    - [x] The real person path (`run-interview` → spawned `run-author` reading the keyboard) has
+      never run live — ruling 9's proof is still owed. **2026-09-15: proven live**, run
+      `mu2qmept` (F182).
     - [ ] The plain-folder confirm turn (D5) and soft-green jobs through the confirm turn are
-      stub-tested only, never run live.
+      stub-tested only, never run live. **2026-09-16:** both the plain-folder run and the
+      soft-green run fired live; both produced defects rather than a pass, so this row stays
+      UNTICKED. The soft-green run (`mu4hec9u`, `deepseek-flash`) is F190
+      (`docs/logs/FINDINGS.md`): the calibration gate's judge provider was built without the
+      job's `baseUrl`, sending a DeepSeek key to `openai-api`'s default host — fixed in code
+      (tests only, not yet re-proven live), plus a second, separate, unfixed defect logged in
+      the same entry (a failed judge `locate` call leaves no cause on the spine). The
+      plain-folder run's defect is not detailed here — see its own record for that.
+      **2026-09-21:** the plain-folder run's defect is F191 (`docs/logs/FINDINGS.md`) — the
+      confirm turn crashed on a plain folder's `lang: 'none-detected'` (`classGuards` has no
+      language to key off). Fixed in code: the confirm turn over a plain folder is now gone
+      entirely (D5 amended, see `docs/product/ITEM33-BUILD.md`) — the stop fires immediately at
+      $0. F190 also fixed properly this pass, routed through `buildRunnerProviders` rather than
+      the hand-copied conditional. Both fail-first proven in tests, neither re-proven live.
+    - [ ] Soft-green calibration: refused on every live run so far — OPEN, reopen after the UI
+      (N6), see FINDINGS F192 (hamr ruling B, 2026-09-21).
     - [x] `bareloop.context.md` does not describe commit 2b45f09's change (`classGuards` +
       write-fence protections, the model's `notChecked` list). — fixed in the v0.26.0 docs follow-up
-    - [ ] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed
-      in `src/promptregisters.js`'s `PROMPT_REGISTERS` — decide whether to add it.
+    - [x] `src/authoring.js` (`TYPES_GENRE_TEMPLATE`) is model-facing prompt text not yet listed
+      in `src/promptregisters.js`'s `PROMPT_REGISTERS` — decide whether to add it. — added,
+      commit 3761644.
+
+    **2026-09-21 — order amended, SUPERSEDES both lines above** (hamr: "we need to finish what
+    we have at hand, close the branch and start immediately on ui, and everything else that was
+    previously planned should come after ui and most likely will be solved while we are doing
+    ui, i expect a lot would surface with ui" — reason: "i can't see and i can't feel what you
+    are saying and it takes a mental effort to imagine"). This supersedes the **2026-09-10**
+    order above ("(5) the panel (N6), shaped by 1–3 → (6) the reuse-lift proof LAST") and the
+    **2026-09-13** detailing of it ("fix branch for item 34 → M3 → M3b → M4 → M5 → M6 → M7 proof
+    fires → (5) the panel → (6) reuse-lift proof last"). New order: close `fix/m3-closeout` →
+    the panel (N6) → M3b–M7 (and the reuse-lift proof) after, most of which is expected to
+    surface WHILE building the panel rather than needing to be planned first. Item 33's
+    interview and non-repo split are already done and signed, which is what the 2026-09-10
+    order's own reason for putting the panel last was conditioned on.
 
 27. **Close-bytes signature — the job signature must cover the close scripts' CONTENT, not
     only their path** (hamr, 2026-09-05: "next in line after export"). Found by the export
@@ -933,8 +1007,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | L20 | `src/index.js` exported 255 names; the test's marker check credited 86 as documented. Of the other 169, 91 were already described in the doc's prose but lacked a marker, and 78 were mentioned nowhere. | FIX, option A — document the names a user of the package needs; stop exporting the rest, so the public list is what the doc covers. Breaking change for anyone importing a removed name. | `6189eff` — 91 names got markers, 78 dropped from the root export (255 → 177), `tests/index.test.js` now guards both ways (every export documented, every documented name exported). |
     | L21 | 2026-09-13: an untracked/ignored subfolder inside a repo froze as `kind: 'repo'` holding none of Source's own files | FIX — refused as `source-untracked-in-repo` for now (ruling A, 2026-09-13); revisit option B (freeze it as a plain folder on hidden git) once M4 gives plain-folder jobs their own checks | 95c1948 |
     | L22 | First live confirm-turn fire: the model-invented "protection" it showed a person was one the close cannot check | FIX — protections now render from `classGuards`, never the model; the model returns `notChecked` instead | 2b45f09, see F174 |
-    | L23 | Same live fire: a `questions` ambiguity the model raised honestly can be confirmed away on round 1 with no forced resolution, and the signed goal can drop a check both source answers asked for | PARKED — open confirm-menu gap, not in this branch's scope | see F175 |
-    | L24 | Same live fire: the revise ladder can keep a later revision that is structurally worse (a broken parser field) than the sound one it replaced | PARKED — open revise-ladder gap, pre-existing | see F176 |
+    | L23 | Same live fire: a `questions` ambiguity the model raised honestly can be confirmed away on round 1 with no forced resolution, and the signed goal can drop a check both source answers asked for | PARTIAL FIX — the model's own `questions` now reach `accepted.openQuestions` on every accepting path (a related ledger bug fixed too), so the question is no longer silently dropped from the signed record; the confirm menu still lets "Confirm" bypass an unresolved question without forcing it (that half stays open). Fixed in code with tests, not yet proven live. | see F175 |
+    | L24 | Same live fire: the revise ladder can keep a later revision that is structurally worse (a broken parser field) than the sound one it replaced | FIX — falls back to the newest measured-sound iteration (a real red/green verdict, never an instrument-stop) when the last one is unsound; `stop` unchanged; the swap is named in a new `fellBack` return field and shown at the readout. Fixed in code with tests, not yet proven live. | see F176 |
 
     Fix branch: L1, L2, L3 (doc note), L4, L16 (model swap), L17, L19, L20 — one branch,
     reviewed and released on its own, BEFORE the M3 build.

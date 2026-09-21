@@ -398,6 +398,71 @@ test('runAuthorScout: a throw from the loop is relayed AFTER cleanup', async () 
   assert.equal(seen.cleaned, 1, 'a leaked surveyor leaks a litectx handle and a gate');
 });
 
+// F179 (2026-09-15, superseded): `settled`'s admitted-casualty class
+// (src/text.js `callCasualty`, shared with `askStructured`) used to widen past
+// the idle-timeout it was built for to also admit a malformed tool-call-
+// arguments SyntaxError, off bare-agent 0.42.0's unguarded
+// `JSON.parse(tc.function.arguments)` throw. bare-agent 0.43.0 fixed that
+// upstream (BA-27): no provider bareloop constructs can still throw a JSON
+// SyntaxError out of `generate()`, so `callCasualty`'s SyntaxError branch was
+// removed as dead code — a SyntaxError is no longer admitted here either (see
+// the neighbouring TypeError/HaltError re-raise tests). The idle-timeout class
+// stays the one this test pins.
+
+test('runAuthorScout: a call rejecting with an ETIMEDOUT casualty lands as call-failed, cost null — never a crash', async () => {
+  const { createSurveyor, seen } = stubSurveyor();
+  const idleTimeout = /** @type {any} */ (new Error('idle socket'));
+  idleTimeout.code = 'ETIMEDOUT';
+  const createLoop = () => ({ run: async () => { throw idleTimeout; }, stop: () => {} });
+  const r = await runAuthorScout({ workdir: '/w', createLoop, createSurveyor });
+  assert.equal(r.state, 'ABSENT');
+  assert.equal(r.cause, 'call-failed');
+  assert.match(r.reason, /idle socket/);
+  assert.equal(r.calls[0].costUsd, null, 'a rejected call has no knowable cost');
+  assert.equal(seen.cleaned, 1);
+});
+
+// F179's scope note (docs/logs/FINDINGS.md): the scout builds its own Loop and
+// was never wired to the authoring-flow retry ladder (`askStructured`'s
+// malformed-tool-call-arguments axis) — this stays true after the 0.43.0 bump.
+// A malformed survey tool call now arrives as bare-agent's own priced
+// `toolCalls: [] + malformedToolCall` marker (never a throw), but
+// `runAuthorScout` never reads `r?.malformedToolCall` anywhere in this module
+// (grep confirms) — the round's `text` (empty, since the model tried to call a
+// tool) is classified by the SAME path an ordinary empty reply takes.
+test('runAuthorScout: a REAL OpenAIProvider survey round with a malformed tool call is classified as an ordinary EMPTY survey, not a distinct malformed-tool-call cause — current classification, pinned', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  provider._request = async () => ({
+    choices: [{
+      message: { content: '', tool_calls: [{ id: 'call_1', function: { name: 'shell_read', arguments: '{"path":"x"}}' } }] },
+      finish_reason: 'tool_calls',
+    }],
+    usage: { prompt_tokens: 50, completion_tokens: 10 },
+    model: 'deepseek-flash',
+  });
+  const { createSurveyor, seen } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', provider, attempts: 1, createSurveyor });
+  assert.equal(r.state, 'ABSENT');
+  // classifySurvey's EMPTY route (blob '' and no r.error) — the malformed
+  // marker is silently dropped rather than surfacing as its own cause. This is
+  // the current behaviour, not a claim that it is correct (see the new open
+  // finding filed alongside this commit).
+  assert.equal(r.cause, SURVEY_CAUSES.EMPTY);
+  assert.equal(typeof r.calls[0].costUsd, 'number', 'the round is still priced off real usage, even though its malformed marker is unread');
+  assert.equal(seen.cleaned, 1);
+});
+
+test('runAuthorScout: a thrown TypeError (a programming bug) still re-raises — callCasualty never launders it', async () => {
+  const { createSurveyor, seen } = stubSurveyor();
+  const createLoop = () => ({ run: async () => { throw new TypeError('cannot read property of undefined'); }, stop: () => {} });
+  await assert.rejects(
+    () => runAuthorScout({ workdir: '/w', createLoop, createSurveyor }),
+    TypeError,
+  );
+  assert.equal(seen.cleaned, 1);
+});
+
 // ── 4. the mechanical seed listing (L1) ─────────────────────────────────────
 
 test('seedFileList reads the SEED commit, never the working tree', async (t) => {

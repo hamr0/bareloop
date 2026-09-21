@@ -193,6 +193,42 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
  * filed as an upstream bug (the BA-2 misattribution class). */
 
 /**
+ * The `baseUrl` SHAPE rule, standalone (PRD item 28 ruling (d); PRD item 33
+ * close-out, "authoring provider selectable" — a bad `--base-url` used to
+ * refuse only at the end of the interview, through `validateJob`, after every
+ * question had already been asked). ONE spelling of the rule: `validateJob`
+ * below calls this, and so does `scripts/run-interview.mjs`, at flag-parse
+ * time, before it asks anything.
+ *
+ * No network access, so this checks SHAPE only: `https://` for a real
+ * endpoint, or `http://` restricted to a loopback host (a local
+ * OpenAI-compatible server, the only legitimate reason to skip TLS) — and
+ * never a credential embedded IN the URL itself. A URL travels into logs and
+ * spine records far more casually than a header ever would, and secrets never
+ * enter the tree/spine (hard line #3) — a baseUrl carrying `user:pass@host`
+ * is exactly that leak, just spelled differently. The returned message never
+ * echoes the value it judged — it is printed as-is by both callers, and a
+ * value that failed for carrying credentials must not repeat them back.
+ * @param {unknown} value
+ * @returns {string|null} a red `detail`, or `null` when the value is admitted
+ */
+export function validateBaseUrl(value) {
+  if (!isNonEmptyString(value)) {
+    return 'non-empty string — an https:// URL (http:// admitted only to 127.0.0.1/localhost/::1)';
+  }
+  /** @type {URL|null} */
+  let u = null;
+  try { u = new URL(value); } catch { /* u stays null — caught below */ }
+  if (!u) return 'must be a parseable URL';
+  if (u.username !== '' || u.password !== '') return 'no embedded credentials (user:pass@host) — secrets never enter a signed spec';
+  if (u.protocol === 'https:') return null; // admitted
+  if (u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '::1')) {
+    return null; // admitted — a local OpenAI-compatible endpoint, the one case that legitimately skips TLS
+  }
+  return 'https:// required (http:// admitted only to 127.0.0.1/localhost/::1)';
+}
+
+/**
  * Validate an operator-owned job spec (`schema: "job-v1"`). Never throws on
  * JSON text or plain parsed data — the ingest contract; a live object with a
  * hostile accessor is outside it. Every failure is a named red. Returns the
@@ -329,33 +365,13 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
 
   // BASE URL — PRD item 28, ruling (d), 2026-09-09: admitted in v1 of
   // openai-api (an OpenAI-compatible gateway/endpoint), OPTIONAL and part of
-  // the signed hash like `model` above. This validator has no network
-  // access, so it checks SHAPE only: `https://` for a real endpoint, or
-  // `http://` restricted to a loopback host (a local OpenAI-compatible
-  // server, the only legitimate reason to skip TLS) — and never a
-  // credential embedded IN the URL itself. A URL travels into logs and
-  // spine records far more casually than a header ever would, and secrets
-  // never enter the tree/spine (hard line #3) — a bareUrl carrying
-  // `user:pass@host` is exactly that leak, just spelled differently.
+  // the signed hash like `model` above. `validateBaseUrl` (below) is the ONE
+  // spelling of the shape rule — `scripts/run-interview.mjs` calls it too, at
+  // flag-parse time, before the interview asks a single question, rather than
+  // this file's copy being the only one that ever ran it.
   if (spec.baseUrl !== undefined) {
-    if (!isNonEmptyString(spec.baseUrl)) {
-      red('invalid-value', 'baseUrl', 'non-empty string — an https:// URL (http:// admitted only to 127.0.0.1/localhost/::1)');
-    } else {
-      /** @type {URL|null} */
-      let u = null;
-      try { u = new URL(spec.baseUrl); } catch { /* u stays null — caught below */ }
-      if (!u) {
-        red('invalid-value', 'baseUrl', 'must be a parseable URL');
-      } else if (u.username !== '' || u.password !== '') {
-        red('invalid-value', 'baseUrl', 'no embedded credentials (user:pass@host) — secrets never enter a signed spec');
-      } else if (u.protocol === 'https:') {
-        // admitted
-      } else if (u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '::1')) {
-        // admitted — a local OpenAI-compatible endpoint, the one case that legitimately skips TLS
-      } else {
-        red('invalid-value', 'baseUrl', 'https:// required (http:// admitted only to 127.0.0.1/localhost/::1)');
-      }
-    }
+    const err = validateBaseUrl(spec.baseUrl);
+    if (err) red('invalid-value', 'baseUrl', err);
   }
 
   // 3. the outer write fence — operator law (interview decision #4), same

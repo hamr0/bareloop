@@ -291,5 +291,5 @@ export { main as cliMain } from './cli.js';
 // module, not a re-derivation of it.
 export {
   prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest,
-  datedDestination, pickDelivery,
+  datedDestination, pickDelivery, missingDependencies,
 } from './source.js';

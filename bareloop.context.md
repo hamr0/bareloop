@@ -538,6 +538,7 @@ contract); returns the parsed spec on ok, `null` on any red. A spec carrying the
 generic unknown-field. Menus exported: `CLOSE_TYPES`, `CLASS_BY_CLOSE`, `GOLD_COMPARE`,
 `CADENCE_UNITS`, `PROVIDERS`, `CONDITION_KEYS`, `TOOL_MENU`, `LOCKED_TOOLS`, `STORE_VERBS`,
 `VERDICT_TYPES`, `LOCKED_VERDICTS` — plus `checkMenu` itself.
+
 `globToPrefix(scope)` and `scanSecrets(text)` are exported too — the write-scope prefix
 mapping and the one secret-shape sweep `validateJob` itself is built from (`src/validate.js`).
 
@@ -615,7 +616,7 @@ a step, or test it without a provider.
 | interview | `runInterview({ verdictType, answers, repoPath })` → `{ ok, answers, verdictType, refusal, reds }` | PURE — no model, no repo, no clock. The interview ADMITS only what is on the menu (`MENU_CLASSES`): nothing is locked today (`LOCKED_CLASSES` is empty), and any pick off the menu returns a refusal rather than `ok:true` — ask `MENU_CLASSES` which classes can be authored, never this sentence. The interview asks NOTHING about a genre and NOTHING about the repository. **Ask the library for the set and its numbers — never hardcode a count or a slot number**: the green set has lost several slots since it was frozen (D13's genre confirm; the repo question, dropped 2026-08-15 because `repoPath` is mandatory structured input; and, at PRD item 33 M3 piece 3, the old "which files change/read" question, replaced by Source and Destination — MECHANICAL fields, proven against the machine, never a numbered answer), and it renumbers CONTIGUOUSLY from 1 each time rather than leaving a gap. Today the green set is THREE questions (Goal, Success, Guardrails); the `soft-green` set is those three plus one more — Judge Examples (one example to pass, one to fail, and why) — the judged floor's one required input, compiled into the signed rubric card and the frozen calibration set. `verdictType` and `repoPath` are STRUCTURED input, never parsed out of prose. Answers are scrubbed at INGEST |
 | survey | `runAuthorScout({ workdir, provider, attempts?, ceilingUsd? })` → `{ state, facts, reason, meta, raw, raws, calls, budgetStop }` | a bounded READ-ONLY LLM survey. Read-only by MENU CONSTRUCTION (`AUTHOR_SCOUT_VERBS` = the full menu minus write-class and store-class verbs), 8 rounds, F59's reserved toolless final round. **`state: 'ABSENT'` means the scout did not complete — never "no special facts are needed"**, and a parsed `{}` is one of its five ABSENT routes. Up to `SCOUT_ATTEMPTS` (**3**, hardcoded — PRD v1.58) attempts: `attempts` is TIGHTEN-ONLY and CLAMPS rather than throws (floor **1**, because a scout that never ran is an ABSENT nobody can act on), the direction every cap in this system runs in. **A retry fires on the typed MALFORMED class alone** (`SCOUT_RETRY_CAUSES` = `empty` \| `unparseable`); what is excluded is excluded for a reason — `call-failed` covers transport and `truncated:max_tokens`, both provider-red with NO redraft; `short` is F59's cut-off population and already has its own instrument INSIDE the attempt; `non-object` and `empty-object` are valid JSON with wrong or vacuous content, which is a SEMANTIC failure, and F38/F39 measured what re-asking one buys (the same distribution, sampled twice) — that is the self-healing line, and it is not crossed here. The re-ask is TOOLLESS over the conversation the survey already produced (the repository was already read; only the emission was unreadable) and names the mechanical parse error and nothing else. **There is no JSON repair behind it and there never will be** — a repairer decides what the model MEANT and writes it down as though the model had said it, in the one artefact whose whole job is to be honest about what a repository contains. `meta.attempts` / `meta.attemptsAllowed` record what was paid for; every attempt is metered under its own label (`author-scout`, `author-scout#2`, …) and leaves its raw behind. **`ceilingUsd` is the operator's money ceiling** (PRD v1.62) — checked BETWEEN attempts and before F59's reserved round, so no paid call escapes it; `null`/absent is UNBOUNDED, and a non-null non-finite value THROWS (the shared `capStop` seam — see `authorClose` below). When it ends the ladder, `budgetStop` names which stop (`cap-halt` \| `pricing-red`) and a survey that was never asked for carries the typed cause `not-funded` — deliberately OUTSIDE `SCOUT_RETRY_CAUSES`, because a retry is precisely what the cap forbade |
 | listing | `buildSeedListing({ workdir, seedRef, sourcePaths, testPaths })` | mechanical, `$0`, no model. `files` is the WHOLE tree (what the validator judges paths against); `block` is scoped to the survey's own paths and capped in ANNOUNCED tiers (what the prompt carries). Handing the validator the scoped half would make a job scoped to `src/` read as whole-tree and silently disarm the one-population law |
-| authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate, ceilingUsd? })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2) — a passed `maxRevisions` is TIGHTEN-ONLY, so a caller may LOWER that ceiling and never buy more revise rounds than the constant (floor **0**: one authoring call with no revise round is a legal ask, and unlimited revising would launder thrash as adaptation) — early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close. The return carries **`raws`**: what every model call actually SAID, the scout's attempts absorbed together with the declaration's, in the cost book's own order and under the same labels it meters. Each is `{ label, attempt, bytes, trimmed, text, cause, reason }` through the ONE persist helper (`scrubRaw` — redacted over the ONE `SECRET_PATTERNS` inventory, since a raw is the record most likely in this system to carry a live credential; bounded at `RAW_PERSIST_MAX` (8000) with the trim ANNOUNCING its own full size, and the cut walked back off a continuation byte so a multi-byte character is never split). `raws` is present on EVERY path **including the `$0` preflight refusals** — the path that spends nothing more is exactly the one whose evidence used to vanish with the process. `iterations` records what each turn MEANT (declaration, validation, seed read); `raws` records what it SAID, and a malformation is only ever visible in the second. **`ceilingUsd` is the same operator ceiling the survey took** — the scout's spend is ABSORBED into this loop's cost book before its first call is weighed, so spend already incurred folds in and re-entering cannot silently widen it. It is checked immediately before EVERY paid call (the author call, each revise, and each malformed-emission retry). **A MALFORMED ceiling is an ERROR, not a silent unbounded run** (v1.64 §3): the seam every ceiling read goes through (`capStop`, `src/text.js`) THROWS on a non-null non-finite value — `'2.50'`, `NaN`, `Infinity`, `true`, `{}` — before the first paid call, and the throw propagates uncaught rather than being caught into an ABSENT survey, because a caught one would hand you the very silent-unbounded run it exists to prevent. `null`/omitted is the STATED operator choice for unbounded; `0` and negatives are finite, legal, and cap-halt immediately. The advertised ceiling and the enforced ceiling can therefore never be different numbers. A `cap-halt` here can arrive with `ok:true` — a close that was already validated and measured survives the money stop, exactly as a late provider casualty does |
+| authoring | `authorClose({ workdir, seedRef, lang, verdictType, answers, scout, listing, generate, ceilingUsd? })` | the grounded loop: author → validate → run EVERY stage at the seed → feed the MEASURED results back → revise, bounded at `MAX_REVISIONS` (2) — a passed `maxRevisions` is TIGHTEN-ONLY, so a caller may LOWER that ceiling and never buy more revise rounds than the constant (floor **0**: one authoring call with no revise round is a legal ask, and unlimited revising would launder thrash as adaptation) — early-stop on an unchanged declaration. The declaration is emitted through a SCHEMA-FORCED TOOL CALL (`declare_close`), never parsed out of prose; the feedback is EXECUTION OUTPUT only — no model ever reviews another model's close. The return carries **`raws`**: what every model call actually SAID, the scout's attempts absorbed together with the declaration's, in the cost book's own order and under the same labels it meters. Each is `{ label, attempt, bytes, trimmed, text, cause, reason }` through the ONE persist helper (`scrubRaw` — redacted over the ONE `SECRET_PATTERNS` inventory, since a raw is the record most likely in this system to carry a live credential; bounded at `RAW_PERSIST_MAX` (8000) with the trim ANNOUNCING its own full size, and the cut walked back off a continuation byte so a multi-byte character is never split). `raws` is present on EVERY path **including the `$0` preflight refusals** — the path that spends nothing more is exactly the one whose evidence used to vanish with the process. `iterations` records what each turn MEANT (declaration, validation, seed read); `raws` records what it SAID, and a malformation is only ever visible in the second. **`ceilingUsd` is the same operator ceiling the survey took** — the scout's spend is ABSORBED into this loop's cost book before its first call is weighed, so spend already incurred folds in and re-entering cannot silently widen it. It is checked immediately before EVERY paid call (the author call, each revise, and each malformed-emission retry). **A MALFORMED ceiling is an ERROR, not a silent unbounded run** (v1.64 §3): the seam every ceiling read goes through (`capStop`, `src/text.js`) THROWS on a non-null non-finite value — `'2.50'`, `NaN`, `Infinity`, `true`, `{}` — before the first paid call, and the throw propagates uncaught rather than being caught into an ABSENT survey, because a caught one would hand you the very silent-unbounded run it exists to prevent. `null`/omitted is the STATED operator choice for unbounded; `0` and negatives are finite, legal, and cap-halt immediately. The advertised ceiling and the enforced ceiling can therefore never be different numbers. A `cap-halt` here can arrive with `ok:true` — a close that was already validated and measured survives the money stop, exactly as a late provider casualty does. **F176 (fixed):** "kept the last accepted revision" is not the same claim as "kept the best revision" — a later revise round can VALIDATE fine yet MEASURE worse (every stage instrument-stops rather than reading a real red/green verdict). `declaration`/`seedRead`/`finalFrom`/the returned `genreEnv.dropped` are therefore the NEWEST SOUND measured iteration, not simply the last one, when the last one instrument-stopped and an earlier one did not; `stop` itself never changes. The swap is never silent: the return also carries **`fellBack`** — `null` on every run where it never fired, else `{from, to, brokenStages}` naming which iteration was dropped, which now stands, and which of the dropped one's stages instrument-stopped — reported through `onPhase('author-fallback', …)` as it happens and printed at the terminal readout (`fellBackLines`, `scripts/author-readout.mjs`). **F179/F180 (history):** bare-agent 0.42.0's OpenAIProvider used to THROW mid-call on malformed tool-call JSON (a raw SyntaxError, after the billed round), crashing past this function; a 2026-09-15 stopgap caught it as a `provider-red`/`ask.providerError` casualty (booked `costUsd: null`) so a sound prior declaration was kept via the fallback above rather than discarded. **F179 (bare-agent 0.43.0, BA-27 — the real mechanism):** the throw is fixed upstream. `OpenAIProvider`/`OllamaProvider.generate` now return a malformed round PRICED (real `usage`, never `costUsd: null`) with `toolCalls: []` plus their own `malformedToolCall: {name, error}` marker, which `Loop.run` surfaces unchanged on its return. For the authoring declaration and confirm-turn calls, `askStructured` reads that marker and RETRIES through the existing malformed-emission retry ladder (`MAX_STRUCTURE_RETRIES`) instead of stopping the run — nothing is ever repaired, and a malformed FIRST call no longer needs an earlier sound declaration to fall back to. The generic provider-casualty fallback above (idle-timeout, etc.) still applies for every other admitted class. **F184 (fixed, worker path):** the scout and the worker path never joined that retry ladder (still true — retrying is arbiter-adjacent, out of scope), but the worker path's `ask()` (`src/planrun.js`) now at least READS the marker where it already sees it and emits a distinct spine record, `worker-malformed-tool-call` (`{phase, iteration, name, error}`), before returning `r` unexamined exactly as before — no retry, no change to strikes/ladder/attempt counting or verdict routing, purely the same visibility bar this section's authoring-path fix already set |
 | everything above, composed | `authorCloseForJob({ verdictType, answers, repoPath, lang, generate, ceilingUsd?, ... })` → `{ ok, closeDecl, verdictType, refusal, cost, ... }` | refuses at the cheapest gate that can refuse: an interview refusal costs **zero**. THE GENRE REFUSAL LIVES HERE (not in the interview): a language the catalogue owns no data for, and a LOCKED KIND the model reached for, both come back as counted `request-red` demand. **`ceilingUsd` is ONE number handed to BOTH paid seams** (the survey's and the declaration loop's) — the advertised ceiling and the enforced ceiling are the same ceiling. It travels as an EXPLICIT `null` when unset, because unbounded is a stated choice and an absent field read as falsy is that state reached by accident — and anything that is neither a finite number nor `null` throws at the seam rather than becoming that state by typo |
 | assembly | `assembleSpec(specDraft, { closeDecl, verdictType })` | folds the authored half into the OPERATOR's half. Budgets, the fence, cadence, escalation and the provider are never authored by anything here. The GOAL is passed through, not generated. **A draft that ALREADY carries the authored half is REFUSED — it THROWS, never merges and never overwrites.** `AUTHORED_SPEC_FIELDS` (`close`, `closeDecl`, `verdictType`) names the fields this fold WRITES, as data, so the refusal and the fold cannot disagree about which half of the spec is which; the rule is `job.js`'s one step earlier (two closes are two arbiters, and picking one silently is how a signed artefact stops meaning what the signer read). `scripts/run-author.mjs` asks the same question at **$0 BEFORE the scout**, so the answer never arrives after the model has been paid |
 | the three gates | `prepareSigning({ spec, workdir, seedRef? })` → `{ ok, specHash, gates, work, guards, refusal }` | D9, and it NEVER signs |
@@ -875,13 +876,24 @@ is exactly what F87 forbids.
 `scripts/run-interview.mjs` existed the only way in was to hand-write an `answers.json` and a
 spec draft — precisely the SWE tax this product refuses. That script is the half that ASKS
 (`--verdict <class> --provider <anthropic-api|openai-api|gemini-api|clipipe-subscription>
---out <outdir> [--budget <usd>]`), and it is deliberately GLUE: **it
+--out <outdir> [--budget <usd>] [--base-url <url>]`), and it is deliberately GLUE: **it
 calls no provider at all**, so a whole interview costs $0 and no model ever sees it. `--provider`
 is REQUIRED with NO default — bareloop is LLM-agnostic, and defaulting it would silently re-lock
 every interview onto one vendor; missing or empty dies loud, at the door, naming the same menu
 `src/job.js`'s own validator admits. It is written into the draft's `provider` field, so
 `scripts/run-author.mjs` needs no flag of its own — it resolves whatever the interview wrote
 down.
+
+`--base-url` is OPTIONAL with NO default (PRD item 33 close-out — L17 named the provider but
+never admitted the endpoint): a provider name's table entry (`src/providers.js`) can be reached
+through an OpenAI-compatible gateway other than its own default host — DeepSeek, today's one
+secondary, is reached as `--provider openai-api --base-url https://api.deepseek.com/v1`. Absent,
+the draft carries NO `baseUrl` field at all (never `null`, never `''`) and every provider
+constructor defaults its own endpoint. When given, it lands in the draft's `baseUrl` field
+beside `provider` and passes through the SAME `validateJob` pass every other field takes below,
+at $0: `http://` to a public host, an embedded `user:pass@`, or an unparseable string reds there,
+before anything is written. The key still follows the PROVIDER, not the endpoint — a DeepSeek
+draft's key still loads from `OPENAI_API_KEY`, and the hand-off says so.
 
 **Source and Destination are the interview's own FIRST TWO QUESTIONS, and they REPLACE
 `--patient`** (PRD item 33 M3, ruling 2, `docs/product/ITEM33-BUILD.md`). Source — "a local
@@ -910,8 +922,10 @@ piece 4 step S6 (D5 = A), the FORM CONTINUES — the class's own questions, job 
 wall are all still asked, and the draft is still written, with no `writeScope` field
 (`PLAIN_FOLDER_DEFERRED_FIELDS`, `src/authorjob.js` — Destination there is an output directory,
 never a fence). The honest named stop (bareloop's check catalogue is code-genre only today,
-ruling 7 → M4) no longer lands HERE — it moves to `run-author.mjs`, AFTER a confirm turn over
-the $0 seed listing (no scout — D5's register is code-only). Everything load-bearing in it is
+ruling 7 → M4) no longer lands HERE — it moves to `run-author.mjs`, which now gives it
+IMMEDIATELY, at $0 (D5 amended 2026-09-21, F191: no scout and no confirm turn either — a plain
+folder has no code language, so the confirm turn's own code-derived protections cannot be
+computed for one; see the run-author.mjs section below). Everything load-bearing in it is
 borrowed rather than respelled —
 the QUESTIONS are the library's frozen sets (`questionsFor` / `requiredAnswersFor`), printed as
 handed over and never re-worded, re-ordered or re-numbered by the script; the REFUSALS are
@@ -946,7 +960,9 @@ spends it.
 DIFFERENT PROCESS under its own ceiling; the interview prints its exact command line (with
 `--budget` propagated only when one was given, and a note when the CHOSEN provider's own key —
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, resolved through the same provider table
-`run-author.mjs` and `run-u.mjs` share — is unset in this shell)
+`run-author.mjs` and `run-u.mjs` share — is unset in this shell, OR set but MALFORMED: F181 — a
+value carrying a line break/control character/stray whitespace (a two-line secret-store entry,
+e.g.) reads a distinct reason via `apiKeyProblem` (`src/providers.js`), never the value)
 before asking `Run it now? [y/N]`, so declining still leaves a command to paste and two files
 already on disk. Only an explicit yes spends — the answer that costs nothing is the one you get
 by saying nothing, the same lean the pause's doors take. On a yes it releases stdin before
@@ -976,7 +992,10 @@ into a success one process up.
 - `run-author.mjs` — **1** a refusal or a failed gate (this now includes the confirm turn's own
   `confirm-abandoned`/`confirm-restart` stops — input ended, or the person chose to start over,
   both counted through the same generic "not-authored" branch every other authoring refusal
-  uses); **2** operator/config; **3** a leak; **4** a CRASH inside the paid span. **3
+  uses, and `source-deps-missing` — the prepared copy's `package.json` lists dependencies with
+  no `node_modules`, refused at $0 before the scout and before the provider/key are even
+  checked, naming the exact install command); **2** operator/config; **3** a leak; **4** a
+  CRASH inside the paid span. **3
   deliberately OVERRIDES a 4**: a secret sitting in a written file is the harder line of the
   two, and the crash keeps both of its own louder channels — the whole error on stderr and its
   own `author-crash` spine record. **This script is now interactive** (step S4): the confirm
@@ -984,12 +1003,15 @@ into a success one process up.
   who wrote what and lets the person confirm the plan, fix it (up to 2 rounds), type the goal
   themselves, or start over — everything else (the survey, the declaration loop, D9's gates)
   stays unattended. `rl.close()` runs in a `finally` around the whole paid span. **A plain-folder
-  Source (step S6, D5 = A) runs NO scout** — its own confirm turn runs over a $0, no-git
-  directory listing of the frozen tree instead, then the SAME honest "no checks yet" stop this
-  script always gave (`request-red`/`non-code-source`), now given AFTER that confirm turn rather
-  than before the API key is even read. If the confirm turn itself does not reach a signed plan
-  (abandoned, a cap/pricing stop, a provider/artifact red, or "start over"), THAT is the stop —
-  the non-code-source one only fires once a plan was actually confirmed.
+  Source (step S6, D5 amended 2026-09-21, F191) gets NO scout AND NO confirm turn.** D5
+  originally ran the confirm turn over a $0, no-git directory listing of the frozen tree first,
+  THEN gave the honest "no checks yet" stop (`request-red`/`non-code-source`) once a plan was
+  confirmed. Live run `mu4hc7sp` crashed inside that confirm turn instead: `confirmProtections`
+  calls `classGuards` (`src/authoring.js`), which is keyed by CODE LANGUAGE and throws on a
+  plain folder's `lang: 'none-detected'` — a plain folder has no language, so the confirm turn
+  cannot honestly show real, code-derived protections for one, and now never runs one. The stop
+  fires immediately after `author-start`, at $0, no scout, no confirm turn, no model call — the
+  spine is exactly `author-start` → `author-end{outcome:'not-authored', stop:'non-code-source'}`.
 
 **The protections a person is shown in the confirm turn come from CODE, never the model**
 (fix #1, live run mu0voeo4, 2026-09-14 — a run once showed a model-invented "behavior-
@@ -1004,6 +1026,26 @@ the person asked for that no listed check can verify, in the person's own words,
 silently dropped. It is shown under its own heading in the menu (`scripts/run-author.mjs`)
 and threaded through to `accepted.notChecked` and `confirmedBlock`'s own "THE PERSON ASKED
 FOR THESE, BUT NOTHING CHECKS THEM" section for the composer.
+
+**The model drafting `notChecked` is now shown the SAME code-derived protections list before
+it drafts** (F183, ruling A, 2026-09-16 — live runs `mu2bjmed` and `mu2qmept` both had the
+model falsely claim an already-enforced guard or the write fence was missing, because it was
+never told what was actually enforced). `confirmProtections`'s output is computed once, before
+the paid round loop, and threaded into `confirmPrompt`'s model-facing prompt as an "ALREADY
+COVERED" block; `CONFIRM_SYSTEM` orders the model to check that list before naming anything in
+`notChecked`. The model still authors `notChecked` freely — this never makes the list
+deterministic, and it is still never a hand-typed second spelling of the guards. Not yet
+proven live.
+
+**`accepted.openQuestions` is the model's OWN honest `questions`, from the plan being
+ACCEPTED** (F175, fixed 2026-09-14) — never a prior, superseded round's, and never limited to
+a person's typed "fix" text as it used to be. On the round-2 "fix" terminal path (D3: there is
+no 3rd call) the model's own questions come first, then the person's still-pending fix text.
+Shown to the composer by `confirmedBlock` ("state these in your notes, never decide them
+silently") and at the terminal signing readout (`openQuestionLines`, `scripts/author-readout.mjs`).
+**Not fully closed:** the confirm menu still lets a person pick "Confirm" without being forced
+to resolve a raised question first — only the silent-drop-from-the-signed-record half of F175
+is fixed; the menu-bypass half stays open.
 
 **A crash inside the paid span leaves a BODY.** The fallible span — from just after
 `author-start` to the end of the main flow — sits in ONE try/catch that RETRIES NOTHING and
@@ -2438,6 +2480,20 @@ objects will not be caught by this. `scripts/behaviour-readout.mjs <gate-audit.j
 prints the block for one run or every run_id found in the file, skipping malformed lines with
 a count rather than throwing.
 
+**F186 (2026-09-15) — the "run's own gate-audit JSONL" claim above was FALSE for a while, at the
+file-hygiene layer, never inside `runBehaviour` itself.** The authoring scout's gate audit
+(`src/authorscout.js`'s `defaultSurveyor`) writes directly into the patient tree at its root
+(`<workdir>/gate-audit.jsonl`), and the tree's own `.gitignore` denies `*.jsonl`, so
+`scripts/run-u.mjs`'s cold reset (`git clean -fd`, no `-x`) never removed it — the file
+accreted rows from every authoring scout AND every worker run that had ever touched the tree,
+and `run-u.mjs`'s end-of-run rename claimed the WHOLE accreted file as "this run's own audit"
+with no filtering. The fix is at the source, never a `run_id` filter bolted onto `runBehaviour`
+(a single run legitimately spans several run_ids): `scripts/run-author.mjs` archives its own
+audit out of the tree the moment authoring ends; `scripts/run-u.mjs` moves any stale audit
+aside right after `coldReset`, before its own Gate ever opens (never on a resume, where the
+tree's audit is that same run's own prior leg). With both halves in place, the file this
+section describes really is scoped to the one run reading it, restoring the claim above.
+
 ```js
 import { runBehaviour, formatBehaviour } from 'bareloop';
 const events = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.parse);
@@ -3202,6 +3258,37 @@ freeze loop never trusts a buffer read a moment earlier), `into-exists`,
 refusal never throws, never overwrites a person's file, and never lands a destination inside
 the run's own scratch tree.
 
+**`prepareSource` copies ONLY git-tracked files** (hamr's ruling, unchanged) — a JS/TS repo's
+prepared copy therefore never carries `node_modules`, and every close stage that needs a tool
+(`tsc`, a test runner) would instrument-stop with nothing telling the person why. bareloop
+NEVER runs an install itself — it only ever touches gated primitives, never a shell-out to
+`npm`/`pnpm`/`yarn`/`bun` on the person's behalf. `missingDependencies` is exported ($0,
+JS/TS only for now — other languages return `null`, M3b's job): it takes `(treeDir,
+sourceSubdir?)` and walks from `sourceSubdir` up to `treeDir` (the same nearest-manifest rule
+`detectLanguage` uses, done independently to avoid a `source.js` ⇄ `detectlang.js` import
+cycle), and when the nearest `package.json` names a non-empty `dependencies`/`devDependencies`
+with no sibling `node_modules`, it returns `{manager, command, reason}` — the exact install
+line (`npm ci`/`pnpm install --frozen-lockfile`/`yarn install --frozen-lockfile`/`bun install
+--frozen-lockfile` by lockfile, else `npm install`), `cd`-prefixed for a subfolder job. An
+invalid `package.json`, no manifest found, or `node_modules` already present all return `null`
+— "cannot tell" is never a fabricated gap. `run-interview.mjs` prints the gap and the exact
+command right after `prepareSource` succeeds, and now PAUSES there (F182 fix, 2026-09-15):
+"Press Enter once it has finished to check again, or type skip to carry on without it" —
+Enter re-runs `missingDependencies` on the spot ("packages found — carrying on." or "still
+missing (…) — try again, or type skip to carry on without it.", looping), `skip` (or end of
+input, treated the same) carries on unresolved. It re-checks once more at the hand-off: a
+still-open gap suppresses the "Run it now?" offer entirely (the same shape the unkeyed-shell
+gate already uses) rather than spending on a run that would only instrument-stop — this is
+what the pause makes reachable: before the fix the interview fell straight through to the
+class questions and only ever re-checked once, too late for the offer to ever fire.
+`run-author.mjs` refuses
+`source-deps-missing` (a `request-red`, routed through the same `refusalEvents()` channel
+`language-unsupported` uses) at $0, before the scout and before the provider/key are even
+read. Once the person installs packages into the copy themselves, `prepareSource` has already
+hidden `node_modules` from `changedSet` via the copy's own PRIVATE `.git/info/exclude` (F177),
+so those installed files never read as the worker's own writes — the source repo's tracked
+`.gitignore` is never touched.
+
 **Destination is a DIRECTORY, never a filename** (D3 rework, hamr's ruling, 2026-09-12,
 condensed in `docs/product/ITEM33-BUILD.md`). It may already exist and need not be empty; it
 may sit inside the source itself (the same-dir case: "i can limit your actions to a certain
@@ -3268,6 +3355,22 @@ Not wired yet, named rather than silently absent: `bareloop run` (the exported b
 `src/cli.js`) still requires `--repo`; a bundled front-door job is parked past PRD item
 33/M5. The intake form that lets a person fill in Source/Destination through the authoring
 interview (rather than the CLI above) is item 33/M3, not yet built.
+
+**Running an authored spec needs no developer hand-step any more (F185, fixed 2026-09-16).**
+`scripts/run-u.mjs --spec <path to resolved-spec.json>` is an alternative to `--job <key>`
+(both, or neither, is a loud $0 refusal): it `validateJob`'s the spec on disk explicitly and
+early, then finds the ONE `source-*/` sibling directory beside it that carries a
+`source.json` (`run-interview.mjs` prepares the source door and invokes `run-author.mjs`
+against the same `--out`, so `resolved-spec.json` and `source-<runid>/{source.json,tree/}`
+are always siblings) and reads the workdir (`<that dir>/tree`) and seed off that SAME
+manifest `readSourceManifest` already serves elsewhere — never typed, guessed, or defaulted.
+No sibling, more than one, a missing seed, or a gone tree each refuse by name. Everything
+past that resolution — the `--approve <jobSpecHash>` signature, budget/wall ceilings,
+coldReset, the close-first precheck — is untouched: `--spec` only NAMES the job, exactly as
+a `--job` row does. `scripts/run-author.mjs`'s "SIGNING PREPARED — NOT SIGNED" screen now
+prints the ready-to-paste `--spec` command (real path, real `--approve <hash>`, the
+provider's real env-key per F187) — a person finishing the interview alone can reach a
+running job with no `jobs/` edit and no JOBS-table row.
 
 ## Architecture
 
@@ -3337,6 +3440,18 @@ under it — this is a passthrough, not a jail.
   denies the gate audit path and every `ARBITER_BOOK_STORES` path under the workdir
   (`src/authorscout.js:295`); a plan step's read scope is the workdir alone
   (`src/planrun.js:1894`).
+- **A signed fence can never name `.git` or `node_modules` (F178/F177).** `scopeContained`
+  (`src/validate.js`, design law #1's own function — `validateJob`'s `writeScope` and
+  `validatePlan`'s step `scope`/exit `target`/`path` all go through it) refuses any fence/scope
+  whose normalized prefix has a whole path segment equal to `.git` or `node_modules` — not a
+  look-alike like `.github/**`, `my.git/**`, or `node_modules_util/**`. That alone cannot catch
+  a NESTED `node_modules` reachable through an otherwise-legal fence (a monorepo package scope,
+  or one a worker creates fresh during the run) — bareguard's `fs.deny` is exact
+  prefix-containment only, no glob, so it cannot express "at any depth" even if it were used
+  here. **`fs.deny` is deliberately NOT used for either book**: it blocks ALL fs actions,
+  reads included, and hamr's ruling blocks WRITING only — reading stays allowed. The runtime
+  belt is `tools.denyArgPatterns` (`FORBIDDEN_WRITE_SEGMENT_PATTERN`, `src/planrun.js`): keyed
+  to `write`/`edit` ONLY, matched against the serialized action's `path` field, whole-segment.
 
 **What it does not guarantee:** no network egress control and no container/VM isolation —
 this repo has neither built nor documented either. `CLOSE_ENV_DENY`'s deny rule matches

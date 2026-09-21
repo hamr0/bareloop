@@ -42,10 +42,33 @@ export function globToPrefix(scope) {
 }
 
 /**
+ * Path segments a fence/scope may never contain, checked WHOLE-SEGMENT
+ * (`prefix.split('/')`), never substring — a look-alike (`.github`,
+ * `.gitignore`, `my.git`, `node_modules_util`) is a DIFFERENT name and stays
+ * admitted. hamr's ruling (option B, 2026-09-14, block both): F178 — a
+ * signed fence naming `.git` could let a worker write git's own files (refs,
+ * the seed, `info/exclude`) and hide those writes from `changedSet`. F177's
+ * follow-up — a signed fence naming `node_modules` directly is the same class
+ * of gap (an installed/worker-written file inside it is invisible to
+ * `changedSet` the same way, and installs are the person's job now, F177).
+ * This catches only a fence that NAMES one of these directly; a fence like
+ * `packages/api/**` that later reaches a NESTED `node_modules` beneath it is a
+ * distinct, only partially closeable gap — see the runtime belt in
+ * planrun.js for `node_modules` (`.git` has no such gap: there is exactly one
+ * `.git` per repo, always at the workdir root, so its own runtime belt is a
+ * single `fs.deny` entry). Both are inexpressible at declaration time, the
+ * same law #1 already applies to `..`.
+ * @type {readonly string[]}
+ */
+export const FORBIDDEN_SCOPE_SEGMENTS = Object.freeze(['.git', 'node_modules']);
+
+/**
  * A scope may never reach the arbiter's inputs (design law #1): it must
  * resolve to a PROPER subdirectory of the run directory. Absolute paths and
  * ".." segments escape it; "." / "./**" cover the whole run directory — where
  * the close suite lives. Windows spellings ("..\", "C:\") count as escapes.
+ * A `.git` or `node_modules` segment anywhere in the prefix is refused too
+ * (F178/F177, see {@link FORBIDDEN_SCOPE_SEGMENTS}).
  * Exported for the job validator: the operator's outer fence obeys the SAME
  * law through the same code — two containment transforms would be the F9
  * red-class one level up.
@@ -59,7 +82,8 @@ export function scopeContained(s) {
   // that normalizes to something absolute can never pass (defense in depth
   // against a future globToPrefix regression; the un-gameable gate, law #1).
   if (prefix === '' || prefix === '.' || prefix.startsWith('/') || /^[a-zA-Z]:/.test(prefix)) return false;
-  return prefix.split('/').every((seg) => seg !== '..');
+  const segments = prefix.split('/');
+  return segments.every((seg) => seg !== '..' && !FORBIDDEN_SCOPE_SEGMENTS.includes(seg));
 }
 
 /** Shared with the job validator — one definition of "a JSON object" for both

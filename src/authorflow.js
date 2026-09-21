@@ -83,7 +83,7 @@ import {
   validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
-import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop } from './text.js';
+import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
 
 const require = createRequire(import.meta.url);
@@ -467,6 +467,24 @@ export const LANGUAGE_PICK_FIELD = Object.freeze({
   kind: 'mechanical',
   label: 'Language',
   prompt: 'This repo has more than one supported language\'s manifest at the same level. Which one is this job about?',
+});
+
+/**
+ * F175's open half (docs/logs/FINDINGS.md, run mu0voeo4), hamr's ruling
+ * (2026-09-16): "Confirm" and "Type the goal yourself" may not bypass a
+ * `questions` entry the model itself raised on the plan being accepted — the
+ * person answers it inline, one question at a time, with NO extra model
+ * call (the round cap and D3 are untouched). This is the `field` handed to
+ * `ask({kind: 'answer', ...})` for each forced question — `question`,
+ * `index` (1-based) and `total` ride alongside on the step itself, not on
+ * this frozen constant, because they differ per question within one turn.
+ */
+export const ANSWER_QUESTION_FIELD = Object.freeze({
+  id: 'answerQuestion',
+  kind: 'mechanical',
+  label: 'Answer',
+  prompt: 'The plan raised a question it could not resolve on its own. Answer it before the plan can be signed '
+    + '("Start over" or "Fix" are the ways out if you cannot answer it here).',
 });
 
 /**
@@ -975,13 +993,21 @@ export function writeScopeBlock(writeScope) {
  * no listed check can verify — shown so the composer names the gap in its
  * own notes rather than the plan quietly reading as if everything asked for
  * is covered.
- * @param {{checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}} confirmed
+ * `answeredQuestions` (F175's open half, run mu0voeo4, hamr's 2026-09-16
+ * ruling) is every `Q:/A:` pair the person answered inline when a "Confirm"
+ * or "Type the goal yourself" pick forced a raised question before
+ * acceptance — BINDING, never re-decided by the composer, and a DIFFERENT
+ * meaning from `openQuestions` (which means "could not resolve"): the two
+ * never merge.
+ * @param {{checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[],
+ *   answeredQuestions?: string[]}} confirmed
  */
 export function confirmedBlock(confirmed) {
   const checks = confirmed.checks ?? [];
   const protections = confirmed.protections ?? [];
   const openQuestions = confirmed.openQuestions ?? [];
   const notChecked = confirmed.notChecked ?? [];
+  const answeredQuestions = confirmed.answeredQuestions ?? [];
   return 'THE CONFIRMED PLAN — the person already saw and confirmed this in the confirm turn\n\n'
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
@@ -991,6 +1017,9 @@ export function confirmedBlock(confirmed) {
     + (notChecked.length
       ? 'THE PERSON ASKED FOR THESE, BUT NOTHING CHECKS THEM (state these in your notes — never silently claim they '
         + `are covered):\n\n${notChecked.map((n) => `  - ${n}`).join('\n')}\n\n`
+      : '')
+    + (answeredQuestions.length
+      ? `QUESTIONS THE PERSON ANSWERED — these answers are binding; compose to them, never re-decide them:\n\n${answeredQuestions.map((a) => `  - ${a}`).join('\n')}\n\n`
       : '')
     + (openQuestions.length
       ? `OPEN QUESTIONS the confirm turn could not resolve (state these in your notes, never decide them silently):\n\n${openQuestions.map((q) => `  - ${q}`).join('\n')}`
@@ -1019,7 +1048,7 @@ export function confirmedBlock(confirmed) {
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
  *   writeScope?: string[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}|null}} o
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
@@ -1438,6 +1467,10 @@ export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens =
     // answers hangs the process forever otherwise. `...opts` still spreads AFTER
     // it, so a caller that ever needs a tighter number for one call may pass it —
     // tighten-only, and nothing does today.
+    // F179 — bare-agent 0.43.0's OpenAIProvider/Ollama generate() no longer
+    // throws on a malformed tool-call arguments string (BA-27): it returns the
+    // round priced with `toolCalls: []` plus its own `malformedToolCall` marker,
+    // which `Loop.run` surfaces unchanged on its return. No local shim needed.
     return loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...opts });
   };
 }
@@ -1493,7 +1526,28 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     // two must offer one set of kinds, or the composer reads about a kind it
     // cannot call — or worse, calls one the ceiling will refuse after we paid.
     const tools = mode === 'tool' ? [channel.tool(box)] : [];
-    const r = await generate(convo, tools, {});
+    // F179/F180 — bare-agent 0.42.0's OpenAIProvider.generate used to THROW
+    // mid-call (a raw SyntaxError off a malformed tool-call arguments string,
+    // parsed with no try/catch) rather than resolve with `{error}` the way a
+    // settled provider-shape casualty normally does; 0.43.0 fixed that class
+    // upstream (BA-27), so `callCasualty` no longer admits a SyntaxError at
+    // all (its branch was dead code and was removed). This try/catch stays
+    // for the class it was ALSO built to cover: `callCasualty` is the SAME
+    // predicate `authorscout.js`'s `settled` uses for its idle-timeout seam
+    // (src/text.js, beside `priceOf`) — a HaltError or an unrecognised throw
+    // re-raises unchanged; only an admitted casualty class lands here as the
+    // same `{error}` shape the resolved-error path already books and returns
+    // below.
+    let r;
+    try {
+      r = await generate(convo, tools, {});
+    } catch (e) {
+      const reason = callCasualty(e);
+      if (reason === null) throw e;
+      attempts += 1;
+      book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, { error: reason }, attempts);
+      return { artifact: null, attempts, convo, raw: '', providerError: reason, red: null, budget: null };
+    }
     attempts += 1;
     book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r, attempts);
     const raw = redactSecrets(String(r?.text ?? ''));
@@ -1503,15 +1557,43 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     }
 
     if (mode === 'tool') {
-      if (box.calls.length === 1) return { artifact: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
-      red = {
-        code: 'artifact-red',
-        path: channel.name,
-        detail: box.calls.length === 0
-          ? `the reply delivered no ${channel.name} call — structure is enforced, prose is never parsed`
-          : `the reply delivered ${box.calls.length} ${channel.name} calls; exactly one is expected`,
-        axis: box.calls.length === 0 ? 'no-declaration-tool-call' : 'multiple-declaration-tool-calls',
-      };
+      // F179 (2026-09-15 ruling) — retry, never repair. bare-agent 0.43.0
+      // (BA-27) already priced this round on the real usage and returns it
+      // with `toolCalls: []` plus its own `malformedToolCall` marker instead
+      // of throwing; this ladder's EXISTING malformed-emission retry (below)
+      // is the whole mechanism — no new cap, no second pricing path, nothing
+      // here ever re-parses or edits the model's arguments. The raw malformed
+      // string itself is never persisted, only the parser's own error
+      // message, scrubbed like every other model-authored text on this trail.
+      //
+      // Checked BEFORE the `box.calls.length === 1` accept and REGARDLESS of
+      // how many calls survived (0 or more — bare-agent's `parseToolCalls` is
+      // itself all-or-nothing, BA-27, so a real provider always returns 0 on
+      // a malformed round): before this fix, a two-call reply was ALWAYS the
+      // 'multiple-declaration-tool-calls' red, never an accept, so a
+      // malformed call riding alongside a valid one must not widen what this
+      // ladder takes from a malformed reply. Nothing from a malformed reply
+      // is ever accepted.
+      if (r?.malformedToolCall) {
+        red = {
+          code: 'artifact-red',
+          path: channel.name,
+          detail: `the reply's ${channel.name} call arguments were not valid JSON `
+            + `(${redactSecrets(String(r.malformedToolCall.error))}) — nothing is repaired; the call must be re-sent whole`,
+          axis: 'malformed-tool-call-arguments',
+        };
+      } else if (box.calls.length === 1) {
+        return { artifact: box.calls[0], attempts, convo, raw, providerError: null, red: null, budget: null };
+      } else {
+        red = {
+          code: 'artifact-red',
+          path: channel.name,
+          detail: box.calls.length === 0
+            ? `the reply delivered no ${channel.name} call — structure is enforced, prose is never parsed`
+            : `the reply delivered ${box.calls.length} ${channel.name} calls; exactly one is expected`,
+          axis: box.calls.length === 0 ? 'no-declaration-tool-call' : 'multiple-declaration-tool-calls',
+        };
+      }
     } else {
       // THE FALLBACK PATH — providers without tool mode only. The ONE shipped
       // parser, never a second one.
@@ -1659,9 +1741,13 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
   + 'a protection is never a check and never named in the goal sentence. The goal sentence names every check you '
   + 'listed and nothing more. For anything the person asked for that none of your listed checks can verify, name it '
   + 'plainly in `notChecked`, in the person\'s own words — never omit a gap to make the plan look complete; '
-  + 'over-reporting a gap is always the safe direction. Ask a question only where an answer is genuinely missing — '
-  + 'never to double-check something already answered. You cannot read anything and you cannot run anything: '
-  + 'everything you know is in the message you are given.';
+  + 'over-reporting a gap is always the safe direction. Before you name anything in `notChecked`, check it against '
+  + 'the ALREADY COVERED list shown to you in the message below (the real guards and write fence this run will '
+  + 'apply) — anything already covered there never belongs in `notChecked`, even when the person asked for it in '
+  + 'their own words (runs mu2bjmed and mu2qmept both wrongly claimed the no-suppressions guard and the write fence '
+  + 'were missing when both were already enforced; check the list before writing the claim). Ask a question only '
+  + 'where an answer is genuinely missing — never to double-check something already answered. You cannot read '
+  + 'anything and you cannot run anything: everything you know is in the message you are given.';
 
 /**
  * The confirm turn's per-round prompt (model-facing, registered). Shows the
@@ -1670,12 +1756,20 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
  * listing already paid for, the write fence, the detected language, "worse
  * than before" when the person gave one (repo only), and — on a fix round —
  * what the person asked to change.
+ * F183 (2026-09-16, ruling A, run mu2qmept): also carries the REAL,
+ * code-derived `protections` list ({@link confirmProtections} — the same
+ * guards the close will actually compose plus the real write fence, never a
+ * second hand-typed list) as an ALREADY COVERED block, with the instruction
+ * that anything on it never belongs in `notChecked`. Twice live (mu2bjmed,
+ * mu2qmept) the model claimed a guard or the write fence was missing while
+ * blind to what was actually enforced — this is the fix: show it the facts
+ * before it drafts, never hand-write a matcher over its answer.
  * @param {{answers: Record<string|number, string>, questions: Record<string|number, string>,
  *   labels?: Record<string|number, string>, facts?: any, listing?: string|null,
  *   writeScope?: string[]|null, isRepo: boolean, lang: string, worseThanBefore?: string,
- *   fixText?: string|null}} o
+ *   fixText?: string|null, protections?: string[]}} o
  */
-export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null }) {
+export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [] }) {
   const lines = ['THE PERSON\'S OWN ANSWERS (a non-engineer; read exactly what they wrote, invent nothing beyond it):'];
   for (const k of Object.keys(questions)) {
     const label = labels[k] ? ` (${labels[k]})` : '';
@@ -1687,6 +1781,15 @@ export function confirmPrompt({ answers, questions, labels = {}, facts = null, l
   }
   lines.push('', `LANGUAGE: ${lang}`);
   if (writeScope) lines.push(`WRITE SCOPE (the fence — the run may write only here): ${writeScope.join(', ')}`);
+  if (protections.length > 0) {
+    lines.push(
+      '',
+      'ALREADY COVERED — these are real, always-on, and enforced by this run regardless of what you compose. '
+        + 'Never list anything already covered here in `notChecked`, even if the person asked for it in their own '
+        + 'words:',
+      ...protections.map((p) => `  - ${p}`),
+    );
+  }
   if (facts) lines.push('', `READ-ONLY SURVEY:\n${JSON.stringify(facts)}`);
   if (listing) lines.push('', `SEED LISTING:\n${listing}`);
   if (fixText) lines.push('', `THE PERSON ASKED FOR A CHANGE: ${fixText}`, 'Revise the plan and resubmit.');
@@ -1734,7 +1837,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
  *   rounds: number,
  *   accepted: {goal: string, checks: string[], protections: string[], lang: string,
- *     worseThanBefore: string, openQuestions: string[], notChecked: string[]}|null,
+ *     worseThanBefore: string, openQuestions: string[], notChecked: string[], answeredQuestions?: string[]}|null,
  *   reds: Red[], cost: any}>}
  */
 export async function runConfirmTurn({
@@ -1775,22 +1878,64 @@ export async function runConfirmTurn({
     resolvedLang = String(pick);
   }
 
+  // F183 (2026-09-16, ruling A): computed ONCE, before the model ever drafts,
+  // from the same source {@link confirmProtections} always used — fed into
+  // the prompt below so the model can check `notChecked` against it, and
+  // reused (never recomputed) after the call so the shown, prompted, and
+  // recorded protections are always the exact same list.
+  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope });
+
   // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
-  /** @type {string[]} */
-  const openQuestions = [];
   /** @type {string|null} */
   let fixText = null;
+  /** F175: `accepted.openQuestions` carries the model's OWN `questions` from
+   * the plan being ACCEPTED — never a prior, superseded round's — secret-
+   * redacted like every other model/person string on this turn. `fixText`
+   * (round 1's own "fix" text) is a SEPARATE mechanism that only feeds round
+   * 2's redraft; it must never land in `openQuestions` on its own — round 2's
+   * plan is the answer to it, and its own `questions` (if it still has any)
+   * are what actually carries forward.
+   * @param {any} plan @returns {string[]} */
+  const questionsFromPlan = (plan) => (Array.isArray(plan?.questions) ? plan.questions : [])
+    .map((/** @type {any} */ q) => redactSecrets(String(q)));
+  /**
+   * F175's open half (run mu0voeo4, hamr's 2026-09-16 ruling): "Confirm" and
+   * "Type the goal yourself" may not bypass a `questions` entry the plan
+   * being accepted raised — each is answered inline, in order, through the
+   * SAME `ask` seam, with a new `kind: 'answer'` step (NO extra model call:
+   * the round/D3 cap is untouched). A blank/whitespace answer is not an
+   * answer and re-asks the SAME question; a `null` from `ask` abandons,
+   * exactly like every other ask in this function. Returns the `Q:/A:`
+   * pairs in order, or `null` to mean abandon.
+   * @param {any} plan @returns {Promise<string[]|null>} */
+  const forceAnsweredQuestions = async (plan) => {
+    const qs = questionsFromPlan(plan);
+    /** @type {string[]} */
+    const answered = [];
+    for (let i = 0; i < qs.length; i += 1) {
+      const question = qs[i];
+      for (;;) {
+        const raw = await ask({ kind: 'answer', field: ANSWER_QUESTION_FIELD, question, index: i + 1, total: qs.length });
+        if (raw === null) return null;
+        const trimmed = redactSecrets(String(raw).trim());
+        if (trimmed === '') continue; // blank is not an answer — re-ask the same question
+        answered.push(`Q: ${question}\nA: ${trimmed}`);
+        break;
+      }
+    }
+    return answered;
+  };
   let convo = [{
     role: 'user',
     content: confirmPrompt({
-      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore,
+      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections,
     }),
   }];
 
   for (let round = 1; round <= 2; round += 1) {
     if (fixText) {
       convo = [...convo, { role: 'user', content: confirmPrompt({
-        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText,
+        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections,
       }) }];
     }
     onPhase('confirm-round', { round });
@@ -1814,9 +1959,10 @@ export async function runConfirmTurn({
     // THE REAL PROTECTIONS (fix #1, run mu0voeo4, 2026-09-14): never the
     // model's `protections` prose — the schema no longer even asks the model
     // for one — but the guards `classGuards` will actually compose, plus the
-    // write fence. `notChecked` is the model's own honest gap list, carried
-    // through unchanged.
-    const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope });
+    // write fence. Computed once above (F183) and reused here unchanged, so
+    // the list the model was prompted with is byte-identical to the list
+    // shown at confirm-done and recorded on acceptance. `notChecked` is the
+    // model's own honest gap list, carried through unchanged.
     const notChecked = [...(r.plan.notChecked ?? [])];
     const plan = { ...r.plan, protections, notChecked };
     onPhase('confirm-done', { round, plan });
@@ -1825,24 +1971,36 @@ export async function runConfirmTurn({
     if (picked === 'start-over') return { ...base(), stop: /** @type {ConfirmStop} */ ('confirm-restart'), rounds: round, cost: book.report() };
 
     if (picked === 'confirm') {
+      const answeredQuestions = await forceAnsweredQuestions(r.plan);
+      if (answeredQuestions === null) return abandon(round);
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore,
+          // every question forced above was answered in order, so what's left
+          // unresolved is honestly empty — computed FROM questionsFromPlan
+          // rather than a hardcoded `[]`, so this stays true if the forcing
+          // design ever changes.
+          openQuestions: questionsFromPlan(r.plan).slice(answeredQuestions.length),
+          notChecked: [...notChecked], answeredQuestions,
         },
         reds: [], cost: book.report(),
       };
     }
 
     if (picked === 'type-goal') {
+      const answeredQuestions = await forceAnsweredQuestions(r.plan);
+      if (answeredQuestions === null) return abandon(round);
       const typed = await ask({ kind: 'goal' });
       if (typed === null) return abandon(round);
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore,
+          openQuestions: questionsFromPlan(r.plan).slice(answeredQuestions.length),
+          notChecked: [...notChecked], answeredQuestions,
         },
         reds: [], cost: book.report(),
       };
@@ -1852,15 +2010,17 @@ export async function runConfirmTurn({
     const fix = await ask({ kind: 'fix' });
     if (fix === null) return abandon(round);
     const redactedFix = redactSecrets(String(fix).trim());
-    openQuestions.push(redactedFix);
     if (round === 2) {
       // D3: after round 2 a "fix" is passed to the composer verbatim (via
-      // openQuestions, shown at signing) — there is no 3rd call.
+      // openQuestions, shown at signing) — there is no 3rd call. F175: the
+      // MODEL's own questions from THIS round's plan come first, then the
+      // person's still-pending fix text — order matters (model asked first,
+      // person spoke last) and neither is dropped.
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...openQuestions], notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore, openQuestions: [...questionsFromPlan(r.plan), redactedFix], notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
       };
@@ -1884,7 +2044,13 @@ export async function runConfirmTurn({
  * The return is deliberately complete rather than tidy:
  *   - `ok` is true iff a declaration passed validation and was measured;
  *   - `declaration` is the LAST ACCEPTED one, genre-env injected — the exact form
- *     that will run and that the signature will cover;
+ *     that will run and that the signature will cover; unless F176's fallback
+ *     fired (see `fellBack`), in which case it is the newest SOUND accepted one
+ *     instead — a "last accepted" close whose seed read instrument-stopped is
+ *     never handed to a signer as though it were the best close this run found;
+ *   - `fellBack` is `null` unless the fallback above fired, in which case it names
+ *     `{from, to, brokenStages}` — which iteration was dropped, which one now
+ *     stands, and which of the dropped one's stages instrument-stopped;
  *   - `reds` is what the LAST validated iteration said. `ok:true` with a non-empty
  *     `reds` means the final revision was rejected and the previous close stands:
  *     the rejection is reported, never hidden, and never silently shipped either;
@@ -1912,7 +2078,7 @@ export async function runConfirmTurn({
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[]}|null}} o
+ *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,
@@ -2129,6 +2295,19 @@ export async function authorClose({
   let stop = 'max-revisions';
   /** @type {{stage: string, name: string}[]} */
   let droppedEnv = [];
+  // F176: every MEASURED iteration (validated + seed-read, never a
+  // validation-rejected one), kept in call order, so a later revision that
+  // broke what an earlier one got right can be detected and reverted rather
+  // than silently kept because it happened to be last. Each entry carries its
+  // OWN droppedEnv — the single `droppedEnv` variable above is overwritten by
+  // every measured iteration and would mismatch a fallen-back iteration.
+  /** @type {{label: string, declaration: any, seedRead: any[], droppedEnv: {stage: string, name: string}[]}[]} */
+  const measuredIterations = [];
+  /** a measured iteration is SOUND when none of its seed-read rows instrument-stopped
+   * (hamr's ruling, 2026-09-14, option A) — a real red/green verdict is sound, a
+   * broken instrument is not.
+   * @param {any[]} rows @returns {boolean} */
+  const isSoundMeasurement = (rows) => Array.isArray(rows) && rows.every((r) => r?.verdict !== 'instrument-stop');
 
   /**
    * THE GOVERNANCE STOP'S OWN RED. It names the CAP and the SPEND, because the
@@ -2275,6 +2454,7 @@ export async function authorClose({
         acceptedSeedRead = rows;
         finalFrom = label;
         measured = renderSeedReadBlock(rows);
+        measuredIterations.push({ label, declaration: injected.declaration, seedRead: rows, droppedEnv: injected.dropped });
       }
 
       if (i === revisionCap) { stop = 'max-revisions'; break; }
@@ -2293,6 +2473,43 @@ export async function authorClose({
     }
   } finally {
     await seedTrees.cleanup();
+  }
+
+  // F176 (hamr's ruling, 2026-09-14, option A): "kept the last accepted
+  // revision" is not the same claim as "kept the best revision" — a revise
+  // loop that only checks validity per round, never soundness ACROSS rounds,
+  // can silently regress on its own last try. If the last MEASURED iteration
+  // is not sound (an instrument-stop, not a real red/green verdict) and an
+  // earlier measured iteration IS sound, fall back to the NEWEST sound one:
+  // its declaration, its seedRead, its own finalFrom label, and its own
+  // droppedEnv — never the module-level `droppedEnv`, which the unsound last
+  // iteration already overwrote. `stop` itself is never changed: whatever
+  // stopped the ladder still stopped it for the reason it stopped it, this
+  // only changes WHICH close is reported as the one that stands. Said loudly,
+  // never silently: `fellBack` names it and `onPhase` reports it as it
+  // happens, so a caller emitting phases to a spine or a terminal cannot miss
+  // it by reading only `declaration`/`seedRead`/`finalFrom`.
+  /** @type {{from: string, to: string, brokenStages: string[]}|null} */
+  let fellBack = null;
+  if (measuredIterations.length) {
+    const last = measuredIterations[measuredIterations.length - 1];
+    if (!isSoundMeasurement(last.seedRead)) {
+      for (let k = measuredIterations.length - 2; k >= 0; k -= 1) {
+        const candidate = measuredIterations[k];
+        if (isSoundMeasurement(candidate.seedRead)) {
+          const brokenStages = last.seedRead
+            .filter((/** @type {any} */ r) => r?.verdict === 'instrument-stop')
+            .map((/** @type {any} */ r) => r.stage);
+          fellBack = { from: last.label, to: candidate.label, brokenStages };
+          accepted = candidate.declaration;
+          acceptedSeedRead = candidate.seedRead;
+          finalFrom = candidate.label;
+          droppedEnv = candidate.droppedEnv;
+          onPhase('author-fallback', fellBack);
+          break;
+        }
+      }
+    }
   }
 
   const reds = fatal.length ? fatal : (lastValidation && !lastValidation.ok ? lastValidation.reds : []);
@@ -2318,6 +2535,11 @@ export async function authorClose({
     listing: seeds,
     genreEnv: { ...base.genreEnv, dropped: droppedEnv },
     finalFrom,
+    // F176: null on every path where the last measured iteration was itself
+    // sound, or where no measured iteration exists — byte-identical to today.
+    // Non-null names WHICH iteration was dropped, WHICH one now stands, and
+    // WHICH stages broke on the dropped one, so this is never a silent swap.
+    fellBack,
     stop,
     revisions: Math.max(0, iterations.length - 1),
   };

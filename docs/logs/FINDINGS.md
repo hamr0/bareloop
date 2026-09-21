@@ -12203,6 +12203,14 @@ UI it names it through has no path that requires the person to see and resolve i
 "Confirm" is accepted — an honest `questions` list and a menu that can bypass it are two
 different mechanisms, and only one of them was built.
 
+**2026-09-14, `fix/m3-closeout` (commit 245437c):** fixed in code with tests, not yet proven
+live. `runConfirmTurn` now carries the model's own `questions` from the plan being accepted
+into `accepted.openQuestions` on every accepting path, and a related ledger bug (round 1's
+"fix" text surviving into a round-2 acceptance it was already answered by) is corrected too.
+The confirm-turn's menu still offers "Confirm" without forcing a raised question to be
+resolved first — that half of this finding stays open; only the silent-drop half (the
+question never reaching the signed spec's own record at all) is fixed here.
+
 ## F176 — a later revision can be structurally worse than the one it replaces, un-flagged (open)
 
 **2026-09-14, same run `mu0voeo4`.** The revise ladder (`authorClose`'s loop, `src/authorflow.js`)
@@ -12235,3 +12243,1145 @@ declaration notes in `resolved-spec.json`.
 "kept the best revision" — a revise loop that only checks *validity* per round, never compares
 soundness ACROSS rounds, can silently regress on its own second-to-last try and hand the
 regression to the person as if it were forward progress.
+
+**2026-09-14, `fix/m3-closeout` (commit 5a83507):** fixed in code with tests, not yet proven
+live. `authorClose` falls back to the newest measured-sound iteration when the last one
+instrument-stopped; `stop` is unchanged and the swap is reported (`fellBack`, an `onPhase`
+event, and the terminal readout). The spine's own `author-phase` events still carry no field
+stating WHY a given revision fired — that half of this finding stays open.
+
+**2026-09-15 update — the fallback fired live a second time** (run `mu2qmept`, transcript
+`~/Downloads/pro3.txt` lines 145-161, spine
+`/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-3/out/author-mu2qmept.jsonl`).
+revise-1's seed-read came back with no instrument-stop (both reds were the expected
+`changed-from-seed` and `typecheck-checksjs-strict-errors`, everything else green) — a sound
+declaration in hand, same as F176's original mu0voeo4 account. revise-2 was still called after
+that sound revise-1 and this time instrument-stopped two stages
+(`tests-executed-kept`, `tests-zero-failures`); `author-fallback {"from":"revise-2",
+"to":"revise-1","brokenStages":["tests-executed-kept","tests-zero-failures"]}` fired and the run
+kept revise-1. The fallback mechanism itself is now proven live; the part of this finding that
+"the ladder always spends to its cap" still stands unchanged — revise-1 was already sound and
+revise-2 was paid for anyway (`revise-2 — $0.529054 across 6 call(s)` total, up from revise-1's
+own lower running total).
+
+## F177 — installed packages read as worker writes when the repo does not gitignore node_modules (fixed in code)
+
+A repo source's copy (`prepareSource`, `src/source.js:411`) holds only git-tracked files. The
+person now installs packages into the copy themselves (`missingDependencies`,
+`source-deps-missing`, commit 941cf7d). Live-verified on a real copy of `~/PycharmProjects/
+pulselog`: its tracked `.gitignore` does not mention `node_modules`, so once packages were
+installed in the copy, `git ls-files --others --exclude-standard` listed all 247 installed
+files as untracked. `changedSet` (`src/kinds.js:601-621`) unions the tracked diff with exactly
+that `ls-files --others` output, so `changed-from-seed` read those 247 files as the worker's
+own writes on a tree the worker never touched.
+
+**hamr's ruling (2026-09-14, option A):** hide `node_modules` in bareloop's OWN copy, never in
+the source repo's tracked files. The person's `.gitignore` — and everything else git-tracked —
+stays byte-identical to what they committed; only the copy's PRIVATE exclude gets a line added.
+
+**Fixed in code, commit 496bb54.** `prepareSource`'s repo-source branch appends `node_modules/`
+to the copy's `.git/info/exclude` (path resolved via `git rev-parse --git-path info/exclude`
+rather than assumed — a worktree layout keeps that file in the common dir, not the per-worktree
+one) right after the `.git` copy and hook strip, before the seed commit. Idempotent: a line
+already present (carried over from the source repo's own private exclude, since `.git` is
+copied wholesale) is left alone rather than duplicated. Plain folder/file/URL sources are
+unaffected — they have no `.git` of their own to carry a private exclude, and their
+`.gitignore` was already deliberately powerless over what the seed holds (M2b fix 6). **Not
+yet proven live** — verified against real git plumbing in tests (`tests/source.test.js`), not
+against a real run.
+
+`changedSet` runs directly in the prepared tree (`workdir` in `src/planrun.js:1764`) — there is
+no worktree in bareloop's own runner. `prepareWorkBranch` (`src/workbranch.js`) only checks out
+a branch IN PLACE in that same directory (`git checkout -b`); it never creates a git worktree.
+So the copy's `.git/info/exclude` is read by the same `git ls-files --others` call that
+`changedSet` makes, in the same directory, with no common-dir indirection to prove.
+
+**A gap this fix does NOT close, stated plainly rather than fixed (hamr's ask, not this
+builder's call).** Nothing stops a write-capable worker from writing INTO `node_modules`
+itself, when the job's signed `writeScope` fence is broad enough to reach it (e.g. a monorepo
+package scope like `packages/api/**` whose own `node_modules` sits inside it). The gate's
+`fs.deny` list (`src/planrun.js:2251`) excludes only the gate-audit file and the two arbiter
+book stores (`ARBITER_BOOK_STORES` = `.smoke`, `.litectx`, `src/kinds.js`); it names nothing
+about `node_modules`. Such a write IS captured by the gate's own audit log
+(`gate-audit.jsonl`), but it is invisible to `changedSet` — both TODAY, whenever the source
+repo's own tracked `.gitignore` already ignores `node_modules` (the common case), and AFTER
+this fix, always. This is arbiter territory (the deny-list is a signed-behaviour surface) and
+is reported, not fixed here.
+
+**The lesson, stated plainly.** Hiding a directory from git so an operator-caused side effect
+(package install) reads correctly also hides any WORKER write that happens to land in the same
+directory — the two causes are indistinguishable to `changedSet` by construction, so the fence
+that decides what a worker may touch is the only place this gap can close, never the exclude
+file.
+
+**2026-09-14 update — fixed in code (hamr's ruling, option B, same session as F178).**
+`scopeContained` (`src/validate.js`) now refuses any signed fence naming a `node_modules` path
+segment directly (`FORBIDDEN_SCOPE_SEGMENTS`), the same inexpressible-at-declaration-time
+treatment F178 gives `.git`. The residual gap this paragraph names above — a legal fence like
+`packages/api/**` reaching a NESTED `node_modules` beneath it, one a worker can create fresh
+during the run — needed a second, separate mechanism: read bareguard's `fs.deny`
+(`node_modules/bareguard/src/primitives/fs.js:26-31`, `within()`) and confirmed it is exact
+prefix-containment only — no glob, no path-segment match, no predicate hook; `matchAny`/
+`globToRegex` exist in the same package (`glob.js`) but `fs.js` never imports them. The
+supported hook used instead is `tools.denyArgPatterns` (`node_modules/bareguard/src/
+primitives/tools.js`, step 3 of `Gate#_stepEval`, the SAME step `fsCheck` runs at and checked
+right after it in the `??` chain, `node_modules/bareguard/src/gate.js`) — keyed by `action.type`
+so it applies to `write`/`edit` only, and reached ONLY when the path already cleared
+`fs.writeScope`/`fs.deny`, i.e. exactly the residual in-fence-but-nested case. The new
+`NODE_MODULES_PATH_PATTERN` (`src/planrun.js`) matches a whole `node_modules` path SEGMENT in
+the serialized action's `path` field (a look-alike like `node_modules_util` stays admitted).
+Matching the WHOLE serialized action carries no risk of a false match from a worker's WRITTEN
+TEXT, unlike bareguard's own `content.denyPatterns` primitive: bareloop's action shape
+(`toolAction`, `src/tools.js`) never carries a write's byte content in the action object —
+`args.bytes` is a length, not the text.
+
+Tests: `tests/validate.test.js` (whole-segment rejection + look-alikes, fail-first),
+`tests/job.test.js` (a `RED_CASES` row through the real `validateJob`), `tests/planrun.test.js`
+(a real bareguard `Gate` proving the nested-node_modules deny both standalone and through the
+REAL `runPlan`/`mkWorker` wiring — a scripted worker attempts an off-script write into
+`pkg/node_modules/` while its declared plan target is elsewhere; both fail-first proven by
+reverting the wiring). `authorscout.js`'s read-only scout Gate was checked and left alone (no
+write verb ever granted, so no `node_modules` write can reach it either). Not yet proven live.
+
+**2026-09-14 second update — the runtime belt's MECHANISM changed (never its coverage), same
+session, see F178's dated update below for the full account.** The `tools.denyArgPatterns`
+choice above was correct and unchanged. What was wrong was housing `.git` in `fs.deny` (F178's
+first version) — that mistake never touched this node_modules mechanism, `node_modules` was
+`tools.denyArgPatterns`-only from the start. `NODE_MODULES_PATH_PATTERN` was folded into the
+new combined `FORBIDDEN_WRITE_SEGMENT_PATTERN` (`/(?:\.git|node_modules)/` as the segment
+alternation) so both books share one pattern and one doc comment rather than two that could
+drift. Tests updated to a single combined Gate test; see F178's update for the full test list.
+
+## F178 — a signed fence could reach inside .git (CLOSED — unreachable live by construction)
+
+Nothing stopped a signed job's `writeScope` (or a workflow step's narrower `scope`/exit
+`target`) from naming `.git` directly — `.git/**`, or a nested spelling like `a/.git/**` under
+an otherwise-legal prefix. `scopeContained` (`src/validate.js:54`, the ONE containment law both
+`validateJob` and `validatePlan` go through, PRD design law #1) rejected absolute paths, `..`
+segments and drive letters, but had no opinion about `.git` as a path segment. A worker granted
+such a fence could write git's own files directly — refs, the seed commit, `.git/info/exclude`
+(the very file F177's fix just started writing to) — and every one of those writes is INVISIBLE
+to `changedSet` (`src/kinds.js:601-621`, a tracked-diff ∪ `git ls-files --others` union that
+never inspects `.git` itself), so the arbiter's own "what did the worker do" reader could be
+fed a lie by the worker rewriting the repository underneath it.
+
+**hamr's ruling (2026-09-14, option B): block both, fix now.** Order: this item first (own
+commit), then the F177 `node_modules` gap (own commit, see the dated update on F177 above).
+Tighten-only, same session, branch `fix/m3-closeout`.
+
+**Fixed in code.** Two layers, same shape as every other fence law in this file:
+  - **Declaration-time (the real stop):** `scopeContained` now refuses any prefix whose
+    normalized path has a whole SEGMENT equal to `.git` (`FORBIDDEN_SCOPE_SEGMENTS`,
+    `src/validate.js`) — whole-segment only, so a look-alike (`.github`, `.gitignore`,
+    `my.git`) is a DIFFERENT name and stays admitted. Every call site (`job.js:386`'s
+    `writeScope`, `plan.js`'s step `scope`/exit `target`/`path`) goes through this one
+    function, so the rule lands everywhere a fence or scope is legality-checked without a
+    second, driftable copy (the F9 red-class this function already exists to prevent).
+  - **Runtime belt:** the worker Gate's `fs.deny` list (built by the new `arbiterDeny(workdir,
+    auditPath)`, `src/planrun.js`, called from `mkWorker`) now includes `join(workdir, '.git')`
+    beside the gate-audit file and the two arbiter book stores. bareguard's `fs.deny` is exact
+    prefix-containment (`within()`, `node_modules/bareguard/src/primitives/fs.js:26-31`), so one
+    entry at the workdir root covers the whole `.git` tree — there is exactly one `.git` per
+    repo, always at the workdir root, unlike `node_modules` which can nest at any depth (see
+    the F177 update above for why that gap needs a different mechanism). This belt is
+    UNREACHABLE through the shipped path today (the declaration-time rule already refuses any
+    fence that could reach it) — kept anyway as defense-in-depth against a future validator
+    regression, the same posture `mkWorker`'s work-branch hard rule already takes for a
+    different precondition.
+  - `authorscout.js`'s read-only scout Gate (`defaultSurveyor`) was checked and left alone: its
+    `writeScope` is always `[]` (no write verb is ever granted there), so no write of any kind
+    — `.git` included — can reach it regardless of the deny list; adding the entry would be
+    inert.
+  - `proveDestination`'s repo-source branch (`src/source.js:469-472`) does not yet validate a
+    Destination answer at all beyond non-empty — the comment there says wiring Destination into
+    `writeScope` is a later milestone (M3/M4). Traced where a real job's `writeScope` actually
+    gets its value today: the AUTHORING DRAFT sets it (`authorjob.js`'s `writeScope` param,
+    composed via `writeScopeBlock`), and every draft is `validateJob`-checked before it can be
+    signed — so a Destination of `.git`, wired in later exactly as planned, is already caught at
+    that one choke point without touching `proveDestination` today. Confirmed with a dedicated
+    `validateJob` test (`tests/job.test.js`) asserting `writeScope: ['.git/**']` reds
+    `invalid-value:writeScope`.
+  - Audited every `jobs/*.json` spec and `tests/` fixture for a fence naming `.git` or
+    `node_modules`: none found.
+
+Tests: `tests/validate.test.js` (whole-segment rejection + look-alikes admitted, both fail-first
+against the reverted function), `tests/job.test.js` (two new `RED_CASES` rows through the real
+`validateJob`), `tests/planrun.test.js` (a real bareguard `Gate`, driven by `arbiterDeny` itself
+— not a hand-typed mirror of it, so the test actually exercises `src/planrun.js`'s own code and
+was proven to fail-first when the function's `.git` entry was reverted). **Not yet proven
+live** — a real end-to-end run attempting a `.git` write has not been executed.
+
+**2026-09-14 update — DESIGN ERROR in the runtime belt above, caught by the main session's full
+gate (`npm test`), fixed same session.** `fs.deny` blocks ALL fs actions, reads included
+(`node_modules/bareguard/src/primitives/fs.js:43` "paths/prefixes denied for all fs actions",
+checked at `:62-66` before the read/write split ever runs) — so putting `.git` in `fs.deny`
+(the `arbiterDeny` mechanism above) silently also blocked the worker from READING `.git`, which
+hamr never ruled (his ruling was block WRITING; reading stays allowed). The regression surfaced
+as a real test failure, not a hypothetical: `tests/tools.test.js`'s persona/fence-drift guard
+("the worker's rendered system prompt names the arbiter's books and forbids reading them") greps
+`src/planrun.js` for the literal `deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) =>
+join(workdir, s))]` and reds when that spelling drifts — exactly what happened, because the
+worker's persona never claims `.git`/`node_modules` as a denied BOOK the way it does the gate
+audit / `.smoke` / `.litectx`, and it would have been lying about the fence if it had (reads of
+those two were never denied).
+
+**Fixed by moving `.git` off `fs.deny` entirely and onto the SAME `tools.denyArgPatterns`
+mechanism F177's `node_modules` belt already used** (that mechanism was always correct — see
+F177's own dated update above). `arbiterDeny` was removed (nothing else needed it); the gate's
+`deny` list is spelled directly again as `[auditPath, ...ARBITER_BOOK_STORES.map((s) =>
+join(workdir, s))]`, restoring the exact literal `tests/tools.test.js` greps for. The
+`node_modules`-only pattern was widened into one combined `FORBIDDEN_WRITE_SEGMENT_PATTERN`
+matching a whole `.git` OR `node_modules` path segment, wired into `tools.denyArgPatterns` for
+`write`/`edit` only — `read` never reaches it, by construction (the map only has `write`/`edit`
+keys).
+
+Tests rewritten (not the failing `tests/tools.test.js`, which needed no change and now passes
+again unmodified): one consolidated `tests/planrun.test.js` Gate test proves, through a real
+bareguard `Gate` driven by the real exported pattern, that a write/edit into `.git` or a nested
+`node_modules` is denied (rule `tools.denyArgPatterns`, not `fs.deny`), that a READ of
+`.git/HEAD` and a read inside `node_modules` are both ALLOWED, that look-alikes
+(`.github`, `.gitignore`, `my.git`, `node_modules_util`) stay admitted, and that an ordinary
+in-fence write is unaffected. Fail-first proven twice: once by reverting the pattern itself
+(caught a scoping bug in the test's own first draft — a `writeScope` narrower than `.git`'s real
+location made the write fail on `fs.writeScope` regardless of the pattern, silently proving
+nothing; corrected to a whole-workdir `writeScope`, modeling the belt's real job as a defense
+against a VALIDATOR regression, since `.git` is never legitimately in-fence in the first place).
+`npm run typecheck` and the targeted files (`tests/tools.test.js`, `tests/validate.test.js`,
+`tests/job.test.js`, `tests/plan.test.js`, `tests/planrun.test.js`) all reconfirmed green after
+the fix — no full `npm test` run from this builder session; the main session's own full gate is
+what surfaced the original regression and is the instrument that will confirm this fix at the
+next full-suite run. Still not yet proven live end to end.
+
+**2026-09-16 — CLOSED (hamr): unreachable live by construction.** Same shape as PRD item 30 row
+30.3 (F152, "impossible live by construction"). `scopeContained`'s `FORBIDDEN_SCOPE_SEGMENTS`
+(`src/validate.js`) refuses ANY fence naming a whole `.git` segment at DECLARATION time, before a
+job can even be signed — every call site a fence or scope is legality-checked through
+(`validateJob`'s `writeScope`, `validatePlan`'s step `scope`/exit `target`/`path`) goes through
+this one function, so no legally-signed job can ever carry a `.git`-reaching fence in the first
+place. That means the runtime belt above (`tools.denyArgPatterns`'s `FORBIDDEN_WRITE_SEGMENT_PATTERN`)
+can never fire on a real, signed run: the worker it would refuse never gets a Gate built with a
+`.git`-reaching `writeScope` to begin with. The belt stays exactly as its own text already says —
+defense-in-depth against a future VALIDATOR regression, not a path any real job takes today. A
+live proof of the belt firing would require deliberately reverting `scopeContained`'s rule first
+— i.e. proving a path no real job can take, which is not evidence about this build. Proof stays
+where it already was: the fail-first unit tests through a real bareguard `Gate`
+(`tests/planrun.test.js`), which exercise the belt directly rather than waiting for a signed job
+that structurally cannot reach it. No paid run follows from this closure.
+
+## F179 — a malformed tool-call JSON from the provider crashed the paid authoring run and threw away a sound declaration (open)
+
+Run mu2bjmed, spine
+`/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/author-mu2bjmed.jsonl`.
+Live proof run of the real person path (PRD item 33 ruling 9), DeepSeek deepseek-flash,
+`openai-api` provider, patient = a `prepareSource` copy of `~/PycharmProjects/pulselog`.
+
+The first `author` call's declaration measured at the seed with 7 stages and NO instrument-stop
+(`changed-from-seed` red, `typecheck-checks-strict` red — both expected at seed — the other five
+green). So a sound declaration was in hand.
+
+The ladder then made call revise-1 (`author-phase` `author-call` `i:1 of:2`, ts
+`2026-09-15T07:02:34.070Z`). That call crashed: `SyntaxError: Unexpected non-whitespace
+character after JSON at position 5734 (line 1 column 5735)`, thrown from `JSON.parse
+(tc.function.arguments)` — `node_modules/bare-agent/src/provider-openai.js:135:23`
+(`OpenAIProvider.generate`, bare-agent 0.42.0, no try/catch around the parse) — propagating
+through `Loop.run` (`node_modules/bare-agent/src/loop.js:823:65`) → `askStructured`
+(`src/authorflow.js:1496:15`, `const r = await generate(convo, tools, {});` — no catch) →
+`askDeclaration` (`src/authorflow.js:1556:13`, `const r = await askStructured({...})`) →
+`authorClose` (`src/authorflow.js:2202:19`) → `authorCloseForJob`
+(`src/authorjob.js:675:20`). The full stack trace is captured verbatim in the spine's
+`author-crash` record (ts `2026-09-15T07:03:24.650Z`). Spine ends `author-crash` +
+`author-end{outcome:'crashed'}` (ts `2026-09-15T07:03:24.651Z`).
+
+F176's fallback (newest sound iteration) never ran, because the throw escaped `authorClose`
+entirely rather than being caught and compared against the prior sound iteration. Nothing
+signed.
+
+HYPOTHESIS (this run's own raw response was not kept): the model emitted a malformed tool-call
+`arguments` string with extra trailing structure. This is consistent with fwdloop's F28 sample —
+a peer repo's own finding, not this run's evidence — whose captured `arguments` string ended
+`..."matches": ["c2", "c3"]}}"` (one extra trailing brace), a shape that would read exactly as
+"non-whitespace character after JSON" the way this run's message does. fwdloop's session
+independently hit the same `bare-agent` 0.42.0 `SyntaxError` live 3 times on 2026-09-15 on
+deepseek-flash — three independent hits the same day across two repos is corroborating signal
+for the crash class, but it is still not this run's own raw text, which was never captured; the
+cause stays a hypothesis here.
+
+Doctrine touchpoints to cite: no JSON repair ever; the one mitigation this codebase already has
+for malformed JSON elsewhere (the judge) is a single retry, not applied here. Upstream: the
+upstream ask has been filed by fwdloop (its F28); bareloop is to add a corroborating
+UPSTREAM-ASKS entry (not done in this commit).
+
+Candidate direction (unruled): wrap the tool-call parse (or the whole `generate` call) so a
+malformed-arguments SyntaxError becomes a typed, catchable provider-shape red instead of an
+uncaught crash, letting F176's fallback-to-newest-sound-iteration logic run.
+
+**2026-09-15 update — fixed in code, not yet proven live** (commit 318e066, `fix/m3-closeout`).
+`askStructured`'s `generate` call is now wrapped in try/catch, tested against `callCasualty`
+(`src/text.js`, new): a `HaltError` still re-raises (a governance exit, never laundered); an
+ETIMEDOUT/TimeoutError-shaped throw or a JSON-mentioning SyntaxError lands as the same typed
+`providerError` shape the resolved-`{error}` path already produced; anything else still crashes.
+`authorClose`'s existing `ask.providerError` handling (the F176-adjacent fallback described
+above) now runs on this class too, so the author call's already-measured, already-sound
+declaration is kept rather than discarded. No JSON repair, no retry added. Upstream: the
+corroborating entry is filed, BA-27 in `docs/product/UPSTREAM-ASKS.md`.
+
+**2026-09-15 update — retry-not-repair shim added, not yet proven live** (commit 96866d5,
+`fix/m3-closeout`). 318e066 was not enough: live run mu2cnycb (2026-09-15, DeepSeek
+deepseek-flash) hit the malformed JSON on the FIRST `author` call. A casualty on the first call
+has no earlier sound declaration to fall back to, so `askStructured`'s `providerError` return
+stopped the run NOT OK — and a retry could not happen on that path anyway, because the call
+books `costUsd: null`, so `capStop` would answer pricing-red before any retry under a ceiling.
+
+hamr's 2026-09-15 ruling, verbatim intent: a malformed tool-call JSON gets RETRIED, NEVER
+REPAIRED, reusing `askStructured`'s EXISTING malformed-emission retry ladder
+(`MAX_STRUCTURE_RETRIES = 2`) — no new retry cap, no new number. `withMalformedToolCallShim`
+(`src/authorflow.js`, wired into `makeLoopGenerate`) is a delegate (`Object.create(provider)`,
+never a mutation of the shared instance) whose `_request` strips a malformed tool call out of the
+RAW response BEFORE `generate()`'s own `JSON.parse` ever reaches it — bare-agent's own usage
+normalization, stop-reason mapping, and the Loop's own pricing/metrics all run unchanged on the
+real response, so the round comes back PRICED (real `usage`) with the malformed call(s) removed
+instead of throwing — zero surviving calls on a single-call reply, but a reply carrying MULTIPLE
+tool calls can leave one or more valid calls surviving alongside the stripped one(s).
+`askStructured` checks for the shim's own `malformedToolCall` marker FIRST, before it ever looks
+at how many calls survived, tagged with a new `malformed-tool-call-arguments` axis, and retries
+through the same ladder that already handles `no-declaration-tool-call`. Nothing ever repairs,
+trims, or re-parses the model's arguments string.
+
+**Follow-up (2026-09-15, same day, review-caught) — a mixed reply is never accepted either**
+(commit e9e2839, `fix/m3-closeout`). The first cut of this fix checked `malformedToolCall` only when
+`box.calls.length === 0`, so a reply carrying TWO declaration calls — one malformed, one valid —
+left exactly one surviving call after the strip and that valid call was silently ACCEPTED. Before
+96866d5 a two-call reply was ALWAYS `multiple-declaration-tool-calls`, never an accept, so this
+widened what a malformed reply could get through. `askStructured` now checks
+`r?.malformedToolCall` before the `box.calls.length === 1` accept, unconditionally on the survivor
+count — nothing from a reply that carried a malformed call is ever accepted.
+
+SCOPE: `makeLoopGenerate` only — the authoring declaration calls (`scripts/run-author.mjs:729`)
+and the confirm turn (`scripts/run-author.mjs:601`). The scout (`src/authorscout.js`, its own
+`Loop`) and the worker path (`src/planrun.js`, its own providers) are OUT OF SCOPE and still get
+only 318e066's `callCasualty` stop (a provider-red with `costUsd: null`, no retry) — this remains
+an OPEN GAP, not yet fixed for those two paths. This fix itself is also NOT YET PROVEN LIVE (unit
+tests only, against a real `OpenAIProvider` instance with `_request` stubbed at the transport
+seam — no live provider run since).
+
+**2026-09-15 update — the upstream fix shipped, bareloop's local shim deleted, still NOT YET
+PROVEN LIVE** (commit `22c7ae9`, `fix/m3-closeout`). `bare-agent` bumped `^0.42.0` -> `^0.43.0`,
+which ships BA-27: `OpenAIProvider`/`OllamaProvider.generate` no longer throw on a malformed
+tool-call arguments string, and no longer need the local strip either — the shared
+`parseToolCalls` helper (bare-agent's own `provider-toolcalls.js`) returns the round priced
+(real `usage`) with `toolCalls: []` plus a `malformedToolCall: {name, error}` marker, which
+`Loop.run` surfaces unchanged on its return. `withMalformedToolCallShim` (`src/authorflow.js`,
+96866d5's stopgap) is deleted; `makeLoopGenerate` calls `loop.run()` directly again;
+`askStructured`'s `r?.malformedToolCall` check (e9e2839, unchanged) now reads bare-agent's own
+field instead of the shim's. `callCasualty`'s SyntaxError admission (`src/text.js`) is deleted as
+dead code in the same commit — read every provider bareloop constructs
+(`AnthropicProvider`/`OpenAIProvider`/`GeminiProvider`, `src/providers.js`) against the installed
+0.43.0 source and confirmed none can still throw a JSON SyntaxError out of `generate()` after a
+billed round (Anthropic/Gemini read tool-call arguments as already-parsed objects; every
+provider's raw-HTTP-body parse in `_request` is already try/catch-wrapped into a plain `Error`);
+bareloop never streams a provider response. Tests adapted to exercise the real mechanism through a
+real `OpenAIProvider` instance (`_request` stubbed, no shim); mutation-tested (deleting
+`askStructured`'s `r?.malformedToolCall` check sent 5 tests red, restored). SCOPE is unchanged —
+the scout and the worker path are still not wired to this retry ladder (the scout's own silent
+classification gap is now pinned by a test, `tests/authorscout.test.js`; the worker path's gap is
+newly named as F184). This is STILL NOT PROVEN LIVE: no real provider run has exercised the
+0.43.0 code path since the bump — unit tests only.
+
+**2026-09-15 update — still NOT proven live.** Two more live runs today (`mu2p83go`, signed run
+via run-u; `mu2qmept`, the real person-path interview) both completed with zero malformed
+tool-call events on their spines (grepped `author-mu2qmept.jsonl` for `malformed`: 0 hits).
+`mu2qmept` did hit an `author-scout-recovery` call (spine ts `2026-09-15T13:59:38.611Z`,
+`$0.139132 across 2 call(s)`) — that is a distinct mechanism (a short-blob scout recovery,
+`src/authorscout.js:556`), not the malformed-tool-call-arguments class this finding names, and
+it carries no `malformedToolCall` marker. This finding stays open, unproven live.
+
+## F180 — the crashed call's spend is not booked; the run's total cost is under-reported (open)
+
+Same run (mu2bjmed). The revise-1 HTTP response came back (the parse happens on
+`data.choices` after a 200), so that call was billed by the provider, but `book.add`
+(`src/authorflow.js:1498`, `book.add(attempt === 0 ? label : ..., r, attempts);`) runs only
+AFTER `generate` returns on line 1496 — since the throw happens inside `generate` (during
+`OpenAIProvider.generate`'s own tool-call mapping, before it returns), `book.add` for revise-1
+never executes. No `author-cost` row for revise-1 exists in the spine. The last `author-cost`
+row present is label `"author"`, `knownUsdSoFar: 0.62592`, `spendCompleteSoFar: true` (ts
+`2026-09-15T07:02:23.568Z`). The following `author-end` record carries no spend fields, and the
+run's terminal output printed no total.
+
+fwdloop's F28 names the same mechanism from its own side: the provider returns `data.usage`
+before the `JSON.parse` throw, and that usage value is lost with the throw — never reaching
+whatever books it, the same class this finding names for bareloop's `book.add` call.
+
+Why it matters: doctrine says a killed run gets its own honest cost, and unknown spend must
+read `spendComplete=false`, never a complete-looking floor. The last-recorded row here reads
+`spendCompleteSoFar: true` while a further, unbilled-on-paper call in fact spent money —
+under-reporting is the unsafe direction for a cap.
+
+Candidate direction (unruled): book (or at least mark incomplete) the pre-throw response data —
+including `usage` when the transport returns it — before the tool-call argument parse can
+crash the call.
+
+**2026-09-15 update — fixed in code, not yet proven live** (commit 318e066, `fix/m3-closeout`).
+The same `askStructured` try/catch that fixes F179 now also books the crashed call before
+returning: `book.add(label, { error: reason }, attempts)` runs inside the catch, exactly the
+resolved-`{error}` path's own shape, so `priceOf({error: reason})` reads `costUsd: null` and the
+tally's `spendComplete` reads `false` — never the complete-looking floor `mu2bjmed` recorded.
+This does NOT recover the crashed call's `usage`: bare-agent's own throw still discards it before
+it can reach `book.add` (that half is upstream's to fix, BA-27 in
+`docs/product/UPSTREAM-ASKS.md` — filed, not landed). The mitigation here makes the total read
+honestly-incomplete rather than falsely complete; it does not make it complete.
+
+**2026-09-15 update — the specific manifestation this finding named is now moot** (commit
+`22c7ae9`, `fix/m3-closeout`, `bare-agent` bumped to `^0.43.0`). BA-27 landed: a malformed
+tool-call round no longer throws and no longer loses `usage` — it returns priced, so the crashed-
+call-loses-spend mechanism this finding described cannot happen anymore for THIS cause (a
+malformed tool-call arguments string). 318e066's booking mitigation (above) stays in place as the
+general safety net for every other admitted casualty class (ETIMEDOUT/TimeoutError) that can still
+reject a call after this repo's own `book.add` seam runs. Not proven live (same caveat as F179).
+
+## F181 — a key with an embedded newline crashes inside the paid span instead of refusing at $0 (fixed in code, not yet proven live)
+
+Run mu2bcn7c, spine
+`/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live/out/author-mu2bcn7c.jsonl`.
+The operator's secret-store entry printed two lines, so `OPENAI_API_KEY` held key + `"\n"` + a
+metadata line. Crash: `TypeError [ERR_INVALID_CHAR]: Invalid character in header content
+["Authorization"]` (`code: 'ERR_INVALID_CHAR'`), thrown from `transport.request(url, ...)` at
+`node_modules/bare-agent/src/provider-openai.js:205:29` (`OpenAIProvider._request`), at the
+first scout call (`author-phase` `scout`, ts `2026-09-15T06:52:08.661Z`; crash ts
+`2026-09-15T06:52:08.833Z`). No request left the machine ($0 spent — the crash is inside Node's
+own header-encode, before the socket is written to); no key value reached the spine (checked:
+grepped the spine for key-shaped strings, 0 hits).
+
+`run-author`'s key check is presence-only (checks the env var is set, not its shape). A curl
+probe built with the same two-line value returned HTTP 200 twice — curl tolerated the embedded
+newline — so a curl probe is a blind instrument for this defect class; a plain Node `https`
+request with the first line only (key with the trailing metadata stripped) returned 200.
+
+Never include or describe the key or the metadata line's content in any record of this finding.
+
+Candidate direction (unruled): trim/validate the resolved API key value (reject embedded control
+characters) before constructing the request, so this class refuses at $0 instead of crashing
+mid-span.
+
+**2026-09-15 update — fixed in code (commit `f4a65b7`, `fix/m3-closeout`), not yet proven
+live.** One exported pure helper, `apiKeyProblem(value)` (`src/providers.js`, beside the
+provider table), reports `null` for a clean value or a plain-English reason for a value that
+carries CR, LF, TAB, any other C0/DEL control character, or leading/trailing whitespace — it
+NEVER trims or repairs (retry-never-repair, in spirit: refuse, don't guess). Wired at every door
+that presence-checks a key: `scripts/run-author.mjs` (worker key, and the judge key when
+`closeJudges` is true), `scripts/run-u.mjs` (worker key, and the judge key when `JUDGES`),
+`src/cli.js`'s `bareloop run` (`ANTHROPIC_API_KEY`), and `scripts/run-interview.mjs`'s `KEYED`
+gate (a malformed key no longer counts as keyed; the offer names the reason, never the value).
+Every refusal names the env var and the reason class only — never the value, never a substring
+of it. Also restored this finding's own header (`## F181 …`), which commit `28380e2` deleted by
+mistake while inserting the F180/F179 dated updates immediately above it — the body text
+survived, orphaned under F180's heading, until this update put the header back. Unit tests
+(`tests/providers.test.js`) cover the clean/newline/CR/tab/leading-space/trailing-space/generic-
+control-char cases and the never-trims contract; a script-level test
+(`tests/run-author.test.js`, `'a key with an embedded newline refuses at $0…'`) drives the real
+script end to end with `ANTHROPIC_API_KEY: 'sk-test\nmeta'` (dummy value) and asserts exit 2,
+the exact reason text, no spine file, and no echo of the key. Mutation-tested: disabling the
+line-break check alone sent 3 tests red across the two suites; restored via `cp` from a
+scratchpad backup, never `git checkout`. Not yet proven live — no real provider run has
+exercised this refusal path since it was added.
+
+## F182 — the interview never waits for the install, so "Run it now?" is unreachable for a repo that needs packages (fixed in code, proven live)
+
+`scripts/run-interview.mjs`. `prepareSource` runs right after Destination (:409). The install
+gap is printed at :426-434 (`"The copy above has no installed packages (...)"`, `"bareloop
+never runs an install itself — run this in the copy, then rerun this command:"`, then the
+`cd ... && <install command>` line) — but the script does not pause there; it falls straight
+through into the rest of the interview (the class/confirm questions), and only re-checks the
+same gap at hand-off, far later (:687-702, `depsGapAtHandoff`, re-run of the same
+`missingDependencies` check right before the offer). `OFFERABLE` (:702) is
+`KEYED && !depsGapAtHandoff`, so the still-open gap silently suppresses the "Run it now?" offer
+there instead.
+
+A freshly made copy of a JS repo with any dependencies therefore never gets the offer unless the
+person installs in a second terminal mid-interview, which nothing on screen tells them to do —
+the printed message says "then rerun this command," pointing at restarting the interview, which
+is not actually required (only the install is).
+
+Observed twice on 2026-09-15, `pulselog-person-live` and `pulselog-person-live-2`: in both, the
+person reached "Not offered — the copy still has no installed packages." The spawned
+`run-author` path (ruling 9's "reading the keyboard" hand-off) is therefore still unproven live
+in this build; `run-author` was fired by hand instead in both runs.
+
+Candidate direction (unruled): either pause the interview with an explicit prompt right after
+printing the install gap (re-checking before continuing), or drop the "rerun this command"
+wording in favor of "install in another terminal, then answer the offer below."
+
+**2026-09-15 update — fixed in code (commit 6240ff9, `fix/m3-closeout`), not yet proven live.**
+Took candidate direction (a): the interview now pauses right where the gap is printed and loops
+on the same `missingDependencies` check, `("Press Enter once it has finished to check again, or
+type skip to carry on without it: ")`, printing `"packages found — carrying on."` on a resolved
+recheck or `"still missing (<reason>) — try again, or type skip to carry on without it."` and
+re-prompting otherwise; `skip` or end of input carries on unresolved (never an infinite loop —
+the hand-off's own re-check and its existing "Not offered" wording are unchanged, still the last
+$0 gate). The wrong "then rerun this command" wording is gone, replaced with "run this in the
+copy, in another terminal." Five new scenarios in `tests/run-interview.test.js` cover skip,
+still-missing retry, a real recheck success (via a new interactive-stdin test driver that creates
+`node_modules` in the prepared copy between two prompts), EOF during the pause, and the no-gap
+case; the two pre-existing deps-gap tests were updated for the pause step now sitting earlier in
+their transcript. Mutation-checked: disabling the recheck (always reading "resolved") is killed
+by the still-missing-retry test. Not yet run against a real live interview end to end.
+
+**2026-09-15 update — PROVEN LIVE, run `mu2qmept`** (transcript `~/Downloads/pro3.txt` lines
+24-28, spine `author-mu2qmept.jsonl`). The interview paused right after printing the install gap
+(`"Press Enter once it has finished to check again, or type skip to carry on without it:"`,
+line 28); `npm ci` was run in the prepared copy from a second shell — by the main session, on the
+person's behalf, not by the person themselves — and Enter on the paused prompt read the recheck
+as resolved (`"packages found — carrying on."`). The interview then reached the "Run it now?"
+offer (line 71) and the person answered yes: `run-author.mjs` was spawned reading the keyboard
+(ruling 9's hand-off), the first time this path has run live end to end. The pause/recheck loop,
+the corrected wording, and the reachable offer are all confirmed working as fixed.
+
+## F183 — the confirm turn's "you asked for these, but nothing checks them" list contradicts the code-derived protections printed right above it (fixed in code, not yet proven live)
+
+Run mu2bjmed, confirm round 2 plan (spine `author-phase` `confirm-done` round 2).
+`notChecked` listed "No ts-ignore comments" and "Do not edit or delete tests" while the
+protections list shown directly above it (the code-derived list, not model prose) included the
+no-suppressions guard (covers `@ts-ignore`) and the write fence `src/**` (`test/` sits outside
+that fence, so a test edit is already refused by the fence, independent of any check). Round 1's
+plan had instead correctly listed those same two items as CHECKED. Of the four `notChecked`
+items in round 2, two are false claims of an absent protection ("No ts-ignore comments", "Do not
+edit or delete tests"); "No any casts" and "Do not change what the code does" are genuinely
+unchecked.
+
+Same defect class as F174 (a model-invented protection), reversed in direction: there a model
+CLAIMED a protection that did not exist; here a model CLAIMS a real protection is MISSING. The
+person reading the confirm turn is told a guard is absent when the code already enforces it.
+
+Candidate direction (unruled): derive `notChecked` from the same code-side protections list the
+confirm turn already prints, by set-difference against the person's asks, rather than letting
+the model state it freeform.
+
+**2026-09-15 update — RECURRED, this time in confirm ROUND 1** (run `mu2qmept`, transcript
+`~/Downloads/pro3.txt` lines 97-112, spine `author-mu2qmept.jsonl` `author-phase` `confirm-done`
+round 1 — mu2bjmed's occurrence was round 2). The same two false claims recurred: `notChecked`
+listed "Do not edit or delete tests" and "No ts-ignore comments and no any casts" while the
+protections list printed directly above already named `no-suppressions` (covers `@ts-ignore`)
+and the write fence `src/**` (`test/` sits outside it, already refusing test edits). "No any
+casts" and "Do not change what the code does" were genuinely unchecked, same as before. Still
+open — the candidate fix (derive `notChecked` by set-difference against the code-side list) has
+not been built.
+
+**2026-09-16 update — FIXED IN CODE, ruling A (hamr, 2026-09-16), not yet proven live.** Option A
+(feed the real guard list and the real write fence into the confirm prompt as facts, instruct the
+model to leave anything already covered off `notChecked`) was chosen over option B (drop the
+model's `notChecked` list entirely, rejected — the model still writes it). `confirmProtections`
+(`src/authorflow.js`) already computed the real code-derived protections list for the person-facing
+display; that computation is now moved earlier in `runConfirmTurn` (before the round loop, right
+after `resolvedLang` is known) and the SAME list — never a second hand-typed spelling — is threaded
+into `confirmPrompt`'s model-facing prompt as an "ALREADY COVERED" block, with an instruction not to
+name anything on it in `notChecked`. `CONFIRM_SYSTEM` was updated to repeat the instruction and cite
+both prior occurrences (`mu2bjmed`, `mu2qmept`). The model still authors `notChecked` freely; nothing
+is made deterministic. Proven by `tests/confirmturn.test.js` (fail-first, mutation, and
+code-derivation tests). NOT yet run against a real provider — the actual reduction in false
+`notChecked` claims needs a live interview to confirm.
+
+**2026-09-16 update — proven live and measured; the fix is PARTIAL, root cause found, wording
+fix PARKED.** Live authoring run `mu3wqmnp` ($0.806198, 6 calls) showed the false "Do not edit or
+delete tests" entry GONE from `notChecked` — that half of the fix holds live. "No any casts" was
+still present as a false `notChecked` claim in the same run.
+
+A $0-then-paid ON/OFF probe isolated why: 20 confirm-turn calls on `deepseek-flash`, $0.66 total,
+same answers and inputs across both arms, only the guard's description line in the
+"ALREADY COVERED" block changed. With the CURRENT wording, the false "No any casts" claim fired
+5 of 10; with a wording that names the guard's real patterns instead, it fired 0 of 10. The
+unrelated "Do not edit or delete tests" claim served as the control and stayed roughly flat
+across both arms (~5/10 vs 6/10) — confirming the swing on "No any casts" tracks the wording
+change, not run-to-run noise.
+
+Root cause: `GUARD_DESCRIPTIONS['no-suppressions']` (`src/authorflow.js:507`) names only 3 items
+and is language-blind — it prints `"# type: ignore"`, a Python-only entry, on a JS job — while
+the real composed guard list is 7 patterns for `js` (`ts-ignore`, `ts-expect-error`,
+`ts-nocheck`, `eslint-disable`, `any`, `any-star`, `cast`) and 5 for `python`. The model reads a
+3-item, wrong-language description and reasonably concludes "no any casts" is not covered.
+
+This wording fix is NOT built. PARKED pending hamr's word (a PRD item — see
+`docs/product/PRD.md` §8a — never a drive-by fix folded into this pass).
+
+Also recorded, parked alongside it: the write-fence line has the same shape of problem but is
+NOT safely fixable by wording alone. Whether "tests" are covered by the fence depends on WHERE
+tests live relative to it — `test/` sits outside `src/**` in the pulselog patient, but a repo
+with `src/foo.test.js` would not be covered by the same fence, so a generic wording change
+("tests are protected by the write fence") would overclaim for that shape of repo.
+
+## F184 — a malformed tool-call round on the worker path ends an attempt with nothing on the spine naming it (fixed in code, not yet proven live)
+
+Found 2026-09-15 while bumping `bare-agent` to 0.43.0 and closing out F179/F180. Scoped read, not
+a live run: `src/planrun.js`'s worker `ask()` (the Loop-path surface, `src/planrun.js:2783-2815`,
+distinct from the native/CLIPipe `ask()` at `:2598-2629`, which is a different transport and out
+of scope here) reads only `r.error` off the `loop.run()` return (`:2806`, `if (r.error) { ... }`)
+and otherwise returns `r` unexamined (`:2814`). It never reads `r.malformedToolCall` — bare-agent
+0.43.0's own field (BA-27, `node_modules/bare-agent/src/loop.js:854-856`), surfaced only on
+`Loop.run()`'s FINAL return, never per-round: the per-round `onLlmResult` metering payload
+(`node_modules/bare-agent/src/loop.js:905-923`) carries `model`/`usage`/`costUsd`/`stopReason`/
+etc. but no `malformedToolCall` field, so bareloop's own round-level spine record
+(`src/planrun.js`'s `metered` callback, ~`:2680-2716`) cannot see it either — the only place the
+marker ever reaches bareloop code is the value `ask()` throws away.
+
+The caller, `middle()` (`src/planrun.js:3308-3320`), does `const r = await w.ask([...])` then
+`lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX)` — the ONLY thing kept from the round. If
+the model's tool call on its final turn is malformed, bare-agent 0.43.0 returns that round with
+`toolCalls: []`, `text: ''` (a JSON-only tool-call reply carries no separate text), `error: null`,
+and `malformedToolCall: {name, error}` — the Loop reads a toolCalls-empty round as the model's own
+"done" (no more tool calls to execute) and returns rather than retrying, exactly as `askStructured`
+(`src/authorflow.js`) is built to notice and re-ask, but nothing on the worker path plays that
+role. `lastText` becomes empty, `judge()` (`src/planrun.js:3323-3348`) then runs the step's real
+exit checks against a workdir the attempt never touched, and the ordinary `needs_revision` +
+`exit-eval` failing-check gap is what reaches the spine (`:3339`, `emit('exit-eval', ...)`) — the
+same shape a ROUND THAT SIMPLY PRODUCED NO USEFUL WORK would leave. A billed round whose real
+cause was a malformed-JSON transport casualty is indistinguishable, on the spine, from the model
+genuinely failing the step — the operator reading a killed/looping run's spine has no way to tell
+"the model tried and the wire garbled it" from "the model didn't try," and the ladder's strike
+governor (two strikes force a replan, MEMORY.md) counts this round exactly like a real failed
+attempt even though nothing the worker could have done differently would have helped.
+
+Not the same population BA-27 fixed for: F179's own SCOPE note already says the worker path (and
+the scout) are OUT OF SCOPE for the `askStructured` retry ladder — this finding is that the
+upstream fix landing does not, by itself, give the worker path anywhere to route the marker either;
+`ask()` simply never looks. (The scout has the same blind spot — pinned by a new test this same
+commit, `tests/authorscout.test.js`, "a REAL OpenAIProvider survey round with a malformed tool
+call is classified as an ordinary EMPTY survey" — but the scout's classification at least lands in
+an EXISTING named cause (`SURVEY_CAUSES.EMPTY`) that retries under `SCOUT_RETRY_CAUSES`; the
+worker path has no retry or named cause at all, only a generic failing-exit-check gap.)
+
+Candidate direction (unruled): `ask()` could read `r.malformedToolCall` when `r.toolCalls` came
+back empty and `r.text` is empty too, and emit a distinct spine event (or fold it into
+`attempt-bounded`'s existing `cause` taxonomy, e.g. `cause: 'malformed-tool-call'`) naming the
+transport class — never retried automatically (that is arbiter-adjacent: it would change how many
+rounds an attempt actually gets), but at minimum VISIBLE, the same honesty bar F179/F180 set for
+the authoring path.
+
+**2026-09-15 update — fixed in code (commit `5418a3a`, `fix/m3-closeout`), not yet proven
+live.** `ask()` (`src/planrun.js`) now reads `r.malformedToolCall` right where the marker already
+reaches bareloop code (after the existing `r.error` handling, so a `denied:`/halt/truncated/wiring
+error still takes its own existing lane unchanged), and emits ONE distinct spine record naming it:
+`worker-malformed-tool-call`, `{phase, iteration, name, error}` — `name`/`error` scrubbed through
+`redactSecrets` and the error text capped at `BOUND_REASON_MAX` with the existing
+`GAP_TRIM_MARKER` withheld-count convention, never a raw unbounded string. `ask()` then `return
+r;`s EXACTLY as before — no retry, no new `attemptBounded` cause, no change to strike/ladder/
+attempt counting or verdict routing (all arbiter-adjacent, explicitly out of this finding's
+scope): the ordinary `needs_revision`/`exit-eval` gap the finding describes still fires the same
+way for a malformed round as it did before this fix, now simply named on the spine alongside it.
+Checked for exhaustive spine-type readers that a new type could break (`replay.js`, every
+`scripts/*.mjs` `events.filter`) — every existing reader POSITIVELY matches specific types it
+wants (`e.type === 'worker-round'`, etc.) rather than enumerating a closed set, so a new type is
+invisible to all of them by construction; none needed a change.
+Test: `tests/worker-malformed-toolcall.test.js` drives the REAL bare-agent `Loop` against a REAL
+`OpenAIProvider` instance with `_request` stubbed at the transport seam (never a hand-rolled
+`scriptedProvider`, which returns pre-parsed `toolCalls` directly and cannot exercise bare-agent's
+own `parseToolCalls`/malformed-JSON detection at all) — the same idiom `tests/
+authorscout.test.js`'s analogous scout-side test uses. Proves: the record fires exactly once, with
+the right name/error/phase/iteration; nothing runs between the marker and the attempt ending (no
+retry); a genuinely-empty ordinary round (no malformed marker at all) never gets mis-flagged. Also
+proves the ordinary `exit-eval` gap still fires unchanged, for both the malformed round and the
+ordinary-empty control. Mutation-tested: disabling the `r.malformedToolCall` read sent the first
+test's marker-count assertion red (0 vs 1); restored via `cp` from a scratchpad backup. Not yet
+proven live — no real provider has produced a malformed tool call against the shipped worker path
+since this fix landed.
+
+## F185 — an interview-authored repo job cannot be RUN by a person; it needs a developer hand-step (fixed in code, not yet proven live)
+
+Found 2026-09-15 while sign-and-running the first PERSON-path spec (`jobs/pulselog-person-strict-checks.json`,
+precedent `edf755c`). `scripts/run-u.mjs` runs only jobs listed in its own hard-coded `JOBS` table
+(`scripts/run-u.mjs:65`); `--job <key>` (`scripts/run-u.mjs:273`, `const jobKey = arg('job') ?? 'aurora-spawner';`)
+resolves a `target` from that table, and the spec it loads is read off disk at a path built from the
+table's own `spec` field (`scripts/run-u.mjs:284`, `const specPath = fileURLToPath(new URL(\`../jobs/${target.spec}\`, import.meta.url));`),
+refusing by name if the file is not there (`:285-286`). There is no code path from a freshly authored
+spec into either the table or `jobs/` — both are edits a developer makes by hand.
+
+The PERSON authoring path (`scripts/run-interview.mjs` → `scripts/run-author.mjs`) never makes that
+edit either. `run-interview.mjs`'s end-of-interview offer ("Run it now?", `scripts/run-interview.mjs:705`)
+spawns `run-author.mjs` (`scripts/run-interview.mjs:724`, `spawnSync(process.execPath, [RUN_AUTHOR, ...childArgs], ...)`)
+— i.e. it runs the AUTHORING pipeline, never the job itself. `run-author.mjs`'s own successful end
+state prints "SIGNING PREPARED — NOT SIGNED. This script stops here, by design." (`scripts/run-author.mjs:1016`)
+followed by "read the seed evidence above; if the close measures your job, the signature is yours to
+give." (`:1018`) and stops — it names no command that signs or runs the resolved spec it just wrote to
+`out/resolved-spec.json`. The person is left holding a resolved, hash-stable spec file with no way to
+launch it: `run-u.mjs` will refuse any `--job` key that is not already in its table, and nothing tells
+the person that reaching a running job from here requires a developer to `cp` the spec into `jobs/`
+and add a `JOBS` row (exactly the two hand-edits this commit made, following precedent `01d66070`).
+
+So PRD item 33 M3 ruling 7 ("A repo job works end to end", `docs/product/ITEM33-BUILD.md:383`) is
+true only with a developer hand-step between authoring and running; it is not true end to end for a
+person acting alone through the shipped CLI surface. No fix proposed here.
+
+**Fixed 2026-09-16, hamr's ruling (option A):** `scripts/run-u.mjs` now accepts `--spec <path to
+resolved-spec.json>` as an alternative to `--job <key>` (giving both, or neither, is a loud $0
+refusal). It reads the SIGNED spec off that path directly (JSON-parsed, then `validateJob`'d
+explicitly and early — a `--job` row's spec is developer-vetted and only meets `validateJob` deep
+inside `runJob`; a `--spec` run gets the same check at $0, before a filesystem lookup or a preview
+line prints, since there is no developer standing between the person and the launch to have caught
+a malformed spec first). The workdir and the seed come from the prepared copy's OWN source manifest
+(`readSourceManifest`, `src/source.js` — the same reader `run-author.mjs` and `run-u.mjs`'s own
+in-run destination read already use): the one `source-*/` sibling directory beside the spec that
+carries a `source.json` IS the copy this spec was authored against (`run-interview.mjs` passes the
+SAME `--out` to both the source door and `run-author.mjs`, so `resolved-spec.json` and
+`source-<runid>/{source.json,tree/}` are always siblings). No sibling, more than one, a missing
+seed, or a gone tree (`tree/.git` absent) are each a named $0 refusal — never typed, guessed, or
+defaulted. The spine directory is derived by the SAME `join(wd, '..', <name>)` formula a `--job`
+row uses, with `<name>` computed as `${spec.job}-bareloop` (the spec's own signed job name) rather
+than hand-picked. Every re-invocation command this script prints (resume/door/reopen, the "revise
+the spec" hints) now goes through one `SELECTOR`/`SPEC_DESC` pair so a `--spec` run's own printed
+commands stay `--spec`, never silently fall back to `--job`.
+
+Nothing past spec/target resolution changed: the `--approve <jobSpecHash>` signature gate, the
+budget/wall ceilings, the work-branch rule, coldReset + the F186 stale-gate-audit move, and the
+close-first precheck all read `spec`/`specHash`/`target` exactly as before, whichever selector
+named them — `tests/spec-selector-u.test.js` proves the signature gate specifically (a wrong or
+absent `--approve` on the `--spec` path refuses/holds exactly as it does on `--job`).
+
+`scripts/run-author.mjs`'s "SIGNING PREPARED — NOT SIGNED" end screen now prints the exact
+ready-to-paste command (`<providerEntry.envKey>=... node scripts/run-u.mjs --spec <resolved-spec
+path> --approve <hash>`, the real key name per F187's rule) — the loose end this finding named:
+reaching a running job from here no longer needs a developer at all.
+
+Tests: `tests/spec-selector-u.test.js` (13 cases, driven through the real script's preview path per
+the `tests/hitl-u.test.js` idiom) — a valid `--spec` resolves the right workdir/seed; `--spec` +
+`--job` together refuses; neither refuses; a missing/unparseable/`validateJob`-failing spec
+refuses; no `source-*/` sibling, more than one, no seed, and a gone tree each refuse; a wrong
+`--approve` hash still refuses (exit 1) and an absent one still holds (exit 0, no run); the printed
+hash is `jobSpecHash` of the spec on disk, the same signature a `--job` run signs. All 13 fail
+against the pre-fix source (11 fail outright — `--spec` was silently ignored and the run fell back
+to the default `--job aurora-spawner` row; the other 2 happened to pass by coincidence of the same
+generic approve-gate text). Mutation-tested per added refusal (both-given, no-seed, gone-tree,
+ambiguous-siblings, validateJob-skip): each disabled check sent its own test red and no other;
+restored via `cp` from a scratchpad backup each time.
+
+Not yet proven live: no real provider has run a `--spec`-launched job since this fix landed —
+everything above is proven at $0 through the preview path and unit-level checks.
+
+## F186 — the printed BEHAVIOUR line counts tool calls from every prior run that ever touched the patient tree, not just this run (fixed in code, proven live)
+
+Found 2026-09-15 reading run `mu2p83go` (the first signed PERSON-path repo job,
+`jobs/pulselog-person-strict-checks.json`) end to end. The run printed:
+
+```
+BEHAVIOUR  142 tool calls · 75 read, 44 grep, 21 edit, 2 recent
+           90 exact repeats (~63%)
+           2 denied
+```
+
+(`out/run-u-person-strict.log:29-31`). Re-deriving `runBehaviour` (`src/behaviour.js:89-105`) by hand
+over the run's own gate-audit file (`u-mu2p83go-gate-audit.jsonl`) with NO run_id filter reproduces
+this exact line: 142 total, 75 `shell_read`, 44 `shell_grep`, 21 `edit`, 2 `ctx_recent`, 90 repeats
+(63%), 2 denied. But the file holds SEVEN distinct `run_id`s, not one: three are earlier AUTHORING
+scouts against the same patient tree that same day (`79879ccf…` 06:56:56–06:57:28Z, `810490ed…`
+07:28:22–07:28:52Z, `4ebd08af…` 10:47:20–10:47:47Z), and only the remaining four (`bdbcf847…`,
+`2f561051…`, `c77c5d39…`, `8d52ced7…`, spanning 13:19:53Z–13:25:32Z) belong to run `mu2p83go` itself.
+Scoped to those four, this run's own behaviour was 82 tool calls (37 read, 23 grep, 21 edit, 1
+recent), 0 denied, 42 repeats (51%) — a materially different, and smaller, picture than what printed.
+
+Mechanism, each piece verified: the authoring scout's default gate-audit path is
+`join(workdir, GATE_AUDIT_FILE)` (`src/authorscout.js:319`, `GATE_AUDIT_FILE = 'gate-audit.jsonl'` at
+`src/kinds.js:597`) — i.e. it writes the arbiter's own book directly into the patient tree, at its
+root, the same place run-u later looks. The patient's `.gitignore:14` denies `*.jsonl`, so run-u's
+cold reset (`scripts/u-patient.mjs:30-37`, `git reset --hard <seed>` then `git clean -fd`, no `-x`)
+leaves that file untouched — it survives across every authoring scout AND the run itself, accreting
+rows from every run_id that has ever touched the tree since the last time something outside git
+removed it. `scripts/run-u.mjs:1532-1534` renames whatever is sitting at `<workdir>/gate-audit.jsonl`
+wholesale into `u-<runid>-gate-audit.jsonl` as "this run's own audit" with no filtering. Then
+`scripts/run-u.mjs:1818` calls `runBehaviour(audit)` with no `runId` — the comment directly above it
+states "`audit` is already scoped to this runid's file, never re-filtered here", which is the false
+assumption this finding traces: the FILE is named after this run, but its CONTENTS are not scoped to
+it. `src/replay.js:735` calls `runBehaviour(audit)` the same unscoped way inside `buildTimeline`, so a
+later replay of this same archived run carries the identical exposure, not just the live printout.
+
+Not affected: the verdict (the close stages judge the patient tree's actual diff, not the audit log,
+and never touched by this). The `21 edit` count IS correct for this run specifically — none of the
+three earlier authoring run_ids contain any `edit` action (their `action_types` are `llm`+`read`
+only, verified by tally), so all 21 edits in the printed total are genuinely mu2p83go's own. The 2
+`denied` rows are BOTH from the earliest authoring scout (`79879ccf…`, 06:57:02Z and 06:57:14Z — an
+`fs.deny` refusal of a `shell_read` on `tree/.litectx` and on `tree/gate-audit.jsonl` itself); run
+mu2p83go's own four run_ids have 0 denies between them, so the printed "2 denied" describes an
+earlier scout's behaviour, not this run's.
+
+This is the class this repo already has a name for: a harness slicing a shared append-only log must
+account for every writer inside its window (MEMORY.md, measurement discipline) — `runBehaviour`'s own
+`repeatKey` docstring (`src/behaviour.js:33-40`) explicitly rejects being "sharper than what the gate
+records", but nothing upstream of it enforces that the records handed in are the right slice.
+
+Separately, and part of the same finding: the authoring scout writing the arbiter's own book
+(`gate-audit.jsonl`) inside the worker's own patient tree at all is itself a proximity the fence has
+to actively police — `isArbiterBook` (`src/kinds.js:572-578`) and the fence's `fs.deny` list are the
+only things stopping a worker from reading or reasoning about its own prior gate history mid-run, and
+the deny DID fire once (see above) — showing the boundary is live, not theoretical, but also that
+the book sits inside the fenced territory it is supposed to be judging from outside. No fix proposed.
+
+**2026-09-15 update — fixed in code (commit `3596f2b`, `fix/m3-closeout`), not yet proven
+live.** Fixed at the SOURCE, not by filtering `runBehaviour` on `run_id` (a single run
+legitimately spans several run_ids, so that would have been the wrong fix — and neither
+`scripts/run-u.mjs` nor `src/replay.js`'s `buildTimeline` gained one). Two parts: (a)
+`scripts/run-author.mjs` now archives its OWN gate audit out of the patient tree the moment
+authoring ends — a new `archiveGateAudit()` (idempotent, best-effort) renames
+`<tree>/gate-audit.jsonl` into the author out dir as `author-<runid>-gate-audit.jsonl` and
+prints the path beside the spine line; called from the `finally` block that every ordinary exit
+path and the crash catch already reach, and a second time explicitly before the one
+`process.exit()` path that bypasses `finally` (F181's judge-key refusal, added earlier the same
+day). (b) `scripts/run-u.mjs` now moves any STALE audit aside at launch, right after `coldReset`
+and before this run's own Gate ever opens: a new exported `moveStaleGateAudit(wd, spineDir,
+runid)` (`scripts/u-patient.mjs`, beside the existing shared `coldReset`) renames
+`<wd>/gate-audit.jsonl` into the spine dir as `pre-<runid>-gate-audit.jsonl` when one is found —
+at that point in the flow it is provably not this run's, because coldReset just proved the tree
+could not have produced one since the seed reset. Deliberately NOT called on the resume (`dead`)
+branch: a halted run's own gate audit already sitting in the tree it resumes into is that SAME
+run's prior leg, not a stranger's — moving it aside there would recreate the bug one leg early.
+The end-of-run rename (`gate-audit.jsonl` -> `u-<runid>-gate-audit.jsonl`) is unchanged and now
+only ever carries this run's own rows, because nothing else can have written to that path
+between the move and the run's own Gate opening. Tests: `tests/gate-audit-hygiene.test.js` drives
+`moveStaleGateAudit` directly against a real tmpdir (moves a stale file, returns its new path and
+content, no-ops when nothing is there) and pins both scripts' wiring from source (the finally-block
+call, the pre-exit() call, the after-`coldReset`-only-on-the-cold-branch call, the resume branch's
+deliberate absence of the call, and that no `run_id` filter was bolted onto `runBehaviour`).
+Mutation-tested: disabling `moveStaleGateAudit`'s body, removing either `archiveGateAudit()` call
+site, and removing the `run-u.mjs` call site each sent exactly the wiring test that names that
+site red; restored via `cp` from a scratchpad backup each time. Not yet proven live — no real
+authoring run followed by a real worker run against the same patient has exercised this path
+since the fix landed.
+
+**2026-09-16 update — proven live, run `mu3wqmnp`.** The printed gate-audit line read:
+`gate audit /home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-3/out-f183/author-mu3wqmnp-gate-audit.jsonl
+(moved out of the patient tree — F186)` — the archived path sits outside the patient tree exactly
+as designed, confirming `archiveGateAudit()` fires on a real authoring run against a real patient.
+
+## F187 — run-u's printed approval-invocation hint always names `ANTHROPIC_API_KEY`, regardless of the job's actual provider (fixed in code, not yet proven live)
+
+Found 2026-09-15 in the same session. `scripts/run-u.mjs:929` builds the printed "run it" command
+with a hardcoded literal: `` `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}...` ``.
+That single `invoke()` helper is the one source for every printed launch hint in the approval flow —
+the rerun/accept/pause door lines (`:939-941`), the plain "To approve and run" line (`:948`), and both
+`systemd-inhibit` wrapper lines (`:963-967`, which print `env <the command above>` around the same
+`invoke()` output) — so the wrong variable name propagates to all of them, not one isolated line.
+
+The actual worker key read at run time is looked up generically: `providerEntry.envKey`
+(`scripts/run-u.mjs:1157-1158`, `process.env[providerEntry.envKey]`, erroring with that same resolved
+name if unset), where `providerEntry` comes from `resolveProvider(spec.provider)` (`:311`) against
+the provider table (`src/providers.js:155-171`). For `jobs/pulselog-person-strict-checks.json`
+(`"provider": "openai-api"`, run on DeepSeek deepseek-flash), the table entry's `envKey` is
+`OPENAI_API_KEY` (`src/providers.js:167`), not `ANTHROPIC_API_KEY`. A person copying the printed hint
+verbatim for this job gets `OPENAI_API_KEY not set (secrets load from the environment — never the
+tree)` at exit 2 — a $0 refusal before any provider call, but the wrong instruction for the provider
+they signed. Same class as the fix already made in `scripts/run-interview.mjs` (~:649-665, per the
+L17 entry referenced in the 2026-09-13 episode) for the interview path; run-u's own approval-preview
+hint was not carried along. No other `ANTHROPIC_API_KEY` literal exists in `scripts/run-u.mjs` — this
+is the only hardcoded site, just fanned out to several printed lines through the shared helper.
+
+**2026-09-15 update — fixed in code (commit `93d1967`, `fix/m3-closeout`), not yet proven
+live.** The one hardcoded `ANTHROPIC_API_KEY` literal (the `invoke()` helper) now reads
+`providerEntry.envKey` — the SAME resolved name the real key check at launch already reads,
+already in scope well before `invoke()` is defined. Every printed line that fans out from
+`invoke()` (the "To approve and run" line, the `systemd-inhibit` wrapper line, the rerun/accept/
+pause door lines) now names the job's real provider key. Test: `tests/run-u-key-hint.test.js`
+drives the real script through its preview path (no `--approve`, nothing spends) for the
+`bareguard-types-deepseek` job (`openai-api`) and asserts `OPENAI_API_KEY` appears and
+`ANTHROPIC_API_KEY` does not anywhere in the preview output, plus the converse for the
+`aurora-spawner` job (`anthropic-api`) to pin that the fix did not flip every job to one name.
+Mutation-tested: reverting the substitution sent 1 of the 2 new tests red; restored via `cp`
+from a scratchpad backup. Not yet proven live.
+
+## F188 — the no-suppressions cast guard matches a value-cast but not the same unchecked cast written as a typed callback parameter (open)
+
+Found 2026-09-15 reading run `mu2p83go`'s close history. Iteration 2 of the revise loop redded on
+`no-suppressions` for two occurrences of `const e = /** @type {NodeJS.ErrnoException} */ (err);` at
+`src/checks.js:57` and `:192` (`close-verdict` record, iteration 2, spine `u-mu2p83go.jsonl`). The
+worker's iteration-3 fix, which went green, rewrote both sites to annotate the callback's parameter
+directly instead: `` socket.once('error', (/** @type {NodeJS.ErrnoException} */ err) => finish(false,
+`${err.code || err.message} ...`)) `` — this exact form appears twice in the final green diff
+(`src/checks.js:98` and `:130`; `git diff b57e692 --stat` confirms the whole diff is `src/checks.js`
+only, +66/−9, matching the run's own report).
+
+The signed spec's `cast` guard regex (`jobs/pulselog-person-strict-checks.json:199-202`,
+`@type\s*\{.*\}\s*\*\/\s*\(`) requires the JSDoc comment to be followed by `(` — true for the
+value-cast form the worker was redded on (`*/ (err)`), false for the parameter-annotation form it
+replaced it with (`*/ err)` — the `(` there belongs to the arrow function's own parameter list, ahead
+of the comment, not after it. Re-running the exact regex against both final lines confirms neither
+matches, so the guard's own "shown-and-fixed" iteration 2 catch never re-fires against the iteration
+3 rewrite; it is a different textual shape carrying the same unchecked-narrowing intent, unmatched.
+
+Severity: low, not a cheat. `NodeJS.ErrnoException.code` is an optional field and both sites fall
+back to `err.message` (`err.code || err.message`), so the annotation is type-safe in practice even
+though the guard cannot see it; the job's stated ask was "no `ts-ignore` comments and no `any` casts"
+(`jobs/pulselog-person-strict-checks.json:221`), and a narrowing `@type` cast to a real type is
+neither. This is a guard-coverage gap in the fixed `cast` regex, not a signed-spec violation the
+guard was supposed to catch and missed by cheating; no widening is proposed here — the regex's
+admissibility is arbiter territory (a signed-spec field), not something this finding recommends
+changing.
+
+## F189 — `redactSecrets` did not mask a URL's embedded userinfo credentials (WITHDRAWN — reverted)
+
+Carried item, stash `2026-09-15-m3-closeout-branch.md:44`: `redactSecrets("https://bob:
+hunter2secretpass@api.deepseek.com/v1")` returned it unchanged. `src/validate.js`'s
+`SECRET_PATTERNS` — the ONE shape inventory that also drives `SECRET_RE`/`scanSecrets`/
+`sweepSecretLiterals` (the detection reds) — had five known-token shapes (`sk-`, `ghp_`,
+`github_pat_`, `AKIA`, `xox[bap]-`, `AIza`) but nothing that matched a bare `user:password@`
+span inside a URL. Note: `validateJob`'s own `baseUrl` field rule already reds ANY embedded
+userinfo outright — this finding was about the SEPARATE detection/redaction inventory.
+
+**2026-09-15 update — fixed in code (commit `9b5252e`, `fix/m3-closeout`).** Added one entry to
+`SECRET_PATTERNS` (and its paired name to `SECRET_PATTERN_NAMES`):
+`/(?<=:\/\/)[A-Za-z0-9._%+-]+:[^:@/\s]+(?=@)/`, redacting a URL's `user:password` span while
+keeping the scheme and host readable.
+
+**2026-09-16 update — the same pattern also drove `prepareSource`'s front-door refusal.**
+Measured at $0: of 44 local repos under `~/PycharmProjects`, 5 carried a tracked file matching
+this shape — `pulselog` (`test/backup.test.js`, the exact patient that greened live in run
+`mu2p83go`), plus `aurora`, `sawt`, `notes`, and bareloop itself — so as shipped this one
+pattern alone made bareloop refuse repos it had previously accepted, almost entirely on
+doc/test fixtures rather than real credentials. Close-out fix (commit `111d408`) added
+`SECRET_PATTERN_REDACT_ONLY` to keep the pattern for redaction while excusing it from the
+front-door refusal.
+
+**2026-09-16 — WITHDRAWN, both commits reverted (`873ed5c`, `07215d6`).** hamr's ruling: this
+finding was never produced by a live failure — it was invented work, found by reading
+`src/validate.js`'s source rather than by any run hitting the gap, and its own close-out fix
+exists only because the first fix's side effect (refusing 5 of 44 local repos, including the
+live patient pulselog) was itself never caught by a live run either. Both commits (`9b5252e`,
+`111d408`) are reverted; `src/validate.js`, `src/source.js`, `tests/validate.test.js`, and
+`tests/source.test.js` are back to their pre-batch state (commit `e355ea0`).
+`SECRET_PATTERN_REDACT_ONLY` no longer exists. This entry stays as a record of the whole
+episode, not as an open or fixed item — nothing here is built or planned; see
+`docs/product/PRD.md` §8a for the standing rule this episode fed back into the record.
+
+## F190 — the authoring run's JUDGE provider was built without the job's baseUrl (fixed in code, routed through the one owner)
+
+Live run `mu4hec9u` (soft-green authoring, `deepseek-flash` via `https://api.deepseek.com/v1`,
+spine `bareloop-patients/pulselog-softgreen-live-out/author-mu4hec9u.jsonl`). The run reached
+the calibration gate — `author-scout`, `author-scout-recovery`, `confirm`, `author`, `revise-1`,
+`revise-2`, and `judged-compile` all priced normally, $0.690831 known across those 7 calls — then
+died `pricing-red` at `budgetUsd` on the calibration gate's first real call
+(`judged-locate:pass-arith-sum`), 0 of 10 calibration cases graded.
+
+**The spine evidence.** That 8th `author-cost` record reads `"costUsd": null, "unpricedRounds":
+0"`. `src/judged.js:852` (`runLocate`'s `out()` helper): `const { costUsd, unpricedRounds } = r
+=== null ? { costUsd: null, unpricedRounds: 0 } : priceOf(r);`. `unpricedRounds: 0` together with
+`costUsd: null` is specifically the `r === null` branch — the provider call produced no result
+object at all — not the `priceOf(r)` branch that reports a round nobody could price (that branch
+reports `unpricedRounds >= 1`). This pair means "the call returned nothing", never "an unpriced
+round happened."
+
+**Root cause.** `scripts/run-author.mjs` builds the AUTHOR provider at line 456 as
+`makeProvider(PROVIDER_NAME, { apiKey, model: MODEL, baseUrl })` — `baseUrl` forwarded. It built
+the JUDGE provider (line 984, before this fix) as `makeProvider(judge.provider, { apiKey:
+judgeKeyFor(judge.provider), model: judge.model })` — no `baseUrl` at all. `src/providers.js:249`
+(`makeProvider`) forwards a provider's endpoint onto its own `endpointKey` only when `baseUrl` is
+not `undefined`; absent, the constructor defaults its own endpoint (`OpenAIProvider`'s default is
+`https://api.openai.com/v1`, per `node_modules/bare-agent/src/provider-openai.js`). So the judge
+call went out to `openai-api`'s default host, carrying a DeepSeek key and the model id
+`deepseek-flash` — it failed, `runLocate` caught nothing sane back, and the run reported the
+unpriceable result as `pricing-red`.
+
+There are three `makeProvider` call sites for this exact judge construction across the codebase.
+Two were already correct: `scripts/run-u.mjs:1414-1415` (`baseUrl: judge.provider === spec.provider
+? baseUrl : undefined`) and `src/cli.js:111`'s `buildRunnerProviders` (`src/providers.js:301,317,319`,
+`judgeBaseUrl` threaded through). `scripts/run-author.mjs` was the one site that missed the
+pattern.
+
+**The fix (this commit).** `scripts/run-author.mjs`'s judge provider construction now forwards
+`baseUrl` exactly when the resolved judge provider equals the authoring provider (`PROVIDER_NAME`),
+and `undefined` otherwise — copied verbatim from `scripts/run-u.mjs`'s existing spelling, with a
+comment at the new site pointing back at it as the one pattern. The conditional is not incidental:
+`resolveJobJudge` (`src/judged.js:203`) defaults the judge's provider to the job's own worker
+provider, but a signed `judge: {provider, model}` may name a genuinely DIFFERENT vendor — handing
+that different vendor the author's endpoint would be the exact silent-misconfiguration class
+`endpointKey` exists to prevent (an unrelated API key sent to a host it was never issued for).
+Same-provider forwards; different-provider must not.
+
+**Consequence, plainly.** Until this fix, soft-green calibration could not complete on ANY
+non-default endpoint through `scripts/run-author.mjs` — DeepSeek included, the repo's own settled
+secondary provider — because the judge silently ran against `openai-api`'s stock host regardless
+of what `baseUrl` the job's spec carried. This blocked item 33's M5 and M7 soft-green proof for
+every job that is not plain `anthropic-api`/default-host `openai-api`.
+
+**Proof.** Fixed by tests only (`tests/run-author.test.js`) — a real child-process twin splices
+the actual `judgeProvider` construction statement out of `scripts/run-author.mjs` and runs it
+against the real `makeProvider`/`resolveProvider` (`src/providers.js`), reading the constructed
+instance's own `.baseUrl`. RED before the fix (reproduced the live defect verbatim: same-provider
+judge construction returned `https://api.openai.com/v1` where `https://api.deepseek.com/v1` was
+expected), GREEN after. **NOT yet re-run live** — no second `run-author.mjs` invocation against a
+real DeepSeek judge has confirmed the calibration gate now completes end to end.
+
+**A second, separate defect observed in the same run — logged, NOT fixed here.** A failed judge
+`locate` call leaves NO cause on the spine. There is no `provider-red` record, no error record,
+nothing naming why the call actually returned null — it surfaces only as the tail `pricing-red`
+at the calibration-gate summary, several lines and one `signing`/`escalation`/`job-red` record
+later. `src/judged.js`'s `LOCATE_AXES` (`PRICING`, `PROVIDER`, `ARTIFACT`) enumerates three
+distinct routes a locate call can fail through, and `runLocate`'s own `catch` arm
+(`src/judged.js:868-869`) does capture `{axis: LOCATE_AXES.PROVIDER, detail: 'the locate call
+failed: ...'}` when `loop.run()` itself throws — but nothing in this run's spine carries that axis
+or detail; only the generic `pricing-red` reached the log. The axis machinery existed and the run
+still could not say which one fired. Open for hamr's ruling; not built here.
+
+**2026-09-21 update — fixed properly, routed through the one owner.** The fix above (commit
+56bbee8) hand-copied `scripts/run-u.mjs`'s same-provider conditional a SECOND time — a fix that
+copies a correct duplicate is still duplication ("one writer per piece of state" means route
+through the owner, MEMORY.md). Both the author provider (`scripts/run-author.mjs`'s own
+construction, previously a hand-rolled `makeProvider` call) and the judge provider now go through
+`buildRunnerProviders` (`src/providers.js`), the same seam `src/cli.js` already used — this file
+was the one call site that never adopted it. The author call's `judge*` args repeat the author's
+own identity (a throwaway: `buildRunnerProviders`' own reuse check returns the same `provider`
+instance rather than constructing a second one); the judge call's `providerName`/`apiKey`/`model`/
+`tierModels` half repeats the author's identity too, so its own `provider` return is unused, never
+a second live instance of the author's client. `tests/run-author.test.js`'s provider twin now
+splices the real construction statement into a child process against the real
+`buildRunnerProviders`, proving the fix against the real seam rather than a hand-typed paraphrase.
+Still **NOT re-run live** — no second `run-author.mjs` invocation against a real DeepSeek judge
+has confirmed the calibration gate now completes end to end.
+
+## F191 — a plain-folder source crashed inside the confirm turn, with no ending on the spine (fixed in code)
+
+**2026-09-21, live run `mu4hc7sp` (plain folder, patient
+`../bareloop-patients/plainfolder-live-1/`, `--verdict green`, DeepSeek `deepseek-flash` via
+`--provider openai-api --base-url https://api.deepseek.com/v1`, budget $1.50).** CRASHED, exit=1,
+$0 spent. Stack: `Error: no TYPES genre data for language "none-detected" — one of js, python` at
+`language` (`src/authoring.js:714`) ← `classGuards` (`src/authoring.js:834`) ←
+`confirmProtections` (`src/authorflow.js:545`) ← `runConfirmTurn` (`src/authorflow.js:1886`) ←
+`scripts/run-author.mjs:696`. The spine (`author-mu4hc7sp.jsonl`) had only 2 records
+(`author-start`, `author-phase confirm`) — no ending at all, byte-for-byte what a run still in
+flight looks like.
+
+**Root cause.** D5's original shape (PRD item 33 M3 piece 4, step S6, ITEM33-BUILD.md's 2026-09-13
+addendum): a plain-folder source runs no scout, but its confirm turn runs over a $0, no-git
+listing of the frozen tree, and only THEN gives the honest "no checks yet" stop once a plan is
+confirmed. F174's fix (this file, above) made the confirm turn show protections computed by
+`classGuards` — the SAME guards the close will actually compose — rather than a model-invented
+list. `classGuards` is keyed by CODE LANGUAGE, and a plain folder's `lang` resolves to
+`'none-detected'` (there is no code, so there is no language) — `classGuards` correctly THROWS
+rather than silently returning an empty guard list for a language it has no data for ("a guard
+that checks nothing reads clean exactly like one that checked correctly" — the design reason for
+throwing, not a bug). A correct fix in one place (F174: protections from `classGuards`, never the
+model) silently invalidated a ruling in another (D5: a plain folder gets a confirm turn) — nothing
+surfaced this until a plain-folder job actually ran live, because no prior test or run had
+exercised that combination.
+
+$0 proof (`node -e` calling `classGuards` directly, both `green` and `soft-green` verdict
+classes): both throw identically on `lang: 'none-detected'`, and both return
+`changed-from-seed,no-suppressions` on `lang: 'js'` — confirming `classGuards` itself is sound and
+verdict-class-independent; the defect is specifically the plain-folder/no-language combination,
+never reached before this run.
+
+**Fixed in code, this branch (fix/m3-closeout).** D5's premise — a plain-folder source gets a paid
+confirm turn before the honest stop — is unreachable by construction: the close catalogue is
+code-genre only, so no confirm turn over a plain folder could ever confirm a plan this build can
+close. The stop now fires immediately after `author-start`, at $0: no scout, no confirm turn, no
+model call at all. The now-unreachable confirm-turn code (`listPlainFolder`, `listingBlock`, the
+`runConfirmTurn` call and its aftermath, ~70 lines) is DELETED, not parked, along with the imports
+it alone used (`readdirSync`, `relative`, `sep`, `runConfirmTurn`, `makeCostBook`). The person now
+sees exactly: *"This is a plain folder, not a code project. bareloop can't check this kind of job
+yet. Nothing was spent and nothing was written."* The spine is exactly `author-start` →
+`author-end{outcome:'not-authored', stop:'non-code-source'}` — the same outcome/stop shape D5's
+original stop used, so nothing downstream that reads for that shape needs to change.
+
+**A second defect in the same gap, fixed alongside it: the crash net itself started too late.**
+`scripts/run-author.mjs`'s spine starts at `emit('author-start')`; the try/catch crash net used to
+start ~300 lines later, right before the repo-shaped scout/authoring call — reasoned (the file's
+own comment) as "the argv and config `die()` paths run before the spine file exists, and a crash
+record with no spine to land in is a record nobody can read". That reason expired the moment the
+spine started existing, at `author-start` itself, not ~300 lines later — the OLD plain-folder
+confirm-turn branch sat entirely inside that gap, which is exactly how this finding's crash left a
+two-record spine with no ending. The net now opens immediately after `author-start`. `rl` (the
+readline interface) and `metered` (the running call list) are hoisted to bindings declared ABOVE
+the try, rather than where they are constructed/used inside it — the `finally` block's
+`rl.close()` and the `catch` block's own spend check are SIBLINGS of the try, not nested inside
+it, so a binding made only inside the try would not exist there (a real scoping bug the naive move
+would have introduced, caught before it shipped). The crash message no longer claims "died inside
+the paid span" unconditionally — it now reads `metered.length` and says "before any paid call"
+when nothing was ever metered, true for the plain-folder stop and for any future $0-only stop this
+net comes to cover.
+
+**Customer-facing text fixed to match.** `scripts/run-interview.mjs` had two messages promising a
+plain folder "the confirm turn still runs (D5)" / "a real model reads the file list and walks you
+through the confirm turn" before the honest stop — both now say plainly that running
+`run-author.mjs` on this source stops right away, at $0, with no scout, no confirm turn, and no
+model call. `bareloop.context.md` and `src/authorjob.js`'s `PLAIN_FOLDER_DEFERRED_FIELDS` comment
+carried the same stale D5 description and were updated with a dated 2026-09-21 amendment pointing
+at this finding.
+
+**Proof.** Fail-first throughout: for each of the three code changes (F190's provider routing,
+this fix's confirm-turn deletion, and the crash-net move), the prior commit's `scripts/
+run-author.mjs` was restored with the NEW tests in place, showing them RED against the old code,
+then the fix was restored and the same tests GREEN. A new live end-to-end test
+(`tests/run-author.test.js`) spawns the real script against a real plain-folder source with a
+fake (never-dialled) API key, and asserts the spine is exactly `author-start`, `job-red`,
+`author-end` with `outcome:'not-authored'`/`stop:'non-code-source'`, and `authored.json`'s
+`cost: null` — proving zero provider calls, not just zero cost. **NOT yet re-run against the
+original crash's own patient** (`../bareloop-patients/plainfolder-live-1/`) — the fix is proven by
+a fresh test-suite patient and by the source-pinned guards, not by re-firing run `mu4hc7sp`'s exact
+job live again (that re-fire is the main session's to run, not this build's).
+
+**Also logged here, NOT built in this pass: `scripts/run-author.mjs` has no single owner for
+"the run ended".** The file has 12 separate `process.exit()` call sites and 8 separate
+`emit('author-end', ...)` call sites, each hand-spelling its own outcome/exit-code pair. This
+branch's fixes threaded the SAME outcome shape (`not-authored`/`non-code-source`) through the
+deleted confirm-turn path into the new $0 stop by hand, matching what was already there — but
+nothing stops a future call site from picking an exit code or outcome name that collides with, or
+drifts from, one of the other 11. hamr's ruling (stash `2026-09-21-m3-closeout-live-runs-ui-next.md`):
+"one owner for all 8 author-end writes" is NOT done in this step — it is the UI step's (N6) first
+job, done once, in the library, not patched again here.
+
+**The lesson, stated plainly.** A correct fix in one place (protections computed by `classGuards`,
+never invented by the model) can silently invalidate a design ruling made in another place (a
+plain folder gets a confirm turn) — nothing surfaces this until the untested combination actually
+runs. And a code boundary justified by a stated reason ("before the spine file exists") must be
+re-checked when the thing it depends on moves: the reason had expired ~300 lines before the
+boundary did, for as long as anyone had looked.
+
+**Correction, 2026-09-21 (same day, /debrief fix-all-4 batch).** The person-facing text quoted
+above ("Nothing was spent and nothing was written.") was itself false the moment it shipped: the
+same branch that wrote it also has this stop call `writeOut('authored.json', …)`, and a live run
+left a 379-byte `authored.json` in `--out`. Fixed in `scripts/run-author.mjs` and
+`scripts/run-interview.mjs` (the matching customer-facing line) to say "Nothing was spent. Your
+source was not changed." instead — true on both counts: no provider call, and the source tree
+untouched (only the operator's own `--out` directory gets a file). This finding's own quote above
+is left as written, since it is describing what a specific live run actually printed at the time.
+
+## F192 — soft-green calibration refused 6/10 live: the judge reported has-doc red on every documented function, and the record cannot say why
+
+**2026-09-21, live run `mub2nboo`, `scripts/run-author.mjs`, `--verdict soft-green`, a pulselog
+copy (patient `../bareloop-patients/pulselog-softgreen-live-out`, source `mu4hdwqs`'s tree),
+`openai-api`/`deepseek-flash` via `https://api.deepseek.com/v1`, judge `deepseek-flash`, budget
+$1.50.** Total $1.123445 across 23 calls, spend complete; authoring $0.902285/7 calls. Exit 1,
+**SIGNING NOT PREPARED**, spec hash `9583a14f…` (not signable). This run is F190's live proof: the
+judge reached the right host and graded all 10 cases (the prior run, `mu4hec9u`, graded 0 of 10).
+
+**Calibration: 6 of 10 graded wrong.** Every miss includes a `has-doc` red on a function whose case
+artifact clearly carries a full JSDoc block — e.g. case `full-contract-pass`: `/**\n * Formats a
+byte count ...` sits directly above `function formatBytes(bytes, decimals = 1)`; the judge
+returned `{verdict: red, reds: ['has-doc·formatBytes']}`, wanted `pass`. Missed cases:
+`full-contract-pass`, `clamp-contract-pass`, `two-functions-pass` (also returns extra reds),
+`phantom-param-red` and `phantom-param-and-no-returns` (the expected `params` red was never
+raised — `has-doc` was raised instead), `omitted-param-red`. The 4 correctly graded cases were all
+red-expecting cases. `full-contract-pass`'s attempt 1 was itself a provider-red casualty; attempt 2
+graded (wrongly).
+
+**Code read ($0): no defect found in `decide()` or the calibration pipe.** `src/judged.js`'s
+`JUDGE_RULES['has-doc']` (~line 299) reds for exactly three reasons: (a) `locate`'s `docQuote` is
+null/empty, (b) `docQuote` lacks `/**`, (c) a `docQuote`/`declarationQuote` line isn't found
+verbatim (trimmed-line match) in the artifact (the `quoteReds`/`unquoted` check, ~lines 260–290).
+`decide()` (~line 931) and the calibration gate's `pipeOnce` (`src/calibrate.js` ~line 318) both
+pass `artifactText` correctly through to the rule. Reading the code alone does not show which of
+(a)/(b)/(c) is firing.
+
+**WHY UNKNOWN — the calibration record cannot say which of (a)/(b)/(c) fired.** The record keeps
+only the `{rule, fn}` address: `expectedOf` (`src/judged.js` ~line 620) deliberately drops `why`
+and `quote`, and the judge's raw `locate` facts (its actual `docQuote`) are written nowhere —
+not the spine, not `signing.json`, not `authored.json`. This is the same class of gap F190 logged
+as its own second, separate defect (a failed judge `locate` call leaves no cause on the spine):
+the gate's refusal cannot be diagnosed from its own record, on two different rules now.
+
+**History: soft-green calibration has never cleared a live run.** F159 (2026-09-10, gemini judge,
+1 of 10, wrong ruler — the rulebook could only judge doc comments and hamr's error-message bar was
+compiled onto it). F190 (2026-09-16, 0 of 10, judge built against the wrong host). F192 (today,
+4 of 10, right host, wrong verdicts on `has-doc`). Three runs, three different causes. Stated
+plainly, as the record actually shows it: no live pass for soft-green calibration exists in this
+file yet — not a stronger claim than that.
+
+**Next step when this is reopened — NOT built now** (hamr ruling "B", 2026-09-21: log it, keep it
+open in the PRD, close this branch, come back after the UI). First make the gate record the
+`locate` facts and each red's `why` per case, so a refusal is diagnosable from its own record
+rather than re-derived by hand. Then run one small paid probe to learn which of (a)/(b)/(c) fires
+against `deepseek-flash`. Given three different causes across three runs, look at soft-green
+calibration as a whole rather than patching one more rule in isolation.
+
+**Status: OPEN, parked by ruling, not built.**

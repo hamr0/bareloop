@@ -21,7 +21,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync,
+  readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync, mkdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
@@ -33,6 +33,21 @@ import { prepareSource } from '../src/source.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const SRC = readFileSync(join(REPO, 'scripts/run-author.mjs'), 'utf8');
+
+/** `archiveGateAudit`'s own catch: from its `try {` to the brace that closes the
+ * whole arrow function, so the guard below reads only this one catch, never the
+ * rest of the file. */
+const ARCHIVE_CATCH = /const archiveGateAudit = \(\) => \{[\s\S]*?\n\};\n/.exec(SRC)?.[0];
+
+// CLAUDE.md forbids `as any` / `@type {any}` casts anywhere in the repo.
+// archiveGateAudit's rename-failure catch (commit 3596f2b, F186) had one:
+// `/** @type {any} */ (e)?.message`. Fixed to narrow via NodeJS.ErrnoException,
+// matching the local idiom (src/ralph.js:252).
+test('archiveGateAudit narrows its catch error without an `any` cast (CLAUDE.md forbids `as any`/`@type {any}`)', () => {
+  assert.ok(ARCHIVE_CATCH, 'archiveGateAudit moved or was renamed — this guard no longer reads the code it guards');
+  assert.ok(!/@type \{any\}/.test(ARCHIVE_CATCH), 'an `any` cast is back in archiveGateAudit\'s catch');
+  assert.match(ARCHIVE_CATCH, /NodeJS\.ErrnoException/, 'the error should be narrowed via NodeJS.ErrnoException, the repo\'s existing idiom (src/ralph.js)');
+});
 
 /** the governance block: from its guard to the emit that closes it. Both ends are
  * INDENT-ANCHORED, because the whole flow now sits inside one `try {`: a pattern
@@ -126,9 +141,33 @@ test('the paid span is inside a catch, and only the paid span is', () => {
   const start = SRC.indexOf("emit('author-start'");
   const tryAt = SRC.indexOf('\ntry {\n');
   assert.ok(start !== -1 && tryAt !== -1, 'the try/author-start pair moved');
-  assert.ok(start < tryAt, 'the try opens BEFORE author-start — a crash would have no spine to land in');
+  assert.ok(start < tryAt, 'author-start emits BEFORE the try opens — a crash would have no spine to land in');
   // and the paid call itself is inside it
   assert.ok(SRC.indexOf('authorCloseForJob({') > tryAt, 'the paid call sits outside the catch');
+});
+
+// F191 — the net USED TO start ~300 lines after `author-start` (right before
+// the repo-shaped `authorCloseForJob` call), leaving a real gap: everything
+// in between (the plain-folder confirm turn, among it) could throw with only
+// `author-start` on the spine and nothing saying the run had died. Live run
+// `mu4hc7sp` hit exactly that gap. This proves the net now starts
+// IMMEDIATELY after `author-start` — allowing only blank lines and comments
+// between them, never executable code that could throw uncaught.
+test('F191: the crash net starts IMMEDIATELY after author-start — no gap of executable code in between', () => {
+  const start = SRC.indexOf("emit('author-start'");
+  assert.ok(start !== -1);
+  const afterStart = SRC.indexOf('\n', start) + 1;
+  const between = SRC.slice(afterStart, SRC.indexOf('\ntry {\n', afterStart) + 1);
+  // strip line comments, block comments, and the two bindings that MUST be
+  // hoisted here (a plain `let`/`const` declaration with no call on its right
+  // side — nothing that can throw) — anything left over is a gap.
+  const codeOnly = between
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+    .replace(/^\s*let rl;\s*$/m, '')
+    .replace(/^\s*const metered = \[\];\s*$/m, '')
+    .trim();
+  assert.equal(codeOnly, '', `only comments and the two hoisted bindings may sit between author-start and the try — found: ${JSON.stringify(codeOnly.slice(0, 200))}`);
 });
 
 test('the catch writes a BODY: the crash and the end, each said once', () => {
@@ -144,6 +183,18 @@ test('the catch writes a BODY: the crash and the end, each said once', () => {
   // the detail is said ONCE. Re-spelling the error onto author-end is two
   // instruments over one fact, which this file has already paid for once.
   assert.ok(!/outcome: 'crashed',/.test(CATCH), 'author-end carries a second copy of the crash detail');
+});
+
+// F191 — the net now starts before any paid call can have happened (right
+// after author-start), so "died inside the paid span" is a claim that can be
+// FALSE the moment the net covers a $0-only stop. The message must say which
+// happened, honestly, off the run's own metered list.
+test('F191: the crash message is truthful about whether anything was ever paid for', () => {
+  assert.ok(CATCH);
+  assert.match(CATCH, /died \$\{metered\.length \? 'inside the paid span' : 'before any paid call'\}/,
+    'the crash message must read the real metered list, never a fixed claim baked into the string');
+  assert.doesNotMatch(CATCH, /died inside the paid span\. Nothing was signed/,
+    'the old fixed wording ("died inside the paid span", unconditionally) must be gone');
 });
 
 test('the catch does not swallow, does not retry, and does not exit()', () => {
@@ -184,10 +235,14 @@ test('the catch does not swallow, does not retry, and does not exit()', () => {
 // at all, because the real script installs these only AFTER the key guard, and
 // past that line every path costs real money.
 
-/** the progress/cost/kill region: from the metered list to the close of the
- * signal loop. INDENT-ANCHORED at both ends (`\n}` at column 0), the same
- * lesson the governance block above already paid for. */
-const KILL = /const metered = \[\];[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+/** the progress/cost/kill region: from `costSoFar` to the close of the signal
+ * loop. INDENT-ANCHORED at both ends (`\n}` at column 0), the same lesson the
+ * governance block above already paid for. F191 moved `const metered = [];`
+ * itself OUTSIDE the try (hoisted alongside `rl`, for the same
+ * catch/finally-is-a-sibling reason) — this region starts one declaration
+ * later than it used to, right after that hoist, so it never swallows the
+ * bare `try {` that now sits between them. */
+const KILL = /const costSoFar = \(\)[\s\S]*?\n\}\n/.exec(SRC)?.[0];
 /** F6's own renderer, extracted with it — the killed report must not spell the
  * spend a second way */
 const COSTLINE = /const costLine = \(cost\) => \{[\s\S]*?\n\};\n/.exec(SRC)?.[0];
@@ -289,6 +344,9 @@ const twin = (sig) => new Promise((resolve, reject) => {
     `const spineFile = ${JSON.stringify(spine)};`,
     'const CEILING_USD = 2.5;',
     "const emit = (type, data = {}) => { appendFileSync(spineFile, `${JSON.stringify({ type, ts: new Date().toISOString(), ...data })}\\n`); };",
+    // hoisted OUTSIDE the try in the real file (F191) — declared here in the
+    // test's own ~10 lines of scaffolding for the same reason.
+    'const metered = [];',
     COSTLINE,
     KILL,
     // one real paid call and one real phase, then hold the process open exactly
@@ -508,6 +566,109 @@ test('the resolved identity matches what scripts/run-u.mjs itself resolves at ru
   assert.deepEqual(gate, expected);
 });
 
+// ── F190: the judge provider was built without the job's baseUrl ───────────
+//
+// Live run `mu4hec9u` (`docs/logs/FINDINGS.md`): a DeepSeek job's judge call
+// (`judged-locate:pass-arith-sum`) went to `openai-api`'s DEFAULT host
+// carrying a DeepSeek key and model id, because the judge provider was
+// constructed as `makeProvider(judge.provider, { apiKey, model })` — no
+// `baseUrl` — while the AUTHOR provider a few hundred lines earlier already
+// forwarded it correctly. The call failed and returned null; the spine
+// recorded `costUsd: null, unpricedRounds: 0` — the `r === null` branch, not
+// an unpriced round — and the run died `pricing-red` with 0 of 10
+// calibration cases graded.
+//
+// **2026-09-21 update.** The original fix (commit 56bbee8) hand-copied
+// `scripts/run-u.mjs`'s same-provider conditional a SECOND time. Routed
+// through the ONE owner now (`buildRunnerProviders`, `src/providers.js`,
+// already `src/cli.js`'s own construction seam) — both the author provider
+// and this judge provider go through it. This twin extracts the ACTUAL
+// `judgeProvider` construction statement out of `scripts/run-author.mjs` and
+// runs it in a real child process against the REAL `buildRunnerProviders`/
+// `resolveProvider` (`src/providers.js`) — so it proves the constructed
+// provider's own `.baseUrl` property, not a re-typed paraphrase of the
+// conditional.
+const JUDGE_PROVIDER_ARG = /const judgeProvider = judge\n[\s\S]*?\n {8}: null;/.exec(SRC)?.[0];
+// the author's OWN provider construction (a few hundred lines earlier) —
+// asserted UNCHANGED: this fix touches only the judge seam, and a regression
+// here (e.g. someone "fixing" the author line too, or dropping its own
+// baseUrl forwarding) would be an unrelated, unreviewed change to a call site
+// this finding never named as broken.
+const AUTHOR_PROVIDER_LINE = /const \{ provider \} = buildRunnerProviders\(\{[\s\S]*?\n\}\);/.exec(SRC)?.[0];
+
+test('the judge-provider construction statement is still BOUNDED, and the author provider line is untouched', () => {
+  assert.ok(JUDGE_PROVIDER_ARG, 'the judgeProvider construction moved or was reworded — this guard no longer reads the code it guards');
+  assert.match(JUDGE_PROVIDER_ARG, /buildRunnerProviders\(\{/, 'the judge provider must be routed through the one owner, not a hand-rolled makeProvider call');
+  assert.match(JUDGE_PROVIDER_ARG, /judgeBaseUrl: judge\.provider === PROVIDER_NAME \? baseUrl : undefined/,
+    'the same-provider conditional (mirroring scripts/run-u.mjs) is gone from the judge provider construction');
+  assert.ok(AUTHOR_PROVIDER_LINE, 'the author provider construction line moved or was reworded — F190 must not have touched this call site');
+  assert.match(AUTHOR_PROVIDER_LINE, /buildRunnerProviders\(\{/, 'the author provider must also be routed through the one owner (F190, 2026-09-21)');
+});
+
+/**
+ * Actually CONSTRUCT a judge provider through the real `judgeProvider`
+ * statement spliced out of `scripts/run-author.mjs`, in a real child process
+ * against the real `buildRunnerProviders`/`resolveProvider`
+ * (`src/providers.js`), and report the constructed instance's own `.baseUrl`
+ * (every table entry — anthropic-api/openai-api/gemini-api — reads its
+ * endpoint into that exact property; see `src/providers.js`'s table-comment).
+ * `judgeKeyFor`/`apiKey` are stubbed (fixed fake strings, deliberately
+ * DIFFERENT from each other) because key RESOLUTION is F181's concern, not
+ * this one — only the endpoint the constructed client ends up holding is at
+ * issue. `providerEntry`/`MODEL` are resolved the same way the real script
+ * resolves them (`resolveProvider(PROVIDER_NAME)`, `.tiers.sonnet`) — never a
+ * hand-picked pair that could drift from what `run-author.mjs` itself does.
+ * @param {{judgeProvider: string, judgeModel: string, providerName: string, authorBaseUrl: string|undefined}} args
+ */
+const providerTwin = ({
+  judgeProvider, judgeModel, providerName, authorBaseUrl,
+}) => new Promise((res, reject) => {
+  const dir = mkdtempSync(join(twinBase, 'provider-'));
+  const file = join(dir, 'provider-twin.mjs');
+  writeFileSync(file, [
+    `import { buildRunnerProviders, resolveProvider } from ${JSON.stringify(join(REPO, 'src/providers.js'))};`,
+    "const judgeKeyFor = () => 'fake-judge-key';",
+    `const judge = ${JSON.stringify({ provider: judgeProvider, model: judgeModel })};`,
+    `const PROVIDER_NAME = ${JSON.stringify(providerName)};`,
+    "const apiKey = 'fake-author-key';",
+    'const providerEntry = resolveProvider(PROVIDER_NAME);',
+    'const MODEL = providerEntry.tiers.sonnet;',
+    `const baseUrl = ${authorBaseUrl === undefined ? 'undefined' : JSON.stringify(authorBaseUrl)};`,
+    /** @type {string} */ (JUDGE_PROVIDER_ARG),
+    'console.log(JSON.stringify({ baseUrl: judgeProvider.baseUrl }));',
+  ].join('\n'));
+  const child = spawn(process.execPath, [file], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (b) => { out += b; });
+  child.stderr.on('data', (b) => { err += b; });
+  child.on('error', reject);
+  child.on('close', (code) => {
+    if (code !== 0) return reject(new Error(`provider twin exited ${code}\n${err}`));
+    try { return res(JSON.parse(out)); } catch (e) { return reject(new Error(`provider twin did not print JSON: ${out}\n${err}`)); }
+  });
+});
+
+test('F190: same-provider judge receives the AUTHOR\'s baseUrl (the mu4hec9u defect, fixed)', async () => {
+  const { baseUrl } = await providerTwin({
+    judgeProvider: 'openai-api', judgeModel: 'deepseek-flash', providerName: 'openai-api',
+    authorBaseUrl: 'https://api.deepseek.com/v1',
+  });
+  assert.equal(baseUrl, 'https://api.deepseek.com/v1',
+    'same-provider judge must receive the author\'s own baseUrl — this is the exact live defect (run mu4hec9u): '
+    + 'without it, a DeepSeek key was sent to openai-api\'s default host');
+});
+
+test('F190: a DIFFERENT judge provider never inherits the author\'s baseUrl — it gets its OWN default host', async () => {
+  const { baseUrl } = await providerTwin({
+    judgeProvider: 'gemini-api', judgeModel: 'gemini-2.5-flash', providerName: 'anthropic-api',
+    authorBaseUrl: 'https://api.deepseek.com/v1',
+  });
+  assert.notEqual(baseUrl, 'https://api.deepseek.com/v1',
+    'a different vendor must never be pointed at the author\'s endpoint — this is the exact silent-misconfiguration endpointKey exists to prevent');
+  assert.match(baseUrl, /^https:\/\/.*google/i, 'gemini-api\'s own default host, untouched by the author\'s baseUrl');
+});
+
 // ── --provider comes from the DRAFT, at $0, before any paid call ────────────
 //
 // PRD item 34 L17 deleted the forced `PROVIDER_NAME = 'anthropic-api'` — the
@@ -653,38 +814,167 @@ test('a --source prepared from a NON-repo (a plain folder), with a valid provide
   assert.equal(spineFiles.length, 0, 'no event ever reached the spine before the key gate — the file was never created');
 });
 
+// F181 — a key that IS set (so the presence check above passes) but carries
+// an embedded line break must refuse at $0, before any provider is
+// constructed and before any spine record exists — never crash mid-call.
+// Dummy value only ("sk-test\nmeta"), never a real secret shape.
+test('a key with an embedded newline refuses at $0 — before any spine record exists', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: 'sk-test\nmeta', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 2, text);
+  assert.match(text, /ANTHROPIC_API_KEY contains a line break/);
+  assert.doesNotMatch(text, /sk-test/, 'the key value itself must never be echoed');
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 0, 'no event ever reached the spine before the key gate — the file was never created');
+});
+
+// F191 (docs/logs/FINDINGS.md) — a REAL end-to-end run, past the key gate,
+// proving the plain-folder stop at $0 with a valid-shaped (but fake) key: no
+// provider is ever constructed against the network on this path (the stop
+// fires before any model call), so a fake key never gets used for real and
+// this test pays nothing.
+test('F191: a plain-folder source stops immediately at $0 — author-start then author-end, no scout, no confirm turn, no model call', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 1, text);
+  assert.match(text, /This is a plain folder, not a code project\. bareloop can't check this kind of job yet\. Nothing was spent\. Your source was not changed\./);
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 1);
+  const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(events.map((e) => e.type), ['author-start', 'job-red', 'author-end'],
+    'exactly author-start, the request-red, then author-end — no author-phase, no author-cost: nothing was ever metered');
+  assert.equal(events.at(-1).outcome, 'not-authored');
+  assert.equal(events.at(-1).stop, 'non-code-source');
+  const authored = JSON.parse(readFileSync(join(out, 'authored.json'), 'utf8'));
+  assert.equal(authored.ok, false);
+  assert.equal(authored.confirmed, null);
+  assert.equal(authored.stop, 'non-code-source');
+  assert.equal(authored.cost, null, 'not metered — this path never reached a model call');
+  const spineLines = (text.match(/^spine {6}/gm) ?? []).length;
+  assert.equal(spineLines, 1, `the tail print (~line 1181) must be the only "spine      " line — a duplicate branch-local print regressed this (saw ${spineLines})\n${text}`);
+});
+
+// F191, item 4 (/debrief fix-all-4) — a REAL throw inside the previously-uncovered
+// region, with no test-only hook added to production code. `writeOut('authored.json',
+// …)` (`writeFileSync`) throws EISDIR when the path it targets already exists as a
+// DIRECTORY — pre-creating `<out>/authored.json/` as a directory before the run
+// forces the plain-folder branch's own `writeOut` call to throw for real, past
+// `author-start` and inside the try, exactly the region the adjacency test above
+// only proves is free of OTHER code — this proves the net actually catches
+// something thrown there.
+test('F191: a real throw inside the plain-folder branch (authored.json pre-exists as a directory) is caught by the crash net — author-crash, author-end{crashed}, exit 4', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-folder-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: folder, into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  const out = join(dir, 'out');
+  mkdirSync(join(out, 'authored.json'), { recursive: true }); // the booby trap: a directory, not a file
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: {
+      ...process.env, ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 4, text);
+  assert.match(text, /CRASHED — the authoring run died before any paid call\./, text);
+  assert.match(text, /written to the spine as author-crash \+ author-end\{outcome:'crashed'\}/, text);
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 1, text);
+  const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(events.map((e) => e.type), ['author-start', 'job-red', 'author-crash', 'author-end'],
+    'the plain-folder request-red still fires before the writeOut throw; then the crash net catches it');
+  assert.equal(events.at(-1).outcome, 'crashed');
+});
+
 // The far side of the move — pinned from SOURCE, for the same reason the
 // governance/kill/sign blocks above are: it is reachable only past a real
 // key and a real model call, which this suite never pays for.
-const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+// F71 fix: the branch now ends `} else {` (process.exitCode, never process.exit(),
+// so queued stdout survives a slow reader) rather than a bare `}` — the block
+// capture stops at that `else` seam, which is also the guarantee that nothing
+// below can fall through into the repo-shaped continuation.
+const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n\} else \{/.exec(SRC)?.[0];
 
 test('the plain-folder branch is still BOUNDED — this guard reads the branch, not the rest of the file', () => {
   assert.ok(PLAIN_FOLDER_BLOCK, 'the plain-folder branch moved — this guard no longer reads the code it guards');
   assert.ok(!/authorCloseForJob/.test(PLAIN_FOLDER_BLOCK), 'the plain-folder branch must never run the repo-shaped authorCloseForJob');
 });
 
-test('a plain-folder job runs NO SCOUT and its confirm turn is isRepo:false, over a manual listing — never authorCloseForJob\'s survey', () => {
+// F191 (2026-09-21): the confirm turn over a plain folder is GONE — it is
+// unreachable by construction (a plain folder has no code language, and
+// `classGuards`/`confirmProtections` throws without one; live run
+// `mu4hc7sp` crashed inside exactly that). The stop now fires immediately,
+// at $0, with no scout and no model call at all.
+test('a plain-folder job runs NO SCOUT and NO CONFIRM TURN — the stop is immediate, at $0, no model call', () => {
   assert.ok(PLAIN_FOLDER_BLOCK);
   assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /runAuthorScout|scoutFn/, 'no scout for a plain folder (D5) — its register is code-only');
-  assert.match(PLAIN_FOLDER_BLOCK, /runConfirmTurn\(\{/);
-  assert.match(PLAIN_FOLDER_BLOCK, /isRepo: false/);
-  assert.match(PLAIN_FOLDER_BLOCK, /facts: null, listing: listingBlock/);
+  assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /runConfirmTurn\(/, 'F191 — the confirm turn is unreachable for a plain folder (no language for classGuards) and must never run here');
+  assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /confirmGenerate|generate:/, 'no model boundary is ever touched on this path');
 });
 
-test('the plain-folder branch NEVER falls through into the repo-shaped try block — every path out of it exits', () => {
+test('the plain-folder branch has exactly ONE outcome, set via process.exitCode (F71) — and an else seam, never a fall-through into the repo-shaped flow', () => {
   assert.ok(PLAIN_FOLDER_BLOCK);
-  const exits = [...PLAIN_FOLDER_BLOCK.matchAll(/process\.exit\(1\)/g)].length;
-  assert.ok(exits >= 2, `expected an exit on both the confirm-turn-not-ok path and the confirmed "no checks yet" path (saw ${exits})`);
+  const exitCodes = [...PLAIN_FOLDER_BLOCK.matchAll(/process\.exitCode = 1/g)].length;
+  assert.equal(exitCodes, 1, `F191's stop is the ONLY way out of this branch now — no confirm turn, no second path (saw ${exitCodes})`);
+  assert.ok(!/process\.exit\(/.test(PLAIN_FOLDER_BLOCK), 'F71 — process.exit() after output can discard queued stdout; this stop must use process.exitCode');
+  assert.match(PLAIN_FOLDER_BLOCK, /\} else \{$/, 'the repo-shaped continuation must be gated behind an else, not merely follow the stop in source order');
 });
 
-test('the plain-folder "no checks yet" stop only fires AFTER a confirmed plan — a stop still named request-red/non-code-source, unchanged from before the move', () => {
+test('the plain-folder "no checks yet" stop is still named request-red/non-code-source, and reaches author-end with zero provider calls', () => {
   assert.ok(PLAIN_FOLDER_BLOCK);
-  const confirmDoneAt = PLAIN_FOLDER_BLOCK.indexOf('if (!confirm.ok)');
-  const stopAt = PLAIN_FOLDER_BLOCK.indexOf("verb: 'non-code-source'");
-  assert.ok(confirmDoneAt !== -1 && stopAt !== -1 && confirmDoneAt < stopAt,
-    'the confirm-turn check must come BEFORE the non-code-source stop — a plan the person never confirmed must never reach it');
   assert.match(PLAIN_FOLDER_BLOCK, /code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',/);
   assert.match(PLAIN_FOLDER_BLOCK, /outcome: 'not-authored', stop: 'non-code-source'/);
+  assert.match(PLAIN_FOLDER_BLOCK, /This is a plain folder, not a code project\. bareloop can't check this kind of /,
+    'the exact person-facing text F191 specifies');
+  assert.match(PLAIN_FOLDER_BLOCK, /Nothing was spent\. Your source was not changed\./);
 });
 
 // ── PRD item 33 M3 piece 4, step S4 — run-author.mjs becomes INTERACTIVE ────
@@ -734,10 +1024,97 @@ test('the signing readout prints the confirm turn\'s open questions (D4: the sig
   assert.ok(specAt !== -1 && idx > specAt, 'the open questions print in the signing readout, not before the spec is written');
 });
 
+test('F175 open half: the signing readout also prints the questions the person ANSWERED inline, beside the open ones', () => {
+  assert.match(SRC, /answeredQuestionLines\(authored\.confirmed\)/);
+  const specAt = SRC.indexOf('const specFile = writeOut');
+  const idx = SRC.indexOf('answeredQuestionLines(authored.confirmed)');
+  assert.ok(specAt !== -1 && idx > specAt, 'the answered questions print in the signing readout, not before the spec is written');
+});
+
+test('run-author.mjs\'s ask seam has a `kind: \'answer\'` branch (F175 open half) that shows the question, its index/total, and reads free text', () => {
+  const branch = /if \(step\.kind === 'answer'\) \{[\s\S]*?\n {2}\}/.exec(SRC)?.[0];
+  assert.ok(branch, 'no kind: "answer" branch found in the ask seam');
+  assert.match(branch, /step\.question/);
+  assert.match(branch, /step\.index/);
+  assert.match(branch, /step\.total/);
+  assert.match(branch, /readFreeText\(false\)/, 'a blank answer must re-ask, same as every other required free-text step');
+});
+
 test('confirm-abandoned and confirm-restart get their own friendlier console line, and both still reach author-end via the generic stop', () => {
   assert.match(SRC, /authored\.stop === 'confirm-abandoned' \|\| authored\.stop === 'confirm-restart'/);
   const NOT_AUTHORED = /if \(!authored\.ok\) \{[\s\S]*?\n {2}\}/.exec(SRC)?.[0];
   assert.ok(NOT_AUTHORED);
   assert.match(NOT_AUTHORED, /emit\('author-end', \{ outcome: 'not-authored', stop: authored\.stop \}\);/,
     'confirm-abandoned/confirm-restart fall through this generic branch — author-end records the real stop either way');
+});
+
+// ── install-gap refusal (PRD item 33 close-out, hamr's ruling 2026-09-14) ───
+// `prepareSource` copies only git-tracked files, so a JS/TS repo's copy never
+// carries `node_modules`. run-author.mjs must refuse at $0 — before the scout,
+// before even the provider/key gates below it in the file — naming the exact
+// command, and it must be routed through the SAME `refusalEvents()` channel
+// `language-unsupported` uses (a real `job-red`/`escalation` pair on the
+// spine), never an ad-hoc print.
+
+test('a --source prepared from a repo whose package.json lists dependencies with no node_modules refuses source-deps-missing, at $0, before the provider/key gates', async () => {
+  const depsRepo = mkdtempSync(join(runBase, 'deps-repo2-'));
+  writeFileSync(join(depsRepo, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  gitFix(depsRepo, ['init', '-q']);
+  gitFix(depsRepo, ['add', '-A']);
+  gitFix(depsRepo, ['commit', '-q', '-m', 'seed']);
+  const prep = await prepareSource({ source: depsRepo, into: join(runBase, `deps-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  // no `provider` field at all — proves this refusal fires BEFORE provider
+  // resolution (which would otherwise die 'unknown provider' first)
+  writeFileSync(draftFile, '{}');
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 1, text);
+  assert.match(text, /REFUSED \(request-red\)  verb=source-deps-missing/);
+  assert.match(text, /npm ci|npm install/, 'the exact install command is named');
+  assert.doesNotMatch(text, /unknown provider/, 'this must refuse BEFORE the provider is even resolved');
+  assert.doesNotMatch(text, /== close-authoring, run/, 'no scout header — no paid span was ever entered');
+
+  const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
+  assert.equal(spineFiles.length, 1, 'the $0 refusal is still counted admission demand — it writes to the spine');
+  const lines = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(lines.some((e) => e.type === 'job-red' && e.verb === 'source-deps-missing'));
+  assert.ok(lines.some((e) => e.type === 'escalation' && e.category === 'close-unauthorable'));
+});
+
+test('a --source prepared from a repo whose deps ARE already installed never refuses source-deps-missing', async () => {
+  const nmRepo = mkdtempSync(join(runBase, 'deps-repo-havenm-'));
+  writeFileSync(join(nmRepo, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  mkdirSync(join(nmRepo, 'node_modules', 'left'), { recursive: true });
+  writeFileSync(join(nmRepo, 'node_modules', 'left', 'index.js'), 'module.exports = 1;\n');
+  gitFix(nmRepo, ['init', '-q']);
+  gitFix(nmRepo, ['add', '-A']);
+  gitFix(nmRepo, ['commit', '-q', '-m', 'seed']);
+  const prep = await prepareSource({ source: nmRepo, into: join(runBase, `havenm-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+
+  const r = (() => {
+    const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+    const answersFile = join(dir, 'answers.json');
+    const draftFile = join(dir, 'specdraft.json');
+    writeFileSync(answersFile, '{}');
+    writeFileSync(draftFile, '{}'); // still no provider — reaches the SAME 'unknown provider' die either way
+    const out = join(dir, 'out');
+    return spawnSync(process.execPath, [
+      SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+      '--verdict', 'green', '--out', out,
+    ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  })();
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.doesNotMatch(text, /source-deps-missing/);
+  assert.match(text, /unknown provider/, 'falls through to the next $0 gate exactly as it would without this build');
 });

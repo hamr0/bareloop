@@ -6,13 +6,13 @@
 // green ONE job end to end. That green GRADUATES the bridge: the plan the agent
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, rmSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { runJob } from '../src/run.js';
-import { jobSpecHash, resolveWorkerModel } from '../src/job.js';
+import { jobSpecHash, resolveWorkerModel, validateJob } from '../src/job.js';
 import { readShimArm } from '../src/readshim.js';
 import { closeStagesOf } from '../src/plan.js';
 import { resolveCloseTimeoutMs } from '../src/closetimeout.js';
@@ -44,14 +44,14 @@ import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKP
 // worker's already goes through. `tests/reviewdoor-u.test.js` greps this
 // file's own source to prove THIS runner actually wires the resolved judge
 // through `makeProvider` into `runJob` (not just that the library can).
-import { resolveProvider, makeProvider, probeWarningLines } from '../src/providers.js';
+import { resolveProvider, makeProvider, probeWarningLines, apiKeyProblem } from '../src/providers.js';
 import { loadRegistry, quarantinesCredit } from '../src/bridges.js';
 import { HITL_PAUSE } from '../src/declaredclose.js';
 // the REVIEW DOOR (module 8): the library opens it on the run's own spine, and this
 // is the seam that answers one. Same rulebook, one level out.
 import { answerReviewDoor, doorRecordOf, doorAgeGate } from '../src/reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
-import { coldReset } from './u-patient.mjs';
+import { coldReset, moveStaleGateAudit } from './u-patient.mjs';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.mjs';
@@ -101,6 +101,19 @@ const JOBS = {
     workdir: '/home/hamr/PycharmProjects/bareloop-patients/pulselog-author-live',
     spine: 'pulselog-author-live-bareloop',
     seed: '92d71a7c1253f8f2430e2d308ecfef01c826b5c2',
+  },
+  // the first spec authored through the PERSON path (run-interview.mjs →
+  // run-author.mjs, DeepSeek deepseek-flash, run mu2js0c0) rather than the
+  // AUTHOR path above — hash fc3d5a1b… (resolved-spec.json copied verbatim into
+  // jobs/, re-verified before and after the copy). workdir is the M2 source
+  // front door's own prepareSource copy (source-mu2bglzc/tree), not the patient's
+  // top level, so the spine dir lands nested one level deeper than its neighbours'
+  // — noted, not a defect in this row.
+  'pulselog-person-strict': {
+    spec: 'pulselog-person-strict-checks.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/tree',
+    spine: 'pulselog-person-live-2-bareloop',
+    seed: 'b57e692c000570e7586787f2d2e3b027a5fa6011',
   },
   'baremobile-types': {
     spec: 'baremobile-u-types.json',
@@ -257,28 +270,149 @@ const SCOUT_LABEL = scoutArg === null
  * so a resume never silently drops it and runs the default under the arm's label. */
 const SCOUT_TAIL = scoutArg !== null && !SCOUT ? ' --scout off' : '';
 
-const jobKey = arg('job') ?? 'aurora-spawner';
-const target = JOBS[/** @type {keyof typeof JOBS} */ (jobKey)];
-if (!target) { console.error(`unknown --job "${jobKey}" — one of: ${Object.keys(JOBS).join(', ')}`); process.exit(2); }
+// F185 — a repo job authored through the PERSON path (run-interview.mjs →
+// run-author.mjs) used to have NO way to reach this runner: `--job` only ever
+// resolved a row from the hard-coded JOBS table below, and nothing wrote that
+// row or copied the authored spec into `jobs/` — a developer did both by hand.
+// hamr's ruling (2026-09-16, option A): `--spec <path to resolved-spec.json>`
+// is the other way to NAME a job, reading the prepared copy's OWN source
+// manifest (`readSourceManifest`, src/source.js) for the workdir and the seed
+// — never typed, never guessed, never defaulted — so there is no table row to
+// add and nothing to copy into `jobs/`. It is an alternative to `--job`, never
+// a second way to widen what either one already does: every gate below this
+// point (the `--approve` signature, the budget/wall ceilings, coldReset, the
+// close-first precheck) reads `spec`/`specHash`/`target` exactly as it always
+// has, whichever selector named them.
+const jobArg = arg('job');
+const specArg = arg('spec');
+if (jobArg !== null && specArg !== null) {
+  die(`--job ${jobArg} and --spec ${specArg} name a job two different ways — give one. `
+    + '--job picks a row from this script\'s own table; --spec points at an authored resolved-spec.json '
+    + 'and reads its prepared copy\'s own source manifest for the workdir and seed (F185).');
+}
+if (jobArg === null && specArg === null) {
+  die(`give one of --job <key> (one of: ${Object.keys(JOBS).join(', ')}) or --spec <path to resolved-spec.json> `
+    + '— a run has to name a job one of the two ways.');
+}
+
+/** @type {{spec: string, workdir: string, spine: string, seed: string}} */
+let target;
+/** the spec's own path, wherever it was found — a `jobs/` file for `--job`,
+ * an arbitrary `resolved-spec.json` for `--spec`. */
+let specPath;
+/** every re-invocation command this script prints (resume/door/reopen) reuses
+ * this so a `--spec` run's own commands stay `--spec`, never silently fall
+ * back to `--job` (the same class of mislabel F186 named for the read shim). */
+let SELECTOR;
+/** how a "go edit the spec" hint renders — `jobs/<file>` for `--job`, the
+ * spec's own path for `--spec` (it has no `jobs/` home to point at). */
+let SPEC_DESC;
+let spec;
+
+if (jobArg !== null) {
+  target = JOBS[/** @type {keyof typeof JOBS} */ (jobArg)];
+  if (!target) { console.error(`unknown --job "${jobArg}" — one of: ${Object.keys(JOBS).join(', ')}`); process.exit(2); }
+  // THE SPEC IS THE OTHER HALF, AND IT MAY NOT BE THERE YET. A row in the table above
+  // is the RUNNER's half of a job — the patient, its seed, where the spine goes. The
+  // spec is the SIGNER's half: it is authored (scripts/run-interview.mjs →
+  // scripts/run-author.mjs) and signed, and nothing here may invent one. A row whose
+  // spec has not been authored yet used to die on `readFileSync`'s ENOENT stack, which
+  // reads as the runner being broken rather than as the job being unauthored.
+  specPath = fileURLToPath(new URL(`../jobs/${target.spec}`, import.meta.url));
+  if (!existsSync(specPath)) {
+    die(`--job ${jobArg}: there is no spec at ${specPath}.\n`
+      + '  The table row is the runner\'s half of a job (patient, seed, spine); the SPEC is yours — authored through\n'
+      + `  scripts/run-interview.mjs and scripts/run-author.mjs, then signed. Nothing here can stand in for it: a job\n`
+      + '  with no spec has no goal, no close, no budget and no hash to approve.');
+  }
+  try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
+    die(`--job ${jobArg}: ${specPath} is not readable JSON (${e.message}) — a spec nobody can parse is a spec nobody signed`);
+  }
+  SELECTOR = `--job ${jobArg}`;
+  SPEC_DESC = `jobs/${target.spec}`;
+} else {
+  specPath = resolve(/** @type {string} */ (specArg));
+  if (!existsSync(specPath)) {
+    die(`--spec ${specPath} does not exist — a run needs the resolved-spec.json an authoring session actually wrote `
+      + '(scripts/run-author.mjs\'s own `out/resolved-spec.json`), never a path nobody authored');
+  }
+  let raw;
+  try { raw = readFileSync(specPath, 'utf8'); } catch (e) {
+    die(`--spec ${specPath}: cannot read (${/** @type {Error} */ (e).message})`);
+  }
+  try { spec = JSON.parse(/** @type {string} */ (raw)); } catch (e) {
+    die(`--spec ${specPath} is not readable JSON (${e.message}) — a spec nobody can parse is a spec nobody signed`);
+  }
+  // validateJob'd HERE, at $0, before a single filesystem lookup for the
+  // source manifest or a single line of the preview prints — a `--job` row's
+  // spec is developer-authored and reaches this same check inside `runJob`
+  // itself, further down; a `--spec` run gets it explicitly and early because
+  // there is no developer standing between the person and this launch to have
+  // caught a malformed spec first. `shellCapUsd: spec.budgetUsd` is the same
+  // self-coupling `prepareSigning`'s own gate 1a and `runJob` below both use
+  // (the budget bound this check enforces IS the spec's own advertised
+  // number) — a bare `validateJob(spec)` would red every real spec here, since
+  // the function's own default cap ($2) sits under every shipped job's budget.
+  const jv = validateJob(spec, { shellCapUsd: typeof spec?.budgetUsd === 'number' ? spec.budgetUsd : undefined });
+  if (!jv.ok) {
+    die(`--spec ${specPath} fails validateJob — ${jv.reds.length} red(s):\n`
+      + jv.reds.map((r) => `  ${r.code} at ${r.path}${r.detail ? ` — ${r.detail}` : ''}`).join('\n'));
+  }
+  // THE PREPARED COPY'S OWN SOURCE MANIFEST — never typed, never guessed. A
+  // `resolved-spec.json` written by run-author.mjs sits in the SAME `--out`
+  // directory a source door's own `source-<runid>/` (source.json + tree/) was
+  // prepared into (run-interview.mjs passes both the same OUT); so the one
+  // directory beside the spec that carries a `source.json` IS the copy this
+  // spec was authored against.
+  let entries;
+  try { entries = readdirSync(dirname(specPath), { withFileTypes: true }); } catch (e) {
+    die(`--spec ${specPath}: ${dirname(specPath)} could not be listed (${/** @type {Error} */ (e).message}) — cannot find the prepared copy beside it`);
+  }
+  const candidates = entries
+    .filter((e) => e.isDirectory() && e.name.startsWith('source-') && existsSync(join(dirname(specPath), e.name, 'source.json')))
+    .map((e) => join(dirname(specPath), e.name));
+  if (candidates.length === 0) {
+    die(`--spec ${specPath}: no prepared copy beside it — looked for a source-*/ directory carrying source.json in `
+      + `${dirname(specPath)} and found none. A --spec run reads its workdir and seed off the copy the authoring `
+      + 'session prepared; it is never typed or guessed. Prepare one first: node scripts/run-interview.mjs (or '
+      + 'run-author.mjs directly against a --source) before running this spec.');
+  }
+  if (candidates.length > 1) {
+    die(`--spec ${specPath}: ${candidates.length} prepared copies sit beside it (${candidates.join(', ')}) — `
+      + 'a --spec run cannot guess which one this spec was authored against; point --spec at a resolved-spec.json '
+      + 'with exactly one source-*/ sibling.');
+  }
+  const into = candidates[0];
+  const manifestRead = await readSourceManifest(into);
+  if (manifestRead.stop !== null) {
+    die(`--spec ${specPath}: ${manifestRead.code} — ${manifestRead.stop}`);
+  }
+  if (!manifestRead.present || !manifestRead.manifest) {
+    die(`--spec ${specPath}: ${into} carries no source.json — not a prepared copy this runner can trust`);
+  }
+  const seed = manifestRead.manifest.seed;
+  if (typeof seed !== 'string' || !seed) {
+    die(`--spec ${specPath}: ${into}/source.json carries no seed commit — not a prepared copy this runner can trust`);
+  }
+  const specWorkdir = join(into, 'tree');
+  if (!existsSync(specWorkdir) || !existsSync(join(specWorkdir, '.git'))) {
+    die(`--spec ${specPath}: the prepared copy's tree is gone (${specWorkdir} has no .git) — nothing to run against; re-prepare the source`);
+  }
+  target = {
+    // display-only in --spec mode (SPEC_DESC below is what actually prints)
+    spec: specPath,
+    workdir: specWorkdir,
+    // spine name derived from the spec's OWN signed job name — never hand-picked,
+    // exactly the shape a JOBS row's own `<patient>-bareloop` convention already
+    // is, just computed instead of typed by a developer.
+    spine: `${spec.job}-bareloop`,
+    seed,
+  };
+  SELECTOR = `--spec ${specPath}`;
+  SPEC_DESC = specPath;
+}
 const WORKDIR = target.workdir;
 const SEED = target.seed;
-// THE SPEC IS THE OTHER HALF, AND IT MAY NOT BE THERE YET. A row in the table above
-// is the RUNNER's half of a job — the patient, its seed, where the spine goes. The
-// spec is the SIGNER's half: it is authored (scripts/run-interview.mjs →
-// scripts/run-author.mjs) and signed, and nothing here may invent one. A row whose
-// spec has not been authored yet used to die on `readFileSync`'s ENOENT stack, which
-// reads as the runner being broken rather than as the job being unauthored.
-const specPath = fileURLToPath(new URL(`../jobs/${target.spec}`, import.meta.url));
-if (!existsSync(specPath)) {
-  die(`--job ${jobKey}: there is no spec at ${specPath}.\n`
-    + '  The table row is the runner\'s half of a job (patient, seed, spine); the SPEC is yours — authored through\n'
-    + `  scripts/run-interview.mjs and scripts/run-author.mjs, then signed. Nothing here can stand in for it: a job\n`
-    + '  with no spec has no goal, no close, no budget and no hash to approve.');
-}
-let spec;
-try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
-  die(`--job ${jobKey}: ${specPath} is not readable JSON (${e.message}) — a spec nobody can parse is a spec nobody signed`);
-}
 const specHash = jobSpecHash(spec);
 // MODEL (build-list #3, hamr's GO 2026-08-30): the signed spec's `model`, if
 // present, wins outright; a --model flag naming a DIFFERENT id is refused
@@ -521,7 +655,7 @@ if (deadSpineFile !== null) {
     console.error(`CHECKPOINT EXPIRED — ${age.detail}`);
     console.error('The work is still on the run\'s own branch; what has expired is the DECISION, not the tree. The levers are yours:');
     console.error('  - start a fresh run against the current tree (the same hash, nothing to re-sign);');
-    console.error(`  - or revise the goal/spec in jobs/${target.spec} — a spec edit, so the hash changes and you sign the new one;`);
+    console.error(`  - or revise the goal/spec in ${SPEC_DESC} — a spec edit, so the hash changes and you sign the new one;`);
     console.error('  - or abandon it and keep the verdict the paused run already minted.');
     process.exit(2);
   }
@@ -595,7 +729,7 @@ if (doorSpineFile !== null) {
     console.error(`DOOR EXPIRED — ${dage.detail}`);
     console.error('That expiry IS what "cancel" used to be: the verdict the run minted stands, nothing graduated, and nobody had to decide.');
     console.error('  - start a fresh run against the current tree (the same hash, nothing to re-sign);');
-    console.error(`  - or revise the goal/spec in jobs/${target.spec} — a spec edit, so the hash changes and you sign the new one.`);
+    console.error(`  - or revise the goal/spec in ${SPEC_DESC} — a spec edit, so the hash changes and you sign the new one.`);
     process.exit(2);
   }
   const je = doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end');
@@ -716,7 +850,7 @@ function heldRowFor(registryDir, name, runid) {
 // needs is the evidence, the three doors, and what each one costs.
 if (doorSpineFile !== null && arg('approve') !== specHash) {
   console.log('U — REVIEW DOOR, answering a run that has already ended');
-  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}`);
+  console.log(`  spec     ${SPEC_DESC}  $${spec.budgetUsd}  wall ${WALL_LABEL}`);
   console.log(`  run      ${DOOR}  ${doorPrior?.spendComplete === false ? '≥' : ''}$${(doorPrior?.spentUsd ?? 0).toFixed(4)} spent  ·  ${doorSpineFile}`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
   console.log('');
@@ -735,7 +869,7 @@ if (doorSpineFile !== null && arg('approve') !== specHash) {
   // at no registry is the `no-row-for-run` refusal one hop later.
   const previewHeld = doorRecord?.quarantined === true && heldRowFor(arg('registry'), arg('workflow') ?? spec.job, DOOR);
   const previewRegistry = arg('registry') !== null ? ` --registry ${arg('registry')} --workflow ${arg('workflow') ?? spec.job}` : '';
-  const doorInvoke = (/** @type {string} */ tail) => `  node scripts/run-u.mjs --job ${jobKey} --door ${DOOR}${tail}${previewRegistry} --approve ${specHash}`;
+  const doorInvoke = (/** @type {string} */ tail) => `  node scripts/run-u.mjs ${SELECTOR} --door ${DOOR}${tail}${previewRegistry} --approve ${specHash}`;
   console.log('');
   if (RULING === null) {
     for (const l of runDoorLines({
@@ -763,7 +897,7 @@ if (doorSpineFile !== null && arg('approve') !== specHash) {
 
 if (arg('approve') !== specHash) {
   console.log(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
-  console.log(`  spec     jobs/${target.spec}  $${spec.budgetUsd}  wall ${WALL_LABEL}  strikeLimit=${STRIKE_LIMIT} (step ladder + close-fix progress rule)`);
+  console.log(`  spec     ${SPEC_DESC}  $${spec.budgetUsd}  wall ${WALL_LABEL}  strikeLimit=${STRIKE_LIMIT} (step ladder + close-fix progress rule)`);
   console.log(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
   console.log(`  shim     ${READ_SHIM_LABEL}`);
   console.log(`  scout    ${SCOUT_LABEL}`);
@@ -871,7 +1005,7 @@ if (arg('approve') !== specHash) {
       console.log('  ⚠ NOTHING LEFT — this run halted because its allowance ran out, and nothing here refills it:');
       if (moneyLeft <= 0) console.log(`            budgetUsd $${spec.budgetUsd} is already spent (${moneyLeft < 0 ? `over by $${(-moneyLeft).toFixed(4)}` : 'exactly'})`);
       if (timeLeft !== null && timeLeft <= 0) console.log(`            maxWallMs ${/** @type {number} */ (WALL_MS) / 60000}min is already burnt`);
-      console.log(`            RAISE the number(s) in jobs/${target.spec} first — that is a spec edit, so the hash below changes and you sign the new one. Resuming as-is re-halts immediately for a close precheck's worth of nothing.`);
+      console.log(`            RAISE the number(s) in ${SPEC_DESC} first — that is a spec edit, so the hash below changes and you sign the new one. Resuming as-is re-halts immediately for a close precheck's worth of nothing.`);
     }
     // F97 — the DOOMED SHAPE, which is the warning the line above cannot give. That
     // one fires when the ALLOWANCE is gone; this one fires when the allowance is fine
@@ -913,7 +1047,13 @@ if (arg('approve') !== specHash) {
   // costs a cycle, never toward the one that mints a green nobody read). A pause WITH
   // a ruling is shown the ruling back — including the words that will BE the gap —
   // and one invocation to sign.
-  const invoke = (/** @type {string} */ tail) => `  ANTHROPIC_API_KEY=... node scripts/run-u.mjs --job ${jobKey}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
+  // F187 — this hint used to hardcode ANTHROPIC_API_KEY, so a job on a
+  // different provider (e.g. openai-api/DeepSeek) printed the WRONG variable
+  // name to set: a person pasting it verbatim hit a $0 refusal naming the
+  // right key only by accident of the runner's own generic error message,
+  // never from this hint. `providerEntry.envKey` is the same resolved name
+  // the real key check at launch (`:1157-1158` below) reads.
+  const invoke = (/** @type {string} */ tail) => `  ${providerEntry.envKey}=... node scripts/run-u.mjs ${SELECTOR}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
   /** the door the operator has already picked, as flags — hoisted out of the else
    * below so the inhibitor line at the bottom can print the WHOLE command rather
    * than a shape the operator has to assemble. Empty on an ordinary run and on the
@@ -1032,7 +1172,7 @@ if (doorSpineFile !== null) {
     } else {
       console.log(`  costs    nothing, in any state — no work, no money, no allowance moved`);
       console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the door on the record; after that it expires on its own, which is all "cancel" ever meant`);
-      console.log(`  reopen   node scripts/run-u.mjs --job ${jobKey} --door ${DOOR} --approve ${specHash}`);
+      console.log(`  reopen   node scripts/run-u.mjs ${SELECTOR} --door ${DOOR} --approve ${specHash}`);
     }
     process.exit(0);
   }
@@ -1070,8 +1210,8 @@ if (PAUSED && RULING?.decision === 'pause') {
   console.log(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
   console.log(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
   console.log('  resume   the SAME runid, whenever you want, with the door you pick then:');
-  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL} --decide accept --approve ${specHash}`);
-  console.log(`           node scripts/run-u.mjs --job ${jobKey} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs ${SELECTOR} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL} --decide accept --approve ${specHash}`);
+  console.log(`           node scripts/run-u.mjs ${SELECTOR} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
   console.log(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
   process.exit(0);
 }
@@ -1086,7 +1226,7 @@ if (PAUSED && RULING?.decision === 'pause') {
 if (dead && RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0) {
   console.error(`WALL ALREADY EXHAUSTED — the halted run burned ${(dead.restart.priorWallMs / 60000).toFixed(1)}min of the signed ${/** @type {number} */ (WALL_MS) / 60000}min, so this resume starts with no time at all.`);
   console.error('Nothing here refills it (a run may never widen its own cap). The lever is yours:');
-  console.error(`  - RAISE maxWallMs in jobs/${target.spec} — that is a spec edit, so the hash changes and you sign the new one with --approve;`);
+  console.error(`  - RAISE maxWallMs in ${SPEC_DESC} — that is a spec edit, so the hash changes and you sign the new one with --approve;`);
   console.error('  - or revise the goal/spec, or abandon the run and keep the verdict it already minted.');
   // NAMED, because it is a real and non-obvious consequence rather than an oversight:
   // a PAUSED run whose wall is gone cannot be ACCEPTED — an accept re-runs every
@@ -1143,6 +1283,12 @@ if (PAUSED && RULING === null) {
 // worker key IS `ANTHROPIC_API_KEY`, demanded as ever.
 const workerApiKey = process.env[providerEntry.envKey];
 if (!workerApiKey) { console.error(`${providerEntry.envKey} not set (secrets load from the environment — never the tree)`); process.exit(2); }
+// F181 — a key that reads as "set" above can still carry a line break/
+// control char/stray whitespace (a two-line secret-store entry, e.g.) and
+// crash Node's own header-encode inside the paid span. Refuse at the SAME
+// door, before any provider is constructed; never echo the value.
+const workerKeyProblem = apiKeyProblem(workerApiKey);
+if (workerKeyProblem) { console.error(`${providerEntry.envKey} ${workerKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`); process.exit(2); }
 const JUDGES = closeJudges(spec.closeDecl);
 // WHICH MODEL GRADES THIS JOB (PRD item 32.1). Resolved, never pinned: the
 // spec's signed `judge: {provider, model}` if it names one, else this job's own
@@ -1164,6 +1310,17 @@ if (JUDGES && !judgeApiKey) {
   console.error(`Neither JUDGE_API_KEY nor ${judgeEntry.envKey} is set — secrets load from the environment, never the tree.`);
   console.error('Refused at $0, BEFORE the worker spends anything: a judged run that discovers this at the close has paid for a verdict it cannot render.');
   process.exit(2);
+}
+// F181 — same door, second shape: a judge key that IS present can still be
+// malformed (line break/control char/stray whitespace). Checked only when
+// JUDGES (the key is only required then); never echoes the value.
+if (JUDGES) {
+  const judgeKeyProblem = apiKeyProblem(/** @type {string} */ (judgeApiKey));
+  if (judgeKeyProblem) {
+    const judgeEnvName = process.env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : judgeEntry.envKey;
+    console.error(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
+    process.exit(2);
+  }
 }
 
 // `wd`/`spineDir` are derived once, above the resume reader that needs them; only the
@@ -1202,6 +1359,15 @@ if (dead) {
   // cold row runs THIS reset rather than a second spelling of it.
   const cold = coldReset(wd, SEED);
   console.log(`patient reset — clean at ${cold.head}, store ${cold.storeRemoved ? 'removed (cold)' : 'was already absent (cold)'}`);
+  // F186 — AFTER coldReset and BEFORE this run's own Gate ever opens (which
+  // writes to this same path), any gate-audit.jsonl still sitting in the
+  // tree is provably not this run's (see moveStaleGateAudit's own doc) —
+  // move it aside now, so the end-of-run rename below (`gate-audit.jsonl`
+  // -> `u-<runid>-gate-audit.jsonl`) only ever carries THIS run's rows. Not
+  // called on the RESUME (`dead`) branch above — a halted run's own gate
+  // audit already in the tree it resumes into is that SAME run's prior leg.
+  const preFile = moveStaleGateAudit(wd, spineDir, runid);
+  if (preFile) console.log(`gate audit — a stale file was already sitting in the patient tree (not this run's); moved aside to ${preFile}`);
 }
 
 const approvals = [{ specHash, signer: process.env.USER ?? 'human', ts: new Date().toISOString() }];
@@ -1560,7 +1726,7 @@ if (mh) {
   console.log(`  trend   ${mh.trend} — ${mh.reading}`);
   console.log(`  lever   ${mh.lever}`);
   for (const o of mh.options ?? []) console.log(`          · ${o}`);
-  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
+  console.log(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
   console.log('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
 }
 // A STALL is a checkpoint too (hamr's go, 2026-08-13). Its own escalation prints one
@@ -1570,7 +1736,7 @@ if (mh) {
 // the hash already approved is the hash that resumes.
 if (outcome === 'step-stalled') {
   console.log('\nSTALL HALT — the model stopped producing rounds and reissuing the call did not recover it. The tree, the plan and the steps already finished STAND.');
-  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve ${specHash}`);
+  console.log(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve ${specHash}`);
   console.log('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
   console.log('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
 }
@@ -1591,7 +1757,7 @@ if (outcome === 'provider-red') {
   console.log(`  died    ${total === null ? 'before a plan was accepted — nothing paid is re-payable'
     : done >= total ? `at the close — all ${total} step(s) finished`
       : `in step ${done + 1} of ${total}`}`);
-  console.log(`  resume  node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve ${specHash}`);
+  console.log(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve ${specHash}`);
   console.log('          (no spec edit, so the hash is unchanged — this re-enters at the recorded step and re-pays for none of the ones before it)');
   console.log('          (if the allowance is what actually ran out underneath the transport fault, that preview says so and refuses — it is read there, not asserted here)');
 }
@@ -1612,7 +1778,7 @@ if (outcome === HITL_PAUSE) {
   ]);
   console.log('  clock    STOPPED — the wall does not run while a person is reading (W-2), and this leg\'s elapsed is what folds into the resume');
   console.log('');
-  const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
+  const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
   for (const l of doorLines({
     rerun: answer(' --decide rerun --text "<what you want done differently>"'),
     accept: answer(' --decide accept'),
@@ -1734,7 +1900,7 @@ if (doorHere) {
   // against has to travel in the printed command — an accept aimed at no registry (or at
   // a different one) is the `no-row-for-run` refusal all over again, one hop later.
   const doorRegistry = REGISTRY_ROW.minted ? ` --registry ${arg('registry')} --workflow ${REGISTRY_ROW.write.name}` : '';
-  const answerDoor = (/** @type {string} */ tail) => `node scripts/run-u.mjs --job ${jobKey} --door ${runid}${tail}${doorRegistry} --approve ${specHash}`;
+  const answerDoor = (/** @type {string} */ tail) => `node scripts/run-u.mjs ${SELECTOR} --door ${runid}${tail}${doorRegistry} --approve ${specHash}`;
   // THE PROMISE READS OFF THE ROW, not off the class. `quarantined` on the door record
   // says this run's credit is HELD; whether there is anything to RELEASE is a second
   // question, and the honest answer is "only if a row was minted". Without `--registry`
@@ -1778,7 +1944,7 @@ if (outcome === 'green' && plan && !leaks.length) {
   // validateJob reds a non-slug job before any green exists, so this is a boundary
   // assertion, not the primary defence; it REJECTS rather than rewrites because a
   // malformed job name is an operator mistake to surface, not to silently mask.
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(spec.job)) throw new Error(`spec.job ${JSON.stringify(spec.job)} is not a kebab-case slug — refusing to build a bridge filename from it (jobs/${target.spec})`);
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(spec.job)) throw new Error(`spec.job ${JSON.stringify(spec.job)} is not a kebab-case slug — refusing to build a bridge filename from it (${SPEC_DESC})`);
   const bridgeFile = join(spineDir, `bridge-${spec.job}-${runid}.json`);
   writeFileSync(bridgeFile, `${JSON.stringify({ job: spec.job, specHash, runid, greenAt: new Date().toISOString(), plan }, null, 2)}\n`);
   console.log(`\nBRIDGE saved — ${bridgeFile}`);

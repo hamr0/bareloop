@@ -25,7 +25,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import {
   prepareSource, proveDestination, copyOut, readSourceManifest, frontDoorFromManifest,
-  datedDestination, pickDelivery, looksLikeRepoSource, nearestGitAncestor,
+  datedDestination, pickDelivery, looksLikeRepoSource, nearestGitAncestor, missingDependencies,
 } from '../src/source.js';
 
 /** the same neutralized identity `src/source.js` uses — CI has no gitconfig
@@ -335,6 +335,71 @@ test('prepareSource: a node_modules/.bin-shaped symlink (untracked, as npm actua
   const r = await prepareSource({ source, into });
   assert.equal(r.stop, null, r.stop ?? undefined);
   assert.ok(!existsSync(join(into, 'tree', 'node_modules')), 'node_modules is untracked and must never reach the copy at all');
+});
+
+// ── F177: the copy's own future node_modules stays hidden from changedSet ──
+// hamr's ruling (2026-09-14, option A): a repo source whose TRACKED
+// .gitignore does not mention node_modules would otherwise have every file
+// the person installs into the COPY (missingDependencies) read as the
+// worker's own writes by `changedSet` (src/kinds.js) — live-verified on a
+// real copy of pulselog at 247 files. The fix writes only into the copy's
+// PRIVATE `.git/info/exclude`; the tracked `.gitignore` bytes are untouched.
+
+test('F177: a repo whose tracked .gitignore does not mention node_modules — installed packages in the COPY are invisible to changedSet, but a real new file is still caught', async () => {
+  const source = tmp('bareloop-src-repo-f177-');
+  gitFix(source, ['init', '-q']);
+  writeFileSync(join(source, '.gitignore'), 'dist/\n'); // deliberately does NOT mention node_modules
+  writeFileSync(join(source, 'package.json'), '{"name":"x","dependencies":{"y":"1.0.0"}}\n');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'root, no node_modules in .gitignore']);
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  const tree = join(into, 'tree');
+
+  // the tracked .gitignore bytes reached the copy byte-identical — never rewritten
+  assert.equal(readFileSync(join(tree, '.gitignore'), 'utf8'), readFileSync(join(source, '.gitignore'), 'utf8'));
+
+  // simulate the person installing packages in the COPY, same shape npm uses
+  mkdirSync(join(tree, 'node_modules', 'some-pkg'), { recursive: true });
+  writeFileSync(join(tree, 'node_modules', 'some-pkg', 'index.js'), 'module.exports = 1;\n');
+  writeFileSync(join(tree, 'node_modules', '.package-lock.json'), '{}\n');
+  // and a real, unrelated new file outside node_modules — must still be caught
+  writeFileSync(join(tree, 'src.new.js'), 'export const x = 1;\n');
+
+  const others = execFileSync('git', ['-C', tree, 'ls-files', '--others', '--exclude-standard'], { encoding: 'utf8' })
+    .split('\n').map((l) => l.trim()).filter(Boolean);
+  assert.deepEqual(others, ['src.new.js'], 'node_modules must be fully hidden from git itself, not merely filtered downstream');
+
+  const { changedSet } = await import('../src/kinds.js');
+  const cs = await changedSet(tree, r.manifest.seed);
+  assert.equal(cs.stop, null, cs.stop ?? undefined);
+  assert.deepEqual(cs.paths, ['src.new.js'], 'the installed packages read as nothing; the real new file still reads as a change');
+});
+
+test('F177: the copy\'s private exclude file is idempotent — a line already carried over from the SOURCE repo\'s own info/exclude is not duplicated', async () => {
+  const source = tmp('bareloop-src-repo-f177-idem-');
+  gitFix(source, ['init', '-q']);
+  writeFileSync(join(source, 'a.txt'), 'x');
+  gitFix(source, ['add', '-A']);
+  gitFix(source, ['commit', '-q', '-m', 'root']);
+  // the SOURCE repo's own private exclude already carries the exact line this
+  // fix would add — `.git` is copied wholesale (src/source.js `cp(... '.git' ...)`)
+  // before the hide step runs, so this is the real path that exercises "already
+  // present", not a hand-written double of the fix's own file.
+  mkdirSync(join(source, '.git', 'info'), { recursive: true });
+  writeFileSync(join(source, '.git', 'info', 'exclude'), '# some local ignore\nnode_modules/\n');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  const r = await prepareSource({ source, into });
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  const tree = join(into, 'tree');
+  const excludeRel = execFileSync('git', ['-C', tree, 'rev-parse', '--git-path', 'info/exclude'], { encoding: 'utf8' }).trim();
+  const content = readFileSync(join(tree, excludeRel), 'utf8');
+  const lines = content.split('\n').filter((l) => l.trim() === 'node_modules/');
+  assert.equal(lines.length, 1, 'exactly one node_modules/ line, never duplicated');
+  assert.ok(content.includes('# some local ignore'), 'pre-existing exclude content is preserved, not overwritten');
 });
 
 test('prepareSource: a TRACKED symlink escaping the repo root refuses source-symlink; one that stays inside is copied verbatim as a link (D1)', async () => {
@@ -1176,4 +1241,105 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
     'the copy-out call site, same scratch-root containment proof');
   assert.match(src, /emit\('destination-written', \{ path: f\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one, for EVERY file copyOut returns');
   assert.match(src, /emit\('destination-refused'/);
+});
+
+// ── missingDependencies — the install-gap detector (PRD item 33 close-out,
+// hamr's ruling 2026-09-14, option A) ────────────────────────────────────────
+// A pure, $0, JS/TS-only detector: real trees built directly in a temp dir
+// (no prepareSource needed — the function only ever reads the filesystem).
+
+test('missingDependencies: deps present, no node_modules, package-lock.json present -> fires with npm ci', () => {
+  const tree = tmp('bareloop-deps-npm-');
+  writeFileSync(join(tree, 'package.json'), JSON.stringify({ name: 'x', dependencies: { left: '1.0.0' } }));
+  writeFileSync(join(tree, 'package-lock.json'), '{}');
+  const r = missingDependencies(tree);
+  assert.deepEqual(r, { manager: 'npm', command: 'npm ci', reason: 'package.json lists dependencies but the copy has no node_modules' });
+});
+
+test('missingDependencies: devDependencies alone still count as dependencies to install', () => {
+  const tree = tmp('bareloop-deps-dev-');
+  writeFileSync(join(tree, 'package.json'), JSON.stringify({ name: 'x', devDependencies: { typescript: '^5.0.0' } }));
+  const r = missingDependencies(tree);
+  assert.ok(r, 'devDependencies alone must still trip the detector');
+  assert.equal(r.command, 'npm install', 'no lockfile in the tree falls back to npm install');
+});
+
+test('missingDependencies: pnpm-lock.yaml present -> pnpm install --frozen-lockfile', () => {
+  const tree = tmp('bareloop-deps-pnpm-');
+  writeFileSync(join(tree, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  writeFileSync(join(tree, 'pnpm-lock.yaml'), 'lockfileVersion: 6\n');
+  const r = missingDependencies(tree);
+  assert.equal(r.command, 'pnpm install --frozen-lockfile');
+  assert.equal(r.manager, 'pnpm');
+});
+
+test('missingDependencies: yarn.lock present -> yarn install --frozen-lockfile', () => {
+  const tree = tmp('bareloop-deps-yarn-');
+  writeFileSync(join(tree, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  writeFileSync(join(tree, 'yarn.lock'), '# yarn lockfile\n');
+  const r = missingDependencies(tree);
+  assert.equal(r.command, 'yarn install --frozen-lockfile');
+});
+
+test('missingDependencies: bun.lock present -> bun install --frozen-lockfile', () => {
+  const tree = tmp('bareloop-deps-bun-');
+  writeFileSync(join(tree, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  writeFileSync(join(tree, 'bun.lock'), '{}');
+  const r = missingDependencies(tree);
+  assert.equal(r.command, 'bun install --frozen-lockfile');
+});
+
+test('missingDependencies: deps present AND node_modules already exists -> null', () => {
+  const tree = tmp('bareloop-deps-havenm-');
+  writeFileSync(join(tree, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  mkdirSync(join(tree, 'node_modules'), { recursive: true });
+  assert.equal(missingDependencies(tree), null);
+});
+
+test('missingDependencies: package.json with no dependencies or devDependencies -> null', () => {
+  const tree = tmp('bareloop-deps-none-');
+  writeFileSync(join(tree, 'package.json'), JSON.stringify({ name: 'x' }));
+  assert.equal(missingDependencies(tree), null);
+});
+
+test('missingDependencies: invalid package.json JSON -> null (cannot tell, never a false alarm)', () => {
+  const tree = tmp('bareloop-deps-invalid-');
+  writeFileSync(join(tree, 'package.json'), '{ not valid json');
+  assert.equal(missingDependencies(tree), null);
+});
+
+test('missingDependencies: no package.json anywhere (non-JS repo) -> null', () => {
+  const tree = tmp('bareloop-deps-nonjs-');
+  writeFileSync(join(tree, 'go.mod'), 'module example.com/x\n');
+  assert.equal(missingDependencies(tree), null);
+});
+
+test('missingDependencies: subfolder job — package.json at the subfolder, deps missing there -> right cd path in the command', () => {
+  const tree = tmp('bareloop-deps-subfolder-');
+  mkdirSync(join(tree, 'packages', 'api'), { recursive: true });
+  writeFileSync(join(tree, 'packages', 'api', 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  writeFileSync(join(tree, 'packages', 'api', 'package-lock.json'), '{}');
+  const r = missingDependencies(tree, 'packages/api');
+  assert.deepEqual(r, {
+    manager: 'npm',
+    command: 'cd packages/api && npm ci',
+    reason: 'packages/api/package.json lists dependencies but the copy has no node_modules',
+  });
+});
+
+test('missingDependencies: subfolder job — nearest package.json is at the REPO ROOT, above the subfolder -> found walking up, root command (no cd)', () => {
+  const tree = tmp('bareloop-deps-subfolder-root-');
+  writeFileSync(join(tree, 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  mkdirSync(join(tree, 'packages', 'api'), { recursive: true });
+  writeFileSync(join(tree, 'packages', 'api', 'index.js'), 'module.exports = 1;\n');
+  const r = missingDependencies(tree, 'packages/api');
+  assert.ok(r, 'the nearest-manifest walk must find the root package.json above the subfolder');
+  assert.equal(r.command, 'npm install', 'the manifest sits at the tree root, so no cd is needed');
+});
+
+test('missingDependencies: subfolder job — node_modules already at the subfolder -> null even though none exists at the tree root', () => {
+  const tree = tmp('bareloop-deps-subfolder-havenm-');
+  mkdirSync(join(tree, 'packages', 'api', 'node_modules'), { recursive: true });
+  writeFileSync(join(tree, 'packages', 'api', 'package.json'), JSON.stringify({ dependencies: { left: '1.0.0' } }));
+  assert.equal(missingDependencies(tree, 'packages/api'), null);
 });

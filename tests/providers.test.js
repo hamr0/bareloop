@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   resolveProvider, makeProvider, buildRunnerProviders, ANTHROPIC_TIER_MODELS, OPENAI_TIER_MODELS,
-  GEMINI_TIER_MODELS, PROBE_STATUS, probeWarningLines,
+  GEMINI_TIER_MODELS, PROBE_STATUS, probeWarningLines, apiKeyProblem,
 } from '../src/providers.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
 
@@ -407,4 +407,44 @@ test('scripts/run-u.mjs PRINTS the warning at launch, through this function and 
   assert.match(src, /probeWarningLines\(/, 'the runner calls it');
   assert.match(src, /for \(const line of probeWarningLines\(.*\) \?\? \[\]\) console\.error\(line\);/, 'and prints every line to stderr');
   assert.ok(!src.includes('UNPROVEN PROVIDER'), 'the words live in ONE place — a second copy is the drift this item exists to stop');
+});
+
+// ── apiKeyProblem: F181 — a shape an HTTP header value cannot carry ────────
+
+test('apiKeyProblem: a clean single-line key reads null', () => {
+  assert.equal(apiKeyProblem('sk-test-abc123'), null);
+});
+
+test('apiKeyProblem: an embedded newline is caught, named "line break"', () => {
+  assert.equal(apiKeyProblem('sk-test\nmeta'), 'contains a line break');
+});
+
+test('apiKeyProblem: a bare carriage return is caught by the same "line break" reason', () => {
+  assert.equal(apiKeyProblem('sk-test\rmeta'), 'contains a line break');
+});
+
+test('apiKeyProblem: an embedded tab is caught, named distinctly from a line break', () => {
+  assert.equal(apiKeyProblem('sk-test\tmeta'), 'contains a tab character');
+});
+
+test('apiKeyProblem: a leading space is caught', () => {
+  assert.equal(apiKeyProblem(' sk-test'), 'has leading or trailing whitespace');
+});
+
+test('apiKeyProblem: a trailing space is caught', () => {
+  assert.equal(apiKeyProblem('sk-test '), 'has leading or trailing whitespace');
+});
+
+test('apiKeyProblem: a generic C0 control character (not tab/CR/LF) is caught', () => {
+  assert.equal(apiKeyProblem('sk-test\x01meta'), 'contains a control character');
+});
+
+test('apiKeyProblem never trims or repairs — it only reports; the caller decides', () => {
+  // the function's own contract, pinned: it must never RETURN a cleaned
+  // value, only a reason or null — trimming here would be exactly the
+  // "guess at the repair" hamr's retry-never-repair rule forbids in spirit.
+  const src = readFileSync(new URL('../src/providers.js', import.meta.url), 'utf8');
+  const fn = /export function apiKeyProblem\(value\) \{[\s\S]*?\n\}/.exec(src)?.[0];
+  assert.ok(fn, 'apiKeyProblem moved — this guard no longer reads the function it pins');
+  assert.ok(!/\.trim\(\)(?!\s*[!=<>])/.test(fn.replace('value !== value.trim()', '')), 'no trim() outside the detection check itself');
 });

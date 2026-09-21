@@ -31,6 +31,25 @@ test('isPromptFile matches an absolute path ending in a registered file', () => 
   assert.equal(isPromptFile('./src/readshim.js'), true);
 });
 
+// Item 6 (2026-09-15) — TYPES_GENRE_TEMPLATE (src/authoring.js) is
+// interpolated verbatim into the authoring prompt (src/authorflow.js's "THE
+// GENRE TEMPLATE" block) but was missing from this inventory entirely —
+// src/authoring.js was never covered, either as a listed prompt file or as
+// one of the module-header's own audited no-prompt-content files. A commit
+// touching src/authoring.js now falls under the same rule every other
+// prompt-register file does.
+test('src/authoring.js (TYPES_GENRE_TEMPLATE) is a registered prompt file', () => {
+  assert.equal(isPromptFile('src/authoring.js'), true);
+  assert.ok(PROMPT_REGISTERS.some((e) => e.file === 'src/authoring.js' && e.name === 'TYPES_GENRE_TEMPLATE'));
+});
+
+// The registry module itself (src/promptregisters.js) is the ONE meta file
+// that is never itself a prompt-content file — declaring an entry is not
+// carrying model-facing text.
+test('src/promptregisters.js is NOT itself a registered prompt file', () => {
+  assert.equal(isPromptFile('src/promptregisters.js'), false);
+});
+
 test('validateCommitMessage: a compliant message passes with no missing labels', () => {
   const { ok, missing } = validateCommitMessage(COMPLIANT);
   assert.equal(ok, true);

@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractArtifact, priceOf, tallyCalls, capStop } from '../src/text.js';
+import { extractArtifact, priceOf, tallyCalls, capStop, callCasualty } from '../src/text.js';
 
 const CODE = 'export function sum(a, b) { return a + b; }';
 
@@ -200,4 +200,59 @@ test('capStop: a breach that is CERTAIN outranks a blindness that is not — cap
   // change the answer; naming this pricing-red would send the operator to price a
   // call when the actual fact is that the money is gone
   assert.equal(capStop({ ceilingUsd: 1, knownUsd: 1.2, spendComplete: false }), 'cap-halt');
+});
+
+// ── callCasualty: the ONE predicate for "was this throw a call casualty" ────
+//
+// F179/F180 (docs/logs/FINDINGS.md): bare-agent 0.42.0's OpenAIProvider.generate
+// used to throw a raw SyntaxError mid-call (a malformed tool-call arguments
+// string, JSON.parse with no try/catch) rather than resolve with `{error}`, and
+// this predicate used to admit that class too. bare-agent 0.43.0 fixed it
+// upstream (BA-27) — no provider bareloop constructs can still throw a JSON
+// SyntaxError out of generate() after a billed round, so that branch was
+// removed as dead code; the two tests below pin that it stays removed. The
+// idle-timeout class remains: `authorscout.js`'s `settled` narrows a rejected
+// `loop.run()` to it, and `askStructured` (src/authorflow.js) reuses the same
+// predicate for its own generate seam.
+
+test('callCasualty: a HaltError is NEVER admitted — a governance exit is not a transport casualty', async () => {
+  const { HaltError } = await import('bare-agent');
+  assert.equal(callCasualty(new HaltError('budget exhausted', { rule: 'test-rule' })), null);
+});
+
+test('callCasualty: an ETIMEDOUT-coded error is admitted, reason is the message', () => {
+  const err = /** @type {any} */ (new Error('idle socket'));
+  err.code = 'ETIMEDOUT';
+  assert.equal(callCasualty(err), 'idle socket');
+});
+
+test('callCasualty: a TimeoutError-named error is admitted even without the ETIMEDOUT code', () => {
+  const err = /** @type {any} */ (new Error('total duration deadline'));
+  err.name = 'TimeoutError';
+  assert.equal(callCasualty(err), 'total duration deadline');
+});
+
+test('callCasualty: a JSON-mentioning SyntaxError is NOT admitted (F179 branch removed, bare-agent 0.43.0 fixed BA-27 upstream)', () => {
+  const err = new SyntaxError('Unexpected non-whitespace character after JSON at position 5734');
+  assert.equal(callCasualty(err), null);
+});
+
+test('callCasualty: a SyntaxError whose message does not mention JSON is NOT admitted', () => {
+  const err = new SyntaxError('Unexpected token in this is not about json at all');
+  assert.equal(callCasualty(err), null, 'a syntax error unrelated to JSON parsing is a programming bug, not a casualty');
+});
+
+test('callCasualty: a plain TypeError (a programming bug) is never laundered', () => {
+  assert.equal(callCasualty(new TypeError('cannot read property of undefined')), null);
+});
+
+test('callCasualty: a plain Error with no matching code/name is never laundered', () => {
+  assert.equal(callCasualty(new Error('boom')), null);
+});
+
+test('callCasualty: null/undefined/non-error inputs never throw and are never admitted', () => {
+  assert.equal(callCasualty(null), null);
+  assert.equal(callCasualty(undefined), null);
+  assert.equal(callCasualty('a plain string'), null);
+  assert.equal(callCasualty({}), null);
 });

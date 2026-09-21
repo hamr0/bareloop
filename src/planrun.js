@@ -11,7 +11,14 @@
 // absolute repo root, its target, prior steps' artifacts labeled by id, its
 // gap, and a cut-off notice. It NEVER sees the budget, the close command, a
 // check's command, the validator, other steps' grants, or the arbiter's books
-// (fs.deny on the gate audit / .smoke / .litectx, unchanged).
+// (fs.deny on the gate audit / .smoke / .litectx, unchanged). `.git` and
+// `node_modules` are a DIFFERENT law (F178/F177): WRITES there are blocked
+// (tools.denyArgPatterns on write/edit, FORBIDDEN_WRITE_SEGMENT_PATTERN,
+// below), but READS are not — fs.deny blocks ALL fs actions including reads
+// (bareguard node_modules/bareguard/src/primitives/fs.js:43,62-66), and
+// hamr's ruling was to block WRITING, never reading; the worker's persona
+// also never names `.git`/`node_modules` as denied books (tests/tools.test.js),
+// which putting either in fs.deny would silently contradict.
 
 import { createRequire } from 'node:module';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -465,7 +472,6 @@ const REPLAN_GAP_KEEP = '\\S';
  * No gap → the empty string, so the brief renders byte-identically to the pre-F86
  * one. A labelled empty section would be an invitation to explain an absence the
  * run never observed (a stall never judged its exits at all).
- *
  * @param {string | null | undefined} gap the step's last exit gap text
  * @returns {string} the labelled block, or '' when there is nothing to show
  */
@@ -479,6 +485,48 @@ export function closeGapBlock(gap) {
   return '\nWhat this step\'s exits reported on its last attempt (their own output, verbatim):\n'
     + (scrubbed.length > CHECK_GAP_MAX ? boundGap(scrubbed, REPLAN_GAP_KEEP) : scrubbed);
 }
+
+/**
+ * The runtime belt for F178 (`.git`) and F177's follow-up (`node_modules`) —
+ * hamr's option B ruling (2026-09-14): block WRITING to either, never reading.
+ * bareguard's `fs.deny` cannot be used for this: it blocks ALL fs actions,
+ * reads included (node_modules/bareguard/src/primitives/fs.js:43 "paths/
+ * prefixes denied for all fs actions", checked at :62-66 before the read/write
+ * split) — putting `.git` there (the first version of this fix) silently also
+ * blocked READING it, which was never ruled, and the worker's persona never
+ * names `.git`/`node_modules` as a denied book the way it does the gate audit
+ * / `.smoke` / `.litectx` (`tests/tools.test.js`'s persona/fence-drift guard
+ * caught exactly this in the full gate). `fs.deny` is exact prefix-containment
+ * only anyway — no glob, no path-segment match — confirmed by reading
+ * `within()` (node_modules/bareguard/src/primitives/fs.js:26-31): `p === b ||
+ * p.startsWith(b + '/')` against each configured entry, nothing else; it
+ * could not express `node_modules`-at-any-depth even if reads were not a
+ * problem (`node_modules/bareguard/src/glob.js`'s `matchAny`/`globToRegex`
+ * exist in the same package but `fs.js` never imports them).
+ *
+ * `tools.denyArgPatterns` (`node_modules/bareguard/src/primitives/tools.js`,
+ * step 3 of `Gate#_stepEval` — the SAME step `fsCheck` runs at, checked right
+ * after it in the `??` chain, `node_modules/bareguard/src/gate.js`) is the
+ * supported hook used instead: a RegExp tested against
+ * `JSON.stringify(action)`, keyed by `action.type` so it is scoped to
+ * `write`/`edit` ONLY — a `read` action never reaches this pattern at all.
+ * Because `fsCheck` runs first in the same `??` chain, this pattern is
+ * reached only when the path already passed `writeScope`/`deny` — exactly the
+ * residual case (an in-fence write/edit whose path still carries a `.git` or
+ * `node_modules` segment; `.git` itself is never IN a signed fence in the
+ * first place, `scopeContained` in src/validate.js refuses that at
+ * declaration time — this is the belt for a validator regression). Matched
+ * whole-segment (a look-alike like `.github`/`.gitignore`/`my.git`/
+ * `node_modules_util` stays admitted). Safe to match the WHOLE serialized
+ * action (not just the `path` field in isolation) because bareloop's own
+ * action shape (`toolAction`, src/tools.js) never carries a write's byte
+ * CONTENT in the action object — `args.bytes` is a length, not the text — so
+ * there is no written-file-content collision risk the way there would be for
+ * bareguard's own `content.denyPatterns` primitive (which explicitly strips
+ * payload fields for exactly that reason).
+ * @type {RegExp}
+ */
+export const FORBIDDEN_WRITE_SEGMENT_PATTERN = /"path":"(?:(?:[^"\\]|\\.)*\/)?(?:\.git|node_modules)(?:\/|")/;
 
 /**
  * The recorded bound-reason's ceiling in the WORKER-facing note. The reason is a
@@ -2250,6 +2298,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         readScope: [workdir],
         deny: [auditPath, ...ARBITER_BOOK_STORES.map((s) => join(workdir, s))],
       },
+      // F178/F177's runtime belt: `.git` and `node_modules` WRITES only — never
+      // fs.deny, which blocks reads too (see FORBIDDEN_WRITE_SEGMENT_PATTERN's
+      // own doc). Reached only when a write/edit path already cleared
+      // fs.writeScope/deny above (step 3's fsCheck runs first in the SAME `??`
+      // chain, node_modules/bareguard/src/gate.js) — i.e. only the residual
+      // case of an in-fence path that still carries one of these segments.
+      tools: { denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN] } },
       budget: { maxCostUsd: Math.max(remainingUsd(), 0.0001) },
       limits: { maxTurns },
       audit: { path: auditPath },
@@ -2755,6 +2810,30 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           : 'interpreter-red';
         err.lib = 'bare-agent';
         throw err;
+      }
+      // F184 — bare-agent 0.43.0 (BA-27) returns a malformed final-turn tool
+      // call PRICED rather than throwing: `toolCalls: []`, `text: ''`,
+      // `error: null`, and its own `malformedToolCall: {name, error}`
+      // marker. Nothing below this point can tell that apart from the model
+      // genuinely producing no useful work — `middle()` reads `r.text` into
+      // `lastText`, which comes back empty either way, and the ordinary
+      // `needs_revision`/`exit-eval` gap is what reaches the spine. That is
+      // NOT changed here — no retry, no new cause on `attemptBounded`, no
+      // effect on strike/ladder/attempt counting or verdict routing (all
+      // arbiter-adjacent, none of this finding's scope). What was missing is
+      // VISIBILITY: this is the one place bareloop code ever sees the
+      // marker before `ask()` returns it unexamined, so a distinct spine
+      // record names the transport class here — the same honesty bar
+      // F179/F180 set for the authoring path, applied to the worker path.
+      if (r.malformedToolCall) {
+        const rawErr = String(r.malformedToolCall.error ?? '');
+        const scrubbedErr = scrub(rawErr);
+        const shownErr = scrubbedErr.length > BOUND_REASON_MAX
+          ? `${scrubbedErr.slice(0, BOUND_REASON_MAX)} [${GAP_TRIM_MARKER} ${scrubbedErr.length - BOUND_REASON_MAX} of ${scrubbedErr.length} characters withheld — the cap is ${BOUND_REASON_MAX}]`
+          : scrubbedErr;
+        emit('worker-malformed-tool-call', {
+          phase, iteration: roundIteration, name: scrub(String(r.malformedToolCall.name ?? '')), error: shownErr,
+        });
       }
       return r;
     };

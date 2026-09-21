@@ -33,7 +33,7 @@
 //
 //   node scripts/run-interview.mjs \
 //     --verdict soft-green --provider anthropic-api \
-//     --out /path/to/outdir [--budget 2.50]
+//     --out /path/to/outdir [--budget 2.50] [--base-url https://api.deepseek.com/v1]
 //
 //   --provider     REQUIRED, NO DEFAULT (PRD item 34 L17): bareloop is
 //                  LLM-agnostic, and a default here would silently lock every
@@ -41,6 +41,24 @@
 //                  written into the draft's `provider` field — run-author.mjs
 //                  then needs no flag of its own; it just resolves what this
 //                  wrote down.
+//
+//   --base-url     OPTIONAL, NO DEFAULT (PRD item 33 close-out, "authoring
+//                  provider selectable" — L17 named the provider but never
+//                  admitted the endpoint): the table entry a provider name
+//                  resolves to (`src/providers.js`) can be reached through an
+//                  OpenAI-compatible gateway other than its own default host —
+//                  DeepSeek, today's one secondary, is reached as
+//                  `--provider openai-api --base-url https://api.deepseek.com/v1`.
+//                  Absent, the field is left OUT of the draft entirely (never
+//                  written as `null`/`''`): every provider constructor already
+//                  defaults its own endpoint when none is given. When given, it
+//                  goes into the draft's `baseUrl` field beside `provider` and
+//                  through the SAME `validateJob` pass every other field takes
+//                  below — an `http://` URL to a public host, an embedded
+//                  `user:pass@`, or an unparseable string reds at $0, before
+//                  anything is written (`src/job.js`'s existing `baseUrl` rule,
+//                  PRD item 28 ruling (d): https:// required, http:// admitted
+//                  only to a loopback host, never a credential in the URL).
 //
 // SOURCE AND DESTINATION REPLACE --patient (PRD item 33 M3, ruling 2,
 // `docs/product/ITEM33-BUILD.md` "M3 — the intake form and confirm turn"): they
@@ -66,11 +84,11 @@ import {
 import {
   SOURCE_FIELD, destinationFieldFor, labelsFor,
 } from '../src/authorflow.js';
-import { validateJob, PROVIDERS } from '../src/job.js';
-import { resolveProvider } from '../src/providers.js';
+import { validateJob, validateBaseUrl, PROVIDERS } from '../src/job.js';
+import { resolveProvider, probeWarningLines, apiKeyProblem } from '../src/providers.js';
 import { scanSecrets, redactSecrets } from '../src/validate.js';
 import { detectLanguage } from '../src/detectlang.js';
-import { prepareSource, proveDestination, looksLikeRepoSource } from '../src/source.js';
+import { prepareSource, proveDestination, looksLikeRepoSource, missingDependencies } from '../src/source.js';
 import { parseCeiling, ceilingLine } from './author-readout.mjs';
 
 const arg = (/** @type {string} */ n) => { const i = process.argv.indexOf(`--${n}`); return i === -1 ? null : (process.argv[i + 1] ?? ''); };
@@ -88,6 +106,15 @@ if (arg('patient') !== null) {
 const outArg = arg('out');
 const verdictArg = arg('verdict');
 const providerArg = arg('provider');
+// OPTIONAL, NO DEFAULT (see the header comment above) — `null` means the flag
+// was never given at all, and the draft carries no `baseUrl` field for that
+// case (not `null`, not `''`: an absent field vs. an empty one mean different
+// things to `validateJob`). `''` (the flag given with nothing after it) is a
+// real, deliberate operator input — it is NOT special-cased here, and reds
+// below through the same `validateJob` pass every other field takes, the same
+// way an empty `--verdict`/`--provider` value already does elsewhere in this
+// file.
+const baseUrlArg = arg('base-url');
 // `--lang` IS GONE (PRD item 33 M3, ruling 3): language is a FACT of the
 // repository, read off its own manifest, never a flag a person sets. A
 // `--lang` on the command line now is an operator error, stopped loud rather
@@ -105,9 +132,19 @@ const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget
 
 if (!outArg || verdictArg === null || !providerArg) {
   die('usage: node scripts/run-interview.mjs '
-    + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>]`);
+    + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>] [--base-url <url>]`);
 }
 if (budgetError) die(budgetError);
+// VALIDATED HERE, before a single line of the interview prints (never left to
+// wait for `validateJob`'s pass over the finished draft, far below) — a typo
+// must not cost the person the whole interview. `validateBaseUrl` is the ONE
+// spelling of the shape rule (`src/job.js`), reused rather than re-checked by
+// hand. The message NEVER echoes the raw value: it may carry credentials
+// (`user:pass@host`), and naming the rule that refused it is enough.
+if (baseUrlArg !== null) {
+  const baseUrlErr = validateBaseUrl(baseUrlArg);
+  if (baseUrlErr) die(`--base-url invalid — ${baseUrlErr}`);
+}
 // the menu is handed over ENUMERATED — an unknown value is a typo, refused as one.
 // A LOCKED or UNLISTED class is a different answer entirely: it is admissible
 // input, and the LIBRARY refuses it below as counted demand. `VERDICT_CLASSES` is
@@ -219,11 +256,14 @@ const readNumber = async (where, field, parse, allowNull = false) => {
 // ── the header (the part known before the interview starts) ─────────────────
 say('INTERVIEW — your job, in your own words. Nothing here spends a cent.');
 say(`  verdict  ${VERDICT}  (YOUR pick — the close this authors promises to stay at or below it)`);
-say(`  provider ${PROVIDER}`);
+say(`  provider ${PROVIDER}${baseUrlArg === null ? '' : `  (endpoint ${baseUrlArg})`}`);
 say(`  out      ${OUT}`);
 say(`  ${ceilingLine(CEILING_USD)}`);
 say('  no model is called from here: this collects your answers and hands them to run-author.mjs, which does the paid part under the ceiling above');
 say('  (answers can be several lines — press Enter on an empty line, i.e. Enter twice, to finish an answer)');
+// PRD item 31.3's probe rule, same warning `scripts/run-u.mjs` already prints
+// at launch — never a refusal, just visible before money is about to be spent.
+for (const line of probeWarningLines(PROVIDER) ?? []) say(`  ${line}`);
 
 // ── the OFF-MENU classes refuse BEFORE a single question, Source included ────
 // Not this script's rule and not this script's words: `runInterview` is the
@@ -378,19 +418,55 @@ say(`  tree     ${prep.tree}`);
 say(`  kind     ${prep.manifest.kind}`);
 say(`  seed     ${prep.manifest.seed}`);
 
-// ── ruling 7 → D5 = A (PRD item 33 M3 piece 4, step S6): a non-repo source
-// no longer stops HERE. bareloop's checks/close catalogue is still
-// code-genre only today (M4 builds the non-code checks), but the honest
-// "no checks yet" stop moves to AFTER the confirm turn — `run-author.mjs`,
-// not this script, is where it now lands, once a plain folder's confirm
-// turn has run over the $0 seed listing (D5). This script stays
-// PROVIDER-FREE (D1): it has nothing of its own to stop for any more.
+// ── item 33 close-out: the install gap, named at $0, and WAITED FOR (F182 fix,
+// hamr's ruling 2026-09-14 option A, candidate direction (a)) ── `prepareSource`
+// copies only git-tracked files, so a JS/TS repo's copy never carries
+// `node_modules`. bareloop NEVER runs an install itself — it names the gap and
+// the exact command, and the person runs it themselves, in another terminal,
+// in the copy. This script now PAUSES right here and re-checks, so the
+// "Run it now?" offer at hand-off (below) is actually reachable once the
+// install finishes — F182: previously the interview fell straight through to
+// the class questions and only re-checked once, too late to ever offer.
+const depsGap = prep.manifest.kind === 'repo'
+  ? missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '')
+  : null;
+if (depsGap) {
+  say('');
+  say(`  The copy above has no installed packages (${depsGap.reason}).`);
+  say('  bareloop never runs an install itself — run this in the copy, in another terminal:');
+  say(`    cd ${prep.tree} && ${depsGap.command}`);
+  say('');
+  // Loops on the SAME check `missingDependencies` above already ran — never a
+  // second, hand-typed copy of the rule. `skip` (or end of input) carries on
+  // exactly as before this fix: the hand-off re-check further down still
+  // suppresses the offer and says so. Any other line (including a blank
+  // Enter) re-checks rather than being treated as a typo — the only way to
+  // stop waiting is the one word `skip`.
+  for (;;) {
+    prompt('  Press Enter once it has finished to check again, or type skip to carry on without it: ');
+    const l = await nextLine();
+    if (l === null || String(l).trim().toLowerCase() === 'skip') break;
+    const recheck = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
+    if (!recheck) { say('  packages found — carrying on.'); break; }
+    say(`  still missing (${recheck.reason}) — try again, or type skip to carry on without it.`);
+  }
+}
+
+// ── ruling 7 → D5 = A, amended 2026-09-21 (F191; PRD item 33 M3 piece 4,
+// step S6): a non-repo source does not stop HERE — this script stays
+// PROVIDER-FREE (D1) and has nothing of its own to stop for. D5 ORIGINALLY
+// read "the honest no-checks-yet stop moves to AFTER the confirm turn": a
+// plain folder's confirm turn crashed live instead (`classGuards` has no
+// language to key off for one, run `mu4hc7sp`, F191) — the confirm turn is
+// unreachable by construction for this kind of source, so it never runs one.
+// `run-author.mjs` now stops immediately, at $0, with no confirm turn and no
+// model call at all — this message says that truthfully, not the old promise.
 const IS_PLAIN_FOLDER = prep.manifest.kind !== 'repo';
 if (IS_PLAIN_FOLDER) {
   say('');
   say(`Source is not a code repository — it is a plain ${prep.manifest.kind} job. bareloop has no checks for this kind`);
-  say('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build), but the form continues: the');
-  say('confirm turn still runs (D5), over the seed listing rather than a scout, when you run run-author.mjs.');
+  say('of job yet (a later build). The form continues, but running run-author.mjs will stop right away, at $0 —');
+  say('no confirm turn, no model call — nothing spent, and your source is not changed.');
 }
 
 // From here on, EVERYTHING that used to read the original patient path reads
@@ -501,6 +577,10 @@ const draft = {
   // bareloop is LLM-agnostic (PRD item 34 L17) — the operator's own pick, asked
   // rather than defaulted, one vendor from the SAME table the worker draws from.
   provider: PROVIDER,
+  // ABSENT when `--base-url` was never given (`baseUrlArg === null`) — never
+  // written as `null`/`''`; every provider constructor defaults its own
+  // endpoint on its own in that case (PRD item 28 ruling (d)).
+  ...(baseUrlArg === null ? {} : { baseUrl: baseUrlArg }),
   cadence: { unit: 'day', every: 1 },
   budgetUsd,
   ...(wallMin === null ? {} : { maxWallMs: Math.round(wallMin * 60_000) }),
@@ -549,6 +629,7 @@ say(`written  ${draftFile}   the operator half — no close and no verdictType: 
 say(`  job      ${draft.job}`);
 say(`  budget   $${draft.budgetUsd} for the RUN  ·  wall ${draft.maxWallMs === undefined ? 'UNBOUNDED (you said none — no outside deadline)' : `${draft.maxWallMs / 60_000}min`}`);
 say(`  fence    ${draft.writeScope ? draft.writeScope.join(', ') : '(none — a plain-folder job has no fence yet, M4)'}`);
+if (draft.baseUrl !== undefined) say(`  endpoint ${draft.baseUrl}`);
 // no goal line here — the confirm turn (run-author.mjs, step S4) drafts and
 // confirms the goal sentence next; this draft carries none yet
 
@@ -570,10 +651,11 @@ const childArgs = [
 ];
 say('');
 // Repo and plain-folder sources hand off to genuinely different pipelines
-// (D5=A, item 33 M3 piece 4): a repo gets a real scout and stops at
-// prepareSigning; a plain folder gets NO scout at all — the confirm turn
-// reads the file list, and run-author stops at the M4 wall ("no checks for
-// this kind of job yet") before signing is ever reached. Saying "scout" or
+// (D5 amended 2026-09-21, F191): a repo gets a real scout and stops at
+// prepareSigning; a plain folder gets NEITHER a scout NOR a confirm turn —
+// `run-author.mjs` stops immediately, at $0, no model call at all (the
+// confirm turn is unreachable by construction for a source with no code
+// language, see the D5 amendment above). Saying "scout", "confirm turn" or
 // "prepareSigning" for a plain folder would describe a run that cannot
 // happen on this source.
 if (IS_REPO) {
@@ -581,9 +663,8 @@ if (IS_REPO) {
   say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
   say('It stops at prepareSigning: it never signs, and it never runs the job.');
 } else {
-  say('NEXT — the paid step: a real model reads the file list and walks you through the confirm turn. There is no scout for a plain folder.');
-  say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
-  say('After you confirm, it stops: no checks for this kind of job yet (M4). It never signs and never runs the job.');
+  say('NEXT — running run-author.mjs on this source stops right away, at $0: no scout, no confirm turn, no model call.');
+  say('It never signs and never runs the job — bareloop has no checks for this kind of job yet.');
 }
 say('');
 // THE KEY NAME FOLLOWS THE CHOSEN PROVIDER (PRD item 34 L17) — no more
@@ -596,30 +677,62 @@ let providerEntry = null;
 try { providerEntry = resolveProvider(PROVIDER); } catch { providerEntry = null; }
 const providerEnvKey = providerEntry?.envKey ?? null;
 say(`  ${providerEnvKey ?? 'YOUR_PROVIDER_API_KEY'}=... node scripts/run-author.mjs ${childArgs.join(' ')}`);
+// An `openai-api` + `baseUrl` draft (DeepSeek, today's one secondary, reached
+// this way) still reads its key from `OPENAI_API_KEY` — there is no separate
+// "DeepSeek key" env var, and a person pointed only at the command above could
+// reasonably miss that. Said once, plainly, never a key VALUE.
+if (draft.baseUrl !== undefined && providerEnvKey) {
+  say(`  (the endpoint above is reached through the "${PROVIDER}" table entry, so its key still goes in ${providerEnvKey} — there is no separate endpoint-specific key variable)`);
+}
 // NO KEY, NO OFFER. `run-author.mjs` refuses without one and exits 2 at its own
 // door, before a spine exists — so with the shell unkeyed this question has
 // exactly one possible outcome for the person, and putting it anyway spends
 // their attention on a choice they do not have. What is actionable instead is
 // the command above and the one line that says how to make it work.
-const KEYED = providerEnvKey !== null && Boolean(process.env[providerEnvKey]);
+// F181 — a key that IS set can still carry a shape run-author will refuse
+// (a line break/control char/stray whitespace, e.g. a two-line secret-store
+// entry). A malformed key must not count as KEYED: this offer must read the
+// same "will it actually run" question run-author itself asks at its door.
+const rawKeyValue = providerEnvKey ? process.env[providerEnvKey] : undefined;
+const keyProblem = rawKeyValue ? apiKeyProblem(rawKeyValue) : null;
+const KEYED = providerEnvKey !== null && Boolean(rawKeyValue) && !keyProblem;
 if (!KEYED) {
   say('');
-  say(providerEnvKey
-    ? `  (${providerEnvKey} is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)`
-    : `  (provider "${PROVIDER}" is not in the runnable table — run-author will refuse it loud; this is not a key problem)`);
+  if (providerEnvKey && keyProblem) {
+    say(`  (${providerEnvKey} is set but ${keyProblem} — run-author refuses without a clean key; secrets are never trimmed or repaired, only reported)`);
+  } else {
+    say(providerEnvKey
+      ? `  (${providerEnvKey} is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)`
+      : `  (provider "${PROVIDER}" is not in the runnable table — run-author will refuse it loud; this is not a key problem)`);
+  }
   // The repair, in plain words and WITHOUT a command: which secret store a person
   // keeps their key in is theirs, and printing one specific incantation would be
   // this script guessing at their setup — while the one thing it must never do is
   // put a key anywhere a command line can be read from.
-  if (providerEnvKey) say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
+  if (providerEnvKey && !keyProblem) say('  set the key in the shell you run it from, e.g. from your secret store, then paste the command above.');
+}
+// re-checked at the hand-off, not just once right after prepareSource: this is
+// the LAST $0 point before the offer below could spend on a run that would
+// only instrument-stop at its first tool-needing close stage. Still fires ⇒
+// no offer, the same shape the KEYED gate above already uses.
+const depsGapAtHandoff = prep.manifest.kind === 'repo'
+  ? missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '')
+  : null;
+if (depsGapAtHandoff) {
+  say('');
+  say(`  The copy still has no installed packages (${depsGapAtHandoff.reason}) — run-author would only instrument-stop on it.`);
+  say(`    cd ${prep.tree} && ${depsGapAtHandoff.command}`);
+  say('  then run run-author.mjs yourself with the command above.');
 }
 say('');
 // The default is NO, and it is the same lean the pause's doors take: the answer that
 // costs nothing is the one you get by saying nothing. Only an explicit yes spends.
-// Unkeyed, the offer is never made and the answer is the default one — not a
-// refusal typed on the person's behalf, but the only answer the state admits.
+// Unkeyed, or with an unresolved install gap, the offer is never made and the
+// answer is the default one — not a refusal typed on the person's behalf, but
+// the only answer the state admits.
+const OFFERABLE = KEYED && !depsGapAtHandoff;
 let answer = '';
-if (KEYED) {
+if (OFFERABLE) {
   prompt('Run it now? [y/N] ');
   const l = await nextLine();
   answer = l === null ? '' : String(l).trim().toLowerCase();
@@ -630,9 +743,11 @@ if (KEYED) {
 rl.close();
 if (answer !== 'y' && answer !== 'yes') {
   say('');
-  say(KEYED
+  say(OFFERABLE
     ? 'Not run. The command above is yours to fire when you are ready — the two files are already on disk.'
-    : 'Not offered — there is no key in this shell to run it with. The command above is yours to fire once you set one; the two files are already on disk.');
+    : !KEYED
+      ? 'Not offered — there is no key in this shell to run it with. The command above is yours to fire once you set one; the two files are already on disk.'
+      : 'Not offered — the copy still has no installed packages. Install them, then fire the command above yourself; the two files are already on disk.');
   // F71 — never process.exit() after output: exit() can discard queued stdout.
   process.exitCode = 0;
 } else {
