@@ -452,19 +452,21 @@ if (depsGap) {
   }
 }
 
-// ── ruling 7 → D5 = A (PRD item 33 M3 piece 4, step S6): a non-repo source
-// no longer stops HERE. bareloop's checks/close catalogue is still
-// code-genre only today (M4 builds the non-code checks), but the honest
-// "no checks yet" stop moves to AFTER the confirm turn — `run-author.mjs`,
-// not this script, is where it now lands, once a plain folder's confirm
-// turn has run over the $0 seed listing (D5). This script stays
-// PROVIDER-FREE (D1): it has nothing of its own to stop for any more.
+// ── ruling 7 → D5 = A, amended 2026-09-21 (F191; PRD item 33 M3 piece 4,
+// step S6): a non-repo source does not stop HERE — this script stays
+// PROVIDER-FREE (D1) and has nothing of its own to stop for. D5 ORIGINALLY
+// read "the honest no-checks-yet stop moves to AFTER the confirm turn": a
+// plain folder's confirm turn crashed live instead (`classGuards` has no
+// language to key off for one, run `mu4hc7sp`, F191) — the confirm turn is
+// unreachable by construction for this kind of source, so it never runs one.
+// `run-author.mjs` now stops immediately, at $0, with no confirm turn and no
+// model call at all — this message says that truthfully, not the old promise.
 const IS_PLAIN_FOLDER = prep.manifest.kind !== 'repo';
 if (IS_PLAIN_FOLDER) {
   say('');
   say(`Source is not a code repository — it is a plain ${prep.manifest.kind} job. bareloop has no checks for this kind`);
-  say('of job yet (PRD item 33 M3 ruling 7 → M4 — non-code checks are a later build), but the form continues: the');
-  say('confirm turn still runs (D5), over the seed listing rather than a scout, when you run run-author.mjs.');
+  say('of job yet (a later build). The form continues, but running run-author.mjs will stop right away, at $0 —');
+  say('no confirm turn, no model call, nothing written.');
 }
 
 // From here on, EVERYTHING that used to read the original patient path reads
@@ -649,10 +651,11 @@ const childArgs = [
 ];
 say('');
 // Repo and plain-folder sources hand off to genuinely different pipelines
-// (D5=A, item 33 M3 piece 4): a repo gets a real scout and stops at
-// prepareSigning; a plain folder gets NO scout at all — the confirm turn
-// reads the file list, and run-author stops at the M4 wall ("no checks for
-// this kind of job yet") before signing is ever reached. Saying "scout" or
+// (D5 amended 2026-09-21, F191): a repo gets a real scout and stops at
+// prepareSigning; a plain folder gets NEITHER a scout NOR a confirm turn —
+// `run-author.mjs` stops immediately, at $0, no model call at all (the
+// confirm turn is unreachable by construction for a source with no code
+// language, see the D5 amendment above). Saying "scout", "confirm turn" or
 // "prepareSigning" for a plain folder would describe a run that cannot
 // happen on this source.
 if (IS_REPO) {
@@ -660,9 +663,8 @@ if (IS_REPO) {
   say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
   say('It stops at prepareSigning: it never signs, and it never runs the job.');
 } else {
-  say('NEXT — the paid step: a real model reads the file list and walks you through the confirm turn. There is no scout for a plain folder.');
-  say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
-  say('After you confirm, it stops: no checks for this kind of job yet (M4). It never signs and never runs the job.');
+  say('NEXT — running run-author.mjs on this source stops right away, at $0: no scout, no confirm turn, no model call.');
+  say('It never signs and never runs the job — bareloop has no checks for this kind of job yet.');
 }
 say('');
 // THE KEY NAME FOLLOWS THE CHOSEN PROVIDER (PRD item 34 L17) — no more

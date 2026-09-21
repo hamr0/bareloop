@@ -364,7 +364,7 @@ test('the original repo Source is never touched — prepareSource COPIES, it nev
 // plain folder — it continues, and the honest "no checks yet" gap moves to
 // AFTER the confirm turn, in run-author.mjs (D5's own stop, over the $0 seed
 // listing rather than a scout).
-test('a non-repo Source (a plain folder): the form CONTINUES (D5=A) — no writeScope in the draft, M4\'s stop moves to run-author.mjs', () => {
+test('a non-repo Source (a plain folder): the form CONTINUES (D5=A) — no writeScope in the draft, the $0 stop moves to run-author.mjs (F191)', () => {
   const out = outDir();
   const folder = mkdtempSync(join(base, 'plain-folder-'));
   writeFileSync(join(folder, 'a.txt'), 'hello');
@@ -378,17 +378,19 @@ test('a non-repo Source (a plain folder): the form CONTINUES (D5=A) — no write
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /bareloop has no checks for this kind/);
   assert.match(r.out, /the form continues/i);
-  assert.match(r.out, /confirm turn still runs \(D5\)/);
+  assert.match(r.out, /stop right away, at \$0/);
+  assert.doesNotMatch(r.out, /confirm turn still runs/, 'F191 — the confirm turn is unreachable for a plain folder now, never promised');
   assert.match(r.out, /── 1 of /, 'the class questions DO start now (D5) — only run-author.mjs stops on this kind of job');
   assert.ok(existsSync(join(out, 'specdraft.json')), 'the draft IS written — a plain-folder job is not refused here any more');
   const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
   assert.equal(draft.writeScope, undefined, 'a plain-folder job has no fence yet (PLAIN_FOLDER_DEFERRED_FIELDS) — never one derived from the output directory');
 });
 
-// PRD item 34 loose end: a plain folder gets NO scout (D5=A, 21561cf) — the
-// hand-off text describing the paid step must say so, never describe the
-// repo-only scout/prepareSigning pipeline that this source never reaches.
-test('a non-repo Source: the hand-off describes the confirm turn and the M4 stop, never a scout or prepareSigning', () => {
+// F191 (2026-09-21): a plain folder gets NO scout AND NO confirm turn — the
+// hand-off text describing the paid step must say so, never promise a model
+// call or describe the repo-only scout/prepareSigning pipeline this source
+// never reaches.
+test('a non-repo Source: the hand-off says the $0 stop plainly, never a confirm turn, a scout, or prepareSigning', () => {
   const out = outDir();
   const folder = mkdtempSync(join(base, 'plain-folder-handoff-'));
   writeFileSync(join(folder, 'a.txt'), 'hello');
@@ -400,9 +402,9 @@ test('a non-repo Source: the hand-off describes the confirm turn and the M4 stop
   ];
   const r = interview({ out, lines });
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /a real model reads the file list and walks you through the confirm turn/);
-  assert.match(r.out, /There is no scout for a plain folder/);
-  assert.match(r.out, /no checks for this kind of job yet \(M4\)/);
+  assert.match(r.out, /stops right away, at \$0: no scout, no confirm turn, no model call/);
+  assert.match(r.out, /bareloop has no checks for this kind of job yet/);
+  assert.doesNotMatch(r.out, /walks you through the confirm turn/);
   assert.doesNotMatch(r.out, /a real scout over that repository/);
   assert.doesNotMatch(r.out, /It stops at prepareSigning/);
 });

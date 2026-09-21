@@ -922,8 +922,10 @@ piece 4 step S6 (D5 = A), the FORM CONTINUES — the class's own questions, job 
 wall are all still asked, and the draft is still written, with no `writeScope` field
 (`PLAIN_FOLDER_DEFERRED_FIELDS`, `src/authorjob.js` — Destination there is an output directory,
 never a fence). The honest named stop (bareloop's check catalogue is code-genre only today,
-ruling 7 → M4) no longer lands HERE — it moves to `run-author.mjs`, AFTER a confirm turn over
-the $0 seed listing (no scout — D5's register is code-only). Everything load-bearing in it is
+ruling 7 → M4) no longer lands HERE — it moves to `run-author.mjs`, which now gives it
+IMMEDIATELY, at $0 (D5 amended 2026-09-21, F191: no scout and no confirm turn either — a plain
+folder has no code language, so the confirm turn's own code-derived protections cannot be
+computed for one; see the run-author.mjs section below). Everything load-bearing in it is
 borrowed rather than respelled —
 the QUESTIONS are the library's frozen sets (`questionsFor` / `requiredAnswersFor`), printed as
 handed over and never re-worded, re-ordered or re-numbered by the script; the REFUSALS are
@@ -1001,12 +1003,15 @@ into a success one process up.
   who wrote what and lets the person confirm the plan, fix it (up to 2 rounds), type the goal
   themselves, or start over — everything else (the survey, the declaration loop, D9's gates)
   stays unattended. `rl.close()` runs in a `finally` around the whole paid span. **A plain-folder
-  Source (step S6, D5 = A) runs NO scout** — its own confirm turn runs over a $0, no-git
-  directory listing of the frozen tree instead, then the SAME honest "no checks yet" stop this
-  script always gave (`request-red`/`non-code-source`), now given AFTER that confirm turn rather
-  than before the API key is even read. If the confirm turn itself does not reach a signed plan
-  (abandoned, a cap/pricing stop, a provider/artifact red, or "start over"), THAT is the stop —
-  the non-code-source one only fires once a plan was actually confirmed.
+  Source (step S6, D5 amended 2026-09-21, F191) gets NO scout AND NO confirm turn.** D5
+  originally ran the confirm turn over a $0, no-git directory listing of the frozen tree first,
+  THEN gave the honest "no checks yet" stop (`request-red`/`non-code-source`) once a plan was
+  confirmed. Live run `mu4hc7sp` crashed inside that confirm turn instead: `confirmProtections`
+  calls `classGuards` (`src/authoring.js`), which is keyed by CODE LANGUAGE and throws on a
+  plain folder's `lang: 'none-detected'` — a plain folder has no language, so the confirm turn
+  cannot honestly show real, code-derived protections for one, and now never runs one. The stop
+  fires immediately after `author-start`, at $0, no scout, no confirm turn, no model call — the
+  spine is exactly `author-start` → `author-end{outcome:'not-authored', stop:'non-code-source'}`.
 
 **The protections a person is shown in the confirm turn come from CODE, never the model**
 (fix #1, live run mu0voeo4, 2026-09-14 — a run once showed a model-invented "behavior-
