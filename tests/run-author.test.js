@@ -888,6 +888,8 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
   assert.equal(authored.confirmed, null);
   assert.equal(authored.stop, 'non-code-source');
   assert.equal(authored.cost, null, 'not metered — this path never reached a model call');
+  const spineLines = (text.match(/^spine {6}/gm) ?? []).length;
+  assert.equal(spineLines, 1, `the tail print (~line 1181) must be the only "spine      " line — a duplicate branch-local print regressed this (saw ${spineLines})\n${text}`);
 });
 
 // F191, item 4 (/debrief fix-all-4) — a REAL throw inside the previously-uncovered

@@ -718,7 +718,6 @@ if (!IS_REPO_SOURCE) {
   emit('job-red', red);
   writeOut('authored.json', { ok: false, confirmed: null, stop: 'non-code-source', cost: null, reds: [red] });
   emit('author-end', { outcome: 'not-authored', stop: 'non-code-source' });
-  console.log(`\nspine      ${spineFile}`);
   process.exitCode = 1;
 } else {
 
