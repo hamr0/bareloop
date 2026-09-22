@@ -301,6 +301,12 @@
 
   .map-box{border:1px solid var(--border-strong);border-radius:0;padding:10px;overflow-x:auto;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
   .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
+  /* the JS layout below sizes the map to fit the box at render time (fewer boxes per row,
+     snaking down, at narrow widths); max-width:100% is only the belt-and-braces backstop for
+     a stale/pre-layout measurement — it shrinks an oversized map to fit, but (unlike width:100%)
+     never stretches an already-fitting map wider than its own natural size, so an unchanged
+     ≤3-step map keeps its original pixel size. */
+  .map-box svg{display:block;max-width:100%;height:auto;}
   .map-legend{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px;flex-wrap:wrap;}
 
   .step-card{position:relative;border:1px solid var(--border);border-radius:0;padding:10px;margin-bottom:8px;background:var(--panel2);}
@@ -593,12 +599,41 @@
                 <button class="btn small" data-testid="wf-export-weekly-digest">Export</button>
               </span>
             </div>
+
+            <!-- 7 real steps — proves the step map's snake wrap on screen (no fixture before
+                 this one ever had more than 3 steps). -->
+            <div class="wf-row" data-wf="migrate-configs" data-testid="wf-row-migrate-configs" tabindex="0" role="button" aria-pressed="false">
+              <span class="dot green"></span>
+              <span class="wf-name">migrate-configs</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
+              <span class="wf-meta">$2.47 / $3.00</span>
+              <span class="wf-meta">26m 40s</span>
+              <span class="wf-meta">2026-09-21</span>
+              <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-edit-migrate-configs">Edit</button>
+                <button class="btn small" data-testid="wf-export-migrate-configs">Export</button>
+              </span>
+            </div>
           </div>
         </section>
 
         <!-- HISTORY TAB -->
         <section id="panel-history" class="tabpanel" role="tabpanel" aria-labelledby="tab-history" hidden>
           <div id="history-list" data-testid="history-list">
+            <div class="hist-row" data-testid="hist-row-migrate-configs" tabindex="0" role="button" aria-pressed="false">
+              <span class="dot green"></span>
+              <span class="wf-name">migrate-configs</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
+              <span class="wf-meta">$2.47</span>
+              <span class="wf-meta">26m 40s</span>
+              <span class="wf-meta">2026-09-21</span>
+              <span class="wf-row-actions">
+                <button class="btn small">Replay $0</button>
+              </span>
+            </div>
+
             <div class="hist-row" data-testid="hist-row-release-notes" tabindex="0" role="button" aria-pressed="false">
               <span class="dot green"></span>
               <span class="wf-name">release-notes</span>
@@ -1230,7 +1265,16 @@
       source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
       success:"digest.md written, covers PRs and issues opened this week",
       guardrails:"docs only, no source edits", money:"0.75", time:"10 min", model:"deepseek-flash",
-      runs:[]}
+      runs:[]},
+    // 7 real steps — the only fixture past 3, proving the step map's snake wrap on screen.
+    "migrate-configs": {verdict:"green", status:"done", statusClass:"green",
+      goal:"Migrate config/*.json to config/*.yaml and point the loader at the new files",
+      source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+      success:"config loader tests exit 0, every config/*.json has a config/*.yaml equivalent",
+      guardrails:"no edits outside config/, src/configLoader.js, docs/CONFIG.md", money:"3.00", time:"45 min", model:"deepseek-flash",
+      runs:[
+        {histId:"migrate-configs", ok:true, date:"2026-09-21", spend:"2.47", time:"26m 40s"}
+      ]}
   };
 
   // fix-types' original static audit fixture (unchanged content), now populated via JS instead
@@ -1266,6 +1310,49 @@
       job: wfData["fix-types"] // same job card fields; only the run outcome differs
       // Run/Audit for this one reuse the fix-types live template (applyRunState("red")) +
       // auditFixTypesRows/auditFixTypesRawLog — see selectHistory().
+    },
+    "migrate-configs": {
+      wfName:"migrate-configs", verdict:"green", dotClass:"dot green", date:"2026-09-21",
+      spend:"2.47", cap:"3.00", elapsed:"26m 40s", turns:54, ok:true,
+      job: wfData["migrate-configs"],
+      run:{
+        checkLine:"config loader tests 1 failing → 0 failing, 14 files converted",
+        changedLine:"config/*.json → config/*.yaml (14 files), src/configLoader.js (+22 −8), docs/CONFIG.md (+18 −2)",
+        outputLine:"~/code/bareguard-out/migrate-configs-2026-09-21",
+        stepsLine:"7 of 7 done",
+        whyLine:"\"config loader tests exit 0, every config/*.json has a config/*.yaml equivalent\"",
+        steps:[
+          {title:"Scan config files", meta:"list config/*.json across the repo · 4 turns · 0m 25s · $0.05", badge:"done", badgeClass:"green"},
+          {title:"Parse JSON configs", meta:"validate JSON, collect key/value shape · 6 turns · 0m 40s · $0.09", badge:"done", badgeClass:"green"},
+          {title:"Convert to YAML", meta:"write config/*.yaml equivalents · 10 turns · 4m 50s · $0.42", badge:"done", badgeClass:"green",
+            events:["read config/app.json","wrote config/app.yaml","wrote config/db.yaml"]},
+          {title:"Update references in source", meta:"point src/configLoader.js at the .yaml files · 12 turns · 6m 20s · $0.55", badge:"done", badgeClass:"green",
+            events:["edited src/configLoader.js"]},
+          {title:"Run config loader tests", meta:"node --test test/configLoader.test.js · 14 turns · 9m 45s · $0.78", badge:"done", badgeClass:"green", retries:1,
+            events:["1 test failing: missing db.port key","edited src/configLoader.js","node --test test/configLoader.test.js — 0 failing"]},
+          {title:"Update documentation", meta:"docs/CONFIG.md reflects the YAML format · 5 turns · 3m 10s · $0.32", badge:"done", badgeClass:"green"},
+          {title:"Final validation run", meta:"yamllint config/, full test suite · 3 turns · 1m 30s · $0.26", badge:"done", badgeClass:"green"}
+        ],
+        audit:[
+          {time:"13:05:00", action:"read", path:"config/app.json", step:1},
+          {time:"13:05:04", action:"read", path:"config/db.json", step:1},
+          {time:"13:05:40", action:"read", path:"config/app.json", step:2},
+          {time:"13:07:10", action:"write", path:"config/app.yaml", step:3, write:true},
+          {time:"13:07:25", action:"write", path:"config/db.yaml", step:3, write:true},
+          {time:"13:10:05", action:"edit", path:"src/configLoader.js", step:4, write:true},
+          {time:"13:16:30", action:"check", path:"node --test test/configLoader.test.js", step:5},
+          {time:"13:18:10", action:"edit", path:"src/configLoader.js", step:5, write:true},
+          {time:"13:19:50", action:"check", path:"node --test test/configLoader.test.js", step:5},
+          {time:"13:23:15", action:"write", path:"docs/CONFIG.md", step:6, write:true},
+          {time:"13:24:50", action:"check", path:"yamllint config/", step:7}
+        ],
+        rawLog:
+'{"t":"2026-09-21T13:05:00Z","type":"read","run_id":"mu9m07ff","path":"config/app.json","step":1}\n' +
+'{"t":"2026-09-21T13:07:10Z","type":"write","run_id":"mu9m07ff","path":"config/app.yaml","step":3,"allowed":true}\n' +
+'{"t":"2026-09-21T13:16:30Z","type":"check","run_id":"mu9m07ff","cmd":"node --test test/configLoader.test.js","step":5,"result":"1 failing"}\n' +
+'{"t":"2026-09-21T13:19:50Z","type":"check","run_id":"mu9m07ff","cmd":"node --test test/configLoader.test.js","step":5,"result":"0 failing"}\n' +
+'{"t":"2026-09-21T13:24:50Z","type":"check","run_id":"mu9m07ff","cmd":"yamllint config/","step":7,"result":"0 issues"}'
+      }
     },
     "release-notes": {
       wfName:"release-notes", verdict:"green", dotClass:"dot green", date:"2026-09-20",
@@ -1428,17 +1515,43 @@
   }
 
   var stepMapUidCounter = 0;
+  var MAP_MARGIN = 10, MAP_ROWH = 130;
 
-  // steps: [{title, state, retries}], at least 1 entry. Lays out up to 5 boxes per row (same
-  // 180x60 box size / arrow style as the original 3-step SVG when there are ≤3 steps, scaling
-  // box width down as more steps join a row), wrapping into further rows past 5.
-  function buildStepMapSVG(steps){
+  // same 180x60 box size / arrow style as the original 3-step SVG when boxes fit ≤3 per row,
+  // scaling box width down as more join a row — unchanged from the original tiers.
+  function mapBoxTier(perRow){
+    if(perRow <= 3) return {boxW:180, gap:38};
+    if(perRow === 4) return {boxW:140, gap:30};
+    return {boxW:110, gap:24};
+  }
+
+  // Picks how many boxes fit per row (≤5, ≥1) so the map's own drawn width stays inside
+  // availW (the map-box's content width at render time). No availW (or a generous one) keeps
+  // the legacy behavior: up to 5 per row at full tier size. At the narrowest widths a single
+  // box per row is legal and shrinks to fit (never below 90px, so the title stays legible).
+  function computeMapLayout(n, availW){
+    var maxPerRow = Math.min(n, 5);
+    for(var perRow = maxPerRow; perRow >= 2; perRow--){
+      var tier = mapBoxTier(perRow);
+      var totalW = MAP_MARGIN * 2 + perRow * tier.boxW + (perRow - 1) * tier.gap;
+      if(!availW || totalW <= availW) return {perRow:perRow, boxW:tier.boxW, gap:tier.gap};
+    }
+    var boxW = availW ? Math.max(90, Math.min(180, availW - MAP_MARGIN * 2)) : 180;
+    return {perRow:1, boxW:boxW, gap:38};
+  }
+
+  // steps: [{title, state, retries}], at least 1 entry. Wraps into further rows as a SNAKE
+  // (boustrophedon): row 0 runs left→right, row 1 runs right→left (arrows pointing left, step
+  // numbers still ascending), row 2 left→right again, and so on — one continuous path the eye
+  // can follow without guessing. availWidth (optional): the map-box's content width right now,
+  // used to pick how many boxes fit per row (see computeMapLayout); omit for the legacy ≤5-per-
+  // row sizing.
+  function buildStepMapSVG(steps, availWidth){
     var n = steps.length;
-    var perRow = Math.min(n, 5);
+    var layout = computeMapLayout(n, availWidth);
+    var perRow = layout.perRow, boxW = layout.boxW, gap = layout.gap;
     var rows = Math.ceil(n / perRow);
-    var boxW = perRow <= 3 ? 180 : (perRow === 4 ? 140 : 110);
-    var gap = perRow <= 3 ? 38 : (perRow === 4 ? 30 : 24);
-    var boxH = 60, margin = 10, rowH = 130;
+    var boxH = 60, margin = MAP_MARGIN, rowH = MAP_ROWH;
     var totalW = margin * 2 + perRow * boxW + (perRow - 1) * gap;
     var totalH = rows * rowH;
     var uid = "sm" + (stepMapUidCounter++);
@@ -1455,8 +1568,10 @@
 
     steps.forEach(function(s, idx){
       var row = Math.floor(idx / perRow);
-      var col = idx % perRow;
-      var x = margin + col * (boxW + gap);
+      var col = idx % perRow;             // chronological position within the row
+      var rtl = (row % 2) === 1;          // odd rows are the snake's return leg, right→left
+      var slotCol = rtl ? (perRow - 1 - col) : col;
+      var x = margin + slotCol * (boxW + gap);
       var y = 30 + row * rowH;
       var colors = stepMapColors(s.state);
       var num = idx + 1;
@@ -1494,15 +1609,27 @@
       ariaParts.push(num + ' ' + s.title + ' ' + s.state + (s.retries ? ' with retry' : ''));
 
       if(idx < n - 1){
-        if(col < perRow - 1){
-          var nx = x + boxW + gap;
-          body += '<line x1="' + (x + boxW) + '" y1="' + (y + 30) + '" x2="' + (nx - 2) + '" y2="' + (y + 30) +
-            '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+        var nextRow = Math.floor((idx + 1) / perRow);
+        if(nextRow === row){
+          // same row: arrow continues in this row's own direction (right on an L→R row,
+          // left on an R→L one — orient="auto" on the marker follows the line either way)
+          if(!rtl){
+            var nx = x + boxW + gap;
+            body += '<line x1="' + (x + boxW) + '" y1="' + (y + 30) + '" x2="' + (nx - 2) + '" y2="' + (y + 30) +
+              '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+          } else {
+            var px = x - gap - boxW; // next box sits one slot to the left
+            body += '<line x1="' + x + '" y1="' + (y + 30) + '" x2="' + (px + boxW + 2) + '" y2="' + (y + 30) +
+              '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+          }
         } else {
-          // wrap to the next row: elbow connector down and back to the row's left margin
-          body += '<path d="M ' + (x + boxW / 2) + ' ' + (y + boxH) + ' L ' + (x + boxW / 2) + ' ' + (y + boxH + 15) +
-            ' L ' + (margin + boxW / 2) + ' ' + (y + boxH + 15) + ' L ' + (margin + boxW / 2) + ' ' + (y + rowH - 2) +
-            '" fill="none" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></path>';
+          // snake turn: this row's exit box and the next row's entry box always land in the
+          // same slot column (0 or perRow-1 — full rows exit/enter at their shared edge, and
+          // only the last row can be partial, which anchors from that same edge), so the
+          // connector is one continuous straight drop, never a sideways jog.
+          var cx = x + boxW / 2;
+          body += '<line x1="' + cx + '" y1="' + (y + boxH) + '" x2="' + cx + '" y2="' + (y + rowH - 2) +
+            '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
         }
       }
     });
@@ -1522,6 +1649,19 @@
       '</div>';
   }
 
+  // width the map has to work with right now, inside the wrapper's own 10px padding (see
+  // .map-box CSS) — null when the wrapper isn't laid out yet (e.g. its tab is still hidden),
+  // in which case buildStepMapSVG falls back to the legacy ≤5-per-row sizing.
+  function mapAvailWidth(wrapper){
+    if(!wrapper) return null;
+    var w = wrapper.getBoundingClientRect().width;
+    if(!w) return null;
+    return Math.max(0, w - 20);
+  }
+
+  var stepMapLastSteps = {}; // mountId -> steps last rendered there, for a resize replay
+  var stepMapLastWidth = {}; // mountId -> width used for that render, to skip redundant redraws
+
   // mountId: id of the empty div living inside a .map-box wrapper. Hides the whole wrapper
   // when a run has no steps yet (never run, or an imported record with no step history).
   function renderStepMap(mountId, steps){
@@ -1529,13 +1669,59 @@
     if(!mount) return;
     var wrapper = mount.parentElement;
     if(!steps || !steps.length){
+      stepMapLastSteps[mountId] = null;
       mount.innerHTML = "";
       if(wrapper) wrapper.hidden = true;
       return;
     }
     if(wrapper) wrapper.hidden = false;
-    mount.innerHTML = buildStepMapSVG(steps) + stepMapLegendHTML();
+    stepMapLastSteps[mountId] = steps;
+    var w = mapAvailWidth(wrapper);
+    stepMapLastWidth[mountId] = w;
+    mount.innerHTML = buildStepMapSVG(steps, w) + stepMapLegendHTML();
   }
+
+  // Re-lays out an already-rendered map when its box's width actually changes — a real window
+  // resize, or its tab going from hidden (width 0, un-measurable) to visible. Skips redundant
+  // redraws when only the box's HEIGHT changed (e.g. from the redraw itself adding a row).
+  function reflowStepMap(wrapperEl, mountId){
+    if(!wrapperEl) return;
+    var w = mapAvailWidth(wrapperEl);
+    if(w === null) return;
+    if(stepMapLastWidth[mountId] === w) return;
+    var steps = stepMapLastSteps[mountId];
+    if(!steps) return;
+    stepMapLastWidth[mountId] = w;
+    var mount = document.getElementById(mountId);
+    if(mount) mount.innerHTML = buildStepMapSVG(steps, w) + stepMapLegendHTML();
+  }
+
+  // both step-map boxes stay live to width changes: a real resize (narrowing the window, e.g.
+  // to prove the 420px case), and a tab switch (Job/Audit -> Run) landing on a box that was
+  // hidden — and hence unmeasurable — when its render was first requested.
+  (function(){
+    var pairs = [["fixtypes-map-box", "fixtypes-map-mount"], ["gen-map", "gen-map-mount"]];
+    if(typeof ResizeObserver === "undefined"){
+      var resizeTimer;
+      window.addEventListener("resize", function(){
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function(){
+          pairs.forEach(function(p){ reflowStepMap(document.getElementById(p[0]), p[1]); });
+        }, 150);
+      });
+      return;
+    }
+    var ro = new ResizeObserver(function(entries){
+      entries.forEach(function(entry){
+        var pair = pairs.filter(function(p){ return p[0] === entry.target.id; })[0];
+        if(pair) reflowStepMap(entry.target, pair[1]);
+      });
+    });
+    pairs.forEach(function(p){
+      var el = document.getElementById(p[0]);
+      if(el) ro.observe(el);
+    });
+  })();
 
   var runFixtypesView = document.getElementById("run-fixtypes-view");
   var runGenericView = document.getElementById("run-generic-view");
