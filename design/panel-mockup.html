@@ -175,6 +175,16 @@
   .job-card.compact label{margin-bottom:1px;font-size:11px;}
   .job-card.compact input,
   .job-card.compact select{padding:5px 7px;}
+  /* read-only job-card field value — same box rhythm as an input, no editable affordance */
+  .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
+
+  /* Details tab: read-only past-runs list — same row shell as History, but static (no buttons, no click).
+     Result glyph reuses .badge (its ::before/::after already render the [ ] brackets). */
+  .wf-past-run{
+    display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;row-gap:2px;
+    padding:6px 8px;border:1px solid var(--border);border-radius:0;margin-bottom:6px;background:var(--panel2);
+  }
+
   .expand-field{text-overflow:ellipsis;transition:height 0.12s ease;}
   .expand-field:focus{
     height:52px;white-space:normal;
@@ -203,7 +213,11 @@
   .btn:hover:not(:disabled){background:var(--panel2);border-color:var(--accent);}
   .btn:disabled{color:var(--text-faint);border-color:var(--border);cursor:not-allowed;}
   .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700;}
-  .btn.primary:hover{filter:brightness(1.08);}
+  /* keep the primary fill/text on hover AND active — a plain :hover background would
+     otherwise lose to the generic .btn:hover:not(:disabled) rule above (equal specificity,
+     declared later) and blank the button's text against its own colour */
+  .btn.primary:hover:not(:disabled),
+  .btn.primary:active:not(:disabled){background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);filter:brightness(1.08);}
   .btn.small{padding:0 9px;height:32px;min-height:0;font-size:12px;}
   .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
 
@@ -521,6 +535,7 @@
               <span class="wf-meta">6m 12s</span>
               <span class="wf-meta">2026-09-21</span>
               <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-open-fix-types">Open</button>
                 <button class="btn small" data-testid="wf-edit-fix-types">Edit</button>
                 <button class="btn small" data-testid="wf-export-fix-types">Export</button>
               </span>
@@ -535,6 +550,7 @@
               <span class="wf-meta">1m 40s</span>
               <span class="wf-meta">2026-09-21</span>
               <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-open-doc-comments">Open</button>
                 <button class="btn small" data-testid="wf-edit-doc-comments">Edit</button>
                 <button class="btn small" data-testid="wf-export-doc-comments">Export</button>
               </span>
@@ -549,6 +565,7 @@
               <span class="wf-meta">4m 02s</span>
               <span class="wf-meta">2026-09-20</span>
               <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-open-release-notes">Open</button>
                 <button class="btn small" data-testid="wf-edit-release-notes">Edit</button>
                 <button class="btn small" data-testid="wf-export-release-notes">Export</button>
               </span>
@@ -563,6 +580,7 @@
               <span class="wf-meta">0m 51s</span>
               <span class="wf-meta">2026-09-17</span>
               <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-open-lint-sweep">Open</button>
                 <button class="btn small" data-testid="wf-edit-lint-sweep">Edit</button>
                 <button class="btn small" data-testid="wf-export-lint-sweep">Export</button>
               </span>
@@ -674,6 +692,7 @@
       <div class="rp-tabrow" role="tablist" aria-label="Workflow views">
         <button role="tab" id="tab-run" aria-controls="panel-run" aria-selected="true" data-testid="right-tab-run">Run</button>
         <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-testid="right-tab-audit">Audit / logs</button>
+        <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Details</button>
       </div>
 
       <div class="pane-body">
@@ -849,6 +868,59 @@
 {"t":"2026-09-21T10:43:05Z","type":"edit","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}
 {"t":"2026-09-21T10:43:41Z","type":"check","run_id":"mu9x02aa","cmd":"tsc --noEmit","step":2,"result":"5 errors"}</pre>
           </details>
+
+        </section>
+
+        <!-- DETAILS TAB — read-only view opened from a Workflows row's "Open" button:
+             the signed job card with no editable fields and no Sign/Revise actions,
+             plus that workflow's past runs. -->
+        <section id="panel-details" class="tabpanel" role="tabpanel" aria-labelledby="tab-details" hidden data-testid="panel-details">
+
+          <div class="job-card compact" data-testid="job-card-readonly">
+            <h4 id="details-title">Job card — signed</h4>
+
+            <div class="field">
+              <label>Check type</label>
+              <div class="ro-value" id="details-verdict">deterministic</div>
+            </div>
+            <div class="field">
+              <label>Model</label>
+              <div class="ro-value" id="details-model">deepseek-flash</div>
+            </div>
+            <div class="field">
+              <label>Goal</label>
+              <div class="ro-value" id="details-goal">—</div>
+            </div>
+            <div class="field">
+              <label>Source</label>
+              <div class="ro-value" id="details-source">—</div>
+            </div>
+            <div class="field">
+              <label>Destination</label>
+              <div class="ro-value" id="details-dest">—</div>
+            </div>
+            <div class="field">
+              <label>Success</label>
+              <div class="ro-value" id="details-success">—</div>
+            </div>
+            <div class="field">
+              <label>Guardrails</label>
+              <div class="ro-value" id="details-guardrails">—</div>
+            </div>
+            <div class="cap-row">
+              <div class="cap-field">
+                <label>$ cap</label>
+                <div class="ro-value" id="details-cap-money">—</div>
+              </div>
+              <div class="cap-field">
+                <label>Time cap</label>
+                <div class="ro-value" id="details-cap-time">—</div>
+              </div>
+            </div>
+          </div>
+
+          <h4 style="margin:14px 0 8px;">Past runs</h4>
+          <div id="details-runs" data-testid="details-runs"></div>
 
         </section>
 
@@ -1077,7 +1149,8 @@
   // right tabs
   wireTabs([
     document.getElementById("tab-run"),
-    document.getElementById("tab-audit")
+    document.getElementById("tab-audit"),
+    document.getElementById("tab-details")
   ]);
 
   // settings tabs
@@ -1107,22 +1180,32 @@
       goal:"Fix failing type errors in src/checks.js; tsc must exit 0",
       source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
       success:"npx tsc --noEmit exits 0, no test regressions",
-      guardrails:"no edits outside src/, no new deps", money:"2.00", time:"30 min", model:"deepseek-flash"},
+      guardrails:"no edits outside src/, no new deps", money:"2.00", time:"30 min", model:"deepseek-flash",
+      runs:[
+        {ok:false, date:"2026-09-21", spend:"2.00", time:"30m 00s"}
+      ]},
     "doc-comments": {verdict:"soft-green", status:"running", statusClass:"amber",
       goal:"Add missing doc comments to exported functions in src/",
       source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
       success:"every exported function has a doc comment",
-      guardrails:"no logic changes, comments only", money:"1.00", time:"15 min", model:"deepseek-flash"},
+      guardrails:"no logic changes, comments only", money:"1.00", time:"15 min", model:"deepseek-flash",
+      runs:[]},
     "release-notes": {verdict:"green", status:"done", statusClass:"green",
       goal:"Draft release notes from the merged PRs since the last tag",
       source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
       success:"RELEASE_NOTES.md written, one bullet per PR",
-      guardrails:"no source edits, docs only", money:"1.50", time:"20 min", model:"claude-sonnet-5"},
+      guardrails:"no source edits, docs only", money:"1.50", time:"20 min", model:"claude-sonnet-5",
+      runs:[
+        {ok:true, date:"2026-09-20", spend:"0.66", time:"4m 02s"}
+      ]},
     "lint-sweep": {verdict:"green", status:"paused", statusClass:"grey",
       goal:"Run the linter and fix auto-fixable violations",
       source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
       success:"lint exits 0",
-      guardrails:"no manual rule disables", money:"1.00", time:"10 min", model:"deepseek-flash"}
+      guardrails:"no manual rule disables", money:"1.00", time:"10 min", model:"deepseek-flash",
+      runs:[
+        {ok:true, date:"2026-09-17", spend:"0.12", time:"0m 51s"}
+      ]}
   };
 
   wfRows.forEach(function(row){
@@ -1169,6 +1252,52 @@
       document.getElementById("sign-run-btn").textContent = "Re-sign & run";
 
       document.getElementById("tab-chat").click();
+    });
+  });
+
+  // Open workflow -> Details tab: signed job card, READ-ONLY (no Sign/Revise, nothing editable),
+  // plus that workflow's past runs. Does NOT stopPropagation, so the click also bubbles to the
+  // row's own listener below and selects the row (same accent-border selection as clicking it).
+  document.querySelectorAll("[data-testid^='wf-open-']").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var row = btn.closest(".wf-row");
+      var key = row.getAttribute("data-wf");
+      var d = wfData[key];
+      if(!d) return;
+
+      document.getElementById("details-title").textContent = "Job card — signed " + key;
+      document.getElementById("details-verdict").textContent = verdictLabel(d.verdict);
+      document.getElementById("details-model").textContent = d.model;
+      document.getElementById("details-goal").textContent = d.goal;
+      document.getElementById("details-source").textContent = d.source;
+      document.getElementById("details-dest").textContent = d.dest;
+      document.getElementById("details-success").textContent = d.success;
+      document.getElementById("details-guardrails").textContent = d.guardrails;
+      document.getElementById("details-cap-money").textContent = "$" + d.money;
+      document.getElementById("details-cap-time").textContent = d.time;
+
+      var runsEl = document.getElementById("details-runs");
+      runsEl.innerHTML = "";
+      var runs = d.runs || [];
+      if(runs.length === 0){
+        var empty = document.createElement("div");
+        empty.className = "hint";
+        empty.textContent = "no past runs yet";
+        runsEl.appendChild(empty);
+      } else {
+        runs.forEach(function(r){
+          var rowEl = document.createElement("div");
+          rowEl.className = "wf-past-run";
+          rowEl.innerHTML =
+            '<span class="badge ' + (r.ok ? "green" : "red") + '">' + (r.ok ? "✓" : "✗") + '</span>' +
+            '<span class="wf-meta">' + r.date + '</span>' +
+            '<span class="wf-meta">$' + r.spend + '</span>' +
+            '<span class="wf-meta">' + r.time + '</span>';
+          runsEl.appendChild(rowEl);
+        });
+      }
+
+      document.getElementById("tab-details").click();
     });
   });
 
