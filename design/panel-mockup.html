@@ -879,13 +879,15 @@
 
           <div id="audit-content" data-testid="audit-content">
 
-          <div class="chips" role="group" aria-label="Filter audit rows">
-            <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
-            <button class="chip" aria-pressed="false" data-filter="write" data-testid="chip-writes">Writes</button>
-            <button class="chip" aria-pressed="false" data-filter="blocked" data-testid="chip-blocked">Blocked</button>
-          </div>
+          <div class="audit-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <div class="chips" role="group" aria-label="Filter audit rows" style="margin-bottom:0;">
+              <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
+              <button class="chip" aria-pressed="false" data-filter="write" data-testid="chip-writes">Writes</button>
+              <button class="chip" aria-pressed="false" data-filter="blocked" data-testid="chip-blocked">Blocked</button>
+            </div>
 
-          <button class="btn small" id="btn-download-log" data-testid="btn-download-log" style="margin-bottom:10px;">Download log</button>
+            <button class="btn small" id="btn-download-log" data-testid="btn-download-log">Download log</button>
+          </div>
 
           <table data-testid="audit-table">
             <thead>
