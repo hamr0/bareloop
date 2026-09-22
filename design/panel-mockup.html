@@ -742,46 +742,10 @@
             <div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">"12 errors left" (the check's own words)</span></div>
           </div>
 
-          <div class="map-box" data-testid="step-map">
-            <svg width="640" height="130" viewBox="0 0 640 130" role="img" aria-label="Step map: 1 Read the errors done, 2 Fix the types running with retry, 3 Run the check waiting">
-              <!-- step 1 -->
-              <rect x="10" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--green)" stroke-width="2"></rect>
-              <text x="100" y="55" text-anchor="middle" font-size="12" fill="var(--text)">1 Read the errors</text>
-              <text x="100" y="72" text-anchor="middle" font-size="10" fill="#2e7d32">done</text>
-              <!-- arrow 1->2 -->
-              <line x1="190" y1="60" x2="228" y2="60" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#arrow)"></line>
-              <!-- step 2 -->
-              <rect id="map-step2-rect" x="230" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--amber)" stroke-width="2"></rect>
-              <circle id="map-step2-pulse" cx="250" cy="42" r="4" fill="#b8860b">
-                <animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"></animate>
-              </circle>
-              <text x="325" y="55" text-anchor="middle" font-size="12" fill="var(--text)">2 Fix the types</text>
-              <text id="map-step2-status-text" x="325" y="72" text-anchor="middle" font-size="10" fill="#b8860b">running</text>
-              <!-- retry curve -->
-              <path d="M 320 95 C 280 120, 260 120, 235 92" fill="none" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrow-grey)"></path>
-              <text x="278" y="122" text-anchor="middle" font-size="10" fill="var(--text-faint)">try 2</text>
-              <!-- arrow 2->3 -->
-              <line x1="410" y1="60" x2="448" y2="60" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#arrow)"></line>
-              <!-- step 3 -->
-              <rect id="map-step3-rect" x="450" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--border-strong)" stroke-width="2"></rect>
-              <text x="540" y="55" text-anchor="middle" font-size="12" fill="var(--text)">3 Run the check</text>
-              <text id="map-step3-status-text" x="540" y="72" text-anchor="middle" font-size="10" fill="var(--text-faint)">waiting</text>
-
-              <defs>
-                <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6 z" fill="var(--text-dim)"></path>
-                </marker>
-                <marker id="arrow-grey" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6 z" fill="var(--text-faint)"></path>
-                </marker>
-              </defs>
-            </svg>
-            <div class="map-legend">
-              <span><span class="dot green"></span>done</span>
-              <span><span class="dot amber pulse"></span>running</span>
-              <span><span class="dot grey"></span>waiting</span>
-              <span>⤾ dashed = retry</span>
-            </div>
+          <!-- step map: built by renderStepMap() (shared with every other workflow/history
+               selection — see stepmap.js's buildStepMapSVG()), never a second hand-authored map. -->
+          <div class="map-box" data-testid="step-map" id="fixtypes-map-box">
+            <div id="fixtypes-map-mount"></div>
           </div>
 
           <div id="step-list">
@@ -851,13 +815,10 @@
             <div class="summary-row"><span class="sum-label">why:</span><span class="sum-val" id="gen-sum-why"></span></div>
           </div>
 
+          <!-- step map: same renderStepMap() as the fix-types view above — one data-driven
+               renderer for every selection, no second hand-authored map here. -->
           <div class="map-box" data-testid="gen-map" id="gen-map">
-            <div id="gen-map-boxes" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
-            <div class="map-legend">
-              <span><span class="dot green"></span>done</span>
-              <span><span class="dot red"></span>stopped</span>
-              <span><span class="dot grey"></span>waiting</span>
-            </div>
+            <div id="gen-map-mount"></div>
           </div>
 
           <div id="gen-step-list" data-testid="gen-step-list"></div>
@@ -1449,6 +1410,133 @@
   };
 
   // ---- shared render pieces ----
+  // ---- shared step map renderer ----
+  // ONE data-driven map for every selection (fix-types live, fix-types-prior red, and every
+  // other workflow/history run) — draws the same box/arrow/retry-curve/legend SVG the original
+  // hand-authored fix-types map used, from each run's own {title, state, retries} step list.
+  // state is one of the literal words a step card already shows: "done", "running", "stopped",
+  // "waiting", "not run" (unrecognized values fall back to the grey/waiting look).
+  function stepMapColors(state){
+    if(state === "done") return {stroke:"var(--green)", textFill:"#2e7d32"};
+    if(state === "running") return {stroke:"var(--amber)", textFill:"#b8860b"};
+    if(state === "stopped") return {stroke:"var(--red)", textFill:"var(--red)"};
+    return {stroke:"var(--border-strong)", textFill:"var(--text-faint)"}; // waiting / not run / other
+  }
+
+  function escapeXml(s){
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  var stepMapUidCounter = 0;
+
+  // steps: [{title, state, retries}], at least 1 entry. Lays out up to 5 boxes per row (same
+  // 180x60 box size / arrow style as the original 3-step SVG when there are ≤3 steps, scaling
+  // box width down as more steps join a row), wrapping into further rows past 5.
+  function buildStepMapSVG(steps){
+    var n = steps.length;
+    var perRow = Math.min(n, 5);
+    var rows = Math.ceil(n / perRow);
+    var boxW = perRow <= 3 ? 180 : (perRow === 4 ? 140 : 110);
+    var gap = perRow <= 3 ? 38 : (perRow === 4 ? 30 : 24);
+    var boxH = 60, margin = 10, rowH = 130;
+    var totalW = margin * 2 + perRow * boxW + (perRow - 1) * gap;
+    var totalH = rows * rowH;
+    var uid = "sm" + (stepMapUidCounter++);
+
+    var body =
+      '<defs>' +
+        '<marker id="' + uid + '-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
+          '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-dim)"></path></marker>' +
+        '<marker id="' + uid + '-arrow-grey" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
+          '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-faint)"></path></marker>' +
+      '</defs>';
+
+    var ariaParts = [];
+
+    steps.forEach(function(s, idx){
+      var row = Math.floor(idx / perRow);
+      var col = idx % perRow;
+      var x = margin + col * (boxW + gap);
+      var y = 30 + row * rowH;
+      var colors = stepMapColors(s.state);
+      var num = idx + 1;
+
+      var titleText = num + ' ' + s.title;
+      // compress (never wrap) a title too wide for its box, monospace ~7.2px/char at font-size 12
+      var titleFits = boxW - 12;
+      var titleAttrs = titleText.length * 7.2 > titleFits ? ' textLength="' + titleFits + '" lengthAdjust="spacingAndGlyphs"' : '';
+      body += '<rect x="' + x + '" y="' + y + '" width="' + boxW + '" height="' + boxH +
+        '" rx="0" fill="var(--panel2)" stroke="' + colors.stroke + '" stroke-width="2"></rect>';
+      body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 25) +
+        '" text-anchor="middle" font-size="12" fill="var(--text)"' + titleAttrs + '>' + escapeXml(titleText) + '</text>';
+      body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 42) +
+        '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(s.state) + '</text>';
+
+      if(s.state === "running"){
+        body += '<circle cx="' + (x + 20) + '" cy="' + (y + 12) + '" r="4" fill="#b8860b">' +
+          '<animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"></animate></circle>';
+      }
+
+      // retry curve: a dashed self-loop under the box (same proportions as the original
+      // hand-authored curve, scaled to this box's own width), labelled with the try count.
+      if(s.retries && s.retries > 0){
+        var bottom = y + boxH;
+        var sx = x + boxW * 0.50, sy = bottom + 5;
+        var c1x = x + boxW * 0.278, c1y = bottom + 30;
+        var c2x = x + boxW * 0.167, c2y = bottom + 30;
+        var ex = x + boxW * 0.028, ey = bottom + 2;
+        body += '<path d="M ' + sx + ' ' + sy + ' C ' + c1x + ' ' + c1y + ', ' + c2x + ' ' + c2y + ', ' + ex + ' ' + ey +
+          '" fill="none" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#' + uid + '-arrow-grey)"></path>';
+        body += '<text x="' + (x + boxW * 0.267) + '" y="' + (bottom + 32) +
+          '" text-anchor="middle" font-size="10" fill="var(--text-faint)">try ' + (s.retries + 1) + '</text>';
+      }
+
+      ariaParts.push(num + ' ' + s.title + ' ' + s.state + (s.retries ? ' with retry' : ''));
+
+      if(idx < n - 1){
+        if(col < perRow - 1){
+          var nx = x + boxW + gap;
+          body += '<line x1="' + (x + boxW) + '" y1="' + (y + 30) + '" x2="' + (nx - 2) + '" y2="' + (y + 30) +
+            '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+        } else {
+          // wrap to the next row: elbow connector down and back to the row's left margin
+          body += '<path d="M ' + (x + boxW / 2) + ' ' + (y + boxH) + ' L ' + (x + boxW / 2) + ' ' + (y + boxH + 15) +
+            ' L ' + (margin + boxW / 2) + ' ' + (y + boxH + 15) + ' L ' + (margin + boxW / 2) + ' ' + (y + rowH - 2) +
+            '" fill="none" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></path>';
+        }
+      }
+    });
+
+    var ariaLabel = "Step map: " + ariaParts.join(", ");
+    return '<svg width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH +
+      '" role="img" aria-label="' + escapeXml(ariaLabel) + '">' + body + '</svg>';
+  }
+
+  function stepMapLegendHTML(){
+    return '<div class="map-legend">' +
+      '<span><span class="dot green"></span>done</span>' +
+      '<span><span class="dot amber pulse"></span>running</span>' +
+      '<span><span class="dot red"></span>stopped</span>' +
+      '<span><span class="dot grey"></span>waiting</span>' +
+      '<span>⤾ dashed = retry</span>' +
+      '</div>';
+  }
+
+  // mountId: id of the empty div living inside a .map-box wrapper. Hides the whole wrapper
+  // when a run has no steps yet (never run, or an imported record with no step history).
+  function renderStepMap(mountId, steps){
+    var mount = document.getElementById(mountId);
+    if(!mount) return;
+    var wrapper = mount.parentElement;
+    if(!steps || !steps.length){
+      mount.innerHTML = "";
+      if(wrapper) wrapper.hidden = true;
+      return;
+    }
+    if(wrapper) wrapper.hidden = false;
+    mount.innerHTML = buildStepMapSVG(steps) + stepMapLegendHTML();
+  }
+
   var runFixtypesView = document.getElementById("run-fixtypes-view");
   var runGenericView = document.getElementById("run-generic-view");
   var runEmptyView = document.getElementById("run-empty-view");
@@ -1587,20 +1675,13 @@
     document.getElementById("gen-sum-steps").textContent = entry.run.stepsLine;
     document.getElementById("gen-sum-why").textContent = entry.run.whyLine;
 
-    var mapBox = document.getElementById("gen-map");
     var listEl = document.getElementById("gen-step-list");
     var steps = entry.run.steps || [];
-    mapBox.hidden = (steps.length === 0);
-    var mapBoxes = document.getElementById("gen-map-boxes");
-    mapBoxes.innerHTML = "";
+    renderStepMap("gen-map-mount", steps.map(function(s){
+      return {title:s.title, state:s.badge, retries:s.retries || 0};
+    }));
     listEl.innerHTML = "";
     steps.forEach(function(s, i){
-      var borderCol = s.badge === "done" ? "var(--green)" : (s.badge === "stopped" ? "var(--red)" : "var(--border-strong)");
-      var box2 = document.createElement("div");
-      box2.style.cssText = "flex:1;min-width:150px;border:1px solid " + borderCol + ";padding:8px;font-size:12px;";
-      box2.innerHTML = '<b>' + (i + 1) + ' ' + s.title + '</b><br><span class="badge ' + s.badgeClass + '">' + s.badge + '</span>';
-      mapBoxes.appendChild(box2);
-
       var card = document.createElement("div");
       card.className = "step-card";
       var evHtml = "";
@@ -1819,11 +1900,26 @@
   var countersEl = document.getElementById("run-counters");
   var countersRunningHTML = countersEl.innerHTML;
 
-  var mapStep2Rect = document.getElementById("map-step2-rect");
-  var mapStep2Pulse = document.getElementById("map-step2-pulse");
-  var mapStep2Text = document.getElementById("map-step2-status-text");
-  var mapStep3Rect = document.getElementById("map-step3-rect");
-  var mapStep3Text = document.getElementById("map-step3-status-text");
+  // fix-types' own 3-step narrative, in the shared {title,state,retries} shape — the only
+  // place fix-types' step text/retry count is spelled out; applyRunState() below just picks
+  // which of these three lists renderStepMap() draws.
+  var FIXTYPES_STEPS = {
+    running: [
+      {title:"Read the errors", state:"done"},
+      {title:"Fix the types", state:"running", retries:1},
+      {title:"Run the check", state:"waiting"}
+    ],
+    green: [
+      {title:"Read the errors", state:"done"},
+      {title:"Fix the types", state:"done", retries:1},
+      {title:"Run the check", state:"done"}
+    ],
+    red: [
+      {title:"Read the errors", state:"done"},
+      {title:"Fix the types", state:"stopped", retries:1},
+      {title:"Run the check", state:"not run"}
+    ]
+  };
   var stepCard2 = document.getElementById("step-card-2");
   var step2Badge = document.getElementById("step2-badge");
   var stepCard3 = document.getElementById("step-card-3");
@@ -1851,13 +1947,7 @@
       simGreenBtn.textContent = "simulate: back to running";
       simRedBtn.textContent = "simulate: run failed";
 
-      mapStep2Rect.setAttribute("stroke", "var(--green)");
-      mapStep2Pulse.style.display = "none";
-      mapStep2Text.textContent = "done";
-      mapStep2Text.setAttribute("fill", "#2e7d32");
-      mapStep3Rect.setAttribute("stroke", "var(--green)");
-      mapStep3Text.textContent = "done";
-      mapStep3Text.setAttribute("fill", "#2e7d32");
+      renderStepMap("fixtypes-map-mount", FIXTYPES_STEPS.green);
       stepCard2.classList.remove("running");
       step2Badge.textContent = "done";
       step2Badge.className = "badge green";
@@ -1874,13 +1964,7 @@
       simGreenBtn.textContent = "simulate: run passed";
       simRedBtn.textContent = "simulate: back to running";
 
-      mapStep2Rect.setAttribute("stroke", "var(--red)");
-      mapStep2Pulse.style.display = "none";
-      mapStep2Text.textContent = "stopped";
-      mapStep2Text.setAttribute("fill", "var(--red)");
-      mapStep3Rect.setAttribute("stroke", "var(--border-strong)");
-      mapStep3Text.textContent = "not run";
-      mapStep3Text.setAttribute("fill", "var(--text-faint)");
+      renderStepMap("fixtypes-map-mount", FIXTYPES_STEPS.red);
       stepCard2.classList.remove("running");
       step2Badge.textContent = "stopped";
       step2Badge.className = "badge red";
@@ -1897,13 +1981,7 @@
       simGreenBtn.textContent = "simulate: run passed";
       simRedBtn.textContent = "simulate: run failed";
 
-      mapStep2Rect.setAttribute("stroke", "var(--amber)");
-      mapStep2Pulse.style.display = "";
-      mapStep2Text.textContent = "running";
-      mapStep2Text.setAttribute("fill", "#b8860b");
-      mapStep3Rect.setAttribute("stroke", "var(--border-strong)");
-      mapStep3Text.textContent = "waiting";
-      mapStep3Text.setAttribute("fill", "var(--text-faint)");
+      renderStepMap("fixtypes-map-mount", FIXTYPES_STEPS.running);
       stepCard2.classList.add("running");
       step2Badge.textContent = "running";
       step2Badge.className = "badge amber";
