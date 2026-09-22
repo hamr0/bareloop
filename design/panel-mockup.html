@@ -107,7 +107,7 @@
   /* main layout */
   [hidden]{display:none !important;}
   .main{display:flex;flex:1;min-height:0;}
-  .left-pane{width:340px;flex:none;border-right:1px solid var(--border-strong);display:flex;flex-direction:column;background:var(--panel);}
+  .left-pane{width:420px;flex:none;border-right:1px solid var(--border-strong);display:flex;flex-direction:column;background:var(--panel);}
   .right-pane{flex:1;min-width:0;display:flex;flex-direction:column;}
 
   /* tab switches — [1] Chat  [2] Workflows  [3] History, active = inverted */
@@ -268,6 +268,7 @@
   /* after-run summary — TUI window with inset title, hidden while running */
   .summary-box{position:relative;border:1px solid var(--border-strong);border-radius:0;padding:16px 12px 12px;margin-top:16px;background:var(--panel2);font-size:12px;}
   .summary-box#summary-red{border-color:var(--red);}
+  .summary-box#summary-running{border-color:var(--amber);}
   .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
   .summary-headline{font-weight:700;margin-bottom:8px;font-size:13px;}
   .summary-row{display:flex;gap:0;padding:2px 0;}
@@ -673,6 +674,15 @@
             <span id="ctr-elapsed">6m 12s</span> elapsed ·
             $<span id="ctr-spend">0.41</span> of $2.00 ·
             Time left <span id="ctr-timeleft">23m</span>
+          </div>
+
+          <div class="summary-box" id="summary-running" data-testid="run-summary-running">
+            <div class="summary-headline"><span class="dot amber pulse"></span><b>deterministic</b> · $<span class="num" id="sumrun-spend">0.41</span> of $2.00 · <span class="num" id="sumrun-elapsed">6m 12s</span> · turn <span class="num" id="sumrun-turn">14</span></div>
+            <div class="summary-row"><span class="sum-label">check:</span><span class="sum-val">tsc errors <span class="num">21</span> → <span class="num">12</span> so far</span></div>
+            <div class="summary-row"><span class="sum-label">changed:</span><span class="sum-val">src/checks.js (<span class="num">+18</span> <span class="num">−4</span>) so far</span></div>
+            <div class="summary-row"><span class="sum-label">output:</span><span class="sum-val">delivered only if the run ends <span class="dot green"></span></span></div>
+            <div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">1</span> of <span class="num">3</span> done · step 2 running · 1 retry</span></div>
+            <div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">— (the check speaks when the run ends)</span></div>
           </div>
 
           <div class="summary-box" id="summary-green" data-testid="run-summary-green" hidden>
@@ -1139,6 +1149,10 @@
   var turnEl = document.getElementById("ctr-turn");
   var elapsedEl = document.getElementById("ctr-elapsed");
   var spendEl = document.getElementById("ctr-spend");
+  // the always-visible running summary's headline mirrors the same live numbers
+  var sumRunTurnEl = document.getElementById("sumrun-turn");
+  var sumRunElapsedEl = document.getElementById("sumrun-elapsed");
+  var sumRunSpendEl = document.getElementById("sumrun-spend");
   var running = true;
 
   function fmt(sec){
@@ -1151,11 +1165,14 @@
       if(!running) return;
       elapsedSec += 1;
       elapsedEl.textContent = fmt(elapsedSec);
+      sumRunElapsedEl.textContent = fmt(elapsedSec);
       if(elapsedSec % 5 === 0){
         turn += 1;
         turnEl.textContent = turn;
+        sumRunTurnEl.textContent = turn;
         spend = Math.min(2.00, spend + 0.01);
         spendEl.textContent = spend.toFixed(2);
+        sumRunSpendEl.textContent = spend.toFixed(2);
       }
     }, 1000);
   }
@@ -1202,6 +1219,7 @@
   var runState = "running";
   var simGreenBtn = document.getElementById("simulate-toggle");
   var simRedBtn = document.getElementById("simulate-toggle-red");
+  var summaryRunningEl = document.getElementById("summary-running");
   var summaryGreenEl = document.getElementById("summary-green");
   var summaryRedEl = document.getElementById("summary-red");
   var countersEl = document.getElementById("run-counters");
@@ -1225,6 +1243,7 @@
     var pauseBtn = document.getElementById("btn-pause");
     var dot = document.getElementById("active-wf-dot");
 
+    summaryRunningEl.hidden = (state !== "running");
     summaryGreenEl.hidden = (state !== "green");
     summaryRedEl.hidden = (state !== "red");
 
@@ -1297,6 +1316,11 @@
       step3Badge.textContent = "waiting";
       step3Badge.className = "badge grey";
       countersEl.innerHTML = countersRunningHTML;
+      // innerHTML replace tore out and rebuilt the ticking spans — re-acquire them
+      // so the setInterval loop keeps writing to the nodes actually on screen
+      turnEl = document.getElementById("ctr-turn");
+      elapsedEl = document.getElementById("ctr-elapsed");
+      spendEl = document.getElementById("ctr-spend");
     }
   }
 
