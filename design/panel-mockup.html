@@ -222,29 +222,23 @@
   .wf-row:hover{border-color:var(--border-strong);}
   .wf-row.selected{border:1px double var(--accent);background:var(--panel2);box-shadow:none;}
   .wf-row.selected::before{content:">";}
-  .wf-row > span:nth-child(3){flex-basis:100%;}
-  .wf-row > span:nth-child(8){flex-basis:100%;margin-top:2px;}
-  .wf-row > span:nth-child(4)::before,
-  .wf-row > span:nth-child(5)::before,
-  .wf-row > span:nth-child(6)::before,
-  .wf-row > span:nth-child(7)::before{content:"· ";color:var(--text-faint);}
   .wf-name{font-weight:700;}
   .wf-meta{font-size:12px;color:var(--text-dim);}
-  .wf-row-actions{display:flex;gap:6px;}
+  .wf-meta + .wf-meta::before{content:"· ";color:var(--text-faint);}
+  /* zero-height flex item: forces everything after it onto a fresh flex line
+     without claiming a visible line of its own (used between name and the
+     type/meta line, and again before the actions line) */
+  .row-break{flex-basis:100%;height:0;}
+  .wf-row-actions{display:flex;gap:6px;flex-basis:100%;margin-top:2px;}
 
   /* history compact list */
   /* 3-line stack, all left-aligned, no right column:
-     line1 = dot + name · line2 (dim) = verdict · price · time · date · line3 = actions */
+     line1 = dot + name · line2 (dim) = type · price · time · date · line3 = actions */
   .hist-row{
     display:flex;flex-wrap:wrap;align-items:center;
     column-gap:8px;row-gap:4px;
     padding:8px;border:1px solid var(--border);border-radius:0;margin-bottom:6px;background:var(--panel2);border-bottom-style:dotted;
   }
-  .hist-row > span:nth-child(3){flex-basis:100%;}
-  .hist-row > span:nth-child(7){flex-basis:100%;margin-top:2px;}
-  .hist-row > span:nth-child(4)::before,
-  .hist-row > span:nth-child(5)::before,
-  .hist-row > span:nth-child(6)::before{content:"· ";color:var(--text-faint);}
   .imported-tag{font-size:11px;color:var(--text-faint);}
 
   /* right pane header — bracketed run title, single rule below */
@@ -418,10 +412,10 @@
             <h4 id="job-card-title">Job card — draft</h4>
 
             <div class="field">
-              <label id="jf-verdict-label">Verdict type</label>
+              <label id="jf-verdict-label">Check type</label>
               <div class="radio-row" role="radiogroup" aria-labelledby="jf-verdict-label">
-                <label><input type="radio" name="verdict" checked> Green</label>
-                <label><input type="radio" name="verdict"> Soft-green</label>
+                <label><input type="radio" name="verdict" checked> Deterministic</label>
+                <label><input type="radio" name="verdict"> Rubric</label>
               </div>
             </div>
             <div class="field">
@@ -457,8 +451,8 @@
               <input id="jf-guardrails" type="text" value="no edits outside src/, no new deps">
             </div>
             <div class="field">
-              <label for="jf-judge">Judge examples <span class="hint" style="display:inline">(soft-green only)</span></label>
-              <input class="expand-field" id="jf-judge" type="text" value="n/a — verdict type is Green" disabled>
+              <label for="jf-judge">Judge examples <span class="hint" style="display:inline">(rubric only)</span></label>
+              <input class="expand-field" id="jf-judge" type="text" value="n/a — check type is deterministic" disabled>
             </div>
 
             <div class="cap-row" data-testid="cap-row">
@@ -508,8 +502,8 @@
             <div class="wf-row selected" data-wf="fix-types" data-testid="wf-row-fix-types" tabindex="0" role="button" aria-pressed="true">
               <span class="dot amber pulse"></span>
               <span class="wf-name">fix-types</span>
-              <span class="badge">green</span>
-              <span class="wf-meta">running · step 2 of 3</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$0.41 / $2.00</span>
               <span class="wf-meta">6m 12s</span>
               <span class="wf-meta">2026-09-21</span>
@@ -522,8 +516,8 @@
             <div class="wf-row" data-wf="doc-comments" data-testid="wf-row-doc-comments" tabindex="0" role="button" aria-pressed="false">
               <span class="dot amber pulse"></span>
               <span class="wf-name">doc-comments</span>
-              <span class="badge grey">soft-green</span>
-              <span class="wf-meta">running · step 1 of 2</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">rubric</span>
               <span class="wf-meta">$0.09 / $1.00</span>
               <span class="wf-meta">1m 40s</span>
               <span class="wf-meta">2026-09-21</span>
@@ -536,8 +530,8 @@
             <div class="wf-row" data-wf="release-notes" data-testid="wf-row-release-notes" tabindex="0" role="button" aria-pressed="false">
               <span class="dot green"></span>
               <span class="wf-name">release-notes</span>
-              <span class="badge">green</span>
-              <span class="wf-meta">done</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$0.66 / $1.50</span>
               <span class="wf-meta">4m 02s</span>
               <span class="wf-meta">2026-09-20</span>
@@ -550,8 +544,8 @@
             <div class="wf-row" data-wf="lint-sweep" data-testid="wf-row-lint-sweep" tabindex="0" role="button" aria-pressed="false">
               <span class="dot grey"></span>
               <span class="wf-name">lint-sweep</span>
-              <span class="badge grey">green</span>
-              <span class="wf-meta">paused</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$0.12 / $1.00</span>
               <span class="wf-meta">0m 51s</span>
               <span class="wf-meta">2026-09-17</span>
@@ -569,7 +563,8 @@
             <div class="hist-row" data-testid="hist-row-release-notes">
               <span class="dot green"></span>
               <span class="wf-name">release-notes</span>
-              <span class="badge">green</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$0.66</span>
               <span class="wf-meta">4m 02s</span>
               <span class="wf-meta">2026-09-20</span>
@@ -582,7 +577,8 @@
             <div class="hist-row" data-testid="hist-row-fix-types-prior">
               <span class="dot red"></span>
               <span class="wf-name">fix-types</span>
-              <span class="badge">green</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$1.84</span>
               <span class="wf-meta">21m 10s</span>
               <span class="wf-meta">2026-09-19</span>
@@ -595,7 +591,8 @@
             <div class="hist-row" data-testid="hist-row-doc-comments-prior">
               <span class="dot amber"></span>
               <span class="wf-name">doc-comments</span>
-              <span class="badge grey">soft-green</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">rubric</span>
               <span class="wf-meta">$0.31</span>
               <span class="wf-meta">2m 15s</span>
               <span class="wf-meta">2026-09-18</span>
@@ -608,7 +605,8 @@
             <div class="hist-row" data-testid="hist-row-lint-sweep-prior">
               <span class="dot grey"></span>
               <span class="wf-name">lint-sweep</span>
-              <span class="badge">green</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$0.12</span>
               <span class="wf-meta">0m 51s</span>
               <span class="wf-meta">2026-09-17</span>
@@ -621,7 +619,8 @@
             <div class="hist-row" data-testid="hist-row-onboarding-md">
               <span class="dot green"></span>
               <span class="wf-name">onboarding-md</span>
-              <span class="badge">green</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$0.44</span>
               <span class="wf-meta">3m 05s</span>
               <span class="wf-meta">2026-09-16</span>
@@ -634,7 +633,8 @@
             <div class="hist-row" data-testid="hist-row-changelog-draft">
               <span class="dot green"></span>
               <span class="wf-name">changelog-draft <span class="imported-tag">imported · view only</span></span>
-              <span class="badge">green</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$0.00</span>
               <span class="wf-meta">—</span>
               <span class="wf-meta">2026-09-14</span>
@@ -654,8 +654,7 @@
         <div class="rp-header-title">
           <span class="dot amber pulse" id="active-wf-dot"></span>
           <h2 id="active-wf-name">fix-types</h2>
-          <span class="badge" id="active-wf-verdict">green</span>
-          <span class="badge amber" id="active-wf-status">running</span>
+          <span class="badge" id="active-wf-verdict">deterministic</span>
         </div>
       </div>
 
@@ -669,7 +668,7 @@
         <!-- RUN TAB -->
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
 
-          <div class="counters" data-testid="live-counters">
+          <div class="counters" id="run-counters" data-testid="live-counters">
             Turn <b id="ctr-turn">14</b> ·
             <span id="ctr-elapsed">6m 12s</span> elapsed ·
             $<span id="ctr-spend">0.41</span> of $2.00 ·
@@ -677,20 +676,20 @@
           </div>
 
           <div class="summary-box" id="summary-green" data-testid="run-summary-green" hidden>
-            <div class="summary-headline"><span class="dot green"></span><b>green</b> · <span class="num">$1.84</span> · <span class="num">21m 10s</span> · <span class="num">38</span> turns</div>
+            <div class="summary-headline"><span class="dot green"></span><b>deterministic</b> · <span class="num">$1.84</span> · <span class="num">21m 10s</span> · <span class="num">38</span> turns</div>
             <div class="summary-row"><span class="sum-label">check:</span><span class="sum-val">tsc errors <span class="num">21</span> → <span class="num">0</span></span></div>
             <div class="summary-row"><span class="sum-label">changed:</span><span class="sum-val">src/checks.js (<span class="num">+42</span> <span class="num">−17</span>)</span></div>
             <div class="summary-row"><span class="sum-label">output:</span><span class="sum-val">~/code/bareguard-out/fix-types-2026-09-22</span></div>
-            <div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">3</span> of <span class="num">3</span> green · 1 retry at step 2</span></div>
+            <div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">3</span> of <span class="num">3</span> done · 1 retry at step 2</span></div>
             <div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">"tsc exits 0, no test regressions"</span></div>
           </div>
 
           <div class="summary-box" id="summary-red" data-testid="run-summary-red" hidden>
-            <div class="summary-headline"><span class="dot red"></span><b>red</b> · <span class="num">$2.00</span> · <span class="num">30m 00s</span> · <span class="num">61</span> turns</div>
+            <div class="summary-headline"><span class="dot red"></span><b>deterministic</b> · <span class="num">$2.00</span> · <span class="num">30m 00s</span> · <span class="num">61</span> turns</div>
             <div class="summary-row"><span class="sum-label">check:</span><span class="sum-val">tsc errors <span class="num">21</span> → <span class="num">12</span></span></div>
             <div class="summary-row"><span class="sum-label">changed:</span><span class="sum-val">src/checks.js (<span class="num">+18</span> <span class="num">−4</span>)</span></div>
-            <div class="summary-row"><span class="sum-label">output:</span><span class="sum-val">nothing delivered — only a green run delivers</span></div>
-            <div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">1</span> of <span class="num">3</span> green · stopped at step 2</span></div>
+            <div class="summary-row"><span class="sum-label">output:</span><span class="sum-val">nothing delivered — only a run that ends <span class="dot green"></span> delivers</span></div>
+            <div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">1</span> of <span class="num">3</span> done · stopped at step 2</span></div>
             <div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">"12 errors left" (the check's own words)</span></div>
           </div>
 
@@ -703,21 +702,21 @@
               <!-- arrow 1->2 -->
               <line x1="190" y1="60" x2="228" y2="60" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#arrow)"></line>
               <!-- step 2 -->
-              <rect x="230" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--amber)" stroke-width="2"></rect>
-              <circle cx="250" cy="42" r="4" fill="#b8860b">
+              <rect id="map-step2-rect" x="230" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--amber)" stroke-width="2"></rect>
+              <circle id="map-step2-pulse" cx="250" cy="42" r="4" fill="#b8860b">
                 <animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"></animate>
               </circle>
               <text x="325" y="55" text-anchor="middle" font-size="12" fill="var(--text)">2 Fix the types</text>
-              <text x="325" y="72" text-anchor="middle" font-size="10" fill="#b8860b">running</text>
+              <text id="map-step2-status-text" x="325" y="72" text-anchor="middle" font-size="10" fill="#b8860b">running</text>
               <!-- retry curve -->
               <path d="M 320 95 C 280 120, 260 120, 235 92" fill="none" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrow-grey)"></path>
               <text x="278" y="122" text-anchor="middle" font-size="10" fill="var(--text-faint)">try 2</text>
               <!-- arrow 2->3 -->
               <line x1="410" y1="60" x2="448" y2="60" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#arrow)"></line>
               <!-- step 3 -->
-              <rect x="450" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--border-strong)" stroke-width="2"></rect>
+              <rect id="map-step3-rect" x="450" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--border-strong)" stroke-width="2"></rect>
               <text x="540" y="55" text-anchor="middle" font-size="12" fill="var(--text)">3 Run the check</text>
-              <text x="540" y="72" text-anchor="middle" font-size="10" fill="var(--text-faint)">waiting</text>
+              <text id="map-step3-status-text" x="540" y="72" text-anchor="middle" font-size="10" fill="var(--text-faint)">waiting</text>
 
               <defs>
                 <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
@@ -745,10 +744,10 @@
               <div class="step-meta">Run tsc, collect the error list · 3 turns · 0m 48s · $0.06</div>
             </div>
 
-            <div class="step-card running" data-testid="step-card-2">
+            <div class="step-card running" id="step-card-2" data-testid="step-card-2">
               <div class="step-head">
                 <h4>2 · Fix the types</h4>
-                <span class="badge amber">running</span>
+                <span class="badge amber" id="step2-badge">running</span>
               </div>
               <div class="step-meta">Edit src/checks.js to satisfy tsc · 9 turns · 4m 40s · $0.30</div>
               <div class="events">
@@ -756,13 +755,13 @@
                 <div>› edited src/checks.js lines 40–62</div>
                 <div>› check: 12 errors left (was 21)</div>
               </div>
-              <div class="earlier-attempt">Earlier attempt: try 1 ended red at step 2 — "still 21 errors"</div>
+              <div class="earlier-attempt">Earlier attempt: try 1 ended <span class="dot red"></span> at step 2 — "still 21 errors"</div>
             </div>
 
-            <div class="step-card" data-testid="step-card-3">
+            <div class="step-card" id="step-card-3" data-testid="step-card-3">
               <div class="step-head">
                 <h4>3 · Run the check</h4>
-                <span class="badge grey">waiting</span>
+                <span class="badge grey" id="step3-badge">waiting</span>
               </div>
               <div class="step-meta">Re-run tsc, confirm 0 errors · 0 turns · — · $0.00</div>
             </div>
@@ -783,8 +782,8 @@
             </div>
           </div>
 
-          <button class="toggle-link" id="simulate-toggle" data-testid="simulate-toggle">simulate: run ended</button>
-          <button class="toggle-link" id="simulate-toggle-red" data-testid="simulate-toggle-red">simulate: run ended red</button>
+          <button class="toggle-link" id="simulate-toggle" data-testid="simulate-toggle">simulate: run passed</button>
+          <button class="toggle-link" id="simulate-toggle-red" data-testid="simulate-toggle-red">simulate: run failed</button>
 
         </section>
 
@@ -1057,8 +1056,12 @@
   var wfRows = document.querySelectorAll(".wf-row");
   var activeName = document.getElementById("active-wf-name");
   var activeVerdict = document.getElementById("active-wf-verdict");
-  var activeStatus = document.getElementById("active-wf-status");
   var activeDot = document.getElementById("active-wf-dot");
+
+  // internal names stay "green"/"soft-green"; only the visible label changes
+  function verdictLabel(internal){
+    return internal === "soft-green" ? "rubric" : "deterministic";
+  }
 
   var wfData = {
     "fix-types": {verdict:"green", status:"running", statusClass:"amber",
@@ -1092,9 +1095,7 @@
       var d = wfData[key];
       activeName.textContent = key;
       if(d){
-        activeVerdict.textContent = d.verdict;
-        activeStatus.textContent = d.status;
-        activeStatus.className = "badge " + d.statusClass;
+        activeVerdict.textContent = verdictLabel(d.verdict);
         activeDot.className = "dot " + d.statusClass + (d.statusClass === "amber" ? " pulse" : "");
       }
     });
@@ -1197,18 +1198,30 @@
   });
 
   // simulate run-ended toggles (running / green / red) — drives the after-run summary
+  // (internal state names stay "green"/"red"; nothing derived from them is shown as that word)
   var runState = "running";
   var simGreenBtn = document.getElementById("simulate-toggle");
   var simRedBtn = document.getElementById("simulate-toggle-red");
   var summaryGreenEl = document.getElementById("summary-green");
   var summaryRedEl = document.getElementById("summary-red");
+  var countersEl = document.getElementById("run-counters");
+  var countersRunningHTML = countersEl.innerHTML;
+
+  var mapStep2Rect = document.getElementById("map-step2-rect");
+  var mapStep2Pulse = document.getElementById("map-step2-pulse");
+  var mapStep2Text = document.getElementById("map-step2-status-text");
+  var mapStep3Rect = document.getElementById("map-step3-rect");
+  var mapStep3Text = document.getElementById("map-step3-status-text");
+  var stepCard2 = document.getElementById("step-card-2");
+  var step2Badge = document.getElementById("step2-badge");
+  var stepCard3 = document.getElementById("step-card-3");
+  var step3Badge = document.getElementById("step3-badge");
 
   function applyRunState(state){
     runState = state;
     var acceptBtn = document.getElementById("btn-accept");
     var rerunBtn = document.getElementById("btn-rerun");
     var hint = document.getElementById("accept-hint");
-    var statusBadge = document.getElementById("active-wf-status");
     var pauseBtn = document.getElementById("btn-pause");
     var dot = document.getElementById("active-wf-dot");
 
@@ -1219,35 +1232,71 @@
       running = false;
       acceptBtn.disabled = false;
       rerunBtn.disabled = false;
-      hint.textContent = "run ended — green";
-      statusBadge.textContent = "done";
-      statusBadge.className = "badge green";
+      hint.textContent = "run ended — done";
       dot.className = "dot green";
       pauseBtn.disabled = true;
       simGreenBtn.textContent = "simulate: back to running";
-      simRedBtn.textContent = "simulate: run ended red";
+      simRedBtn.textContent = "simulate: run failed";
+
+      mapStep2Rect.setAttribute("stroke", "var(--green)");
+      mapStep2Pulse.style.display = "none";
+      mapStep2Text.textContent = "done";
+      mapStep2Text.setAttribute("fill", "#2e7d32");
+      mapStep3Rect.setAttribute("stroke", "var(--green)");
+      mapStep3Text.textContent = "done";
+      mapStep3Text.setAttribute("fill", "#2e7d32");
+      stepCard2.classList.remove("running");
+      step2Badge.textContent = "done";
+      step2Badge.className = "badge green";
+      step3Badge.textContent = "done";
+      step3Badge.className = "badge green";
+      countersEl.innerHTML = 'Turn <b>38</b> · <span>21m 10s</span> · $<span>1.84</span> of $2.00';
     } else if(state === "red"){
       running = false;
       acceptBtn.disabled = true;
       rerunBtn.disabled = false;
-      hint.textContent = "run ended — red (cap hit)";
-      statusBadge.textContent = "red";
-      statusBadge.className = "badge red";
+      hint.textContent = "run ended — failed (cap hit)";
       dot.className = "dot red";
       pauseBtn.disabled = true;
-      simGreenBtn.textContent = "simulate: run ended";
+      simGreenBtn.textContent = "simulate: run passed";
       simRedBtn.textContent = "simulate: back to running";
+
+      mapStep2Rect.setAttribute("stroke", "var(--red)");
+      mapStep2Pulse.style.display = "none";
+      mapStep2Text.textContent = "stopped";
+      mapStep2Text.setAttribute("fill", "var(--red)");
+      mapStep3Rect.setAttribute("stroke", "var(--border-strong)");
+      mapStep3Text.textContent = "not run";
+      mapStep3Text.setAttribute("fill", "var(--text-faint)");
+      stepCard2.classList.remove("running");
+      step2Badge.textContent = "stopped";
+      step2Badge.className = "badge red";
+      step3Badge.textContent = "not run";
+      step3Badge.className = "badge grey";
+      countersEl.innerHTML = 'Turn <b>61</b> · <span>30m 00s</span> · $<span>2.00</span> of $2.00 · cap reached';
     } else {
       running = true;
       acceptBtn.disabled = true;
       rerunBtn.disabled = true;
       hint.textContent = "available when the run ends";
-      statusBadge.textContent = "running";
-      statusBadge.className = "badge amber";
       dot.className = "dot amber pulse";
       pauseBtn.disabled = false;
-      simGreenBtn.textContent = "simulate: run ended";
-      simRedBtn.textContent = "simulate: run ended red";
+      simGreenBtn.textContent = "simulate: run passed";
+      simRedBtn.textContent = "simulate: run failed";
+
+      mapStep2Rect.setAttribute("stroke", "var(--amber)");
+      mapStep2Pulse.style.display = "";
+      mapStep2Text.textContent = "running";
+      mapStep2Text.setAttribute("fill", "#b8860b");
+      mapStep3Rect.setAttribute("stroke", "var(--border-strong)");
+      mapStep3Text.textContent = "waiting";
+      mapStep3Text.setAttribute("fill", "var(--text-faint)");
+      stepCard2.classList.add("running");
+      step2Badge.textContent = "running";
+      step2Badge.className = "badge amber";
+      step3Badge.textContent = "waiting";
+      step3Badge.className = "badge grey";
+      countersEl.innerHTML = countersRunningHTML;
     }
   }
 
@@ -1266,10 +1315,26 @@
     if(!row) return;
     var name = row.querySelector(".wf-name").firstChild.textContent.trim();
     var isRed = !!row.querySelector(".dot.red");
+    var rowVerdictLabel = row.querySelector(".wf-meta").textContent.trim();
     document.getElementById("active-wf-name").textContent = name;
+    document.getElementById("active-wf-verdict").textContent = rowVerdictLabel;
     document.getElementById("tab-run").click();
     applyRunState(isRed ? "red" : "green");
   });
+
+  // verification convenience: ?state=green|red|hist-red drives the Run tab into that state on load
+  // (design-lab only, not part of the product surface)
+  (function(){
+    var m = /[?&]state=(green|red|hist-red)/.exec(location.search);
+    if(!m) return;
+    if(m[1] === "hist-red"){
+      document.getElementById("tab-history").click();
+      var row = document.querySelector('[data-testid="hist-row-fix-types-prior"] button');
+      if(row) row.click();
+    } else {
+      applyRunState(m[1]);
+    }
+  })();
 
   document.getElementById("btn-accept").addEventListener("click", function(){
     alert("Accept — wireframe stub.");
@@ -1301,6 +1366,12 @@
       document.getElementById("tab-money").click();
     }
   }
+  // verification convenience: ?leftTab=workflows|history opens that left-pane tab on load (wireframe only)
+  (function(){
+    var m = /[?&]leftTab=(workflows|history)/.exec(location.search);
+    if(!m) return;
+    document.getElementById("tab-" + m[1]).click();
+  })();
 
   // Settings stub buttons
   var newProviderCount = 0;
