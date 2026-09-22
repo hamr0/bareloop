@@ -110,10 +110,14 @@
   .left-pane{width:420px;flex:none;border-right:1px solid var(--border-strong);display:flex;flex-direction:column;background:var(--panel);}
   .right-pane{flex:1;min-width:0;display:flex;flex-direction:column;}
 
-  /* tab switches — [1] Chat  [2] Workflows  [3] History, active = inverted */
-  .tabrow{display:flex;border-bottom:1px solid var(--border-strong);counter-reset:tabnum;}
+  /* tab switches — [1] Chat  [2] Workflows  [3] History, active = inverted
+     container carries --panel2 and buttons stay transparent (same pattern as .rp-tabrow
+     below) so the selected button's --panel fill contrasts against the row, not just
+     against .left-pane's own --panel background — otherwise a selected left tab visually
+     disappears into the pane around it while the right-pane tabs still show a clear box */
+  .tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:tabnum;}
   .tabrow button{
-    flex:1;padding:10px 6px;min-height:44px;background:var(--panel2);border:none;
+    flex:1;padding:10px 6px;min-height:44px;background:transparent;border:none;
     border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);
     counter-increment:tabnum;
   }
@@ -220,7 +224,6 @@
   }
   .wf-row::before{content:" ";position:absolute;left:6px;top:8px;color:var(--accent);font-weight:700;}
   .wf-row:hover{border-color:var(--border-strong);}
-  .wf-row.selected{border:1px double var(--accent);background:var(--panel2);box-shadow:none;}
   .wf-row.selected::before{content:">";}
   .wf-name{font-weight:700;}
   .wf-meta{font-size:12px;color:var(--text-dim);}
@@ -238,8 +241,14 @@
     display:flex;flex-wrap:wrap;align-items:center;
     column-gap:8px;row-gap:4px;
     padding:8px;border:1px solid var(--border);border-radius:0;margin-bottom:6px;background:var(--panel2);border-bottom-style:dotted;
+    cursor:pointer;
   }
+  .hist-row:hover{border-color:var(--border-strong);}
   .imported-tag{font-size:11px;color:var(--text-faint);}
+
+  /* one shared selected-row look for Workflows and History rows: thicker accent border, rounded corners */
+  .wf-row.selected,
+  .hist-row.selected{border:2px solid var(--accent);border-radius:4px;background:var(--panel2);box-shadow:none;}
 
   /* right pane header — bracketed run title, single rule below */
   .rp-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);flex-wrap:wrap;gap:8px;}
@@ -564,7 +573,7 @@
         <!-- HISTORY TAB -->
         <section id="panel-history" class="tabpanel" role="tabpanel" aria-labelledby="tab-history" hidden>
           <div id="history-list" data-testid="history-list">
-            <div class="hist-row" data-testid="hist-row-release-notes">
+            <div class="hist-row" data-testid="hist-row-release-notes" tabindex="0" role="button" aria-pressed="false">
               <span class="dot green"></span>
               <span class="wf-name">release-notes</span>
               <span class="row-break"></span>
@@ -578,7 +587,7 @@
               </span>
             </div>
 
-            <div class="hist-row" data-testid="hist-row-fix-types-prior">
+            <div class="hist-row" data-testid="hist-row-fix-types-prior" tabindex="0" role="button" aria-pressed="false">
               <span class="dot red"></span>
               <span class="wf-name">fix-types</span>
               <span class="row-break"></span>
@@ -592,7 +601,7 @@
               </span>
             </div>
 
-            <div class="hist-row" data-testid="hist-row-doc-comments-prior">
+            <div class="hist-row" data-testid="hist-row-doc-comments-prior" tabindex="0" role="button" aria-pressed="false">
               <span class="dot amber"></span>
               <span class="wf-name">doc-comments</span>
               <span class="row-break"></span>
@@ -606,7 +615,7 @@
               </span>
             </div>
 
-            <div class="hist-row" data-testid="hist-row-lint-sweep-prior">
+            <div class="hist-row" data-testid="hist-row-lint-sweep-prior" tabindex="0" role="button" aria-pressed="false">
               <span class="dot grey"></span>
               <span class="wf-name">lint-sweep</span>
               <span class="row-break"></span>
@@ -620,7 +629,7 @@
               </span>
             </div>
 
-            <div class="hist-row" data-testid="hist-row-onboarding-md">
+            <div class="hist-row" data-testid="hist-row-onboarding-md" tabindex="0" role="button" aria-pressed="false">
               <span class="dot green"></span>
               <span class="wf-name">onboarding-md</span>
               <span class="row-break"></span>
@@ -634,7 +643,7 @@
               </span>
             </div>
 
-            <div class="hist-row" data-testid="hist-row-changelog-draft">
+            <div class="hist-row" data-testid="hist-row-changelog-draft" tabindex="0" role="button" aria-pressed="false">
               <span class="dot green"></span>
               <span class="wf-name">changelog-draft <span class="imported-tag">imported · view only</span></span>
               <span class="row-break"></span>
@@ -1366,6 +1375,21 @@
     applyRunState(isRed ? "red" : "green");
   });
 
+  // History row selection — same "selected" look and one-per-list rule as Workflows rows.
+  // Clicking anywhere in the row selects it (including the Open/Replay buttons, since a
+  // click on a button still bubbles up to this row-level listener).
+  var histRows = document.querySelectorAll(".hist-row");
+  histRows.forEach(function(row){
+    row.addEventListener("click", function(){
+      histRows.forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
+      row.classList.add("selected");
+      row.setAttribute("aria-pressed","true");
+    });
+    row.addEventListener("keydown", function(e){
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); }
+    });
+  });
+
   // verification convenience: ?state=green|red|hist-red drives the Run tab into that state on load
   // (design-lab only, not part of the product surface)
   (function(){
@@ -1410,11 +1434,19 @@
       document.getElementById("tab-money").click();
     }
   }
-  // verification convenience: ?leftTab=workflows|history opens that left-pane tab on load (wireframe only)
+  // verification convenience: ?leftTab=workflows|history opens that left-pane tab on load,
+  // and &select=<row's data-wf value, or the tail of a hist-row's data-testid after "hist-row-">
+  // clicks that row to exercise the real selection handler (wireframe only)
   (function(){
     var m = /[?&]leftTab=(workflows|history)/.exec(location.search);
     if(!m) return;
     document.getElementById("tab-" + m[1]).click();
+    var sel = /[?&]select=([a-z0-9-]+)/.exec(location.search);
+    if(!sel) return;
+    var target = m[1] === "workflows"
+      ? document.querySelector('.wf-row[data-wf="' + sel[1] + '"]')
+      : document.querySelector('[data-testid="hist-row-' + sel[1] + '"]');
+    if(target) target.click();
   })();
 
   // Settings stub buttons
