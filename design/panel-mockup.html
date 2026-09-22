@@ -533,7 +533,7 @@
               <span class="wf-meta">deterministic</span>
               <span class="wf-meta">$0.41 / $2.00</span>
               <span class="wf-meta">6m 12s</span>
-              <span class="wf-meta">2026-09-21</span>
+              <span class="wf-meta">2026-09-22</span>
               <span class="wf-row-actions">
                 <button class="btn small" data-testid="wf-edit-fix-types">Edit</button>
                 <button class="btn small" data-testid="wf-export-fix-types">Export</button>
@@ -734,7 +734,7 @@
           </div>
 
           <div class="summary-box" id="summary-red" data-testid="run-summary-red" hidden>
-            <div class="summary-headline"><span class="dot red"></span><b>deterministic</b> · <span class="num">$2.00</span> · <span class="num">30m 00s</span> · <span class="num">61</span> turns</div>
+            <div class="summary-headline"><span class="dot red"></span><b>deterministic</b> · <span class="num">$1.84</span> · <span class="num">21m 10s</span> · <span class="num">61</span> turns</div>
             <div class="summary-row"><span class="sum-label">check:</span><span class="sum-val">tsc errors <span class="num">21</span> → <span class="num">12</span></span></div>
             <div class="summary-row"><span class="sum-label">changed:</span><span class="sum-val">src/checks.js (<span class="num">+18</span> <span class="num">−4</span>)</span></div>
             <div class="summary-row"><span class="sum-label">output:</span><span class="sum-val">nothing delivered — only a run that ends <span class="dot green"></span> delivers</span></div>
@@ -1224,6 +1224,10 @@
     return internal === "soft-green" ? "rubric" : "deterministic";
   }
 
+  // this mockup's "today" — a workflow whose latest attempt is LIVE shows this as its own
+  // date (row and header both), never a prior finished attempt's date.
+  var TODAY = "2026-09-22";
+
   // ---- Workflows tab: the CURRENT signed job card + its own run history (linked to histData
   // by histId, since a run's full detail lives in one place — histData — never duplicated). ----
   var wfData = {
@@ -1658,7 +1662,7 @@
     if(row){ row.classList.add("selected"); row.setAttribute("aria-pressed","true"); }
 
     setHeader(key, "dot " + d.statusClass + (d.statusClass === "amber" ? " pulse" : ""), verdictLabel(d.verdict),
-      d.runs.length ? d.runs[0].date : "not run yet");
+      d.status === "running" ? TODAY : (d.runs.length ? d.runs[0].date : "not run yet"));
 
     if(key === "fix-types"){
       runGenericView.hidden = true;
@@ -1864,7 +1868,7 @@
       running = false;
       acceptBtn.disabled = true;
       rerunBtn.disabled = false;
-      hint.textContent = "run ended — failed (cap hit)";
+      hint.textContent = "run ended — failed (check still failing)";
       dot.className = "dot red";
       pauseBtn.disabled = true;
       simGreenBtn.textContent = "simulate: run passed";
@@ -1882,7 +1886,7 @@
       step2Badge.className = "badge red";
       step3Badge.textContent = "not run";
       step3Badge.className = "badge grey";
-      countersEl.innerHTML = 'Turn <b>61</b> · <span>30m 00s</span> · $<span>2.00</span> of $2.00 · cap reached';
+      countersEl.innerHTML = 'Turn <b>61</b> · <span>21m 10s</span> · $<span>1.84</span> of $2.00';
     } else {
       running = true;
       acceptBtn.disabled = true;
