@@ -178,7 +178,7 @@
   /* read-only job-card field value — same box rhythm as an input, no editable affordance */
   .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
 
-  /* Details tab: read-only past-runs list — same row shell as History, but static (no buttons, no click).
+  /* Job tab: read-only past-runs list — same row shell as History, but static (no buttons, no click).
      Result glyph reuses .badge (its ::before/::after already render the [ ] brackets). */
   .wf-past-run{
     display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;row-gap:2px;
@@ -608,7 +608,6 @@
               <span class="wf-meta">4m 02s</span>
               <span class="wf-meta">2026-09-20</span>
               <span class="wf-row-actions">
-                <button class="btn small">Open</button>
                 <button class="btn small">Replay $0</button>
               </span>
             </div>
@@ -622,7 +621,6 @@
               <span class="wf-meta">21m 10s</span>
               <span class="wf-meta">2026-09-19</span>
               <span class="wf-row-actions">
-                <button class="btn small">Open</button>
                 <button class="btn small">Replay $0</button>
               </span>
             </div>
@@ -636,7 +634,6 @@
               <span class="wf-meta">2m 15s</span>
               <span class="wf-meta">2026-09-18</span>
               <span class="wf-row-actions">
-                <button class="btn small">Open</button>
                 <button class="btn small">Replay $0</button>
               </span>
             </div>
@@ -650,7 +647,6 @@
               <span class="wf-meta">0m 51s</span>
               <span class="wf-meta">2026-09-17</span>
               <span class="wf-row-actions">
-                <button class="btn small">Open</button>
                 <button class="btn small">Replay $0</button>
               </span>
             </div>
@@ -664,7 +660,6 @@
               <span class="wf-meta">3m 05s</span>
               <span class="wf-meta">2026-09-16</span>
               <span class="wf-row-actions">
-                <button class="btn small">Open</button>
                 <button class="btn small">Replay $0</button>
               </span>
             </div>
@@ -677,9 +672,6 @@
               <span class="wf-meta">$0.00</span>
               <span class="wf-meta">—</span>
               <span class="wf-meta">2026-09-14</span>
-              <span class="wf-row-actions">
-                <button class="btn small">Open</button>
-              </span>
             </div>
           </div>
         </section>
@@ -700,7 +692,7 @@
       <div class="rp-tabrow" role="tablist" aria-label="Workflow views">
         <button role="tab" id="tab-run" aria-controls="panel-run" aria-selected="true" data-testid="right-tab-run">Run</button>
         <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-testid="right-tab-audit">Audit / logs</button>
-        <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Details</button>
+        <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Job</button>
       </div>
 
       <div class="pane-body">
@@ -912,7 +904,7 @@
 
         </section>
 
-        <!-- DETAILS TAB — read-only view opened from a Workflows row's "Open" button:
+        <!-- JOB TAB — read-only view opened from a Workflows row's "Open" button:
              the signed job card with no editable fields and no Sign/Revise actions,
              plus that workflow's past runs. -->
         <section id="panel-details" class="tabpanel" role="tabpanel" aria-labelledby="tab-details" hidden data-testid="panel-details">
@@ -1207,7 +1199,7 @@
 
   // ===================================================================================
   // ITEM 3: clicking a row in EITHER Workflows or History makes the WHOLE right pane
-  // (header, Run, Audit, Details) about that one thing — never a mix of two items.
+  // (header, Run, Audit, Job) about that one thing — never a mix of two items.
   //
   // fix-types keeps its original hand-built live-ticking template verbatim (#run-fixtypes-view,
   // wired by applyRunState below) — that template is used for exactly two selections: the
@@ -1510,7 +1502,7 @@
     alert("Download log — wireframe stub, no file produced.");
   });
 
-  // Details tab: signed job card (read-only) + past runs list. Used for both a Workflows
+  // Job tab: signed job card (read-only) + past runs list. Used for both a Workflows
   // selection (job = its own current signed card, runs = its own run history) and a History
   // selection (job = that run's own snapshot, runs = just that one run, marked "viewing").
   function renderDetails(title, job, runsList, viewingHistId){
@@ -1713,8 +1705,8 @@
     });
   });
 
-  // History rows — clicking anywhere in the row (including the Open button, since its click
-  // bubbles up here) does the same full render as a Workflows row click.
+  // History rows — clicking anywhere in the row (including the Replay $0 button, since its
+  // click bubbles up here) does the same full render as a Workflows row click.
   histRows.forEach(function(row){
     row.addEventListener("click", function(){
       var id = row.getAttribute("data-testid").replace("hist-row-", "");
