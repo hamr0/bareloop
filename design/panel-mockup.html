@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bareloop panel — tty console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* dark theme (primary) — Tokyo Night */
+    --bg:#1a1b26; --panel:#1f2335; --panel2:#24283b; --border:#292e42; --border-strong:#3b4261;
+    --text:#c0caf5; --text-dim:#a9b1d6; --text-faint:#565f89;
+    --green:#9ece6a; --green-bg:#1c2b23;
+    --red:#f7768e; --red-bg:#2b1822;
+    --amber:#e0af68; --amber-bg:#2b2416;
+    --grey-dot:#878eac; --grey-bg:#20242f;
+    --cyan:#7dcfff; --cyan-bg:#182634;
+    --magenta:#bb9af7;
+    --accent:#7aa2f7;
+    --btn-bg:#1f2335; --btn-text:#c0caf5;
+    --primary-bg:#7aa2f7; --primary-text:#1a1b26; --primary-border:#7aa2f7;
+    font: 14px/1.5 "Courier Prime", "Courier New", Courier, ui-monospace, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  body{overflow-x:hidden;}
+  button{font:inherit;cursor:pointer;}
+  table{border-collapse:collapse;width:100%;}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px dotted var(--border-strong);font-size:12px;}
+  th{color:var(--text-dim);font-weight:700;background:var(--panel2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;border-bottom:1px solid var(--border-strong);}
+  td{border-right:1px dotted var(--border);}
+  td:last-child{border-right:none;}
+  input,select{font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);}
+  input::placeholder{color:var(--text-faint);}
+  label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
+  .field{margin-bottom:10px;}
+  .field input,.field select{width:100%;}
+  a{color:var(--accent);text-decoration:underline;}
+
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  /* light theme override — Tokyo Night Day (dim/status tones darkened to hold ≥4.5:1 on panel2) */
+  :root[data-theme="light"]{
+    --bg:#e1e2e7; --panel:#d0d5e3; --panel2:#e9e9ed; --border:#c4c8da; --border-strong:#a8b0cc;
+    --text:#3760bf; --text-dim:#58679f; --text-faint:#848cb5;
+    --green:#567238; --green-bg:#dfe7d4;
+    --red:#c92353; --red-bg:#fbe0e8;
+    --amber:#82643a; --amber-bg:#f0e6d3;
+    --grey-dot:#626887; --grey-bg:#e2e2e8;
+    --cyan:#007197; --cyan-bg:#d6ecf1;
+    --magenta:#9854f1;
+    --accent:#2668c2;
+    --btn-bg:#e9e9ed; --btn-text:#3760bf;
+    --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#e1e2e7; --panel:#d0d5e3; --panel2:#e9e9ed; --border:#c4c8da; --border-strong:#a8b0cc;
+      --text:#3760bf; --text-dim:#58679f; --text-faint:#848cb5;
+      --green:#567238; --green-bg:#dfe7d4;
+      --red:#c92353; --red-bg:#fbe0e8;
+      --amber:#82643a; --amber-bg:#f0e6d3;
+      --grey-dot:#626887; --grey-bg:#e2e2e8;
+      --cyan:#007197; --cyan-bg:#d6ecf1;
+      --magenta:#9854f1;
+      --accent:#2668c2;
+      --btn-bg:#e9e9ed; --btn-text:#3760bf;
+      --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
+    }
+  }
+
+  .theme-toggle{padding:4px 9px;min-height:32px;border:1px solid var(--border-strong);background:var(--btn-bg);color:var(--text);}
+
+  /* section labels — no soft rule lines, TUI dotted divider instead */
+  h2, h4, .job-card h4{
+    text-transform:uppercase;letter-spacing:0.06em;font-weight:700;
+  }
+  .rule-label{
+    display:flex;align-items:center;gap:8px;color:var(--text-faint);font-size:11px;
+    text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 8px;
+  }
+  .rule-label::after{content:"";flex:1;border-top:1px dotted var(--border-strong);}
+
+  #BareloopPanel{display:flex;flex-direction:column;min-height:100vh;}
+
+  /* top bar — single-rule TUI header */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px;border-bottom:2px solid var(--border-strong);
+    background:var(--panel);flex-wrap:wrap;gap:8px;
+  }
+  .topbar > div:first-child{display:flex;align-items:baseline;gap:0;white-space:nowrap;overflow:hidden;}
+  .topbar .brand{font-weight:700;font-size:17px;letter-spacing:0.06em;flex:none;}
+  .topbar .brand::before{content:"■ ";}
+  .topbar .tagline{font-size:12px;color:var(--text-dim);margin-left:8px;overflow:hidden;text-overflow:ellipsis;}
+  .topbar .tagline::before{content:"· ";color:var(--text-faint);}
+  .topbar .host{font-size:11px;color:var(--text-faint);margin-left:8px;flex:none;}
+  .topbar .host::before{content:"· @";}
+  @media (max-width: 600px){
+    .topbar .tagline{display:none;}
+  }
+  .topbar .totals{font-size:13px;color:var(--text-dim);text-align:right;}
+  .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+
+  /* main layout */
+  [hidden]{display:none !important;}
+  .main{display:flex;flex:1;min-height:0;}
+  .left-pane{width:340px;flex:none;border-right:1px solid var(--border-strong);display:flex;flex-direction:column;background:var(--panel);}
+  .right-pane{flex:1;min-width:0;display:flex;flex-direction:column;}
+
+  /* tab switches — [1] Chat  [2] Workflows  [3] History, active = inverted */
+  .tabrow{display:flex;border-bottom:1px solid var(--border-strong);counter-reset:tabnum;}
+  .tabrow button{
+    flex:1;padding:10px 6px;min-height:44px;background:var(--panel2);border:none;
+    border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);
+    counter-increment:tabnum;
+  }
+  .tabrow button::before{content:"[" counter(tabnum) "] ";color:var(--text-faint);font-weight:700;}
+  .tabrow button:last-child{border-right:none;}
+
+  .pane-body{padding:12px;overflow:auto;flex:1;min-height:0;}
+  .tabpanel{display:none;}
+  .tabpanel.active{display:block;}
+
+  /* status dot -> bracketed TUI glyph, no fill circle */
+  .dot{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:auto;height:auto;border-radius:0;margin-right:6px;vertical-align:middle;
+    background:none;font-weight:700;font-size:12px;letter-spacing:0;
+  }
+  .dot::before{content:"[·]";color:var(--grey-dot);}
+  .dot.green::before{content:"[✓]";color:var(--green);}
+  .dot.red::before{content:"[✗]";color:var(--red);}
+  .dot.amber::before{content:"[▶]";color:var(--amber);}
+  .dot.grey::before{content:"[·]";color:var(--grey-dot);}
+  .dot.pulse::after{content:"▌";color:var(--amber);margin-left:2px;animation:pulse 1s steps(1) infinite;}
+  @media (prefers-reduced-motion: reduce){ .dot.pulse::after{animation:none;opacity:1;} }
+  @keyframes pulse{0%,49%{opacity:1;}50%,100%{opacity:0;}}
+
+  /* badges -> bracket outline text, not filled pills */
+  .badge{display:inline-block;font-size:11px;padding:1px 4px;border-radius:0;border:none;color:var(--text-dim);background:none;font-weight:700;letter-spacing:0.02em;}
+  .badge::before{content:"[";color:var(--text-faint);}
+  .badge::after{content:"]";color:var(--text-faint);}
+  .badge.green{color:var(--green);}
+  .badge.red{color:var(--red);}
+  .badge.amber{color:var(--amber);}
+  .badge.grey{color:var(--grey-dot);}
+
+  /* chat */
+  .chat-thread{display:flex;flex-direction:column;gap:10px;margin-bottom:10px;}
+  .msg{padding:8px 10px;border:1px solid var(--border);border-radius:0;max-width:100%;background:var(--panel2);}
+  .msg.bot{border-left:3px solid var(--border-strong);}
+  .msg.bot .who::before{content:"$ ";}
+  .msg.user{background:var(--bg);margin-left:20px;border-left:3px solid var(--accent);}
+  .msg.user .who::before{content:"> ";}
+  .msg .who{font-size:11px;color:var(--text-faint);margin-bottom:3px;}
+
+  /* job-card drawn as a TUI window: title inset on the top border */
+  .job-card{position:relative;border:1px solid var(--border-strong);border-radius:0;padding:14px 10px 10px;background:var(--panel2);margin-top:10px;margin-bottom:10px;}
+  .job-card h4{margin:0 0 8px;font-size:13px;position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;}
+  .job-card h4::before{content:"┤ ";color:var(--text-faint);}
+  .job-card h4::after{content:" ├";color:var(--text-faint);}
+  .edit-banner{font-size:12px;padding:6px 8px;border:1px dashed var(--red);color:var(--red);background:var(--red-bg);border-radius:0;margin-bottom:8px;}
+  .edit-banner::before{content:"[!] ";}
+
+  /* compact job card */
+  .job-card.compact{padding:14px 8px 8px;}
+  .job-card.compact .field{margin-bottom:6px;}
+  .job-card.compact label{margin-bottom:1px;font-size:11px;}
+  .job-card.compact input,
+  .job-card.compact select{padding:5px 7px;}
+  .expand-field{text-overflow:ellipsis;transition:height 0.12s ease;}
+  .expand-field:focus{
+    height:52px;white-space:normal;
+  }
+  .cap-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;}
+  .cap-field label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:1px;}
+  .cap-field input{width:100%;padding:5px 6px;}
+  @media (max-width: 899px){
+    .cap-row{grid-template-columns:1fr;}
+  }
+
+  /* money & limits strip */
+  .money-strip{display:grid;grid-template-columns:repeat(5, 1fr);gap:12px;align-items:end;padding:10px;border:1px solid var(--border-strong);border-radius:0;background:var(--panel2);}
+  .money-item label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;}
+  .money-value{font-size:16px;font-weight:700;padding:6px 0;}
+  .money-item input{width:100%;height:44px;box-sizing:border-box;}
+  .money-item-save{display:flex;}
+  .money-item-save .btn{width:100%;height:44px;}
+  @media (max-width: 899px){
+    .money-strip{grid-template-columns:1fr 1fr;}
+  }
+  .radio-row{display:flex;gap:14px;align-items:center;margin-bottom:10px;}
+  .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;}
+
+  .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);border-radius:0;background:var(--panel2);color:var(--text);}
+  .btn:hover:not(:disabled){background:var(--panel2);border-color:var(--accent);}
+  .btn:disabled{color:var(--text-faint);border-color:var(--border);cursor:not-allowed;}
+  .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700;}
+  .btn.primary:hover{filter:brightness(1.08);}
+  .btn.small{padding:0 9px;height:32px;min-height:0;font-size:12px;}
+  .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
+
+  .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
+  .chat-input-row input{width:100%;}
+
+  .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
+  .actions-row > .btn{flex:1 1 auto;}
+
+  /* workflows list — dotted rows, > prefix on selected */
+  .wf-toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+  /* 3-line stack, all left-aligned, no right column:
+     line1 = dot + name · line2 (dim) = verdict · status · price · time · date · line3 = actions */
+  .wf-row{
+    display:flex;flex-wrap:wrap;align-items:center;
+    column-gap:8px;row-gap:4px;
+    padding:8px 8px 8px 18px;position:relative;border:1px solid var(--border);border-radius:0;margin-bottom:6px;background:var(--panel2);cursor:pointer;
+  }
+  .wf-row::before{content:" ";position:absolute;left:6px;top:8px;color:var(--accent);font-weight:700;}
+  .wf-row:hover{border-color:var(--border-strong);}
+  .wf-row.selected{border:1px double var(--accent);background:var(--panel2);box-shadow:none;}
+  .wf-row.selected::before{content:">";}
+  .wf-row > span:nth-child(3){flex-basis:100%;}
+  .wf-row > span:nth-child(8){flex-basis:100%;margin-top:2px;}
+  .wf-row > span:nth-child(4)::before,
+  .wf-row > span:nth-child(5)::before,
+  .wf-row > span:nth-child(6)::before,
+  .wf-row > span:nth-child(7)::before{content:"· ";color:var(--text-faint);}
+  .wf-name{font-weight:700;}
+  .wf-meta{font-size:12px;color:var(--text-dim);}
+  .wf-row-actions{display:flex;gap:6px;}
+
+  /* history compact list */
+  /* 3-line stack, all left-aligned, no right column:
+     line1 = dot + name · line2 (dim) = verdict · price · time · date · line3 = actions */
+  .hist-row{
+    display:flex;flex-wrap:wrap;align-items:center;
+    column-gap:8px;row-gap:4px;
+    padding:8px;border:1px solid var(--border);border-radius:0;margin-bottom:6px;background:var(--panel2);border-bottom-style:dotted;
+  }
+  .hist-row > span:nth-child(3){flex-basis:100%;}
+  .hist-row > span:nth-child(7){flex-basis:100%;margin-top:2px;}
+  .hist-row > span:nth-child(4)::before,
+  .hist-row > span:nth-child(5)::before,
+  .hist-row > span:nth-child(6)::before{content:"· ";color:var(--text-faint);}
+  .imported-tag{font-size:11px;color:var(--text-faint);}
+
+  /* right pane header — bracketed run title, single rule below */
+  .rp-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);flex-wrap:wrap;gap:8px;}
+  .rp-header h2{margin:0;font-size:15px;}
+  .rp-header h2::before{content:"┤ ";color:var(--text-faint);}
+  .rp-header h2::after{content:" ├";color:var(--text-faint);}
+  .rp-header-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .rp-tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:rtabnum;}
+  .rp-tabrow button{padding:10px 14px;min-height:44px;background:transparent;border:none;border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);counter-increment:rtabnum;}
+  .rp-tabrow button::before{content:"[" counter(rtabnum) "] ";color:var(--text-faint);font-weight:700;}
+  /* selected-tab style is shared verbatim between left-pane tabs, settings tabs, and the right-pane tabs — one rule, reused */
+  .tabrow button[aria-selected="true"],
+  .rp-tabrow button[aria-selected="true"]{background:var(--panel);color:var(--accent);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent);}
+  .tabrow button[aria-selected="true"]::before,
+  .rp-tabrow button[aria-selected="true"]::before{color:var(--accent);}
+
+  /* counters restyled as a toolbar strip flush under the Run/Audit tabs — raised panel, not a solid fill */
+  .counters{
+    display:block;padding:9px 12px;border:none;border-bottom:2px solid var(--border-strong);border-radius:0;
+    background:var(--panel2);color:var(--text-dim);margin:-12px -12px 14px;
+    font-size:12px;font-weight:700;
+    white-space:normal;overflow-wrap:break-word;
+  }
+  .counters b, .counters span{color:var(--accent);}
+
+  /* after-run summary — TUI window with inset title, hidden while running */
+  .summary-box{position:relative;border:1px solid var(--border-strong);border-radius:0;padding:16px 12px 12px;margin-top:16px;background:var(--panel2);font-size:12px;}
+  .summary-box#summary-red{border-color:var(--red);}
+  .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
+  .summary-headline{font-weight:700;margin-bottom:8px;font-size:13px;}
+  .summary-row{display:flex;gap:0;padding:2px 0;}
+  .sum-label{flex:none;width:66px;color:var(--text-faint);}
+  .sum-val{color:var(--text);}
+  .summary-box .num{color:var(--accent);font-weight:700;}
+
+  .map-box{border:1px solid var(--border-strong);border-radius:0;padding:10px;overflow-x:auto;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
+  .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
+  .map-legend{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px;flex-wrap:wrap;}
+
+  .step-card{position:relative;border:1px solid var(--border);border-radius:0;padding:10px;margin-bottom:8px;background:var(--panel2);}
+  .step-card.running{border:1px double var(--amber);}
+  .step-card .step-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+  .step-card h4{margin:0;font-size:13px;}
+  .step-meta{font-size:12px;color:var(--text-dim);margin-top:4px;}
+  .events{margin-top:8px;padding:8px;background:var(--bg);border:1px dotted var(--border-strong);border-radius:0;font-family:"Courier Prime","Courier New",monospace;font-size:12px;color:var(--text);}
+  .events div{padding:2px 0;}
+  .earlier-attempt{font-size:12px;color:var(--text-faint);margin-top:6px;border-top:1px dotted var(--border);padding-top:6px;}
+
+  .toggle-link{font-size:11px;background:none;border:none;text-decoration:underline;color:var(--text-faint);padding:4px 0;}
+
+  /* audit */
+  .chips{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+  .chip{padding:5px 10px;min-height:32px;border:1px solid var(--border-strong);border-radius:0;background:var(--panel2);font-size:12px;color:var(--text-dim);}
+  .chip::before{content:"[ ";color:var(--text-faint);}
+  .chip::after{content:" ]";color:var(--text-faint);}
+  .chip[aria-pressed="true"]{background:var(--panel);color:var(--accent);border-color:var(--accent);font-weight:700;}
+  .chip[aria-pressed="true"]::before,.chip[aria-pressed="true"]::after{color:var(--accent);opacity:0.8;}
+  .row-blocked{background:var(--red-bg);}
+  .raw-log{margin-top:12px;}
+  .raw-log summary{cursor:pointer;font-size:13px;padding:6px 0;}
+  .raw-log summary::marker{color:var(--text-faint);}
+  .raw-log pre{background:#0b0b0f;color:#e8e8f0;padding:10px;border:1px solid var(--border-strong);border-radius:0;font-size:11px;overflow-x:auto;font-family:"Courier Prime","Courier New",monospace;}
+
+  /* settings view */
+  .settings-view{display:flex;flex-direction:column;flex:1;min-height:0;}
+  .settings-header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);}
+  .settings-header h2{margin:0;font-size:15px;}
+  .settings-header h2::before{content:"┤ ";color:var(--text-faint);}
+  .settings-header h2::after{content:" ├";color:var(--text-faint);}
+  .rp-header h2, .settings-header h2{display:inline;}
+  .keyfile-strip{position:relative;border:1px solid var(--border-strong);border-radius:0;padding:12px 12px 8px;background:var(--panel2);margin-top:14px;margin-bottom:14px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .keyfile-strip::before{content:"┤ KEYS ├";position:absolute;top:-9px;left:10px;background:var(--panel2);padding:0 4px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
+  .keyfile-strip-main{display:flex;flex-direction:column;gap:3px;flex:1;min-width:220px;}
+  .keyfile-strip-actions{display:flex;gap:6px;flex:none;}
+  .keyfile-strip code{background:var(--bg);border:1px solid var(--border-strong);border-radius:0;padding:1px 5px;font-family:"Courier Prime","Courier New",monospace;font-size:11px;color:var(--amber);}
+
+  /* bracketed keys */
+  .btn{position:relative;}
+  .btn::before{content:"[ ";color:var(--text-faint);}
+  .btn::after{content:" ]";color:var(--text-faint);}
+  .btn.primary::before,.btn.primary::after{color:var(--primary-text);opacity:0.6;}
+  .btn:disabled::before,.btn:disabled::after{color:var(--text-faint);opacity:0.4;}
+
+  .radio-row label{white-space:nowrap;}
+
+  /* provider table (columns, not cards) — dotted column separators */
+  .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);border-radius:0;background:var(--panel2);max-width:100%;}
+  .table-wrap table{min-width:920px;}
+  .table-wrap td{vertical-align:top;}
+  .cell-input{width:100%;min-width:90px;height:32px;padding:0 6px;font-size:12px;box-sizing:border-box;}
+  .cell-input-narrow{width:80px;min-width:80px;}
+  /* row controls (input/select/button) share one 32px line; status text drops to its own dim line below */
+  .table-wrap .hint{display:block;margin-top:3px;white-space:nowrap;}
+  .table-wrap td > span, .table-wrap td{line-height:32px;}
+  .table-wrap .hint{line-height:1.4;}
+  td .hint{margin-top:2px;white-space:nowrap;}
+  td.row-actions{white-space:nowrap;}
+  td.row-actions .btn{margin-bottom:2px;}
+
+  /* responsive */
+  @media (max-width: 899px){
+    .main{flex-direction:column;}
+    .left-pane{width:100%;border-right:none;border-bottom:1px solid var(--border-strong);}
+    .right-pane{width:100%;}
+    .msg.user{margin-left:8px;}
+    .topbar{flex-direction:column;align-items:flex-start;}
+    .topbar-right{width:100%;justify-content:space-between;}
+    .btn.small{height:44px;min-height:44px;padding:0 12px;}
+    .cell-input{height:44px;}
+    .chip{min-height:44px;}
+    .counters{position:static;}
+    .rp-header{margin:8px 8px 0;}
+    .rp-tabrow{margin:0 8px;}
+  }
+</style>
+</head>
+<body>
+
+<div role="note" style="background:#fefce8;border:1px solid #facc15;border-radius:8px;padding:10px 14px;margin:12px 0;font-size:13px;line-height:1.5;color:#854d0e;">
+  <b>This is a temporary design lab.</b> Click any element → leave a comment → Save.
+  Your feedback goes to Claude; the lab is deleted on Finish. The overlay
+  badge (bottom-right) tells you whether feedback is streaming live or being
+  collected as JSON.
+</div>
+
+<div id="BareloopPanel" data-variant="F">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div>
+      <span class="brand" id="brand-name">bareloop</span>
+      <span class="tagline">automate a job, verified</span>
+      <span class="host">127.0.0.1:4700</span>
+    </div>
+    <div class="topbar-right">
+      <div class="totals" id="totals-line">
+        Today $1.20 · This month $14.80 · Total $212.40 · Time run 3h 10m · <b>2 running</b>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme">☾</button>
+      <button class="btn small" id="btn-settings" data-testid="btn-settings" aria-haspopup="true">⚙ Settings</button>
+    </div>
+  </header>
+
+  <div class="main" id="main-view">
+
+    <!-- LEFT PANE -->
+    <nav class="left-pane" aria-label="Job navigation">
+      <div class="tabrow" role="tablist" aria-label="Left panel views">
+        <button role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="true" data-testid="left-tab-chat">Chat</button>
+        <button role="tab" id="tab-workflows" aria-controls="panel-workflows" aria-selected="false" data-testid="left-tab-workflows">Workflows</button>
+        <button role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false" data-testid="left-tab-history">History</button>
+      </div>
+
+      <div class="pane-body">
+
+        <!-- CHAT TAB -->
+        <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
+
+          <div class="msg bot" id="review-round-msg"><div class="who">bareloop</div>
+            <b>Review round 1 of 2</b> — drafted plan:
+            <ol style="margin:6px 0 0 18px;padding:0;">
+              <li>Read the errors — run tsc, collect the error list</li>
+              <li>Fix the types — edit src/checks.js to satisfy tsc</li>
+              <li>Run the check — re-run tsc, confirm 0 errors</li>
+            </ol>
+          </div>
+
+          <div class="job-card compact" data-testid="job-card">
+            <div class="edit-banner" id="edit-banner" data-testid="edit-banner" hidden>Editing a signed job — changes need a new signature</div>
+            <h4 id="job-card-title">Job card — draft</h4>
+
+            <div class="field">
+              <label id="jf-verdict-label">Verdict type</label>
+              <div class="radio-row" role="radiogroup" aria-labelledby="jf-verdict-label">
+                <label><input type="radio" name="verdict" checked> Green</label>
+                <label><input type="radio" name="verdict"> Soft-green</label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="jf-model">Model</label>
+              <select id="jf-model">
+                <option value="deepseek-flash">deepseek-flash · DeepSeek</option>
+                <option value="claude-sonnet-5">claude-sonnet-5 · Anthropic</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="jf-name">Job name</label>
+              <input id="jf-name" type="text" value="fix-types-2">
+              <div class="hint" id="jf-name-hint" data-testid="jf-name-hint">⚠ must be unique — "fix-types" already exists</div>
+            </div>
+            <div class="field">
+              <label for="jf-goal">Goal</label>
+              <input class="expand-field" id="jf-goal" type="text" value="Fix failing type errors in src/checks.js; tsc must exit 0">
+            </div>
+            <div class="field">
+              <label for="jf-source">Source</label>
+              <input id="jf-source" type="text" value="~/code/bareguard (copy)">
+            </div>
+            <div class="field">
+              <label for="jf-dest">Destination</label>
+              <input id="jf-dest" type="text" value="~/code/bareguard-out">
+            </div>
+            <div class="field">
+              <label for="jf-success">Success</label>
+              <input class="expand-field" id="jf-success" type="text" value="npx tsc --noEmit exits 0, no test regressions">
+            </div>
+            <div class="field">
+              <label for="jf-guardrails">Guardrails</label>
+              <input id="jf-guardrails" type="text" value="no edits outside src/, no new deps">
+            </div>
+            <div class="field">
+              <label for="jf-judge">Judge examples <span class="hint" style="display:inline">(soft-green only)</span></label>
+              <input class="expand-field" id="jf-judge" type="text" value="n/a — verdict type is Green" disabled>
+            </div>
+
+            <div class="cap-row" data-testid="cap-row">
+              <div class="cap-field">
+                <label for="jf-cap-money">$ cap</label>
+                <input id="jf-cap-money" type="text" value="2.00">
+              </div>
+              <div class="cap-field">
+                <label for="jf-cap-time">Time cap</label>
+                <input id="jf-cap-time" type="text" value="30 min">
+              </div>
+              <div class="cap-field">
+                <label for="jf-price">Token price</label>
+                <input id="jf-price" type="text" placeholder="est.">
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-thread">
+            <div class="msg bot"><div class="who">bareloop</div>What do you want done? Give me the goal, and where the work lives.</div>
+            <div class="msg user"><div class="who">you</div>Fix the failing type errors in src/checks.js and get tsc clean.</div>
+            <div class="msg bot"><div class="who">bareloop</div>Got it. Where's the source, and where should the result land?</div>
+            <div class="msg user"><div class="who">you</div>Source: ~/code/bareguard (copy). Destination: ~/code/bareguard-out</div>
+          </div>
+
+          <div class="chat-input-row">
+            <label for="chat-msg" style="display:none">Message</label>
+            <input id="chat-msg" type="text" placeholder="Ask for a change, or reply to the plan…">
+          </div>
+
+          <div class="actions-row">
+            <button class="btn" data-testid="chat-send">Send</button>
+            <button class="btn primary" id="sign-run-btn" data-testid="btn-sign-run">Sign &amp; run</button>
+            <button class="btn" id="revise-btn" data-testid="btn-revise">Revise (1 left)</button>
+          </div>
+          <div class="hint">Only your click signs. The chat can't.</div>
+        </section>
+
+        <!-- WORKFLOWS TAB -->
+        <section id="panel-workflows" class="tabpanel" role="tabpanel" aria-labelledby="tab-workflows" hidden>
+          <div class="wf-toolbar">
+            <button class="btn small" id="wf-new" data-testid="wf-new">+ New</button>
+            <button class="btn small" id="wf-import" data-testid="wf-import">Import</button>
+          </div>
+
+          <div id="wf-list">
+            <div class="wf-row selected" data-wf="fix-types" data-testid="wf-row-fix-types" tabindex="0" role="button" aria-pressed="true">
+              <span class="dot amber pulse"></span>
+              <span class="wf-name">fix-types</span>
+              <span class="badge">green</span>
+              <span class="wf-meta">running · step 2 of 3</span>
+              <span class="wf-meta">$0.41 / $2.00</span>
+              <span class="wf-meta">6m 12s</span>
+              <span class="wf-meta">2026-09-21</span>
+              <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-edit-fix-types">Edit</button>
+                <button class="btn small" data-testid="wf-export-fix-types">Export</button>
+              </span>
+            </div>
+
+            <div class="wf-row" data-wf="doc-comments" data-testid="wf-row-doc-comments" tabindex="0" role="button" aria-pressed="false">
+              <span class="dot amber pulse"></span>
+              <span class="wf-name">doc-comments</span>
+              <span class="badge grey">soft-green</span>
+              <span class="wf-meta">running · step 1 of 2</span>
+              <span class="wf-meta">$0.09 / $1.00</span>
+              <span class="wf-meta">1m 40s</span>
+              <span class="wf-meta">2026-09-21</span>
+              <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-edit-doc-comments">Edit</button>
+                <button class="btn small" data-testid="wf-export-doc-comments">Export</button>
+              </span>
+            </div>
+
+            <div class="wf-row" data-wf="release-notes" data-testid="wf-row-release-notes" tabindex="0" role="button" aria-pressed="false">
+              <span class="dot green"></span>
+              <span class="wf-name">release-notes</span>
+              <span class="badge">green</span>
+              <span class="wf-meta">done</span>
+              <span class="wf-meta">$0.66 / $1.50</span>
+              <span class="wf-meta">4m 02s</span>
+              <span class="wf-meta">2026-09-20</span>
+              <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-edit-release-notes">Edit</button>
+                <button class="btn small" data-testid="wf-export-release-notes">Export</button>
+              </span>
+            </div>
+
+            <div class="wf-row" data-wf="lint-sweep" data-testid="wf-row-lint-sweep" tabindex="0" role="button" aria-pressed="false">
+              <span class="dot grey"></span>
+              <span class="wf-name">lint-sweep</span>
+              <span class="badge grey">green</span>
+              <span class="wf-meta">paused</span>
+              <span class="wf-meta">$0.12 / $1.00</span>
+              <span class="wf-meta">0m 51s</span>
+              <span class="wf-meta">2026-09-17</span>
+              <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-edit-lint-sweep">Edit</button>
+                <button class="btn small" data-testid="wf-export-lint-sweep">Export</button>
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <!-- HISTORY TAB -->
+        <section id="panel-history" class="tabpanel" role="tabpanel" aria-labelledby="tab-history" hidden>
+          <div id="history-list" data-testid="history-list">
+            <div class="hist-row" data-testid="hist-row-release-notes">
+              <span class="dot green"></span>
+              <span class="wf-name">release-notes</span>
+              <span class="badge">green</span>
+              <span class="wf-meta">$0.66</span>
+              <span class="wf-meta">4m 02s</span>
+              <span class="wf-meta">2026-09-20</span>
+              <span class="wf-row-actions">
+                <button class="btn small">Open</button>
+                <button class="btn small">Replay $0</button>
+              </span>
+            </div>
+
+            <div class="hist-row" data-testid="hist-row-fix-types-prior">
+              <span class="dot red"></span>
+              <span class="wf-name">fix-types</span>
+              <span class="badge">green</span>
+              <span class="wf-meta">$1.84</span>
+              <span class="wf-meta">21m 10s</span>
+              <span class="wf-meta">2026-09-19</span>
+              <span class="wf-row-actions">
+                <button class="btn small">Open</button>
+                <button class="btn small">Replay $0</button>
+              </span>
+            </div>
+
+            <div class="hist-row" data-testid="hist-row-doc-comments-prior">
+              <span class="dot amber"></span>
+              <span class="wf-name">doc-comments</span>
+              <span class="badge grey">soft-green</span>
+              <span class="wf-meta">$0.31</span>
+              <span class="wf-meta">2m 15s</span>
+              <span class="wf-meta">2026-09-18</span>
+              <span class="wf-row-actions">
+                <button class="btn small">Open</button>
+                <button class="btn small">Replay $0</button>
+              </span>
+            </div>
+
+            <div class="hist-row" data-testid="hist-row-lint-sweep-prior">
+              <span class="dot grey"></span>
+              <span class="wf-name">lint-sweep</span>
+              <span class="badge">green</span>
+              <span class="wf-meta">$0.12</span>
+              <span class="wf-meta">0m 51s</span>
+              <span class="wf-meta">2026-09-17</span>
+              <span class="wf-row-actions">
+                <button class="btn small">Open</button>
+                <button class="btn small">Replay $0</button>
+              </span>
+            </div>
+
+            <div class="hist-row" data-testid="hist-row-onboarding-md">
+              <span class="dot green"></span>
+              <span class="wf-name">onboarding-md</span>
+              <span class="badge">green</span>
+              <span class="wf-meta">$0.44</span>
+              <span class="wf-meta">3m 05s</span>
+              <span class="wf-meta">2026-09-16</span>
+              <span class="wf-row-actions">
+                <button class="btn small">Open</button>
+                <button class="btn small">Replay $0</button>
+              </span>
+            </div>
+
+            <div class="hist-row" data-testid="hist-row-changelog-draft">
+              <span class="dot green"></span>
+              <span class="wf-name">changelog-draft <span class="imported-tag">imported · view only</span></span>
+              <span class="badge">green</span>
+              <span class="wf-meta">$0.00</span>
+              <span class="wf-meta">—</span>
+              <span class="wf-meta">2026-09-14</span>
+              <span class="wf-row-actions">
+                <button class="btn small">Open</button>
+              </span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </nav>
+
+    <!-- RIGHT PANE -->
+    <section class="right-pane" aria-label="Active workflow">
+      <div class="rp-header">
+        <div class="rp-header-title">
+          <span class="dot amber pulse" id="active-wf-dot"></span>
+          <h2 id="active-wf-name">fix-types</h2>
+          <span class="badge" id="active-wf-verdict">green</span>
+          <span class="badge amber" id="active-wf-status">running</span>
+        </div>
+      </div>
+
+      <div class="rp-tabrow" role="tablist" aria-label="Workflow views">
+        <button role="tab" id="tab-run" aria-controls="panel-run" aria-selected="true" data-testid="right-tab-run">Run</button>
+        <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-testid="right-tab-audit">Audit / logs</button>
+      </div>
+
+      <div class="pane-body">
+
+        <!-- RUN TAB -->
+        <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
+
+          <div class="counters" data-testid="live-counters">
+            Turn <b id="ctr-turn">14</b> ·
+            <span id="ctr-elapsed">6m 12s</span> elapsed ·
+            $<span id="ctr-spend">0.41</span> of $2.00 ·
+            Time left <span id="ctr-timeleft">23m</span>
+          </div>
+
+          <div class="summary-box" id="summary-green" data-testid="run-summary-green" hidden>
+            <div class="summary-headline"><span class="dot green"></span><b>green</b> · <span class="num">$1.84</span> · <span class="num">21m 10s</span> · <span class="num">38</span> turns</div>
+            <div class="summary-row"><span class="sum-label">check:</span><span class="sum-val">tsc errors <span class="num">21</span> → <span class="num">0</span></span></div>
+            <div class="summary-row"><span class="sum-label">changed:</span><span class="sum-val">src/checks.js (<span class="num">+42</span> <span class="num">−17</span>)</span></div>
+            <div class="summary-row"><span class="sum-label">output:</span><span class="sum-val">~/code/bareguard-out/fix-types-2026-09-22</span></div>
+            <div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">3</span> of <span class="num">3</span> green · 1 retry at step 2</span></div>
+            <div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">"tsc exits 0, no test regressions"</span></div>
+          </div>
+
+          <div class="summary-box" id="summary-red" data-testid="run-summary-red" hidden>
+            <div class="summary-headline"><span class="dot red"></span><b>red</b> · <span class="num">$2.00</span> · <span class="num">30m 00s</span> · <span class="num">61</span> turns</div>
+            <div class="summary-row"><span class="sum-label">check:</span><span class="sum-val">tsc errors <span class="num">21</span> → <span class="num">12</span></span></div>
+            <div class="summary-row"><span class="sum-label">changed:</span><span class="sum-val">src/checks.js (<span class="num">+18</span> <span class="num">−4</span>)</span></div>
+            <div class="summary-row"><span class="sum-label">output:</span><span class="sum-val">nothing delivered — only a green run delivers</span></div>
+            <div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">1</span> of <span class="num">3</span> green · stopped at step 2</span></div>
+            <div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">"12 errors left" (the check's own words)</span></div>
+          </div>
+
+          <div class="map-box" data-testid="step-map">
+            <svg width="640" height="130" viewBox="0 0 640 130" role="img" aria-label="Step map: 1 Read the errors done, 2 Fix the types running with retry, 3 Run the check waiting">
+              <!-- step 1 -->
+              <rect x="10" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--green)" stroke-width="2"></rect>
+              <text x="100" y="55" text-anchor="middle" font-size="12" fill="var(--text)">1 Read the errors</text>
+              <text x="100" y="72" text-anchor="middle" font-size="10" fill="#2e7d32">done</text>
+              <!-- arrow 1->2 -->
+              <line x1="190" y1="60" x2="228" y2="60" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#arrow)"></line>
+              <!-- step 2 -->
+              <rect x="230" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--amber)" stroke-width="2"></rect>
+              <circle cx="250" cy="42" r="4" fill="#b8860b">
+                <animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"></animate>
+              </circle>
+              <text x="325" y="55" text-anchor="middle" font-size="12" fill="var(--text)">2 Fix the types</text>
+              <text x="325" y="72" text-anchor="middle" font-size="10" fill="#b8860b">running</text>
+              <!-- retry curve -->
+              <path d="M 320 95 C 280 120, 260 120, 235 92" fill="none" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrow-grey)"></path>
+              <text x="278" y="122" text-anchor="middle" font-size="10" fill="var(--text-faint)">try 2</text>
+              <!-- arrow 2->3 -->
+              <line x1="410" y1="60" x2="448" y2="60" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#arrow)"></line>
+              <!-- step 3 -->
+              <rect x="450" y="30" width="180" height="60" rx="0" fill="var(--panel2)" stroke="var(--border-strong)" stroke-width="2"></rect>
+              <text x="540" y="55" text-anchor="middle" font-size="12" fill="var(--text)">3 Run the check</text>
+              <text x="540" y="72" text-anchor="middle" font-size="10" fill="var(--text-faint)">waiting</text>
+
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L6,3 L0,6 z" fill="var(--text-dim)"></path>
+                </marker>
+                <marker id="arrow-grey" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L6,3 L0,6 z" fill="var(--text-faint)"></path>
+                </marker>
+              </defs>
+            </svg>
+            <div class="map-legend">
+              <span><span class="dot green"></span>done</span>
+              <span><span class="dot amber pulse"></span>running</span>
+              <span><span class="dot grey"></span>waiting</span>
+              <span>⤾ dashed = retry</span>
+            </div>
+          </div>
+
+          <div id="step-list">
+            <div class="step-card" data-testid="step-card-1">
+              <div class="step-head">
+                <h4>1 · Read the errors</h4>
+                <span class="badge green">done</span>
+              </div>
+              <div class="step-meta">Run tsc, collect the error list · 3 turns · 0m 48s · $0.06</div>
+            </div>
+
+            <div class="step-card running" data-testid="step-card-2">
+              <div class="step-head">
+                <h4>2 · Fix the types</h4>
+                <span class="badge amber">running</span>
+              </div>
+              <div class="step-meta">Edit src/checks.js to satisfy tsc · 9 turns · 4m 40s · $0.30</div>
+              <div class="events">
+                <div>› read src/checks.js</div>
+                <div>› edited src/checks.js lines 40–62</div>
+                <div>› check: 12 errors left (was 21)</div>
+              </div>
+              <div class="earlier-attempt">Earlier attempt: try 1 ended red at step 2 — "still 21 errors"</div>
+            </div>
+
+            <div class="step-card" data-testid="step-card-3">
+              <div class="step-head">
+                <h4>3 · Run the check</h4>
+                <span class="badge grey">waiting</span>
+              </div>
+              <div class="step-meta">Re-run tsc, confirm 0 errors · 0 turns · — · $0.00</div>
+            </div>
+          </div>
+
+          <div class="actions-row" data-testid="action-bar">
+            <div>
+              <button class="btn" id="btn-accept" data-testid="btn-accept" disabled>Accept</button>
+              <button class="btn" id="btn-rerun" data-testid="btn-rerun" disabled>Rerun</button>
+              <div class="hint" id="accept-hint">available when the run ends</div>
+            </div>
+            <div>
+              <button class="btn" id="btn-pause" data-testid="btn-pause">Pause</button>
+            </div>
+            <div>
+              <button class="btn" id="btn-replay" data-testid="btn-replay">Replay $0</button>
+              <div class="hint">plays back the recording, no model calls</div>
+            </div>
+          </div>
+
+          <button class="toggle-link" id="simulate-toggle" data-testid="simulate-toggle">simulate: run ended</button>
+          <button class="toggle-link" id="simulate-toggle-red" data-testid="simulate-toggle-red">simulate: run ended red</button>
+
+        </section>
+
+        <!-- AUDIT / LOGS TAB -->
+        <section id="panel-audit" class="tabpanel" role="tabpanel" aria-labelledby="tab-audit" hidden>
+
+          <div class="chips" role="group" aria-label="Filter audit rows">
+            <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
+            <button class="chip" aria-pressed="false" data-filter="write" data-testid="chip-writes">Writes</button>
+            <button class="chip" aria-pressed="false" data-filter="blocked" data-testid="chip-blocked">Blocked</button>
+          </div>
+
+          <button class="btn small" id="btn-download-log" data-testid="btn-download-log" style="margin-bottom:10px;">Download log</button>
+
+          <table data-testid="audit-table">
+            <thead>
+              <tr><th>Time</th><th>Action</th><th>Path</th><th>Decision</th><th>Step</th></tr>
+            </thead>
+            <tbody id="audit-tbody">
+              <tr data-action="read"><td>10:41:02</td><td>read</td><td>src/checks.js</td><td><span class="badge green">allowed</span></td><td>1</td></tr>
+              <tr data-action="read"><td>10:41:04</td><td>read</td><td>tsconfig.json</td><td><span class="badge green">allowed</span></td><td>1</td></tr>
+              <tr data-action="write" class="row-write"><td>10:41:40</td><td>write</td><td>src/checks.js</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
+              <tr data-action="edit" class="row-write"><td>10:41:52</td><td>edit</td><td>src/checks.js</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
+              <tr data-action="check"><td>10:42:10</td><td>check</td><td>tsc --noEmit</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
+              <tr data-action="write" class="row-write row-blocked"><td>10:42:15</td><td>write</td><td>.git/config</td><td><span class="badge red">blocked</span></td><td>2</td></tr>
+              <tr data-action="read"><td>10:42:30</td><td>read</td><td>src/types.d.ts</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
+              <tr data-action="edit" class="row-write"><td>10:43:05</td><td>edit</td><td>src/checks.js</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
+              <tr data-action="read"><td>10:43:20</td><td>read</td><td>package.json</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
+              <tr data-action="check"><td>10:43:41</td><td>check</td><td>tsc --noEmit</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
+            </tbody>
+          </table>
+
+          <details class="raw-log" data-testid="raw-spine-log">
+            <summary>Raw spine events</summary>
+            <pre>{"t":"2026-09-21T10:41:02Z","type":"read","run_id":"mu9x02aa","path":"src/checks.js","step":1}
+{"t":"2026-09-21T10:41:04Z","type":"read","run_id":"mu9x02aa","path":"tsconfig.json","step":1}
+{"t":"2026-09-21T10:41:40Z","type":"write","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}
+{"t":"2026-09-21T10:41:52Z","type":"edit","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}
+{"t":"2026-09-21T10:42:10Z","type":"check","run_id":"mu9x02aa","cmd":"tsc --noEmit","step":2,"result":"12 errors"}
+{"t":"2026-09-21T10:42:15Z","type":"write","run_id":"mu9x02aa","path":".git/config","step":2,"allowed":false}
+{"t":"2026-09-21T10:43:05Z","type":"edit","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}
+{"t":"2026-09-21T10:43:41Z","type":"check","run_id":"mu9x02aa","cmd":"tsc --noEmit","step":2,"result":"5 errors"}</pre>
+          </details>
+
+        </section>
+
+      </div>
+    </section>
+
+  </div>
+
+  <!-- SETTINGS VIEW -->
+  <section class="settings-view" id="settings-view" aria-label="Settings" hidden>
+    <div class="settings-header">
+      <button class="btn small" id="settings-back" data-testid="settings-back">← Back</button>
+      <h2>Settings</h2>
+    </div>
+
+    <div class="tabrow" role="tablist" aria-label="Settings views">
+      <button role="tab" id="tab-providers" aria-controls="panel-providers" aria-selected="true" data-testid="settings-tab-providers">Providers</button>
+      <button role="tab" id="tab-money" aria-controls="panel-money" aria-selected="false" data-testid="settings-tab-money">Money &amp; limits</button>
+    </div>
+
+    <div class="pane-body">
+
+      <!-- PROVIDERS TAB -->
+      <section id="panel-providers" class="tabpanel active" role="tabpanel" aria-labelledby="tab-providers">
+
+        <div class="keyfile-strip" data-testid="keyfile-box">
+          <div class="keyfile-strip-main">
+            <span>Keys live in one file: <code>~/.config/bareloop/.env</code> (outside any repo — can't be committed). Variables: <code>DEEPSEEK_API_KEY</code>, <code>ANTHROPIC_API_KEY</code></span>
+            <span class="hint" data-testid="keyfile-warning">⚠ file is readable by other users — run: chmod 600 ~/.config/bareloop/.env</span>
+          </div>
+          <div class="keyfile-strip-actions">
+            <button class="btn small" id="btn-copy-keyfile-path" data-testid="btn-copy-keyfile-path">Copy path</button>
+            <button class="btn small" id="btn-reload-keys" data-testid="btn-reload-keys">Reload keys</button>
+          </div>
+        </div>
+
+        <div class="wf-toolbar">
+          <button class="btn small" id="btn-add-provider" data-testid="btn-add-provider">+ Add provider</button>
+        </div>
+
+        <div class="table-wrap" data-testid="provider-table-wrap">
+          <table data-testid="provider-table">
+            <thead>
+              <tr>
+                <th>Name</th><th>API shape</th><th>Base URL</th><th>Key variable</th>
+                <th>Test</th><th>Tokens used</th><th>Balance</th><th>Price</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr data-testid="provider-row-deepseek">
+                <td><input class="cell-input" id="pv-ds-name" type="text" value="DeepSeek"></td>
+                <td>
+                  <select class="cell-input" id="pv-ds-shape">
+                    <option selected>OpenAI-compatible</option>
+                    <option>Anthropic</option>
+                    <option>Gemini</option>
+                    <option>Ollama (llama)</option>
+                  </select>
+                </td>
+                <td><input class="cell-input" id="pv-ds-url" type="text" value="https://api.deepseek.com"></td>
+                <td>
+                  <input class="cell-input" id="pv-ds-env" type="text" value="DEEPSEEK_API_KEY">
+                  <div class="hint">found in file ✓</div>
+                </td>
+                <td>
+                  <button class="btn small" id="test-connection-deepseek" data-testid="test-connection-deepseek">Test</button>
+                  <div class="hint" id="test-result-deepseek">OK · 412 ms</div>
+                </td>
+                <td>18.4M</td>
+                <td>$7.42 · 2 min ago</td>
+                <td>est.</td>
+                <td class="row-actions">
+                  <button class="btn small" data-testid="edit-provider-deepseek">Edit</button>
+                  <button class="btn small" data-testid="remove-provider-deepseek">Remove</button>
+                </td>
+              </tr>
+
+              <tr data-testid="provider-row-anthropic">
+                <td><input class="cell-input" id="pv-an-name" type="text" value="Anthropic"></td>
+                <td>
+                  <select class="cell-input" id="pv-an-shape">
+                    <option>OpenAI-compatible</option>
+                    <option selected>Anthropic</option>
+                    <option>Gemini</option>
+                    <option>Ollama (llama)</option>
+                  </select>
+                </td>
+                <td><input class="cell-input" id="pv-an-url" type="text" value="https://api.anthropic.com"></td>
+                <td>
+                  <input class="cell-input" id="pv-an-env" type="text" value="ANTHROPIC_API_KEY">
+                  <div class="hint">not set ✗</div>
+                </td>
+                <td>
+                  <button class="btn small" id="test-connection-anthropic" data-testid="test-connection-anthropic">Test</button>
+                  <div class="hint" id="test-result-anthropic">not tested</div>
+                </td>
+                <td>2.1M</td>
+                <td>
+                  <input class="cell-input cell-input-narrow" id="pv-an-balance" type="text" placeholder="e.g. 25.00">
+                  <button class="btn small" id="save-anthropic-balance" data-testid="save-anthropic-balance">Save</button>
+                </td>
+                <td>est.</td>
+                <td class="row-actions">
+                  <button class="btn small" data-testid="edit-provider-anthropic">Edit</button>
+                  <button class="btn small" data-testid="remove-provider-anthropic">Remove</button>
+                </td>
+              </tr>
+
+              <tr data-testid="provider-row-local-llama">
+                <td><input class="cell-input" id="pv-ll-name" type="text" value="Local llama"></td>
+                <td>
+                  <select class="cell-input" id="pv-ll-shape">
+                    <option>OpenAI-compatible</option>
+                    <option>Anthropic</option>
+                    <option>Gemini</option>
+                    <option selected>Ollama (llama)</option>
+                  </select>
+                </td>
+                <td><input class="cell-input" id="pv-ll-url" type="text" value="http://127.0.0.1:11434"></td>
+                <td>
+                  <input class="cell-input" id="pv-ll-env" type="text" value="none needed" disabled>
+                </td>
+                <td>
+                  <button class="btn small" id="test-connection-local-llama" data-testid="test-connection-local-llama">Test</button>
+                  <div class="hint" id="test-result-local-llama">OK · 9 ms</div>
+                </td>
+                <td>640K</td>
+                <td>local — no bill</td>
+                <td>no price set</td>
+                <td class="row-actions">
+                  <button class="btn small" data-testid="edit-provider-local-llama">Edit</button>
+                  <button class="btn small" data-testid="remove-provider-local-llama">Remove</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="hint" style="margin-top:6px;">Only variable names are shown here. The key itself never reaches this page.</div>
+      </section>
+
+      <!-- MONEY & LIMITS TAB -->
+      <section id="panel-money" class="tabpanel" role="tabpanel" aria-labelledby="tab-money" hidden>
+        <div class="money-strip" data-testid="money-strip">
+          <div class="money-item">
+            <label>Total spent to date</label>
+            <div class="money-value">$212.40</div>
+          </div>
+          <div class="money-item">
+            <label>This month spent</label>
+            <div class="money-value">$14.80</div>
+          </div>
+          <div class="money-item">
+            <label for="ml-money">Monthly money limit ($)</label>
+            <input id="ml-money" type="text" value="50.00">
+          </div>
+          <div class="money-item">
+            <label for="ml-time">Monthly time limit (hours)</label>
+            <input id="ml-time" type="text" value="20">
+          </div>
+          <div class="money-item money-item-save">
+            <button class="btn" id="btn-save-limits" data-testid="btn-save-limits">Save</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:6px;">Limits are yours. The agent can never change them.</div>
+
+        <h4 style="margin-top:20px;font-size:13px;">Per-provider breakdown</h4>
+        <table data-testid="provider-breakdown-table">
+          <thead>
+            <tr><th>Provider</th><th>This month $</th><th>To date $</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>DeepSeek</td><td>$9.10</td><td>$132.20</td></tr>
+            <tr><td>Anthropic</td><td>$5.70</td><td>$80.20</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  function wireTabs(tabButtons, panelPrefix){
+    tabButtons.forEach(function(btn){
+      btn.addEventListener("click", function(){
+        tabButtons.forEach(function(b){
+          b.setAttribute("aria-selected", "false");
+          var p = document.getElementById(b.getAttribute("aria-controls"));
+          if(p){ p.hidden = true; p.classList.remove("active"); }
+        });
+        btn.setAttribute("aria-selected", "true");
+        var panel = document.getElementById(btn.getAttribute("aria-controls"));
+        if(panel){ panel.hidden = false; panel.classList.add("active"); }
+      });
+    });
+  }
+
+  // left tabs
+  wireTabs([
+    document.getElementById("tab-chat"),
+    document.getElementById("tab-workflows"),
+    document.getElementById("tab-history")
+  ]);
+
+  // right tabs
+  wireTabs([
+    document.getElementById("tab-run"),
+    document.getElementById("tab-audit")
+  ]);
+
+  // settings tabs
+  wireTabs([
+    document.getElementById("tab-providers"),
+    document.getElementById("tab-money")
+  ]);
+
+  // "+ New" jumps to Chat tab
+  document.getElementById("wf-new").addEventListener("click", function(){
+    document.getElementById("tab-chat").click();
+  });
+
+  // workflow row selection
+  var wfRows = document.querySelectorAll(".wf-row");
+  var activeName = document.getElementById("active-wf-name");
+  var activeVerdict = document.getElementById("active-wf-verdict");
+  var activeStatus = document.getElementById("active-wf-status");
+  var activeDot = document.getElementById("active-wf-dot");
+
+  var wfData = {
+    "fix-types": {verdict:"green", status:"running", statusClass:"amber",
+      goal:"Fix failing type errors in src/checks.js; tsc must exit 0",
+      source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+      success:"npx tsc --noEmit exits 0, no test regressions",
+      guardrails:"no edits outside src/, no new deps", money:"2.00", time:"30 min", model:"deepseek-flash"},
+    "doc-comments": {verdict:"soft-green", status:"running", statusClass:"amber",
+      goal:"Add missing doc comments to exported functions in src/",
+      source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+      success:"every exported function has a doc comment",
+      guardrails:"no logic changes, comments only", money:"1.00", time:"15 min", model:"deepseek-flash"},
+    "release-notes": {verdict:"green", status:"done", statusClass:"green",
+      goal:"Draft release notes from the merged PRs since the last tag",
+      source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+      success:"RELEASE_NOTES.md written, one bullet per PR",
+      guardrails:"no source edits, docs only", money:"1.50", time:"20 min", model:"claude-sonnet-5"},
+    "lint-sweep": {verdict:"green", status:"paused", statusClass:"grey",
+      goal:"Run the linter and fix auto-fixable violations",
+      source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+      success:"lint exits 0",
+      guardrails:"no manual rule disables", money:"1.00", time:"10 min", model:"deepseek-flash"}
+  };
+
+  wfRows.forEach(function(row){
+    row.addEventListener("click", function(){
+      wfRows.forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
+      row.classList.add("selected");
+      row.setAttribute("aria-pressed","true");
+      var key = row.getAttribute("data-wf");
+      var d = wfData[key];
+      activeName.textContent = key;
+      if(d){
+        activeVerdict.textContent = d.verdict;
+        activeStatus.textContent = d.status;
+        activeStatus.className = "badge " + d.statusClass;
+        activeDot.className = "dot " + d.statusClass + (d.statusClass === "amber" ? " pulse" : "");
+      }
+    });
+    row.addEventListener("keydown", function(e){
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); }
+    });
+  });
+
+  // Edit workflow -> Chat tab, prefilled, signed-edit banner
+  document.querySelectorAll("[data-testid^='wf-edit-']").forEach(function(btn){
+    btn.addEventListener("click", function(e){
+      e.stopPropagation();
+      var row = btn.closest(".wf-row");
+      var key = row.getAttribute("data-wf");
+      var d = wfData[key];
+      if(!d) return;
+
+      document.getElementById("jf-name").value = key;
+      document.getElementById("jf-goal").value = d.goal;
+      document.getElementById("jf-source").value = d.source;
+      document.getElementById("jf-dest").value = d.dest;
+      document.getElementById("jf-success").value = d.success;
+      document.getElementById("jf-guardrails").value = d.guardrails;
+      document.getElementById("jf-cap-money").value = d.money;
+      document.getElementById("jf-cap-time").value = d.time;
+      document.getElementById("jf-model").value = d.model;
+      var nameHint = document.getElementById("jf-name-hint");
+      if(nameHint) nameHint.style.display = "none";
+
+      document.getElementById("job-card-title").textContent = "Job card — editing " + key;
+      document.getElementById("edit-banner").hidden = false;
+      document.getElementById("sign-run-btn").textContent = "Re-sign & run";
+
+      document.getElementById("tab-chat").click();
+    });
+  });
+
+  // live-ish counters (fake)
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var turn = 14, elapsedSec = 6*60+12, spend = 0.41;
+  var turnEl = document.getElementById("ctr-turn");
+  var elapsedEl = document.getElementById("ctr-elapsed");
+  var spendEl = document.getElementById("ctr-spend");
+  var running = true;
+
+  function fmt(sec){
+    var m = Math.floor(sec/60), s = sec%60;
+    return m + "m " + (s<10?"0":"") + s + "s";
+  }
+
+  if(!reduceMotion){
+    setInterval(function(){
+      if(!running) return;
+      elapsedSec += 1;
+      elapsedEl.textContent = fmt(elapsedSec);
+      if(elapsedSec % 5 === 0){
+        turn += 1;
+        turnEl.textContent = turn;
+        spend = Math.min(2.00, spend + 0.01);
+        spendEl.textContent = spend.toFixed(2);
+      }
+    }, 1000);
+  }
+
+  // audit filter chips
+  var chips = document.querySelectorAll(".chip");
+  var auditRows = document.querySelectorAll("#audit-tbody tr");
+  chips.forEach(function(chip){
+    chip.addEventListener("click", function(){
+      chips.forEach(function(c){ c.setAttribute("aria-pressed","false"); });
+      chip.setAttribute("aria-pressed","true");
+      var f = chip.getAttribute("data-filter");
+      auditRows.forEach(function(row){
+        if(f === "all"){ row.style.display = ""; }
+        else if(f === "write"){ row.style.display = row.classList.contains("row-write") ? "" : "none"; }
+        else if(f === "blocked"){ row.style.display = row.classList.contains("row-blocked") ? "" : "none"; }
+      });
+    });
+  });
+
+  document.getElementById("btn-download-log").addEventListener("click", function(){
+    alert("Download log — wireframe stub, no file produced.");
+  });
+
+  // sign/revise buttons
+  document.getElementById("sign-run-btn").addEventListener("click", function(){
+    alert("Sign & run — wireframe stub. This click is the only thing that signs.");
+  });
+  document.getElementById("revise-btn").addEventListener("click", function(){
+    alert("Revise — wireframe stub. 1 round left.");
+  });
+
+  // action bar buttons (Pause/Replay stubs)
+  document.getElementById("btn-pause").addEventListener("click", function(){
+    running = false;
+    alert("Paused — wireframe stub.");
+  });
+  document.getElementById("btn-replay").addEventListener("click", function(){
+    alert("Replay $0 — wireframe stub, plays back the recording only.");
+  });
+
+  // simulate run-ended toggles (running / green / red) — drives the after-run summary
+  var runState = "running";
+  var simGreenBtn = document.getElementById("simulate-toggle");
+  var simRedBtn = document.getElementById("simulate-toggle-red");
+  var summaryGreenEl = document.getElementById("summary-green");
+  var summaryRedEl = document.getElementById("summary-red");
+
+  function applyRunState(state){
+    runState = state;
+    var acceptBtn = document.getElementById("btn-accept");
+    var rerunBtn = document.getElementById("btn-rerun");
+    var hint = document.getElementById("accept-hint");
+    var statusBadge = document.getElementById("active-wf-status");
+    var pauseBtn = document.getElementById("btn-pause");
+    var dot = document.getElementById("active-wf-dot");
+
+    summaryGreenEl.hidden = (state !== "green");
+    summaryRedEl.hidden = (state !== "red");
+
+    if(state === "green"){
+      running = false;
+      acceptBtn.disabled = false;
+      rerunBtn.disabled = false;
+      hint.textContent = "run ended — green";
+      statusBadge.textContent = "done";
+      statusBadge.className = "badge green";
+      dot.className = "dot green";
+      pauseBtn.disabled = true;
+      simGreenBtn.textContent = "simulate: back to running";
+      simRedBtn.textContent = "simulate: run ended red";
+    } else if(state === "red"){
+      running = false;
+      acceptBtn.disabled = true;
+      rerunBtn.disabled = false;
+      hint.textContent = "run ended — red (cap hit)";
+      statusBadge.textContent = "red";
+      statusBadge.className = "badge red";
+      dot.className = "dot red";
+      pauseBtn.disabled = true;
+      simGreenBtn.textContent = "simulate: run ended";
+      simRedBtn.textContent = "simulate: back to running";
+    } else {
+      running = true;
+      acceptBtn.disabled = true;
+      rerunBtn.disabled = true;
+      hint.textContent = "available when the run ends";
+      statusBadge.textContent = "running";
+      statusBadge.className = "badge amber";
+      dot.className = "dot amber pulse";
+      pauseBtn.disabled = false;
+      simGreenBtn.textContent = "simulate: run ended";
+      simRedBtn.textContent = "simulate: run ended red";
+    }
+  }
+
+  simGreenBtn.addEventListener("click", function(){
+    applyRunState(runState === "green" ? "running" : "green");
+  });
+  simRedBtn.addEventListener("click", function(){
+    applyRunState(runState === "red" ? "running" : "red");
+  });
+
+  // History -> Open: switch the right pane to that run in its ended state (red dot -> red fixture, else green)
+  document.getElementById("history-list").addEventListener("click", function(e){
+    var btn = e.target.closest("button");
+    if(!btn || btn.textContent.trim() !== "Open") return;
+    var row = btn.closest(".hist-row");
+    if(!row) return;
+    var name = row.querySelector(".wf-name").firstChild.textContent.trim();
+    var isRed = !!row.querySelector(".dot.red");
+    document.getElementById("active-wf-name").textContent = name;
+    document.getElementById("tab-run").click();
+    applyRunState(isRed ? "red" : "green");
+  });
+
+  document.getElementById("btn-accept").addEventListener("click", function(){
+    alert("Accept — wireframe stub.");
+  });
+  document.getElementById("btn-rerun").addEventListener("click", function(){
+    alert("Rerun — wireframe stub.");
+  });
+
+  document.getElementById("wf-import").addEventListener("click", function(){
+    alert("Import — wireframe stub.");
+  });
+
+  // Settings view open/close
+  var mainView = document.getElementById("main-view");
+  var settingsView = document.getElementById("settings-view");
+  document.getElementById("btn-settings").addEventListener("click", function(){
+    mainView.hidden = true;
+    settingsView.hidden = false;
+  });
+  document.getElementById("settings-back").addEventListener("click", function(){
+    settingsView.hidden = true;
+    mainView.hidden = false;
+  });
+  // verification convenience: ?settings=1 in the URL opens Settings on load (wireframe only)
+  if(location.search.indexOf("settings=1") !== -1){
+    mainView.hidden = true;
+    settingsView.hidden = false;
+    if(location.search.indexOf("tab=money") !== -1){
+      document.getElementById("tab-money").click();
+    }
+  }
+
+  // Settings stub buttons
+  var newProviderCount = 0;
+  document.getElementById("btn-add-provider").addEventListener("click", function(){
+    newProviderCount += 1;
+    var tbody = document.querySelector("[data-testid='provider-table'] tbody");
+    var tr = document.createElement("tr");
+    tr.setAttribute("data-testid", "provider-row-new-" + newProviderCount);
+    tr.innerHTML =
+      '<td><input class="cell-input" type="text" placeholder="Provider name"></td>' +
+      '<td><select class="cell-input"><option>OpenAI-compatible</option><option>Anthropic</option><option>Gemini</option><option>Ollama (llama)</option></select></td>' +
+      '<td><input class="cell-input" type="text" placeholder="https://…"></td>' +
+      '<td><input class="cell-input" type="text" placeholder="SOME_API_KEY"><div class="hint">not set ✗</div></td>' +
+      '<td><button class="btn small">Test</button><div class="hint">not tested</div></td>' +
+      '<td>0</td>' +
+      '<td>—</td>' +
+      '<td><input class="cell-input cell-input-narrow" type="text" placeholder="est."></td>' +
+      '<td class="row-actions"><button class="btn small">Edit</button><button class="btn small">Remove</button></td>';
+    tbody.appendChild(tr);
+  });
+
+  // delegated stubs for Edit/Remove/Test on provider rows (incl. dynamically added ones)
+  document.querySelector("[data-testid='provider-table']").addEventListener("click", function(e){
+    var btn = e.target.closest("button");
+    if(!btn) return;
+    var txt = btn.textContent.trim();
+    if(txt === "Edit"){ alert("Edit provider — wireframe stub."); }
+    else if(txt === "Remove"){ btn.closest("tr").remove(); }
+    else if(txt === "Test" && !btn.id){ btn.nextElementSibling.textContent = "OK · 380 ms"; }
+  });
+  document.getElementById("test-connection-deepseek").addEventListener("click", function(){
+    document.getElementById("test-result-deepseek").textContent = "OK · 412 ms · model list reachable";
+  });
+  document.getElementById("test-connection-anthropic").addEventListener("click", function(){
+    document.getElementById("test-result-anthropic").textContent = "Failed · ANTHROPIC_API_KEY not set in environment";
+  });
+  document.getElementById("save-anthropic-balance").addEventListener("click", function(){
+    alert("Balance saved — wireframe stub.");
+  });
+  document.getElementById("btn-save-limits").addEventListener("click", function(){
+    alert("Limits saved — wireframe stub.");
+  });
+  document.getElementById("test-connection-local-llama").addEventListener("click", function(){
+    document.getElementById("test-result-local-llama").textContent = "OK · 9 ms · model list reachable";
+  });
+  document.getElementById("btn-copy-keyfile-path").addEventListener("click", function(){
+    alert("Copied ~/.config/bareloop/.env — wireframe stub.");
+  });
+  document.getElementById("btn-reload-keys").addEventListener("click", function(){
+    alert("Reload keys — wireframe stub.");
+  });
+
+  // theme toggle (additive; does not alter any locked behavior above)
+  (function(){
+    var root = document.documentElement;
+    var btn = document.getElementById("theme-toggle");
+    var stored = null;
+    try{ stored = localStorage.getItem("bareloop-variant-f-theme"); }catch(e){}
+    if(stored === "light" || stored === "dark"){ root.setAttribute("data-theme", stored); }
+    function current(){
+      var attr = root.getAttribute("data-theme");
+      if(attr) return attr;
+      return (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+    }
+    function paint(){ btn.textContent = current() === "dark" ? "☾" : "☀"; }
+    paint();
+    btn.addEventListener("click", function(){
+      var next = current() === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try{ localStorage.setItem("bareloop-variant-f-theme", next); }catch(e){}
+      paint();
+    });
+  })();
+
+})();
+</script>
+
+<script src="overlay-vanilla.js"></script>
+<script>LiveCanvas.init({target:'BareloopPanel-F', batchEndpoint:'http://localhost:8788/feedback-jsonl'});</script>
+</body>
+</html>
