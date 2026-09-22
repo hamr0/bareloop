@@ -686,6 +686,7 @@
           <span class="dot amber pulse" id="active-wf-dot"></span>
           <h2 id="active-wf-name">fix-types</h2>
           <span class="badge" id="active-wf-verdict">deterministic</span>
+          <span class="badge" id="active-wf-date">not run yet</span>
         </div>
       </div>
 
@@ -1215,6 +1216,7 @@
   var histRows = document.querySelectorAll(".hist-row");
   var activeName = document.getElementById("active-wf-name");
   var activeVerdict = document.getElementById("active-wf-verdict");
+  var activeDate = document.getElementById("active-wf-date");
   var activeDot = document.getElementById("active-wf-dot");
 
   // internal names stay "green"/"soft-green"; only the visible label changes
@@ -1636,10 +1638,11 @@
     renderAuditEmpty("no logs — not run yet");
   }
 
-  function setHeader(name, dotClassStr, badgeText){
+  function setHeader(name, dotClassStr, badgeText, dateText){
     activeName.textContent = name;
     activeDot.className = dotClassStr;
     activeVerdict.textContent = badgeText;
+    activeDate.textContent = dateText;
   }
 
   function clearRowSelection(){
@@ -1654,7 +1657,8 @@
     var row = document.querySelector('.wf-row[data-wf="' + key + '"]');
     if(row){ row.classList.add("selected"); row.setAttribute("aria-pressed","true"); }
 
-    setHeader(key, "dot " + d.statusClass + (d.statusClass === "amber" ? " pulse" : ""), verdictLabel(d.verdict));
+    setHeader(key, "dot " + d.statusClass + (d.statusClass === "amber" ? " pulse" : ""), verdictLabel(d.verdict),
+      d.runs.length ? d.runs[0].date : "not run yet");
 
     if(key === "fix-types"){
       runGenericView.hidden = true;
@@ -1680,7 +1684,7 @@
     var row = document.querySelector('[data-testid="hist-row-' + id + '"]');
     if(row){ row.classList.add("selected"); row.setAttribute("aria-pressed","true"); }
 
-    setHeader(h.wfName, h.dotClass, h.date);
+    setHeader(h.wfName, h.dotClass, verdictLabel(h.verdict), h.date);
 
     if(id === "fix-types-prior"){
       runGenericView.hidden = true;
