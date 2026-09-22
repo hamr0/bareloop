@@ -403,7 +403,7 @@
     </div>
     <div class="topbar-right">
       <div class="totals" id="totals-line">
-        Today $1.20 · This month $14.80 · Total $212.40 · Time run 3h 10m · <b>2 running</b>
+        Today $1.20 · This month $14.80 · Total $212.40 · Time run 3h 10m · <b>1 running</b>
       </div>
       <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme">☾</button>
       <button class="btn small" id="btn-settings" data-testid="btn-settings" aria-haspopup="true">⚙ Settings</button>
@@ -535,22 +535,18 @@
               <span class="wf-meta">6m 12s</span>
               <span class="wf-meta">2026-09-21</span>
               <span class="wf-row-actions">
-                <button class="btn small" data-testid="wf-open-fix-types">Open</button>
                 <button class="btn small" data-testid="wf-edit-fix-types">Edit</button>
                 <button class="btn small" data-testid="wf-export-fix-types">Export</button>
               </span>
             </div>
 
             <div class="wf-row" data-wf="doc-comments" data-testid="wf-row-doc-comments" tabindex="0" role="button" aria-pressed="false">
-              <span class="dot amber pulse"></span>
+              <span class="dot grey"></span>
               <span class="wf-name">doc-comments</span>
               <span class="row-break"></span>
               <span class="wf-meta">rubric</span>
-              <span class="wf-meta">$0.09 / $1.00</span>
-              <span class="wf-meta">1m 40s</span>
-              <span class="wf-meta">2026-09-21</span>
+              <span class="wf-meta">not run yet</span>
               <span class="wf-row-actions">
-                <button class="btn small" data-testid="wf-open-doc-comments">Open</button>
                 <button class="btn small" data-testid="wf-edit-doc-comments">Edit</button>
                 <button class="btn small" data-testid="wf-export-doc-comments">Export</button>
               </span>
@@ -565,7 +561,6 @@
               <span class="wf-meta">4m 02s</span>
               <span class="wf-meta">2026-09-20</span>
               <span class="wf-row-actions">
-                <button class="btn small" data-testid="wf-open-release-notes">Open</button>
                 <button class="btn small" data-testid="wf-edit-release-notes">Edit</button>
                 <button class="btn small" data-testid="wf-export-release-notes">Export</button>
               </span>
@@ -580,7 +575,6 @@
               <span class="wf-meta">0m 51s</span>
               <span class="wf-meta">2026-09-17</span>
               <span class="wf-row-actions">
-                <button class="btn small" data-testid="wf-open-lint-sweep">Open</button>
                 <button class="btn small" data-testid="wf-edit-lint-sweep">Edit</button>
                 <button class="btn small" data-testid="wf-export-lint-sweep">Export</button>
               </span>
@@ -699,6 +693,13 @@
 
         <!-- RUN TAB -->
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
+
+        <!-- fix-types' own view: live-ticking template, kept exactly as it was before item 3's
+             work (this is the ONLY thing shown when fix-types' live/running attempt is selected,
+             or its one red history entry — same markup, driven into the red state by JS). Every
+             other selection hides this whole block and uses #run-generic-view / #run-empty-view
+             instead, so no fix-types-specific text can leak into another workflow's Run tab. -->
+        <div id="run-fixtypes-view">
 
           <div class="counters" id="run-counters" data-testid="live-counters">
             Turn <b id="ctr-turn">14</b> ·
@@ -826,10 +827,51 @@
           <button class="toggle-link" id="simulate-toggle" data-testid="simulate-toggle">simulate: run passed</button>
           <button class="toggle-link" id="simulate-toggle-red" data-testid="simulate-toggle-red">simulate: run failed</button>
 
+        </div>
+
+        <!-- every other workflow/run: built by renderGeneric() from wfData/histData, never from
+             the fix-types fixture above. -->
+        <div id="run-generic-view" hidden data-testid="run-generic-view">
+
+          <div class="counters" id="gen-counters" data-testid="gen-counters"></div>
+
+          <div class="summary-box" id="gen-summary" data-testid="gen-summary">
+            <div class="summary-headline" id="gen-summary-headline"></div>
+            <div class="summary-row"><span class="sum-label">check:</span><span class="sum-val" id="gen-sum-check"></span></div>
+            <div class="summary-row"><span class="sum-label">changed:</span><span class="sum-val" id="gen-sum-changed"></span></div>
+            <div class="summary-row"><span class="sum-label">output:</span><span class="sum-val" id="gen-sum-output"></span></div>
+            <div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val" id="gen-sum-steps"></span></div>
+            <div class="summary-row"><span class="sum-label">why:</span><span class="sum-val" id="gen-sum-why"></span></div>
+          </div>
+
+          <div class="map-box" data-testid="gen-map" id="gen-map">
+            <div id="gen-map-boxes" style="display:flex;gap:10px;flex-wrap:wrap;"></div>
+            <div class="map-legend">
+              <span><span class="dot green"></span>done</span>
+              <span><span class="dot red"></span>stopped</span>
+              <span><span class="dot grey"></span>waiting</span>
+            </div>
+          </div>
+
+          <div id="gen-step-list" data-testid="gen-step-list"></div>
+
+          <div class="actions-row" id="gen-actions" data-testid="gen-action-bar"></div>
+
+        </div>
+
+        <!-- workflow has never run: no summary numbers at all -->
+        <div id="run-empty-view" hidden data-testid="run-empty-view">
+          <div class="hint" style="font-size:13px;padding:24px 0;">not run yet</div>
+        </div>
+
         </section>
 
         <!-- AUDIT / LOGS TAB -->
         <section id="panel-audit" class="tabpanel" role="tabpanel" aria-labelledby="tab-audit" hidden>
+
+          <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;" hidden>no logs — not run yet</div>
+
+          <div id="audit-content" data-testid="audit-content">
 
           <div class="chips" role="group" aria-label="Filter audit rows">
             <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
@@ -844,30 +886,15 @@
               <tr><th>Time</th><th>Action</th><th>Path</th><th>Decision</th><th>Step</th></tr>
             </thead>
             <tbody id="audit-tbody">
-              <tr data-action="read"><td>10:41:02</td><td>read</td><td>src/checks.js</td><td><span class="badge green">allowed</span></td><td>1</td></tr>
-              <tr data-action="read"><td>10:41:04</td><td>read</td><td>tsconfig.json</td><td><span class="badge green">allowed</span></td><td>1</td></tr>
-              <tr data-action="write" class="row-write"><td>10:41:40</td><td>write</td><td>src/checks.js</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
-              <tr data-action="edit" class="row-write"><td>10:41:52</td><td>edit</td><td>src/checks.js</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
-              <tr data-action="check"><td>10:42:10</td><td>check</td><td>tsc --noEmit</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
-              <tr data-action="write" class="row-write row-blocked"><td>10:42:15</td><td>write</td><td>.git/config</td><td><span class="badge red">blocked</span></td><td>2</td></tr>
-              <tr data-action="read"><td>10:42:30</td><td>read</td><td>src/types.d.ts</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
-              <tr data-action="edit" class="row-write"><td>10:43:05</td><td>edit</td><td>src/checks.js</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
-              <tr data-action="read"><td>10:43:20</td><td>read</td><td>package.json</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
-              <tr data-action="check"><td>10:43:41</td><td>check</td><td>tsc --noEmit</td><td><span class="badge green">allowed</span></td><td>2</td></tr>
             </tbody>
           </table>
 
           <details class="raw-log" data-testid="raw-spine-log">
             <summary>Raw spine events</summary>
-            <pre>{"t":"2026-09-21T10:41:02Z","type":"read","run_id":"mu9x02aa","path":"src/checks.js","step":1}
-{"t":"2026-09-21T10:41:04Z","type":"read","run_id":"mu9x02aa","path":"tsconfig.json","step":1}
-{"t":"2026-09-21T10:41:40Z","type":"write","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}
-{"t":"2026-09-21T10:41:52Z","type":"edit","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}
-{"t":"2026-09-21T10:42:10Z","type":"check","run_id":"mu9x02aa","cmd":"tsc --noEmit","step":2,"result":"12 errors"}
-{"t":"2026-09-21T10:42:15Z","type":"write","run_id":"mu9x02aa","path":".git/config","step":2,"allowed":false}
-{"t":"2026-09-21T10:43:05Z","type":"edit","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}
-{"t":"2026-09-21T10:43:41Z","type":"check","run_id":"mu9x02aa","cmd":"tsc --noEmit","step":2,"result":"5 errors"}</pre>
+            <pre id="audit-rawlog"></pre>
           </details>
+
+          </div>
 
         </section>
 
@@ -1164,8 +1191,20 @@
     document.getElementById("tab-chat").click();
   });
 
-  // workflow row selection
+  // ===================================================================================
+  // ITEM 3: clicking a row in EITHER Workflows or History makes the WHOLE right pane
+  // (header, Run, Audit, Details) about that one thing — never a mix of two items.
+  //
+  // fix-types keeps its original hand-built live-ticking template verbatim (#run-fixtypes-view,
+  // wired by applyRunState below) — that template is used for exactly two selections: the
+  // fix-types workflow (its live/running attempt) and the "fix-types-prior" history row (its
+  // one finished/red attempt, 2026-09-19). Every other selection renders through the generic,
+  // data-driven template (#run-generic-view) or the empty-state template (#run-empty-view), so
+  // no fix-types-specific text can leak into another workflow's Run tab.
+  // ===================================================================================
+
   var wfRows = document.querySelectorAll(".wf-row");
+  var histRows = document.querySelectorAll(".hist-row");
   var activeName = document.getElementById("active-wf-name");
   var activeVerdict = document.getElementById("active-wf-verdict");
   var activeDot = document.getElementById("active-wf-dot");
@@ -1175,6 +1214,8 @@
     return internal === "soft-green" ? "rubric" : "deterministic";
   }
 
+  // ---- Workflows tab: the CURRENT signed job card + its own run history (linked to histData
+  // by histId, since a run's full detail lives in one place — histData — never duplicated). ----
   var wfData = {
     "fix-types": {verdict:"green", status:"running", statusClass:"amber",
       goal:"Fix failing type errors in src/checks.js; tsc must exit 0",
@@ -1182,13 +1223,15 @@
       success:"npx tsc --noEmit exits 0, no test regressions",
       guardrails:"no edits outside src/, no new deps", money:"2.00", time:"30 min", model:"deepseek-flash",
       runs:[
-        {ok:false, date:"2026-09-21", spend:"2.00", time:"30m 00s"}
+        {histId:"fix-types-prior", ok:false, date:"2026-09-19", spend:"1.84", time:"21m 10s"}
       ]},
-    "doc-comments": {verdict:"soft-green", status:"running", statusClass:"amber",
+    "doc-comments": {verdict:"soft-green", status:"not-run", statusClass:"grey",
       goal:"Add missing doc comments to exported functions in src/",
       source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
       success:"every exported function has a doc comment",
       guardrails:"no logic changes, comments only", money:"1.00", time:"15 min", model:"deepseek-flash",
+      // never run under the current signed version — the "doc-comments-prior" History row
+      // below is a leftover from an earlier signature and is not part of this job's own record.
       runs:[]},
     "release-notes": {verdict:"green", status:"done", statusClass:"green",
       goal:"Draft release notes from the merged PRs since the last tag",
@@ -1196,7 +1239,7 @@
       success:"RELEASE_NOTES.md written, one bullet per PR",
       guardrails:"no source edits, docs only", money:"1.50", time:"20 min", model:"claude-sonnet-5",
       runs:[
-        {ok:true, date:"2026-09-20", spend:"0.66", time:"4m 02s"}
+        {histId:"release-notes", ok:true, date:"2026-09-20", spend:"0.66", time:"4m 02s"}
       ]},
     "lint-sweep": {verdict:"green", status:"paused", statusClass:"grey",
       goal:"Run the linter and fix auto-fixable violations",
@@ -1204,22 +1247,458 @@
       success:"lint exits 0",
       guardrails:"no manual rule disables", money:"1.00", time:"10 min", model:"deepseek-flash",
       runs:[
-        {ok:true, date:"2026-09-17", spend:"0.12", time:"0m 51s"}
+        {histId:"lint-sweep-prior", ok:true, date:"2026-09-17", spend:"0.12", time:"0m 51s"}
       ]}
   };
 
+  // fix-types' original static audit fixture (unchanged content), now populated via JS instead
+  // of hardcoded table rows, so the SAME renderer serves the live run and every other selection.
+  var auditFixTypesRows = [
+    {time:"10:41:02", action:"read", path:"src/checks.js", step:1},
+    {time:"10:41:04", action:"read", path:"tsconfig.json", step:1},
+    {time:"10:41:40", action:"write", path:"src/checks.js", step:2, write:true},
+    {time:"10:41:52", action:"edit", path:"src/checks.js", step:2, write:true},
+    {time:"10:42:10", action:"check", path:"tsc --noEmit", step:2},
+    {time:"10:42:15", action:"write", path:".git/config", step:2, write:true, blocked:true},
+    {time:"10:42:30", action:"read", path:"src/types.d.ts", step:2},
+    {time:"10:43:05", action:"edit", path:"src/checks.js", step:2, write:true},
+    {time:"10:43:20", action:"read", path:"package.json", step:2},
+    {time:"10:43:41", action:"check", path:"tsc --noEmit", step:2}
+  ];
+  var auditFixTypesRawLog =
+'{"t":"2026-09-21T10:41:02Z","type":"read","run_id":"mu9x02aa","path":"src/checks.js","step":1}\n' +
+'{"t":"2026-09-21T10:41:04Z","type":"read","run_id":"mu9x02aa","path":"tsconfig.json","step":1}\n' +
+'{"t":"2026-09-21T10:41:40Z","type":"write","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}\n' +
+'{"t":"2026-09-21T10:41:52Z","type":"edit","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}\n' +
+'{"t":"2026-09-21T10:42:10Z","type":"check","run_id":"mu9x02aa","cmd":"tsc --noEmit","step":2,"result":"12 errors"}\n' +
+'{"t":"2026-09-21T10:42:15Z","type":"write","run_id":"mu9x02aa","path":".git/config","step":2,"allowed":false}\n' +
+'{"t":"2026-09-21T10:43:05Z","type":"edit","run_id":"mu9x02aa","path":"src/checks.js","step":2,"allowed":true}\n' +
+'{"t":"2026-09-21T10:43:41Z","type":"check","run_id":"mu9x02aa","cmd":"tsc --noEmit","step":2,"result":"5 errors"}';
+
+  // ---- History tab: one self-contained snapshot per run (its own job-card fields as of that
+  // run, plus its own Run/Audit detail) — a history record never changes when a job is re-signed. ----
+  var histData = {
+    "fix-types-prior": {
+      wfName:"fix-types", verdict:"green", dotClass:"dot red", date:"2026-09-19",
+      spend:"1.84", cap:"2.00", elapsed:"21m 10s", turns:61, ok:false,
+      job: wfData["fix-types"] // same job card fields; only the run outcome differs
+      // Run/Audit for this one reuse the fix-types live template (applyRunState("red")) +
+      // auditFixTypesRows/auditFixTypesRawLog — see selectHistory().
+    },
+    "release-notes": {
+      wfName:"release-notes", verdict:"green", dotClass:"dot green", date:"2026-09-20",
+      spend:"0.66", cap:"1.50", elapsed:"4m 02s", turns:22, ok:true,
+      job:{goal:"Draft release notes from the merged PRs since the last tag",
+        source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+        success:"RELEASE_NOTES.md written, one bullet per PR",
+        guardrails:"no source edits, docs only", money:"1.50", time:"20 min", model:"claude-sonnet-5"},
+      run:{
+        checkLine:"PRs found 9 → 9 documented",
+        changedLine:"RELEASE_NOTES.md (+40 −0)",
+        outputLine:"~/code/bareguard-out/release-notes-2026-09-20",
+        stepsLine:"3 of 3 done",
+        whyLine:"\"RELEASE_NOTES.md written, one bullet per PR\"",
+        steps:[
+          {title:"Collect merged PRs", meta:"git log since last tag, list PR numbers · 6 turns · 1m 10s · $0.14", badge:"done", badgeClass:"green"},
+          {title:"Draft the notes", meta:"one bullet per PR, grouped by type · 12 turns · 2m 05s · $0.38", badge:"done", badgeClass:"green",
+            events:["read git log --since last tag","drafted 9 bullets"]},
+          {title:"Write RELEASE_NOTES.md", meta:"write file, final pass · 4 turns · 0m 47s · $0.14", badge:"done", badgeClass:"green"}
+        ],
+        audit:[
+          {time:"09:10:02", action:"read", path:".git/refs/tags", step:1},
+          {time:"09:10:05", action:"read", path:"CHANGELOG.md", step:1},
+          {time:"09:11:40", action:"write", path:"RELEASE_NOTES.md", step:3, write:true},
+          {time:"09:12:20", action:"check", path:"markdownlint RELEASE_NOTES.md", step:3}
+        ],
+        rawLog:
+'{"t":"2026-09-20T09:10:02Z","type":"read","run_id":"mu9r01nn","path":".git/refs/tags","step":1}\n' +
+'{"t":"2026-09-20T09:11:40Z","type":"write","run_id":"mu9r01nn","path":"RELEASE_NOTES.md","step":3,"allowed":true}\n' +
+'{"t":"2026-09-20T09:12:20Z","type":"check","run_id":"mu9r01nn","cmd":"markdownlint RELEASE_NOTES.md","step":3,"result":"0 issues"}'
+      }
+    },
+    "doc-comments-prior": {
+      wfName:"doc-comments", verdict:"soft-green", dotClass:"dot amber", date:"2026-09-18",
+      spend:"0.31", cap:"1.00", elapsed:"2m 15s", turns:9, ok:"soft",
+      job:{goal:"Add missing doc comments to exported functions in src/",
+        source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+        success:"every exported function has a doc comment",
+        guardrails:"no logic changes, comments only", money:"1.00", time:"15 min", model:"deepseek-flash"},
+      run:{
+        checkLine:"judge: \"all 6 exported functions documented\" (rubric)",
+        changedLine:"src/index.js, src/checks.js (+14 −0)",
+        outputLine:"~/code/bareguard-out/doc-comments-2026-09-18",
+        stepsLine:"3 of 3 done",
+        whyLine:"judge: \"every exported function has a doc comment\" — satisfied",
+        steps:[
+          {title:"Scan exported functions", meta:"list exports across src/ · 3 turns · 0m 20s · $0.03", badge:"done", badgeClass:"green"},
+          {title:"Draft doc comments", meta:"write comments for 6 exports · 5 turns · 1m 30s · $0.22", badge:"done", badgeClass:"green",
+            events:["read src/index.js","added 6 doc comments"]},
+          {title:"Verify coverage", meta:"rubric judge checks all 6 are covered · 1 turn · 0m 25s · $0.06", badge:"done", badgeClass:"amber"}
+        ],
+        audit:[
+          {time:"14:02:01", action:"read", path:"src/index.js", step:1},
+          {time:"14:02:40", action:"edit", path:"src/index.js", step:2, write:true},
+          {time:"14:03:10", action:"edit", path:"src/checks.js", step:2, write:true},
+          {time:"14:03:55", action:"judge", path:"doc-comment coverage", step:3}
+        ],
+        rawLog:
+'{"t":"2026-09-18T14:02:01Z","type":"read","run_id":"mu9d04pp","path":"src/index.js","step":1}\n' +
+'{"t":"2026-09-18T14:02:40Z","type":"edit","run_id":"mu9d04pp","path":"src/index.js","step":2,"allowed":true}\n' +
+'{"t":"2026-09-18T14:03:55Z","type":"judge","run_id":"mu9d04pp","target":"doc-comment coverage","step":3,"result":"pass"}'
+      }
+    },
+    "lint-sweep-prior": {
+      wfName:"lint-sweep", verdict:"green", dotClass:"dot grey", date:"2026-09-17",
+      spend:"0.12", cap:"1.00", elapsed:"0m 51s", turns:5, ok:true,
+      job:{goal:"Run the linter and fix auto-fixable violations",
+        source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+        success:"lint exits 0",
+        guardrails:"no manual rule disables", money:"1.00", time:"10 min", model:"deepseek-flash"},
+      run:{
+        checkLine:"eslint violations 14 → 0",
+        changedLine:"src/*.js (+6 −6, autofix only)",
+        outputLine:"~/code/bareguard-out/lint-sweep-2026-09-17",
+        stepsLine:"3 of 3 done",
+        whyLine:"\"lint exits 0\"",
+        steps:[
+          {title:"Run eslint", meta:"collect violation list · 1 turn · 0m 08s · $0.01", badge:"done", badgeClass:"green"},
+          {title:"Apply autofixes", meta:"eslint --fix · 2 turns · 0m 30s · $0.08",
+            badge:"done", badgeClass:"green", events:["eslint --fix","6 files changed"]},
+          {title:"Re-run eslint to confirm 0", meta:"final check · 2 turns · 0m 13s · $0.03", badge:"done", badgeClass:"green"}
+        ],
+        audit:[
+          {time:"08:02:00", action:"read", path:".eslintrc.json", step:1},
+          {time:"08:02:12", action:"write", path:"src/*.js", step:2, write:true},
+          {time:"08:02:45", action:"check", path:"eslint .", step:3}
+        ],
+        rawLog:
+'{"t":"2026-09-17T08:02:00Z","type":"read","run_id":"mu9l03ee","path":".eslintrc.json","step":1}\n' +
+'{"t":"2026-09-17T08:02:12Z","type":"write","run_id":"mu9l03ee","path":"src/*.js","step":2,"allowed":true}\n' +
+'{"t":"2026-09-17T08:02:45Z","type":"check","run_id":"mu9l03ee","cmd":"eslint .","step":3,"result":"0 violations"}'
+      }
+    },
+    "onboarding-md": {
+      wfName:"onboarding-md", verdict:"green", dotClass:"dot green", date:"2026-09-16",
+      spend:"0.44", cap:"1.00", elapsed:"3m 05s", turns:16, ok:true,
+      job:{goal:"Write an onboarding guide for new contributors",
+        source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+        success:"docs/ONBOARDING.md written, covers setup and first PR",
+        guardrails:"docs only, no source edits", money:"1.00", time:"15 min", model:"deepseek-flash"},
+      run:{
+        checkLine:"guide sections 0 → 5",
+        changedLine:"docs/ONBOARDING.md (+120 −0)",
+        outputLine:"~/code/bareguard-out/onboarding-md-2026-09-16",
+        stepsLine:"3 of 3 done",
+        whyLine:"\"ONBOARDING.md written, covers setup and first PR\"",
+        steps:[
+          {title:"Draft outline", meta:"5 sections planned · 3 turns · 0m 30s · $0.05", badge:"done", badgeClass:"green"},
+          {title:"Write ONBOARDING.md", meta:"fill each section · 10 turns · 2m 05s · $0.32",
+            badge:"done", badgeClass:"green", events:["read package.json for setup steps","wrote 5 sections"]},
+          {title:"Proofread", meta:"final pass · 3 turns · 0m 30s · $0.07", badge:"done", badgeClass:"green"}
+        ],
+        audit:[
+          {time:"11:00:05", action:"read", path:"package.json", step:1},
+          {time:"11:00:20", action:"read", path:"README.md", step:1},
+          {time:"11:01:40", action:"write", path:"docs/ONBOARDING.md", step:2, write:true},
+          {time:"11:03:00", action:"check", path:"markdownlint docs/ONBOARDING.md", step:3}
+        ],
+        rawLog:
+'{"t":"2026-09-16T11:00:05Z","type":"read","run_id":"mu9o02qq","path":"package.json","step":1}\n' +
+'{"t":"2026-09-16T11:01:40Z","type":"write","run_id":"mu9o02qq","path":"docs/ONBOARDING.md","step":2,"allowed":true}\n' +
+'{"t":"2026-09-16T11:03:00Z","type":"check","run_id":"mu9o02qq","cmd":"markdownlint docs/ONBOARDING.md","step":3,"result":"0 issues"}'
+      }
+    },
+    "changelog-draft": {
+      wfName:"changelog-draft", verdict:"green", dotClass:"dot green", date:"2026-09-14",
+      spend:"0.00", cap:"0.00", elapsed:"—", turns:"—", ok:true, imported:true,
+      job:{goal:"Draft CHANGELOG entries from commit messages since the last tag",
+        source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+        success:"CHANGELOG.md draft section added",
+        guardrails:"docs only, no source edits", money:"—", time:"—", model:"—"},
+      run:{
+        checkLine:"not recorded — imported from another bareloop instance",
+        changedLine:"not recorded",
+        outputLine:"imported record — view only",
+        stepsLine:"n/a — imported",
+        whyLine:"imported, no local check history",
+        steps:[],
+        audit:[]
+      }
+    }
+  };
+
+  // ---- shared render pieces ----
+  var runFixtypesView = document.getElementById("run-fixtypes-view");
+  var runGenericView = document.getElementById("run-generic-view");
+  var runEmptyView = document.getElementById("run-empty-view");
+  var auditEmptyEl = document.getElementById("audit-empty");
+  var auditContentEl = document.getElementById("audit-content");
+  var auditTbody = document.getElementById("audit-tbody");
+  var auditRawlogEl = document.getElementById("audit-rawlog");
+
+  var chips = document.querySelectorAll(".chip");
+  var auditRows = [];
+
+  function resetAuditFilter(){
+    chips.forEach(function(c){ c.setAttribute("aria-pressed", c.getAttribute("data-filter") === "all" ? "true" : "false"); });
+    auditRows.forEach(function(row){ row.style.display = ""; });
+  }
+
+  function renderAuditRows(rows, rawLogText){
+    auditContentEl.hidden = false;
+    auditEmptyEl.hidden = true;
+    auditTbody.innerHTML = "";
+    rows.forEach(function(r){
+      var tr = document.createElement("tr");
+      tr.setAttribute("data-action", r.action);
+      var classes = [];
+      if(r.write) classes.push("row-write");
+      if(r.blocked) classes.push("row-blocked");
+      if(classes.length) tr.className = classes.join(" ");
+      tr.innerHTML =
+        "<td>" + r.time + "</td><td>" + r.action + "</td><td>" + r.path + "</td>" +
+        "<td><span class=\"badge " + (r.blocked ? "red" : "green") + "\">" + (r.blocked ? "blocked" : "allowed") + "</span></td>" +
+        "<td>" + r.step + "</td>";
+      auditTbody.appendChild(tr);
+    });
+    auditRawlogEl.textContent = rawLogText || "";
+    auditRows = document.querySelectorAll("#audit-tbody tr");
+    resetAuditFilter();
+  }
+
+  function renderAuditEmpty(msg){
+    auditContentEl.hidden = true;
+    auditEmptyEl.hidden = false;
+    auditEmptyEl.textContent = msg;
+  }
+
+  chips.forEach(function(chip){
+    chip.addEventListener("click", function(){
+      chips.forEach(function(c){ c.setAttribute("aria-pressed","false"); });
+      chip.setAttribute("aria-pressed","true");
+      var f = chip.getAttribute("data-filter");
+      auditRows.forEach(function(row){
+        if(f === "all"){ row.style.display = ""; }
+        else if(f === "write"){ row.style.display = row.classList.contains("row-write") ? "" : "none"; }
+        else if(f === "blocked"){ row.style.display = row.classList.contains("row-blocked") ? "" : "none"; }
+      });
+    });
+  });
+
+  document.getElementById("btn-download-log").addEventListener("click", function(){
+    alert("Download log — wireframe stub, no file produced.");
+  });
+
+  // Details tab: signed job card (read-only) + past runs list. Used for both a Workflows
+  // selection (job = its own current signed card, runs = its own run history) and a History
+  // selection (job = that run's own snapshot, runs = just that one run, marked "viewing").
+  function renderDetails(title, job, runsList, viewingHistId){
+    document.getElementById("details-title").textContent = title;
+    document.getElementById("details-verdict").textContent = verdictLabel(job.verdict);
+    document.getElementById("details-model").textContent = job.model;
+    document.getElementById("details-goal").textContent = job.goal;
+    document.getElementById("details-source").textContent = job.source;
+    document.getElementById("details-dest").textContent = job.dest;
+    document.getElementById("details-success").textContent = job.success;
+    document.getElementById("details-guardrails").textContent = job.guardrails;
+    document.getElementById("details-cap-money").textContent = job.money === "—" ? "—" : "$" + job.money;
+    document.getElementById("details-cap-time").textContent = job.time;
+
+    var runsEl = document.getElementById("details-runs");
+    runsEl.innerHTML = "";
+    if(!runsList || runsList.length === 0){
+      var empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "no past runs yet";
+      runsEl.appendChild(empty);
+      return;
+    }
+    runsList.forEach(function(r){
+      var rowEl = document.createElement("div");
+      rowEl.className = "wf-past-run";
+      var glyphClass = r.ok === true ? "green" : (r.ok === false ? "red" : "amber");
+      var glyph = r.ok === true ? "✓" : (r.ok === false ? "✗" : "▶");
+      var viewing = r.histId && r.histId === viewingHistId;
+      if(viewing){ rowEl.style.border = "2px solid var(--accent)"; rowEl.style.borderRadius = "4px"; }
+      rowEl.innerHTML =
+        '<span class="badge ' + glyphClass + '">' + glyph + '</span>' +
+        '<span class="wf-meta">' + r.date + '</span>' +
+        '<span class="wf-meta">$' + r.spend + '</span>' +
+        '<span class="wf-meta">' + r.time + '</span>' +
+        (viewing ? '<span class="wf-meta" style="color:var(--accent);font-weight:700;">viewing</span>' : '');
+      if(r.histId){
+        rowEl.style.cursor = "pointer";
+        rowEl.setAttribute("tabindex", "0");
+        rowEl.setAttribute("role", "button");
+        rowEl.addEventListener("click", function(){
+          selectHistory(r.histId);
+          document.getElementById("tab-run").click();
+        });
+        rowEl.addEventListener("keydown", function(e){
+          if(e.key === "Enter" || e.key === " "){ e.preventDefault(); rowEl.click(); }
+        });
+      }
+      runsEl.appendChild(rowEl);
+    });
+  }
+
+  // generic (non-fix-types) Run tab renderer — built from one histData-shaped entry
+  // ({verdict, spend, cap, elapsed, turns, ok, imported, run:{...}})
+  function renderGenericRun(entry){
+    runFixtypesView.hidden = true;
+    runEmptyView.hidden = true;
+    runGenericView.hidden = false;
+
+    document.getElementById("gen-counters").textContent =
+      "$" + entry.spend + " of $" + entry.cap + " · " + entry.elapsed + " · " + entry.turns + " turns";
+
+    var dotCls = entry.ok === true ? "green" : (entry.ok === false ? "red" : "amber");
+    var borderVar = entry.ok === true ? "var(--green)" : (entry.ok === false ? "var(--red)" : "var(--amber)");
+    var box = document.getElementById("gen-summary");
+    box.style.borderColor = borderVar;
+    document.getElementById("gen-summary-headline").innerHTML =
+      '<span class="dot ' + dotCls + '"></span><b>' + verdictLabel(entry.verdict) + '</b> · ' +
+      '<span class="num">$' + entry.spend + '</span> · <span class="num">' + entry.elapsed + '</span> · ' +
+      '<span class="num">' + entry.turns + '</span> turns';
+    document.getElementById("gen-sum-check").textContent = entry.run.checkLine;
+    document.getElementById("gen-sum-changed").textContent = entry.run.changedLine;
+    document.getElementById("gen-sum-output").textContent = entry.run.outputLine;
+    document.getElementById("gen-sum-steps").textContent = entry.run.stepsLine;
+    document.getElementById("gen-sum-why").textContent = entry.run.whyLine;
+
+    var mapBox = document.getElementById("gen-map");
+    var listEl = document.getElementById("gen-step-list");
+    var steps = entry.run.steps || [];
+    mapBox.hidden = (steps.length === 0);
+    var mapBoxes = document.getElementById("gen-map-boxes");
+    mapBoxes.innerHTML = "";
+    listEl.innerHTML = "";
+    steps.forEach(function(s, i){
+      var borderCol = s.badge === "done" ? "var(--green)" : (s.badge === "stopped" ? "var(--red)" : "var(--border-strong)");
+      var box2 = document.createElement("div");
+      box2.style.cssText = "flex:1;min-width:150px;border:1px solid " + borderCol + ";padding:8px;font-size:12px;";
+      box2.innerHTML = '<b>' + (i + 1) + ' ' + s.title + '</b><br><span class="badge ' + s.badgeClass + '">' + s.badge + '</span>';
+      mapBoxes.appendChild(box2);
+
+      var card = document.createElement("div");
+      card.className = "step-card";
+      var evHtml = "";
+      if(s.events && s.events.length){
+        evHtml = '<div class="events">' + s.events.map(function(e){ return '<div>› ' + e + '</div>'; }).join("") + '</div>';
+      }
+      card.innerHTML =
+        '<div class="step-head"><h4>' + (i + 1) + ' · ' + s.title + '</h4><span class="badge ' + s.badgeClass + '">' + s.badge + '</span></div>' +
+        '<div class="step-meta">' + s.meta + '</div>' + evHtml;
+      listEl.appendChild(card);
+    });
+
+    var actionsEl = document.getElementById("gen-actions");
+    if(entry.imported){
+      actionsEl.innerHTML = '<div class="hint">imported record — view only, no actions</div>';
+    } else {
+      actionsEl.innerHTML =
+        '<button class="btn" id="gen-btn-rerun">Rerun</button>' +
+        '<button class="btn" id="gen-btn-replay">Replay $0</button>';
+      document.getElementById("gen-btn-rerun").addEventListener("click", function(){
+        alert("Rerun — wireframe stub.");
+      });
+      document.getElementById("gen-btn-replay").addEventListener("click", function(){
+        alert("Replay $0 — wireframe stub, plays back the recording only.");
+      });
+    }
+
+    if(entry.run.audit && entry.run.audit.length){
+      renderAuditRows(entry.run.audit, entry.run.rawLog);
+    } else {
+      renderAuditEmpty(entry.imported ? "no logs — imported, view only" : "no logs recorded");
+    }
+  }
+
+  function renderEmptyRun(){
+    runFixtypesView.hidden = true;
+    runGenericView.hidden = true;
+    runEmptyView.hidden = false;
+    renderAuditEmpty("no logs — not run yet");
+  }
+
+  function setHeader(name, dotClassStr, badgeText){
+    activeName.textContent = name;
+    activeDot.className = dotClassStr;
+    activeVerdict.textContent = badgeText;
+  }
+
+  function clearRowSelection(){
+    wfRows.forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
+    histRows.forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
+  }
+
+  function selectWorkflow(key){
+    var d = wfData[key];
+    if(!d) return;
+    clearRowSelection();
+    var row = document.querySelector('.wf-row[data-wf="' + key + '"]');
+    if(row){ row.classList.add("selected"); row.setAttribute("aria-pressed","true"); }
+
+    setHeader(key, "dot " + d.statusClass + (d.statusClass === "amber" ? " pulse" : ""), verdictLabel(d.verdict));
+
+    if(key === "fix-types"){
+      runGenericView.hidden = true;
+      runEmptyView.hidden = true;
+      runFixtypesView.hidden = false;
+      applyRunState("running");
+      renderAuditRows(auditFixTypesRows, auditFixTypesRawLog);
+    } else if(d.runs.length === 0){
+      renderEmptyRun();
+    } else {
+      renderGenericRun(histData[d.runs[0].histId]);
+    }
+
+    renderDetails("Job card — signed " + key, d,
+      d.runs.map(function(r){ return {histId:r.histId, ok:r.ok, date:r.date, spend:r.spend, time:r.time}; }),
+      null);
+  }
+
+  function selectHistory(id){
+    var h = histData[id];
+    if(!h) return;
+    clearRowSelection();
+    var row = document.querySelector('[data-testid="hist-row-' + id + '"]');
+    if(row){ row.classList.add("selected"); row.setAttribute("aria-pressed","true"); }
+
+    setHeader(h.wfName, h.dotClass, h.date);
+
+    if(id === "fix-types-prior"){
+      runGenericView.hidden = true;
+      runEmptyView.hidden = true;
+      runFixtypesView.hidden = false;
+      applyRunState("red");
+      renderAuditRows(auditFixTypesRows, auditFixTypesRawLog);
+    } else {
+      renderGenericRun(h);
+    }
+
+    renderDetails("Job card — signed " + h.wfName, h.job,
+      [{histId:id, ok:h.ok, date:h.date, spend:h.spend, time:h.elapsed}],
+      id);
+  }
+
   wfRows.forEach(function(row){
     row.addEventListener("click", function(){
-      wfRows.forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
-      row.classList.add("selected");
-      row.setAttribute("aria-pressed","true");
-      var key = row.getAttribute("data-wf");
-      var d = wfData[key];
-      activeName.textContent = key;
-      if(d){
-        activeVerdict.textContent = verdictLabel(d.verdict);
-        activeDot.className = "dot " + d.statusClass + (d.statusClass === "amber" ? " pulse" : "");
-      }
+      selectWorkflow(row.getAttribute("data-wf"));
+      document.getElementById("tab-run").click();
+    });
+    row.addEventListener("keydown", function(e){
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); }
+    });
+  });
+
+  // History rows — clicking anywhere in the row (including the Open button, since its click
+  // bubbles up here) does the same full render as a Workflows row click.
+  histRows.forEach(function(row){
+    row.addEventListener("click", function(){
+      var id = row.getAttribute("data-testid").replace("hist-row-", "");
+      selectHistory(id);
+      document.getElementById("tab-run").click();
     });
     row.addEventListener("keydown", function(e){
       if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); }
@@ -1255,53 +1734,7 @@
     });
   });
 
-  // Open workflow -> Details tab: signed job card, READ-ONLY (no Sign/Revise, nothing editable),
-  // plus that workflow's past runs. Does NOT stopPropagation, so the click also bubbles to the
-  // row's own listener below and selects the row (same accent-border selection as clicking it).
-  document.querySelectorAll("[data-testid^='wf-open-']").forEach(function(btn){
-    btn.addEventListener("click", function(){
-      var row = btn.closest(".wf-row");
-      var key = row.getAttribute("data-wf");
-      var d = wfData[key];
-      if(!d) return;
-
-      document.getElementById("details-title").textContent = "Job card — signed " + key;
-      document.getElementById("details-verdict").textContent = verdictLabel(d.verdict);
-      document.getElementById("details-model").textContent = d.model;
-      document.getElementById("details-goal").textContent = d.goal;
-      document.getElementById("details-source").textContent = d.source;
-      document.getElementById("details-dest").textContent = d.dest;
-      document.getElementById("details-success").textContent = d.success;
-      document.getElementById("details-guardrails").textContent = d.guardrails;
-      document.getElementById("details-cap-money").textContent = "$" + d.money;
-      document.getElementById("details-cap-time").textContent = d.time;
-
-      var runsEl = document.getElementById("details-runs");
-      runsEl.innerHTML = "";
-      var runs = d.runs || [];
-      if(runs.length === 0){
-        var empty = document.createElement("div");
-        empty.className = "hint";
-        empty.textContent = "no past runs yet";
-        runsEl.appendChild(empty);
-      } else {
-        runs.forEach(function(r){
-          var rowEl = document.createElement("div");
-          rowEl.className = "wf-past-run";
-          rowEl.innerHTML =
-            '<span class="badge ' + (r.ok ? "green" : "red") + '">' + (r.ok ? "✓" : "✗") + '</span>' +
-            '<span class="wf-meta">' + r.date + '</span>' +
-            '<span class="wf-meta">$' + r.spend + '</span>' +
-            '<span class="wf-meta">' + r.time + '</span>';
-          runsEl.appendChild(rowEl);
-        });
-      }
-
-      document.getElementById("tab-details").click();
-    });
-  });
-
-  // live-ish counters (fake)
+  // live-ish counters (fake) — only ticks while fix-types' own live view is the one showing
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var turn = 14, elapsedSec = 6*60+12, spend = 0.41;
   var turnEl = document.getElementById("ctr-turn");
@@ -1335,26 +1768,6 @@
     }, 1000);
   }
 
-  // audit filter chips
-  var chips = document.querySelectorAll(".chip");
-  var auditRows = document.querySelectorAll("#audit-tbody tr");
-  chips.forEach(function(chip){
-    chip.addEventListener("click", function(){
-      chips.forEach(function(c){ c.setAttribute("aria-pressed","false"); });
-      chip.setAttribute("aria-pressed","true");
-      var f = chip.getAttribute("data-filter");
-      auditRows.forEach(function(row){
-        if(f === "all"){ row.style.display = ""; }
-        else if(f === "write"){ row.style.display = row.classList.contains("row-write") ? "" : "none"; }
-        else if(f === "blocked"){ row.style.display = row.classList.contains("row-blocked") ? "" : "none"; }
-      });
-    });
-  });
-
-  document.getElementById("btn-download-log").addEventListener("click", function(){
-    alert("Download log — wireframe stub, no file produced.");
-  });
-
   // sign/revise buttons
   document.getElementById("sign-run-btn").addEventListener("click", function(){
     alert("Sign & run — wireframe stub. This click is the only thing that signs.");
@@ -1363,7 +1776,7 @@
     alert("Revise — wireframe stub. 1 round left.");
   });
 
-  // action bar buttons (Pause/Replay stubs)
+  // action bar buttons (Pause/Replay stubs) — fix-types view only
   document.getElementById("btn-pause").addEventListener("click", function(){
     running = false;
     alert("Paused — wireframe stub.");
@@ -1372,7 +1785,7 @@
     alert("Replay $0 — wireframe stub, plays back the recording only.");
   });
 
-  // simulate run-ended toggles (running / green / red) — drives the after-run summary
+  // simulate run-ended toggles (running / green / red) — drives fix-types' after-run summary
   // (internal state names stay "green"/"red"; nothing derived from them is shown as that word)
   var runState = "running";
   var simGreenBtn = document.getElementById("simulate-toggle");
@@ -1489,50 +1902,6 @@
     applyRunState(runState === "red" ? "running" : "red");
   });
 
-  // History -> Open: switch the right pane to that run in its ended state (red dot -> red fixture, else green)
-  document.getElementById("history-list").addEventListener("click", function(e){
-    var btn = e.target.closest("button");
-    if(!btn || btn.textContent.trim() !== "Open") return;
-    var row = btn.closest(".hist-row");
-    if(!row) return;
-    var name = row.querySelector(".wf-name").firstChild.textContent.trim();
-    var isRed = !!row.querySelector(".dot.red");
-    var rowVerdictLabel = row.querySelector(".wf-meta").textContent.trim();
-    document.getElementById("active-wf-name").textContent = name;
-    document.getElementById("active-wf-verdict").textContent = rowVerdictLabel;
-    document.getElementById("tab-run").click();
-    applyRunState(isRed ? "red" : "green");
-  });
-
-  // History row selection — same "selected" look and one-per-list rule as Workflows rows.
-  // Clicking anywhere in the row selects it (including the Open/Replay buttons, since a
-  // click on a button still bubbles up to this row-level listener).
-  var histRows = document.querySelectorAll(".hist-row");
-  histRows.forEach(function(row){
-    row.addEventListener("click", function(){
-      histRows.forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
-      row.classList.add("selected");
-      row.setAttribute("aria-pressed","true");
-    });
-    row.addEventListener("keydown", function(e){
-      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); }
-    });
-  });
-
-  // verification convenience: ?state=green|red|hist-red drives the Run tab into that state on load
-  // (design-lab only, not part of the product surface)
-  (function(){
-    var m = /[?&]state=(green|red|hist-red)/.exec(location.search);
-    if(!m) return;
-    if(m[1] === "hist-red"){
-      document.getElementById("tab-history").click();
-      var row = document.querySelector('[data-testid="hist-row-fix-types-prior"] button');
-      if(row) row.click();
-    } else {
-      applyRunState(m[1]);
-    }
-  })();
-
   document.getElementById("btn-accept").addEventListener("click", function(){
     alert("Accept — wireframe stub.");
   });
@@ -1543,6 +1912,23 @@
   document.getElementById("wf-import").addEventListener("click", function(){
     alert("Import — wireframe stub.");
   });
+
+  // default selection on load: fix-types' live run (matches the static markup's initial state)
+  selectWorkflow("fix-types");
+
+  // verification convenience: ?state=green|red|hist-red drives the Run tab into that state on load
+  // (design-lab only, not part of the product surface)
+  (function(){
+    var m = /[?&]state=(green|red|hist-red)/.exec(location.search);
+    if(!m) return;
+    if(m[1] === "hist-red"){
+      document.getElementById("tab-history").click();
+      selectHistory("fix-types-prior");
+      document.getElementById("tab-run").click();
+    } else {
+      applyRunState(m[1]);
+    }
+  })();
 
   // Settings view open/close
   var mainView = document.getElementById("main-view");
