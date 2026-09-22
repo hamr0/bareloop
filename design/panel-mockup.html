@@ -195,7 +195,7 @@
   .radio-row{display:flex;gap:14px;align-items:center;margin-bottom:10px;}
   .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;}
 
-  .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);border-radius:0;background:var(--panel2);color:var(--text);}
+  .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);border-radius:0;background:var(--panel2);color:var(--text);white-space:nowrap;flex:none;}
   .btn:hover:not(:disabled){background:var(--panel2);border-color:var(--accent);}
   .btn:disabled{color:var(--text-faint);border-color:var(--border);cursor:not-allowed;}
   .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700;}
@@ -328,8 +328,9 @@
 
   /* provider table (columns, not cards) — dotted column separators */
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);border-radius:0;background:var(--panel2);max-width:100%;}
-  .table-wrap table{min-width:920px;}
-  .table-wrap td{vertical-align:top;}
+  .table-wrap table{min-width:1100px;table-layout:auto;}
+  .table-wrap th{white-space:nowrap;}
+  .table-wrap td{vertical-align:top;white-space:nowrap;}
   .cell-input{width:100%;min-width:90px;height:32px;padding:0 6px;font-size:12px;box-sizing:border-box;}
   .cell-input-narrow{width:80px;min-width:80px;}
   /* row controls (input/select/button) share one 32px line; status text drops to its own dim line below */
@@ -339,6 +340,8 @@
   td .hint{margin-top:2px;white-space:nowrap;}
   td.row-actions{white-space:nowrap;}
   td.row-actions .btn{margin-bottom:2px;}
+  /* input+button pairs in one cell (e.g. balance save) stay on one 32px line, never wrap */
+  .cell-inline{display:flex;align-items:center;gap:4px;white-space:nowrap;}
 
   /* responsive */
   @media (max-width: 899px){
@@ -864,7 +867,7 @@
 
         <div class="keyfile-strip" data-testid="keyfile-box">
           <div class="keyfile-strip-main">
-            <span>Keys live in one file: <code>~/.config/bareloop/.env</code> (outside any repo — can't be committed). Variables: <code>DEEPSEEK_API_KEY</code>, <code>ANTHROPIC_API_KEY</code></span>
+            <span>Add a line <code>NAME=key</code> to <code>~/.config/bareloop/.env</code>, then Reload keys — the name appears in the dropdown. Only names are listed; keys never reach this page.</span>
             <span class="hint" data-testid="keyfile-warning">⚠ file is readable by other users — run: chmod 600 ~/.config/bareloop/.env</span>
           </div>
           <div class="keyfile-strip-actions">
@@ -898,7 +901,12 @@
                 </td>
                 <td><input class="cell-input" id="pv-ds-url" type="text" value="https://api.deepseek.com"></td>
                 <td>
-                  <input class="cell-input" id="pv-ds-env" type="text" value="DEEPSEEK_API_KEY">
+                  <select class="cell-input" id="pv-ds-env">
+                    <option selected>DEEPSEEK_API_KEY</option>
+                    <option>ANTHROPIC_API_KEY</option>
+                    <option>GEMINI_API_KEY (empty)</option>
+                    <option>none needed</option>
+                  </select>
                   <div class="hint">found in file ✓</div>
                 </td>
                 <td>
@@ -926,7 +934,12 @@
                 </td>
                 <td><input class="cell-input" id="pv-an-url" type="text" value="https://api.anthropic.com"></td>
                 <td>
-                  <input class="cell-input" id="pv-an-env" type="text" value="ANTHROPIC_API_KEY">
+                  <select class="cell-input" id="pv-an-env">
+                    <option>DEEPSEEK_API_KEY</option>
+                    <option selected>ANTHROPIC_API_KEY</option>
+                    <option>GEMINI_API_KEY (empty)</option>
+                    <option>none needed</option>
+                  </select>
                   <div class="hint">not set ✗</div>
                 </td>
                 <td>
@@ -935,8 +948,10 @@
                 </td>
                 <td>2.1M</td>
                 <td>
-                  <input class="cell-input cell-input-narrow" id="pv-an-balance" type="text" placeholder="e.g. 25.00">
-                  <button class="btn small" id="save-anthropic-balance" data-testid="save-anthropic-balance">Save</button>
+                  <span class="cell-inline">
+                    <input class="cell-input cell-input-narrow" id="pv-an-balance" type="text" placeholder="e.g. 25.00">
+                    <button class="btn small" id="save-anthropic-balance" data-testid="save-anthropic-balance">Save</button>
+                  </span>
                 </td>
                 <td>est.</td>
                 <td class="row-actions">
@@ -957,7 +972,12 @@
                 </td>
                 <td><input class="cell-input" id="pv-ll-url" type="text" value="http://127.0.0.1:11434"></td>
                 <td>
-                  <input class="cell-input" id="pv-ll-env" type="text" value="none needed" disabled>
+                  <select class="cell-input" id="pv-ll-env">
+                    <option>DEEPSEEK_API_KEY</option>
+                    <option>ANTHROPIC_API_KEY</option>
+                    <option>GEMINI_API_KEY (empty)</option>
+                    <option selected>none needed</option>
+                  </select>
                 </td>
                 <td>
                   <button class="btn small" id="test-connection-local-llama" data-testid="test-connection-local-llama">Test</button>
@@ -1408,7 +1428,7 @@
       '<td><input class="cell-input" type="text" placeholder="Provider name"></td>' +
       '<td><select class="cell-input"><option>OpenAI-compatible</option><option>Anthropic</option><option>Gemini</option><option>Ollama (llama)</option></select></td>' +
       '<td><input class="cell-input" type="text" placeholder="https://…"></td>' +
-      '<td><input class="cell-input" type="text" placeholder="SOME_API_KEY"><div class="hint">not set ✗</div></td>' +
+      '<td><select class="cell-input"><option>DEEPSEEK_API_KEY</option><option>ANTHROPIC_API_KEY</option><option>GEMINI_API_KEY (empty)</option><option>none needed</option></select><div class="hint">not set ✗</div></td>' +
       '<td><button class="btn small">Test</button><div class="hint">not tested</div></td>' +
       '<td>0</td>' +
       '<td>—</td>' +
