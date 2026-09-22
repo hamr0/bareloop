@@ -541,11 +541,13 @@
             </div>
 
             <div class="wf-row" data-wf="doc-comments" data-testid="wf-row-doc-comments" tabindex="0" role="button" aria-pressed="false">
-              <span class="dot grey"></span>
+              <span class="dot green"></span>
               <span class="wf-name">doc-comments</span>
               <span class="row-break"></span>
               <span class="wf-meta">rubric</span>
-              <span class="wf-meta">not run yet</span>
+              <span class="wf-meta">$0.31 / $1.00</span>
+              <span class="wf-meta">2m 15s</span>
+              <span class="wf-meta">2026-09-18</span>
               <span class="wf-row-actions">
                 <button class="btn small" data-testid="wf-edit-doc-comments">Edit</button>
                 <button class="btn small" data-testid="wf-export-doc-comments">Export</button>
@@ -577,6 +579,18 @@
               <span class="wf-row-actions">
                 <button class="btn small" data-testid="wf-edit-lint-sweep">Edit</button>
                 <button class="btn small" data-testid="wf-export-lint-sweep">Export</button>
+              </span>
+            </div>
+
+            <div class="wf-row" data-wf="weekly-digest" data-testid="wf-row-weekly-digest" tabindex="0" role="button" aria-pressed="false">
+              <span class="dot grey"></span>
+              <span class="wf-name">weekly-digest</span>
+              <span class="row-break"></span>
+              <span class="wf-meta">rubric</span>
+              <span class="wf-meta">not run yet</span>
+              <span class="wf-row-actions">
+                <button class="btn small" data-testid="wf-edit-weekly-digest">Edit</button>
+                <button class="btn small" data-testid="wf-export-weekly-digest">Export</button>
               </span>
             </div>
           </div>
@@ -614,7 +628,7 @@
             </div>
 
             <div class="hist-row" data-testid="hist-row-doc-comments-prior" tabindex="0" role="button" aria-pressed="false">
-              <span class="dot amber"></span>
+              <span class="dot green"></span>
               <span class="wf-name">doc-comments</span>
               <span class="row-break"></span>
               <span class="wf-meta">rubric</span>
@@ -1225,14 +1239,14 @@
       runs:[
         {histId:"fix-types-prior", ok:false, date:"2026-09-19", spend:"1.84", time:"21m 10s"}
       ]},
-    "doc-comments": {verdict:"soft-green", status:"not-run", statusClass:"grey",
+    "doc-comments": {verdict:"soft-green", status:"done", statusClass:"green",
       goal:"Add missing doc comments to exported functions in src/",
       source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
       success:"every exported function has a doc comment",
       guardrails:"no logic changes, comments only", money:"1.00", time:"15 min", model:"deepseek-flash",
-      // never run under the current signed version — the "doc-comments-prior" History row
-      // below is a leftover from an earlier signature and is not part of this job's own record.
-      runs:[]},
+      runs:[
+        {histId:"doc-comments-prior", ok:true, date:"2026-09-18", spend:"0.31", time:"2m 15s"}
+      ]},
     "release-notes": {verdict:"green", status:"done", statusClass:"green",
       goal:"Draft release notes from the merged PRs since the last tag",
       source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
@@ -1248,7 +1262,14 @@
       guardrails:"no manual rule disables", money:"1.00", time:"10 min", model:"deepseek-flash",
       runs:[
         {histId:"lint-sweep-prior", ok:true, date:"2026-09-17", spend:"0.12", time:"0m 51s"}
-      ]}
+      ]},
+    // never run, no History entry either — kept as the concrete "never run yet" proof
+    "weekly-digest": {verdict:"soft-green", status:"not-run", statusClass:"grey",
+      goal:"Summarize this week's merged PRs and opened issues into a digest",
+      source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
+      success:"digest.md written, covers PRs and issues opened this week",
+      guardrails:"docs only, no source edits", money:"0.75", time:"10 min", model:"deepseek-flash",
+      runs:[]}
   };
 
   // fix-types' original static audit fixture (unchanged content), now populated via JS instead
@@ -1317,8 +1338,8 @@
       }
     },
     "doc-comments-prior": {
-      wfName:"doc-comments", verdict:"soft-green", dotClass:"dot amber", date:"2026-09-18",
-      spend:"0.31", cap:"1.00", elapsed:"2m 15s", turns:9, ok:"soft",
+      wfName:"doc-comments", verdict:"soft-green", dotClass:"dot green", date:"2026-09-18",
+      spend:"0.31", cap:"1.00", elapsed:"2m 15s", turns:9, ok:true,
       job:{goal:"Add missing doc comments to exported functions in src/",
         source:"~/code/bareguard (copy)", dest:"~/code/bareguard-out",
         success:"every exported function has a doc comment",
@@ -1333,7 +1354,7 @@
           {title:"Scan exported functions", meta:"list exports across src/ · 3 turns · 0m 20s · $0.03", badge:"done", badgeClass:"green"},
           {title:"Draft doc comments", meta:"write comments for 6 exports · 5 turns · 1m 30s · $0.22", badge:"done", badgeClass:"green",
             events:["read src/index.js","added 6 doc comments"]},
-          {title:"Verify coverage", meta:"rubric judge checks all 6 are covered · 1 turn · 0m 25s · $0.06", badge:"done", badgeClass:"amber"}
+          {title:"Verify coverage", meta:"rubric judge checks all 6 are covered · 1 turn · 0m 25s · $0.06", badge:"done", badgeClass:"green"}
         ],
         audit:[
           {time:"14:02:01", action:"read", path:"src/index.js", step:1},
