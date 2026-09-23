@@ -77,7 +77,8 @@ Three layers, product form:
   revision is allowed in production runs (it recovers runs and its learning is captured by law #2)
   but disabled in claim/analytics cohorts (law #6).
 - **Floor:** an append-only JSONL spine (the single source for every UI), a litectx store per job,
-  and a ledger with per-run rows. The panel is a pure observer of the spine. Secrets load from the
+  and a ledger with per-run rows. The panel is a pure observer of the spine — superseded, see
+  Addendum v1.84. Secrets load from the
   environment and never enter the spine, configs, or ledger — an append-only record that captures
   a key captures it forever.
 
@@ -1207,3 +1208,45 @@ instrument that reads whether the loop recovers without it. It is re-weighed on 
 number, not before. This principle sits beside, not above, §3's design laws: the arbiter's
 rails (close, budget, fence, merge) are never on this scale — they are the floor, not an
 optimization.
+
+
+### The panel starts and runs workflows; §4's "pure observer" is superseded (v1.84 — 2026-09-23)
+
+hamr's scope interview for the panel (N6), recorded in full at
+`.claude/stash/2026-09-22-panel-design-settled.md`: the panel is where he runs and starts
+workflows, his management panel and observability surface — fills a job's requirements,
+watches it live, replays at $0, browses previous runs, imports a run view-only, and holds
+Settings. **§4's line "the panel is a pure observer of the spine" is SUPERSEDED.** The panel
+starts and runs workflows, authors jobs through the interview, and holds settings. It is still
+never an arbiter — it never signs, never accepts, never changes a budget; only hamr's own
+click signs, merge stays human, and every budget/verdict check still runs inside the library
+exactly as it does for the CLI today (`docs/product/PANEL-BUILD.md` §5, "the arbiter's hard
+lines"). A pointer is added inline at §4's own line; the original prose stands otherwise
+untouched.
+
+**Ollama is re-admitted** to the provider table, reversing item 31.3's 2026-09-09 ruling
+("anthropic, openai, gemini — drop ollama for now"). Item 31.3's own closed text is left
+untouched; the reversal lives here. Re-admission answers item 31.3's own named hazard — Ollama
+has no key and no bill, so every round through it prices at $0 through machinery that trusts a
+price — by requiring Ollama's price always show as **estimated, never $0** in the panel's
+Settings/providers table (the same estimated-price sign the panel already gives any provider
+with no live price feed).
+
+**The UI wording ruling** (`docs/product/PANEL-BUILD.md` §6, from the 2026-09-22/23 mockup
+sessions): a run's check type is shown as `Check type` with value `deterministic` (internal
+hard green) or `rubric` (internal soft green); a run's result is shown ONLY as a glyph —
+`[✓]` passed, `[✗]` failed, `[▶]` running, `[·]` waiting. The internal colour words
+green/red/soft-green are never shown anywhere in the panel.
+
+**The keys file:** provider API keys live at `~/.config/bareloop/.env`, outside any repo
+tree, with a chmod 600 warning shown in Settings. The panel's server reads this file; the page
+itself only ever sees key variable NAMES and a found/not-set state, never a value — a job
+spec's "key variable" field is a dropdown populated from the names in that file, never free
+text. This is the panel's form of the standing secrets hard line (§1: secrets load from the
+environment; they never enter the tree, the spine, the configs, or the ledger).
+
+**The layering law:** panel HTTP handlers call the same `src/` library functions
+`src/cli.js` commands call — one source, each layer calls the next inward, the panel adds no
+logic of its own. The panel is built per `docs/product/PANEL-BUILD.md`, which holds the
+measured gap between today's code and a panel and the rung-by-rung build plan (each rung its
+own exit condition, per the build-ladder discipline this PRD already holds at §1).

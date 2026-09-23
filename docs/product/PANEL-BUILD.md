@@ -1,0 +1,235 @@
+---
+type: reference
+title: "Panel (N6) build — layering, the gap, and the rungs"
+status: active
+sources: [docs/product/PRD.md]
+---
+
+# Panel (N6) build
+
+The build plan for PRD item N6, the panel (§10 build order; superseded routing per PRD
+addendum v1.84 below). The PRD holds the rulings; this file holds the layering law, the
+measured gap between today's code and a panel, and the milestones each with its own exit
+condition. Branch: TBD (opened when P0 starts). Builders are sonnet (strict pin); every rung
+lands green on its own before the next starts.
+
+## 1. What the panel is
+
+From hamr's scope interview (`.claude/stash/2026-09-22-panel-design-settled.md`): the panel is
+where hamr runs and starts workflows — his management panel and observability surface. He
+fills the job's requirements (provider/token price, check type, time cap, money cap, up to two
+review rounds plus a confirm turn) and, once a run is signed and firing, watches it live: turn,
+elapsed time, glyph per step, step descriptions, and where a stuck run got to. It shows audit
+traces, supports replaying a past run at $0, lists previous runs, and can import a run (bundle
+and run record) for view-only inspection. It handles multiple workflows at once and runs at
+127.0.0.1 (localhost) only — no LAN, no phone access (parked). It is lightweight JS with a
+workflow map in the codegraph style (plain step boxes, not a text-only timeline).
+
+## 2. The layering law
+
+**hamr's ruling, option A — one source, each layer calls the next:**
+
+> `src/` library function → `src/cli.js` command → panel HTTP handler.
+
+Each layer calls the one inward of it. The library functions in `src/` are the single source
+of truth for every flow; `src/cli.js` commands are the CLI's own callers of those functions
+(the same shape `bin/bareloop.mjs` already is over `src/cli.js` — a thin ~10-line adapter
+that supplies real deps and turns an exit code into `process.exitCode`, never re-implementing
+anything `src/cli.js` does). The panel's HTTP server is one more caller in that same chain: it
+calls the same library functions `src/cli.js` calls (directly, in-process — never by shelling
+out to a script or another CLI invocation), and it never re-implements arbiter or flow logic
+of its own.
+
+**Consequence, stated as a gate:** a flow with no CLI command is not ready for the panel. If
+the panel needs a flow that only exists today as inline logic in a `scripts/*.mjs` file, that
+logic moves into `src/` and gets a `bareloop <command>` FIRST (rung P0, below) — the panel
+never reaches past `src/cli.js` into a script.
+
+This is also hamr's answer on where the panel lives: inside the bareloop package itself
+(no separate process wired by IPC, no new dependency to talk to a sibling server) — the panel
+HTTP handler is one more file in this same codebase, requiring nothing `src/cli.js` doesn't
+already require.
+
+## 3. The gap, measured
+
+Verified this session (2026-09-23) against the actual source, not restated from memory.
+
+| Flow the panel needs | Where the logic lives today | CLI command today? |
+|---|---|---|
+| Export a job spec to a bundle | `src/bundle.js` (`exportBundle`, exported from `src/index.js`) | Yes — `bareloop export` (`src/cli.js:doExport`) |
+| Run a signed bundle against a repo | `src/run.js` (`runJob`) + `src/bundle.js` (bundle read/bless/envelope) | Yes — `bareloop run` (`src/cli.js:doRun`) |
+| List a bundle's history + bridges | `src/index.js` (`loadRegistry`, `listingRow`) + `history.jsonl` | Yes — `bareloop history` (`src/cli.js:doHistory`) |
+| **The interview** — the ENTRY GATE for a new job (source/destination, goal, guardrails, check type, judge examples, confirm turn) | `scripts/run-interview.mjs` (**764 lines**, verified `wc -l`); imports `validateJob`/`validateBaseUrl`/`PROVIDERS` from `src/job.js`, `resolveProvider`/`probeWarningLines`/`apiKeyProblem` from `src/providers.js`, `scanSecrets`/`redactSecrets` from `src/validate.js`, `detectLanguage` from `src/detectlang.js`, `prepareSource`/`proveDestination`/`looksLikeRepoSource`/`missingDependencies` from `src/source.js` — a REPO SCRIPT orchestrating library calls, not itself a library module | **No** — repo script only, no `bareloop` subcommand |
+| **Authoring** — draft/revise/sign a job spec from interview answers | `scripts/run-author.mjs` (**1182 lines**, verified `wc -l`); imports `defaultJudgeLoop`/`resolveJobJudge` from `src/judged.js`, `validateJob`/`jobSpecHash`/`resolveWorkerModel` from `src/job.js`, `closeJudges`/`GATE_AUDIT_FILE` from `src/kinds.js`, `resolveProvider`/`buildRunnerProviders`/`apiKeyProblem` from `src/providers.js`, `readSourceManifest`/`missingDependencies` from `src/source.js` — again a REPO SCRIPT, not a library module | **No** |
+| **Person-path run** — the full run-a-job flow (resume, pause, review door, replay) | `scripts/run-u.mjs` (**1992 lines**, verified `wc -l`); imports `runJob` from `src/run.js`, plus `src/job.js`, `src/readshim.js`, `src/plan.js`, `src/closetimeout.js`, `src/spine.js`, `src/source.js`, `src/validate.js`, `src/behaviour.js`, `src/kinds.js`, `src/judged.js`, `src/reuse.js`, `src/providers.js`, `src/bridges.js`, `src/declaredclose.js`, `src/reviewdoor.js`; also imports `scripts/u-patient.mjs` and `scripts/u-readout.mjs` (script-local helpers) | **No** |
+| Replay an archived run at $0 | `src/replay.js` (`replayRun`, `formatReplay`), exported from `src/index.js` | **No** — no `bareloop replay` |
+| Read the spine for History/Run/Audit tabs | `src/spine.js` (`makeSpine`, the one writer) + raw `spine.jsonl` per run, read directly by every consumer today (`src/cli.js:doRun` reads it with `readFileSync`/`JSON.parse` inline) | **No** dedicated read command — every consumer re-parses the file itself |
+| Gate-audit trail for the Audit tab | `gate-audit.jsonl`, relocated per run by `src/cli.js:doRun` (bundle path) or `scripts/run-u.mjs`/`scripts/u-patient.mjs` (person path) — no library reader | **No** |
+
+**The entry gate for a new job is the interview** (`scripts/run-interview.mjs`) — hamr's own
+words point here: *"on all scripts, they should have had cli, shouldn't they?"* Every flow in
+the table above the CLI already has (export/run/history) stays as-is; every flow below it
+(interview, author, person-path run, replay, and the two read paths the panel's tabs need)
+is the P0 gap.
+
+## 4. Rungs
+
+A rung that cannot meet its exit stops the ladder (PRD build-ladder discipline, §1 hard lines);
+the stop is a result, never widened to force a green.
+
+### P0 — one source
+
+Lift the interview/author/person-path-run logic out of `scripts/run-interview.mjs`,
+`scripts/run-author.mjs`, and `scripts/run-u.mjs` into `src/` library functions, each callable
+in-process with an injectable `deps` object (the same test seam `src/cli.js`'s `main(argv,
+deps)` already uses — `deps.provider` etc. skip the real-key check for tests). Give each flow a
+real `bareloop <command>` in `src/cli.js`:
+- `bareloop interview` — wraps the library form of `run-interview`'s flow.
+- `bareloop author` — wraps the library form of `run-author`'s flow.
+- `bareloop run-u` (or the equivalent verb hamr picks at build time) — wraps the person-path
+  run flow `run-u.mjs` currently owns end to end (resume, pause, review door, replay call-in).
+- A read-side library function per spine/gate-audit consumer the panel's tabs need (History,
+  Run, Audit, Job), so the panel never hand-rolls its own `JSON.parse` over `spine.jsonl`
+  the way `src/cli.js:doRun`'s own tail-read currently does either — this rung also gives that
+  inline read a named library function.
+
+`scripts/*.mjs` reduce to thin adapters over the library, the same ~10-line shape
+`bin/bareloop.mjs` already is over `src/cli.js` (parse argv, supply real deps, print, set
+`process.exitCode`) — never re-implementing the flow itself.
+
+Also folds in the standing cleanup this session verified live: `scripts/run-author.mjs` has
+**6 real `process.exit()` calls** (lines 96, 288, 326, 412, 419, 956 — re-counted this session;
+the 2026-09-15 stash's "12" figure had drifted, three of the grep's earlier hits were comment
+lines, not calls) and **7 `emit('author-end', …)` sites** (lines 558, 720, 859, 916, 1077,
+1096, 1131), all needing one ending-owner once the flow moves into `src/` — a single library
+function shouldn't have nine different exit paths written by hand at different points in a
+1182-line script.
+
+**Exit:** every panel-needed flow (interview, author, person-path run, replay, spine read,
+gate-audit read) is a library function in `src/` with a `bareloop` CLI command over it; full
+suite green; the old `scripts/*.mjs` entry points still work, now calling through the new
+library seam instead of holding the logic themselves.
+
+### P1 — read-only panel
+
+A `node:http` server (`node:http` only — no new dependency; the one-production-dependency bar
+from `LIBRARY_CONVENTIONS.md` already spends its one slot on `bare-agent`), default port
+**4700**, bound to `127.0.0.1` only. Serves the mockup's History, Run, Audit, and Job tabs from
+REAL archived spine records (via the P0 read functions) — no fabricated/sample data. Nothing on
+this rung can spend a cent: no interview, no author, no run trigger, no key ever read.
+
+**Port 4700, checked this session:** `/etc/services` on this machine lists `4700` as
+`netxms-agent` (NetXMS monitoring agent, TCP+UDP) — not one of the commonly-collided dev ports
+(3000, 5000, 5173, 8000, 8080, 8888, 9000 are all in heavier everyday use); `ss -ltn` showed no
+live listener on 4700 on this machine at check time. Reasonable default; not guaranteed
+collision-free on every machine, so the server should still fail loudly (not silently pick
+another port) if 4700 is taken.
+
+**Exit:** a real past run renders end to end in the panel, matching the mockup's exact wording
+and glyphs (`design/panel-mockup.html` — see §6 below for what "matching" means).
+
+### P2 — live run view
+
+2-second polling (hamr: *"2s sounds good, no rush in publish progress, 2s sounds enough if map
+will update, and panel is well connected"* — not SSE). The step map, step cards, counters line,
+and the always-visible summary box update on each poll while a run is live.
+
+**Exit:** a real live run is watched start to finish in the panel.
+
+### P3 — chat / authoring
+
+Left pane: review round message, job card, chat thread, `[Send] [Sign & run] [Revise]` (per
+the settled job-card field order and button set, §6). This is where P0's `bareloop interview`
+and `bareloop author` commands get an HTTP face — the chat turns hamr's replies into the same
+library calls the CLI's interactive flow already makes; it adds no authoring logic that isn't
+already in `src/`.
+
+**Exit:** a job is authored and signed from the page alone, end to end.
+
+### P4 — Settings
+
+Providers table (name, API shape, base URL, key variable, test, tokens used, balance, price,
+edit/remove) and Money & Limits tab (total spent, this month, monthly $ limit, monthly time
+limit, per-provider breakdown), per the 2026-09-22 stash's Settings decisions.
+
+**Exit:** per the 2026-09-22 stash's Settings decisions (Ollama re-admitted with an estimated
+price shown, never $0; keys file wired per §5 below).
+
+## 5. The arbiter's hard lines inside the panel
+
+Not negotiable, and not re-litigated by any panel code:
+
+- **The chat can never press Sign & run, accept, or raise a cap.** Only hamr's own click signs
+  — the mockup's own note says it (*"Only your click signs. The chat can't."*). The panel's
+  HTTP server must REFUSE a sign/accept/cap-raise request that did not originate from a human
+  click in the page (no chat-driven, no scripted, no replay-triggered signature).
+- **Merge stays human.** Nothing in the panel merges; `bareloop run`'s own tail already prints
+  `merge stays human — this CLI never merges`, and the panel adds no path around that.
+- **Keys never appear in the page.** The panel shows provider names and found/not-set only,
+  read server-side from `~/.config/bareloop/.env` (chmod 600 warning shown in Settings) — see
+  §7d of the PRD addendum for the full shape.
+- **The panel is a client of the arbiter, never a second arbiter.** Every budget check, verdict,
+  and signature still happens inside the library (`checkEnvelope`, `checkApproval`, `bless`,
+  etc.) exactly as it does for the CLI today; the panel calls those functions, it does not
+  reimplement or bypass any of them.
+
+## 6. Settled UI rulings carried in
+
+`design/panel-mockup.html` is the visual contract — read it rather than this section
+restating pixels. The rulings that constrain the real build (not just the mockup):
+
+- **Wording ruling:** check type shown as `Check type` with value `deterministic` (internal
+  hard green) or `rubric` (internal soft green); a run's result is shown ONLY as a glyph —
+  `[✓]` passed, `[✗]` failed, `[▶]` running, `[·]` waiting — never the words green/red/
+  soft-green anywhere in the page. (Saved to auto-memory `ui-verdict-words.md`.)
+- **Run ID format and placement:** `workflow-name (mu2p83go)` — bracketed after the workflow
+  name — shown on the run's summary line 1 and in every History row. (Closes the open question
+  from the 2026-09-22 stash.)
+- **Tagline:** `bareloop · automate a job, verified · @127.0.0.1:4700` — "verified" is fixed
+  title text (bareloop's own close decides done), never changes per workflow.
+- **Job card field order:** Check type, Model, Job name (unique), Goal, Source, Destination,
+  Success, Guardrails, Judge examples (rubric only), then `$ cap | Time cap | Token price` in
+  one row.
+- **Row shape:** Workflows and History rows are 3 lines — glyph+name / `deterministic · $0.66 ·
+  4m 02s · 2026-09-20` / buttons. Left pane 420px.
+- **The one step-map renderer:** a single SVG map for every run — snake wrap (row 1 L→R, arrow
+  down, row 2 R→L, …), stretched to fill the pane's full width (`boxW = (usableW -
+  (perRow-1)*gap) / perRow`), one font size, never squeezed text to fit. There is no second,
+  simplified map renderer anywhere in the panel.
+- **Three right-pane tabs, verified in the mockup:** `Run` (`#tab-run`), `Audit / logs`
+  (`#tab-audit`), `Job` (`#tab-details`, labelled "Job"). Three left-pane tabs: `Chat`,
+  `Workflows`, `History`.
+
+## 7. Known gaps the real build must close
+
+From both mockup-feedback stashes, carried forward, not fixed by the mockup itself:
+
+- The mockup's port (4700) is a hardcoded fake in the HTML/JS; the real build wires the actual
+  server port (P1).
+- The `>1`-line step-title wrap path is UNPROVEN — no fixture title in the mockup is long
+  enough to force a second line. Needs a real long-title fixture before P1 is called done.
+- F192 (soft-green calibration refused on every live run so far, `docs/logs/FINDINGS.md`) is
+  still OPEN — the panel shows this honestly (no papering over a refused calibration), it does
+  not fix it. Reopens after the panel per hamr's ruling B (2026-09-21).
+- `scripts/run-author.mjs`'s ending-owner cleanup (6 `process.exit()` calls, 7 `author-end`
+  writes — re-verified this session, see P0) folds naturally into P0's move into `src/`.
+- Phone/LAN access is parked — `127.0.0.1` only; a phone cannot reach it (noted, not built).
+
+## 8. Not in scope
+
+- M3b–M7 (language guards, non-code checks, the judge, web search, the proof fires) — come
+  after the panel, per the 2026-09-21 order amendment (PRD.md, item 33's build-order section).
+- LAN access.
+- Anything that changes a budget, a verdict, or merge behaviour — those stay arbiter territory,
+  outside what any panel rung may touch (§5 above).
+
+## Open — needs hamr
+
+- **The exact CLI verb names** for P0's new commands (`bareloop interview` / `bareloop author`
+  / the person-path-run verb) are proposed above, not signed — hamr's word needed before P0
+  locks them (a signed CLI surface is the same class of decision as `bareloop export`/`run`/
+  `history` were).
+- **Whether `scripts/run-u.mjs`'s resume/pause/review-door/replay behaviour all becomes ONE
+  library function or several** — this doc treats it as one flow for the gap table, but the
+  actual `src/` split (one function vs. a handful) is a design call for whoever builds P0, not
+  pre-decided here.
