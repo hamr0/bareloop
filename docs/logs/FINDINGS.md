@@ -13385,3 +13385,53 @@ against `deepseek-flash`. Given three different causes across three runs, look a
 calibration as a whole rather than patching one more rule in isolation.
 
 **Status: OPEN, parked by ruling, not built.**
+
+## F193 — the prompt-commit rule assumed every prompt-register-file change came from a run failure; a type-only edit could not satisfy it honestly (fixed)
+
+Found 2026-09-23 on `feat/panel-n6`. Commit `565fb99` widened one JSDoc `@param` type annotation in
+`src/planrun.js` (a registered file, `NATIVE_READ_STRATEGY`) from `text?: string` to
+`text?: string|null`, fixing a real `strictNullChecks` error `tsc` found — a latent type-annotation
+bug (`humanRuling`'s declared shape didn't match its sibling `heldRuling`'s, both fed by the same
+`resolveHumanRuling` seam), not a runtime defect and not caused by any run. It changed zero
+characters of any prompt string, yet `npm test`'s `prompt-commit-check` step failed the commit
+(missing `Failure`/`Addresses`/`Corrects` and a run citation) because the base rule
+(`scripts/promptcommitlib.mjs`) is FILE-granular by design — a commit touching an inventoried
+prompt-register file must carry the three labels, full stop, with no way to see that the specific
+lines it changed carried no prompt text. No honest `Failure: run <id>` line could exist for this
+commit: a typechecker caused it, not a run.
+
+hamr authorized a narrow exemption (2026-09-23, his own word, same session): a commit is exempt
+from the three labels + run citation only when, for EVERY prompt-register file it touches, EVERY
+line the diff changed (removed lines against the OLD file, added lines against the NEW file) is
+"prose-only" — entirely whitespace, a `//` line comment, or inside a `/* ... */` block comment, per
+a small conservative comment/string/template-literal scanner (`classifyProseOnlyLines` in
+`scripts/promptcommitlib.mjs`). Every prompt register in this codebase is assembled from a string or
+template literal, never a comment, so a line that is provably ALL comment can never carry the text
+PROMPT_REGISTERS points at. Changed-line numbers come from parsing a `git diff -U0` patch's hunk
+headers (`parseChangedLineNumbers`, pure text parsing); the old/new file blobs and the diff patch
+text are resolved via git ONLY in `scripts/prompt-commit-check.mjs` (`attachPromptFileDiffs`) and
+handed into the pure `fileChangeIsProseOnly`/`evaluateCommits` path as plain data — the pure module
+never spawns git, matching every other field on `PromptCommitInput`.
+
+Fails closed by construction: any of the old text, new text, or diff text being unresolved (`null`
+— no parent commit, file didn't exist yet, file was deleted, etc.), a diff that resolves to zero
+changed lines, a single changed line that isn't provably prose-only, or a multi-file commit where
+even ONE touched prompt file isn't provably prose-only, all make the commit NOT exempt — the base
+rule (three labels + run citation) still applies. Proven adversarially, not just for the happy path:
+a real prompt-text (template-literal) edit is still rejected; a prompt-text edit and a comment edit
+landing in the SAME file/diff are still rejected; a PURE DELETION of a real prompt line (nothing
+added back) is still rejected (catches a mutation that only checked the added side); and a
+markdown-bullet-shaped line (`* like this`) written INSIDE a template literal's actual prompt text
+is never mistaken for a JSDoc continuation line, including the dangerous direction where an
+untracked backtick could let an unterminated `/* ...` sequence inside a template leak a fake
+block-comment state into the next real line of code. Every one of these was mutation-tested: each
+mutation (dropping the null-check, weakening `every` to `some`, dropping backtick/template state
+tracking, dropping the old-side line check, an off-by-one in the hunk-header line-number parser) was
+independently verified to turn a passing test red, then reverted via `cp` from a scratch backup
+(never `git checkout`).
+
+Commit `565fb99` now passes `node scripts/prompt-commit-check.mjs --range 565fb99^..565fb99`
+unmodified — the exemption alone made it pass; the commit itself was not touched.
+
+**Status: fixed.** `scripts/promptcommitlib.mjs`, `scripts/prompt-commit-check.mjs`,
+`tests/promptcommit.test.js`.
