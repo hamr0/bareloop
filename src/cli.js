@@ -34,6 +34,14 @@ import {
   runJob, makeSpine, loadRegistry, listingRow, jobSpecHash, resolveWorkerModel, resolveJudge,
 } from './index.js';
 import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
+// PANEL-BUILD.md P0 task 2/4 — `bareloop run-u` wraps the person-path run
+// flow's own argv-parsing entry (`src/userrun.js`'s `main(argv, deps)`,
+// itself the lift target of P0 task 1). This is the SAME function
+// `scripts/run-u.mjs` calls directly — routing this command through it
+// rather than re-parsing argv a second time here keeps exactly one code
+// path for the flag grammar; `src/cli.js` only supplies the deps shape
+// (`out`/`err`/`env`) this command's own callers already use.
+import { main as runUMain } from './userrun.js';
 
 // The tier->model tables live in `src/providers.js` now (PRD item 28's
 // factory) — one seam instead of a copy hardcoded in each runner. A
@@ -528,6 +536,17 @@ export async function main(argv, deps = {}) {
   if (cmd === 'export') return doExport(rest, ctx);
   if (cmd === 'run') return doRun(rest, ctx);
   if (cmd === 'history') return doHistory(rest, ctx);
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history`);
+  // `bareloop run-u` — the person-path run flow (PANEL-BUILD.md P0 task
+  // 2/4). `rest` is handed straight to `src/userrun.js`'s own `main(argv,
+  // deps)`, unparsed: that function is this flag grammar's one owner
+  // (`--job`/`--spec`/`--resume`/`--door`/`--decide`/`--text`/
+  // `--review-door`/`--approve`/`--registry`/`--workflow`/`--model`/
+  // `--read-shim`/`--scout`). `deps` is spread first so an injected test
+  // seam (`deps.provider`/`providerFor`/`judgeProvider`) still reaches it,
+  // then `env`/`out`/`err` are overridden to the SAME resolved values every
+  // other command here prints through, so `run-u`'s output lands on the
+  // `stdout`/`stderr` a caller of `main` actually passed.
+  if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err });
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u`);
   return 1;
 }

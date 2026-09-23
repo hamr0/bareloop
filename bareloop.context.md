@@ -3000,7 +3000,7 @@ between a swapped script and a fake green, so `bareloop run` calls it as literal
 before the envelope check, before the key check, before the worktree, before `runJob` is
 ever reached.
 
-#### The CLI — `bareloop export | run | history`, `bin/bareloop.mjs`
+#### The CLI — `bareloop export | run | history | run-u`, `bin/bareloop.mjs`
 
 `bin/bareloop.mjs` is a ~10-line adapter: it supplies the real `deps` (real `env`/`stdout`/
 `stderr`/`cwd`/`stdin`) and turns the returned number into `process.exitCode` — never
@@ -3015,7 +3015,10 @@ same seam `tests/planrun.test.js` uses. `deps` also accepts `env`, `stdout`, `st
 
 Bare `bareloop` (no sub-command) prints a numbered menu — `1 export  2 run  3 history  q
 quit` — and asks each sub-command's arguments one line at a time over the SAME code paths
-below.
+below. `run-u` (below) is not on this menu (PANEL-BUILD.md P0 task 2/4): its flag grammar is
+too wide for a line-at-a-time wizard, and the menu's job is to ask the SAME questions the
+sub-command below already answers, never to invent a new interview — `run-u` is dispatched
+by name only, `bareloop run-u <flags…>`.
 
 - **`bareloop export <jobs/x.json> --registry <dir> --out <dir>`** → resolves the spec's
   close-script paths against the spec file's own directory (never the process cwd), calls
@@ -3094,6 +3097,23 @@ below.
 - **`bareloop history <bundleDir>`** → prints every `history.jsonl` line verbatim, then
   every bridge's `listingRow(b)` from `<bundleDir>/bridges`. Always exit `0`; "(no runs
   yet)" when `history.jsonl` doesn't exist.
+
+- **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
+  (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
+  U-mode). `src/cli.js`'s `run-u` dispatch hands `rest` straight to
+  **`src/userrun.js`'s own `main(argv, deps)`**, unparsed — that function is the flag
+  grammar's ONE owner, and `scripts/run-u.mjs` calls the exact same function directly, so
+  there is exactly one place this grammar is parsed, never two that can drift). Flags:
+  `--job <key>` (one of the JOBS table's rows) **or** `--spec <path>` (an authored
+  `resolved-spec.json`, F185) — exactly one, never both, never neither; `--resume
+  <runid|path>`; `--door <runid|path>` with `--decide <rerun|accept|pause>` and (`rerun`
+  only) `--text <…>`; `--review-door`; `--approve <specHash>`; `--registry <dir>` +
+  `--workflow <name>`; `--model <sonnet|haiku>`; `--read-shim <off|cap|diff|all>`; `--scout
+  <on|off>`. No key/no injected `deps.provider`: prints the preview (invocation hints, the
+  right key name for the job's own provider) and exits `0`, spending nothing — the same
+  preview `scripts/run-u.mjs --job <x>` prints with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
+  set. `scripts/run-u.mjs` is unchanged in behaviour: it is the pre-existing thin adapter
+  over this same `src/userrun.js:main`, not rewired to go through `src/cli.js`.
 
 **Tighten-only budget/wall.** `--budget`/`--wall` on `bareloop run` may only lower the
 bundle's own signed `budgetUsd`/`maxWallMs` — `checkEnvelope`'s `envelope-widen` red refuses
