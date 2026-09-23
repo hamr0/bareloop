@@ -1515,43 +1515,85 @@
   }
 
   var stepMapUidCounter = 0;
-  var MAP_MARGIN = 10, MAP_ROWH = 130;
+  var MAP_MARGIN = 10, MAP_GAP = 28;
+  var CHAR_W = 7.2;        // Courier Prime monospace glyph advance at font-size 12 (page-wide font)
+  var TITLE_HPAD = 16;     // horizontal padding inside a box around its title (8px each side)
+  var MIN_BOX_W = 100;
+  var BOX_H = 60, BOX_H_2LINE = 78; // taller box when a title needs a wrapped second line
+  var ROW_GAP = 70;        // vertical room below a box for its state line + retry curve + drop
 
-  // same 180x60 box size / arrow style as the original 3-step SVG when boxes fit ≤3 per row,
-  // scaling box width down as more join a row — unchanged from the original tiers.
-  function mapBoxTier(perRow){
-    if(perRow <= 3) return {boxW:180, gap:38};
-    if(perRow === 4) return {boxW:140, gap:30};
-    return {boxW:110, gap:24};
+  function stepTitleText(idx, title){ return (idx + 1) + ' ' + title; }
+
+  // ONE box width for the whole map, sized to fit the WIDEST title with no squeezing, rather
+  // than a per-box width — chosen so the snake's connectors stay simple straight lines and
+  // every box reads at a consistent size (hamr, 2026-09-23: "don't squeeze boxes to fit, let
+  // them fit to width and overflow to next line").
+  function naturalBoxWidth(steps){
+    var maxChars = 0;
+    steps.forEach(function(s, idx){
+      maxChars = Math.max(maxChars, stepTitleText(idx, s.title).length);
+    });
+    return Math.max(MIN_BOX_W, Math.ceil(maxChars * CHAR_W) + TITLE_HPAD);
   }
 
-  // Picks how many boxes fit per row (≤5, ≥1) so the map's own drawn width stays inside
-  // availW (the map-box's content width at render time). No availW (or a generous one) keeps
-  // the legacy behavior: up to 5 per row at full tier size. At the narrowest widths a single
-  // box per row is legal and shrinks to fit (never below 90px, so the title stays legible).
-  function computeMapLayout(n, availW){
-    var maxPerRow = Math.min(n, 5);
-    for(var perRow = maxPerRow; perRow >= 2; perRow--){
-      var tier = mapBoxTier(perRow);
-      var totalW = MAP_MARGIN * 2 + perRow * tier.boxW + (perRow - 1) * tier.gap;
-      if(!availW || totalW <= availW) return {perRow:perRow, boxW:tier.boxW, gap:tier.gap};
+  // Picks how many of the uniform-width boxes fit per row so the row's own drawn width stays
+  // inside availW — no artificial per-row cap, the pane's own available width decides alone.
+  // No availW (unmeasured, e.g. a still-hidden tab) draws everything on a single row at natural
+  // width. When even ONE box at its natural width doesn't fit availW, boxW is clamped to the
+  // available space and titles wrap onto a second line (see buildStepMapSVG) instead of
+  // shrinking the font.
+  function computeMapLayout(n, availW, naturalW){
+    if(!availW) return {perRow:n, boxW:naturalW};
+    var usableW = availW - MAP_MARGIN * 2;
+    for(var perRow = n; perRow >= 2; perRow--){
+      var totalW = perRow * naturalW + (perRow - 1) * MAP_GAP;
+      if(totalW <= usableW) return {perRow:perRow, boxW:naturalW};
     }
-    var boxW = availW ? Math.max(90, Math.min(180, availW - MAP_MARGIN * 2)) : 180;
-    return {perRow:1, boxW:boxW, gap:38};
+    return {perRow:1, boxW:Math.max(MIN_BOX_W, Math.min(naturalW, usableW))};
+  }
+
+  // Splits text into at most 2 lines that fit maxWidth (word-boundary first, hard split only
+  // if a single word alone is wider than maxWidth) — used only when a box's width had to be
+  // clamped below its natural (unsqueezed) width to fit the available space.
+  function wrapTitleLines(text, maxWidth){
+    var maxChars = Math.max(1, Math.floor((maxWidth - TITLE_HPAD) / CHAR_W));
+    if(text.length <= maxChars) return [text];
+    var words = text.split(' ');
+    var line1 = '', i = 0;
+    for(; i < words.length; i++){
+      var cand = line1 ? line1 + ' ' + words[i] : words[i];
+      if(line1 && cand.length > maxChars) break;
+      line1 = cand;
+    }
+    if(!line1) return [text.slice(0, maxChars), text.slice(maxChars)];
+    var line2 = words.slice(i).join(' ');
+    return line2 ? [line1, line2] : [line1];
   }
 
   // steps: [{title, state, retries}], at least 1 entry. Wraps into further rows as a SNAKE
   // (boustrophedon): row 0 runs left→right, row 1 runs right→left (arrows pointing left, step
   // numbers still ascending), row 2 left→right again, and so on — one continuous path the eye
   // can follow without guessing. availWidth (optional): the map-box's content width right now,
-  // used to pick how many boxes fit per row (see computeMapLayout); omit for the legacy ≤5-per-
-  // row sizing.
+  // used to pick how many boxes fit per row (see computeMapLayout); omit for the legacy
+  // single-row-at-natural-width fallback (still-hidden tab).
   function buildStepMapSVG(steps, availWidth){
     var n = steps.length;
-    var layout = computeMapLayout(n, availWidth);
-    var perRow = layout.perRow, boxW = layout.boxW, gap = layout.gap;
+    var naturalW = naturalBoxWidth(steps);
+    var layout = computeMapLayout(n, availWidth, naturalW);
+    var perRow = layout.perRow, boxW = layout.boxW, gap = MAP_GAP;
     var rows = Math.ceil(n / perRow);
-    var boxH = 60, margin = MAP_MARGIN, rowH = MAP_ROWH;
+    var margin = MAP_MARGIN;
+
+    // titles are wrapped once up front so every box in the map can share ONE box/row height
+    // (rule: boxes in a row stay the same height — kept uniform across the whole map here,
+    // simpler than per-row heights and still true to that rule since a taller box never sits
+    // next to a shorter one).
+    var titleLines = steps.map(function(s, idx){
+      return wrapTitleLines(stepTitleText(idx, s.title), boxW);
+    });
+    var maxLines = titleLines.reduce(function(m, l){ return Math.max(m, l.length); }, 1);
+    var boxH = maxLines > 1 ? BOX_H_2LINE : BOX_H;
+    var rowH = boxH + ROW_GAP;
     var totalW = margin * 2 + perRow * boxW + (perRow - 1) * gap;
     var totalH = rows * rowH;
     var uid = "sm" + (stepMapUidCounter++);
@@ -1576,15 +1618,20 @@
       var colors = stepMapColors(s.state);
       var num = idx + 1;
 
-      var titleText = num + ' ' + s.title;
-      // compress (never wrap) a title too wide for its box, monospace ~7.2px/char at font-size 12
-      var titleFits = boxW - 12;
-      var titleAttrs = titleText.length * 7.2 > titleFits ? ' textLength="' + titleFits + '" lengthAdjust="spacingAndGlyphs"' : '';
+      var lines = titleLines[idx];
+      var stateY = y + boxH - 18;
       body += '<rect x="' + x + '" y="' + y + '" width="' + boxW + '" height="' + boxH +
         '" rx="0" fill="var(--panel2)" stroke="' + colors.stroke + '" stroke-width="2"></rect>';
-      body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 25) +
-        '" text-anchor="middle" font-size="12" fill="var(--text)"' + titleAttrs + '>' + escapeXml(titleText) + '</text>';
-      body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 42) +
+      if(lines.length === 1){
+        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 25) +
+          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[0]) + '</text>';
+      } else {
+        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 17) +
+          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[0]) + '</text>';
+        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 29) +
+          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[1]) + '</text>';
+      }
+      body += '<text x="' + (x + boxW / 2) + '" y="' + stateY +
         '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(s.state) + '</text>';
 
       if(s.state === "running"){
@@ -1613,13 +1660,14 @@
         if(nextRow === row){
           // same row: arrow continues in this row's own direction (right on an L→R row,
           // left on an R→L one — orient="auto" on the marker follows the line either way)
+          var midY = y + boxH / 2;
           if(!rtl){
             var nx = x + boxW + gap;
-            body += '<line x1="' + (x + boxW) + '" y1="' + (y + 30) + '" x2="' + (nx - 2) + '" y2="' + (y + 30) +
+            body += '<line x1="' + (x + boxW) + '" y1="' + midY + '" x2="' + (nx - 2) + '" y2="' + midY +
               '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
           } else {
             var px = x - gap - boxW; // next box sits one slot to the left
-            body += '<line x1="' + x + '" y1="' + (y + 30) + '" x2="' + (px + boxW + 2) + '" y2="' + (y + 30) +
+            body += '<line x1="' + x + '" y1="' + midY + '" x2="' + (px + boxW + 2) + '" y2="' + midY +
               '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
           }
         } else {
