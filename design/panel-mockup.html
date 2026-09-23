@@ -1542,20 +1542,25 @@
     return Math.max(MIN_BOX_W, Math.ceil(maxChars * CHAR_W) + TITLE_HPAD);
   }
 
-  // Picks how many of the uniform-width boxes fit per row so the row's own drawn width stays
-  // inside availW — no artificial per-row cap, the pane's own available width decides alone.
-  // No availW (unmeasured, e.g. a still-hidden tab) draws everything on a single row at natural
-  // width. When even ONE box at its natural width doesn't fit availW, boxW is clamped to the
-  // available space and titles wrap onto a second line (see buildStepMapSVG) instead of
-  // shrinking the font.
+  // Picks how many boxes fit per row using each box's natural (title-driven) width as the
+  // MINIMUM — same row count as before — then STRETCHES boxW so perRow boxes plus their gaps
+  // exactly fill usableW, edge to edge. Simplest rule that always fills the width: grow every
+  // box in the row equally rather than growing the gaps, so uniformity (one box width across
+  // the whole map) and the fixed MAP_GAP rhythm both hold. No availW (unmeasured, e.g. a still-
+  // hidden tab) draws everything on a single row at natural width, unstretched (legacy
+  // fallback — nothing to fill yet). Text is never squeezed: stretching only ever widens a box
+  // beyond what its title needs.
   function computeMapLayout(n, availW, naturalW){
     if(!availW) return {perRow:n, boxW:naturalW};
     var usableW = availW - MAP_MARGIN * 2;
     for(var perRow = n; perRow >= 2; perRow--){
       var totalW = perRow * naturalW + (perRow - 1) * MAP_GAP;
-      if(totalW <= usableW) return {perRow:perRow, boxW:naturalW};
+      if(totalW <= usableW){
+        var stretched = (usableW - (perRow - 1) * MAP_GAP) / perRow;
+        return {perRow:perRow, boxW:Math.max(naturalW, stretched)};
+      }
     }
-    return {perRow:1, boxW:Math.max(MIN_BOX_W, Math.min(naturalW, usableW))};
+    return {perRow:1, boxW:Math.max(MIN_BOX_W, usableW)};
   }
 
   // Splits text into at most 2 lines that fit maxWidth (word-boundary first, hard split only
