@@ -83,11 +83,10 @@ Lift the interview/author/person-path-run logic out of `scripts/run-interview.mj
 `scripts/run-author.mjs`, and `scripts/run-u.mjs` into `src/` library functions, each callable
 in-process with an injectable `deps` object (the same test seam `src/cli.js`'s `main(argv,
 deps)` already uses — `deps.provider` etc. skip the real-key check for tests). Give each flow a
-real `bareloop <command>` in `src/cli.js`:
+real `bareloop <command>` in `src/cli.js` — **signed, hamr: "cli names are fine"**:
 - `bareloop interview` — wraps the library form of `run-interview`'s flow.
 - `bareloop author` — wraps the library form of `run-author`'s flow.
-- `bareloop run-u` (or the equivalent verb hamr picks at build time) — wraps the person-path
-  run flow `run-u.mjs` currently owns end to end (resume, pause, review door, replay call-in).
+- `bareloop run-u` — wraps the person-path run flow, itself split into the three doors below.
 - A read-side library function per spine/gate-audit consumer the panel's tabs need (History,
   Run, Audit, Job), so the panel never hand-rolls its own `JSON.parse` over `spine.jsonl`
   the way `src/cli.js:doRun`'s own tail-read currently does either — this rung also gives that
@@ -96,6 +95,38 @@ real `bareloop <command>` in `src/cli.js`:
 `scripts/*.mjs` reduce to thin adapters over the library, the same ~10-line shape
 `bin/bareloop.mjs` already is over `src/cli.js` (parse argv, supply real deps, print, set
 `process.exitCode`) — never re-implementing the flow itself.
+
+**The person-path-run shape — hamr's ruling:** *"i think run-u one libary is better to
+prevent drift"*, then *"agreed, one module three thin doors."* Settled shape:
+
+- **One new module, `src/userrun.js`, holding one internal engine.**
+- **Three thin named doors** onto that one engine, replacing `run-u.mjs`'s flag-driven entry:
+  - `startRun(spec, opts)` — a fresh run (today's `--job` / `--spec`).
+  - `resumeRun(runId, opts)` — a halted run (today's `--resume`).
+  - `answerDoor(runId, decision)` — a finished run's review door (today's `--door`).
+- All three build the same run context and hand off to one shared internal `execute()` — the
+  engine is written once; the doors differ only in how they arrive at that shared context.
+- **Replay is not a door.** `src/replay.js` already IS library (`replayRun`, `formatReplay` —
+  both confirmed exported this session) and stays exactly where it is; it is not moved into
+  `userrun.js` or folded into the three doors.
+- **Why three doors, not one flag or three separate flows** (both rejected, one line each):
+  a single function with a mode flag just relocates the 1992-line monolith as a giant internal
+  `if` tree inside one function, buying nothing; three fully independent flows are the exact
+  drift hamr is preventing — they fork on resume/spend/branch handling exactly the way
+  `run-u.mjs`'s single file has drifted internally already.
+- **The three doors are already mutually exclusive in `run-u.mjs` today** — verified this
+  session, `scripts/run-u.mjs:542`: `die('--door answers the review door of a run that
+  FINISHED; --resume continues one that HALTED. Those are two ' …)`. That refusal is the
+  real shape already enforced by the current script; three named doors make it structural
+  instead of a runtime flag check.
+- **The semantics are already library today — this rung lifts ORCHESTRATION, not semantics.**
+  Verified this session, all exported: `runJob` (`src/run.js:245`), `answerReviewDoor`
+  (`src/reviewdoor.js:108`), `readResume` (`src/reuse.js:817`), `replayRun`/`formatReplay`
+  (`src/replay.js:362`/`:886`). `src/userrun.js`'s job is calling these in the right order with
+  the right context per door, the way `scripts/run-u.mjs` does today by hand across 1992 lines
+  — not reimplementing what `runJob`/`answerReviewDoor`/`readResume` already do.
+- `scripts/run-u.mjs` reduces to a thin adapter over `src/userrun.js`'s three doors, the same
+  `bin/bareloop.mjs` shape used everywhere else in this rung.
 
 Also folds in the standing cleanup this session verified live: `scripts/run-author.mjs` has
 **6 real `process.exit()` calls** (lines 96, 288, 326, 412, 419, 956 — re-counted this session;
@@ -222,14 +253,3 @@ From both mockup-feedback stashes, carried forward, not fixed by the mockup itse
 - LAN access.
 - Anything that changes a budget, a verdict, or merge behaviour — those stay arbiter territory,
   outside what any panel rung may touch (§5 above).
-
-## Open — needs hamr
-
-- **The exact CLI verb names** for P0's new commands (`bareloop interview` / `bareloop author`
-  / the person-path-run verb) are proposed above, not signed — hamr's word needed before P0
-  locks them (a signed CLI surface is the same class of decision as `bareloop export`/`run`/
-  `history` were).
-- **Whether `scripts/run-u.mjs`'s resume/pause/review-door/replay behaviour all becomes ONE
-  library function or several** — this doc treats it as one flow for the gap table, but the
-  actual `src/` split (one function vs. a handful) is a design call for whoever builds P0, not
-  pre-decided here.
