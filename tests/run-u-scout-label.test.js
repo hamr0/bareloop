@@ -7,18 +7,20 @@
 // row). The fix adds a third label state rather than reusing the default's
 // wording for an explicit `on`.
 //
-// `SCOUT_LABEL` is a top-level const in a SCRIPT (run-u.mjs has no export
-// surface for it, and spawning the whole runner needs a live job/patient
-// fixture this repo does not build for a printed-label test) — so this pins
-// the SOURCE TEXT of the ternary that computes it, the same source-text-pin
-// idiom `tests/close-timeout.test.js`/`tests/judge-key-demand.test.js` use
-// for other run-u.mjs internals with no export seam.
+// `SCOUT_LABEL` is a local const inside `execute()`, src/userrun.js's one
+// shared engine (PANEL-BUILD.md P0 moved it off `scripts/run-u.mjs`, now a
+// thin adapter, into that engine — it has no export surface for it, and
+// spawning the whole runner needs a live job/patient fixture this repo does
+// not build for a printed-label test) — so this pins the SOURCE TEXT of the
+// ternary that computes it, the same source-text-pin idiom
+// `tests/close-timeout.test.js`/`tests/judge-key-demand.test.js` use for
+// other run-u internals with no export seam.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const SOURCE = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+const SOURCE = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
 
 /** @param {string} src @returns {{noFlag: string, explicitOn: string, explicitOff: string}} */
 function extractScoutLabels(src) {

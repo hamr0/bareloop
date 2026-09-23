@@ -33,7 +33,9 @@ import { join } from 'node:path';
 import { moveStaleGateAudit } from '../scripts/u-patient.mjs';
 
 const RUN_AUTHOR_SRC = readFileSync(new URL('../scripts/run-author.mjs', import.meta.url), 'utf8');
-const RUN_U_SRC = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+// PANEL-BUILD.md P0 — this orchestration moved off scripts/run-u.mjs (now a
+// thin adapter) into src/userrun.js's one shared execute() engine.
+const RUN_U_SRC = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
 
 // ── (b) moveStaleGateAudit — driven directly, real tmpdir, no provider ─────
 
@@ -108,7 +110,10 @@ test('run-u.mjs calls moveStaleGateAudit AFTER coldReset, only on the cold (non-
 });
 
 test('run-u.mjs never calls moveStaleGateAudit on the resume (dead) branch — a resumed run\'s own prior-leg audit must be left alone', () => {
-  const resumeBranch = /if \(dead\) \{[\s\S]*?\n\} else \{/.exec(RUN_U_SRC)?.[0];
+  // PANEL-BUILD.md P0 — this block now sits inside src/userrun.js's
+  // execute(), indented one level deeper than the old top-level script, so
+  // the closing brace carries leading whitespace it never used to.
+  const resumeBranch = /if \(dead\) \{[\s\S]*?\n\s*\} else \{/.exec(RUN_U_SRC)?.[0];
   assert.ok(resumeBranch, 'the resume branch moved — this guard no longer reads the branch it pins');
   assert.doesNotMatch(resumeBranch, /moveStaleGateAudit/, 'a resume\'s own halted-run audit is a continuation, not a stranger — never moved aside');
 });

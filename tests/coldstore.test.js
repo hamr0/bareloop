@@ -251,8 +251,12 @@ test('tripwire: scripts/run-u.mjs still resets the .litectx store before every r
   // the runner calls the shared reset on its cold path, and that the shared reset is
   // still the thing that removes the store. Loosening either half would let cold stop
   // meaning cold, which is the leak this guard exists for.
-  const src = readFileSync(RUNNER, 'utf8');
-  assert.match(src, /import \{ coldReset, moveStaleGateAudit \} from '\.\/u-patient\.mjs'/, 'the runner must use the shared cold reset (F186 added a second shared export from the same module, moveStaleGateAudit)');
+  //
+  // PANEL-BUILD.md P0 — this import moved off scripts/run-u.mjs (now a thin
+  // adapter) into src/userrun.js, which sits one directory over from
+  // scripts/u-patient.mjs and so imports it as `../scripts/u-patient.mjs`.
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url).pathname, 'utf8');
+  assert.match(src, /import \{ coldReset, moveStaleGateAudit \} from '\.\.\/scripts\/u-patient\.mjs'/, 'the runner must use the shared cold reset (F186 added a second shared export from the same module, moveStaleGateAudit)');
   assert.match(src, /coldReset\(wd, SEED\)/, 'the runner must CALL it on the cold path, with its own workdir and frozen seed');
   // Loose on purpose — the semantic pieces only (rmSync ... .litectx ... recursive),
   // so reformatting or renaming the workdir variable does not red this.

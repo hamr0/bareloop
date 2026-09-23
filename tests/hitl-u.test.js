@@ -20,6 +20,11 @@ import { PAUSE_TTL_MS } from '../src/reuse.js';
 import { deathAtOf, evidencePackage, resumeAtLines } from '../scripts/u-readout.mjs';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
+// PANEL-BUILD.md P0 — the ORCHESTRATION this file's source-text tripwires
+// pin moved off scripts/run-u.mjs (now a thin adapter) into src/userrun.js's
+// one shared execute() engine; RUNNER (above) still spawns the real CLI
+// entry point for the BEHAVIOURAL tests, unchanged.
+const ENGINE_SRC = new URL('../src/userrun.js', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
 const DAY = 86_400_000;
 
@@ -154,7 +159,7 @@ test('§2 TTL: the gate is the LIBRARY\'s, and it applies to the PAUSE only', ()
   // `checkpointAgeGate` returns `applies:false` for every other terminal on purpose:
   // ageing out a cap-halt would be a governance change nobody ruled. Driven through
   // the script so the runner cannot have widened it on the way past.
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /checkpointAgeGate\(/, 'the runner calls the library gate rather than re-deriving 60 days');
   assert.doesNotMatch(src, /60 \* 24 \* 60|5184000000/, 'and the number itself is nowhere in the script');
 
@@ -252,7 +257,7 @@ test('§1 tripwire: the runner HANDS the ruling to runJob, and builds it through
   // The decision SEMANTICS live in src/kinds.js (`normalizeHumanRuling`): three doors,
   // no fourth, a rerun's text required. A script that re-spelled any of those would be
   // a second rulebook for the one thing the signer is signing.
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /import \{[^}]*\bnormalizeHumanRuling\b/, 'the shape check is the library\'s');
   assert.match(src, /humanRuling:\s*RULING/, 'and the normalised ruling reaches runJob — refused-but-unwired would pause forever');
   assert.doesNotMatch(src, /\['accept', 'rerun', 'pause'\]/, 'the door list is never re-spelled here');
@@ -337,7 +342,7 @@ test('the proving job refuses BY NAME while its spec is unauthored, and never cr
 });
 
 test('the row carries the runner\'s half only — a patient COPY, its own seed, and its own spine', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   const row = src.slice(src.indexOf("'litectx-maintainer': {"));
   assert.match(row.slice(0, 300), /workdir: '\/home\/hamr\/PycharmProjects\/bareloop-patients\/litectx-maintainer'/,
     'a patient is ALWAYS a separate copy — the copy is the blast radius');
@@ -418,10 +423,10 @@ test('#9 E2E: the real preview of a paused checkpoint names the review, not a st
 // are pinned in source). What is pinned is what they must not stop doing.
 
 test('§5.2 the PAUSE readout shows the package and the doors where the person is standing', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   const at = src.indexOf('if (outcome === HITL_PAUSE) {');
   assert.ok(at > 0, 'the pause readout exists');
-  const end = src.indexOf('\n}', at);
+  const end = src.indexOf('\n  }', at); // PANEL-BUILD.md P0: src/userrun.js indents this block one level deeper
   assert.ok(end > at);
   const block = src.slice(at, end);
   assert.match(block, /printPauseEvidence\(/, 'the same package the preview renders — never a second assembly of one run\'s facts');
@@ -439,20 +444,23 @@ test('§1 the PAUSE door launches NOTHING and keeps the checkpoint the operator 
   // returns before drafting emits no `plan-accepted` and no `step-end` — which is all
   // `readStepCheckpoint` reads. A launched "not now" would therefore mint a runid whose
   // checkpoint is empty, and resuming THAT one re-drafts and re-pays for finished work.
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   const at = src.indexOf("if (PAUSED && RULING?.decision === 'pause') {");
   assert.ok(at > 0, 'the pause door is answered in the runner');
-  const end = src.indexOf('\n}', at);
+  const end = src.indexOf('\n  }', at); // PANEL-BUILD.md P0: src/userrun.js indents this block one level deeper
   const block = src.slice(at, end);
   assert.match(block, /PAUSED BY YOU/);
   assert.match(block, /nothing was run and nothing was spent/, 'a pause costs nothing — that is the whole of it');
   assert.match(block, /--resume \$\{RESUME\}/, 'and it points at the SAME runid: the checkpoint that matters is the one already on disk');
-  assert.match(block, /process\.exit\(0\)/, 'it exits before the key, the spine and the launch — nothing downstream runs');
+  // PANEL-BUILD.md P0 — src/userrun.js's execute() never calls process.exit
+  // itself (a library function returns a code / throws); the same refusal is
+  // `throw new ExitSignal(0)` there.
+  assert.match(block, /throw new ExitSignal\(0\)/, 'it exits before the key, the spine and the launch — nothing downstream runs');
   // PRD item 31.4 split one key demand into two (the WORKER's, from the provider
   // table's own envKey, and the JUDGE's, demanded only when the close judges), so
   // this anchors on the FIRST of them — the worker key, which every run needs.
   // The claim is unchanged: a pause exits before ANY secret is asked for.
-  const firstKeyDemand = src.indexOf('const workerApiKey = process.env[providerEntry.envKey]');
+  const firstKeyDemand = src.indexOf('workerApiKey = env[providerEntry.envKey]');
   assert.ok(firstKeyDemand > 0, 'the runner still demands a worker key somewhere below');
   assert.ok(at < firstKeyDemand, 'above the key: nothing about saying "not now" needs a secret');
 });
@@ -467,7 +475,7 @@ test('§1 the pause door is REACHABLE and silent about money: a signed `--decide
 });
 
 test('§1 a pause writes NO bridge: the artifact is minted by a green, and a pause is not one', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /if \(outcome === 'green' && plan && !leaks\.length\)/,
     'the bridge gate still reads the GREEN terminal only — a checkpoint that graduated a reusable plan would mint learning credit no close ever rendered');
 });

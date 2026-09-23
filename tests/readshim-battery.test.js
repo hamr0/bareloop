@@ -45,7 +45,9 @@ test('the CLI spelling of every arm is accepted by run-u.mjs', () => {
   // the map run-u.mjs keys on, read out of its source rather than restated here: a
   // driver that spawns `--read-shim A2` against a runner that has never heard of "A2"
   // dies at row 3, after two paid rows.
-  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  // PANEL-BUILD.md P0 — this map moved off scripts/run-u.mjs (now a thin
+  // adapter) into src/userrun.js's one shared execute() engine.
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
   const block = /const READ_SHIM_ARM_NAMES = [\s\S]*?\}\);/.exec(src);
   assert.ok(block, 'run-u.mjs must declare READ_SHIM_ARM_NAMES');
   for (const a of ARMS) {
