@@ -223,6 +223,9 @@
 
   .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
   .chat-input-row input{width:100%;}
+  /* chat message box reads as an unmistakable text box: ~2x the default input height,
+     same border token as the job-card/Settings inputs (var(--border-strong)), not a new colour. */
+  #chat-msg{min-height:64px;padding:8px 12px;border:1px solid var(--border-strong);}
 
   .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
   .actions-row > .btn{flex:1 1 auto;}
