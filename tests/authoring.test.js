@@ -1499,7 +1499,7 @@ test('normalizeDeclaration: resolves every short-form parser, and copies rather 
 // printed the declaration and never the goal, run-u's --approve gate printed
 // the goal and never the declaration. The lines live in a helper because
 // `run-author.mjs` is a script (importing it runs it, and reaching that block
-// costs a real scout and a real model call), exactly as `u-readout.mjs` exists.
+// costs a real scout and a real model call), exactly as `src/u-readout.js` exists.
 test('signing readout: the goal leads, and every stage that will judge it is named under it', () => {
   // a REAL signed spec out of this repo's own jobs/ — not a fixture authored to
   // contain the answer

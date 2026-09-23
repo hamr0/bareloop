@@ -805,7 +805,7 @@ function readGradeSeed(seen) {
  * abandoned attempt twice in a chain of resumes.
  *
  * @param {any[]} events the dead spine's events, parsed, in file order
- * @param {{deathAt?: number|null, direct?: boolean, resumableOutcomes?: string[]}} [opts]
+ * @param {{deathAt?: number|null, direct?: boolean, resumableOutcomes?: readonly string[]}} [opts]
  *   `deathAt`: when the process is judged to have died (the watchdog's kill record,
  *   which is later and better evidence than the last event). Defaults to the last
  *   event's own timestamp — the last sign of life there is.

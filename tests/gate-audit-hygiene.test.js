@@ -19,7 +19,7 @@
 //
 //   (b) scripts/run-u.mjs moves any STALE audit aside at launch, right
 //       after coldReset and before this run's own Gate ever opens, through
-//       the newly-exported `moveStaleGateAudit` (scripts/u-patient.mjs,
+//       the newly-exported `moveStaleGateAudit` (src/u-patient.js,
 //       beside the existing shared `coldReset`) — driven directly against
 //       a real tmpdir here, no provider needed.
 
@@ -30,7 +30,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { moveStaleGateAudit } from '../scripts/u-patient.mjs';
+import { moveStaleGateAudit } from '../src/u-patient.js';
 
 const RUN_AUTHOR_SRC = readFileSync(new URL('../scripts/run-author.mjs', import.meta.url), 'utf8');
 // PANEL-BUILD.md P0 — this orchestration moved off scripts/run-u.mjs (now a

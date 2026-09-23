@@ -6,7 +6,7 @@
 //
 // Same two instruments tests/resume-u.test.js uses, for the same reasons: the REAL
 // script driven through its PREVIEW path (everything before a key is read and before
-// a dollar is committed), and pure helpers in `scripts/u-readout.mjs` for the
+// a dollar is committed), and pure helpers in `src/u-readout.js` for the
 // arithmetic and the rendering the preview cannot reach without a paid run.
 
 import { test } from 'node:test';
@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS } from '../src/reuse.js';
-import { deathAtOf, evidencePackage, resumeAtLines } from '../scripts/u-readout.mjs';
+import { deathAtOf, evidencePackage, resumeAtLines } from '../src/u-readout.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 — the ORCHESTRATION this file's source-text tripwires

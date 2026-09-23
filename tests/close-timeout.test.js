@@ -34,7 +34,7 @@ import { assembleSpec, AUTHORED_SPEC_FIELDS } from '../src/authorjob.js';
 import { runPlan } from '../src/planrun.js';
 import { runJob } from '../src/run.js';
 import { scriptedProvider, initPatientRepo, gitInPatient } from './helpers.js';
-import { doorTimingRedLines } from '../scripts/u-readout.mjs';
+import { doorTimingRedLines } from '../src/u-readout.js';
 
 /** @param {import('node:test').TestContext} t @param {string} prefix */
 const tmp = (t, prefix) => {
@@ -565,7 +565,7 @@ test('runPlan: maxWallMs at or above the effective close timeout is fine', async
 //
 // What IS provable at $0, without a provider and without a 10-minute wait:
 //   1. the wording/options the refusal prints (pure function, unit-tested
-//      directly — the same pattern `scripts/u-readout.mjs`'s other pure
+//      directly — the same pattern `src/u-readout.js`'s other pure
 //      renderers use, per `tests/reviewdoor-u.test.js`'s own docstring);
 //   2. a SOURCE-LEVEL pin (same discipline as the F129/F133 pins above) that
 //      the door's `accept` path checks `doorCloseTiming.timedOut` and exits

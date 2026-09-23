@@ -378,7 +378,7 @@ test('§3 ORDERING (source tripwire): the resume read and the approval gate both
   // PANEL-BUILD.md P0 — `arg('approve')` in the old script is a ctx read
   // now (src/userrun.js's execute() takes a structured ctx, not argv flags).
   const gateAt = src.indexOf('if ((ctx.approve ?? null) !== specHash)');
-  // the reset MECHANISM moved into scripts/u-patient.mjs (2026-08-19) so the read-shim
+  // the reset MECHANISM moved into src/u-patient.js (2026-08-19) so the read-shim
   // battery rehearses the same cold reset; the ORDERING property this tripwire guards
   // is unchanged, so the anchor follows the call site rather than the deleted literal.
   const resetAt = src.indexOf('coldReset(wd, SEED)');
@@ -489,7 +489,7 @@ test('§3 CONTROL: a resume with allowance still on the table does NOT cry wolf'
 // the 20.1min remainder), the READING was not.
 //
 // The arithmetic is now one exported function, which is what makes it testable at all.
-import { wallLine } from '../scripts/u-readout.mjs';
+import { wallLine } from '../src/u-readout.js';
 
 test('§3 banner: on a RESUMED leg the wall reads FOLDED against the signed cap — and still shows the leg, so neither number goes blind', () => {
   // the real u-msf70nei numbers: 24.9min inherited, 12.8min bought in this leg
@@ -536,7 +536,7 @@ test('§3 banner: the runner prints the folded line through THIS function — a 
 // So the predicate lives here, beside `wallLine`, for `wallLine`'s reason: the script
 // runs on import, and a banner nothing can drive is a banner nothing can prove fires.
 // It is a WARNING only — it never blocks and never changes what the run does.
-import { doomedResume } from '../scripts/u-readout.mjs';
+import { doomedResume } from '../src/u-readout.js';
 
 /** the restart fold as `readResume` hands it to the banner, F97's own numbers */
 const F97 = { seed: { phase: 'steps' }, replans: 2, replanGrantUsed: true };
@@ -584,9 +584,9 @@ test('§F97 banner: the runner prints it through THIS predicate, and it WARNS ra
   // membership, not the exact list: the readout module has grown (N4's `deathAtOf`),
   // and pinning the spelling of the whole import made an unrelated addition a red
   //
-  // PANEL-BUILD.md P0 — src/userrun.js imports its scripts/ siblings with
-  // `../scripts/` (it used to be a same-directory `./` sibling).
-  assert.match(src, /import \{[^}]*\bdoomedResume\b[^}]*\} from '\.\.\/scripts\/u-readout\.mjs'/, 'imported from the readout module the tests can reach');
+  // PANEL-BUILD.md P0 task 1/4 — u-readout.mjs moved into src/ (tsc rootDir) and
+  // src/userrun.js now imports it as a same-directory `./` sibling.
+  assert.match(src, /import \{[^}]*\bdoomedResume\b[^}]*\} from '\.\/u-readout\.js'/, 'imported from the readout module the tests can reach');
   // WARNING ONLY: the F97 lesson is an operator pre-flight, not a new gate. A `die(`
   // or a `process.exit`/`ExitSignal` reached from this predicate would turn a $0
   // read into a refusal the operator never signed up for.
@@ -639,7 +639,7 @@ test('§F97 banner E2E: the REAL preview prints it for F97\'s own spine shape, a
 // line, summed off THIS LEG's own spine — never `worker-result`, which is an
 // attempt-level ECHO of round sums (house rule: enumerate every round type that
 // spends, and never fold an echo record into the sum).
-import { tokensLine, fmtTokens } from '../scripts/u-readout.mjs';
+import { tokensLine, fmtTokens } from '../src/u-readout.js';
 
 test('§tokens: sums usage across BOTH worker-round and judge-round', () => {
   const events = [

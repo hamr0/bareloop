@@ -69,10 +69,10 @@ import { HITL_PAUSE } from './declaredclose.js';
 // is the seam that answers one. Same rulebook, one level out.
 import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
-import { coldReset, moveStaleGateAudit } from '../scripts/u-patient.mjs';
+import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
-import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from '../scripts/u-readout.mjs';
+import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
 
 const require = createRequire(import.meta.url);
 const { AnthropicProvider } = require('bare-agent/providers');
@@ -226,6 +226,10 @@ class ExitSignal extends Error {
 
 /**
  * @typedef {object} RunOpts
+ * @property {any} [spec] the parsed, not-yet-validated job spec — read by
+ *   `resumeRun`/`answerDoor`, whose positional argument is the runid rather
+ *   than the spec (unlike `startRun`, which takes `spec` positionally and
+ *   never reads this).
  * @property {string} [workdir] the patient's tree
  * @property {string} [seed] the patient's frozen seed commit
  * @property {string} [spineName] the spine directory name, beside `workdir`
@@ -289,8 +293,13 @@ async function execute(ctx) {
   const err = deps.err ?? ((/** @type {string} */ s) => { console.error(s); });
   /** every operator/config stop this engine makes, in one exit code — thrown,
    * never `process.exit()`'d, so this stays a library function (constraint:
-   * "never process.exit() inside the library — return an exit code"). */
-  const die = (/** @type {string} */ m) => { err(m); throw new ExitSignal(2); };
+   * "never process.exit() inside the library — return an exit code").
+   * `@returns {never}` is load-bearing, not decorative: it is what lets tsc
+   * narrow every `let x; try { x = ... } catch { die(...) }` site below to a
+   * defined `x` afterward, honestly, because `die` truly never returns.
+   * @param {string} m
+   * @returns {never} */
+  const die = (m) => { err(m); throw new ExitSignal(2); };
   let exitCode = 0;
   try {
   const spec = ctx.spec;
@@ -591,7 +600,7 @@ async function execute(ctx) {
     // WHEN did the dead leg stop? The watchdog's kill record is later, better evidence
     // than the last spine event for a run that was KILLED — and worse evidence for one
     // that ended itself, which is what N4's pause is. The preference order lives in
-    // `deathAtOf` (scripts/u-readout.mjs) so it is reachable by a test; the hazard it
+    // `deathAtOf` (src/u-readout.js) so it is reachable by a test; the hazard it
     // closes was measured, not imagined (a report dated after a pause bills the human's
     // deciding time to the run's wall and can zero the remainder outright).
     const deathAt = deathAtOf({ watchdogAt: watchdog?.at, events: deadEvents });
@@ -817,6 +826,10 @@ async function execute(ctx) {
   // re-enters, whether the plan is doomed) is a true sentence here. What a person
   // needs is the evidence, the three doors, and what each one costs.
   if (doorSpineFile !== null && (ctx.approve ?? null) !== specHash) {
+    // doorSpineFile is computed FROM DOOR (`DOOR == null ? null : ...` above) and is
+    // non-null here, so DOOR itself cannot be null — this is a real invariant, stated
+    // for tsc rather than asserted away, and it can never actually throw.
+    if (DOOR === null) throw new Error('unreachable: doorSpineFile is only non-null when DOOR is non-null');
     out('U — REVIEW DOOR, answering a run that has already ended');
     out(`  spec     ${SPEC_DESC}  $${spec.budgetUsd}  wall ${WALL_LABEL}`);
     out(`  run      ${DOOR}  ${doorPrior?.spendComplete === false ? '≥' : ''}$${(doorPrior?.spentUsd ?? 0).toFixed(4)} spent  ·  ${doorSpineFile}`);
@@ -931,7 +944,7 @@ async function execute(ctx) {
       // WHERE it picks up. Without this line "resume" covers two runs that cost very
       // different amounts — one that re-scouts and re-drafts from nothing, and one that
       // re-enters at the close — and the hash being signed authorizes the dollars either way.
-      // …through `resumeAtLines` (scripts/u-readout.mjs), because a PAUSE is a phase this
+      // …through `resumeAtLines` (src/u-readout.js), because a PAUSE is a phase this
       // line did not have: it stops after the plan's steps, at the close's human stage, and
       // the step arithmetic used to walk off the end of the plan (`at step 2 of 1
       // "(unknown)"`). The rule the helper holds is that a step count may never exceed the
@@ -1098,10 +1111,18 @@ async function execute(ctx) {
     // is never called on this path — nothing is recorded (no door record on
     // `doorSpineFile`), nothing is released, and nothing is spent.
     if (doorCloseTiming.timedOut) {
+      // `resolveCloseTimeoutMs` only returns `timing: null` on the signed-override
+      // path, which returns `timedOut: false` — so `timedOut: true` always carries a
+      // real `timing`. Stated for tsc, not asserted away.
+      if (doorCloseTiming.timing === null) throw new Error('unreachable: resolveCloseTimeoutMs sets timing whenever timedOut is true');
       const names = doorCloseTiming.timing.perStage.filter((s) => s.timedOut).map((s) => s.name).join(', ');
       for (const l of doorTimingRedLines({ names })) err(l);
       throw new ExitSignal(1);
     }
+    // Symmetric invariant: every non-timedOut return of `resolveCloseTimeoutMs` sets a
+    // real `closeTimeoutMs` (override or estimated) — `null` only pairs with
+    // `timedOut: true`, already handled above.
+    if (doorCloseTiming.closeTimeoutMs === null) throw new Error('unreachable: resolveCloseTimeoutMs sets closeTimeoutMs whenever timedOut is false');
     const ans = await answerReviewDoor({
       job: spec,
       workdir: wd,
@@ -1260,10 +1281,12 @@ async function execute(ctx) {
   // into runJob below whether this leg constructs a real judge provider or not.
   const judge = resolveJudge({ specJudge: spec.judge, workerProvider: spec.provider, workerModel: MODEL });
   const judgeEntry = resolveProvider(judge.provider);
-  /** @type {string|null} */
-  let workerApiKey = null;
-  /** @type {string|null} */
-  let judgeApiKey = null;
+  // undefined, not null: both come straight off `env[...]` lookups below, which
+  // (like process.env) never produce null for a missing key.
+  /** @type {string|undefined} */
+  let workerApiKey;
+  /** @type {string|undefined} */
+  let judgeApiKey;
   // TEST SEAM (constraint: `deps.provider` skips the real-key check entirely,
   // the same shape src/cli.js's `doRun` already uses) — a caller that hands in
   // its own provider IS the run, so nothing here needs a real secret.
@@ -1335,7 +1358,7 @@ async function execute(ctx) {
     // yield. When the reuse rung lands, KEEPING the store becomes an explicit
     // ledger-attributed choice — never a leak.
     //
-    // The mechanism lives in `scripts/u-patient.mjs` so a battery driver rehearsing a
+    // The mechanism lives in `src/u-patient.js` so a battery driver rehearsing a
     // cold row runs THIS reset rather than a second spelling of it.
     const cold = coldReset(wd, SEED);
     out(`patient reset — clean at ${cold.head}, store ${cold.storeRemoved ? 'removed (cold)' : 'was already absent (cold)'}`);
@@ -1489,6 +1512,9 @@ async function execute(ctx) {
 
   const closeTimingResolved = await resolveCloseTimeoutMs({ job: spec, stages: closeStagesOf(spec) ?? [], cwd: wd, redact: redactSecrets });
   if (closeTimingResolved.timedOut) {
+    // Same invariant as the door's own timing check above: `resolveCloseTimeoutMs`
+    // only omits `timing` on the signed-override path, which is never `timedOut`.
+    if (closeTimingResolved.timing === null) throw new Error('unreachable: resolveCloseTimeoutMs sets timing whenever timedOut is true');
     const names = closeTimingResolved.timing.perStage.filter((s) => s.timedOut).map((s) => s.name).join(', ');
     emit('close-timing', { perStage: closeTimingResolved.timing.perStage, slowestMs: closeTimingResolved.timing.slowestMs, slowestName: closeTimingResolved.timing.slowestName, ceilingMs: null, source: 'estimated' });
     emit('escalation', {
@@ -2066,7 +2092,8 @@ export async function main(argv, deps = {}) {
   const env = deps.env ?? process.env;
   const out = deps.out ?? ((/** @type {string} */ s) => { console.log(s); });
   const err = deps.err ?? ((/** @type {string} */ s) => { console.error(s); });
-  const die = (/** @type {string} */ m) => { err(m); throw new ExitSignal(2); };
+  /** @param {string} m @returns {never} */
+  const die = (m) => { err(m); throw new ExitSignal(2); };
   const argFlag = (/** @type {string} */ n) => { const i = argv.indexOf(`--${n}`); return i === -1 ? null : (argv[i + 1] ?? ''); };
 
   try {

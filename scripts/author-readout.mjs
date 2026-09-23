@@ -4,7 +4,7 @@
 // `run-author.mjs` is a script: importing it runs it, and the block this replaces
 // is only reached after a real scout and a real model call. So the lines a person
 // actually signs against live here instead, and the runner calls them — the same
-// reason `u-readout.mjs` exists.
+// reason `src/u-readout.js` exists.
 //
 // F87 is the whole point of the pairing. The goal must state everything the close
 // will judge, and NOTHING derives one from the other or checks them against each

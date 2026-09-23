@@ -7,7 +7,7 @@
 //
 // Same instrument the hitl surface uses (tests/hitl-u.test.js): the REAL script,
 // driven through its PREVIEW path — everything before a key is read and before a
-// dollar is committed — plus the pure renderers from scripts/u-readout.mjs.
+// dollar is committed — plus the pure renderers from src/u-readout.js.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS, writeGreenRow } from '../src/reuse.js';
 import { makeRegistry } from '../src/bridges.js';
-import { reviewDoorPackage, runDoorLines } from '../scripts/u-readout.mjs';
+import { reviewDoorPackage, runDoorLines } from '../src/u-readout.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 — the orchestration this file's SOURCE-TEXT tripwires
