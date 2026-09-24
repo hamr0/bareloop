@@ -990,6 +990,14 @@ test('F191: a real throw inside the plain-folder branch (authored.json pre-exist
   assert.deepEqual(events.map((e) => e.type), ['author-start', 'job-red', 'author-crash', 'author-end'],
     'the plain-folder request-red still fires before the writeOut throw; then the crash net catches it');
   assert.equal(events.at(-1).outcome, 'crashed');
+  // the spine PATH itself must appear exactly once across stdout+stderr — the
+  // crash catch used to print it (~src/authorrun.js:1280) AND the shared tail
+  // that every exit path reaches (~:1328) also prints it; nothing on the crash
+  // path skips the tail, so the catch's own copy was a pure duplicate.
+  const spineFile = join(out, spineFiles[0]);
+  const spineMentions = text.split(spineFile).length - 1;
+  assert.equal(spineMentions, 1,
+    `the spine path must appear exactly once across stdout+stderr — a duplicate print regressed this (saw ${spineMentions})\n${text}`);
 });
 
 // The far side of the move — pinned from SOURCE, for the same reason the
