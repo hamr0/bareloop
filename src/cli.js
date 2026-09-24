@@ -51,6 +51,13 @@ import { main as runUMain } from './userrun.js';
 // one place each flag grammar is parsed.
 import { main as interviewMain } from './interviewrun.js';
 import { main as authorMain } from './authorrun.js';
+// PANEL-BUILD.md P0 — the spine/gate-audit read side (`bareloop replay`,
+// and `doHistory`'s reader below), lifted out of `scripts/run-replay.mjs`
+// into `src/replayio.js` the same way tasks 1-3 lifted their own scripts.
+import {
+  parseJsonl, looksLikeSpine, replayOne, listSpines, readHistoryLog,
+} from './replayio.js';
+import { formatReplay, formatAllLines } from './replay.js';
 
 // The tier->model tables live in `src/providers.js` now (PRD item 28's
 // factory) — one seam instead of a copy hardcoded in each runner. A
@@ -467,16 +474,65 @@ function doHistory(args, { out, err, cwd }) {
   const dir = resolve(cwd, bundleDirArg);
   const historyFile = join(dir, 'history.jsonl');
   if (existsSync(historyFile)) {
+    // PANEL-BUILD.md P0 — the one reader for `history.jsonl` (`src/replayio.js`'s
+    // `readHistoryLog`), replacing this command's own hand-rolled
+    // `readFileSync`/split. Each row is re-printed with `JSON.stringify`
+    // (byte-identical to the original trimmed line for every well-formed
+    // row, since `appendHistory` itself writes `JSON.stringify(row)` —
+    // src/bundle.js:712); a malformed line is counted, never silently
+    // dropped or reprinted corrupt.
+    const { rows, skipped } = readHistoryLog(historyFile);
     out('history:');
-    for (const line of readFileSync(historyFile, 'utf8').split('\n')) {
-      if (line.trim()) out(`  ${line.trim()}`);
-    }
+    for (const row of rows) out(`  ${JSON.stringify(row)}`);
+    if (skipped > 0) out(`  (${skipped} malformed line${skipped === 1 ? '' : 's'} skipped)`);
   } else out('history: (no runs yet)');
   const reg = loadRegistry(join(dir, 'bridges'));
   if (reg.bridges.length > 0) {
     out('bridges:');
     for (const b of reg.bridges) out(`  ${JSON.stringify(listingRow(b))}`);
   }
+  return 0;
+}
+
+/**
+ * `bareloop replay <spine.jsonl>` — one run's whole story, reconstructed
+ * from its spine + gate-audit sidecar, printed as one page
+ * ({@link formatReplay}). `bareloop replay --all <dir>` — every spine found
+ * directly in `dir`, one aligned table row each ({@link formatAllLines}).
+ * Read-only, $0, mints no verdict, writes nothing (PANEL-BUILD.md P0: this
+ * is the CLI the gap table marked "No" for "Replay an archived run at $0").
+ * Logic lifted verbatim from `scripts/run-replay.mjs` into
+ * `src/replayio.js`; this command is that script's one caller now, the same
+ * shape `bareloop history`/`bareloop run` already are over their own
+ * library functions.
+ * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string }} ctx
+ */
+function doReplay(args, { out, err, cwd }) {
+  if (args[0] === '--all') {
+    const dirArg = args[1];
+    if (!dirArg) { err('usage: bareloop replay --all <dir>'); return 1; }
+    const dir = resolve(cwd, dirArg);
+    if (!existsSync(dir)) { err(`no such directory: ${dir}`); return 1; }
+    const entries = listSpines(dir);
+    if (entries.length === 0) { out(`no .jsonl files found in ${dir}`); return 0; }
+    out(formatAllLines(entries));
+    return 0;
+  }
+  const spinePathArg = args[0];
+  if (!spinePathArg) {
+    err('usage: bareloop replay <spine.jsonl>');
+    err('       bareloop replay --all <dir>');
+    return 1;
+  }
+  const spinePath = resolve(cwd, spinePathArg);
+  if (!existsSync(spinePath)) { err(`no such file: ${spinePath}`); return 1; }
+  const spine = parseJsonl(spinePath);
+  if (!looksLikeSpine(spine.records)) {
+    err(`${spinePath} does not look like a spine (no job-start or run-start record found)`);
+    return 1;
+  }
+  const summary = replayOne(spinePath, { preParsedSpine: spine });
+  out(formatReplay(summary));
   return 0;
 }
 
@@ -566,6 +622,11 @@ export async function main(argv, deps = {}) {
   // gates), same task. Same raw-stream reasoning: its one interactive seam
   // (the confirm turn) reads stdin directly.
   if (cmd === 'author') return authorMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr });
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author`);
+  // `bareloop replay` — the spine/gate-audit read side (PANEL-BUILD.md P0,
+  // last of the rung's four tasks). Synchronous, file-based, no interactive
+  // seam — same shape as `doHistory`/`doExport`, not the argv-owning
+  // `main(argv, deps)` modules the flows above delegate to.
+  if (cmd === 'replay') return doReplay(rest, ctx);
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay`);
   return 1;
 }

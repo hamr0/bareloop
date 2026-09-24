@@ -2517,7 +2517,16 @@ is not a spend record and no spend-slicing instrument needs to account for it.
 prints the same line when handed the run's spine file as its optional third positional.
 
 
-### `replayRun(spineEvents, auditEvents?, { runId? })` / `formatReplay(summary)` — `src/replay.js`
+### `replayRun(spineEvents, auditEvents?, { runId? })` / `formatReplay(summary)` / `summarizeForAllLine(summary)` / `formatAllLines(entries)` — `src/replay.js`
+
+`summarizeForAllLine(summary)` reduces one `replayRun` summary to one `--all`/directory-
+listing row's raw field strings (`id`/`job`/`shape`/`class`/`model`/`outcome`/`spend`/
+`wall`/`steps`/`reason`); `formatAllLines(entries)` renders every row `listSpines` (below)
+built for one directory as a fixed-column aligned table, with `<name>  not-a-spine` lines
+interleaved at their original position for any file that didn't look like a spine. Both
+are PANEL-BUILD.md P0 additions to the package root: they already existed inside
+`src/replay.js` (built for `scripts/run-replay.mjs`'s own `--all` mode) but were not
+re-exported until this rung, alongside `src/replayio.js` below.
 
 PRD build-list item 6: today no failed run can be reconstructed in under five minutes — every
 byte is on disk (the spine JSONL + its gate-audit sidecar) but only hand-slicing JSONL reads it.
@@ -2767,6 +2776,45 @@ const audit = fs.readFileSync(auditFile, 'utf8').trim().split('\n').map(JSON.par
 console.log(formatReplay(replayRun(spine, audit, { runId: 'mszcthk1' })));
 ```
 
+### `replayOne(spinePath, opts?)` / `listSpines(dir)` / `readHistoryLog(file)` — `src/replayio.js`
+
+PANEL-BUILD.md P0, the rung's last task: the IO layer `replayRun`/`formatReplay` above
+never had — resolving a spine's gate-audit sibling on disk and reading it, and listing
+which `.jsonl` files in a directory are spines at all. This is the module `bareloop
+replay` and `bareloop history` are both thin callers of (previously duplicated ad hoc: a
+`readFileSync` inline in `src/cli.js`'s own `doHistory`, and a second copy of this exact
+IO logic living only in `scripts/run-replay.mjs` with no library form and no `bareloop`
+command over it — the gap PANEL-BUILD.md's own measured table named). Every function here
+is pure IO + content detection; the actual reconstruction is `replayRun`'s alone (above) —
+nothing here recomputes a field `replayRun`/`runBehaviour` already derive.
+
+`src/replayio.js` also holds lower-level plumbing (`parseJsonl`, `isSidecarByName`,
+`looksLikeSpine`, `resolveSiblings`) that the three functions below compose internally —
+a raw JSONL parser, a filename predicate, a content predicate, and a sibling-path
+resolver. These are deliberately **not** re-exported from the package root: they are
+implementation steps, not their own adopter-facing promise, and each is exercised (and
+importable) directly from `src/replayio.js` by this repo's own tests.
+
+- **`replayOne(spinePath, { preParsedSpine?, skipAudit? })`** → `ReturnType<replayRun>`.
+  Reads the spine (+ sidecar unless `skipAudit`) and hands both straight to `replayRun`.
+  `skipAudit` (carried over from the script this replaces, PR #23 review item 5): a
+  directory listing never opens a run's sidecar at all, since `summarizeForAllLine` reads
+  none of the audit-sourced fields — reading every run's sidecar in a `--all` listing was
+  pure unused I/O, multiplied by every spine found.
+- **`listSpines(dir)`** → `Array<{kind:'spine', row: ReturnType<summarizeForAllLine>} |
+  {kind:'not-a-spine', name}>`, one entry per `.jsonl` file found directly in `dir` (not
+  recursive) that is not a sidecar by name. Feeds `formatAllLines` directly.
+- **`readHistoryLog(file)`** → `{rows, skipped}`. The one reader for a bundle's
+  `history.jsonl` (`src/bundle.js`'s `appendHistory`); replaces `bareloop history`'s former
+  hand-rolled `readFileSync`/split.
+
+```js
+import { listSpines, replayOne } from 'bareloop';
+import { formatAllLines, formatReplay } from 'bareloop';
+console.log(formatAllLines(listSpines('/path/to/patient-repo')));
+console.log(formatReplay(replayOne('/path/to/patient-repo/u-mszcthk1.jsonl')));
+```
+
 ### `PROMPT_REGISTERS` / `isPromptFile(path)` — `src/promptregisters.js`, and the prompt-commit rule
 
 PRD build-list item 5 (TODO #8), Q9 answered (hamr, 2026-08-25): "a check". A commit that
@@ -3000,7 +3048,7 @@ between a swapped script and a fake green, so `bareloop run` calls it as literal
 before the envelope check, before the key check, before the worktree, before `runJob` is
 ever reached.
 
-#### The CLI — `bareloop export | run | history | run-u | interview | author`, `bin/bareloop.mjs`
+#### The CLI — `bareloop export | run | history | replay | run-u | interview | author`, `bin/bareloop.mjs`
 
 `bin/bareloop.mjs` is a ~10-line adapter: it supplies the real `deps` (real `env`/`stdout`/
 `stderr`/`cwd`/`stdin`) and turns the returned number into `process.exitCode` — never
@@ -3096,9 +3144,30 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   when none matches — which, cross-machine, is the common case, since the historic mint's
   real close-script path and the importer's own bundle path essentially never coincide.
 
-- **`bareloop history <bundleDir>`** → prints every `history.jsonl` line verbatim, then
-  every bridge's `listingRow(b)` from `<bundleDir>/bridges`. Always exit `0`; "(no runs
-  yet)" when `history.jsonl` doesn't exist.
+- **`bareloop history <bundleDir>`** → prints every `history.jsonl` row (via
+  `readHistoryLog` — `src/replayio.js`, PANEL-BUILD.md P0's last task; a malformed row is
+  counted and skipped, never reprinted corrupt), re-serialized with `JSON.stringify` (byte-
+  identical to the original line for every well-formed row, since `appendHistory` itself
+  writes `JSON.stringify(row)` — `src/bundle.js`), then every bridge's `listingRow(b)` from
+  `<bundleDir>/bridges`. Always exit `0`; "(no runs yet)" when `history.jsonl` doesn't exist.
+
+- **`bareloop replay <spine.jsonl>`** / **`bareloop replay --all <dir>`** (PANEL-BUILD.md
+  P0, last of the rung's four tasks) → the read side for the panel's History/Run/Audit/Job
+  tabs: point it at one run's spine (+ its `-gate-audit.jsonl` sidecar, resolved
+  automatically) and get `formatReplay`'s one-page report; point `--all` at a directory and
+  get every spine found directly in it as one aligned table row each
+  (`formatAllLines`/`summarizeForAllLine`). Read-only, $0, mints no verdict, writes nothing.
+  Lifted verbatim out of `scripts/run-replay.mjs` into `src/replayio.js` (see the Public API
+  entry below); that script is now this command's own thin adapter (`bareloop replay` is a
+  fresh sub-command name — `bareloop`'s own numbered menu is unchanged, same reasoning as
+  `run-u`/`interview`/`author` above). A `.jsonl` that carries no `job-start`/`run-start`
+  record — content-detected, never by filename pattern (the real archive uses `u-<id>`,
+  `battery-A1-<id>`, `reuse-<id>`, `job2-<id>`, and more, with no shared convention) — errs
+  `does not look like a spine`, exit `1`, rather than silently printing an empty report; a
+  directory of only such files under `--all` prints each as `<name>  not-a-spine` instead of
+  a blank table. Exit `0` on a normal report/listing (regardless of the RUN's own outcome —
+  this command reports, it never grades), `1` on a missing file/directory or a non-spine
+  file, `1` with a usage line on no args.
 
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
