@@ -13385,3 +13385,101 @@ against `deepseek-flash`. Given three different causes across three runs, look a
 calibration as a whole rather than patching one more rule in isolation.
 
 **Status: OPEN, parked by ruling, not built.**
+
+## F193 — the prompt-commit rule assumed every prompt-register-file change came from a run failure; a type-only edit could not satisfy it honestly (fixed)
+
+Found 2026-09-23 on `feat/panel-n6`. Commit `565fb99` widened one JSDoc `@param` type annotation in
+`src/planrun.js` (a registered file, `NATIVE_READ_STRATEGY`) from `text?: string` to
+`text?: string|null`, fixing a real `strictNullChecks` error `tsc` found — a latent type-annotation
+bug (`humanRuling`'s declared shape didn't match its sibling `heldRuling`'s, both fed by the same
+`resolveHumanRuling` seam), not a runtime defect and not caused by any run. It changed zero
+characters of any prompt string, yet `npm test`'s `prompt-commit-check` step failed the commit
+(missing `Failure`/`Addresses`/`Corrects` and a run citation) because the base rule
+(`scripts/promptcommitlib.mjs`) is FILE-granular by design — a commit touching an inventoried
+prompt-register file must carry the three labels, full stop, with no way to see that the specific
+lines it changed carried no prompt text. No honest `Failure: run <id>` line could exist for this
+commit: a typechecker caused it, not a run.
+
+hamr authorized a narrow exemption (2026-09-23, his own word, same session): a commit is exempt
+from the three labels + run citation only when, for EVERY prompt-register file it touches, EVERY
+line the diff changed (removed lines against the OLD file, added lines against the NEW file) is
+"prose-only" — entirely whitespace, a `//` line comment, or inside a `/* ... */` block comment, per
+a small conservative comment/string/template-literal scanner (`classifyProseOnlyLines` in
+`scripts/promptcommitlib.mjs`). Every prompt register in this codebase is assembled from a string or
+template literal, never a comment, so a line that is provably ALL comment can never carry the text
+PROMPT_REGISTERS points at. Changed-line numbers come from parsing a `git diff -U0` patch's hunk
+headers (`parseChangedLineNumbers`, pure text parsing); the old/new file blobs and the diff patch
+text are resolved via git ONLY in `scripts/prompt-commit-check.mjs` (`attachPromptFileDiffs`) and
+handed into the pure `fileChangeIsProseOnly`/`evaluateCommits` path as plain data — the pure module
+never spawns git, matching every other field on `PromptCommitInput`.
+
+Fails closed by construction: any of the old text, new text, or diff text being unresolved (`null`
+— no parent commit, file didn't exist yet, file was deleted, etc.), a diff that resolves to zero
+changed lines, a single changed line that isn't provably prose-only, or a multi-file commit where
+even ONE touched prompt file isn't provably prose-only, all make the commit NOT exempt — the base
+rule (three labels + run citation) still applies. Proven adversarially, not just for the happy path:
+a real prompt-text (template-literal) edit is still rejected; a prompt-text edit and a comment edit
+landing in the SAME file/diff are still rejected; a PURE DELETION of a real prompt line (nothing
+added back) is still rejected (catches a mutation that only checked the added side); and a
+markdown-bullet-shaped line (`* like this`) written INSIDE a template literal's actual prompt text
+is never mistaken for a JSDoc continuation line, including the dangerous direction where an
+untracked backtick could let an unterminated `/* ...` sequence inside a template leak a fake
+block-comment state into the next real line of code. Every one of these was mutation-tested: each
+mutation (dropping the null-check, weakening `every` to `some`, dropping backtick/template state
+tracking, dropping the old-side line check, an off-by-one in the hunk-header line-number parser) was
+independently verified to turn a passing test red, then reverted via `cp` from a scratch backup
+(never `git checkout`).
+
+Commit `565fb99` now passes `node scripts/prompt-commit-check.mjs --range 565fb99^..565fb99`
+unmodified — the exemption alone made it pass; the commit itself was not touched.
+
+**Status: fixed.** `scripts/promptcommitlib.mjs`, `scripts/prompt-commit-check.mjs`,
+`tests/promptcommit.test.js`.
+
+## F194 — F193's blank-line hole: a ZERO-LENGTH line inside an open template literal read as prose-only, exempting a real prompt-text change (fixed)
+
+Found 2026-09-24 by `/branch-review` on `feat/panel-n6`, before merge — F193's exemption scanner
+(`classifyProseOnlyLines`, `scripts/promptcommitlib.mjs`) walks each line CHARACTER BY CHARACTER to
+decide whether it is prose-only. A fully empty line has zero characters, so it never enters the
+per-character loop, and `hasNonComment` kept its `false` default regardless of what state
+(`code`/`template`/`single`/`double`/`blockcomment`) was open when that empty line began. Since
+every prompt register in this codebase is a string or template literal (never a comment —
+`src/promptregisters.js`'s own header), a blank line sitting INSIDE a still-open template literal is
+real prompt content, exactly like every non-blank line in that same open state already is via the
+per-character loop — but the scanner read it as prose-only anyway, purely because it had nothing to
+iterate over. Reproduced directly against the shipped (unfixed) code:
+
+```js
+const oldText = 'const P = `Line one\nLine three`;\n';
+const newText = 'const P = `Line one\n\nLine three`;\n';   // one blank line inserted mid-template
+classifyProseOnlyLines(newText)                    // → [false, true, false]   ← line 2 (blank) misread prose-only
+fileChangeIsProseOnly(oldText, newText, diffText)  // → true                    ← wrongly EXEMPT
+```
+
+**Failure:** a commit inserting or deleting a blank line inside a multi-line prompt template literal
+in a registered file (e.g. `src/planrun.js`) genuinely changes the text sent to the model, and would
+have been silently waved through `npm test`'s `prompt-commit-check` with no `Failure`/`Addresses`/
+`Corrects` labels and no run citation — the exact defeat of the rule F193's exemption exists to stay
+inside.
+
+Fix: `classifyProseOnlyLines` now seeds `hasNonComment` for a zero-length line from whether the
+state open at that line's START is `single`/`double`/`template` — content-bearing states where a
+blank line is still real text — rather than always defaulting to `false`. A blank line inside an
+open `blockcomment` (or plain `code`) correctly stays prose-only, unchanged from before: only the
+string/template-literal states were wrong, so only they are seeded. A non-empty line's classification
+is untouched (the per-character loop still computes it exactly as before); the seed only matters when
+the loop never runs at all.
+
+Proven monotonic against the existing suite: `tests/promptcommit.test.js`'s full 44 pre-existing
+cases (the F193 exemption's own comment-only-edit, real-template-edit, mixed-hunk, null-input,
+pure-deletion, zero-hunk and markdown-bullet-in-template adversarial cases) all still pass, byte-
+identical expectations, after the fix — the only behaviour change is the blank/whitespace-inside-a-
+template case. Five new tests cover it directly: a blank line inside an open template
+(`classifyProseOnlyLines` and both directions of `fileChangeIsProseOnly` — inserted and deleted, the
+old-side check matters too), a blank line inside an open block comment (control case, stays
+prose-only), and a whitespace-only line inside an open template — the latter was already correctly
+classified non-prose by the existing per-character loop (each space character hits the
+`single`/`double`/`template` branch, which unconditionally marks `hasNonComment = true` regardless of
+the character), so only the true zero-length case needed the fix.
+
+**Status: fixed.** `scripts/promptcommitlib.mjs`, `tests/promptcommit.test.js`.

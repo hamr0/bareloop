@@ -5,7 +5,7 @@
 // only AFTER a real scout and a real model call have been paid for. The repo
 // already carries this pattern for the same reason (tests/watchdog.test.js reads
 // run-u.mjs's grace arithmetic out of source; tests/authoring.test.js pushed the
-// readout and the ceiling parse into `scripts/author-readout.mjs` so a test could
+// readout and the ceiling parse into `src/authorreadout.js` so a test could
 // reach them at all). What cannot be extracted without moving the emit itself is
 // pinned here instead of going unchecked.
 //
@@ -32,12 +32,21 @@ import { prepareSource } from '../src/source.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
-const SRC = readFileSync(join(REPO, 'scripts/run-author.mjs'), 'utf8');
+// PANEL-BUILD.md P0 task 4/4 — this orchestration moved off
+// scripts/run-author.mjs (now a thin adapter) into src/authorrun.js's one
+// `main(argv, deps)`. Every block this file pins is now indented ONE level
+// deeper (it sits inside `main`'s own body rather than at the top of the
+// script), so every indent-anchored pattern below carries the extra 2
+// spaces; tokens also changed (`console.log`→`out`, `console.error`→`err`,
+// `process.exit(n)`→`throw new ExitSignal(n)`, `process.exitCode = n`→
+// `exitCode = n`, the crash catch's own param `err`→`authorErr` to avoid
+// shadowing the `err()` print function).
+const SRC = readFileSync(join(REPO, 'src/authorrun.js'), 'utf8');
 
 /** `archiveGateAudit`'s own catch: from its `try {` to the brace that closes the
  * whole arrow function, so the guard below reads only this one catch, never the
  * rest of the file. */
-const ARCHIVE_CATCH = /const archiveGateAudit = \(\) => \{[\s\S]*?\n\};\n/.exec(SRC)?.[0];
+const ARCHIVE_CATCH = /const archiveGateAudit = \(\) => \{[\s\S]*?\n {2}\};\n/.exec(SRC)?.[0];
 
 // CLAUDE.md forbids `as any` / `@type {any}` casts anywhere in the repo.
 // archiveGateAudit's rename-failure catch (commit 3596f2b, F186) had one:
@@ -54,9 +63,13 @@ test('archiveGateAudit narrows its catch error without an `any` cast (CLAUDE.md 
  * closing on a bare `\n}\n` swallowed everything down to the catch's own brace and
  * the guard silently became a guard over the rest of the file — every assertion
  * below still passing while reading a block it was never written against. */
-const BLOCK = /\n {2}if \(authored\.stop === 'cap-halt' \|\| authored\.stop === 'pricing-red'\) \{[\s\S]*?\n {2}\}\n/.exec(SRC)?.[0];
-/** the crash catch: the whole handler, from its brace to its brace */
-const CATCH = /\n\} catch \(err\) \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+const BLOCK = /\n {4}if \(authored\.stop === 'cap-halt' \|\| authored\.stop === 'pricing-red'\) \{[\s\S]*?\n {4}\}\n/.exec(SRC)?.[0];
+/** the crash catch: from its own brace to where `} finally {` opens the next
+ * block on the SAME line — a bare `\n {2}\}\n` (the OLD anchor) never matches
+ * that combined line at all, so the lazy scan would have run straight past
+ * the catch into whatever the next bare `}` happens to be, the exact
+ * too-much-haystack failure this file's own header warns about. */
+const CATCH = /\n {2}\} catch \(authorErr\) \{[\s\S]*?\n {2}\} finally \{/.exec(SRC)?.[0];
 
 test('the governance block is still BOUNDED — the guard reads a block, not the rest of the file', () => {
   // The instrument's own pre-flight. `BLOCK` is a lazy regex over source, and the
@@ -130,7 +143,7 @@ test('the spine MEANING splits by stop — a blind meter is never spelled as a s
 // Read from SOURCE for the same reason the block above is: the span only reached
 // by paying for a scout and a model call cannot be driven from a test, and the
 // alternative to pinning it here is not pinning it at all. What CAN be extracted
-// was — `crashRecord` lives in `scripts/author-readout.mjs` and is exercised on
+// was — `crashRecord` lives in `src/authorreadout.js` and is exercised on
 // real thrown values in tests/authoring.test.js.
 
 test('the paid span is inside a catch, and only the paid span is', () => {
@@ -138,8 +151,14 @@ test('the paid span is inside a catch, and only the paid span is', () => {
   // the try opens AFTER the spine exists and after author-start is on it. Opening
   // it earlier would put the argv/config `die()` paths inside a handler whose
   // whole job is to write to a file that does not exist yet.
+  //
+  // PANEL-BUILD.md P0 — `main`'s OWN outer try (catching `ExitSignal`, the
+  // library's process.exit replacement) opens much earlier, before author-start
+  // even exists, so a bare `indexOf('\ntry {\n')` would find THAT one instead.
+  // This is the crash-handling try specifically — scoped to search AFTER
+  // `start`, the same way the F191 gap test below already has to.
   const start = SRC.indexOf("emit('author-start'");
-  const tryAt = SRC.indexOf('\ntry {\n');
+  const tryAt = SRC.indexOf('\n  try {\n', start);
   assert.ok(start !== -1 && tryAt !== -1, 'the try/author-start pair moved');
   assert.ok(start < tryAt, 'author-start emits BEFORE the try opens — a crash would have no spine to land in');
   // and the paid call itself is inside it
@@ -157,17 +176,23 @@ test('F191: the crash net starts IMMEDIATELY after author-start — no gap of ex
   const start = SRC.indexOf("emit('author-start'");
   assert.ok(start !== -1);
   const afterStart = SRC.indexOf('\n', start) + 1;
-  const between = SRC.slice(afterStart, SRC.indexOf('\ntry {\n', afterStart) + 1);
-  // strip line comments, block comments, and the two bindings that MUST be
+  const between = SRC.slice(afterStart, SRC.indexOf('\n  try {\n', afterStart) + 1);
+  // strip line comments, block comments, and the THREE bindings that MUST be
   // hoisted here (a plain `let`/`const` declaration with no call on its right
   // side — nothing that can throw) — anything left over is a gap.
+  //
+  // PANEL-BUILD.md P0 added the third one, `sigHandlers`: the ordinary-finish
+  // listener cleanup in `finally` (a library-safety addition so `main` stays
+  // callable more than once in one process) needed it visible outside the try
+  // for the same sibling-scope reason `rl`/`metered` already are.
   const codeOnly = between
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/.*$/gm, '')
     .replace(/^\s*let rl;\s*$/m, '')
     .replace(/^\s*const metered = \[\];\s*$/m, '')
+    .replace(/^\s*let sigHandlers = \[\];\s*$/m, '')
     .trim();
-  assert.equal(codeOnly, '', `only comments and the two hoisted bindings may sit between author-start and the try — found: ${JSON.stringify(codeOnly.slice(0, 200))}`);
+  assert.equal(codeOnly, '', `only comments and the three hoisted bindings may sit between author-start and the try — found: ${JSON.stringify(codeOnly.slice(0, 200))}`);
 });
 
 test('the catch writes a BODY: the crash and the end, each said once', () => {
@@ -175,7 +200,7 @@ test('the catch writes a BODY: the crash and the end, each said once', () => {
   // the crash record, built by the ONE helper — a hand-rolled object here would be
   // a second scrub boundary, and an unredacted stack is the worst string in this
   // system to write to a file that outlives the run
-  assert.match(CATCH, /emit\('author-crash', crashRecord\(err\)\)/,
+  assert.match(CATCH, /emit\('author-crash', crashRecord\(authorErr\)\)/,
     'the crash body must go through crashRecord — an inline object bypasses the redactor and the bound');
   // and the run's END, under an outcome no other arm uses
   assert.match(CATCH, /emit\('author-end', \{ outcome: 'crashed' \}\)/,
@@ -200,9 +225,12 @@ test('F191: the crash message is truthful about whether anything was ever paid f
 test('the catch does not swallow, does not retry, and does not exit()', () => {
   assert.ok(CATCH, 'the crash handler is gone');
   // the operator's whole error, on stderr, and FIRST — before the two writes that
-  // could themselves fail
-  assert.match(CATCH, /console\.error\(err\)/, 'the raw error must still reach the terminal in full');
-  const printed = CATCH.indexOf('console.error(err)');
+  // could themselves fail. PANEL-BUILD.md P0: this is the ONE line this file's
+  // header deliberately kept as a raw `console.error` rather than routing
+  // through the injected `err()` — Node's own multi-line Error/stack
+  // formatting is the point, and it must survive byte-for-byte.
+  assert.match(CATCH, /console\.error\(authorErr\)/, 'the raw error must still reach the terminal in full');
+  const printed = CATCH.indexOf('console.error(authorErr)');
   const emitted = CATCH.indexOf("emit('author-crash'");
   assert.ok(printed !== -1 && emitted !== -1 && printed < emitted,
     'the error is written down before it is printed — a full disk would then swallow it');
@@ -211,9 +239,13 @@ test('the catch does not swallow, does not retry, and does not exit()', () => {
   assert.ok(!/await /.test(CATCH), 'the catch awaits something — a crash handler must not retry');
   assert.ok(!/authorCloseForJob|prepareSigning/.test(CATCH), 'the catch re-enters the pipeline');
   // F71 — process.exit() can discard queued stdout, and this handler runs with a
-  // readout already queued behind it (the leak scan and the spine line)
+  // readout already queued behind it (the leak scan and the spine line).
+  // PANEL-BUILD.md P0: `main` is a LIBRARY function now and never calls
+  // process.exit() anywhere — the crash sets a local `exitCode = 4` instead,
+  // returned at the bottom of `main` (never `process.exitCode`, a top-level
+  // script global this function no longer is).
   assert.ok(!/process\.exit\(/.test(CATCH), 'process.exit() in the crash path can discard the readout it just wrote (F71)');
-  assert.match(CATCH, /process\.exitCode = 4/, 'the crash needs its own exit code, distinct from 1/2/3');
+  assert.match(CATCH, /exitCode = 4/, 'the crash needs its own exit code, distinct from 1/2/3');
   // and the record survives its own writer failing: an appendFileSync that throws
   // must not take the printed error down with it (F70 — a guard carrying the
   // failure mode it guards)
@@ -236,16 +268,17 @@ test('the catch does not swallow, does not retry, and does not exit()', () => {
 // past that line every path costs real money.
 
 /** the progress/cost/kill region: from `costSoFar` to the close of the signal
- * loop. INDENT-ANCHORED at both ends (`\n}` at column 0), the same lesson the
+ * loop. INDENT-ANCHORED at both ends (`\n  }` at column 2 — one level deeper
+ * than the old top-level script, PANEL-BUILD.md P0), the same lesson the
  * governance block above already paid for. F191 moved `const metered = [];`
  * itself OUTSIDE the try (hoisted alongside `rl`, for the same
  * catch/finally-is-a-sibling reason) — this region starts one declaration
  * later than it used to, right after that hoist, so it never swallows the
  * bare `try {` that now sits between them. */
-const KILL = /const costSoFar = \(\)[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+const KILL = /const costSoFar = \(\)[\s\S]*?\n {2}\}\n/.exec(SRC)?.[0];
 /** F6's own renderer, extracted with it — the killed report must not spell the
  * spend a second way */
-const COSTLINE = /const costLine = \(cost\) => \{[\s\S]*?\n\};\n/.exec(SRC)?.[0];
+const COSTLINE = /const costLine = \(cost\) => \{[\s\S]*?\n {2}\};\n/.exec(SRC)?.[0];
 
 test('the kill region is still BOUNDED — this guard reads the handler, not the rest of the file', () => {
   assert.ok(KILL, 'the kill/progress region moved — this guard no longer reads the code it guards');
@@ -308,7 +341,7 @@ test('the reporters never take down the run they report on', () => {
 // a real model call have been paid for.
 
 /** the `prepareSigning` call, from its opening to its closing paren */
-const SIGN = /const signing = await prepareSigning\(\{[\s\S]*?\n {6}\}\);/.exec(SRC)?.[0];
+const SIGN = /const signing = await prepareSigning\(\{[\s\S]*?\n {8}\}\);/.exec(SRC)?.[0];
 
 test('the calibration gate runs under the OPERATOR\'s ceiling, with prior spend folded in', () => {
   assert.ok(SIGN, 'the prepareSigning call moved — this guard no longer reads the code it guards');
@@ -340,13 +373,20 @@ const twin = (sig) => new Promise((resolve, reject) => {
   writeFileSync(file, [
     "import { appendFileSync } from 'node:fs';",
     `import { tallyCalls } from ${JSON.stringify(join(REPO, 'src/text.js'))};`,
-    `import { phaseLine } from ${JSON.stringify(join(REPO, 'scripts/author-readout.mjs'))};`,
+    `import { phaseLine } from ${JSON.stringify(join(REPO, 'src/authorreadout.js'))};`,
     `const spineFile = ${JSON.stringify(spine)};`,
     'const CEILING_USD = 2.5;',
     "const emit = (type, data = {}) => { appendFileSync(spineFile, `${JSON.stringify({ type, ts: new Date().toISOString(), ...data })}\\n`); };",
+    // PANEL-BUILD.md P0 — the real file's console.log/console.error became
+    // out()/err() against an injectable stream (the library lift); the twin's
+    // own ~10 lines of scaffolding define the same two functions, against the
+    // real process streams, so KILL's calls to them resolve.
+    "const out = (s = '') => { process.stdout.write(`${s}\\n`); };",
+    "const err = (s) => { process.stderr.write(`${s}\\n`); };",
     // hoisted OUTSIDE the try in the real file (F191) — declared here in the
     // test's own ~10 lines of scaffolding for the same reason.
     'const metered = [];',
+    'let sigHandlers = [];',
     COSTLINE,
     KILL,
     // one real paid call and one real phase, then hold the process open exactly
@@ -428,7 +468,18 @@ test('twin: the paid calls were on the spine BEFORE the kill — a run that dies
 test('exit code 4 is the CRASH, and nothing else in this runner claims it', () => {
   // 1 = a refusal or a failed gate, 2 = operator/config, 3 = a leak. Sharing a
   // code would file a crash as one of those — a bug read as a result.
-  const codes = [...SRC.matchAll(/process\.exit(?:Code = |\()(\d)/g)].map((m) => m[1]);
+  //
+  // PANEL-BUILD.md P0 — the vocabulary itself is unchanged, only its spelling:
+  // a library function never calls `process.exit()`/sets `process.exitCode`,
+  // so every early stop is now `throw new ExitSignal(n)` and every ordinary
+  // stop is a local `exitCode = n` (returned at the bottom of `main`).
+  const codes = [...SRC.matchAll(/(?:\bexitCode = (\d)\b)|(?:ExitSignal\((\d)\))/g)]
+    .map((m) => m[1] ?? m[2])
+    // `let exitCode = 0;` is the function's own initializer, never a stop —
+    // the original vocabulary never counted an implicit/absent exit code
+    // either, so this excludes the one new site that would otherwise be a
+    // false '0' the old top-level script had no way to spell.
+    .filter((c) => c !== '0');
   assert.deepEqual([...new Set(codes)].sort(), ['1', '2', '3', '4'], 'the runner\'s exit vocabulary changed');
   assert.equal(codes.filter((c) => c === '4').length, 1, 'a second site claims exit 4 — the crash code is no longer distinct');
 });
@@ -458,15 +509,15 @@ test('exit code 4 is the CRASH, and nothing else in this runner claims it', () =
 // dies loud on a missing/unresolvable one. Extracted whole (`let providerEntry;`
 // through the `baseUrl` line that closes it) so the twin below runs the REAL
 // resolution, not a re-typed stand-in of it.
-const PROVIDER_BLOCK = /\nconst providerEntry = \(\(\) => \{\n[\s\S]*?\nconst baseUrl = typeof draft\?\.baseUrl === 'string' \? draft\.baseUrl : undefined;\n/.exec(SRC)?.[0];
-const DRAFT_JUDGE = /const resolveDraftJudge = [\s\S]*?\nconst draftJudge = resolveDraftJudge\(draft\);/.exec(SRC)?.[0];
+const PROVIDER_BLOCK = /\n {2}const providerEntry = \(\(\) => \{\n[\s\S]*?\n {2}const baseUrl = typeof draft\?\.baseUrl === 'string' \? draft\.baseUrl : undefined;\n/.exec(SRC)?.[0];
+const DRAFT_JUDGE = /const resolveDraftJudge = [\s\S]*?\n {2}const draftJudge = resolveDraftJudge\(draft\);/.exec(SRC)?.[0];
 const GATE_JUDGE = /const judge = judges\n[\s\S]*?: null;/.exec(SRC)?.[0];
 // the STAMP: the actual argument `authorCloseForJob` is called with — extracted
 // separately from `DRAFT_JUDGE` because computing the right identity and USING
 // it at the call site are two different ways to reintroduce the bug (the
 // twin below executes `DRAFT_JUDGE`, but nothing short of reading this exact
 // line proves the call site spends it rather than the old `MODEL`).
-const AUTHOR_JUDGE_ARG = /\n {4}judgeModel: [^,\n]+,\n/.exec(SRC)?.[0];
+const AUTHOR_JUDGE_ARG = /\n {6}judgeModel: [^,\n]+,\n/.exec(SRC)?.[0];
 
 test('the judge-identity block is still BOUNDED — the twin below reads exact statements, not the rest of the file', () => {
   assert.ok(PROVIDER_BLOCK, 'the authoring provider resolution moved or was reworded');
@@ -588,13 +639,20 @@ test('the resolved identity matches what scripts/run-u.mjs itself resolves at ru
 // `resolveProvider` (`src/providers.js`) — so it proves the constructed
 // provider's own `.baseUrl` property, not a re-typed paraphrase of the
 // conditional.
-const JUDGE_PROVIDER_ARG = /const judgeProvider = judge\n[\s\S]*?\n {8}: null;/.exec(SRC)?.[0];
+// PANEL-BUILD.md P0 — this used to be a ternary (`const judgeProvider = judge
+// ? buildRunnerProviders({...}).judgeProvider : null;`); the lift rewrote it
+// to an if/else (`let judgeProvider = null; if (judge) { judgeProvider =
+// buildRunnerProviders({...}).judgeProvider; }`) because the ternary's own
+// true-branch object literal did not narrow `judge` for tsc (a real,
+// behaviour-identical fix, not a rewording) — the construction and its
+// content are otherwise the SAME statement this finding is about.
+const JUDGE_PROVIDER_ARG = /let judgeProvider = null;\n[\s\S]*?\n {8}\}\n/.exec(SRC)?.[0];
 // the author's OWN provider construction (a few hundred lines earlier) —
 // asserted UNCHANGED: this fix touches only the judge seam, and a regression
 // here (e.g. someone "fixing" the author line too, or dropping its own
 // baseUrl forwarding) would be an unrelated, unreviewed change to a call site
 // this finding never named as broken.
-const AUTHOR_PROVIDER_LINE = /const \{ provider \} = buildRunnerProviders\(\{[\s\S]*?\n\}\);/.exec(SRC)?.[0];
+const AUTHOR_PROVIDER_LINE = /const \{ provider \} = buildRunnerProviders\(\{[\s\S]*?\n {2}\}\);/.exec(SRC)?.[0];
 
 test('the judge-provider construction statement is still BOUNDED, and the author provider line is untouched', () => {
   assert.ok(JUDGE_PROVIDER_ARG, 'the judgeProvider construction moved or was reworded — this guard no longer reads the code it guards');
@@ -937,11 +995,12 @@ test('F191: a real throw inside the plain-folder branch (authored.json pre-exist
 // The far side of the move — pinned from SOURCE, for the same reason the
 // governance/kill/sign blocks above are: it is reachable only past a real
 // key and a real model call, which this suite never pays for.
-// F71 fix: the branch now ends `} else {` (process.exitCode, never process.exit(),
-// so queued stdout survives a slow reader) rather than a bare `}` — the block
-// capture stops at that `else` seam, which is also the guarantee that nothing
-// below can fall through into the repo-shaped continuation.
-const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n\} else \{/.exec(SRC)?.[0];
+// F71 fix: the branch now ends `} else {` (a local `exitCode = 1`, never
+// process.exit(), so queued stdout survives a slow reader) rather than a bare
+// `}` — the block capture stops at that `else` seam, which is also the
+// guarantee that nothing below can fall through into the repo-shaped
+// continuation.
+const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n {2}\} else \{/.exec(SRC)?.[0];
 
 test('the plain-folder branch is still BOUNDED — this guard reads the branch, not the rest of the file', () => {
   assert.ok(PLAIN_FOLDER_BLOCK, 'the plain-folder branch moved — this guard no longer reads the code it guards');
@@ -960,11 +1019,16 @@ test('a plain-folder job runs NO SCOUT and NO CONFIRM TURN — the stop is immed
   assert.doesNotMatch(PLAIN_FOLDER_BLOCK, /confirmGenerate|generate:/, 'no model boundary is ever touched on this path');
 });
 
-test('the plain-folder branch has exactly ONE outcome, set via process.exitCode (F71) — and an else seam, never a fall-through into the repo-shaped flow', () => {
+test('the plain-folder branch has exactly ONE outcome, set via a local exitCode (F71) — and an else seam, never a fall-through into the repo-shaped flow', () => {
   assert.ok(PLAIN_FOLDER_BLOCK);
-  const exitCodes = [...PLAIN_FOLDER_BLOCK.matchAll(/process\.exitCode = 1/g)].length;
+  const exitCodes = [...PLAIN_FOLDER_BLOCK.matchAll(/\bexitCode = 1\b/g)].length;
   assert.equal(exitCodes, 1, `F191's stop is the ONLY way out of this branch now — no confirm turn, no second path (saw ${exitCodes})`);
-  assert.ok(!/process\.exit\(/.test(PLAIN_FOLDER_BLOCK), 'F71 — process.exit() after output can discard queued stdout; this stop must use process.exitCode');
+  // F71 — process.exit() after output can discard queued stdout; this stop
+  // must use a returned exit code instead. PANEL-BUILD.md P0: `main` is a
+  // library function now and calls neither process.exit() NOR throws an
+  // ExitSignal on this path — it falls through to the shared tail.
+  assert.ok(!/process\.exit\(/.test(PLAIN_FOLDER_BLOCK), 'F71 — process.exit() after output can discard queued stdout; this stop must use a returned exit code');
+  assert.ok(!/ExitSignal\(/.test(PLAIN_FOLDER_BLOCK), 'this stop falls through to the shared tail — it must not early-exit via ExitSignal either');
   assert.match(PLAIN_FOLDER_BLOCK, /\} else \{$/, 'the repo-shaped continuation must be gated behind an else, not merely follow the stop in source order');
 });
 
@@ -992,7 +1056,7 @@ test('ambiguous language no longer dies — it travels through as langResult, fo
 });
 
 test('the confirm turn is wired into the authorCloseForJob call: ask, its OWN confirmGenerate, isRepo, langResult', () => {
-  const CALL = /const authored = await authorCloseForJob\(\{[\s\S]*?\n {2}\}\);/.exec(SRC)?.[0];
+  const CALL = /const authored = await authorCloseForJob\(\{[\s\S]*?\n {4}\}\);/.exec(SRC)?.[0];
   assert.ok(CALL, 'the authorCloseForJob call moved — this guard no longer reads the code it guards');
   assert.match(CALL, /\bask, confirmGenerate, isRepo: true, langResult,/);
   // the confirm turn's model boundary must be its OWN — bound to CONFIRM_SYSTEM,
@@ -1003,15 +1067,24 @@ test('the confirm turn is wired into the authorCloseForJob call: ask, its OWN co
 });
 
 test('rl.close() runs in a finally around the whole paid span — never inline at one exit path only', () => {
-  const finallyBlock = /\} finally \{[\s\S]*?\n\}\n/.exec(SRC)?.[0];
+  const finallyBlock = /\n {2}\} finally \{[\s\S]*?\n {2}\}\n/.exec(SRC)?.[0];
   assert.ok(finallyBlock, 'no finally block follows the crash catch');
-  assert.match(finallyBlock, /rl\.close\(\)/);
+  // PANEL-BUILD.md P0 — `rl` is possibly undefined (a die() before the confirm
+  // turn's own `rl = createInterface(...)` reaches this finally too), so tsc
+  // needed the honest `rl?.close()` rather than a bare `rl.close()`.
+  assert.match(finallyBlock, /rl\?\.close\(\)/);
   assert.match(finallyBlock, /catch \{/, 'closing the interactive seam must not crash the readout it follows (F70)');
 });
 
 test('the confirm turn\'s accepted goal lands on the DRAFT before assembleSpec — goal stays an operator field (D2)', () => {
   const idx = SRC.indexOf('authored.confirmed?.goal');
-  const assembleAt = SRC.indexOf('const spec = assembleSpec(draft, authored);');
+  // PANEL-BUILD.md P0 — `assembleSpec(draft, authored)` became `assembleSpec(draft,
+  // { ...authored, verdictType: authored.verdictType })`: a real tsc narrowing fix
+  // (a runtime guard just above proves `verdictType` is non-null in this branch, but
+  // that narrowing does not itself change what the whole `authored` OBJECT's type
+  // looks like at a call site, only this specific property access) — never a logic
+  // change to WHAT gets assembled.
+  const assembleAt = SRC.indexOf('const spec = assembleSpec(draft,');
   assert.ok(idx !== -1 && assembleAt !== -1 && idx < assembleAt,
     'draft.goal must be set from the confirm turn\'s accepted goal BEFORE assembleSpec reads the draft');
   assert.match(SRC, /draft\.goal = redactSecrets\(String\(authored\.confirmed\.goal\)\);/);
@@ -1032,7 +1105,7 @@ test('F175 open half: the signing readout also prints the questions the person A
 });
 
 test('run-author.mjs\'s ask seam has a `kind: \'answer\'` branch (F175 open half) that shows the question, its index/total, and reads free text', () => {
-  const branch = /if \(step\.kind === 'answer'\) \{[\s\S]*?\n {2}\}/.exec(SRC)?.[0];
+  const branch = /if \(step\.kind === 'answer'\) \{[\s\S]*?\n {4}\}/.exec(SRC)?.[0];
   assert.ok(branch, 'no kind: "answer" branch found in the ask seam');
   assert.match(branch, /step\.question/);
   assert.match(branch, /step\.index/);
@@ -1042,7 +1115,7 @@ test('run-author.mjs\'s ask seam has a `kind: \'answer\'` branch (F175 open half
 
 test('confirm-abandoned and confirm-restart get their own friendlier console line, and both still reach author-end via the generic stop', () => {
   assert.match(SRC, /authored\.stop === 'confirm-abandoned' \|\| authored\.stop === 'confirm-restart'/);
-  const NOT_AUTHORED = /if \(!authored\.ok\) \{[\s\S]*?\n {2}\}/.exec(SRC)?.[0];
+  const NOT_AUTHORED = /if \(!authored\.ok\) \{[\s\S]*?\n {4}\}/.exec(SRC)?.[0];
   assert.ok(NOT_AUTHORED);
   assert.match(NOT_AUTHORED, /emit\('author-end', \{ outcome: 'not-authored', stop: authored\.stop \}\);/,
     'confirm-abandoned/confirm-restart fall through this generic branch — author-end records the real stop either way');

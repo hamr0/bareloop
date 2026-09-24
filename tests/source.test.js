@@ -1222,8 +1222,12 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
   // destination each call proves against), never the local variable spellings
   // (`wd`, `frontDoor`, `dp`, `co`, …) — a behaviour-preserving rename must not
   // break this suite, only a change to what calls what.
-  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
-  assert.match(src, /import\s*\{\s*readSourceManifest,\s*frontDoorFromManifest,\s*proveDestination,\s*copyOut\s*\}\s*from\s*'\.\.\/src\/source\.js'/);
+  //
+  // PANEL-BUILD.md P0 — this wiring moved off `scripts/run-u.mjs` (now a thin
+  // adapter) into src/userrun.js's one shared `execute()` engine, which
+  // imports its sibling modules with `./` rather than `../src/`.
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
+  assert.match(src, /import\s*\{\s*readSourceManifest,\s*frontDoorFromManifest,\s*proveDestination,\s*copyOut\s*\}\s*from\s*'\.\/source\.js'/);
 
   const manifestCall = src.match(/const (\w+) = await readSourceManifest\(dirname\((\w+)\)\);/);
   assert.ok(manifestCall, 'the manifest must be read from the tree\'s own parent, before any token spends');

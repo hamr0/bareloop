@@ -6,7 +6,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateCommitMessage, evaluateCommits, PROMPT_COMMIT_LABELS, FAILURE_NEEDS_RUN_REF } from '../scripts/promptcommitlib.mjs';
+import {
+  validateCommitMessage, evaluateCommits, PROMPT_COMMIT_LABELS, FAILURE_NEEDS_RUN_REF,
+  classifyProseOnlyLines, parseChangedLineNumbers, fileChangeIsProseOnly,
+} from '../scripts/promptcommitlib.mjs';
 import { isPromptFile, PROMPT_REGISTERS } from '../src/promptregisters.js';
 
 // 'mszcthk1' is a REAL archived run id (bareloop.context.md's own replayRun
@@ -154,6 +157,246 @@ test('evaluateCommits: a commit touching a prompt file with a non-compliant mess
   );
   assert.equal(ok, false);
   assert.deepEqual(offenders, [{ sha: 'ghi789', missing: [...PROMPT_COMMIT_LABELS] }]);
+});
+
+// --- hamr's narrow exemption (2026-09-23): a commit touching a prompt-
+// register file changes no prompt TEXT — covers classifyProseOnlyLines,
+// parseChangedLineNumbers, fileChangeIsProseOnly, and evaluateCommits'
+// integration of all three via `promptFileDiffs`. ---------------------------
+
+test('classifyProseOnlyLines: a full JSDoc block comment is prose-only on every line, including a param line shaped exactly like commit 565fb99\'s real edit', () => {
+  const text = [
+    'function f(opts) {}',
+    '/**',
+    ' * @param {{decision: string, text?: string|null}|null} [opts.humanRuling] N4',
+    ' */',
+    'const other = 1;',
+  ].join('\n');
+  const classified = classifyProseOnlyLines(text);
+  assert.deepEqual(classified, [false, true, true, true, false]);
+});
+
+test('classifyProseOnlyLines: a `//` line comment is prose-only, a code line is not', () => {
+  const text = 'const x = 1;\n// a real comment\nconst y = 2; // trailing comment still has code before it';
+  assert.deepEqual(classifyProseOnlyLines(text), [false, true, false]);
+});
+
+test('classifyProseOnlyLines: a markdown-bullet-shaped line INSIDE a template literal is never mistaken for a JSDoc continuation line', () => {
+  // This is the adversarial case the exemption must not fall for: `* like
+  // this` is a real JSDoc-continuation shape, but here it is model-facing
+  // PROMPT TEXT sitting inside a backtick template, not a comment.
+  const text = [
+    'const PERSONA_TOOLS = `',
+    '* Always be nice',
+    '* Never lie',
+    '`;',
+  ].join('\n');
+  assert.deepEqual(classifyProseOnlyLines(text), [false, false, false, false]);
+});
+
+test('classifyProseOnlyLines: a `/* */`-shaped sequence inside a string never opens a real block comment (no state leak to the next line)', () => {
+  const text = 'const s = "a /* b";\nreal_code_here();';
+  // Both lines carry real code — if the string wrongly let "/*" open a block
+  // comment, line 2 (or the tail of line 1) could misclassify as comment.
+  assert.deepEqual(classifyProseOnlyLines(text), [false, false]);
+});
+
+test('classifyProseOnlyLines: an UNTERMINATED "/* "-shaped sequence inside a TEMPLATE literal must not leak a fake block-comment state into the next real code line', () => {
+  // The dangerous direction: if backtick-tracking were dropped, the scanner
+  // would (wrongly, still in "code" state) treat the `/*` inside this prompt
+  // string as opening a REAL block comment with no closing `*/` on the same
+  // line, and that fake comment state would then swallow the next line's
+  // real code as "prose-only" too — a false EXEMPT. Template tracking must
+  // prevent that: the whole first line is template content (never a real
+  // comment start), and the second line is real code, full stop.
+  const text = 'const PROMPT = `note: /* looks like a comment start inside a string`;\nconst REAL_CODE_AFTER = mustNotBeHidden();';
+  assert.deepEqual(classifyProseOnlyLines(text), [false, false]);
+});
+
+// F194 — a blank line has zero characters, so the per-character loop that
+// sets `hasNonComment` never runs for it, and `hasNonComment` keeps its
+// `false` default regardless of what state (code/template/string/block-
+// comment) was active when that empty line began. A blank line sitting
+// INSIDE a still-open template literal is real prompt content (the doc
+// comment above claims "the whole span from an opening backtick to its
+// closing backtick is treated as one non-comment region" — false for an
+// empty line before this fix). Found by /branch-review, reproduced here
+// before the fix, fixed after. See docs/logs/FINDINGS.md F194 (F193 follow-up).
+test('classifyProseOnlyLines: F194 — a BLANK line inside an open template literal is NOT prose-only (it is real prompt content)', () => {
+  const text = [
+    'const P = `Line one',
+    '',
+    'Line three`;',
+  ].join('\n');
+  // line 2 is empty, but state is 'template' at its start — must read false.
+  assert.deepEqual(classifyProseOnlyLines(text), [false, false, false]);
+});
+
+test('classifyProseOnlyLines: F194 — a BLANK line inside an open block comment IS still prose-only (blank stays exempt in `code`-derived comment states)', () => {
+  const text = [
+    '/**',
+    '',
+    ' */',
+  ].join('\n');
+  assert.deepEqual(classifyProseOnlyLines(text), [true, true, true]);
+});
+
+test('classifyProseOnlyLines: F194 — a WHITESPACE-ONLY line inside an open template literal is NOT prose-only', () => {
+  const text = [
+    'const P = `Line one',
+    '   ',
+    'Line three`;',
+  ].join('\n');
+  assert.deepEqual(classifyProseOnlyLines(text), [false, false, false]);
+});
+
+test('fileChangeIsProseOnly: F194 — a blank line INSERTED into an open template literal is REJECTED (exemption must not fire)', () => {
+  const oldText = 'const P = `Line one\nLine three`;\n';
+  const newText = 'const P = `Line one\n\nLine three`;\n';
+  // -U0 shape for a pure insertion: 0 old lines at the insertion point, 1 new line (2).
+  const diff = '@@ -1,0 +2 @@\n+\n';
+  assert.equal(fileChangeIsProseOnly(oldText, newText, diff), false);
+});
+
+test('fileChangeIsProseOnly: F194 — a blank line DELETED from an open template literal is REJECTED (the old-side check matters too)', () => {
+  const oldText = 'const P = `Line one\n\nLine three`;\n';
+  const newText = 'const P = `Line one\nLine three`;\n';
+  // -U0 shape for a pure deletion: 1 old line (2) removed, 0 new lines at that point.
+  const diff = '@@ -2 +1,0 @@\n-\n';
+  assert.equal(fileChangeIsProseOnly(oldText, newText, diff), false);
+});
+
+test('parseChangedLineNumbers: a single-line hunk (no comma — git\'s real -U0 shape for a 1-line change, e.g. 565fb99)', () => {
+  const diff = '--- a/src/planrun.js\n+++ b/src/planrun.js\n@@ -935 +935 @@ ${scoutBlob}\n'
+    + '- * @param {{decision: string, text?: string}|null} [opts.humanRuling] N4\n'
+    + '+ * @param {{decision: string, text?: string|null}|null} [opts.humanRuling] N4\n';
+  assert.deepEqual(parseChangedLineNumbers(diff), { oldLines: [935], newLines: [935] });
+});
+
+test('parseChangedLineNumbers: multi-line, multi-hunk headers with explicit counts', () => {
+  const diff = '@@ -10,3 +12,5 @@\n-a\n-b\n-c\n+a\n+b\n+c\n+d\n+e\n@@ -40 +44,2 @@\n-x\n+x\n+y\n';
+  assert.deepEqual(parseChangedLineNumbers(diff), {
+    oldLines: [10, 11, 12, 40],
+    newLines: [12, 13, 14, 15, 16, 44, 45],
+  });
+});
+
+test('parseChangedLineNumbers: no hunk headers resolves to zero changed lines', () => {
+  assert.deepEqual(parseChangedLineNumbers('not a diff at all'), { oldLines: [], newLines: [] });
+});
+
+const PROSE_ONLY_OLD = [
+  'const AUTHOR_SYSTEM = `hello`;',
+  '/**',
+  ' * @param {string} x old text',
+  ' */',
+  'const other = 1;',
+].join('\n');
+const PROSE_ONLY_NEW = PROSE_ONLY_OLD.replace('old text', 'new text');
+const PROSE_ONLY_DIFF = '@@ -3 +3 @@\n- * @param {string} x old text\n+ * @param {string} x new text\n';
+
+test('fileChangeIsProseOnly: a comment-only line edit (the real 565fb99 shape) is exempt-eligible', () => {
+  assert.equal(fileChangeIsProseOnly(PROSE_ONLY_OLD, PROSE_ONLY_NEW, PROSE_ONLY_DIFF), true);
+});
+
+test('fileChangeIsProseOnly: a real prompt-text (template literal) edit is REJECTED', () => {
+  const oldText = PROSE_ONLY_OLD;
+  const newText = oldText.replace('`hello`', '`hello world`');
+  const diff = '@@ -1 +1 @@\n-const AUTHOR_SYSTEM = `hello`;\n+const AUTHOR_SYSTEM = `hello world`;\n';
+  assert.equal(fileChangeIsProseOnly(oldText, newText, diff), false);
+});
+
+test('fileChangeIsProseOnly: a prompt-text edit AND a comment edit in the SAME file/diff is still REJECTED (mixed-hunk case)', () => {
+  const oldText = PROSE_ONLY_OLD;
+  const newText = oldText.replace('`hello`', '`hello world`').replace('old text', 'new text');
+  const diff = '@@ -1 +1 @@\n'
+    + '-const AUTHOR_SYSTEM = `hello`;\n+const AUTHOR_SYSTEM = `hello world`;\n'
+    + '@@ -3 +3 @@\n- * @param {string} x old text\n+ * @param {string} x new text\n';
+  assert.equal(fileChangeIsProseOnly(oldText, newText, diff), false);
+});
+
+test('fileChangeIsProseOnly: any null input (unresolved diff/blob) is never exempt', () => {
+  assert.equal(fileChangeIsProseOnly(null, PROSE_ONLY_NEW, PROSE_ONLY_DIFF), false);
+  assert.equal(fileChangeIsProseOnly(PROSE_ONLY_OLD, null, PROSE_ONLY_DIFF), false);
+  assert.equal(fileChangeIsProseOnly(PROSE_ONLY_OLD, PROSE_ONLY_NEW, null), false);
+});
+
+test('fileChangeIsProseOnly: a PURE DELETION of a real prompt-text line (no replacement added) is REJECTED — the old-side check must run even when nothing was added', () => {
+  const oldText = 'const AUTHOR_SYSTEM = `hello`;\nconst other = 1;';
+  const newText = 'const other = 1;';
+  const diff = '@@ -1 +0,0 @@\n-const AUTHOR_SYSTEM = `hello`;\n';
+  assert.equal(fileChangeIsProseOnly(oldText, newText, diff), false);
+});
+
+test('fileChangeIsProseOnly: a diff with zero resolvable hunks is never exempt (nothing was positively proven prose-only)', () => {
+  assert.equal(fileChangeIsProseOnly(PROSE_ONLY_OLD, PROSE_ONLY_NEW, 'no hunks here'), false);
+});
+
+test('fileChangeIsProseOnly: the markdown-bullet-inside-a-template adversarial case is REJECTED end to end', () => {
+  const oldText = ['const PERSONA_TOOLS = `', '* Always be nice', '* Never lie', '`;'].join('\n');
+  const newText = ['const PERSONA_TOOLS = `', '* Always be nice', '* Never lie to the user', '`;'].join('\n');
+  const diff = '@@ -3 +3 @@\n-* Never lie\n+* Never lie to the user\n';
+  assert.equal(fileChangeIsProseOnly(oldText, newText, diff), false);
+});
+
+test('evaluateCommits: a comment-only prompt-register edit is EXEMPT — passes with no labels at all', () => {
+  const { ok, offenders } = evaluateCommits(
+    [{
+      sha: 'exempt1',
+      message: 'fix: widen a JSDoc type for tsc, no run behind it',
+      files: ['src/planrun.js'],
+      promptFileDiffs: { 'src/planrun.js': { oldText: PROSE_ONLY_OLD, newText: PROSE_ONLY_NEW, diffText: PROSE_ONLY_DIFF } },
+    }],
+    isPromptFile,
+  );
+  assert.equal(ok, true);
+  assert.deepEqual(offenders, []);
+});
+
+test('evaluateCommits: a real prompt-text edit still requires the three labels even with promptFileDiffs present', () => {
+  const oldText = PROSE_ONLY_OLD;
+  const newText = oldText.replace('`hello`', '`hello world`');
+  const diff = '@@ -1 +1 @@\n-const AUTHOR_SYSTEM = `hello`;\n+const AUTHOR_SYSTEM = `hello world`;\n';
+  const { ok, offenders } = evaluateCommits(
+    [{
+      sha: 'notexempt1',
+      message: 'fix: change the greeting',
+      files: ['src/planrun.js'],
+      promptFileDiffs: { 'src/planrun.js': { oldText, newText, diffText: diff } },
+    }],
+    isPromptFile,
+  );
+  assert.equal(ok, false);
+  assert.deepEqual(offenders, [{ sha: 'notexempt1', missing: [...PROMPT_COMMIT_LABELS] }]);
+});
+
+test('evaluateCommits: a commit touching TWO prompt files where only one is proven prose-only is NOT exempt overall', () => {
+  const oldText = PROSE_ONLY_OLD;
+  const newText = oldText.replace('`hello`', '`hello world`');
+  const diff = '@@ -1 +1 @@\n-const AUTHOR_SYSTEM = `hello`;\n+const AUTHOR_SYSTEM = `hello world`;\n';
+  const { ok, offenders } = evaluateCommits(
+    [{
+      sha: 'mixedfiles1',
+      message: 'fix: two files',
+      files: ['src/planrun.js', 'src/tools.js'],
+      promptFileDiffs: {
+        'src/planrun.js': { oldText: PROSE_ONLY_OLD, newText: PROSE_ONLY_NEW, diffText: PROSE_ONLY_DIFF },
+        'src/tools.js': { oldText, newText, diffText: diff },
+      },
+    }],
+    isPromptFile,
+  );
+  assert.equal(ok, false);
+  assert.deepEqual(offenders, [{ sha: 'mixedfiles1', missing: [...PROMPT_COMMIT_LABELS] }]);
+});
+
+test('evaluateCommits: a touched prompt file with NO promptFileDiffs entry at all is not exempt (missing data is not a pass)', () => {
+  const { ok, offenders } = evaluateCommits(
+    [{ sha: 'nodiffdata1', message: 'fix: no diff data supplied', files: ['src/planrun.js'], promptFileDiffs: {} }],
+    isPromptFile,
+  );
+  assert.equal(ok, false);
+  assert.deepEqual(offenders, [{ sha: 'nodiffdata1', missing: [...PROMPT_COMMIT_LABELS] }]);
 });
 
 test('evaluateCommits: multiple commits in a range, mixed compliance', () => {

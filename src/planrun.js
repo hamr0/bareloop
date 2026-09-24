@@ -932,7 +932,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   it the deterministic name would collide with that very branch and the collision walk
  *   would mint a `-2` beside the progress the resume exists to keep. Absent is the cold
  *   path. A recorded branch that no longer exists is a STOP, never a fresh start.
- * @param {{decision: string, text?: string}|null} [opts.humanRuling] N4 — the SIGNER's
+ * @param {{decision: string, text?: string|null}|null} [opts.humanRuling] N4 — the SIGNER's
  *   answer at a hitl pause (2026-08-12 §1, re-cut 2026-08-17: accept | rerun <text> | pause), carried in
  *   by the runner on the leg that RESUMES a paused run. Absent on every ordinary run and
  *   on the leg that pauses; it is never authored, never defaulted, and never inferred.

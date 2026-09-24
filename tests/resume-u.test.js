@@ -27,6 +27,11 @@ import { jobSpecHash } from '../src/job.js';
 import { CHECKPOINT_OUTCOMES } from '../src/reuse.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
+// PANEL-BUILD.md P0 — the ORCHESTRATION this file's source-text tripwires
+// pin moved off scripts/run-u.mjs (now a thin adapter) into src/userrun.js's
+// one shared execute() engine; RUNNER (above) still spawns the real CLI
+// entry point for the BEHAVIOURAL tests, unchanged.
+const ENGINE_SRC = new URL('../src/userrun.js', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
 
 // These tests spawn the REAL runner, which loads the REAL job spec — so `budgetUsd` and
@@ -136,7 +141,7 @@ test('§3 tripwire: the runner still HANDS the inherited grades to runJob, not j
   // chain reading the run never receives, and no behaviour test can see it from here
   // (the script cannot be imported: it is top-level and it spends money past the gate).
   // Loose on purpose: the two semantic pieces only, so reformatting cannot red this.
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /resumeGrades:\s*dead\.restart\.grades/,
     'the dead leg\'s grades must reach runJob — printed-but-unwired is a readout that lies about what the run is doing');
   assert.match(src, /grades\?\.length\s*\?/,
@@ -149,7 +154,7 @@ test('§3 tripwire: the runner HANDS the replan ledger over too — the ceiling 
   // opens with a ceiling the chain already spent, and PRD v1.12's "unlimited replanning
   // launders thrash as adaptation" is refilled once per kill. This script is the U
   // path's ONLY caller of runJob, so nothing else can catch it.
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /resumeReplans:\s*\{\s*count:\s*dead\.restart\.replans/,
     'the ledger the reader computed must reach runJob — computed-but-undelivered is a ceiling that reads spent and behaves fresh');
   assert.match(src, /grantUsed:\s*dead\.restart\.replanGrantUsed/,
@@ -252,8 +257,9 @@ test('§3 the refusal names the resumable set from the ONE constant, and every t
   // runner with bareloop as a dependency) would have had to keep a third; the same
   // reasoning that put the pause TTL in the library puts this there. So what is pinned
   // here is that the script CONSUMES it rather than re-spelling it.
-  const src = readFileSync(RUNNER, 'utf8');
-  assert.match(src, /import \{[^}]*\bCHECKPOINT_OUTCOMES\b[^}]*\} from '\.\.\/src\/reuse\.js'/,
+  const src = readFileSync(ENGINE_SRC, 'utf8');
+  // PANEL-BUILD.md P0 — src/userrun.js imports its sibling modules with `./`.
+  assert.match(src, /import \{[^}]*\bCHECKPOINT_OUTCOMES\b[^}]*\} from '\.\/reuse\.js'/,
     'the runner reads the checkpoint set from the library that owns it');
   assert.doesNotMatch(src, /const RESUMABLE_HALTS = \[/,
     'and the literal copy is GONE, not merely shadowed — two spellings of one set is how a runner comes to refuse a terminal the library resumes');
@@ -276,10 +282,10 @@ test('§3 the STALL readout OFFERS the resume (source tripwire): the run that ca
   // end-of-run readouts in this file are pinned in source. The stall's own escalation
   // prints one line above it and says "retry the run"; without this block the only
   // retry on offer is a cold one that re-drafts the plan and re-pays every step.
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   const at = src.indexOf("if (outcome === 'step-stalled') {");
   assert.ok(at > 0, 'the stall readout exists');
-  const end = src.indexOf('\n}', at);
+  const end = src.indexOf('\n  }', at); // PANEL-BUILD.md P0: src/userrun.js indents this block one level deeper
   assert.ok(end > at, 'and it closes at its own indent');
   const block = src.slice(at, end);
   assert.match(block, /--resume \$\{runid\}/, 'it hands over the actual resume invocation, not the idea of one');
@@ -367,10 +373,12 @@ test('§3 ORDERING (source tripwire): the resume read and the approval gate both
   // A preview must never touch a patient. That is guaranteed by ORDER, so the order
   // is what is pinned: if a future edit moves the reset up, every test in this file
   // starts hard-resetting an operator's real repository instead of failing.
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   const readAt = src.indexOf('readResume(deadEvents');
-  const gateAt = src.indexOf("if (arg('approve') !== specHash)");
-  // the reset MECHANISM moved into scripts/u-patient.mjs (2026-08-19) so the read-shim
+  // PANEL-BUILD.md P0 — `arg('approve')` in the old script is a ctx read
+  // now (src/userrun.js's execute() takes a structured ctx, not argv flags).
+  const gateAt = src.indexOf('if ((ctx.approve ?? null) !== specHash)');
+  // the reset MECHANISM moved into src/u-patient.js (2026-08-19) so the read-shim
   // battery rehearses the same cold reset; the ORDERING property this tripwire guards
   // is unchanged, so the anchor follows the call site rather than the deleted literal.
   const resetAt = src.indexOf('coldReset(wd, SEED)');
@@ -481,7 +489,7 @@ test('§3 CONTROL: a resume with allowance still on the table does NOT cry wolf'
 // the 20.1min remainder), the READING was not.
 //
 // The arithmetic is now one exported function, which is what makes it testable at all.
-import { wallLine } from '../scripts/u-readout.mjs';
+import { wallLine } from '../src/u-readout.js';
 
 test('§3 banner: on a RESUMED leg the wall reads FOLDED against the signed cap — and still shows the leg, so neither number goes blind', () => {
   // the real u-msf70nei numbers: 24.9min inherited, 12.8min bought in this leg
@@ -511,7 +519,7 @@ test('§3 banner: a garbage fold contributes ZERO — the readout can never clai
 });
 
 test('§3 banner: the runner prints the folded line through THIS function — a second arithmetic in the script is how the two numbers disagreed in the first place', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /wall {6}\$\{wallLine\(/, 'the banner calls the shared helper');
   assert.doesNotMatch(src, /\$\{elapsedMin\}min of/, 'and the old leg-only spelling is gone, not merely shadowed');
 });
@@ -528,7 +536,7 @@ test('§3 banner: the runner prints the folded line through THIS function — a 
 // So the predicate lives here, beside `wallLine`, for `wallLine`'s reason: the script
 // runs on import, and a banner nothing can drive is a banner nothing can prove fires.
 // It is a WARNING only — it never blocks and never changes what the run does.
-import { doomedResume } from '../scripts/u-readout.mjs';
+import { doomedResume } from '../src/u-readout.js';
 
 /** the restart fold as `readResume` hands it to the banner, F97's own numbers */
 const F97 = { seed: { phase: 'steps' }, replans: 2, replanGrantUsed: true };
@@ -571,24 +579,29 @@ test('§F97 predicate: a garbage ledger never SUPPRESSES the warning by reading 
 });
 
 test('§F97 banner: the runner prints it through THIS predicate, and it WARNS rather than blocks', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /doomedResume\(/, 'the script drives the shared predicate rather than re-deriving the shape');
   // membership, not the exact list: the readout module has grown (N4's `deathAtOf`),
   // and pinning the spelling of the whole import made an unrelated addition a red
-  assert.match(src, /import \{[^}]*\bdoomedResume\b[^}]*\} from '\.\/u-readout\.mjs'/, 'imported from the readout module the tests can reach');
+  //
+  // PANEL-BUILD.md P0 task 1/4 — u-readout.mjs moved into src/ (tsc rootDir) and
+  // src/userrun.js now imports it as a same-directory `./` sibling.
+  assert.match(src, /import \{[^}]*\bdoomedResume\b[^}]*\} from '\.\/u-readout\.js'/, 'imported from the readout module the tests can reach');
   // WARNING ONLY: the F97 lesson is an operator pre-flight, not a new gate. A `die(`
-  // or a `process.exit` reached from this predicate would turn a $0 read into a
-  // refusal the operator never signed up for.
+  // or a `process.exit`/`ExitSignal` reached from this predicate would turn a $0
+  // read into a refusal the operator never signed up for.
   // scoped to the BANNER BLOCK — not a byte-window, which would sweep in the approval
-  // gate's own (correct, unrelated) `process.exit` two statements later and pass or
+  // gate's own (correct, unrelated) refusal two statements later and pass or
   // fail on how long the prose above it happens to be
   const at = src.indexOf('if (doomedResume(');
   assert.ok(at > 0, 'the banner is a guarded block, so there is a block to bound');
-  const end = src.indexOf('\n    }', at);
+  // PANEL-BUILD.md P0: src/userrun.js indents this block two levels deeper
+  // than the old top-level script (inside `if (dead) {` inside `execute()`).
+  const end = src.indexOf('\n      }', at);
   assert.ok(end > at, 'and it closes at its own indent');
   const block = src.slice(at, end);
-  assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'the banner never blocks the resume');
-  assert.match(block, /console\.log/, 'it only prints');
+  assert.doesNotMatch(block, /\bdie\(|process\.exit|throw new ExitSignal/, 'the banner never blocks the resume');
+  assert.match(block, /\bout\(/, 'it only prints');
 });
 
 test('§F97 banner E2E: the REAL preview prints it for F97\'s own spine shape, and stays silent on the control', () => {
@@ -626,7 +639,7 @@ test('§F97 banner E2E: the REAL preview prints it for F97\'s own spine shape, a
 // line, summed off THIS LEG's own spine — never `worker-result`, which is an
 // attempt-level ECHO of round sums (house rule: enumerate every round type that
 // spends, and never fold an echo record into the sum).
-import { tokensLine, fmtTokens } from '../scripts/u-readout.mjs';
+import { tokensLine, fmtTokens } from '../src/u-readout.js';
 
 test('§tokens: sums usage across BOTH worker-round and judge-round', () => {
   const events = [
@@ -672,7 +685,7 @@ test('§tokens: formatter renders k/M with the precision the line prints', () =>
 });
 
 test('§tokens: the runner prints the tail line through THIS function, right after `rounds`', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /tokens {4}\$\{tokensLine\(/, 'the tail calls the shared helper');
 });
 
@@ -686,7 +699,7 @@ test('§tokens: the runner prints the tail line through THIS function, right aft
 // grammar itself — not just its presence in source — is proven against a plan
 // shape, never a hardcoded budget/count.
 test('§plan: the runner\'s tail line pluralizes on the ACCEPTED plan\'s own step count', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(
     src,
     /plan {6}\$\{plan \? `\$\{plan\.steps\?\.length \?\? '\?'\} \$\{plan\.steps\?\.length === 1 \? 'step' : 'steps'\}` : 'none validated'\}/,

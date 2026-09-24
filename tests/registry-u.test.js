@@ -42,7 +42,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeGreenRow, writeRunGreenRow, applyDoorDecision } from '../src/reuse.js';
 import { makeRegistry, loadBridge } from '../src/bridges.js';
-import { runDoorLines } from '../scripts/u-readout.mjs';
+import { runDoorLines } from '../src/u-readout.js';
 
 const base = mkdtempSync(join(tmpdir(), 'registry-u-'));
 process.on('exit', () => rmSync(base, { recursive: true, force: true }));

@@ -403,9 +403,14 @@ test('scripts/run-u.mjs PRINTS the warning at launch, through this function and 
   // words were moved out of the runner in the first place. What this can prove
   // is that the call site exists, sends the lines to stderr, and holds no
   // duplicate of the text that could drift away from PROBE_STATUS.
-  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  //
+  // PANEL-BUILD.md P0 — this call site moved off scripts/run-u.mjs (now a thin
+  // adapter) into src/userrun.js's one shared execute() engine, where every
+  // `console.error` became `err` (the library never calls `process.exit`/
+  // prints via the global console directly — it takes an injectable `err`).
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
   assert.match(src, /probeWarningLines\(/, 'the runner calls it');
-  assert.match(src, /for \(const line of probeWarningLines\(.*\) \?\? \[\]\) console\.error\(line\);/, 'and prints every line to stderr');
+  assert.match(src, /for \(const line of probeWarningLines\(.*\) \?\? \[\]\) err\(line\);/, 'and prints every line to stderr');
   assert.ok(!src.includes('UNPROVEN PROVIDER'), 'the words live in ONE place — a second copy is the drift this item exists to stop');
 });
 

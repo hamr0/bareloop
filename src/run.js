@@ -204,7 +204,7 @@ async function primitiveSmoke(workdir) {
  *        a manufactured-fixation probe). `true` is the ON/experimental arm; the
  *        default is the OFF arm. (Shell-owned seam, same doctrine as the provider
  *        binding.)
- * @param {{decision: string, text?: string}|null} [opts.humanRuling] N4 — the SIGNER's
+ * @param {{decision: string, text?: string|null}|null} [opts.humanRuling] N4 — the SIGNER's
  *   answer at a hitl pause (accept | rerun <text> | pause), carried by the leg that
  *   RESUMES a paused run and forwarded verbatim to the plan flow. Absent on every
  *   ordinary run; never authored and never defaulted (a defaulted answer to "is this

@@ -55,6 +55,71 @@ function git(args) {
   return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+/**
+ * Read one git blob by rev-spec (`<ref>:<path>` or `:<path>` for the index),
+ * `null` when git cannot resolve it (no such parent, file didn't exist yet,
+ * file was deleted, etc.) — the ONLY meaning `null` carries into the pure
+ * exemption logic is "cannot decide", which it treats as "not exempt".
+ * @param {string} spec
+ * @returns {string|null}
+ */
+function readBlobAtSpec(spec) {
+  try {
+    return git(['show', spec]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a `git diff -U0` patch, `null` on any git failure (mirrors
+ * `readBlobAtSpec`'s fail-closed contract).
+ * @param {string[]} diffArgs the args after `diff`
+ * @returns {string|null}
+ */
+function readDiffText(diffArgs) {
+  try {
+    return git(['diff', ...diffArgs]);
+  } catch {
+    return null;
+  }
+}
+
+// hamr's narrow exemption (2026-09-23) — see promptcommitlib.mjs's own header
+// comment for the full reasoning. This is the ONE place that resolves the
+// {oldText,newText,diffText} triple the pure `fileChangeIsProseOnly` decision
+// needs, via git; `evaluateCommits` never spawns git itself, matching every
+// other PromptCommitInput field.
+/**
+ * Attach `promptFileDiffs` to every commit, one entry per prompt-register
+ * file it touches. Mutates `commits` in place.
+ * @param {import('./promptcommitlib.mjs').PromptCommitInput[]} commits
+ * @returns {void}
+ */
+function attachPromptFileDiffs(commits) {
+  for (const commit of commits) {
+    const promptFiles = commit.files.filter((f) => isPromptFile(f));
+    if (promptFiles.length === 0) continue;
+    const isStaged = commit.sha === '(staged)';
+    /** @type {Record<string, {oldText: string|null, newText: string|null, diffText: string|null}>} */
+    const diffs = {};
+    for (const file of promptFiles) {
+      diffs[file] = isStaged
+        ? {
+          oldText: readBlobAtSpec(`HEAD:${file}`),
+          newText: readBlobAtSpec(`:${file}`),
+          diffText: readDiffText(['--cached', '-U0', '--no-color', '--', file]),
+        }
+        : {
+          oldText: readBlobAtSpec(`${commit.sha}^:${file}`),
+          newText: readBlobAtSpec(`${commit.sha}:${file}`),
+          diffText: readDiffText([`${commit.sha}^..${commit.sha}`, '-U0', '--no-color', '--', file]),
+        };
+    }
+    commit.promptFileDiffs = diffs;
+  }
+}
+
 /** @param {string[]} argv @returns {{range?: string, messageFile?: string}} */
 function parseArgs(argv) {
   const out = /** @type {{range?: string, messageFile?: string}} */ ({});
@@ -215,6 +280,7 @@ function main() {
     commits = [loadStagedCommit(/** @type {string} */ (args.messageFile))];
   }
 
+  attachPromptFileDiffs(commits);
   const { ok, offenders } = evaluateCommits(commits, isPromptFile);
 
   if (ok) {

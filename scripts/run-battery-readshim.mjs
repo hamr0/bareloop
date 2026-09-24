@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { jobSpecHash } from '../src/job.js';
 import { closeStagesOf } from '../src/plan.js';
 import { readShimArm } from '../src/readshim.js';
-import { coldReset } from './u-patient.mjs';
+import { coldReset } from '../src/u-patient.js';
 import {
   ARMS, ARM_CLI, rowPlan, ceilingGate, readSpend, readToolShare, armStats, isCasualty, rowSettled,
   ACCOUNTED_ROUND_TYPES, ECHO_ROUND_TYPES, UNRESOLVED_NOTICE, isSpineFile,
@@ -350,7 +350,7 @@ const dryRun = () => {
   console.log(`    ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'present in env' : 'NOT SET (the real run would refuse)'} — passed via the child ENVIRONMENT, never argv`);
 
   // 4. the cold reset, actually performed
-  console.log('\n[4] COLD PATIENT — `coldReset` (scripts/u-patient.mjs), the SAME function run-u.mjs calls:');
+  console.log('\n[4] COLD PATIENT — `coldReset` (src/u-patient.js), the SAME function run-u.mjs calls:');
   if (!existsSync(join(WORKDIR, '.git'))) {
     console.log(`    SKIPPED — ${WORKDIR} is not a git repo on this machine. THE BATTERY CANNOT RUN until it is.`);
   } else {

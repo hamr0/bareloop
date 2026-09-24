@@ -34,7 +34,7 @@ import { assembleSpec, AUTHORED_SPEC_FIELDS } from '../src/authorjob.js';
 import { runPlan } from '../src/planrun.js';
 import { runJob } from '../src/run.js';
 import { scriptedProvider, initPatientRepo, gitInPatient } from './helpers.js';
-import { doorTimingRedLines } from '../scripts/u-readout.mjs';
+import { doorTimingRedLines } from '../src/u-readout.js';
 
 /** @param {import('node:test').TestContext} t @param {string} prefix */
 const tmp = (t, prefix) => {
@@ -443,7 +443,9 @@ function sliceCall(source, fnName) {
 }
 
 for (const [file, fnName, label] of [
-  ['scripts/run-u.mjs', 'runJob', 'run-u.mjs'],
+  // PANEL-BUILD.md P0 — this call site moved off scripts/run-u.mjs (now a
+  // thin adapter) into src/userrun.js's one shared execute() engine.
+  ['src/userrun.js', 'runJob', 'run-u.mjs'],
   ['src/cli.js', 'runJob', 'the bundle CLI'],
 ]) {
   test(`F133 grep-pin: ${label}'s ${fnName} call never passes closeTimeoutMs`, () => {
@@ -459,7 +461,8 @@ for (const [file, fnName, label] of [
 }
 
 test('F133 sanity: sliceCall actually isolates the runJob call (not the whole file)', () => {
-  const source = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  // PANEL-BUILD.md P0 — this call site moved into src/userrun.js.
+  const source = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
   const call = sliceCall(source, 'runJob');
   assert.ok(call.length > 0 && call.length < source.length, 'must be a real slice, not the whole file');
   assert.match(call, /approvals/, 'must actually contain the runJob options bag');
@@ -562,7 +565,7 @@ test('runPlan: maxWallMs at or above the effective close timeout is fine', async
 //
 // What IS provable at $0, without a provider and without a 10-minute wait:
 //   1. the wording/options the refusal prints (pure function, unit-tested
-//      directly — the same pattern `scripts/u-readout.mjs`'s other pure
+//      directly — the same pattern `src/u-readout.js`'s other pure
 //      renderers use, per `tests/reviewdoor-u.test.js`'s own docstring);
 //   2. a SOURCE-LEVEL pin (same discipline as the F129/F133 pins above) that
 //      the door's `accept` path checks `doorCloseTiming.timedOut` and exits
@@ -596,9 +599,9 @@ test('F137: doorTimingRedLines mirrors the in-run close-timing-red wording/optio
   assert.match(lines[0], /typecheck-clean, no-suppressions/);
   assert.match(lines[0], /nothing was run, nothing was recorded, and nothing was spent/);
   // the exact three options `scripts/run-u.mjs`'s in-run close-timing-red
-  // escalation already uses (~line 1197) — same catalogue, never a second
-  // invented list.
-  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  // escalation already uses — same catalogue, never a second invented list.
+  // PANEL-BUILD.md P0 — that escalation lives in src/userrun.js now.
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
   assert.match(src, /'investigate why the stage hangs \(infra\/network\/resource issue\)'/);
   assert.match(src, /'sign an explicit closeTimeoutMs override once the real duration is known'/);
   assert.match(src, /'abandon the task'/);
@@ -627,7 +630,12 @@ function checkDoorRefusesOnTimeout(source) {
   }
   const doorRegion = source.slice(resolveIdx, answerIdx);
   if (!/doorCloseTiming\.timedOut/.test(doorRegion)) reasons.push('the door never reads doorCloseTiming.timedOut before answering');
-  if (!/process\.exit\(1\)/.test(doorRegion)) reasons.push('no process.exit(1) between resolving the door\'s timing and calling answerReviewDoor — a timed-out pass would fall through to the call instead of refusing first');
+  // PANEL-BUILD.md P0 — src/userrun.js's engine never calls process.exit()
+  // itself (a library function returns a code / throws); the SAME refusal is
+  // `throw new ExitSignal(1)` there. The pre-fix git blob this same checker
+  // is also run against (below) is real historical scripts/run-u.mjs source
+  // and still says `process.exit(1)` literally, so both spellings are read.
+  if (!/process\.exit\(1\)/.test(doorRegion) && !/throw new ExitSignal\(1\)/.test(doorRegion)) reasons.push('no process.exit(1)/ExitSignal(1) between resolving the door\'s timing and calling answerReviewDoor — a timed-out pass would fall through to the call instead of refusing first');
   if (/\bemit\(/.test(doorRegion) || /makeSpine\(doorSpineFile/.test(doorRegion)) reasons.push('the refusal region writes to the spine (emit(...)/makeSpine(doorSpineFile...)) — the ruling requires recording NOTHING on a timed-out door timing pass');
   const call = sliceCall(source, 'answerReviewDoor');
   if (call === '') { reasons.push('fixture bug: no answerReviewDoor( call found'); return { ok: false, reasons }; }
@@ -638,7 +646,8 @@ function checkDoorRefusesOnTimeout(source) {
 }
 
 test('F137 grep-pin: the door refuses close-timing-red before answering (GREEN on current source)', () => {
-  const source = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  // PANEL-BUILD.md P0 — this call site moved into src/userrun.js.
+  const source = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
   const result = checkDoorRefusesOnTimeout(source);
   assert.ok(result.ok, `door refusal pin failed on current source: ${JSON.stringify(result.reasons)}`);
 });

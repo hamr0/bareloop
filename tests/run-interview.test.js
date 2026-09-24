@@ -45,6 +45,12 @@ import { SOURCE_FIELD, DESTINATION_FIELD_REPO, labelsFor } from '../src/authorfl
 const CLASS = MENU_CLASSES.reduce((a, b) => (requiredAnswersFor(b).length > requiredAnswersFor(a).length ? b : a));
 
 const SCRIPT = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
+// PANEL-BUILD.md P0 task 3/4 — the ORCHESTRATION this file's two source-text
+// tripwires (below) pin moved off scripts/run-interview.mjs (now a thin
+// adapter) into src/interviewrun.js's own `main(argv, deps)`; SCRIPT (above)
+// still spawns the real CLI entry point for every BEHAVIOURAL test in this
+// file, unchanged.
+const ENGINE_SRC = new URL('../src/interviewrun.js', import.meta.url).pathname;
 const base = mkdtempSync(join(tmpdir(), 'run-interview-'));
 process.on('exit', () => rmSync(base, { recursive: true, force: true }));
 let n = 0;
@@ -232,7 +238,7 @@ test('the GREEN class gets its own set, shorter than the judged one — read fro
 });
 
 test('tripwire: the script SPELLS no question of its own', () => {
-  const src = readFileSync(SCRIPT, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   for (const v of VERDICT_CLASSES.filter((c) => !LOCKED_CLASSES.includes(c))) {
     for (const q of Object.values(questionsFor(v))) {
       assert.ok(!src.includes(String(q)), `"${q}" is the library's wording — a second copy in a script is how an interview drifts from the one that was frozen`);
@@ -806,7 +812,7 @@ test('a draft the JOB VALIDATOR would refuse is refused HERE, for $0, before the
 });
 
 test('tripwire: the draft\'s validity is the LIBRARY\'s reading, and the authored half is filtered by NAME', () => {
-  const src = readFileSync(SCRIPT, 'utf8');
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /validateJob\(draft/, 'the same validator that judges it after the paid call');
   assert.match(src, /AUTHORED_SPEC_FIELDS/, 'and which reds are expected is read off the data that names the halves, never re-listed here');
   assert.doesNotMatch(src, /new AnthropicProvider|generate\(/, 'this script never talks to a provider: the paid step is a different process under a different ceiling');

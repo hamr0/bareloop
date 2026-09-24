@@ -19,8 +19,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const SURFACES = Object.freeze([
   'bareloop.context.md',
+  // PANEL-BUILD.md P0 tasks 3/4-4/4 — the printed text these two commands
+  // show a person now lives in src/interviewrun.js and src/authorrun.js;
+  // scripts/run-author.mjs and scripts/run-interview.mjs are thin adapters
+  // with almost no text of their own, but stay listed too (harmless, and a
+  // literal reappearing in the thin adapter would still be caught here).
   'scripts/run-author.mjs',
   'scripts/run-interview.mjs',
+  'src/authorrun.js',
+  'src/interviewrun.js',
 ]);
 
 for (const rel of SURFACES) {

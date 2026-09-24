@@ -237,7 +237,19 @@ export { runBehaviour, formatBehaviour } from './behaviour.js';
 // (`replayRun`) or one printable page (`formatReplay`). Reads only, mints no
 // verdict, writes nothing to the spine — reuses `runBehaviour` rather than
 // re-implementing the tool-call count.
-export { replayRun, formatReplay } from './replay.js';
+export { replayRun, formatReplay, summarizeForAllLine, formatAllLines } from './replay.js';
+// PANEL-BUILD.md P0 — the IO layer over `replayRun`: read one run's spine
+// (+ its gate-audit sibling) off disk, or list every spine directly in a
+// directory (content-detected, never by filename pattern — see the module
+// header) as `--all`-style rows. `readHistoryLog` is the one reader for a
+// bundle's `history.jsonl`, replacing `src/cli.js`'s own former hand-rolled
+// read. `src/replayio.js` also exports lower-level plumbing this package
+// root deliberately does NOT re-export (`parseJsonl`, `isSidecarByName`,
+// `looksLikeSpine`, `resolveSiblings`): a raw JSONL parser, a filename
+// predicate, and a sibling-path resolver are internal steps these three
+// functions already compose for a caller — not their own adopter-facing
+// promise, and an export here is a promise kept forever.
+export { replayOne, listSpines, readHistoryLog } from './replayio.js';
 // M4b — the interview, the refusal, the composition, and D9's three gates.
 // `prepareSigning` returns the resolved spec's HASH and the seed evidence; it
 // never signs — the approvals array and the human's word are unchanged.

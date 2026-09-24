@@ -38,10 +38,13 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
+// PANEL-BUILD.md P0 task 4/4 — moved into src/ (was scripts/author-readout.mjs)
+// so its callers (src/authorrun.js, src/interviewrun.js) stay under tsc's
+// rootDir; no logic changed in the move.
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
   openQuestionLines, answeredQuestionLines, fellBackLines,
-} from '../scripts/author-readout.mjs';
+} from '../src/authorreadout.js';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS
@@ -1499,7 +1502,7 @@ test('normalizeDeclaration: resolves every short-form parser, and copies rather 
 // printed the declaration and never the goal, run-u's --approve gate printed
 // the goal and never the declaration. The lines live in a helper because
 // `run-author.mjs` is a script (importing it runs it, and reaching that block
-// costs a real scout and a real model call), exactly as `u-readout.mjs` exists.
+// costs a real scout and a real model call), exactly as `src/u-readout.js` exists.
 test('signing readout: the goal leads, and every stage that will judge it is named under it', () => {
   // a REAL signed spec out of this repo's own jobs/ — not a fixture authored to
   // contain the answer

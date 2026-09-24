@@ -375,7 +375,10 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   // Read from SOURCE because run-u.mjs cannot be imported: it is a top-level script
   // that resets the patient repo and spawns a run on load. The arithmetic is checked
   // against the real spec, and the wiring against the real flag.
-  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  //
+  // PANEL-BUILD.md P0 — this arithmetic moved off scripts/run-u.mjs (now a
+  // thin adapter) into src/userrun.js's one shared execute() engine.
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
   const spec = JSON.parse(readFileSync(new URL('../jobs/aurora-u-spawner-types.json', import.meta.url), 'utf8'));
   const stages = closeStagesOf(spec)?.length || 1;
   // DERIVED from the spec, never pinned to a count: the close's stage list is a
@@ -400,7 +403,9 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   // ordering pin, since a grace computed AFTER the spawn would arm the guard on
   // stale/undefined numbers.
   const resolveIdx = src.indexOf('resolveCloseTimeoutMs({ job: spec');
-  const spawnIdx = src.indexOf("fileURLToPath(new URL('./u-watchdog.mjs'");
+  // PANEL-BUILD.md P0 — src/userrun.js sits one directory over from
+  // scripts/u-watchdog.mjs now (it used to be a same-directory sibling).
+  const spawnIdx = src.indexOf("fileURLToPath(new URL('../scripts/u-watchdog.mjs'");
   assert.ok(resolveIdx > -1 && spawnIdx > -1 && resolveIdx < spawnIdx, 'the close timeout must be resolved BEFORE the watchdog is spawned');
 
   // AN AUTHORED CLOSE IS THE SAME ARITHMETIC. A `closeDecl` spec carries no
@@ -427,7 +432,9 @@ test('neither caller can hand the guard a zero wall: both REFUSE the launch abov
   // spine. What this locks is the ORDER — a refusal below the spawn is a guard armed
   // with the number the refusal exists to reject.
   for (const [file, guard] of [
-    ['../scripts/run-u.mjs', /RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0/],
+    // PANEL-BUILD.md P0 — this refusal moved off scripts/run-u.mjs (now a
+    // thin adapter) into src/userrun.js's one shared execute() engine.
+    ['../src/userrun.js', /RESUME_WALL_MS !== null && RESUME_WALL_MS <= 0/],
     ['../scripts/run-reuse.mjs', /if \(plannedWallMs <= 0\) \{/],
   ]) {
     const src = readFileSync(new URL(file, import.meta.url), 'utf8');

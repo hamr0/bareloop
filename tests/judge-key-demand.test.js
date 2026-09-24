@@ -27,8 +27,14 @@ const cmdStage = (name = 'tests') => ({ name, kind: 'cmd-exit-zero', params: { c
 // Pins the WIRING (the judge key is read from JUDGE_API_KEY / judgeEntry.envKey
 // and gates the judge demand and provider construction), never a specific local
 // variable spelling — a behaviour-preserving rename must not break this suite.
+//
+// PANEL-BUILD.md P0 — this orchestration moved into src/userrun.js's
+// execute(), where `process.env` reads became `env` (an injectable deps
+// field) and the identifier is declared `let … = null;` above a TEST-SEAM
+// guard, then reassigned here (never `const`), so this no longer requires
+// the `const` keyword.
 function judgeKeyIdentifier(src) {
-  const m = src.match(/const (\w+) = process\.env\.JUDGE_API_KEY \?\? process\.env\[judgeEntry\.envKey\];/);
+  const m = src.match(/(?:const|let)?\s*(\w+) = env\.JUDGE_API_KEY \?\? env\[judgeEntry\.envKey\];/);
   assert.ok(m, 'the judge key follows the RESOLVED judge provider\'s own env var, with the role-named override in front');
   return m[1];
 }
@@ -80,13 +86,18 @@ test('scripts/run-u.mjs demands the WORKER key unconditionally and the JUDGE key
   // so the suite cannot execute the branch. What it can prove is that the
   // unconditional Anthropic demand is GONE and the judge demand is gated on
   // the shared predicate rather than on a seventh open-coded reading.
-  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  //
+  // PANEL-BUILD.md P0 — this orchestration moved off scripts/run-u.mjs (now
+  // a thin adapter) into src/userrun.js's execute(), where `process.env` ->
+  // `env` and `process.exit(2)` -> `throw new ExitSignal(2)` (a library
+  // function never calls process.exit itself).
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
 
-  assert.ok(!/const apiKey = process\.env\.ANTHROPIC_API_KEY;\nif \(!apiKey\)/.test(src),
+  assert.ok(!/const apiKey = (?:process\.)?env\.ANTHROPIC_API_KEY;\nif \(!apiKey\)/.test(src),
     'the unconditional ANTHROPIC_API_KEY exit is gone — that WAS the defect');
-  assert.match(src, /const workerApiKey = process\.env\[providerEntry\.envKey\];/,
+  assert.match(src, /workerApiKey = env\[providerEntry\.envKey\];/,
     'the worker key comes from the provider table\'s own envKey, never a hardcoded variable name');
-  assert.match(src, /if \(!workerApiKey\)[\s\S]{0,160}process\.exit\(2\)/,
+  assert.match(src, /if \(!workerApiKey\)[\s\S]{0,160}throw new ExitSignal\(2\)/,
     'and it is still ALWAYS required — the worker always runs');
   assert.match(src, /const JUDGES = closeJudges\(spec\.closeDecl\);/,
     'the judge demand asks the shared predicate');
@@ -106,10 +117,11 @@ test('the judge key reads JUDGE_API_KEY first and falls back to the RESOLVED jud
   // judge is no longer pinned to Anthropic, so the fallback has to follow
   // WHATEVER provider `resolveJudge` names, read out of the same provider table
   // the worker key already goes through — never a second hardcoded variable.
-  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
-  assert.match(src, /process\.env\.JUDGE_API_KEY \?\? process\.env\[judgeEntry\.envKey\]/,
+  // PANEL-BUILD.md P0 — this call site is in src/userrun.js now.
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
+  assert.match(src, /env\.JUDGE_API_KEY \?\? env\[judgeEntry\.envKey\]/,
     'role-named first, fallback second: the fallback follows the RESOLVED provider, never a hardcoded name');
-  assert.ok(!/process\.env\.JUDGE_API_KEY \?\? process\.env\.ANTHROPIC_API_KEY/.test(src),
+  assert.ok(!/env\.JUDGE_API_KEY \?\? env\.ANTHROPIC_API_KEY/.test(src),
     'the pre-item-32 hardcoded Anthropic fallback is gone — that spelling assumed the judge could only ever be Claude');
 });
 
@@ -118,9 +130,16 @@ test('the judge provider is built through the factory only when its key exists �
   // judge is now built through `makeProvider`, exactly like the worker, off the
   // judge identity `resolveJudge` handed back — never a literal `AnthropicProvider`
   // import standing in for "the judge".
-  const src = readFileSync(new URL('../scripts/run-u.mjs', import.meta.url), 'utf8');
+  //
+  // PANEL-BUILD.md P0 — this construction moved into src/userrun.js's
+  // execute(), wrapped in a TEST-SEAM guard (`if (!provider) { … }`, the same
+  // shape src/cli.js's `doRun` uses): `judgeProvider` is `let`-reassigned,
+  // never `const`, and the `apiKey` argument carries a `/** @type {string} */`
+  // cast — the patterns below are loosened to match that shape, never the
+  // substance (still the SAME factory, still null with no key).
+  const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
   const judgeKeyIdent = judgeKeyIdentifier(src);
-  assert.match(src, new RegExp(`const judgeProvider = ${judgeKeyIdent}\\s*\\n\\s*\\? makeProvider\\(judge\\.provider, \\{ apiKey: ${judgeKeyIdent}, model: judge\\.model`),
+  assert.match(src, new RegExp(`judgeProvider = ${judgeKeyIdent}\\s*\\n\\s*\\? makeProvider\\(judge\\.provider, \\{ apiKey: [^,]*${judgeKeyIdent}[^,]*, model: judge\\.model`),
     'a provider constructed with apiKey:undefined would fail at CALL time, deep in a close, after the run has been paid for — and it is built through the SAME factory the worker uses, never a hardcoded class');
   assert.match(src, /: null;/, 'the null branch survives: no key, no provider, never one holding undefined');
   assert.ok(!/new AnthropicProvider/.test(src),
@@ -136,7 +155,13 @@ test('no module open-codes the judged-stage filter any more — the six duplicat
   // question about whether a close judges at all.
   const files = [
     'src/cardauthor.js', 'src/authorjob.js', 'src/authoring.js',
-    'scripts/run-author.mjs', 'scripts/author-readout.mjs', 'scripts/run-u.mjs',
+    // PANEL-BUILD.md P0 — scripts/run-u.mjs and scripts/run-author.mjs are
+    // now thin adapters (no logic of their own left to open-code anything
+    // in); scripts/author-readout.mjs moved to src/authorreadout.js
+    // outright (rootDir). The real orchestration this sweep is checking
+    // lives in src/userrun.js, src/authorrun.js and src/authorreadout.js now.
+    'scripts/run-author.mjs', 'scripts/run-u.mjs', 'src/userrun.js',
+    'src/authorrun.js', 'src/authorreadout.js',
   ];
   for (const f of files) {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');

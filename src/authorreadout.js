@@ -1,10 +1,16 @@
 // The authoring runner's SIGNING readout — the goal, and the stages that will
 // judge it — in the one place a test can reach it.
 //
-// `run-author.mjs` is a script: importing it runs it, and the block this replaces
-// is only reached after a real scout and a real model call. So the lines a person
-// actually signs against live here instead, and the runner calls them — the same
-// reason `u-readout.mjs` exists.
+// PANEL-BUILD.md P0 task 4/4 — moved here (was `scripts/author-readout.mjs`)
+// because its callers (`src/authorrun.js`, `src/interviewrun.js`) now live
+// under `src/`, and `tsconfig.json`'s `rootDir: ./src` refuses an import that
+// reaches back out into `scripts/`. This module carries no executable
+// top-level code and no logic changed in the move — only the three relative
+// import paths below, from `../src/x.js` to `./x.js`.
+//
+// The lines a person actually signs against live here rather than inline in
+// the runner, and the runner calls them — the same reason `src/u-readout.js`
+// exists.
 //
 // F87 is the whole point of the pairing. The goal must state everything the close
 // will judge, and NOTHING derives one from the other or checks them against each
@@ -17,9 +23,9 @@
 // The ceiling parse and the crash record below are here for the same one reason,
 // not because they are readouts: the runner is a script, and a rule no test can
 // reach is a rule nothing checks.
-import { scrubRaw } from '../src/text.js';
-import { redactSecrets } from '../src/validate.js';
-import { judgedStages } from '../src/kinds.js';
+import { scrubRaw } from './text.js';
+import { redactSecrets } from './validate.js';
+import { judgedStages } from './kinds.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes

@@ -7,7 +7,7 @@
 //
 // Same instrument the hitl surface uses (tests/hitl-u.test.js): the REAL script,
 // driven through its PREVIEW path — everything before a key is read and before a
-// dollar is committed — plus the pure renderers from scripts/u-readout.mjs.
+// dollar is committed — plus the pure renderers from src/u-readout.js.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,9 +18,17 @@ import { spawnSync } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS, writeGreenRow } from '../src/reuse.js';
 import { makeRegistry } from '../src/bridges.js';
-import { reviewDoorPackage, runDoorLines } from '../scripts/u-readout.mjs';
+import { reviewDoorPackage, runDoorLines } from '../src/u-readout.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
+// PANEL-BUILD.md P0 — the orchestration this file's SOURCE-TEXT tripwires
+// pin (below) moved off `scripts/run-u.mjs` (now a thin adapter, ~10 lines)
+// and into `src/userrun.js`'s one shared `execute()` engine. The BEHAVIOURAL
+// tests above still spawn `RUNNER` (`scripts/run-u.mjs`) — that is still the
+// real CLI entry point and still runs the exact same engine — only the
+// tripwires that grep the runner's own SOURCE for specific wiring retarget
+// to where that wiring actually lives now.
+const ENGINE_SRC = new URL('../src/userrun.js', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
 const HASH = jobSpecHash(SPEC);
 
@@ -201,7 +209,11 @@ test('REFUSED: a door on another job\'s spine — a decision is answered against
 // ══ tripwires: one rulebook, one door list, and the flag actually reaches runJob ══
 
 test('tripwire: the runner ANSWERS through the library seam and never re-spells the doors', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  // PANEL-BUILD.md P0 — this wiring lives in src/userrun.js's `execute()` now
+  // (scripts/run-u.mjs is a thin adapter that calls through it); the door
+  // as a FLAG is still proven behaviourally by the tests above, spawning
+  // the real scripts/run-u.mjs.
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   assert.match(src, /import \{[^}]*\banswerReviewDoor\b/s, 'the door\'s rulebook is the library\'s');
   assert.match(src, /reviewDoor: true/, 'and the opt-in flag reaches runJob — a flag that is parsed and dropped opens nothing');
   assert.match(src, /doorRerun: DOOR_RERUN/, 'as do the signer\'s words on a rerun');
@@ -230,13 +242,21 @@ test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provide
   // `new AnthropicProvider`) — so what this tripwire must now prove is that the
   // RESOLVED identity, not a library constant, is what gets built and handed to
   // `runJob`.
-  const src = readFileSync(RUNNER, 'utf8');
-  assert.match(src, /import \{ resolveJudge \} from '\.\.\/src\/judged\.js';/,
+  //
+  // PANEL-BUILD.md P0 — this wiring moved into src/userrun.js's `execute()`;
+  // the construction is now wrapped in `if (!provider) { … }` (a TEST SEAM,
+  // the same shape src/cli.js's `doRun` already uses: `deps.provider` skips
+  // this real-key construction entirely) — `judgeProvider` is declared with
+  // `let` and reassigned inside that guard, rather than a bare `const`, and
+  // the `apiKey` arguments below carry a `/** @type {string} */` cast; the
+  // patterns here are loosened to match that shape, never the substance.
+  const src = readFileSync(ENGINE_SRC, 'utf8');
+  assert.match(src, /import \{ resolveJudge \} from '\.\/judged\.js';/,
     'the identity is RESOLVED per job, never imported as a fixed tier');
   assert.match(src, /const judge = resolveJudge\(\{ specJudge: spec\.judge, workerProvider: spec\.provider, workerModel: MODEL \}\);/,
     'resolved from the signed spec\'s override, defaulting to the job\'s own worker');
   assert.match(src, /judgeProvider/, 'the judge provider must be built');
-  assert.match(src, /const judgeProvider = judgeApiKey\s*\n\s*\? makeProvider\(judge\.provider, \{ apiKey: judgeApiKey, model: judge\.model/,
+  assert.match(src, /judgeProvider = judgeApiKey\s*\n\s*\? makeProvider\(judge\.provider, \{ apiKey: [^,]*judgeApiKey[^,]*, model: judge\.model/,
     'built through the FACTORY off the resolved identity, never a hardcoded AnthropicProvider construction');
   assert.ok(!/new AnthropicProvider\(/.test(src),
     'no direct AnthropicProvider construction survives for the judge — that pin is exactly what item 32.2 removed');
@@ -248,7 +268,8 @@ test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provide
 });
 
 test('tripwire: a rerun buys its OWN clock and folds the answered run\'s money (F103)', () => {
-  const src = readFileSync(RUNNER, 'utf8');
+  // PANEL-BUILD.md P0 — this call site lives in src/userrun.js's `execute()` now.
+  const src = readFileSync(ENGINE_SRC, 'utf8');
   const call = src.slice(src.indexOf('DOOR_RERUN === null ? {} : {'), src.indexOf('DOOR_RERUN === null ? {} : {') + 400);
   assert.match(call, /priorSpentUsd: doorPrior\?\.spentUsd/, 'money folds — a signature for $X never authorises more');
   assert.doesNotMatch(call, /priorWallMs/, 'and the WALL does not: a rerun that inherits a dead leg\'s clock is structurally doomed');
