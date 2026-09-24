@@ -35,13 +35,17 @@ const noStdin = () => Readable.from([]);
 // dispatch: `bareloop interview` reaches src/interviewrun.js's own die() paths
 // ---------------------------------------------------------------------------
 
-test('bareloop interview: missing required flags dies with the module\'s own usage message, exit 2', async () => {
+test('bareloop interview: missing required flags dies with the module\'s own usage message, exit 2, naming the command actually typed', async () => {
   const out = sink(); const err = sink();
   const rc = await main(['interview'], {
     stdout: out, stderr: err, stdin: noStdin(), env: {}, cwd: process.cwd(),
   });
   assert.equal(rc, 2);
-  assert.match(err.text(), /usage: node scripts\/run-interview\.mjs/);
+  // NOT the script path — a person who typed `bareloop interview` never ran
+  // scripts/run-interview.mjs and may not have a checkout with it on disk
+  // (a branch-review nit fix, src/cli.js's `invokedAs: 'bareloop interview'`).
+  assert.match(err.text(), /^usage: bareloop interview /);
+  assert.doesNotMatch(err.text(), /run-interview\.mjs/);
 });
 
 test('bareloop interview: --patient is refused by name — Source replaced it (PRD item 33 M3)', async () => {
@@ -66,13 +70,16 @@ test('bareloop interview: an off-menu --verdict value is a typo, refused as one,
 // dispatch: `bareloop author` reaches src/authorrun.js's own die() paths
 // ---------------------------------------------------------------------------
 
-test('bareloop author: missing required flags dies with the module\'s own usage message, exit 2', async () => {
+test('bareloop author: missing required flags dies with the module\'s own usage message, exit 2, naming the command actually typed', async () => {
   const out = sink(); const err = sink();
   const rc = await main(['author'], {
     stdout: out, stderr: err, stdin: noStdin(), env: {}, cwd: process.cwd(),
   });
   assert.equal(rc, 2);
-  assert.match(err.text(), /usage: node scripts\/run-author\.mjs/);
+  // NOT the script path — same fix, same reason (src/cli.js's
+  // `invokedAs: 'bareloop author'`).
+  assert.match(err.text(), /^usage: bareloop author /);
+  assert.doesNotMatch(err.text(), /run-author\.mjs/);
 });
 
 test('bareloop author: --patient is refused by name — --source replaced it (PRD item 33 M3)', async () => {

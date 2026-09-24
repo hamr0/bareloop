@@ -542,7 +542,12 @@ function doReplay(args, { out, err, cwd }) {
 
 /**
  * The bare `bareloop` menu: `1 export  2 run  3 history  q quit`, then the
- * SAME code path as the sub-command, asking its args line by line.
+ * SAME code path as the sub-command, asking its args line by line. `run-u`,
+ * `interview`, `author` and `replay` are NOT wizarded here — a line-at-a-time
+ * prompt for `run-u`'s 13 flags (or the others' own argv shapes) would be
+ * inventing new interactive UX, not wiring, and that judgement stands. This
+ * menu is fixed instead: it now says those four commands exist and how to
+ * reach them, rather than implying only three commands do at all.
  * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, env: any, now: () => number }} ctx
  */
 async function runMenu(deps, ctx) {
@@ -551,6 +556,7 @@ async function runMenu(deps, ctx) {
   const rl = createInterface({ input: stdin, output: stdout });
   try {
     ctx.out('1 export  2 run  3 history  q quit');
+    ctx.out('(also on the command line, not wizarded here: run-u, interview, author, replay — run `bareloop <name>` with its own flags)');
     const choice = (await rl.question('> ')).trim().toLowerCase();
     if (choice === '' || choice === 'q' || choice === 'quit') return 0;
     if (choice === '1') {
@@ -621,11 +627,15 @@ export async function main(argv, deps = {}) {
   // through the `out`/`err` line-functions every other command here uses, so
   // it needs the raw streams, not the wrapped ones — `stdout`/`stderr` (both
   // already resolved above) are handed through instead.
-  if (cmd === 'interview') return interviewMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr });
+  // `invokedAs: 'bareloop interview'` — the usage message names the command a
+  // person actually typed, never a script path they never invoked and may
+  // not have on disk (a branch-review nit; `scripts/run-interview.mjs` still
+  // supplies none, so it keeps naming itself when run directly).
+  if (cmd === 'interview') return interviewMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr, invokedAs: 'bareloop interview' });
   // `bareloop author` — the authoring pipeline (scout, declaration, D9's
   // gates), same task. Same raw-stream reasoning: its one interactive seam
-  // (the confirm turn) reads stdin directly.
-  if (cmd === 'author') return authorMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr });
+  // (the confirm turn) reads stdin directly. Same `invokedAs` reasoning too.
+  if (cmd === 'author') return authorMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr, invokedAs: 'bareloop author' });
   // `bareloop replay` — the spine/gate-audit read side (PANEL-BUILD.md P0,
   // last of the rung's four tasks). Synchronous, file-based, no interactive
   // seam — same shape as `doHistory`/`doExport`, not the argv-owning

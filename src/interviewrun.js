@@ -129,6 +129,11 @@ class ExitSignal extends Error {
  * @property {typeof realSpawnSync} [spawnSync] the TEST SEAM for the final
  *   paid-step offer — a caller that supplies this never actually spawns
  *   `scripts/run-author.mjs`.
+ * @property {string} [invokedAs] the command name this run was actually
+ *   reached through, for the usage message ONLY — `scripts/run-interview.mjs`
+ *   supplies none (defaults to its own real invocation), `src/cli.js` passes
+ *   `'bareloop interview'` so a person who typed that is told to re-run THAT,
+ *   never a script path they never invoked and may not have on disk.
  */
 
 /**
@@ -146,6 +151,7 @@ export async function main(argv, deps = {}) {
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
   const spawnSyncFn = deps.spawnSync ?? realSpawnSync;
+  const invokedAs = deps.invokedAs ?? 'node scripts/run-interview.mjs';
   const out = (/** @type {string} */ s = '') => { stdout.write(`${s}\n`); };
   const err = (/** @type {string} */ s) => { stderr.write(`${s}\n`); };
   const arg = (/** @type {string} */ n) => { const i = argv.indexOf(`--${n}`); return i === -1 ? null : (argv[i + 1] ?? ''); };
@@ -190,7 +196,7 @@ export async function main(argv, deps = {}) {
   const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget'));
 
   if (!outArg || verdictArg === null || !providerArg) {
-    die('usage: node scripts/run-interview.mjs '
+    die(`usage: ${invokedAs} `
       + `--verdict <${MENU_CLASSES.join('|')}> --provider <${PROVIDERS.join('|')}> --out <outdir> [--budget <usd>] [--base-url <url>]`);
   }
   if (budgetError) die(budgetError);

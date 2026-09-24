@@ -144,6 +144,11 @@ class ExitSignal extends Error {
  * @property {NodeJS.ReadStream} [stdin]
  * @property {NodeJS.WritableStream} [stdout]
  * @property {NodeJS.WritableStream} [stderr]
+ * @property {string} [invokedAs] the command name this run was actually
+ *   reached through, for the usage message ONLY — `scripts/run-author.mjs`
+ *   supplies none (defaults to its own real invocation), `src/cli.js` passes
+ *   `'bareloop author'` so a person who typed that is told to re-run THAT,
+ *   never a script path they never invoked and may not have on disk.
  */
 
 /**
@@ -163,6 +168,7 @@ export async function main(argv, deps = {}) {
   const stderr = deps.stderr ?? process.stderr;
   const out = (/** @type {string} */ s = '') => { stdout.write(`${s}\n`); };
   const err = (/** @type {string} */ s) => { stderr.write(`${s}\n`); };
+  const invokedAs = deps.invokedAs ?? 'node scripts/run-author.mjs';
   let exitCode = 0;
   try {
   /** the close precheck / seed read spawns real toolchains; the slowest stage is a
@@ -206,7 +212,7 @@ export async function main(argv, deps = {}) {
   const { ceilingUsd: CEILING_USD, error: budgetError } = parseCeiling(arg('budget'));
 
   if (!sourceArg || !answersArg || !draftArg || !outArg || verdictArg === null) {
-    die('usage: node scripts/run-author.mjs --source <tree> --answers <answers.json> --draft <specdraft.json> '
+    die(`usage: ${invokedAs} --source <tree> --answers <answers.json> --draft <specdraft.json> `
       + `--verdict <${MENU_CLASSES.join('|')}> --out <outdir> [--timeout <ms>] [--budget <usd>]`);
   }
   // A malformed ceiling dies at the door rather than silently reading as absent.
