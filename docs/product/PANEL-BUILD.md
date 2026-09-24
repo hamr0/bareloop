@@ -52,19 +52,25 @@ already require.
 
 ## 3. The gap, measured
 
-Verified this session (2026-09-23) against the actual source, not restated from memory.
+Measured 2026-09-23 (pre-P0); re-verified 2026-09-24 against the actual source
+post-P0 — every row below the CLI line the 2026-09-23 table marked "No" now has a
+`bareloop` command, confirmed by grep/`wc -l` on the current tree, not restated from the
+earlier table.
 
 | Flow the panel needs | Where the logic lives today | CLI command today? |
 |---|---|---|
 | Export a job spec to a bundle | `src/bundle.js` (`exportBundle`, exported from `src/index.js`) | Yes — `bareloop export` (`src/cli.js:doExport`) |
 | Run a signed bundle against a repo | `src/run.js` (`runJob`) + `src/bundle.js` (bundle read/bless/envelope) | Yes — `bareloop run` (`src/cli.js:doRun`) |
 | List a bundle's history + bridges | `src/index.js` (`loadRegistry`, `listingRow`) + `history.jsonl` | Yes — `bareloop history` (`src/cli.js:doHistory`) |
-| **The interview** — the ENTRY GATE for a new job (source/destination, goal, guardrails, check type, judge examples, confirm turn) | `scripts/run-interview.mjs` (**764 lines**, verified `wc -l`); imports `validateJob`/`validateBaseUrl`/`PROVIDERS` from `src/job.js`, `resolveProvider`/`probeWarningLines`/`apiKeyProblem` from `src/providers.js`, `scanSecrets`/`redactSecrets` from `src/validate.js`, `detectLanguage` from `src/detectlang.js`, `prepareSource`/`proveDestination`/`looksLikeRepoSource`/`missingDependencies` from `src/source.js` — a REPO SCRIPT orchestrating library calls, not itself a library module | **No** — repo script only, no `bareloop` subcommand |
-| **Authoring** — draft/revise/sign a job spec from interview answers | `scripts/run-author.mjs` (**1182 lines**, verified `wc -l`); imports `defaultJudgeLoop`/`resolveJobJudge` from `src/judged.js`, `validateJob`/`jobSpecHash`/`resolveWorkerModel` from `src/job.js`, `closeJudges`/`GATE_AUDIT_FILE` from `src/kinds.js`, `resolveProvider`/`buildRunnerProviders`/`apiKeyProblem` from `src/providers.js`, `readSourceManifest`/`missingDependencies` from `src/source.js` — again a REPO SCRIPT, not a library module | **No** |
-| **Person-path run** — the full run-a-job flow (resume, pause, review door, replay) | `scripts/run-u.mjs` (**1992 lines**, verified `wc -l`); imports `runJob` from `src/run.js`, plus `src/job.js`, `src/readshim.js`, `src/plan.js`, `src/closetimeout.js`, `src/spine.js`, `src/source.js`, `src/validate.js`, `src/behaviour.js`, `src/kinds.js`, `src/judged.js`, `src/reuse.js`, `src/providers.js`, `src/bridges.js`, `src/declaredclose.js`, `src/reviewdoor.js`; also imports `scripts/u-patient.mjs` and `scripts/u-readout.mjs` (script-local helpers) | **No** |
-| Replay an archived run at $0 | `src/replay.js` (`replayRun`, `formatReplay`), exported from `src/index.js` | **No** — no `bareloop replay` |
-| Read the spine for History/Run/Audit tabs | `src/spine.js` (`makeSpine`, the one writer) + raw `spine.jsonl` per run, read directly by every consumer today (`src/cli.js:doRun` reads it with `readFileSync`/`JSON.parse` inline) | **No** dedicated read command — every consumer re-parses the file itself |
-| Gate-audit trail for the Audit tab | `gate-audit.jsonl`, relocated per run by `src/cli.js:doRun` (bundle path) or `scripts/run-u.mjs`/`scripts/u-patient.mjs` (person path) — no library reader | **No** |
+| **The interview** — the ENTRY GATE for a new job (source/destination, goal, guardrails, check type, judge examples, confirm turn) | `src/interviewrun.js` (one argv-parsing `main(argv, deps)`, lifted verbatim out of the former `scripts/run-interview.mjs` repo script per P0); `scripts/run-interview.mjs` is now a thin ~22-line adapter over it | **Yes** — `bareloop interview` (`src/cli.js`, routes to `interviewMain`) |
+| **Authoring** — draft/revise/sign a job spec from interview answers | `src/authorrun.js` (one argv-parsing `main(argv, deps)`, lifted verbatim out of the former `scripts/run-author.mjs`); `scripts/run-author.mjs` is now a thin ~22-line adapter over it | **Yes** — `bareloop author` (`src/cli.js`, routes to `authorMain`) |
+| **Person-path run** — the full run-a-job flow (resume, pause, review door, replay) | `src/userrun.js` — one internal engine behind three thin named doors (`startRun`/`resumeRun`/`answerDoor`, per the settled "one module three thin doors" shape below), lifted out of the former `scripts/run-u.mjs`; `scripts/run-u.mjs` is now a thin ~20-line adapter over it | **Yes** — `bareloop run-u` (`src/cli.js`, routes to `runUMain`) |
+| Replay an archived run at $0 | `src/replay.js` (`replayRun`, `formatReplay`) + `src/replayio.js` (the IO layer: `parseJsonl`/`looksLikeSpine`/`replayOne`/`listSpines`, lifted out of the former `scripts/run-replay.mjs`) | **Yes** — `bareloop replay <spine.jsonl>` and `bareloop replay --all <dir>` (`src/cli.js:doReplay`) |
+| Read the spine for History/Run/Audit tabs | `src/replayio.js`'s `parseJsonl` (tolerant JSONL reader, skips a malformed line instead of throwing) is now the one named reader; `doHistory` (`readHistoryLog`) and `doRun`'s own job-end tail read both call it instead of hand-rolling `readFileSync`/`JSON.parse` inline | **Yes** — no separate read-only subcommand was needed; the panel's read side calls `src/replayio.js`'s exported functions directly, in-process, the same way `src/cli.js` does (per the layering law, §2) |
+| Gate-audit trail for the Audit tab | `src/replayio.js`'s `replayOne` resolves and reads a spine's `-gate-audit.jsonl` sidecar by the name convention (content-based spine detection, sidecar-by-name) — one library reader, no per-caller re-implementation | **Yes** — same as the row above: `bareloop replay` exercises it; the panel calls `src/replayio.js` directly for the Audit tab |
+
+**P0 status: COMPLETE** (see §4 below for the exit condition text and what was actually
+delivered against it).
 
 **The entry gate for a new job is the interview** (`scripts/run-interview.mjs`) — hamr's own
 words point here: *"on all scripts, they should have had cli, shouldn't they?"* Every flow in
@@ -91,6 +97,13 @@ real `bareloop <command>` in `src/cli.js` — **signed, hamr: "cli names are fin
   Run, Audit, Job), so the panel never hand-rolls its own `JSON.parse` over `spine.jsonl`
   the way `src/cli.js:doRun`'s own tail-read currently does either — this rung also gives that
   inline read a named library function.
+- `bareloop replay` — wraps `src/replayio.js`'s read side over `src/replay.js`'s
+  `replayRun`/`formatReplay`. **Provenance note, added honestly:** unlike `interview`/`author`/
+  `run-u` above, hamr never separately named `replay` verbatim in the scope interview — it
+  was signed on **2026-09-24**, when a post-P0 debrief listed it (among 3 other items) as
+  needing his confirmation, and he replied **"fix all"**. That is a blanket approval of the
+  debrief's items, not a separate verbatim CLI-naming quote like the other three — recorded
+  here plainly as what it was, not dressed up as an equivalent quote.
 
 `scripts/*.mjs` reduce to thin adapters over the library, the same ~10-line shape
 `bin/bareloop.mjs` already is over `src/cli.js` (parse argv, supply real deps, print, set
@@ -140,6 +153,21 @@ function shouldn't have nine different exit paths written by hand at different p
 gate-audit read) is a library function in `src/` with a `bareloop` CLI command over it; full
 suite green; the old `scripts/*.mjs` entry points still work, now calling through the new
 library seam instead of holding the logic themselves.
+
+**Delivered (P0 COMPLETE, this branch, 8 commits):** `src/interviewrun.js`,
+`src/authorrun.js`, `src/userrun.js` (one engine, three doors: `startRun`/`resumeRun`/
+`answerDoor`), and `src/replayio.js` hold the lifted logic; `bareloop interview`/`author`/
+`run-u`/`replay` are wired in `src/cli.js`; `scripts/run-interview.mjs`, `scripts/
+run-author.mjs`, and `scripts/run-u.mjs` are now thin ~20-line adapters (down from 764/1182/
+1992 lines respectively); spine and gate-audit reads go through `src/replayio.js`'s
+`parseJsonl`/`readHistoryLog`/`replayOne` rather than a per-caller hand-rolled parse — including
+`doRun`'s own job-end tail read, retargeted onto `parseJsonl` the same session (see §3's read-side
+row). The run-author ending-owner consolidation (§4's "also folds in" note above) is delivered
+too: `src/authorrun.js` has zero real `process.exit()` calls left (verified by grep) — every
+ending now throws one `ExitSignal(n)`, caught once at the bottom of `main`; the 7 `author-end`
+emit sites are unchanged in place (a behaviour-preserving lift, not a re-architecture of WHEN each
+fires). §3's gap table above was re-verified against this delivered state on 2026-09-24. See §7
+for what P0 did NOT close (the step-title wrap fixture, F192 — both explicitly out of P0's scope).
 
 ### P1 — read-only panel
 
