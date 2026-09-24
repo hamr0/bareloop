@@ -42,6 +42,15 @@ import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './provider
 // path for the flag grammar; `src/cli.js` only supplies the deps shape
 // (`out`/`err`/`env`) this command's own callers already use.
 import { main as runUMain } from './userrun.js';
+// PANEL-BUILD.md P0 task 3/4 — `bareloop interview` and `bareloop author`
+// wrap the close-authoring interview and authoring-pipeline flows' own
+// argv-parsing entries (`src/interviewrun.js`/`src/authorrun.js`, lifted out
+// of `scripts/run-interview.mjs`/`scripts/run-author.mjs` the same way task
+// 1/2 lifted `scripts/run-u.mjs`). `scripts/run-interview.mjs`/`scripts/
+// run-author.mjs` call these SAME functions directly, so there is exactly
+// one place each flag grammar is parsed.
+import { main as interviewMain } from './interviewrun.js';
+import { main as authorMain } from './authorrun.js';
 
 // The tier->model tables live in `src/providers.js` now (PRD item 28's
 // factory) — one seam instead of a copy hardcoded in each runner. A
@@ -547,6 +556,16 @@ export async function main(argv, deps = {}) {
   // other command here prints through, so `run-u`'s output lands on the
   // `stdout`/`stderr` a caller of `main` actually passed.
   if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err });
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u`);
+  // `bareloop interview` — the close-authoring interview (PANEL-BUILD.md P0
+  // task 3/4). This flow reads a TTY (or a piped stdin) directly rather than
+  // through the `out`/`err` line-functions every other command here uses, so
+  // it needs the raw streams, not the wrapped ones — `stdout`/`stderr` (both
+  // already resolved above) are handed through instead.
+  if (cmd === 'interview') return interviewMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr });
+  // `bareloop author` — the authoring pipeline (scout, declaration, D9's
+  // gates), same task. Same raw-stream reasoning: its one interactive seam
+  // (the confirm turn) reads stdin directly.
+  if (cmd === 'author') return authorMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr });
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author`);
   return 1;
 }

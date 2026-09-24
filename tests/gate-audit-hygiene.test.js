@@ -32,7 +32,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { moveStaleGateAudit } from '../src/u-patient.js';
 
-const RUN_AUTHOR_SRC = readFileSync(new URL('../scripts/run-author.mjs', import.meta.url), 'utf8');
+// PANEL-BUILD.md P0 task 4/4 — this orchestration moved off
+// scripts/run-author.mjs (now a thin adapter) into src/authorrun.js's one
+// `main(argv, deps)`.
+const RUN_AUTHOR_SRC = readFileSync(new URL('../src/authorrun.js', import.meta.url), 'utf8');
 // PANEL-BUILD.md P0 — this orchestration moved off scripts/run-u.mjs (now a
 // thin adapter) into src/userrun.js's one shared execute() engine.
 const RUN_U_SRC = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
@@ -86,15 +89,22 @@ test('run-author.mjs defines an idempotent archiveGateAudit() that renames the t
 });
 
 test('run-author.mjs calls archiveGateAudit() from the finally block (every ordinary exit path AND the crash catch)', () => {
-  const finallyBlock = /\} finally \{[\s\S]*?\n\}/.exec(RUN_AUTHOR_SRC)?.[0];
+  // PANEL-BUILD.md P0 — indented one level deeper (src/authorrun.js) than the
+  // old top-level script.
+  const finallyBlock = /\} finally \{[\s\S]*?\n {2}\}/.exec(RUN_AUTHOR_SRC)?.[0];
   assert.ok(finallyBlock, 'the finally block moved — this guard no longer reads the block it pins');
   assert.match(finallyBlock, /archiveGateAudit\(\);/, 'the finally block, reached by every ordinary exit AND the crash catch above it, archives the audit');
 });
 
-test('run-author.mjs also calls archiveGateAudit() before the judge-key process.exit(2) — the one path that bypasses finally', () => {
-  const judgeKeyBlock = /if \(judgeKeyProblem\) \{[\s\S]*?process\.exit\(2\);\s*\n\s*\}/.exec(RUN_AUTHOR_SRC)?.[0];
+test('run-author.mjs also calls archiveGateAudit() before the judge-key throw new ExitSignal(2) — the one path that used to bypass finally under process.exit()', () => {
+  // PANEL-BUILD.md P0 — a library function never calls process.exit(); this
+  // site throws `ExitSignal(2)` instead, caught by main's own outer catch.
+  // Unlike process.exit(), the thrown signal DOES now reach the finally block
+  // below (which archives again — idempotent), but the explicit call here
+  // stays too: it never depends on the finally block running first.
+  const judgeKeyBlock = /if \(judgeKeyProblem\) \{[\s\S]*?throw new ExitSignal\(2\);\s*\n\s*\}/.exec(RUN_AUTHOR_SRC)?.[0];
   assert.ok(judgeKeyBlock, 'the judge-key refusal block moved — this guard no longer reads the block it pins');
-  assert.match(judgeKeyBlock, /archiveGateAudit\(\);/, 'process.exit() skips finally entirely, so this path must call it explicitly');
+  assert.match(judgeKeyBlock, /archiveGateAudit\(\);/, 'the explicit call here must never depend on the finally block running first');
 });
 
 // ── (b) run-u.mjs — pinned from source (a real launch needs a provider) ────

@@ -3000,7 +3000,7 @@ between a swapped script and a fake green, so `bareloop run` calls it as literal
 before the envelope check, before the key check, before the worktree, before `runJob` is
 ever reached.
 
-#### The CLI — `bareloop export | run | history | run-u`, `bin/bareloop.mjs`
+#### The CLI — `bareloop export | run | history | run-u | interview | author`, `bin/bareloop.mjs`
 
 `bin/bareloop.mjs` is a ~10-line adapter: it supplies the real `deps` (real `env`/`stdout`/
 `stderr`/`cwd`/`stdin`) and turns the returned number into `process.exitCode` — never
@@ -3015,10 +3015,12 @@ same seam `tests/planrun.test.js` uses. `deps` also accepts `env`, `stdout`, `st
 
 Bare `bareloop` (no sub-command) prints a numbered menu — `1 export  2 run  3 history  q
 quit` — and asks each sub-command's arguments one line at a time over the SAME code paths
-below. `run-u` (below) is not on this menu (PANEL-BUILD.md P0 task 2/4): its flag grammar is
-too wide for a line-at-a-time wizard, and the menu's job is to ask the SAME questions the
-sub-command below already answers, never to invent a new interview — `run-u` is dispatched
-by name only, `bareloop run-u <flags…>`.
+below. `run-u`, `interview` and `author` (below) are not on this menu (PANEL-BUILD.md P0
+tasks 2/4-4/4): each one's own flag grammar is too wide for a line-at-a-time wizard, and the
+menu's job is to ask the SAME questions the sub-command below already answers, never to
+invent a new interview — this is doubly true for `interview`/`author`, which already ARE
+interviews of their own. All three are dispatched by name only: `bareloop run-u <flags…>`,
+`bareloop interview <flags…>`, `bareloop author <flags…>`.
 
 - **`bareloop export <jobs/x.json> --registry <dir> --out <dir>`** → resolves the spec's
   close-script paths against the spec file's own directory (never the process cwd), calls
@@ -3114,6 +3116,51 @@ by name only, `bareloop run-u <flags…>`.
   preview `scripts/run-u.mjs --job <x>` prints with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
   set. `scripts/run-u.mjs` is unchanged in behaviour: it is the pre-existing thin adapter
   over this same `src/userrun.js:main`, not rewired to go through `src/cli.js`.
+
+- **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring
+  interview, at the terminal, one question at a time (D10; `docs/logs/FINDINGS.md`'s
+  interview surface). `src/cli.js`'s `interview` dispatch hands `rest` straight to
+  **`src/interviewrun.js`'s own `main(argv, deps)`**, unparsed — the same one-owner shape
+  `run-u` uses, and `scripts/run-interview.mjs` calls the exact same function directly.
+  Flags: `--verdict <green|soft-green>`, `--provider <anthropic-api|openai-api|gemini-api>`,
+  `--out <outdir>` (all three required, no defaults — PRD item 34 L17: a defaulted provider
+  would silently re-lock every interview onto one vendor) plus optional `--budget <usd>` (the
+  AUTHORING ceiling, unbounded if omitted) and `--base-url <url>`. It never talks to a
+  provider itself: Source and Destination are its own first two questions (proven
+  mechanically, $0, via `prepareSource`/`proveDestination`), then the picked class's frozen
+  question set (`questionsFor`/`requiredAnswersFor`, `src/authorjob.js`), then the operator's
+  own job name/budget/wall. On success it writes `answers.json`/`specdraft.json` under `--out`
+  and either offers to spawn `scripts/run-author.mjs` (only when a clean key is present and no
+  install gap remains — default answer is no) or prints the exact command to run it later.
+  Because this module reads a real TTY/piped stdin, `src/cli.js` hands it `stdin`/`stdout`/
+  `stderr` (the raw streams, not the wrapped `out`/`err` line-functions every other command
+  here uses) rather than re-deriving them.
+
+- **`bareloop author <flags…>`** (PANEL-BUILD.md P0 task 4/4) → the authoring pipeline: a
+  real scout over a real repository, a real model filling the close declaration, D9's three
+  mechanical gates, stopping at `prepareSigning` (it never signs and never runs the job —
+  signing and running are `run-u`'s territory). `src/cli.js`'s `author` dispatch hands `rest`
+  straight to **`src/authorrun.js`'s own `main(argv, deps)`**, unparsed, the same one-owner
+  shape; `scripts/run-author.mjs` calls the exact same function directly. Flags: `--source
+  <tree>` (a PREPARED tree a source door already froze — an unprepared path dies loud, naming
+  the exact command to prepare one), `--answers <answers.json>`, `--draft <specdraft.json>`,
+  `--verdict <green|soft-green>`, `--out <outdir>` (all required) plus optional `--timeout
+  <ms>` (default 300000, per close stage) and `--budget <usd>` (the AUTHORING ceiling —
+  unbounded, and announced as such, if omitted). A REFUSAL IS A RESULT: every stop (an
+  interview refusal, an unauthorable close, a stage that cannot run, nothing red at the seed)
+  is written to `--out` and counted as admission demand on the module's own spine
+  (`author-<runid>.jsonl`), never swallowed. Exit vocabulary: `0` prepared/signable, `1` a
+  refusal or a failed gate, `2` operator/config (including a malformed or missing provider
+  key), `3` a secret-shaped leak in what this run wrote, `4` an unhandled crash (`author-crash`
+  + `author-end{outcome:'crashed'}` on the spine — a spine that stops mid-sentence is
+  indistinguishable from a run still in flight, F191). A real OS signal (SIGINT/SIGTERM/
+  SIGHUP) during the paid span still writes `author-killed` + `author-end{outcome:'killed'}`
+  and then RE-RAISES the signal itself (128+signo), never invents an exit code; SIGKILL is
+  named but, being uncatchable, cannot be covered. The library function itself never calls
+  `process.exit()` anywhere, on any path — every stop is a returned exit code (an internal
+  `throw new ExitSignal(n)`, caught at the bottom of `main`), the same "a library function
+  returns a code / throws" rule `src/userrun.js` already keeps. Like `interview`, `src/cli.js`
+  hands it raw `stdin`/`stdout`/`stderr` (its one interactive seam is the confirm turn).
 
 **Tighten-only budget/wall.** `--budget`/`--wall` on `bareloop run` may only lower the
 bundle's own signed `budgetUsd`/`maxWallMs` — `checkEnvelope`'s `envelope-widen` red refuses

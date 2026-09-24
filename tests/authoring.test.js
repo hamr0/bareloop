@@ -38,10 +38,13 @@ import {
   classGuards, closeCeiling, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, normalizeDeclaration,
 } from '../src/authoring.js';
+// PANEL-BUILD.md P0 task 4/4 — moved into src/ (was scripts/author-readout.mjs)
+// so its callers (src/authorrun.js, src/interviewrun.js) stay under tsc's
+// rootDir; no logic changed in the move.
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
   openQuestionLines, answeredQuestionLines, fellBackLines,
-} from '../scripts/author-readout.mjs';
+} from '../src/authorreadout.js';
 import { RAW_PERSIST_MAX, RAW_TRIM_MARKER } from '../src/text.js';
 
 /** The battery for the one class v1 admits. The attachment point is the CLASS

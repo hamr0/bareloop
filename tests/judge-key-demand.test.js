@@ -155,10 +155,13 @@ test('no module open-codes the judged-stage filter any more — the six duplicat
   // question about whether a close judges at all.
   const files = [
     'src/cardauthor.js', 'src/authorjob.js', 'src/authoring.js',
-    // PANEL-BUILD.md P0 — scripts/run-u.mjs is now a thin adapter (no logic
-    // of its own to open-code anything in); the real orchestration this
-    // sweep is checking lives in src/userrun.js now.
-    'scripts/run-author.mjs', 'scripts/author-readout.mjs', 'scripts/run-u.mjs', 'src/userrun.js',
+    // PANEL-BUILD.md P0 — scripts/run-u.mjs and scripts/run-author.mjs are
+    // now thin adapters (no logic of their own left to open-code anything
+    // in); scripts/author-readout.mjs moved to src/authorreadout.js
+    // outright (rootDir). The real orchestration this sweep is checking
+    // lives in src/userrun.js, src/authorrun.js and src/authorreadout.js now.
+    'scripts/run-author.mjs', 'scripts/run-u.mjs', 'src/userrun.js',
+    'src/authorrun.js', 'src/authorreadout.js',
   ];
   for (const f of files) {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');

@@ -173,7 +173,7 @@ test('capStop: spend that cannot be KNOWN stops on its own axis — unpriced is 
 
 test('capStop: a MALFORMED ceiling is an error, never a silent UNBOUNDED (PRD v1.62)', () => {
   // The library seam is the one the CLI's guard cannot cover: `parseCeiling` lives
-  // in scripts/author-readout.mjs and the UNBOUNDED banner is printed by the
+  // in src/authorreadout.js and the UNBOUNDED banner is printed by the
   // runner, so an adopter calling `authorClose({ceilingUsd: '2.50'})` used to buy
   // a paid pipeline with NOTHING enforcing the ceiling it just set — the advertised
   // ceiling and the enforced ceiling must be the same ceiling, and here they were
