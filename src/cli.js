@@ -421,8 +421,12 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
   if (existsSync(auditSrc)) renameSync(auditSrc, join(runsDir, 'gate-audit.jsonl'));
 
   // the job-end record off THIS run's own spine — never fabricate a 0 for an
-  // unknown spend (F6/F12's class).
-  const events = readFileSync(spineFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  // unknown spend (F6/F12's class). PANEL-BUILD.md P0: read via the same
+  // named library reader `doHistory`/`doReplay` already use (`parseJsonl`,
+  // `src/replayio.js`) instead of hand-rolling the parse again here — it
+  // tolerates a malformed/truncated line (a process killed mid-append)
+  // instead of throwing uncaught and crashing this run's exit tail.
+  const { records: events } = parseJsonl(spineFile);
   const je = events.findLast((/** @type {any} */ e) => e.type === 'job-end');
   const spentUsd = je?.spentUsd ?? null;
   const spendComplete = je?.spendComplete ?? null;

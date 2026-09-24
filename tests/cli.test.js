@@ -386,6 +386,48 @@ test('bareloop run: first GREEN run blesses the bundle, records history, and lea
   assert.equal(existsSync(join(bundleDir, 'runs', runid, 'gate-audit.jsonl')), true);
 });
 
+test('bareloop run: a spine with a malformed/truncated line (process-killed-mid-append shape) does not crash the job-end tail read', async (t) => {
+  // PANEL-BUILD.md P0 — `doRun`'s own job-end read (src/cli.js) used to
+  // hand-roll `readFileSync(...).split('\n').filter(Boolean).map(JSON.parse)`
+  // OUTSIDE any try/catch, the exact parse `parseJsonl` (src/replayio.js)
+  // already tolerates elsewhere (`doHistory`/`doReplay`). A spine carrying
+  // one malformed line — the real shape of a process killed mid-append —
+  // threw uncaught there and crashed the tail of an otherwise-successful
+  // run. `makeSpine` only APPENDS (`appendFileSync`), so we seed one bad,
+  // newline-terminated line into the spine file before the run starts; every
+  // event the run itself emits (including the job-end record the tail
+  // reads) lands after it, well-formed. `doRun`'s current buggy read maps
+  // JSON.parse over EVERY line unconditionally, so a malformed line anywhere
+  // in the file reproduces the exact same uncaught throw regardless of
+  // position — this is the same defect class, proven without needing to
+  // interrupt a real write mid-flight.
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+
+  const ts = 1_700_000_900_000;
+  const now = makeNow(ts);
+  const runid = ts.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', runid);
+  const runsDir = join(bundleDir, 'runs', runid);
+  mkdirSync(runsDir, { recursive: true });
+  const spineFile = join(runsDir, 'spine.jsonl');
+  // deliberately malformed: an unterminated JSON object, own newline-terminated
+  // line — the shape a truncated append leaves behind.
+  writeFileSync(spineFile, '{"type":"job-start","seq":1,"ts":"TRUNCATED\n');
+
+  const provider = greenScript(worktree);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now,
+  });
+  assert.equal(rc, 0, `run must still green despite the malformed seed line: ${out.text()}\n${err.text()}`);
+  assert.match(out.text(), /outcome   green/);
+  // the real spend, read off the well-formed job-end record appended after
+  // the malformed line — never UNKNOWN just because an earlier line was bad.
+  assert.doesNotMatch(out.text(), /spent {5}UNKNOWN/);
+});
+
 test('bareloop run: a SECOND run needs no --approve, mints a fresh worktree/runid and a "-2" branch', async (t) => {
   const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');
