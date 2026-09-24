@@ -5,6 +5,55 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.28.0] — 2026-09-24
+
+### Added
+
+- **`bareloop run-u`, `bareloop interview`, `bareloop author`, and `bareloop replay` (+
+  `--all`)** — four new CLI commands giving the panel's (N6) planned History/Run/Audit
+  surfaces, and any other adopter, a library-backed door onto machinery that previously
+  existed only as standalone scripts (`scripts/run-u.mjs`, `scripts/run-interview.mjs`,
+  `scripts/run-author.mjs`, `scripts/run-replay.mjs`). Each new command dispatches argv
+  straight to a library module's own `main(argv, deps)` — one owner per flag grammar — so
+  the CLI and the standalone script converge on the exact same code path. `bareloop replay
+  --all <dir>` lists every spine under a directory.
+
+### Changed
+
+- **`scripts/run-u.mjs`, `scripts/run-interview.mjs`, `scripts/run-author.mjs`, and
+  `scripts/run-replay.mjs` lifted into `src/`** (`src/userrun.js`, `src/interviewrun.js`,
+  `src/authorrun.js`, `src/replayio.js`, plus `src/authorreadout.js`, `src/u-patient.js`,
+  `src/u-readout.js` moved outright to sit under `tsc`'s `rootDir`). Each script is now a
+  thin (~15–20 line) adapter over its library module, the same shape `bin/bareloop.mjs`
+  already is over `src/cli.js`. Behaviour-preserving: every `console.log`/`console.error`
+  became an injectable `out`/`err`, every `process.exit(n)` became a thrown `ExitSignal(n)`
+  caught at the function's own boundary (a library function never calls `process.exit`
+  itself), and `process.env`/`process.argv` reads became injectable parameters. Moving this
+  code under `rootDir` exposed it to `tsc` for the first time, surfacing and fixing ~26 real
+  `strictNullChecks` errors (no `!`, `as any`, or `@ts-ignore`), including one genuine
+  type-annotation bug (`humanRuling.text` declared `string?` when the real value flows
+  `string|null`).
+- **`src/cli.js`'s bare interactive menu** now lists `run-u`, `interview`, `author`, and
+  `replay` alongside the existing commands (previously unlisted even though they already
+  existed on the command line), and usage/error text in `src/interviewrun.js`/
+  `src/authorrun.js` now names the command actually typed (`bareloop interview`/`bareloop
+  author`) instead of a hardcoded script path, when invoked that way.
+
+### Fixed
+
+- **`doRun`'s job-end spine read could crash an otherwise-successful run's tail.** A
+  hand-rolled `readFileSync(...).split('\n').map(JSON.parse)` outside any try/catch threw
+  uncaught on a spine with a malformed/truncated final line (e.g. a process killed
+  mid-append). Retargeted onto the existing tolerant `parseJsonl` (now in
+  `src/replayio.js`), which skips a bad line instead of throwing.
+- **F193/F194 — the prompt-commit-check's prose-only exemption.** A commit touching a
+  registered prompt-register file normally needs Failure/Addresses/Corrects labels plus a
+  run citation; a narrow, fail-closed exemption now applies when every changed line in
+  every touched prompt-register file is provably prose-only (whitespace or a comment),
+  decided by scanning real old/new diff text rather than the commit message. F194 closed a
+  follow-up hole where a blank line inserted or deleted inside a still-open template
+  literal was misclassified prose-only and wrongly exempted.
+
 ## [0.27.0] — 2026-09-21
 
 ### Changed
