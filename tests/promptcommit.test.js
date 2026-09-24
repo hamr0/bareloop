@@ -213,6 +213,59 @@ test('classifyProseOnlyLines: an UNTERMINATED "/* "-shaped sequence inside a TEM
   assert.deepEqual(classifyProseOnlyLines(text), [false, false]);
 });
 
+// F194 — a blank line has zero characters, so the per-character loop that
+// sets `hasNonComment` never runs for it, and `hasNonComment` keeps its
+// `false` default regardless of what state (code/template/string/block-
+// comment) was active when that empty line began. A blank line sitting
+// INSIDE a still-open template literal is real prompt content (the doc
+// comment above claims "the whole span from an opening backtick to its
+// closing backtick is treated as one non-comment region" — false for an
+// empty line before this fix). Found by /branch-review, reproduced here
+// before the fix, fixed after. See docs/logs/FINDINGS.md F194 (F193 follow-up).
+test('classifyProseOnlyLines: F194 — a BLANK line inside an open template literal is NOT prose-only (it is real prompt content)', () => {
+  const text = [
+    'const P = `Line one',
+    '',
+    'Line three`;',
+  ].join('\n');
+  // line 2 is empty, but state is 'template' at its start — must read false.
+  assert.deepEqual(classifyProseOnlyLines(text), [false, false, false]);
+});
+
+test('classifyProseOnlyLines: F194 — a BLANK line inside an open block comment IS still prose-only (blank stays exempt in `code`-derived comment states)', () => {
+  const text = [
+    '/**',
+    '',
+    ' */',
+  ].join('\n');
+  assert.deepEqual(classifyProseOnlyLines(text), [true, true, true]);
+});
+
+test('classifyProseOnlyLines: F194 — a WHITESPACE-ONLY line inside an open template literal is NOT prose-only', () => {
+  const text = [
+    'const P = `Line one',
+    '   ',
+    'Line three`;',
+  ].join('\n');
+  assert.deepEqual(classifyProseOnlyLines(text), [false, false, false]);
+});
+
+test('fileChangeIsProseOnly: F194 — a blank line INSERTED into an open template literal is REJECTED (exemption must not fire)', () => {
+  const oldText = 'const P = `Line one\nLine three`;\n';
+  const newText = 'const P = `Line one\n\nLine three`;\n';
+  // -U0 shape for a pure insertion: 0 old lines at the insertion point, 1 new line (2).
+  const diff = '@@ -1,0 +2 @@\n+\n';
+  assert.equal(fileChangeIsProseOnly(oldText, newText, diff), false);
+});
+
+test('fileChangeIsProseOnly: F194 — a blank line DELETED from an open template literal is REJECTED (the old-side check matters too)', () => {
+  const oldText = 'const P = `Line one\n\nLine three`;\n';
+  const newText = 'const P = `Line one\nLine three`;\n';
+  // -U0 shape for a pure deletion: 1 old line (2) removed, 0 new lines at that point.
+  const diff = '@@ -2 +1,0 @@\n-\n';
+  assert.equal(fileChangeIsProseOnly(oldText, newText, diff), false);
+});
+
 test('parseChangedLineNumbers: a single-line hunk (no comma — git\'s real -U0 shape for a 1-line change, e.g. 565fb99)', () => {
   const diff = '--- a/src/planrun.js\n+++ b/src/planrun.js\n@@ -935 +935 @@ ${scoutBlob}\n'
     + '- * @param {{decision: string, text?: string}|null} [opts.humanRuling] N4\n'

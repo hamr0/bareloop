@@ -159,7 +159,20 @@ export function classifyProseOnlyLines(text) {
   for (let li = 0; li < lines.length; li += 1) {
     const line = lines[li];
     if (state === 'linecomment') state = 'code'; // a `//` comment never spans a newline
-    let hasNonComment = false;
+    // F194 (F193 follow-up) — a ZERO-LENGTH line never enters the per-character
+    // loop below, so `hasNonComment` would otherwise keep its `false` default
+    // regardless of what state was open when the line began. That is correct
+    // when the open state is itself comment-shaped (`blockcomment`, or `code`
+    // with nothing on the line) — an empty line inside a `/* */` block IS
+    // prose-only, same as before this fix. It is WRONG when the open state is
+    // a string/template literal (`single`/`double`/`template`): every prompt
+    // register in this codebase is a string or template literal (never a
+    // comment — see the module header), so a blank line sitting inside one is
+    // real prompt content, not prose, exactly like every non-blank line in
+    // that same state already is via the per-character loop below. Seeded
+    // here, once, rather than special-cased after the loop, so a non-empty
+    // line's behaviour (computed by the loop itself) is untouched.
+    let hasNonComment = line.length === 0 && (state === 'single' || state === 'double' || state === 'template');
     for (let i = 0; i < line.length; i += 1) {
       const ch = line[i];
       const next = line[i + 1];
