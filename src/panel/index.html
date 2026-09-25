@@ -439,7 +439,19 @@
   // s.noNumber (F196): a synthetic placeholder box (e.g. "died during
   // planning") is a LABEL, never a real step — it renders without the
   // leading "<n> " step number a real step gets.
-  function stepTitleText(idx, s){ return s.noNumber ? s.title : (idx + 1) + ' ' + s.title; }
+  // item 4 (2026-09-25): each step box shows its attempts INLINE, e.g.
+  // "attempt 1 [✗] · attempt 2 [✓]" — appended to the box's own title text
+  // (the existing wrapTitleLines 2-line wrap handles overflow the same way
+  // it already does for a long step id; no third renderer, no new box shape).
+  function attemptsInlineText(attempts){
+    if(!attempts || !attempts.length) return "";
+    return attempts.map(function(a){ return "attempt " + a.n + " " + (a.outcome === "green" ? "✓" : "✗"); }).join(" · ");
+  }
+  function stepTitleText(idx, s){
+    var base = s.noNumber ? s.title : (idx + 1) + ' ' + s.title;
+    var at = attemptsInlineText(s.attempts);
+    return at ? base + ' — ' + at : base;
+  }
   function naturalBoxWidth(steps){
     var maxChars = 0;
     steps.forEach(function(s, idx){ maxChars = Math.max(maxChars, stepTitleText(idx, s).length); });
@@ -1008,7 +1020,7 @@
     lastRunBehaviour = detail.behaviour;
     paintOfferedRow();
 
-    renderStepMap(detail.steps.map(function(s){ return { title: String(s.id), state: s.state, noNumber: !!s.synthetic }; }));
+    renderStepMap(detail.steps.map(function(s){ return { title: String(s.id), state: s.state, noNumber: !!s.synthetic, attempts: s.attempts || [] }; }));
 
     var listEl = document.getElementById("step-list");
     listEl.innerHTML = "";

@@ -567,3 +567,34 @@ test('item 3: the Run summary carries a hidden "offered" row that paintOfferedRo
   assert.match(html, /lastRunBehaviour = detail\.behaviour;\s*\n\s*paintOfferedRow\(\);/);
   assert.match(html, /lastJobToolsList = Array\.isArray\(job\.toolsList\) \? job\.toolsList : null;\s*\n\s*paintOfferedRow\(\);/);
 });
+
+// ---------------------------------------------------------------------------
+// item 4 (2026-09-25): map boxes show attempts inline
+// ---------------------------------------------------------------------------
+
+test('item 4: attemptsInlineText / stepTitleText — attempts append to the box title as "attempt N [check/cross]"', () => {
+  const { attemptsInlineText, stepTitleText } = (function(){
+    const html = readFileSync(PAGE_PATH, 'utf8');
+    const start = html.indexOf('function attemptsInlineText(');
+    const end = html.indexOf('function naturalBoxWidth(');
+    const body = html.slice(start, end);
+    // eslint-disable-next-line no-new-func
+    return new Function(`${body}\nreturn { attemptsInlineText, stepTitleText };`)();
+  })();
+  assert.equal(attemptsInlineText([]), '');
+  assert.equal(attemptsInlineText(null), '');
+  assert.equal(
+    attemptsInlineText([{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }]),
+    'attempt 1 ✗ · attempt 2 ✓',
+  );
+  assert.equal(stepTitleText(0, { title: 'annotate-checks', attempts: [] }), '1 annotate-checks');
+  assert.equal(
+    stepTitleText(0, { title: 'annotate-checks', attempts: [{ n: 1, outcome: 'green' }] }),
+    '1 annotate-checks — attempt 1 ✓',
+  );
+});
+
+test('item 4: renderRun feeds each step\'s attempts into the map data', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /attempts: s\.attempts \|\| \[\]/);
+});

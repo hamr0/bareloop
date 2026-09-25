@@ -1141,3 +1141,86 @@ test('server module source never references process.env (no secret ever read on 
   const codeOnly = src.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
   assert.ok(!codeOnly.includes('process.env'), 'src/panel/server.js must never read process.env directly (outside comments)');
 });
+
+// ---------------------------------------------------------------------------
+// item 4 (2026-09-25): Map — attempts inline on step boxes, and an
+// iterations-shape (older/non-plan) run collapses to ONE implicit step box
+// carrying its iterations as attempts, instead of one box per iteration.
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid: a PLAN-shape run\'s steps each carry their own attempts array (from replay.js)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-attempts.jsonl'), [
+    { type: 'job-start', job: 'attempts-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'x', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    {
+      type: 'exit-eval', step: 'x', iteration: 1, seq: 3, ts: '2026-09-05T00:00:02.000Z', results: [{ type: 'check-passes', pass: false }],
+    },
+    {
+      type: 'exit-eval', step: 'x', iteration: 2, seq: 4, ts: '2026-09-05T00:00:03.000Z', results: [{ type: 'check-passes', pass: true }],
+    },
+    { type: 'step-end', step: 'x', outcome: 'green', seq: 5, ts: '2026-09-05T00:00:04.000Z' },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0, spendComplete: true, seq: 6, ts: '2026-09-05T00:00:05.000Z',
+    },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'attemptsrun', job: 'attempts-job', spine: join(dir, 'u-attempts.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/attemptsrun');
+  const body = await res.json();
+  assert.equal(body.steps.length, 1);
+  assert.deepEqual(body.steps[0].attempts, [
+    { n: 1, iteration: 1, outcome: 'red' },
+    { n: 2, iteration: 2, outcome: 'green' },
+  ]);
+});
+
+test('/api/runs/:runid: an ITERATIONS-shape (loop, no step-start) run collapses to ONE step box whose attempts are the run\'s own iterations', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-loop.jsonl'), [
+    { type: 'job-start', job: 'loop-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'run-start', seq: 2, ts: '2026-09-05T00:00:00.500Z' },
+    { type: 'iteration-start', iteration: 1, seq: 3, ts: '2026-09-05T00:00:01.000Z' },
+    {
+      type: 'worker-round', costUsd: 0.01, tokens: 10, seq: 4, ts: '2026-09-05T00:00:01.500Z',
+    },
+    {
+      type: 'close-verdict', iteration: 1, verdict: 'needs_revision', seq: 5, ts: '2026-09-05T00:00:02.000Z',
+    },
+    { type: 'iteration-start', iteration: 2, seq: 6, ts: '2026-09-05T00:00:02.500Z' },
+    {
+      type: 'worker-round', costUsd: 0.01, tokens: 10, seq: 7, ts: '2026-09-05T00:00:03.000Z',
+    },
+    {
+      type: 'close-verdict', iteration: 2, verdict: 'satisfied', seq: 8, ts: '2026-09-05T00:00:03.500Z',
+    },
+    {
+      type: 'run-end', outcome: 'green', iterations: 2, seq: 9, ts: '2026-09-05T00:00:04.000Z',
+    },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0.02, spendComplete: true, seq: 10, ts: '2026-09-05T00:00:04.500Z',
+    },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'looprun', job: 'loop-job', spine: join(dir, 'u-loop.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/looprun');
+  const body = await res.json();
+  assert.equal(body.timelineKind, 'iterations');
+  // ONE box, not one per iteration
+  assert.equal(body.steps.length, 1);
+  assert.equal(body.steps[0].id, 'loop-job'); // the job name, never "iteration 1"/"iteration 2"
+  assert.equal(body.steps[0].state, 'done');
+  assert.deepEqual(body.steps[0].attempts, [
+    { n: 1, iteration: 1, outcome: 'red' },
+    { n: 2, iteration: 2, outcome: 'green' },
+  ]);
+  // aggregated across both iterations
+  assert.equal(body.steps[0].rounds, 2);
+  assert.ok(Math.abs(body.steps[0].spentUsd - 0.02) < 1e-9);
+});

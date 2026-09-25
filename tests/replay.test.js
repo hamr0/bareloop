@@ -829,3 +829,76 @@ test('(hand-built, SYNTHETIC spine) a phase-less spend record between two occurr
   assert.equal(s.thisFileSpend.totalRounds, 3, 'this-file spend counts all 3 records, including the one attributed to no step');
   assert.ok(Math.abs(s.thisFileSpend.value - 1.8) < 1e-9, 'this-file spend = 1.0 + 0.3 (between, no step) + 0.5 (inside occurrence 2) = 1.8');
 });
+
+// ---------------------------------------------------------------------------
+// panel item 4 (2026-09-25): per-step `attempts` — one entry per exit-eval
+// inside the step's own window, outcome green only when every result in
+// that exit-eval passed.
+// ---------------------------------------------------------------------------
+
+test('replayRun: step attempts — 2 exit-evals (fail then pass) in one step window produce 2 attempts, in order', () => {
+  const spine = [
+    { type: 'job-start', job: 'attempts-job', ts: '2026-01-01T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'x', ts: '2026-01-01T00:00:01.000Z', seq: 2 },
+    {
+      type: 'exit-eval', step: 'x', iteration: 1, seq: 3, ts: '2026-01-01T00:00:02.000Z', results: [{ type: 'check-passes', pass: false }],
+    },
+    {
+      type: 'exit-eval', step: 'x', iteration: 2, seq: 4, ts: '2026-01-01T00:00:03.000Z', results: [{ type: 'check-passes', pass: true }, { type: 'tree-changed', pass: true }],
+    },
+    { type: 'step-end', step: 'x', outcome: 'green', seq: 5, ts: '2026-01-01T00:00:04.000Z' },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0, spendComplete: true, seq: 6, ts: '2026-01-01T00:00:05.000Z',
+    },
+  ];
+  const s = replayRun(spine, [], { runId: 'attempts-run' });
+  assert.equal(s.steps.length, 1);
+  assert.deepEqual(s.steps[0].attempts, [
+    { n: 1, iteration: 1, outcome: 'red' },
+    { n: 2, iteration: 2, outcome: 'green' },
+  ]);
+  assert.deepEqual(s.steps[0].checks, { passed: 1, failed: 1 });
+});
+
+test('replayRun: a step with rounds but NO exit-eval (crashed before any check ran) has an EMPTY attempts array, never a fabricated one', () => {
+  const spine = [
+    { type: 'job-start', job: 'noeval-job', ts: '2026-01-01T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'y', ts: '2026-01-01T00:00:01.000Z', seq: 2 },
+    {
+      type: 'worker-round', phase: 'step:y', costUsd: 0.01, tokens: 10, seq: 3, ts: '2026-01-01T00:00:02.000Z',
+    },
+    {
+      type: 'escalation', category: 'provider-red', decision: 'x', seq: 4, ts: '2026-01-01T00:00:03.000Z',
+    },
+    { type: 'step-end', step: 'y', outcome: 'escalated', seq: 5, ts: '2026-01-01T00:00:04.000Z' },
+    {
+      type: 'job-end', outcome: 'provider-red', spentUsd: 0.01, spendComplete: false, seq: 6, ts: '2026-01-01T00:00:05.000Z',
+    },
+  ];
+  const s = replayRun(spine, [], { runId: 'noeval-run' });
+  assert.equal(s.steps.length, 1);
+  assert.deepEqual(s.steps[0].attempts, []);
+});
+
+test('replayRun: an exit-eval with an EMPTY results array reads RED, never a fabricated green', () => {
+  const spine = [
+    { type: 'job-start', job: 'empty-results-job', ts: '2026-01-01T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'z', ts: '2026-01-01T00:00:01.000Z', seq: 2 },
+    {
+      type: 'exit-eval', step: 'z', iteration: 1, seq: 3, ts: '2026-01-01T00:00:02.000Z', results: [],
+    },
+    { type: 'step-end', step: 'z', outcome: 'red', seq: 4, ts: '2026-01-01T00:00:03.000Z' },
+    {
+      type: 'job-end', outcome: 'job-red', spentUsd: 0, spendComplete: true, seq: 5, ts: '2026-01-01T00:00:04.000Z',
+    },
+  ];
+  const s = replayRun(spine, [], { runId: 'empty-results-run' });
+  assert.deepEqual(s.steps[0].attempts, [{ n: 1, iteration: 1, outcome: 'red' }]);
+});
+
+test('replayRun: real archived run mu2p83go — the one step has exactly 1 attempt, green (matches `bareloop replay`\'s checks 1/0)', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
+  const s = replayRun(spine, [], { runId: 'mu2p83go' });
+  assert.equal(s.steps.length, 1);
+  assert.deepEqual(s.steps[0].attempts, [{ n: 1, iteration: 1, outcome: 'green' }]);
+});

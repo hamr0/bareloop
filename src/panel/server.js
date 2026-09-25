@@ -408,34 +408,78 @@ export function getRunDetail(runid, opts = {}) {
   }
   const summary = replayOne(row.spine);
   const timelineKind = summary.timelineKind;
-  const units = timelineKind === 'iterations' ? summary.iterations : summary.steps;
   const rawSpineRecords = parseJsonl(row.spine).records;
   const death = deriveDeath(row.spine, rawSpineRecords, summary.outcome);
-  const steps = units.map((u, idx) => {
-    const isLast = idx === units.length - 1;
-    /** @type {'done'|'stopped'|'running'|'waiting'|'died'} */
-    let state;
-    const outcome = timelineKind === 'iterations' ? u.verdict : u.outcome;
+
+  /** @param {string|null} outcome @param {boolean} isLast */
+  const stateFor = (outcome, isLast) => {
     const isGreen = outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied';
-    if (outcome !== null && outcome !== undefined) state = isGreen ? 'done' : 'stopped';
-    else if (isLast && death.died) state = 'died';
-    else if (isLast && summary.outcome === null) state = 'running';
-    else state = 'waiting';
-    return {
-      id: timelineKind === 'iterations' ? `iteration ${u.iteration ?? idx + 1}` : u.id,
-      occurrence: timelineKind === 'iterations' ? null : u.occurrence,
-      outcome: outcome ?? null,
-      state,
-      rounds: u.rounds,
-      toolCalls: u.toolCalls,
-      wallMs: u.wallMs,
-      spentUsd: u.spentUsd,
-      unpricedRounds: u.unpricedRounds,
-      checks: timelineKind === 'iterations' ? null : u.checks,
-      treeChanged: timelineKind === 'iterations' ? null : u.treeChanged,
-      tripped: u.tripped,
-    };
-  });
+    if (outcome !== null && outcome !== undefined) return isGreen ? 'done' : 'stopped';
+    if (isLast && death.died) return 'died';
+    if (isLast && summary.outcome === null) return 'running';
+    return 'waiting';
+  };
+
+  // item 4 (2026-09-25): a PLAN run keeps one box per step, each carrying its
+  // own `attempts` (src/replay.js's new per-step field — one entry per
+  // exit-eval that actually ran, reusing that SAME windowing, never a second
+  // one). A LOOP-shape run (no step-start at all — an older/non-plan run,
+  // `timelineKind:'iterations'`) used to render ONE box PER ITERATION
+  // (labelled "1 iteration 1", "2 iteration 2", …, each counted as if it
+  // were its own step); it now renders as ONE implicit step whose `attempts`
+  // are the run's own iterations, since a loop-shape run's iterations ARE
+  // its attempts (there is no separate step layer above them to attach to).
+  /** @type {any[]} */
+  let steps;
+  if (timelineKind === 'iterations') {
+    const units = summary.iterations;
+    const attempts = units.map((u, idx) => ({
+      n: idx + 1,
+      iteration: u.iteration,
+      outcome: (u.verdict === 'green' || u.verdict === 'already-green' || u.verdict === 'satisfied') ? 'green' : 'red',
+    }));
+    const rounds = units.reduce((acc, u) => acc + u.rounds, 0);
+    const allToolsKnown = units.every((u) => typeof u.toolCalls === 'number');
+    const toolCalls = allToolsKnown ? units.reduce((acc, u) => acc + (u.toolCalls ?? 0), 0) : null;
+    const allWallKnown = units.every((u) => typeof u.wallMs === 'number');
+    const wallMs = allWallKnown ? units.reduce((acc, u) => acc + (u.wallMs ?? 0), 0) : null;
+    const unpricedRounds = units.reduce((acc, u) => acc + u.unpricedRounds, 0);
+    const spentUsd = unpricedRounds > 0 ? null : units.reduce((acc, u) => acc + (u.spentUsd ?? 0), 0);
+    steps = units.length === 0 ? [] : [{
+      id: summary.job ?? row.job,
+      occurrence: null,
+      outcome: summary.outcome,
+      state: stateFor(summary.outcome, true),
+      rounds,
+      toolCalls,
+      wallMs,
+      spentUsd,
+      unpricedRounds,
+      checks: null,
+      treeChanged: null,
+      tripped: units.length ? units[units.length - 1].tripped : null,
+      attempts,
+    }];
+  } else {
+    steps = summary.steps.map((u, idx) => {
+      const isLast = idx === summary.steps.length - 1;
+      return {
+        id: u.id,
+        occurrence: u.occurrence,
+        outcome: u.outcome ?? null,
+        state: stateFor(u.outcome, isLast),
+        rounds: u.rounds,
+        toolCalls: u.toolCalls,
+        wallMs: u.wallMs,
+        spentUsd: u.spentUsd,
+        unpricedRounds: u.unpricedRounds,
+        checks: u.checks,
+        treeChanged: u.treeChanged,
+        tripped: u.tripped,
+        attempts: u.attempts,
+      };
+    });
+  }
   // died before any step/iteration ever started (steps empty — the run was
   // still in scout/planning) — one placeholder box, never an empty map. Its
   // "id" IS the map's own display text (the map renders `String(s.id)`
@@ -460,6 +504,7 @@ export function getRunDetail(runid, opts = {}) {
       checks: null,
       treeChanged: null,
       tripped: null,
+      attempts: [],
       synthetic: true,
     });
   }

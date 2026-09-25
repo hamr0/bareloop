@@ -582,14 +582,33 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     let passed = 0;
     let failed = 0;
     let treeChanged = false;
-    for (const ee of exitEvals) {
-      if (ee.step !== id) continue;
-      if (!(typeof ee.seq === 'number' && ee.seq > startSeq && ee.seq < endSeq)) continue;
-      for (const r of Array.isArray(ee.results) ? ee.results : []) {
-        if (!isRecord(r)) continue;
+    // `attempts` (panel item 4, 2026-09-25): one entry per exit-eval that
+    // actually ran inside this step's own window — an "attempt" being one
+    // iteration of the step's own micro-loop (worker works, then the step's
+    // check runs, src/planrun.js's `ralph({judge,...})`). An attempt's own
+    // outcome is GREEN only when EVERY result the exit-eval carries passed
+    // (not just `check-passes` — `tree-changed` failing is also a real
+    // attempt failure); an exit-eval with an EMPTY `results` array is
+    // reported RED, never a fabricated green (nothing passed). Ordered by
+    // `seq` (the array is already built in spine order, but sorted
+    // defensively since a caller could hand in an out-of-order array).
+    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red'}>} */
+    const attempts = [];
+    const stepExitEvals = exitEvals
+      .filter((ee) => ee.step === id && typeof ee.seq === 'number' && ee.seq > startSeq && ee.seq < endSeq)
+      .sort((a, b) => a.seq - b.seq);
+    for (const ee of stepExitEvals) {
+      const results = Array.isArray(ee.results) ? ee.results.filter(isRecord) : [];
+      for (const r of results) {
         if (r.type === 'check-passes') { if (r.pass) passed += 1; else failed += 1; }
         if (r.type === 'tree-changed' && r.pass) treeChanged = true;
       }
+      const allPass = results.length > 0 && results.every((r) => r.pass === true);
+      attempts.push({
+        n: attempts.length + 1,
+        iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
+        outcome: allPass ? 'green' : 'red',
+      });
     }
 
     idOccurrence.set(id, (idOccurrence.get(id) ?? 0) + 1);
@@ -601,6 +620,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
       checks: { passed, failed },
       treeChanged,
+      attempts,
     };
   });
 
