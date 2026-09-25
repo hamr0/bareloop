@@ -165,3 +165,22 @@ test('wf-name and wf-meta-line CSS: single-line with ellipsis (never wrap) so a 
   assert.match(metaLineRule[0], /text-overflow:ellipsis/);
   assert.match(metaLineRule[0], /overflow:hidden/);
 });
+
+// ---------------------------------------------------------------------------
+// Defect: Workflows/History row meta renders "deterministic· $1.5056· 6m08s"
+// — no space BEFORE the "·" separator (only after it) once .wf-meta-line
+// dropped its old flex/column-gap layout for a single nowrap/ellipsis line —
+// the ONLY spacing left comes from the ::before content string itself, so it
+// must carry a leading space too. design/panel-mockup.html reads
+// "deterministic · $0.66 · 4m 02s" (spaced both sides).
+// ---------------------------------------------------------------------------
+
+test('.wf-meta + .wf-meta::before separator carries a space on BOTH sides (" · "), never just a trailing space', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const cssBlockMatch = html.match(/<style>[\s\S]*?<\/style>/);
+  assert.ok(cssBlockMatch, 'expected an inline <style> block');
+  const css = cssBlockMatch[0];
+  const sepRule = css.match(/\.wf-meta \+ \.wf-meta::before\{[^}]*\}/);
+  assert.ok(sepRule, 'expected a .wf-meta + .wf-meta::before rule');
+  assert.match(sepRule[0], /content:" · "/, `expected content:" · " (space both sides), got: ${sepRule[0]}`);
+});
