@@ -401,8 +401,16 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
   // PANEL-BUILD.md P1 — one row in the run list, BEFORE the first paid call
   // (runJob, right below). A list-append failure must never block a real,
   // already-signed run: caught and named loudly, never rethrown.
+  // `deps.runlistHome` — the SAME test seam shape `deps.provider`/`deps.now`
+  // already are on this ctx (never a new env var, see src/runlist.js's own
+  // header comment): a caller that injects it (every test in
+  // tests/cli.test.js that reaches this line) writes its row under a temp
+  // home instead of the real `~/.config/bareloop`; production never sets it,
+  // so `appendRun` falls through to `runlistHome()`'s own `os.homedir()`.
   try {
-    appendRun({ at: new Date(now()).toISOString(), runid, job: runSpec.job, spine: spineFile, patient: worktree, via: 'bundle' });
+    appendRun({
+      at: new Date(now()).toISOString(), runid, job: runSpec.job, spine: spineFile, patient: worktree, via: 'bundle',
+    }, { home: deps.runlistHome });
   } catch (e) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${/** @type {Error} */ (e).message}) — the run continues; the panel's list will be missing this row.`);
   }
@@ -639,7 +647,7 @@ async function runMenu(deps, ctx) {
  * code, so `bin/bareloop.mjs` can set `process.exitCode` and let node flush
  * queued stdout on its own (F-something: `process.exit()` can discard it).
  * @param {string[]} argv
- * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any }} deps
+ * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, runlistHome?: string }} deps
  * @returns {Promise<number>}
  */
 export async function main(argv, deps = {}) {

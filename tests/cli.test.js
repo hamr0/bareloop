@@ -34,6 +34,19 @@ const tmp = (t, prefix) => {
   return d;
 };
 
+// F196 — `doRun` (src/cli.js) calls `appendRun` (src/runlist.js), which
+// defaults to the REAL `os.homedir()`/`~/.config/bareloop/runs.jsonl` when no
+// `home` override is given. `npm test` is safe (scripts/hermetic.mjs
+// redirects HOME), but this file's tests drive `main(['run', ...])` directly
+// and are sometimes run with `node --test tests/cli.test.js` (outside that
+// hermetic wrapper) — every such run used to write real fixture rows into
+// the operator's own run list. Every `main(['run', ...])` call below now
+// passes `runlistHome`, the SAME injectable seam `deps.provider`/`deps.now`
+// already are (never a new env var), so no test here ever touches the real
+// home regardless of how the file is launched.
+/** @param {import('node:test').TestContext} t @returns {string} a fresh temp dir standing in for `~/.config/bareloop` */
+const runlistHome = (t) => tmp(t, 'cli-runlist-home-');
+
 const git = (/** @type {string} */ cwd, /** @type {string[]} */ args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 /** a throwaway origin repo, one commit, src/mod.mjs without the marker */
@@ -232,7 +245,7 @@ test('bareloop run: no key and no injected provider -> questions + hash, exit 0,
   initRepo(repo);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo], {
-    stdout: out, stderr: err, cwd: process.cwd(), env: {},
+    stdout: out, stderr: err, cwd: process.cwd(), env: {}, runlistHome: runlistHome(t),
   });
   assert.equal(rc, 0);
   assert.match(out.text(), new RegExp(bundleHash));
@@ -263,7 +276,7 @@ test('bareloop run: a bundle naming a provider with a DIFFERENT env key refuses 
   initRepo(repo);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo], {
-    stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' },
+    stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' }, runlistHome: runlistHome(t),
   });
   assert.notEqual(rc, 0, 'a provider it cannot key must refuse, never run');
   const said = err.text() + out.text();
@@ -286,7 +299,7 @@ test('bareloop run: a bundle whose signed JUDGE names a DIFFERENT env key refuse
   initRepo(repo);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo], {
-    stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' },
+    stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' }, runlistHome: runlistHome(t),
   });
   assert.notEqual(rc, 0, 'a judge it cannot key must refuse, never run');
   const said = err.text() + out.text();
@@ -304,7 +317,7 @@ test('bareloop run: a tampered bundle reds bundle-tampered BEFORE any worktree/p
   const provider = scriptedProvider([{ text: 'never reached' }]);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', 'whatever'], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider,
+    stdout: out, stderr: err, cwd: process.cwd(), provider, runlistHome: runlistHome(t),
   });
   assert.equal(rc, 1);
   assert.match(err.text(), /bundle-tampered/);
@@ -318,7 +331,7 @@ test('bareloop run: first run without --approve is refused', async (t) => {
   initRepo(repo);
   const provider = scriptedProvider([{ text: 'never reached' }]);
   const out = sink(); const err = sink();
-  const rc = await main(['run', bundleDir, '--repo', repo], { stdout: out, stderr: err, cwd: process.cwd(), provider });
+  const rc = await main(['run', bundleDir, '--repo', repo], { stdout: out, stderr: err, cwd: process.cwd(), provider, runlistHome: runlistHome(t) });
   assert.equal(rc, 1);
   assert.match(err.text(), /--approve/);
   assert.deepEqual(provider.calls, []);
@@ -330,7 +343,7 @@ test('bareloop run: first run with the WRONG --approve is refused', async (t) =>
   initRepo(repo);
   const provider = scriptedProvider([{ text: 'never reached' }]);
   const out = sink(); const err = sink();
-  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', 'deadbeef'], { stdout: out, stderr: err, cwd: process.cwd(), provider });
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', 'deadbeef'], { stdout: out, stderr: err, cwd: process.cwd(), provider, runlistHome: runlistHome(t) });
   assert.equal(rc, 1);
   assert.deepEqual(provider.calls, []);
 });
@@ -349,7 +362,7 @@ test('bareloop run: first GREEN run blesses the bundle, records history, and lea
 
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider, now,
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now, runlistHome: runlistHome(t),
   });
   assert.equal(rc, 0, `run must green: ${out.text()}\n${err.text()}`);
   assert.match(out.text(), /outcome   green/);
@@ -419,7 +432,7 @@ test('bareloop run: a spine with a malformed/truncated line (process-killed-mid-
   const provider = greenScript(worktree);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider, now,
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now, runlistHome: runlistHome(t),
   });
   assert.equal(rc, 0, `run must still green despite the malformed seed line: ${out.text()}\n${err.text()}`);
   assert.match(out.text(), /outcome   green/);
@@ -445,19 +458,20 @@ test('bareloop run: appends one row to the run list before the first paid call, 
   const worktree = join(repo, '.bareloop', 'wt', runid);
   const provider = greenScript(worktree);
 
+  // F196 — injects the run-list home through `deps.runlistHome` (the
+  // library's own test seam, src/runlist.js) rather than mutating the
+  // process-wide `HOME` env var: this test's own claim (never the real home)
+  // stays true regardless of how the suite is launched.
   const home = tmp(t, 'cli-runlist-home-');
-  const savedHome = process.env.HOME;
-  process.env.HOME = home;
-  t.after(() => { process.env.HOME = savedHome; });
 
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider, now,
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now, runlistHome: home,
   });
   assert.equal(rc, 0, `run must green: ${out.text()}\n${err.text()}`);
 
   const { readRunList } = await import('../src/runlist.js');
-  const { rows } = readRunList({ home: join(home, '.config', 'bareloop') });
+  const { rows } = readRunList({ home });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].runid, runid);
   assert.equal(rows[0].via, 'bundle');
@@ -484,13 +498,13 @@ test('bareloop run: a run-list append failure (HOME points through a FILE, not a
   const blockerDir = tmp(t, 'cli-home-blocker-');
   const blockerFile = join(blockerDir, 'blocked');
   writeFileSync(blockerFile, 'not a directory');
-  const savedHome = process.env.HOME;
-  process.env.HOME = join(blockerFile, 'bareloop-home');
-  t.after(() => { process.env.HOME = savedHome; });
+  // F196 — the same ENOTDIR shape as before, now forced through the injected
+  // `deps.runlistHome` seam instead of mutating process.env.HOME.
+  const brokenHome = join(blockerFile, 'bareloop-home');
 
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider, now,
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now, runlistHome: brokenHome,
   });
   assert.equal(rc, 0, `the run must still green despite the run-list append failure: ${out.text()}\n${err.text()}`);
   assert.match(out.text(), /outcome   green/);
@@ -502,10 +516,11 @@ test('bareloop run: a SECOND run needs no --approve, mints a fresh worktree/runi
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
 
+  const home = runlistHome(t);
   const runid1 = (1_700_000_100_000).toString(36);
   const wt1 = join(repo, '.bareloop', 'wt', runid1);
   await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(wt1), now: makeNow(1_700_000_100_000),
+    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(wt1), now: makeNow(1_700_000_100_000), runlistHome: home,
   });
   assert.equal(existsSync(join(bundleDir, 'blessing.json')), true);
 
@@ -513,7 +528,7 @@ test('bareloop run: a SECOND run needs no --approve, mints a fresh worktree/runi
   const wt2 = join(repo, '.bareloop', 'wt', runid2);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(wt2), now: makeNow(1_700_000_200_000),
+    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(wt2), now: makeNow(1_700_000_200_000), runlistHome: home,
   });
   assert.equal(rc, 0, `second run must green: ${out.text()}\n${err.text()}`);
   assert.notEqual(wt1, wt2);
@@ -530,7 +545,7 @@ test('bareloop run: --budget wider than the bundle reds envelope-widen', async (
   initRepo(repo);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '10'], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider: scriptedProvider([{ text: 'never reached' }]),
+    stdout: out, stderr: err, cwd: process.cwd(), provider: scriptedProvider([{ text: 'never reached' }]), runlistHome: runlistHome(t),
   });
   assert.equal(rc, 1);
   assert.match(err.text(), /envelope-widen/);
@@ -544,7 +559,7 @@ test('bareloop run: a TIGHTER --budget runs and history records the tighter numb
   const worktree = join(repo, '.bareloop', 'wt', runid);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '1'], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(1_700_000_300_000),
+    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(1_700_000_300_000), runlistHome: runlistHome(t),
   });
   assert.equal(rc, 0, `run must green: ${out.text()}\n${err.text()}`);
   const row = JSON.parse(readFileSync(join(bundleDir, 'history.jsonl'), 'utf8').trim().split('\n')[0]);
@@ -558,7 +573,7 @@ test('bareloop run: blessing-stale (bundle re-exported since blessing) reds and 
   const runid = (1_700_000_400_000).toString(36);
   const worktree = join(repo, '.bareloop', 'wt', runid);
   const first = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(1_700_000_400_000),
+    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(1_700_000_400_000), runlistHome: runlistHome(t),
   });
   assert.equal(first, 0);
 
@@ -573,7 +588,7 @@ test('bareloop run: blessing-stale (bundle re-exported since blessing) reds and 
 
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider: scriptedProvider([{ text: 'never reached' }]),
+    stdout: out, stderr: err, cwd: process.cwd(), provider: scriptedProvider([{ text: 'never reached' }]), runlistHome: runlistHome(t),
   });
   assert.equal(rc, 1);
   assert.match(err.text(), /blessing-stale/);
@@ -593,7 +608,7 @@ test('bareloop run: a bundle with no node_modules reds bundle-deps-missing BEFOR
   const provider = scriptedProvider([{ text: 'never reached' }]);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider,
+    stdout: out, stderr: err, cwd: process.cwd(), provider, runlistHome: runlistHome(t),
   });
   assert.equal(rc, 1);
   assert.match(err.text(), /bundle-deps-missing/);
@@ -615,7 +630,7 @@ test('bareloop run: a non-green outcome (cap-halt) exits 1', async (t) => {
   const provider = scriptedProvider([CLOSE_SCOUT, { text: planFor() }, { text: 'never reached' }]);
   const out = sink(); const err = sink();
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider, now: makeNow(1_700_000_600_000),
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now: makeNow(1_700_000_600_000), runlistHome: runlistHome(t),
   });
   const outcomeLine = out.text().match(/^outcome {3}(\S+)$/m)?.[1];
   assert.notEqual(outcomeLine, 'green', `fixture must not accidentally green: ${out.text()}`);
@@ -662,7 +677,7 @@ test('bareloop run: first-run "minting run" names the bridge VERSION at this exa
   // wrong --approve so the run stops right after printing the first-run
   // notice — cheapest way to observe the "minting run" line at $0.
   const rc = await main(['run', outDir, '--repo', repo, '--approve', 'deadbeef'], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider,
+    stdout: out, stderr: err, cwd: process.cwd(), provider, runlistHome: runlistHome(t),
   });
   assert.equal(rc, 1);
   assert.match(out.text(), /minting run: mint-1 \(spine not bundled in v1\)/, out.text());
@@ -689,7 +704,7 @@ test('bareloop run: "no version at this hash" when no bridge version matches the
   // no --approve given at all: exits 1 right after printing the first-run
   // notice, which is all this test needs to observe.
   const rc = await main(['run', bundleDir, '--repo', repo], {
-    stdout: out, stderr: err, cwd: process.cwd(), provider,
+    stdout: out, stderr: err, cwd: process.cwd(), provider, runlistHome: runlistHome(t),
   });
   assert.equal(rc, 1);
   assert.match(out.text(), /no version at this hash/);
@@ -707,7 +722,7 @@ test('bareloop history: prints history rows and bridge listing rows', async (t) 
   const runid = (1_700_000_500_000).toString(36);
   const worktree = join(repo, '.bareloop', 'wt', runid);
   await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
-    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(1_700_000_500_000),
+    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(1_700_000_500_000), runlistHome: runlistHome(t),
   });
 
   const out = sink(); const err = sink();

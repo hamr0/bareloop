@@ -224,6 +224,10 @@ class ExitSignal extends Error {
  *   check entirely, the same shape `src/cli.js`'s `main(argv, deps)` uses.
  * @property {(tier: string) => any} [providerFor]
  * @property {any} [judgeProvider]
+ * @property {string} [runlistHome] F196 — a test seam for `appendRun`'s
+ *   (src/runlist.js) `home` override, the same shape `deps.provider` already
+ *   is. Production never sets it; `appendRun` falls through to its own
+ *   `os.homedir()`-based default.
  */
 
 /**
@@ -1342,8 +1346,14 @@ async function execute(ctx) {
   // that legitimately re-enters with the same runid (e.g. a retried
   // in-process test). A list-append failure must never block a real,
   // already-signed run: caught and named loudly, never rethrown.
+  // `deps.runlistHome` — the same injectable test seam `ctx.deps` already
+  // carries everything else through (env/out/err/provider/…): a caller that
+  // injects it writes this leg's row under a temp home instead of the real
+  // `~/.config/bareloop`; production never sets it.
   try {
-    appendRun({ at: new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: 'run-u' });
+    appendRun({
+      at: new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: 'run-u',
+    }, { home: deps.runlistHome });
   } catch (/** @type {any} */ e) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
   }
