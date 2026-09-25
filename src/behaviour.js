@@ -126,11 +126,14 @@ export function runBehaviour(events, { runId } = {}) {
  * Render a {@link runBehaviour} summary as the agreed printable block
  * (2–4 short lines). A zero-call run formats plainly ("0 tool calls") rather
  * than a NaN-laced percentage — an empty run is a complete, reportable
- * answer, not a division error.
- * @param {ReturnType<typeof runBehaviour>} summary
+ * answer, not a division error. `summary === null` means the caller never
+ * had a gate-audit sidecar to read at all (see `replayRun`'s `auditAvailable`
+ * option) — that reads as "unknown", never coerced to a 0-call summary.
+ * @param {ReturnType<typeof runBehaviour>|null} summary
  * @returns {string}
  */
 export function formatBehaviour(summary) {
+  if (summary === null) return 'unknown (no gate-audit sidecar found for this run)';
   const { totalCalls, byTool, denied, repeats, repeatPct } = summary; // uniquePaths: data-only, not in the agreed printed shape
   const lines = [];
 

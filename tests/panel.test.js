@@ -263,6 +263,37 @@ test(
 );
 
 // ---------------------------------------------------------------------------
+// toolCalls: unknown (null), never 0, when no gate-audit sidecar exists
+// ---------------------------------------------------------------------------
+
+const POC_NO_AUDIT = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-pm48w5az.jsonl';
+const havePocNoAudit = existsSync(POC_NO_AUDIT);
+
+test(
+  '/api/runs/:runid on a real spine with no gate-audit sidecar reports each step\'s toolCalls as null, never 0',
+  { skip: !havePocNoAudit && 'no poc-pm48w5az fixture on this machine' },
+  async (t) => {
+    const home = tmp();
+    const dest = tmp();
+    const destSpine = join(dest, 'poc-pm48w5az.jsonl');
+    cpSync(POC_NO_AUDIT, destSpine);
+    // deliberately no sidecar copied alongside it
+    appendRun({
+      at: '2026-09-09T00:00:00.000Z', runid: 'pm48w5az', job: 'poc-no-audit', spine: destSpine, patient: null, via: 'backfill',
+    }, { home });
+
+    const { base } = await startServer(t, { home });
+    const res = await fetch(`${base}/api/runs/pm48w5az`);
+    assert.equal(res.status, 200);
+    const detail = await res.json();
+    assert.ok(detail.steps.length > 0, 'expected at least one step in this real spine');
+    for (const s of detail.steps) {
+      assert.equal(s.toolCalls, null, `step ${s.id} must report toolCalls:null (unknown), never 0`);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // /api/workflows grouping
 // ---------------------------------------------------------------------------
 

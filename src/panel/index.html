@@ -663,7 +663,7 @@
       var badgeClass = s.state === "done" ? "green" : (s.state === "stopped" ? "red" : (s.state === "running" ? "amber" : "grey"));
       var metaBits = [];
       if(typeof s.rounds === "number") metaBits.push(s.rounds + " round" + (s.rounds === 1 ? "" : "s"));
-      if(typeof s.toolCalls === "number") metaBits.push(s.toolCalls + " tool call" + (s.toolCalls === 1 ? "" : "s"));
+      metaBits.push(typeof s.toolCalls === "number" ? (s.toolCalls + " tool call" + (s.toolCalls === 1 ? "" : "s")) : "unknown tool calls");
       metaBits.push(duration(s.wallMs));
       metaBits.push(s.unpricedRounds > 0 ? "unknown (" + s.unpricedRounds + " unpriced round" + (s.unpricedRounds === 1 ? "" : "s") + ")" : money(s.spentUsd));
       card.innerHTML =

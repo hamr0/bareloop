@@ -356,10 +356,18 @@ function resolveClose(spine) {
  *
  * @param {any[]} spineEvents parsed records from `u-<id>.jsonl`
  * @param {any[]} [auditEvents] parsed records from the sibling `-gate-audit.jsonl`
- * @param {{runId?: string|null}} [opts] `runId`: caller-supplied (the spine
- *   carries no run-id field of its own — see the file header)
+ * @param {{runId?: string|null, auditAvailable?: boolean}} [opts] `runId`:
+ *   caller-supplied (the spine carries no run-id field of its own — see the
+ *   file header). `auditAvailable` (default `true`, back-compat: every
+ *   direct caller in this codebase that hands a literal `[]` here means a
+ *   REAL, known-empty audit, not "unknown") — set `false` only when the
+ *   caller could not even determine whether a gate-audit sidecar exists (no
+ *   file found on disk, or deliberately not read). When `false`, every
+ *   tool-call figure this function derives (`behaviour`, each occurrence's
+ *   `toolCalls`) reads `null` (unknown), never `0` — doctrine: unknown is
+ *   reported as unknown, never rendered as zero.
  */
-export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) {
+export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAvailable = true } = {}) {
   let skipped = 0;
 
   /** @type {any[]} */
@@ -537,7 +545,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     const { spentUsd, unpricedRounds } = windowSpend(roundsInWindow);
     return {
       rounds: roundsInWindow.length,
-      toolCalls: runBehaviour(windowed).totalCalls,
+      toolCalls: auditAvailable ? runBehaviour(windowed).totalCalls : null,
       wallMs: windowWallMs(startTs, endTs),
       spentUsd,
       unpricedRounds,
@@ -732,7 +740,10 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     replans,
     close,
     ending: { record: last, before, escalation: escalationOutsideWindow },
-    behaviour: runBehaviour(audit),
+    // `null` (never a 0-call object) when the caller could not even
+    // determine whether a gate-audit sidecar exists — see the `auditAvailable`
+    // param doc above.
+    behaviour: auditAvailable ? runBehaviour(audit) : null,
     memoryCache,
     skipped,
   };
@@ -759,6 +770,18 @@ function rowMoney(row) {
   return row.unpricedRounds > 0
     ? `unknown (${row.unpricedRounds} unpriced round${row.unpricedRounds === 1 ? '' : 's'})`
     : money(row.spentUsd);
+}
+
+/**
+ * The `tools` column for one occurrence/iteration row: `null` (no
+ * gate-audit sidecar available for this run) reads `unknown tools` — never
+ * `0 tools`, which would silently discard real tool-call activity the
+ * sidecar just wasn't there to count. A real zero-call occurrence still
+ * reads `0 tools` honestly.
+ * @param {number|null} n
+ */
+function toolsCell(n) {
+  return n === null ? 'unknown tools' : `${n} tool${n === 1 ? '' : 's'}`;
 }
 
 /** @param {number|null} ms */
@@ -1018,7 +1041,7 @@ export function formatReplay(summary) {
         `iteration ${it.iteration ?? '?'}`,
         resultWord(it.verdict),
         `${it.rounds} round${it.rounds === 1 ? '' : 's'}`,
-        `${it.toolCalls} tool${it.toolCalls === 1 ? '' : 's'}`,
+        toolsCell(it.toolCalls),
         duration(it.wallMs),
         rowMoney(it),
       ]);
@@ -1048,7 +1071,7 @@ export function formatReplay(summary) {
         `${s.id}${s.occurrence > 1 ? ` (${ordinal(s.occurrence)})` : ''}`,
         resultWord(s.outcome),
         `${s.rounds} round${s.rounds === 1 ? '' : 's'}`,
-        `${s.toolCalls} tool${s.toolCalls === 1 ? '' : 's'}`,
+        toolsCell(s.toolCalls),
         `${s.checks.passed}/${s.checks.failed}`,
         s.treeChanged ? 'changed' : 'unchanged',
         duration(s.wallMs),

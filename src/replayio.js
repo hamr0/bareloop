@@ -110,7 +110,13 @@ export function replayOne(spinePath, opts = {}) {
   const { runId, auditPath } = resolveSiblings(spinePath);
   const spine = preParsedSpine ?? parseJsonl(spinePath);
   const audit = (!skipAudit && auditPath) ? parseJsonl(auditPath) : { records: [], skipped: 0 };
-  const summary = replayRun(spine.records, audit.records, { runId });
+  // `auditAvailable`: true only when a sidecar was actually FOUND AND READ.
+  // `skipAudit` (a deliberate cheap directory listing) and "no sidecar on
+  // disk" both mean this call never learned the real tool-call count, so
+  // both report unknown, never a coincidental 0 (doctrine: unknown reported
+  // as unknown, never rendered as zero — see `replayRun`'s own doc).
+  const auditAvailable = !skipAudit && auditPath !== null;
+  const summary = replayRun(spine.records, audit.records, { runId, auditAvailable });
   summary.skipped += spine.skipped + audit.skipped;
   return summary;
 }
