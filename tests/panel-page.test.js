@@ -278,6 +278,37 @@ test('item 7: cacheLine — not recorded when memoryCache is null; real numbers 
   assert.equal(cacheLine({ pointered: 7, bytesWithheld: 4865 }), '7 re-reads answered from memory · 4.8 KB not re-sent');
 });
 
+test('item 4: desktop (min-width:900px) bounds #BareloopPanel/.main to the viewport so each pane-body scrolls internally, never the whole page', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const cssBlockMatch = html.match(/<style>[\s\S]*?<\/style>/);
+  assert.ok(cssBlockMatch);
+  const css = cssBlockMatch[0];
+  const desktopBlock = css.match(/@media \(min-width: 900px\)\{[\s\S]*?\n  \}/);
+  assert.ok(desktopBlock, 'expected a @media (min-width: 900px) block');
+  assert.match(desktopBlock[0], /#BareloopPanel\{height:100vh;min-height:0;overflow:hidden;\}/);
+  assert.match(desktopBlock[0], /\.main\{overflow:hidden;\}/);
+});
+
+test('item 4: a phone-only "↑ list" back-link exists (hidden on desktop, shown under the existing 899px breakpoint)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /data-testid="back-to-list"/);
+  assert.match(html, /\.back-to-list-link\{display:none;/);
+  assert.match(html, /@media \(max-width: 899px\)\{ \.back-to-list-link\{display:inline-block;\} \}/);
+});
+
+test('item 4: row selection scrolls the run view into view on mobile only, gated by the same 899px breakpoint as the CSS', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /window\.matchMedia\("\(max-width: 899px\)"\)\.matches/);
+  assert.match(html, /function scrollRunIntoViewMobile\(\)\{/);
+  assert.match(html, /getElementById\("right-pane-anchor"\)/);
+  assert.match(html, /getElementById\("left-pane-anchor"\)/);
+  // both row-click handlers call it
+  const wfClick = html.match(/selectRun\(w\.lastRunid, row, "\.wf-row"\); document\.getElementById\("tab-run"\)\.click\(\); scrollRunIntoViewMobile\(\);/);
+  const histClick = html.match(/selectRun\(r\.runid, row, "\.hist-row"\); document\.getElementById\("tab-run"\)\.click\(\); scrollRunIntoViewMobile\(\);/);
+  assert.ok(wfClick, 'expected the Workflows row click handler to call scrollRunIntoViewMobile()');
+  assert.ok(histClick, 'expected the History row click handler to call scrollRunIntoViewMobile()');
+});
+
 test('item 5: filterRuns — no filters selected -> everything passes (each group empty = no filter for that group)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const filterRuns = extractFn(html, 'filterRuns');

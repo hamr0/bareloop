@@ -71,6 +71,19 @@
   h2,h4{text-transform:uppercase;letter-spacing:0.06em;font-weight:700;}
 
   #BareloopPanel{display:flex;flex-direction:column;min-height:100vh;}
+  /* item 4 (2026-09-25): on desktop the left list scrolls inside its own
+     pane and the right pane stays in view — the PAGE itself never scrolls
+     the list away. Bounding #BareloopPanel/.main to the viewport height
+     (desktop only — phone keeps its natural stacked-page scroll, see the
+     max-width:899px block below) is what lets each .pane-body's own
+     `overflow:auto` actually take effect instead of the whole document
+     growing taller than 100vh and dragging everything, list included, up
+     off screen together. */
+  @media (min-width: 900px){
+    html, body{height:100%;}
+    #BareloopPanel{height:100vh;min-height:0;overflow:hidden;}
+    .main{overflow:hidden;}
+  }
   .topbar{
     display:flex;align-items:center;justify-content:space-between;
     padding:10px 16px;border-bottom:2px solid var(--border-strong);
@@ -155,6 +168,10 @@
   .rp-header h2::before{content:"┤ ";color:var(--text-faint);}
   .rp-header h2::after{content:" ├";color:var(--text-faint);}
   .rp-header-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  /* item 4: phone-only jump-back link — hidden on desktop (the two panes
+     are already both on screen there, nothing to jump back to). */
+  .back-to-list-link{display:none;font-size:12px;color:var(--accent);text-decoration:underline;background:none;border:none;padding:0;cursor:pointer;}
+  @media (max-width: 899px){ .back-to-list-link{display:inline-block;} }
   .rp-tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:rtabnum;}
   .rp-tabrow button{padding:10px 14px;min-height:44px;background:transparent;border:none;border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);counter-increment:rtabnum;}
   .rp-tabrow button::before{content:"[" counter(rtabnum) "] ";color:var(--text-faint);font-weight:700;}
@@ -237,7 +254,7 @@
 
   <div class="main" id="main-view">
 
-    <nav class="left-pane" aria-label="Job navigation">
+    <nav class="left-pane" aria-label="Job navigation" id="left-pane-anchor">
       <div class="tabrow" role="tablist" aria-label="Left panel views">
         <button role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="true" data-testid="left-tab-chat">Chat</button>
         <button role="tab" id="tab-workflows" aria-controls="panel-workflows" aria-selected="false" data-testid="left-tab-workflows">Workflows</button>
@@ -286,8 +303,9 @@
       </div>
     </nav>
 
-    <section class="right-pane" aria-label="Active workflow">
+    <section class="right-pane" aria-label="Active workflow" id="right-pane-anchor">
       <div class="rp-header">
+        <button type="button" class="back-to-list-link" id="back-to-list" data-testid="back-to-list">&#8593; list</button>
         <div class="rp-header-title">
           <span class="dot grey" id="active-wf-dot"></span>
           <h2 id="active-wf-name">(none selected)</h2>
@@ -601,7 +619,7 @@
         '<span class="wf-meta">' + escapeXml(w.lastDate || "unknown") + '</span>' +
         '<span class="wf-meta">' + w.runCount + ' run' + (w.runCount === 1 ? '' : 's') + '</span>' +
         '</span>';
-      row.addEventListener("click", function(){ selectRun(w.lastRunid, row, ".wf-row"); document.getElementById("tab-run").click(); });
+      row.addEventListener("click", function(){ selectRun(w.lastRunid, row, ".wf-row"); document.getElementById("tab-run").click(); scrollRunIntoViewMobile(); });
       row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
       el.appendChild(row);
     });
@@ -643,7 +661,7 @@
           '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
           '</span>';
       }
-      row.addEventListener("click", function(){ selectRun(r.runid, row, ".hist-row"); document.getElementById("tab-run").click(); });
+      row.addEventListener("click", function(){ selectRun(r.runid, row, ".hist-row"); document.getElementById("tab-run").click(); scrollRunIntoViewMobile(); });
       row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
       el.appendChild(row);
     });
@@ -740,6 +758,26 @@
   }
   loadHistFilterState();
   paintHistFilterChips();
+
+  // item 4: phone-only "scroll the run view into view" on row select, and
+  // the matching "↑ list" jump back. Desktop never runs either — both panes
+  // are already on screen there (the <900px breakpoint here matches the
+  // CSS media query above, both named off the same 900px number).
+  function isMobileLayout(){
+    return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 899px)").matches;
+  }
+  function scrollRunIntoViewMobile(){
+    if(!isMobileLayout()) return;
+    var target = document.getElementById("right-pane-anchor");
+    if(target && target.scrollIntoView) target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  var backToListBtn = document.getElementById("back-to-list");
+  if(backToListBtn){
+    backToListBtn.addEventListener("click", function(){
+      var target = document.getElementById("left-pane-anchor");
+      if(target && target.scrollIntoView) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   function clearSelection(selector){
     document.querySelectorAll(".wf-row, .hist-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
