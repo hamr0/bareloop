@@ -8,7 +8,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, cpSync, utimesSync,
+  mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, cpSync, utimesSync, readFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +16,7 @@ import {
   createPanelServer, panelMain, glyphForOutcome, checkTypeLabel, checkTypeTitle, RUNID_RE, formatTimestamp,
 } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
+import { jobSpecHash } from '../src/job.js';
 
 /** @type {string[]} */
 const tmpDirs = [];
@@ -658,6 +659,107 @@ test('/api/runs/:runid/audit: a sidecar with real rows -> reason null, rows popu
   assert.equal(body.empty, false);
   assert.equal(body.reason, null);
   assert.equal(body.rows.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// item 2 (2026-09-25): Job tab source order — (a) bundle spec.json [existing,
+// re-verified above], (b) jobs/<job>.json with a specHash compare, (c) the
+// run's own job-start record, else 'not recorded'/'unknown' everywhere.
+// ---------------------------------------------------------------------------
+
+const REAL_JOBS_DIR = join(process.cwd(), 'jobs');
+const REAL_JOB_NAME = 'aurora-testgen-cold';
+const REAL_JOB_SPEC_PATH = join(REAL_JOBS_DIR, `${REAL_JOB_NAME}.json`);
+const haveRealJobSpec = existsSync(REAL_JOB_SPEC_PATH);
+
+test(
+  '/api/runs/:runid/job: (b) jobs/<job>.json — matching specHash resolves the real jobs/ spec, no mismatch note',
+  { skip: !haveRealJobSpec && `${REAL_JOB_SPEC_PATH} not present on this machine` },
+  async (t) => {
+    const home = tmp();
+    const dir = tmp();
+    const realSpec = JSON.parse(readFileSync(REAL_JOB_SPEC_PATH, 'utf8'));
+    const hash = jobSpecHash(realSpec);
+    writeSpine(join(dir, `u-jobsdirmatch.jsonl`), [{
+      type: 'job-start', job: REAL_JOB_NAME, ts: '2026-09-10T00:00:00.000Z', seq: 1, specHash: hash, verdictType: realSpec.verdictType,
+    }]);
+    appendRun({
+      at: '2026-09-10T00:00:00.000Z', runid: 'jobsdirmatch', job: REAL_JOB_NAME, spine: join(dir, 'u-jobsdirmatch.jsonl'), patient: null, via: 'run-u',
+    }, { home });
+    const { base } = await startServer(t, { home });
+    const res = await fetch(base + '/api/runs/jobsdirmatch/job');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.resolved, true);
+    assert.equal(body.resolvedFrom, `jobs/${REAL_JOB_NAME}.json`);
+    assert.equal(body.note, null);
+    assert.equal(body.goal, realSpec.goal);
+    assert.equal(body.source, 'unknown'); // job-v1 spec schema carries no source field
+  },
+);
+
+test(
+  '/api/runs/:runid/job: (b) jobs/<job>.json — a specHash MISMATCH still shows the spec fields, with a visible edited-since-run note',
+  { skip: !haveRealJobSpec && `${REAL_JOB_SPEC_PATH} not present on this machine` },
+  async (t) => {
+    const home = tmp();
+    const dir = tmp();
+    writeSpine(join(dir, `u-jobsdirmismatch.jsonl`), [{
+      type: 'job-start', job: REAL_JOB_NAME, ts: '2026-09-10T00:00:00.000Z', seq: 1, specHash: 'not-the-real-hash-deadbeef', verdictType: 'green',
+    }]);
+    appendRun({
+      at: '2026-09-10T00:00:00.000Z', runid: 'jobsdirmismatch', job: REAL_JOB_NAME, spine: join(dir, 'u-jobsdirmismatch.jsonl'), patient: null, via: 'run-u',
+    }, { home });
+    const { base } = await startServer(t, { home });
+    const res = await fetch(base + '/api/runs/jobsdirmismatch/job');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.resolved, true);
+    assert.equal(body.resolvedFrom, `jobs/${REAL_JOB_NAME}.json`);
+    assert.equal(body.note, 'this job was edited after this run (spec hash differs)');
+  },
+);
+
+test('/api/runs/:runid/job: (c) no bundle, no matching jobs/<job>.json -> falls back to the run\'s own job-start record fields', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-startonly.jsonl'), [{
+    type: 'job-start', job: 'not-a-real-jobs-dir-entry-xyz', goal: 'do the real thing', model: 'claude-sonnet-5', budgetUsd: 3, ts: '2026-09-10T00:00:00.000Z', seq: 1, verdictType: 'green',
+  }]);
+  appendRun({
+    at: '2026-09-10T00:00:00.000Z', runid: 'startonly', job: 'not-a-real-jobs-dir-entry-xyz', spine: join(dir, 'u-startonly.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/startonly/job');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.resolved, false);
+  assert.equal(body.resolvedFrom, "the run's own start record");
+  assert.equal(body.goal, 'do the real thing');
+  assert.equal(body.model, 'claude-sonnet-5');
+  assert.equal(body.budgetUsd, 3);
+  assert.equal(body.note, "from the run's own start record");
+  assert.equal(body.source, 'unknown');
+});
+
+test('/api/runs/:runid/job: (d) nothing resolvable at all -> every field "not recorded"/"unknown", never fabricated', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-nothingatall.jsonl'), [{
+    type: 'job-start', job: 'nothing-at-all-job-xyz', ts: '2026-09-10T00:00:00.000Z', seq: 1, verdictType: 'green',
+  }, { type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, ts: '2026-09-10T00:01:00.000Z', seq: 2 }]);
+  appendRun({
+    at: '2026-09-10T00:00:00.000Z', runid: 'nothingatall', job: 'nothing-at-all-job-xyz', spine: join(dir, 'u-nothingatall.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/nothingatall/job');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  // this spine DOES carry a job-start with goal absent -> falls to (c), goal
+  // reads "not recorded" (never fabricated), resolved false.
+  assert.equal(body.resolved, false);
+  assert.equal(body.goal, 'not recorded');
+  assert.equal(body.model, 'not recorded');
 });
 
 // ---------------------------------------------------------------------------

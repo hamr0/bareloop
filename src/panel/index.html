@@ -780,6 +780,8 @@
     card.hidden = false;
     document.getElementById("details-title").textContent = "Job — " + job.job + (job.resolved ? " (signed)" : "");
     document.getElementById("details-verdict").textContent = job.checkType;
+    var verdictEl = document.getElementById("details-verdict");
+    if(job.checkTypeTitle){ verdictEl.title = job.checkTypeTitle; } else { verdictEl.removeAttribute("title"); }
     document.getElementById("details-model").textContent = job.model;
     document.getElementById("details-goal").textContent = job.goal;
     document.getElementById("details-source").textContent = job.source;

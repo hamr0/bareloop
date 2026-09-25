@@ -32,6 +32,7 @@ import {
 } from '../replayio.js';
 import { summarizeForAllLine } from '../replay.js';
 import { SPEND_RECORD_TYPES } from '../ledger.js';
+import { jobSpecHash } from '../job.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -557,15 +558,33 @@ function bundleDirForSpine(spinePath) {
 }
 
 /**
- * `GET /api/runs/:runid/job` — the Job tab: the signed spec's own fields,
- * when this run's spec is resolvable (bundle-layout runs only — a
- * `bareloop run` bundle keeps `spec.json` beside its `runs/` directory).
- * A run-u (person-path) run has no bundle directory at all: `resolved:
- * false` and every spec-only field reads `'unknown'` — never fabricated
- * from the spine's own job-start fields, which is a DIFFERENT, narrower
- * record (goal/verdictType/model/budgetUsd only; no source/destination/
- * success/guardrails at all — verified against `src/run.js`'s `job-start`
- * emit this session).
+ * `<src/panel>/../../jobs` — the repo's `jobs/` directory of signed specs,
+ * resolved from the bareloop PACKAGE ROOT (this module's own on-disk
+ * location), never from `process.cwd()` — a panel launched from any working
+ * directory must resolve the same jobs/ dir (item 2, 2026-09-25).
+ * @returns {string}
+ */
+function jobsDir() {
+  return join(HERE, '..', '..', 'jobs');
+}
+
+/**
+ * `GET /api/runs/:runid/job` — the Job tab, filled from the first source
+ * that actually resolves (item 2, 2026-09-25), in order:
+ *  (a) the bundle's own `spec.json` (a `bareloop run` bundle keeps one
+ *      beside its `runs/` dir) — the pre-existing path, unchanged;
+ *  (b) `jobs/<job>.json` in the repo's own jobs/ dir (resolved from the
+ *      package root) — its `jobSpecHash` is compared against the run's own
+ *      job-start `specHash`; a mismatch is shown, never hidden (the job may
+ *      have been edited since this run signed it);
+ *  (c) the run's own job-start record (goal/model/budgetUsd/verdictType only
+ *      — a narrower, unsigned record, `resolved:false`);
+ *  else every spec-only field reads `'unknown'`/`'not recorded'`, never
+ * fabricated. `resolvedFrom` names which of these actually supplied the
+ * fields, shown in the page. `source`/`destination`/`success`/`guardrails`
+ * stay `'unknown'` in every branch — verified against `src/job.js`'s
+ * `JOB_FIELDS` and `src/run.js`'s `job-start` emit: neither schema carries
+ * these fields at all, so showing anything else here would be a guess.
  * @param {string} runid
  * @param {{ home?: string }} [opts]
  * @returns {any|null}
@@ -574,13 +593,36 @@ export function getRunJob(runid, opts = {}) {
   const { rows } = readRunList(opts);
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
-  const unknown = () => ({
+
+  /** @param {string|null} v @returns {string} */
+  const notRecorded = (v) => (typeof v === 'string' && v.length > 0 ? v : 'not recorded');
+  /** @param {any} spec @param {boolean} resolved @param {string} resolvedFrom @param {string|null} note */
+  const fromSpec = (spec, resolved, resolvedFrom, note) => ({
+    runid,
+    job: typeof spec.job === 'string' ? spec.job : row.job,
+    resolved,
+    resolvedFrom,
+    checkType: checkTypeLabel(typeof spec.verdictType === 'string' ? spec.verdictType : null, row.at),
+    checkTypeTitle: checkTypeTitle(typeof spec.verdictType === 'string' ? spec.verdictType : null, row.at),
+    model: notRecorded(typeof spec.model === 'string' ? spec.model : null),
+    goal: notRecorded(typeof spec.goal === 'string' ? spec.goal : null),
+    budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+    maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : null,
+    source: 'unknown',
+    destination: 'unknown',
+    success: 'unknown',
+    guardrails: 'unknown',
+    note,
+  });
+  const none = () => ({
     runid,
     job: row.job,
     resolved: false,
+    resolvedFrom: 'none',
     checkType: 'unknown',
-    model: 'unknown',
-    goal: 'unknown',
+    checkTypeTitle: null,
+    model: 'not recorded',
+    goal: 'not recorded',
     budgetUsd: null,
     maxWallMs: null,
     source: 'unknown',
@@ -589,35 +631,68 @@ export function getRunJob(runid, opts = {}) {
     guardrails: 'unknown',
     note: 'no resolvable spec for this run (only bareloop-run bundle-layout runs carry one; a run-u run has none on disk)',
   });
-  if (!existsSync(row.spine)) return unknown();
-  const bundleDir = bundleDirForSpine(row.spine);
-  const specPath = bundleDir ? join(bundleDir, 'spec.json') : null;
-  if (!specPath || !existsSync(specPath)) return unknown();
-  let spec;
-  try {
-    spec = JSON.parse(readFileSync(specPath, 'utf8'));
-  } catch {
-    return unknown();
+
+  // (a) bundle spec.json — unchanged path, still tried first.
+  if (existsSync(row.spine)) {
+    const bundleDir = bundleDirForSpine(row.spine);
+    const specPath = bundleDir ? join(bundleDir, 'spec.json') : null;
+    if (specPath && existsSync(specPath)) {
+      let spec = null;
+      try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch { spec = null; }
+      if (spec && typeof spec === 'object') {
+        return fromSpec(spec, true, 'bundle spec.json', null);
+      }
+    }
   }
-  if (!spec || typeof spec !== 'object') return unknown();
-  return {
-    runid,
-    job: typeof spec.job === 'string' ? spec.job : row.job,
-    resolved: true,
-    checkType: checkTypeLabel(typeof spec.verdictType === 'string' ? spec.verdictType : null),
-    model: typeof spec.model === 'string' ? spec.model : 'unknown',
-    goal: typeof spec.goal === 'string' ? spec.goal : 'unknown',
-    budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
-    maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : null,
-    // the job spec schema this reads (`src/job.js`'s JOB_FIELDS) carries no
-    // source/destination/success/guardrails fields at all — reported
-    // honestly as 'unknown' rather than guessed from writeScope/description.
-    source: 'unknown',
-    destination: 'unknown',
-    success: 'unknown',
-    guardrails: 'unknown',
-    note: null,
-  };
+
+  // Read this run's own job-start record once — feeds both (b)'s hash
+  // comparison and (c)'s fallback.
+  let jobStart = null;
+  if (existsSync(row.spine)) {
+    try {
+      const { records } = parseJsonl(row.spine);
+      jobStart = records.find((r) => r && typeof r === 'object' && r.type === 'job-start') ?? null;
+    } catch { jobStart = null; }
+  }
+
+  // (b) jobs/<job>.json in the repo's own jobs/ dir.
+  const jobsSpecPath = join(jobsDir(), `${row.job}.json`);
+  if (existsSync(jobsSpecPath)) {
+    let spec = null;
+    try { spec = JSON.parse(readFileSync(jobsSpecPath, 'utf8')); } catch { spec = null; }
+    if (spec && typeof spec === 'object') {
+      const specHash = typeof jobStart?.specHash === 'string' ? jobStart.specHash : null;
+      let mismatch = false;
+      if (specHash) {
+        try { mismatch = jobSpecHash(spec) !== specHash; } catch { mismatch = false; }
+      }
+      const note = mismatch ? 'this job was edited after this run (spec hash differs)' : null;
+      return fromSpec(spec, true, `jobs/${row.job}.json`, note);
+    }
+  }
+
+  // (c) the run's own job-start record — narrower, unsigned.
+  if (jobStart) {
+    return {
+      runid,
+      job: typeof jobStart.job === 'string' ? jobStart.job : row.job,
+      resolved: false,
+      resolvedFrom: "the run's own start record",
+      checkType: checkTypeLabel(typeof jobStart.verdictType === 'string' ? jobStart.verdictType : null, row.at),
+      checkTypeTitle: checkTypeTitle(typeof jobStart.verdictType === 'string' ? jobStart.verdictType : null, row.at),
+      model: notRecorded(typeof jobStart.model === 'string' ? jobStart.model : null),
+      goal: notRecorded(typeof jobStart.goal === 'string' ? jobStart.goal : null),
+      budgetUsd: typeof jobStart.budgetUsd === 'number' ? jobStart.budgetUsd : null,
+      maxWallMs: null,
+      source: 'unknown',
+      destination: 'unknown',
+      success: 'unknown',
+      guardrails: 'unknown',
+      note: "from the run's own start record",
+    };
+  }
+
+  return none();
 }
 
 /** @param {any} res @param {number} code @param {any} body */
