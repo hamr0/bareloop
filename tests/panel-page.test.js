@@ -278,6 +278,79 @@ test('item 7: cacheLine — not recorded when memoryCache is null; real numbers 
   assert.equal(cacheLine({ pointered: 7, bytesWithheld: 4865 }), '7 re-reads answered from memory · 4.8 KB not re-sent');
 });
 
+test('item 5: filterRuns — no filters selected -> everything passes (each group empty = no filter for that group)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const filterRuns = extractFn(html, 'filterRuns');
+  const runs = [
+    { checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
+    { checkType: 'rubric', glyph: '✗', at: '2026-01-01T00:00:00.000Z' },
+  ];
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  assert.equal(filterRuns(runs, { checkTypes: [], results: [], time: 'all' }, now).length, 2);
+});
+
+test('item 5: filterRuns — checkType OR within group, AND across groups', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const filterRuns = extractFn(html, 'filterRuns');
+  const runs = [
+    { checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
+    { checkType: 'rubric', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
+    { checkType: 'unknown', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
+    { checkType: 'deterministic', glyph: '✗', at: '2026-09-20T00:00:00.000Z' },
+  ];
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  // OR within checkType group: deterministic OR rubric
+  const r1 = filterRuns(runs, { checkTypes: ['deterministic', 'rubric'], results: [], time: 'all' }, now);
+  assert.equal(r1.length, 3); // rows 1,2,4
+
+  // AND across groups: checkType=deterministic AND result=✓
+  const r2 = filterRuns(runs, { checkTypes: ['deterministic'], results: ['✓'], time: 'all' }, now);
+  assert.deepEqual(r2, [runs[0]]);
+});
+
+test('item 5: filterRuns — time is single-select (7d/30d/all), excludes older rows and unparseable dates', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const filterRuns = extractFn(html, 'filterRuns');
+  const now = Date.parse('2026-09-25T12:00:00.000Z');
+  const runs = [
+    { checkType: 'deterministic', glyph: '✓', at: '2026-09-24T00:00:00.000Z' }, // 1 day old
+    { checkType: 'deterministic', glyph: '✓', at: '2026-09-01T00:00:00.000Z' }, // 24 days old
+    { checkType: 'deterministic', glyph: '✓', at: '2026-01-01T00:00:00.000Z' }, // very old
+    { checkType: 'deterministic', glyph: '✓', at: 'not a date' }, // unparseable
+  ];
+  const r7 = filterRuns(runs, { checkTypes: [], results: [], time: '7d' }, now);
+  assert.deepEqual(r7, [runs[0]]);
+  const r30 = filterRuns(runs, { checkTypes: [], results: [], time: '30d' }, now);
+  assert.deepEqual(r30, [runs[0], runs[1]]);
+  const rAll = filterRuns(runs, { checkTypes: [], results: [], time: 'all' }, now);
+  assert.equal(rAll.length, 4);
+});
+
+test('item 5: the History filter bar exists with checkType/result/time chip groups, a clear button, and a "showing N of M" count element', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /data-testid="hist-filters"/);
+  assert.match(html, /data-filter-group="checkType"/);
+  assert.match(html, /data-filter-group="result"/);
+  assert.match(html, /data-filter-group="time"/);
+  assert.match(html, /id="hist-filter-clear"/);
+  assert.match(html, /id="hist-filter-count"/);
+  assert.match(html, /"showing " \+ filtered\.length \+ " of " \+ allHistoryRuns\.length \+ " runs"/);
+});
+
+test('item 5: History filter localStorage access is wrapped in try/catch (per-viewer convenience only)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const loadStart = html.indexOf('function loadHistFilterState');
+  const loadEnd = html.indexOf('function saveHistFilterState');
+  assert.ok(loadStart !== -1 && loadEnd !== -1 && loadEnd > loadStart);
+  const loadBody = html.slice(loadStart, loadEnd);
+  assert.match(loadBody, /try\{[\s\S]*localStorage\.getItem[\s\S]*\}catch\(e\)/);
+
+  const saveStart = html.indexOf('function saveHistFilterState');
+  const saveEnd = html.indexOf('function paintHistFilterChips');
+  const saveBody = html.slice(saveStart, saveEnd);
+  assert.match(saveBody, /try\{[\s\S]*localStorage\.setItem[\s\S]*\}catch\(e\)/);
+});
+
 test('item 6: the step card meta line carries a plain-language title (hover) explaining steps/rounds/tools — no new glyph', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(

@@ -260,6 +260,26 @@
         </section>
 
         <section id="panel-history" class="tabpanel" role="tabpanel" aria-labelledby="tab-history" hidden>
+          <div class="hist-filters" data-testid="hist-filters">
+            <div class="chips" role="group" aria-label="Filter by check type" style="margin-bottom:6px;">
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="deterministic" data-testid="chip-ct-deterministic">deterministic</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="rubric" data-testid="chip-ct-rubric">rubric</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="unknown" data-testid="chip-ct-unknown">unknown</button>
+            </div>
+            <div class="chips" role="group" aria-label="Filter by result" style="margin-bottom:6px;">
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="✓" data-testid="chip-res-pass">[&#10003;]</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="✗" data-testid="chip-res-fail">[&#10007;]</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="?" data-testid="chip-res-died">[?]</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="▶" data-testid="chip-res-running">[&#9654;]</button>
+            </div>
+            <div class="chips" role="group" aria-label="Filter by time" style="margin-bottom:6px;">
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="7d" data-testid="chip-time-7d">7 days</button>
+              <button class="chip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="30d" data-testid="chip-time-30d">30 days</button>
+              <button class="chip" type="button" aria-pressed="true" data-filter-group="time" data-filter-value="all" data-testid="chip-time-all">all</button>
+              <button class="btn small" type="button" id="hist-filter-clear" data-testid="hist-filter-clear">clear</button>
+            </div>
+            <div class="hint" id="hist-filter-count" data-testid="hist-filter-count"></div>
+          </div>
           <div id="history-list" data-testid="history-list"></div>
         </section>
 
@@ -629,6 +649,98 @@
     });
   }
 
+  // ---- History filters (item 5) ----
+  // Pure function: chips toggle on/off independently and combine AND across
+  // the three groups (checkType/result/time), OR within a group (an empty
+  // group array means "no filter" for that group — everything passes it).
+  // `time` is single-select, default "all". `nowMs` is injectable for tests.
+  function filterRuns(runs, filters, nowMs){
+    nowMs = (typeof nowMs === "number") ? nowMs : Date.now();
+    var ct = (filters && filters.checkTypes) || [];
+    var rs = (filters && filters.results) || [];
+    var time = (filters && filters.time) || "all";
+    return (runs || []).filter(function(r){
+      if(ct.length && ct.indexOf(r.checkType) === -1) return false;
+      if(rs.length && rs.indexOf(r.glyph) === -1) return false;
+      if(time !== "all"){
+        var days = time === "7d" ? 7 : 30;
+        var t = typeof r.at === "string" ? Date.parse(r.at) : NaN;
+        if(!isFinite(t)) return false;
+        if(nowMs - t > days * 24 * 60 * 60 * 1000) return false;
+      }
+      return true;
+    });
+  }
+
+  var HIST_FILTER_STORAGE_KEY = "bareloop-panel-history-filters";
+  var histFilterState = { checkTypes: [], results: [], time: "all" };
+  var allHistoryRuns = [];
+
+  function loadHistFilterState(){
+    try{
+      var raw = localStorage.getItem(HIST_FILTER_STORAGE_KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        if(parsed && typeof parsed === "object"){
+          histFilterState = {
+            checkTypes: Array.isArray(parsed.checkTypes) ? parsed.checkTypes : [],
+            results: Array.isArray(parsed.results) ? parsed.results : [],
+            time: typeof parsed.time === "string" ? parsed.time : "all",
+          };
+        }
+      }
+    }catch(e){ /* per-viewer convenience only; a blocked/private store just means no memory */ }
+  }
+  function saveHistFilterState(){
+    try{ localStorage.setItem(HIST_FILTER_STORAGE_KEY, JSON.stringify(histFilterState)); }catch(e){ /* best-effort only */ }
+  }
+  function paintHistFilterChips(){
+    document.querySelectorAll('.hist-filters .chip[data-filter-group]').forEach(function(chip){
+      var group = chip.getAttribute("data-filter-group");
+      var value = chip.getAttribute("data-filter-value");
+      var active;
+      if(group === "time"){ active = histFilterState.time === value; }
+      else if(group === "checkType"){ active = histFilterState.checkTypes.indexOf(value) !== -1; }
+      else { active = histFilterState.results.indexOf(value) !== -1; }
+      chip.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+  function applyHistFilters(){
+    var filtered = filterRuns(allHistoryRuns, histFilterState);
+    renderHistory(filtered);
+    var countEl = document.getElementById("hist-filter-count");
+    if(countEl) countEl.textContent = "showing " + filtered.length + " of " + allHistoryRuns.length + " runs";
+  }
+  document.querySelectorAll('.hist-filters .chip[data-filter-group]').forEach(function(chip){
+    chip.addEventListener("click", function(){
+      var group = chip.getAttribute("data-filter-group");
+      var value = chip.getAttribute("data-filter-value");
+      if(group === "time"){
+        histFilterState.time = value; // single-select within time
+      } else if(group === "checkType"){
+        var idx = histFilterState.checkTypes.indexOf(value);
+        if(idx === -1) histFilterState.checkTypes.push(value); else histFilterState.checkTypes.splice(idx, 1);
+      } else if(group === "result"){
+        var idx2 = histFilterState.results.indexOf(value);
+        if(idx2 === -1) histFilterState.results.push(value); else histFilterState.results.splice(idx2, 1);
+      }
+      paintHistFilterChips();
+      saveHistFilterState();
+      applyHistFilters();
+    });
+  });
+  var histClearBtn = document.getElementById("hist-filter-clear");
+  if(histClearBtn){
+    histClearBtn.addEventListener("click", function(){
+      histFilterState = { checkTypes: [], results: [], time: "all" };
+      paintHistFilterChips();
+      saveHistFilterState();
+      applyHistFilters();
+    });
+  }
+  loadHistFilterState();
+  paintHistFilterChips();
+
   function clearSelection(selector){
     document.querySelectorAll(".wf-row, .hist-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
   }
@@ -835,7 +947,8 @@
     var workflows = results[0].workflows || [];
     var runs = results[1].runs || [];
     renderWorkflows(workflows);
-    renderHistory(runs);
+    allHistoryRuns = runs;
+    applyHistFilters();
     if(runs.length && !runs[0].fileMissing){
       document.getElementById("tab-workflows").click();
       var firstRow = document.querySelector('.wf-row[data-wf="' + (workflows[0] && workflows[0].job) + '"]');
