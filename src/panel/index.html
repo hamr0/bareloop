@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bareloop panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Reused verbatim from design/panel-mockup.html (the visual contract, PANEL-BUILD.md §6) —
+     Tokyo Night box-drawing TUI look, same tokens, same responsive breakpoint. Fake-data rows
+     and the Settings/Chat-authoring styling are kept (Settings/Chat are out of P1's scope but
+     the CSS is harmless dead weight rather than a second stylesheet to maintain). */
+  :root{
+    --bg:#1a1b26; --panel:#1f2335; --panel2:#24283b; --border:#292e42; --border-strong:#3b4261;
+    --text:#c0caf5; --text-dim:#a9b1d6; --text-faint:#565f89;
+    --green:#9ece6a; --green-bg:#1c2b23;
+    --red:#f7768e; --red-bg:#2b1822;
+    --amber:#e0af68; --amber-bg:#2b2416;
+    --grey-dot:#878eac; --grey-bg:#20242f;
+    --cyan:#7dcfff; --cyan-bg:#182634;
+    --magenta:#bb9af7;
+    --accent:#7aa2f7;
+    --btn-bg:#1f2335; --btn-text:#c0caf5;
+    --primary-bg:#7aa2f7; --primary-text:#1a1b26; --primary-border:#7aa2f7;
+    font: 14px/1.5 "Courier Prime", "Courier New", Courier, ui-monospace, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  body{overflow-x:hidden;}
+  button{font:inherit;cursor:pointer;}
+  table{border-collapse:collapse;width:100%;}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px dotted var(--border-strong);font-size:12px;}
+  th{color:var(--text-dim);font-weight:700;background:var(--panel2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;border-bottom:1px solid var(--border-strong);}
+  td{border-right:1px dotted var(--border);}
+  td:last-child{border-right:none;}
+  a{color:var(--accent);text-decoration:underline;}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#e1e2e7; --panel:#d0d5e3; --panel2:#e9e9ed; --border:#c4c8da; --border-strong:#a8b0cc;
+      --text:#3760bf; --text-dim:#58679f; --text-faint:#848cb5;
+      --green:#567238; --green-bg:#dfe7d4;
+      --red:#c92353; --red-bg:#fbe0e8;
+      --amber:#82643a; --amber-bg:#f0e6d3;
+      --grey-dot:#626887; --grey-bg:#e2e2e8;
+      --cyan:#007197; --cyan-bg:#d6ecf1;
+      --magenta:#9854f1;
+      --accent:#2668c2;
+      --btn-bg:#e9e9ed; --btn-text:#3760bf;
+      --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#e1e2e7; --panel:#d0d5e3; --panel2:#e9e9ed; --border:#c4c8da; --border-strong:#a8b0cc;
+    --text:#3760bf; --text-dim:#58679f; --text-faint:#848cb5;
+    --green:#567238; --green-bg:#dfe7d4;
+    --red:#c92353; --red-bg:#fbe0e8;
+    --amber:#82643a; --amber-bg:#f0e6d3;
+    --grey-dot:#626887; --grey-bg:#e2e2e8;
+    --cyan:#007197; --cyan-bg:#d6ecf1;
+    --magenta:#9854f1;
+    --accent:#2668c2;
+    --btn-bg:#e9e9ed; --btn-text:#3760bf;
+    --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
+  }
+  .theme-toggle{padding:4px 9px;min-height:32px;border:1px solid var(--border-strong);background:var(--btn-bg);color:var(--text);}
+
+  h2,h4{text-transform:uppercase;letter-spacing:0.06em;font-weight:700;}
+
+  #BareloopPanel{display:flex;flex-direction:column;min-height:100vh;}
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px;border-bottom:2px solid var(--border-strong);
+    background:var(--panel);flex-wrap:wrap;gap:8px;
+  }
+  .topbar > div:first-child{display:flex;align-items:baseline;gap:0;white-space:nowrap;overflow:hidden;}
+  .topbar .brand{font-weight:700;font-size:17px;letter-spacing:0.06em;flex:none;}
+  .topbar .brand::before{content:"■ ";}
+  .topbar .tagline{font-size:12px;color:var(--text-dim);margin-left:8px;overflow:hidden;text-overflow:ellipsis;}
+  .topbar .tagline::before{content:"· ";color:var(--text-faint);}
+  @media (max-width: 600px){ .topbar .tagline{display:none;} }
+  .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+
+  [hidden]{display:none !important;}
+  .main{display:flex;flex:1;min-height:0;}
+  .left-pane{width:420px;flex:none;border-right:1px solid var(--border-strong);display:flex;flex-direction:column;background:var(--panel);}
+  .right-pane{flex:1;min-width:0;display:flex;flex-direction:column;}
+
+  .tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:tabnum;}
+  .tabrow button{
+    flex:1;padding:10px 6px;min-height:44px;background:transparent;border:none;
+    border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);
+    counter-increment:tabnum;
+  }
+  .tabrow button::before{content:"[" counter(tabnum) "] ";color:var(--text-faint);font-weight:700;}
+  .tabrow button:last-child{border-right:none;}
+
+  .pane-body{padding:12px;overflow:auto;flex:1;min-height:0;}
+  .tabpanel{display:none;}
+  .tabpanel.active{display:block;}
+
+  .dot{display:inline-flex;align-items:center;justify-content:center;margin-right:6px;vertical-align:middle;font-weight:700;font-size:12px;}
+  .dot::before{content:"[·]";color:var(--grey-dot);}
+  .dot.green::before{content:"[✓]";color:var(--green);}
+  .dot.red::before{content:"[✗]";color:var(--red);}
+  .dot.amber::before{content:"[▶]";color:var(--amber);}
+  .dot.grey::before{content:"[·]";color:var(--grey-dot);}
+
+  .badge{display:inline-block;font-size:11px;padding:1px 4px;color:var(--text-dim);background:none;font-weight:700;}
+  .badge::before{content:"[";color:var(--text-faint);}
+  .badge::after{content:"]";color:var(--text-faint);}
+  .badge.green{color:var(--green);}
+  .badge.red{color:var(--red);}
+  .badge.amber{color:var(--amber);}
+  .badge.grey{color:var(--grey-dot);}
+
+  .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
+  .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);white-space:nowrap;flex:none;position:relative;}
+  .btn::before{content:"[ ";color:var(--text-faint);}
+  .btn::after{content:" ]";color:var(--text-faint);}
+  .btn:disabled{color:var(--text-faint);border-color:var(--border);cursor:not-allowed;}
+  .btn:disabled::before,.btn:disabled::after{color:var(--text-faint);opacity:0.4;}
+  .btn.small{padding:0 9px;height:32px;min-height:0;font-size:12px;}
+
+  .wf-row,.hist-row{
+    display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;row-gap:4px;
+    padding:8px 8px 8px 18px;position:relative;border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);cursor:pointer;
+  }
+  .wf-row::before{content:" ";position:absolute;left:6px;top:8px;color:var(--accent);font-weight:700;}
+  .wf-row:hover,.hist-row:hover{border-color:var(--border-strong);}
+  .wf-row.selected::before{content:">";}
+  .wf-name{font-weight:700;}
+  .wf-meta{font-size:12px;color:var(--text-dim);}
+  .wf-meta + .wf-meta::before{content:"· ";color:var(--text-faint);}
+  .row-break{flex-basis:100%;height:0;}
+  .wf-row-actions{display:flex;gap:6px;flex-basis:100%;margin-top:2px;}
+  .wf-row.selected,.hist-row.selected{border:2px solid var(--accent);border-radius:4px;}
+
+  .rp-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);flex-wrap:wrap;gap:8px;}
+  .rp-header h2{margin:0;font-size:15px;}
+  .rp-header h2::before{content:"┤ ";color:var(--text-faint);}
+  .rp-header h2::after{content:" ├";color:var(--text-faint);}
+  .rp-header-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .rp-tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:rtabnum;}
+  .rp-tabrow button{padding:10px 14px;min-height:44px;background:transparent;border:none;border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);counter-increment:rtabnum;}
+  .rp-tabrow button::before{content:"[" counter(rtabnum) "] ";color:var(--text-faint);font-weight:700;}
+  .tabrow button[aria-selected="true"],.rp-tabrow button[aria-selected="true"]{background:var(--panel);color:var(--accent);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent);}
+  .tabrow button[aria-selected="true"]::before,.rp-tabrow button[aria-selected="true"]::before{color:var(--accent);}
+
+  .counters{display:block;padding:9px 12px;border:none;border-bottom:2px solid var(--border-strong);background:var(--panel2);color:var(--text-dim);margin:-12px -12px 14px;font-size:12px;font-weight:700;white-space:normal;overflow-wrap:break-word;}
+  .counters b,.counters span{color:var(--accent);}
+
+  .summary-box{position:relative;border:1px solid var(--border-strong);padding:16px 12px 12px;margin-top:16px;background:var(--panel2);font-size:12px;}
+  .summary-box.red{border-color:var(--red);}
+  .summary-box.amber{border-color:var(--amber);}
+  .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
+  .summary-headline{font-weight:700;margin-bottom:8px;font-size:13px;}
+  .summary-row{display:flex;gap:0;padding:2px 0;}
+  .sum-label{flex:none;width:66px;color:var(--text-faint);}
+  .sum-val{color:var(--text);}
+  .summary-box .num{color:var(--accent);font-weight:700;}
+
+  .map-box{border:1px solid var(--border-strong);padding:10px;overflow-x:auto;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
+  .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
+  .map-box svg{display:block;max-width:100%;height:auto;}
+  .map-legend{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px;flex-wrap:wrap;}
+
+  .step-card{position:relative;border:1px solid var(--border);padding:10px;margin-bottom:8px;background:var(--panel2);}
+  .step-card.running{border:1px double var(--amber);}
+  .step-card .step-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+  .step-card h4{margin:0;font-size:13px;}
+  .step-meta{font-size:12px;color:var(--text-dim);margin-top:4px;}
+
+  .chips{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+  .chip{padding:5px 10px;min-height:32px;border:1px solid var(--border-strong);background:var(--panel2);font-size:12px;color:var(--text-dim);}
+  .chip::before{content:"[ ";color:var(--text-faint);}
+  .chip::after{content:" ]";color:var(--text-faint);}
+  .chip[aria-pressed="true"]{background:var(--panel);color:var(--accent);border-color:var(--accent);font-weight:700;}
+  .row-blocked{background:var(--red-bg);}
+  .raw-log{margin-top:12px;}
+  .raw-log summary{cursor:pointer;font-size:13px;padding:6px 0;}
+  .raw-log pre{background:#0b0b0f;color:#e8e8f0;padding:10px;border:1px solid var(--border-strong);font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;}
+
+  .job-card{position:relative;border:1px solid var(--border-strong);padding:14px 10px 10px;background:var(--panel2);margin-top:10px;margin-bottom:10px;}
+  .job-card h4{margin:0 0 8px;font-size:13px;position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;}
+  .job-card h4::before{content:"┤ ";color:var(--text-faint);}
+  .job-card h4::after{content:" ├";color:var(--text-faint);}
+  .field{margin-bottom:10px;}
+  label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
+  .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
+  .wf-past-run{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;row-gap:2px;padding:6px 8px;border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);}
+
+  .chat-thread{padding:20px 8px;color:var(--text-faint);font-size:13px;}
+
+  @media (max-width: 899px){
+    .main{flex-direction:column;}
+    .left-pane{width:100%;border-right:none;border-bottom:1px solid var(--border-strong);}
+    .right-pane{width:100%;}
+    .topbar{flex-direction:column;align-items:flex-start;}
+    .topbar-right{width:100%;justify-content:space-between;}
+    .btn.small{height:44px;min-height:44px;padding:0 12px;}
+    .chip{min-height:44px;}
+    .rp-header{margin:8px 8px 0;}
+    .rp-tabrow{margin:0 8px;}
+  }
+</style>
+</head>
+<body>
+
+<div id="BareloopPanel">
+
+  <header class="topbar">
+    <div>
+      <span class="brand">bareloop</span>
+      <span class="tagline">automate a job, verified</span>
+    </div>
+    <div class="topbar-right">
+      <span class="hint" id="host-line"></span>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme">&#9789;</button>
+    </div>
+  </header>
+
+  <div class="main" id="main-view">
+
+    <nav class="left-pane" aria-label="Job navigation">
+      <div class="tabrow" role="tablist" aria-label="Left panel views">
+        <button role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="true" data-testid="left-tab-chat">Chat</button>
+        <button role="tab" id="tab-workflows" aria-controls="panel-workflows" aria-selected="false" data-testid="left-tab-workflows">Workflows</button>
+        <button role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false" data-testid="left-tab-history">History</button>
+      </div>
+
+      <div class="pane-body">
+
+        <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
+          <div class="chat-thread">
+            Authoring a new job from this page comes later (PANEL-BUILD.md P3). This build
+            (P1) is read-only: it shows runs already started from the command line
+            (<code>bareloop run</code> / <code>bareloop run-u</code>). Use the Workflows or
+            History tab to look at one.
+          </div>
+        </section>
+
+        <section id="panel-workflows" class="tabpanel" role="tabpanel" aria-labelledby="tab-workflows" hidden>
+          <div id="wf-list" data-testid="wf-list"></div>
+        </section>
+
+        <section id="panel-history" class="tabpanel" role="tabpanel" aria-labelledby="tab-history" hidden>
+          <div id="history-list" data-testid="history-list"></div>
+        </section>
+
+      </div>
+    </nav>
+
+    <section class="right-pane" aria-label="Active workflow">
+      <div class="rp-header">
+        <div class="rp-header-title">
+          <span class="dot grey" id="active-wf-dot"></span>
+          <h2 id="active-wf-name">(none selected)</h2>
+          <span class="badge" id="active-wf-verdict">—</span>
+          <span class="badge" id="active-wf-date">—</span>
+        </div>
+      </div>
+
+      <div class="rp-tabrow" role="tablist" aria-label="Workflow views">
+        <button role="tab" id="tab-run" aria-controls="panel-run" aria-selected="true" data-testid="right-tab-run">Run</button>
+        <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-testid="right-tab-audit">Audit / logs</button>
+        <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Job</button>
+      </div>
+
+      <div class="pane-body">
+
+        <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
+          <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
+          <div id="run-content" hidden>
+            <div class="counters" id="run-counters" data-testid="live-counters"></div>
+            <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
+            <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div></div>
+            <div id="step-list"></div>
+          </div>
+        </section>
+
+        <section id="panel-audit" class="tabpanel" role="tabpanel" aria-labelledby="tab-audit" hidden>
+          <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;">select a run first</div>
+          <div id="audit-content" data-testid="audit-content" hidden>
+            <div class="audit-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+              <div class="chips" role="group" aria-label="Filter audit rows" style="margin-bottom:0;">
+                <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
+                <button class="chip" aria-pressed="false" data-filter="write" data-testid="chip-writes">Writes</button>
+                <button class="chip" aria-pressed="false" data-filter="blocked" data-testid="chip-blocked">Blocked</button>
+              </div>
+            </div>
+            <table data-testid="audit-table">
+              <thead><tr><th>Time</th><th>Action</th><th>Path</th><th>Decision</th><th>Step</th></tr></thead>
+              <tbody id="audit-tbody"></tbody>
+            </table>
+            <details class="raw-log" data-testid="raw-spine-log">
+              <summary>Raw gate-audit log</summary>
+              <pre id="audit-rawlog"></pre>
+            </details>
+          </div>
+        </section>
+
+        <section id="panel-details" class="tabpanel" role="tabpanel" aria-labelledby="tab-details" hidden data-testid="panel-details">
+          <div id="job-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
+          <div class="job-card" id="job-card" hidden data-testid="job-card-readonly">
+            <h4 id="details-title">Job card — signed</h4>
+            <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
+            <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
+            <div class="field"><label>Goal</label><div class="ro-value" id="details-goal">—</div></div>
+            <div class="field"><label>Source</label><div class="ro-value" id="details-source">—</div></div>
+            <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
+            <div class="field"><label>Success</label><div class="ro-value" id="details-success">—</div></div>
+            <div class="field"><label>Guardrails</label><div class="ro-value" id="details-guardrails">—</div></div>
+            <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
+            <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
+            <div class="hint" id="job-note"></div>
+          </div>
+        </section>
+
+      </div>
+    </section>
+
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var PORT = "__BARELOOP_PANEL_PORT__";
+  document.getElementById("host-line").textContent = "127.0.0.1:" + PORT;
+
+  function wireTabs(tabButtons){
+    tabButtons.forEach(function(btn){
+      btn.addEventListener("click", function(){
+        tabButtons.forEach(function(b){
+          b.setAttribute("aria-selected", "false");
+          var p = document.getElementById(b.getAttribute("aria-controls"));
+          if(p){ p.hidden = true; p.classList.remove("active"); }
+        });
+        btn.setAttribute("aria-selected", "true");
+        var panel = document.getElementById(btn.getAttribute("aria-controls"));
+        if(panel){ panel.hidden = false; panel.classList.add("active"); }
+        if(btn.id === "tab-run"){ reflowMap(); }
+      });
+    });
+  }
+  wireTabs([document.getElementById("tab-chat"), document.getElementById("tab-workflows"), document.getElementById("tab-history")]);
+  wireTabs([document.getElementById("tab-run"), document.getElementById("tab-audit"), document.getElementById("tab-details")]);
+
+  // ---- fetch helpers ----
+  function getJSON(path){
+    return fetch(path, { headers: { accept: "application/json" } }).then(function(r){
+      if(!r.ok) throw new Error(path + ": HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  // ---- step map renderer (verbatim algorithm from design/panel-mockup.html's
+  // buildStepMapSVG — ONE renderer, no second hand-authored map anywhere on this page) ----
+  function stepMapColors(state){
+    if(state === "done") return {stroke:"var(--green)", textFill:"#2e7d32"};
+    if(state === "running") return {stroke:"var(--amber)", textFill:"#b8860b"};
+    if(state === "stopped") return {stroke:"var(--red)", textFill:"var(--red)"};
+    return {stroke:"var(--border-strong)", textFill:"var(--text-faint)"};
+  }
+  function escapeXml(s){
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  var stepMapUidCounter = 0;
+  var MAP_MARGIN = 10, MAP_GAP = 28;
+  var CHAR_W = 7.2;
+  var TITLE_HPAD = 16;
+  var MIN_BOX_W = 100;
+  var BOX_H = 60, BOX_H_2LINE = 78;
+  var ROW_GAP = 70;
+  function stepTitleText(idx, title){ return (idx + 1) + ' ' + title; }
+  function naturalBoxWidth(steps){
+    var maxChars = 0;
+    steps.forEach(function(s, idx){ maxChars = Math.max(maxChars, stepTitleText(idx, s.title).length); });
+    return Math.max(MIN_BOX_W, Math.ceil(maxChars * CHAR_W) + TITLE_HPAD);
+  }
+  function computeMapLayout(n, availW, naturalW){
+    if(!availW) return {perRow:n, boxW:naturalW};
+    var usableW = availW - MAP_MARGIN * 2;
+    for(var perRow = n; perRow >= 2; perRow--){
+      var totalW = perRow * naturalW + (perRow - 1) * MAP_GAP;
+      if(totalW <= usableW){
+        var stretched = (usableW - (perRow - 1) * MAP_GAP) / perRow;
+        return {perRow:perRow, boxW:Math.max(naturalW, stretched)};
+      }
+    }
+    return {perRow:1, boxW:Math.max(MIN_BOX_W, usableW)};
+  }
+  function wrapTitleLines(text, maxWidth){
+    var maxChars = Math.max(1, Math.floor((maxWidth - TITLE_HPAD) / CHAR_W));
+    if(text.length <= maxChars) return [text];
+    var words = text.split(' ');
+    var line1 = '', i = 0;
+    for(; i < words.length; i++){
+      var cand = line1 ? line1 + ' ' + words[i] : words[i];
+      if(line1 && cand.length > maxChars) break;
+      line1 = cand;
+    }
+    if(!line1) return [text.slice(0, maxChars), text.slice(maxChars)];
+    var line2 = words.slice(i).join(' ');
+    return line2 ? [line1, line2] : [line1];
+  }
+  function buildStepMapSVG(steps, availWidth){
+    var n = steps.length;
+    var naturalW = naturalBoxWidth(steps);
+    var layout = computeMapLayout(n, availWidth, naturalW);
+    var perRow = layout.perRow, boxW = layout.boxW, gap = MAP_GAP;
+    var rows = Math.ceil(n / perRow);
+    var margin = MAP_MARGIN;
+    var titleLines = steps.map(function(s, idx){ return wrapTitleLines(stepTitleText(idx, s.title), boxW); });
+    var maxLines = titleLines.reduce(function(m, l){ return Math.max(m, l.length); }, 1);
+    var boxH = maxLines > 1 ? BOX_H_2LINE : BOX_H;
+    var rowH = boxH + ROW_GAP;
+    var totalW = margin * 2 + perRow * boxW + (perRow - 1) * gap;
+    var totalH = rows * rowH;
+    var uid = "sm" + (stepMapUidCounter++);
+    var body =
+      '<defs>' +
+        '<marker id="' + uid + '-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
+          '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-dim)"></path></marker>' +
+      '</defs>';
+    steps.forEach(function(s, idx){
+      var row = Math.floor(idx / perRow);
+      var col = idx % perRow;
+      var rtl = (row % 2) === 1;
+      var slotCol = rtl ? (perRow - 1 - col) : col;
+      var x = margin + slotCol * (boxW + gap);
+      var y = 30 + row * rowH;
+      var colors = stepMapColors(s.state);
+      var lines = titleLines[idx];
+      var stateY = y + boxH - 18;
+      body += '<rect x="' + x + '" y="' + y + '" width="' + boxW + '" height="' + boxH +
+        '" rx="0" fill="var(--panel2)" stroke="' + colors.stroke + '" stroke-width="2"></rect>';
+      if(lines.length === 1){
+        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 25) +
+          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[0]) + '</text>';
+      } else {
+        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 17) +
+          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[0]) + '</text>';
+        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 29) +
+          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[1]) + '</text>';
+      }
+      body += '<text x="' + (x + boxW / 2) + '" y="' + stateY +
+        '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(s.state) + '</text>';
+      if(idx < n - 1){
+        var nextRow = Math.floor((idx + 1) / perRow);
+        if(nextRow === row){
+          var midY = y + boxH / 2;
+          if(!rtl){
+            var nx = x + boxW + gap;
+            body += '<line x1="' + (x + boxW) + '" y1="' + midY + '" x2="' + (nx - 2) + '" y2="' + midY +
+              '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+          } else {
+            var px = x - gap - boxW;
+            body += '<line x1="' + x + '" y1="' + midY + '" x2="' + (px + boxW + 2) + '" y2="' + midY +
+              '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+          }
+        } else {
+          var cx = x + boxW / 2;
+          body += '<line x1="' + cx + '" y1="' + (y + boxH) + '" x2="' + cx + '" y2="' + (y + rowH - 2) +
+            '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+        }
+      }
+    });
+    return '<svg width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" role="img" aria-label="step map">' + body + '</svg>';
+  }
+  function stepMapLegendHTML(){
+    return '<div class="map-legend">' +
+      '<span><span class="dot green"></span>done</span>' +
+      '<span><span class="dot amber"></span>running</span>' +
+      '<span><span class="dot red"></span>stopped</span>' +
+      '<span><span class="dot grey"></span>waiting</span>' +
+      '</div>';
+  }
+  var lastSteps = null;
+  var lastWidth = null;
+  function mapAvailWidth(wrapper){
+    if(!wrapper) return null;
+    var w = wrapper.getBoundingClientRect().width;
+    if(!w) return null;
+    return Math.max(0, w - 20);
+  }
+  function renderStepMap(steps){
+    var mount = document.getElementById("map-mount");
+    var wrapper = document.getElementById("map-box");
+    lastSteps = steps;
+    if(!steps || !steps.length){
+      mount.innerHTML = "";
+      wrapper.hidden = true;
+      return;
+    }
+    wrapper.hidden = false;
+    var w = mapAvailWidth(wrapper);
+    lastWidth = w;
+    mount.innerHTML = buildStepMapSVG(steps, w) + stepMapLegendHTML();
+  }
+  function reflowMap(){
+    var wrapper = document.getElementById("map-box");
+    if(!wrapper || wrapper.hidden || !lastSteps) return;
+    var w = mapAvailWidth(wrapper);
+    if(w === null || w === lastWidth) return;
+    lastWidth = w;
+    document.getElementById("map-mount").innerHTML = buildStepMapSVG(lastSteps, w) + stepMapLegendHTML();
+  }
+  if(typeof ResizeObserver !== "undefined"){
+    var ro = new ResizeObserver(function(){ reflowMap(); });
+    var mb = document.getElementById("map-box");
+    if(mb) ro.observe(mb);
+  } else {
+    window.addEventListener("resize", reflowMap);
+  }
+
+  // ---- glyph/badge helpers (only [✓]/[✗]/[▶]/[·] — never the words green/red/soft-green) ----
+  function glyphClass(g){
+    if(g === "✓") return "green";
+    if(g === "✗") return "red";
+    if(g === "▶") return "amber";
+    return "grey";
+  }
+
+  // ---- Workflows tab ----
+  function renderWorkflows(workflows){
+    var el = document.getElementById("wf-list");
+    el.innerHTML = "";
+    if(!workflows.length){
+      el.innerHTML = '<div class="hint">no runs listed yet — run `bareloop run-u` or `bareloop run`, or `bareloop runs backfill <dir>`</div>';
+      return;
+    }
+    workflows.forEach(function(w){
+      var row = document.createElement("div");
+      row.className = "wf-row";
+      row.setAttribute("data-wf", w.job);
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-pressed", "false");
+      row.innerHTML =
+        '<span class="dot ' + glyphClass(w.lastGlyph) + '"></span>' +
+        '<span class="wf-name">' + escapeXml(w.job) + ' (' + escapeXml(w.lastRunid) + ')</span>' +
+        '<span class="row-break"></span>' +
+        '<span class="wf-meta">' + escapeXml(w.lastCheckType) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(w.lastSpend) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(w.lastWall) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(w.lastDate || "unknown") + '</span>' +
+        '<span class="wf-meta">' + w.runCount + ' run' + (w.runCount === 1 ? '' : 's') + '</span>';
+      row.addEventListener("click", function(){ selectRun(w.lastRunid, row, ".wf-row"); document.getElementById("tab-run").click(); });
+      row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
+      el.appendChild(row);
+    });
+  }
+
+  // ---- History tab ----
+  function renderHistory(runs){
+    var el = document.getElementById("history-list");
+    el.innerHTML = "";
+    var listed = runs.filter(function(r){ return !r.fileMissing; });
+    if(!listed.length){
+      el.innerHTML = '<div class="hint">no runs listed yet</div>';
+      return;
+    }
+    runs.forEach(function(r){
+      var row = document.createElement("div");
+      row.className = "hist-row";
+      row.setAttribute("data-testid", "hist-row-" + r.runid);
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-pressed", "false");
+      if(r.fileMissing){
+        row.innerHTML =
+          '<span class="dot grey"></span>' +
+          '<span class="wf-name">' + escapeXml(r.job) + ' (' + escapeXml(r.runid) + ')</span>' +
+          '<span class="row-break"></span>' +
+          '<span class="wf-meta">file missing</span>' +
+          '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>';
+      } else {
+        row.innerHTML =
+          '<span class="dot ' + glyphClass(r.glyph) + '"></span>' +
+          '<span class="wf-name">' + escapeXml(r.job) + ' (' + escapeXml(r.runid) + ')</span>' +
+          '<span class="row-break"></span>' +
+          '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
+          '<span class="wf-meta">' + escapeXml(r.spend) + '</span>' +
+          '<span class="wf-meta">' + escapeXml(r.wall) + '</span>' +
+          '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>';
+      }
+      row.addEventListener("click", function(){ selectRun(r.runid, row, ".hist-row"); document.getElementById("tab-run").click(); });
+      row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
+      el.appendChild(row);
+    });
+  }
+
+  function clearSelection(selector){
+    document.querySelectorAll(".wf-row, .hist-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
+  }
+
+  // ---- Run tab ----
+  function money(n){ return (n === null || n === undefined) ? "unknown" : "$" + Number(n).toFixed(4); }
+  function duration(ms){
+    if(ms === null || ms === undefined) return "unknown";
+    if(ms < 0) return "unknown";
+    var s = ms / 1000;
+    if(s < 60) return s.toFixed(1) + "s";
+    var m = Math.floor(s / 60), rem = Math.round(s - m * 60);
+    if(rem === 60){ m += 1; rem = 0; }
+    return m + "m" + String(rem).padStart(2, "0") + "s";
+  }
+
+  function renderRun(detail){
+    var name = document.getElementById("active-wf-name");
+    var dot = document.getElementById("active-wf-dot");
+    var verdict = document.getElementById("active-wf-verdict");
+    var date = document.getElementById("active-wf-date");
+
+    if(detail.fileMissing){
+      name.textContent = detail.job + " (" + detail.runid + ")";
+      dot.className = "dot grey";
+      verdict.textContent = "unknown";
+      date.textContent = "file missing";
+      document.getElementById("run-empty").hidden = false;
+      document.getElementById("run-empty").textContent = "spine file no longer on disk";
+      document.getElementById("run-content").hidden = true;
+      return;
+    }
+
+    name.textContent = detail.job + " (" + detail.runid + ")";
+    dot.className = "dot " + glyphClass(detail.glyph);
+    verdict.textContent = detail.checkType;
+    date.textContent = detail.date || "unknown";
+
+    document.getElementById("run-empty").hidden = true;
+    document.getElementById("run-content").hidden = false;
+
+    document.getElementById("run-counters").innerHTML =
+      money(detail.spentUsd) + " of $" + (detail.budgetUsd === null ? "unknown" : Number(detail.budgetUsd).toFixed(2)) +
+      " &middot; " + duration(detail.wallMs) + " elapsed";
+
+    var box = document.getElementById("run-summary");
+    box.className = "summary-box " + (detail.glyph === "✗" ? "red" : (detail.glyph === "▶" ? "amber" : ""));
+    var stepsDone = detail.steps.filter(function(s){ return s.state === "done"; }).length;
+    box.innerHTML =
+      '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span><b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
+        '<span class="num">' + money(detail.spentUsd) + '</span> &middot; <span class="num">' + duration(detail.wallMs) + '</span></div>' +
+      '<div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">' + stepsDone + '</span> of <span class="num">' + detail.steps.length + '</span> done' +
+        (detail.replans ? ' &middot; ' + detail.replans + ' replan' + (detail.replans === 1 ? '' : 's') : '') + '</span></div>' +
+      '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +
+      '<div class="summary-row"><span class="sum-label">close:</span><span class="sum-val">' + escapeXml(detail.close && detail.close.verdict ? detail.close.verdict : "none — the run ended before any close ran") + '</span></div>';
+
+    renderStepMap(detail.steps.map(function(s){ return { title: String(s.id), state: s.state }; }));
+
+    var listEl = document.getElementById("step-list");
+    listEl.innerHTML = "";
+    detail.steps.forEach(function(s, i){
+      var card = document.createElement("div");
+      card.className = "step-card" + (s.state === "running" ? " running" : "");
+      var badgeClass = s.state === "done" ? "green" : (s.state === "stopped" ? "red" : (s.state === "running" ? "amber" : "grey"));
+      var metaBits = [];
+      if(typeof s.rounds === "number") metaBits.push(s.rounds + " round" + (s.rounds === 1 ? "" : "s"));
+      if(typeof s.toolCalls === "number") metaBits.push(s.toolCalls + " tool call" + (s.toolCalls === 1 ? "" : "s"));
+      metaBits.push(duration(s.wallMs));
+      metaBits.push(s.unpricedRounds > 0 ? "unknown (" + s.unpricedRounds + " unpriced round" + (s.unpricedRounds === 1 ? "" : "s") + ")" : money(s.spentUsd));
+      card.innerHTML =
+        '<div class="step-head"><h4>' + (i + 1) + ' &middot; ' + escapeXml(s.id) + (s.occurrence && s.occurrence > 1 ? ' (try ' + s.occurrence + ')' : '') + '</h4>' +
+        '<span class="badge ' + badgeClass + '">' + escapeXml(s.state) + '</span></div>' +
+        '<div class="step-meta">' + metaBits.join(" &middot; ") + '</div>' +
+        (s.tripped ? '<div class="step-meta">tripped: ' + escapeXml([s.tripped.category, s.tripped.detail].filter(Boolean).join(" — ")) + '</div>' : '');
+      listEl.appendChild(card);
+    });
+  }
+
+  // ---- Audit tab ----
+  var auditRowEls = [];
+  function renderAudit(result){
+    var empty = document.getElementById("audit-empty");
+    var content = document.getElementById("audit-content");
+    if(!result || result.empty){
+      empty.hidden = false;
+      empty.textContent = "no logs recorded for this run";
+      content.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    content.hidden = false;
+    var tbody = document.getElementById("audit-tbody");
+    tbody.innerHTML = "";
+    result.rows.forEach(function(r){
+      var tr = document.createElement("tr");
+      var blocked = r.decision === "block" || r.decision === "deny" || r.decision === false;
+      var isWrite = r.action === "write" || r.action === "edit";
+      if(isWrite) tr.className = "row-write";
+      if(blocked) tr.className = (tr.className ? tr.className + " " : "") + "row-blocked";
+      tr.innerHTML =
+        "<td>" + escapeXml(r.time || "unknown") + "</td>" +
+        "<td>" + escapeXml(r.action || "unknown") + "</td>" +
+        "<td>" + escapeXml(r.path || "unknown") + "</td>" +
+        "<td><span class=\"badge " + (blocked ? "red" : "green") + "\">" + (r.decision || "unknown") + "</span></td>" +
+        "<td>" + (r.step === null ? "&mdash;" : escapeXml(r.step)) + "</td>";
+      tbody.appendChild(tr);
+    });
+    document.getElementById("audit-rawlog").textContent = result.raw || "";
+    auditRowEls = Array.prototype.slice.call(tbody.querySelectorAll("tr"));
+    document.querySelectorAll(".chip").forEach(function(c){ c.setAttribute("aria-pressed", c.getAttribute("data-filter") === "all" ? "true" : "false"); });
+    auditRowEls.forEach(function(row){ row.style.display = ""; });
+  }
+  document.querySelectorAll(".chip").forEach(function(chip){
+    chip.addEventListener("click", function(){
+      document.querySelectorAll(".chip").forEach(function(c){ c.setAttribute("aria-pressed","false"); });
+      chip.setAttribute("aria-pressed","true");
+      var f = chip.getAttribute("data-filter");
+      auditRowEls.forEach(function(row){
+        if(f === "all"){ row.style.display = ""; }
+        else if(f === "write"){ row.style.display = row.classList.contains("row-write") ? "" : "none"; }
+        else if(f === "blocked"){ row.style.display = row.classList.contains("row-blocked") ? "" : "none"; }
+      });
+    });
+  });
+
+  // ---- Job tab ----
+  function renderJob(job){
+    var empty = document.getElementById("job-empty");
+    var card = document.getElementById("job-card");
+    if(!job){ empty.hidden = false; card.hidden = true; return; }
+    empty.hidden = true;
+    card.hidden = false;
+    document.getElementById("details-title").textContent = "Job — " + job.job + (job.resolved ? " (signed)" : "");
+    document.getElementById("details-verdict").textContent = job.checkType;
+    document.getElementById("details-model").textContent = job.model;
+    document.getElementById("details-goal").textContent = job.goal;
+    document.getElementById("details-source").textContent = job.source;
+    document.getElementById("details-dest").textContent = job.destination;
+    document.getElementById("details-success").textContent = job.success;
+    document.getElementById("details-guardrails").textContent = job.guardrails;
+    document.getElementById("details-cap-money").textContent = job.budgetUsd === null ? "unknown" : ("$" + Number(job.budgetUsd).toFixed(2));
+    document.getElementById("details-cap-time").textContent = job.maxWallMs === null ? "unknown" : duration(job.maxWallMs);
+    document.getElementById("job-note").textContent = job.note || "";
+  }
+
+  // ---- selection + loading ----
+  var currentRunid = null;
+  function selectRun(runid, rowEl, siblingSelector){
+    clearSelection();
+    document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
+    if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
+    currentRunid = runid;
+    getJSON("/api/runs/" + encodeURIComponent(runid)).then(renderRun).catch(function(e){
+      document.getElementById("run-empty").hidden = false;
+      document.getElementById("run-empty").textContent = "failed to load run: " + e.message;
+      document.getElementById("run-content").hidden = true;
+    });
+    getJSON("/api/runs/" + encodeURIComponent(runid) + "/audit").then(renderAudit).catch(function(){ renderAudit(null); });
+    getJSON("/api/runs/" + encodeURIComponent(runid) + "/job").then(renderJob).catch(function(){ renderJob(null); });
+  }
+
+  Promise.all([getJSON("/api/workflows"), getJSON("/api/runs")]).then(function(results){
+    var workflows = results[0].workflows || [];
+    var runs = results[1].runs || [];
+    renderWorkflows(workflows);
+    renderHistory(runs);
+    if(runs.length && !runs[0].fileMissing){
+      document.getElementById("tab-workflows").click();
+      var firstRow = document.querySelector('.wf-row[data-wf="' + (workflows[0] && workflows[0].job) + '"]');
+      if(workflows.length) selectRun(workflows[0].lastRunid, firstRow, ".wf-row");
+    }
+  }).catch(function(e){
+    document.getElementById("wf-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
+    document.getElementById("history-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
+  });
+
+  // theme toggle
+  (function(){
+    var root = document.documentElement;
+    var btn = document.getElementById("theme-toggle");
+    var stored = null;
+    try{ stored = localStorage.getItem("bareloop-panel-theme"); }catch(e){}
+    if(stored === "light" || stored === "dark"){ root.setAttribute("data-theme", stored); }
+    function current(){
+      var attr = root.getAttribute("data-theme");
+      if(attr) return attr;
+      return (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+    }
+    function paint(){ btn.textContent = current() === "dark" ? "☾" : "☀"; }
+    paint();
+    btn.addEventListener("click", function(){
+      var next = current() === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try{ localStorage.setItem("bareloop-panel-theme", next); }catch(e){}
+      paint();
+    });
+  })();
+
+})();
+</script>
+</body>
+</html>
