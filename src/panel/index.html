@@ -715,7 +715,7 @@
       card.innerHTML =
         '<div class="step-head"><h4>' + (i + 1) + ' &middot; ' + escapeXml(s.id) + (s.occurrence && s.occurrence > 1 ? ' (try ' + s.occurrence + ')' : '') + '</h4>' +
         '<span class="badge ' + badgeClass + '">' + escapeXml(s.state) + '</span></div>' +
-        '<div class="step-meta">' + metaBits.join(" &middot; ") + '</div>' +
+        '<div class="step-meta" title="a step is one piece of the plan; a round is one model call; each round can use several tools (read, edit, search…)">' + metaBits.join(" &middot; ") + '</div>' +
         (s.tripped ? '<div class="step-meta">tripped: ' + escapeXml([s.tripped.category, s.tripped.detail].filter(Boolean).join(" — ")) + '</div>' : '');
       listEl.appendChild(card);
     });

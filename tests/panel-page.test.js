@@ -240,3 +240,11 @@ test('.wf-meta + .wf-meta::before separator carries a space on BOTH sides (" · 
   assert.ok(sepRule, 'expected a .wf-meta + .wf-meta::before rule');
   assert.match(sepRule[0], /content:" · "/, `expected content:" · " (space both sides), got: ${sepRule[0]}`);
 });
+
+test('item 6: the step card meta line carries a plain-language title (hover) explaining steps/rounds/tools — no new glyph', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(
+    html,
+    /class="step-meta" title="a step is one piece of the plan; a round is one model call; each round can use several tools \(read, edit, search…\)"/,
+  );
+});
