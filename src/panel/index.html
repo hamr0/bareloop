@@ -213,6 +213,11 @@
      the live panel ("icons are taking too much space", "one letter without
      brackets"). */
   .filterbar{margin-bottom:8px;}
+  .search-input{
+    display:block;width:100%;box-sizing:border-box;padding:6px 8px;min-height:32px;margin-bottom:6px;
+    border:1px solid var(--border-strong);background:var(--bg);color:var(--text);font:inherit;
+  }
+  .search-input::placeholder{color:var(--text-faint);}
   .filterbar .chips{gap:4px;margin-bottom:4px;}
   .chip.fchip{padding:3px 7px;min-height:28px;min-width:28px;font-size:12px;text-align:center;}
   .chip.fchip::before,.chip.fchip::after{content:"";}
@@ -678,6 +683,8 @@
   function filterBarHTML(scope){
     return (
       '<div class="filterbar" data-scope="' + scope + '" data-testid="' + scope + '-filters">' +
+        '<input type="text" class="search-input" placeholder="search job or run id…" ' +
+          'id="' + scope + '-filter-search" data-testid="' + scope + '-filter-search" autocomplete="off">' +
         '<div class="chips" role="group" aria-label="Filter">' +
           '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="deterministic" title="deterministic" data-testid="chip-' + scope + '-ct-deterministic">D</button>' +
           '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="rubric" title="rubric" data-testid="chip-' + scope + '-ct-rubric">R</button>' +
@@ -700,14 +707,28 @@
   // group array means "no filter" for that group — everything passes it).
   // `time` is single-select, default "all". `nowMs` is injectable for tests.
   // Field names (checkType/glyph/at) match a History run row's own shape.
+  // item 1 (2026-09-25): case-insensitive substring match on job name AND
+  // runid, combined AND with the chip groups (an empty/whitespace-only query
+  // means "no search filter" — everything passes it, same posture as an
+  // empty chip group).
+  function matchesSearch(job, runid, query){
+    if(!query) return true;
+    var q = String(query).trim().toLowerCase();
+    if(!q) return true;
+    var j = String(job || "").toLowerCase();
+    var r = String(runid || "").toLowerCase();
+    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1;
+  }
   function filterRuns(runs, filters, nowMs){
     nowMs = (typeof nowMs === "number") ? nowMs : Date.now();
     var ct = (filters && filters.checkTypes) || [];
     var rs = (filters && filters.results) || [];
     var time = (filters && filters.time) || "all";
+    var q = (filters && filters.search) || "";
     return (runs || []).filter(function(r){
       if(ct.length && ct.indexOf(r.checkType) === -1) return false;
       if(rs.length && rs.indexOf(r.glyph) === -1) return false;
+      if(!matchesSearch(r.job, r.runid, q)) return false;
       if(time !== "all"){
         var days = time === "7d" ? 7 : 30;
         var t = typeof r.at === "string" ? Date.parse(r.at) : NaN;
@@ -719,11 +740,12 @@
   }
 
   // Same rule, applied to a workflow's OWN latest-run fields
-  // (lastCheckType/lastGlyph/lastAt) — reuses filterRuns via a one-row
-  // adapter rather than re-implementing the AND/OR/time semantics twice.
+  // (lastCheckType/lastGlyph/lastAt/lastRunid) — reuses filterRuns via a
+  // one-row adapter rather than re-implementing the AND/OR/time/search
+  // semantics twice.
   function filterWorkflows(workflows, filters, nowMs){
     return (workflows || []).filter(function(w){
-      return filterRuns([{ checkType: w.lastCheckType, glyph: w.lastGlyph, at: w.lastAt }], filters, nowMs).length === 1;
+      return filterRuns([{ checkType: w.lastCheckType, glyph: w.lastGlyph, at: w.lastAt, job: w.job, runid: w.lastRunid }], filters, nowMs).length === 1;
     });
   }
 
@@ -736,7 +758,7 @@
   function createFilterBar(opts){
     var scope = opts.scope;
     var storageKey = opts.storageKey;
-    var state = { checkTypes: [], results: [], time: "all" };
+    var state = { checkTypes: [], results: [], time: "all", search: "" };
     var allItems = [];
 
     function load(){
@@ -749,6 +771,7 @@
               checkTypes: Array.isArray(parsed.checkTypes) ? parsed.checkTypes : [],
               results: Array.isArray(parsed.results) ? parsed.results : [],
               time: typeof parsed.time === "string" ? parsed.time : "all",
+              search: typeof parsed.search === "string" ? parsed.search : "",
             };
           }
         }
@@ -767,6 +790,8 @@
         else { active = state.results.indexOf(value) !== -1; }
         chip.setAttribute("aria-pressed", active ? "true" : "false");
       });
+      var searchEl = document.getElementById(scope + "-filter-search");
+      if(searchEl && searchEl.value !== state.search) searchEl.value = state.search;
     }
     function apply(){
       var filtered = opts.filterFn(allItems, state, Date.now());
@@ -795,8 +820,16 @@
     var clearBtn = document.getElementById(scope + "-filter-clear");
     if(clearBtn){
       clearBtn.addEventListener("click", function(){
-        state = { checkTypes: [], results: [], time: "all" };
+        state = { checkTypes: [], results: [], time: "all", search: "" };
         paint();
+        save();
+        apply();
+      });
+    }
+    var searchInput = document.getElementById(scope + "-filter-search");
+    if(searchInput){
+      searchInput.addEventListener("input", function(){
+        state.search = searchInput.value;
         save();
         apply();
       });

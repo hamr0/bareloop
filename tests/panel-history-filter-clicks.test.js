@@ -175,6 +175,8 @@ test('F-panel-chip-collision: the History "clear" button resets state and repain
   assert.equal(api.historyFilterBar.getState().checkTypes.length, 1);
 
   histClear.click();
-  assert.deepEqual(api.historyFilterBar.getState(), { checkTypes: [], results: [], time: 'all' });
+  assert.deepEqual(api.historyFilterBar.getState(), {
+    checkTypes: [], results: [], time: 'all', search: '',
+  });
   assert.equal(histDet.getAttribute('aria-pressed'), 'false', 'clear must visibly un-press every chip it turned off in state');
 });

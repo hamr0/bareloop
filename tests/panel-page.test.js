@@ -311,7 +311,7 @@ test('item 4: row selection scrolls the run view into view on mobile only, gated
 
 test('item 5: filterRuns — no filters selected -> everything passes (each group empty = no filter for that group)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const filterRuns = extractFn(html, 'filterRuns');
+  const filterRuns = loadFilterRunsWithSearch(html);
   const runs = [
     { checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
     { checkType: 'rubric', glyph: '✗', at: '2026-01-01T00:00:00.000Z' },
@@ -322,7 +322,7 @@ test('item 5: filterRuns — no filters selected -> everything passes (each grou
 
 test('item 5: filterRuns — checkType OR within group, AND across groups', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const filterRuns = extractFn(html, 'filterRuns');
+  const filterRuns = loadFilterRunsWithSearch(html);
   const runs = [
     { checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
     { checkType: 'rubric', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
@@ -341,7 +341,7 @@ test('item 5: filterRuns — checkType OR within group, AND across groups', () =
 
 test('item 5: filterRuns — time is single-select (7d/30d/all), excludes older rows and unparseable dates', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const filterRuns = extractFn(html, 'filterRuns');
+  const filterRuns = loadFilterRunsWithSearch(html);
   const now = Date.parse('2026-09-25T12:00:00.000Z');
   const runs = [
     { checkType: 'deterministic', glyph: '✓', at: '2026-09-24T00:00:00.000Z' }, // 1 day old
@@ -391,9 +391,10 @@ test('item 5 + F-panel-chip-collision: the shared filter-bar component wraps loc
 test('F-panel-chip-collision: filterWorkflows filters by each workflow\'s OWN latest-run checkType/glyph/date, same shape as filterRuns', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   // filterWorkflows calls filterRuns internally (a one-row adapter, not a
-  // reimplementation) — extract BOTH function bodies, verbatim, in source
-  // order, so the real dependency is exercised rather than stubbed.
-  const start = html.indexOf('function filterRuns(');
+  // reimplementation), and filterRuns itself calls matchesSearch (item 1) —
+  // extract ALL THREE function bodies, verbatim, in source order, so the
+  // real dependency chain is exercised rather than stubbed.
+  const start = html.indexOf('function matchesSearch(');
   const wfStart = html.indexOf('function filterWorkflows(');
   const braceStart = html.indexOf('{', wfStart);
   let depth = 0;
@@ -421,4 +422,75 @@ test('item 6: the step card meta line carries a plain-language title (hover) exp
     html,
     /class="step-meta" title="a step is one piece of the plan; a round is one model call; each round can use several tools \(read, edit, search…\)"/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// item 1 (2026-09-25): the shared search box (job name + runid substring, AND
+// with the chip filters). `filterRuns` calls `matchesSearch`, so both must be
+// extracted together (same brace-matching trick the filterWorkflows test
+// above already uses) — never a reimplementation of the search predicate.
+// ---------------------------------------------------------------------------
+function loadFilterRunsWithSearch(html) {
+  const start = html.indexOf('function matchesSearch(');
+  const frStart = html.indexOf('function filterRuns(');
+  const braceStart = html.indexOf('{', frStart);
+  let depth = 0;
+  let i = braceStart;
+  for (; i < html.length; i += 1) {
+    if (html[i] === '{') depth += 1;
+    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
+  }
+  const body = html.slice(start, i + 1);
+  // eslint-disable-next-line no-new-func
+  return new Function(`${body}\nreturn filterRuns;`)();
+}
+
+test('item 1: matchesSearch — case-insensitive substring on job name or runid; empty/whitespace query = no filter', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function matchesSearch(');
+  const end = html.indexOf('function filterRuns(');
+  const body = html.slice(start, end);
+  // eslint-disable-next-line no-new-func
+  const matchesSearch = new Function(`${body}\nreturn matchesSearch;`)();
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'PULSE'), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'mu2p'), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'nomatch'), false);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', ''), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', '   '), true);
+});
+
+test('item 1: filterRuns — search is AND with the chip groups, matches job or runid', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const filterRuns = loadFilterRunsWithSearch(html);
+  const runs = [
+    { job: 'pulselog-person', runid: 'mu2p83go', checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
+    { job: 'other-job', runid: 'xyz123', checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z' },
+  ];
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  // matches by job substring
+  assert.deepEqual(filterRuns(runs, { checkTypes: [], results: [], time: 'all', search: 'pulse' }, now), [runs[0]]);
+  // matches by runid substring
+  assert.deepEqual(filterRuns(runs, { checkTypes: [], results: [], time: 'all', search: 'xyz' }, now), [runs[1]]);
+  // AND with a chip filter that would otherwise pass both
+  assert.deepEqual(filterRuns(runs, { checkTypes: ['deterministic'], results: [], time: 'all', search: 'nomatch' }, now), []);
+  // no search key at all behaves as before (undefined -> no filter)
+  assert.equal(filterRuns(runs, { checkTypes: [], results: [], time: 'all' }, now).length, 2);
+});
+
+test('item 1: the search input exists in the shared filter bar for both scopes, and clear empties it', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const filterBarHTML = extractFn(html, 'filterBarHTML');
+  ['history', 'workflows'].forEach((scope) => {
+    const markup = filterBarHTML(scope);
+    assert.match(markup, new RegExp(`id="${scope}-filter-search"`));
+    assert.match(markup, new RegExp(`data-testid="${scope}-filter-search"`));
+  });
+  // clear resets search to "" alongside the chip groups
+  assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "" \};/);
+});
+
+test('item 1: search state persists via the same localStorage key as the chip filters', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /search: typeof parsed\.search === "string" \? parsed\.search : ""/);
+  assert.match(html, /searchInput\.addEventListener\("input"/);
 });
