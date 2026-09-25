@@ -623,3 +623,13 @@ test('item 5: renderRoundsPage builds "showing A–B of N" text and a load-more 
   // a round's check result renders with the same green\/red badge vocabulary as everywhere else
   assert.match(html, /data\.check\.outcome === "green" \? "green" : "red"/);
 });
+
+// ---------------------------------------------------------------------------
+// item 6 (2026-09-25): "took" (finished/died) vs "elapsed" (live [▶] only)
+// ---------------------------------------------------------------------------
+
+test('item 6: run-counters reads "took Xs" for a finished or died run, "Xs elapsed" only for a live [▶] run', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.ok(html.indexOf('var isLive = detail.glyph === "▶" && !detail.died;') !== -1);
+  assert.ok(html.indexOf('var wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);') !== -1);
+});

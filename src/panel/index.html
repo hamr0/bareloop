@@ -1005,10 +1005,16 @@
     // never "unknown" when a priced round actually exists.
     var spendText = detail.died ? (detail.spendFloorUsd === null ? "unknown" : "at least " + money(detail.spendFloorUsd)) : money(detail.spentUsd);
     var wallText = detail.died ? (detail.wallFloorMs === null ? "unknown" : "at least " + duration(detail.wallFloorMs)) : duration(detail.wallMs);
+    // item 6 (2026-09-25): "took" for a finished (job-end reached) OR died
+    // run — both are OVER, so the wall figure is a completed duration, never
+    // an in-progress one. "elapsed" is reserved for the one state that IS
+    // still in progress: a live [▶] run (glyph "▶" and not died).
+    var isLive = detail.glyph === "▶" && !detail.died;
+    var wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);
 
     document.getElementById("run-counters").innerHTML =
       spendText + " of $" + (detail.budgetUsd === null ? "unknown" : Number(detail.budgetUsd).toFixed(2)) +
-      " &middot; " + wallText + (detail.died ? "" : " elapsed");
+      " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
     box.className = "summary-box " + (detail.died ? "magenta" : (detail.glyph === "✗" ? "red" : (detail.glyph === "▶" ? "amber" : "")));
