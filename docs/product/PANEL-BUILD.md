@@ -187,6 +187,33 @@ another port) if 4700 is taken.
 **Exit:** a real past run renders end to end in the panel, matching the mockup's exact wording
 and glyphs (`design/panel-mockup.html` — see §6 below for what "matching" means).
 
+**Rulings 2026-09-24 (this session, before the HTTP server itself):**
+
+- **Option B: "one home" for runs, not a move.** hamr: *"B, i need one home for them
+  anyways."* A run LIST at `~/.config/bareloop/runs.jsonl` (the same directory the keys file
+  lives in, PRD §7d) — one row per run, `{ at, runid, job, spine, patient, via }`. Patient
+  copies are NEVER moved (they stay at `bareloop-patients/…` for run-u, or
+  `<bundleDir>/runs/<runid>/` for `bareloop run`); the list only points at them.
+- **Jobs stay in `jobs/` for now.** hamr picked "A" — moving job specs into the home directory
+  too is deferred to P3, not built here.
+- **hamr's "OK"** ("commit, and p1") signed this sub-spec.
+
+**Delivered against that spec (this session):** `src/runlist.js` — `appendRun`/`readRunList`
+(idempotent by runid), `backfillRuns` (scans a directory and its immediate subdirectories for
+both the free-standing spine layout and the bundle layout
+`<x>/runs/<runid>/spine.jsonl`, reusing `src/replayio.js`'s `parseJsonl`/`isSidecarByName`/
+`looksLikeSpine`, never a second parser), and `formatRunRow` (`file missing` when a listed
+spine no longer exists on disk). Wired to append one row at run START, BEFORE the first paid
+call, in exactly two callers: `src/userrun.js` (`run-u`) and `src/cli.js`'s `doRun`
+(`bareloop run`, bundle path) — interview/author sessions are NOT added (deferred to P3, no
+run to list yet at that stage). A list-append failure is caught at both call sites and printed
+loudly to stderr; the run itself continues (hamr's rule: a panel list must never block real
+work). New CLI surface: `bareloop runs` (print the list) and `bareloop runs backfill <dir>`
+(reconstruct rows from spines already archived on disk, idempotent). No new production
+dependency, no new env var (grepped for an existing HOME-override convention first — none
+exists; `home` is an injectable test-seam param instead, the same shape `deps.provider` already
+is elsewhere).
+
 ### P2 — live run view
 
 2-second polling (hamr: *"2s sounds good, no rush in publish progress, 2s sounds enough if map
