@@ -134,6 +134,7 @@
   .badge.amber{color:var(--amber);}
   .badge.grey{color:var(--grey-dot);}
   .badge.magenta{color:var(--magenta);}
+  .badge.cyan{color:var(--cyan);}
 
   .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
   .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);white-space:nowrap;flex:none;position:relative;}
@@ -342,7 +343,7 @@
               </div>
             </div>
             <table data-testid="audit-table">
-              <thead><tr><th>Time</th><th>Action</th><th>Path</th><th>Decision</th><th>Step</th></tr></thead>
+              <thead><tr><th>Time</th><th>Round</th><th>Action</th><th>Path</th><th>Decision</th><th>Step</th></tr></thead>
               <tbody id="audit-tbody"></tbody>
             </table>
             <details class="raw-log" data-testid="raw-spine-log">
@@ -1013,15 +1014,28 @@
     tbody.innerHTML = "";
     result.rows.forEach(function(r){
       var tr = document.createElement("tr");
-      var blocked = r.decision === "block" || r.decision === "deny" || r.decision === false;
-      var isWrite = r.action === "write" || r.action === "edit";
+      var isModelCall = r.kind === "model-call";
+      var blocked = !isModelCall && (r.decision === "block" || r.decision === "deny" || r.decision === false);
+      var isWrite = !isModelCall && (r.action === "write" || r.action === "edit");
       if(isWrite) tr.className = "row-write";
       if(blocked) tr.className = (tr.className ? tr.className + " " : "") + "row-blocked";
+      var roundCell = (typeof r.round === "number") ? String(r.round) : "&mdash;";
+      var decisionCell;
+      if(isModelCall){
+        var bits = [];
+        bits.push(typeof r.costUsd === "number" ? money(r.costUsd) : "unknown");
+        bits.push((typeof r.tokens === "number" ? r.tokens : "unknown") + " tokens");
+        bits.push(duration(r.durationMs));
+        decisionCell = "<span class=\"badge cyan\">model call</span> " + escapeXml(bits.join(" · "));
+      } else {
+        decisionCell = "<span class=\"badge " + (blocked ? "red" : "green") + "\">" + (r.decision || "unknown") + "</span>";
+      }
       tr.innerHTML =
         "<td>" + escapeXml(r.time || "unknown") + "</td>" +
-        "<td>" + escapeXml(r.action || "unknown") + "</td>" +
+        "<td>" + roundCell + "</td>" +
+        "<td>" + (isModelCall ? "model call" : escapeXml(r.action || "unknown")) + "</td>" +
         "<td>" + escapeXml(r.path || "unknown") + "</td>" +
-        "<td><span class=\"badge " + (blocked ? "red" : "green") + "\">" + (r.decision || "unknown") + "</span></td>" +
+        "<td>" + decisionCell + "</td>" +
         "<td>" + (r.step === null ? "&mdash;" : escapeXml(r.step)) + "</td>";
       tbody.appendChild(tr);
     });

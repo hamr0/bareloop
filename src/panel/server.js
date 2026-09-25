@@ -31,6 +31,7 @@ import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine } from '../replay.js';
+import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
@@ -408,7 +409,8 @@ export function getRunDetail(runid, opts = {}) {
   const summary = replayOne(row.spine);
   const timelineKind = summary.timelineKind;
   const units = timelineKind === 'iterations' ? summary.iterations : summary.steps;
-  const death = deriveDeath(row.spine, parseJsonl(row.spine).records, summary.outcome);
+  const rawSpineRecords = parseJsonl(row.spine).records;
+  const death = deriveDeath(row.spine, rawSpineRecords, summary.outcome);
   const steps = units.map((u, idx) => {
     const isLast = idx === units.length - 1;
     /** @type {'done'|'stopped'|'running'|'waiting'|'died'} */
@@ -491,32 +493,151 @@ export function getRunDetail(runid, opts = {}) {
     at: row.at,
     via: row.via,
     skipped: summary.skipped,
-    // item 7 (2026-09-25): the Run summary's tools/cache rows — reused
-    // verbatim from `replayRun`'s own already-computed fields (the SAME
-    // numbers `bareloop replay` prints under BEHAVIOUR/MEMORY-CACHE), never
-    // recomputed a second way. `behaviour` is `null` when no gate-audit
-    // sidecar was ever found (never a fake all-zero object); `memoryCache`
-    // is `null` when the spine carries no `memory-cache` record at all
-    // (never armed on this run).
-    behaviour: summary.behaviour,
+    // item 7 (2026-09-25), corrected item 2 (2026-09-25): the Run summary's
+    // tools/cache rows. `behaviour` is {@link scopedBehaviour} — the SAME
+    // gate-audit rows the Audit tab now shows (this run's own job-start..
+    // job-end ts window, item 2's fix for a real measured defect: a
+    // gate-audit sidecar CAN carry other runs' rows when several spines
+    // share one filename — see {@link runAuditWindow}'s doc) — never
+    // `replayRun`'s own top-level `summary.behaviour`, which reads the
+    // WHOLE sidecar file unscoped and is contaminated on a real archived run
+    // (measured: pulselog-person-live-2's mu2p83go reads 142 unscoped tool
+    // calls vs 82 once scoped to this run's own window; `bareloop replay`'s
+    // CLI output, src/replay.js, still reports the old unscoped figure —
+    // untouched here, flagged separately, out of this panel-only fix's
+    // scope). `null` when no gate-audit sidecar was ever found (never a fake
+    // all-zero object). `memoryCache` is still reused verbatim from
+    // `replayRun` (a single spine record, never audit-sidecar-sourced, so it
+    // carries no contamination risk); `null` when the spine carries no
+    // `memory-cache` record at all (never armed on this run).
+    behaviour: scopedBehaviour(row.spine, rawSpineRecords),
     memoryCache: summary.memoryCache,
   };
 }
 
 /**
+ * The `[startTs, endTs]` window (both epoch ms, `endTs` possibly
+ * `Infinity`) that actually belongs to ONE run inside a gate-audit sidecar
+ * that can be SHARED across several runs' spines pointing at the same
+ * filename (measured directly on a real archived patient — pulselog-person-
+ * live-2, run mu2p83go: its sidecar carries rows from 7 distinct `run_id`s
+ * spanning 06:56Z to 13:25Z on one day, but the run's own `job-start`..
+ * `job-end` window is 13:19:40Z..13:25:48Z; every row before that window
+ * belongs to an EARLIER, unrelated run that happened to reuse the same
+ * sidecar path). No `step`/`run_id` field in the gate-audit row is a
+ * reliable enough key on its own (the file header's own doc: gate-audit rows
+ * carry no `step`; a shared file can even reuse a `run_id` across archived
+ * copies), so `ts` bounded by this run's own `job-start`/`job-end` — the one
+ * pair of timestamps `replayRun` already trusts for the SAME purpose (its
+ * per-occurrence `buildOccurrenceMetrics` windowing) — is the only honest
+ * scope. `endTs` is `Infinity` when no `job-end` was ever reached (a died/
+ * still-running run) — never clamped to this spine's own last record's `ts`,
+ * which would wrongly exclude a real tool call the gate logged just AFTER
+ * the spine's own last record landed (spine and gate-audit are written by
+ * different seams and are not guaranteed to interleave exactly). The
+ * measured real contamination above is rows from an EARLIER run, before
+ * this run's own `job-start` — bounding only the lower edge already fixes
+ * that; bounding the upper edge too would risk the opposite, newly-
+ * introduced failure on the far more common still-running/died shape.
+ * @param {any[]} spineRecords
+ * @returns {{startTs: number, endTs: number}}
+ */
+function runAuditWindow(spineRecords) {
+  const jobStart = spineRecords.find((r) => r && r.type === 'job-start') ?? null;
+  const jobEnd = [...spineRecords].reverse().find((r) => r && r.type === 'job-end') ?? null;
+  const startMs = jobStart && typeof jobStart.ts === 'string' ? Date.parse(jobStart.ts) : -Infinity;
+  const endMs = jobEnd && typeof jobEnd.ts === 'string' ? Date.parse(jobEnd.ts) : Infinity;
+  return {
+    startTs: Number.isFinite(startMs) ? startMs : -Infinity,
+    endTs: Number.isFinite(endMs) ? endMs : Infinity,
+  };
+}
+
+/**
+ * The `round` column (item 2, 2026-09-25): which model-call round was
+ * running when an audit row happened, derived from ts ordering against this
+ * spine's own round-spending records (`SPEND_RECORD_TYPES` —
+ * `worker-round`/`judge-round`/`worker-turn`, the same canonical set
+ * `src/replay.js` itself imports rather than re-spelling). Round N's window
+ * opens at that Nth record's own `ts` (measured on mu2p83go: a round record's
+ * `ts` lands within ~10ms of its own gate-audit `llm` row, i.e. essentially
+ * simultaneous — the round record fires right as the model call is logged,
+ * before its resulting tool calls run) and stays open until the NEXT round
+ * record's `ts`, so every tool call the round's own model turn asked for
+ * lands inside it. A row whose `ts` falls BEFORE the first round record
+ * (scout/materials/pre-round activity) gets `null` — never a fabricated
+ * round 0 or round 1 — same honesty rule as an unparseable ts.
+ * @param {any[]} spineRecords
+ * @returns {(rowTs: string|null) => number|null}
+ */
+function makeRoundLookup(spineRecords) {
+  const roundTsMs = spineRecords
+    .filter((r) => r && SPEND_RECORD_TYPES.includes(r.type) && typeof r.ts === 'string')
+    .map((r) => Date.parse(r.ts))
+    .filter((ms) => Number.isFinite(ms))
+    .sort((a, b) => a - b);
+  return (rowTs) => {
+    if (typeof rowTs !== 'string') return null;
+    const ms = Date.parse(rowTs);
+    if (!Number.isFinite(ms)) return null;
+    let lo = 0;
+    let hi = roundTsMs.length - 1;
+    let found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (roundTsMs[mid] <= ms) { found = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return found === -1 ? null : found + 1; // 1-indexed round number
+  };
+}
+
+/**
+ * `runBehaviour`, fed only the gate-audit rows inside this run's own ts
+ * window (see {@link runAuditWindow}) — the panel-side fix for the same
+ * contamination `getRunAudit` fixes for the Audit tab, kept as ONE shared
+ * scoping function so the Audit tab and the Run tab's tools/cache summary
+ * can never disagree with each other about which rows belong to this run.
+ * `null` when no gate-audit sidecar exists at all (never a fake all-zero
+ * object — same rule `replayRun`'s own `auditAvailable` already follows).
+ * @param {string} spinePath
+ * @param {any[]} spineRecords
+ * @returns {ReturnType<typeof runBehaviour>|null}
+ */
+function scopedBehaviour(spinePath, spineRecords) {
+  const { auditPath } = resolveSiblings(spinePath);
+  if (!auditPath || !existsSync(auditPath)) return null;
+  const { records } = parseJsonl(auditPath);
+  const { startTs, endTs } = runAuditWindow(spineRecords);
+  const windowed = records.filter((r) => {
+    if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
+    const ms = Date.parse(r.ts);
+    return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
+  });
+  return runBehaviour(windowed);
+}
+
+/**
  * `GET /api/runs/:runid/audit` — the Audit tab's rows, off the run's own
  * gate-audit sidecar (name-convention resolution, `src/replayio.js`'s
- * `resolveSiblings`). A row's real fields (`ts`, `action.type`,
- * `action.path`, `decision`) — `step` is honestly `null` (no gate-audit row
- * carries one; see `src/replay.js`'s own header comment) rather than
- * guessed from a seq-window the way `replayRun`'s internal windowing does
- * for its own aggregate counts.
+ * `resolveSiblings`), scoped to this run's own ts window (see {@link
+ * runAuditWindow} — a sidecar can carry other runs' rows). A row's real
+ * fields (`ts`, `action.type`, `action.path`, `decision`) — `step` is
+ * honestly `null` (no gate-audit row carries one; see `src/replay.js`'s own
+ * header comment) rather than guessed from a seq-window the way `replayRun`'s
+ * internal windowing does for its own aggregate counts. `round` — see
+ * {@link makeRoundLookup}. A `phase:'record'`/`action.type:'llm'` row (item
+ * 2: every MODEL CALL, `decision` always `null` on the real record) is
+ * marked `kind:'model-call'` with its own `result.{costUsd,tokens,
+ * durationMs}` surfaced directly (never re-derived); every other row is
+ * `kind:'tool-call'`, unchanged.
  * `reason` distinguishes the two ways this can come back empty (item 1,
  * 2026-09-25): `'no-sidecar'` — no gate-audit sidecar was ever written for
  * this run (an older version, or a run-u/native path that never emitted one)
- * — vs `'sidecar-empty'` — a sidecar file DOES exist but has zero rows (the
- * run made no tool calls the gate audited). The client renders these as two
- * different sentences; never a bare empty table for either.
+ * — vs `'sidecar-empty'` — a sidecar file DOES exist but has zero rows FOR
+ * THIS RUN'S OWN WINDOW (the run made no tool/model calls the gate audited,
+ * or every row on disk belongs to a different run sharing the same
+ * filename). The client renders these as two different sentences; never a
+ * bare empty table for either.
  * @param {string} runid
  * @param {{ home?: string }} [opts]
  * @returns {{runid: string, rows: any[], raw: string, empty: boolean, reason: 'no-sidecar'|'sidecar-empty'|null}|null}
@@ -536,15 +657,33 @@ export function getRunAudit(runid, opts = {}) {
       runid, rows: [], raw: '', empty: true, reason: 'no-sidecar',
     };
   }
+  const { records: spineRecords } = parseJsonl(row.spine);
+  const { startTs, endTs } = runAuditWindow(spineRecords);
+  const roundOf = makeRoundLookup(spineRecords);
+
   const { records } = parseJsonl(auditPath);
   const rawText = readFileSync(auditPath, 'utf8');
-  const auditRows = records.filter((r) => r && typeof r === 'object').map((r) => ({
-    time: typeof r.ts === 'string' ? r.ts : null,
-    action: r.action && typeof r.action.type === 'string' ? r.action.type : null,
-    path: r.action && typeof r.action.path === 'string' ? r.action.path : null,
-    decision: typeof r.decision === 'string' ? r.decision : null,
-    step: null,
-  }));
+  const windowed = records.filter((r) => {
+    if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
+    const ms = Date.parse(r.ts);
+    return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
+  });
+  const auditRows = windowed.map((r) => {
+    const isModelCall = r.action && r.action.type === 'llm';
+    const resultObj = isModelCall && r.result && typeof r.result === 'object' ? r.result : null;
+    return {
+      time: typeof r.ts === 'string' ? r.ts : null,
+      action: r.action && typeof r.action.type === 'string' ? r.action.type : null,
+      path: r.action && typeof r.action.path === 'string' ? r.action.path : null,
+      decision: typeof r.decision === 'string' ? r.decision : null,
+      step: null,
+      round: roundOf(r.ts),
+      kind: isModelCall ? 'model-call' : 'tool-call',
+      costUsd: resultObj && typeof resultObj.costUsd === 'number' && Number.isFinite(resultObj.costUsd) ? resultObj.costUsd : null,
+      tokens: resultObj && typeof resultObj.tokens === 'number' && Number.isFinite(resultObj.tokens) ? resultObj.tokens : null,
+      durationMs: resultObj && typeof resultObj.durationMs === 'number' && Number.isFinite(resultObj.durationMs) ? resultObj.durationMs : null,
+    };
+  });
   const empty = auditRows.length === 0;
   return {
     runid, rows: auditRows, raw: rawText, empty, reason: empty ? 'sidecar-empty' : null,

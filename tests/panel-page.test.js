@@ -494,3 +494,22 @@ test('item 1: search state persists via the same localStorage key as the chip fi
   assert.match(html, /search: typeof parsed\.search === "string" \? parsed\.search : ""/);
   assert.match(html, /searchInput\.addEventListener\("input"/);
 });
+
+// ---------------------------------------------------------------------------
+// item 2 (2026-09-25): Audit tab — model-call rows + round column
+// ---------------------------------------------------------------------------
+
+test('item 2: audit table header carries a Round column, and renderAudit renders a model-call row distinctly from a tool-call row', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<thead><tr><th>Time<\/th><th>Round<\/th><th>Action<\/th><th>Path<\/th><th>Decision<\/th><th>Step<\/th><\/tr><\/thead>/);
+  const start = html.indexOf('function renderAudit(result){');
+  const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected renderAudit in src/panel/index.html');
+  const body = html.slice(start, end);
+  assert.match(body, /r\.kind === "model-call"/);
+  assert.match(body, /"model call"/);
+  assert.match(body, /r\.costUsd/);
+  assert.match(body, /r\.tokens/);
+  assert.match(body, /r\.durationMs/);
+  assert.match(body, /typeof r\.round === "number"/);
+});

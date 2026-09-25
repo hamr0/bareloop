@@ -663,6 +663,98 @@ test('/api/runs/:runid/audit: a sidecar with real rows -> reason null, rows popu
 });
 
 // ---------------------------------------------------------------------------
+// item 2 (2026-09-25): Audit tab — model-call rows + round column, and the
+// sidecar-scoping fix (a shared gate-audit file can carry other runs' rows).
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid/audit: a phase:record/type:llm row renders as kind "model-call" with its own cost/tokens/duration, decision stays null', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-llm.jsonl'), [
+    { type: 'job-start', job: 'llm-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'worker-round', phase: 'step:x', iteration: 1, costUsd: 0.01, tokens: 500, seq: 2, ts: '2026-09-05T00:00:01.000Z' },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, seq: 3, ts: '2026-09-05T00:00:05.000Z' },
+  ]);
+  writeSpine(join(dir, 'u-llm-gate-audit.jsonl'), [
+    {
+      ts: '2026-09-05T00:00:01.005Z', phase: 'record', action: { type: 'llm', args: { model: 'x' } }, decision: null, result: { costUsd: 0.01, pricing: 'priced', tokens: 500, durationMs: 1200 },
+    },
+    { ts: '2026-09-05T00:00:01.100Z', action: { type: 'read', path: 'a.js' }, decision: 'allow' },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'llmrun', job: 'llm-job', spine: join(dir, 'u-llm.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/llmrun/audit');
+  const body = await res.json();
+  assert.equal(body.rows.length, 2);
+  const [llmRow, toolRow] = body.rows;
+  assert.equal(llmRow.kind, 'model-call');
+  assert.equal(llmRow.decision, null);
+  assert.equal(llmRow.costUsd, 0.01);
+  assert.equal(llmRow.tokens, 500);
+  assert.equal(llmRow.durationMs, 1200);
+  assert.equal(llmRow.round, 1);
+  assert.equal(toolRow.kind, 'tool-call');
+  assert.equal(toolRow.round, 1); // falls inside round 1's open window (no round 2 yet)
+});
+
+test('/api/runs/:runid/audit: round column — a tool call BEFORE the first worker-round gets round null ("—" on the client)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-pre.jsonl'), [
+    { type: 'job-start', job: 'pre-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'worker-round', phase: 'plan', costUsd: 0.01, tokens: 100, seq: 3, ts: '2026-09-05T00:00:02.000Z' },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, seq: 4, ts: '2026-09-05T00:00:05.000Z' },
+  ]);
+  writeSpine(join(dir, 'u-pre-gate-audit.jsonl'), [
+    { ts: '2026-09-05T00:00:00.500Z', action: { type: 'read', path: 'scout.js' }, decision: 'allow' }, // scout activity, before round 1
+    {
+      ts: '2026-09-05T00:00:02.001Z', phase: 'record', action: { type: 'llm' }, decision: null, result: { costUsd: 0.01, tokens: 100, durationMs: 500 },
+    },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'prerun', job: 'pre-job', spine: join(dir, 'u-pre.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/prerun/audit');
+  const body = await res.json();
+  assert.equal(body.rows[0].round, null);
+  assert.equal(body.rows[1].round, 1);
+});
+
+test('/api/runs/:runid/audit: a shared sidecar carrying an EARLIER unrelated run\'s rows (before this run\'s own job-start) excludes them — item 2 contamination fix', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-later.jsonl'), [
+    { type: 'job-start', job: 'later-job', ts: '2026-09-05T12:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'worker-round', phase: 'plan', costUsd: 0.01, tokens: 100, seq: 2, ts: '2026-09-05T12:00:01.000Z' },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, seq: 3, ts: '2026-09-05T12:00:05.000Z' },
+  ]);
+  writeSpine(join(dir, 'u-later-gate-audit.jsonl'), [
+    // an EARLIER run's rows, sharing this sidecar filename by coincidence —
+    // hours before "later-job" even started
+    { ts: '2026-09-05T06:00:00.000Z', action: { type: 'read', path: 'other-run-file.js' }, decision: 'allow' },
+    { ts: '2026-09-05T06:00:01.000Z', action: { type: 'edit', path: 'other-run-file.js' }, decision: 'allow' },
+    // this run's own row
+    { ts: '2026-09-05T12:00:01.500Z', action: { type: 'read', path: 'real-file.js' }, decision: 'allow' },
+  ]);
+  appendRun({
+    at: '2026-09-05T12:00:00.000Z', runid: 'laterrun', job: 'later-job', spine: join(dir, 'u-later.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const auditRes = await fetch(base + '/api/runs/laterrun/audit');
+  const auditBody = await auditRes.json();
+  assert.equal(auditBody.rows.length, 1, 'the two earlier-run rows must be excluded');
+  assert.equal(auditBody.rows[0].path, 'real-file.js');
+
+  // the Run tab's tools summary must agree with the Audit tab — same scoping
+  const detailRes = await fetch(base + '/api/runs/laterrun');
+  const detail = await detailRes.json();
+  assert.equal(detail.behaviour.totalCalls, 1);
+});
+
+// ---------------------------------------------------------------------------
 // item 7 (2026-09-25): /api/runs/:runid carries replay's own already-computed
 // behaviour/memoryCache fields verbatim — never recomputed a second way.
 // ---------------------------------------------------------------------------
@@ -684,7 +776,7 @@ test('/api/runs/:runid: no gate-audit sidecar -> behaviour is null (never a fake
   assert.equal(body.memoryCache, null);
 });
 
-test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2) reports behaviour/memoryCache matching `bareloop replay` exactly', async (t) => {
+test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2) reports memoryCache matching `bareloop replay` exactly, and behaviour scoped to this run\'s own ts window (item 2 fix — NOT the CLI\'s unscoped figure, see below)', async (t) => {
   const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
   if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
   const home = tmp();
@@ -695,13 +787,28 @@ test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2)
   const res = await fetch(base + '/api/runs/mu2p83go-item7');
   assert.equal(res.status, 200);
   const body = await res.json();
-  // verified against `node bin/bareloop.mjs replay <spine>` BEHAVIOUR/MEMORY-CACHE
-  // lines in the build report: "142 tool calls · 75 read, 44 grep, 21 edit, 2
-  // recent" / "7 re-reads answered from memory · 0 reads capped · 4.8 KB withheld".
-  assert.equal(body.behaviour.totalCalls, 142);
+  // ITEM 2 FINDING (2026-09-25): this run's gate-audit sidecar is SHARED —
+  // it carries rows from 7 distinct run_ids spanning 06:56Z..13:25Z on one
+  // day, but this run's own job-start..job-end window is only
+  // 13:19:40Z..13:25:48Z. `node bin/bareloop.mjs replay <spine>` (src/
+  // replay.js, unscoped, untouched by this fix) prints the CONTAMINATED
+  // figure: "142 tool calls · 75 read, 44 grep, 21 edit, 2 recent" — that
+  // includes rows from earlier, unrelated runs that happened to reuse this
+  // sidecar filename. Scoped to this run's own ts window (verified directly
+  // against the raw JSONL, both files, outside this test), the REAL figure
+  // for THIS run alone is 82 calls: 37 read, 23 grep, 21 edit, 1 recent. The
+  // panel's Run-tab `behaviour` (and the Audit tab's row count) now report
+  // this honest, scoped figure — deliberately DIFFERENT from the CLI's own
+  // still-unscoped BEHAVIOUR line, which is flagged as a separate, un-fixed
+  // finding (out of this panel-only change's scope; src/replay.js is core
+  // and used well beyond the panel).
+  assert.equal(body.behaviour.totalCalls, 82);
   assert.deepEqual(body.behaviour.byTool, {
-    shell_read: 75, shell_grep: 44, ctx_recent: 2, edit: 21,
+    shell_read: 37, shell_grep: 23, ctx_recent: 1, edit: 21,
   });
+  assert.equal(body.behaviour.denied, 0);
+  // memoryCache is a single spine record (never audit-sidecar-sourced), so
+  // it carries no contamination risk and still matches the CLI exactly.
   assert.equal(body.memoryCache.pointered, 7);
   assert.equal(body.memoryCache.capped, 0);
   assert.equal(body.memoryCache.bytesWithheld, 4865);
