@@ -129,3 +129,39 @@ test('step-title wrap, exercised with a REAL long step id when the archive has o
   assert.match(svg, /<svg /);
   assert.ok(svg.length > 0);
 });
+
+// ---------------------------------------------------------------------------
+// Workflows/History row layout — glyph+name stays on ONE line (ellipsis,
+// never wrap), meta stays on ONE line (ellipsis, never wrap onto a 3rd/4th
+// line). Defect: a long real job name + runid (e.g. "pulselog-person-
+// live-2-bareloop (u-mu2p83go)") was breaking the glyph off onto its own
+// line and wrapping meta onto a 4th line at both 1440px and 390px, verified
+// visually with real headless screenshots (see the build report).
+// ---------------------------------------------------------------------------
+
+test('wf-row/hist-row markup: glyph+name are grouped in one nowrap/ellipsis line (wf-line1 > dot + wf-name), never split across the old row-break trick', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.ok(!html.includes('row-break'), 'the old flex-wrap row-break trick must be fully removed');
+  assert.ok(html.includes('class="wf-line1"'), 'expected a dedicated line1 container grouping the dot + name');
+  // both renderers must build the same wf-line1 > dot + wf-name[title] shape
+  const line1Occurrences = html.split('class="wf-line1"').length - 1;
+  assert.ok(line1Occurrences >= 3, `expected wf-line1 built by renderWorkflows and both renderHistory branches (found ${line1Occurrences})`);
+  assert.match(html, /wf-name" title="/, 'wf-name must carry a title attribute with the full, untruncated text');
+});
+
+test('wf-name and wf-meta-line CSS: single-line with ellipsis (never wrap) so a long job name/runid or meta string truncates instead of pushing onto extra lines', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const cssBlockMatch = html.match(/<style>[\s\S]*?<\/style>/);
+  assert.ok(cssBlockMatch, 'expected an inline <style> block');
+  const css = cssBlockMatch[0];
+  const wfNameRule = css.match(/\.wf-name\{[^}]*\}/);
+  assert.ok(wfNameRule, 'expected a .wf-name CSS rule');
+  assert.match(wfNameRule[0], /white-space:nowrap/);
+  assert.match(wfNameRule[0], /text-overflow:ellipsis/);
+  assert.match(wfNameRule[0], /overflow:hidden/);
+  const metaLineRule = css.match(/\.wf-meta-line\{[^}]*\}/);
+  assert.ok(metaLineRule, 'expected a .wf-meta-line CSS rule');
+  assert.match(metaLineRule[0], /white-space:nowrap/);
+  assert.match(metaLineRule[0], /text-overflow:ellipsis/);
+  assert.match(metaLineRule[0], /overflow:hidden/);
+});
