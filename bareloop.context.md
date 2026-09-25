@@ -3215,6 +3215,27 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   them the same in-process way `src/cli.js` does, per the layering law
   (`docs/product/PANEL-BUILD.md` §2), not through `bareloop`'s public API.
 
+- **`bareloop panel [--port N]`** (PANEL-BUILD.md P1) → a READ-ONLY `node:http` server
+  (no new dependency), bound to `127.0.0.1` ONLY, default port `4700`. Serves the mockup's
+  look (`design/panel-mockup.html`'s Tokyo Night box-drawing TUI style) over the run list's
+  real data: `GET /` the page; `GET /api/runs` (newest first, each row enriched with a
+  glyph/check-type/spend/wall summary, `fileMissing:true` when the listed spine is gone);
+  `GET /api/workflows` (the run list grouped by job name); `GET /api/runs/:runid` (the full
+  replay — steps, counters, summary); `GET /api/runs/:runid/audit` (the gate-audit sidecar,
+  when one resolves); `GET /api/runs/:runid/job` (the signed spec's own fields, ONLY when a
+  bundle-layout run's `spec.json` is reachable — a run-u run has none on disk, and this
+  reads `resolved:false` with every spec-only field honestly `'unknown'`, never guessed
+  from the spine's own narrower `job-start` record). Every endpoint is GET/HEAD only
+  (anything else — including every write verb — is `405`); a URL never joins a path segment
+  into a filesystem read — a runid is looked up in the run list first (`RUNID_RE`,
+  `src/panel/server.js`), and only the path THAT ROW stores is ever read. A taken port fails
+  loudly (names the port, exit `1`) — this command never silently tries a different one. No
+  interview, no author, no run trigger, no key/`.env` ever read on this path. One more
+  caller of `src/replayio.js`/`src/runlist.js`, in-process, per the layering law
+  (`docs/product/PANEL-BUILD.md` §2) — the panel's HTTP handler holds no flow logic of its
+  own. Chat/Settings/authoring (P3/P4) are not built yet; the page says so rather than
+  hiding the gap.
+
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
   U-mode). `src/cli.js`'s `run-u` dispatch hands `rest` straight to

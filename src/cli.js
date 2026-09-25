@@ -58,6 +58,12 @@ import {
   parseJsonl, looksLikeSpine, replayOne, listSpines, readHistoryLog,
 } from './replayio.js';
 import { formatReplay, formatAllLines } from './replay.js';
+// PANEL-BUILD.md P1 — the read-only panel HTTP server (`bareloop panel`).
+// One more caller of the same `src/` library functions this file already
+// calls (the layering law, PANEL-BUILD.md §2) — `src/panel/server.js` never
+// re-implements the spine/run-list read side, it calls `src/replayio.js`/
+// `src/runlist.js` directly, in-process.
+import { panelMain } from './panel/server.js';
 // PANEL-BUILD.md P1 (2026-09-24 rulings) — the one run list
 // (`~/.config/bareloop/runs.jsonl`) and its backfill scan. `bareloop runs`
 // (list) and `bareloop runs backfill <dir>` (reconstruct rows from archived
@@ -610,7 +616,7 @@ async function runMenu(deps, ctx) {
   const rl = createInterface({ input: stdin, output: stdout });
   try {
     ctx.out('1 export  2 run  3 history  q quit');
-    ctx.out('(also on the command line, not wizarded here: run-u, interview, author, replay, runs — run `bareloop <name>` with its own flags)');
+    ctx.out('(also on the command line, not wizarded here: run-u, interview, author, replay, runs, panel — run `bareloop <name>` with its own flags)');
     const choice = (await rl.question('> ')).trim().toLowerCase();
     if (choice === '' || choice === 'q' || choice === 'quit') return 0;
     if (choice === '1') {
@@ -699,6 +705,11 @@ export async function main(argv, deps = {}) {
   // one run list. Read-only ($0): no interview, no author, no run trigger,
   // no key ever read.
   if (cmd === 'runs') return doRuns(rest, ctx);
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay, runs`);
+  // `bareloop panel [--port N]` — PANEL-BUILD.md P1's read-only HTTP panel.
+  // Never runs a job, spends money, or reads a key: it serves the run list
+  // and spine/gate-audit reads over `127.0.0.1` only. `deps.runlistHome`
+  // rides through the same injectable seam `run`/`run-u` already use.
+  if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome });
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay, runs, panel`);
   return 1;
 }

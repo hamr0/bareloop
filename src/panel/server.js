@@ -1,0 +1,514 @@
+// PANEL-BUILD.md P1 — the read-only panel server. `node:http` ONLY (no new
+// dependency — the one-production-dependency bar already spends its one slot
+// on bare-agent, LIBRARY_CONVENTIONS.md). Layering law (PANEL-BUILD.md §2):
+// this file is one more CALLER of the same `src/` library functions
+// `src/cli.js` calls — `src/replayio.js`'s read side and `src/runlist.js`'s
+// run list — never a re-implementation of either.
+//
+// READ-ONLY, BY CONSTRUCTION: GET/HEAD only (anything else -> 405); no
+// endpoint runs a job, spends money, signs, or reads a key/.env. Nothing
+// here imports `src/providers.js` or touches `process.env` for a secret —
+// grepped before writing this file, and the same discipline is kept here.
+//
+// PATH SAFETY: a URL may name a runid ONLY (validated against
+// `RUNID_RE` below); the server looks that runid up in the run list and
+// reads ONLY the path stored there for that row. A URL segment is NEVER
+// joined into a filesystem path directly — the one exception is the fixed,
+// whitelisted `/` route, which always serves this same directory's own
+// `index.html`, never a URL-derived filename.
+//
+// Bound to 127.0.0.1 ONLY (PANEL-BUILD.md P1's own port-4700 note). A taken
+// port fails LOUDLY (prints the port, exits non-zero) — this module never
+// silently tries another port (hamr's rule, restated across this codebase
+// for every cap/threshold: a shell never widens what it was asked to do).
+
+import { createServer } from 'node:http';
+import { readFileSync, existsSync } from 'node:fs';
+import { dirname, join, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readRunList } from '../runlist.js';
+import {
+  replayOne, parseJsonl, resolveSiblings, isSidecarByName,
+} from '../replayio.js';
+import { summarizeForAllLine } from '../replay.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** A runid, as it appears in a URL path segment — never a raw filesystem path. */
+export const RUNID_RE = /^[A-Za-z0-9._-]+$/;
+
+/** Default bind port (PANEL-BUILD.md P1: checked free on the build machine, not guaranteed elsewhere — the server still fails loudly on collision, see {@link createPanelServer}). */
+export const DEFAULT_PORT = 4700;
+
+/**
+ * `[✓]`/`[✗]`/`[▶]` — the ONLY vocabulary a result is ever rendered in
+ * (auto-memory `ui-verdict-words.md`: never the words green/red/soft-green
+ * anywhere in the page). `null` (no `job-end` reached — a killed-mid-run or
+ * still-running spine) reads `▶` — the same "in progress / unresolved" glyph
+ * P1's own four-glyph vocabulary reserves for that state; a genuinely still-
+ * running attempt and an archived spine that never reached its own end are
+ * the same fact from this read-only side: no verdict has been recorded yet.
+ * @param {string|null} outcome
+ * @returns {'✓'|'✗'|'▶'}
+ */
+export function glyphForOutcome(outcome) {
+  if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') return '✓';
+  if (outcome === null || outcome === undefined) return '▶';
+  return '✗';
+}
+
+/**
+ * `deterministic` (green) / `rubric` (soft-green) / `unknown` (pre-F117
+ * spine, or a class this reader doesn't recognize) — the settled UI wording
+ * (PANEL-BUILD.md §6), never the internal `green`/`soft-green` spelling.
+ * @param {string|null} verdictType
+ * @returns {'deterministic'|'rubric'|'unknown'}
+ */
+export function checkTypeLabel(verdictType) {
+  if (verdictType === 'green') return 'deterministic';
+  if (verdictType === 'soft-green') return 'rubric';
+  return 'unknown';
+}
+
+/**
+ * One `/api/runs` row, or `{ ...row, fileMissing: true }` when the row's
+ * spine no longer exists on disk — never silently listed as if it were
+ * still there (the same rule {@link import('../runlist.js').formatRunRow}
+ * already applies to the CLI's own listing).
+ * @param {import('../runlist.js').RunRow} row
+ * @returns {any}
+ */
+function summarizeRow(row) {
+  if (!existsSync(row.spine)) {
+    return {
+      runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
+    };
+  }
+  let summary;
+  try {
+    summary = replayOne(row.spine, { skipAudit: true });
+  } catch (e) {
+    return {
+      runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, readError: String(/** @type {Error} */ (e).message),
+    };
+  }
+  const line = summarizeForAllLine(summary);
+  return {
+    runid: row.runid,
+    job: row.job,
+    at: row.at,
+    via: row.via,
+    fileMissing: false,
+    glyph: glyphForOutcome(summary.outcome),
+    checkType: checkTypeLabel(summary.verdictType),
+    model: summary.model,
+    spend: line.spend,
+    wall: line.wall,
+    date: typeof row.at === 'string' ? row.at.slice(0, 10) : null,
+  };
+}
+
+/**
+ * `GET /api/runs` — every listed run, NEWEST FIRST, each enriched with a
+ * cheap ($0, `skipAudit:true`) summary. Reused by `/api/workflows`'s own
+ * grouping so the two endpoints never compute the glyph/checkType mapping
+ * twice.
+ * @param {{ home?: string }} [opts]
+ * @returns {any[]}
+ */
+export function listRuns(opts = {}) {
+  const { rows } = readRunList(opts);
+  return rows.slice().reverse().map(summarizeRow);
+}
+
+/**
+ * `GET /api/workflows` — the run list grouped by job name: run count, last
+ * run date, last result glyph/check type. Sorted by last-run date, newest
+ * first (a job never run yet has no row here at all — P1 has no concept of
+ * an unsigned/never-run job, unlike the mockup's Workflows tab; that gap is
+ * named in the build report, not papered over).
+ * @param {{ home?: string }} [opts]
+ * @returns {any[]}
+ */
+export function listWorkflows(opts = {}) {
+  const rows = listRuns(opts);
+  /** @type {Map<string, any>} */
+  const byJob = new Map();
+  for (const r of rows) {
+    const existing = byJob.get(r.job);
+    if (!existing) {
+      byJob.set(r.job, {
+        job: r.job,
+        runCount: 1,
+        lastAt: r.at,
+        lastRunid: r.runid,
+        lastGlyph: r.glyph ?? '▶',
+        lastCheckType: r.checkType ?? 'unknown',
+        lastSpend: r.spend ?? 'unknown',
+        lastWall: r.wall ?? 'unknown',
+        lastDate: r.date,
+      });
+    } else {
+      existing.runCount += 1;
+      // rows are already newest-first, so the FIRST row seen for a job is its latest
+    }
+  }
+  return [...byJob.values()];
+}
+
+/**
+ * `GET /api/runs/:runid` — the full replay for the Run tab: steps (or
+ * iterations), counters, summary-box fields. Looks `runid` up in the run
+ * list FIRST and reads only the path stored there (path safety — see file
+ * header); `null` when the runid is not in the list at all (caller renders
+ * 404).
+ * @param {string} runid
+ * @param {{ home?: string }} [opts]
+ * @returns {any|null}
+ */
+export function getRunDetail(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  if (!existsSync(row.spine)) {
+    return {
+      runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
+    };
+  }
+  const summary = replayOne(row.spine);
+  const timelineKind = summary.timelineKind;
+  const units = timelineKind === 'iterations' ? summary.iterations : summary.steps;
+  const steps = units.map((u, idx) => {
+    const isLast = idx === units.length - 1;
+    /** @type {'done'|'stopped'|'running'|'waiting'} */
+    let state;
+    const outcome = timelineKind === 'iterations' ? u.verdict : u.outcome;
+    const isGreen = outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied';
+    if (outcome !== null && outcome !== undefined) state = isGreen ? 'done' : 'stopped';
+    else if (isLast && summary.outcome === null) state = 'running';
+    else state = 'waiting';
+    return {
+      id: timelineKind === 'iterations' ? `iteration ${u.iteration ?? idx + 1}` : u.id,
+      occurrence: timelineKind === 'iterations' ? null : u.occurrence,
+      outcome: outcome ?? null,
+      state,
+      rounds: u.rounds,
+      toolCalls: u.toolCalls,
+      wallMs: u.wallMs,
+      spentUsd: u.spentUsd,
+      unpricedRounds: u.unpricedRounds,
+      checks: timelineKind === 'iterations' ? null : u.checks,
+      treeChanged: timelineKind === 'iterations' ? null : u.treeChanged,
+      tripped: u.tripped,
+    };
+  });
+  return {
+    runid: summary.runId ?? runid,
+    job: summary.job ?? row.job,
+    goal: summary.goal,
+    checkType: checkTypeLabel(summary.verdictType),
+    model: summary.model,
+    budgetUsd: summary.budgetUsd,
+    glyph: glyphForOutcome(summary.outcome),
+    outcome: summary.outcome,
+    stopReason: summary.stopReason,
+    spentUsd: summary.spentUsd,
+    spendComplete: summary.spendComplete,
+    wallMs: summary.wallMs,
+    timelineKind,
+    steps,
+    replans: summary.replans,
+    close: summary.close,
+    branch: summary.branch,
+    date: typeof row.at === 'string' ? row.at.slice(0, 10) : null,
+    at: row.at,
+    via: row.via,
+    skipped: summary.skipped,
+  };
+}
+
+/**
+ * `GET /api/runs/:runid/audit` — the Audit tab's rows, off the run's own
+ * gate-audit sidecar (name-convention resolution, `src/replayio.js`'s
+ * `resolveSiblings`). A row's real fields (`ts`, `action.type`,
+ * `action.path`, `decision`) — `step` is honestly `null` (no gate-audit row
+ * carries one; see `src/replay.js`'s own header comment) rather than
+ * guessed from a seq-window the way `replayRun`'s internal windowing does
+ * for its own aggregate counts.
+ * @param {string} runid
+ * @param {{ home?: string }} [opts]
+ * @returns {{runid: string, rows: any[], raw: string, empty: boolean}|null}
+ */
+export function getRunAudit(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  if (!existsSync(row.spine)) return { runid, rows: [], raw: '', empty: true };
+  const { auditPath } = resolveSiblings(row.spine);
+  if (!auditPath || !existsSync(auditPath)) return { runid, rows: [], raw: '', empty: true };
+  const { records } = parseJsonl(auditPath);
+  const rawText = readFileSync(auditPath, 'utf8');
+  const auditRows = records.filter((r) => r && typeof r === 'object').map((r) => ({
+    time: typeof r.ts === 'string' ? r.ts : null,
+    action: r.action && typeof r.action.type === 'string' ? r.action.type : null,
+    path: r.action && typeof r.action.path === 'string' ? r.action.path : null,
+    decision: typeof r.decision === 'string' ? r.decision : null,
+    step: null,
+  }));
+  return {
+    runid, rows: auditRows, raw: rawText, empty: auditRows.length === 0,
+  };
+}
+
+/**
+ * `<x>/runs/<runid>/spine.jsonl` -> `<x>` (the bundle directory carrying
+ * `spec.json` — see `src/bundle.js`'s own export layout). `null` for every
+ * other spine layout (run-u's free-standing spines have no bundle dir at
+ * all — resolving one would mean guessing, which this function refuses to
+ * do).
+ * @param {string} spinePath
+ * @returns {string|null}
+ */
+function bundleDirForSpine(spinePath) {
+  if (basename(spinePath) !== 'spine.jsonl') return null; // only the bundle layout uses this bare filename
+  const runsDir = dirname(dirname(spinePath)); // <x>/runs/<runid> -> <x>/runs
+  if (basename(runsDir) !== 'runs') return null; // not actually the bundle layout
+  return dirname(runsDir); // <x>/runs -> <x>
+}
+
+/**
+ * `GET /api/runs/:runid/job` — the Job tab: the signed spec's own fields,
+ * when this run's spec is resolvable (bundle-layout runs only — a
+ * `bareloop run` bundle keeps `spec.json` beside its `runs/` directory).
+ * A run-u (person-path) run has no bundle directory at all: `resolved:
+ * false` and every spec-only field reads `'unknown'` — never fabricated
+ * from the spine's own job-start fields, which is a DIFFERENT, narrower
+ * record (goal/verdictType/model/budgetUsd only; no source/destination/
+ * success/guardrails at all — verified against `src/run.js`'s `job-start`
+ * emit this session).
+ * @param {string} runid
+ * @param {{ home?: string }} [opts]
+ * @returns {any|null}
+ */
+export function getRunJob(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  const unknown = () => ({
+    runid,
+    job: row.job,
+    resolved: false,
+    checkType: 'unknown',
+    model: 'unknown',
+    goal: 'unknown',
+    budgetUsd: null,
+    maxWallMs: null,
+    source: 'unknown',
+    destination: 'unknown',
+    success: 'unknown',
+    guardrails: 'unknown',
+    note: 'no resolvable spec for this run (only bareloop-run bundle-layout runs carry one; a run-u run has none on disk)',
+  });
+  if (!existsSync(row.spine)) return unknown();
+  const bundleDir = bundleDirForSpine(row.spine);
+  const specPath = bundleDir ? join(bundleDir, 'spec.json') : null;
+  if (!specPath || !existsSync(specPath)) return unknown();
+  let spec;
+  try {
+    spec = JSON.parse(readFileSync(specPath, 'utf8'));
+  } catch {
+    return unknown();
+  }
+  if (!spec || typeof spec !== 'object') return unknown();
+  return {
+    runid,
+    job: typeof spec.job === 'string' ? spec.job : row.job,
+    resolved: true,
+    checkType: checkTypeLabel(typeof spec.verdictType === 'string' ? spec.verdictType : null),
+    model: typeof spec.model === 'string' ? spec.model : 'unknown',
+    goal: typeof spec.goal === 'string' ? spec.goal : 'unknown',
+    budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+    maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : null,
+    // the job spec schema this reads (`src/job.js`'s JOB_FIELDS) carries no
+    // source/destination/success/guardrails fields at all — reported
+    // honestly as 'unknown' rather than guessed from writeScope/description.
+    source: 'unknown',
+    destination: 'unknown',
+    success: 'unknown',
+    guardrails: 'unknown',
+    note: null,
+  };
+}
+
+/** @param {any} res @param {number} code @param {any} body */
+function sendJson(res, code, body) {
+  const text = JSON.stringify(body);
+  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text) });
+  res.end(text);
+}
+
+/** @param {any} res @param {number} code @param {string} text */
+function sendText(res, code, text) {
+  res.writeHead(code, { 'content-type': 'text/plain; charset=utf-8', 'content-length': Buffer.byteLength(text) });
+  res.end(text);
+}
+
+/**
+ * Handle one request against the read-only API + the page. Exported
+ * separately from {@link createPanelServer} so tests can drive it without a
+ * real listening socket where that is simpler (most path-safety/405 tests
+ * still go through a real socket, per the build spec).
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @param {{ home?: string, port: number }} opts
+ */
+export function handleRequest(req, res, opts) {
+  const method = req.method ?? 'GET';
+  if (method !== 'GET' && method !== 'HEAD') {
+    sendText(res, 405, 'method not allowed — this panel is read-only (GET/HEAD only)');
+    return;
+  }
+
+  let url;
+  try {
+    url = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1');
+  } catch {
+    sendText(res, 400, 'bad request');
+    return;
+  }
+  const { pathname } = url;
+
+  const send = (code, body) => {
+    if (method === 'HEAD') {
+      const text = JSON.stringify(body);
+      res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text) });
+      res.end();
+      return;
+    }
+    sendJson(res, code, body);
+  };
+
+  if (pathname === '/' || pathname === '/index.html') {
+    const indexPath = join(HERE, 'index.html');
+    let html;
+    try {
+      html = readFileSync(indexPath, 'utf8');
+    } catch {
+      sendText(res, 500, 'panel page missing on disk');
+      return;
+    }
+    html = html.replace(/__BARELOOP_PANEL_PORT__/g, String(opts.port));
+    if (method === 'HEAD') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
+    res.end(html);
+    return;
+  }
+
+  if (pathname === '/api/runs') { send(200, { runs: listRuns({ home: opts.home }) }); return; }
+  if (pathname === '/api/workflows') { send(200, { workflows: listWorkflows({ home: opts.home }) }); return; }
+
+  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job))?$/.exec(pathname);
+  if (runMatch) {
+    const rawRunid = runMatch[1];
+    const sub = runMatch[3] ?? null;
+    // PATH SAFETY: a runid must match RUNID_RE before it is used for
+    // ANYTHING — including the lookup itself. A runid carrying a slash
+    // (encoded or not — `decodeURIComponent` runs first via `URL`'s own
+    // pathname decoding) never reaches the run-list lookup at all.
+    const runid = rawRunid;
+    if (!RUNID_RE.test(runid)) { sendText(res, 400, 'bad runid'); return; }
+    if (sub === 'audit') {
+      const result = getRunAudit(runid, { home: opts.home });
+      if (!result) { sendText(res, 404, 'no such run'); return; }
+      send(200, result);
+      return;
+    }
+    if (sub === 'job') {
+      const result = getRunJob(runid, { home: opts.home });
+      if (!result) { sendText(res, 404, 'no such run'); return; }
+      send(200, result);
+      return;
+    }
+    const result = getRunDetail(runid, { home: opts.home });
+    if (!result) { sendText(res, 404, 'no such run'); return; }
+    send(200, result);
+    return;
+  }
+
+  sendText(res, 404, 'not found');
+}
+
+/**
+ * Start the panel server. Binds `127.0.0.1` ONLY. A taken port is a LOUD,
+ * non-zero-exit failure — this never falls back to another port (see file
+ * header). Resolves once actually listening; rejects on a bind error
+ * (including `EADDRINUSE`) with a `.port` field on the error for the
+ * caller's message.
+ * @param {{ port?: number, home?: string }} [opts]
+ * @returns {Promise<{ server: import('node:http').Server, port: number, close: () => Promise<void> }>}
+ */
+export function createPanelServer(opts = {}) {
+  const port = opts.port ?? DEFAULT_PORT;
+  const home = opts.home;
+  return new Promise((resolve, reject) => {
+    const server = createServer((req, res) => {
+      try {
+        handleRequest(req, res, { home, port });
+      } catch (e) {
+        sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
+      }
+    });
+    server.once('error', (e) => {
+      const err = /** @type {any} */ (e);
+      err.port = port;
+      reject(err);
+    });
+    server.listen(port, '127.0.0.1', () => {
+      resolve({
+        server,
+        port,
+        close: () => new Promise((res2) => { server.close(() => res2(undefined)); }),
+      });
+    });
+  });
+}
+
+/**
+ * `bareloop panel [--port N]` — the CLI entry (`src/cli.js` dispatch).
+ * Never picks a different port on collision (see file header): prints a
+ * loud, named error to stderr and returns 1.
+ * @param {string[]} argv
+ * @param {{ out: (s: string) => void, err: (s: string) => void, runlistHome?: string }} ctx
+ * @returns {Promise<number>}
+ */
+export async function panelMain(argv, ctx) {
+  let port = DEFAULT_PORT;
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--port') {
+      const v = Number(argv[i + 1]);
+      if (!Number.isInteger(v) || v <= 0 || v > 65535) { ctx.err(`--port must be a valid TCP port, got ${JSON.stringify(argv[i + 1])}`); return 1; }
+      port = v;
+      i += 1;
+    }
+  }
+  try {
+    const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome });
+    ctx.out(`bareloop panel — read-only, http://127.0.0.1:${boundPort} (Ctrl-C to stop)`);
+    // never resolves on its own — the process stays up until killed, same
+    // shape any other long-running dev server takes.
+    await new Promise(() => {});
+    return 0;
+  } catch (e) {
+    const err = /** @type {any} */ (e);
+    if (err && err.code === 'EADDRINUSE') {
+      ctx.err(`bareloop panel: port ${port} is already in use — pass --port to use a different one (never picked automatically)`);
+      return 1;
+    }
+    ctx.err(`bareloop panel: failed to start — ${err && err.message ? err.message : String(err)}`);
+    return 1;
+  }
+}
