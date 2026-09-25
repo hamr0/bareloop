@@ -727,7 +727,10 @@
     var content = document.getElementById("audit-content");
     if(!result || result.empty){
       empty.hidden = false;
-      empty.textContent = "no logs recorded for this run";
+      var reason = result ? result.reason : "no-sidecar";
+      empty.textContent = reason === "sidecar-empty"
+        ? "log saved, no tool calls recorded"
+        : "no log was saved for this run (older version)";
       content.hidden = true;
       return;
     }

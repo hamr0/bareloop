@@ -450,17 +450,31 @@ export function getRunDetail(runid, opts = {}) {
  * carries one; see `src/replay.js`'s own header comment) rather than
  * guessed from a seq-window the way `replayRun`'s internal windowing does
  * for its own aggregate counts.
+ * `reason` distinguishes the two ways this can come back empty (item 1,
+ * 2026-09-25): `'no-sidecar'` — no gate-audit sidecar was ever written for
+ * this run (an older version, or a run-u/native path that never emitted one)
+ * — vs `'sidecar-empty'` — a sidecar file DOES exist but has zero rows (the
+ * run made no tool calls the gate audited). The client renders these as two
+ * different sentences; never a bare empty table for either.
  * @param {string} runid
  * @param {{ home?: string }} [opts]
- * @returns {{runid: string, rows: any[], raw: string, empty: boolean}|null}
+ * @returns {{runid: string, rows: any[], raw: string, empty: boolean, reason: 'no-sidecar'|'sidecar-empty'|null}|null}
  */
 export function getRunAudit(runid, opts = {}) {
   const { rows } = readRunList(opts);
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
-  if (!existsSync(row.spine)) return { runid, rows: [], raw: '', empty: true };
+  if (!existsSync(row.spine)) {
+    return {
+      runid, rows: [], raw: '', empty: true, reason: 'no-sidecar',
+    };
+  }
   const { auditPath } = resolveSiblings(row.spine);
-  if (!auditPath || !existsSync(auditPath)) return { runid, rows: [], raw: '', empty: true };
+  if (!auditPath || !existsSync(auditPath)) {
+    return {
+      runid, rows: [], raw: '', empty: true, reason: 'no-sidecar',
+    };
+  }
   const { records } = parseJsonl(auditPath);
   const rawText = readFileSync(auditPath, 'utf8');
   const auditRows = records.filter((r) => r && typeof r === 'object').map((r) => ({
@@ -470,8 +484,9 @@ export function getRunAudit(runid, opts = {}) {
     decision: typeof r.decision === 'string' ? r.decision : null,
     step: null,
   }));
+  const empty = auditRows.length === 0;
   return {
-    runid, rows: auditRows, raw: rawText, empty: auditRows.length === 0,
+    runid, rows: auditRows, raw: rawText, empty, reason: empty ? 'sidecar-empty' : null,
   };
 }
 

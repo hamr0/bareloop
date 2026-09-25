@@ -558,6 +558,67 @@ test('/api/runs/:runid/job: a bundle-layout run (spec.json beside runs/) resolve
 });
 
 // ---------------------------------------------------------------------------
+// item 1 (2026-09-25): audit tab distinguishes "no sidecar ever written"
+// from "sidecar exists but carries zero rows"
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid/audit: no gate-audit sidecar on disk -> reason "no-sidecar"', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-noaudit.jsonl'), [{
+    type: 'job-start', job: 'no-audit-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green',
+  }]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'noaudit', job: 'no-audit-job', spine: join(dir, 'u-noaudit.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/noaudit/audit');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.empty, true);
+  assert.equal(body.reason, 'no-sidecar');
+});
+
+test('/api/runs/:runid/audit: a sidecar exists but has zero rows -> reason "sidecar-empty"', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-emptyaudit.jsonl'), [{
+    type: 'job-start', job: 'empty-audit-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green',
+  }]);
+  writeSpine(join(dir, 'u-emptyaudit-gate-audit.jsonl'), []);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'emptyaudit', job: 'empty-audit-job', spine: join(dir, 'u-emptyaudit.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/emptyaudit/audit');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.empty, true);
+  assert.equal(body.reason, 'sidecar-empty');
+});
+
+test('/api/runs/:runid/audit: a sidecar with real rows -> reason null, rows populated', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-hasaudit.jsonl'), [{
+    type: 'job-start', job: 'has-audit-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green',
+  }]);
+  writeSpine(join(dir, 'u-hasaudit-gate-audit.jsonl'), [{
+    ts: '2026-09-05T00:00:01.000Z', action: { type: 'write', path: 'foo.js' }, decision: 'allow',
+  }]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'hasaudit', job: 'has-audit-job', spine: join(dir, 'u-hasaudit.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/hasaudit/audit');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.empty, false);
+  assert.equal(body.reason, null);
+  assert.equal(body.rows.length, 1);
+});
+
+// ---------------------------------------------------------------------------
 // never reads process.env for a secret (code-inspected, asserted here too)
 // ---------------------------------------------------------------------------
 
