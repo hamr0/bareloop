@@ -901,19 +901,51 @@
   // mirrors src/behaviour.js's own displayLabel() verbatim (strip shell_/ctx_
   // prefixes) so the panel's tool names read the SAME as `bareloop replay`'s.
   function toolDisplayLabel(key){ return String(key).replace(/^shell_/, "").replace(/^ctx_/, ""); }
+  // item 3 (2026-09-25): EVERY tool used, with counts — no top-5 truncation
+  // (was `entries.slice(0, 5)` + "…"; the build spec calls for the full list).
   function toolsLine(behaviour){
     if(!behaviour) return "unknown (no log saved)";
     if(behaviour.totalCalls === 0) return "0 calls";
     var entries = Object.keys(behaviour.byTool).map(function(k){ return [toolDisplayLabel(k), behaviour.byTool[k]]; });
     entries.sort(function(a,b){ return b[1] - a[1]; });
-    var top = entries.slice(0, 5).map(function(e){ return e[0] + " " + e[1]; });
-    var more = entries.length > 5 ? " · …" : "";
-    return behaviour.totalCalls + " calls — " + top.join(" · ") + more;
+    var all = entries.map(function(e){ return e[0] + " " + e[1]; });
+    return behaviour.totalCalls + " calls — " + all.join(" · ");
+  }
+  // item 3: "offered, never used" — the spec's granted tools minus the ones
+  // this run's own behaviour actually used (by DISPLAY name, since a spec's
+  // `tools` array already uses the bare names: 'read'/'grep'/'edit'/'recall'/
+  // etc — real spec.json files checked, e.g. spines-poc-openai's spec.json —
+  // matching what `toolDisplayLabel` strips shell_/ctx_ prefixes down to).
+  // `null` when the spec carries no granted-tools list at all (never shown).
+  function offeredNeverUsedLine(toolsList, behaviour){
+    if(!toolsList || !toolsList.length) return null;
+    var used = {};
+    if(behaviour && behaviour.byTool){
+      Object.keys(behaviour.byTool).forEach(function(k){ used[toolDisplayLabel(k)] = true; });
+    }
+    var never = toolsList.filter(function(t){ return !used[t]; });
+    return never.length ? never.join(", ") : null;
   }
   function cacheLine(memoryCache){
     if(!memoryCache) return "not recorded";
     var kb = (memoryCache.bytesWithheld / 1024).toFixed(1);
     return memoryCache.pointered + " re-reads answered from memory · " + kb + " KB not re-sent";
+  }
+
+  // item 3: the Run summary and Job tab load via two independent fetches
+  // (see selectRun below) that can resolve in either order — these two
+  // module vars plus paintOfferedRow() let whichever one finishes SECOND
+  // fill in the "offered, never used" row, without either render function
+  // depending on the other's data being present yet.
+  var lastRunBehaviour = null;
+  var lastJobToolsList = null;
+  function paintOfferedRow(){
+    var row = document.getElementById("summary-offered-row");
+    var val = document.getElementById("summary-offered-val");
+    if(!row || !val) return;
+    var line = offeredNeverUsedLine(lastJobToolsList, lastRunBehaviour);
+    if(line){ val.textContent = line; row.hidden = false; }
+    else { row.hidden = true; val.textContent = ""; }
   }
 
   function renderRun(detail){
@@ -970,7 +1002,11 @@
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">close:</span><span class="sum-val">' + escapeXml(detail.close && detail.close.verdict ? detail.close.verdict : "none — the run ended before any close ran") + '</span></div>' +
       '<div class="summary-row" data-testid="summary-tools"><span class="sum-label">tools:</span><span class="sum-val">' + escapeXml(toolsLine(detail.behaviour)) + '</span></div>' +
+      '<div class="summary-row" data-testid="summary-offered" id="summary-offered-row" hidden><span class="sum-label">offered:</span><span class="sum-val" id="summary-offered-val"></span></div>' +
       '<div class="summary-row" data-testid="summary-cache"><span class="sum-label">cache:</span><span class="sum-val">' + escapeXml(cacheLine(detail.memoryCache)) + '</span></div>';
+
+    lastRunBehaviour = detail.behaviour;
+    paintOfferedRow();
 
     renderStepMap(detail.steps.map(function(s){ return { title: String(s.id), state: s.state, noNumber: !!s.synthetic }; }));
 
@@ -1088,6 +1124,8 @@
     document.getElementById("details-cap-money").textContent = job.budgetUsd === null ? "unknown" : ("$" + Number(job.budgetUsd).toFixed(2));
     document.getElementById("details-cap-time").textContent = job.maxWallMs === null ? "unknown" : duration(job.maxWallMs);
     document.getElementById("job-note").textContent = job.note || "";
+    lastJobToolsList = Array.isArray(job.toolsList) ? job.toolsList : null;
+    paintOfferedRow();
   }
 
   // ---- selection + loading ----
@@ -1097,6 +1135,8 @@
     document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
     if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
     currentRunid = runid;
+    lastRunBehaviour = null;
+    lastJobToolsList = null;
     getJSON("/api/runs/" + encodeURIComponent(runid)).then(renderRun).catch(function(e){
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "failed to load run: " + e.message;

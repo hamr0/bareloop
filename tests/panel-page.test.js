@@ -513,3 +513,57 @@ test('item 2: audit table header carries a Round column, and renderAudit renders
   assert.match(body, /r\.durationMs/);
   assert.match(body, /typeof r\.round === "number"/);
 });
+
+// ---------------------------------------------------------------------------
+// item 3 (2026-09-25): tools line shows EVERY tool (no top-5 truncation),
+// plus the "offered, never used" second line.
+// ---------------------------------------------------------------------------
+
+function loadToolsFns(html) {
+  const start = html.indexOf('function toolDisplayLabel(');
+  const end = html.indexOf('function renderRun(detail){');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected toolDisplayLabel/toolsLine/offeredNeverUsedLine in src/panel/index.html');
+  const body = html.slice(start, end);
+  // eslint-disable-next-line no-new-func
+  return new Function(`${body}\nreturn { toolsLine, offeredNeverUsedLine };`)();
+}
+
+test('item 3: toolsLine lists EVERY tool used, no top-5 truncation, sorted by count descending', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { toolsLine } = loadToolsFns(html);
+  const behaviour = {
+    totalCalls: 7,
+    byTool: {
+      shell_read: 3, shell_grep: 1, edit: 1, ctx_recall: 1, ctx_get: 1,
+    },
+  };
+  const line = toolsLine(behaviour);
+  assert.match(line, /^7 calls —/);
+  // all 5 distinct tools present, not truncated to fewer
+  ['read', 'grep', 'edit', 'recall', 'get'].forEach((name) => {
+    assert.ok(line.indexOf(name) !== -1, `expected "${name}" in tools line: ${line}`);
+  });
+  assert.doesNotMatch(line, /…/);
+});
+
+test('item 3: offeredNeverUsedLine — spec tools minus used (by display name), null when nothing offered or nothing unused', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { offeredNeverUsedLine } = loadToolsFns(html);
+  const behaviour = { totalCalls: 3, byTool: { shell_read: 2, edit: 1 } };
+  assert.equal(offeredNeverUsedLine(['read', 'edit', 'recall', 'get'], behaviour), 'recall, get');
+  assert.equal(offeredNeverUsedLine(['read', 'edit'], behaviour), null); // nothing unused
+  assert.equal(offeredNeverUsedLine(null, behaviour), null); // no granted list at all
+  assert.equal(offeredNeverUsedLine([], behaviour), null);
+  assert.equal(offeredNeverUsedLine(['recall'], null), 'recall'); // no behaviour at all -> everything offered reads as never-used
+});
+
+test('item 3: the Run summary carries a hidden "offered" row that paintOfferedRow fills once both run + job data are in, in either arrival order', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /id="summary-offered-row" hidden/);
+  assert.match(html, /var lastRunBehaviour = null;/);
+  assert.match(html, /var lastJobToolsList = null;/);
+  assert.match(html, /function paintOfferedRow\(\)\{/);
+  // renderRun sets lastRunBehaviour then repaints; renderJob sets lastJobToolsList then repaints
+  assert.match(html, /lastRunBehaviour = detail\.behaviour;\s*\n\s*paintOfferedRow\(\);/);
+  assert.match(html, /lastJobToolsList = Array\.isArray\(job\.toolsList\) \? job\.toolsList : null;\s*\n\s*paintOfferedRow\(\);/);
+});

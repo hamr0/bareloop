@@ -815,6 +815,72 @@ test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2)
 });
 
 // ---------------------------------------------------------------------------
+// item 3 (2026-09-25): Run summary "tools" line — EVERY tool used (no top-5
+// truncation), litectx tools already folded into behaviour.byTool (confirmed
+// on litectx-u-bareloop's real run mtotxw1z — no contamination there, its
+// whole gate-audit window sits inside job-start..job-end), plus a raw
+// `toolsList` field on the Job response feeding the "offered, never used"
+// line.
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid: a real archived run (u-mtotxw1z, litectx-u-bareloop) reports behaviour matching `bareloop replay` exactly — litectx tools (recall/get/impact) already folded in, no double-count', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'mtotxw1z-item3', job: 'litectx-u-types', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/mtotxw1z-item3');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  // verified against `node bin/bareloop.mjs replay <spine>`: "127 tool calls
+  // · 47 read, 40 edit, 34 grep, 4 recall, 1 get, 1 impact" — this run's own
+  // gate-audit window sits entirely inside job-start..job-end (no
+  // contamination, unlike mu2p83go above), so the scoped and unscoped
+  // figures agree here.
+  assert.equal(body.behaviour.totalCalls, 127);
+  assert.deepEqual(body.behaviour.byTool, {
+    shell_read: 47, shell_grep: 34, edit: 40, ctx_recall: 4, ctx_get: 1, ctx_impact: 1,
+  });
+});
+
+test('toolsListFromSpec / getRunJob: toolsList carries the spec\'s raw granted-tool array, matching real spec.json shapes (bare names: read/grep/edit/recall/…)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'bundlejob', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'bundlejob', tools: ['read', 'grep', 'edit', 'recall', 'get', 'impact'],
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'bundlerun', job: 'bundlejob', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/bundlerun/job');
+  const body = await res.json();
+  assert.deepEqual(body.toolsList, ['read', 'grep', 'edit', 'recall', 'get', 'impact']);
+  assert.equal(body.tools, 'read · grep · edit · recall · get · impact');
+});
+
+test('toolsListFromSpec: no spec resolvable -> toolsList null (never fabricated)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-nospec.jsonl'), [
+    { type: 'job-start', job: 'nospec-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'nospecrun', job: 'nospec-job', spine: join(dir, 'u-nospec.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/nospecrun/job');
+  const body = await res.json();
+  assert.equal(body.toolsList, null);
+});
+
+// ---------------------------------------------------------------------------
 // item 2 (2026-09-25): Job tab source order — (a) bundle spec.json [existing,
 // re-verified above], (b) jobs/<job>.json with a specHash compare, (c) the
 // run's own resolved-spec.json found beside the spine, (d) the run's own

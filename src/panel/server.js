@@ -789,16 +789,31 @@ function guardrailsFromSpec(spec) {
 }
 
 /**
+ * The granted tool list, RAW (as declared, in order) — `null` when the spec
+ * carries none (a job may legally declare no `tools` at all). The one owner
+ * of this array; {@link toolsFromSpec}'s joined display string is derived
+ * from it, and item 3 (2026-09-25)'s "offered, never used" line on the Run
+ * tab reads this raw array directly (`toolsList` on the Job response) rather
+ * than reverse-parsing the joined string.
+ * @param {any} spec
+ * @returns {string[]|null}
+ */
+function toolsListFromSpec(spec) {
+  if (!spec || typeof spec !== 'object') return null;
+  if (!Array.isArray(spec.tools) || spec.tools.length === 0) return null;
+  const names = spec.tools.filter((t) => typeof t === 'string' && t.length > 0);
+  return names.length > 0 ? names : null;
+}
+
+/**
  * The granted tool list, verbatim, in declared order — `null` when the spec
  * carries none (a job may legally declare no `tools` at all).
  * @param {any} spec
  * @returns {string|null}
  */
 function toolsFromSpec(spec) {
-  if (!spec || typeof spec !== 'object') return null;
-  if (!Array.isArray(spec.tools) || spec.tools.length === 0) return null;
-  const names = spec.tools.filter((t) => typeof t === 'string' && t.length > 0);
-  return names.length > 0 ? names.join(' · ') : null;
+  const names = toolsListFromSpec(spec);
+  return names ? names.join(' · ') : null;
 }
 
 /**
@@ -902,6 +917,7 @@ export function getRunJob(runid, opts = {}) {
     success: notRecorded(successFromSpec(spec)),
     guardrails: notRecorded(guardrailsFromSpec(spec)),
     tools: notRecorded(toolsFromSpec(spec)),
+    toolsList: toolsListFromSpec(spec),
     note,
   });
   const none = () => ({
@@ -921,6 +937,7 @@ export function getRunJob(runid, opts = {}) {
     success: 'not recorded',
     guardrails: 'not recorded',
     tools: 'not recorded',
+    toolsList: null,
     note: 'no resolvable spec for this run (only bareloop-run bundle-layout runs carry one; a run-u run has none on disk)',
   });
 
@@ -981,6 +998,7 @@ export function getRunJob(runid, opts = {}) {
       success: 'not recorded',
       guardrails: 'not recorded',
       tools: 'not recorded',
+      toolsList: null,
       note: "from the run's own start record",
     };
   }
