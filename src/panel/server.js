@@ -145,6 +145,25 @@ function describeLastRecord(r) {
 }
 
 /**
+ * `YYYY-MM-DD HH:MM` (local time, 24h, zero-padded) — the ONE
+ * timestamp-WITH-TIME format this page ever shows (a plain date elsewhere
+ * stays `YYYY-MM-DD`, e.g. `row.at.slice(0,10)`, untouched — that's a
+ * different, shorter field, not this helper's concern). Used instead of a
+ * locale-dependent `toLocaleString()` spelling (F195: the died "why" line
+ * read `9/9/2026, 11:49:40 AM`, inconsistent with every other date on the
+ * page) so a future second timestamp-with-time spot routes through the same
+ * one function rather than growing its own `toLocale*` call.
+ * @param {string|number|Date} ts
+ * @returns {string}
+ */
+export function formatTimestamp(ts) {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return 'an unknown time';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
  * Died-run derivation: `died` (the mtime rule above), the plain-words
  * `why` sentence, the priced-rounds spend floor, and the first→last
  * record wall floor — all `null`/`false` when this run is NOT died (a real
@@ -169,7 +188,7 @@ function deriveDeath(spinePath, records, outcome) {
 
   const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
   const last = withTs.length ? withTs[withTs.length - 1] : null;
-  const when = last ? new Date(last.ts).toLocaleString() : 'an unknown time';
+  const when = last ? formatTimestamp(last.ts) : 'an unknown time';
   const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${describeLastRecord(last)} at ${when}.`;
 
   let spendSum = 0;

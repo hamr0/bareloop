@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  createPanelServer, panelMain, glyphForOutcome, checkTypeLabel, RUNID_RE,
+  createPanelServer, panelMain, glyphForOutcome, checkTypeLabel, RUNID_RE, formatTimestamp,
 } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
 
@@ -52,6 +52,14 @@ test('glyphForOutcome: green/already-green/satisfied -> ✓, null -> ▶, anythi
   assert.equal(glyphForOutcome(null), '▶');
   assert.equal(glyphForOutcome('cap-halt'), '✗');
   assert.equal(glyphForOutcome('job-red'), '✗');
+});
+
+test('formatTimestamp: YYYY-MM-DD HH:MM (local, 24h, zero-padded) — the ONE timestamp-with-time format on the page', () => {
+  const d = new Date(2026, 8, 9, 11, 49, 40); // 2026-09-09 11:49:40 local — Sep is month index 8
+  assert.equal(formatTimestamp(d), '2026-09-09 11:49');
+  const midnight = new Date(2026, 0, 5, 0, 5, 0); // zero-padding check on both hour and minute
+  assert.equal(formatTimestamp(midnight), '2026-01-05 00:05');
+  assert.equal(formatTimestamp('not a date'), 'an unknown time');
 });
 
 test('checkTypeLabel: green -> deterministic, soft-green -> rubric, else -> unknown', () => {
@@ -229,6 +237,12 @@ test(
     assert.equal(detail.outcome, null, 'no job-end really was reached — outcome stays null, only died is new');
     assert.match(detail.stopReason, /^died — no ending was recorded \(killed, crashed, or the machine slept\)\. Last thing it did: /);
     assert.match(detail.stopReason, /a scout model call/, 'must name the REAL last record (a worker-round, phase:scout) never a guess');
+    // F195: the died "why" line must use the ONE timestamp format this page
+    // ever shows (YYYY-MM-DD HH:MM, local, 24h, zero-padded) — never a
+    // locale-dependent toLocaleString() spelling like "9/9/2026, 11:49:40 AM"
+    // (every other date on the page reads plain YYYY-MM-DD).
+    assert.match(detail.stopReason, /at \d{4}-\d{2}-\d{2} \d{2}:\d{2}\.$/, `expected a YYYY-MM-DD HH:MM timestamp, got: ${detail.stopReason}`);
+    assert.ok(!/[AP]M/.test(detail.stopReason), `must never carry a locale AM/PM spelling: ${detail.stopReason}`);
     assert.ok(detail.steps.length >= 1, 'steps empty (no step-start at all) must still produce one box, never an empty map');
     assert.equal(detail.steps[detail.steps.length - 1].state, 'died');
     assert.match(String(detail.steps[detail.steps.length - 1].id), /died during planning/i);
