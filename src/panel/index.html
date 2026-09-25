@@ -927,12 +927,18 @@
     });
     document.getElementById("audit-rawlog").textContent = result.raw || "";
     auditRowEls = Array.prototype.slice.call(tbody.querySelectorAll("tr"));
-    document.querySelectorAll(".chip").forEach(function(c){ c.setAttribute("aria-pressed", c.getAttribute("data-filter") === "all" ? "true" : "false"); });
+    // Scoped to [data-filter] — the audit tab's OWN chips (chip-all/writes/
+    // blocked). A bare ".chip" here also matched the History filter bar's
+    // chips (same class, different data- attributes), binding a second
+    // listener on them and forcing their aria-pressed back to "true" on
+    // every click regardless of the actual toggle state (hamr's live-panel
+    // feedback, 2026-09-25: "selection is buggy", "clear doesnt work").
+    document.querySelectorAll(".chip[data-filter]").forEach(function(c){ c.setAttribute("aria-pressed", c.getAttribute("data-filter") === "all" ? "true" : "false"); });
     auditRowEls.forEach(function(row){ row.style.display = ""; });
   }
-  document.querySelectorAll(".chip").forEach(function(chip){
+  document.querySelectorAll(".chip[data-filter]").forEach(function(chip){
     chip.addEventListener("click", function(){
-      document.querySelectorAll(".chip").forEach(function(c){ c.setAttribute("aria-pressed","false"); });
+      document.querySelectorAll(".chip[data-filter]").forEach(function(c){ c.setAttribute("aria-pressed","false"); });
       chip.setAttribute("aria-pressed","true");
       var f = chip.getAttribute("data-filter");
       auditRowEls.forEach(function(row){
