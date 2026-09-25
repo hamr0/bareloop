@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  createPanelServer, panelMain, glyphForOutcome, checkTypeLabel, RUNID_RE, formatTimestamp,
+  createPanelServer, panelMain, glyphForOutcome, checkTypeLabel, checkTypeTitle, RUNID_RE, formatTimestamp,
 } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
 
@@ -67,6 +67,31 @@ test('checkTypeLabel: green -> deterministic, soft-green -> rubric, else -> unkn
   assert.equal(checkTypeLabel('soft-green'), 'rubric');
   assert.equal(checkTypeLabel(null), 'unknown');
   assert.equal(checkTypeLabel('hitl'), 'unknown');
+});
+
+test('checkTypeLabel/checkTypeTitle (item 3): three branches — real verdictType, absent+pre-cutoff, absent+post-cutoff', () => {
+  // branch 1: verdictType present -> as today, no title regardless of date
+  assert.equal(checkTypeLabel('green', '2026-01-01T00:00:00.000Z'), 'deterministic');
+  assert.equal(checkTypeTitle('green', '2026-01-01T00:00:00.000Z'), null);
+  assert.equal(checkTypeLabel('soft-green', '2026-09-01T00:00:00.000Z'), 'rubric');
+  assert.equal(checkTypeTitle('soft-green', '2026-09-01T00:00:00.000Z'), null);
+
+  // branch 2: verdictType absent, run predates 2026-08-18 (soft-green admitted,
+  // commit 30df0f9) -> deterministic, with an explanatory title
+  assert.equal(checkTypeLabel(null, '2026-08-17T23:59:59.000Z'), 'deterministic');
+  assert.equal(
+    checkTypeTitle(null, '2026-08-17T23:59:59.000Z'),
+    'not recorded — deterministic was the only check type before 2026-08-18',
+  );
+
+  // branch 3: verdictType absent, run on/after the cutoff -> genuinely unknown, no title
+  assert.equal(checkTypeLabel(null, '2026-08-18T00:00:00.000Z'), 'unknown');
+  assert.equal(checkTypeTitle(null, '2026-08-18T00:00:00.000Z'), null);
+  assert.equal(checkTypeLabel(null, '2026-09-24T00:00:00.000Z'), 'unknown');
+
+  // an unparseable/missing date is never assumed old
+  assert.equal(checkTypeLabel(null, undefined), 'unknown');
+  assert.equal(checkTypeLabel(null, 'not a date'), 'unknown');
 });
 
 test('RUNID_RE: accepts alnum/./_/-/~ (the last for a backfill-disambiguated id like "run~2"), rejects a path segment carrying a slash or ..', () => {
@@ -555,6 +580,23 @@ test('/api/runs/:runid/job: a bundle-layout run (spec.json beside runs/) resolve
   assert.equal(body.model, 'deepseek-flash');
   assert.equal(body.budgetUsd, 1.5);
   assert.equal(body.source, 'unknown'); // the real bundle-run spec schema carries no source field — honest, not fabricated
+});
+
+test('/api/runs: a pre-cutoff spine with no verdictType at all reports checkType "deterministic" with a title, end to end', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-old.jsonl'), [{
+    type: 'job-start', job: 'old-job', ts: '2026-08-01T00:00:00.000Z', seq: 1,
+  }, { type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, ts: '2026-08-01T00:01:00.000Z', seq: 2 }]);
+  appendRun({
+    at: '2026-08-01T00:00:00.000Z', runid: 'old1', job: 'old-job', spine: join(dir, 'u-old.jsonl'), patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs');
+  const { runs } = await res.json();
+  const row = runs.find((r) => r.runid === 'old1');
+  assert.equal(row.checkType, 'deterministic');
+  assert.equal(row.checkTypeTitle, 'not recorded — deterministic was the only check type before 2026-08-18');
 });
 
 // ---------------------------------------------------------------------------

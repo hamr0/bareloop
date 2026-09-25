@@ -65,16 +65,64 @@ export function glyphForOutcome(outcome) {
 }
 
 /**
- * `deterministic` (green) / `rubric` (soft-green) / `unknown` (pre-F117
- * spine, or a class this reader doesn't recognize) — the settled UI wording
- * (PANEL-BUILD.md §6), never the internal `green`/`soft-green` spelling.
+ * Soft-green was admitted at commit 30df0f9 (2026-08-18) — before that,
+ * `green` was the only admissible verdict type, so a run started before this
+ * moment that carries no `verdictType` at all (pre-F117 spine) really was
+ * deterministic; there was no other check type it could have been. Tighten-
+ * only, named so a future change is a deliberate, visible edit (item 3,
+ * 2026-09-25).
+ */
+export const SOFTGREEN_ADMITTED_ISO = '2026-08-18T00:00:00.000Z';
+
+/**
+ * `true` when `atIso` parses to a moment strictly before {@link
+ * SOFTGREEN_ADMITTED_ISO}. An unparseable/missing `atIso` reads `false`
+ * (never assumed old) — an unknown date is a genuinely unknown check type,
+ * not a free pass to guess "old".
+ * @param {string|null|undefined} atIso
+ * @returns {boolean}
+ */
+function isPreSoftgreen(atIso) {
+  const t = typeof atIso === 'string' ? Date.parse(atIso) : NaN;
+  return Number.isFinite(t) && t < Date.parse(SOFTGREEN_ADMITTED_ISO);
+}
+
+/**
+ * `deterministic` (green) / `rubric` (soft-green) / `unknown` (a class this
+ * reader doesn't recognize) — the settled UI wording (PANEL-BUILD.md §6),
+ * never the internal `green`/`soft-green` spelling. Item 3 (2026-09-25): a
+ * spine with NO `verdictType` (pre-F117) is genuinely ambiguous UNLESS its
+ * own run date (`atIso`, the job-start ts) predates {@link
+ * SOFTGREEN_ADMITTED_ISO} — in that one case, `deterministic` was the only
+ * check type that could have run, so it is reported as such (not fabricated:
+ * derived from the frozen historical fact that soft-green did not exist
+ * yet), paired with {@link checkTypeTitle}'s tooltip explaining the
+ * derivation rather than presenting it as if it had been directly recorded.
+ * `atIso` is optional so every existing single-arg caller/test keeps its
+ * prior behavior (no date -> 'unknown', same as before this item).
  * @param {string|null} verdictType
+ * @param {string|null} [atIso] the run's own job-start timestamp
  * @returns {'deterministic'|'rubric'|'unknown'}
  */
-export function checkTypeLabel(verdictType) {
+export function checkTypeLabel(verdictType, atIso) {
   if (verdictType === 'green') return 'deterministic';
   if (verdictType === 'soft-green') return 'rubric';
+  if (isPreSoftgreen(atIso)) return 'deterministic';
   return 'unknown';
+}
+
+/**
+ * The tooltip/title text for {@link checkTypeLabel}'s pre-softgreen-cutoff
+ * branch — `null` for every other case (a real `verdictType` needs no
+ * explanation; a genuinely unknown one has none to give).
+ * @param {string|null} verdictType
+ * @param {string|null} [atIso]
+ * @returns {string|null}
+ */
+export function checkTypeTitle(verdictType, atIso) {
+  if (verdictType === 'green' || verdictType === 'soft-green') return null;
+  if (isPreSoftgreen(atIso)) return 'not recorded — deterministic was the only check type before 2026-08-18';
+  return null;
 }
 
 // DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` never shares
@@ -264,7 +312,8 @@ function summarizeRow(row) {
     fileMissing: false,
     died: death.died,
     glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
-    checkType: checkTypeLabel(summary.verdictType),
+    checkType: checkTypeLabel(summary.verdictType, row.at),
+    checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
     model: summary.model,
     // died: never "unknown" when a priced round exists — glyph [?] already
     // carries the word "died", so the row meta text itself never repeats it.
@@ -414,7 +463,8 @@ export function getRunDetail(runid, opts = {}) {
     runid: summary.runId ?? runid,
     job: summary.job ?? row.job,
     goal: summary.goal,
-    checkType: checkTypeLabel(summary.verdictType),
+    checkType: checkTypeLabel(summary.verdictType, row.at),
+    checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
     model: summary.model,
     budgetUsd: summary.budgetUsd,
     glyph: death.died ? '?' : glyphForOutcome(summary.outcome),

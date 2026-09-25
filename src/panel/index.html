@@ -665,6 +665,7 @@
     name.textContent = detail.job + " (" + detail.runid + ")";
     dot.className = "dot " + glyphClass(detail.glyph);
     verdict.textContent = detail.checkType;
+    if(detail.checkTypeTitle){ verdict.title = detail.checkTypeTitle; } else { verdict.removeAttribute("title"); }
     date.textContent = detail.date || "unknown";
 
     document.getElementById("run-empty").hidden = true;
