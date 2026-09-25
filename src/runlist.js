@@ -126,35 +126,63 @@ function runidForSpine(spinePath) {
   return resolveSiblings(spinePath).runId;
 }
 
+// A backfill scan of a real patients directory can be arbitrarily deep
+// (person-path runs archive several levels down: `<dir>/<proj>/out/
+// source-<x>/<proj>-bareloop/u-<id>.jsonl`, 4 levels under the dir a person
+// actually points `backfill` at) — a non-recursive/immediate-subdir-only
+// scan silently misses every run nested past that first level (measured:
+// the newest real run in a 2026-09-09-capped panel was 12 days stale while
+// real runs existed through 2026-09-21). Tighten-only cap, named so a future
+// change to it is a deliberate, visible edit, never a silent number bump.
+export const MAX_BACKFILL_DEPTH = 6;
+
 /**
- * Every `.jsonl` file sitting directly in `dir` that is not a sidecar by
- * name — the same non-recursive listing `listSpines` (src/replayio.js) does,
- * duplicated here rather than imported because `listSpines` also runs
- * `replayOne` per file (full replay summary) and this scan only needs the
- * raw parsed records to test `looksLikeSpine` — a directory of a few hundred
- * archived spines should not pay for a full gate-audit-adjacent replay just
- * to be scanned for backfill.
+ * Every `.jsonl` file under `dir`, recursively, that is not a sidecar by
+ * name — bounded to {@link MAX_BACKFILL_DEPTH} directory levels below `dir`
+ * itself (`dir` is depth 0). Never descends into `node_modules` or `.git`
+ * (a copied repo source or a bundle's own worktree can carry either, and
+ * neither ever holds a real archived spine worth scanning). Never follows a
+ * symlinked directory (a symlink is skipped outright — `Dirent.isDirectory`/
+ * `isFile` both read false for one, since `readdirSync` with `withFileTypes`
+ * types by `lstat`, not the link's target — so it silently falls out of
+ * both branches below rather than needing a separate check).
  * @param {string} dir
+ * @param {number} [maxDepth]
  * @returns {string[]}
  */
-function jsonlFilesIn(dir) {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.jsonl') && !isSidecarByName(f))
-    .map((f) => join(dir, f))
-    .sort();
+function jsonlFilesIn(dir, maxDepth = MAX_BACKFILL_DEPTH) {
+  /** @type {Set<string>} */
+  const found = new Set();
+  /** @param {string} d @param {number} depth */
+  function walk(d, depth) {
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.git') continue;
+        if (depth < maxDepth) walk(join(d, entry.name), depth + 1);
+        continue;
+      }
+      if (entry.isFile() && entry.name.endsWith('.jsonl') && !isSidecarByName(entry.name)) {
+        found.add(join(d, entry.name));
+      }
+    }
+  }
+  if (existsSync(dir)) walk(dir, 0);
+  return [...found].sort();
 }
 
 /**
- * `bareloop runs backfill <dir>` — scan `dir` and its immediate
- * subdirectories for archived spine files (both the free-standing layout,
- * e.g. `<dir>/<x>/u-<id>.jsonl`, and the bundle layout,
- * `<dir>/<x>/runs/<runid>/spine.jsonl`, plus `dir` itself in either shape)
- * and add one row per spine whose runid is not already in the list.
- * IDEMPOTENT: running twice adds nothing the second time (the same
- * runid-dedup `appendRun` already does). Never silent about what it found:
- * every candidate `.jsonl` is bucketed into exactly one of added / already
- * listed / skipped (not a spine, or unreadable).
+ * `bareloop runs backfill <dir>` — recursively scan `dir` (bounded to
+ * {@link MAX_BACKFILL_DEPTH} levels, never into `node_modules`/`.git`,
+ * never following a symlinked directory) for archived spine files — both
+ * the free-standing layout (e.g. `<dir>/<x>/u-<id>.jsonl`, at any depth) and
+ * the bundle layout (`<dir>/.../runs/<runid>/spine.jsonl`) — and add one row
+ * per spine whose runid is not already in the list. IDEMPOTENT: running
+ * twice adds nothing the second time (the same runid-dedup `appendRun`
+ * already does). Never silent about what it found: every candidate `.jsonl`
+ * is bucketed into exactly one of added / already listed / skipped (not a
+ * spine, or unreadable).
  * @param {string} dir
  * @param {{ home?: string }} [opts]
  * @returns {{ added: number, alreadyListed: number, skipped: number, addedRows: RunRow[] }}
@@ -162,23 +190,7 @@ function jsonlFilesIn(dir) {
 export function backfillRuns(dir, opts = {}) {
   if (!existsSync(dir)) throw new Error(`backfillRuns: no such directory: ${dir}`);
 
-  /** @type {Set<string>} */
-  const candidates = new Set();
-  const roots = [dir];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) roots.push(join(dir, entry.name));
-  }
-  for (const root of roots) {
-    for (const f of jsonlFilesIn(root)) candidates.add(f);
-    const runsDir = join(root, 'runs');
-    if (existsSync(runsDir)) {
-      for (const entry of readdirSync(runsDir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const spinePath = join(runsDir, entry.name, 'spine.jsonl');
-        if (existsSync(spinePath)) candidates.add(spinePath);
-      }
-    }
-  }
+  const candidates = new Set(jsonlFilesIn(dir));
 
   const { rows: existingRows } = readRunList(opts);
   const known = new Set(existingRows.map((r) => r && r.runid).filter(Boolean));

@@ -10,7 +10,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  existsSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, cpSync,
+  existsSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, cpSync, symlinkSync,
 } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
@@ -180,6 +180,67 @@ test('backfillRuns: an already-appended run (via run-u/bundle) is recognized and
   const { rows } = readRunList({ home });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].via, 'run-u'); // the live row is never overwritten by a backfill row
+});
+
+test('backfillRuns: RECURSIVE — finds a spine nested several directories deep, never just dir + immediate subdirs', () => {
+  const patients = tmp();
+  const home = tmp();
+  // 4 directories deep, matching the real shape a person-path run archives
+  // to: <dir>/out/source-x/y-bareloop/u-<id>.jsonl
+  const deep = join(patients, 'proj-live', 'out', 'source-x', 'proj-live-bareloop');
+  mkdirSync(deep, { recursive: true });
+  writeSpine(join(deep, 'u-deep1.jsonl'), [{ type: 'job-start', job: 'deep-job', ts: '2026-09-20T00:00:00.000Z', seq: 1 }]);
+
+  const result = backfillRuns(patients, { home });
+  assert.equal(result.added, 1);
+  const { rows } = readRunList({ home });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].runid, 'deep1');
+  assert.equal(rows[0].job, 'deep-job');
+});
+
+test('backfillRuns: never descends into node_modules or .git', () => {
+  const patients = tmp();
+  const home = tmp();
+  mkdirSync(join(patients, 'node_modules', 'some-pkg'), { recursive: true });
+  writeSpine(join(patients, 'node_modules', 'some-pkg', 'u-nm1.jsonl'), [{ type: 'job-start', job: 'nm-job', ts: '2026-09-20T00:00:00.000Z', seq: 1 }]);
+  mkdirSync(join(patients, '.git', 'objects'), { recursive: true });
+  writeSpine(join(patients, '.git', 'objects', 'u-git1.jsonl'), [{ type: 'job-start', job: 'git-job', ts: '2026-09-20T00:00:00.000Z', seq: 1 }]);
+  // a real spine sitting alongside, to prove the scan otherwise works
+  writeSpine(join(patients, 'u-real1.jsonl'), [{ type: 'job-start', job: 'real-job', ts: '2026-09-20T00:00:00.000Z', seq: 1 }]);
+
+  const result = backfillRuns(patients, { home });
+  assert.equal(result.added, 1);
+  const { rows } = readRunList({ home });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].job, 'real-job');
+});
+
+test('backfillRuns: never follows a symlinked directory', { skip: process.platform === 'win32' }, () => {
+  const patients = tmp();
+  const home = tmp();
+  const real = tmp();
+  writeSpine(join(real, 'u-sym1.jsonl'), [{ type: 'job-start', job: 'sym-job', ts: '2026-09-20T00:00:00.000Z', seq: 1 }]);
+  symlinkSync(real, join(patients, 'linked'), 'dir');
+
+  const result = backfillRuns(patients, { home });
+  assert.equal(result.added, 0);
+  const { rows } = readRunList({ home });
+  assert.equal(rows.length, 0);
+});
+
+test('backfillRuns: bounded depth — a spine deeper than the cap is not found', () => {
+  const patients = tmp();
+  const home = tmp();
+  // one level deeper than MAX_BACKFILL_DEPTH (6): dir/d1/d2/d3/d4/d5/d6/d7/u-x.jsonl
+  const tooDeep = join(patients, 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7');
+  mkdirSync(tooDeep, { recursive: true });
+  writeSpine(join(tooDeep, 'u-toodeep1.jsonl'), [{ type: 'job-start', job: 'too-deep-job', ts: '2026-09-20T00:00:00.000Z', seq: 1 }]);
+
+  const result = backfillRuns(patients, { home });
+  assert.equal(result.added, 0);
+  const { rows } = readRunList({ home });
+  assert.equal(rows.length, 0);
 });
 
 // ---------------------------------------------------------------------------
