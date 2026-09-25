@@ -662,6 +662,51 @@ test('/api/runs/:runid/audit: a sidecar with real rows -> reason null, rows popu
 });
 
 // ---------------------------------------------------------------------------
+// item 7 (2026-09-25): /api/runs/:runid carries replay's own already-computed
+// behaviour/memoryCache fields verbatim — never recomputed a second way.
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid: no gate-audit sidecar -> behaviour is null (never a fake zero-calls object)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-nobehaviour.jsonl'), [{
+    type: 'job-start', job: 'no-behaviour-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green',
+  }, { type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, ts: '2026-09-05T00:01:00.000Z', seq: 2 }]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'nobehaviour', job: 'no-behaviour-job', spine: join(dir, 'u-nobehaviour.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/nobehaviour');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.behaviour, null);
+  assert.equal(body.memoryCache, null);
+});
+
+test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2) reports behaviour/memoryCache matching `bareloop replay` exactly', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-item7', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/mu2p83go-item7');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  // verified against `node bin/bareloop.mjs replay <spine>` BEHAVIOUR/MEMORY-CACHE
+  // lines in the build report: "142 tool calls · 75 read, 44 grep, 21 edit, 2
+  // recent" / "7 re-reads answered from memory · 0 reads capped · 4.8 KB withheld".
+  assert.equal(body.behaviour.totalCalls, 142);
+  assert.deepEqual(body.behaviour.byTool, {
+    shell_read: 75, shell_grep: 44, ctx_recent: 2, edit: 21,
+  });
+  assert.equal(body.memoryCache.pointered, 7);
+  assert.equal(body.memoryCache.capped, 0);
+  assert.equal(body.memoryCache.bytesWithheld, 4865);
+});
+
+// ---------------------------------------------------------------------------
 // item 2 (2026-09-25): Job tab source order — (a) bundle spec.json [existing,
 // re-verified above], (b) jobs/<job>.json with a specHash compare, (c) the
 // run's own job-start record, else 'not recorded'/'unknown' everywhere.

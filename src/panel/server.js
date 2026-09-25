@@ -490,6 +490,15 @@ export function getRunDetail(runid, opts = {}) {
     at: row.at,
     via: row.via,
     skipped: summary.skipped,
+    // item 7 (2026-09-25): the Run summary's tools/cache rows — reused
+    // verbatim from `replayRun`'s own already-computed fields (the SAME
+    // numbers `bareloop replay` prints under BEHAVIOUR/MEMORY-CACHE), never
+    // recomputed a second way. `behaviour` is `null` when no gate-audit
+    // sidecar was ever found (never a fake all-zero object); `memoryCache`
+    // is `null` when the spine carries no `memory-cache` record at all
+    // (never armed on this run).
+    behaviour: summary.behaviour,
+    memoryCache: summary.memoryCache,
   };
 }
 

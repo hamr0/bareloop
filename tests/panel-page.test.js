@@ -241,6 +241,43 @@ test('.wf-meta + .wf-meta::before separator carries a space on BOTH sides (" · 
   assert.match(sepRule[0], /content:" · "/, `expected content:" · " (space both sides), got: ${sepRule[0]}`);
 });
 
+function loadToolsCacheHelpers(html) {
+  const start = html.indexOf('function toolDisplayLabel');
+  const end = html.indexOf('function renderRun(detail){');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected toolDisplayLabel/toolsLine/cacheLine in src/panel/index.html');
+  const body = html.slice(start, end);
+  // eslint-disable-next-line no-new-func
+  return new Function(`${body}\nreturn { toolDisplayLabel, toolsLine, cacheLine };`)();
+}
+
+test('item 7: toolsLine — unknown (no log saved) when behaviour is null, never a fake "0 calls"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { toolsLine } = loadToolsCacheHelpers(html);
+  assert.equal(toolsLine(null), 'unknown (no log saved)');
+});
+
+test('item 7: toolsLine — a real gate-audit-derived behaviour object formats top tools by count, mirroring src/behaviour.js displayLabel', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { toolsLine } = loadToolsCacheHelpers(html);
+  // real numbers from bareloop-patients u-mu2p83go.jsonl, verified against
+  // `node bin/bareloop.mjs replay` in the build report.
+  const behaviour = {
+    totalCalls: 142, byTool: {
+      shell_read: 75, shell_grep: 44, ctx_recent: 2, edit: 21,
+    },
+  };
+  assert.equal(toolsLine(behaviour), '142 calls — read 75 · grep 44 · edit 21 · recent 2');
+  assert.equal(toolsLine({ totalCalls: 0, byTool: {} }), '0 calls');
+});
+
+test('item 7: cacheLine — not recorded when memoryCache is null; real numbers otherwise, matching replay\'s own KB formula', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { cacheLine } = loadToolsCacheHelpers(html);
+  assert.equal(cacheLine(null), 'not recorded');
+  // real numbers from u-mu2p83go.jsonl's memory-cache record.
+  assert.equal(cacheLine({ pointered: 7, bytesWithheld: 4865 }), '7 re-reads answered from memory · 4.8 KB not re-sent');
+});
+
 test('item 6: the step card meta line carries a plain-language title (hover) explaining steps/rounds/tools — no new glyph', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(
