@@ -175,6 +175,62 @@ test('wf-name and wf-meta-line CSS: single-line with ellipsis (never wrap) so a 
 // "deterministic · $0.66 · 4m 02s" (spaced both sides).
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Defect (F196): a died-before-any-step run's synthetic "died during
+// planning" placeholder box was being counted as step 1 ("steps: 0 of 1
+// done"), and the map box's own title carried a "1 " number prefix as if it
+// were a real step. `realSteps()` filters synthetic steps out of the
+// summary count / step-card list; `stepTitleText()` skips the number prefix
+// for any step flagged `noNumber` (set from `synthetic` by renderRun).
+// ---------------------------------------------------------------------------
+
+/** Extracts one named function's source text verbatim out of the page's own
+ * inline script (never a reimplementation) and returns it as a callable. */
+function extractFn(html, name) {
+  const start = html.indexOf(`function ${name}(`);
+  assert.ok(start !== -1, `expected to find function ${name} in src/panel/index.html`);
+  // find the matching closing brace by simple depth counting from the first "{"
+  const braceStart = html.indexOf('{', start);
+  let depth = 0;
+  let i = braceStart;
+  for (; i < html.length; i += 1) {
+    if (html[i] === '{') depth += 1;
+    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
+  }
+  const body = html.slice(start, i + 1);
+  // eslint-disable-next-line no-new-func
+  return new Function(`${body}\nreturn ${name};`)();
+}
+
+test('realSteps: filters out any step flagged `synthetic` (the "died during planning" placeholder), keeps real steps', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const realSteps = extractFn(html, 'realSteps');
+  const steps = [
+    { id: 'a', state: 'done' },
+    { id: 'b', state: 'stopped' },
+    { id: 'died during planning', state: 'died', synthetic: true },
+  ];
+  const result = realSteps(steps);
+  assert.equal(result.length, 2);
+  assert.ok(result.every((s) => !s.synthetic));
+});
+
+test('realSteps: a died-before-any-step run (only the synthetic placeholder) reduces to an EMPTY list — the summary must read "0 of 0"/"none started", never "0 of 1"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const realSteps = extractFn(html, 'realSteps');
+  const steps = [{ id: 'died during planning', state: 'died', synthetic: true }];
+  assert.equal(realSteps(steps).length, 0);
+});
+
+test('stepTitleText: a step flagged noNumber renders WITHOUT the leading "<n> " step-number prefix a real step gets', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { stepTitleText } = loadStepMapGeometry();
+  assert.equal(stepTitleText(0, { title: 'died during planning', noNumber: true }), 'died during planning');
+  assert.equal(stepTitleText(0, { title: 'run the checks' }), '1 run the checks');
+  assert.equal(stepTitleText(2, { title: 'run the checks' }), '3 run the checks');
+  assert.ok(html.length > 0); // keep html referenced (lint)
+});
+
 test('.wf-meta + .wf-meta::before separator carries a space on BOTH sides (" · "), never just a trailing space', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const cssBlockMatch = html.match(/<style>[\s\S]*?<\/style>/);

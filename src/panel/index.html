@@ -393,10 +393,13 @@
   var MIN_BOX_W = 100;
   var BOX_H = 60, BOX_H_2LINE = 78;
   var ROW_GAP = 70;
-  function stepTitleText(idx, title){ return (idx + 1) + ' ' + title; }
+  // s.noNumber (F196): a synthetic placeholder box (e.g. "died during
+  // planning") is a LABEL, never a real step — it renders without the
+  // leading "<n> " step number a real step gets.
+  function stepTitleText(idx, s){ return s.noNumber ? s.title : (idx + 1) + ' ' + s.title; }
   function naturalBoxWidth(steps){
     var maxChars = 0;
-    steps.forEach(function(s, idx){ maxChars = Math.max(maxChars, stepTitleText(idx, s.title).length); });
+    steps.forEach(function(s, idx){ maxChars = Math.max(maxChars, stepTitleText(idx, s).length); });
     return Math.max(MIN_BOX_W, Math.ceil(maxChars * CHAR_W) + TITLE_HPAD);
   }
   function computeMapLayout(n, availW, naturalW){
@@ -432,7 +435,7 @@
     var perRow = layout.perRow, boxW = layout.boxW, gap = MAP_GAP;
     var rows = Math.ceil(n / perRow);
     var margin = MAP_MARGIN;
-    var titleLines = steps.map(function(s, idx){ return wrapTitleLines(stepTitleText(idx, s.title), boxW); });
+    var titleLines = steps.map(function(s, idx){ return wrapTitleLines(stepTitleText(idx, s), boxW); });
     var maxLines = titleLines.reduce(function(m, l){ return Math.max(m, l.length); }, 1);
     var boxH = maxLines > 1 ? BOX_H_2LINE : BOX_H;
     var rowH = boxH + ROW_GAP;
@@ -535,6 +538,13 @@
   } else {
     window.addEventListener("resize", reflowMap);
   }
+
+  // F196: a `synthetic` step (e.g. the "died during planning" placeholder
+  // box) is a LABEL, never a real step — excluded from the summary's "N of
+  // M done" count and from the numbered step-card list below the map (the
+  // map itself still keeps the one box, rendered via renderStepMap directly
+  // off detail.steps, unfiltered).
+  function realSteps(steps){ return steps.filter(function(s){ return !s.synthetic; }); }
 
   // ---- glyph/badge helpers (only [✓]/[✗]/[▶]/[·]/[?] — never the words green/red/soft-green/died) ----
   function glyphClass(g){
@@ -673,20 +683,26 @@
 
     var box = document.getElementById("run-summary");
     box.className = "summary-box " + (detail.died ? "magenta" : (detail.glyph === "✗" ? "red" : (detail.glyph === "▶" ? "amber" : "")));
-    var stepsDone = detail.steps.filter(function(s){ return s.state === "done"; }).length;
+    // F196: a synthetic placeholder box (e.g. "died during planning") is a
+    // LABEL, not a real step — excluded from this count so a run that died
+    // before any step started reads "0 of 0 done" / "none started", never
+    // "0 of 1 done".
+    var rSteps = realSteps(detail.steps);
+    var stepsDone = rSteps.filter(function(s){ return s.state === "done"; }).length;
+    var stepsText = rSteps.length === 0 ? "none started" : ('<span class="num">' + stepsDone + '</span> of <span class="num">' + rSteps.length + '</span> done');
     box.innerHTML =
       '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span><b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
         '<span class="num">' + spendText + '</span> &middot; <span class="num">' + wallText + '</span></div>' +
-      '<div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">' + stepsDone + '</span> of <span class="num">' + detail.steps.length + '</span> done' +
+      '<div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val">' + stepsText +
         (detail.replans ? ' &middot; ' + detail.replans + ' replan' + (detail.replans === 1 ? '' : 's') : '') + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">close:</span><span class="sum-val">' + escapeXml(detail.close && detail.close.verdict ? detail.close.verdict : "none — the run ended before any close ran") + '</span></div>';
 
-    renderStepMap(detail.steps.map(function(s){ return { title: String(s.id), state: s.state }; }));
+    renderStepMap(detail.steps.map(function(s){ return { title: String(s.id), state: s.state, noNumber: !!s.synthetic }; }));
 
     var listEl = document.getElementById("step-list");
     listEl.innerHTML = "";
-    detail.steps.forEach(function(s, i){
+    rSteps.forEach(function(s, i){
       var card = document.createElement("div");
       card.className = "step-card" + (s.state === "running" ? " running" : "");
       var badgeClass = s.state === "done" ? "green" : (s.state === "stopped" ? "red" : (s.state === "running" ? "amber" : (s.state === "died" ? "magenta" : "grey")));

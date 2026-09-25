@@ -246,6 +246,10 @@ test(
     assert.ok(detail.steps.length >= 1, 'steps empty (no step-start at all) must still produce one box, never an empty map');
     assert.equal(detail.steps[detail.steps.length - 1].state, 'died');
     assert.match(String(detail.steps[detail.steps.length - 1].id), /died during planning/i);
+    // F196: the "died during planning" placeholder is a LABEL, never counted
+    // as a real step — the panel must never read "steps: 0 of 1 done" for a
+    // run that died before any step started.
+    assert.equal(detail.steps[detail.steps.length - 1].synthetic, true, 'the placeholder box must be marked synthetic so the client excludes it from the step count');
     // spend: 2 real worker-round costUsd (0.008187 + 0.010002) — never "unknown"
     assert.ok(typeof detail.spendFloorUsd === 'number' && detail.spendFloorUsd > 0.018 && detail.spendFloorUsd < 0.019, `expected a real priced-rounds sum ~0.018189, got ${detail.spendFloorUsd}`);
 

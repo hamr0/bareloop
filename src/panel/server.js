@@ -380,7 +380,13 @@ export function getRunDetail(runid, opts = {}) {
   // died before any step/iteration ever started (steps empty — the run was
   // still in scout/planning) — one placeholder box, never an empty map. Its
   // "id" IS the map's own display text (the map renders `String(s.id)`
-  // verbatim), so no separate client-side special case is needed.
+  // verbatim), so no separate client-side special case is needed for the
+  // map. `synthetic: true` marks it as a LABEL, not a real step — F196: it
+  // was being counted into "steps: 0 of 1 done" (should read "0 of 0"), and
+  // the map box carried a "1" number as if it were a real step 1. The
+  // client (index.html) excludes any `synthetic` step from both the summary
+  // count and the numbered step-card list; the map keeps the one box but
+  // renders it without a leading step number.
   if (death.died && steps.length === 0) {
     steps.push({
       id: 'died during planning',
@@ -395,6 +401,7 @@ export function getRunDetail(runid, opts = {}) {
       checks: null,
       treeChanged: null,
       tripped: null,
+      synthetic: true,
     });
   }
   return {
