@@ -1224,3 +1224,170 @@ test('/api/runs/:runid: an ITERATIONS-shape (loop, no step-start) run collapses 
   assert.equal(body.steps[0].rounds, 2);
   assert.ok(Math.abs(body.steps[0].spentUsd - 0.02) < 1e-9);
 });
+
+// ---------------------------------------------------------------------------
+// item 5 (2026-09-25): /api/runs/:runid/rounds — expandable step-card detail
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid/rounds: a plan step\'s attempt returns its own rounds + tool calls in order, pagination fields present', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-rounds.jsonl'), [
+    { type: 'job-start', job: 'rounds-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'x', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    {
+      type: 'worker-round', phase: 'step:x', costUsd: 0.01, tokens: 100, seq: 3, ts: '2026-09-05T00:00:02.000Z',
+    },
+    {
+      type: 'worker-round', phase: 'step:x', costUsd: 0.02, tokens: 200, seq: 4, ts: '2026-09-05T00:00:03.000Z',
+    },
+    {
+      type: 'exit-eval', step: 'x', iteration: 1, seq: 5, ts: '2026-09-05T00:00:04.000Z', results: [{ type: 'check-passes', pass: true }],
+    },
+    { type: 'step-end', step: 'x', outcome: 'green', seq: 6, ts: '2026-09-05T00:00:05.000Z' },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0.03, spendComplete: true, seq: 7, ts: '2026-09-05T00:00:06.000Z',
+    },
+  ]);
+  writeSpine(join(dir, 'u-rounds-gate-audit.jsonl'), [
+    {
+      ts: '2026-09-05T00:00:02.000Z', phase: 'record', action: { type: 'llm' }, decision: null, result: { costUsd: 0.01, tokens: 100, durationMs: 400 },
+    },
+    { ts: '2026-09-05T00:00:02.100Z', action: { type: 'read', path: 'a.js' }, decision: 'allow' },
+    {
+      ts: '2026-09-05T00:00:03.000Z', phase: 'record', action: { type: 'llm' }, decision: null, result: { costUsd: 0.02, tokens: 200, durationMs: 500 },
+    },
+    { ts: '2026-09-05T00:00:03.100Z', action: { type: 'edit', path: 'b.js' }, decision: 'allow' },
+    { ts: '2026-09-05T00:00:03.200Z', action: { type: 'read', path: 'c.js' }, decision: 'deny' },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'roundsrun', job: 'rounds-job', spine: join(dir, 'u-rounds.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/roundsrun/rounds?step=x&occurrence=1&attempt=1`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.totalRounds, 2);
+  assert.equal(body.rounds.length, 2);
+  assert.equal(body.rounds[0].n, 1);
+  assert.equal(body.rounds[0].costUsd, 0.01);
+  assert.equal(body.rounds[0].durationMs, 400);
+  assert.equal(body.rounds[0].toolCalls.length, 1);
+  assert.equal(body.rounds[0].toolCalls[0].path, 'a.js');
+  assert.equal(body.rounds[1].n, 2);
+  assert.equal(body.rounds[1].toolCalls.length, 2); // one allowed edit + one denied read
+  assert.equal(body.toolLogSaved, true);
+  assert.equal(body.check.outcome, 'green');
+  assert.equal(body.offset, 0);
+  assert.equal(body.limit, 50);
+});
+
+test('/api/runs/:runid/rounds: pagination — offset/limit slice the rounds list, totalRounds always the real count', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const records = [
+    { type: 'job-start', job: 'many-rounds', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'x', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+  ];
+  let seq = 3;
+  for (let i = 0; i < 10; i += 1) {
+    records.push({
+      type: 'worker-round', phase: 'step:x', costUsd: 0.01, tokens: 1, seq: seq++, ts: `2026-09-05T00:00:${String(2 + i).padStart(2, '0')}.000Z`,
+    });
+  }
+  records.push({
+    type: 'exit-eval', step: 'x', iteration: 1, seq: seq++, ts: '2026-09-05T00:00:20.000Z', results: [{ type: 'check-passes', pass: true }],
+  });
+  records.push({ type: 'step-end', step: 'x', outcome: 'green', seq: seq++, ts: '2026-09-05T00:00:21.000Z' });
+  records.push({
+    type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, seq: seq++, ts: '2026-09-05T00:00:22.000Z',
+  });
+  writeSpine(join(dir, 'u-many.jsonl'), records);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'manyrun', job: 'many-rounds', spine: join(dir, 'u-many.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/manyrun/rounds?step=x&occurrence=1&attempt=1&offset=3&limit=4`);
+  const body = await res.json();
+  assert.equal(body.totalRounds, 10);
+  assert.equal(body.rounds.length, 4);
+  assert.equal(body.rounds[0].n, 4); // offset 3 -> round #4
+  assert.equal(body.offset, 3);
+  assert.equal(body.limit, 4);
+  // no gate-audit sidecar at all -> toolLogSaved false, toolCalls null (never a fake empty array)
+  assert.equal(body.toolLogSaved, false);
+  assert.equal(body.rounds[0].toolCalls, null);
+});
+
+test('/api/runs/:runid/rounds: an unknown step/attempt combination -> null (client 404)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-onestep.jsonl'), [
+    { type: 'job-start', job: 'onestep', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'x', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'x', outcome: 'green', seq: 3, ts: '2026-09-05T00:00:02.000Z' },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0, spendComplete: true, seq: 4, ts: '2026-09-05T00:00:03.000Z',
+    },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'onesteprun', job: 'onestep', spine: join(dir, 'u-onestep.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res1 = await fetch(`${base}/api/runs/onesteprun/rounds?step=nosuchstep&attempt=1`);
+  assert.equal(res1.status, 404);
+  const res2 = await fetch(`${base}/api/runs/onesteprun/rounds?step=x&attempt=1`); // no exit-eval ran -> no attempt 1
+  assert.equal(res2.status, 404);
+});
+
+test('/api/runs/:runid/rounds: LOOP-shape (iterations) run — attempt N maps to iteration N, no `step` query needed', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-looprounds.jsonl'), [
+    { type: 'job-start', job: 'loop-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'run-start', seq: 2, ts: '2026-09-05T00:00:00.500Z' },
+    { type: 'iteration-start', iteration: 1, seq: 3, ts: '2026-09-05T00:00:01.000Z' },
+    {
+      type: 'worker-round', costUsd: 0.01, tokens: 10, seq: 4, ts: '2026-09-05T00:00:01.500Z',
+    },
+    {
+      type: 'close-verdict', iteration: 1, verdict: 'satisfied', seq: 5, ts: '2026-09-05T00:00:02.000Z',
+    },
+    {
+      type: 'run-end', outcome: 'green', iterations: 1, seq: 6, ts: '2026-09-05T00:00:02.500Z',
+    },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, seq: 7, ts: '2026-09-05T00:00:03.000Z',
+    },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'loopround', job: 'loop-job', spine: join(dir, 'u-looprounds.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/loopround/rounds?attempt=1`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.totalRounds, 1);
+  assert.equal(body.rounds[0].costUsd, 0.01);
+});
+
+test('/api/runs/:runid/rounds: real archived run mu2p83go — attempt 1 of the one step returns all 19 rounds, matching replay\'s own step.rounds count', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-rounds', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/mu2p83go-rounds/rounds?step=annotate-checks-strict&occurrence=1&attempt=1`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.totalRounds, 19);
+  assert.equal(body.rounds.length, 19);
+  // rounds in ascending round-number order (timestamp order, per the item 2 round derivation)
+  const ns = body.rounds.map((r) => r.n);
+  const sortedNs = [...ns].sort((a, b) => a - b);
+  assert.deepEqual(ns, sortedNs, 'rounds must come back in ascending round-number (timestamp) order');
+  assert.equal(body.check.outcome, 'green');
+  assert.equal(body.toolLogSaved, true);
+});

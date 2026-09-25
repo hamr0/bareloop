@@ -594,9 +594,22 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // defensively since a caller could hand in an out-of-order array).
     /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red'}>} */
     const attempts = [];
+    // `attemptWindows` (panel item 5, 2026-09-25): the SAME per-attempt list
+    // as `attempts` above, plus each attempt's own seq/ts sub-window
+    // (`(prevBoundarySeq, thisExitEvalSeq]`, first attempt's lower bound is
+    // the step's own `startSeq`/`startTs`) — never a second windowing pass:
+    // this is the ONE loop that decides attempt boundaries; `attempts` is
+    // just this array's public-facing projection. Consumed by the
+    // `/api/runs/:runid/rounds` endpoint (`src/panel/server.js`) to slice
+    // this attempt's own rounds/tool-calls out of the full spine+gate-audit,
+    // never recomputed a second way there either.
+    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red', startSeq: number, endSeq: number, startTs: number|null, endTs: number|null, exitEvalDetail: string|null}>} */
+    const attemptWindows = [];
     const stepExitEvals = exitEvals
       .filter((ee) => ee.step === id && typeof ee.seq === 'number' && ee.seq > startSeq && ee.seq < endSeq)
       .sort((a, b) => a.seq - b.seq);
+    let prevBoundSeq = startSeq;
+    let prevBoundTs = startTs;
     for (const ee of stepExitEvals) {
       const results = Array.isArray(ee.results) ? ee.results.filter(isRecord) : [];
       for (const r of results) {
@@ -604,11 +617,31 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         if (r.type === 'tree-changed' && r.pass) treeChanged = true;
       }
       const allPass = results.length > 0 && results.every((r) => r.pass === true);
+      const eeSeq = typeof ee.seq === 'number' ? ee.seq : prevBoundSeq;
+      const eeTs = parseTs(ee.ts);
+      // the failing (or, on an all-pass attempt, the first) result's own
+      // `detail` — the closest thing a step-level exit-eval carries to a
+      // "gap line" (the outer close's own `gap` field has no per-step
+      // equivalent; see the file header's `close-verdict` doc).
+      const failing = results.find((r) => r.pass !== true);
+      const detailSource = failing ?? results[0] ?? null;
       attempts.push({
         n: attempts.length + 1,
         iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
         outcome: allPass ? 'green' : 'red',
       });
+      attemptWindows.push({
+        n: attemptWindows.length + 1,
+        iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
+        outcome: allPass ? 'green' : 'red',
+        startSeq: prevBoundSeq,
+        endSeq: eeSeq,
+        startTs: prevBoundTs,
+        endTs: eeTs,
+        exitEvalDetail: detailSource && typeof detailSource.detail === 'string' ? detailSource.detail : null,
+      });
+      prevBoundSeq = eeSeq;
+      prevBoundTs = eeTs ?? prevBoundTs;
     }
 
     idOccurrence.set(id, (idOccurrence.get(id) ?? 0) + 1);
@@ -621,6 +654,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       checks: { passed, failed },
       treeChanged,
       attempts,
+      attemptWindows,
+      stepStartSeq: startSeq,
+      stepEndSeq: endSeq,
     };
   });
 
@@ -662,6 +698,13 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         ? { verdict: end.verdict ?? null, stages: Array.isArray(end.stages) ? end.stages : null }
         : null,
       ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
+      // exposed for panel item 5's `/api/runs/:runid/rounds` endpoint, which
+      // slices this iteration's own rounds/tool-calls the same way a plan
+      // step's `attemptWindows` does — never a second windowing pass.
+      windowStartSeq: startSeq,
+      windowEndSeq: endSeq,
+      windowStartTs: startTs,
+      windowEndTs: endTs,
     };
   }) : [];
 

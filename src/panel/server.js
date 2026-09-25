@@ -735,6 +735,140 @@ export function getRunAudit(runid, opts = {}) {
   };
 }
 
+/** The default/max page size for {@link getRunRounds} — tighten-only,
+ * named so a future change is a deliberate, visible edit (item 5,
+ * 2026-09-25). */
+export const ROUNDS_PAGE_DEFAULT = 50;
+export const ROUNDS_PAGE_MAX = 200;
+
+/**
+ * `GET /api/runs/:runid/rounds?step=<id>&occurrence=<n>&attempt=<n>&offset=&limit=`
+ * — item 5 (2026-09-25): the expandable step-card detail, built server-side
+ * in one endpoint and rendered lazily on expand. Slices ONE attempt's own
+ * rounds (+ each round's own tool calls, in order) out of the already-
+ * computed `attemptWindows` (`src/replay.js`'s per-step field, item 5's
+ * addition — the exact seq/ts sub-window each attempt covers) or, for a
+ * loop-shape run (`timelineKind:'iterations'`, no step layer at all), out of
+ * each iteration's own `windowStartSeq`/`windowEndSeq` — NEVER a second
+ * windowing pass: both are read directly off `replayOne`'s already-computed
+ * summary. Tool calls per round reuse {@link getRunAudit}'s own already-
+ * scoped, already-round-tagged rows (item 2) — filtered to this round's
+ * number, never re-derived. `toolLogSaved:false` (no gate-audit sidecar at
+ * all) still returns every round from the spine's own worker-round records,
+ * each with `toolCalls: null` (never a fabricated empty array — the client
+ * renders "tool calls: no log saved").
+ * Pagination: `offset`/`limit` slice the ATTEMPT's rounds list (never a
+ * round's own tool-call list) — `limit` defaults to {@link
+ * ROUNDS_PAGE_DEFAULT}, clamped to {@link ROUNDS_PAGE_MAX}; the response
+ * always carries `totalRounds` so the client can print "showing A–B of N",
+ * never a silently truncated list.
+ * `null` when the run isn't listed, the requested step/occurrence/attempt
+ * doesn't resolve to a real window, or the spine file is missing — the
+ * caller renders 404, same posture as {@link getRunAudit}/{@link getRunJob}.
+ * @param {string} runid
+ * @param {{ step?: string, occurrence?: number, attempt?: number, offset?: number, limit?: number }} query
+ * @param {{ home?: string }} [opts]
+ * @returns {any|null}
+ */
+export function getRunRounds(runid, query = {}, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  if (!existsSync(row.spine)) return null;
+
+  const occurrence = typeof query.occurrence === 'number' && Number.isInteger(query.occurrence) && query.occurrence > 0 ? query.occurrence : 1;
+  const attempt = typeof query.attempt === 'number' && Number.isInteger(query.attempt) && query.attempt > 0 ? query.attempt : 1;
+  const offset = typeof query.offset === 'number' && Number.isInteger(query.offset) && query.offset >= 0 ? query.offset : 0;
+  const limit = typeof query.limit === 'number' && Number.isInteger(query.limit) && query.limit > 0
+    ? Math.min(query.limit, ROUNDS_PAGE_MAX) : ROUNDS_PAGE_DEFAULT;
+
+  const summary = replayOne(row.spine);
+
+  /** @type {{startSeq: number, endSeq: number, outcome: string|null, detail: string|null}|null} */
+  let window = null;
+  let stepLabel = null;
+  if (summary.timelineKind === 'iterations') {
+    const it = summary.iterations[attempt - 1];
+    if (!it) return null;
+    window = {
+      startSeq: it.windowStartSeq, endSeq: it.windowEndSeq, outcome: it.verdict, detail: it.closeStage ? closeStageDetail(it.closeStage) : null,
+    };
+    stepLabel = summary.job ?? row.job;
+  } else {
+    const step = summary.steps.find((s) => s.id === query.step && s.occurrence === occurrence);
+    if (!step) return null;
+    const aw = Array.isArray(step.attemptWindows) ? step.attemptWindows[attempt - 1] : null;
+    if (!aw) return null;
+    window = {
+      startSeq: aw.startSeq, endSeq: aw.endSeq, outcome: aw.outcome, detail: aw.exitEvalDetail,
+    };
+    stepLabel = step.id;
+  }
+
+  const { records: spineRecords } = parseJsonl(row.spine);
+  const roundOf = makeRoundLookup(spineRecords);
+  const roundRecordsInWindow = spineRecords
+    .filter((r) => r && SPEND_RECORD_TYPES.includes(r.type) && typeof r.seq === 'number' && r.seq > window.startSeq && r.seq <= window.endSeq)
+    .sort((a, b) => a.seq - b.seq);
+
+  const auditResult = getRunAudit(runid, opts);
+  const toolLogSaved = !!auditResult && auditResult.reason !== 'no-sidecar';
+  /** @type {Map<number, any[]>} */
+  const toolsByRound = new Map();
+  if (toolLogSaved) {
+    for (const r of auditResult.rows) {
+      if (r.kind !== 'tool-call' || typeof r.round !== 'number') continue;
+      const bucket = toolsByRound.get(r.round) ?? [];
+      bucket.push(r);
+      toolsByRound.set(r.round, bucket);
+    }
+  }
+
+  const totalRounds = roundRecordsInWindow.length;
+  const page = roundRecordsInWindow.slice(offset, offset + limit);
+  const rounds = page.map((r) => {
+    const n = roundOf(r.ts);
+    const modelCallRow = toolLogSaved ? auditResult.rows.find((a) => a.kind === 'model-call' && a.round === n) : null;
+    return {
+      n,
+      ts: typeof r.ts === 'string' ? r.ts : null,
+      costUsd: typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? r.costUsd : null,
+      tokens: typeof r.tokens === 'number' && Number.isFinite(r.tokens) ? r.tokens : null,
+      durationMs: modelCallRow ? modelCallRow.durationMs : null,
+      toolCalls: toolLogSaved ? (n === null ? [] : (toolsByRound.get(n) ?? [])) : null,
+    };
+  });
+
+  return {
+    runid,
+    step: stepLabel,
+    occurrence: summary.timelineKind === 'iterations' ? null : occurrence,
+    attempt,
+    rounds,
+    totalRounds,
+    offset,
+    limit,
+    check: { outcome: window.outcome, detail: window.detail },
+    toolLogSaved,
+  };
+}
+
+/**
+ * The `↳ close:`-style text for one iteration's OWN close-verdict — same
+ * shape as `src/replay.js`'s private `closeStageLine`, but that helper is
+ * not exported (a formatting concern of the CLI's printable page); the
+ * `/rounds` endpoint needs the same "failing stage names" text as plain
+ * data, not a pre-formatted line, so it is derived here instead of importing
+ * a print-only helper.
+ * @param {{verdict: string|null, stages: any[]|null}|null} closeStage
+ * @returns {string|null}
+ */
+function closeStageDetail(closeStage) {
+  if (!closeStage || !closeStage.verdict) return null;
+  const failing = Array.isArray(closeStage.stages) ? closeStage.stages.filter((s) => s && s.verdict !== 'satisfied').map((s) => s.name) : [];
+  return failing.length ? `failing: ${failing.join(', ')}` : null;
+}
+
 /**
  * `<x>/runs/<runid>/spine.jsonl` -> `<x>` (the bundle directory carrying
  * `spec.json` — see `src/bundle.js`'s own export layout). `null` for every
@@ -1122,7 +1256,7 @@ export function handleRequest(req, res, opts) {
   if (pathname === '/api/runs') { send(200, { runs: listRuns({ home: opts.home }) }); return; }
   if (pathname === '/api/workflows') { send(200, { workflows: listWorkflows({ home: opts.home }) }); return; }
 
-  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job))?$/.exec(pathname);
+  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds))?$/.exec(pathname);
   if (runMatch) {
     const rawRunid = runMatch[1];
     const sub = runMatch[3] ?? null;
@@ -1141,6 +1275,21 @@ export function handleRequest(req, res, opts) {
     if (sub === 'job') {
       const result = getRunJob(runid, { home: opts.home });
       if (!result) { sendText(res, 404, 'no such run'); return; }
+      send(200, result);
+      return;
+    }
+    if (sub === 'rounds') {
+      /** @param {string|null} v @returns {number|undefined} */
+      const num = (v) => (v !== null && /^\d+$/.test(v) ? Number(v) : undefined);
+      const query = {
+        step: url.searchParams.get('step') ?? undefined,
+        occurrence: num(url.searchParams.get('occurrence')),
+        attempt: num(url.searchParams.get('attempt')),
+        offset: num(url.searchParams.get('offset')),
+        limit: num(url.searchParams.get('limit')),
+      };
+      const result = getRunRounds(runid, query, { home: opts.home });
+      if (!result) { sendText(res, 404, 'no such run/step/attempt'); return; }
       send(200, result);
       return;
     }

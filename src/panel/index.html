@@ -203,6 +203,19 @@
   .step-card .step-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
   .step-card h4{margin:0;font-size:13px;}
   .step-meta{font-size:12px;color:var(--text-dim);margin-top:4px;}
+  /* item 5 (2026-09-25): expandable step card -> attempts -> rounds */
+  .step-attempts-toggle{margin-top:8px;}
+  .attempts-list{margin-top:8px;border-top:1px dotted var(--border-strong);padding-top:8px;}
+  .attempt-row{margin-bottom:6px;}
+  .attempt-toggle{margin-bottom:4px;}
+  .rounds-list{margin:6px 0 6px 12px;padding-left:8px;border-left:2px solid var(--border-strong);}
+  .round-block{margin-bottom:6px;font-size:12px;}
+  .round-head{color:var(--text-dim);font-weight:700;}
+  .round-tool{padding-left:10px;color:var(--text-dim);font-size:12px;}
+  .round-tool.denied{color:var(--red);}
+  .round-tool.hint{color:var(--text-faint);font-style:italic;}
+  .attempt-check{margin-top:4px;font-size:12px;}
+  .rounds-page-info{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 
   .chips{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
   .chip{padding:5px 10px;min-height:32px;border:1px solid var(--border-strong);background:var(--panel2);font-size:12px;color:var(--text-dim);}
@@ -1033,12 +1046,123 @@
       metaBits.push(typeof s.toolCalls === "number" ? (s.toolCalls + " tool call" + (s.toolCalls === 1 ? "" : "s")) : "unknown tool calls");
       metaBits.push(duration(s.wallMs));
       metaBits.push(s.unpricedRounds > 0 ? "unknown (" + s.unpricedRounds + " unpriced round" + (s.unpricedRounds === 1 ? "" : "s") + ")" : money(s.spentUsd));
+      var attempts = Array.isArray(s.attempts) ? s.attempts : [];
       card.innerHTML =
         '<div class="step-head"><h4>' + (i + 1) + ' &middot; ' + escapeXml(s.id) + (s.occurrence && s.occurrence > 1 ? ' (try ' + s.occurrence + ')' : '') + '</h4>' +
         '<span class="badge ' + badgeClass + '">' + escapeXml(s.state) + '</span></div>' +
         '<div class="step-meta" title="a step is one piece of the plan; a round is one model call; each round can use several tools (read, edit, search…)">' + metaBits.join(" &middot; ") + '</div>' +
-        (s.tripped ? '<div class="step-meta">tripped: ' + escapeXml([s.tripped.category, s.tripped.detail].filter(Boolean).join(" — ")) + '</div>' : '');
+        (s.tripped ? '<div class="step-meta">tripped: ' + escapeXml([s.tripped.category, s.tripped.detail].filter(Boolean).join(" — ")) + '</div>' : '') +
+        (attempts.length
+          ? '<button class="btn small step-attempts-toggle" type="button" aria-expanded="false" data-testid="step-attempts-toggle-' + i + '">' + attempts.length + ' attempt' + (attempts.length === 1 ? '' : 's') + '</button>' +
+            '<div class="attempts-list" hidden data-testid="attempts-list-' + i + '"></div>'
+          : '');
       listEl.appendChild(card);
+      if(!attempts.length) return;
+
+      var toggleBtn = card.querySelector(".step-attempts-toggle");
+      var attemptsListEl = card.querySelector(".attempts-list");
+      var attemptsBuilt = false;
+      toggleBtn.addEventListener("click", function(){
+        var expanded = toggleBtn.getAttribute("aria-expanded") === "true";
+        toggleBtn.setAttribute("aria-expanded", expanded ? "false" : "true");
+        attemptsListEl.hidden = expanded;
+        if(!expanded && !attemptsBuilt){
+          attemptsBuilt = true;
+          buildAttemptsList(attemptsListEl, s, attempts);
+        }
+      });
+    });
+  }
+
+  // item 5 (2026-09-25): expandable step cards — attempt row -> its rounds
+  // (server-built, lazy-fetched on expand via /api/runs/:runid/rounds).
+  function attemptGlyph(outcome){ return outcome === "green" ? "✓" : "✗"; }
+
+  function buildAttemptsList(container, step, attempts){
+    container.innerHTML = "";
+    attempts.forEach(function(a){
+      var row = document.createElement("div");
+      row.className = "attempt-row";
+      row.innerHTML =
+        '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
+          'attempt ' + a.n + ' ' + attemptGlyph(a.outcome) +
+        '</button>' +
+        '<div class="rounds-list" hidden></div>';
+      container.appendChild(row);
+      var btn = row.querySelector(".attempt-toggle");
+      var roundsEl = row.querySelector(".rounds-list");
+      var built = false;
+      btn.addEventListener("click", function(){
+        var expanded = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", expanded ? "false" : "true");
+        roundsEl.hidden = expanded;
+        if(!expanded && !built){
+          built = true;
+          loadRounds(roundsEl, step, a, 0);
+        }
+      });
+    });
+  }
+
+  function roundsUrl(step, attempt, offset){
+    var params = "attempt=" + encodeURIComponent(attempt.n) + "&offset=" + offset;
+    if(step.id !== undefined && step.id !== null) params += "&step=" + encodeURIComponent(step.id);
+    if(step.occurrence) params += "&occurrence=" + encodeURIComponent(step.occurrence);
+    return "/api/runs/" + encodeURIComponent(currentRunid) + "/rounds?" + params;
+  }
+
+  function renderRoundToolCall(tc){
+    var verb = tc.action === "read" ? "read" : (tc.action === "edit" ? "edit" : (tc.action === "write" ? "write" : (tc.action || "call")));
+    var denied = tc.decision === "deny";
+    return '<div class="round-tool' + (denied ? ' denied' : '') + '">' +
+      escapeXml(verb) + ' ' + escapeXml(tc.path || "") + (denied ? ' <span class="badge red">denied</span>' : '') +
+    '</div>';
+  }
+
+  function renderRoundsPage(roundsEl, step, attempt, data, appendMode){
+    var body = "";
+    data.rounds.forEach(function(r){
+      var head = 'round ' + (r.n === null ? '?' : r.n) + ' · ' + money(r.costUsd) + ' · ' +
+        (typeof r.tokens === "number" ? r.tokens : "unknown") + ' tokens' +
+        (typeof r.durationMs === "number" ? ' · ' + duration(r.durationMs) : '');
+      var tools = data.toolLogSaved
+        ? (r.toolCalls && r.toolCalls.length ? r.toolCalls.map(renderRoundToolCall).join("") : '<div class="round-tool hint">no tool calls</div>')
+        : '<div class="round-tool hint">tool calls: no log saved</div>';
+      body += '<div class="round-block"><div class="round-head">' + head + '</div>' + tools + '</div>';
+    });
+    var checkLine = data.check
+      ? '<div class="attempt-check">check: <span class="badge ' + (data.check.outcome === "green" ? "green" : "red") + '">' + escapeXml(data.check.outcome || "unknown") + '</span>' +
+        (data.check.detail ? ' — ' + escapeXml(data.check.detail) : '') + '</div>'
+      : '';
+    var shownTo = data.offset + data.rounds.length;
+    var hasMore = shownTo < data.totalRounds;
+    var pageInfo = '<div class="hint">showing ' + (data.offset + 1) + '–' + shownTo + ' of ' + data.totalRounds + '</div>';
+    var loadMoreHtml = hasMore ? '<button class="btn small rounds-load-more" type="button">load more</button>' : '';
+    if(appendMode){
+      var existingMore = roundsEl.querySelector(".rounds-load-more");
+      if(existingMore) existingMore.remove();
+      var existingInfo = roundsEl.querySelector(".rounds-page-info");
+      if(existingInfo) existingInfo.remove();
+      roundsEl.insertAdjacentHTML("beforeend", body);
+    } else {
+      roundsEl.innerHTML = body;
+    }
+    roundsEl.insertAdjacentHTML("beforeend", '<div class="rounds-page-info">' + pageInfo + checkLine + '</div>');
+    if(hasMore){
+      var loadMoreWrap = roundsEl.querySelector(".rounds-page-info");
+      loadMoreWrap.insertAdjacentHTML("beforeend", loadMoreHtml);
+      loadMoreWrap.querySelector(".rounds-load-more").addEventListener("click", function(){
+        loadRounds(roundsEl, step, attempt, shownTo, true);
+      });
+    }
+  }
+
+  function loadRounds(roundsEl, step, attempt, offset, appendMode){
+    if(!appendMode) roundsEl.innerHTML = '<div class="hint">loading…</div>';
+    getJSON(roundsUrl(step, attempt, offset)).then(function(data){
+      renderRoundsPage(roundsEl, step, attempt, data, !!appendMode);
+    }).catch(function(e){
+      roundsEl.innerHTML = '<div class="hint">failed to load rounds: ' + escapeXml(e.message) + '</div>';
     });
   }
 

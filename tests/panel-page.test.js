@@ -598,3 +598,28 @@ test('item 4: renderRun feeds each step\'s attempts into the map data', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /attempts: s\.attempts \|\| \[\]/);
 });
+
+// ---------------------------------------------------------------------------
+// item 5 (2026-09-25): expandable step cards -> attempts -> rounds
+// ---------------------------------------------------------------------------
+
+test('item 5: step cards render collapsed-by-default attempt toggles, and lazy-load rounds via /api/runs/:runid/rounds on expand', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /step-attempts-toggle/);
+  assert.match(html, /class="attempts-list" hidden/);
+  assert.match(html, /class="rounds-list" hidden/);
+  assert.match(html, /function loadRounds\(/);
+  assert.match(html, /"\/api\/runs\/" \+ encodeURIComponent\(currentRunid\) \+ "\/rounds\?" \+ params/);
+});
+
+test('item 5: renderRoundsPage builds "showing A–B of N" text and a load-more button only when more rounds remain', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.ok(html.indexOf("var pageInfo = '<div class=\"hint\">showing ' + (data.offset + 1) +") !== -1, 'expected the "showing A of B" pagination text builder in src/panel/index.html');
+  assert.ok(html.indexOf("+ shownTo + ' of ' + data.totalRounds + '</div>';") !== -1);
+  assert.match(html, /var hasMore = shownTo < data\.totalRounds;/);
+  assert.match(html, /var loadMoreHtml = hasMore \? '<button class="btn small rounds-load-more"/);
+  // toolLogSaved:false renders the honest "no log saved" line, never a fake empty tool-call list
+  assert.match(html, /tool calls: no log saved/);
+  // a round's check result renders with the same green\/red badge vocabulary as everywhere else
+  assert.match(html, /data\.check\.outcome === "green" \? "green" : "red"/);
+});
