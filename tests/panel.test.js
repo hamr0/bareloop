@@ -323,6 +323,36 @@ test('/api/workflows groups the run list by job name, newest row per job wins as
   assert.equal(workflows[0].lastRunid, 'a2'); // the run list is newest-first; a2 was appended after a1
 });
 
+test('/api/workflows and /api/runs sort by `at` (real time), never by file/append order — a backfill can append an OLDER row after a newer one', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-kimi-a-1.jsonl'), [{
+    type: 'job-start', job: 'kimi-a', ts: '2026-09-09T09:48:00.000Z', seq: 1, verdictType: 'green',
+  }, { type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, ts: '2026-09-09T09:49:00.000Z', seq: 2 }]);
+  writeSpine(join(dir, 'u-429-live-1.jsonl'), [{
+    type: 'job-start', job: '429-live', ts: '2026-09-09T07:56:00.000Z', seq: 1, verdictType: 'green',
+  }, { type: 'job-end', outcome: 'green', spentUsd: 0.2, spendComplete: true, ts: '2026-09-09T07:57:00.000Z', seq: 2 }]);
+  writeSpine(join(dir, 'u-deepseek-4-1.jsonl'), [{
+    type: 'job-start', job: 'deepseek-4', ts: '2026-09-09T07:33:00.000Z', seq: 1, verdictType: 'green',
+  }, { type: 'job-end', outcome: 'green', spentUsd: 0.3, spendComplete: true, ts: '2026-09-09T07:34:00.000Z', seq: 2 }]);
+  // appended in exactly this order (a backfill scan's sorted-path order need
+  // not match chronological `at` order): kimi-a (09:48) first, THEN two rows
+  // that are chronologically EARLIER than it.
+  appendRun({ at: '2026-09-09T09:48:00.000Z', runid: 'kimi-a-1', job: 'kimi-a', spine: join(dir, 'u-kimi-a-1.jsonl'), patient: null, via: 'backfill' }, { home });
+  appendRun({ at: '2026-09-09T07:56:00.000Z', runid: '429-live-1', job: '429-live', spine: join(dir, 'u-429-live-1.jsonl'), patient: null, via: 'backfill' }, { home });
+  appendRun({ at: '2026-09-09T07:33:00.000Z', runid: 'deepseek-4-1', job: 'deepseek-4', spine: join(dir, 'u-deepseek-4-1.jsonl'), patient: null, via: 'backfill' }, { home });
+
+  const { base } = await startServer(t, { home });
+
+  const runsRes = await fetch(base + '/api/runs');
+  const { runs } = await runsRes.json();
+  assert.deepEqual(runs.map((r) => r.runid), ['kimi-a-1', '429-live-1', 'deepseek-4-1'], '/api/runs must be newest-first by `at`');
+
+  const wfRes = await fetch(base + '/api/workflows');
+  const { workflows } = await wfRes.json();
+  assert.deepEqual(workflows.map((w) => w.job), ['kimi-a', '429-live', 'deepseek-4'], '/api/workflows must be newest-first by lastAt');
+});
+
 // ---------------------------------------------------------------------------
 // /api/runs/:runid/job — resolved (bundle layout) vs honest unknown
 // ---------------------------------------------------------------------------

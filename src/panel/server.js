@@ -109,16 +109,29 @@ function summarizeRow(row) {
 }
 
 /**
- * `GET /api/runs` — every listed run, NEWEST FIRST, each enriched with a
- * cheap ($0, `skipAudit:true`) summary. Reused by `/api/workflows`'s own
- * grouping so the two endpoints never compute the glyph/checkType mapping
- * twice.
+ * `GET /api/runs` — every listed run, NEWEST FIRST BY `at` (never by file/
+ * append order — a backfill scan appends rows in sorted-PATH order, which
+ * does not track chronological `at` order; a plain `.reverse()` here once
+ * silently mis-sorted any list `appendRun` didn't build strictly
+ * chronologically), each enriched with a cheap ($0, `skipAudit:true`)
+ * summary. A row with an unparseable/missing `at` sorts last (Unix epoch 0),
+ * never crashes the sort or floats to the top. Ties (identical `at`) keep
+ * their original file order among themselves (stable sort) rather than an
+ * arbitrary one. Reused by `/api/workflows`'s own grouping so the two
+ * endpoints never compute the glyph/checkType mapping twice.
  * @param {{ home?: string }} [opts]
  * @returns {any[]}
  */
 export function listRuns(opts = {}) {
   const { rows } = readRunList(opts);
-  return rows.slice().reverse().map(summarizeRow);
+  const atMs = (r) => {
+    const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
+    return Number.isFinite(t) ? t : 0;
+  };
+  return rows
+    .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
+    .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
+    .map(({ row }) => summarizeRow(row));
 }
 
 /**
