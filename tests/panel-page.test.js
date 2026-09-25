@@ -357,29 +357,62 @@ test('item 5: filterRuns — time is single-select (7d/30d/all), excludes older 
   assert.equal(rAll.length, 4);
 });
 
-test('item 5: the History filter bar exists with checkType/result/time chip groups, a clear button, and a "showing N of M" count element', () => {
+test('item 5 + F-panel-chip-collision: ONE filter-bar component is shared by History AND Workflows — same checkType/result/time chip groups, a clear button, and a "showing N of M" count element, in each tab; no "unknown" check-type chip', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /data-testid="hist-filters"/);
-  assert.match(html, /data-filter-group="checkType"/);
-  assert.match(html, /data-filter-group="result"/);
-  assert.match(html, /data-filter-group="time"/);
-  assert.match(html, /id="hist-filter-clear"/);
-  assert.match(html, /id="hist-filter-count"/);
-  assert.match(html, /"showing " \+ filtered\.length \+ " of " \+ allHistoryRuns\.length \+ " runs"/);
+  const filterBarHTML = extractFn(html, 'filterBarHTML');
+  ['history', 'workflows'].forEach((scope) => {
+    const markup = filterBarHTML(scope);
+    assert.match(markup, new RegExp(`data-testid="${scope}-filters"`));
+    assert.match(markup, new RegExp(`id="${scope}-filter-clear"`));
+    assert.match(markup, new RegExp(`id="${scope}-filter-count"`));
+    assert.match(markup, /data-filter-group="checkType"/);
+    assert.match(markup, /data-filter-group="result"/);
+    assert.match(markup, /data-filter-group="time"/);
+    // single-letter checkType chips with tooltips, no "unknown" chip, and
+    // bare (bracket-free) result glyphs
+    assert.match(markup, /title="deterministic"[^>]*>D</);
+    assert.match(markup, /title="rubric"[^>]*>R</);
+    assert.doesNotMatch(markup, /data-filter-value="unknown"/);
+    assert.doesNotMatch(markup, /\[&#10003;\]/);
+  });
+  assert.match(html, /"showing " \+ filtered\.length \+ " of " \+ allItems\.length \+ " runs"/);
 });
 
-test('item 5: History filter localStorage access is wrapped in try/catch (per-viewer convenience only)', () => {
+test('item 5 + F-panel-chip-collision: the shared filter-bar component wraps localStorage access in try/catch (per-viewer convenience only)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const loadStart = html.indexOf('function loadHistFilterState');
-  const loadEnd = html.indexOf('function saveHistFilterState');
-  assert.ok(loadStart !== -1 && loadEnd !== -1 && loadEnd > loadStart);
-  const loadBody = html.slice(loadStart, loadEnd);
-  assert.match(loadBody, /try\{[\s\S]*localStorage\.getItem[\s\S]*\}catch\(e\)/);
+  const start = html.indexOf('function createFilterBar');
+  const end = html.indexOf('document.getElementById("history-filterbar-anchor")');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected createFilterBar in src/panel/index.html');
+  const body = html.slice(start, end);
+  assert.match(body, /try\{[\s\S]*localStorage\.getItem[\s\S]*\}catch\(e\)/);
+  assert.match(body, /try\{[\s\S]*localStorage\.setItem[\s\S]*\}catch\(e\)/);
+});
 
-  const saveStart = html.indexOf('function saveHistFilterState');
-  const saveEnd = html.indexOf('function paintHistFilterChips');
-  const saveBody = html.slice(saveStart, saveEnd);
-  assert.match(saveBody, /try\{[\s\S]*localStorage\.setItem[\s\S]*\}catch\(e\)/);
+test('F-panel-chip-collision: filterWorkflows filters by each workflow\'s OWN latest-run checkType/glyph/date, same shape as filterRuns', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  // filterWorkflows calls filterRuns internally (a one-row adapter, not a
+  // reimplementation) — extract BOTH function bodies, verbatim, in source
+  // order, so the real dependency is exercised rather than stubbed.
+  const start = html.indexOf('function filterRuns(');
+  const wfStart = html.indexOf('function filterWorkflows(');
+  const braceStart = html.indexOf('{', wfStart);
+  let depth = 0;
+  let i = braceStart;
+  for (; i < html.length; i += 1) {
+    if (html[i] === '{') depth += 1;
+    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
+  }
+  const body = html.slice(start, i + 1);
+  // eslint-disable-next-line no-new-func
+  const filterWorkflows = new Function(`${body}\nreturn filterWorkflows;`)();
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  const workflows = [
+    { job: 'a', lastCheckType: 'deterministic', lastGlyph: '✓', lastAt: '2026-09-20T00:00:00.000Z' },
+    { job: 'b', lastCheckType: 'rubric', lastGlyph: '✗', lastAt: '2026-01-01T00:00:00.000Z' },
+  ];
+  assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: 'all' }, now), workflows);
+  assert.deepEqual(filterWorkflows(workflows, { checkTypes: ['deterministic'], results: [], time: 'all' }, now), [workflows[0]]);
+  assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: '7d' }, now), [workflows[0]]);
 });
 
 test('item 6: the step card meta line carries a plain-language title (hover) explaining steps/rounds/tools — no new glyph', () => {

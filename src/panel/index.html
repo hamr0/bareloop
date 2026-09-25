@@ -208,6 +208,14 @@
   .chip::before{content:"[ ";color:var(--text-faint);}
   .chip::after{content:" ]";color:var(--text-faint);}
   .chip[aria-pressed="true"]{background:var(--panel);color:var(--accent);border-color:var(--accent);font-weight:700;}
+  /* Compact filter-bar chips (History + Workflows, shared component): single
+     letters/bare glyphs, no "[ ]" brackets — hamr's 2026-09-25 feedback on
+     the live panel ("icons are taking too much space", "one letter without
+     brackets"). */
+  .filterbar{margin-bottom:8px;}
+  .filterbar .chips{gap:4px;margin-bottom:4px;}
+  .chip.fchip{padding:3px 7px;min-height:28px;min-width:28px;font-size:12px;text-align:center;}
+  .chip.fchip::before,.chip.fchip::after{content:"";}
   .row-blocked{background:var(--red-bg);}
   .raw-log{margin-top:12px;}
   .raw-log summary{cursor:pointer;font-size:13px;padding:6px 0;}
@@ -232,6 +240,7 @@
     .topbar-right{width:100%;justify-content:space-between;}
     .btn.small{height:44px;min-height:44px;padding:0 12px;}
     .chip{min-height:44px;}
+    .chip.fchip{min-height:40px;min-width:40px;}
     .rp-header{margin:8px 8px 0;}
     .rp-tabrow{margin:0 8px;}
   }
@@ -273,30 +282,12 @@
         </section>
 
         <section id="panel-workflows" class="tabpanel" role="tabpanel" aria-labelledby="tab-workflows" hidden>
+          <div id="workflows-filterbar-anchor"></div>
           <div id="wf-list" data-testid="wf-list"></div>
         </section>
 
         <section id="panel-history" class="tabpanel" role="tabpanel" aria-labelledby="tab-history" hidden>
-          <div class="hist-filters" data-testid="hist-filters">
-            <div class="chips" role="group" aria-label="Filter by check type" style="margin-bottom:6px;">
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="deterministic" data-testid="chip-ct-deterministic">deterministic</button>
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="rubric" data-testid="chip-ct-rubric">rubric</button>
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="unknown" data-testid="chip-ct-unknown">unknown</button>
-            </div>
-            <div class="chips" role="group" aria-label="Filter by result" style="margin-bottom:6px;">
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="✓" data-testid="chip-res-pass">[&#10003;]</button>
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="✗" data-testid="chip-res-fail">[&#10007;]</button>
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="?" data-testid="chip-res-died">[?]</button>
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="▶" data-testid="chip-res-running">[&#9654;]</button>
-            </div>
-            <div class="chips" role="group" aria-label="Filter by time" style="margin-bottom:6px;">
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="7d" data-testid="chip-time-7d">7 days</button>
-              <button class="chip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="30d" data-testid="chip-time-30d">30 days</button>
-              <button class="chip" type="button" aria-pressed="true" data-filter-group="time" data-filter-value="all" data-testid="chip-time-all">all</button>
-              <button class="btn small" type="button" id="hist-filter-clear" data-testid="hist-filter-clear">clear</button>
-            </div>
-            <div class="hint" id="hist-filter-count" data-testid="hist-filter-count"></div>
-          </div>
+          <div id="history-filterbar-anchor"></div>
           <div id="history-list" data-testid="history-list"></div>
         </section>
 
@@ -667,11 +658,40 @@
     });
   }
 
-  // ---- History filters (item 5) ----
+  // ---- Filter bar (item 5 + hamr's 2026-09-25 live-panel feedback) ----
+  // ONE component, ONE state shape ({checkTypes, results, time}), used by
+  // BOTH the History tab (filters individual runs) and the Workflows tab
+  // (filters by each workflow's OWN latest-run fields). Compact: check type
+  // is a single letter (tooltip carries the word), result is a bare glyph
+  // (no brackets — the generic ".chip" style still wraps other chips in
+  // "[ ]"; ".fchip" turns that off), time is a short label, then "clear".
+  // No "unknown" check-type chip — runs/workflows with unknown type still
+  // show whenever no type chip is selected (checkTypes stays empty).
+  function filterBarHTML(scope){
+    return (
+      '<div class="filterbar" data-scope="' + scope + '" data-testid="' + scope + '-filters">' +
+        '<div class="chips" role="group" aria-label="Filter">' +
+          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="deterministic" title="deterministic" data-testid="chip-' + scope + '-ct-deterministic">D</button>' +
+          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="rubric" title="rubric" data-testid="chip-' + scope + '-ct-rubric">R</button>' +
+          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#10003;" title="pass" data-testid="chip-' + scope + '-res-pass">&#10003;</button>' +
+          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#10007;" title="fail" data-testid="chip-' + scope + '-res-fail">&#10007;</button>' +
+          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="?" title="died" data-testid="chip-' + scope + '-res-died">?</button>' +
+          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#9654;" title="running" data-testid="chip-' + scope + '-res-running">&#9654;</button>' +
+          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="7d" title="last 7 days" data-testid="chip-' + scope + '-time-7d">7d</button>' +
+          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="30d" title="last 30 days" data-testid="chip-' + scope + '-time-30d">30d</button>' +
+          '<button class="chip fchip" type="button" aria-pressed="true" data-filter-group="time" data-filter-value="all" title="all time" data-testid="chip-' + scope + '-time-all">all</button>' +
+          '<button class="chip fchip" type="button" id="' + scope + '-filter-clear" data-testid="' + scope + '-filter-clear">clear</button>' +
+        '</div>' +
+        '<div class="hint" id="' + scope + '-filter-count" data-testid="' + scope + '-filter-count"></div>' +
+      '</div>'
+    );
+  }
+
   // Pure function: chips toggle on/off independently and combine AND across
   // the three groups (checkType/result/time), OR within a group (an empty
   // group array means "no filter" for that group — everything passes it).
   // `time` is single-select, default "all". `nowMs` is injectable for tests.
+  // Field names (checkType/glyph/at) match a History run row's own shape.
   function filterRuns(runs, filters, nowMs){
     nowMs = (typeof nowMs === "number") ? nowMs : Date.now();
     var ct = (filters && filters.checkTypes) || [];
@@ -690,74 +710,113 @@
     });
   }
 
-  var HIST_FILTER_STORAGE_KEY = "bareloop-panel-history-filters";
-  var histFilterState = { checkTypes: [], results: [], time: "all" };
-  var allHistoryRuns = [];
+  // Same rule, applied to a workflow's OWN latest-run fields
+  // (lastCheckType/lastGlyph/lastAt) — reuses filterRuns via a one-row
+  // adapter rather than re-implementing the AND/OR/time semantics twice.
+  function filterWorkflows(workflows, filters, nowMs){
+    return (workflows || []).filter(function(w){
+      return filterRuns([{ checkType: w.lastCheckType, glyph: w.lastGlyph, at: w.lastAt }], filters, nowMs).length === 1;
+    });
+  }
 
-  function loadHistFilterState(){
-    try{
-      var raw = localStorage.getItem(HIST_FILTER_STORAGE_KEY);
-      if(raw){
-        var parsed = JSON.parse(raw);
-        if(parsed && typeof parsed === "object"){
-          histFilterState = {
-            checkTypes: Array.isArray(parsed.checkTypes) ? parsed.checkTypes : [],
-            results: Array.isArray(parsed.results) ? parsed.results : [],
-            time: typeof parsed.time === "string" ? parsed.time : "all",
-          };
+  /**
+   * One filter-bar instance: its own localStorage key, its own DOM scope
+   * (`.filterbar[data-scope="..."]`), its own item list — but the same
+   * wiring as every other instance.
+   * @param {{scope:string, storageKey:string, filterFn:Function, applyFn:Function}} opts
+   */
+  function createFilterBar(opts){
+    var scope = opts.scope;
+    var storageKey = opts.storageKey;
+    var state = { checkTypes: [], results: [], time: "all" };
+    var allItems = [];
+
+    function load(){
+      try{
+        var raw = localStorage.getItem(storageKey);
+        if(raw){
+          var parsed = JSON.parse(raw);
+          if(parsed && typeof parsed === "object"){
+            state = {
+              checkTypes: Array.isArray(parsed.checkTypes) ? parsed.checkTypes : [],
+              results: Array.isArray(parsed.results) ? parsed.results : [],
+              time: typeof parsed.time === "string" ? parsed.time : "all",
+            };
+          }
         }
-      }
-    }catch(e){ /* per-viewer convenience only; a blocked/private store just means no memory */ }
-  }
-  function saveHistFilterState(){
-    try{ localStorage.setItem(HIST_FILTER_STORAGE_KEY, JSON.stringify(histFilterState)); }catch(e){ /* best-effort only */ }
-  }
-  function paintHistFilterChips(){
-    document.querySelectorAll('.hist-filters .chip[data-filter-group]').forEach(function(chip){
-      var group = chip.getAttribute("data-filter-group");
-      var value = chip.getAttribute("data-filter-value");
-      var active;
-      if(group === "time"){ active = histFilterState.time === value; }
-      else if(group === "checkType"){ active = histFilterState.checkTypes.indexOf(value) !== -1; }
-      else { active = histFilterState.results.indexOf(value) !== -1; }
-      chip.setAttribute("aria-pressed", active ? "true" : "false");
+      }catch(e){ /* per-viewer convenience only; a blocked/private store just means no memory */ }
+    }
+    function save(){
+      try{ localStorage.setItem(storageKey, JSON.stringify(state)); }catch(e){ /* best-effort only */ }
+    }
+    function paint(){
+      document.querySelectorAll('.filterbar[data-scope="' + scope + '"] .chip[data-filter-group]').forEach(function(chip){
+        var group = chip.getAttribute("data-filter-group");
+        var value = chip.getAttribute("data-filter-value");
+        var active;
+        if(group === "time"){ active = state.time === value; }
+        else if(group === "checkType"){ active = state.checkTypes.indexOf(value) !== -1; }
+        else { active = state.results.indexOf(value) !== -1; }
+        chip.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+    function apply(){
+      var filtered = opts.filterFn(allItems, state, Date.now());
+      opts.applyFn(filtered);
+      var countEl = document.getElementById(scope + "-filter-count");
+      if(countEl) countEl.textContent = "showing " + filtered.length + " of " + allItems.length + " runs";
+    }
+    document.querySelectorAll('.filterbar[data-scope="' + scope + '"] .chip[data-filter-group]').forEach(function(chip){
+      chip.addEventListener("click", function(){
+        var group = chip.getAttribute("data-filter-group");
+        var value = chip.getAttribute("data-filter-value");
+        if(group === "time"){
+          state.time = value; // single-select within time
+        } else if(group === "checkType"){
+          var idx = state.checkTypes.indexOf(value);
+          if(idx === -1) state.checkTypes.push(value); else state.checkTypes.splice(idx, 1);
+        } else if(group === "result"){
+          var idx2 = state.results.indexOf(value);
+          if(idx2 === -1) state.results.push(value); else state.results.splice(idx2, 1);
+        }
+        paint();
+        save();
+        apply();
+      });
     });
+    var clearBtn = document.getElementById(scope + "-filter-clear");
+    if(clearBtn){
+      clearBtn.addEventListener("click", function(){
+        state = { checkTypes: [], results: [], time: "all" };
+        paint();
+        save();
+        apply();
+      });
+    }
+    load();
+    paint();
+
+    return {
+      setItems: function(items){ allItems = items || []; apply(); },
+      getState: function(){ return state; },
+    };
   }
-  function applyHistFilters(){
-    var filtered = filterRuns(allHistoryRuns, histFilterState);
-    renderHistory(filtered);
-    var countEl = document.getElementById("hist-filter-count");
-    if(countEl) countEl.textContent = "showing " + filtered.length + " of " + allHistoryRuns.length + " runs";
-  }
-  document.querySelectorAll('.hist-filters .chip[data-filter-group]').forEach(function(chip){
-    chip.addEventListener("click", function(){
-      var group = chip.getAttribute("data-filter-group");
-      var value = chip.getAttribute("data-filter-value");
-      if(group === "time"){
-        histFilterState.time = value; // single-select within time
-      } else if(group === "checkType"){
-        var idx = histFilterState.checkTypes.indexOf(value);
-        if(idx === -1) histFilterState.checkTypes.push(value); else histFilterState.checkTypes.splice(idx, 1);
-      } else if(group === "result"){
-        var idx2 = histFilterState.results.indexOf(value);
-        if(idx2 === -1) histFilterState.results.push(value); else histFilterState.results.splice(idx2, 1);
-      }
-      paintHistFilterChips();
-      saveHistFilterState();
-      applyHistFilters();
-    });
+
+  document.getElementById("history-filterbar-anchor").innerHTML = filterBarHTML("history");
+  document.getElementById("workflows-filterbar-anchor").innerHTML = filterBarHTML("workflows");
+
+  var historyFilterBar = createFilterBar({
+    scope: "history",
+    storageKey: "bareloop-panel-history-filters",
+    filterFn: filterRuns,
+    applyFn: renderHistory,
   });
-  var histClearBtn = document.getElementById("hist-filter-clear");
-  if(histClearBtn){
-    histClearBtn.addEventListener("click", function(){
-      histFilterState = { checkTypes: [], results: [], time: "all" };
-      paintHistFilterChips();
-      saveHistFilterState();
-      applyHistFilters();
-    });
-  }
-  loadHistFilterState();
-  paintHistFilterChips();
+  var workflowsFilterBar = createFilterBar({
+    scope: "workflows",
+    storageKey: "bareloop-panel-workflows-filters",
+    filterFn: filterWorkflows,
+    applyFn: renderWorkflows,
+  });
 
   // item 4: phone-only "scroll the run view into view" on row select, and
   // the matching "↑ list" jump back. Desktop never runs either — both panes
@@ -990,9 +1049,8 @@
   Promise.all([getJSON("/api/workflows"), getJSON("/api/runs")]).then(function(results){
     var workflows = results[0].workflows || [];
     var runs = results[1].runs || [];
-    renderWorkflows(workflows);
-    allHistoryRuns = runs;
-    applyHistFilters();
+    workflowsFilterBar.setItems(workflows);
+    historyFilterBar.setItems(runs);
     if(runs.length && !runs[0].fileMissing){
       document.getElementById("tab-workflows").click();
       var firstRow = document.querySelector('.wf-row[data-wf="' + (workflows[0] && workflows[0].job) + '"]');
