@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   createPanelServer, panelMain, glyphForOutcome, checkTypeLabel, checkTypeTitle, RUNID_RE, formatTimestamp,
 } from '../src/panel/server.js';
@@ -801,11 +802,160 @@ test('/api/runs/:runid/job: (d) nothing resolvable at all -> every field "not re
   const res = await fetch(base + '/api/runs/nothingatall/job');
   assert.equal(res.status, 200);
   const body = await res.json();
-  // this spine DOES carry a job-start with goal absent -> falls to (c), goal
+  // this spine DOES carry a job-start with goal absent -> falls to (d), goal
   // reads "not recorded" (never fabricated), resolved false.
   assert.equal(body.resolved, false);
   assert.equal(body.goal, 'not recorded');
   assert.equal(body.model, 'not recorded');
+});
+
+// ---------------------------------------------------------------------------
+// item 2 (2026-09-25), continued: the new-shape resolution step — a run's own
+// resolved-spec.json + source.json, found BESIDE the spine at the source
+// front door's own layout (never the bundle layout, never guessed) — and the
+// real-fields-only rule for Success/Guardrails/Source/Destination/Tools.
+// ---------------------------------------------------------------------------
+
+const REAL_PERSON_OUT = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out';
+const REAL_RESOLVED_SPEC = join(REAL_PERSON_OUT, 'resolved-spec.json');
+const REAL_SOURCE_SEED_DIR = join(REAL_PERSON_OUT, 'source-mu2bglzc');
+const REAL_SOURCE_JSON = join(REAL_SOURCE_SEED_DIR, 'source.json');
+const REAL_PERSON_SPINE = join(REAL_SOURCE_SEED_DIR, 'pulselog-person-live-2-bareloop', 'u-mu2p83go.jsonl');
+const havePersonFixture = existsSync(REAL_RESOLVED_SPEC) && existsSync(REAL_SOURCE_JSON) && existsSync(REAL_PERSON_SPINE);
+
+test(
+  '/api/runs/:runid/job: (c) NEW — resolved-spec.json + source.json found beside the spine resolve Success/Guardrails/Source/Destination for a real closeDecl spec',
+  { skip: !havePersonFixture && `${REAL_PERSON_OUT} not present on this machine` },
+  async (t) => {
+    const home = tmp();
+    // copy the real fixture into a FRESH tmp layout at runtime — never read
+    // in place — so this test proves the shape-derivation, not a hardcoded
+    // path on hamr's own machine.
+    const out = tmp();
+    cpSync(REAL_RESOLVED_SPEC, join(out, 'resolved-spec.json'));
+    mkdirSync(join(out, 'source-mu2bglzc'), { recursive: true });
+    cpSync(REAL_SOURCE_JSON, join(out, 'source-mu2bglzc', 'source.json'));
+    mkdirSync(join(out, 'source-mu2bglzc', 'pulselog-person-live-2-bareloop'), { recursive: true });
+    const spineCopy = join(out, 'source-mu2bglzc', 'pulselog-person-live-2-bareloop', 'u-mu2p83go.jsonl');
+    cpSync(REAL_PERSON_SPINE, spineCopy);
+
+    const realSpec = JSON.parse(readFileSync(REAL_RESOLVED_SPEC, 'utf8'));
+    const realManifest = JSON.parse(readFileSync(REAL_SOURCE_JSON, 'utf8'));
+    const expectedSuccess = realSpec.closeDecl.stages.map((s) => s.name).join(' · ');
+
+    appendRun({
+      at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-jobtab', job: realSpec.job, spine: spineCopy, patient: null, via: 'backfill',
+    }, { home });
+    const { base } = await startServer(t, { home });
+    const res = await fetch(base + '/api/runs/mu2p83go-jobtab/job');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.resolved, true);
+    assert.equal(body.resolvedFrom, "the run's own resolved-spec.json");
+    assert.equal(body.job, realSpec.job);
+    assert.equal(body.goal, realSpec.goal);
+    assert.equal(body.description, realSpec.description);
+    assert.equal(body.success, expectedSuccess);
+    assert.ok(body.success.includes('typecheck-checks-strict'), 'Success must list the real closeDecl stage names');
+    assert.ok(body.success.includes('no-suppressions'), 'Success must list the real closeDecl stage names');
+    assert.ok(body.guardrails.includes('changed-from-seed'), 'Guardrails must include the real guard names (from confirmProtections)');
+    assert.ok(body.guardrails.includes('no-suppressions'), 'Guardrails must include the real guard names (from confirmProtections)');
+    assert.ok(body.guardrails.includes('write fence'), 'Guardrails must include the write fence line');
+    assert.ok(body.guardrails.includes(realSpec.writeScope[0]), 'Guardrails must name the real writeScope glob');
+    assert.equal(body.source, realManifest.source);
+    assert.equal(body.destination, realManifest.destination);
+    // the spec itself carries no `model` field (resolved at run time) — the
+    // job-start record's own resolved model is the honest fallback.
+    assert.equal(body.model, 'deepseek-flash');
+    assert.equal(body.budgetUsd, realSpec.budgetUsd);
+    assert.equal(body.maxWallMs, realSpec.maxWallMs);
+  },
+);
+
+test(
+  '/api/runs/:runid/job: old-shape close[] spec (jobs/litectx-u-types.json) — Success lists close[].name, model/goal/writeScope real',
+  { skip: !existsSync(join(process.cwd(), 'jobs', 'litectx-u-types.json')) && 'jobs/litectx-u-types.json not present' },
+  async (t) => {
+    const home = tmp();
+    const dir = tmp();
+    const oldSpecPath = join(process.cwd(), 'jobs', 'litectx-u-types.json');
+    const oldSpec = JSON.parse(readFileSync(oldSpecPath, 'utf8'));
+    // a spine shaped like the REAL litectx-u-bareloop archive: no source-*/
+    // sibling at all, so the new (c) step must find nothing and fall through
+    // to (b) jobs/<job>.json — exactly mtotxw1z's real on-disk shape.
+    writeSpine(join(dir, 'u-oldshape.jsonl'), [{
+      type: 'job-start', job: 'litectx-u-types', ts: '2026-09-01T00:00:00.000Z', seq: 1, verdictType: 'green', model: 'claude-sonnet-5',
+    }]);
+    appendRun({
+      at: '2026-09-01T00:00:00.000Z', runid: 'oldshape-jobtab', job: 'litectx-u-types', spine: join(dir, 'u-oldshape.jsonl'), patient: null, via: 'backfill',
+    }, { home });
+    const { base } = await startServer(t, { home });
+    const res = await fetch(base + '/api/runs/oldshape-jobtab/job');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.resolved, true);
+    assert.equal(body.resolvedFrom, 'jobs/litectx-u-types.json');
+    const expectedSuccess = oldSpec.close.map((s) => s.name).join(' · ');
+    assert.equal(body.success, expectedSuccess);
+    assert.ok(body.success.includes('typecheck'));
+    assert.ok(body.success.includes('suite-green'));
+    // old-shape has no closeDecl.lang -> guardNames/confirmProtections can't
+    // resolve guard names generically; Guardrails falls back to the write
+    // fence line alone (real field, never fabricated guard prose).
+    assert.equal(body.guardrails, `write fence — the run may only change files matching: ${oldSpec.writeScope.join(', ')}`);
+    assert.equal(body.tools, oldSpec.tools.join(' · '));
+    assert.equal(body.source, 'not recorded'); // no source.json anywhere near this spine, and this row's patient is null
+    assert.equal(body.destination, 'not recorded');
+  },
+);
+
+test('/api/runs/:runid/job: RED PROOF — with sourceNearSpine/successFromSpec/guardrailsFromSpec reverted, the new-shape fixture reads "not recorded" (mechanically proves these fields are not fabricated)', { skip: !havePersonFixture && `${REAL_PERSON_OUT} not present on this machine` }, async (t) => {
+  const serverPath = fileURLToPath(new URL('../src/panel/server.js', import.meta.url));
+  const backup = `${serverPath}.redproof-bak`;
+  cpSync(serverPath, backup);
+  try {
+    const src = readFileSync(serverPath, 'utf8');
+    // neuter sourceNearSpine so it always reports "nothing near the spine" —
+    // the same shape as a run whose resolved-spec.json genuinely doesn't
+    // exist. A real bug here (e.g. success/guardrails silently fabricated
+    // from somewhere else) would make this row STILL show real values; the
+    // red proof is that it does not.
+    const patched = src.replace(
+      'function sourceNearSpine(spinePath) {',
+      'function sourceNearSpine(spinePath) { return { specPath: null, sourceJsonPath: null };',
+    );
+    assert.notEqual(patched, src, 'the patch must actually match sourceNearSpine\'s real source — otherwise this proves nothing');
+    writeFileSync(serverPath, patched);
+
+    // fresh import with a cache-busting query so node re-reads the patched file
+    const { createPanelServer: patchedCreate } = await import(`../src/panel/server.js?redproof=${Date.now()}`);
+
+    const home = tmp();
+    const out = tmp();
+    cpSync(REAL_RESOLVED_SPEC, join(out, 'resolved-spec.json'));
+    mkdirSync(join(out, 'source-mu2bglzc'), { recursive: true });
+    cpSync(REAL_SOURCE_JSON, join(out, 'source-mu2bglzc', 'source.json'));
+    mkdirSync(join(out, 'source-mu2bglzc', 'pulselog-person-live-2-bareloop'), { recursive: true });
+    const spineCopy = join(out, 'source-mu2bglzc', 'pulselog-person-live-2-bareloop', 'u-mu2p83go.jsonl');
+    cpSync(REAL_PERSON_SPINE, spineCopy);
+    const realSpec = JSON.parse(readFileSync(REAL_RESOLVED_SPEC, 'utf8'));
+
+    appendRun({
+      at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-redproof', job: realSpec.job, spine: spineCopy, patient: null, via: 'backfill',
+    }, { home });
+    const port = 20000 + Math.floor(Math.random() * 10000);
+    const { server, close } = await patchedCreate({ port, home });
+    t.after(() => close());
+    const res = await fetch(`http://127.0.0.1:${port}/api/runs/mu2p83go-redproof/job`);
+    const body = await res.json();
+    assert.equal(body.resolvedFrom, "the run's own start record", 'with sourceNearSpine neutered, resolution must fall all the way through to the job-start record');
+    assert.equal(body.success, 'not recorded');
+    assert.equal(body.guardrails, 'not recorded');
+    void server;
+  } finally {
+    cpSync(backup, serverPath);
+    rmSync(backup);
+  }
 });
 
 // ---------------------------------------------------------------------------
