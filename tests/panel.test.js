@@ -553,10 +553,10 @@ test('/api/runs/:runid/job: a run-u style spine (no bundle spec.json reachable) 
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.resolved, false);
-  assert.equal(body.source, 'unknown');
-  assert.equal(body.destination, 'unknown');
-  assert.equal(body.success, 'unknown');
-  assert.equal(body.guardrails, 'unknown');
+  assert.equal(body.source, 'not recorded');
+  assert.equal(body.destination, 'not recorded');
+  assert.equal(body.success, 'not recorded');
+  assert.equal(body.guardrails, 'not recorded');
 });
 
 test('/api/runs/:runid/job: a bundle-layout run (spec.json beside runs/) resolves real spec fields', async (t) => {
@@ -580,7 +580,7 @@ test('/api/runs/:runid/job: a bundle-layout run (spec.json beside runs/) resolve
   assert.equal(body.checkType, 'rubric');
   assert.equal(body.model, 'deepseek-flash');
   assert.equal(body.budgetUsd, 1.5);
-  assert.equal(body.source, 'unknown'); // the real bundle-run spec schema carries no source field — honest, not fabricated
+  assert.equal(body.source, 'not recorded'); // the real bundle-run spec schema carries no source field, and this row's own `patient` is null — honest, not fabricated
 });
 
 test('/api/runs: a pre-cutoff spine with no verdictType at all reports checkType "deterministic" with a title, end to end', async (t) => {
@@ -709,7 +709,8 @@ test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2)
 // ---------------------------------------------------------------------------
 // item 2 (2026-09-25): Job tab source order — (a) bundle spec.json [existing,
 // re-verified above], (b) jobs/<job>.json with a specHash compare, (c) the
-// run's own job-start record, else 'not recorded'/'unknown' everywhere.
+// run's own resolved-spec.json found beside the spine, (d) the run's own
+// job-start record, else 'not recorded' everywhere.
 // ---------------------------------------------------------------------------
 
 const REAL_JOBS_DIR = join(process.cwd(), 'jobs');
@@ -739,7 +740,7 @@ test(
     assert.equal(body.resolvedFrom, `jobs/${REAL_JOB_NAME}.json`);
     assert.equal(body.note, null);
     assert.equal(body.goal, realSpec.goal);
-    assert.equal(body.source, 'unknown'); // job-v1 spec schema carries no source field
+    assert.equal(body.source, 'not recorded'); // job-v1 spec schema carries no source field, and this row's own `patient` is null
   },
 );
 
@@ -765,7 +766,7 @@ test(
   },
 );
 
-test('/api/runs/:runid/job: (c) no bundle, no matching jobs/<job>.json -> falls back to the run\'s own job-start record fields', async (t) => {
+test('/api/runs/:runid/job: (d) no bundle, no matching jobs/<job>.json, no resolved-spec.json near the spine -> falls back to the run\'s own job-start record fields', async (t) => {
   const home = tmp();
   const dir = tmp();
   writeSpine(join(dir, 'u-startonly.jsonl'), [{
@@ -784,10 +785,10 @@ test('/api/runs/:runid/job: (c) no bundle, no matching jobs/<job>.json -> falls 
   assert.equal(body.model, 'claude-sonnet-5');
   assert.equal(body.budgetUsd, 3);
   assert.equal(body.note, "from the run's own start record");
-  assert.equal(body.source, 'unknown');
+  assert.equal(body.source, 'not recorded');
 });
 
-test('/api/runs/:runid/job: (d) nothing resolvable at all -> every field "not recorded"/"unknown", never fabricated', async (t) => {
+test('/api/runs/:runid/job: (d) nothing resolvable at all -> every field "not recorded", never fabricated', async (t) => {
   const home = tmp();
   const dir = tmp();
   writeSpine(join(dir, 'u-nothingatall.jsonl'), [{

@@ -228,6 +228,9 @@
   .field{margin-bottom:10px;}
   label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
   .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
+  .ro-value.scroll{max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;}
+  .field-row{display:flex;flex-wrap:wrap;gap:10px;}
+  .field-row .field{flex:1 1 140px;margin-bottom:10px;}
   .wf-past-run{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;row-gap:2px;padding:6px 8px;border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);}
 
   .chat-thread{padding:20px 8px;color:var(--text-faint);font-size:13px;}
@@ -350,13 +353,18 @@
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
-            <div class="field"><label>Goal</label><div class="ro-value" id="details-goal">—</div></div>
-            <div class="field"><label>Source</label><div class="ro-value" id="details-source">—</div></div>
-            <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
+            <div class="field"><label>Job name</label><div class="ro-value" id="details-jobname">—</div></div>
+            <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
+            <div class="field"><label>Goal</label><div class="ro-value scroll" id="details-goal">—</div></div>
             <div class="field"><label>Success</label><div class="ro-value" id="details-success">—</div></div>
             <div class="field"><label>Guardrails</label><div class="ro-value" id="details-guardrails">—</div></div>
-            <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
-            <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
+            <div class="field"><label>Source</label><div class="ro-value" id="details-source">—</div></div>
+            <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
+            <div class="field"><label>Tools</label><div class="ro-value" id="details-tools">—</div></div>
+            <div class="field-row">
+              <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
+              <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
+            </div>
             <div class="hint" id="job-note"></div>
           </div>
         </section>
@@ -1020,11 +1028,16 @@
     var verdictEl = document.getElementById("details-verdict");
     if(job.checkTypeTitle){ verdictEl.title = job.checkTypeTitle; } else { verdictEl.removeAttribute("title"); }
     document.getElementById("details-model").textContent = job.model;
+    document.getElementById("details-jobname").textContent = job.job;
+    var descField = document.getElementById("details-description-field");
+    if(job.description){ descField.hidden = false; document.getElementById("details-description").textContent = job.description; }
+    else { descField.hidden = true; }
     document.getElementById("details-goal").textContent = job.goal;
-    document.getElementById("details-source").textContent = job.source;
-    document.getElementById("details-dest").textContent = job.destination;
     document.getElementById("details-success").textContent = job.success;
     document.getElementById("details-guardrails").textContent = job.guardrails;
+    document.getElementById("details-source").textContent = job.source;
+    document.getElementById("details-dest").textContent = job.destination;
+    document.getElementById("details-tools").textContent = job.tools;
     document.getElementById("details-cap-money").textContent = job.budgetUsd === null ? "unknown" : ("$" + Number(job.budgetUsd).toFixed(2));
     document.getElementById("details-cap-time").textContent = job.maxWallMs === null ? "unknown" : duration(job.maxWallMs);
     document.getElementById("job-note").textContent = job.note || "";

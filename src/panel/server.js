@@ -33,6 +33,7 @@ import {
 import { summarizeForAllLine } from '../replay.js';
 import { SPEND_RECORD_TYPES } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
+import { confirmProtections } from '../authorflow.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -567,6 +568,101 @@ function bundleDirForSpine(spinePath) {
 }
 
 /**
+ * `<out>/source-<seed>/<job>-bareloop/u-<runid>.jsonl` -> the two files an
+ * authoring session leaves BESIDE that layout — `<out>/resolved-spec.json`
+ * (the signed spec `--spec`/a JOBS-table row ran) and
+ * `<out>/source-<seed>/source.json` (the source front door's manifest) —
+ * verified against `src/userrun.js`'s own construction (`specWorkdir = join(into,
+ * 'tree')`, `spineDir = join(wd, '..', target.spine)`, both `--spec` and the
+ * `pulselog-person-strict` JOBS-table row read `into` the same way) and a real
+ * archived run (pulselog-person-live-2, run mu2p83go): `dirname(spine)` is
+ * `<into>/<job>-bareloop`, `dirname(dirname(spine))` is `<into>` itself
+ * (`source-<seed>`, carrying `source.json`), and `dirname(dirname(dirname(spine)))`
+ * is `<out>` (carrying `resolved-spec.json`).
+ *
+ * Only resolves when `<into>`'s own name starts with `source-` — the one
+ * shape marker this convention always carries — and each file is checked to
+ * actually exist before being handed back; any other spine layout (the bundle
+ * `spine.jsonl`, a JOBS-table row whose workdir has no source-seed copy, e.g.
+ * `litectx-u`) returns both fields `null`, never a guessed path (build spec
+ * item 2, 2026-09-25: "don't search the disk broadly — fall through").
+ * @param {string} spinePath
+ * @returns {{ specPath: string|null, sourceJsonPath: string|null }}
+ */
+function sourceNearSpine(spinePath) {
+  const into = dirname(dirname(spinePath)); // <into>/<job>-bareloop/u-x.jsonl -> <into>
+  if (!basename(into).startsWith('source-')) return { specPath: null, sourceJsonPath: null };
+  const sourceJsonPath = join(into, 'source.json');
+  const specPath = join(dirname(into), 'resolved-spec.json'); // <into> -> <out>
+  return {
+    specPath: existsSync(specPath) ? specPath : null,
+    sourceJsonPath: existsSync(sourceJsonPath) ? sourceJsonPath : null,
+  };
+}
+
+/**
+ * The close's stage names, in declared order — `close[].name` (a hand-authored
+ * command close) or `closeDecl.stages[].name` (an authored declaration); the
+ * two are mutually exclusive (`validateJob`'s own `close-duplicated` red).
+ * `null` when neither carries a named stage (an old/malformed spec) — never a
+ * fabricated placeholder.
+ * @param {any} spec
+ * @returns {string|null}
+ */
+function successFromSpec(spec) {
+  if (!spec || typeof spec !== 'object') return null;
+  const stages = Array.isArray(spec.close) ? spec.close
+    : (spec.closeDecl && Array.isArray(spec.closeDecl.stages) ? spec.closeDecl.stages : null);
+  if (!stages) return null;
+  const names = stages.filter((s) => s && typeof s.name === 'string' && s.name.length > 0).map((s) => s.name);
+  return names.length > 0 ? names.join(' · ') : null;
+}
+
+/**
+ * The write fence plus the guard checks a close actually carries — reusing
+ * {@link confirmProtections} (`src/authorflow.js`), the SAME function the
+ * authoring CLI's confirm turn shows a person, never a second hand-typed list
+ * (build spec item 2). Guard names only resolve for a `closeDecl` spec
+ * (`classGuards` needs its `lang`+the spec's `verdictType`); an old-shape
+ * `close`-array spec falls back to the write fence alone — its guard stages
+ * (e.g. `no-suppressions`) already show up in {@link successFromSpec}'s own
+ * stage list, and inventing a second detector to relabel them as "guards" here
+ * would be exactly the per-age special-casing the build spec rules out.
+ * `confirmProtections` itself can throw for an unrecognized verdictType/lang
+ * (a spec this panel was never validated against) — caught here so a stale or
+ * hand-edited spec never 500s the Job tab, only shows less than it could.
+ * @param {any} spec
+ * @returns {string|null}
+ */
+function guardrailsFromSpec(spec) {
+  if (!spec || typeof spec !== 'object') return null;
+  const writeScope = Array.isArray(spec.writeScope) && spec.writeScope.every((s) => typeof s === 'string')
+    ? spec.writeScope : null;
+  const fenceLine = writeScope && writeScope.length > 0
+    ? `write fence — the run may only change files matching: ${writeScope.join(', ')}` : null;
+  if (spec.closeDecl && typeof spec.closeDecl.lang === 'string' && typeof spec.verdictType === 'string') {
+    try {
+      const lines = confirmProtections({ verdictType: spec.verdictType, lang: spec.closeDecl.lang, writeScope });
+      if (lines.length > 0) return lines.join(' · ');
+    } catch { /* falls through to the write-fence-only line below */ }
+  }
+  return fenceLine;
+}
+
+/**
+ * The granted tool list, verbatim, in declared order — `null` when the spec
+ * carries none (a job may legally declare no `tools` at all).
+ * @param {any} spec
+ * @returns {string|null}
+ */
+function toolsFromSpec(spec) {
+  if (!spec || typeof spec !== 'object') return null;
+  if (!Array.isArray(spec.tools) || spec.tools.length === 0) return null;
+  const names = spec.tools.filter((t) => typeof t === 'string' && t.length > 0);
+  return names.length > 0 ? names.join(' · ') : null;
+}
+
+/**
  * `<src/panel>/../../jobs` — the repo's `jobs/` directory of signed specs,
  * resolved from the bareloop PACKAGE ROOT (this module's own on-disk
  * location), never from `process.cwd()` — a panel launched from any working
@@ -586,14 +682,21 @@ function jobsDir() {
  *      package root) — its `jobSpecHash` is compared against the run's own
  *      job-start `specHash`; a mismatch is shown, never hidden (the job may
  *      have been edited since this run signed it);
- *  (c) the run's own job-start record (goal/model/budgetUsd/verdictType only
+ *  (c) NEW (item 2, 2026-09-25): the run's own `resolved-spec.json`, found
+ *      beside the spine via {@link sourceNearSpine} — a person-path (`--spec`
+ *      or a source-seed-backed JOBS-table row) run's signed copy, never
+ *      searched for, only read when the on-disk shape unambiguously names it;
+ *  (d) the run's own job-start record (goal/model/budgetUsd/verdictType only
  *      — a narrower, unsigned record, `resolved:false`);
- *  else every spec-only field reads `'unknown'`/`'not recorded'`, never
- * fabricated. `resolvedFrom` names which of these actually supplied the
- * fields, shown in the page. `source`/`destination`/`success`/`guardrails`
- * stay `'unknown'` in every branch — verified against `src/job.js`'s
- * `JOB_FIELDS` and `src/run.js`'s `job-start` emit: neither schema carries
- * these fields at all, so showing anything else here would be a guess.
+ *  else every spec-only field reads `'not recorded'`, never fabricated.
+ * `resolvedFrom` names which of these actually supplied the fields, shown in
+ * the page. `source`/`destination` are resolved SEPARATELY from the rest (any
+ * branch above may supply the goal/close/etc while carrying no source.json of
+ * its own) — from the source front door's manifest when `sourceNearSpine`
+ * finds one, else the run list's own recorded `patient` path for a `source`
+ * with no manifest, else `'not recorded'`. `success`/`guardrails`/`tools` come
+ * from the resolved SPEC only (a) (b) (c) — a job-start record and `none()`
+ * carry no close/writeScope/tools at all, so those stay `'not recorded'`.
  * @param {string} runid
  * @param {{ home?: string }} [opts]
  * @returns {any|null}
@@ -603,8 +706,45 @@ export function getRunJob(runid, opts = {}) {
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
 
+  const near = existsSync(row.spine) ? sourceNearSpine(row.spine) : { specPath: null, sourceJsonPath: null };
+  let manifest = null;
+  if (near.sourceJsonPath) {
+    try { manifest = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { manifest = null; }
+  }
+
   /** @param {string|null} v @returns {string} */
   const notRecorded = (v) => (typeof v === 'string' && v.length > 0 ? v : 'not recorded');
+  const sourceDisplay = () => {
+    if (manifest && typeof manifest.source === 'string' && manifest.source.length > 0) return manifest.source;
+    if (typeof row.patient === 'string' && row.patient.length > 0) return row.patient;
+    return 'not recorded';
+  };
+  const destDisplay = () => {
+    if (manifest && typeof manifest.destination === 'string' && manifest.destination.length > 0) return manifest.destination;
+    return 'not recorded';
+  };
+
+  // Read this run's own job-start record once — feeds the model fallback
+  // below, (b)'s hash comparison, and (d)'s own fallback.
+  let jobStart = null;
+  if (existsSync(row.spine)) {
+    try {
+      const { records } = parseJsonl(row.spine);
+      jobStart = records.find((r) => r && typeof r === 'object' && r.type === 'job-start') ?? null;
+    } catch { jobStart = null; }
+  }
+  // A spec is a repeatable SHAPE and may legally omit `model` (resolved at
+  // run time — `resolveWorkerModel`, e.g. `resolved-spec.json` for run
+  // mu2p83go carries no `model` key at all, `deepseek-flash` was resolved and
+  // only the job-start record says so): the job-start record's own `model` is
+  // the real fact for what actually ran, shown whenever the spec itself is
+  // silent on it — never a second age-conditioned code path, just the more
+  // specific of two real fields.
+  const modelDisplay = (/** @type {any} */ spec) => notRecorded(
+    typeof spec.model === 'string' && spec.model.length > 0 ? spec.model
+      : (typeof jobStart?.model === 'string' ? jobStart.model : null),
+  );
+
   /** @param {any} spec @param {boolean} resolved @param {string} resolvedFrom @param {string|null} note */
   const fromSpec = (spec, resolved, resolvedFrom, note) => ({
     runid,
@@ -613,14 +753,16 @@ export function getRunJob(runid, opts = {}) {
     resolvedFrom,
     checkType: checkTypeLabel(typeof spec.verdictType === 'string' ? spec.verdictType : null, row.at),
     checkTypeTitle: checkTypeTitle(typeof spec.verdictType === 'string' ? spec.verdictType : null, row.at),
-    model: notRecorded(typeof spec.model === 'string' ? spec.model : null),
+    model: modelDisplay(spec),
+    description: typeof spec.description === 'string' && spec.description.length > 0 ? spec.description : null,
     goal: notRecorded(typeof spec.goal === 'string' ? spec.goal : null),
     budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : null,
-    source: 'unknown',
-    destination: 'unknown',
-    success: 'unknown',
-    guardrails: 'unknown',
+    source: sourceDisplay(),
+    destination: destDisplay(),
+    success: notRecorded(successFromSpec(spec)),
+    guardrails: notRecorded(guardrailsFromSpec(spec)),
+    tools: notRecorded(toolsFromSpec(spec)),
     note,
   });
   const none = () => ({
@@ -631,13 +773,15 @@ export function getRunJob(runid, opts = {}) {
     checkType: 'unknown',
     checkTypeTitle: null,
     model: 'not recorded',
+    description: null,
     goal: 'not recorded',
     budgetUsd: null,
     maxWallMs: null,
-    source: 'unknown',
-    destination: 'unknown',
-    success: 'unknown',
-    guardrails: 'unknown',
+    source: sourceDisplay(),
+    destination: destDisplay(),
+    success: 'not recorded',
+    guardrails: 'not recorded',
+    tools: 'not recorded',
     note: 'no resolvable spec for this run (only bareloop-run bundle-layout runs carry one; a run-u run has none on disk)',
   });
 
@@ -652,16 +796,6 @@ export function getRunJob(runid, opts = {}) {
         return fromSpec(spec, true, 'bundle spec.json', null);
       }
     }
-  }
-
-  // Read this run's own job-start record once — feeds both (b)'s hash
-  // comparison and (c)'s fallback.
-  let jobStart = null;
-  if (existsSync(row.spine)) {
-    try {
-      const { records } = parseJsonl(row.spine);
-      jobStart = records.find((r) => r && typeof r === 'object' && r.type === 'job-start') ?? null;
-    } catch { jobStart = null; }
   }
 
   // (b) jobs/<job>.json in the repo's own jobs/ dir.
@@ -680,7 +814,16 @@ export function getRunJob(runid, opts = {}) {
     }
   }
 
-  // (c) the run's own job-start record — narrower, unsigned.
+  // (c) NEW — the run's own resolved-spec.json, found beside the spine.
+  if (near.specPath) {
+    let spec = null;
+    try { spec = JSON.parse(readFileSync(near.specPath, 'utf8')); } catch { spec = null; }
+    if (spec && typeof spec === 'object') {
+      return fromSpec(spec, true, "the run's own resolved-spec.json", null);
+    }
+  }
+
+  // (d) the run's own job-start record — narrower, unsigned.
   if (jobStart) {
     return {
       runid,
@@ -690,13 +833,15 @@ export function getRunJob(runid, opts = {}) {
       checkType: checkTypeLabel(typeof jobStart.verdictType === 'string' ? jobStart.verdictType : null, row.at),
       checkTypeTitle: checkTypeTitle(typeof jobStart.verdictType === 'string' ? jobStart.verdictType : null, row.at),
       model: notRecorded(typeof jobStart.model === 'string' ? jobStart.model : null),
+      description: null,
       goal: notRecorded(typeof jobStart.goal === 'string' ? jobStart.goal : null),
       budgetUsd: typeof jobStart.budgetUsd === 'number' ? jobStart.budgetUsd : null,
       maxWallMs: null,
-      source: 'unknown',
-      destination: 'unknown',
-      success: 'unknown',
-      guardrails: 'unknown',
+      source: sourceDisplay(),
+      destination: destDisplay(),
+      success: 'not recorded',
+      guardrails: 'not recorded',
+      tools: 'not recorded',
       note: "from the run's own start record",
     };
   }
