@@ -108,6 +108,10 @@
   .dot.red::before{content:"[✗]";color:var(--red);}
   .dot.amber::before{content:"[▶]";color:var(--amber);}
   .dot.grey::before{content:"[·]";color:var(--grey-dot);}
+  /* died (hamr's ruling B, 2026-09-25): no ending was ever recorded — a
+     DIFFERENT fact from a real [✗] close/arbiter "no", so it gets its own
+     glyph and its own color (magenta), never red or amber. */
+  .dot.magenta::before{content:"[?]";color:var(--magenta);}
 
   .badge{display:inline-block;font-size:11px;padding:1px 4px;color:var(--text-dim);background:none;font-weight:700;}
   .badge::before{content:"[";color:var(--text-faint);}
@@ -116,6 +120,7 @@
   .badge.red{color:var(--red);}
   .badge.amber{color:var(--amber);}
   .badge.grey{color:var(--grey-dot);}
+  .badge.magenta{color:var(--magenta);}
 
   .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
   .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);white-space:nowrap;flex:none;position:relative;}
@@ -162,6 +167,7 @@
   .summary-box{position:relative;border:1px solid var(--border-strong);padding:16px 12px 12px;margin-top:16px;background:var(--panel2);font-size:12px;}
   .summary-box.red{border-color:var(--red);}
   .summary-box.amber{border-color:var(--amber);}
+  .summary-box.magenta{border-color:var(--magenta);}
   .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
   .summary-headline{font-weight:700;margin-bottom:8px;font-size:13px;}
   .summary-row{display:flex;gap:0;padding:2px 0;}
@@ -372,6 +378,9 @@
     if(state === "done") return {stroke:"var(--green)", textFill:"#2e7d32"};
     if(state === "running") return {stroke:"var(--amber)", textFill:"#b8860b"};
     if(state === "stopped") return {stroke:"var(--red)", textFill:"var(--red)"};
+    // died (hamr's ruling B, 2026-09-25): distinct from stopped/red — no
+    // verdict was ever reached, so this box never shares the red look.
+    if(state === "died") return {stroke:"var(--magenta)", textFill:"var(--magenta)"};
     return {stroke:"var(--border-strong)", textFill:"var(--text-faint)"};
   }
   function escapeXml(s){
@@ -486,6 +495,7 @@
       '<span><span class="dot amber"></span>running</span>' +
       '<span><span class="dot red"></span>stopped</span>' +
       '<span><span class="dot grey"></span>waiting</span>' +
+      '<span><span class="dot magenta"></span>died</span>' +
       '</div>';
   }
   var lastSteps = null;
@@ -526,11 +536,12 @@
     window.addEventListener("resize", reflowMap);
   }
 
-  // ---- glyph/badge helpers (only [✓]/[✗]/[▶]/[·] — never the words green/red/soft-green) ----
+  // ---- glyph/badge helpers (only [✓]/[✗]/[▶]/[·]/[?] — never the words green/red/soft-green/died) ----
   function glyphClass(g){
     if(g === "✓") return "green";
     if(g === "✗") return "red";
     if(g === "▶") return "amber";
+    if(g === "?") return "magenta";
     return "grey";
   }
 
@@ -649,16 +660,23 @@
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = false;
 
+    // died: the two REAL figures the panel has (spentUsd/wallMs, both null —
+    // no job-end means no final totals were ever recorded) are replaced with
+    // the priced-rounds/first-to-last-record FLOORS the server derived —
+    // never "unknown" when a priced round actually exists.
+    var spendText = detail.died ? (detail.spendFloorUsd === null ? "unknown" : "at least " + money(detail.spendFloorUsd)) : money(detail.spentUsd);
+    var wallText = detail.died ? (detail.wallFloorMs === null ? "unknown" : "at least " + duration(detail.wallFloorMs)) : duration(detail.wallMs);
+
     document.getElementById("run-counters").innerHTML =
-      money(detail.spentUsd) + " of $" + (detail.budgetUsd === null ? "unknown" : Number(detail.budgetUsd).toFixed(2)) +
-      " &middot; " + duration(detail.wallMs) + " elapsed";
+      spendText + " of $" + (detail.budgetUsd === null ? "unknown" : Number(detail.budgetUsd).toFixed(2)) +
+      " &middot; " + wallText + (detail.died ? "" : " elapsed");
 
     var box = document.getElementById("run-summary");
-    box.className = "summary-box " + (detail.glyph === "✗" ? "red" : (detail.glyph === "▶" ? "amber" : ""));
+    box.className = "summary-box " + (detail.died ? "magenta" : (detail.glyph === "✗" ? "red" : (detail.glyph === "▶" ? "amber" : "")));
     var stepsDone = detail.steps.filter(function(s){ return s.state === "done"; }).length;
     box.innerHTML =
       '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span><b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
-        '<span class="num">' + money(detail.spentUsd) + '</span> &middot; <span class="num">' + duration(detail.wallMs) + '</span></div>' +
+        '<span class="num">' + spendText + '</span> &middot; <span class="num">' + wallText + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val"><span class="num">' + stepsDone + '</span> of <span class="num">' + detail.steps.length + '</span> done' +
         (detail.replans ? ' &middot; ' + detail.replans + ' replan' + (detail.replans === 1 ? '' : 's') : '') + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +
@@ -671,7 +689,7 @@
     detail.steps.forEach(function(s, i){
       var card = document.createElement("div");
       card.className = "step-card" + (s.state === "running" ? " running" : "");
-      var badgeClass = s.state === "done" ? "green" : (s.state === "stopped" ? "red" : (s.state === "running" ? "amber" : "grey"));
+      var badgeClass = s.state === "done" ? "green" : (s.state === "stopped" ? "red" : (s.state === "running" ? "amber" : (s.state === "died" ? "magenta" : "grey")));
       var metaBits = [];
       if(typeof s.rounds === "number") metaBits.push(s.rounds + " round" + (s.rounds === 1 ? "" : "s"));
       metaBits.push(typeof s.toolCalls === "number" ? (s.toolCalls + " tool call" + (s.toolCalls === 1 ? "" : "s")) : "unknown tool calls");

@@ -8,7 +8,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, cpSync,
+  mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, cpSync, utimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -193,6 +193,111 @@ test('/api/runs/:runid on a fileMissing row: 200 with fileMissing:true, never a 
   const body = await res.json();
   assert.equal(body.fileMissing, true);
 });
+
+// ---------------------------------------------------------------------------
+// DIED (hamr's ruling B, 2026-09-25): no job-end + spine mtime older than
+// DIED_MTIME_MS reads as died (killed/crashed/machine slept) — a DISTINCT
+// glyph [?] (never [✗], which stays reserved for a real close/arbiter "no").
+// ---------------------------------------------------------------------------
+
+const POC_DEAD = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-sjisejl8.jsonl';
+const havePocDead = existsSync(POC_DEAD);
+
+test(
+  'a real dead spine (poc-sjisejl8: no job-end, died during scout, steps empty) reads as died — glyph [?], never [✗]; why names the real last record; spend is "at least $X", never unknown; map is one "died during planning" box',
+  { skip: !havePocDead && 'no poc-sjisejl8 fixture on this machine' },
+  async (t) => {
+    const home = tmp();
+    const dest = tmp();
+    const destSpine = join(dest, 'poc-sjisejl8.jsonl');
+    cpSync(POC_DEAD, destSpine);
+    // force an OLD mtime regardless of when this test runs / the fixture was
+    // last touched — the died rule is mtime-relative, not wall-clock-fixed.
+    const old = new Date(Date.now() - 20 * 60 * 1000);
+    utimesSync(destSpine, old, old);
+    appendRun({
+      at: '2026-09-09T09:48:59.000Z', runid: 'sjisejl8', job: 'bareguard-u-types-kimi-a-1', spine: destSpine, patient: null, via: 'backfill',
+    }, { home });
+
+    const { base } = await startServer(t, { home });
+
+    const detailRes = await fetch(`${base}/api/runs/sjisejl8`);
+    assert.equal(detailRes.status, 200);
+    const detail = await detailRes.json();
+    assert.equal(detail.died, true);
+    assert.equal(detail.glyph, '?', 'died must use the distinct [?] glyph, never [✗]');
+    assert.equal(detail.outcome, null, 'no job-end really was reached — outcome stays null, only died is new');
+    assert.match(detail.stopReason, /^died — no ending was recorded \(killed, crashed, or the machine slept\)\. Last thing it did: /);
+    assert.match(detail.stopReason, /a scout model call/, 'must name the REAL last record (a worker-round, phase:scout) never a guess');
+    assert.ok(detail.steps.length >= 1, 'steps empty (no step-start at all) must still produce one box, never an empty map');
+    assert.equal(detail.steps[detail.steps.length - 1].state, 'died');
+    assert.match(String(detail.steps[detail.steps.length - 1].id), /died during planning/i);
+    // spend: 2 real worker-round costUsd (0.008187 + 0.010002) — never "unknown"
+    assert.ok(typeof detail.spendFloorUsd === 'number' && detail.spendFloorUsd > 0.018 && detail.spendFloorUsd < 0.019, `expected a real priced-rounds sum ~0.018189, got ${detail.spendFloorUsd}`);
+
+    const runsRes = await fetch(`${base}/api/runs`);
+    const { runs } = await runsRes.json();
+    const row = runs.find((r) => r.runid === 'sjisejl8');
+    assert.ok(row);
+    assert.equal(row.glyph, '?');
+    assert.equal(row.died, true);
+    assert.ok(!/\bdied\b/.test(row.checkType) && !/\bdied\b/.test(row.spend) && !/\bdied\b/.test(row.wall), 'row meta must never carry the literal word "died" — the glyph alone carries it');
+    assert.match(row.spend, /^at least \$/);
+
+    const wfRes = await fetch(`${base}/api/workflows`);
+    const { workflows } = await wfRes.json();
+    const wf = workflows.find((w) => w.job === 'bareguard-u-types-kimi-a-1');
+    assert.ok(wf);
+    assert.equal(wf.lastGlyph, '?');
+  },
+);
+
+test('a FRESH spine (no job-end, mtime just written) is still just "running" [▶] — never misread as died', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const spinePath = join(dir, 'u-freshnoend.jsonl');
+  writeSpine(spinePath, [{
+    type: 'job-start', job: 'still-going', ts: new Date().toISOString(), seq: 1, verdictType: 'green',
+  }]);
+  appendRun({
+    at: new Date().toISOString(), runid: 'freshnoend', job: 'still-going', spine: spinePath, patient: null, via: 'run-u',
+  }, { home });
+
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/freshnoend`);
+  const detail = await res.json();
+  assert.equal(detail.died, false);
+  assert.equal(detail.glyph, '▶');
+});
+
+const POC_RED = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl';
+const havePocRed = existsSync(POC_RED);
+
+test(
+  'a real RED run (job-end present, outcome provider-red) is completely unaffected by the died rule — glyph stays [✗], stopReason unchanged, died:false',
+  { skip: !havePocRed && 'no poc-p2ocuxj8 fixture on this machine' },
+  async (t) => {
+    const home = tmp();
+    const dest = tmp();
+    const destSpine = join(dest, 'poc-p2ocuxj8.jsonl');
+    cpSync(POC_RED, destSpine);
+    // old mtime too — proves the died rule never fires just because a
+    // spine's own file is old; it fires ONLY on outcome === null.
+    const old = new Date(Date.now() - 20 * 60 * 1000);
+    utimesSync(destSpine, old, old);
+    appendRun({
+      at: '2026-09-09T07:57:36.000Z', runid: 'p2ocuxj8', job: 'red-job', spine: destSpine, patient: null, via: 'backfill',
+    }, { home });
+
+    const { base } = await startServer(t, { home });
+    const res = await fetch(`${base}/api/runs/p2ocuxj8`);
+    const detail = await res.json();
+    assert.equal(detail.died, false);
+    assert.equal(detail.glyph, '✗');
+    assert.equal(detail.outcome, 'provider-red');
+    assert.ok(detail.stopReason, 'a red run must keep its own written stopReason');
+  },
+);
 
 // ---------------------------------------------------------------------------
 // real archived data

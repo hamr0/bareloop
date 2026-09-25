@@ -23,7 +23,7 @@
 // for every cap/threshold: a shell never widens what it was asked to do).
 
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRunList } from '../runlist.js';
@@ -31,6 +31,7 @@ import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine } from '../replay.js';
+import { SPEND_RECORD_TYPES } from '../ledger.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -70,6 +71,140 @@ export function checkTypeLabel(verdictType) {
   return 'unknown';
 }
 
+// DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` never shares
+// the failed glyph — [✗] stays reserved for a run whose close/arbiter
+// actually rendered a "no" (a real result). A spine that just stops, with
+// no ending ever recorded, is a DIFFERENT fact (killed, crashed, or the
+// machine slept) and gets its own [?] glyph. The distinguishing signal is
+// the spine FILE's own mtime, never wall-clock "now minus job-start" (a
+// resumed/paused run can legitimately sit quiet for a long time without
+// having died): still fresh (written to within this window) reads as the
+// existing `running` [▶] state; older than this reads as died. Tighten-only,
+// named so a future change is a deliberate, visible edit.
+export const DIED_MTIME_MS = 10 * 60 * 1000;
+
+/**
+ * Plain-words description of ONE spine record, for the died "why" sentence's
+ * "Last thing it did: …" clause. Built from the REAL record shapes this
+ * codebase's own spines carry (grepped, and read directly off a real dead
+ * archive — poc-sjisejl8 — while building this), never a guess: an
+ * unrecognized `type` still gets an honest, literal fallback rather than a
+ * silently wrong label.
+ * @param {any} r
+ * @returns {string}
+ */
+function describeLastRecord(r) {
+  if (!r || typeof r !== 'object') return 'nothing (no record at all)';
+  const type = typeof r.type === 'string' ? r.type : 'unknown';
+  if (type === 'worker-round' || type === 'worker-turn' || type === 'judge-round') {
+    if (typeof r.phase === 'string' && r.phase.startsWith('step:')) {
+      const stepId = r.phase.slice('step:'.length);
+      return typeof r.iteration === 'number' ? `step ${stepId} iteration ${r.iteration}` : `step ${stepId}`;
+    }
+    if (typeof r.phase === 'string' && r.phase.length > 0) return `a ${r.phase} model call`;
+    return type === 'judge-round' ? 'a judge model call' : 'a model call';
+  }
+  /** @type {Record<string, (r: any) => string>} */
+  const labels = {
+    'job-start': () => 'starting the job',
+    'scout-start': () => 'starting the scout',
+    'scout-result': () => 'the scout finishing',
+    'check-run': () => 'a check run',
+    'check-preflight': () => 'a preflight check',
+    'check-menu': () => 'building the check menu',
+    'step-start': (rec) => `starting step ${rec.step ?? '?'}`,
+    'step-end': (rec) => `finishing step ${rec.step ?? '?'}`,
+    'iteration-start': (rec) => `starting iteration ${rec.iteration ?? '?'}`,
+    'exit-eval': (rec) => `an exit check${typeof rec.step === 'string' ? ` for step ${rec.step}` : ''}`,
+    materials: () => 'gathering materials',
+    'plan-validate': () => 'validating the plan',
+    'plan-accepted': () => 'accepting the plan',
+    'plan-executed': () => 'finishing the plan',
+    'work-branch': () => 'preparing the work branch',
+    'scope-menu': () => 'building the scope menu',
+    'close-verdict': () => 'a close verdict',
+    'close-precheck': () => 'a close precheck',
+    'close-timing': () => 'timing the close',
+    'primitive-smoke': () => 'a primitive smoke check',
+    engagement: () => 'starting the engagement',
+    'wall-clock': () => 'reading the wall clock',
+    ladder: () => 'a strike-ladder check',
+    'fix-loop': () => 'a fix-loop iteration',
+    'transport-retry': () => 'a transport retry',
+    'memory-cache': () => 'reading the memory cache',
+    'run-start': () => 'starting the run',
+    'run-end': () => 'ending the run',
+    'outer-close': () => 'the outer close',
+    'attempt-bounded': () => 'bounding the attempt',
+    'middle-done': () => 'finishing a middle step',
+    'resume-seed': () => 'seeding a resume',
+    escalation: (rec) => `an escalation${typeof rec.category === 'string' ? ` (${rec.category})` : ''}`,
+  };
+  const label = labels[type];
+  return label ? label(r) : `a ${type} record`;
+}
+
+/**
+ * Died-run derivation: `died` (the mtime rule above), the plain-words
+ * `why` sentence, the priced-rounds spend floor, and the first→last
+ * record wall floor — all `null`/`false` when this run is NOT died (a real
+ * `job-end` was reached, or the file is still fresh). Reads the spine's raw
+ * records directly (never re-derives from `replayRun`'s own windowed
+ * fields, which assume a `job-end` exists) — the ONE owner of this
+ * derivation, used by every caller below (`/api/runs`, `/api/workflows`,
+ * `/api/runs/:id`) so the three never drift apart.
+ * @param {string} spinePath
+ * @param {any[]} records raw parsed spine records (already read once by the caller)
+ * @param {string|null} outcome `replayRun`'s own `summary.outcome`
+ * @returns {{died: boolean, why: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
+ */
+function deriveDeath(spinePath, records, outcome) {
+  const notDied = {
+    died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
+  };
+  if (outcome !== null && outcome !== undefined) return notDied; // a real job-end was reached
+  let mtimeMs;
+  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return notDied; }
+  if (Date.now() - mtimeMs <= DIED_MTIME_MS) return notDied; // still fresh — genuinely `running`, not died
+
+  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
+  const last = withTs.length ? withTs[withTs.length - 1] : null;
+  const when = last ? new Date(last.ts).toLocaleString() : 'an unknown time';
+  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${describeLastRecord(last)} at ${when}.`;
+
+  let spendSum = 0;
+  let pricedCount = 0;
+  for (const r of records) {
+    if (!r || typeof r !== 'object' || !SPEND_RECORD_TYPES.includes(r.type)) continue; // worker-result echoes excluded by construction — not a spend type
+    if (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd)) { spendSum += r.costUsd; pricedCount += 1; }
+  }
+  const spendFloorUsd = pricedCount > 0 ? spendSum : null;
+
+  const firstMs = withTs.length ? Date.parse(withTs[0].ts) : NaN;
+  const lastMs = withTs.length ? Date.parse(withTs[withTs.length - 1].ts) : NaN;
+  const wallFloorMs = Number.isFinite(firstMs) && Number.isFinite(lastMs) && lastMs >= firstMs ? lastMs - firstMs : null;
+
+  return {
+    died: true, why, spendFloorUsd, wallFloorMs,
+  };
+}
+
+/**
+ * `duration()`'s own local twin (replay.js keeps its copy private) — used
+ * ONLY for the died-row "at least …" wall figure, so this formatting can
+ * never silently drift from the row's own normal wall column shape (`6m08s`).
+ * @param {number} ms
+ * @returns {string}
+ */
+function formatDurationMs(ms) {
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  let m = Math.floor(s / 60);
+  let rem = Math.round(s - m * 60);
+  if (rem === 60) { m += 1; rem = 0; }
+  return `${m}m${String(rem).padStart(2, '0')}s`;
+}
+
 /**
  * One `/api/runs` row, or `{ ...row, fileMissing: true }` when the row's
  * spine no longer exists on disk — never silently listed as if it were
@@ -85,25 +220,31 @@ function summarizeRow(row) {
     };
   }
   let summary;
+  let rawRecords;
   try {
     summary = replayOne(row.spine, { skipAudit: true });
+    rawRecords = parseJsonl(row.spine).records;
   } catch (e) {
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, readError: String(/** @type {Error} */ (e).message),
     };
   }
   const line = summarizeForAllLine(summary);
+  const death = deriveDeath(row.spine, rawRecords, summary.outcome);
   return {
     runid: row.runid,
     job: row.job,
     at: row.at,
     via: row.via,
     fileMissing: false,
-    glyph: glyphForOutcome(summary.outcome),
+    died: death.died,
+    glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
     checkType: checkTypeLabel(summary.verdictType),
     model: summary.model,
-    spend: line.spend,
-    wall: line.wall,
+    // died: never "unknown" when a priced round exists — glyph [?] already
+    // carries the word "died", so the row meta text itself never repeats it.
+    spend: death.died ? (death.spendFloorUsd !== null ? `at least $${death.spendFloorUsd.toFixed(4)}` : 'unknown') : line.spend,
+    wall: death.died ? (death.wallFloorMs !== null ? `at least ${formatDurationMs(death.wallFloorMs)}` : 'unknown') : line.wall,
     date: typeof row.at === 'string' ? row.at.slice(0, 10) : null,
   };
 }
@@ -191,13 +332,15 @@ export function getRunDetail(runid, opts = {}) {
   const summary = replayOne(row.spine);
   const timelineKind = summary.timelineKind;
   const units = timelineKind === 'iterations' ? summary.iterations : summary.steps;
+  const death = deriveDeath(row.spine, parseJsonl(row.spine).records, summary.outcome);
   const steps = units.map((u, idx) => {
     const isLast = idx === units.length - 1;
-    /** @type {'done'|'stopped'|'running'|'waiting'} */
+    /** @type {'done'|'stopped'|'running'|'waiting'|'died'} */
     let state;
     const outcome = timelineKind === 'iterations' ? u.verdict : u.outcome;
     const isGreen = outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied';
     if (outcome !== null && outcome !== undefined) state = isGreen ? 'done' : 'stopped';
+    else if (isLast && death.died) state = 'died';
     else if (isLast && summary.outcome === null) state = 'running';
     else state = 'waiting';
     return {
@@ -215,6 +358,26 @@ export function getRunDetail(runid, opts = {}) {
       tripped: u.tripped,
     };
   });
+  // died before any step/iteration ever started (steps empty — the run was
+  // still in scout/planning) — one placeholder box, never an empty map. Its
+  // "id" IS the map's own display text (the map renders `String(s.id)`
+  // verbatim), so no separate client-side special case is needed.
+  if (death.died && steps.length === 0) {
+    steps.push({
+      id: 'died during planning',
+      occurrence: null,
+      outcome: null,
+      state: 'died',
+      rounds: null,
+      toolCalls: null,
+      wallMs: null,
+      spentUsd: null,
+      unpricedRounds: 0,
+      checks: null,
+      treeChanged: null,
+      tripped: null,
+    });
+  }
   return {
     runid: summary.runId ?? runid,
     job: summary.job ?? row.job,
@@ -222,10 +385,17 @@ export function getRunDetail(runid, opts = {}) {
     checkType: checkTypeLabel(summary.verdictType),
     model: summary.model,
     budgetUsd: summary.budgetUsd,
-    glyph: glyphForOutcome(summary.outcome),
+    glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
     outcome: summary.outcome,
-    stopReason: summary.stopReason,
+    died: death.died,
+    stopReason: death.died ? death.why : summary.stopReason,
     spentUsd: summary.spentUsd,
+    // died: a spend floor summed from real priced rounds present in the
+    // file — never null/unknown when at least one priced round exists.
+    // `null` on a non-died run (the normal `spentUsd`/`wallMs` fields above
+    // are already the real, complete figures there).
+    spendFloorUsd: death.died ? death.spendFloorUsd : null,
+    wallFloorMs: death.died ? death.wallFloorMs : null,
     spendComplete: summary.spendComplete,
     wallMs: summary.wallMs,
     timelineKind,

@@ -266,8 +266,12 @@ restating pixels. The rulings that constrain the real build (not just the mockup
 
 - **Wording ruling:** check type shown as `Check type` with value `deterministic` (internal
   hard green) or `rubric` (internal soft green); a run's result is shown ONLY as a glyph —
-  `[✓]` passed, `[✗]` failed, `[▶]` running, `[·]` waiting — never the words green/red/
-  soft-green anywhere in the page. (Saved to auto-memory `ui-verdict-words.md`.)
+  `[✓]` passed, `[✗]` failed, `[▶]` running, `[·]` waiting, `[?]` died (no result) — never the
+  words green/red/soft-green anywhere in the page. (Saved to auto-memory `ui-verdict-words.md`.)
+  2026-09-25, hamr: B — died is not failed; a run with no verdict never shares the failed
+  glyph. `[?]` is a run whose spine carries no `job-end` at all (killed, crashed, or the
+  machine slept) — distinct from `[✗]`, which stays reserved for a run whose close/arbiter
+  actually rendered a "no" (a real result).
 - **Run ID format and placement:** `workflow-name (mu2p83go)` — bracketed after the workflow
   name — shown on the run's summary line 1 and in every History row. (Closes the open question
   from the 2026-09-22 stash.)
