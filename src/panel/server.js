@@ -35,8 +35,14 @@ import { SPEND_RECORD_TYPES } from '../ledger.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** A runid, as it appears in a URL path segment — never a raw filesystem path. */
-export const RUNID_RE = /^[A-Za-z0-9._-]+$/;
+/**
+ * A runid, as it appears in a URL path segment — never a raw filesystem
+ * path. `~` is included so a backfill-disambiguated runid (F197:
+ * `src/runlist.js`'s `backfillRuns`, e.g. `run~2` when two archived spines
+ * derive the same filename-based runid) is a legal, reachable id, never a
+ * 400.
+ */
+export const RUNID_RE = /^[A-Za-z0-9._~-]+$/;
 
 /** Default bind port (PANEL-BUILD.md P1: checked free on the build machine, not guaranteed elsewhere — the server still fails loudly on collision, see {@link createPanelServer}). */
 export const DEFAULT_PORT = 4700;

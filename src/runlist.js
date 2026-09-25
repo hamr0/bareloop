@@ -31,7 +31,9 @@ import {
   existsSync, mkdirSync, appendFileSync, chmodSync, readdirSync, statSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, dirname, basename } from 'node:path';
+import {
+  join, dirname, basename, resolve,
+} from 'node:path';
 import { parseJsonl, isSidecarByName, looksLikeSpine, resolveSiblings } from './replayio.js';
 
 /**
@@ -178,11 +180,25 @@ function jsonlFilesIn(dir, maxDepth = MAX_BACKFILL_DEPTH) {
  * never following a symlinked directory) for archived spine files — both
  * the free-standing layout (e.g. `<dir>/<x>/u-<id>.jsonl`, at any depth) and
  * the bundle layout (`<dir>/.../runs/<runid>/spine.jsonl`) — and add one row
- * per spine whose runid is not already in the list. IDEMPOTENT: running
- * twice adds nothing the second time (the same runid-dedup `appendRun`
- * already does). Never silent about what it found: every candidate `.jsonl`
- * is bucketed into exactly one of added / already listed / skipped (not a
- * spine, or unreadable).
+ * per spine whose RESOLVED ABSOLUTE PATH is not already in the list.
+ *
+ * F197: dedup is by spine path, never by `runidForSpine`'s own derived
+ * runid. A spine carrying no `runid` field falls back to a filename-derived
+ * id (e.g. `run` for a `run.jsonl` with no runid inside) — a SECOND such
+ * file elsewhere (same basename, different directory: not a rare shape,
+ * `bareloop-patients/quickstart-proof/run.jsonl` is a real example) is a
+ * DIFFERENT run, not a duplicate, and dedup-by-runid would have silently
+ * dropped it. When the derived runid collides with one already in the list
+ * (pre-existing or added earlier in this same pass), the row's OWN runid is
+ * disambiguated (`<base>~2`, `<base>~3`, …) so every row keeps a runid the
+ * panel's `/api/runs/:runid` lookup can resolve unambiguously — see
+ * {@link RUNID_RE} in `src/panel/server.js`, updated to allow `~`.
+ *
+ * IDEMPOTENT: running twice adds nothing the second time (the resolved-path
+ * set already contains every spine this pass would otherwise re-add). Never
+ * silent about what it found: every candidate `.jsonl` is bucketed into
+ * exactly one of added / already listed / skipped (not a spine, or
+ * unreadable).
  * @param {string} dir
  * @param {{ home?: string }} [opts]
  * @returns {{ added: number, alreadyListed: number, skipped: number, addedRows: RunRow[] }}
@@ -193,7 +209,8 @@ export function backfillRuns(dir, opts = {}) {
   const candidates = new Set(jsonlFilesIn(dir));
 
   const { rows: existingRows } = readRunList(opts);
-  const known = new Set(existingRows.map((r) => r && r.runid).filter(Boolean));
+  const knownPaths = new Set(existingRows.map((r) => (r && typeof r.spine === 'string' ? resolve(r.spine) : null)).filter(Boolean));
+  const knownRunids = new Set(existingRows.map((r) => r && r.runid).filter(Boolean));
 
   let added = 0;
   let alreadyListed = 0;
@@ -202,6 +219,8 @@ export function backfillRuns(dir, opts = {}) {
   const addedRows = [];
 
   for (const spinePath of [...candidates].sort()) {
+    const resolvedPath = resolve(spinePath);
+    if (knownPaths.has(resolvedPath)) { alreadyListed += 1; continue; }
     let parsed;
     try {
       parsed = parseJsonl(spinePath);
@@ -210,8 +229,13 @@ export function backfillRuns(dir, opts = {}) {
       continue;
     }
     if (!looksLikeSpine(parsed.records)) { skipped += 1; continue; }
-    const runid = runidForSpine(spinePath);
-    if (known.has(runid)) { alreadyListed += 1; continue; }
+    const baseRunid = runidForSpine(spinePath);
+    let runid = baseRunid;
+    if (knownRunids.has(runid)) {
+      let n = 2;
+      while (knownRunids.has(`${baseRunid}~${n}`)) n += 1;
+      runid = `${baseRunid}~${n}`;
+    }
     const jobStart = parsed.records.find((r) => r && r.type === 'job-start') ?? null;
     const job = typeof jobStart?.job === 'string' ? jobStart.job : '(unknown job)';
     // `at`: the job-start record's own `ts` (stamped by src/spine.js's
@@ -225,10 +249,18 @@ export function backfillRuns(dir, opts = {}) {
     // `null` rather than guessed from directory layout, which does not hold
     // across the archive's several naming conventions (see src/replayio.js's
     // own file-header comment).
-    const row = { at, runid, job, spine: spinePath, patient: null, via: /** @type {const} */ ('backfill') };
+    const row = {
+      at, runid, job, spine: resolvedPath, patient: null, via: /** @type {const} */ ('backfill'),
+    };
     const result = appendRun(row, opts);
-    if (result.appended) { added += 1; addedRows.push(row); known.add(runid); }
-    else alreadyListed += 1;
+    if (result.appended) {
+      added += 1; addedRows.push(row); knownPaths.add(resolvedPath); knownRunids.add(runid);
+    } else {
+      // only reachable if two candidates in the SAME pass resolve to the
+      // same path under different spellings, or an unexpected runid clash
+      // appendRun itself caught — either way, honestly counted, never lost.
+      alreadyListed += 1;
+    }
   }
 
   return { added, alreadyListed, skipped, addedRows };

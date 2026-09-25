@@ -271,6 +271,58 @@ test('formatRunRow: a row whose spine file still exists prints clean; a row whos
 const REAL_PATIENTS_DIR = '/home/hamr/PycharmProjects/bareloop-patients';
 const haveRealPatients = existsSync(REAL_PATIENTS_DIR);
 
+// ---------------------------------------------------------------------------
+// F197: dedup by SPINE PATH (never a filename-derived runid). A spine with
+// no runid inside it (e.g. quickstart-proof/run.jsonl) falls back to a
+// runid derived from its own basename ("run") — two such files, same
+// basename, different directories, must NOT be treated as "the same run".
+// ---------------------------------------------------------------------------
+
+test('backfillRuns: two DIFFERENT spine files sharing a basename (no runid inside either, e.g. two run.jsonl) are BOTH added — dedup is by spine path, never the filename-derived runid', () => {
+  const patients = tmp();
+  const home = tmp();
+  mkdirSync(join(patients, 'proj-a'), { recursive: true });
+  mkdirSync(join(patients, 'proj-b'), { recursive: true });
+  // neither record carries a `runid` field — runidForSpine falls back to the
+  // filename-derived id ("run") for BOTH, since both files are named run.jsonl
+  writeSpine(join(patients, 'proj-a', 'run.jsonl'), [{ type: 'job-start', job: 'job-a', ts: '2026-09-24T00:00:00.000Z', seq: 1 }]);
+  writeSpine(join(patients, 'proj-b', 'run.jsonl'), [{ type: 'job-start', job: 'job-b', ts: '2026-09-24T00:00:01.000Z', seq: 1 }]);
+
+  const first = backfillRuns(patients, { home });
+  assert.equal(first.added, 2, 'both run.jsonl files must be added — same basename is not the same run');
+  assert.equal(first.alreadyListed, 0);
+
+  const { rows } = readRunList({ home });
+  assert.equal(rows.length, 2);
+  const runids = rows.map((r) => r.runid);
+  assert.equal(new Set(runids).size, 2, 'the two rows must carry DISTINCT runids (disambiguated), never the same one twice');
+  const byJob = Object.fromEntries(rows.map((r) => [r.job, r]));
+  assert.ok(byJob['job-a']);
+  assert.ok(byJob['job-b']);
+
+  // IDEMPOTENT: running backfill again over the same dir adds nothing —
+  // dedup is now keyed on the resolved spine path, which is stable.
+  const second = backfillRuns(patients, { home });
+  assert.equal(second.added, 0, 'a second backfill pass must add nothing new');
+  assert.equal(second.alreadyListed, 2);
+  const { rows: rows2 } = readRunList({ home });
+  assert.equal(rows2.length, 2, 'no duplicate rows after a second backfill pass');
+});
+
+test('backfillRuns: dedup is by resolved ABSOLUTE spine path — a relative/unresolved dir argument still recognizes an already-listed spine', () => {
+  const patients = tmp();
+  const home = tmp();
+  writeSpine(join(patients, 'u-relcheck.jsonl'), [{ type: 'job-start', job: 'rel-job', ts: '2026-09-24T00:00:00.000Z', seq: 1 }]);
+
+  const first = backfillRuns(patients, { home });
+  assert.equal(first.added, 1);
+  // second pass, same absolute dir — must recognize the spine already listed
+  // via its resolved path even though nothing here changed the path's spelling
+  const second = backfillRuns(patients, { home });
+  assert.equal(second.added, 0);
+  assert.equal(second.alreadyListed, 1);
+});
+
 test('backfillRuns: against a COPY of real archived spines, every candidate is bucketed (added+alreadyListed+skipped accounts for every .jsonl found)', { skip: !haveRealPatients && 'no bareloop-patients dir on this machine' }, () => {
   const src = join(REAL_PATIENTS_DIR, 'bareagent-u-bareloop');
   if (!existsSync(src)) { assert.ok(true, 'bareagent-u-bareloop not present; nothing to copy'); return; }

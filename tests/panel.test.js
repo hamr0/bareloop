@@ -69,12 +69,45 @@ test('checkTypeLabel: green -> deterministic, soft-green -> rubric, else -> unkn
   assert.equal(checkTypeLabel('hitl'), 'unknown');
 });
 
-test('RUNID_RE: accepts alnum/./_/-, rejects a path segment carrying a slash or ..', () => {
+test('RUNID_RE: accepts alnum/./_/-/~ (the last for a backfill-disambiguated id like "run~2"), rejects a path segment carrying a slash or ..', () => {
   assert.ok(RUNID_RE.test('mu9x02aa'));
   assert.ok(RUNID_RE.test('u-r1.jsonl-ish_name'));
+  assert.ok(RUNID_RE.test('run~2'), 'a backfill-disambiguated runid must be a legal runid');
   assert.ok(!RUNID_RE.test('../etc/passwd'));
   assert.ok(!RUNID_RE.test('a/b'));
   assert.ok(!RUNID_RE.test(''));
+});
+
+// ---------------------------------------------------------------------------
+// F197: two spine files sharing a filename-derived runid ("run") get
+// disambiguated runids (run, run~2) by backfillRuns — both must be reachable
+// via /api/runs/:runid, never ambiguous.
+// ---------------------------------------------------------------------------
+
+test('backfillRuns + panel: two same-basename spines (both derive runid "run") are BOTH independently reachable via /api/runs/:runid', async (t) => {
+  const home = tmp();
+  const patients = tmp();
+  mkdirSync(join(patients, 'proj-a'), { recursive: true });
+  mkdirSync(join(patients, 'proj-b'), { recursive: true });
+  writeSpine(join(patients, 'proj-a', 'run.jsonl'), [{ type: 'job-start', job: 'job-a', ts: '2026-09-24T00:00:00.000Z', seq: 1 }]);
+  writeSpine(join(patients, 'proj-b', 'run.jsonl'), [{ type: 'job-start', job: 'job-b', ts: '2026-09-24T00:00:01.000Z', seq: 1 }]);
+
+  const { backfillRuns } = await import('../src/runlist.js');
+  const result = backfillRuns(patients, { home });
+  assert.equal(result.added, 2);
+
+  const { base } = await startServer(t, { home });
+  const runsRes = await fetch(`${base}/api/runs`);
+  const { runs } = await runsRes.json();
+  assert.equal(runs.length, 2);
+  const jobs = new Set();
+  for (const r of runs) {
+    const res = await fetch(`${base}/api/runs/${encodeURIComponent(r.runid)}`);
+    assert.equal(res.status, 200, `expected runid ${r.runid} to be independently reachable`);
+    const detail = await res.json();
+    jobs.add(detail.job);
+  }
+  assert.deepEqual([...jobs].sort(), ['job-a', 'job-b'], 'both runs must resolve to their OWN distinct job, never colliding');
 });
 
 // ---------------------------------------------------------------------------
