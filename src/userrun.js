@@ -70,6 +70,8 @@ import { HITL_PAUSE } from './declaredclose.js';
 import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
+// PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
+import { appendRun } from './runlist.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -1331,6 +1333,20 @@ async function execute(ctx) {
   mkdirSync(spineDir, { recursive: true });
   const runid = Date.now().toString(36);
   const spineFile = join(spineDir, `u-${runid}.jsonl`);
+
+  // PANEL-BUILD.md P1 — one row in the run list, BEFORE any paid call (this
+  // leg's own `runJob` further down, and BEFORE the provider-key checks that
+  // preceded this point already gated on). `runid` is fresh for THIS leg
+  // (cold start or resumed leg both mint one here), so `appendRun`'s own
+  // runid-dedup never fires on the ordinary path — it exists for a caller
+  // that legitimately re-enters with the same runid (e.g. a retried
+  // in-process test). A list-append failure must never block a real,
+  // already-signed run: caught and named loudly, never rethrown.
+  try {
+    appendRun({ at: new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: 'run-u' });
+  } catch (/** @type {any} */ e) {
+    err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
+  }
 
   const git = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a], { encoding: 'utf8' }).trim();
   if (dead) {

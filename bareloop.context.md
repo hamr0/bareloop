@@ -3186,6 +3186,35 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   this command reports, it never grades), `1` on a missing file/directory or a non-spine
   file, `1` with a usage line on no args.
 
+- **`bareloop runs`** / **`bareloop runs backfill <dir>`** (PANEL-BUILD.md P1, 2026-09-24
+  rulings — "one home for runs", hamr's option B) → the one run list, at `~/.config/bareloop/
+  runs.jsonl` (the same directory the keys file, PRD §7d, lives in — outside any repo tree,
+  never moved into one). This is a LIST, not a relocation: patient copies stay exactly where
+  they already are (`bareloop-patients/…` for `run-u`, `<bundleDir>/runs/<runid>/` for
+  `bareloop run`); jobs stay in `jobs/` (moving them into the home too is deferred to P3,
+  hamr picked option "A"). `bareloop runs` with no subcommand prints every listed row, one
+  line each — `job (runid) · date · spine path`, with ` — file missing` appended when the
+  row's `spine` no longer exists on disk. `bareloop runs backfill <dir>` scans `dir` and its
+  immediate subdirectories for archived spines already on disk (both the free-standing
+  layout, e.g. `<dir>/<x>/u-<id>.jsonl`, and the bundle layout, `<dir>/<x>/runs/<runid>/
+  spine.jsonl`), reusing `src/replayio.js`'s `parseJsonl`/`isSidecarByName`/`looksLikeSpine`
+  (never a second parser), and adds one row per spine whose runid is not already listed —
+  idempotent, running it twice adds nothing the second time. Prints `added N, already listed
+  M, skipped K (not a spine or unreadable)` — never silent about what it found. Read-only,
+  $0: no interview, no author, no run trigger, no key ever read. A row is `{ at, runid, job,
+  spine, patient, via }` — `spine`/`patient` are always absolute paths (`patient: null` when
+  not known, e.g. every `via:"backfill"` row: no spine record carries a run's workdir);
+  `via` is `'run-u'`, `'bundle'`, or `'backfill'`. `bareloop run-u` and `bareloop run` (the
+  bundle path) each append their own row at run START, before the first paid call — a
+  list-append failure is caught at both call sites and printed loudly to stderr
+  (`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (…)`); the run itself
+  always continues (a panel list must never block real, already-signed work). Interview/
+  author sessions are NOT added (deferred to P3 — nothing to list at that stage yet). These
+  functions (`appendRun`/`readRunList`/`backfillRuns`/`formatRunRow`, `src/runlist.js`) are
+  NOT exported from the package root — the panel's HTTP server (P1's next task) will call
+  them the same in-process way `src/cli.js` does, per the layering law
+  (`docs/product/PANEL-BUILD.md` §2), not through `bareloop`'s public API.
+
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
   U-mode). `src/cli.js`'s `run-u` dispatch hands `rest` straight to

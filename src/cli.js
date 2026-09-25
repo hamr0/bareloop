@@ -58,6 +58,11 @@ import {
   parseJsonl, looksLikeSpine, replayOne, listSpines, readHistoryLog,
 } from './replayio.js';
 import { formatReplay, formatAllLines } from './replay.js';
+// PANEL-BUILD.md P1 (2026-09-24 rulings) — the one run list
+// (`~/.config/bareloop/runs.jsonl`) and its backfill scan. `bareloop runs`
+// (list) and `bareloop runs backfill <dir>` (reconstruct rows from archived
+// spines already on disk) are this rung's only new commands.
+import { appendRun, readRunList, backfillRuns, formatRunRow } from './runlist.js';
 
 // The tier->model tables live in `src/providers.js` now (PRD item 28's
 // factory) — one seam instead of a copy hardcoded in each runner. A
@@ -393,6 +398,15 @@ async function doRun(args, { out, err, cwd, env, now, deps }) {
   const closeDir = join(runsDir, 'close');
   mkdirSync(closeDir, { recursive: true });
 
+  // PANEL-BUILD.md P1 — one row in the run list, BEFORE the first paid call
+  // (runJob, right below). A list-append failure must never block a real,
+  // already-signed run: caught and named loudly, never rethrown.
+  try {
+    appendRun({ at: new Date(now()).toISOString(), runid, job: runSpec.job, spine: spineFile, patient: worktree, via: 'bundle' });
+  } catch (e) {
+    err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${/** @type {Error} */ (e).message}) — the run continues; the panel's list will be missing this row.`);
+  }
+
   let outcome;
   try {
     outcome = await runJob(runSpec, {
@@ -541,6 +555,38 @@ function doReplay(args, { out, err, cwd }) {
 }
 
 /**
+ * `bareloop runs` — print the one run list, one line per row
+ * ({@link formatRunRow}). `bareloop runs backfill <dir>` — scan `dir` for
+ * archived spines and add a row per one not already listed
+ * ({@link backfillRuns}), printing the count added/already-listed/skipped
+ * (never silent). Read-only, $0: no interview, no author, no run trigger, no
+ * key ever read.
+ * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string }} ctx
+ */
+function doRuns(args, { out, err, cwd }) {
+  if (args[0] === 'backfill') {
+    const dirArg = args[1];
+    if (!dirArg) { err('usage: bareloop runs backfill <dir>'); return 1; }
+    const dir = resolve(cwd, dirArg);
+    if (!existsSync(dir)) { err(`no such directory: ${dir}`); return 1; }
+    let result;
+    try {
+      result = backfillRuns(dir);
+    } catch (e) {
+      err(`backfill failed: ${/** @type {Error} */ (e).message}`);
+      return 1;
+    }
+    out(`backfill ${dir}: added ${result.added}, already listed ${result.alreadyListed}, skipped ${result.skipped} (not a spine or unreadable)`);
+    return 0;
+  }
+  const { rows, skipped } = readRunList();
+  if (rows.length === 0) { out('runs: (none listed yet — see `bareloop runs backfill <dir>`)'); }
+  else for (const row of rows) out(formatRunRow(row));
+  if (skipped > 0) out(`(${skipped} malformed line${skipped === 1 ? '' : 's'} skipped)`);
+  return 0;
+}
+
+/**
  * The bare `bareloop` menu: `1 export  2 run  3 history  q quit`, then the
  * SAME code path as the sub-command, asking its args line by line. `run-u`,
  * `interview`, `author` and `replay` are NOT wizarded here — a line-at-a-time
@@ -556,7 +602,7 @@ async function runMenu(deps, ctx) {
   const rl = createInterface({ input: stdin, output: stdout });
   try {
     ctx.out('1 export  2 run  3 history  q quit');
-    ctx.out('(also on the command line, not wizarded here: run-u, interview, author, replay — run `bareloop <name>` with its own flags)');
+    ctx.out('(also on the command line, not wizarded here: run-u, interview, author, replay, runs — run `bareloop <name>` with its own flags)');
     const choice = (await rl.question('> ')).trim().toLowerCase();
     if (choice === '' || choice === 'q' || choice === 'quit') return 0;
     if (choice === '1') {
@@ -641,6 +687,10 @@ export async function main(argv, deps = {}) {
   // seam — same shape as `doHistory`/`doExport`, not the argv-owning
   // `main(argv, deps)` modules the flows above delegate to.
   if (cmd === 'replay') return doReplay(rest, ctx);
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay`);
+  // `bareloop runs` / `bareloop runs backfill <dir>` — PANEL-BUILD.md P1's
+  // one run list. Read-only ($0): no interview, no author, no run trigger,
+  // no key ever read.
+  if (cmd === 'runs') return doRuns(rest, ctx);
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay, runs`);
   return 1;
 }

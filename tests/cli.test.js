@@ -428,6 +428,75 @@ test('bareloop run: a spine with a malformed/truncated line (process-killed-mid-
   assert.doesNotMatch(out.text(), /spent {5}UNKNOWN/);
 });
 
+// ---------------------------------------------------------------------------
+// PANEL-BUILD.md P1 — the one run list gets a row at run START, and a
+// failure to write it must never block the (already-signed, already-paying)
+// run itself.
+// ---------------------------------------------------------------------------
+
+test('bareloop run: appends one row to the run list before the first paid call, absolute paths, via:"bundle"', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+
+  const ts = 1_700_000_500_000;
+  const now = makeNow(ts);
+  const runid = ts.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', runid);
+  const provider = greenScript(worktree);
+
+  const home = tmp(t, 'cli-runlist-home-');
+  const savedHome = process.env.HOME;
+  process.env.HOME = home;
+  t.after(() => { process.env.HOME = savedHome; });
+
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now,
+  });
+  assert.equal(rc, 0, `run must green: ${out.text()}\n${err.text()}`);
+
+  const { readRunList } = await import('../src/runlist.js');
+  const { rows } = readRunList({ home: join(home, '.config', 'bareloop') });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].runid, runid);
+  assert.equal(rows[0].via, 'bundle');
+  assert.equal(rows[0].spine, join(bundleDir, 'runs', runid, 'spine.jsonl'));
+  assert.equal(rows[0].patient, worktree);
+  assert.equal(typeof rows[0].at, 'string');
+});
+
+test('bareloop run: a run-list append failure (HOME points through a FILE, not a dir) is printed to stderr and never blocks the run — it still greens', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+
+  const ts = 1_700_000_600_000;
+  const now = makeNow(ts);
+  const runid = ts.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', runid);
+  const provider = greenScript(worktree);
+
+  // FAIL-FIRST-PROVEN (see tests/runlist.test.js and the session report):
+  // pointing HOME through a plain FILE forces mkdirSync(..., {recursive:true})
+  // inside appendRun to throw ENOTDIR — the same shape a permission-denied or
+  // disk-full home directory would produce.
+  const blockerDir = tmp(t, 'cli-home-blocker-');
+  const blockerFile = join(blockerDir, 'blocked');
+  writeFileSync(blockerFile, 'not a directory');
+  const savedHome = process.env.HOME;
+  process.env.HOME = join(blockerFile, 'bareloop-home');
+  t.after(() => { process.env.HOME = savedHome; });
+
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now,
+  });
+  assert.equal(rc, 0, `the run must still green despite the run-list append failure: ${out.text()}\n${err.text()}`);
+  assert.match(out.text(), /outcome   green/);
+  assert.match(err.text(), /WARNING: could not add this run to ~\/\.config\/bareloop\/runs\.jsonl/);
+});
+
 test('bareloop run: a SECOND run needs no --approve, mints a fresh worktree/runid and a "-2" branch', async (t) => {
   const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');
