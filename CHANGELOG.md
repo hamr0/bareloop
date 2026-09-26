@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.29.0] — 2026-09-26
 
 ### Added
 
@@ -52,6 +52,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - Backfill scans recursively (bounded depth) instead of the top directory plus its immediate
   subdirectories only, and dedups by resolved spine path rather than a filename-derived runid
   (two same-basename spines in different directories are different runs, not duplicates).
+- **Workflows job (parent) row is its latest run**: clicking it opens that run (previously a
+  dead click after the Runs-tab merge); the expanded child list shows only OLDER runs, never
+  repeating the latest as its own first child; the expand caret appears only when a matching
+  older run exists under the active filters/search (not just `runCount > 1`); and the row's
+  "selected" state and click target both follow whichever run is actually active
+  (`representedRun`) — so a search hit or a History pick on an older run correctly expands
+  and highlights that run's job, instead of always marking/opening the job's latest.
 - Various Workflows/History/Audit rendering fixes: rows stay two lines and never wrap; the
   meta-line separator carries a leading space; a died run's "why" line uses one plain
   timestamp format; a run that died before its first step reads "0 of 0 done" (never "0 of
