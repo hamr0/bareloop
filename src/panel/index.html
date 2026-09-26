@@ -176,6 +176,14 @@
   .wf-meta + .wf-meta::before{content:" · ";color:var(--text-faint);}
   .wf-row-actions{display:flex;gap:6px;margin-top:2px;}
   .wf-row.selected,.hist-row.selected{border:2px solid var(--accent);border-radius:4px;}
+  /* item 2 (2026-09-26 merge): a Workflows-view job row expands inline to
+     list ALL its runs (build spec's own design) — the caret glyph on the
+     job row, and the indent wrapper the expanded runs render into. */
+  .wf-job{margin-bottom:6px;}
+  .wf-job .wf-row{margin-bottom:0;}
+  .wf-caret{display:inline-block;width:11px;flex:none;color:var(--text-faint);font-size:10px;}
+  .wf-runs{margin:4px 0 8px 16px;padding-left:8px;border-left:2px solid var(--border);}
+  .wf-runs .hist-row{margin-bottom:4px;}
 
   .rp-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);flex-wrap:wrap;gap:8px;}
   .rp-header h2{margin:0;font-size:15px;}
@@ -311,8 +319,7 @@
     <nav class="left-pane" aria-label="Job navigation" id="left-pane-anchor">
       <div class="tabrow" role="tablist" aria-label="Left panel views">
         <button role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="true" data-testid="left-tab-chat">Chat</button>
-        <button role="tab" id="tab-workflows" aria-controls="panel-workflows" aria-selected="false" data-testid="left-tab-workflows">Workflows</button>
-        <button role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false" data-testid="left-tab-history">History</button>
+        <button role="tab" id="tab-runs" aria-controls="panel-runs" aria-selected="false" data-testid="left-tab-runs">Runs</button>
       </div>
 
       <div class="pane-body">
@@ -321,19 +328,19 @@
           <div class="chat-thread">
             Authoring a new job from this page comes later (PANEL-BUILD.md P3). This build
             (P1) is read-only: it shows runs already started from the command line
-            (<code>bareloop run</code> / <code>bareloop run-u</code>). Use the Workflows or
-            History tab to look at one.
+            (<code>bareloop run</code> / <code>bareloop run-u</code>). Use the Runs tab to
+            look at one.
           </div>
         </section>
 
-        <section id="panel-workflows" class="tabpanel" role="tabpanel" aria-labelledby="tab-workflows" hidden>
-          <div id="workflows-filterbar-anchor"></div>
+        <section id="panel-runs" class="tabpanel" role="tabpanel" aria-labelledby="tab-runs" hidden>
+          <div class="chips" role="group" aria-label="Runs view" style="margin-bottom:8px;">
+            <button class="chip" type="button" aria-pressed="true" data-runs-view="workflows" data-testid="runs-view-workflows">Workflows</button>
+            <button class="chip" type="button" aria-pressed="false" data-runs-view="history" data-testid="runs-view-history">History</button>
+          </div>
+          <div id="runs-filterbar-anchor"></div>
           <div id="wf-list" data-testid="wf-list"></div>
-        </section>
-
-        <section id="panel-history" class="tabpanel" role="tabpanel" aria-labelledby="tab-history" hidden>
-          <div id="history-filterbar-anchor"></div>
-          <div id="history-list" data-testid="history-list"></div>
+          <div id="history-list" data-testid="history-list" hidden></div>
         </section>
 
       </div>
@@ -452,7 +459,7 @@
       });
     });
   }
-  wireTabs([document.getElementById("tab-chat"), document.getElementById("tab-workflows"), document.getElementById("tab-history")]);
+  wireTabs([document.getElementById("tab-chat"), document.getElementById("tab-runs")]);
   wireTabs([document.getElementById("tab-run"), document.getElementById("tab-audit"), document.getElementById("tab-details")]);
 
   // ---- fetch helpers ----
@@ -747,77 +754,168 @@
     return "grey";
   }
 
-  // ---- Workflows tab ----
-  function renderWorkflows(workflows){
-    var el = document.getElementById("wf-list");
-    el.innerHTML = "";
-    if(!workflows.length){
-      el.innerHTML = '<div class="hint">no runs listed yet — run `bareloop run-u` or `bareloop run`, or `bareloop runs backfill <dir>`</div>';
-      return;
-    }
-    workflows.forEach(function(w){
-      var row = document.createElement("div");
-      row.className = "wf-row";
-      row.setAttribute("data-wf", w.job);
-      row.setAttribute("tabindex", "0");
-      row.setAttribute("role", "button");
-      row.setAttribute("aria-pressed", "false");
-      var wfFullName = w.job + ' (' + w.lastRunid + ')';
+  // ---- Runs tab: ONE run-row builder shared by History (flat) and the
+  // Workflows view's per-job expansion (item 2, 2026-09-26 merge) — the two
+  // never drift on how a run row reads.
+  function buildRunRowEl(r){
+    var row = document.createElement("div");
+    row.className = "hist-row";
+    row.setAttribute("data-testid", "hist-row-" + r.runid);
+    row.setAttribute("tabindex", "0");
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-pressed", "false");
+    var histFullName = r.job + ' (' + r.runid + ')';
+    if(r.fileMissing){
       row.innerHTML =
-        '<span class="wf-line1"><span class="dot ' + glyphClass(w.lastGlyph) + '"></span>' +
-        '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
+        '<span class="wf-line1"><span class="dot grey"></span>' +
+        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
         '<span class="wf-meta-line">' +
-        '<span class="wf-meta">' + escapeXml(w.lastCheckType) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(w.lastSpend) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(w.lastWall) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(w.lastDate || "unknown") + '</span>' +
-        '<span class="wf-meta">' + w.runCount + ' run' + (w.runCount === 1 ? '' : 's') + '</span>' +
+        '<span class="wf-meta">file missing</span>' +
+        '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
         '</span>';
-      row.addEventListener("click", function(){ selectRun(w.lastRunid, row, ".wf-row"); document.getElementById("tab-run").click(); scrollRunIntoViewMobile(); });
-      row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
-      el.appendChild(row);
-    });
+    } else {
+      row.innerHTML =
+        '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
+        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
+        '<span class="wf-meta-line">' +
+        '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(r.spend) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(r.wall) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
+        '</span>';
+    }
+    row.addEventListener("click", function(){ selectRun(r.runid, row, ".hist-row"); document.getElementById("tab-run").click(); scrollRunIntoViewMobile(); });
+    row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
+    return row;
   }
 
-  // ---- History tab ----
+  // ---- History view ----
   function renderHistory(runs){
     var el = document.getElementById("history-list");
     el.innerHTML = "";
-    var listed = runs.filter(function(r){ return !r.fileMissing; });
+    var listed = (runs || []).filter(function(r){ return !r.fileMissing; });
     if(!listed.length){
       el.innerHTML = '<div class="hint">no runs listed yet</div>';
       return;
     }
-    runs.forEach(function(r){
+    (runs || []).forEach(function(r){ el.appendChild(buildRunRowEl(r)); });
+  }
+
+  // ---- Workflows view (item 2, 2026-09-26 merge): groups the ONE /api/runs
+  // payload by job name client-side — the sole owner of that grouping now
+  // (the old /api/workflows endpoint is gone; see src/panel/server.js). Runs
+  // arrive newest-first (server contract, see listRuns), so the FIRST run
+  // seen for a job is its latest — no re-sort needed, and job order (first-
+  // job-seen order) is already newest-first by construction.
+  function groupRunsByJob(runs){
+    var byJob = {};
+    var order = [];
+    (runs || []).forEach(function(r){
+      if(!byJob[r.job]){ byJob[r.job] = []; order.push(r.job); }
+      byJob[r.job].push(r);
+    });
+    return order.map(function(job){
+      var jobRuns = byJob[job];
+      var last = jobRuns[0];
+      return {
+        job: job,
+        runs: jobRuns,
+        runCount: jobRuns.length,
+        lastRunid: last.runid,
+        lastAt: last.at,
+        lastGlyph: last.glyph || "▶",
+        lastCheckType: last.checkType || "unknown",
+        lastModel: last.model || null,
+        lastSpend: last.spend || "unknown",
+        lastWall: last.wall || "unknown",
+        lastDate: last.date,
+      };
+    });
+  }
+
+  // Matches a job if ANY of its runs match the filters (not only the
+  // latest) — a one-line adapter over filterRuns (never a reimplementation
+  // of the AND/OR/time/search semantics), same posture as the old
+  // filterWorkflows but now correct against the job's FULL run list.
+  function filterWorkflows(jobs, filters, nowMs){
+    return (jobs || []).filter(function(g){
+      return filterRuns(g.runs, filters, nowMs).length > 0;
+    });
+  }
+
+  function filtersActive(filters){
+    return !!(filters && (
+      (filters.checkTypes && filters.checkTypes.length) ||
+      (filters.results && filters.results.length) ||
+      (filters.time && filters.time !== "all") ||
+      (filters.search && String(filters.search).trim())
+    ));
+  }
+
+  // Pure rule (item 2 build spec): when filters/search are active, a job
+  // whose LATEST run doesn't match but an older one does auto-expands so the
+  // matching run is visible without an extra click; inactive filters never
+  // force an expand.
+  function autoExpandJob(group, matchingRuns, active){
+    if(!active || !matchingRuns.length) return false;
+    var latestId = group.runs.length ? group.runs[0].runid : null;
+    var latestIncluded = matchingRuns.some(function(r){ return r.runid === latestId; });
+    return !latestIncluded;
+  }
+
+  // manual expand/collapse memory, keyed by job name — survives a re-render
+  // triggered by a filter/search change within the same page load, reset on
+  // full page reload (per-viewer convenience only, never persisted).
+  var wfExpanded = {};
+
+  function renderWorkflows(jobs){
+    var el = document.getElementById("wf-list");
+    el.innerHTML = "";
+    if(!jobs.length){
+      el.innerHTML = '<div class="hint">no runs listed yet — run `bareloop run-u` or `bareloop run`, or `bareloop runs backfill <dir>`</div>';
+      return;
+    }
+    var active = filtersActive(currentRunsFilters());
+    jobs.forEach(function(g){
+      var matchingRuns = active ? filterRuns(g.runs, currentRunsFilters(), Date.now()) : g.runs;
+      var autoExpand = autoExpandJob(g, matchingRuns, active);
+      var expanded = Object.prototype.hasOwnProperty.call(wfExpanded, g.job) ? wfExpanded[g.job] : autoExpand;
+
+      var wrap = document.createElement("div");
+      wrap.className = "wf-job";
+
       var row = document.createElement("div");
-      row.className = "hist-row";
-      row.setAttribute("data-testid", "hist-row-" + r.runid);
+      row.className = "wf-row";
+      row.setAttribute("data-wf", g.job);
+      row.setAttribute("data-testid", "wf-row-" + g.job);
       row.setAttribute("tabindex", "0");
       row.setAttribute("role", "button");
-      row.setAttribute("aria-pressed", "false");
-      var histFullName = r.job + ' (' + r.runid + ')';
-      if(r.fileMissing){
-        row.innerHTML =
-          '<span class="wf-line1"><span class="dot grey"></span>' +
-          '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-          '<span class="wf-meta-line">' +
-          '<span class="wf-meta">file missing</span>' +
-          '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
-          '</span>';
-      } else {
-        row.innerHTML =
-          '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
-          '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-          '<span class="wf-meta-line">' +
-          '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
-          '<span class="wf-meta">' + escapeXml(r.spend) + '</span>' +
-          '<span class="wf-meta">' + escapeXml(r.wall) + '</span>' +
-          '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
-          '</span>';
-      }
-      row.addEventListener("click", function(){ selectRun(r.runid, row, ".hist-row"); document.getElementById("tab-run").click(); scrollRunIntoViewMobile(); });
+      row.setAttribute("aria-expanded", expanded ? "true" : "false");
+      var wfFullName = g.job + ' (' + g.lastRunid + ')';
+      row.innerHTML =
+        '<span class="wf-line1"><span class="wf-caret">' + (expanded ? "▼" : "▶") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
+        '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
+        '<span class="wf-meta-line">' +
+        '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(g.lastSpend) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(g.lastWall) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(g.lastDate || "unknown") + '</span>' +
+        '<span class="wf-meta">' + g.runCount + ' run' + (g.runCount === 1 ? '' : 's') + '</span>' +
+        '</span>';
+      row.addEventListener("click", function(){
+        wfExpanded[g.job] = !expanded;
+        renderWorkflows(jobs);
+      });
       row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
-      el.appendChild(row);
+      wrap.appendChild(row);
+
+      if(expanded){
+        var runsWrap = document.createElement("div");
+        runsWrap.className = "wf-runs";
+        (active ? matchingRuns : g.runs).forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r)); });
+        wrap.appendChild(runsWrap);
+      }
+      el.appendChild(wrap);
     });
   }
 
@@ -889,18 +987,6 @@
         if(nowMs - t > days * 24 * 60 * 60 * 1000) return false;
       }
       return true;
-    });
-  }
-
-  // Same rule, applied to a workflow's OWN latest-run fields
-  // (lastCheckType/lastGlyph/lastAt/lastRunid/lastModel) — reuses filterRuns
-  // via a one-row adapter rather than re-implementing the AND/OR/time/search
-  // semantics twice. `lastModel` is whatever `/api/workflows` put there
-  // (`src/panel/server.js`'s `listWorkflows`) — `null`/absent on an older
-  // archived run, same posture as `matchesSearch`'s own model handling.
-  function filterWorkflows(workflows, filters, nowMs){
-    return (workflows || []).filter(function(w){
-      return filterRuns([{ checkType: w.lastCheckType, glyph: w.lastGlyph, at: w.lastAt, job: w.job, runid: w.lastRunid, model: w.lastModel }], filters, nowMs).length === 1;
     });
   }
 
@@ -995,24 +1081,66 @@
     return {
       setItems: function(items){ allItems = items || []; apply(); },
       getState: function(){ return state; },
+      refresh: function(){ apply(); },
     };
   }
 
-  document.getElementById("history-filterbar-anchor").innerHTML = filterBarHTML("history");
-  document.getElementById("workflows-filterbar-anchor").innerHTML = filterBarHTML("workflows");
+  // item 2 (2026-09-26 merge): Workflows/History view-mode memory — same
+  // per-viewer-convenience posture as every other localStorage read/write on
+  // this page (try/catch, never assumed available).
+  var RUNS_VIEW_KEY = "bareloop-panel-runs-view";
+  function loadRunsViewMode(){
+    try{
+      var v = localStorage.getItem(RUNS_VIEW_KEY);
+      if(v === "workflows" || v === "history") return v;
+    }catch(e){ /* per-viewer convenience only */ }
+    return "workflows";
+  }
+  function saveRunsViewMode(v){
+    try{ localStorage.setItem(RUNS_VIEW_KEY, v); }catch(e){ /* best-effort only */ }
+  }
 
-  var historyFilterBar = createFilterBar({
-    scope: "history",
-    storageKey: "bareloop-panel-history-filters",
-    filterFn: filterRuns,
-    applyFn: renderHistory,
+  // item 2 (2026-09-26 merge): ONE shared filter bar drives whichever view
+  // (Workflows/History) is currently on — one scope, one localStorage key,
+  // so switching views never loses the search/chip state.
+  document.getElementById("runs-filterbar-anchor").innerHTML = filterBarHTML("runs");
+
+  var runsViewMode = loadRunsViewMode();
+  function runsFilterFn(items, filters, nowMs){
+    if(runsViewMode === "history") return filterRuns(items, filters, nowMs);
+    return filterWorkflows(groupRunsByJob(items), filters, nowMs);
+  }
+  function runsApplyFn(filtered){
+    if(runsViewMode === "history") renderHistory(filtered);
+    else renderWorkflows(filtered);
+  }
+  var runsFilterBar = createFilterBar({
+    scope: "runs",
+    storageKey: "bareloop-panel-runs-filters",
+    filterFn: runsFilterFn,
+    applyFn: runsApplyFn,
   });
-  var workflowsFilterBar = createFilterBar({
-    scope: "workflows",
-    storageKey: "bareloop-panel-workflows-filters",
-    filterFn: filterWorkflows,
-    applyFn: renderWorkflows,
+  function currentRunsFilters(){
+    return runsFilterBar ? runsFilterBar.getState() : { checkTypes: [], results: [], time: "all", search: "" };
+  }
+  function paintRunsViewToggle(){
+    document.querySelectorAll('.chip[data-runs-view]').forEach(function(c){
+      c.setAttribute("aria-pressed", c.getAttribute("data-runs-view") === runsViewMode ? "true" : "false");
+    });
+    document.getElementById("wf-list").hidden = runsViewMode !== "workflows";
+    document.getElementById("history-list").hidden = runsViewMode !== "history";
+  }
+  document.querySelectorAll('.chip[data-runs-view]').forEach(function(chip){
+    chip.addEventListener("click", function(){
+      var next = chip.getAttribute("data-runs-view");
+      if(next === runsViewMode) return;
+      runsViewMode = next;
+      saveRunsViewMode(runsViewMode);
+      paintRunsViewToggle();
+      runsFilterBar.refresh();
+    });
   });
+  paintRunsViewToggle();
 
   // item 4: phone-only "scroll the run view into view" on row select, and
   // the matching "↑ list" jump back. Desktop never runs either — both panes
@@ -1643,15 +1771,16 @@
     getJSON("/api/runs/" + encodeURIComponent(runid) + "/job").then(renderJob).catch(function(){ renderJob(null); });
   }
 
-  Promise.all([getJSON("/api/workflows"), getJSON("/api/runs")]).then(function(results){
-    var workflows = results[0].workflows || [];
-    var runs = results[1].runs || [];
-    workflowsFilterBar.setItems(workflows);
-    historyFilterBar.setItems(runs);
+  getJSON("/api/runs").then(function(result){
+    var runs = result.runs || [];
+    runsFilterBar.setItems(runs);
     if(runs.length && !runs[0].fileMissing){
-      document.getElementById("tab-workflows").click();
-      var firstRow = document.querySelector('.wf-row[data-wf="' + (workflows[0] && workflows[0].job) + '"]');
-      if(workflows.length) selectRun(workflows[0].lastRunid, firstRow, ".wf-row");
+      document.getElementById("tab-runs").click();
+      // newest run overall, opened directly — the Workflows view starts
+      // collapsed (item 2 merge has no "current selection" concept for a
+      // collapsed job row; clicking a job only expands/collapses it now).
+      selectRun(runs[0].runid, null, ".hist-row");
+      document.getElementById("tab-run").click();
     }
   }).catch(function(e){
     document.getElementById("wf-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
