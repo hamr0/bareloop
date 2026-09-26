@@ -379,6 +379,16 @@ export function getRunDetail(runid, opts = {}) {
   const timelineKind = summary.timelineKind;
   const rawSpineRecords = parseJsonl(row.spine).records;
   const death = deriveDeath(row.spine, rawSpineRecords, summary.outcome);
+  // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
+  // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
+  // close's own paid judge seam, distinct from the worker `model` above.
+  // `null` whenever no judge-round was ever recorded (the common case —
+  // src/replay.js's own note: no real archived run measured against this
+  // build carries one yet), never guessed from the worker model.
+  const judgeRoundWithModel = rawSpineRecords.find(
+    (r) => r && typeof r === 'object' && r.type === 'judge-round' && typeof r.model === 'string' && r.model.length > 0,
+  );
+  const judgeModel = judgeRoundWithModel ? judgeRoundWithModel.model : null;
 
   /** @param {string|null} outcome @param {boolean} isLast */
   const stateFor = (outcome, isLast) => {
@@ -484,6 +494,8 @@ export function getRunDetail(runid, opts = {}) {
     checkType: checkTypeLabel(summary.verdictType, row.at),
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
     model: summary.model,
+    provider: summary.provider,
+    judgeModel,
     budgetUsd: summary.budgetUsd,
     glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
     outcome: summary.outcome,
@@ -1419,25 +1431,33 @@ export function handleRequest(req, res, opts) {
  * @returns {Promise<{ server: import('node:http').Server, port: number, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
-  const port = opts.port ?? DEFAULT_PORT;
+  const requestedPort = opts.port ?? DEFAULT_PORT;
   const home = opts.home;
   return new Promise((resolve, reject) => {
+    // Bound port is resolved from the live socket (`server.address().port`)
+    // once listening starts, not the requested value — this is what makes
+    // `port: 0` (OS-assigned ephemeral port) work for callers such as the
+    // test suite, while `--port N` / DEFAULT_PORT callers still get back
+    // exactly the port they asked for.
+    let boundPort = requestedPort;
     const server = createServer((req, res) => {
       try {
-        handleRequest(req, res, { home, port });
+        handleRequest(req, res, { home, port: boundPort });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
       }
     });
     server.once('error', (e) => {
       const err = /** @type {any} */ (e);
-      err.port = port;
+      err.port = requestedPort;
       reject(err);
     });
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(requestedPort, '127.0.0.1', () => {
+      const addr = server.address();
+      boundPort = typeof addr === 'object' && addr !== null ? addr.port : requestedPort;
       resolve({
         server,
-        port,
+        port: boundPort,
         close: () => new Promise((res2) => { server.close(() => res2(undefined)); }),
       });
     });

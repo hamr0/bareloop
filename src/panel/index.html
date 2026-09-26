@@ -1226,6 +1226,16 @@
   function toolDisplayLabel(key){ return String(key).replace(/^shell_/, "").replace(/^ctx_/, ""); }
   // item 3 (2026-09-25): EVERY tool used, with counts — no top-5 truncation
   // (was `entries.slice(0, 5)` + "…"; the build spec calls for the full list).
+  // item 3 (2026-09-26): Run summary "model:" line — `detail.model` +
+  // `detail.provider` off job-start's own real fields (src/run.js:360/368),
+  // never guessed. `provider` is shown alongside the model only when the
+  // spine actually recorded one (e.g. "deepseek-flash (openai-api)"); a
+  // spine predating either field reads "not recorded", never a default
+  // model name.
+  function modelLine(detail){
+    if(!detail.model) return "not recorded";
+    return detail.provider ? (detail.model + " (" + detail.provider + ")") : detail.model;
+  }
   function toolsLine(behaviour){
     if(!behaviour) return "unknown (no log saved)";
     if(behaviour.totalCalls === 0) return "0 calls";
@@ -1337,6 +1347,8 @@
     box.innerHTML =
       '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span><b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
         '<span class="num">' + spendText + '</span> &middot; <span class="num">' + wallText + '</span></div>' +
+      '<div class="summary-row" data-testid="summary-model"><span class="sum-label">model:</span><span class="sum-val">' + escapeXml(modelLine(detail)) + '</span></div>' +
+      (detail.judgeModel ? '<div class="summary-row" data-testid="summary-judge"><span class="sum-label">judge:</span><span class="sum-val">' + escapeXml(detail.judgeModel) + '</span></div>' : '') +
       '<div class="summary-row"><span class="sum-label">steps:</span><span class="sum-val">' + stepsText +
         (detail.replans ? ' &middot; ' + detail.replans + ' replan' + (detail.replans === 1 ? '' : 's') : '') + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +

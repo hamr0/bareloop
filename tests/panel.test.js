@@ -33,14 +33,21 @@ function writeSpine(path, records) {
   writeFileSync(path, `${records.map((r) => JSON.stringify(r)).join('\n')}\n`);
 }
 
-/** starts a server on an ephemeral free-ish port for this test, torn down after */
+/** starts a server on an OS-assigned ephemeral port for this test, torn down after */
 async function startServer(t, opts = {}) {
-  // pick a high, unlikely-collision port per test rather than the real 4700
-  // default — parallel test files must not fight over one port.
-  const port = 20000 + Math.floor(Math.random() * 10000);
-  const { server, close, port: boundPort } = await createPanelServer({ port, ...opts });
+  // port: 0 asks the OS for a free port — guaranteed collision-free, unlike
+  // a random pick from a fixed range (which flakes under EADDRINUSE whenever
+  // another listener lands on the same number, see F-panel-port-flake).
+  const { server, close, port: boundPort } = await createPanelServer({ port: 0, ...opts });
   t.after(() => close());
   return { server, port: boundPort, base: `http://127.0.0.1:${boundPort}` };
+}
+
+/** binds a throwaway server on an OS-assigned port and returns that port, now guaranteed taken (caller must not close it before using the port). */
+async function reserveTakenPort(t) {
+  const { server, close, port } = await createPanelServer({ port: 0 });
+  t.after(() => close());
+  return port;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,11 +154,17 @@ test('createPanelServer: binds 127.0.0.1 only, never 0.0.0.0', async (t) => {
   assert.equal(addr.address, '127.0.0.1');
 });
 
+test('createPanelServer: port 0 resolves the OS-assigned real port, never 0, and the page carries that real port', async (t) => {
+  const { port, base } = await startServer(t, { home: tmp() });
+  assert.ok(Number.isInteger(port) && port > 0, `expected a real bound port, got ${port}`);
+  const res = await fetch(`${base}/`);
+  const html = await res.text();
+  assert.ok(html.includes(String(port)), 'expected the resolved port to reach the served page (not the literal 0 requested)');
+});
+
 test('createPanelServer: a taken port rejects loudly (EADDRINUSE), never silently picks another port', async (t) => {
   const home = tmp();
-  const port = 20000 + Math.floor(Math.random() * 10000) + 1;
-  const first = await createPanelServer({ port, home });
-  t.after(() => first.close());
+  const port = await reserveTakenPort(t);
   await assert.rejects(createPanelServer({ port, home }), (e) => {
     assert.equal(/** @type {any} */ (e).code, 'EADDRINUSE');
     assert.equal(/** @type {any} */ (e).port, port);
@@ -161,9 +174,7 @@ test('createPanelServer: a taken port rejects loudly (EADDRINUSE), never silentl
 
 test('panelMain: a taken port prints a LOUD error naming the port and returns non-zero, never falls back to another port', async (t) => {
   const home = tmp();
-  const port = 20000 + Math.floor(Math.random() * 10000) + 2;
-  const held = await createPanelServer({ port, home });
-  t.after(() => held.close());
+  const port = await reserveTakenPort(t);
   const errLines = [];
   const rc = await panelMain(['--port', String(port)], { out: () => {}, err: (s) => errLines.push(s), runlistHome: home });
   assert.equal(rc, 1);
@@ -875,6 +886,50 @@ test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2)
 });
 
 // ---------------------------------------------------------------------------
+// item 3 (2026-09-26): Run summary "model:" line — the worker model +
+// provider (openai-api-style endpoint kind), and a "judge:" line only when
+// the spine actually recorded one. Both come off job-start's own real
+// fields (src/run.js:360/368), never guessed.
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid: a real archived run (u-mu2p83go, pulselog-person-live-2) reports model+provider from its own job-start record (deepseek-flash on openai-api)', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-model', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/mu2p83go-model');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.model, 'deepseek-flash');
+  assert.equal(body.provider, 'openai-api');
+  // this real spine's judge-round records (if any) all land inside a step
+  // window (src/replay.js's own "no real archived run carries a leftover
+  // judge-round" note) — no judge model is recorded for this run.
+  assert.equal(body.judgeModel, null);
+});
+
+test('/api/runs/:runid: a spine predating the `model`/`provider` fields reports both null — "not recorded", never a guessed "sonnet"', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-nomodel.jsonl'), [{
+    type: 'job-start', job: 'pre-field-job', ts: '2026-09-10T00:00:00.000Z', seq: 1, verdictType: 'green',
+  }, { type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, ts: '2026-09-10T00:01:00.000Z', seq: 2 }]);
+  appendRun({
+    at: '2026-09-10T00:00:00.000Z', runid: 'nomodel', job: 'pre-field-job', spine: join(dir, 'u-nomodel.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/nomodel');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.model, null);
+  assert.equal(body.provider, null);
+  assert.equal(body.judgeModel, null);
+});
+
+// ---------------------------------------------------------------------------
 // item 3 (2026-09-25): Run summary "tools" line — EVERY tool used (no top-5
 // truncation), litectx tools already folded into behaviour.byTool (confirmed
 // on litectx-u-bareloop's real run mtotxw1z — no contamination there, its
@@ -1176,8 +1231,7 @@ test('/api/runs/:runid/job: RED PROOF — with sourceNearSpine/successFromSpec/g
     appendRun({
       at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-redproof', job: realSpec.job, spine: spineCopy, patient: null, via: 'backfill',
     }, { home });
-    const port = 20000 + Math.floor(Math.random() * 10000);
-    const { server, close } = await patchedCreate({ port, home });
+    const { server, close, port } = await patchedCreate({ port: 0, home });
     t.after(() => close());
     const res = await fetch(`http://127.0.0.1:${port}/api/runs/mu2p83go-redproof/job`);
     const body = await res.json();

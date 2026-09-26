@@ -1249,6 +1249,11 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // neither, and this reader reports that honestly rather than guessing.
     verdictType: typeof jobStart?.verdictType === 'string' ? jobStart.verdictType : null,
     model: typeof jobStart?.model === 'string' ? jobStart.model : null,
+    // PRD item 28 / F156's own field (src/run.js:368) — WHICH provider ran
+    // this model (e.g. `openai-api` for a DeepSeek run). `null` on any spine
+    // older than that landing, or a native/clipipe call path with no such
+    // binding — never fabricated, never defaulted to "anthropic-api".
+    provider: typeof jobStart?.provider === 'string' ? jobStart.provider : null,
     // F118 (parked-half landed): `job-start.code` — absent on any spine older
     // than that landing (this run predates the field entirely, distinct from
     // `sha` being null because the run happened to run from an npm install
