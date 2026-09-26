@@ -586,7 +586,8 @@ test('item B: renderAudit\'s Step cell shows a tooltip on a null step (before an
   const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
   const body = html.slice(start, end);
   assert.match(body, /r\.step === null/);
-  assert.match(body, /title="before any step \(planning\)"/);
+  assert.match(body, /title=\\"before any step \(planning\)\\"/);
+  assert.match(body, /title=\\"after the last step \(final check\)\\"/);
   assert.match(body, /typeof r\.attempt === "number"/);
 });
 

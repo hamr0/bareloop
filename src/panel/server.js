@@ -666,10 +666,15 @@ function scopedBehaviour(spinePath, spineRecords) {
  * step's last recorded attempt but before `stepEndTs` (a rare gap: the row
  * still belongs to the step, but not to any one attempt).
  * @param {ReturnType<typeof import('../replay.js').replayRun>} summary
- * @returns {(rowTs: string|null) => {step: string|null, attempt: number|null}}
+ * @returns {(rowTs: string|null) => {step: string|null, attempt: number|null, phase: 'planning'|'final-check'|null}}
  */
 function makeStepLookup(summary) {
-  const NONE = { step: /** @type {string|null} */ (null), attempt: /** @type {number|null} */ (null) };
+  /** @param {'planning'|'final-check'|null} phase */
+  const none = (phase) => ({
+    step: /** @type {string|null} */ (null),
+    attempt: /** @type {number|null} */ (null),
+    phase,
+  });
   const isIterations = summary.timelineKind === 'iterations';
   const units = isIterations ? summary.iterations : summary.steps;
   const windows = units
@@ -689,16 +694,25 @@ function makeStepLookup(summary) {
 
   return (rowTs) => {
     const ms = typeof rowTs === 'string' ? Date.parse(rowTs) : NaN;
-    if (!Number.isFinite(ms)) return NONE;
+    if (!Number.isFinite(ms)) return none('planning');
     let match = null;
-    for (const w of windows) {
-      if (w.startTs <= ms) match = w; else break;
+    let matchIdx = -1;
+    for (let i = 0; i < windows.length; i += 1) {
+      if (windows[i].startTs <= ms) { match = windows[i]; matchIdx = i; } else break;
     }
-    if (!match) return NONE;
-    if (typeof match.endTs === 'number' && ms > match.endTs) return NONE;
+    if (!match) return none('planning');
+    if (typeof match.endTs === 'number' && ms > match.endTs) {
+      // past this window's own end with no LATER window having started yet
+      // (matchIdx is the last window that has started as of `ms`, since
+      // windows are visited in startTs order) — that's the final close only
+      // when match is also the temporally last window overall; a gap
+      // between two steps (a later window exists but hasn't opened yet)
+      // gets no special phase.
+      return none(matchIdx === windows.length - 1 ? 'final-check' : null);
+    }
     const attemptWindow = match.attemptWindows.find((aw) => typeof aw.startTs === 'number'
       && aw.startTs <= ms && (typeof aw.endTs !== 'number' || ms <= aw.endTs));
-    return { step: match.id, attempt: attemptWindow ? attemptWindow.n : null };
+    return { step: match.id, attempt: attemptWindow ? attemptWindow.n : null, phase: null };
   };
 }
 
@@ -709,7 +723,12 @@ function makeStepLookup(summary) {
  * runAuditWindow} — a sidecar can carry other runs' rows). A row's real
  * fields (`ts`, `action.type`, `action.path`, `decision`) plus `step`/
  * `attempt` — see {@link makeStepLookup}: `null` for a row before any step
- * ever started (planning), a real step id otherwise. `round` — see
+ * ever started (planning), a real step id otherwise. `phase` distinguishes
+ * WHY `step` is `null`: `'planning'` (before the first step's own start, or
+ * a died-before-any-step run with no windows at all) vs `'final-check'`
+ * (strictly after the last step/iteration's own end, with no later one
+ * having started — the tail close) vs `null` when `step` is a real id, or
+ * for the rare in-between-steps gap. `round` — see
  * {@link makeRoundLookup}. A `phase:'record'`/`action.type:'llm'` row (item
  * 2: every MODEL CALL, `decision` always `null` on the real record) is
  * marked `kind:'model-call'` with its own `result.{costUsd,tokens,
@@ -765,7 +784,7 @@ export function getRunAudit(runid, opts = {}) {
   const auditRows = windowed.map((r) => {
     const isModelCall = r.action && r.action.type === 'llm';
     const resultObj = isModelCall && r.result && typeof r.result === 'object' ? r.result : null;
-    const { step, attempt } = stepOf(r.ts);
+    const { step, attempt, phase } = stepOf(r.ts);
     return {
       time: typeof r.ts === 'string' ? r.ts : null,
       action: r.action && typeof r.action.type === 'string' ? r.action.type : null,
@@ -773,6 +792,7 @@ export function getRunAudit(runid, opts = {}) {
       decision: typeof r.decision === 'string' ? r.decision : null,
       step,
       attempt,
+      phase,
       round: roundOf(r.ts),
       kind: isModelCall ? 'model-call' : 'tool-call',
       costUsd: resultObj && typeof resultObj.costUsd === 'number' && Number.isFinite(resultObj.costUsd) ? resultObj.costUsd : null,

@@ -1220,7 +1220,9 @@
         "<td>" + escapeXml(r.path || "unknown") + "</td>" +
         "<td>" + decisionCell + "</td>" +
         (r.step === null
-          ? "<td title=\"before any step (planning)\">&mdash;</td>"
+          ? (r.phase === "final-check"
+            ? "<td title=\"after the last step (final check)\">&mdash;</td>"
+            : "<td title=\"before any step (planning)\">&mdash;</td>")
           : "<td>" + escapeXml(r.step) + (typeof r.attempt === "number" ? " &middot; a" + r.attempt : "") + "</td>");
       tbody.appendChild(tr);
     });

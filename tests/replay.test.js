@@ -936,11 +936,11 @@ test('RED->GREEN (F195): replayRun scopes gate-audit rows to this run\'s own job
   const audit = [
     // an EARLIER, unrelated run's rows sharing this sidecar filename by
     // coincidence — hours before this run's own job-start
-    { ts: '2026-09-05T06:00:00.000Z', action: { type: 'read', path: 'other-run-a.js' }, decision: 'allow' },
-    { ts: '2026-09-05T06:00:01.000Z', action: { type: 'read', path: 'other-run-b.js' }, decision: 'allow' },
-    { ts: '2026-09-05T06:00:02.000Z', action: { type: 'edit', path: 'other-run-c.js' }, decision: 'allow' },
+    { ts: '2026-09-05T06:00:00.000Z', action: { type: 'read', path: 'other-run-a.js', args: { tool: 'shell_read' } }, decision: 'allow' },
+    { ts: '2026-09-05T06:00:01.000Z', action: { type: 'read', path: 'other-run-b.js', args: { tool: 'shell_read' } }, decision: 'allow' },
+    { ts: '2026-09-05T06:00:02.000Z', action: { type: 'edit', path: 'other-run-c.js', args: { tool: 'shell_edit' } }, decision: 'allow' },
     // this run's own row
-    { ts: '2026-09-05T12:00:01.500Z', action: { type: 'read', path: 'real-file.js' }, decision: 'allow' },
+    { ts: '2026-09-05T12:00:01.500Z', action: { type: 'read', path: 'real-file.js', args: { tool: 'shell_read' } }, decision: 'allow' },
   ];
   // pre-fix behaviour (what the bug looked like): every row in the sidecar
   // unconditionally counted, 4 total — reproduced here directly against the
