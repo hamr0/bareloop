@@ -30,7 +30,7 @@ import { readRunList } from '../runlist.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
-import { summarizeForAllLine } from '../replay.js';
+import { summarizeForAllLine, auditWindow } from '../replay.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
@@ -375,6 +375,7 @@ export function listWorkflows(opts = {}) {
         lastRunid: r.runid,
         lastGlyph: r.glyph ?? '▶',
         lastCheckType: r.checkType ?? 'unknown',
+        lastModel: r.model ?? null,
         lastSpend: r.spend ?? 'unknown',
         lastWall: r.wall ?? 'unknown',
         lastDate: r.date,
@@ -569,33 +570,18 @@ export function getRunDetail(runid, opts = {}) {
  * spanning 06:56Z to 13:25Z on one day, but the run's own `job-start`..
  * `job-end` window is 13:19:40Z..13:25:48Z; every row before that window
  * belongs to an EARLIER, unrelated run that happened to reuse the same
- * sidecar path). No `step`/`run_id` field in the gate-audit row is a
- * reliable enough key on its own (the file header's own doc: gate-audit rows
- * carry no `step`; a shared file can even reuse a `run_id` across archived
- * copies), so `ts` bounded by this run's own `job-start`/`job-end` — the one
- * pair of timestamps `replayRun` already trusts for the SAME purpose (its
- * per-occurrence `buildOccurrenceMetrics` windowing) — is the only honest
- * scope. `endTs` is `Infinity` when no `job-end` was ever reached (a died/
- * still-running run) — never clamped to this spine's own last record's `ts`,
- * which would wrongly exclude a real tool call the gate logged just AFTER
- * the spine's own last record landed (spine and gate-audit are written by
- * different seams and are not guaranteed to interleave exactly). The
- * measured real contamination above is rows from an EARLIER run, before
- * this run's own `job-start` — bounding only the lower edge already fixes
- * that; bounding the upper edge too would risk the opposite, newly-
- * introduced failure on the far more common still-running/died shape.
+ * sidecar path). F195: this is a thin wrapper over `src/replay.js`'s own
+ * {@link auditWindow} — the ONE owner of this rule (`replayRun` itself now
+ * applies it too, so `bareloop replay` and the panel can never disagree
+ * about which rows belong to a run) — kept here only to find `job-start`/
+ * `job-end` off the raw `spineRecords` array the panel already has in hand.
  * @param {any[]} spineRecords
  * @returns {{startTs: number, endTs: number}}
  */
 function runAuditWindow(spineRecords) {
   const jobStart = spineRecords.find((r) => r && r.type === 'job-start') ?? null;
   const jobEnd = [...spineRecords].reverse().find((r) => r && r.type === 'job-end') ?? null;
-  const startMs = jobStart && typeof jobStart.ts === 'string' ? Date.parse(jobStart.ts) : -Infinity;
-  const endMs = jobEnd && typeof jobEnd.ts === 'string' ? Date.parse(jobEnd.ts) : Infinity;
-  return {
-    startTs: Number.isFinite(startMs) ? startMs : -Infinity,
-    endTs: Number.isFinite(endMs) ? endMs : Infinity,
-  };
+  return auditWindow(jobStart, jobEnd);
 }
 
 /**
@@ -662,14 +648,68 @@ function scopedBehaviour(spinePath, spineRecords) {
 }
 
 /**
+ * Map an audit row's `ts` into the run's own step (or iteration) window —
+ * the Audit tab's `step` column (`getRunAudit`, previously hard-`null`).
+ * Reuses the SAME per-step/per-attempt windows item 5 already computed
+ * (`src/replay.js`'s `stepStartTs`/`stepEndTs`/`attemptWindows` on a
+ * `steps`-shape run, or `windowStartTs`/`windowEndTs` on an
+ * `iterations`-shape run) — never a second windowing pass of its own. A row
+ * whose `ts` falls before the first step/iteration's own start (drafting/
+ * scout activity, or a died-before-any-step run with no windows at all)
+ * returns `{step: null, attempt: null}` — same honesty rule as an
+ * unparseable ts — and so does a row that falls strictly AFTER a step's own
+ * `stepEndTs` with no later step/iteration having started yet (the final
+ * close phase). Windows are visited in `startTs` order (a replanned step id
+ * recurs as a later occurrence with a later `startTs`, so the later one
+ * correctly wins once its own window opens). `attempt` (the step's own
+ * `attemptWindows[].n`) is `null` when the row falls in the tail after the
+ * step's last recorded attempt but before `stepEndTs` (a rare gap: the row
+ * still belongs to the step, but not to any one attempt).
+ * @param {ReturnType<typeof import('../replay.js').replayRun>} summary
+ * @returns {(rowTs: string|null) => {step: string|null, attempt: number|null}}
+ */
+function makeStepLookup(summary) {
+  const NONE = { step: /** @type {string|null} */ (null), attempt: /** @type {number|null} */ (null) };
+  const isIterations = summary.timelineKind === 'iterations';
+  const units = isIterations ? summary.iterations : summary.steps;
+  const windows = units
+    .map((u) => (isIterations ? {
+      id: `iteration ${u.iteration ?? '?'}`,
+      startTs: u.windowStartTs,
+      endTs: u.windowEndTs,
+      attemptWindows: [],
+    } : {
+      id: u.id,
+      startTs: u.stepStartTs,
+      endTs: u.stepEndTs,
+      attemptWindows: Array.isArray(u.attemptWindows) ? u.attemptWindows : [],
+    }))
+    .filter((w) => typeof w.startTs === 'number')
+    .sort((a, b) => a.startTs - b.startTs);
+
+  return (rowTs) => {
+    const ms = typeof rowTs === 'string' ? Date.parse(rowTs) : NaN;
+    if (!Number.isFinite(ms)) return NONE;
+    let match = null;
+    for (const w of windows) {
+      if (w.startTs <= ms) match = w; else break;
+    }
+    if (!match) return NONE;
+    if (typeof match.endTs === 'number' && ms > match.endTs) return NONE;
+    const attemptWindow = match.attemptWindows.find((aw) => typeof aw.startTs === 'number'
+      && aw.startTs <= ms && (typeof aw.endTs !== 'number' || ms <= aw.endTs));
+    return { step: match.id, attempt: attemptWindow ? attemptWindow.n : null };
+  };
+}
+
+/**
  * `GET /api/runs/:runid/audit` — the Audit tab's rows, off the run's own
  * gate-audit sidecar (name-convention resolution, `src/replayio.js`'s
  * `resolveSiblings`), scoped to this run's own ts window (see {@link
  * runAuditWindow} — a sidecar can carry other runs' rows). A row's real
- * fields (`ts`, `action.type`, `action.path`, `decision`) — `step` is
- * honestly `null` (no gate-audit row carries one; see `src/replay.js`'s own
- * header comment) rather than guessed from a seq-window the way `replayRun`'s
- * internal windowing does for its own aggregate counts. `round` — see
+ * fields (`ts`, `action.type`, `action.path`, `decision`) plus `step`/
+ * `attempt` — see {@link makeStepLookup}: `null` for a row before any step
+ * ever started (planning), a real step id otherwise. `round` — see
  * {@link makeRoundLookup}. A `phase:'record'`/`action.type:'llm'` row (item
  * 2: every MODEL CALL, `decision` always `null` on the real record) is
  * marked `kind:'model-call'` with its own `result.{costUsd,tokens,
@@ -702,9 +742,18 @@ export function getRunAudit(runid, opts = {}) {
       runid, rows: [], raw: '', empty: true, reason: 'no-sidecar',
     };
   }
-  const { records: spineRecords } = parseJsonl(row.spine);
+  const { records: spineRecords, skipped: spineSkipped } = parseJsonl(row.spine);
   const { startTs, endTs } = runAuditWindow(spineRecords);
   const roundOf = makeRoundLookup(spineRecords);
+  // `preParsedSpine` avoids a second parse of the same spine file just read
+  // above; `skipAudit:true` since this call only needs `steps`/`iterations`
+  // (for {@link makeStepLookup}), never `replayOne`'s own audit-derived
+  // `behaviour` field.
+  const summary = replayOne(row.spine, {
+    preParsedSpine: { records: spineRecords, skipped: spineSkipped },
+    skipAudit: true,
+  });
+  const stepOf = makeStepLookup(summary);
 
   const { records } = parseJsonl(auditPath);
   const rawText = readFileSync(auditPath, 'utf8');
@@ -716,12 +765,14 @@ export function getRunAudit(runid, opts = {}) {
   const auditRows = windowed.map((r) => {
     const isModelCall = r.action && r.action.type === 'llm';
     const resultObj = isModelCall && r.result && typeof r.result === 'object' ? r.result : null;
+    const { step, attempt } = stepOf(r.ts);
     return {
       time: typeof r.ts === 'string' ? r.ts : null,
       action: r.action && typeof r.action.type === 'string' ? r.action.type : null,
       path: r.action && typeof r.action.path === 'string' ? r.action.path : null,
       decision: typeof r.decision === 'string' ? r.decision : null,
-      step: null,
+      step,
+      attempt,
       round: roundOf(r.ts),
       kind: isModelCall ? 'model-call' : 'tool-call',
       costUsd: resultObj && typeof resultObj.costUsd === 'number' && Number.isFinite(resultObj.costUsd) ? resultObj.costUsd : null,

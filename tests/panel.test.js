@@ -487,7 +487,7 @@ test('/api/workflows groups the run list by job name, newest row per job wins as
     type: 'job-start', job: 'alpha', ts: '2026-09-01T00:00:00.000Z', seq: 1, verdictType: 'green',
   }, { type: 'job-end', outcome: 'green', spentUsd: 0.5, spendComplete: true, ts: '2026-09-01T00:01:00.000Z', seq: 2 }]);
   writeSpine(join(dir, 'u-a2.jsonl'), [{
-    type: 'job-start', job: 'alpha', ts: '2026-09-02T00:00:00.000Z', seq: 1, verdictType: 'green',
+    type: 'job-start', job: 'alpha', ts: '2026-09-02T00:00:00.000Z', seq: 1, verdictType: 'green', model: 'deepseek-chat',
   }, { type: 'job-end', outcome: 'green', spentUsd: 0.6, spendComplete: true, ts: '2026-09-02T00:01:00.000Z', seq: 2 }]);
   appendRun({
     at: '2026-09-01T00:00:00.000Z', runid: 'a1', job: 'alpha', spine: join(dir, 'u-a1.jsonl'), patient: null, via: 'run-u',
@@ -504,6 +504,7 @@ test('/api/workflows groups the run list by job name, newest row per job wins as
   assert.equal(workflows[0].job, 'alpha');
   assert.equal(workflows[0].runCount, 2);
   assert.equal(workflows[0].lastRunid, 'a2'); // the run list is newest-first; a2 was appended after a1
+  assert.equal(workflows[0].lastModel, 'deepseek-chat'); // item C: model surfaced for the search box
 });
 
 test('/api/workflows and /api/runs sort by `at` (real time), never by file/append order — a backfill can append an OLDER row after a newer one', async (t) => {
@@ -752,6 +753,81 @@ test('/api/runs/:runid/audit: a shared sidecar carrying an EARLIER unrelated run
   const detailRes = await fetch(base + '/api/runs/laterrun');
   const detail = await detailRes.json();
   assert.equal(detail.behaviour.totalCalls, 1);
+});
+
+// ---------------------------------------------------------------------------
+// item B (2026-09-26): Audit tab "Step" column, filled off replay's own
+// per-step/attempt windows (item 5's `stepStartTs`/`stepEndTs`/
+// `attemptWindows`) — never a second windowing pass.
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid/audit: step column — a row before the first step-start is null, a row inside a step\'s window carries the step id and its own attempt number', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-stepcol.jsonl'), [
+    { type: 'job-start', job: 'stepcol-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:02.000Z', seq: 2 },
+    {
+      type: 'exit-eval', step: 'do-thing', iteration: 1, seq: 3, ts: '2026-09-05T00:00:03.000Z', results: [{ type: 'check-passes', pass: false }],
+    },
+    {
+      type: 'exit-eval', step: 'do-thing', iteration: 2, seq: 4, ts: '2026-09-05T00:00:05.000Z', results: [{ type: 'check-passes', pass: true }],
+    },
+    { type: 'step-end', step: 'do-thing', outcome: 'green', seq: 5, ts: '2026-09-05T00:00:06.000Z' },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, seq: 6, ts: '2026-09-05T00:00:07.000Z' },
+  ]);
+  writeSpine(join(dir, 'u-stepcol-gate-audit.jsonl'), [
+    // before step-start — scout/planning activity
+    { ts: '2026-09-05T00:00:01.000Z', action: { type: 'read', path: 'scout.js' }, decision: 'allow' },
+    // inside the step's first attempt (step-start..1st exit-eval)
+    { ts: '2026-09-05T00:00:02.500Z', action: { type: 'read', path: 'attempt1.js' }, decision: 'allow' },
+    // inside the step's second attempt (1st exit-eval..2nd exit-eval)
+    { ts: '2026-09-05T00:00:04.000Z', action: { type: 'edit', path: 'attempt2.js' }, decision: 'allow' },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'stepcolrun', job: 'stepcol-job', spine: join(dir, 'u-stepcol.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/stepcolrun/audit');
+  const body = await res.json();
+  assert.equal(body.rows.length, 3);
+  const [beforeStep, attempt1Row, attempt2Row] = body.rows;
+  assert.equal(beforeStep.step, null);
+  assert.equal(beforeStep.attempt, null);
+  assert.equal(attempt1Row.step, 'do-thing');
+  assert.equal(attempt1Row.attempt, 1);
+  assert.equal(attempt2Row.step, 'do-thing');
+  assert.equal(attempt2Row.attempt, 2);
+});
+
+test('/api/runs/:runid/audit: a real archived run (u-mu2p83go, pulselog-person-live-2, single step "annotate-checks-strict") reports step non-null inside the step window, null before it', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-stepcol', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/mu2p83go-stepcol/audit');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  // verified directly against the raw spine (job-start 13:19:40.706Z,
+  // step-start 13:20:54.061Z, step-end 13:22:18.606Z, job-end
+  // 13:25:48.481Z) and the raw gate-audit sidecar, outside this test: this
+  // run's own scoped window (143 rows total) splits into 41 rows inside the
+  // one step "annotate-checks-strict"'s own window (all attempt 1 — its
+  // single exit-eval), and 102 rows null — 22 before the step ever started
+  // (drafting) plus 80 after it ended (the run's final close phase, which
+  // has no step of its own).
+  assert.equal(body.rows.length, 143);
+  const withStep = body.rows.filter((r) => r.step !== null);
+  const withoutStep = body.rows.filter((r) => r.step === null);
+  assert.equal(withStep.length, 41);
+  assert.equal(withoutStep.length, 102);
+  withStep.forEach((r) => {
+    assert.equal(r.step, 'annotate-checks-strict');
+    assert.equal(r.attempt, 1);
+  });
 });
 
 // ---------------------------------------------------------------------------
