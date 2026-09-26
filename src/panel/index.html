@@ -993,6 +993,18 @@
     else { row.hidden = true; val.textContent = ""; }
   }
 
+  // item 1 (2026-09-26): the same metadata line (rounds/tool-calls/wall/spend)
+  // a real step card shows, shared by the scout+plan and fix-loop boxes below
+  // — never a second hand-authored copy of this text.
+  function stepMetaBits(s){
+    var metaBits = [];
+    if(typeof s.rounds === "number") metaBits.push(s.rounds + " round" + (s.rounds === 1 ? "" : "s"));
+    metaBits.push(typeof s.toolCalls === "number" ? (s.toolCalls + " tool call" + (s.toolCalls === 1 ? "" : "s")) : "unknown tool calls");
+    metaBits.push(duration(s.wallMs));
+    metaBits.push(s.unpricedRounds > 0 ? "unknown (" + s.unpricedRounds + " unpriced round" + (s.unpricedRounds === 1 ? "" : "s") + ")" : money(s.spentUsd));
+    return metaBits;
+  }
+
   function renderRun(detail){
     var name = document.getElementById("active-wf-name");
     var dot = document.getElementById("active-wf-dot");
@@ -1059,7 +1071,24 @@
     lastRunBehaviour = detail.behaviour;
     paintOfferedRow();
 
-    renderStepMap(detail.steps.map(function(s){ return { title: String(s.id), state: s.state, noNumber: !!s.synthetic, attempts: s.attempts || [] }; }));
+    // item 1 (2026-09-26): scout+plan (pre-step drafting) and the post-step
+    // fix loop (outer-close precheck + fix-loop iterations) each get their
+    // own box on the map, either side of the plan's own steps — both were
+    // previously invisible entirely (only the plan's own steps ever showed).
+    // Neither counts as a numbered step (`noNumber:true`, same posture as
+    // F196's synthetic "died during planning" placeholder) since neither is
+    // one of the plan's own declared steps.
+    var FIX_LOOP_KEY = "__fix-loop__";
+    var scoutPlanBox = detail.scoutPlan ? { title: "scout + plan", state: "done", noNumber: true, attempts: [] } : null;
+    var fixLoopLast = detail.fixLoop && detail.fixLoop.attempts.length ? detail.fixLoop.attempts[detail.fixLoop.attempts.length - 1] : null;
+    var fixLoopBox = fixLoopLast ? {
+      title: "fix loop", state: fixLoopLast.outcome === "green" ? "done" : "stopped", noNumber: true,
+      attempts: detail.fixLoop.attempts.map(function(a){ return { n: a.n, outcome: a.outcome }; }),
+    } : null;
+    var mapBoxes = detail.steps.map(function(s){ return { title: String(s.id), state: s.state, noNumber: !!s.synthetic, attempts: s.attempts || [] }; });
+    if(scoutPlanBox) mapBoxes.unshift(scoutPlanBox);
+    if(fixLoopBox) mapBoxes.push(fixLoopBox);
+    renderStepMap(mapBoxes);
 
     var listEl = document.getElementById("step-list");
     listEl.innerHTML = "";
@@ -1067,11 +1096,7 @@
       var card = document.createElement("div");
       card.className = "step-card" + (s.state === "running" ? " running" : "");
       var badgeClass = s.state === "done" ? "green" : (s.state === "stopped" ? "red" : (s.state === "running" ? "amber" : (s.state === "died" ? "magenta" : "grey")));
-      var metaBits = [];
-      if(typeof s.rounds === "number") metaBits.push(s.rounds + " round" + (s.rounds === 1 ? "" : "s"));
-      metaBits.push(typeof s.toolCalls === "number" ? (s.toolCalls + " tool call" + (s.toolCalls === 1 ? "" : "s")) : "unknown tool calls");
-      metaBits.push(duration(s.wallMs));
-      metaBits.push(s.unpricedRounds > 0 ? "unknown (" + s.unpricedRounds + " unpriced round" + (s.unpricedRounds === 1 ? "" : "s") + ")" : money(s.spentUsd));
+      var metaBits = stepMetaBits(s);
       var attempts = Array.isArray(s.attempts) ? s.attempts : [];
       card.innerHTML =
         '<div class="step-head"><h4>' + (i + 1) + ' &middot; ' + escapeXml(s.id) + (s.occurrence && s.occurrence > 1 ? ' (try ' + s.occurrence + ')' : '') + '</h4>' +
@@ -1098,6 +1123,49 @@
         }
       });
     });
+
+    // item 1 (2026-09-26): the scout+plan card (no expand — it carries no
+    // per-attempt breakdown of its own, just the run's own pre-step totals)
+    // and the fix-loop card (expandable exactly like a real step card,
+    // reusing buildAttemptsList/loadRounds unchanged — the server's
+    // `/api/runs/:runid/rounds` endpoint recognizes the `FIX_LOOP_KEY`
+    // sentinel as its own `step` query value).
+    if(detail.scoutPlan){
+      var spCard = document.createElement("div");
+      spCard.className = "step-card";
+      spCard.innerHTML =
+        '<div class="step-head"><h4>scout + plan</h4><span class="badge green">done</span></div>' +
+        '<div class="step-meta" title="the run\'s own pre-step drafting: scouting the repo and validating the plan, before its first step starts">' +
+          stepMetaBits(detail.scoutPlan).join(" &middot; ") + '</div>';
+      listEl.appendChild(spCard);
+    }
+    if(detail.fixLoop && detail.fixLoop.attempts.length){
+      var flAttempts = detail.fixLoop.attempts;
+      var flLast = flAttempts[flAttempts.length - 1];
+      var flBadge = flLast.outcome === "green" ? "green" : "red";
+      var flCard = document.createElement("div");
+      flCard.className = "step-card";
+      flCard.innerHTML =
+        '<div class="step-head"><h4>fix loop</h4><span class="badge ' + flBadge + '">' + (flLast.outcome === "green" ? "done" : "stopped") + '</span></div>' +
+        '<div class="step-meta" title="the operator\'s real close ran again after the plan\'s steps finished: a precheck, then fix-loop iterations, until satisfied or stopped">' +
+          stepMetaBits(detail.fixLoop).join(" &middot; ") + '</div>' +
+        '<button class="btn small step-attempts-toggle" type="button" aria-expanded="false" data-testid="fix-loop-attempts-toggle">' +
+          flAttempts.length + ' attempt' + (flAttempts.length === 1 ? '' : 's') + '</button>' +
+        '<div class="attempts-list" hidden data-testid="fix-loop-attempts-list"></div>';
+      listEl.appendChild(flCard);
+      var flToggle = flCard.querySelector(".step-attempts-toggle");
+      var flAttemptsEl = flCard.querySelector(".attempts-list");
+      var flBuilt = false;
+      flToggle.addEventListener("click", function(){
+        var expanded = flToggle.getAttribute("aria-expanded") === "true";
+        flToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+        flAttemptsEl.hidden = expanded;
+        if(!expanded && !flBuilt){
+          flBuilt = true;
+          buildAttemptsList(flAttemptsEl, { id: FIX_LOOP_KEY }, flAttempts);
+        }
+      });
+    }
   }
 
   // item 5 (2026-09-25): expandable step cards — attempt row -> its rounds
@@ -1228,16 +1296,24 @@
       } else {
         decisionCell = "<span class=\"badge " + (blocked ? "red" : "green") + "\">" + (r.decision || "unknown") + "</span>";
       }
+      // item 2 rewrite (2026-09-26): the Step cell is now derived from this
+      // row's own ROUND's recorded phase (never ts-guessing) — `r.step` is a
+      // real step id, or "scout"/"plan"/"fix"; `r.reason` names WHY it's
+      // null when it is: "no-round" (before the very first model call) vs
+      // "unrecorded" (a round exists but carries no recognizable phase).
       var stepCell = r.step === null
-        ? (r.phase === "final-check"
-          ? "<td title=\"after the last step (final check)\">&mdash;</td>"
-          : "<td title=\"before any step (planning)\">&mdash;</td>")
+        ? "<td title=\"" + (r.reason === "unrecorded" ? "this round's phase wasn't recorded" : "before the first model call") + "\">&mdash;</td>"
         : "<td>" + escapeXml(r.step) + (typeof r.attempt === "number" ? " &middot; a" + r.attempt : "") + "</td>";
+      // item 3 (2026-09-26): a model-call row never carries a path at all
+      // (the real record: `phase:'record'`/`action.type:'llm'` has no
+      // `action.path`) — "&mdash;" says so plainly; "unknown" stays reserved
+      // for a TOOL-call row whose path genuinely wasn't recorded.
+      var pathCell = isModelCall ? "&mdash;" : escapeXml(r.path || "unknown");
       tr.innerHTML =
         "<td>" + roundCell + "</td>" +
         stepCell +
         "<td>" + (isModelCall ? "model call" : escapeXml(r.action || "unknown")) + "</td>" +
-        "<td>" + escapeXml(r.path || "unknown") + "</td>" +
+        "<td>" + pathCell + "</td>" +
         "<td>" + decisionCell + "</td>" +
         "<td>" + escapeXml(r.time || "unknown") + "</td>";
       tbody.appendChild(tr);

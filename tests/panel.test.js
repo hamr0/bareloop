@@ -761,27 +761,33 @@ test('/api/runs/:runid/audit: a shared sidecar carrying an EARLIER unrelated run
 // `attemptWindows`) — never a second windowing pass.
 // ---------------------------------------------------------------------------
 
-test('/api/runs/:runid/audit: step column — a row before the first step-start is null, a row inside a step\'s window carries the step id and its own attempt number', async (t) => {
+test('/api/runs/:runid/audit: step column — item 2 rewrite (2026-09-26): derived from the row\'s own ROUND\'s recorded phase, never ts-guessing. A row before the very first round is null/reason "no-round"; a row inside a step-phase round carries the step id and its own attempt number (matched by the round\'s own seq against the step\'s attempt windows)', async (t) => {
   const home = tmp();
   const dir = tmp();
   writeSpine(join(dir, 'u-stepcol.jsonl'), [
     { type: 'job-start', job: 'stepcol-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
     { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:02.000Z', seq: 2 },
     {
-      type: 'exit-eval', step: 'do-thing', iteration: 1, seq: 3, ts: '2026-09-05T00:00:03.000Z', results: [{ type: 'check-passes', pass: false }],
+      type: 'worker-round', phase: 'step:do-thing', costUsd: 0.01, tokens: 100, seq: 3, ts: '2026-09-05T00:00:02.200Z',
     },
     {
-      type: 'exit-eval', step: 'do-thing', iteration: 2, seq: 4, ts: '2026-09-05T00:00:05.000Z', results: [{ type: 'check-passes', pass: true }],
+      type: 'exit-eval', step: 'do-thing', iteration: 1, seq: 4, ts: '2026-09-05T00:00:03.000Z', results: [{ type: 'check-passes', pass: false }],
     },
-    { type: 'step-end', step: 'do-thing', outcome: 'green', seq: 5, ts: '2026-09-05T00:00:06.000Z' },
-    { type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, seq: 6, ts: '2026-09-05T00:00:07.000Z' },
+    {
+      type: 'worker-round', phase: 'step:do-thing', costUsd: 0.01, tokens: 100, seq: 5, ts: '2026-09-05T00:00:03.500Z',
+    },
+    {
+      type: 'exit-eval', step: 'do-thing', iteration: 2, seq: 6, ts: '2026-09-05T00:00:05.000Z', results: [{ type: 'check-passes', pass: true }],
+    },
+    { type: 'step-end', step: 'do-thing', outcome: 'green', seq: 7, ts: '2026-09-05T00:00:06.000Z' },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.02, spendComplete: true, seq: 8, ts: '2026-09-05T00:00:07.000Z' },
   ]);
   writeSpine(join(dir, 'u-stepcol-gate-audit.jsonl'), [
-    // before step-start — scout/planning activity
+    // before the very first round (step's first round fires at 02.200) — scout/planning activity, no round to attribute to at all
     { ts: '2026-09-05T00:00:01.000Z', action: { type: 'read', path: 'scout.js' }, decision: 'allow' },
-    // inside the step's first attempt (step-start..1st exit-eval)
+    // inside the step's first attempt's own round (02.200..03.000)
     { ts: '2026-09-05T00:00:02.500Z', action: { type: 'read', path: 'attempt1.js' }, decision: 'allow' },
-    // inside the step's second attempt (1st exit-eval..2nd exit-eval)
+    // inside the step's second attempt's own round (03.500..)
     { ts: '2026-09-05T00:00:04.000Z', action: { type: 'edit', path: 'attempt2.js' }, decision: 'allow' },
   ]);
   appendRun({
@@ -794,13 +800,15 @@ test('/api/runs/:runid/audit: step column — a row before the first step-start 
   const [beforeStep, attempt1Row, attempt2Row] = body.rows;
   assert.equal(beforeStep.step, null);
   assert.equal(beforeStep.attempt, null);
+  assert.equal(beforeStep.reason, 'no-round');
   assert.equal(attempt1Row.step, 'do-thing');
   assert.equal(attempt1Row.attempt, 1);
+  assert.equal(attempt1Row.reason, null);
   assert.equal(attempt2Row.step, 'do-thing');
   assert.equal(attempt2Row.attempt, 2);
 });
 
-test('/api/runs/:runid/audit: a real archived run (u-mu2p83go, pulselog-person-live-2, single step "annotate-checks-strict") reports step non-null inside the step window, null before it', async (t) => {
+test('/api/runs/:runid/audit: item 2 rewrite (2026-09-26) — a real archived run (u-mu2p83go, pulselog-person-live-2) splits its 143 rows by the round\'s own recorded phase: scout, plan, the one step "annotate-checks-strict" (attempt 1), and fix (the post-step fix loop) — NEVER a nameless null tail', async (t) => {
   const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
   if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
   const home = tmp();
@@ -811,23 +819,25 @@ test('/api/runs/:runid/audit: a real archived run (u-mu2p83go, pulselog-person-l
   const res = await fetch(base + '/api/runs/mu2p83go-stepcol/audit');
   assert.equal(res.status, 200);
   const body = await res.json();
-  // verified directly against the raw spine (job-start 13:19:40.706Z,
-  // step-start 13:20:54.061Z, step-end 13:22:18.606Z, job-end
-  // 13:25:48.481Z) and the raw gate-audit sidecar, outside this test: this
-  // run's own scoped window (143 rows total) splits into 41 rows inside the
-  // one step "annotate-checks-strict"'s own window (all attempt 1 — its
-  // single exit-eval), and 102 rows null — 22 before the step ever started
-  // (drafting) plus 80 after it ended (the run's final close phase, which
-  // has no step of its own).
+  // Hand-counted directly off the raw spine + gate-audit sidecar (a python
+  // replay of the same round-then-phase derivation this endpoint now uses,
+  // outside this test): this run's own scoped window (143 rows total) splits
+  // into 21 rows during `phase:'scout'` rounds, 1 during the `phase:'plan'`
+  // round, 41 inside the one step "annotate-checks-strict"'s own window (all
+  // attempt 1 — its single exit-eval), and 80 during the post-step fix loop's
+  // `phase:'fix'` rounds (33 model calls + 47 tool calls — this run's
+  // `outer-close` precheck came back `needs_revision`, so the fix loop ran 3
+  // more iterations before its close was satisfied). ZERO rows read null —
+  // every one of the spine's rounds carries a recognizable phase.
   assert.equal(body.rows.length, 143);
-  const withStep = body.rows.filter((r) => r.step !== null);
-  const withoutStep = body.rows.filter((r) => r.step === null);
-  assert.equal(withStep.length, 41);
-  assert.equal(withoutStep.length, 102);
-  withStep.forEach((r) => {
-    assert.equal(r.step, 'annotate-checks-strict');
-    assert.equal(r.attempt, 1);
+  const byStep = new Map();
+  for (const r of body.rows) byStep.set(r.step, (byStep.get(r.step) ?? 0) + 1);
+  assert.deepEqual(Object.fromEntries(byStep), {
+    scout: 21, plan: 1, 'annotate-checks-strict': 41, fix: 80,
   });
+  assert.equal(body.rows.filter((r) => r.step === null).length, 0, 'every row on this run resolves to a real phase — none should read null/unrecorded');
+  const stepRows = body.rows.filter((r) => r.step === 'annotate-checks-strict');
+  stepRows.forEach((r) => { assert.equal(r.attempt, 1); });
 });
 
 // ---------------------------------------------------------------------------

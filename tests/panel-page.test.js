@@ -606,7 +606,7 @@ test('item: Audit table cells are built in Round, Step, Action, Path, Decision, 
   const roundIdx = trBody.indexOf('roundCell');
   const stepIdx = trBody.indexOf('stepCell');
   const actionIdx = trBody.indexOf('isModelCall ? "model call"');
-  const pathIdx = trBody.indexOf('escapeXml(r.path');
+  const pathIdx = trBody.indexOf('pathCell');
   const decisionIdx = trBody.indexOf('decisionCell');
   const timeIdx = trBody.indexOf('escapeXml(r.time');
   assert.ok(roundIdx < stepIdx && stepIdx < actionIdx && actionIdx < pathIdx && pathIdx < decisionIdx && decisionIdx < timeIdx,
@@ -629,15 +629,24 @@ test('item: Audit table header cells are sticky on scroll, inside a bounded self
   assert.match(html, /<div class="audit-table-scroll">\s*<table data-testid="audit-table">/);
 });
 
-test('item B: renderAudit\'s Step cell shows a tooltip on a null step (before any step) and appends "· aN" when an attempt number is present', () => {
+test('item 2 rewrite (2026-09-26): renderAudit\'s Step cell shows a tooltip on a null step (round-phase reason, never the old ts-heuristic "planning"/"final-check" wording) and appends "· aN" when an attempt number is present', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function renderAudit(result){');
   const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
   const body = html.slice(start, end);
   assert.match(body, /r\.step === null/);
-  assert.match(body, /title=\\"before any step \(planning\)\\"/);
-  assert.match(body, /title=\\"after the last step \(final check\)\\"/);
+  assert.match(body, /before the first model call/);
+  assert.match(body, /r\.reason === "unrecorded"/);
+  assert.doesNotMatch(body, /final check/, 'the old ts-window "final-check" heuristic must be gone, replaced by the round\'s own recorded phase');
   assert.match(body, /typeof r\.attempt === "number"/);
+});
+
+test('item 3 (2026-09-26): renderAudit\'s Path cell shows "&mdash;" (never "unknown") for a model-call row', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function renderAudit(result){');
+  const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
+  const body = html.slice(start, end);
+  assert.match(body, /var pathCell = isModelCall \? "&mdash;" : escapeXml\(r\.path \|\| "unknown"\)/);
 });
 
 // ---------------------------------------------------------------------------

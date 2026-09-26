@@ -988,3 +988,69 @@ test('F195: `bareloop replay` CLI (scripts/run-replay.mjs) on a COPY of mu2p83go
   assert.match(out, /82 tool calls/);
   assert.doesNotMatch(out, /142 tool calls/);
 });
+
+// ---------------------------------------------------------------------------
+// Panel build item 1 (2026-09-26): `fixLoop` (the post-step outer-close
+// precheck + fix-loop iterations) and `scoutPlan` (a plan run's own pre-step
+// scout/plan rounds) — both invisible before this addition. See src/replay.js's
+// own construction comments for the mechanism and the field provenance.
+// ---------------------------------------------------------------------------
+
+test('replayRun: real archived run mu2p83go — fixLoop reports the outer-close precheck plus 3 fix-loop iterations as 4 attempts (red red red green), matching a hand read of the raw spine', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
+  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl';
+  const audit = parseJsonl(auditPath);
+  const s = replayRun(spine, audit, { runId: 'mu2p83go' });
+  assert.ok(s.fixLoop, 'expected a fixLoop object on this run (it carries an outer-close precheck + 3 fix-loop iterations, verified directly against the raw spine)');
+  assert.deepEqual(s.fixLoop.attempts.map((a) => a.outcome), ['red', 'red', 'red', 'green']);
+  assert.deepEqual(s.fixLoop.attempts.map((a) => a.source), ['outer-close', 'iteration', 'iteration', 'iteration']);
+  assert.deepEqual(s.fixLoop.attempts.map((a) => a.iteration), [null, 1, 2, 3]);
+  // 33 `phase:'fix'` worker-round records total on this spine (hand-counted
+  // off the raw JSONL) — every one of them must land inside a fix-loop
+  // attempt's own window, none left over.
+  assert.equal(s.fixLoop.rounds, 33);
+  // 82 total tool calls on this run (F195's own established figure); 22 fall
+  // inside the one step's own window, 13 before the first step (scout+plan),
+  // so the fix loop's own share is the remainder: 82 - 22 - 13 = 47.
+  assert.equal(s.fixLoop.toolCalls, 47);
+  assert.equal(s.steps[0].toolCalls, 22);
+});
+
+test('replayRun: real archived run mu2p83go — scoutPlan reports 8 scout + 1 plan round, 13 tool calls, all strictly before the run\'s one step-start', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
+  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl';
+  const audit = parseJsonl(auditPath);
+  const s = replayRun(spine, audit, { runId: 'mu2p83go' });
+  assert.ok(s.scoutPlan);
+  assert.equal(s.scoutPlan.scoutRounds, 8);
+  assert.equal(s.scoutPlan.planRounds, 1);
+  assert.equal(s.scoutPlan.rounds, 9);
+  assert.equal(s.scoutPlan.toolCalls, 13);
+});
+
+test('replayRun: real archived run mtotxw1z (litectx-u-bareloop) — ALSO carries a fixLoop (2 attempts) and a scoutPlan, proving this is not a one-off shape only mu2p83go has', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl') && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl');
+  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z-gate-audit.jsonl';
+  const audit = parseJsonl(auditPath);
+  const s = replayRun(spine, audit, { runId: 'mtotxw1z' });
+  assert.ok(s.fixLoop);
+  assert.equal(s.fixLoop.attempts.length, 2);
+  assert.ok(s.scoutPlan);
+});
+
+test('replayRun: a run with no post-step outer-close/fix-loop at all reports fixLoop null (the common case must read exactly as before this addition)', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  // u-msdsmkid (fix-loop-strict, cited above at line ~312) never replans and
+  // its close is satisfied on the step's own micro-loop — no outer-close/
+  // fix-loop records exist on this spine at all.
+  const spine = parseJsonl(join(BAREAGENT_U, 'u-msdsmkid.jsonl'));
+  assert.equal(spine.filter((e) => e.type === 'outer-close').length, 0, 'precondition: no outer-close on this file');
+  const s = replayRun(spine, [], { runId: 'msdsmkid' });
+  assert.equal(s.fixLoop, null);
+});
+
+test('replayRun: msf70nei (loop-shape, timelineKind:iterations) reports fixLoop null — its own outer-close/fix-loop iterations are already the `iterations` timeline, never double-counted into fixLoop too', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  const spine = parseJsonl(join(BAREAGENT_U, 'u-msf70nei.jsonl'));
+  const s = replayRun(spine, [], { runId: 'msf70nei' });
+  assert.equal(s.timelineKind, 'iterations');
+  assert.equal(s.fixLoop, null);
+});

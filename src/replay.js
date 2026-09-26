@@ -617,6 +617,33 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     };
   }
 
+  // ── SCOUT+PLAN (panel build item 1, 2026-09-26): a PLAN run's own
+  // pre-step drafting work (`phase:'scout'` and `phase:'plan'` worker rounds,
+  // src/planrun.js:2735,2515) — the OTHER half of the same invisibility
+  // fixLoop above closes: before this, only the plan's own steps ever showed
+  // on the Run tab, so a run's first ~10 rounds (drafting materials, scouting
+  // the repo, validating the plan) had no box of their own at all. Scoped to
+  // seq/ts strictly BEFORE the first step-start (the only place scout/plan
+  // rounds occur on a steps-shape run — measured on mu2p83go: scout×8 + plan×1
+  // all precede the run's one step-start at seq 34). `null` when this run has
+  // no steps (nothing to be "pre-" to) or no scout/plan rounds at all (an
+  // older archived spine, or a run resumed past drafting).
+  let scoutPlan = null;
+  if (stepStarts.length > 0) {
+    const firstStepStart = stepStarts.reduce((first, ss) => (typeof ss.seq === 'number' && (first === null || ss.seq < first.seq) ? ss : first), /** @type {any} */ (null));
+    const firstSeq = firstStepStart && typeof firstStepStart.seq === 'number' ? firstStepStart.seq : Infinity;
+    const firstTs = firstStepStart ? parseTs(firstStepStart.ts) : null;
+    const roundsInWindow = spendRecords.filter((r) => (r.phase === 'scout' || r.phase === 'plan') && typeof r.seq === 'number' && r.seq < firstSeq);
+    if (roundsInWindow.length > 0) {
+      const jobStartTs = parseTs(jobStart?.ts);
+      scoutPlan = {
+        scoutRounds: roundsInWindow.filter((r) => r.phase === 'scout').length,
+        planRounds: roundsInWindow.filter((r) => r.phase === 'plan').length,
+        ...buildOccurrenceMetrics(-Infinity, jobStartTs, firstSeq, firstTs, roundsInWindow),
+      };
+    }
+  }
+
   const usedEndSeqs = new Set();
   const idOccurrence = new Map();
 
@@ -739,6 +766,131 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   const iterationStarts = spine.filter((e) => e.type === 'iteration-start');
   const timelineKind = /** @type {'steps'|'iterations'} */ (stepStarts.length > 0 ? 'steps' : (iterationStarts.length > 0 ? 'iterations' : 'steps'));
   const boundaries = spine.filter((e) => e.type === 'close-verdict' || e.type === 'run-end' || e.type === 'escalation');
+
+  // ── FIX LOOP (panel build item 1, 2026-09-26): a PLAN run (timelineKind
+  // 'steps') can carry a SECOND loop after every step already ended — the
+  // operator's real close runs an `outer-close` PRECHECK, and when that
+  // comes back non-green a `fix-loop` (src/planrun.js:3539's `runCloseStages`
+  // loop) re-runs the close against fresh worker rounds (`phase:'fix'`)
+  // until it's satisfied or the run stops. Before this, every one of those
+  // rounds/iterations was invisible on the Run tab: `steps` only carries the
+  // plan's OWN steps, and the `iterations` timeline above is built ONLY when
+  // `timelineKind==='iterations'` (no step-start at all) — a plan run with a
+  // fix loop has BOTH a step-start AND post-step iteration-start records,
+  // and the latter were simply never read.
+  //
+  // Measured on the real archived run this was built against (mu2p83go):
+  // step-end at seq 61, then `outer-close` (needs_revision) at seq 62,
+  // `fix-loop`/run-start/iteration-start 1 at seq 63-65, two more
+  // needs_revision iterations, then iteration 3 satisfied at seq 108,
+  // run-end/job-end at 109/112. `fixLoop.attempts` reports this as 4
+  // attempts: the outer-close precheck first (attempt 1, red), then the
+  // fix-loop's own 3 iterations (2 red, 1 green) — the SAME "✗ ✗ ✗ ✓"
+  // sequence a person reading the raw spine by hand gets.
+  //
+  // Scoped by seq strictly AFTER the last step-end this spine reached (never
+  // before — the step's OWN micro-loop, src/planrun.js's `ralph({judge,...})`,
+  // also emits `iteration-start`/`close-verdict` and must not be double
+  // counted here; that loop is already fully captured by each step's own
+  // `attempts`/`attemptWindows` above, keyed off `exit-eval`, a completely
+  // separate emit type). `null` (never an empty-but-present object) when
+  // this run has no steps at all, OR no outer-close/fix-loop iteration
+  // exists after the last step ended (the overwhelmingly common case: a
+  // plan run whose close was satisfied on the first outer-close precheck
+  // never enters a fix loop, and this field must read exactly as it did
+  // before this addition for that run).
+  let fixLoop = null;
+  if (timelineKind === 'steps' && stepStarts.length > 0) {
+    const lastStepEndSeq = stepEnds.reduce((max, se) => (typeof se.seq === 'number' && se.seq > max ? se.seq : max), -Infinity);
+    const outerClosesAfter = spine
+      .filter((e) => e.type === 'outer-close' && typeof e.seq === 'number' && e.seq > lastStepEndSeq)
+      .sort((a, b) => a.seq - b.seq);
+    const iterationStartsAfter = iterationStarts
+      .filter((e) => typeof e.seq === 'number' && e.seq > lastStepEndSeq)
+      .sort((a, b) => a.seq - b.seq);
+
+    if (outerClosesAfter.length > 0 || iterationStartsAfter.length > 0) {
+      /** @type {any[]} */
+      const attempts = [];
+
+      // The outer-close precheck(s): each is a single point-in-time verdict,
+      // never its own round-producing window on its own (the rounds that led
+      // to it already belong to the LAST STEP, already reported there) —
+      // except the (rare) gap between step-end and the precheck itself,
+      // which this window still honestly captures rather than assuming zero.
+      let prevSeq = lastStepEndSeq;
+      let prevTs = stepEnds.length ? (stepEnds.reduce((latest, se) => {
+        const t = parseTs(se.ts);
+        return typeof se.seq === 'number' && se.seq === lastStepEndSeq && t !== null ? t : latest;
+      }, /** @type {number|null} */ (null))) : null;
+      for (const oc of outerClosesAfter) {
+        const seq = typeof oc.seq === 'number' ? oc.seq : Infinity;
+        const ts = parseTs(oc.ts);
+        const roundsInWindow = spendRecords.filter((r) => typeof r.seq === 'number' && r.seq > prevSeq && r.seq < seq);
+        const verdict = oc.verdict ?? null;
+        attempts.push({
+          n: attempts.length + 1,
+          source: /** @type {'outer-close'} */ ('outer-close'),
+          iteration: null,
+          verdict,
+          stages: Array.isArray(oc.stages) ? oc.stages : null,
+          outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red'),
+          ...buildOccurrenceMetrics(prevSeq, prevTs, seq, ts, roundsInWindow),
+          windowStartSeq: prevSeq,
+          windowEndSeq: seq,
+          windowStartTs: prevTs,
+          windowEndTs: ts,
+        });
+        prevSeq = seq;
+        prevTs = ts;
+      }
+
+      // The fix-loop's own iterations: same windowing rule the `iterations`
+      // timeline above already uses (iteration-start .. next close-verdict/
+      // run-end/escalation), scoped to `> lastStepEndSeq` so the step's own
+      // micro-loop iterations never leak in.
+      for (const is of iterationStartsAfter) {
+        const startSeq = typeof is.seq === 'number' ? is.seq : -Infinity;
+        const startTs = parseTs(is.ts);
+        const end = boundaries
+          .filter((b) => typeof b.seq === 'number' && b.seq > startSeq)
+          .sort((a, b) => a.seq - b.seq)[0] ?? null;
+        const endSeq = end && typeof end.seq === 'number' ? end.seq : Infinity;
+        const endTs = end ? parseTs(end.ts) : null;
+        const roundsInWindow = spendRecords.filter((r) => typeof r.seq === 'number' && r.seq > startSeq && r.seq < endSeq);
+        const verdict = end
+          ? (end.type === 'close-verdict' ? (end.verdict ?? null)
+            : end.type === 'run-end' ? (end.outcome ?? null)
+              : end.type === 'escalation' ? (end.category ?? null) : null)
+          : null;
+        attempts.push({
+          n: attempts.length + 1,
+          source: /** @type {'iteration'} */ ('iteration'),
+          iteration: typeof is.iteration === 'number' ? is.iteration : null,
+          verdict,
+          stages: end && end.type === 'close-verdict' && Array.isArray(end.stages) ? end.stages : null,
+          outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red'),
+          ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
+          windowStartSeq: startSeq,
+          windowEndSeq: endSeq,
+          windowStartTs: startTs,
+          windowEndTs: endTs,
+        });
+      }
+
+      const allToolsKnown = attempts.every((a) => typeof a.toolCalls === 'number');
+      const allWallKnown = attempts.every((a) => typeof a.wallMs === 'number');
+      const unpricedRounds = attempts.reduce((acc, a) => acc + a.unpricedRounds, 0);
+      fixLoop = {
+        attempts,
+        rounds: attempts.reduce((acc, a) => acc + a.rounds, 0),
+        toolCalls: allToolsKnown ? attempts.reduce((acc, a) => acc + (a.toolCalls ?? 0), 0) : null,
+        wallMs: allWallKnown ? attempts.reduce((acc, a) => acc + (a.wallMs ?? 0), 0) : null,
+        spentUsd: unpricedRounds > 0 ? null : attempts.reduce((acc, a) => acc + (a.spentUsd ?? 0), 0),
+        unpricedRounds,
+      };
+    }
+  }
 
   const iterations = timelineKind === 'iterations' ? iterationStarts.map((is) => {
     const startSeq = typeof is.seq === 'number' ? is.seq : -Infinity;
@@ -870,8 +1022,17 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       ? { spentUsd, thisFileUsd: thisFileSpend.value, diffUsd: spentUsd - thisFileSpend.value }
       : null,
     timelineKind,
+    // scoutPlan (panel build item 1, 2026-09-26): this run's own pre-step
+    // scout/plan rounds — see the field's own construction comment above.
+    // `null` on every run with no steps, or no scout/plan rounds recorded.
+    scoutPlan,
     steps,
     iterations,
+    // fixLoop (panel build item 1, 2026-09-26): the post-step outer-close
+    // precheck + fix-loop iterations a PLAN run can carry after its last
+    // step-end — see the field's own construction comment above. `null` on
+    // every run with no such loop (the common case) or with no steps at all.
+    fixLoop,
     replans,
     close,
     ending: { record: last, before, escalation: escalationOutsideWindow },
@@ -1223,6 +1384,23 @@ export function formatReplay(summary) {
         if (retryNote) lines.push(`${indent}↳ ${retryNote}`);
       }
     }
+  }
+
+  // FIX LOOP (panel build item 1, 2026-09-26): printed ONLY when this run
+  // actually carries one (see `replayRun`'s own construction comment) —
+  // additive, never replacing any existing line above, so a run with no
+  // fix loop prints byte-identical to before this addition.
+  if (summary.fixLoop) {
+    lines.push('');
+    lines.push('FIX LOOP (post-step outer-close precheck + fix-loop iterations)');
+    const seq = summary.fixLoop.attempts.map((a) => (a.source === 'outer-close' ? 'precheck' : `iter ${a.iteration ?? '?'}`) + (a.outcome === 'green' ? ' ✓' : ' ✗')).join(' · ');
+    lines.push(`  ${seq}`);
+    lines.push(`  ${summary.fixLoop.rounds} round${summary.fixLoop.rounds === 1 ? '' : 's'} · ${toolsCell(summary.fixLoop.toolCalls)} · ${duration(summary.fixLoop.wallMs)} · ${rowMoney(summary.fixLoop)}`);
+  }
+  if (summary.scoutPlan) {
+    lines.push('');
+    lines.push('SCOUT+PLAN (this run\'s own pre-step drafting)');
+    lines.push(`  ${summary.scoutPlan.scoutRounds} scout round${summary.scoutPlan.scoutRounds === 1 ? '' : 's'} + ${summary.scoutPlan.planRounds} plan round${summary.scoutPlan.planRounds === 1 ? '' : 's'} · ${toolsCell(summary.scoutPlan.toolCalls)} · ${duration(summary.scoutPlan.wallMs)} · ${rowMoney(summary.scoutPlan)}`);
   }
 
   lines.push('');
