@@ -539,6 +539,12 @@ export function getRunDetail(runid, opts = {}) {
     // ever starting) — see src/replay.js's own construction comments.
     scoutPlan: summary.scoutPlan,
     fixLoop: summary.fixLoop,
+    // parts (panel build item B/C, 2026-09-26): the ONE ordered part list
+    // (`src/replay.js`'s own field, computed once server-side) — drives the
+    // Run tab's map+cards and the Audit tab's grouped rows. Passed through
+    // VERBATIM (never re-derived client-side) so the two tabs can never
+    // disagree about run order, counts, or blocked-call figures.
+    parts: summary.parts,
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -611,7 +617,7 @@ function runAuditWindow(spineRecords) {
 /**
  * Every `SPEND_RECORD_TYPES` round record on this spine with a parseable
  * `ts`, sorted ascending — the ONE shared derivation {@link makeRoundLookup}
- * (the `round` number column) and {@link makeRoundPhaseLookup} (the Audit
+ * (the `round` number column) and {@link makePartLookup} (the Audit
  * tab's `step` column, item 2, 2026-09-26) both build on, so the two can
  * never disagree about which record is "round N".
  * @param {any[]} spineRecords
@@ -666,74 +672,64 @@ function scopedBehaviour(spinePath, spineRecords) {
 }
 
 /**
- * The Audit tab's `step` column (item 2, 2026-09-26) — REPLACES the earlier
- * ts-window heuristic (`makeStepLookup`, deleted here): that function guessed
- * a row's step purely from where its `ts` fell between step-start/step-end
- * ts's, and every row AFTER the last step's own end read `'final-check'`,
- * whatever it actually was. Measured on the real archived run this rewrite
- * was built against (mu2p83go): 80 of its 143 audit rows are really
- * `phase:'fix'` fix-loop activity (33 model calls, 47 tool calls), not a
- * nameless post-step tail — see src/replay.js's own `fixLoop` field this same
- * build adds.
+ * The Audit tab's part/attempt columns (build item C, 2026-09-26) — REPLACES
+ * `makeRoundPhaseLookup`'s phase-string heuristic (deleted here): that
+ * function mislabelled replan rounds as `plan` and needed a whole per-kind
+ * switch statement to recognize scout/plan/fix/step phases. `summary.parts`
+ * (`src/replay.js`'s own ONE ordered part list) already carries every part's
+ * own attempt seq windows (`startSeq`/`endSeq`, exclusive/inclusive same as
+ * every other windowing rule in this codebase) — a round's OWN `seq` matched
+ * against those windows tells you which part+attempt it belongs to directly,
+ * with no phase-string special-casing and no risk of a replan window being
+ * mislabelled as its neighbouring plan/step window (each part owns a
+ * disjoint, contiguous seq range by construction — see `src/replay.js`'s
+ * `parts` builder).
  *
- * Every audit row already resolves to a ROUND NUMBER via
- * {@link makeRoundLookup}/{@link sortedRoundRecords}; this reads THAT ROUND's
- * OWN spine record and its `phase` field directly instead — never ts-guessing:
- *   - `phase:'scout'` -> `step:'scout'`
- *   - `phase:'plan'` -> `step:'plan'`
- *   - `phase:'fix'` -> `step:'fix'`, `attempt`: the round's own `.iteration`
- *     when it carries one (a loop-shape run's `phase:'fix'` rounds, AND a
- *     plan run's post-step fix-loop rounds, both carry this field — measured
- *     on both u-msf70nei and u-mu2p83go)
- *   - `phase:'step:<id>'` -> `step:<id>`, `attempt` resolved by matching the
- *     round record's own `seq` against that step's occurrence/attempt seq
- *     windows (`replayOne`'s own `stepStartSeq`/`stepEndSeq`/
- *     `attemptWindows` — never a second windowing pass; `seq` is exact,
- *     unlike the old ts-based match, so a replanned step id's two occurrences
- *     can never be confused)
- *   - no round at all — the row's `ts` falls before the very first model
- *     call — `step:null`, `reason:'no-round'` (the client shows "—" titled
- *     "before the first model call")
- *   - a round exists but its record carries no recognizable `.phase` (an
- *     older archived spine, or a native/no-phase call path) -> `step:null`,
- *     `reason:'unrecorded'`
+ * `partIndex`/`attemptN` are `null` (never a guessed 0) when the round's own
+ * seq falls before this run's very first part-attempt window (should not
+ * happen on a spine with at least a `job-start`, since the first part's first
+ * attempt always opens at `-Infinity`, but a malformed/partial spine is
+ * handled honestly rather than assumed).
  * @param {ReturnType<typeof import('../replay.js').replayRun>} summary
- * @returns {(roundRecord: any|null) => {step: string|null, attempt: number|null, reason: 'no-round'|'unrecorded'|null}}
+ * @returns {(roundRecord: any|null) => {partIndex: number|null, partLabel: string|null, attemptN: number|null, reason: 'no-round'|'unassigned'|null}}
  */
-function makeRoundPhaseLookup(summary) {
-  /** @type {Map<string, any[]>} */
-  const stepOccurrencesById = new Map();
-  for (const s of summary.steps) {
-    const list = stepOccurrencesById.get(s.id) ?? [];
-    list.push(s);
-    stepOccurrencesById.set(s.id, list);
-  }
+function makePartLookup(summary) {
+  const parts = Array.isArray(summary.parts) ? summary.parts : [];
   return (roundRecord) => {
-    if (!roundRecord) return { step: null, attempt: null, reason: 'no-round' };
-    const phase = typeof roundRecord.phase === 'string' ? roundRecord.phase : null;
-    if (phase === 'scout') return { step: 'scout', attempt: null, reason: null };
-    if (phase === 'plan') return { step: 'plan', attempt: null, reason: null };
-    if (phase === 'fix') {
-      const iteration = typeof roundRecord.iteration === 'number' ? roundRecord.iteration : null;
-      return { step: 'fix', attempt: iteration, reason: null };
-    }
-    if (typeof phase === 'string' && phase.startsWith('step:')) {
-      const stepId = phase.slice('step:'.length);
-      const seq = typeof roundRecord.seq === 'number' ? roundRecord.seq : null;
-      const occurrences = stepOccurrencesById.get(stepId) ?? [];
-      const bySeq = seq !== null
-        ? occurrences.find((o) => typeof o.stepStartSeq === 'number' && typeof o.stepEndSeq === 'number' && seq > o.stepStartSeq && seq < o.stepEndSeq)
-        : null;
-      const occ = bySeq ?? occurrences[occurrences.length - 1] ?? null;
-      let attempt = null;
-      if (occ && seq !== null && Array.isArray(occ.attemptWindows)) {
-        const aw = occ.attemptWindows.find((w) => typeof w.startSeq === 'number' && typeof w.endSeq === 'number' && seq > w.startSeq && seq <= w.endSeq);
-        attempt = aw ? aw.n : null;
+    if (!roundRecord) return {
+      partIndex: null, partLabel: null, attemptN: null, reason: 'no-round',
+    };
+    const seq = typeof roundRecord.seq === 'number' ? roundRecord.seq : null;
+    if (seq === null) return {
+      partIndex: null, partLabel: null, attemptN: null, reason: 'unassigned',
+    };
+    for (let pi = 0; pi < parts.length; pi += 1) {
+      const attempts = Array.isArray(parts[pi].attempts) ? parts[pi].attempts : [];
+      for (const a of attempts) {
+        if (typeof a.startSeq === 'number' && typeof a.endSeq === 'number' && seq > a.startSeq && seq <= a.endSeq) {
+          return {
+            partIndex: pi, partLabel: partDisplayLabel(parts[pi]), attemptN: a.n, reason: null,
+          };
+        }
       }
-      return { step: stepId, attempt, reason: null };
     }
-    return { step: null, attempt: null, reason: 'unrecorded' };
+    return {
+      partIndex: null, partLabel: null, attemptN: null, reason: 'unassigned',
+    };
   };
+}
+
+/**
+ * The part's own display label — the step id (plus a "(try N)" suffix on a
+ * replanned occurrence) for a `kind:'step'` part, else the part's plain
+ * `label` (scout/plan/replan/fix/judge/run). ONE owner shared by the Audit
+ * tab's grouped rows and this file's flat-row lookup above.
+ * @param {any} part
+ * @returns {string}
+ */
+function partDisplayLabel(part) {
+  if (part.kind === 'step' && part.occurrence > 1) return `${part.label} (try ${part.occurrence})`;
+  return part.label;
 }
 
 /**
@@ -741,13 +737,14 @@ function makeRoundPhaseLookup(summary) {
  * gate-audit sidecar (name-convention resolution, `src/replayio.js`'s
  * `resolveSiblings`), scoped to this run's own ts window (see {@link
  * runAuditWindow} — a sidecar can carry other runs' rows). A row's real
- * fields (`ts`, `action.type`, `action.path`, `decision`) plus `step`/
- * `attempt` — see {@link makeRoundPhaseLookup} (item 2, 2026-09-26 rewrite):
- * derived from the row's own ROUND's recorded `phase` field, never ts
- * guessing. `reason` names WHY `step` is `null`: `'no-round'` (the row's `ts`
- * falls before the very first model call — scout/materials activity with no
- * round yet) vs `'unrecorded'` (a round exists but carries no recognizable
- * `.phase`, an older/native spine) vs `null` when `step` is a real label.
+ * fields (`ts`, `action.type`, `action.path`, `decision`) plus `partIndex`/
+ * `partLabel`/`attemptN` — see {@link makePartLookup} (build item C,
+ * 2026-09-26 rewrite): derived from the row's own ROUND's `seq` matched
+ * against `summary.parts`' own attempt windows, never phase-string guessing.
+ * `reason` names WHY `partIndex` is `null`: `'no-round'` (the row's `ts` falls
+ * before the very first model call) vs `'unassigned'` (a round exists but its
+ * seq matched no part window — an honest gap, never fabricated) vs `null`
+ * when `partIndex` is real.
  * `round` — see
  * {@link makeRoundLookup}. A `phase:'record'`/`action.type:'llm'` row (item
  * 2: every MODEL CALL, `decision` always `null` on the real record) is
@@ -786,14 +783,14 @@ export function getRunAudit(runid, opts = {}) {
   const roundOf = makeRoundLookup(spineRecords);
   const roundRecords = sortedRoundRecords(spineRecords);
   // `preParsedSpine` avoids a second parse of the same spine file just read
-  // above; `skipAudit:true` since this call only needs `steps`/`iterations`/
-  // `fixLoop` (for {@link makeRoundPhaseLookup}), never `replayOne`'s own
+  // above; `skipAudit:true` since this call only needs `summary.parts`' own
+  // attempt seq windows (for {@link makePartLookup}), never `replayOne`'s own
   // audit-derived `behaviour` field.
   const summary = replayOne(row.spine, {
     preParsedSpine: { records: spineRecords, skipped: spineSkipped },
     skipAudit: true,
   });
-  const phaseOf = makeRoundPhaseLookup(summary);
+  const partOf = makePartLookup(summary);
 
   const { records } = parseJsonl(auditPath);
   const rawText = readFileSync(auditPath, 'utf8');
@@ -806,14 +803,17 @@ export function getRunAudit(runid, opts = {}) {
     const isModelCall = r.action && r.action.type === 'llm';
     const resultObj = isModelCall && r.result && typeof r.result === 'object' ? r.result : null;
     const n = roundOf(r.ts);
-    const { step, attempt, reason } = phaseOf(n === null ? null : roundRecords[n - 1]);
+    const {
+      partIndex, partLabel, attemptN, reason,
+    } = partOf(n === null ? null : roundRecords[n - 1]);
     return {
       time: typeof r.ts === 'string' ? r.ts : null,
       action: r.action && typeof r.action.type === 'string' ? r.action.type : null,
       path: r.action && typeof r.action.path === 'string' ? r.action.path : null,
       decision: typeof r.decision === 'string' ? r.decision : null,
-      step,
-      attempt,
+      partIndex,
+      partLabel,
+      attemptN,
       reason,
       round: n,
       kind: isModelCall ? 'model-call' : 'tool-call',
@@ -834,39 +834,37 @@ export function getRunAudit(runid, opts = {}) {
 export const ROUNDS_PAGE_DEFAULT = 50;
 export const ROUNDS_PAGE_MAX = 200;
 
-/** The `query.step` sentinel selecting the fix-loop box's own attempts in
- * {@link getRunRounds} (panel build item 1, 2026-09-26) — never a real step
- * id (every real step id comes off a spec's own declared steps, which can
- * never collide with this literal). Exported so the one client-side caller
- * (`src/panel/index.html`) never hand-spells a second copy of this string. */
-export const FIX_LOOP_STEP_ID = '__fix-loop__';
-
 /**
- * `GET /api/runs/:runid/rounds?step=<id>&occurrence=<n>&attempt=<n>&offset=&limit=`
- * — item 5 (2026-09-25): the expandable step-card detail, built server-side
- * in one endpoint and rendered lazily on expand. Slices ONE attempt's own
- * rounds (+ each round's own tool calls, in order) out of the already-
- * computed `attemptWindows` (`src/replay.js`'s per-step field, item 5's
- * addition — the exact seq/ts sub-window each attempt covers) or, for a
- * loop-shape run (`timelineKind:'iterations'`, no step layer at all), out of
- * each iteration's own `windowStartSeq`/`windowEndSeq` — NEVER a second
- * windowing pass: both are read directly off `replayOne`'s already-computed
- * summary. Tool calls per round reuse {@link getRunAudit}'s own already-
- * scoped, already-round-tagged rows (item 2) — filtered to this round's
- * number, never re-derived. `toolLogSaved:false` (no gate-audit sidecar at
- * all) still returns every round from the spine's own worker-round records,
- * each with `toolCalls: null` (never a fabricated empty array — the client
- * renders "tool calls: no log saved").
+ * `GET /api/runs/:runid/rounds?part=<index>&attempt=<n>&offset=&limit=`
+ * — build item C (2026-09-26 rewrite): the Audit tab's expandable attempt
+ * detail, built server-side in one endpoint and rendered lazily on expand.
+ * REPLACES the earlier step-id/occurrence/`FIX_LOOP_STEP_ID`-sentinel/
+ * `timelineKind` branching (three separate ways to resolve a window,
+ * deleted here) with ONE rule: `part` indexes directly into
+ * `summary.parts` (`src/replay.js`'s own ONE ordered part list — scout,
+ * plan, each step occurrence, replan, fix, judge, or a single `run` part on
+ * an old spine), and `attempt` indexes into THAT part's own `attempts` array
+ * — every part kind already carries at least one (a real per-attempt list
+ * for `step`/`fix`, or a single synthetic whole-part attempt for
+ * scout/plan/replan/judge/run, `src/replay.js`'s `wholePartAttempt`). No
+ * second windowing pass: each attempt's own `startSeq`/`endSeq` is read
+ * directly off `replayOne`'s already-computed summary.
+ * Tool calls per round reuse {@link getRunAudit}'s own already-scoped,
+ * already-round-tagged rows — filtered to this round's number, never
+ * re-derived. `toolLogSaved:false` (no gate-audit sidecar at all) still
+ * returns every round from the spine's own worker-round records, each with
+ * `toolCalls: null` (never a fabricated empty array — the client renders
+ * "tool calls: no log saved").
  * Pagination: `offset`/`limit` slice the ATTEMPT's rounds list (never a
  * round's own tool-call list) — `limit` defaults to {@link
  * ROUNDS_PAGE_DEFAULT}, clamped to {@link ROUNDS_PAGE_MAX}; the response
  * always carries `totalRounds` so the client can print "showing A–B of N",
  * never a silently truncated list.
- * `null` when the run isn't listed, the requested step/occurrence/attempt
- * doesn't resolve to a real window, or the spine file is missing — the
- * caller renders 404, same posture as {@link getRunAudit}/{@link getRunJob}.
+ * `null` when the run isn't listed, the requested part/attempt index doesn't
+ * resolve to a real window, or the spine file is missing — the caller
+ * renders 404, same posture as {@link getRunAudit}/{@link getRunJob}.
  * @param {string} runid
- * @param {{ step?: string, occurrence?: number, attempt?: number, offset?: number, limit?: number }} query
+ * @param {{ part?: number, attempt?: number, offset?: number, limit?: number }} query
  * @param {{ home?: string }} [opts]
  * @returns {any|null}
  */
@@ -876,47 +874,25 @@ export function getRunRounds(runid, query = {}, opts = {}) {
   if (!row) return null;
   if (!existsSync(row.spine)) return null;
 
-  const occurrence = typeof query.occurrence === 'number' && Number.isInteger(query.occurrence) && query.occurrence > 0 ? query.occurrence : 1;
+  const partIndex = typeof query.part === 'number' && Number.isInteger(query.part) && query.part >= 0 ? query.part : 0;
   const attempt = typeof query.attempt === 'number' && Number.isInteger(query.attempt) && query.attempt > 0 ? query.attempt : 1;
   const offset = typeof query.offset === 'number' && Number.isInteger(query.offset) && query.offset >= 0 ? query.offset : 0;
   const limit = typeof query.limit === 'number' && Number.isInteger(query.limit) && query.limit > 0
     ? Math.min(query.limit, ROUNDS_PAGE_MAX) : ROUNDS_PAGE_DEFAULT;
 
   const summary = replayOne(row.spine);
-
-  /** @type {{startSeq: number, endSeq: number, outcome: string|null, detail: string|null}|null} */
-  let window = null;
-  let stepLabel = null;
-  if (query.step === FIX_LOOP_STEP_ID) {
-    // panel build item 1 (2026-09-26): the fix-loop box's own expand,
-    // reusing this SAME endpoint rather than a second one — `summary.fixLoop`
-    // carries the exact same `windowStartSeq`/`windowEndSeq`/`outcome`/
-    // `verdict`/`stages` shape a step's own `attemptWindows` already provide,
-    // so no new windowing logic is needed here at all.
-    const fl = summary.fixLoop;
-    const a = fl ? fl.attempts[attempt - 1] : null;
-    if (!a) return null;
-    window = {
-      startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, outcome: a.outcome, detail: closeStageDetail({ verdict: a.verdict, stages: a.stages }),
-    };
-    stepLabel = FIX_LOOP_STEP_ID;
-  } else if (summary.timelineKind === 'iterations') {
-    const it = summary.iterations[attempt - 1];
-    if (!it) return null;
-    window = {
-      startSeq: it.windowStartSeq, endSeq: it.windowEndSeq, outcome: it.verdict, detail: it.closeStage ? closeStageDetail(it.closeStage) : null,
-    };
-    stepLabel = summary.job ?? row.job;
-  } else {
-    const step = summary.steps.find((s) => s.id === query.step && s.occurrence === occurrence);
-    if (!step) return null;
-    const aw = Array.isArray(step.attemptWindows) ? step.attemptWindows[attempt - 1] : null;
-    if (!aw) return null;
-    window = {
-      startSeq: aw.startSeq, endSeq: aw.endSeq, outcome: aw.outcome, detail: aw.exitEvalDetail,
-    };
-    stepLabel = step.id;
-  }
+  const part = Array.isArray(summary.parts) ? summary.parts[partIndex] : null;
+  if (!part) return null;
+  const a = Array.isArray(part.attempts) ? part.attempts[attempt - 1] : null;
+  if (!a) return null;
+  /** @type {{startSeq: number, endSeq: number, outcome: string|null, detail: string|null}} */
+  const window = {
+    startSeq: a.startSeq,
+    endSeq: a.endSeq,
+    outcome: a.outcome,
+    detail: a.detail ?? (a.verdict || a.stages ? closeStageDetail({ verdict: a.verdict, stages: a.stages }) : null),
+  };
+  const stepLabel = partDisplayLabel(part);
 
   const { records: spineRecords } = parseJsonl(row.spine);
   const roundOf = makeRoundLookup(spineRecords);
@@ -954,8 +930,10 @@ export function getRunRounds(runid, query = {}, opts = {}) {
 
   return {
     runid,
+    part: partIndex,
+    partKind: part.kind,
     step: stepLabel,
-    occurrence: summary.timelineKind === 'iterations' ? null : occurrence,
+    occurrence: part.kind === 'step' ? part.occurrence : null,
     attempt,
     rounds,
     totalRounds,
@@ -1395,14 +1373,13 @@ export function handleRequest(req, res, opts) {
       /** @param {string|null} v @returns {number|undefined} */
       const num = (v) => (v !== null && /^\d+$/.test(v) ? Number(v) : undefined);
       const query = {
-        step: url.searchParams.get('step') ?? undefined,
-        occurrence: num(url.searchParams.get('occurrence')),
+        part: num(url.searchParams.get('part')),
         attempt: num(url.searchParams.get('attempt')),
         offset: num(url.searchParams.get('offset')),
         limit: num(url.searchParams.get('limit')),
       };
       const result = getRunRounds(runid, query, { home: opts.home });
-      if (!result) { sendText(res, 404, 'no such run/step/attempt'); return; }
+      if (!result) { sendText(res, 404, 'no such run/part/attempt'); return; }
       send(200, result);
       return;
     }

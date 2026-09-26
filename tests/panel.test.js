@@ -798,14 +798,15 @@ test('/api/runs/:runid/audit: step column — item 2 rewrite (2026-09-26): deriv
   const body = await res.json();
   assert.equal(body.rows.length, 3);
   const [beforeStep, attempt1Row, attempt2Row] = body.rows;
-  assert.equal(beforeStep.step, null);
-  assert.equal(beforeStep.attempt, null);
+  assert.equal(beforeStep.partIndex, null);
+  assert.equal(beforeStep.partLabel, null);
+  assert.equal(beforeStep.attemptN, null);
   assert.equal(beforeStep.reason, 'no-round');
-  assert.equal(attempt1Row.step, 'do-thing');
-  assert.equal(attempt1Row.attempt, 1);
+  assert.equal(attempt1Row.partLabel, 'do-thing');
+  assert.equal(attempt1Row.attemptN, 1);
   assert.equal(attempt1Row.reason, null);
-  assert.equal(attempt2Row.step, 'do-thing');
-  assert.equal(attempt2Row.attempt, 2);
+  assert.equal(attempt2Row.partLabel, 'do-thing');
+  assert.equal(attempt2Row.attemptN, 2);
 });
 
 test('/api/runs/:runid/audit: item 2 rewrite (2026-09-26) — a real archived run (u-mu2p83go, pulselog-person-live-2) splits its 143 rows by the round\'s own recorded phase: scout, plan, the one step "annotate-checks-strict" (attempt 1), and fix (the post-step fix loop) — NEVER a nameless null tail', async (t) => {
@@ -831,13 +832,13 @@ test('/api/runs/:runid/audit: item 2 rewrite (2026-09-26) — a real archived ru
   // every one of the spine's rounds carries a recognizable phase.
   assert.equal(body.rows.length, 143);
   const byStep = new Map();
-  for (const r of body.rows) byStep.set(r.step, (byStep.get(r.step) ?? 0) + 1);
+  for (const r of body.rows) byStep.set(r.partLabel, (byStep.get(r.partLabel) ?? 0) + 1);
   assert.deepEqual(Object.fromEntries(byStep), {
     scout: 21, plan: 1, 'annotate-checks-strict': 41, fix: 80,
   });
-  assert.equal(body.rows.filter((r) => r.step === null).length, 0, 'every row on this run resolves to a real phase — none should read null/unrecorded');
-  const stepRows = body.rows.filter((r) => r.step === 'annotate-checks-strict');
-  stepRows.forEach((r) => { assert.equal(r.attempt, 1); });
+  assert.equal(body.rows.filter((r) => r.partLabel === null).length, 0, 'every row on this run resolves to a real part — none should read null/unassigned');
+  const stepRows = body.rows.filter((r) => r.partLabel === 'annotate-checks-strict');
+  stepRows.forEach((r) => { assert.equal(r.attemptN, 1); });
 });
 
 // ---------------------------------------------------------------------------
@@ -1350,7 +1351,7 @@ test('/api/runs/:runid/rounds: a plan step\'s attempt returns its own rounds + t
     at: '2026-09-05T00:00:00.000Z', runid: 'roundsrun', job: 'rounds-job', spine: join(dir, 'u-rounds.jsonl'), patient: null, via: 'run-u',
   }, { home });
   const { base } = await startServer(t, { home });
-  const res = await fetch(`${base}/api/runs/roundsrun/rounds?step=x&occurrence=1&attempt=1`);
+  const res = await fetch(`${base}/api/runs/roundsrun/rounds?part=0&attempt=1`);
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.totalRounds, 2);
@@ -1393,7 +1394,7 @@ test('/api/runs/:runid/rounds: pagination — offset/limit slice the rounds list
     at: '2026-09-05T00:00:00.000Z', runid: 'manyrun', job: 'many-rounds', spine: join(dir, 'u-many.jsonl'), patient: null, via: 'run-u',
   }, { home });
   const { base } = await startServer(t, { home });
-  const res = await fetch(`${base}/api/runs/manyrun/rounds?step=x&occurrence=1&attempt=1&offset=3&limit=4`);
+  const res = await fetch(`${base}/api/runs/manyrun/rounds?part=0&attempt=1&offset=3&limit=4`);
   const body = await res.json();
   assert.equal(body.totalRounds, 10);
   assert.equal(body.rounds.length, 4);
@@ -1405,7 +1406,7 @@ test('/api/runs/:runid/rounds: pagination — offset/limit slice the rounds list
   assert.equal(body.rounds[0].toolCalls, null);
 });
 
-test('/api/runs/:runid/rounds: an unknown step/attempt combination -> null (client 404)', async (t) => {
+test('/api/runs/:runid/rounds: an unknown part/attempt combination -> null (client 404)', async (t) => {
   const home = tmp();
   const dir = tmp();
   writeSpine(join(dir, 'u-onestep.jsonl'), [
@@ -1420,13 +1421,13 @@ test('/api/runs/:runid/rounds: an unknown step/attempt combination -> null (clie
     at: '2026-09-05T00:00:00.000Z', runid: 'onesteprun', job: 'onestep', spine: join(dir, 'u-onestep.jsonl'), patient: null, via: 'run-u',
   }, { home });
   const { base } = await startServer(t, { home });
-  const res1 = await fetch(`${base}/api/runs/onesteprun/rounds?step=nosuchstep&attempt=1`);
+  const res1 = await fetch(`${base}/api/runs/onesteprun/rounds?part=5&attempt=1`); // out of range part index
   assert.equal(res1.status, 404);
-  const res2 = await fetch(`${base}/api/runs/onesteprun/rounds?step=x&attempt=1`); // no exit-eval ran -> no attempt 1
+  const res2 = await fetch(`${base}/api/runs/onesteprun/rounds?part=0&attempt=2`); // step's one synthetic attempt is #1, no #2
   assert.equal(res2.status, 404);
 });
 
-test('/api/runs/:runid/rounds: LOOP-shape (iterations) run — attempt N maps to iteration N, no `step` query needed', async (t) => {
+test('/api/runs/:runid/rounds: an old-shape (iterations, no step-start) run collapses to ONE "run" part whose single synthetic attempt covers every round in the run', async (t) => {
   const home = tmp();
   const dir = tmp();
   writeSpine(join(dir, 'u-looprounds.jsonl'), [
@@ -1437,24 +1438,36 @@ test('/api/runs/:runid/rounds: LOOP-shape (iterations) run — attempt N maps to
       type: 'worker-round', costUsd: 0.01, tokens: 10, seq: 4, ts: '2026-09-05T00:00:01.500Z',
     },
     {
-      type: 'close-verdict', iteration: 1, verdict: 'satisfied', seq: 5, ts: '2026-09-05T00:00:02.000Z',
+      type: 'close-verdict', iteration: 1, verdict: 'needs_revision', seq: 5, ts: '2026-09-05T00:00:02.000Z',
+    },
+    { type: 'iteration-start', iteration: 2, seq: 6, ts: '2026-09-05T00:00:02.500Z' },
+    {
+      type: 'worker-round', costUsd: 0.02, tokens: 20, seq: 7, ts: '2026-09-05T00:00:03.000Z',
     },
     {
-      type: 'run-end', outcome: 'green', iterations: 1, seq: 6, ts: '2026-09-05T00:00:02.500Z',
+      type: 'close-verdict', iteration: 2, verdict: 'satisfied', seq: 8, ts: '2026-09-05T00:00:03.500Z',
     },
     {
-      type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, seq: 7, ts: '2026-09-05T00:00:03.000Z',
+      type: 'run-end', outcome: 'green', iterations: 2, seq: 9, ts: '2026-09-05T00:00:04.000Z',
+    },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0.03, spendComplete: true, seq: 10, ts: '2026-09-05T00:00:04.500Z',
     },
   ]);
   appendRun({
     at: '2026-09-05T00:00:00.000Z', runid: 'loopround', job: 'loop-job', spine: join(dir, 'u-looprounds.jsonl'), patient: null, via: 'run-u',
   }, { home });
   const { base } = await startServer(t, { home });
-  const res = await fetch(`${base}/api/runs/loopround/rounds?attempt=1`);
+  const detailRes = await fetch(`${base}/api/runs/loopround`);
+  const detail = await detailRes.json();
+  assert.equal(detail.parts.length, 1);
+  assert.equal(detail.parts[0].kind, 'run');
+  const res = await fetch(`${base}/api/runs/loopround/rounds?part=0&attempt=1`);
   assert.equal(res.status, 200);
   const body = await res.json();
-  assert.equal(body.totalRounds, 1);
+  assert.equal(body.totalRounds, 2, 'the run part\'s one synthetic attempt covers both iterations\' rounds');
   assert.equal(body.rounds[0].costUsd, 0.01);
+  assert.equal(body.rounds[1].costUsd, 0.02);
 });
 
 test('/api/runs/:runid/rounds: real archived run mu2p83go — attempt 1 of the one step returns all 19 rounds, matching replay\'s own step.rounds count', async (t) => {
@@ -1465,7 +1478,11 @@ test('/api/runs/:runid/rounds: real archived run mu2p83go — attempt 1 of the o
     at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-rounds', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
   }, { home });
   const { base } = await startServer(t, { home });
-  const res = await fetch(`${base}/api/runs/mu2p83go-rounds/rounds?step=annotate-checks-strict&occurrence=1&attempt=1`);
+  const detailRes = await fetch(`${base}/api/runs/mu2p83go-rounds`);
+  const detail = await detailRes.json();
+  const stepPartIdx = detail.parts.findIndex((p) => p.kind === 'step' && p.label === 'annotate-checks-strict');
+  assert.ok(stepPartIdx !== -1, 'expected a step part for annotate-checks-strict');
+  const res = await fetch(`${base}/api/runs/mu2p83go-rounds/rounds?part=${stepPartIdx}&attempt=1`);
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.totalRounds, 19);
