@@ -1312,7 +1312,7 @@ test('build item (fix): a job with only ONE run gets no expand caret and never e
   assert.equal(doc.getElementById('wf-list').children[0].children.length, 1, 'no child-list wrapper appended at all');
 });
 
-test('build item (fix): when filters are active and the ONLY match is the latest run, the parent shows with no children listed', () => {
+test('build item (fix): when filters are active and the ONLY match is the latest run, the parent gets no expand affordance at all', () => {
   const { page, doc, setFilters } = makeWorkflowsPage();
   setFilters({ checkTypes: [], results: ['✓'], time: 'all', search: '' });
 
@@ -1328,12 +1328,13 @@ test('build item (fix): when filters are active and the ONLY match is the latest
   const wrap = doc.getElementById('wf-list').children[0];
   assert.equal(wrap.children.length, 1, 'parent job row renders (it matches) but no child-list wrapper is appended');
   const row = wrap.children[0];
-  assert.ok(row.innerHTML.includes('▶'), 'caret still shown — the job DOES have another run, just not a filter match');
+  assert.ok(!row.innerHTML.includes('▶') && !row.innerHTML.includes('▼'), 'no caret — with these filters active the job has no OTHER matching run to show');
+  assert.equal(row.getAttribute('aria-expanded'), 'false');
 
   row.click();
   const wrapAfter = doc.getElementById('wf-list').children[0];
-  assert.equal(wrapAfter.children.length, 2, 'expanding now shows the (empty) child-list wrapper');
-  assert.equal(wrapAfter.children[1].children.length, 0, 'no children listed — the only match was the latest run');
+  assert.equal(wrapAfter.children.length, 1, 'still no child-list wrapper after click — nothing to expand');
+  assert.equal(row.getAttribute('aria-expanded'), 'false', 'still not expandable after the click');
 });
 
 test('build item (fix): selection highlight goes to the parent for the latest run, and to the child for an older run — never both, never a duplicate', () => {

@@ -878,12 +878,15 @@
       // build item (2026-09-26 fix): the parent row IS the job's latest run
       // (clicking it opens that run), so the inline child list must be the
       // job's OTHER runs only — never repeat the latest as its own first
-      // child. A job with exactly one run has no "other runs" at all, so it
-      // gets no expand affordance (caret, aria-expanded, toggle) — clicking
-      // it still opens the run, same as any job row.
-      var hasOtherRuns = g.runCount > 1;
+      // child. Expand affordance (caret, aria-expanded, toggle) is gated on
+      // there being a child to actually show: with filters/search active,
+      // that's the FILTERED other-runs list, so a job whose only match is
+      // its own latest run gets no caret and never expands — clicking it
+      // still opens the run, same as any job row. With no filters active
+      // this is unchanged (childRuns = all other runs, same as runCount>1).
       var candidateRuns = active ? filterRuns(g.runs, currentRunsFilters(), Date.now()) : g.runs;
-      var childRuns = hasOtherRuns ? candidateRuns.filter(function(r){ return r.runid !== g.lastRunid; }) : [];
+      var childRuns = candidateRuns.filter(function(r){ return r.runid !== g.lastRunid; });
+      var hasOtherRuns = childRuns.length > 0;
       var autoExpand = hasOtherRuns && autoExpandJob(g, candidateRuns, active);
       var expanded = hasOtherRuns && (Object.prototype.hasOwnProperty.call(wfExpanded, g.job) ? wfExpanded[g.job] : autoExpand);
 
