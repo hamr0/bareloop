@@ -5,6 +5,64 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **`bareloop` panel (N6/P0/P1)** — a read-only HTTP server (`bareloop panel`, bound to
+  `127.0.0.1:4700`) serving a single-page app built from one run list
+  (`~/.config/bareloop/runs.jsonl`, populated by `bareloop run`/`bareloop runs backfill`).
+  The page reads the library's own `replayRun`/spine/gate-audit functions directly, in-process
+  — the same read side `bareloop replay` uses, never a duplicated parser.
+- **Run tab: step-map + per-part cards.** A plan-shape run renders one two-line card per PART
+  (scout, plan, each step, each replan, the post-step fix loop, judge when recorded), each
+  clickable through to its own slice of the Audit tab; an old-shape (iterations, no
+  step-start) run collapses to one "run" card.
+- **Audit tab: Grouped (part → attempt → rounds table) and Flat views**, a search box
+  (matches job/runid/model), and All/Writes/Blocked filter chips that auto-open every
+  matching group.
+- **Job tab** resolves the real spec (bundle `spec.json`, `jobs/<job>.json`, or the run's own
+  job-start record) and shows Success/Guardrails/Tools/Judge-examples fields plus the full
+  granted-tools "offered" list.
+- **Run Summary** gained `model` (with provider) and `judge` lines, and a died glyph `[?]`
+  distinct from a real failed verdict `[✗]`.
+
+### Changed
+
+- **Workflows and History merged into one `Runs` tab**, toggled between a grouped-by-job
+  "Workflows" view (default) and a flat "History" view — both built from the one `/api/runs`
+  list; `/api/workflows` and the client's `listWorkflows` were deleted.
+- Audit-tab paths shorten to the run's own resolved tree root (`pathShort`) when one can be
+  found; an older run with no resolvable root keeps its full absolute path.
+
+### Fixed
+
+- **`bareloop replay`'s tool-call count was contaminated by a shared gate-audit sidecar** — a
+  sidecar file can carry rows from several runs that happen to reuse the same filename;
+  `auditWindow` now scopes every reader (CLI and panel alike) to the run's own
+  `job-start`..`job-end` window, so the two can never disagree.
+- **Panel tests bound a fixed port, flaking under a taken port** — every test now asks the OS
+  for an ephemeral port (`port: 0`) instead of guessing a free one.
+- Audit tab's "Raw log" leaked an EARLIER unrelated run's rows when a gate-audit sidecar is
+  shared across runs; it now shows only this run's own ts-windowed lines, byte-for-byte.
+- A `~2`-style backfill-collision runid (two archived spines sharing a basename in different
+  directories) echoed the wrong, unsuffixed runid in the run header and its sibling lookups.
+- `toolCalls`/`behaviour` report `null` (unknown), never a fabricated `0`, when a run has no
+  gate-audit sidecar at all.
+- Backfill scans recursively (bounded depth) instead of the top directory plus its immediate
+  subdirectories only, and dedups by resolved spine path rather than a filename-derived runid
+  (two same-basename spines in different directories are different runs, not duplicates).
+- Various Workflows/History/Audit rendering fixes: rows stay two lines and never wrap; the
+  meta-line separator carries a leading space; a died run's "why" line uses one plain
+  timestamp format; a run that died before its first step reads "0 of 0 done" (never "0 of
+  1"); the Audit tab distinguishes "no sidecar ever written" from "sidecar exists but empty";
+  History's filter chips no longer needed two clicks to register; the desktop list scrolls in
+  its own pane and mobile gets a "back to list" affordance; check-type labelling correctly
+  falls back to "deterministic" for runs that predate `verdictType` (2026-08-18); no-verdict
+  parts (scout/plan/replan/judge) render no result glyph rather than a guessed one; the Run
+  tab's step-map numbering and card order matched (F197/F198); Summary's "offered" line shows
+  the FULL granted-tools list, never truncated to the top few.
+
 ## [0.28.0] — 2026-09-24
 
 ### Added

@@ -288,7 +288,7 @@ restating pixels. The rulings that constrain the real build (not just the mockup
   simplified map renderer anywhere in the panel.
 - **Three right-pane tabs, verified in the mockup:** `Run` (`#tab-run`), `Audit / logs`
   (`#tab-audit`), `Job` (`#tab-details`, labelled "Job"). Three left-pane tabs: `Chat`,
-  `Workflows`, `History`.
+  `Workflows`, `History`. (superseded — see Addendum 2026-09-26)
 
 ## 7. Known gaps the real build must close
 
@@ -312,3 +312,37 @@ From both mockup-feedback stashes, carried forward, not fixed by the mockup itse
 - LAN access.
 - Anything that changes a budget, a verdict, or merge behaviour — those stay arbiter territory,
   outside what any panel rung may touch (§5 above).
+
+## Addendum 2026-09-26 — P1 panel redesign (hamr's live-review rulings)
+
+This is a dated addendum, not a rewrite — §6's "Three left-pane tabs: Chat, Workflows,
+History" and its Row-shape ruling are prose from the ORIGINAL mockup contract and are left
+untouched above; the following ships instead, decided during P1's live click-to-annotate
+review rounds:
+
+- **Workflows and History merged into one `Runs` tab**, with a toggle between "Workflows"
+  view (grouped by job, default) and "History" view (flat, newest-first) — never two separate
+  left-pane tabs. `/api/workflows` and its client-side `listWorkflows` were deleted; both views
+  are now built from the one `/api/runs` list.
+- **Run tab: map + two-line part cards.** A PLAN-shape run renders one card per PART (scout,
+  plan, each step, each replan, the post-step fix loop, the judge stage where recorded) — never
+  one card per step only. An old-shape (iterations, no step-start) run collapses to a single
+  "run" box, same as before. Clicking a part's map box OR its card jumps to the Audit tab,
+  pre-filtered/scrolled to that part.
+- **Audit tab: Grouped + Flat toggle.** "Grouped" (the default) nests rows as part → attempt →
+  a rounds table (lazy-fetched per attempt via `/api/runs/:runid/rounds`); "Flat" is the old
+  single ungrouped row list. Three filter chips — All / Writes / Blocked — auto-open every
+  matching group so a filtered result is never hidden behind a collapsed toggle.
+- **Short paths** (`pathShort`, relative to the run's own resolved tree root) apply only to
+  runs recorded under this new layout; an older archived run with no resolvable tree root keeps
+  showing the absolute path, honestly, rather than a guessed shortening.
+- **Run Summary box** gained a `model` line (provider in parens when recorded, e.g. `deepseek-
+  flash (openai-api)`) and a `judge:` line when a judge-round was recorded on the spine.
+- **"offered" line** (Job tab) shows the FULL granted-tools list from the spec, never a
+  top-N-truncated version.
+
+Build item (2026-09-26, this branch, `feat/panel-p1`) additionally fixed two panel-only bugs
+found during this same review pass: the Audit tab's "Raw log" leaking an EARLIER unrelated
+run's rows when a gate-audit sidecar is shared across runs (now windowed to this run's own
+ts range, same rule as the parsed `rows`), and a `~2`-backfill-collision run's header/lookups
+echoing the wrong (unsuffixed) runid.
