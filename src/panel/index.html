@@ -526,6 +526,26 @@
     if(isLastLivePart) return "running";
     return "done"; // scout/plan/replan/judge: no per-part verdict, but the part itself already happened
   }
+  // scout/plan/replan/judge parts carry no per-part verdict at all — their
+  // ONE attempt is always the wholePartAttempt synthetic placeholder
+  // (outcome:null, src/replay.js), never a real green/red. Showing that as
+  // an inline "attempt 1 ?" on the map/card would read as an unresolved
+  // result when nothing was ever judged there; `step`/`fix` (real attempts)
+  // and `run` (its own real, non-null outcome) are the only kinds worth an
+  // inline attempt/result glyph.
+  function partHasNoVerdict(part){ return part.kind === "scout" || part.kind === "plan" || part.kind === "replan" || part.kind === "judge"; }
+  // ONE shared result-glyph rule for both the Run tab's cards and the Audit
+  // tab's grouped-row headers — `null` (never a fabricated "?") for a
+  // no-verdict part kind; a multi-attempt part (a step with retries, or the
+  // fix loop) joins every attempt's own glyph ("✗✗✗✓"); everything else
+  // (a single-attempt step, or the whole "run" box on an old-shape spine)
+  // reads the part's own outcome.
+  function partResultGlyph(part, box){
+    if(partHasNoVerdict(part)) return null;
+    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome); }).join("");
+    var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
+    return attemptGlyph(outcome);
+  }
   function buildOrderedBoxes(parts, isLive){
     var list = Array.isArray(parts) ? parts : [];
     return list.map(function(part, idx){
@@ -537,7 +557,11 @@
         title: part.label + occSuffix,
         state: partBoxState(part, isLastLivePart),
         noNumber: part.kind !== "step",
-        attempts: Array.isArray(part.attempts) ? part.attempts : [],
+        // display-only attempts (map inline text + card/audit result glyph
+        // fallback) — [] for a no-verdict part kind even though `part.attempts`
+        // itself still carries its one real synthetic window (needed by the
+        // Audit tab's expand-to-rounds, read off `box.part.attempts` directly).
+        attempts: partHasNoVerdict(part) ? [] : (Array.isArray(part.attempts) ? part.attempts : []),
         blocked: typeof part.blocked === "number" ? part.blocked : 0,
         part: part,
       };
@@ -1176,16 +1200,14 @@
       var part = box.part;
       var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
       var titleText = box.kind === "step" ? ((cardStepNumbers[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
-      var resultGlyph = box.attempts.length > 1
-        ? box.attempts.map(function(a){ return attemptGlyph(a.outcome); }).join("")
-        : attemptGlyph(part.outcome !== null && part.outcome !== undefined ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null));
+      var resultGlyph = partResultGlyph(part, box);
       var line1Bits = [
         (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
         typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
         duration(part.wallMs),
         part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : money(part.spentUsd),
-        resultGlyph,
       ];
+      if(resultGlyph !== null) line1Bits.push(resultGlyph);
       var card = document.createElement("div");
       card.className = "step-card part-card" + (box.state === "running" ? " running" : "");
       card.setAttribute("data-testid", "part-card-" + idx);
@@ -1323,11 +1345,6 @@
       part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : money(part.spentUsd),
     ].join(" &middot; ");
   }
-  function partResultGlyph(part, box){
-    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome); }).join("");
-    var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
-    return attemptGlyph(outcome);
-  }
   var currentAuditFilter = "all";
   function auditPartMatchesFilter(rowWrap, filter){
     if(filter === "all") return true;
@@ -1368,9 +1385,10 @@
       var startExpanded = box.state === "running";
       headBtn.setAttribute("aria-expanded", startExpanded ? "true" : "false");
       headBtn.setAttribute("data-testid", "audit-part-toggle-" + idx);
+      var groupResultGlyph = partResultGlyph(part, box);
       headBtn.innerHTML =
         '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span> ' + titleText + ' &middot; ' + partLine1Text(part) +
-        ' &middot; ' + partResultGlyph(part, box) +
+        (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
         (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '');
       var body = document.createElement("div");
       body.className = "audit-part-body";

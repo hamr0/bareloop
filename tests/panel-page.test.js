@@ -34,7 +34,7 @@ function loadStepMapGeometry() {
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
   const factory = new Function(`${body}
-    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes };
+    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph };
   `);
   return factory();
 }
@@ -836,9 +836,41 @@ test('item 4: attemptsInlineText / stepTitleText — attempts append to the box 
   );
 });
 
-test('build item B: buildOrderedBoxes feeds each part\'s own attempts into the map data (never a step-shaped re-derivation)', () => {
+test('build item B: buildOrderedBoxes feeds each part\'s own attempts into the map data (never a step-shaped re-derivation), except a no-verdict part kind (scout/plan/replan/judge) which shows no inline attempt/result glyph at all', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /attempts: Array\.isArray\(part\.attempts\) \? part\.attempts : \[\]/);
+  assert.match(html, /attempts: partHasNoVerdict\(part\) \? \[\] : \(Array\.isArray\(part\.attempts\) \? part\.attempts : \[\]\)/);
+});
+
+// live-check regression (caught on a real headless render of mu2p83go, see
+// build report): a scout/plan/replan/judge part's ONE attempt is always the
+// wholePartAttempt synthetic placeholder (outcome:null) — before this fix,
+// buildOrderedBoxes fed that straight into the map/card display and it
+// rendered as a bare "attempt 1 ?" / a trailing "· ?" on every such box,
+// reading as an unresolved result when nothing was ever judged there.
+test('build item B RED-PROOF: partResultGlyph/partHasNoVerdict — scout/plan/replan/judge (no per-part verdict) render NO result glyph at all, never a fabricated "?"; step/fix/run (a real verdict) still do', () => {
+  const { buildOrderedBoxes, partHasNoVerdict, partResultGlyph } = loadStepMapGeometry();
+  const noVerdictKinds = ['scout', 'plan', 'replan', 'judge'];
+  noVerdictKinds.forEach((kind) => {
+    const part = {
+      kind, label: kind, occurrence: null, outcome: null, attempts: [{ n: 1, outcome: null }],
+    };
+    assert.equal(partHasNoVerdict(part), true, `${kind} must be a no-verdict kind`);
+    const [box] = buildOrderedBoxes([part], false);
+    assert.deepEqual(box.attempts, [], `${kind}'s synthetic attempt must not reach map/card display`);
+    assert.equal(partResultGlyph(part, box), null, `${kind} must render no result glyph at all`);
+  });
+  // a real single-attempt step (a genuine green) still shows its glyph.
+  const stepPart = {
+    kind: 'step', label: 'x', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }],
+  };
+  const [stepBox] = buildOrderedBoxes([stepPart], false);
+  assert.equal(partResultGlyph(stepPart, stepBox), '✓');
+  // a multi-attempt fix loop still joins every attempt's own glyph.
+  const fixPart = {
+    kind: 'fix', label: 'fix', occurrence: null, outcome: 'green', attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }],
+  };
+  const [fixBox] = buildOrderedBoxes([fixPart], false);
+  assert.equal(partResultGlyph(fixPart, fixBox), '✗✓');
 });
 
 // ---------------------------------------------------------------------------
