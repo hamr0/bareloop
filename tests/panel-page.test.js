@@ -278,44 +278,62 @@ test('buildStepMapSVG: a noNumber box (scout+plan), a real step A, a real step B
 // feeds both the map and the card list, so they cannot drift apart again.
 // ---------------------------------------------------------------------------
 
-test('buildOrderedBoxes: orders scout+plan FIRST, then the plan\'s own steps in run order, then fix loop — the same order the map itself renders in', () => {
+// build item B (2026-09-26 rewrite): buildOrderedBoxes now takes
+// `detail.parts` directly (src/replay.js's own ONE ordered part list) — not
+// a hand-assembled {scoutPlan,steps,fixLoop} object — so the map/card list
+// and the Audit tab's grouped rows read off the exact same server-computed
+// list and can never drift apart (F198's own bug class, generalized).
+
+test('buildOrderedBoxes: parts render in their own given order (scout, plan, each step, fix) — the same order the map itself renders in', () => {
   const { buildOrderedBoxes } = loadStepMapGeometry();
-  const detail = {
-    scoutPlan: { rounds: 9 },
-    steps: [
-      { id: 'step A', state: 'done' },
-      { id: 'step B', state: 'done' },
-    ],
-    fixLoop: { attempts: [{ n: 1, outcome: 'green' }] },
-  };
-  const ordered = buildOrderedBoxes(detail);
-  assert.deepEqual(ordered.map((b) => b.kind), ['scoutPlan', 'step', 'step', 'fixLoop']);
-  assert.equal(ordered[0].title, 'scout + plan');
-  assert.equal(ordered[1].step.id, 'step A');
-  assert.equal(ordered[2].step.id, 'step B');
-  assert.equal(ordered[3].title, 'fix loop');
+  const parts = [
+    { kind: 'scout', label: 'scout', occurrence: null, outcome: null, attempts: [] },
+    { kind: 'plan', label: 'plan', occurrence: null, outcome: null, attempts: [] },
+    {
+      kind: 'step', label: 'step A', occurrence: 1, outcome: 'green', attempts: [],
+    },
+    {
+      kind: 'step', label: 'step B', occurrence: 1, outcome: 'green', attempts: [],
+    },
+    {
+      kind: 'fix', label: 'fix', occurrence: null, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }],
+    },
+  ];
+  const ordered = buildOrderedBoxes(parts, false);
+  assert.deepEqual(ordered.map((b) => b.kind), ['scout', 'plan', 'step', 'step', 'fix']);
+  assert.equal(ordered[0].title, 'scout');
+  assert.equal(ordered[1].title, 'plan');
+  assert.equal(ordered[2].part.label, 'step A');
+  assert.equal(ordered[3].part.label, 'step B');
+  assert.equal(ordered[4].title, 'fix');
 });
 
-test('buildOrderedBoxes: with no scoutPlan/fixLoop data, the list is just the plan\'s own steps (no phantom boxes)', () => {
+test('buildOrderedBoxes: with only a plan step of its own, the list is just that one part (no phantom boxes)', () => {
   const { buildOrderedBoxes } = loadStepMapGeometry();
-  const detail = { steps: [{ id: 'only step', state: 'done' }] };
-  const ordered = buildOrderedBoxes(detail);
+  const parts = [{
+    kind: 'step', label: 'only step', occurrence: 1, outcome: 'green', attempts: [],
+  }];
+  const ordered = buildOrderedBoxes(parts, false);
   assert.deepEqual(ordered.map((b) => b.kind), ['step']);
 });
 
-test('buildOrderedBoxes + stepNumberIndices: real step A/B keep numbers "1"/"2" regardless of the noNumber boxes around them — proves the card list and the map read numbers off the exact same list', () => {
+test('buildOrderedBoxes + stepNumberIndices: real step A/B keep numbers "1"/"2" regardless of the noNumber (non-step) parts around them — proves the card list and the map read numbers off the exact same list', () => {
   const { buildOrderedBoxes, stepNumberIndices } = loadStepMapGeometry();
-  const detail = {
-    scoutPlan: { rounds: 3 },
-    steps: [
-      { id: 'step A', state: 'done' },
-      { id: 'step B', state: 'done' },
-    ],
-    fixLoop: { attempts: [{ n: 1, outcome: 'red' }] },
-  };
-  const ordered = buildOrderedBoxes(detail);
+  const parts = [
+    { kind: 'scout', label: 'scout', occurrence: null, outcome: null, attempts: [] },
+    {
+      kind: 'step', label: 'step A', occurrence: 1, outcome: 'green', attempts: [],
+    },
+    {
+      kind: 'step', label: 'step B', occurrence: 1, outcome: 'green', attempts: [],
+    },
+    {
+      kind: 'fix', label: 'fix', occurrence: null, outcome: 'red', attempts: [{ n: 1, outcome: 'red' }],
+    },
+  ];
+  const ordered = buildOrderedBoxes(parts, false);
   const numbers = stepNumberIndices(ordered);
-  // ordered = [scoutPlan, step A, step B, fixLoop] -> numbers = [-1, 0, 1, -1]
+  // ordered = [scout, step A, step B, fix] -> numbers = [-1, 0, 1, -1]
   assert.equal(numbers[1], 0); // step A displays as "1"
   assert.equal(numbers[2], 1); // step B displays as "2"
 });
@@ -505,11 +523,11 @@ test('F-panel-chip-collision: filterWorkflows filters by each workflow\'s OWN la
   assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: '7d' }, now), [workflows[0]]);
 });
 
-test('item 6: the step card meta line carries a plain-language title (hover) explaining steps/rounds/tools — no new glyph', () => {
+test('item 6/build item B: the part card meta line carries a plain-language title (hover) explaining parts/calls/tools — no new glyph', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(
     html,
-    /class="step-meta" title="a step is one piece of the plan; a round is one model call; each round can use several tools \(read, edit, search…\)"/,
+    /class="step-meta" title="a part is one piece of the run \(scout, plan, a step, replan, fix, judge\); a call is one model round"/,
   );
 });
 
@@ -718,16 +736,16 @@ test('item: Audit table header cells are sticky on scroll, inside a bounded self
   assert.match(html, /<div class="audit-table-scroll">\s*<table data-testid="audit-table">/);
 });
 
-test('item 2 rewrite (2026-09-26): renderAudit\'s Step cell shows a tooltip on a null step (round-phase reason, never the old ts-heuristic "planning"/"final-check" wording) and appends "· aN" when an attempt number is present', () => {
+test('build item C rewrite (2026-09-26): renderAudit\'s Step cell shows a tooltip on a null part (round-part reason, never the old phase-string/ts-heuristic wording) and appends "· aN" when an attempt number is present', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function renderAudit(result){');
   const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
   const body = html.slice(start, end);
-  assert.match(body, /r\.step === null/);
+  assert.match(body, /r\.partLabel === null/);
   assert.match(body, /before the first model call/);
-  assert.match(body, /r\.reason === "unrecorded"/);
-  assert.doesNotMatch(body, /final check/, 'the old ts-window "final-check" heuristic must be gone, replaced by the round\'s own recorded phase');
-  assert.match(body, /typeof r\.attempt === "number"/);
+  assert.match(body, /r\.reason === "unassigned"/);
+  assert.doesNotMatch(body, /final check/, 'the old ts-window "final-check" heuristic must be gone, replaced by the round\'s own seq matched against parts');
+  assert.match(body, /typeof r\.attemptN === "number"/);
 });
 
 test('item 3 (2026-09-26): renderAudit\'s Path cell shows "&mdash;" (never "unknown") for a model-call row', () => {
@@ -799,7 +817,7 @@ test('item 3: the Run summary carries a hidden "offered" row that paintOfferedRo
 test('item 4: attemptsInlineText / stepTitleText — attempts append to the box title as "attempt N [check/cross]"', () => {
   const { attemptsInlineText, stepTitleText } = (function(){
     const html = readFileSync(PAGE_PATH, 'utf8');
-    const start = html.indexOf('function attemptsInlineText(');
+    const start = html.indexOf('function attemptGlyph(');
     const end = html.indexOf('function naturalBoxWidth(');
     const body = html.slice(start, end);
     // eslint-disable-next-line no-new-func
@@ -818,21 +836,26 @@ test('item 4: attemptsInlineText / stepTitleText — attempts append to the box 
   );
 });
 
-test('item 4: renderRun feeds each step\'s attempts into the map data', () => {
+test('build item B: buildOrderedBoxes feeds each part\'s own attempts into the map data (never a step-shaped re-derivation)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /attempts: s\.attempts \|\| \[\]/);
+  assert.match(html, /attempts: Array\.isArray\(part\.attempts\) \? part\.attempts : \[\]/);
 });
 
 // ---------------------------------------------------------------------------
-// item 5 (2026-09-25): expandable step cards -> attempts -> rounds
+// build item C (2026-09-26 rewrite): the Run tab's cards no longer expand at
+// all (build spec item B — "Remove Run-tab card expand/attempts/rounds UI");
+// this coverage moves to its Audit-tab equivalent — the grouped-by-part rows
+// render collapsed-by-default toggles and lazy-load rounds via the SAME
+// /api/runs/:runid/rounds?part=<i>&attempt=<n> endpoint on expand.
 // ---------------------------------------------------------------------------
 
-test('item 5: step cards render collapsed-by-default attempt toggles, and lazy-load rounds via /api/runs/:runid/rounds on expand', () => {
+test('build item C: Audit tab grouped rows render collapsed-by-default part toggles, and lazy-load rounds via /api/runs/:runid/rounds?part=<i> on expand', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /step-attempts-toggle/);
-  assert.match(html, /class="attempts-list" hidden/);
-  assert.match(html, /class="rounds-list" hidden/);
+  assert.match(html, /audit-part-toggle/);
+  assert.match(html, /body\.className = "audit-part-body";\s*\n\s*body\.hidden = !startExpanded;/);
+  assert.match(html, /class="rounds-list"/);
   assert.match(html, /function loadRounds\(/);
+  assert.match(html, /"part=" \+ encodeURIComponent\(partIndex\) \+ "&attempt=" \+ encodeURIComponent\(attempt\.n\) \+ "&offset=" \+ offset/);
   assert.match(html, /"\/api\/runs\/" \+ encodeURIComponent\(currentRunid\) \+ "\/rounds\?" \+ params/);
 });
 

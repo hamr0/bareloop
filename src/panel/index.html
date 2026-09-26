@@ -230,6 +230,14 @@
   .attempt-check{margin-top:4px;font-size:12px;}
   .rounds-page-info{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 
+  /* build item C: Audit tab grouped-by-part rows */
+  .audit-part{border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);}
+  .audit-part-toggle{width:100%;text-align:left;display:block;white-space:normal;min-height:44px;padding:8px 10px;}
+  .audit-part-toggle::before,.audit-part-toggle::after{content:"";}
+  .audit-part-body{padding:8px 10px 10px;border-top:1px dotted var(--border-strong);}
+  .part-card{cursor:pointer;}
+  .part-card:hover{border-color:var(--border-strong);}
+
   .chips{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
   .chip{padding:5px 10px;min-height:32px;border:1px solid var(--border-strong);background:var(--panel2);font-size:12px;color:var(--text-dim);}
   .chip::before{content:"[ ";color:var(--text-faint);}
@@ -359,25 +367,35 @@
         </section>
 
         <section id="panel-audit" class="tabpanel" role="tabpanel" aria-labelledby="tab-audit" hidden>
-          <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;">select a run first</div>
-          <div id="audit-content" data-testid="audit-content" hidden>
+          <div id="audit-select-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
+          <div id="audit-body" hidden>
             <div class="audit-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
               <div class="chips" role="group" aria-label="Filter audit rows" style="margin-bottom:0;">
                 <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
                 <button class="chip" aria-pressed="false" data-filter="write" data-testid="chip-writes">Writes</button>
                 <button class="chip" aria-pressed="false" data-filter="blocked" data-testid="chip-blocked">Blocked</button>
               </div>
+              <div class="chips" role="group" aria-label="Audit view" style="margin-bottom:0;">
+                <button class="chip" aria-pressed="true" data-view="grouped" data-testid="audit-view-grouped">Grouped</button>
+                <button class="chip" aria-pressed="false" data-view="flat" data-testid="audit-view-flat">Flat</button>
+              </div>
             </div>
-            <div class="audit-table-scroll">
-              <table data-testid="audit-table">
-                <thead><tr><th>Round</th><th>Step</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead>
-                <tbody id="audit-tbody"></tbody>
-              </table>
+            <div id="audit-groups" data-testid="audit-groups"></div>
+            <div id="audit-flat-wrap" hidden>
+              <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;">select a run first</div>
+              <div id="audit-content" data-testid="audit-content" hidden>
+                <div class="audit-table-scroll">
+                  <table data-testid="audit-table">
+                    <thead><tr><th>Round</th><th>Step</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead>
+                    <tbody id="audit-tbody"></tbody>
+                  </table>
+                </div>
+                <details class="raw-log" data-testid="raw-spine-log">
+                  <summary>Raw gate-audit log</summary>
+                  <pre id="audit-rawlog"></pre>
+                </details>
+              </div>
             </div>
-            <details class="raw-log" data-testid="raw-spine-log">
-              <summary>Raw gate-audit log</summary>
-              <pre id="audit-rawlog"></pre>
-            </details>
           </div>
         </section>
 
@@ -471,9 +489,10 @@
   // "attempt 1 [✗] · attempt 2 [✓]" — appended to the box's own title text
   // (the existing wrapTitleLines 2-line wrap handles overflow the same way
   // it already does for a long step id; no third renderer, no new box shape).
+  function attemptGlyph(outcome){ return outcome === "green" ? "✓" : (outcome === null || outcome === undefined ? "?" : "✗"); }
   function attemptsInlineText(attempts){
     if(!attempts || !attempts.length) return "";
-    return attempts.map(function(a){ return "attempt " + a.n + " " + (a.outcome === "green" ? "✓" : "✗"); }).join(" · ");
+    return attempts.map(function(a){ return "attempt " + a.n + " " + attemptGlyph(a.outcome); }).join(" · ");
   }
   function stepTitleText(idx, s){
     var base = s.noNumber ? s.title : (idx + 1) + ' ' + s.title;
@@ -494,25 +513,36 @@
       return n - 1;
     });
   }
-  // F198: the ONE canonical ordering — scout+plan, then the plan's own
-  // steps in run order, then fix loop — feeds BOTH the step-map (via
-  // renderStepMap) and the step-card list below it, so the two can never
-  // render in different orders again (a prior build put the cards' scout+
-  // plan/fix-loop entries AFTER all the step cards, while the map correctly
-  // put scout+plan first, either side of the plan's own steps).
-  function buildOrderedBoxes(detail){
-    var scoutPlanBox = detail.scoutPlan ? { kind: "scoutPlan", title: "scout + plan", state: "done", noNumber: true, attempts: [] } : null;
-    var fixLoopLast = detail.fixLoop && detail.fixLoop.attempts.length ? detail.fixLoop.attempts[detail.fixLoop.attempts.length - 1] : null;
-    var fixLoopBox = fixLoopLast ? {
-      kind: "fixLoop", title: "fix loop", state: fixLoopLast.outcome === "green" ? "done" : "stopped", noNumber: true,
-      attempts: detail.fixLoop.attempts.map(function(a){ return { n: a.n, outcome: a.outcome }; }),
-    } : null;
-    var stepBoxes = (detail.steps || []).map(function(s){ return { kind: "step", step: s, title: String(s.id), state: s.state, noNumber: !!s.synthetic, attempts: s.attempts || [] }; });
-    var orderedBoxes = [];
-    if(scoutPlanBox) orderedBoxes.push(scoutPlanBox);
-    orderedBoxes = orderedBoxes.concat(stepBoxes);
-    if(fixLoopBox) orderedBoxes.push(fixLoopBox);
-    return orderedBoxes;
+  // build item B (2026-09-26 rewrite): the map+card list are now built from
+  // `detail.parts` — src/replay.js's own ONE ordered part list (scout, plan,
+  // each step occurrence, replan, fix, judge, or a single "run" box for an
+  // old-shape spine) — never a second client-side re-derivation off
+  // scoutPlan/steps/fixLoop separately (F198's own bug class: two ordering
+  // passes that could drift apart). `partIndex` on every box lets a click
+  // jump straight to that SAME part's Audit-tab row (build item B's
+  // click-through), with no re-lookup needed.
+  function partBoxState(part, isLastLivePart){
+    if(part.outcome === "green" || part.outcome === "satisfied" || part.outcome === "already-green") return "done";
+    if(typeof part.outcome === "string") return "stopped";
+    if(isLastLivePart) return "running";
+    return "done"; // scout/plan/replan/judge: no per-part verdict, but the part itself already happened
+  }
+  function buildOrderedBoxes(parts, isLive){
+    var list = Array.isArray(parts) ? parts : [];
+    return list.map(function(part, idx){
+      var isLastLivePart = !!isLive && idx === list.length - 1;
+      var occSuffix = part.kind === "step" && part.occurrence > 1 ? " (try " + part.occurrence + ")" : "";
+      return {
+        kind: part.kind,
+        partIndex: idx,
+        title: part.label + occSuffix,
+        state: partBoxState(part, isLastLivePart),
+        noNumber: part.kind !== "step",
+        attempts: Array.isArray(part.attempts) ? part.attempts : [],
+        blocked: typeof part.blocked === "number" ? part.blocked : 0,
+        part: part,
+      };
+    });
   }
   function naturalBoxWidth(steps){
     var numIdx = stepNumberIndices(steps);
@@ -576,8 +606,13 @@
       var colors = stepMapColors(s.state);
       var lines = titleLines[idx];
       var stateY = y + boxH - 18;
+      var partIdxAttr = typeof s.partIndex === "number" ? (' data-part-index="' + s.partIndex + '" style="cursor:pointer;"') : '';
       body += '<rect x="' + x + '" y="' + y + '" width="' + boxW + '" height="' + boxH +
-        '" rx="0" fill="var(--panel2)" stroke="' + colors.stroke + '" stroke-width="2"></rect>';
+        '" rx="0" fill="var(--panel2)" stroke="' + colors.stroke + '" stroke-width="2"' + partIdxAttr + '></rect>';
+      if(s.blocked > 0){
+        body += '<text x="' + (x + boxW - 6) + '" y="' + (y + 12) +
+          '" text-anchor="end" font-size="10" fill="var(--red)">' + s.blocked + ' blocked</text>';
+      }
       if(lines.length === 1){
         body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 25) +
           '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[0]) + '</text>';
@@ -641,6 +676,18 @@
     var w = mapAvailWidth(wrapper);
     lastWidth = w;
     mount.innerHTML = buildStepMapSVG(steps, w) + stepMapLegendHTML();
+    // build item B: a map box click jumps to the Audit tab, that same part
+    // expanded and scrolled into view — same click-through as the card list,
+    // sharing partIndex so the two can never disagree about which row a box
+    // maps to. Delegated once per render (mount.innerHTML above already
+    // wiped any previous listeners' targets along with the old markup).
+    mount.querySelectorAll("rect[data-part-index]").forEach(function(rect){
+      rect.addEventListener("click", function(){
+        var idx = Number(rect.getAttribute("data-part-index"));
+        document.getElementById("tab-audit").click();
+        openAuditPart(idx);
+      });
+    });
   }
   function reflowMap(){
     var wrapper = document.getElementById("map-box");
@@ -1007,6 +1054,17 @@
     var never = toolsList.filter(function(t){ return !used[t]; });
     return never.length ? never.join(", ") : null;
   }
+  // build item B: a part card's own 2nd line — every tool used, with counts,
+  // sorted by count descending (no "N calls —" prefix, that's line 1's job).
+  // `null` byTool (no gate-audit sidecar) reads the same "unknown (no log
+  // saved)" toolsLine already uses; an empty-but-known object reads "no tools".
+  function toolBreakdownLine(byTool){
+    if(!byTool) return "unknown (no log saved)";
+    var entries = Object.keys(byTool).map(function(k){ return [toolDisplayLabel(k), byTool[k]]; });
+    if(!entries.length) return "no tools";
+    entries.sort(function(a,b){ return b[1] - a[1]; });
+    return entries.map(function(e){ return e[0] + " " + e[1]; }).join(" · ");
+  }
   function cacheLine(memoryCache){
     if(!memoryCache) return "not recorded";
     var kb = (memoryCache.bytesWithheld / 1024).toFixed(1);
@@ -1055,8 +1113,13 @@
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "spine file no longer on disk";
       document.getElementById("run-content").hidden = true;
+      document.getElementById("audit-select-empty").hidden = false;
+      document.getElementById("audit-body").hidden = true;
       return;
     }
+
+    document.getElementById("audit-select-empty").hidden = true;
+    document.getElementById("audit-body").hidden = false;
 
     name.textContent = detail.job + " (" + detail.runid + ")";
     dot.className = "dot " + glyphClass(detail.glyph);
@@ -1107,116 +1170,72 @@
     lastRunBehaviour = detail.behaviour;
     paintOfferedRow();
 
-    // item 1 (2026-09-26): scout+plan (pre-step drafting) and the post-step
-    // fix loop (outer-close precheck + fix-loop iterations) each get their
-    // own box on the map, either side of the plan's own steps — both were
-    // previously invisible entirely (only the plan's own steps ever showed).
-    // Neither counts as a numbered step (`noNumber:true`, same posture as
-    // F196's synthetic "died during planning" placeholder) since neither is
-    // one of the plan's own declared steps.
-    // F198: the map and the step-CARD list are now built from ONE ordered
-    // list (`buildOrderedBoxes`) — scout+plan, then the plan's own steps in
-    // run order, then fix loop — so they can never drift apart again (a
-    // prior build had the cards render steps first, then scout+plan, then
-    // fix loop, while the map correctly put scout+plan first).
-    var FIX_LOOP_KEY = "__fix-loop__";
-    var orderedBoxes = buildOrderedBoxes(detail);
+    // build item B (2026-09-26 rewrite): the map AND the card list are both
+    // built from ONE list — `detail.parts` (src/replay.js's own ordered part
+    // list) via `buildOrderedBoxes` — so they can never drift apart (F198's
+    // own bug class). Cards are SUMMARY ONLY here, never expandable — every
+    // attempt/rounds detail now lives exclusively on the Audit tab; a card
+    // (or its map box) click switches to Audit with that same part expanded
+    // and scrolled into view (build item B's click-through).
+    var isLiveRun = detail.glyph === "▶" && !detail.died;
+    var orderedBoxes = buildOrderedBoxes(detail.parts, isLiveRun);
     renderStepMap(orderedBoxes);
 
-    // the card list's step numbers must match the map's own numbers exactly
-    // — reuse the SAME numbering rule (stepNumberIndices, defined with the
-    // map geometry above) over the SAME ordered list, rather than a second
-    // hand-rolled count that could silently diverge from the map's.
     var cardStepNumbers = stepNumberIndices(orderedBoxes);
 
     var listEl = document.getElementById("step-list");
     listEl.innerHTML = "";
-    orderedBoxes.forEach(function(entry, idx){
-      if(entry.kind === "scoutPlan"){
-        var spCard = document.createElement("div");
-        spCard.className = "step-card";
-        spCard.innerHTML =
-          '<div class="step-head"><h4>scout + plan</h4><span class="badge green">done</span></div>' +
-          '<div class="step-meta" title="the run\'s own pre-step drafting: scouting the repo and validating the plan, before its first step starts">' +
-            stepMetaBits(detail.scoutPlan).join(" &middot; ") + '</div>';
-        listEl.appendChild(spCard);
-        return;
-      }
-      if(entry.kind === "fixLoop"){
-        var flAttempts = detail.fixLoop.attempts;
-        var flLast = flAttempts[flAttempts.length - 1];
-        var flBadge = flLast.outcome === "green" ? "green" : "red";
-        var flCard = document.createElement("div");
-        flCard.className = "step-card";
-        flCard.innerHTML =
-          '<div class="step-head"><h4>fix loop</h4><span class="badge ' + flBadge + '">' + (flLast.outcome === "green" ? "done" : "stopped") + '</span></div>' +
-          '<div class="step-meta" title="the operator\'s real close ran again after the plan\'s steps finished: a precheck, then fix-loop iterations, until satisfied or stopped">' +
-            stepMetaBits(detail.fixLoop).join(" &middot; ") + '</div>' +
-          '<button class="btn small step-attempts-toggle" type="button" aria-expanded="false" data-testid="fix-loop-attempts-toggle">' +
-            flAttempts.length + ' attempt' + (flAttempts.length === 1 ? '' : 's') + '</button>' +
-          '<div class="attempts-list" hidden data-testid="fix-loop-attempts-list"></div>';
-        listEl.appendChild(flCard);
-        var flToggle = flCard.querySelector(".step-attempts-toggle");
-        var flAttemptsEl = flCard.querySelector(".attempts-list");
-        var flBuilt = false;
-        flToggle.addEventListener("click", function(){
-          var expanded = flToggle.getAttribute("aria-expanded") === "true";
-          flToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
-          flAttemptsEl.hidden = expanded;
-          if(!expanded && !flBuilt){
-            flBuilt = true;
-            buildAttemptsList(flAttemptsEl, { id: FIX_LOOP_KEY }, flAttempts);
-          }
-        });
-        return;
-      }
-      // kind === "step": a synthetic step (F196's "died during planning"
-      // placeholder) gets a map box only, never a card — same posture as
-      // realSteps() filtering it out of the summary count.
-      var s = entry.step;
-      if(s.synthetic) return;
-      var i = cardStepNumbers[idx]; // 0-based; (i+1) below is the display number, matching the map's own box
+    orderedBoxes.forEach(function(box, idx){
+      var part = box.part;
+      var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
+      var titleText = box.kind === "step" ? ((cardStepNumbers[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
+      var resultGlyph = box.attempts.length > 1
+        ? box.attempts.map(function(a){ return attemptGlyph(a.outcome); }).join("")
+        : attemptGlyph(part.outcome !== null && part.outcome !== undefined ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null));
+      var line1Bits = [
+        (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
+        typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
+        duration(part.wallMs),
+        part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : money(part.spentUsd),
+        resultGlyph,
+      ];
       var card = document.createElement("div");
-      card.className = "step-card" + (s.state === "running" ? " running" : "");
-      var badgeClass = s.state === "done" ? "green" : (s.state === "stopped" ? "red" : (s.state === "running" ? "amber" : (s.state === "died" ? "magenta" : "grey")));
-      var metaBits = stepMetaBits(s);
-      var attempts = Array.isArray(s.attempts) ? s.attempts : [];
+      card.className = "step-card part-card" + (box.state === "running" ? " running" : "");
+      card.setAttribute("data-testid", "part-card-" + idx);
+      card.setAttribute("tabindex", "0");
+      card.setAttribute("role", "button");
       card.innerHTML =
-        '<div class="step-head"><h4>' + (i + 1) + ' &middot; ' + escapeXml(s.id) + (s.occurrence && s.occurrence > 1 ? ' (try ' + s.occurrence + ')' : '') + '</h4>' +
-        '<span class="badge ' + badgeClass + '">' + escapeXml(s.state) + '</span></div>' +
-        '<div class="step-meta" title="a step is one piece of the plan; a round is one model call; each round can use several tools (read, edit, search…)">' + metaBits.join(" &middot; ") + '</div>' +
-        (s.tripped ? '<div class="step-meta">tripped: ' + escapeXml([s.tripped.category, s.tripped.detail].filter(Boolean).join(" — ")) + '</div>' : '') +
-        (attempts.length
-          ? '<button class="btn small step-attempts-toggle" type="button" aria-expanded="false" data-testid="step-attempts-toggle-' + i + '">' + attempts.length + ' attempt' + (attempts.length === 1 ? '' : 's') + '</button>' +
-            '<div class="attempts-list" hidden data-testid="attempts-list-' + i + '"></div>'
-          : '');
+        '<div class="step-head"><h4>' + titleText + '</h4>' +
+          '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span>' +
+          (box.blocked > 0 ? '<span class="badge red" data-testid="part-blocked-badge">' + box.blocked + ' blocked</span>' : '') +
+        '</div>' +
+        '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +
+        '<div class="step-meta">' + escapeXml(toolBreakdownLine(box.part.byTool)) + '</div>';
       listEl.appendChild(card);
-      if(!attempts.length) return;
-
-      var toggleBtn = card.querySelector(".step-attempts-toggle");
-      var attemptsListEl = card.querySelector(".attempts-list");
-      var attemptsBuilt = false;
-      toggleBtn.addEventListener("click", function(){
-        var expanded = toggleBtn.getAttribute("aria-expanded") === "true";
-        toggleBtn.setAttribute("aria-expanded", expanded ? "false" : "true");
-        attemptsListEl.hidden = expanded;
-        if(!expanded && !attemptsBuilt){
-          attemptsBuilt = true;
-          buildAttemptsList(attemptsListEl, s, attempts);
-        }
-      });
+      var jumpToAudit = function(){
+        document.getElementById("tab-audit").click();
+        openAuditPart(idx);
+      };
+      card.addEventListener("click", jumpToAudit);
+      card.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); jumpToAudit(); } });
     });
+
+    // build item C: the Audit tab's grouped-by-part view is built here too —
+    // off the SAME `detail.parts`/`buildOrderedBoxes` this function just used
+    // for the map+cards, never a second independently-fetched data source
+    // (the flat one-row-per-call table still comes from its own `/audit`
+    // fetch, wired separately in selectRun below).
+    renderAuditGroups(detail);
   }
 
-  // item 5 (2026-09-25): expandable step cards — attempt row -> its rounds
-  // (server-built, lazy-fetched on expand via /api/runs/:runid/rounds).
-  function attemptGlyph(outcome){ return outcome === "green" ? "✓" : "✗"; }
-
-  function buildAttemptsList(container, step, attempts){
+  // build item C: Audit tab attempt row -> its rounds (server-built,
+  // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
+  function buildAttemptsList(container, partIndex, attempts){
     container.innerHTML = "";
     attempts.forEach(function(a){
       var row = document.createElement("div");
       row.className = "attempt-row";
+      row.setAttribute("data-testid", "audit-attempt-" + partIndex + "-" + a.n);
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
           'attempt ' + a.n + ' ' + attemptGlyph(a.outcome) +
@@ -1232,16 +1251,14 @@
         roundsEl.hidden = expanded;
         if(!expanded && !built){
           built = true;
-          loadRounds(roundsEl, step, a, 0);
+          loadRounds(roundsEl, partIndex, a, 0);
         }
       });
     });
   }
 
-  function roundsUrl(step, attempt, offset){
-    var params = "attempt=" + encodeURIComponent(attempt.n) + "&offset=" + offset;
-    if(step.id !== undefined && step.id !== null) params += "&step=" + encodeURIComponent(step.id);
-    if(step.occurrence) params += "&occurrence=" + encodeURIComponent(step.occurrence);
+  function roundsUrl(partIndex, attempt, offset){
+    var params = "part=" + encodeURIComponent(partIndex) + "&attempt=" + encodeURIComponent(attempt.n) + "&offset=" + offset;
     return "/api/runs/" + encodeURIComponent(currentRunid) + "/rounds?" + params;
   }
 
@@ -1253,7 +1270,7 @@
     '</div>';
   }
 
-  function renderRoundsPage(roundsEl, step, attempt, data, appendMode){
+  function renderRoundsPage(roundsEl, partIndex, attempt, data, appendMode){
     var body = "";
     data.rounds.forEach(function(r){
       var head = 'round ' + (r.n === null ? '?' : r.n) + ' · ' + money(r.costUsd) + ' · ' +
@@ -1286,21 +1303,151 @@
       var loadMoreWrap = roundsEl.querySelector(".rounds-page-info");
       loadMoreWrap.insertAdjacentHTML("beforeend", loadMoreHtml);
       loadMoreWrap.querySelector(".rounds-load-more").addEventListener("click", function(){
-        loadRounds(roundsEl, step, attempt, shownTo, true);
+        loadRounds(roundsEl, partIndex, attempt, shownTo, true);
       });
     }
   }
 
-  function loadRounds(roundsEl, step, attempt, offset, appendMode){
+  function loadRounds(roundsEl, partIndex, attempt, offset, appendMode){
     if(!appendMode) roundsEl.innerHTML = '<div class="hint">loading…</div>';
-    getJSON(roundsUrl(step, attempt, offset)).then(function(data){
-      renderRoundsPage(roundsEl, step, attempt, data, !!appendMode);
+    getJSON(roundsUrl(partIndex, attempt, offset)).then(function(data){
+      renderRoundsPage(roundsEl, partIndex, attempt, data, !!appendMode);
     }).catch(function(e){
       roundsEl.innerHTML = '<div class="hint">failed to load rounds: ' + escapeXml(e.message) + '</div>';
     });
   }
 
-  // ---- Audit tab ----
+  // ---- Audit tab: GROUPED view (build item C, default) ----
+  // One collapsed row per part (build item B/C's ONE shared list,
+  // `detail.parts`), same one-line stats + blocked badge a Run-tab card
+  // shows — expand -> attempts (parts with >1, e.g. a multi-attempt step or
+  // the fix loop) or straight to a rounds table (every other part kind,
+  // which carries exactly one synthetic whole-part attempt).
+  function partHasWrites(part){
+    var bt = part.byTool;
+    if(!bt) return false;
+    return !!(bt.edit || bt.write);
+  }
+  function partLine1Text(part){
+    return [
+      (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
+      typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
+      duration(part.wallMs),
+      part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : money(part.spentUsd),
+    ].join(" &middot; ");
+  }
+  function partResultGlyph(part, box){
+    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome); }).join("");
+    var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
+    return attemptGlyph(outcome);
+  }
+  var currentAuditFilter = "all";
+  function auditPartMatchesFilter(rowWrap, filter){
+    if(filter === "all") return true;
+    if(filter === "write") return rowWrap.getAttribute("data-writes") === "1";
+    if(filter === "blocked") return rowWrap.getAttribute("data-blocked") === "1";
+    return true;
+  }
+  function applyAuditFilter(filter){
+    currentAuditFilter = filter;
+    document.querySelectorAll(".audit-part").forEach(function(rowWrap){
+      var matches = auditPartMatchesFilter(rowWrap, filter);
+      rowWrap.style.display = matches ? "" : "none";
+      if(matches && filter !== "all"){
+        var btn = rowWrap.querySelector(".audit-part-toggle");
+        if(btn && btn.getAttribute("aria-expanded") !== "true") btn.click();
+      }
+    });
+  }
+  function renderAuditGroups(detail){
+    var container = document.getElementById("audit-groups");
+    container.innerHTML = "";
+    var parts = Array.isArray(detail.parts) ? detail.parts : [];
+    var isLiveRun = detail.glyph === "▶" && !detail.died;
+    var boxes = buildOrderedBoxes(parts, isLiveRun);
+    var numberMap = stepNumberIndices(boxes);
+    boxes.forEach(function(box, idx){
+      var part = box.part;
+      var titleText = box.kind === "step" ? ((numberMap[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
+      var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
+      var rowWrap = document.createElement("div");
+      rowWrap.className = "audit-part";
+      rowWrap.setAttribute("data-testid", "audit-part-" + idx);
+      if(box.blocked > 0) rowWrap.setAttribute("data-blocked", "1");
+      if(partHasWrites(part)) rowWrap.setAttribute("data-writes", "1");
+      var headBtn = document.createElement("button");
+      headBtn.type = "button";
+      headBtn.className = "btn audit-part-toggle";
+      var startExpanded = box.state === "running";
+      headBtn.setAttribute("aria-expanded", startExpanded ? "true" : "false");
+      headBtn.setAttribute("data-testid", "audit-part-toggle-" + idx);
+      headBtn.innerHTML =
+        '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span> ' + titleText + ' &middot; ' + partLine1Text(part) +
+        ' &middot; ' + partResultGlyph(part, box) +
+        (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '');
+      var body = document.createElement("div");
+      body.className = "audit-part-body";
+      body.hidden = !startExpanded;
+      body.setAttribute("data-testid", "audit-part-body-" + idx);
+      var attempts = Array.isArray(part.attempts) ? part.attempts : [];
+      var built = false;
+      var buildBody = function(){
+        built = true;
+        var toolsHeader = document.createElement("div");
+        toolsHeader.className = "hint";
+        toolsHeader.textContent = toolBreakdownLine(part.byTool);
+        body.appendChild(toolsHeader);
+        if(attempts.length > 1){
+          // parts WITH an attempt sub-loop (a multi-attempt step, or the fix
+          // loop) expand to attempt rows first — each attempt expands to its
+          // own rounds table on its own click, same as the Run tab used to.
+          var attemptsWrap = document.createElement("div");
+          attemptsWrap.className = "attempts-list";
+          body.appendChild(attemptsWrap);
+          buildAttemptsList(attemptsWrap, idx, attempts);
+        } else {
+          // parts with NO sub-loop (scout, plan, replan, judge, run, or a
+          // single-attempt step) expand STRAIGHT to their rounds table.
+          var roundsEl = document.createElement("div");
+          roundsEl.className = "rounds-list";
+          body.appendChild(roundsEl);
+          loadRounds(roundsEl, idx, attempts[0] || { n: 1 }, 0);
+        }
+      };
+      headBtn.addEventListener("click", function(){
+        var expanded = headBtn.getAttribute("aria-expanded") === "true";
+        headBtn.setAttribute("aria-expanded", expanded ? "false" : "true");
+        body.hidden = expanded;
+        if(!expanded && !built) buildBody();
+      });
+      rowWrap.appendChild(headBtn);
+      rowWrap.appendChild(body);
+      container.appendChild(rowWrap);
+      if(startExpanded && !built) buildBody(); // a live run's currently-running part opens by default
+    });
+    applyAuditFilter(currentAuditFilter);
+  }
+  // build item B: a Run-tab card (or map box) click switches to the Audit
+  // tab, that same part's row expanded and scrolled into view — sharing
+  // partIndex so the two tabs can never disagree about which row a click maps to.
+  function openAuditPart(idx){
+    setAuditView("grouped");
+    var row = document.querySelector('[data-testid="audit-part-' + idx + '"]');
+    if(!row) return;
+    var btn = row.querySelector(".audit-part-toggle");
+    if(btn && btn.getAttribute("aria-expanded") !== "true") btn.click();
+    if(typeof row.scrollIntoView === "function") row.scrollIntoView({ block: "center" });
+  }
+  function setAuditView(view){
+    document.getElementById("audit-groups").hidden = view !== "grouped";
+    document.getElementById("audit-flat-wrap").hidden = view !== "flat";
+    document.querySelectorAll(".chip[data-view]").forEach(function(c){ c.setAttribute("aria-pressed", c.getAttribute("data-view") === view ? "true" : "false"); });
+  }
+  document.querySelectorAll(".chip[data-view]").forEach(function(chip){
+    chip.addEventListener("click", function(){ setAuditView(chip.getAttribute("data-view")); });
+  });
+
+  // ---- Audit tab: FLAT view (the old one-row-per-call time-ordered table) ----
   var auditRowEls = [];
   function renderAudit(result){
     var empty = document.getElementById("audit-empty");
@@ -1336,14 +1483,16 @@
       } else {
         decisionCell = "<span class=\"badge " + (blocked ? "red" : "green") + "\">" + (r.decision || "unknown") + "</span>";
       }
-      // item 2 rewrite (2026-09-26): the Step cell is now derived from this
-      // row's own ROUND's recorded phase (never ts-guessing) — `r.step` is a
-      // real step id, or "scout"/"plan"/"fix"; `r.reason` names WHY it's
-      // null when it is: "no-round" (before the very first model call) vs
-      // "unrecorded" (a round exists but carries no recognizable phase).
-      var stepCell = r.step === null
-        ? "<td title=\"" + (r.reason === "unrecorded" ? "this round's phase wasn't recorded" : "before the first model call") + "\">&mdash;</td>"
-        : "<td>" + escapeXml(r.step) + (typeof r.attempt === "number" ? " &middot; a" + r.attempt : "") + "</td>";
+      // build item C rewrite (2026-09-26): the Step cell is derived from this
+      // row's own ROUND's seq matched against `summary.parts`' own attempt
+      // windows (never phase-string guessing, never ts-guessing) —
+      // `r.partLabel` is a real part label (scout/plan/a step id/replan/fix/
+      // judge/run); `r.reason` names WHY it's null when it is: "no-round"
+      // (before the very first model call) vs "unassigned" (a round exists
+      // but its seq matched no part window).
+      var stepCell = r.partLabel === null
+        ? "<td title=\"" + (r.reason === "unassigned" ? "this round's part wasn't recorded" : "before the first model call") + "\">&mdash;</td>"
+        : "<td>" + escapeXml(r.partLabel) + (typeof r.attemptN === "number" ? " &middot; a" + r.attemptN : "") + "</td>";
       // item 3 (2026-09-26): a model-call row never carries a path at all
       // (the real record: `phase:'record'`/`action.type:'llm'` has no
       // `action.path`) — "&mdash;" says so plainly; "unknown" stays reserved
@@ -1379,6 +1528,9 @@
         else if(f === "write"){ row.style.display = row.classList.contains("row-write") ? "" : "none"; }
         else if(f === "blocked"){ row.style.display = row.classList.contains("row-blocked") ? "" : "none"; }
       });
+      // same All/Writes/Blocked chip group also drives the grouped view
+      // (build item C): auto-open only the parts that match, hide the rest.
+      applyAuditFilter(f);
     });
   });
 
