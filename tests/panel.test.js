@@ -177,7 +177,7 @@ test('panelMain: a taken port prints a LOUD error naming the port and returns no
 test('non-GET/HEAD methods (POST/PUT/DELETE) -> 405 on every route, including the page and the API', async (t) => {
   const { base } = await startServer(t, { home: tmp() });
   for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
-    for (const path of ['/', '/api/runs', '/api/workflows']) {
+    for (const path of ['/', '/api/runs', '/api/runs/nope/audit']) {
       const res = await fetch(base + path, { method });
       assert.equal(res.status, 405, `${method} ${path} should be 405`);
     }
@@ -321,12 +321,10 @@ test(
     assert.equal(row.died, true);
     assert.ok(!/\bdied\b/.test(row.checkType) && !/\bdied\b/.test(row.spend) && !/\bdied\b/.test(row.wall), 'row meta must never carry the literal word "died" — the glyph alone carries it');
     assert.match(row.spend, /^at least \$/);
-
-    const wfRes = await fetch(`${base}/api/workflows`);
-    const { workflows } = await wfRes.json();
-    const wf = workflows.find((w) => w.job === 'bareguard-u-types-kimi-a-1');
-    assert.ok(wf);
-    assert.equal(wf.lastGlyph, '?');
+    // a died row's glyph propagating into the Workflows view's client-side
+    // job grouping (item 2, 2026-09-26 merge) is covered in
+    // tests/panel-page.test.js's groupRunsByJob coverage, off this exact
+    // /api/runs row shape — no second server endpoint to test here anymore.
   },
 );
 
@@ -477,37 +475,16 @@ test(
 );
 
 // ---------------------------------------------------------------------------
-// /api/workflows grouping
+// Workflows grouping moved client-side (item 2, 2026-09-26 merge build): the
+// left pane's Workflows/History tabs merged into one "Runs" tab with a
+// [Workflows]/[History] toggle, both fed from this ONE `/api/runs` payload —
+// `/api/workflows` and `listWorkflows` are gone; `groupRunsByJob`'s own
+// coverage (job grouping, "newest row wins as last", search-matches-any-run,
+// died-glyph propagation) lives in tests/panel-page.test.js instead, off the
+// same real `/api/runs` row shape these tests already establish below.
 // ---------------------------------------------------------------------------
 
-test('/api/workflows groups the run list by job name, newest row per job wins as "last"', async (t) => {
-  const home = tmp();
-  const dir = tmp();
-  writeSpine(join(dir, 'u-a1.jsonl'), [{
-    type: 'job-start', job: 'alpha', ts: '2026-09-01T00:00:00.000Z', seq: 1, verdictType: 'green',
-  }, { type: 'job-end', outcome: 'green', spentUsd: 0.5, spendComplete: true, ts: '2026-09-01T00:01:00.000Z', seq: 2 }]);
-  writeSpine(join(dir, 'u-a2.jsonl'), [{
-    type: 'job-start', job: 'alpha', ts: '2026-09-02T00:00:00.000Z', seq: 1, verdictType: 'green', model: 'deepseek-chat',
-  }, { type: 'job-end', outcome: 'green', spentUsd: 0.6, spendComplete: true, ts: '2026-09-02T00:01:00.000Z', seq: 2 }]);
-  appendRun({
-    at: '2026-09-01T00:00:00.000Z', runid: 'a1', job: 'alpha', spine: join(dir, 'u-a1.jsonl'), patient: null, via: 'run-u',
-  }, { home });
-  appendRun({
-    at: '2026-09-02T00:00:00.000Z', runid: 'a2', job: 'alpha', spine: join(dir, 'u-a2.jsonl'), patient: null, via: 'run-u',
-  }, { home });
-
-  const { base } = await startServer(t, { home });
-  const res = await fetch(base + '/api/workflows');
-  assert.equal(res.status, 200);
-  const { workflows } = await res.json();
-  assert.equal(workflows.length, 1);
-  assert.equal(workflows[0].job, 'alpha');
-  assert.equal(workflows[0].runCount, 2);
-  assert.equal(workflows[0].lastRunid, 'a2'); // the run list is newest-first; a2 was appended after a1
-  assert.equal(workflows[0].lastModel, 'deepseek-chat'); // item C: model surfaced for the search box
-});
-
-test('/api/workflows and /api/runs sort by `at` (real time), never by file/append order — a backfill can append an OLDER row after a newer one', async (t) => {
+test('/api/runs sorts by `at` (real time), never by file/append order — a backfill can append an OLDER row after a newer one', async (t) => {
   const home = tmp();
   const dir = tmp();
   writeSpine(join(dir, 'u-kimi-a-1.jsonl'), [{
@@ -531,10 +508,6 @@ test('/api/workflows and /api/runs sort by `at` (real time), never by file/appen
   const runsRes = await fetch(base + '/api/runs');
   const { runs } = await runsRes.json();
   assert.deepEqual(runs.map((r) => r.runid), ['kimi-a-1', '429-live-1', 'deepseek-4-1'], '/api/runs must be newest-first by `at`');
-
-  const wfRes = await fetch(base + '/api/workflows');
-  const { workflows } = await wfRes.json();
-  assert.deepEqual(workflows.map((w) => w.job), ['kimi-a', '429-live', 'deepseek-4'], '/api/workflows must be newest-first by lastAt');
 });
 
 // ---------------------------------------------------------------------------

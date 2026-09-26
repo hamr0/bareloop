@@ -229,8 +229,8 @@ export function formatTimestamp(ts) {
  * `job-end` was reached, or the file is still fresh). Reads the spine's raw
  * records directly (never re-derives from `replayRun`'s own windowed
  * fields, which assume a `job-end` exists) — the ONE owner of this
- * derivation, used by every caller below (`/api/runs`, `/api/workflows`,
- * `/api/runs/:id`) so the three never drift apart.
+ * derivation, used by every caller below (`/api/runs`, `/api/runs/:id`) so
+ * the two never drift apart.
  * @param {string} spinePath
  * @param {any[]} records raw parsed spine records (already read once by the caller)
  * @param {string|null} outcome `replayRun`'s own `summary.outcome`
@@ -337,8 +337,10 @@ function summarizeRow(row) {
  * summary. A row with an unparseable/missing `at` sorts last (Unix epoch 0),
  * never crashes the sort or floats to the top. Ties (identical `at`) keep
  * their original file order among themselves (stable sort) rather than an
- * arbitrary one. Reused by `/api/workflows`'s own grouping so the two
- * endpoints never compute the glyph/checkType mapping twice.
+ * arbitrary one. The Workflows view (item 2, 2026-09-26 merge) groups this
+ * SAME payload by job client-side (`groupRunsByJob` in `index.html`) rather
+ * than a second server-side endpoint, so the glyph/checkType mapping is
+ * still computed in exactly one place.
  * @param {{ home?: string }} [opts]
  * @returns {any[]}
  */
@@ -352,42 +354,6 @@ export function listRuns(opts = {}) {
     .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
     .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
     .map(({ row }) => summarizeRow(row));
-}
-
-/**
- * `GET /api/workflows` — the run list grouped by job name: run count, last
- * run date, last result glyph/check type. Sorted by last-run date, newest
- * first (a job never run yet has no row here at all — P1 has no concept of
- * an unsigned/never-run job, unlike the mockup's Workflows tab; that gap is
- * named in the build report, not papered over).
- * @param {{ home?: string }} [opts]
- * @returns {any[]}
- */
-export function listWorkflows(opts = {}) {
-  const rows = listRuns(opts);
-  /** @type {Map<string, any>} */
-  const byJob = new Map();
-  for (const r of rows) {
-    const existing = byJob.get(r.job);
-    if (!existing) {
-      byJob.set(r.job, {
-        job: r.job,
-        runCount: 1,
-        lastAt: r.at,
-        lastRunid: r.runid,
-        lastGlyph: r.glyph ?? '▶',
-        lastCheckType: r.checkType ?? 'unknown',
-        lastModel: r.model ?? null,
-        lastSpend: r.spend ?? 'unknown',
-        lastWall: r.wall ?? 'unknown',
-        lastDate: r.date,
-      });
-    } else {
-      existing.runCount += 1;
-      // rows are already newest-first, so the FIRST row seen for a job is its latest
-    }
-  }
-  return [...byJob.values()];
 }
 
 /**
@@ -1397,7 +1363,6 @@ export function handleRequest(req, res, opts) {
   }
 
   if (pathname === '/api/runs') { send(200, { runs: listRuns({ home: opts.home }) }); return; }
-  if (pathname === '/api/workflows') { send(200, { workflows: listWorkflows({ home: opts.home }) }); return; }
 
   const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds))?$/.exec(pathname);
   if (runMatch) {
