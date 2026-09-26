@@ -24,7 +24,9 @@
 
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
-import { dirname, join, basename } from 'node:path';
+import {
+  dirname, join, basename, relative, isAbsolute, sep,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRunList } from '../runlist.js';
 import {
@@ -733,6 +735,50 @@ function partDisplayLabel(part) {
 }
 
 /**
+ * The run's tree root (the patient's own working directory) — used to
+ * shorten every path the Audit tab shows (item 2, 2026-09-26 build spec).
+ * Resolution order, honest at every step, never a guessed root:
+ *  (a) `row.patient` — the run list's own recorded workdir (`run-u`/`bundle`
+ *      rows carry it directly — see `src/runlist.js`'s `RunRow` shape,
+ *      `src/userrun.js:1355`/`src/cli.js:418`); the real thing, trusted as-is;
+ *  (b) the source-seed layout's own `tree/` dir — the same `into` derivation
+ *      {@link sourceNearSpine} uses (`dirname(dirname(spine))`, only when its
+ *      basename starts with `source-`) plus `tree` (verified against
+ *      `src/userrun.js`'s own `specWorkdir = join(into, 'tree')`, and against
+ *      a real archived run, pulselog-person-live-2's mu2p83go, whose row
+ *      carries `patient: null` since it was `runs backfill`-added — a
+ *      backfilled person-path run's tree root is ONLY ever recovered this
+ *      way); only trusted when that directory actually exists on disk;
+ *  else `null` — every path stays absolute, never shortened against a guess.
+ * @param {{ spine: string, patient: string|null }} row
+ * @returns {string|null}
+ */
+function treeRootForRun(row) {
+  if (typeof row.patient === 'string' && row.patient.length > 0) return row.patient;
+  const into = dirname(dirname(row.spine));
+  if (!basename(into).startsWith('source-')) return null;
+  const tree = join(into, 'tree');
+  return existsSync(tree) ? tree : null;
+}
+
+/**
+ * Shortens an absolute `path` to be relative to `root` when it genuinely
+ * lives under `root` (the tree root itself shortens to `'.'`) — a path
+ * outside `root`, or a `null`/missing `root`, is returned exactly as given,
+ * never truncated to something that only LOOKS relative (item 2).
+ * @param {string|null} path
+ * @param {string|null} root
+ * @returns {string|null}
+ */
+function shortenPath(path, root) {
+  if (typeof path !== 'string' || path.length === 0 || !root) return path;
+  const rel = relative(root, path);
+  if (rel === '') return '.';
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return path;
+  return rel;
+}
+
+/**
  * `GET /api/runs/:runid/audit` — the Audit tab's rows, off the run's own
  * gate-audit sidecar (name-convention resolution, `src/replayio.js`'s
  * `resolveSiblings`), scoped to this run's own ts window (see {@link
@@ -799,6 +845,10 @@ export function getRunAudit(runid, opts = {}) {
     const ms = Date.parse(r.ts);
     return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
   });
+  // item 2 (2026-09-26 build spec): every row's path shortened relative to
+  // the run's own tree root — computed ONCE here, never per-row, since the
+  // root never changes within one run's rows.
+  const treeRoot = treeRootForRun(row);
   const auditRows = windowed.map((r) => {
     const isModelCall = r.action && r.action.type === 'llm';
     const resultObj = isModelCall && r.result && typeof r.result === 'object' ? r.result : null;
@@ -806,10 +856,12 @@ export function getRunAudit(runid, opts = {}) {
     const {
       partIndex, partLabel, attemptN, reason,
     } = partOf(n === null ? null : roundRecords[n - 1]);
+    const path = r.action && typeof r.action.path === 'string' ? r.action.path : null;
     return {
       time: typeof r.ts === 'string' ? r.ts : null,
       action: r.action && typeof r.action.type === 'string' ? r.action.type : null,
-      path: r.action && typeof r.action.path === 'string' ? r.action.path : null,
+      path,
+      pathShort: shortenPath(path, treeRoot),
       decision: typeof r.decision === 'string' ? r.decision : null,
       partIndex,
       partLabel,

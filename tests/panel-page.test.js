@@ -672,13 +672,26 @@ test('item 1: search state persists via the same localStorage key as the chip fi
 // item 2 (2026-09-25): Audit tab — model-call rows + round column
 // ---------------------------------------------------------------------------
 
-test('item 2: audit table header carries a Round column, and renderAudit renders a model-call row distinctly from a tool-call row', () => {
+// item 1 (2026-09-26 build spec): renderAudit's own per-row cells (round/
+// action/path/decision) now come from ONE shared set of auditXCellHtml
+// builders (`auditIsModelCall`/`auditRoundCellHtml`/`auditActionCellHtml`/
+// `auditPathCellHtml`/`auditDecisionCellHtml`/`auditRowClassName`, defined
+// right after `duration()`) — the SAME functions the Grouped view's rounds
+// table (`renderRoundHeaderRow`/`renderRoundToolRow`) calls, so the two views
+// can never drift on how a model-call row vs a tool-call row reads. These
+// tests move from pinning renderAudit's own inline body to pinning that
+// shared builder region instead.
+function auditCellBuilderSource(html) {
+  const start = html.indexOf('function auditIsModelCall(r){');
+  const end = html.indexOf('// item 7: tools/cache summary rows');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected the shared auditXCellHtml builders in src/panel/index.html');
+  return html.slice(start, end);
+}
+
+test('item 2: audit table header carries a Round column, and the shared cell builders render a model-call row distinctly from a tool-call row', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /<thead><tr><th>Round<\/th><th>Step<\/th><th>Action<\/th><th>Path<\/th><th>Decision<\/th><th>Time<\/th><\/tr><\/thead>/);
-  const start = html.indexOf('function renderAudit(result){');
-  const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
-  assert.ok(start !== -1 && end !== -1 && end > start, 'expected renderAudit in src/panel/index.html');
-  const body = html.slice(start, end);
+  const body = auditCellBuilderSource(html);
   assert.match(body, /r\.kind === "model-call"/);
   assert.match(body, /"model call"/);
   assert.match(body, /r\.costUsd/);
@@ -689,17 +702,15 @@ test('item 2: audit table header carries a Round column, and renderAudit renders
 
 test('item: Decision cell for a model-call row shows only cost/tokens/duration, no "model call" badge text; Action cell carries that label instead', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function renderAudit(result){');
-  const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
-  const body = html.slice(start, end);
+  const body = auditCellBuilderSource(html);
   // decisionCell for a model-call row is built from the joined cost/tokens/duration
   // bits alone — no "badge cyan"/"model call" wrapper the way the old markup had.
   assert.doesNotMatch(body, /badge cyan\\">model call/);
-  const decisionAssign = body.slice(body.indexOf('if(isModelCall){'), body.indexOf('} else {', body.indexOf('if(isModelCall){')));
-  assert.doesNotMatch(decisionAssign, /model call/);
-  assert.match(decisionAssign, /decisionCell = escapeXml\(bits\.join\(" · "\)\)/);
+  const decisionAssign = body.slice(body.indexOf('function auditDecisionCellHtml'), body.indexOf('function auditRowClassName'));
+  assert.doesNotMatch(decisionAssign.slice(0, decisionAssign.indexOf('return "<span')), /model call/);
+  assert.match(decisionAssign, /return escapeXml\(bits\.join\(" · "\)\)/);
   // Action cell keeps identifying a model-call row as such.
-  assert.match(body, /isModelCall \? "model call" : escapeXml\(r\.action \|\| "unknown"\)/);
+  assert.match(body, /auditIsModelCall\(r\) \? "model call" : escapeXml\(r\.action \|\| "unknown"\)/);
 });
 
 test('item: Audit table cells are built in Round, Step, Action, Path, Decision, Time order, matching the header', () => {
@@ -712,7 +723,7 @@ test('item: Audit table cells are built in Round, Step, Action, Path, Decision, 
   const trBody = body.slice(trStart, trEnd);
   const roundIdx = trBody.indexOf('roundCell');
   const stepIdx = trBody.indexOf('stepCell');
-  const actionIdx = trBody.indexOf('isModelCall ? "model call"');
+  const actionIdx = trBody.indexOf('auditActionCellHtml(r)');
   const pathIdx = trBody.indexOf('pathCell');
   const decisionIdx = trBody.indexOf('decisionCell');
   const timeIdx = trBody.indexOf('escapeXml(r.time');
@@ -748,12 +759,55 @@ test('build item C rewrite (2026-09-26): renderAudit\'s Step cell shows a toolti
   assert.match(body, /typeof r\.attemptN === "number"/);
 });
 
-test('item 3 (2026-09-26): renderAudit\'s Path cell shows "&mdash;" (never "unknown") for a model-call row', () => {
+test('item 3 (2026-09-26): the shared Path cell builder shows "&mdash;" (never "unknown") for a model-call row', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function renderAudit(result){');
-  const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
-  const body = html.slice(start, end);
-  assert.match(body, /var pathCell = isModelCall \? "&mdash;" : escapeXml\(r\.path \|\| "unknown"\)/);
+  const body = auditCellBuilderSource(html);
+  assert.match(body, /if\(auditIsModelCall\(r\)\) return "&mdash;";/);
+});
+
+// ---------------------------------------------------------------------------
+// item 2 (2026-09-26 build spec): short (tree-root-relative) paths in BOTH
+// the Flat and Grouped views, full absolute path kept in a title tooltip —
+// server sends both `path` (full) and `pathShort`, never losing information.
+// ---------------------------------------------------------------------------
+
+test('item 2: auditPathCellHtml shows pathShort with the full path in a title tooltip, falling back to the full path when no pathShort was resolvable', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const body = auditCellBuilderSource(html);
+  const fnStart = body.indexOf('function auditPathCellHtml');
+  const fnEnd = body.indexOf('function auditDecisionCellHtml');
+  const fn = body.slice(fnStart, fnEnd);
+  assert.match(fn, /var full = r\.path \|\| "unknown";/);
+  assert.match(fn, /var shown = r\.pathShort \|\| r\.path \|\| "unknown";/);
+  assert.match(fn, /title="[^"]*escapeXml\(full\)/);
+  assert.match(fn, /escapeXml\(shown\)/);
+});
+
+// ---------------------------------------------------------------------------
+// item 1 (2026-09-26 build spec): the Grouped view's rounds render as a real
+// TABLE (Round · Action · Path · Decision · Time), the round's own model call
+// as a distinct header row, reusing the SAME cell builders as Flat.
+// ---------------------------------------------------------------------------
+
+test('item 1: renderRoundsPage builds a real table (thead + rounds-table), the round header row visually distinct, tool-call rows via the shared cell builders', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /function renderRoundHeaderRow\(r\)\{/);
+  assert.match(html, /class="round-header-row"/);
+  assert.match(html, /function renderRoundToolRow\(tc\)\{/);
+  assert.match(html, /auditRowClassName\(tc\)/, 'a denied tool-call row must reuse the same row-blocked class Flat uses');
+  assert.match(html, /<table class="rounds-table" data-testid="rounds-table">/);
+  assert.match(html, /<thead><tr><th>Round<\/th><th>Action<\/th><th>Path<\/th><th>Decision<\/th><th>Time<\/th><\/tr><\/thead>/);
+  // wrapped in the same scroll/sticky-header wrapper Flat uses
+  assert.match(html, /<div class="audit-table-scroll"><table class="rounds-table"/);
+  // still keeps pagination working across the load-more append path (item 5)
+  assert.match(html, /tbody = roundsEl\.querySelector\(".rounds-table tbody"\);/);
+});
+
+test('item 1: the round-header-row is visually distinct (its own CSS rule), and the rounds table shares Flat\'s sticky-header rule via .audit-table-scroll', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /tr\.round-header-row td\{[^}]*background:var\(--panel2\)/);
+  assert.match(html, /tr\.round-header-row td\{[^}]*font-weight:700/);
+  assert.match(html, /\.audit-table-scroll table th\{[^}]*position:sticky/);
 });
 
 // ---------------------------------------------------------------------------
