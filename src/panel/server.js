@@ -488,7 +488,14 @@ export function getRunDetail(runid, opts = {}) {
     });
   }
   return {
-    runid: summary.runId ?? runid,
+    // build item (2026-09-26): the LISTED runid (this function's own
+    // `runid` parameter, from `runlist`'s row) is the identity — never
+    // `summary.runId`, which `resolveSiblings` derives from the spine
+    // FILENAME STEM and silently drops a `~2`-style collision suffix
+    // runlist assigns when two spines share a basename in different dirs
+    // (getRunAudit/getRunRounds/getRunJob already return the parameter
+    // directly; this was the one holdout).
+    runid,
     job: summary.job ?? row.job,
     goal: summary.goal,
     checkType: checkTypeLabel(summary.verdictType, row.at),

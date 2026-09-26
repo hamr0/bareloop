@@ -144,6 +144,35 @@ test('backfillRuns + panel: two same-basename spines (both derive runid "run") a
   assert.deepEqual([...jobs].sort(), ['job-a', 'job-b'], 'both runs must resolve to their OWN distinct job, never colliding');
 });
 
+test('build item (2026-09-26): a "~2"-collision runid — /api/runs/:runid returns the LISTED runid (with its suffix), never the filename-derived one `resolveSiblings` reads off the spine stem', async (t) => {
+  const home = tmp();
+  const patients = tmp();
+  mkdirSync(join(patients, 'proj-a'), { recursive: true });
+  mkdirSync(join(patients, 'proj-b'), { recursive: true });
+  writeSpine(join(patients, 'proj-a', 'u-coll1.jsonl'), [{ type: 'job-start', job: 'job-a', ts: '2026-09-24T00:00:00.000Z', seq: 1 }]);
+  writeSpine(join(patients, 'proj-b', 'u-coll1.jsonl'), [{ type: 'job-start', job: 'job-b', ts: '2026-09-24T00:00:01.000Z', seq: 1 }]);
+
+  const { backfillRuns } = await import('../src/runlist.js');
+  const result = backfillRuns(patients, { home });
+  assert.equal(result.added, 2);
+
+  const collided = result.addedRows.find((r) => r.runid.endsWith('~2'));
+  assert.ok(collided, 'expected backfillRuns to disambiguate the second spine to coll1~2');
+  assert.equal(collided.runid, 'coll1~2');
+
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/${encodeURIComponent(collided.runid)}`);
+  assert.equal(res.status, 200);
+  const detail = await res.json();
+  assert.equal(detail.runid, 'coll1~2', 'the response header must echo the LISTED runid, not the spine-stem-derived "coll1"');
+
+  // same pattern check across the other run-detail-shaped endpoints
+  const auditRes = await fetch(`${base}/api/runs/${encodeURIComponent(collided.runid)}/audit`);
+  assert.equal((await auditRes.json()).runid, 'coll1~2');
+  const jobRes = await fetch(`${base}/api/runs/${encodeURIComponent(collided.runid)}/job`);
+  assert.equal((await jobRes.json()).runid, 'coll1~2');
+});
+
 // ---------------------------------------------------------------------------
 // bind address + port-taken
 // ---------------------------------------------------------------------------
