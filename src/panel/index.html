@@ -883,12 +883,20 @@
       wrap.className = "wf-job";
 
       var row = document.createElement("div");
-      row.className = "wf-row";
+      // build item (2026-09-26): a job (parent) row also opens its latest
+      // run in the Run tab, same as a child row — so it carries the same
+      // "selected" visual state a child row gets from selectRun (the class
+      // is computed HERE, at render time, rather than left on the clicked
+      // element, since this function tears down and rebuilds every wf-row
+      // on every click — see below).
+      var isSelected = currentRunid === g.lastRunid;
+      row.className = "wf-row" + (isSelected ? " selected" : "");
       row.setAttribute("data-wf", g.job);
       row.setAttribute("data-testid", "wf-row-" + g.job);
       row.setAttribute("tabindex", "0");
       row.setAttribute("role", "button");
       row.setAttribute("aria-expanded", expanded ? "true" : "false");
+      row.setAttribute("aria-pressed", isSelected ? "true" : "false");
       var wfFullName = g.job + ' (' + g.lastRunid + ')';
       row.innerHTML =
         '<span class="wf-line1"><span class="wf-caret">' + (expanded ? "▼" : "▶") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
@@ -902,6 +910,15 @@
         '</span>';
       row.addEventListener("click", function(){
         wfExpanded[g.job] = !expanded;
+        // build item (2026-09-26): clicking the parent also opens its
+        // latest run (as it did before the Workflows/History merge) — pass
+        // rowEl null since renderWorkflows(jobs) below rebuilds every row
+        // right after, so a class set directly on this element would be
+        // discarded; the fresh render marks selection off `currentRunid`
+        // instead (see `isSelected` above).
+        selectRun(g.lastRunid, null, ".hist-row");
+        document.getElementById("tab-run").click();
+        scrollRunIntoViewMobile();
         renderWorkflows(jobs);
       });
       row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
@@ -1787,10 +1804,12 @@
     if(runs.length && !runs[0].fileMissing){
       document.getElementById("tab-runs").click();
       // newest run overall, opened directly — the Workflows view starts
-      // collapsed (item 2 merge has no "current selection" concept for a
-      // collapsed job row; clicking a job only expands/collapses it now).
+      // collapsed, but its job row still renders "selected" (build item,
+      // 2026-09-26: a job row shows selected state like a child row) since
+      // `runsFilterBar.refresh()` re-renders AFTER `currentRunid` is set.
       selectRun(runs[0].runid, null, ".hist-row");
       document.getElementById("tab-run").click();
+      runsFilterBar.refresh();
     }
   }).catch(function(e){
     document.getElementById("wf-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';

@@ -1142,3 +1142,118 @@ test('item 2: autoExpandJob — expands only when filters are active AND the mat
   assert.equal(autoExpandJob(group, [{ runid: 'older' }], false), false, 'filters not active at all -> never force an expand');
   assert.equal(autoExpandJob(group, [], true), false, 'no matching runs at all -> nothing to expand (this job would not even render)');
 });
+
+// ---------------------------------------------------------------------------
+// build item (2026-09-26): clicking a Workflows job (PARENT) row must also
+// open that job's latest run in the Run tab and toggle its inline run list —
+// as before the Workflows/History merge. Before this fix the parent row's
+// click handler only toggled `wfExpanded`; e.g. job bareagent-u-types' latest
+// run msi0w2i5 (red) could not be opened from the parent row at all. Drives
+// the REAL `renderWorkflows` extracted verbatim out of the page (never a
+// reimplementation) against a tiny hand-rolled fake DOM (no jsdom — one-dep
+// budget), same posture as tests/panel-history-filter-clicks.test.js.
+// ---------------------------------------------------------------------------
+
+/** A fake DOM element: just enough surface for `renderWorkflows`'s own code
+ * (className assignment, setAttribute/getAttribute, addEventListener/click,
+ * appendChild, innerHTML assignment). */
+function makeFakeEl() {
+  const listeners = [];
+  const el = {
+    className: '',
+    children: [],
+    _attrs: {},
+    setAttribute(k, v) { this._attrs[k] = String(v); },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null; },
+    addEventListener(type, fn) { listeners.push({ type, fn }); },
+    click() { listeners.filter((l) => l.type === 'click').forEach((l) => l.fn.call(this)); },
+    appendChild(c) { this.children.push(c); },
+  };
+  // `el.innerHTML = ""` (the page's own clear-before-rebuild idiom) must
+  // actually clear the fake children array, or a re-render leaves the OLD
+  // row sitting at children[0] alongside the freshly appended one.
+  Object.defineProperty(el, 'innerHTML', {
+    get() { return this._innerHTML || ''; },
+    set(v) { this._innerHTML = v; if (v === '') this.children = []; },
+  });
+  return el;
+}
+
+test('build item: clicking a Workflows job (parent) row opens its latest run in the Run tab, toggles its inline run list, and shows selected state like a child row', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = [
+    extractFnSource(html, 'escapeXml'),
+    extractFnSource(html, 'glyphClass'),
+    extractFnSource(html, 'groupRunsByJob'),
+    extractFnSource(html, 'filtersActive'),
+    extractFnSource(html, 'autoExpandJob'),
+    extractFnSource(html, 'buildRunRowEl'),
+    extractFnSource(html, 'renderWorkflows'),
+  ].join('\n');
+
+  const elementsById = {};
+  const doc = {
+    getElementById(id) {
+      if (!elementsById[id]) elementsById[id] = makeFakeEl();
+      return elementsById[id];
+    },
+    createElement() { return makeFakeEl(); },
+  };
+  const calls = { selectRun: [], scrolls: 0 };
+  let tabRunClicks = 0;
+  doc.getElementById('tab-run').addEventListener('click', () => { tabRunClicks += 1; });
+
+  // eslint-disable-next-line no-new-func
+  const factory = new Function('document', 'calls', 'incTabRunClicks', `
+    var wfExpanded = {};
+    var currentRunid = null;
+    function selectRun(runid, rowEl, sel){ calls.selectRun.push(runid); currentRunid = runid; }
+    function scrollRunIntoViewMobile(){ calls.scrolls += 1; }
+    function currentRunsFilters(){ return { checkTypes: [], results: [], time: 'all', search: '' }; }
+    ${src}
+    return { render: renderWorkflows, getCurrentRunid: function(){ return currentRunid; } };
+  `);
+  const page = factory(doc, calls, () => { tabRunClicks += 1; });
+
+  const jobs = groupRunsByJobFixture();
+  page.render(jobs);
+
+  const wfList = doc.getElementById('wf-list');
+  assert.equal(wfList.children.length, 1, 'expected one wf-job wrapper for the one job group');
+  let row = wfList.children[0].children[0];
+  assert.equal(row.className, 'wf-row', 'not selected before any click');
+  assert.equal(row.getAttribute('aria-expanded'), 'false');
+
+  row.click();
+
+  assert.deepEqual(calls.selectRun, ['msi0w2i5'], 'clicking the parent must open the JOB\'s latest run, same as a child row would');
+  assert.equal(page.getCurrentRunid(), 'msi0w2i5');
+  assert.equal(tabRunClicks, 1, 'the Run tab must be activated, same as clicking a child row');
+  assert.equal(calls.scrolls, 1, 'mobile scroll-into-view fires too, same as a child row');
+
+  // renderWorkflows was called again by the click handler itself — re-fetch
+  // the (rebuilt) row and check both the toggle and the selected state.
+  row = doc.getElementById('wf-list').children[0].children[0];
+  assert.equal(row.getAttribute('aria-expanded'), 'true', 'the inline run list must also toggle open, as before the merge');
+  assert.equal(row.className, 'wf-row selected', 'the parent row must show selected state like a child row');
+  assert.equal(row.getAttribute('aria-pressed'), 'true');
+});
+
+/** One job group ("bareagent-u-types") with its latest run "msi0w2i5" red —
+ * matches the real defect named in the build item (a job whose latest run
+ * could not be opened by clicking its parent row). */
+function groupRunsByJobFixture() {
+  return [{
+    job: 'bareagent-u-types',
+    runs: [{ runid: 'msi0w2i5', job: 'bareagent-u-types', glyph: '✗' }],
+    runCount: 1,
+    lastRunid: 'msi0w2i5',
+    lastAt: '2026-09-20T00:00:00.000Z',
+    lastGlyph: '✗',
+    lastCheckType: 'deterministic',
+    lastModel: null,
+    lastSpend: '$0.10',
+    lastWall: '1m00s',
+    lastDate: '2026-09-20',
+  }];
+}
