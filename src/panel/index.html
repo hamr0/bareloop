@@ -480,9 +480,44 @@
     var at = attemptsInlineText(s.attempts);
     return at ? base + ' — ' + at : base;
   }
+  // item 5 (F197): a box's step NUMBER must count only over boxes without
+  // `noNumber` (a real plan step), skipping any noNumber box (scout+plan,
+  // fix loop, a synthetic "died during planning" placeholder) wherever it
+  // sits in the list — never the box's raw array position. Returns, per
+  // box, the `idx` value stepTitleText expects (its own +1 makes the
+  // display number), so a noNumber box's entry is unused/irrelevant.
+  function stepNumberIndices(steps){
+    var n = 0;
+    return steps.map(function(s){
+      if(s.noNumber) return -1;
+      n++;
+      return n - 1;
+    });
+  }
+  // F198: the ONE canonical ordering — scout+plan, then the plan's own
+  // steps in run order, then fix loop — feeds BOTH the step-map (via
+  // renderStepMap) and the step-card list below it, so the two can never
+  // render in different orders again (a prior build put the cards' scout+
+  // plan/fix-loop entries AFTER all the step cards, while the map correctly
+  // put scout+plan first, either side of the plan's own steps).
+  function buildOrderedBoxes(detail){
+    var scoutPlanBox = detail.scoutPlan ? { kind: "scoutPlan", title: "scout + plan", state: "done", noNumber: true, attempts: [] } : null;
+    var fixLoopLast = detail.fixLoop && detail.fixLoop.attempts.length ? detail.fixLoop.attempts[detail.fixLoop.attempts.length - 1] : null;
+    var fixLoopBox = fixLoopLast ? {
+      kind: "fixLoop", title: "fix loop", state: fixLoopLast.outcome === "green" ? "done" : "stopped", noNumber: true,
+      attempts: detail.fixLoop.attempts.map(function(a){ return { n: a.n, outcome: a.outcome }; }),
+    } : null;
+    var stepBoxes = (detail.steps || []).map(function(s){ return { kind: "step", step: s, title: String(s.id), state: s.state, noNumber: !!s.synthetic, attempts: s.attempts || [] }; });
+    var orderedBoxes = [];
+    if(scoutPlanBox) orderedBoxes.push(scoutPlanBox);
+    orderedBoxes = orderedBoxes.concat(stepBoxes);
+    if(fixLoopBox) orderedBoxes.push(fixLoopBox);
+    return orderedBoxes;
+  }
   function naturalBoxWidth(steps){
+    var numIdx = stepNumberIndices(steps);
     var maxChars = 0;
-    steps.forEach(function(s, idx){ maxChars = Math.max(maxChars, stepTitleText(idx, s).length); });
+    steps.forEach(function(s, idx){ maxChars = Math.max(maxChars, stepTitleText(numIdx[idx], s).length); });
     return Math.max(MIN_BOX_W, Math.ceil(maxChars * CHAR_W) + TITLE_HPAD);
   }
   function computeMapLayout(n, availW, naturalW){
@@ -518,7 +553,8 @@
     var perRow = layout.perRow, boxW = layout.boxW, gap = MAP_GAP;
     var rows = Math.ceil(n / perRow);
     var margin = MAP_MARGIN;
-    var titleLines = steps.map(function(s, idx){ return wrapTitleLines(stepTitleText(idx, s), boxW); });
+    var numIdx = stepNumberIndices(steps);
+    var titleLines = steps.map(function(s, idx){ return wrapTitleLines(stepTitleText(numIdx[idx], s), boxW); });
     var maxLines = titleLines.reduce(function(m, l){ return Math.max(m, l.length); }, 1);
     var boxH = maxLines > 1 ? BOX_H_2LINE : BOX_H;
     var rowH = boxH + ROW_GAP;
@@ -1078,21 +1114,68 @@
     // Neither counts as a numbered step (`noNumber:true`, same posture as
     // F196's synthetic "died during planning" placeholder) since neither is
     // one of the plan's own declared steps.
+    // F198: the map and the step-CARD list are now built from ONE ordered
+    // list (`buildOrderedBoxes`) — scout+plan, then the plan's own steps in
+    // run order, then fix loop — so they can never drift apart again (a
+    // prior build had the cards render steps first, then scout+plan, then
+    // fix loop, while the map correctly put scout+plan first).
     var FIX_LOOP_KEY = "__fix-loop__";
-    var scoutPlanBox = detail.scoutPlan ? { title: "scout + plan", state: "done", noNumber: true, attempts: [] } : null;
-    var fixLoopLast = detail.fixLoop && detail.fixLoop.attempts.length ? detail.fixLoop.attempts[detail.fixLoop.attempts.length - 1] : null;
-    var fixLoopBox = fixLoopLast ? {
-      title: "fix loop", state: fixLoopLast.outcome === "green" ? "done" : "stopped", noNumber: true,
-      attempts: detail.fixLoop.attempts.map(function(a){ return { n: a.n, outcome: a.outcome }; }),
-    } : null;
-    var mapBoxes = detail.steps.map(function(s){ return { title: String(s.id), state: s.state, noNumber: !!s.synthetic, attempts: s.attempts || [] }; });
-    if(scoutPlanBox) mapBoxes.unshift(scoutPlanBox);
-    if(fixLoopBox) mapBoxes.push(fixLoopBox);
-    renderStepMap(mapBoxes);
+    var orderedBoxes = buildOrderedBoxes(detail);
+    renderStepMap(orderedBoxes);
+
+    // the card list's step numbers must match the map's own numbers exactly
+    // — reuse the SAME numbering rule (stepNumberIndices, defined with the
+    // map geometry above) over the SAME ordered list, rather than a second
+    // hand-rolled count that could silently diverge from the map's.
+    var cardStepNumbers = stepNumberIndices(orderedBoxes);
 
     var listEl = document.getElementById("step-list");
     listEl.innerHTML = "";
-    rSteps.forEach(function(s, i){
+    orderedBoxes.forEach(function(entry, idx){
+      if(entry.kind === "scoutPlan"){
+        var spCard = document.createElement("div");
+        spCard.className = "step-card";
+        spCard.innerHTML =
+          '<div class="step-head"><h4>scout + plan</h4><span class="badge green">done</span></div>' +
+          '<div class="step-meta" title="the run\'s own pre-step drafting: scouting the repo and validating the plan, before its first step starts">' +
+            stepMetaBits(detail.scoutPlan).join(" &middot; ") + '</div>';
+        listEl.appendChild(spCard);
+        return;
+      }
+      if(entry.kind === "fixLoop"){
+        var flAttempts = detail.fixLoop.attempts;
+        var flLast = flAttempts[flAttempts.length - 1];
+        var flBadge = flLast.outcome === "green" ? "green" : "red";
+        var flCard = document.createElement("div");
+        flCard.className = "step-card";
+        flCard.innerHTML =
+          '<div class="step-head"><h4>fix loop</h4><span class="badge ' + flBadge + '">' + (flLast.outcome === "green" ? "done" : "stopped") + '</span></div>' +
+          '<div class="step-meta" title="the operator\'s real close ran again after the plan\'s steps finished: a precheck, then fix-loop iterations, until satisfied or stopped">' +
+            stepMetaBits(detail.fixLoop).join(" &middot; ") + '</div>' +
+          '<button class="btn small step-attempts-toggle" type="button" aria-expanded="false" data-testid="fix-loop-attempts-toggle">' +
+            flAttempts.length + ' attempt' + (flAttempts.length === 1 ? '' : 's') + '</button>' +
+          '<div class="attempts-list" hidden data-testid="fix-loop-attempts-list"></div>';
+        listEl.appendChild(flCard);
+        var flToggle = flCard.querySelector(".step-attempts-toggle");
+        var flAttemptsEl = flCard.querySelector(".attempts-list");
+        var flBuilt = false;
+        flToggle.addEventListener("click", function(){
+          var expanded = flToggle.getAttribute("aria-expanded") === "true";
+          flToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+          flAttemptsEl.hidden = expanded;
+          if(!expanded && !flBuilt){
+            flBuilt = true;
+            buildAttemptsList(flAttemptsEl, { id: FIX_LOOP_KEY }, flAttempts);
+          }
+        });
+        return;
+      }
+      // kind === "step": a synthetic step (F196's "died during planning"
+      // placeholder) gets a map box only, never a card — same posture as
+      // realSteps() filtering it out of the summary count.
+      var s = entry.step;
+      if(s.synthetic) return;
+      var i = cardStepNumbers[idx]; // 0-based; (i+1) below is the display number, matching the map's own box
       var card = document.createElement("div");
       card.className = "step-card" + (s.state === "running" ? " running" : "");
       var badgeClass = s.state === "done" ? "green" : (s.state === "stopped" ? "red" : (s.state === "running" ? "amber" : (s.state === "died" ? "magenta" : "grey")));
@@ -1123,49 +1206,6 @@
         }
       });
     });
-
-    // item 1 (2026-09-26): the scout+plan card (no expand — it carries no
-    // per-attempt breakdown of its own, just the run's own pre-step totals)
-    // and the fix-loop card (expandable exactly like a real step card,
-    // reusing buildAttemptsList/loadRounds unchanged — the server's
-    // `/api/runs/:runid/rounds` endpoint recognizes the `FIX_LOOP_KEY`
-    // sentinel as its own `step` query value).
-    if(detail.scoutPlan){
-      var spCard = document.createElement("div");
-      spCard.className = "step-card";
-      spCard.innerHTML =
-        '<div class="step-head"><h4>scout + plan</h4><span class="badge green">done</span></div>' +
-        '<div class="step-meta" title="the run\'s own pre-step drafting: scouting the repo and validating the plan, before its first step starts">' +
-          stepMetaBits(detail.scoutPlan).join(" &middot; ") + '</div>';
-      listEl.appendChild(spCard);
-    }
-    if(detail.fixLoop && detail.fixLoop.attempts.length){
-      var flAttempts = detail.fixLoop.attempts;
-      var flLast = flAttempts[flAttempts.length - 1];
-      var flBadge = flLast.outcome === "green" ? "green" : "red";
-      var flCard = document.createElement("div");
-      flCard.className = "step-card";
-      flCard.innerHTML =
-        '<div class="step-head"><h4>fix loop</h4><span class="badge ' + flBadge + '">' + (flLast.outcome === "green" ? "done" : "stopped") + '</span></div>' +
-        '<div class="step-meta" title="the operator\'s real close ran again after the plan\'s steps finished: a precheck, then fix-loop iterations, until satisfied or stopped">' +
-          stepMetaBits(detail.fixLoop).join(" &middot; ") + '</div>' +
-        '<button class="btn small step-attempts-toggle" type="button" aria-expanded="false" data-testid="fix-loop-attempts-toggle">' +
-          flAttempts.length + ' attempt' + (flAttempts.length === 1 ? '' : 's') + '</button>' +
-        '<div class="attempts-list" hidden data-testid="fix-loop-attempts-list"></div>';
-      listEl.appendChild(flCard);
-      var flToggle = flCard.querySelector(".step-attempts-toggle");
-      var flAttemptsEl = flCard.querySelector(".attempts-list");
-      var flBuilt = false;
-      flToggle.addEventListener("click", function(){
-        var expanded = flToggle.getAttribute("aria-expanded") === "true";
-        flToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
-        flAttemptsEl.hidden = expanded;
-        if(!expanded && !flBuilt){
-          flBuilt = true;
-          buildAttemptsList(flAttemptsEl, { id: FIX_LOOP_KEY }, flAttempts);
-        }
-      });
-    }
   }
 
   // item 5 (2026-09-25): expandable step cards — attempt row -> its rounds

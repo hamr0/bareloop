@@ -34,7 +34,7 @@ function loadStepMapGeometry() {
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
   const factory = new Function(`${body}
-    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText };
+    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes };
   `);
   return factory();
 }
@@ -229,6 +229,95 @@ test('stepTitleText: a step flagged noNumber renders WITHOUT the leading "<n> " 
   assert.equal(stepTitleText(0, { title: 'run the checks' }), '1 run the checks');
   assert.equal(stepTitleText(2, { title: 'run the checks' }), '3 run the checks');
   assert.ok(html.length > 0); // keep html referenced (lint)
+});
+
+// ---------------------------------------------------------------------------
+// F197 (regression from 7acd320): once a "scout + plan" noNumber box was
+// prepended to the map (item 1, 2026-09-26), a run's real first step started
+// numbering from 2 instead of 1 — the map's own text was still numbering by
+// raw array POSITION (`idx` in the steps array), not by count-of-numbered-
+// boxes-so-far. On real run mu2p83go this made the only real step's box read
+// "2 annotate-checks-strict" instead of "1 annotate-checks-strict".
+// ---------------------------------------------------------------------------
+
+test('buildStepMapSVG: a noNumber box (scout+plan) ahead of a real step must NOT shift the real step\'s number — first real step stays "1 <title>", never "2 <title>"', () => {
+  const { buildStepMapSVG } = loadStepMapGeometry();
+  const boxes = [
+    { title: 'scout + plan', state: 'done', noNumber: true, attempts: [] },
+    { title: 'annotate-checks-strict', state: 'done', attempts: [] },
+  ];
+  const svg = buildStepMapSVG(boxes, 900);
+  assert.match(svg, /1 annotate-checks-strict/, `expected the real step to render as step 1, got: ${svg}`);
+  assert.doesNotMatch(svg, /2 annotate-checks-strict/, `real step must not be mislabelled step 2 by the noNumber box ahead of it: ${svg}`);
+});
+
+test('buildStepMapSVG: a noNumber box (scout+plan), a real step A, a real step B, and a noNumber box (fix loop) — A is "1", B is "2", never "2"/"3"', () => {
+  const { buildStepMapSVG } = loadStepMapGeometry();
+  const boxes = [
+    { title: 'scout + plan', state: 'done', noNumber: true, attempts: [] },
+    { title: 'step A', state: 'done', attempts: [] },
+    { title: 'step B', state: 'done', attempts: [] },
+    { title: 'fix loop', state: 'done', noNumber: true, attempts: [] },
+  ];
+  const svg = buildStepMapSVG(boxes, 1200);
+  assert.match(svg, /1 step A/, `expected step A labelled 1, got: ${svg}`);
+  assert.match(svg, /2 step B/, `expected step B labelled 2, got: ${svg}`);
+  assert.doesNotMatch(svg, /2 step A/);
+  assert.doesNotMatch(svg, /3 step B/);
+});
+
+// ---------------------------------------------------------------------------
+// F198: the Run tab's step-CARD list must render in the SAME order as the
+// map — scout+plan, then the plan's own steps in run order, then fix loop.
+// A prior build (item 1, 2026-09-26) had renderRun build the card list by
+// iterating the plan's own steps FIRST, then appending a scout+plan card and
+// a fix-loop card AFTER them — so on real run mu2p83go the cards read
+// "1 · annotate-checks-strict", "scout + plan", "fix loop", while the map
+// (built from a separately-ordered `mapBoxes` list) correctly showed
+// scout+plan first. `buildOrderedBoxes()` is now the ONE ordered list that
+// feeds both the map and the card list, so they cannot drift apart again.
+// ---------------------------------------------------------------------------
+
+test('buildOrderedBoxes: orders scout+plan FIRST, then the plan\'s own steps in run order, then fix loop — the same order the map itself renders in', () => {
+  const { buildOrderedBoxes } = loadStepMapGeometry();
+  const detail = {
+    scoutPlan: { rounds: 9 },
+    steps: [
+      { id: 'step A', state: 'done' },
+      { id: 'step B', state: 'done' },
+    ],
+    fixLoop: { attempts: [{ n: 1, outcome: 'green' }] },
+  };
+  const ordered = buildOrderedBoxes(detail);
+  assert.deepEqual(ordered.map((b) => b.kind), ['scoutPlan', 'step', 'step', 'fixLoop']);
+  assert.equal(ordered[0].title, 'scout + plan');
+  assert.equal(ordered[1].step.id, 'step A');
+  assert.equal(ordered[2].step.id, 'step B');
+  assert.equal(ordered[3].title, 'fix loop');
+});
+
+test('buildOrderedBoxes: with no scoutPlan/fixLoop data, the list is just the plan\'s own steps (no phantom boxes)', () => {
+  const { buildOrderedBoxes } = loadStepMapGeometry();
+  const detail = { steps: [{ id: 'only step', state: 'done' }] };
+  const ordered = buildOrderedBoxes(detail);
+  assert.deepEqual(ordered.map((b) => b.kind), ['step']);
+});
+
+test('buildOrderedBoxes + stepNumberIndices: real step A/B keep numbers "1"/"2" regardless of the noNumber boxes around them — proves the card list and the map read numbers off the exact same list', () => {
+  const { buildOrderedBoxes, stepNumberIndices } = loadStepMapGeometry();
+  const detail = {
+    scoutPlan: { rounds: 3 },
+    steps: [
+      { id: 'step A', state: 'done' },
+      { id: 'step B', state: 'done' },
+    ],
+    fixLoop: { attempts: [{ n: 1, outcome: 'red' }] },
+  };
+  const ordered = buildOrderedBoxes(detail);
+  const numbers = stepNumberIndices(ordered);
+  // ordered = [scoutPlan, step A, step B, fixLoop] -> numbers = [-1, 0, 1, -1]
+  assert.equal(numbers[1], 0); // step A displays as "1"
+  assert.equal(numbers[2], 1); // step B displays as "2"
 });
 
 test('.wf-meta + .wf-meta::before separator carries a space on BOTH sides (" · "), never just a trailing space', () => {
