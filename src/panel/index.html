@@ -33,6 +33,19 @@
   table{border-collapse:collapse;width:100%;}
   th,td{text-align:left;padding:6px 8px;border-bottom:1px dotted var(--border-strong);font-size:12px;}
   th{color:var(--text-dim);font-weight:700;background:var(--panel2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;border-bottom:1px solid var(--border-strong);}
+  /* item: Audit tab header stays visible while the row list scrolls. On
+     desktop >=900px .pane-body itself is height-bound and scrolls (see the
+     @media(min-width:900px) block above); on mobile #BareloopPanel/.main
+     are unbound and the PAGE scrolls instead, so .pane-body never actually
+     develops its own scroll offset there and a sticky th anchored to it
+     would scroll away with the page. Giving the table its own bounded,
+     always-scrolling wrapper makes the header genuinely sticky on both
+     breakpoints, and also owns the horizontal scroll for the Path column
+     on narrow (390px) screens instead of leaving it to .pane-body. */
+  .audit-table-scroll{overflow:auto;max-height:min(60vh,520px);}
+  /* z-index keeps rows from showing through the solid th background as
+     they scroll under it. */
+  [data-testid="audit-table"] th{position:sticky;top:0;z-index:1;}
   td{border-right:1px dotted var(--border);}
   td:last-child{border-right:none;}
   a{color:var(--accent);text-decoration:underline;}
@@ -355,10 +368,12 @@
                 <button class="chip" aria-pressed="false" data-filter="blocked" data-testid="chip-blocked">Blocked</button>
               </div>
             </div>
-            <table data-testid="audit-table">
-              <thead><tr><th>Time</th><th>Round</th><th>Action</th><th>Path</th><th>Decision</th><th>Step</th></tr></thead>
-              <tbody id="audit-tbody"></tbody>
-            </table>
+            <div class="audit-table-scroll">
+              <table data-testid="audit-table">
+                <thead><tr><th>Round</th><th>Step</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead>
+                <tbody id="audit-tbody"></tbody>
+              </table>
+            </div>
             <details class="raw-log" data-testid="raw-spine-log">
               <summary>Raw gate-audit log</summary>
               <pre id="audit-rawlog"></pre>
@@ -1209,21 +1224,22 @@
         bits.push(typeof r.costUsd === "number" ? money(r.costUsd) : "unknown");
         bits.push((typeof r.tokens === "number" ? r.tokens : "unknown") + " tokens");
         bits.push(duration(r.durationMs));
-        decisionCell = "<span class=\"badge cyan\">model call</span> " + escapeXml(bits.join(" · "));
+        decisionCell = escapeXml(bits.join(" · "));
       } else {
         decisionCell = "<span class=\"badge " + (blocked ? "red" : "green") + "\">" + (r.decision || "unknown") + "</span>";
       }
+      var stepCell = r.step === null
+        ? (r.phase === "final-check"
+          ? "<td title=\"after the last step (final check)\">&mdash;</td>"
+          : "<td title=\"before any step (planning)\">&mdash;</td>")
+        : "<td>" + escapeXml(r.step) + (typeof r.attempt === "number" ? " &middot; a" + r.attempt : "") + "</td>";
       tr.innerHTML =
-        "<td>" + escapeXml(r.time || "unknown") + "</td>" +
         "<td>" + roundCell + "</td>" +
+        stepCell +
         "<td>" + (isModelCall ? "model call" : escapeXml(r.action || "unknown")) + "</td>" +
         "<td>" + escapeXml(r.path || "unknown") + "</td>" +
         "<td>" + decisionCell + "</td>" +
-        (r.step === null
-          ? (r.phase === "final-check"
-            ? "<td title=\"after the last step (final check)\">&mdash;</td>"
-            : "<td title=\"before any step (planning)\">&mdash;</td>")
-          : "<td>" + escapeXml(r.step) + (typeof r.attempt === "number" ? " &middot; a" + r.attempt : "") + "</td>");
+        "<td>" + escapeXml(r.time || "unknown") + "</td>";
       tbody.appendChild(tr);
     });
     document.getElementById("audit-rawlog").textContent = result.raw || "";

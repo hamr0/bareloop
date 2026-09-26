@@ -567,7 +567,7 @@ test('item 1: search state persists via the same localStorage key as the chip fi
 
 test('item 2: audit table header carries a Round column, and renderAudit renders a model-call row distinctly from a tool-call row', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /<thead><tr><th>Time<\/th><th>Round<\/th><th>Action<\/th><th>Path<\/th><th>Decision<\/th><th>Step<\/th><\/tr><\/thead>/);
+  assert.match(html, /<thead><tr><th>Round<\/th><th>Step<\/th><th>Action<\/th><th>Path<\/th><th>Decision<\/th><th>Time<\/th><\/tr><\/thead>/);
   const start = html.indexOf('function renderAudit(result){');
   const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected renderAudit in src/panel/index.html');
@@ -578,6 +578,55 @@ test('item 2: audit table header carries a Round column, and renderAudit renders
   assert.match(body, /r\.tokens/);
   assert.match(body, /r\.durationMs/);
   assert.match(body, /typeof r\.round === "number"/);
+});
+
+test('item: Decision cell for a model-call row shows only cost/tokens/duration, no "model call" badge text; Action cell carries that label instead', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function renderAudit(result){');
+  const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
+  const body = html.slice(start, end);
+  // decisionCell for a model-call row is built from the joined cost/tokens/duration
+  // bits alone — no "badge cyan"/"model call" wrapper the way the old markup had.
+  assert.doesNotMatch(body, /badge cyan\\">model call/);
+  const decisionAssign = body.slice(body.indexOf('if(isModelCall){'), body.indexOf('} else {', body.indexOf('if(isModelCall){')));
+  assert.doesNotMatch(decisionAssign, /model call/);
+  assert.match(decisionAssign, /decisionCell = escapeXml\(bits\.join\(" · "\)\)/);
+  // Action cell keeps identifying a model-call row as such.
+  assert.match(body, /isModelCall \? "model call" : escapeXml\(r\.action \|\| "unknown"\)/);
+});
+
+test('item: Audit table cells are built in Round, Step, Action, Path, Decision, Time order, matching the header', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function renderAudit(result){');
+  const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
+  const body = html.slice(start, end);
+  const trStart = body.indexOf('tr.innerHTML =');
+  const trEnd = body.indexOf(';', body.indexOf('escapeXml(r.time'));
+  const trBody = body.slice(trStart, trEnd);
+  const roundIdx = trBody.indexOf('roundCell');
+  const stepIdx = trBody.indexOf('stepCell');
+  const actionIdx = trBody.indexOf('isModelCall ? "model call"');
+  const pathIdx = trBody.indexOf('escapeXml(r.path');
+  const decisionIdx = trBody.indexOf('decisionCell');
+  const timeIdx = trBody.indexOf('escapeXml(r.time');
+  assert.ok(roundIdx < stepIdx && stepIdx < actionIdx && actionIdx < pathIdx && pathIdx < decisionIdx && decisionIdx < timeIdx,
+    `expected Round < Step < Action < Path < Decision < Time in tr.innerHTML build order, got: ${trBody}`);
+});
+
+test('item: Audit table header cells are sticky on scroll, inside a bounded self-scrolling wrapper (pane-body alone does not reliably scroll on mobile)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /\[data-testid="audit-table"\] th\{[^}]*position:sticky/);
+  assert.match(html, /\[data-testid="audit-table"\] th\{[^}]*top:0/);
+  assert.match(html, /\[data-testid="audit-table"\] th\{[^}]*z-index:\s*\d/);
+  // th already carries a solid background (var(--panel2)) so scrolled rows
+  // don't show through underneath the sticky header.
+  assert.match(html, /th\{[^}]*background:var\(--panel2\)/);
+  // the table itself has a bounded, always-scrolling wrapper — on mobile
+  // #BareloopPanel/.main are unbound and the PAGE scrolls, so .pane-body
+  // never develops its own scroll offset there and a sticky th anchored
+  // only to it would scroll away with the page (verified live at 390px).
+  assert.match(html, /\.audit-table-scroll\{[^}]*overflow:auto/);
+  assert.match(html, /<div class="audit-table-scroll">\s*<table data-testid="audit-table">/);
 });
 
 test('item B: renderAudit\'s Step cell shows a tooltip on a null step (before any step) and appends "· aN" when an attempt number is present', () => {
