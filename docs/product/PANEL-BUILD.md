@@ -346,3 +346,14 @@ found during this same review pass: the Audit tab's "Raw log" leaking an EARLIER
 run's rows when a gate-audit sidecar is shared across runs (now windowed to this run's own
 ts range, same rule as the parsed `rows`), and a `~2`-backfill-collision run's header/lookups
 echoing the wrong (unsuffixed) runid.
+
+**Workflows view — job-row semantics (four hamr live-review rounds, 2026-09-26, this
+branch).** A job's parent row IS its "represented run" — the run a search/filter match or the
+current selection points at, defaulting to the job's own latest run when nothing narrower is
+active. Clicking the parent row opens that represented run (not always the latest) and the row
+shows "selected" whenever the represented run is the one currently open. The inline expand
+list never repeats the represented run — it lists only the job's OTHER runs, newest first —
+and the expand caret itself only appears when at least one such other run also passes the
+active filters/search; a job with a single run, or whose only match is its represented run,
+never shows a caret. A manual collapse click still wins over auto-expand-for-selection on the
+next render.
