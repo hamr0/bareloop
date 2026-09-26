@@ -1054,3 +1054,70 @@ test('replayRun: msf70nei (loop-shape, timelineKind:iterations) reports fixLoop 
   assert.equal(s.timelineKind, 'iterations');
   assert.equal(s.fixLoop, null);
 });
+
+// Panel build item 6 (2026-09-26): `parts` — the ONE ordered list of a run's
+// own high-level pieces (scout, plan, each step occurrence in run order, a
+// replan window between two steps, the fix loop, and a synthetic-only
+// leftover judge-round bucket) driving both the Run tab's map+cards and the
+// Audit tab's groups.
+test('replayRun: parts on mu2p83go — scout/plan/step/fix in order, each part\'s rounds+toolCalls sum matches the Audit tab\'s required row counts (scout 21, plan 1, step 41, fix 80)', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
+  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl';
+  const audit = parseJsonl(auditPath);
+  const s = replayRun(spine, audit, { runId: 'mu2p83go' });
+  assert.deepEqual(s.parts.map((p) => p.id), ['scout', 'plan', 'step:annotate-checks-strict:1', 'fix']);
+  assert.deepEqual(s.parts.map((p) => p.rounds + (p.toolCalls ?? 0)), [21, 1, 41, 80]);
+  assert.equal(s.parts[2].number, 1, 'the one real step is numbered 1');
+  assert.equal(s.parts[3].outcome, 'green', 'the fix loop\'s last attempt is green, matching fixLoop.attempts');
+});
+
+test('replayRun: parts on bareagent-u-bareloop/u-mshcpdg4 — a real replan between two steps gets its own box, and a step id re-running after a replan gets occurrence 2 (numbered separately from occurrence 1)', { skip: !existsSync(join(BAREAGENT_U, 'u-mshcpdg4.jsonl')) && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl(join(BAREAGENT_U, 'u-mshcpdg4.jsonl'));
+  const s = replayRun(spine, [], { runId: 'mshcpdg4' });
+  assert.deepEqual(s.parts.map((p) => p.kind), [
+    'scout', 'plan', 'step', 'replan', 'step', 'step', 'replan', 'step',
+  ]);
+  assert.deepEqual(s.parts.filter((p) => p.kind === 'step').map((p) => `${p.label}:${p.occurrence}`), [
+    'fix-strict-errors:1', 'fix-loop-strict-types:1', 'finish-strict-typecheck:1', 'finish-strict-typecheck:2',
+  ]);
+  assert.deepEqual(s.parts.filter((p) => p.kind === 'step').map((p) => p.number), [1, 2, 3, 4], 'each step occurrence gets its own running number, never reused');
+});
+
+test('replayRun: parts on a run with no phase data at all (msf70nei, loop-tier `iterations` shape) collapses to one {kind:\'run\'} box', { skip: !existsSync(BAREAGENT_U) && 'no bareagent-u patient on this machine' }, () => {
+  const spine = parseJsonl(join(BAREAGENT_U, 'u-msf70nei.jsonl'));
+  const s = replayRun(spine, [], { runId: 'msf70nei' });
+  assert.equal(s.parts.length, 1);
+  assert.equal(s.parts[0].kind, 'run');
+  assert.equal(s.parts[0].id, 'run');
+  assert.equal(s.parts[0].rounds, s.iterations.reduce((acc, u) => acc + u.rounds, 0));
+});
+
+test('replayRun: parts on poc-p2ocuxj8 — a step that crashed before its first exit-eval (empty attemptWindows) still gets one synthetic whole-step attempt to expand into', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl') && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl');
+  const s = replayRun(spine, [], { runId: 'poc-p2ocuxj8' });
+  const crashedStep = s.steps.find((st) => st.attemptWindows.length === 0);
+  assert.ok(crashedStep, 'precondition: this archive has a step with no exit-eval at all');
+  const part = s.parts.find((p) => p.kind === 'step' && p.label === crashedStep.id && p.occurrence === crashedStep.occurrence);
+  assert.ok(part);
+  assert.equal(part.attempts.length, 1, 'falls back to one whole-step synthetic attempt, never an empty list');
+  assert.equal(part.attempts[0].outcome, null, 'a synthetic whole-part attempt carries no verdict of its own');
+});
+
+test('replayRun: parts — a judge-round with no step/fix/scout/plan window covering it gets its own synthetic {kind:\'judge\'} box (fixture-built; no real archive measured against this build carries one)', () => {
+  const spine = [
+    { type: 'job-start', seq: 1, ts: '2026-09-26T00:00:00.000Z', job: 'synthetic-judge-fixture' },
+    { type: 'step-start', seq: 2, ts: '2026-09-26T00:00:01.000Z', step: 'only-step' },
+    { type: 'worker-round', seq: 3, ts: '2026-09-26T00:00:02.000Z', phase: 'step:only-step', costUsd: 0.01 },
+    { type: 'step-end', seq: 4, ts: '2026-09-26T00:00:03.000Z', step: 'only-step', outcome: 'green' },
+    // a bare judge-round after the step ended, with no outer-close/fix-loop
+    // record at all — outside every window `parts` otherwise builds.
+    { type: 'judge-round', seq: 5, ts: '2026-09-26T00:00:04.000Z', costUsd: 0.002 },
+    { type: 'run-end', seq: 6, ts: '2026-09-26T00:00:05.000Z', outcome: 'green' },
+    { type: 'job-end', seq: 7, ts: '2026-09-26T00:00:06.000Z', outcome: 'green', spentUsd: 0.012, spendComplete: true },
+  ];
+  const s = replayRun(spine, [], { runId: 'synthetic-judge-fixture' });
+  assert.deepEqual(s.parts.map((p) => p.kind), ['step', 'judge']);
+  assert.equal(s.parts[1].id, 'judge');
+  assert.equal(s.parts[1].rounds, 1);
+  assert.equal(s.parts[1].attempts.length, 1);
+});
