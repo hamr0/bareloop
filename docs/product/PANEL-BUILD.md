@@ -187,6 +187,33 @@ another port) if 4700 is taken.
 **Exit:** a real past run renders end to end in the panel, matching the mockup's exact wording
 and glyphs (`design/panel-mockup.html` — see §6 below for what "matching" means).
 
+**Rulings 2026-09-24 (this session, before the HTTP server itself):**
+
+- **Option B: "one home" for runs, not a move.** hamr: *"B, i need one home for them
+  anyways."* A run LIST at `~/.config/bareloop/runs.jsonl` (the same directory the keys file
+  lives in, PRD §7d) — one row per run, `{ at, runid, job, spine, patient, via }`. Patient
+  copies are NEVER moved (they stay at `bareloop-patients/…` for run-u, or
+  `<bundleDir>/runs/<runid>/` for `bareloop run`); the list only points at them.
+- **Jobs stay in `jobs/` for now.** hamr picked "A" — moving job specs into the home directory
+  too is deferred to P3, not built here.
+- **hamr's "OK"** ("commit, and p1") signed this sub-spec.
+
+**Delivered against that spec (this session):** `src/runlist.js` — `appendRun`/`readRunList`
+(idempotent by runid), `backfillRuns` (scans a directory and its immediate subdirectories for
+both the free-standing spine layout and the bundle layout
+`<x>/runs/<runid>/spine.jsonl`, reusing `src/replayio.js`'s `parseJsonl`/`isSidecarByName`/
+`looksLikeSpine`, never a second parser), and `formatRunRow` (`file missing` when a listed
+spine no longer exists on disk). Wired to append one row at run START, BEFORE the first paid
+call, in exactly two callers: `src/userrun.js` (`run-u`) and `src/cli.js`'s `doRun`
+(`bareloop run`, bundle path) — interview/author sessions are NOT added (deferred to P3, no
+run to list yet at that stage). A list-append failure is caught at both call sites and printed
+loudly to stderr; the run itself continues (hamr's rule: a panel list must never block real
+work). New CLI surface: `bareloop runs` (print the list) and `bareloop runs backfill <dir>`
+(reconstruct rows from spines already archived on disk, idempotent). No new production
+dependency, no new env var (grepped for an existing HOME-override convention first — none
+exists; `home` is an injectable test-seam param instead, the same shape `deps.provider` already
+is elsewhere).
+
 ### P2 — live run view
 
 2-second polling (hamr: *"2s sounds good, no rush in publish progress, 2s sounds enough if map
@@ -239,8 +266,12 @@ restating pixels. The rulings that constrain the real build (not just the mockup
 
 - **Wording ruling:** check type shown as `Check type` with value `deterministic` (internal
   hard green) or `rubric` (internal soft green); a run's result is shown ONLY as a glyph —
-  `[✓]` passed, `[✗]` failed, `[▶]` running, `[·]` waiting — never the words green/red/
-  soft-green anywhere in the page. (Saved to auto-memory `ui-verdict-words.md`.)
+  `[✓]` passed, `[✗]` failed, `[▶]` running, `[·]` waiting, `[?]` died (no result) — never the
+  words green/red/soft-green anywhere in the page. (Saved to auto-memory `ui-verdict-words.md`.)
+  2026-09-25, hamr: B — died is not failed; a run with no verdict never shares the failed
+  glyph. `[?]` is a run whose spine carries no `job-end` at all (killed, crashed, or the
+  machine slept) — distinct from `[✗]`, which stays reserved for a run whose close/arbiter
+  actually rendered a "no" (a real result).
 - **Run ID format and placement:** `workflow-name (mu2p83go)` — bracketed after the workflow
   name — shown on the run's summary line 1 and in every History row. (Closes the open question
   from the 2026-09-22 stash.)
@@ -257,7 +288,7 @@ restating pixels. The rulings that constrain the real build (not just the mockup
   simplified map renderer anywhere in the panel.
 - **Three right-pane tabs, verified in the mockup:** `Run` (`#tab-run`), `Audit / logs`
   (`#tab-audit`), `Job` (`#tab-details`, labelled "Job"). Three left-pane tabs: `Chat`,
-  `Workflows`, `History`.
+  `Workflows`, `History`. (superseded — see Addendum 2026-09-26)
 
 ## 7. Known gaps the real build must close
 
@@ -281,3 +312,48 @@ From both mockup-feedback stashes, carried forward, not fixed by the mockup itse
 - LAN access.
 - Anything that changes a budget, a verdict, or merge behaviour — those stay arbiter territory,
   outside what any panel rung may touch (§5 above).
+
+## Addendum 2026-09-26 — P1 panel redesign (hamr's live-review rulings)
+
+This is a dated addendum, not a rewrite — §6's "Three left-pane tabs: Chat, Workflows,
+History" and its Row-shape ruling are prose from the ORIGINAL mockup contract and are left
+untouched above; the following ships instead, decided during P1's live click-to-annotate
+review rounds:
+
+- **Workflows and History merged into one `Runs` tab**, with a toggle between "Workflows"
+  view (grouped by job, default) and "History" view (flat, newest-first) — never two separate
+  left-pane tabs. `/api/workflows` and its client-side `listWorkflows` were deleted; both views
+  are now built from the one `/api/runs` list.
+- **Run tab: map + two-line part cards.** A PLAN-shape run renders one card per PART (scout,
+  plan, each step, each replan, the post-step fix loop, the judge stage where recorded) — never
+  one card per step only. An old-shape (iterations, no step-start) run collapses to a single
+  "run" box, same as before. Clicking a part's map box OR its card jumps to the Audit tab,
+  pre-filtered/scrolled to that part.
+- **Audit tab: Grouped + Flat toggle.** "Grouped" (the default) nests rows as part → attempt →
+  a rounds table (lazy-fetched per attempt via `/api/runs/:runid/rounds`); "Flat" is the old
+  single ungrouped row list. Three filter chips — All / Writes / Blocked — auto-open every
+  matching group so a filtered result is never hidden behind a collapsed toggle.
+- **Short paths** (`pathShort`, relative to the run's own resolved tree root) apply only to
+  runs recorded under this new layout; an older archived run with no resolvable tree root keeps
+  showing the absolute path, honestly, rather than a guessed shortening.
+- **Run Summary box** gained a `model` line (provider in parens when recorded, e.g. `deepseek-
+  flash (openai-api)`) and a `judge:` line when a judge-round was recorded on the spine.
+- **"offered" line** (Job tab) shows the FULL granted-tools list from the spec, never a
+  top-N-truncated version.
+
+Build item (2026-09-26, this branch, `feat/panel-p1`) additionally fixed two panel-only bugs
+found during this same review pass: the Audit tab's "Raw log" leaking an EARLIER unrelated
+run's rows when a gate-audit sidecar is shared across runs (now windowed to this run's own
+ts range, same rule as the parsed `rows`), and a `~2`-backfill-collision run's header/lookups
+echoing the wrong (unsuffixed) runid.
+
+**Workflows view — job-row semantics (four hamr live-review rounds, 2026-09-26, this
+branch).** A job's parent row IS its "represented run" — the run a search/filter match or the
+current selection points at, defaulting to the job's own latest run when nothing narrower is
+active. Clicking the parent row opens that represented run (not always the latest) and the row
+shows "selected" whenever the represented run is the one currently open. The inline expand
+list never repeats the represented run — it lists only the job's OTHER runs, newest first —
+and the expand caret itself only appears when at least one such other run also passes the
+active filters/search; a job with a single run, or whose only match is its represented run,
+never shows a caret. A manual collapse click still wins over auto-expand-for-selection on the
+next render.

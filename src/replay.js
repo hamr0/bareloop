@@ -129,6 +129,45 @@ function parseTs(ts) {
 }
 
 /**
+ * `[startTs, endTs]` (epoch ms; `endTs` possibly `Infinity`) bounding the
+ * gate-audit rows that actually belong to ONE run's own spine. A sidecar
+ * file can be SHARED across several runs whose spines happen to reuse the
+ * same filename (measured directly on a real archived patient —
+ * pulselog-person-live-2, run mu2p83go: its sidecar carries rows from 7
+ * distinct `run_id`s spanning 06:56Z..13:25Z on one day, but this run's own
+ * `job-start`..`job-end` window is 13:19:40Z..13:25:48Z; every row before
+ * that window belongs to an earlier, unrelated run sharing the sidecar
+ * path). No `step`/`run_id` field on a gate-audit row is a reliable enough
+ * key on its own (see this file's header) — bounding by `ts` against this
+ * run's own `job-start`/`job-end` is the only honest scope.
+ *
+ * `startTs` is this run's own `job-start.ts` (`-Infinity` when absent —
+ * never a guessed lower bound). `endTs` is `job-end.ts` when a `job-end`
+ * was actually reached, else `Infinity` (a died/still-running run — never
+ * clamped to the spine's own last record's `ts`, which would wrongly
+ * exclude a real tool call the gate logged just AFTER the spine's own last
+ * record landed: spine and gate-audit are written by different seams and
+ * are not guaranteed to interleave exactly).
+ *
+ * ONE shared owner for this rule (F195): `replayRun` (this file) uses it to
+ * scope every audit row it hands to `runBehaviour`, so `bareloop replay`
+ * and every caller of `replayRun`/`replayOne` (including the panel,
+ * `src/panel/server.js`) read the same, honest figure — never two places
+ * independently re-deriving (and risking drifting from) the same rule.
+ * @param {{ts?: string}|null} [jobStart]
+ * @param {{ts?: string}|null} [jobEnd]
+ * @returns {{startTs: number, endTs: number}}
+ */
+export function auditWindow(jobStart, jobEnd) {
+  const startTs = jobStart ? parseTs(jobStart.ts) : null;
+  const endTs = jobEnd ? parseTs(jobEnd.ts) : null;
+  return {
+    startTs: startTs !== null ? startTs : -Infinity,
+    endTs: endTs !== null ? endTs : Infinity,
+  };
+}
+
+/**
  * Trim a string to `max` chars with an explicit `…[+N chars]` marker —
  * NEVER a silent truncation, and never a trailing ellipsis alone
  * (indistinguishable from a detail that just happened to end there). Used
@@ -356,10 +395,18 @@ function resolveClose(spine) {
  *
  * @param {any[]} spineEvents parsed records from `u-<id>.jsonl`
  * @param {any[]} [auditEvents] parsed records from the sibling `-gate-audit.jsonl`
- * @param {{runId?: string|null}} [opts] `runId`: caller-supplied (the spine
- *   carries no run-id field of its own — see the file header)
+ * @param {{runId?: string|null, auditAvailable?: boolean}} [opts] `runId`:
+ *   caller-supplied (the spine carries no run-id field of its own — see the
+ *   file header). `auditAvailable` (default `true`, back-compat: every
+ *   direct caller in this codebase that hands a literal `[]` here means a
+ *   REAL, known-empty audit, not "unknown") — set `false` only when the
+ *   caller could not even determine whether a gate-audit sidecar exists (no
+ *   file found on disk, or deliberately not read). When `false`, every
+ *   tool-call figure this function derives (`behaviour`, each occurrence's
+ *   `toolCalls`) reads `null` (unknown), never `0` — doctrine: unknown is
+ *   reported as unknown, never rendered as zero.
  */
-export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) {
+export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAvailable = true } = {}) {
   let skipped = 0;
 
   /** @type {any[]} */
@@ -369,7 +416,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     else skipped += 1;
   }
   /** @type {any[]} */
-  const audit = [];
+  let audit = [];
   for (const e of Array.isArray(auditEvents) ? auditEvents : []) {
     if (isRecord(e)) audit.push(e);
     else skipped += 1;
@@ -377,6 +424,30 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
 
   const jobStart = spine.find((e) => e.type === 'job-start') ?? null;
   const jobEnd = spine.findLast((e) => e.type === 'job-end') ?? null;
+
+  // F195 fix: a gate-audit sidecar CAN be shared across several runs whose
+  // spines happen to reuse the same filename (measured on a real archived
+  // patient — pulselog-person-live-2's mu2p83go: its sidecar carries rows
+  // from 7 distinct run_ids spanning 06:56Z..13:25Z on one day, while this
+  // run's own job-start..job-end window is only 13:19:40Z..13:25:48Z).
+  // Scope `audit` to THIS run's own window (see {@link auditWindow}'s own
+  // doc) before any downstream use — the top-level `behaviour` field below
+  // (previously fed the raw, unscoped array: `bareloop replay` printed 142
+  // tool calls on mu2p83go where the real figure for this run alone is 82)
+  // AND every per-occurrence/per-attempt window `buildOccurrenceMetrics`
+  // computes further down, which is a strict subset of this run's own
+  // window anyway and so is unaffected in the common (single-owner sidecar)
+  // case. This is now the ONE place that applies the rule — the panel
+  // (`src/panel/server.js`) calls this same {@link auditWindow} rather than
+  // keeping its own copy.
+  {
+    const { startTs, endTs } = auditWindow(jobStart, jobEnd);
+    audit = audit.filter((a) => {
+      const t = parseTs(a.ts);
+      return t !== null && t >= startTs && t <= endTs;
+    });
+  }
+
   const outcome = jobEnd ? (jobEnd.outcome ?? null) : null;
   const isGreen = outcome === 'green' || outcome === 'already-green';
 
@@ -537,13 +608,40 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     const { spentUsd, unpricedRounds } = windowSpend(roundsInWindow);
     return {
       rounds: roundsInWindow.length,
-      toolCalls: runBehaviour(windowed).totalCalls,
+      toolCalls: auditAvailable ? runBehaviour(windowed).totalCalls : null,
       wallMs: windowWallMs(startTs, endTs),
       spentUsd,
       unpricedRounds,
       tripped: tripOf(findTrip(escalations, startSeq, endSeq)),
       transportRetries: windowTransportRetries(transportRetries, startSeq, endSeq),
     };
+  }
+
+  // ── SCOUT+PLAN (panel build item 1, 2026-09-26): a PLAN run's own
+  // pre-step drafting work (`phase:'scout'` and `phase:'plan'` worker rounds,
+  // src/planrun.js:2735,2515) — the OTHER half of the same invisibility
+  // fixLoop above closes: before this, only the plan's own steps ever showed
+  // on the Run tab, so a run's first ~10 rounds (drafting materials, scouting
+  // the repo, validating the plan) had no box of their own at all. Scoped to
+  // seq/ts strictly BEFORE the first step-start (the only place scout/plan
+  // rounds occur on a steps-shape run — measured on mu2p83go: scout×8 + plan×1
+  // all precede the run's one step-start at seq 34). `null` when this run has
+  // no steps (nothing to be "pre-" to) or no scout/plan rounds at all (an
+  // older archived spine, or a run resumed past drafting).
+  let scoutPlan = null;
+  if (stepStarts.length > 0) {
+    const firstStepStart = stepStarts.reduce((first, ss) => (typeof ss.seq === 'number' && (first === null || ss.seq < first.seq) ? ss : first), /** @type {any} */ (null));
+    const firstSeq = firstStepStart && typeof firstStepStart.seq === 'number' ? firstStepStart.seq : Infinity;
+    const firstTs = firstStepStart ? parseTs(firstStepStart.ts) : null;
+    const roundsInWindow = spendRecords.filter((r) => (r.phase === 'scout' || r.phase === 'plan') && typeof r.seq === 'number' && r.seq < firstSeq);
+    if (roundsInWindow.length > 0) {
+      const jobStartTs = parseTs(jobStart?.ts);
+      scoutPlan = {
+        scoutRounds: roundsInWindow.filter((r) => r.phase === 'scout').length,
+        planRounds: roundsInWindow.filter((r) => r.phase === 'plan').length,
+        ...buildOccurrenceMetrics(-Infinity, jobStartTs, firstSeq, firstTs, roundsInWindow),
+      };
+    }
   }
 
   const usedEndSeqs = new Set();
@@ -574,14 +672,66 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     let passed = 0;
     let failed = 0;
     let treeChanged = false;
-    for (const ee of exitEvals) {
-      if (ee.step !== id) continue;
-      if (!(typeof ee.seq === 'number' && ee.seq > startSeq && ee.seq < endSeq)) continue;
-      for (const r of Array.isArray(ee.results) ? ee.results : []) {
-        if (!isRecord(r)) continue;
+    // `attempts` (panel item 4, 2026-09-25): one entry per exit-eval that
+    // actually ran inside this step's own window — an "attempt" being one
+    // iteration of the step's own micro-loop (worker works, then the step's
+    // check runs, src/planrun.js's `ralph({judge,...})`). An attempt's own
+    // outcome is GREEN only when EVERY result the exit-eval carries passed
+    // (not just `check-passes` — `tree-changed` failing is also a real
+    // attempt failure); an exit-eval with an EMPTY `results` array is
+    // reported RED, never a fabricated green (nothing passed). Ordered by
+    // `seq` (the array is already built in spine order, but sorted
+    // defensively since a caller could hand in an out-of-order array).
+    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red'}>} */
+    const attempts = [];
+    // `attemptWindows` (panel item 5, 2026-09-25): the SAME per-attempt list
+    // as `attempts` above, plus each attempt's own seq/ts sub-window
+    // (`(prevBoundarySeq, thisExitEvalSeq]`, first attempt's lower bound is
+    // the step's own `startSeq`/`startTs`) — never a second windowing pass:
+    // this is the ONE loop that decides attempt boundaries; `attempts` is
+    // just this array's public-facing projection. Consumed by the
+    // `/api/runs/:runid/rounds` endpoint (`src/panel/server.js`) to slice
+    // this attempt's own rounds/tool-calls out of the full spine+gate-audit,
+    // never recomputed a second way there either.
+    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red', startSeq: number, endSeq: number, startTs: number|null, endTs: number|null, exitEvalDetail: string|null}>} */
+    const attemptWindows = [];
+    const stepExitEvals = exitEvals
+      .filter((ee) => ee.step === id && typeof ee.seq === 'number' && ee.seq > startSeq && ee.seq < endSeq)
+      .sort((a, b) => a.seq - b.seq);
+    let prevBoundSeq = startSeq;
+    let prevBoundTs = startTs;
+    for (const ee of stepExitEvals) {
+      const results = Array.isArray(ee.results) ? ee.results.filter(isRecord) : [];
+      for (const r of results) {
         if (r.type === 'check-passes') { if (r.pass) passed += 1; else failed += 1; }
         if (r.type === 'tree-changed' && r.pass) treeChanged = true;
       }
+      const allPass = results.length > 0 && results.every((r) => r.pass === true);
+      const eeSeq = typeof ee.seq === 'number' ? ee.seq : prevBoundSeq;
+      const eeTs = parseTs(ee.ts);
+      // the failing (or, on an all-pass attempt, the first) result's own
+      // `detail` — the closest thing a step-level exit-eval carries to a
+      // "gap line" (the outer close's own `gap` field has no per-step
+      // equivalent; see the file header's `close-verdict` doc).
+      const failing = results.find((r) => r.pass !== true);
+      const detailSource = failing ?? results[0] ?? null;
+      attempts.push({
+        n: attempts.length + 1,
+        iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
+        outcome: allPass ? 'green' : 'red',
+      });
+      attemptWindows.push({
+        n: attemptWindows.length + 1,
+        iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
+        outcome: allPass ? 'green' : 'red',
+        startSeq: prevBoundSeq,
+        endSeq: eeSeq,
+        startTs: prevBoundTs,
+        endTs: eeTs,
+        exitEvalDetail: detailSource && typeof detailSource.detail === 'string' ? detailSource.detail : null,
+      });
+      prevBoundSeq = eeSeq;
+      prevBoundTs = eeTs ?? prevBoundTs;
     }
 
     idOccurrence.set(id, (idOccurrence.get(id) ?? 0) + 1);
@@ -593,6 +743,19 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
       ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
       checks: { passed, failed },
       treeChanged,
+      attempts,
+      attemptWindows,
+      stepStartSeq: startSeq,
+      stepEndSeq: endSeq,
+      // `stepStartTs`/`stepEndTs` (panel item 2 follow-up, F195/F-audit-step):
+      // this step's own ts bounds, the same `startTs`/`endTs` already
+      // computed above for `buildOccurrenceMetrics` — exposed (never a
+      // second windowing pass) so a ts-keyed lookup (the Audit tab's `step`
+      // column) can place a row without re-deriving step boundaries a
+      // second way. `stepEndTs` is `null` when this occurrence never
+      // reached its own `step-end` (a died/still-running/escalated step).
+      stepStartTs: startTs,
+      stepEndTs: endTs,
     };
   });
 
@@ -603,6 +766,131 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
   const iterationStarts = spine.filter((e) => e.type === 'iteration-start');
   const timelineKind = /** @type {'steps'|'iterations'} */ (stepStarts.length > 0 ? 'steps' : (iterationStarts.length > 0 ? 'iterations' : 'steps'));
   const boundaries = spine.filter((e) => e.type === 'close-verdict' || e.type === 'run-end' || e.type === 'escalation');
+
+  // ── FIX LOOP (panel build item 1, 2026-09-26): a PLAN run (timelineKind
+  // 'steps') can carry a SECOND loop after every step already ended — the
+  // operator's real close runs an `outer-close` PRECHECK, and when that
+  // comes back non-green a `fix-loop` (src/planrun.js:3539's `runCloseStages`
+  // loop) re-runs the close against fresh worker rounds (`phase:'fix'`)
+  // until it's satisfied or the run stops. Before this, every one of those
+  // rounds/iterations was invisible on the Run tab: `steps` only carries the
+  // plan's OWN steps, and the `iterations` timeline above is built ONLY when
+  // `timelineKind==='iterations'` (no step-start at all) — a plan run with a
+  // fix loop has BOTH a step-start AND post-step iteration-start records,
+  // and the latter were simply never read.
+  //
+  // Measured on the real archived run this was built against (mu2p83go):
+  // step-end at seq 61, then `outer-close` (needs_revision) at seq 62,
+  // `fix-loop`/run-start/iteration-start 1 at seq 63-65, two more
+  // needs_revision iterations, then iteration 3 satisfied at seq 108,
+  // run-end/job-end at 109/112. `fixLoop.attempts` reports this as 4
+  // attempts: the outer-close precheck first (attempt 1, red), then the
+  // fix-loop's own 3 iterations (2 red, 1 green) — the SAME "✗ ✗ ✗ ✓"
+  // sequence a person reading the raw spine by hand gets.
+  //
+  // Scoped by seq strictly AFTER the last step-end this spine reached (never
+  // before — the step's OWN micro-loop, src/planrun.js's `ralph({judge,...})`,
+  // also emits `iteration-start`/`close-verdict` and must not be double
+  // counted here; that loop is already fully captured by each step's own
+  // `attempts`/`attemptWindows` above, keyed off `exit-eval`, a completely
+  // separate emit type). `null` (never an empty-but-present object) when
+  // this run has no steps at all, OR no outer-close/fix-loop iteration
+  // exists after the last step ended (the overwhelmingly common case: a
+  // plan run whose close was satisfied on the first outer-close precheck
+  // never enters a fix loop, and this field must read exactly as it did
+  // before this addition for that run).
+  let fixLoop = null;
+  if (timelineKind === 'steps' && stepStarts.length > 0) {
+    const lastStepEndSeq = stepEnds.reduce((max, se) => (typeof se.seq === 'number' && se.seq > max ? se.seq : max), -Infinity);
+    const outerClosesAfter = spine
+      .filter((e) => e.type === 'outer-close' && typeof e.seq === 'number' && e.seq > lastStepEndSeq)
+      .sort((a, b) => a.seq - b.seq);
+    const iterationStartsAfter = iterationStarts
+      .filter((e) => typeof e.seq === 'number' && e.seq > lastStepEndSeq)
+      .sort((a, b) => a.seq - b.seq);
+
+    if (outerClosesAfter.length > 0 || iterationStartsAfter.length > 0) {
+      /** @type {any[]} */
+      const attempts = [];
+
+      // The outer-close precheck(s): each is a single point-in-time verdict,
+      // never its own round-producing window on its own (the rounds that led
+      // to it already belong to the LAST STEP, already reported there) —
+      // except the (rare) gap between step-end and the precheck itself,
+      // which this window still honestly captures rather than assuming zero.
+      let prevSeq = lastStepEndSeq;
+      let prevTs = stepEnds.length ? (stepEnds.reduce((latest, se) => {
+        const t = parseTs(se.ts);
+        return typeof se.seq === 'number' && se.seq === lastStepEndSeq && t !== null ? t : latest;
+      }, /** @type {number|null} */ (null))) : null;
+      for (const oc of outerClosesAfter) {
+        const seq = typeof oc.seq === 'number' ? oc.seq : Infinity;
+        const ts = parseTs(oc.ts);
+        const roundsInWindow = spendRecords.filter((r) => typeof r.seq === 'number' && r.seq > prevSeq && r.seq < seq);
+        const verdict = oc.verdict ?? null;
+        attempts.push({
+          n: attempts.length + 1,
+          source: /** @type {'outer-close'} */ ('outer-close'),
+          iteration: null,
+          verdict,
+          stages: Array.isArray(oc.stages) ? oc.stages : null,
+          outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red'),
+          ...buildOccurrenceMetrics(prevSeq, prevTs, seq, ts, roundsInWindow),
+          windowStartSeq: prevSeq,
+          windowEndSeq: seq,
+          windowStartTs: prevTs,
+          windowEndTs: ts,
+        });
+        prevSeq = seq;
+        prevTs = ts;
+      }
+
+      // The fix-loop's own iterations: same windowing rule the `iterations`
+      // timeline above already uses (iteration-start .. next close-verdict/
+      // run-end/escalation), scoped to `> lastStepEndSeq` so the step's own
+      // micro-loop iterations never leak in.
+      for (const is of iterationStartsAfter) {
+        const startSeq = typeof is.seq === 'number' ? is.seq : -Infinity;
+        const startTs = parseTs(is.ts);
+        const end = boundaries
+          .filter((b) => typeof b.seq === 'number' && b.seq > startSeq)
+          .sort((a, b) => a.seq - b.seq)[0] ?? null;
+        const endSeq = end && typeof end.seq === 'number' ? end.seq : Infinity;
+        const endTs = end ? parseTs(end.ts) : null;
+        const roundsInWindow = spendRecords.filter((r) => typeof r.seq === 'number' && r.seq > startSeq && r.seq < endSeq);
+        const verdict = end
+          ? (end.type === 'close-verdict' ? (end.verdict ?? null)
+            : end.type === 'run-end' ? (end.outcome ?? null)
+              : end.type === 'escalation' ? (end.category ?? null) : null)
+          : null;
+        attempts.push({
+          n: attempts.length + 1,
+          source: /** @type {'iteration'} */ ('iteration'),
+          iteration: typeof is.iteration === 'number' ? is.iteration : null,
+          verdict,
+          stages: end && end.type === 'close-verdict' && Array.isArray(end.stages) ? end.stages : null,
+          outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red'),
+          ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
+          windowStartSeq: startSeq,
+          windowEndSeq: endSeq,
+          windowStartTs: startTs,
+          windowEndTs: endTs,
+        });
+      }
+
+      const allToolsKnown = attempts.every((a) => typeof a.toolCalls === 'number');
+      const allWallKnown = attempts.every((a) => typeof a.wallMs === 'number');
+      const unpricedRounds = attempts.reduce((acc, a) => acc + a.unpricedRounds, 0);
+      fixLoop = {
+        attempts,
+        rounds: attempts.reduce((acc, a) => acc + a.rounds, 0),
+        toolCalls: allToolsKnown ? attempts.reduce((acc, a) => acc + (a.toolCalls ?? 0), 0) : null,
+        wallMs: allWallKnown ? attempts.reduce((acc, a) => acc + (a.wallMs ?? 0), 0) : null,
+        spentUsd: unpricedRounds > 0 ? null : attempts.reduce((acc, a) => acc + (a.spentUsd ?? 0), 0),
+        unpricedRounds,
+      };
+    }
+  }
 
   const iterations = timelineKind === 'iterations' ? iterationStarts.map((is) => {
     const startSeq = typeof is.seq === 'number' ? is.seq : -Infinity;
@@ -634,6 +922,13 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
         ? { verdict: end.verdict ?? null, stages: Array.isArray(end.stages) ? end.stages : null }
         : null,
       ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
+      // exposed for panel item 5's `/api/runs/:runid/rounds` endpoint, which
+      // slices this iteration's own rounds/tool-calls the same way a plan
+      // step's `attemptWindows` does — never a second windowing pass.
+      windowStartSeq: startSeq,
+      windowEndSeq: endSeq,
+      windowStartTs: startTs,
+      windowEndTs: endTs,
     };
   }) : [];
 
@@ -668,6 +963,280 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
   const shown = new Set([last, ...before]);
   const escalationOutsideWindow = lastEscalation && !shown.has(lastEscalation) ? lastEscalation : null;
 
+  // ── PARTS (panel build item 6, 2026-09-26): ONE ordered list of this run's
+  // own high-level pieces — scout, plan, each step occurrence in run order,
+  // a replan window sitting between two steps, the fix loop, and (synthetic
+  // only — no real archive carries this yet) a leftover judge-round bucket.
+  // Computed ONCE here, server-side, so the Run tab's map+cards and the
+  // Audit tab's groups read off the exact same list and can never disagree
+  // on order or counts. A run with no phase data at all (no step-start: the
+  // pre-phase archive shape, or the older loop-tier `iterations` shape,
+  // neither of which carries a scout/plan/step split of its own) collapses
+  // to one box, `{kind:'run'}` — matching the build spec's "old runs with no
+  // phase data = one box 'run'".
+  /**
+   * @param {number|null} startTs
+   * @param {number|null} endTs
+   */
+  function partBehaviour(startTs, endTs) {
+    if (!auditAvailable) return null;
+    const lo = startTs ?? -Infinity;
+    const hi = endTs ?? Infinity;
+    const windowed = audit.filter((a) => {
+      const t = parseTs(a.ts);
+      return t !== null && t >= lo && t <= hi;
+    });
+    return runBehaviour(windowed);
+  }
+  /**
+   * One synthetic "whole part" attempt — used by every part kind that has no
+   * attempt/iteration sub-loop of its own (scout, plan, replan, judge, run):
+   * the Audit tab expands these straight to their rounds table (build spec
+   * item C), never through a fake attempt list.
+   * @param {number} startSeq
+   * @param {number|null} startTs
+   * @param {number} endSeq
+   * @param {number|null} endTs
+   */
+  function wholePartAttempt(startSeq, startTs, endSeq, endTs) {
+    return [{
+      n: 1, outcome: /** @type {null} */ (null), verdict: null, stages: null, detail: null, startSeq, endSeq, startTs, endTs,
+    }];
+  }
+
+  /** @type {Array<any>} */
+  const parts = [];
+
+  if (stepStarts.length === 0) {
+    const jobStartTs = parseTs(jobStart?.ts);
+    const jobEndTs = parseTs(jobEnd?.ts);
+    const b = partBehaviour(jobStartTs, jobEndTs);
+    parts.push({
+      id: 'run',
+      kind: 'run',
+      label: 'run',
+      number: null,
+      occurrence: null,
+      rounds: spendRecords.length,
+      toolCalls: b ? b.totalCalls : null,
+      byTool: b ? b.byTool : null,
+      blocked: b ? b.denied : null,
+      wallMs,
+      spentUsd: thisFileSpend.value,
+      unpricedRounds: thisFileSpend.unpricedRounds,
+      outcome,
+      attempts: wholePartAttempt(-Infinity, jobStartTs, Infinity, jobEndTs),
+    });
+  } else {
+    const firstStepStart = stepStarts.reduce((first, ss) => (typeof ss.seq === 'number' && (first === null || ss.seq < first.seq) ? ss : first), /** @type {any} */ (null));
+    const firstSeq = firstStepStart && typeof firstStepStart.seq === 'number' ? firstStepStart.seq : Infinity;
+    const firstTs = firstStepStart ? parseTs(firstStepStart.ts) : null;
+    const jobStartTs = parseTs(jobStart?.ts);
+
+    const scoutRoundsArr = spendRecords.filter((r) => r.phase === 'scout' && typeof r.seq === 'number' && r.seq < firstSeq);
+    const planRoundsInitialArr = spendRecords.filter((r) => r.phase === 'plan' && typeof r.seq === 'number' && r.seq < firstSeq);
+    // `scoutLastSeq` is the ONE seq boundary shared by both windows below —
+    // scout's own upper bound and plan's own lower bound — so a round can
+    // never land in both (or neither): each is a real spend record's own
+    // `seq`, never a placeholder Infinity that would make the two windows
+    // overlap (a `phase-lookup` consumer keying purely off seq needs this).
+    const scoutLastSeq = scoutRoundsArr.length ? scoutRoundsArr[scoutRoundsArr.length - 1].seq : -Infinity;
+    const scoutTsHi = planRoundsInitialArr.length ? parseTs(planRoundsInitialArr[0].ts) : firstTs;
+
+    if (scoutRoundsArr.length > 0) {
+      const { spentUsd, unpricedRounds } = windowSpend(scoutRoundsArr);
+      const b = partBehaviour(jobStartTs, scoutTsHi);
+      parts.push({
+        id: 'scout',
+        kind: 'scout',
+        label: 'scout',
+        number: null,
+        occurrence: null,
+        rounds: scoutRoundsArr.length,
+        toolCalls: b ? b.totalCalls : null,
+        byTool: b ? b.byTool : null,
+        blocked: b ? b.denied : null,
+        wallMs: windowWallMs(jobStartTs, scoutTsHi),
+        spentUsd,
+        unpricedRounds,
+        outcome: null,
+        attempts: wholePartAttempt(-Infinity, jobStartTs, scoutLastSeq, scoutTsHi),
+      });
+    }
+    if (planRoundsInitialArr.length > 0) {
+      const { spentUsd, unpricedRounds } = windowSpend(planRoundsInitialArr);
+      const b = partBehaviour(scoutTsHi, firstTs);
+      parts.push({
+        id: 'plan',
+        kind: 'plan',
+        label: 'plan',
+        number: null,
+        occurrence: null,
+        rounds: planRoundsInitialArr.length,
+        toolCalls: b ? b.totalCalls : null,
+        byTool: b ? b.byTool : null,
+        blocked: b ? b.denied : null,
+        wallMs: windowWallMs(scoutTsHi, firstTs),
+        spentUsd,
+        unpricedRounds,
+        outcome: null,
+        attempts: wholePartAttempt(scoutLastSeq, scoutTsHi, firstSeq, firstTs),
+      });
+    }
+
+    // replans (panel build item 6): a `materials` record stamped
+    // `phase:'replan'` between two consecutive steps marks a redraft — its
+    // own worker rounds carry `phase:'plan'` (measured on a real archived
+    // run, bareagent-u-bareloop/u-mshcpdg4.jsonl: `materials{phase:replan}`
+    // at seq 72, then a `worker-round{phase:plan}` at seq 73, then the next
+    // step's own `step-start` at seq 76 — the identical shape the run's
+    // FIRST scout/plan window uses, just sitting later in the spine).
+    const replanMarkers = spine
+      .filter((e) => e.type === 'materials' && e.phase === 'replan' && typeof e.seq === 'number' && e.seq > firstSeq)
+      .sort((a, b) => a.seq - b.seq);
+
+    let stepIdx = 0;
+    for (const step of steps) {
+      stepIdx += 1;
+      // a replan marker sitting between the PREVIOUS step's own end and
+      // THIS step's own start belongs here, immediately before this step's
+      // box — matching run order.
+      const prevStep = stepIdx > 1 ? steps[stepIdx - 2] : null;
+      const windowLo = prevStep ? prevStep.stepEndSeq : firstSeq;
+      const marker = replanMarkers.find((m) => typeof m.seq === 'number' && m.seq > windowLo && m.seq < step.stepStartSeq);
+      if (marker) {
+        const markerSeq = marker.seq;
+        const planRoundsHere = spendRecords.filter((r) => r.phase === 'plan' && typeof r.seq === 'number' && r.seq > windowLo && r.seq < step.stepStartSeq);
+        const loTs = prevStep ? prevStep.stepEndTs : firstTs;
+        const hiTs = step.stepStartTs;
+        const { spentUsd, unpricedRounds } = windowSpend(planRoundsHere);
+        const b = partBehaviour(loTs, hiTs);
+        parts.push({
+          id: `replan:${parts.filter((p) => p.kind === 'replan').length + 1}`,
+          kind: 'replan',
+          label: 'replan',
+          number: null,
+          occurrence: null,
+          rounds: planRoundsHere.length,
+          toolCalls: b ? b.totalCalls : null,
+          byTool: b ? b.byTool : null,
+          blocked: b ? b.denied : null,
+          wallMs: windowWallMs(loTs, hiTs),
+          spentUsd,
+          unpricedRounds,
+          outcome: null,
+          attempts: wholePartAttempt(windowLo, loTs, step.stepStartSeq, hiTs),
+          markerSeq,
+        });
+      }
+
+      const stepBehaviour = partBehaviour(step.stepStartTs, step.stepEndTs);
+      // a step that died before its own first exit-eval ever ran (e.g. a
+      // crash mid-attempt — measured on the real archived
+      // spines-poc-openai/poc-p2ocuxj8.jsonl, whose 2nd step crashed with no
+      // check ever firing) carries an EMPTY `attemptWindows` — fall back to
+      // one synthetic whole-step attempt spanning the step's own bounds so
+      // the Audit tab still has something to expand into a rounds table,
+      // same as a scout/plan/replan/judge/run part already does.
+      const stepAttempts = step.attemptWindows.length > 0
+        ? step.attemptWindows.map((aw) => ({
+          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs,
+        }))
+        : wholePartAttempt(step.stepStartSeq, step.stepStartTs, step.stepEndSeq, step.stepEndTs);
+      parts.push({
+        id: `step:${step.id}:${step.occurrence}`,
+        kind: 'step',
+        label: step.id,
+        number: stepIdx,
+        occurrence: step.occurrence,
+        rounds: step.rounds,
+        toolCalls: step.toolCalls,
+        byTool: stepBehaviour ? stepBehaviour.byTool : null,
+        blocked: stepBehaviour ? stepBehaviour.denied : null,
+        wallMs: step.wallMs,
+        spentUsd: step.spentUsd,
+        unpricedRounds: step.unpricedRounds,
+        outcome: step.outcome,
+        attempts: stepAttempts,
+      });
+    }
+
+    if (fixLoop) {
+      const firstA = fixLoop.attempts[0];
+      const lastA = fixLoop.attempts[fixLoop.attempts.length - 1];
+      const fixBehaviour = partBehaviour(firstA ? firstA.windowStartTs : null, lastA ? lastA.windowEndTs : null);
+      parts.push({
+        id: 'fix',
+        kind: 'fix',
+        label: 'fix',
+        number: null,
+        occurrence: null,
+        rounds: fixLoop.rounds,
+        toolCalls: fixLoop.toolCalls,
+        byTool: fixBehaviour ? fixBehaviour.byTool : null,
+        blocked: fixBehaviour ? fixBehaviour.denied : null,
+        wallMs: fixLoop.wallMs,
+        spentUsd: fixLoop.spentUsd,
+        unpricedRounds: fixLoop.unpricedRounds,
+        outcome: fixLoop.attempts.length ? fixLoop.attempts[fixLoop.attempts.length - 1].outcome : null,
+        attempts: fixLoop.attempts.map((a) => ({
+          n: a.n, outcome: a.outcome, verdict: a.verdict, stages: a.stages, detail: null, startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, startTs: a.windowStartTs, endTs: a.windowEndTs,
+        })),
+      });
+    }
+
+    // judge (panel build item 6): a bare `judge-round` spend record — a
+    // close's own paid seam (`onJudgeCost`, src/planrun.js:1333) — that
+    // falls OUTSIDE every window already built above (every step, every
+    // replan, the fix loop). No real archived run measured against this
+    // build carries one: every judge-round seen so far already lands inside
+    // a step or fix-loop window. Kept SYNTHETIC-ONLY (a fixture test builds
+    // one by hand) so a future soft-green judged close still gets its own
+    // box instead of silently vanishing into "unaccounted for".
+    const consumedSeqs = new Set();
+    for (const p of parts) {
+      for (const a of p.attempts) {
+        if (typeof a.startSeq === 'number' && typeof a.endSeq === 'number') {
+          for (const r of spendRecords) {
+            if (typeof r.seq === 'number' && r.seq > a.startSeq && r.seq <= a.endSeq) consumedSeqs.add(r.seq);
+          }
+        }
+      }
+    }
+    const leftoverJudgeRounds = spendRecords.filter((r) => r.type === 'judge-round' && typeof r.seq === 'number' && !consumedSeqs.has(r.seq));
+    if (leftoverJudgeRounds.length > 0) {
+      const jTsLo = parseTs(leftoverJudgeRounds[0].ts);
+      const jTsHi = parseTs(leftoverJudgeRounds[leftoverJudgeRounds.length - 1].ts);
+      const { spentUsd, unpricedRounds } = windowSpend(leftoverJudgeRounds);
+      const b = partBehaviour(jTsLo, jTsHi);
+      parts.push({
+        id: 'judge',
+        kind: 'judge',
+        label: 'judge',
+        number: null,
+        occurrence: null,
+        rounds: leftoverJudgeRounds.length,
+        toolCalls: b ? b.totalCalls : null,
+        byTool: b ? b.byTool : null,
+        blocked: b ? b.denied : null,
+        wallMs: windowWallMs(jTsLo, jTsHi),
+        spentUsd,
+        unpricedRounds,
+        outcome: null,
+        // startSeq is one less than the first leftover round's own seq (an
+        // exclusive lower bound, matching every other part's convention) so
+        // that round itself still falls INSIDE this window rather than being
+        // excluded by its own boundary.
+        attempts: wholePartAttempt(
+          leftoverJudgeRounds[0].seq - 1,
+          jTsLo,
+          leftoverJudgeRounds[leftoverJudgeRounds.length - 1].seq,
+          jTsHi,
+        ),
+      });
+    }
+  }
+
   return {
     runId,
     job: jobStart?.job ?? null,
@@ -680,6 +1249,11 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
     // neither, and this reader reports that honestly rather than guessing.
     verdictType: typeof jobStart?.verdictType === 'string' ? jobStart.verdictType : null,
     model: typeof jobStart?.model === 'string' ? jobStart.model : null,
+    // PRD item 28 / F156's own field (src/run.js:368) — WHICH provider ran
+    // this model (e.g. `openai-api` for a DeepSeek run). `null` on any spine
+    // older than that landing, or a native/clipipe call path with no such
+    // binding — never fabricated, never defaulted to "anthropic-api".
+    provider: typeof jobStart?.provider === 'string' ? jobStart.provider : null,
     // F118 (parked-half landed): `job-start.code` — absent on any spine older
     // than that landing (this run predates the field entirely, distinct from
     // `sha` being null because the run happened to run from an npm install
@@ -727,12 +1301,28 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null } = {}) 
       ? { spentUsd, thisFileUsd: thisFileSpend.value, diffUsd: spentUsd - thisFileSpend.value }
       : null,
     timelineKind,
+    // scoutPlan (panel build item 1, 2026-09-26): this run's own pre-step
+    // scout/plan rounds — see the field's own construction comment above.
+    // `null` on every run with no steps, or no scout/plan rounds recorded.
+    scoutPlan,
     steps,
     iterations,
+    // fixLoop (panel build item 1, 2026-09-26): the post-step outer-close
+    // precheck + fix-loop iterations a PLAN run can carry after its last
+    // step-end — see the field's own construction comment above. `null` on
+    // every run with no such loop (the common case) or with no steps at all.
+    fixLoop,
+    // parts (panel build item 6, 2026-09-26): the ONE ordered part list —
+    // see its own construction comment above. Drives the Run tab's map+cards
+    // and the Audit tab's groups; never a second computation of run order.
+    parts,
     replans,
     close,
     ending: { record: last, before, escalation: escalationOutsideWindow },
-    behaviour: runBehaviour(audit),
+    // `null` (never a 0-call object) when the caller could not even
+    // determine whether a gate-audit sidecar exists — see the `auditAvailable`
+    // param doc above.
+    behaviour: auditAvailable ? runBehaviour(audit) : null,
     memoryCache,
     skipped,
   };
@@ -759,6 +1349,18 @@ function rowMoney(row) {
   return row.unpricedRounds > 0
     ? `unknown (${row.unpricedRounds} unpriced round${row.unpricedRounds === 1 ? '' : 's'})`
     : money(row.spentUsd);
+}
+
+/**
+ * The `tools` column for one occurrence/iteration row: `null` (no
+ * gate-audit sidecar available for this run) reads `unknown tools` — never
+ * `0 tools`, which would silently discard real tool-call activity the
+ * sidecar just wasn't there to count. A real zero-call occurrence still
+ * reads `0 tools` honestly.
+ * @param {number|null} n
+ */
+function toolsCell(n) {
+  return n === null ? 'unknown tools' : `${n} tool${n === 1 ? '' : 's'}`;
 }
 
 /** @param {number|null} ms */
@@ -1018,7 +1620,7 @@ export function formatReplay(summary) {
         `iteration ${it.iteration ?? '?'}`,
         resultWord(it.verdict),
         `${it.rounds} round${it.rounds === 1 ? '' : 's'}`,
-        `${it.toolCalls} tool${it.toolCalls === 1 ? '' : 's'}`,
+        toolsCell(it.toolCalls),
         duration(it.wallMs),
         rowMoney(it),
       ]);
@@ -1048,7 +1650,7 @@ export function formatReplay(summary) {
         `${s.id}${s.occurrence > 1 ? ` (${ordinal(s.occurrence)})` : ''}`,
         resultWord(s.outcome),
         `${s.rounds} round${s.rounds === 1 ? '' : 's'}`,
-        `${s.toolCalls} tool${s.toolCalls === 1 ? '' : 's'}`,
+        toolsCell(s.toolCalls),
         `${s.checks.passed}/${s.checks.failed}`,
         s.treeChanged ? 'changed' : 'unchanged',
         duration(s.wallMs),
@@ -1065,6 +1667,23 @@ export function formatReplay(summary) {
         if (retryNote) lines.push(`${indent}↳ ${retryNote}`);
       }
     }
+  }
+
+  // FIX LOOP (panel build item 1, 2026-09-26): printed ONLY when this run
+  // actually carries one (see `replayRun`'s own construction comment) —
+  // additive, never replacing any existing line above, so a run with no
+  // fix loop prints byte-identical to before this addition.
+  if (summary.fixLoop) {
+    lines.push('');
+    lines.push('FIX LOOP (post-step outer-close precheck + fix-loop iterations)');
+    const seq = summary.fixLoop.attempts.map((a) => (a.source === 'outer-close' ? 'precheck' : `iter ${a.iteration ?? '?'}`) + (a.outcome === 'green' ? ' ✓' : ' ✗')).join(' · ');
+    lines.push(`  ${seq}`);
+    lines.push(`  ${summary.fixLoop.rounds} round${summary.fixLoop.rounds === 1 ? '' : 's'} · ${toolsCell(summary.fixLoop.toolCalls)} · ${duration(summary.fixLoop.wallMs)} · ${rowMoney(summary.fixLoop)}`);
+  }
+  if (summary.scoutPlan) {
+    lines.push('');
+    lines.push('SCOUT+PLAN (this run\'s own pre-step drafting)');
+    lines.push(`  ${summary.scoutPlan.scoutRounds} scout round${summary.scoutPlan.scoutRounds === 1 ? '' : 's'} + ${summary.scoutPlan.planRounds} plan round${summary.scoutPlan.planRounds === 1 ? '' : 's'} · ${toolsCell(summary.scoutPlan.toolCalls)} · ${duration(summary.scoutPlan.wallMs)} · ${rowMoney(summary.scoutPlan)}`);
   }
 
   lines.push('');

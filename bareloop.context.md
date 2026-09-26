@@ -3186,6 +3186,63 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   this command reports, it never grades), `1` on a missing file/directory or a non-spine
   file, `1` with a usage line on no args.
 
+- **`bareloop runs`** / **`bareloop runs backfill <dir>`** (PANEL-BUILD.md P1, 2026-09-24
+  rulings — "one home for runs", hamr's option B) → the one run list, at `~/.config/bareloop/
+  runs.jsonl` (the same directory the keys file, PRD §7d, lives in — outside any repo tree,
+  never moved into one). This is a LIST, not a relocation: patient copies stay exactly where
+  they already are (`bareloop-patients/…` for `run-u`, `<bundleDir>/runs/<runid>/` for
+  `bareloop run`); jobs stay in `jobs/` (moving them into the home too is deferred to P3,
+  hamr picked option "A"). `bareloop runs` with no subcommand prints every listed row, one
+  line each — `job (runid) · date · spine path`, with ` — file missing` appended when the
+  row's `spine` no longer exists on disk. `bareloop runs backfill <dir>` scans `dir` and its
+  immediate subdirectories for archived spines already on disk (both the free-standing
+  layout, e.g. `<dir>/<x>/u-<id>.jsonl`, and the bundle layout, `<dir>/<x>/runs/<runid>/
+  spine.jsonl`), reusing `src/replayio.js`'s `parseJsonl`/`isSidecarByName`/`looksLikeSpine`
+  (never a second parser), and adds one row per spine whose runid is not already listed —
+  idempotent, running it twice adds nothing the second time. Prints `added N, already listed
+  M, skipped K (not a spine or unreadable)` — never silent about what it found. Read-only,
+  $0: no interview, no author, no run trigger, no key ever read. A row is `{ at, runid, job,
+  spine, patient, via }` — `spine`/`patient` are always absolute paths (`patient: null` when
+  not known, e.g. every `via:"backfill"` row: no spine record carries a run's workdir);
+  `via` is `'run-u'`, `'bundle'`, or `'backfill'`. `bareloop run-u` and `bareloop run` (the
+  bundle path) each append their own row at run START, before the first paid call — a
+  list-append failure is caught at both call sites and printed loudly to stderr
+  (`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (…)`); the run itself
+  always continues (a panel list must never block real, already-signed work). Interview/
+  author sessions are NOT added (deferred to P3 — nothing to list at that stage yet). These
+  functions (`appendRun`/`readRunList`/`backfillRuns`/`formatRunRow`, `src/runlist.js`) are
+  NOT exported from the package root — the panel's HTTP server (P1's next task) will call
+  them the same in-process way `src/cli.js` does, per the layering law
+  (`docs/product/PANEL-BUILD.md` §2), not through `bareloop`'s public API.
+
+- **`bareloop panel [--port N]`** (PANEL-BUILD.md P1) → a READ-ONLY `node:http` server
+  (no new dependency), bound to `127.0.0.1` ONLY, default port `4700`. Serves the panel's
+  look (Tokyo Night box-drawing TUI style) over the run list's real data: `GET /` the page;
+  `GET /api/runs` (newest first, each row enriched with a glyph/check-type/spend/wall
+  summary, `fileMissing:true` when the listed spine is gone — the client groups this SAME
+  list by job for the left pane's "Workflows" view and renders it flat for "History", both
+  behind one `Runs` tab toggle; there is no separate `/api/workflows` endpoint, deleted in
+  the P1 Runs-tab merge); `GET /api/runs/:runid` (the full replay — parts/steps, counters,
+  summary, model/provider/judge); `GET /api/runs/:runid/audit` (the gate-audit sidecar rows,
+  ts-windowed to this run alone even when the sidecar file is shared with other runs, plus
+  the matching raw-log text windowed the same way — when one resolves); `GET
+  /api/runs/:runid/rounds?part=&attempt=&offset=&limit=` (one attempt's rounds, lazily
+  paged, for the Audit tab's Grouped view); `GET /api/runs/:runid/job` (the signed spec's
+  own fields, ONLY when a bundle-layout run's `spec.json` is reachable — a run-u run has
+  none on disk, and this reads `resolved:false` with every spec-only field honestly
+  `'unknown'`, never guessed from the spine's own narrower `job-start` record). Every
+  endpoint is GET/HEAD only (anything else — including every write verb — is `405`); a URL
+  never joins a path segment into a filesystem read — a runid is looked up in the run list
+  first (`RUNID_RE`, `src/panel/server.js` — accepts a `~2`-style backfill-disambiguated
+  suffix too, and every endpoint echoes back the LISTED runid, never a filename-derived one
+  that can silently drop that suffix), and only the path THAT ROW stores is ever read. A
+  taken port fails loudly (names the port, exit `1`) — this command never silently tries a
+  different one. No interview, no author, no run trigger, no key/`.env` ever read on this
+  path. One more caller of `src/replayio.js`/`src/runlist.js`, in-process, per the layering
+  law (`docs/product/PANEL-BUILD.md` §2) — the panel's HTTP handler holds no flow logic of
+  its own. Chat/Settings/authoring (P3/P4) are not built yet; the page says so rather than
+  hiding the gap.
+
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
   U-mode). `src/cli.js`'s `run-u` dispatch hands `rest` straight to

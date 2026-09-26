@@ -1277,7 +1277,15 @@ export async function main(argv, deps = {}) {
       err(`  AND THE SPINE COULD NOT BE WRITTEN: ${/** @type {any} */ (spineErr)?.message ?? spineErr}`);
       err('  the error above is the only record of this run — copy it before it scrolls');
     }
-    err(`  spine ${spineFile}`);
+    // no `err(\`  spine ${spineFile}\`)` here — this catch falls through to the
+    // shared tail (`out(\`\nspine      ${spineFile}\`)\`, below), which runs on
+    // EVERY exit path including this one (nothing in finally/the tail skips it
+    // when the catch already set exitCode). A second, catch-local print here
+    // used to duplicate that line on every crash; ONE owner (the tail) now
+    // prints it, same as the refusal/failed-gate/signed-readout paths always
+    // did. (The `err('  spine …')` in the SIGINT/SIGTERM/SIGHUP handler above
+    // is a different path — a real signal re-raises and never reaches the
+    // tail, so that one stays as the sole print for a killed run.)
     // 4, distinct from 1 (a refusal or a failed gate), 2 (operator/config) and 3 (a
     // leak). A crash is none of those: it is the run failing to reach a verdict at
     // all, and sharing an exit code with a refusal would file a bug as a result.

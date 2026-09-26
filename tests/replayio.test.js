@@ -122,6 +122,33 @@ test('replayOne: a real GREEN run (u-msf70nei) reconstructs identically to hand-
   assert.notDeepEqual(noAuditSummary.behaviour, summary.behaviour, 'without the real sidecar, behaviour must differ from the real reading, never coincidentally match it');
 });
 
+const POC_NO_AUDIT = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-pm48w5az.jsonl';
+const havePocNoAudit = existsSync(POC_NO_AUDIT);
+
+test(
+  'replayOne on a real spine with NO gate-audit sidecar reports toolCalls/behaviour as unknown (null), never 0 — the spine itself carries 33 ctx-tool records that a 0 would silently discard',
+  { skip: !havePocNoAudit && 'no poc-pm48w5az fixture on this machine' },
+  () => {
+    // confirm the fixture really has no sidecar sitting next to it (the
+    // defect this reproduces: a spine-only archive, not an edited fixture).
+    const { auditPath } = resolveSiblings(POC_NO_AUDIT);
+    assert.equal(auditPath, null, 'fixture must genuinely have no gate-audit sidecar');
+
+    const summary = replayOne(POC_NO_AUDIT);
+    assert.equal(summary.behaviour, null, 'no sidecar was found — behaviour must be null (unknown), never a 0-call object');
+    assert.equal(summary.timelineKind, 'steps');
+    assert.ok(summary.steps.length > 0);
+    for (const s of summary.steps) {
+      assert.equal(s.toolCalls, null, `step ${s.id} has no sidecar data — toolCalls must be null, never 0`);
+    }
+
+    const text = formatReplay(summary);
+    assert.ok(!/\b0 tools?\b/.test(text), `formatted replay must never print "0 tool(s)" for an audit-less run:\n${text}`);
+    assert.ok(!/^0 tool calls$/m.test(text), `BEHAVIOUR section must never print "0 tool calls" for an audit-less run:\n${text}`);
+    assert.ok(/unknown/i.test(text), 'formatted replay must say unknown somewhere for the missing tool-call data');
+  },
+);
+
 test('replayOne: formatReplay(replayOne(...)) on a real run matches manual parseJsonl + replayRun byte-for-byte', { skip: !haveBareagent && 'no bareagent-u patient on this machine' }, () => {
   const path = join(BAREAGENT_U, 'u-msdsmkid.jsonl');
   const auditPath = join(BAREAGENT_U, 'u-msdsmkid-gate-audit.jsonl');
