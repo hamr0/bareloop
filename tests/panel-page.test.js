@@ -184,12 +184,11 @@ test('wf-name and wf-meta-line CSS: single-line with ellipsis (never wrap) so a 
 // for any step flagged `noNumber` (set from `synthetic` by renderRun).
 // ---------------------------------------------------------------------------
 
-/** Extracts one named function's source text verbatim out of the page's own
- * inline script (never a reimplementation) and returns it as a callable. */
-function extractFn(html, name) {
+/** Extracts one named function's source text verbatim (brace-depth counted
+ * from its own `function name(` marker, wherever it lives in the page). */
+function extractFnSource(html, name) {
   const start = html.indexOf(`function ${name}(`);
   assert.ok(start !== -1, `expected to find function ${name} in src/panel/index.html`);
-  // find the matching closing brace by simple depth counting from the first "{"
   const braceStart = html.indexOf('{', start);
   let depth = 0;
   let i = braceStart;
@@ -197,9 +196,25 @@ function extractFn(html, name) {
     if (html[i] === '{') depth += 1;
     else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
   }
-  const body = html.slice(start, i + 1);
+  return html.slice(start, i + 1);
+}
+
+/** Extracts one named function's source text verbatim out of the page's own
+ * inline script (never a reimplementation) and returns it as a callable. */
+function extractFn(html, name) {
   // eslint-disable-next-line no-new-func
-  return new Function(`${body}\nreturn ${name};`)();
+  return new Function(`${extractFnSource(html, name)}\nreturn ${name};`)();
+}
+
+/** Extracts SEVERAL named functions verbatim (any source order — function
+ * DECLARATIONS hoist within the constructed scope, so a caller defined
+ * earlier in the page than its own callee still resolves it) and returns the
+ * one named `returnName` as a callable, with its real dependency chain
+ * intact (never a reimplementation/stub of the functions it calls). */
+function loadFns(html, names, returnName) {
+  const body = names.map((n) => extractFnSource(html, n)).join('\n');
+  // eslint-disable-next-line no-new-func
+  return new Function(`${body}\nreturn ${returnName};`)();
 }
 
 test('realSteps: filters out any step flagged `synthetic` (the "died during planning" placeholder), keeps real steps', () => {
@@ -409,11 +424,11 @@ test('item 4: row selection scrolls the run view into view on mobile only, gated
   assert.match(html, /function scrollRunIntoViewMobile\(\)\{/);
   assert.match(html, /getElementById\("right-pane-anchor"\)/);
   assert.match(html, /getElementById\("left-pane-anchor"\)/);
-  // both row-click handlers call it
-  const wfClick = html.match(/selectRun\(w\.lastRunid, row, "\.wf-row"\); document\.getElementById\("tab-run"\)\.click\(\); scrollRunIntoViewMobile\(\);/);
-  const histClick = html.match(/selectRun\(r\.runid, row, "\.hist-row"\); document\.getElementById\("tab-run"\)\.click\(\); scrollRunIntoViewMobile\(\);/);
-  assert.ok(wfClick, 'expected the Workflows row click handler to call scrollRunIntoViewMobile()');
-  assert.ok(histClick, 'expected the History row click handler to call scrollRunIntoViewMobile()');
+  // the ONE shared run-row builder (item 2, 2026-09-26 merge: buildRunRowEl,
+  // used by both History and a Workflows job's inline expansion) calls it —
+  // a job row itself only expands/collapses now, it never selects a run.
+  const runRowClick = html.match(/selectRun\(r\.runid, row, "\.hist-row"\); document\.getElementById\("tab-run"\)\.click\(\); scrollRunIntoViewMobile\(\);/);
+  assert.ok(runRowClick, 'expected buildRunRowEl\'s click handler to call scrollRunIntoViewMobile()');
 });
 
 test('item 5: filterRuns — no filters selected -> everything passes (each group empty = no filter for that group)', () => {
@@ -488,39 +503,49 @@ test('item 5 + F-panel-chip-collision: ONE filter-bar component is shared by His
 test('item 5 + F-panel-chip-collision: the shared filter-bar component wraps localStorage access in try/catch (per-viewer convenience only)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function createFilterBar');
-  const end = html.indexOf('document.getElementById("history-filterbar-anchor")');
+  const end = html.indexOf('document.getElementById("runs-filterbar-anchor")');
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected createFilterBar in src/panel/index.html');
   const body = html.slice(start, end);
   assert.match(body, /try\{[\s\S]*localStorage\.getItem[\s\S]*\}catch\(e\)/);
   assert.match(body, /try\{[\s\S]*localStorage\.setItem[\s\S]*\}catch\(e\)/);
 });
 
-test('F-panel-chip-collision: filterWorkflows filters by each workflow\'s OWN latest-run checkType/glyph/date, same shape as filterRuns', () => {
+test('item 2 (2026-09-26 merge): filterWorkflows matches a job if ANY of its runs match (not only the latest) — a one-line adapter over filterRuns, same real dependency chain as matchesSearch', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  // filterWorkflows calls filterRuns internally (a one-row adapter, not a
-  // reimplementation), and filterRuns itself calls matchesSearch (item 1) —
-  // extract ALL THREE function bodies, verbatim, in source order, so the
+  // filterWorkflows calls filterRuns internally (never a reimplementation),
+  // and filterRuns itself calls matchesSearch (item 1) — extract all three
+  // (function declarations hoist, so extraction order doesn't matter) so the
   // real dependency chain is exercised rather than stubbed.
-  const start = html.indexOf('function matchesSearch(');
-  const wfStart = html.indexOf('function filterWorkflows(');
-  const braceStart = html.indexOf('{', wfStart);
-  let depth = 0;
-  let i = braceStart;
-  for (; i < html.length; i += 1) {
-    if (html[i] === '{') depth += 1;
-    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
-  }
-  const body = html.slice(start, i + 1);
-  // eslint-disable-next-line no-new-func
-  const filterWorkflows = new Function(`${body}\nreturn filterWorkflows;`)();
+  const filterWorkflows = loadFns(html, ['matchesSearch', 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
   const now = Date.parse('2026-09-25T00:00:00.000Z');
-  const workflows = [
-    { job: 'a', lastCheckType: 'deterministic', lastGlyph: '✓', lastAt: '2026-09-20T00:00:00.000Z' },
-    { job: 'b', lastCheckType: 'rubric', lastGlyph: '✗', lastAt: '2026-01-01T00:00:00.000Z' },
-  ];
-  assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: 'all' }, now), workflows);
-  assert.deepEqual(filterWorkflows(workflows, { checkTypes: ['deterministic'], results: [], time: 'all' }, now), [workflows[0]]);
-  assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: '7d' }, now), [workflows[0]]);
+  const jobA = {
+    job: 'a',
+    runs: [{ runid: 'a2', job: 'a', checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z' }],
+  };
+  const jobB = {
+    job: 'b',
+    runs: [{ runid: 'b1', job: 'b', checkType: 'rubric', glyph: '✗', at: '2026-01-01T00:00:00.000Z' }],
+  };
+  const jobs = [jobA, jobB];
+  assert.deepEqual(filterWorkflows(jobs, { checkTypes: [], results: [], time: 'all' }, now), jobs);
+  assert.deepEqual(filterWorkflows(jobs, { checkTypes: ['deterministic'], results: [], time: 'all' }, now), [jobA]);
+  assert.deepEqual(filterWorkflows(jobs, { checkTypes: [], results: [], time: '7d' }, now), [jobA]);
+});
+
+test('item 2 (2026-09-26 merge): filterWorkflows matches a job whose LATEST run fails a filter but an OLDER run in that same job passes it', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const filterWorkflows = loadFns(html, ['matchesSearch', 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  const job = {
+    job: 'mixed',
+    runs: [
+      { runid: 'newest', job: 'mixed', checkType: 'rubric', glyph: '✗', at: '2026-09-24T00:00:00.000Z' }, // latest — does NOT match
+      { runid: 'older', job: 'mixed', checkType: 'deterministic', glyph: '✓', at: '2026-09-01T00:00:00.000Z' }, // older — DOES match
+    ],
+  };
+  const matched = filterWorkflows([job], { checkTypes: ['deterministic'], results: [], time: 'all' }, now);
+  assert.equal(matched.length, 1, 'the job must still show up because an older run of it matches');
+  assert.equal(matched[0].job, 'mixed');
 });
 
 test('item 6/build item B: the part card meta line carries a plain-language title (hover) explaining parts/calls/tools — no new glyph', () => {
@@ -618,31 +643,26 @@ test('item C: filterRuns — search also matches the run\'s model field', () => 
   assert.deepEqual(filterRuns(runs, { checkTypes: [], results: [], time: 'all', search: 'nomodel' }, now), []);
 });
 
-test('item C: filterWorkflows — search matches a workflow\'s own lastModel field', () => {
+test('item C: filterWorkflows — search matches a run\'s own model field, off the job\'s real per-run list', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function matchesSearch(');
-  const wfStart = html.indexOf('function filterWorkflows(');
-  const braceStart = html.indexOf('{', wfStart);
-  let depth = 0;
-  let i = braceStart;
-  for (; i < html.length; i += 1) {
-    if (html[i] === '{') depth += 1;
-    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
-  }
-  const body = html.slice(start, i + 1);
-  // eslint-disable-next-line no-new-func
-  const filterWorkflows = new Function(`${body}\nreturn filterWorkflows;`)();
+  const filterWorkflows = loadFns(html, ['matchesSearch', 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
   const now = Date.parse('2026-09-25T00:00:00.000Z');
-  const workflows = [
+  const jobs = [
     {
-      job: 'a', lastCheckType: 'deterministic', lastGlyph: '✓', lastAt: '2026-09-20T00:00:00.000Z', lastModel: 'deepseek-chat',
+      job: 'a',
+      runs: [{
+        runid: 'a1', job: 'a', checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z', model: 'deepseek-chat',
+      }],
     },
     {
-      job: 'b', lastCheckType: 'rubric', lastGlyph: '✗', lastAt: '2026-01-01T00:00:00.000Z', lastModel: 'claude-sonnet-5',
+      job: 'b',
+      runs: [{
+        runid: 'b1', job: 'b', checkType: 'rubric', glyph: '✗', at: '2026-01-01T00:00:00.000Z', model: 'claude-sonnet-5',
+      }],
     },
   ];
-  assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: 'all', search: 'deepseek' }, now), [workflows[0]]);
-  assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: 'all', search: 'sonnet' }, now), [workflows[1]]);
+  assert.deepEqual(filterWorkflows(jobs, { checkTypes: [], results: [], time: 'all', search: 'deepseek' }, now), [jobs[0]]);
+  assert.deepEqual(filterWorkflows(jobs, { checkTypes: [], results: [], time: 'all', search: 'sonnet' }, now), [jobs[1]]);
 });
 
 test('item 1: the search input exists in the shared filter bar for both scopes, and clear empties it', () => {
@@ -962,4 +982,163 @@ test('item 6: run-counters reads "took Xs" for a finished or died run, "Xs elaps
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.ok(html.indexOf('var isLive = detail.glyph === "▶" && !detail.died;') !== -1);
   assert.ok(html.indexOf('var wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);') !== -1);
+});
+
+// ---------------------------------------------------------------------------
+// item 2 (2026-09-26 build spec): Workflows and History merge into ONE left
+// "Runs" tab with a [Workflows]/[History] toggle over a single shared filter
+// bar. Coverage here: the left-tab markup itself, the toggle's default +
+// localStorage persistence, groupRunsByJob (the client-side replacement for
+// the deleted /api/workflows endpoint), and the "match ANY run, auto-expand
+// a job whose latest run doesn't match" rules — off a real archived job name
+// (bareagent-u-types, run mshcpdg4) wherever the build report names one.
+// ---------------------------------------------------------------------------
+
+test('item 2: left pane has ONE "Runs" tab (Workflows/History merged) — the old separate tab ids are gone', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /data-testid="left-tab-runs"/);
+  assert.doesNotMatch(html, /data-testid="left-tab-workflows"/);
+  assert.doesNotMatch(html, /data-testid="left-tab-history"/);
+  assert.match(html, /data-testid="runs-view-workflows"/);
+  assert.match(html, /data-testid="runs-view-history"/);
+  // Workflows is the markup default (aria-pressed="true" on load, before any JS runs)
+  assert.match(html, /data-runs-view="workflows" data-testid="runs-view-workflows">Workflows<\/button>/);
+  const wfBtn = html.match(/<button class="chip" type="button" aria-pressed="(true|false)" data-runs-view="workflows"/);
+  assert.ok(wfBtn && wfBtn[1] === 'true', 'expected the Workflows toggle button to start pressed in the raw markup');
+});
+
+test('item 2: ONE shared filter bar anchor ("runs" scope) feeds both views — the old two-anchor/two-instance shape is gone', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /id="runs-filterbar-anchor"/);
+  assert.doesNotMatch(html, /workflows-filterbar-anchor/);
+  assert.doesNotMatch(html, /history-filterbar-anchor/);
+  assert.match(html, /filterBarHTML\("runs"\)/);
+  assert.doesNotMatch(html, /var historyFilterBar/);
+  assert.doesNotMatch(html, /var workflowsFilterBar/);
+});
+
+test('item 2: loadRunsViewMode defaults to "workflows", round-trips through localStorage, and ignores garbage', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  // RUNS_VIEW_KEY is a module-level const the two functions close over —
+  // must be extracted alongside them or they'd throw a ReferenceError
+  // (silently swallowed by their own try/catch, which would falsely read as
+  // "always defaults to workflows" instead of a real extraction bug).
+  const keyLine = html.match(/var RUNS_VIEW_KEY = "[^"]+";/);
+  assert.ok(keyLine, 'expected the RUNS_VIEW_KEY module const in src/panel/index.html');
+  const { loadRunsViewMode, saveRunsViewMode } = loadFns2(
+    html,
+    ['loadRunsViewMode', 'saveRunsViewMode'],
+    ['loadRunsViewMode', 'saveRunsViewMode'],
+    keyLine[0],
+  );
+  const store = {};
+  global.localStorage = {
+    getItem: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+  };
+  try {
+    assert.equal(loadRunsViewMode(), 'workflows', 'no stored value at all -> default workflows');
+    saveRunsViewMode('history');
+    assert.equal(loadRunsViewMode(), 'history', 'persisted value round-trips');
+    store['bareloop-panel-runs-view'] = 'not-a-real-mode';
+    assert.equal(loadRunsViewMode(), 'workflows', 'garbage stored value falls back to the default, never crashes');
+  } finally {
+    delete global.localStorage;
+  }
+});
+
+/** Like loadFns, but returns SEVERAL named functions at once as an object
+ * (still one shared hoisted scope, so they can call each other). `extraSrc`
+ * is any additional verbatim source (e.g. a module-level const the
+ * extracted functions close over) to prepend. */
+function loadFns2(html, sourceNames, returnNames, extraSrc) {
+  const body = (extraSrc ? `${extraSrc}\n` : '') + sourceNames.map((n) => extractFnSource(html, n)).join('\n');
+  const returnObj = `{ ${returnNames.join(', ')} }`;
+  // eslint-disable-next-line no-new-func
+  return new Function(`${body}\nreturn ${returnObj};`)();
+}
+
+test('item 2: groupRunsByJob groups the /api/runs payload by job, newest run per job wins as "last", full per-job run list preserved', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const groupRunsByJob = loadFns(html, ['groupRunsByJob'], 'groupRunsByJob');
+  const runs = [
+    {
+      runid: 'a2', job: 'alpha', at: '2026-09-02T00:00:00.000Z', glyph: '✓', checkType: 'deterministic', model: 'deepseek-chat', spend: '$0.60', wall: '2m00s', date: '2026-09-02',
+    },
+    {
+      runid: 'a1', job: 'alpha', at: '2026-09-01T00:00:00.000Z', glyph: '✗', checkType: 'deterministic', spend: '$0.50', wall: '1m00s', date: '2026-09-01',
+    },
+    {
+      runid: 'b1', job: 'beta', at: '2026-09-01T12:00:00.000Z', glyph: '✓', checkType: 'rubric', spend: '$0.10', wall: '0m30s', date: '2026-09-01',
+    },
+  ];
+  const jobs = groupRunsByJob(runs);
+  assert.deepEqual(jobs.map((j) => j.job), ['alpha', 'beta'], 'job order follows first-seen (already newest-first) run order');
+  const alpha = jobs.find((j) => j.job === 'alpha');
+  assert.equal(alpha.runCount, 2);
+  assert.equal(alpha.lastRunid, 'a2');
+  assert.equal(alpha.lastGlyph, '✓');
+  assert.deepEqual(alpha.runs.map((r) => r.runid), ['a2', 'a1'], 'the job\'s own full run list is preserved, newest-first');
+});
+
+test('item 2: workflow search matches a job if the query matches ANY of its runs (real job shape: bareagent-u-types, run mshcpdg4)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { groupRunsByJob, filterWorkflows } = loadFns2(
+    html,
+    ['matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['groupRunsByJob', 'filterWorkflows'],
+  );
+  const runs = [
+    {
+      runid: 'mshzvkqw', job: 'bareagent-u-types', at: '2026-08-06T23:12:00.000Z', glyph: '✓', checkType: 'deterministic',
+    },
+    {
+      runid: 'mshcpdg4', job: 'bareagent-u-types', at: '2026-08-05T00:04:00.000Z', glyph: '✓', checkType: 'deterministic',
+    },
+    {
+      runid: 'other1', job: 'unrelated-job', at: '2026-08-01T00:00:00.000Z', glyph: '✓', checkType: 'deterministic',
+    },
+  ];
+  const jobs = groupRunsByJob(runs);
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  const matched = filterWorkflows(jobs, {
+    checkTypes: [], results: [], time: 'all', search: 'mshcpdg4',
+  }, now);
+  assert.equal(matched.length, 1);
+  assert.equal(matched[0].job, 'bareagent-u-types');
+  assert.ok(matched[0].runs.some((r) => r.runid === 'mshcpdg4'), 'the matching OLDER run must still be in the job\'s own run list for the client to expand into');
+});
+
+test('item 2: a ✗ result filter keeps a job whose LATEST run is ✓ but an OLDER run of it is ✗ (match-any-run, not just-latest)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { groupRunsByJob, filterWorkflows } = loadFns2(
+    html,
+    ['matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['groupRunsByJob', 'filterWorkflows'],
+  );
+  const runs = [
+    {
+      runid: 'newest', job: 'flaky-job', at: '2026-09-24T00:00:00.000Z', glyph: '✓', checkType: 'deterministic',
+    },
+    {
+      runid: 'older-red', job: 'flaky-job', at: '2026-09-01T00:00:00.000Z', glyph: '✗', checkType: 'deterministic',
+    },
+  ];
+  const jobs = groupRunsByJob(runs);
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  const matched = filterWorkflows(jobs, {
+    checkTypes: [], results: ['✗'], time: 'all',
+  }, now);
+  assert.equal(matched.length, 1, 'flaky-job must still show up under the ✗ filter because an older run of it was ✗');
+  assert.equal(matched[0].lastGlyph, '✓', 'the job row itself still reports its TRUE latest glyph (✓), never overwritten by the filter match');
+});
+
+test('item 2: autoExpandJob — expands only when filters are active AND the matching run(s) exclude the job\'s own latest run', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const autoExpandJob = loadFns(html, ['autoExpandJob'], 'autoExpandJob');
+  const group = { runs: [{ runid: 'newest' }, { runid: 'older' }] };
+  assert.equal(autoExpandJob(group, [{ runid: 'newest' }], true), false, 'latest run itself matched -> no need to auto-expand');
+  assert.equal(autoExpandJob(group, [{ runid: 'older' }], true), true, 'only an older run matched -> auto-expand so it\'s visible');
+  assert.equal(autoExpandJob(group, [{ runid: 'older' }], false), false, 'filters not active at all -> never force an expand');
+  assert.equal(autoExpandJob(group, [], true), false, 'no matching runs at all -> nothing to expand (this job would not even render)');
 });
