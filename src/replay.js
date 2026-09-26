@@ -963,6 +963,280 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   const shown = new Set([last, ...before]);
   const escalationOutsideWindow = lastEscalation && !shown.has(lastEscalation) ? lastEscalation : null;
 
+  // ── PARTS (panel build item 6, 2026-09-26): ONE ordered list of this run's
+  // own high-level pieces — scout, plan, each step occurrence in run order,
+  // a replan window sitting between two steps, the fix loop, and (synthetic
+  // only — no real archive carries this yet) a leftover judge-round bucket.
+  // Computed ONCE here, server-side, so the Run tab's map+cards and the
+  // Audit tab's groups read off the exact same list and can never disagree
+  // on order or counts. A run with no phase data at all (no step-start: the
+  // pre-phase archive shape, or the older loop-tier `iterations` shape,
+  // neither of which carries a scout/plan/step split of its own) collapses
+  // to one box, `{kind:'run'}` — matching the build spec's "old runs with no
+  // phase data = one box 'run'".
+  /**
+   * @param {number|null} startTs
+   * @param {number|null} endTs
+   */
+  function partBehaviour(startTs, endTs) {
+    if (!auditAvailable) return null;
+    const lo = startTs ?? -Infinity;
+    const hi = endTs ?? Infinity;
+    const windowed = audit.filter((a) => {
+      const t = parseTs(a.ts);
+      return t !== null && t >= lo && t <= hi;
+    });
+    return runBehaviour(windowed);
+  }
+  /**
+   * One synthetic "whole part" attempt — used by every part kind that has no
+   * attempt/iteration sub-loop of its own (scout, plan, replan, judge, run):
+   * the Audit tab expands these straight to their rounds table (build spec
+   * item C), never through a fake attempt list.
+   * @param {number} startSeq
+   * @param {number|null} startTs
+   * @param {number} endSeq
+   * @param {number|null} endTs
+   */
+  function wholePartAttempt(startSeq, startTs, endSeq, endTs) {
+    return [{
+      n: 1, outcome: /** @type {null} */ (null), verdict: null, stages: null, detail: null, startSeq, endSeq, startTs, endTs,
+    }];
+  }
+
+  /** @type {Array<any>} */
+  const parts = [];
+
+  if (stepStarts.length === 0) {
+    const jobStartTs = parseTs(jobStart?.ts);
+    const jobEndTs = parseTs(jobEnd?.ts);
+    const b = partBehaviour(jobStartTs, jobEndTs);
+    parts.push({
+      id: 'run',
+      kind: 'run',
+      label: 'run',
+      number: null,
+      occurrence: null,
+      rounds: spendRecords.length,
+      toolCalls: b ? b.totalCalls : null,
+      byTool: b ? b.byTool : null,
+      blocked: b ? b.denied : null,
+      wallMs,
+      spentUsd: thisFileSpend.value,
+      unpricedRounds: thisFileSpend.unpricedRounds,
+      outcome,
+      attempts: wholePartAttempt(-Infinity, jobStartTs, Infinity, jobEndTs),
+    });
+  } else {
+    const firstStepStart = stepStarts.reduce((first, ss) => (typeof ss.seq === 'number' && (first === null || ss.seq < first.seq) ? ss : first), /** @type {any} */ (null));
+    const firstSeq = firstStepStart && typeof firstStepStart.seq === 'number' ? firstStepStart.seq : Infinity;
+    const firstTs = firstStepStart ? parseTs(firstStepStart.ts) : null;
+    const jobStartTs = parseTs(jobStart?.ts);
+
+    const scoutRoundsArr = spendRecords.filter((r) => r.phase === 'scout' && typeof r.seq === 'number' && r.seq < firstSeq);
+    const planRoundsInitialArr = spendRecords.filter((r) => r.phase === 'plan' && typeof r.seq === 'number' && r.seq < firstSeq);
+    // `scoutLastSeq` is the ONE seq boundary shared by both windows below —
+    // scout's own upper bound and plan's own lower bound — so a round can
+    // never land in both (or neither): each is a real spend record's own
+    // `seq`, never a placeholder Infinity that would make the two windows
+    // overlap (a `phase-lookup` consumer keying purely off seq needs this).
+    const scoutLastSeq = scoutRoundsArr.length ? scoutRoundsArr[scoutRoundsArr.length - 1].seq : -Infinity;
+    const scoutTsHi = planRoundsInitialArr.length ? parseTs(planRoundsInitialArr[0].ts) : firstTs;
+
+    if (scoutRoundsArr.length > 0) {
+      const { spentUsd, unpricedRounds } = windowSpend(scoutRoundsArr);
+      const b = partBehaviour(jobStartTs, scoutTsHi);
+      parts.push({
+        id: 'scout',
+        kind: 'scout',
+        label: 'scout',
+        number: null,
+        occurrence: null,
+        rounds: scoutRoundsArr.length,
+        toolCalls: b ? b.totalCalls : null,
+        byTool: b ? b.byTool : null,
+        blocked: b ? b.denied : null,
+        wallMs: windowWallMs(jobStartTs, scoutTsHi),
+        spentUsd,
+        unpricedRounds,
+        outcome: null,
+        attempts: wholePartAttempt(-Infinity, jobStartTs, scoutLastSeq, scoutTsHi),
+      });
+    }
+    if (planRoundsInitialArr.length > 0) {
+      const { spentUsd, unpricedRounds } = windowSpend(planRoundsInitialArr);
+      const b = partBehaviour(scoutTsHi, firstTs);
+      parts.push({
+        id: 'plan',
+        kind: 'plan',
+        label: 'plan',
+        number: null,
+        occurrence: null,
+        rounds: planRoundsInitialArr.length,
+        toolCalls: b ? b.totalCalls : null,
+        byTool: b ? b.byTool : null,
+        blocked: b ? b.denied : null,
+        wallMs: windowWallMs(scoutTsHi, firstTs),
+        spentUsd,
+        unpricedRounds,
+        outcome: null,
+        attempts: wholePartAttempt(scoutLastSeq, scoutTsHi, firstSeq, firstTs),
+      });
+    }
+
+    // replans (panel build item 6): a `materials` record stamped
+    // `phase:'replan'` between two consecutive steps marks a redraft — its
+    // own worker rounds carry `phase:'plan'` (measured on a real archived
+    // run, bareagent-u-bareloop/u-mshcpdg4.jsonl: `materials{phase:replan}`
+    // at seq 72, then a `worker-round{phase:plan}` at seq 73, then the next
+    // step's own `step-start` at seq 76 — the identical shape the run's
+    // FIRST scout/plan window uses, just sitting later in the spine).
+    const replanMarkers = spine
+      .filter((e) => e.type === 'materials' && e.phase === 'replan' && typeof e.seq === 'number' && e.seq > firstSeq)
+      .sort((a, b) => a.seq - b.seq);
+
+    let stepIdx = 0;
+    for (const step of steps) {
+      stepIdx += 1;
+      // a replan marker sitting between the PREVIOUS step's own end and
+      // THIS step's own start belongs here, immediately before this step's
+      // box — matching run order.
+      const prevStep = stepIdx > 1 ? steps[stepIdx - 2] : null;
+      const windowLo = prevStep ? prevStep.stepEndSeq : firstSeq;
+      const marker = replanMarkers.find((m) => typeof m.seq === 'number' && m.seq > windowLo && m.seq < step.stepStartSeq);
+      if (marker) {
+        const markerSeq = marker.seq;
+        const planRoundsHere = spendRecords.filter((r) => r.phase === 'plan' && typeof r.seq === 'number' && r.seq > windowLo && r.seq < step.stepStartSeq);
+        const loTs = prevStep ? prevStep.stepEndTs : firstTs;
+        const hiTs = step.stepStartTs;
+        const { spentUsd, unpricedRounds } = windowSpend(planRoundsHere);
+        const b = partBehaviour(loTs, hiTs);
+        parts.push({
+          id: `replan:${parts.filter((p) => p.kind === 'replan').length + 1}`,
+          kind: 'replan',
+          label: 'replan',
+          number: null,
+          occurrence: null,
+          rounds: planRoundsHere.length,
+          toolCalls: b ? b.totalCalls : null,
+          byTool: b ? b.byTool : null,
+          blocked: b ? b.denied : null,
+          wallMs: windowWallMs(loTs, hiTs),
+          spentUsd,
+          unpricedRounds,
+          outcome: null,
+          attempts: wholePartAttempt(windowLo, loTs, step.stepStartSeq, hiTs),
+          markerSeq,
+        });
+      }
+
+      const stepBehaviour = partBehaviour(step.stepStartTs, step.stepEndTs);
+      // a step that died before its own first exit-eval ever ran (e.g. a
+      // crash mid-attempt — measured on the real archived
+      // spines-poc-openai/poc-p2ocuxj8.jsonl, whose 2nd step crashed with no
+      // check ever firing) carries an EMPTY `attemptWindows` — fall back to
+      // one synthetic whole-step attempt spanning the step's own bounds so
+      // the Audit tab still has something to expand into a rounds table,
+      // same as a scout/plan/replan/judge/run part already does.
+      const stepAttempts = step.attemptWindows.length > 0
+        ? step.attemptWindows.map((aw) => ({
+          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs,
+        }))
+        : wholePartAttempt(step.stepStartSeq, step.stepStartTs, step.stepEndSeq, step.stepEndTs);
+      parts.push({
+        id: `step:${step.id}:${step.occurrence}`,
+        kind: 'step',
+        label: step.id,
+        number: stepIdx,
+        occurrence: step.occurrence,
+        rounds: step.rounds,
+        toolCalls: step.toolCalls,
+        byTool: stepBehaviour ? stepBehaviour.byTool : null,
+        blocked: stepBehaviour ? stepBehaviour.denied : null,
+        wallMs: step.wallMs,
+        spentUsd: step.spentUsd,
+        unpricedRounds: step.unpricedRounds,
+        outcome: step.outcome,
+        attempts: stepAttempts,
+      });
+    }
+
+    if (fixLoop) {
+      const firstA = fixLoop.attempts[0];
+      const lastA = fixLoop.attempts[fixLoop.attempts.length - 1];
+      const fixBehaviour = partBehaviour(firstA ? firstA.windowStartTs : null, lastA ? lastA.windowEndTs : null);
+      parts.push({
+        id: 'fix',
+        kind: 'fix',
+        label: 'fix',
+        number: null,
+        occurrence: null,
+        rounds: fixLoop.rounds,
+        toolCalls: fixLoop.toolCalls,
+        byTool: fixBehaviour ? fixBehaviour.byTool : null,
+        blocked: fixBehaviour ? fixBehaviour.denied : null,
+        wallMs: fixLoop.wallMs,
+        spentUsd: fixLoop.spentUsd,
+        unpricedRounds: fixLoop.unpricedRounds,
+        outcome: fixLoop.attempts.length ? fixLoop.attempts[fixLoop.attempts.length - 1].outcome : null,
+        attempts: fixLoop.attempts.map((a) => ({
+          n: a.n, outcome: a.outcome, verdict: a.verdict, stages: a.stages, detail: null, startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, startTs: a.windowStartTs, endTs: a.windowEndTs,
+        })),
+      });
+    }
+
+    // judge (panel build item 6): a bare `judge-round` spend record — a
+    // close's own paid seam (`onJudgeCost`, src/planrun.js:1333) — that
+    // falls OUTSIDE every window already built above (every step, every
+    // replan, the fix loop). No real archived run measured against this
+    // build carries one: every judge-round seen so far already lands inside
+    // a step or fix-loop window. Kept SYNTHETIC-ONLY (a fixture test builds
+    // one by hand) so a future soft-green judged close still gets its own
+    // box instead of silently vanishing into "unaccounted for".
+    const consumedSeqs = new Set();
+    for (const p of parts) {
+      for (const a of p.attempts) {
+        if (typeof a.startSeq === 'number' && typeof a.endSeq === 'number') {
+          for (const r of spendRecords) {
+            if (typeof r.seq === 'number' && r.seq > a.startSeq && r.seq <= a.endSeq) consumedSeqs.add(r.seq);
+          }
+        }
+      }
+    }
+    const leftoverJudgeRounds = spendRecords.filter((r) => r.type === 'judge-round' && typeof r.seq === 'number' && !consumedSeqs.has(r.seq));
+    if (leftoverJudgeRounds.length > 0) {
+      const jTsLo = parseTs(leftoverJudgeRounds[0].ts);
+      const jTsHi = parseTs(leftoverJudgeRounds[leftoverJudgeRounds.length - 1].ts);
+      const { spentUsd, unpricedRounds } = windowSpend(leftoverJudgeRounds);
+      const b = partBehaviour(jTsLo, jTsHi);
+      parts.push({
+        id: 'judge',
+        kind: 'judge',
+        label: 'judge',
+        number: null,
+        occurrence: null,
+        rounds: leftoverJudgeRounds.length,
+        toolCalls: b ? b.totalCalls : null,
+        byTool: b ? b.byTool : null,
+        blocked: b ? b.denied : null,
+        wallMs: windowWallMs(jTsLo, jTsHi),
+        spentUsd,
+        unpricedRounds,
+        outcome: null,
+        // startSeq is one less than the first leftover round's own seq (an
+        // exclusive lower bound, matching every other part's convention) so
+        // that round itself still falls INSIDE this window rather than being
+        // excluded by its own boundary.
+        attempts: wholePartAttempt(
+          leftoverJudgeRounds[0].seq - 1,
+          jTsLo,
+          leftoverJudgeRounds[leftoverJudgeRounds.length - 1].seq,
+          jTsHi,
+        ),
+      });
+    }
+  }
+
   return {
     runId,
     job: jobStart?.job ?? null,
@@ -1033,6 +1307,10 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // step-end — see the field's own construction comment above. `null` on
     // every run with no such loop (the common case) or with no steps at all.
     fixLoop,
+    // parts (panel build item 6, 2026-09-26): the ONE ordered part list —
+    // see its own construction comment above. Drives the Run tab's map+cards
+    // and the Audit tab's groups; never a second computation of run order.
+    parts,
     replans,
     close,
     ending: { record: last, before, escalation: escalationOutsideWindow },
