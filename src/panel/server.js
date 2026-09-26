@@ -817,12 +817,31 @@ export function getRunAudit(runid, opts = {}) {
   const partOf = makePartLookup(summary);
 
   const { records } = parseJsonl(auditPath);
-  const rawText = readFileSync(auditPath, 'utf8');
   const windowed = records.filter((r) => {
     if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
     const ms = Date.parse(r.ts);
     return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
   });
+  // item 1 (build item, 2026-09-26): "Raw log" must show only THIS run's own
+  // window, same rule as `windowed` above (a sidecar can carry other runs'
+  // rows — see {@link runAuditWindow}'s doc). Filtered at the LINE level
+  // (never the parsed-record level) so a matched line stays byte-for-byte —
+  // "raw" means raw, not a re-serialized JSON.stringify of the parsed
+  // object. A line whose `ts` can't be parsed (malformed JSON, or a
+  // well-formed row missing/mistyping `ts`) is dropped rather than guessed
+  // into the window, matching the same honesty rule `windowed` already
+  // follows for its own rows.
+  const rawText = readFileSync(auditPath, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .filter((line) => {
+      let r;
+      try { r = JSON.parse(line); } catch { return false; }
+      if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
+      const ms = Date.parse(r.ts);
+      return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
+    })
+    .join('\n');
   // item 2 (2026-09-26 build spec): every row's path shortened relative to
   // the run's own tree root — computed ONCE here, never per-row, since the
   // root never changes within one run's rows.

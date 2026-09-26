@@ -648,6 +648,53 @@ test('/api/runs/:runid/audit: a sidecar with real rows -> reason null, rows popu
 });
 
 // ---------------------------------------------------------------------------
+// build item (2026-09-26): "Raw log" leaked other runs — `raw` used to be the
+// WHOLE sidecar file unscoped while `rows` was windowed to this run's own
+// ts range. `raw` must carry only the sidecar LINES inside that same window,
+// byte-for-byte (never a re-serialized JSON.stringify).
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid/audit: raw log is scoped to THIS run\'s own ts window, same rule as rows — a shared sidecar\'s earlier unrelated row is excluded from raw too', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-rawscope.jsonl'), [
+    { type: 'job-start', job: 'rawscope-job', ts: '2026-09-05T00:10:00.000Z', seq: 1 },
+    { type: 'job-end', ts: '2026-09-05T00:10:05.000Z', seq: 2, verdict: 'green' },
+  ]);
+  const earlierLine = JSON.stringify({ ts: '2026-09-05T00:00:00.000Z', action: { type: 'read', path: 'other-run.js' }, decision: 'allow' });
+  const insideLine = JSON.stringify({ ts: '2026-09-05T00:10:02.000Z', action: { type: 'write', path: 'foo.js' }, decision: 'allow' });
+  writeFileSync(join(dir, 'u-rawscope-gate-audit.jsonl'), `${earlierLine}\n${insideLine}\n`);
+  appendRun({
+    at: '2026-09-05T00:10:00.000Z', runid: 'rawscope', job: 'rawscope-job', spine: join(dir, 'u-rawscope.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/rawscope/audit');
+  const body = await res.json();
+  const rawLines = body.raw.split('\n').filter((l) => l.trim() !== '');
+  assert.equal(rawLines.length, 1, 'the earlier unrelated row must be excluded from raw, not just from rows');
+  assert.equal(rawLines[0], insideLine, 'the surviving line stays byte-for-byte identical to what was written');
+  assert.equal(body.rows.length, 1);
+});
+
+test('/api/runs/:runid/audit: real archived run mu2p83go — raw log\'s first line is not before job-start (F: raw used to start at 06:56:56, hours before the real 13:19:40.706Z job-start)', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-rawscope', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/mu2p83go-rawscope/audit');
+  const body = await res.json();
+  const rawLines = body.raw.split('\n').filter((l) => l.trim() !== '');
+  assert.ok(rawLines.length > 0);
+  const firstTs = Date.parse(JSON.parse(rawLines[0]).ts);
+  const jobStartTs = Date.parse('2026-09-15T13:19:40.706Z');
+  assert.ok(firstTs >= jobStartTs, `expected raw's first line ts (${new Date(firstTs).toISOString()}) >= job-start (2026-09-15T13:19:40.706Z)`);
+  assert.equal(rawLines.length, body.rows.length, 'raw line count must match the windowed rows count exactly');
+});
+
+// ---------------------------------------------------------------------------
 // item 2 (2026-09-25): Audit tab — model-call rows + round column, and the
 // sidecar-scoping fix (a shared gate-audit file can carry other runs' rows).
 // ---------------------------------------------------------------------------
