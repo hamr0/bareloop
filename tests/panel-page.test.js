@@ -818,10 +818,10 @@ test('item 1: the round-header-row is visually distinct (its own CSS rule), and 
 function loadToolsFns(html) {
   const start = html.indexOf('function toolDisplayLabel(');
   const end = html.indexOf('function renderRun(detail){');
-  assert.ok(start !== -1 && end !== -1 && end > start, 'expected toolDisplayLabel/toolsLine/offeredNeverUsedLine in src/panel/index.html');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected toolDisplayLabel/toolsLine/offeredLine in src/panel/index.html');
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
-  return new Function(`${body}\nreturn { toolsLine, offeredNeverUsedLine };`)();
+  return new Function(`${body}\nreturn { toolsLine, offeredLine };`)();
 }
 
 test('item 3: toolsLine lists EVERY tool used, no top-5 truncation, sorted by count descending', () => {
@@ -842,26 +842,23 @@ test('item 3: toolsLine lists EVERY tool used, no top-5 truncation, sorted by co
   assert.doesNotMatch(line, /…/);
 });
 
-test('item 3: offeredNeverUsedLine — spec tools minus used (by display name), null when nothing offered or nothing unused', () => {
+test('item 3 (2026-09-26 revision): offeredLine — the FULL granted-tools list, joined verbatim, never subtracted against what was used; null only when nothing was offered at all', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const { offeredNeverUsedLine } = loadToolsFns(html);
-  const behaviour = { totalCalls: 3, byTool: { shell_read: 2, edit: 1 } };
-  assert.equal(offeredNeverUsedLine(['read', 'edit', 'recall', 'get'], behaviour), 'recall, get');
-  assert.equal(offeredNeverUsedLine(['read', 'edit'], behaviour), null); // nothing unused
-  assert.equal(offeredNeverUsedLine(null, behaviour), null); // no granted list at all
-  assert.equal(offeredNeverUsedLine([], behaviour), null);
-  assert.equal(offeredNeverUsedLine(['recall'], null), 'recall'); // no behaviour at all -> everything offered reads as never-used
+  const { offeredLine } = loadToolsFns(html);
+  assert.equal(offeredLine(['read', 'grep', 'edit', 'write', 'recall', 'get']), 'read · grep · edit · write · recall · get');
+  // still shown even when every offered tool was actually used — no subtraction
+  assert.equal(offeredLine(['read', 'edit']), 'read · edit');
+  assert.equal(offeredLine(null), null); // no granted list at all
+  assert.equal(offeredLine([]), null);
 });
 
-test('item 3: the Run summary carries a hidden "offered" row that paintOfferedRow fills once both run + job data are in, in either arrival order', () => {
+test('item 3: the Run summary carries a hidden "offered" row that paintOfferedRow fills from the Job tab\'s own granted-tools list', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /id="summary-offered-row" hidden/);
-  assert.match(html, /var lastRunBehaviour = null;/);
   assert.match(html, /var lastJobToolsList = null;/);
   assert.match(html, /function paintOfferedRow\(\)\{/);
-  // renderRun sets lastRunBehaviour then repaints; renderJob sets lastJobToolsList then repaints
-  assert.match(html, /lastRunBehaviour = detail\.behaviour;\s*\n\s*paintOfferedRow\(\);/);
   assert.match(html, /lastJobToolsList = Array\.isArray\(job\.toolsList\) \? job\.toolsList : null;\s*\n\s*paintOfferedRow\(\);/);
+  assert.doesNotMatch(html, /lastRunBehaviour/, 'offeredLine no longer looks at run behaviour, so the module var must be gone entirely, not dead');
 });
 
 // ---------------------------------------------------------------------------

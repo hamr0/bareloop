@@ -1106,20 +1106,16 @@
     var all = entries.map(function(e){ return e[0] + " " + e[1]; });
     return behaviour.totalCalls + " calls — " + all.join(" · ");
   }
-  // item 3: "offered, never used" — the spec's granted tools minus the ones
-  // this run's own behaviour actually used (by DISPLAY name, since a spec's
-  // `tools` array already uses the bare names: 'read'/'grep'/'edit'/'recall'/
-  // etc — real spec.json files checked, e.g. spines-poc-openai's spec.json —
-  // matching what `toolDisplayLabel` strips shell_/ctx_ prefixes down to).
-  // `null` when the spec carries no granted-tools list at all (never shown).
-  function offeredNeverUsedLine(toolsList, behaviour){
+  // item 3 (2026-09-26 revision, hamr's word): "offered" — the FULL granted-
+  // tools list from the run's own resolved spec (`job.toolsList`), shown
+  // whenever a granted list exists at all — never subtracted against what
+  // was actually used (that used/never-used split was the ORIGINAL item 3
+  // shape; hamr asked it removed in favor of just showing everything the
+  // run was offered). `null` when the spec carries no granted-tools list at
+  // all (never shown).
+  function offeredLine(toolsList){
     if(!toolsList || !toolsList.length) return null;
-    var used = {};
-    if(behaviour && behaviour.byTool){
-      Object.keys(behaviour.byTool).forEach(function(k){ used[toolDisplayLabel(k)] = true; });
-    }
-    var never = toolsList.filter(function(t){ return !used[t]; });
-    return never.length ? never.join(", ") : null;
+    return toolsList.join(" · ");
   }
   // build item B: a part card's own 2nd line — every tool used, with counts,
   // sorted by count descending (no "N calls —" prefix, that's line 1's job).
@@ -1139,17 +1135,16 @@
   }
 
   // item 3: the Run summary and Job tab load via two independent fetches
-  // (see selectRun below) that can resolve in either order — these two
-  // module vars plus paintOfferedRow() let whichever one finishes SECOND
-  // fill in the "offered, never used" row, without either render function
-  // depending on the other's data being present yet.
-  var lastRunBehaviour = null;
+  // (see selectRun below) that can resolve in either order; the Job fetch is
+  // the only one this row needs now (offeredLine no longer looks at run
+  // behaviour at all), but paintOfferedRow() stays idempotent-safe to call
+  // from either render function.
   var lastJobToolsList = null;
   function paintOfferedRow(){
     var row = document.getElementById("summary-offered-row");
     var val = document.getElementById("summary-offered-val");
     if(!row || !val) return;
-    var line = offeredNeverUsedLine(lastJobToolsList, lastRunBehaviour);
+    var line = offeredLine(lastJobToolsList);
     if(line){ val.textContent = line; row.hidden = false; }
     else { row.hidden = true; val.textContent = ""; }
   }
@@ -1222,7 +1217,6 @@
       '<div class="summary-row" data-testid="summary-offered" id="summary-offered-row" hidden><span class="sum-label">offered:</span><span class="sum-val" id="summary-offered-val"></span></div>' +
       '<div class="summary-row" data-testid="summary-cache"><span class="sum-label">cache:</span><span class="sum-val">' + escapeXml(cacheLine(detail.memoryCache)) + '</span></div>';
 
-    lastRunBehaviour = detail.behaviour;
     paintOfferedRow();
 
     // build item B (2026-09-26 rewrite): the map AND the card list are both
@@ -1639,7 +1633,6 @@
     document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
     if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
     currentRunid = runid;
-    lastRunBehaviour = null;
     lastJobToolsList = null;
     getJSON("/api/runs/" + encodeURIComponent(runid)).then(renderRun).catch(function(e){
       document.getElementById("run-empty").hidden = false;
