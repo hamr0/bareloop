@@ -757,11 +757,19 @@
   // never drift on how a run row reads.
   function buildRunRowEl(r){
     var row = document.createElement("div");
-    row.className = "hist-row";
+    // build item (2026-09-26 fix): compute selected state here, off the
+    // module's own `currentRunid`, so a row freshly built by a RE-RENDER
+    // (switching Runs view mode, or a Workflows parent auto-expanding onto
+    // an older run picked from History) shows selected without needing a
+    // click on this exact element — `selectRun`'s imperative class toggle
+    // (used when a click passes its own `rowEl`) stays layered on top of
+    // this, never replaced by it.
+    var selected = r.runid === currentRunid;
+    row.className = "hist-row" + (selected ? " selected" : "");
     row.setAttribute("data-testid", "hist-row-" + r.runid);
     row.setAttribute("tabindex", "0");
     row.setAttribute("role", "button");
-    row.setAttribute("aria-pressed", "false");
+    row.setAttribute("aria-pressed", selected ? "true" : "false");
     var histFullName = r.job + ' (' + r.runid + ')';
     if(r.fileMissing){
       row.innerHTML =
@@ -861,9 +869,42 @@
     return !latestIncluded;
   }
 
+  // build item (2026-09-26 fix, F: parent-row/older-run mismatch): ONE owner
+  // for "which run does this parent row stand for" — both its own selected
+  // state and what its click opens read this, never two separate rules that
+  // could drift. Unfiltered (or when the latest still matches), a job's
+  // parent always stands for its latest run, same as before this fix. With
+  // a filter/search that matches an OLDER run but excludes the latest, the
+  // parent stands for the newest MATCHING run instead — so its click opens
+  // the run the search actually found, and (once picked) the parent's own
+  // selected state follows that same run rather than silently reverting to
+  // the latest.
+  function representedRun(group, candidateRuns, active){
+    if(active && candidateRuns.length){
+      var latestIncluded = candidateRuns.some(function(r){ return r.runid === group.lastRunid; });
+      if(!latestIncluded) return candidateRuns[0].runid;
+    }
+    return group.lastRunid;
+  }
+
+  // Is `currentRunid` one of this job's OLDER runs (i.e. a run that
+  // belongs to this job but isn't its latest)? Selecting a run from History
+  // and switching to Workflows lands here: the job must auto-expand and its
+  // matching child row must carry the selected marker even though no
+  // filter/search is active and no click happened inside Workflows itself.
+  function activeOlderRun(group){
+    if(!currentRunid || currentRunid === group.lastRunid) return null;
+    var found = group.runs.some(function(r){ return r.runid === currentRunid; });
+    return found ? currentRunid : null;
+  }
+
   // manual expand/collapse memory, keyed by job name — survives a re-render
   // triggered by a filter/search change within the same page load, reset on
-  // full page reload (per-viewer convenience only, never persisted).
+  // full page reload (per-viewer convenience only, never persisted). A
+  // manual collapse click still wins over auto-expand-for-selection on the
+  // next render (simplest rule: one flag, no "but selection forces it back
+  // open" special case) — collapsing a job you're not looking at any more
+  // is a normal, expected action.
   var wfExpanded = {};
 
   function renderWorkflows(jobs){
@@ -887,8 +928,14 @@
       var candidateRuns = active ? filterRuns(g.runs, currentRunsFilters(), Date.now()) : g.runs;
       var childRuns = candidateRuns.filter(function(r){ return r.runid !== g.lastRunid; });
       var hasOtherRuns = childRuns.length > 0;
-      var autoExpand = hasOtherRuns && autoExpandJob(g, candidateRuns, active);
+      // build item (2026-09-26 fix): auto-expand for a filter/search match
+      // on an older run (existing rule) OR because the run picked elsewhere
+      // (e.g. History) IS one of this job's older runs — either way the
+      // matching child must be visible without an extra click.
+      var olderSelected = activeOlderRun(g);
+      var autoExpand = hasOtherRuns && (autoExpandJob(g, candidateRuns, active) || !!olderSelected);
       var expanded = hasOtherRuns && (Object.prototype.hasOwnProperty.call(wfExpanded, g.job) ? wfExpanded[g.job] : autoExpand);
+      var targetRunid = representedRun(g, candidateRuns, active);
 
       var wrap = document.createElement("div");
       wrap.className = "wf-job";
@@ -899,8 +946,11 @@
       // "selected" visual state a child row gets from selectRun (the class
       // is computed HERE, at render time, rather than left on the clicked
       // element, since this function tears down and rebuilds every wf-row
-      // on every click — see below).
-      var isSelected = currentRunid === g.lastRunid;
+      // on every click — see below). `targetRunid` (see `representedRun`
+      // above) is normally the latest run, so this is unchanged in the
+      // common case; a filter/search that matched an older run instead
+      // makes the parent follow THAT run once it's the selected one.
+      var isSelected = currentRunid === targetRunid;
       row.className = "wf-row" + (isSelected ? " selected" : "");
       row.setAttribute("data-wf", g.job);
       row.setAttribute("data-testid", "wf-row-" + g.job);
@@ -928,8 +978,11 @@
         // rowEl null since renderWorkflows(jobs) below rebuilds every row
         // right after, so a class set directly on this element would be
         // discarded; the fresh render marks selection off `currentRunid`
-        // instead (see `isSelected` above).
-        selectRun(g.lastRunid, null, ".hist-row");
+        // instead (see `isSelected` above). build item (2026-09-26 fix):
+        // opens `targetRunid`, not always `g.lastRunid` — with a filter/
+        // search active that excludes the latest but matches an older run,
+        // that's the run the search actually found (see `representedRun`).
+        selectRun(targetRunid, null, ".hist-row");
         document.getElementById("tab-run").click();
         scrollRunIntoViewMobile();
         renderWorkflows(jobs);

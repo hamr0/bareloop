@@ -1195,6 +1195,8 @@ function makeWorkflowsPage() {
     extractFnSource(html, 'groupRunsByJob'),
     extractFnSource(html, 'filtersActive'),
     extractFnSource(html, 'autoExpandJob'),
+    extractFnSource(html, 'representedRun'),
+    extractFnSource(html, 'activeOlderRun'),
     extractFnSource(html, 'buildRunRowEl'),
     extractFnSource(html, 'renderWorkflows'),
   ].join('\n');
@@ -1400,3 +1402,57 @@ function singleRunJobFixture() {
     lastDate: '2026-09-20',
   }];
 }
+
+// ---------------------------------------------------------------------------
+// build item (2026-09-26 fix, debrief): the parent row was hardwired to
+// `g.lastRunid` for both its own "selected" state and its click target —
+// two failures follow: (1) a search hit on an OLDER run auto-expands the
+// job but clicking the parent still opens the unrelated latest run with no
+// cue, and (2) picking an older run from History then switching to
+// Workflows leaves the job collapsed with nothing marked selected. Fixed
+// via ONE `representedRun`/`activeOlderRun` pair the parent's own selected
+// state, click target, and auto-expand all read from — see src/panel/
+// index.html. These tests fail without that fix (verified by reverting it
+// in a scratch copy): failure (1) reads `calls.selectRun` still landing on
+// 'msi0w2i5' instead of 'older1'; failure (2) reads the job collapsed
+// (`aria-expanded` "false") with no selected row anywhere.
+// ---------------------------------------------------------------------------
+
+test('build item (fix): search matching only an older run — clicking the parent opens THAT run, not the unrelated latest', () => {
+  const { page, doc, calls, setFilters } = makeWorkflowsPage();
+  setFilters({ checkTypes: [], results: [], time: 'all', search: 'older1' });
+
+  const jobs = groupRunsByJobFixture(); // latest 'msi0w2i5', older 'older1'
+  page.render(jobs);
+
+  const wrap = doc.getElementById('wf-list').children[0];
+  let row = wrap.children[0];
+  assert.equal(row.getAttribute('aria-expanded'), 'true', 'auto-expands: only an older run matches the search');
+
+  row.click();
+
+  assert.deepEqual(calls.selectRun, ['older1'], 'parent click must open the MATCHED older run, never the latest, when the latest is filtered out');
+  assert.equal(page.getCurrentRunid(), 'older1');
+
+  row = doc.getElementById('wf-list').children[0].children[0];
+  assert.equal(row.className, 'wf-row selected', 'parent follows the run it now stands for, not the (unmatched) latest');
+});
+
+test('build item (fix): picking an older run elsewhere (e.g. History) then rendering Workflows auto-expands the job and marks that child selected, not the parent', () => {
+  const { page, doc } = makeWorkflowsPage();
+
+  const jobs = groupRunsByJobFixture(); // latest 'msi0w2i5', older 'older1'
+  page.setCurrentRunid('older1'); // simulates a History-tab selection made before switching views
+  page.render(jobs);
+
+  const wrap = doc.getElementById('wf-list').children[0];
+  const row = wrap.children[0];
+  assert.equal(row.getAttribute('aria-expanded'), 'true', 'must auto-expand so the selected older run is visible, with no filter/search active at all');
+  assert.ok(!row.className.includes('selected'), 'parent (which stands for the latest run) must not be marked selected');
+
+  const runsWrap = wrap.children[1];
+  assert.ok(runsWrap, 'expanded child list must be rendered');
+  assert.equal(runsWrap.children.length, 1);
+  assert.equal(runsWrap.children[0].getAttribute('data-testid'), 'hist-row-older1');
+  assert.equal(runsWrap.children[0].className, 'hist-row selected', 'the matching child must carry the selected marker on render, with no click needed');
+});
