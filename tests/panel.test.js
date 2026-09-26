@@ -1494,3 +1494,145 @@ test('/api/runs/:runid/rounds: real archived run mu2p83go — attempt 1 of the o
   assert.equal(body.check.outcome, 'green');
   assert.equal(body.toolLogSaved, true);
 });
+
+// ---------------------------------------------------------------------------
+// PANEL P1 items B/C (2026-09-26): parts-driven Run tab + Audit tab grouping.
+// Real-archive proof + a synthetic red-proof for the one class of bug the
+// old phase-string heuristic (`makeRoundPhaseLookup`) could not avoid: a
+// replan's own worker-round STILL carries `phase:'plan'` (src/replay.js's
+// own comment on the `parts` builder), so a tool call happening during a
+// replan's own round used to read `step:'plan'` — indistinguishable from the
+// run's real initial plan phase. `makePartLookup` fixes this by matching a
+// round's own SEQ against `summary.parts`' disjoint attempt windows instead.
+// ---------------------------------------------------------------------------
+
+test('build item B/C: real archived run mu2p83go — /api/runs/:runid exposes `parts` with the same 4-part shape (scout, plan, one step, fix) the Audit grouping test already proves via row counts', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-parts', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/mu2p83go-parts`);
+  const detail = await res.json();
+  assert.deepEqual(detail.parts.map((p) => p.kind), ['scout', 'plan', 'step', 'fix']);
+  assert.equal(detail.parts[2].label, 'annotate-checks-strict');
+  // real gate-audit-derived tool-call counts per part (byTool populated,
+  // never null, since this run's sidecar exists and covers every part).
+  detail.parts.forEach((p) => { assert.equal(typeof p.toolCalls, 'number', `part ${p.kind} must carry a real toolCalls count`); });
+});
+
+test('build item B/C: real archived run bareagent u-mshcpdg4 — a REPLAN carries its own part between two step occurrences (never merged into the initial "plan" part), and its own worker-round is isolated to a 1-round window', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u-bareloop/u-mshcpdg4.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-10T00:00:00.000Z', runid: 'mshcpdg4-parts', job: 'bareagent-u-types', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/mshcpdg4-parts`);
+  const detail = await res.json();
+  assert.deepEqual(detail.parts.map((p) => p.kind), ['scout', 'plan', 'step', 'replan', 'step', 'step', 'replan', 'step']);
+  // real archived blocked figure: this run's own gate-audit sidecar carries
+  // exactly 1 denied call, all inside the scout part's own window.
+  assert.equal(detail.parts[0].blocked, 1);
+  detail.parts.filter((p) => p.kind !== 'scout').forEach((p) => assert.equal(p.blocked, 0));
+  // each replan's own worker-round window is isolated (never pooled with
+  // the surrounding steps or the initial plan) — 1 round each.
+  const replanParts = detail.parts.filter((p) => p.kind === 'replan');
+  assert.equal(replanParts.length, 2);
+  replanParts.forEach((p) => assert.equal(p.rounds, 1));
+  const replanIdx = detail.parts.findIndex((p) => p.kind === 'replan');
+  const roundsRes = await fetch(`${base}/api/runs/mshcpdg4-parts/rounds?part=${replanIdx}&attempt=1`);
+  assert.equal(roundsRes.status, 200);
+  const roundsBody = await roundsRes.json();
+  assert.equal(roundsBody.totalRounds, 1);
+});
+
+test('build item C RED-PROOF: a tool call during a REPLAN\'s own worker-round (which itself still carries `phase:\'plan\'`, per src/replay.js) resolves to partLabel "replan" — NEVER "plan" (the old makeRoundPhaseLookup phase-string heuristic could not tell these apart, since both share the identical `phase:\'plan\'` value)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const T = (s) => `2026-09-05T00:00:${String(s).padStart(2, '0')}.000Z`;
+  writeSpine(join(dir, 'u-replan.jsonl'), [
+    { type: 'job-start', job: 'replan-job', ts: T(0), seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 's1', ts: T(1), seq: 2 },
+    {
+      type: 'worker-round', phase: 'step:s1', costUsd: 0.01, tokens: 10, seq: 3, ts: T(2),
+    },
+    {
+      type: 'exit-eval', step: 's1', iteration: 1, seq: 4, ts: T(3), results: [{ type: 'check-passes', pass: true }],
+    },
+    { type: 'step-end', step: 's1', outcome: 'green', seq: 5, ts: T(4) },
+    { type: 'materials', phase: 'replan', seq: 6, ts: T(5) },
+    // the replan's OWN worker-round — carries phase:'plan', same as the
+    // run's real initial plan phase (src/replay.js's own documented shape).
+    {
+      type: 'worker-round', phase: 'plan', costUsd: 0.02, tokens: 20, seq: 7, ts: T(6),
+    },
+    { type: 'step-start', step: 's2', ts: T(7), seq: 8 },
+    {
+      type: 'worker-round', phase: 'step:s2', costUsd: 0.01, tokens: 10, seq: 9, ts: T(8),
+    },
+    {
+      type: 'exit-eval', step: 's2', iteration: 1, seq: 10, ts: T(9), results: [{ type: 'check-passes', pass: true }],
+    },
+    { type: 'step-end', step: 's2', outcome: 'green', seq: 11, ts: T(10) },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0.04, spendComplete: true, seq: 12, ts: T(11),
+    },
+  ]);
+  writeSpine(join(dir, 'u-replan-gate-audit.jsonl'), [
+    // lands inside round #1 (s1's own round, ts T(2)..T(6)) — attributed to step s1
+    { ts: '2026-09-05T00:00:02.500Z', action: { type: 'read', path: 's1.js' }, decision: 'allow' },
+    // lands inside round #2 — the REPLAN's own round (ts T(6)..T(8)) — must resolve to "replan", never "plan"
+    { ts: '2026-09-05T00:00:06.500Z', action: { type: 'read', path: 'replan-window.js' }, decision: 'allow' },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'replanrun', job: 'replan-job', spine: join(dir, 'u-replan.jsonl'), patient: null, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/replanrun/audit`);
+  const body = await res.json();
+  const replanRow = body.rows.find((r) => r.path === 'replan-window.js');
+  assert.ok(replanRow, 'expected the row inside the replan\'s own round window');
+  assert.equal(replanRow.partLabel, 'replan');
+  assert.notEqual(replanRow.partLabel, 'plan');
+});
+
+test('build item B/C no-regression: real archived old-shape run bareagent u-msf70nei (iterations timeline, no step-start) still collapses cleanly to a single "run" part and serves its rounds', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u-bareloop/u-msf70nei.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-10T00:00:00.000Z', runid: 'msf70nei-parts', job: 'bareagent-u-types', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const detailRes = await fetch(`${base}/api/runs/msf70nei-parts`);
+  const detail = await detailRes.json();
+  assert.equal(detail.timelineKind, 'iterations');
+  assert.deepEqual(detail.parts.map((p) => p.kind), ['run']);
+  const roundsRes = await fetch(`${base}/api/runs/msf70nei-parts/rounds?part=0&attempt=1`);
+  assert.equal(roundsRes.status, 200);
+  const roundsBody = await roundsRes.json();
+  assert.ok(roundsBody.totalRounds > 0);
+  const auditRes = await fetch(`${base}/api/runs/msf70nei-parts/audit`);
+  assert.equal(auditRes.status, 200); // no 500 — the parts-based lookup handles the run-kind single-window case
+});
+
+test('build item B/C no-regression: real archived run spines-poc-openai poc-p2ocuxj8 (a step crashed before its own first exit-eval) still exposes a synthetic single-attempt part with no crash', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-10T00:00:00.000Z', runid: 'p2ocuxj8-parts', job: 'spines-poc-openai', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const detailRes = await fetch(`${base}/api/runs/p2ocuxj8-parts`);
+  const detail = await detailRes.json();
+  assert.deepEqual(detail.parts.map((p) => p.kind), ['scout', 'plan', 'step', 'step']);
+  const crashedStep = detail.parts[detail.parts.length - 1];
+  assert.equal(crashedStep.attempts.length, 1); // fell back to ONE synthetic whole-step attempt, never an empty list
+  const roundsRes = await fetch(`${base}/api/runs/p2ocuxj8-parts/rounds?part=${detail.parts.length - 1}&attempt=1`);
+  assert.equal(roundsRes.status, 200); // never a crash/404 on the synthetic-attempt part
+});
