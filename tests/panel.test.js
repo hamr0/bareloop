@@ -1496,6 +1496,78 @@ test('/api/runs/:runid/rounds: real archived run mu2p83go — attempt 1 of the o
 });
 
 // ---------------------------------------------------------------------------
+// item 2 (2026-09-26 build spec): short (tree-root-relative) paths — the
+// server resolves the run's tree root and shortens every audit row's path,
+// keeping the full path alongside as `path` (never losing information).
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid/audit: item 2 — real archived run mu2p83go resolves pathShort relative to its source-seed tree/ dir (row.patient null, backfilled) — a file under the tree reads "src/checks.js", the tree root itself reads "."', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-pathshort', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/mu2p83go-pathshort/audit');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  const checksRow = body.rows.find((r) => typeof r.path === 'string' && r.path.endsWith('/tree/src/checks.js'));
+  assert.ok(checksRow, 'expected at least one row touching src/checks.js under the tree');
+  assert.equal(checksRow.pathShort, 'src/checks.js');
+  assert.ok(checksRow.path.startsWith('/'), 'the full path must stay absolute alongside pathShort');
+  const rootRow = body.rows.find((r) => typeof r.path === 'string' && r.path.endsWith('/source-mu2bglzc/tree'));
+  assert.ok(rootRow, 'expected at least one row naming the tree root itself');
+  assert.equal(rootRow.pathShort, '.');
+});
+
+test('/api/runs/:runid/rounds: item 2 — a round\'s own toolCalls carry pathShort too (the SAME row objects getRunAudit already shortened, never re-derived)', async (t) => {
+  const spine = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl';
+  if (!existsSync(spine)) { assert.ok(true, 'real fixture not present on this machine'); return; }
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-roundpath', job: 'pulselog-strict-checks', spine, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const detailRes = await fetch(`${base}/api/runs/mu2p83go-roundpath`);
+  const detail = await detailRes.json();
+  const stepPartIdx = detail.parts.findIndex((p) => p.kind === 'step' && p.label === 'annotate-checks-strict');
+  const res = await fetch(`${base}/api/runs/mu2p83go-roundpath/rounds?part=${stepPartIdx}&attempt=1&limit=200`);
+  const body = await res.json();
+  const allToolCalls = body.rounds.flatMap((r) => r.toolCalls || []);
+  const shortened = allToolCalls.filter((tc) => typeof tc.path === 'string' && tc.path.includes('/tree/') && tc.pathShort && !tc.pathShort.startsWith('/'));
+  assert.ok(shortened.length > 0, 'expected at least one tool call in this step whose path shortened to a tree-relative pathShort');
+});
+
+test('/api/runs/:runid/audit: item 2 RED PROOF — a path genuinely outside the resolved tree root stays absolute (never truncated to something that only looks relative)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const auditPath = join(dir, 'u-outsideroot-gate-audit.jsonl'); // resolveSiblings: u-outsideroot.jsonl -> u-outsideroot-gate-audit.jsonl
+  writeSpine(join(dir, 'u-outsideroot.jsonl'), [
+    { type: 'job-start', job: 'outside-root-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    {
+      type: 'worker-round', ts: '2026-09-05T00:00:01.000Z', seq: 2, costUsd: 0.01, tokens: 100,
+    },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.1, spendComplete: true, ts: '2026-09-05T00:01:00.000Z', seq: 3 },
+  ]);
+  writeFileSync(auditPath, `${JSON.stringify({
+    ts: '2026-09-05T00:00:01.500Z', action: { type: 'read', path: '/etc/passwd' }, decision: 'allow',
+  })}\n`);
+  // `patient` names a DIFFERENT tree than the path above lives under — the
+  // path resolves outside that root, so it must stay exactly as recorded.
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'outsideroot', job: 'outside-root-job', spine: join(dir, 'u-outsideroot.jsonl'), patient: join(dir, 'tree'), via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(base + '/api/runs/outsideroot/audit');
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  const row = body.rows.find((r) => r.path === '/etc/passwd');
+  assert.ok(row, 'expected the /etc/passwd row');
+  assert.equal(row.pathShort, '/etc/passwd', 'a path outside the resolved tree root must stay absolute, never guessed-relative');
+});
+
+// ---------------------------------------------------------------------------
 // PANEL P1 items B/C (2026-09-26): parts-driven Run tab + Audit tab grouping.
 // Real-archive proof + a synthetic red-proof for the one class of bug the
 // old phase-string heuristic (`makeRoundPhaseLookup`) could not avoid: a
