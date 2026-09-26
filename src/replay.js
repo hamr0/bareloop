@@ -129,6 +129,45 @@ function parseTs(ts) {
 }
 
 /**
+ * `[startTs, endTs]` (epoch ms; `endTs` possibly `Infinity`) bounding the
+ * gate-audit rows that actually belong to ONE run's own spine. A sidecar
+ * file can be SHARED across several runs whose spines happen to reuse the
+ * same filename (measured directly on a real archived patient —
+ * pulselog-person-live-2, run mu2p83go: its sidecar carries rows from 7
+ * distinct `run_id`s spanning 06:56Z..13:25Z on one day, but this run's own
+ * `job-start`..`job-end` window is 13:19:40Z..13:25:48Z; every row before
+ * that window belongs to an earlier, unrelated run sharing the sidecar
+ * path). No `step`/`run_id` field on a gate-audit row is a reliable enough
+ * key on its own (see this file's header) — bounding by `ts` against this
+ * run's own `job-start`/`job-end` is the only honest scope.
+ *
+ * `startTs` is this run's own `job-start.ts` (`-Infinity` when absent —
+ * never a guessed lower bound). `endTs` is `job-end.ts` when a `job-end`
+ * was actually reached, else `Infinity` (a died/still-running run — never
+ * clamped to the spine's own last record's `ts`, which would wrongly
+ * exclude a real tool call the gate logged just AFTER the spine's own last
+ * record landed: spine and gate-audit are written by different seams and
+ * are not guaranteed to interleave exactly).
+ *
+ * ONE shared owner for this rule (F195): `replayRun` (this file) uses it to
+ * scope every audit row it hands to `runBehaviour`, so `bareloop replay`
+ * and every caller of `replayRun`/`replayOne` (including the panel,
+ * `src/panel/server.js`) read the same, honest figure — never two places
+ * independently re-deriving (and risking drifting from) the same rule.
+ * @param {{ts?: string}|null} [jobStart]
+ * @param {{ts?: string}|null} [jobEnd]
+ * @returns {{startTs: number, endTs: number}}
+ */
+export function auditWindow(jobStart, jobEnd) {
+  const startTs = jobStart ? parseTs(jobStart.ts) : null;
+  const endTs = jobEnd ? parseTs(jobEnd.ts) : null;
+  return {
+    startTs: startTs !== null ? startTs : -Infinity,
+    endTs: endTs !== null ? endTs : Infinity,
+  };
+}
+
+/**
  * Trim a string to `max` chars with an explicit `…[+N chars]` marker —
  * NEVER a silent truncation, and never a trailing ellipsis alone
  * (indistinguishable from a detail that just happened to end there). Used
@@ -377,7 +416,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     else skipped += 1;
   }
   /** @type {any[]} */
-  const audit = [];
+  let audit = [];
   for (const e of Array.isArray(auditEvents) ? auditEvents : []) {
     if (isRecord(e)) audit.push(e);
     else skipped += 1;
@@ -385,6 +424,30 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
 
   const jobStart = spine.find((e) => e.type === 'job-start') ?? null;
   const jobEnd = spine.findLast((e) => e.type === 'job-end') ?? null;
+
+  // F195 fix: a gate-audit sidecar CAN be shared across several runs whose
+  // spines happen to reuse the same filename (measured on a real archived
+  // patient — pulselog-person-live-2's mu2p83go: its sidecar carries rows
+  // from 7 distinct run_ids spanning 06:56Z..13:25Z on one day, while this
+  // run's own job-start..job-end window is only 13:19:40Z..13:25:48Z).
+  // Scope `audit` to THIS run's own window (see {@link auditWindow}'s own
+  // doc) before any downstream use — the top-level `behaviour` field below
+  // (previously fed the raw, unscoped array: `bareloop replay` printed 142
+  // tool calls on mu2p83go where the real figure for this run alone is 82)
+  // AND every per-occurrence/per-attempt window `buildOccurrenceMetrics`
+  // computes further down, which is a strict subset of this run's own
+  // window anyway and so is unaffected in the common (single-owner sidecar)
+  // case. This is now the ONE place that applies the rule — the panel
+  // (`src/panel/server.js`) calls this same {@link auditWindow} rather than
+  // keeping its own copy.
+  {
+    const { startTs, endTs } = auditWindow(jobStart, jobEnd);
+    audit = audit.filter((a) => {
+      const t = parseTs(a.ts);
+      return t !== null && t >= startTs && t <= endTs;
+    });
+  }
+
   const outcome = jobEnd ? (jobEnd.outcome ?? null) : null;
   const isGreen = outcome === 'green' || outcome === 'already-green';
 
@@ -657,6 +720,15 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       attemptWindows,
       stepStartSeq: startSeq,
       stepEndSeq: endSeq,
+      // `stepStartTs`/`stepEndTs` (panel item 2 follow-up, F195/F-audit-step):
+      // this step's own ts bounds, the same `startTs`/`endTs` already
+      // computed above for `buildOccurrenceMetrics` — exposed (never a
+      // second windowing pass) so a ts-keyed lookup (the Audit tab's `step`
+      // column) can place a row without re-deriving step boundaries a
+      // second way. `stepEndTs` is `null` when this occurrence never
+      // reached its own `step-end` (a died/still-running/escalated step).
+      stepStartTs: startTs,
+      stepEndTs: endTs,
     };
   });
 

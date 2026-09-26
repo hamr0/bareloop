@@ -12,7 +12,9 @@ import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { replayRun, formatReplay, summarizeForAllLine, formatAllLines } from '../src/replay.js';
+import {
+  replayRun, formatReplay, summarizeForAllLine, formatAllLines, auditWindow,
+} from '../src/replay.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
@@ -901,4 +903,88 @@ test('replayRun: real archived run mu2p83go — the one step has exactly 1 attem
   const s = replayRun(spine, [], { runId: 'mu2p83go' });
   assert.equal(s.steps.length, 1);
   assert.deepEqual(s.steps[0].attempts, [{ n: 1, iteration: 1, outcome: 'green' }]);
+});
+
+// ---------------------------------------------------------------------------
+// F195: `bareloop replay`'s `behaviour` (fed by `replayRun`'s top-level
+// `behaviour` field, `formatReplay`'s printed "N tool calls" line) was
+// reading the WHOLE gate-audit sidecar unscoped — a sidecar CAN carry rows
+// from an earlier, unrelated run sharing the same filename (the panel's
+// item 2 fix already worked around this on its own side; this closes the
+// gap at the ONE shared owner, `src/replay.js`, so the CLI and the panel
+// can never disagree again).
+// ---------------------------------------------------------------------------
+
+test('auditWindow: startTs/endTs derived from job-start/job-end ts, -Infinity/Infinity when either is missing', () => {
+  const jobStart = { ts: '2026-09-05T12:00:00.000Z' };
+  const jobEnd = { ts: '2026-09-05T12:05:00.000Z' };
+  assert.deepEqual(auditWindow(jobStart, jobEnd), {
+    startTs: Date.parse('2026-09-05T12:00:00.000Z'),
+    endTs: Date.parse('2026-09-05T12:05:00.000Z'),
+  });
+  assert.deepEqual(auditWindow(null, jobEnd), { startTs: -Infinity, endTs: Date.parse('2026-09-05T12:05:00.000Z') });
+  assert.deepEqual(auditWindow(jobStart, null), { startTs: Date.parse('2026-09-05T12:00:00.000Z'), endTs: Infinity });
+  assert.deepEqual(auditWindow(null, null), { startTs: -Infinity, endTs: Infinity });
+});
+
+test('RED->GREEN (F195): replayRun scopes gate-audit rows to this run\'s own job-start..job-end window — a shared sidecar\'s earlier-run rows no longer inflate the top-level `behaviour` figure', () => {
+  const spine = [
+    { type: 'job-start', job: 'shared-sidecar-job', ts: '2026-09-05T12:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'worker-round', phase: 'plan', costUsd: 0.01, tokens: 100, seq: 2, ts: '2026-09-05T12:00:01.000Z' },
+    { type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, seq: 3, ts: '2026-09-05T12:00:05.000Z' },
+  ];
+  const audit = [
+    // an EARLIER, unrelated run's rows sharing this sidecar filename by
+    // coincidence — hours before this run's own job-start
+    { ts: '2026-09-05T06:00:00.000Z', action: { type: 'read', path: 'other-run-a.js' }, decision: 'allow' },
+    { ts: '2026-09-05T06:00:01.000Z', action: { type: 'read', path: 'other-run-b.js' }, decision: 'allow' },
+    { ts: '2026-09-05T06:00:02.000Z', action: { type: 'edit', path: 'other-run-c.js' }, decision: 'allow' },
+    // this run's own row
+    { ts: '2026-09-05T12:00:01.500Z', action: { type: 'read', path: 'real-file.js' }, decision: 'allow' },
+  ];
+  // pre-fix behaviour (what the bug looked like): every row in the sidecar
+  // unconditionally counted, 4 total — reproduced here directly against the
+  // raw unscoped array, never asserted, just documented for contrast.
+  // post-fix: replayRun itself must report only the 1 row inside its own window.
+  const s = replayRun(spine, audit, { runId: 'shared-sidecar-run' });
+  assert.equal(s.behaviour.totalCalls, 1);
+  assert.deepEqual(s.behaviour.byTool, { shell_read: 1 });
+});
+
+test('F195: real archived run mu2p83go (pulselog-person-live-2) — replayRun\'s own top-level behaviour now reports the SCOPED figure (82), not the raw sidecar\'s contaminated 142', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl');
+  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl';
+  const audit = parseJsonl(auditPath);
+  const s = replayRun(spine, audit, { runId: 'mu2p83go' });
+  assert.equal(s.behaviour.totalCalls, 82);
+  assert.deepEqual(s.behaviour.byTool, {
+    shell_read: 37, shell_grep: 23, ctx_recent: 1, edit: 21,
+  });
+});
+
+test('F195: real archived run mtotxw1z (litectx-u-bareloop) — no shared-sidecar contamination there, scoped figure is unchanged at 127 (the fix must not regress the common case)', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl') && 'real fixture not present on this machine' }, () => {
+  const spine = parseJsonl('/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z.jsonl');
+  const auditPath = '/home/hamr/PycharmProjects/bareloop-patients/litectx-u-bareloop/u-mtotxw1z-gate-audit.jsonl';
+  const audit = parseJsonl(auditPath);
+  const s = replayRun(spine, audit, { runId: 'mtotxw1z' });
+  assert.equal(s.behaviour.totalCalls, 127);
+  assert.deepEqual(s.behaviour.byTool, {
+    shell_read: 47, shell_grep: 34, edit: 40, ctx_recall: 4, ctx_get: 1, ctx_impact: 1,
+  });
+});
+
+test('F195: `bareloop replay` CLI (scripts/run-replay.mjs) on a COPY of mu2p83go now prints the SCOPED "82 tool calls" line, not the old contaminated "142"', { skip: !existsSync('/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl') && 'real fixture not present on this machine' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bareloop-replay-f195-'));
+  tmpDirs.push(dir);
+  copyFileSync(
+    '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go.jsonl',
+    join(dir, 'u-mu2p83go.jsonl'),
+  );
+  copyFileSync(
+    '/home/hamr/PycharmProjects/bareloop-patients/pulselog-person-live-2/out/source-mu2bglzc/pulselog-person-live-2-bareloop/u-mu2p83go-gate-audit.jsonl',
+    join(dir, 'u-mu2p83go-gate-audit.jsonl'),
+  );
+  const out = execFileSync('node', [SCRIPT, join(dir, 'u-mu2p83go.jsonl')], { encoding: 'utf8' });
+  assert.match(out, /82 tool calls/);
+  assert.doesNotMatch(out, /142 tool calls/);
 });
