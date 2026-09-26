@@ -875,9 +875,17 @@
     }
     var active = filtersActive(currentRunsFilters());
     jobs.forEach(function(g){
-      var matchingRuns = active ? filterRuns(g.runs, currentRunsFilters(), Date.now()) : g.runs;
-      var autoExpand = autoExpandJob(g, matchingRuns, active);
-      var expanded = Object.prototype.hasOwnProperty.call(wfExpanded, g.job) ? wfExpanded[g.job] : autoExpand;
+      // build item (2026-09-26 fix): the parent row IS the job's latest run
+      // (clicking it opens that run), so the inline child list must be the
+      // job's OTHER runs only — never repeat the latest as its own first
+      // child. A job with exactly one run has no "other runs" at all, so it
+      // gets no expand affordance (caret, aria-expanded, toggle) — clicking
+      // it still opens the run, same as any job row.
+      var hasOtherRuns = g.runCount > 1;
+      var candidateRuns = active ? filterRuns(g.runs, currentRunsFilters(), Date.now()) : g.runs;
+      var childRuns = hasOtherRuns ? candidateRuns.filter(function(r){ return r.runid !== g.lastRunid; }) : [];
+      var autoExpand = hasOtherRuns && autoExpandJob(g, candidateRuns, active);
+      var expanded = hasOtherRuns && (Object.prototype.hasOwnProperty.call(wfExpanded, g.job) ? wfExpanded[g.job] : autoExpand);
 
       var wrap = document.createElement("div");
       wrap.className = "wf-job";
@@ -899,7 +907,7 @@
       row.setAttribute("aria-pressed", isSelected ? "true" : "false");
       var wfFullName = g.job + ' (' + g.lastRunid + ')';
       row.innerHTML =
-        '<span class="wf-line1"><span class="wf-caret">' + (expanded ? "▼" : "▶") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
+        '<span class="wf-line1"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
@@ -909,7 +917,9 @@
         '<span class="wf-meta">' + g.runCount + ' run' + (g.runCount === 1 ? '' : 's') + '</span>' +
         '</span>';
       row.addEventListener("click", function(){
-        wfExpanded[g.job] = !expanded;
+        // a single-run job has nothing to expand — the click still opens
+        // the run, it just never toggles `wfExpanded` for it.
+        if(hasOtherRuns) wfExpanded[g.job] = !expanded;
         // build item (2026-09-26): clicking the parent also opens its
         // latest run (as it did before the Workflows/History merge) — pass
         // rowEl null since renderWorkflows(jobs) below rebuilds every row
@@ -927,7 +937,7 @@
       if(expanded){
         var runsWrap = document.createElement("div");
         runsWrap.className = "wf-runs";
-        (active ? matchingRuns : g.runs).forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r)); });
+        childRuns.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r)); });
         wrap.appendChild(runsWrap);
       }
       el.appendChild(wrap);

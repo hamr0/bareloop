@@ -1156,8 +1156,11 @@ test('item 2: autoExpandJob — expands only when filters are active AND the mat
 
 /** A fake DOM element: just enough surface for `renderWorkflows`'s own code
  * (className assignment, setAttribute/getAttribute, addEventListener/click,
- * appendChild, innerHTML assignment). */
-function makeFakeEl() {
+ * appendChild, innerHTML assignment). `registry`, when given, gets every
+ * created element pushed onto it — lets a fake `selectRun` reproduce the
+ * real page's global `clearSelection()` (which clears `.selected` off every
+ * `.wf-row`/`.hist-row` in the document, not just the clicked one). */
+function makeFakeEl(registry) {
   const listeners = [];
   const el = {
     className: '',
@@ -1169,6 +1172,7 @@ function makeFakeEl() {
     click() { listeners.filter((l) => l.type === 'click').forEach((l) => l.fn.call(this)); },
     appendChild(c) { this.children.push(c); },
   };
+  if (registry) registry.push(el);
   // `el.innerHTML = ""` (the page's own clear-before-rebuild idiom) must
   // actually clear the fake children array, or a re-render leaves the OLD
   // row sitting at children[0] alongside the freshly appended one.
@@ -1179,7 +1183,11 @@ function makeFakeEl() {
   return el;
 }
 
-test('build item: clicking a Workflows job (parent) row opens its latest run in the Run tab, toggles its inline run list, and shows selected state like a child row', () => {
+/** Builds a fake `document` + the real `renderWorkflows` (and its
+ * dependencies) extracted verbatim from the page, wired to hand-rolled
+ * fakes for `selectRun`/scroll/filters — shared by every renderWorkflows
+ * test below so none of them re-implement its logic. */
+function makeWorkflowsPage() {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const src = [
     extractFnSource(html, 'escapeXml'),
@@ -1192,28 +1200,62 @@ test('build item: clicking a Workflows job (parent) row opens its latest run in 
   ].join('\n');
 
   const elementsById = {};
+  const registry = []; // every element ever created — for global .selected clearing
   const doc = {
     getElementById(id) {
-      if (!elementsById[id]) elementsById[id] = makeFakeEl();
+      if (!elementsById[id]) elementsById[id] = makeFakeEl(registry);
       return elementsById[id];
     },
-    createElement() { return makeFakeEl(); },
+    createElement() { return makeFakeEl(registry); },
   };
   const calls = { selectRun: [], scrolls: 0 };
   let tabRunClicks = 0;
   doc.getElementById('tab-run').addEventListener('click', () => { tabRunClicks += 1; });
 
+  let filters = { checkTypes: [], results: [], time: 'all', search: '' };
+  // filterRuns (and its own matchesSearch dependency) is a real dependency
+  // of the page too (used when filters are active) — pull it in verbatim
+  // rather than reimplementing its semantics.
+  const filterRunsSrc = [extractFnSource(html, 'matchesSearch'), extractFnSource(html, 'filterRuns')].join('\n');
+
   // eslint-disable-next-line no-new-func
-  const factory = new Function('document', 'calls', 'incTabRunClicks', `
+  const factory = new Function('document', 'calls', 'getFilters', 'registry', `
     var wfExpanded = {};
     var currentRunid = null;
-    function selectRun(runid, rowEl, sel){ calls.selectRun.push(runid); currentRunid = runid; }
+    function selectRun(runid, rowEl, sel){
+      calls.selectRun.push(runid);
+      currentRunid = runid;
+      // reproduce the real page's clearSelection(): strip "selected" off
+      // every wf-row/hist-row element ever created, then mark just this one.
+      registry.forEach(function(el){
+        if (typeof el.className === 'string' && (el.className.indexOf('wf-row') === 0 || el.className.indexOf('hist-row') === 0)) {
+          el.className = el.className.replace(/ selected\\b/, '');
+        }
+      });
+      if (rowEl) rowEl.className = (rowEl.className + ' selected').trim();
+    }
     function scrollRunIntoViewMobile(){ calls.scrolls += 1; }
-    function currentRunsFilters(){ return { checkTypes: [], results: [], time: 'all', search: '' }; }
+    function currentRunsFilters(){ return getFilters(); }
+    ${filterRunsSrc}
     ${src}
-    return { render: renderWorkflows, getCurrentRunid: function(){ return currentRunid; } };
+    return {
+      render: renderWorkflows,
+      getCurrentRunid: function(){ return currentRunid; },
+      setCurrentRunid: function(id){ currentRunid = id; },
+    };
   `);
-  const page = factory(doc, calls, () => { tabRunClicks += 1; });
+  const page = factory(doc, calls, () => filters, registry);
+  return {
+    page,
+    doc,
+    calls,
+    getTabRunClicks: () => tabRunClicks,
+    setFilters(f) { filters = f; },
+  };
+}
+
+test('build item: clicking a Workflows job (parent) row opens its latest run in the Run tab, toggles its inline run list, and shows selected state like a child row', () => {
+  const { page, doc, calls, getTabRunClicks } = makeWorkflowsPage();
 
   const jobs = groupRunsByJobFixture();
   page.render(jobs);
@@ -1228,7 +1270,7 @@ test('build item: clicking a Workflows job (parent) row opens its latest run in 
 
   assert.deepEqual(calls.selectRun, ['msi0w2i5'], 'clicking the parent must open the JOB\'s latest run, same as a child row would');
   assert.equal(page.getCurrentRunid(), 'msi0w2i5');
-  assert.equal(tabRunClicks, 1, 'the Run tab must be activated, same as clicking a child row');
+  assert.equal(getTabRunClicks(), 1, 'the Run tab must be activated, same as clicking a child row');
   assert.equal(calls.scrolls, 1, 'mobile scroll-into-view fires too, same as a child row');
 
   // renderWorkflows was called again by the click handler itself — re-fetch
@@ -1237,19 +1279,119 @@ test('build item: clicking a Workflows job (parent) row opens its latest run in 
   assert.equal(row.getAttribute('aria-expanded'), 'true', 'the inline run list must also toggle open, as before the merge');
   assert.equal(row.className, 'wf-row selected', 'the parent row must show selected state like a child row');
   assert.equal(row.getAttribute('aria-pressed'), 'true');
+
+  // build item (fix, 2026-09-26): the parent row IS the latest run
+  // (msi0w2i5) — its expanded child list must be the job's OTHER runs
+  // only, never repeating the latest as a duplicate first child.
+  const runsWrap = doc.getElementById('wf-list').children[0].children[1];
+  assert.ok(runsWrap, 'expanded child list must be rendered (job has an other run)');
+  assert.equal(runsWrap.children.length, 1, 'only the ONE other run, never the latest repeated');
+  assert.equal(
+    runsWrap.children[0].getAttribute('data-testid'),
+    'hist-row-older1',
+    'first (only) child must be the OTHER run, not a duplicate of the latest',
+  );
 });
 
-/** One job group ("bareagent-u-types") with its latest run "msi0w2i5" red —
- * matches the real defect named in the build item (a job whose latest run
- * could not be opened by clicking its parent row). */
+test('build item (fix): a job with only ONE run gets no expand caret and never expands, even when clicked', () => {
+  const { page, doc, calls } = makeWorkflowsPage();
+
+  const jobs = singleRunJobFixture();
+  page.render(jobs);
+
+  let row = doc.getElementById('wf-list').children[0].children[0];
+  assert.ok(!row.innerHTML.includes('▶') && !row.innerHTML.includes('▼'), 'no caret glyph for a single-run job');
+  assert.equal(row.getAttribute('aria-expanded'), 'false');
+
+  row.click();
+  assert.deepEqual(calls.selectRun, ['solo1'], 'clicking still opens the (only) run');
+
+  row = doc.getElementById('wf-list').children[0].children[0];
+  assert.equal(row.getAttribute('aria-expanded'), 'false', 'still nothing to expand after the click');
+  assert.ok(!row.innerHTML.includes('▶') && !row.innerHTML.includes('▼'), 'still no caret after the click');
+  assert.equal(doc.getElementById('wf-list').children[0].children.length, 1, 'no child-list wrapper appended at all');
+});
+
+test('build item (fix): when filters are active and the ONLY match is the latest run, the parent shows with no children listed', () => {
+  const { page, doc, setFilters } = makeWorkflowsPage();
+  setFilters({ checkTypes: [], results: ['✓'], time: 'all', search: '' });
+
+  const jobs = groupRunsByJobFixture(); // latest msi0w2i5 is glyph '✗', older1 would need '✓' to match
+  // give the older run a passing glyph so it does NOT match the '✓' filter,
+  // leaving the latest (✗) as the only... wait — invert: latest matches.
+  jobs[0].runs[0].glyph = '✓'; // latest -> pass, matches filter
+  jobs[0].runs[1].glyph = '✗'; // older -> fail, does not match filter
+  jobs[0].lastGlyph = '✓';
+
+  page.render(jobs);
+
+  const wrap = doc.getElementById('wf-list').children[0];
+  assert.equal(wrap.children.length, 1, 'parent job row renders (it matches) but no child-list wrapper is appended');
+  const row = wrap.children[0];
+  assert.ok(row.innerHTML.includes('▶'), 'caret still shown — the job DOES have another run, just not a filter match');
+
+  row.click();
+  const wrapAfter = doc.getElementById('wf-list').children[0];
+  assert.equal(wrapAfter.children.length, 2, 'expanding now shows the (empty) child-list wrapper');
+  assert.equal(wrapAfter.children[1].children.length, 0, 'no children listed — the only match was the latest run');
+});
+
+test('build item (fix): selection highlight goes to the parent for the latest run, and to the child for an older run — never both, never a duplicate', () => {
+  const { page, doc } = makeWorkflowsPage();
+  const jobs = groupRunsByJobFixture();
+  page.render(jobs);
+
+  // expand so the child row exists to click
+  let row = doc.getElementById('wf-list').children[0].children[0];
+  row.click();
+
+  let wrap = doc.getElementById('wf-list').children[0];
+  row = wrap.children[0];
+  assert.equal(row.className, 'wf-row selected', 'latest run selected -> parent carries the highlight');
+  let runsWrap = wrap.children[1];
+  assert.equal(runsWrap.children.length, 1);
+  assert.equal(runsWrap.children[0].className, 'hist-row', 'the (only) child is not highlighted');
+
+  // now click that older child run directly
+  const olderChild = runsWrap.children[0];
+  olderChild.click();
+
+  wrap = doc.getElementById('wf-list').children[0];
+  row = wrap.children[0];
+  assert.ok(!row.className.includes('selected'), 'parent no longer selected once an older run is picked');
+});
+
+/** One job group ("bareagent-u-types") with two runs: latest "msi0w2i5"
+ * (red) and one older run "older1" — lets tests exercise both the
+ * expand/toggle path and the "child list excludes the latest" fix. */
 function groupRunsByJobFixture() {
   return [{
     job: 'bareagent-u-types',
-    runs: [{ runid: 'msi0w2i5', job: 'bareagent-u-types', glyph: '✗' }],
-    runCount: 1,
+    runs: [
+      { runid: 'msi0w2i5', job: 'bareagent-u-types', glyph: '✗' },
+      { runid: 'older1', job: 'bareagent-u-types', glyph: '✓' },
+    ],
+    runCount: 2,
     lastRunid: 'msi0w2i5',
     lastAt: '2026-09-20T00:00:00.000Z',
     lastGlyph: '✗',
+    lastCheckType: 'deterministic',
+    lastModel: null,
+    lastSpend: '$0.10',
+    lastWall: '1m00s',
+    lastDate: '2026-09-20',
+  }];
+}
+
+/** A job with exactly one run — no "other runs" exist at all. */
+function singleRunJobFixture() {
+  return [{
+    job: 'solo-job',
+    runs: [{ runid: 'solo1', job: 'solo-job', glyph: '✓' }],
+    runCount: 1,
+    lastRunid: 'solo1',
+    lastAt: '2026-09-20T00:00:00.000Z',
+    lastGlyph: '✓',
     lastCheckType: 'deterministic',
     lastModel: null,
     lastSpend: '$0.10',
