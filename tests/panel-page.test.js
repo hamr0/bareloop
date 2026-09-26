@@ -452,11 +452,28 @@ test('item 1: matchesSearch — case-insensitive substring on job name or runid;
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
   const matchesSearch = new Function(`${body}\nreturn matchesSearch;`)();
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'PULSE'), true);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'mu2p'), true);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'nomatch'), false);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', ''), true);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', '   '), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', 'PULSE'), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', 'mu2p'), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', 'nomatch'), false);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', ''), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', '   '), true);
+});
+
+test('item C: matchesSearch — also matches the model field (case-insensitive substring), null model never crashes', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function matchesSearch(');
+  const end = html.indexOf('function filterRuns(');
+  const body = html.slice(start, end);
+  // eslint-disable-next-line no-new-func
+  const matchesSearch = new Function(`${body}\nreturn matchesSearch;`)();
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', 'deepseek'), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'claude-sonnet-5', 'SONNET'), true);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'claude-sonnet-5', 'deepseek'), false);
+  // matches job/runid still work when model doesn't
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'claude-sonnet-5', 'pulselog'), true);
+  // null/absent model (older archived run) never crashes, never false-matches
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', null, 'deepseek'), false);
+  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', undefined, ''), true);
 });
 
 test('item 1: filterRuns — search is AND with the chip groups, matches job or runid', () => {
@@ -477,6 +494,50 @@ test('item 1: filterRuns — search is AND with the chip groups, matches job or 
   assert.equal(filterRuns(runs, { checkTypes: [], results: [], time: 'all' }, now).length, 2);
 });
 
+test('item C: filterRuns — search also matches the run\'s model field', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const filterRuns = loadFilterRunsWithSearch(html);
+  const runs = [
+    {
+      job: 'pulselog-person', runid: 'mu2p83go', model: 'deepseek-chat', checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z',
+    },
+    {
+      job: 'other-job', runid: 'xyz123', model: 'claude-sonnet-5', checkType: 'deterministic', glyph: '✓', at: '2026-09-20T00:00:00.000Z',
+    },
+  ];
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  assert.deepEqual(filterRuns(runs, { checkTypes: [], results: [], time: 'all', search: 'deepseek' }, now), [runs[0]]);
+  assert.deepEqual(filterRuns(runs, { checkTypes: [], results: [], time: 'all', search: 'sonnet' }, now), [runs[1]]);
+  assert.deepEqual(filterRuns(runs, { checkTypes: [], results: [], time: 'all', search: 'nomodel' }, now), []);
+});
+
+test('item C: filterWorkflows — search matches a workflow\'s own lastModel field', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function matchesSearch(');
+  const wfStart = html.indexOf('function filterWorkflows(');
+  const braceStart = html.indexOf('{', wfStart);
+  let depth = 0;
+  let i = braceStart;
+  for (; i < html.length; i += 1) {
+    if (html[i] === '{') depth += 1;
+    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
+  }
+  const body = html.slice(start, i + 1);
+  // eslint-disable-next-line no-new-func
+  const filterWorkflows = new Function(`${body}\nreturn filterWorkflows;`)();
+  const now = Date.parse('2026-09-25T00:00:00.000Z');
+  const workflows = [
+    {
+      job: 'a', lastCheckType: 'deterministic', lastGlyph: '✓', lastAt: '2026-09-20T00:00:00.000Z', lastModel: 'deepseek-chat',
+    },
+    {
+      job: 'b', lastCheckType: 'rubric', lastGlyph: '✗', lastAt: '2026-01-01T00:00:00.000Z', lastModel: 'claude-sonnet-5',
+    },
+  ];
+  assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: 'all', search: 'deepseek' }, now), [workflows[0]]);
+  assert.deepEqual(filterWorkflows(workflows, { checkTypes: [], results: [], time: 'all', search: 'sonnet' }, now), [workflows[1]]);
+});
+
 test('item 1: the search input exists in the shared filter bar for both scopes, and clear empties it', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const filterBarHTML = extractFn(html, 'filterBarHTML');
@@ -487,6 +548,11 @@ test('item 1: the search input exists in the shared filter bar for both scopes, 
   });
   // clear resets search to "" alongside the chip groups
   assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "" \};/);
+});
+
+test('item C: search placeholder mentions job, run id AND model', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /placeholder="search job, run id or model…"/);
 });
 
 test('item 1: search state persists via the same localStorage key as the chip filters', () => {
@@ -512,6 +578,16 @@ test('item 2: audit table header carries a Round column, and renderAudit renders
   assert.match(body, /r\.tokens/);
   assert.match(body, /r\.durationMs/);
   assert.match(body, /typeof r\.round === "number"/);
+});
+
+test('item B: renderAudit\'s Step cell shows a tooltip on a null step (before any step) and appends "· aN" when an attempt number is present', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function renderAudit(result){');
+  const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
+  const body = html.slice(start, end);
+  assert.match(body, /r\.step === null/);
+  assert.match(body, /title="before any step \(planning\)"/);
+  assert.match(body, /typeof r\.attempt === "number"/);
 });
 
 // ---------------------------------------------------------------------------

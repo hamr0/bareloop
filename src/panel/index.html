@@ -709,7 +709,7 @@
   function filterBarHTML(scope){
     return (
       '<div class="filterbar" data-scope="' + scope + '" data-testid="' + scope + '-filters">' +
-        '<input type="text" class="search-input" placeholder="search job or run id…" ' +
+        '<input type="text" class="search-input" placeholder="search job, run id or model…" ' +
           'id="' + scope + '-filter-search" data-testid="' + scope + '-filter-search" autocomplete="off">' +
         '<div class="chips" role="group" aria-label="Filter">' +
           '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="deterministic" title="deterministic" data-testid="chip-' + scope + '-ct-deterministic">D</button>' +
@@ -736,14 +736,17 @@
   // item 1 (2026-09-25): case-insensitive substring match on job name AND
   // runid, combined AND with the chip groups (an empty/whitespace-only query
   // means "no search filter" — everything passes it, same posture as an
-  // empty chip group).
-  function matchesSearch(job, runid, query){
+  // empty chip group). item C (2026-09-26): also matches the run's model
+  // name (e.g. "deepseek", "sonnet") — `model` is `null`/absent on an older
+  // archived run, same posture as a missing job/runid.
+  function matchesSearch(job, runid, model, query){
     if(!query) return true;
     var q = String(query).trim().toLowerCase();
     if(!q) return true;
     var j = String(job || "").toLowerCase();
     var r = String(runid || "").toLowerCase();
-    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1;
+    var m = String(model || "").toLowerCase();
+    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1 || m.indexOf(q) !== -1;
   }
   function filterRuns(runs, filters, nowMs){
     nowMs = (typeof nowMs === "number") ? nowMs : Date.now();
@@ -754,7 +757,7 @@
     return (runs || []).filter(function(r){
       if(ct.length && ct.indexOf(r.checkType) === -1) return false;
       if(rs.length && rs.indexOf(r.glyph) === -1) return false;
-      if(!matchesSearch(r.job, r.runid, q)) return false;
+      if(!matchesSearch(r.job, r.runid, r.model, q)) return false;
       if(time !== "all"){
         var days = time === "7d" ? 7 : 30;
         var t = typeof r.at === "string" ? Date.parse(r.at) : NaN;
@@ -766,12 +769,14 @@
   }
 
   // Same rule, applied to a workflow's OWN latest-run fields
-  // (lastCheckType/lastGlyph/lastAt/lastRunid) — reuses filterRuns via a
-  // one-row adapter rather than re-implementing the AND/OR/time/search
-  // semantics twice.
+  // (lastCheckType/lastGlyph/lastAt/lastRunid/lastModel) — reuses filterRuns
+  // via a one-row adapter rather than re-implementing the AND/OR/time/search
+  // semantics twice. `lastModel` is whatever `/api/workflows` put there
+  // (`src/panel/server.js`'s `listWorkflows`) — `null`/absent on an older
+  // archived run, same posture as `matchesSearch`'s own model handling.
   function filterWorkflows(workflows, filters, nowMs){
     return (workflows || []).filter(function(w){
-      return filterRuns([{ checkType: w.lastCheckType, glyph: w.lastGlyph, at: w.lastAt, job: w.job, runid: w.lastRunid }], filters, nowMs).length === 1;
+      return filterRuns([{ checkType: w.lastCheckType, glyph: w.lastGlyph, at: w.lastAt, job: w.job, runid: w.lastRunid, model: w.lastModel }], filters, nowMs).length === 1;
     });
   }
 
@@ -1214,7 +1219,9 @@
         "<td>" + (isModelCall ? "model call" : escapeXml(r.action || "unknown")) + "</td>" +
         "<td>" + escapeXml(r.path || "unknown") + "</td>" +
         "<td>" + decisionCell + "</td>" +
-        "<td>" + (r.step === null ? "&mdash;" : escapeXml(r.step)) + "</td>";
+        (r.step === null
+          ? "<td title=\"before any step (planning)\">&mdash;</td>"
+          : "<td>" + escapeXml(r.step) + (typeof r.attempt === "number" ? " &middot; a" + r.attempt : "") + "</td>");
       tbody.appendChild(tr);
     });
     document.getElementById("audit-rawlog").textContent = result.raw || "";
