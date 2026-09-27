@@ -34,7 +34,7 @@ function loadStepMapGeometry() {
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
   const factory = new Function(`${body}
-    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph, boxRetryTry };
+    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph, boxRetryTry, partBoxState, attemptGlyph };
   `);
   return factory();
 }
@@ -942,6 +942,63 @@ test('build item B RED-PROOF: partResultGlyph/partHasNoVerdict — scout/plan/re
   };
   const [fixBox] = buildOrderedBoxes([fixPart], false);
   assert.equal(partResultGlyph(fixPart, fixBox), '✗✓');
+});
+
+// Panel P2 defect 2 (hamr-watched run mujjtrvd, 2026-09-27): `partBoxState`
+// checks `part.outcome` BEFORE `isLastLivePart`, so a live run's own
+// still-open fix-loop part must carry `outcome: null` (fixed at the source,
+// src/replay.js — see tests/replay.test.js's mujjtrvd-midrun.jsonl fixture
+// test) for this check to ever reach the isLastLivePart branch at all. This
+// test proves the PANEL side of that fix: given the now-correct null
+// outcome, the last live part reads "running" (with a pulsing map dot, this
+// file's own `s.state === "running"` branch), never "stopped", and its
+// result glyph is the honest "?" (unresolved), never a fabricated "✗".
+test('build item (2026-09-27, panel P2 defect 2): a live run\'s LAST part with outcome null reads state "running", never "stopped" — and its result glyph is "?" (unresolved), never a fabricated "✗"', () => {
+  const {
+    buildOrderedBoxes, partBoxState, partResultGlyph, attemptGlyph,
+  } = loadStepMapGeometry();
+  const openFixPart = {
+    kind: 'fix', label: 'fix', occurrence: null, outcome: null, attempts: [{ n: 1, outcome: null }],
+  };
+  const [box] = buildOrderedBoxes([openFixPart], /* isLive */ true);
+  assert.equal(box.state, 'running', 'a live run\'s last part with outcome null must read running');
+  assert.equal(partBoxState(openFixPart, /* isLastLivePart */ true), 'running');
+  assert.equal(attemptGlyph(null), '?', 'an unresolved attempt outcome must render "?", never "✗"');
+  assert.equal(partResultGlyph(openFixPart, box), '?');
+  // sanity: the pre-fix behaviour this replaces — outcome as a STRING (the
+  // fabricated 'red' the source bug used to mint) reads "stopped" even when
+  // it is genuinely the last live part, proving partBoxState really does
+  // check part.outcome before isLastLivePart (the ordering the fix relies
+  // on never flipping silently underneath it).
+  const fabricatedRedPart = { ...openFixPart, outcome: 'red' };
+  assert.equal(partBoxState(fabricatedRedPart, true), 'stopped');
+});
+
+// ---------------------------------------------------------------------------
+// Panel P2 defect 1 (hamr-watched run mujjtrvd, 2026-09-27): the [▶] glyph
+// itself pulses wherever a live run's `.dot.amber` is shown (runs list rows,
+// the Workflows job row, the run header) — same rhythm as the map box's own
+// running-part dot (opacity 1 -> 0.3 -> 1, 1.2s), off by
+// `prefers-reduced-motion: reduce`. `.dot.amber` is minted only for glyph
+// "▶" (glyphForOutcome, src/panel/server.js), never for a died [?] or
+// finished [✓]/[✗] run, so scoping the animation to this one CSS selector
+// alone already excludes every non-live state.
+// ---------------------------------------------------------------------------
+test('src/panel/index.html: .dot.amber (the live [▶] glyph) pulses via a keyframe animation, disabled under prefers-reduced-motion', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const amberRuleMatch = html.match(/\.dot\.amber::before\{[^}]*\}/);
+  assert.ok(amberRuleMatch, 'expected a .dot.amber::before rule');
+  assert.match(amberRuleMatch[0], /animation\s*:/, '.dot.amber::before must declare a pulsing animation');
+  assert.match(html, /@keyframes\s+pulse-glyph\s*\{[^}]*0%[^}]*100%[^}]*opacity\s*:\s*1[\s\S]*?50%[^}]*opacity\s*:\s*0\.3/, 'expected a pulse-glyph keyframe going 1 -> 0.3 -> 1, matching the map dot\'s own rhythm');
+  const reducedMotionBlock = html.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]*\.dot\.amber::before\s*\{[^}]*\})/);
+  assert.ok(reducedMotionBlock, 'expected prefers-reduced-motion: reduce to turn the .dot.amber pulse off');
+  assert.match(reducedMotionBlock[1], /animation\s*:\s*none/);
+  // never for a died [?] (magenta) or finished [✓]/[✗] (green/red) dot.
+  ['green', 'red', 'magenta', 'grey'].forEach((cls) => {
+    const rule = html.match(new RegExp(`\\.dot\\.${cls}::before\\{[^}]*\\}`));
+    assert.ok(rule, `expected a .dot.${cls}::before rule`);
+    assert.doesNotMatch(rule[0], /animation/, `.dot.${cls} must never pulse`);
+  });
 });
 
 // ---------------------------------------------------------------------------

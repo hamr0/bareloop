@@ -132,7 +132,22 @@
   .dot::before{content:"[·]";color:var(--grey-dot);}
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
-  .dot.amber::before{content:"[▶]";color:var(--amber);}
+  /* Panel P2 defect 1 (hamr-watched run mujjtrvd, 2026-09-27): the [▶] glyph
+     itself pulses wherever a LIVE run shows it (runs list rows, the
+     Workflows job row when its represented run is live, the run header) —
+     `.dot.amber` is minted ONLY for glyph "▶" (glyphForOutcome,
+     src/panel/server.js: outcome null -> "▶", never for a died [?] or a
+     finished [✓]/[✗] run), so scoping the animation to this one selector
+     already excludes every other state, no extra "is it live" check needed
+     here. Same rhythm as the map box's own running-part dot (this file,
+     `buildMapSvg`'s `s.state === "running"` branch): opacity 1 -> 0.3 -> 1,
+     1.2s, matching design/panel-mockup.html's pulsing amber dot exactly —
+     one fixed rhythm, never re-derived per call site. */
+  @keyframes pulse-glyph{0%,100%{opacity:1;}50%{opacity:0.3;}}
+  .dot.amber::before{content:"[▶]";color:var(--amber);animation:pulse-glyph 1.2s ease-in-out infinite;}
+  @media (prefers-reduced-motion: reduce){
+    .dot.amber::before{animation:none;}
+  }
   .dot.grey::before{content:"[·]";color:var(--grey-dot);}
   /* died (hamr's ruling B, 2026-09-25): no ending was ever recorded — a
      DIFFERENT fact from a real [✗] close/arbiter "no", so it gets its own
