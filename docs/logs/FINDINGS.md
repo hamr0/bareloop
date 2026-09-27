@@ -13483,3 +13483,37 @@ classified non-prose by the existing per-character loop (each space character hi
 the character), so only the true zero-length case needed the fix.
 
 **Status: fixed.** `scripts/promptcommitlib.mjs`, `tests/promptcommit.test.js`.
+
+## F195 — `/api/runs` re-replays every archived spine on every call: ~300-460ms CPU at 250 rows (open, escalated)
+
+**Context:** panel rung P2 (live run view) wires the left Runs list to poll `/api/runs` every
+2 seconds (hamr's ruling, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27, Q1=A: the list
+refreshes every tick, not just the open run). Piece 3 of that build spec required measuring
+`/api/runs` and the run-detail endpoint against hamr's real archive (`HOME=/home/hamr`, the
+panel's real `~/.config/bareloop`, 250 listed rows) before shipping continuous polling against
+it, with an explicit instruction to STOP and report rather than invent a cache if the cost
+exceeded ~200ms of CPU per tick.
+
+**Measurement (this session, own panel instance on port 4763, `home:
+'/home/hamr/.config/bareloop'`, n=10 each):**
+
+- `GET /api/runs` over HTTP: median 346.72ms wall (range 306.5-426.6ms).
+- `listRuns()` called directly (no HTTP overhead), with `process.cpuUsage()` deltas: median
+  301.27ms wall, **median 457.40ms CPU** (range 277.3-574.7ms CPU) — `summarizeRow` fully
+  reads and `replayOne`-replays every listed run's ENTIRE spine file, on every single call, for
+  all 250 rows; there is no per-row caching keyed on the spine's own mtime/size.
+- `GET /api/runs/:runid` (single run detail) by contrast: median 8.85ms wall / 15.74ms CPU
+  (direct-call) — cheap, no concern.
+
+**Verdict:** `/api/runs` alone is ~2.3x over the ~200ms/tick CPU budget at hamr's real archive
+size, and will only grow as more runs accumulate (linear in row count — every row's spine is
+fully re-parsed and re-replayed per call). At a 2-second poll interval this means the panel's
+Node process spends a large, and growing, fraction of every tick synchronously blocked
+replaying data that (for all but the newest few rows) has not changed since the previous tick.
+
+**Status: open, escalated — not fixed.** Per the build spec's explicit instruction, this
+session did not invent a cache or change `listRuns`/`summarizeRow`. Candidate fixes (a
+per-row cache keyed on the spine file's mtime+size, an ETag/If-None-Match short-circuit,
+raising the poll interval, or paginating/limiting the list) are server-behavior changes beyond
+this rung's read-only-GET scope and are left for hamr's own call before this ships to
+continuous 2s polling against a large archive.
