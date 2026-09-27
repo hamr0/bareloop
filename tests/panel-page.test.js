@@ -1516,3 +1516,233 @@ test('stepMapLegendHTML: includes the retry legend entry', () => {
   const body = html.slice(start, end);
   assert.match(body, /dashed = retry/);
 });
+
+// ---------------------------------------------------------------------------
+// P2 (PANEL-BUILD.md, 2026-09-27 rulings) — the single poll owner that
+// drives the left Runs list (every 2s tick, Q1=A) and the open run's own
+// detail (only while it's live, stopping once it dies or gets a real
+// verdict). The five functions below (`sig`, `withScrollPreserved`,
+// `refreshRunsList`, `refreshOpenRun`, `pollTick`) are extracted VERBATIM
+// out of the page (never a reimplementation) and driven against a tiny
+// hand-rolled fake DOM + a fully injectable `getJSON` stub — same posture
+// as `makeWorkflowsPage` above (no jsdom — one-dep budget).
+//
+// Fail-first proof: none of these five function names exist anywhere in
+// the pre-P2 page (`git show 16825a7:src/panel/index.html` — the branch
+// HEAD before this session's polling commit) — `extractFnSource` would
+// throw "expected to find function X" for every one of them, so every test
+// below is a genuine red against the pre-change source, not a vacuous pass.
+// ---------------------------------------------------------------------------
+
+/** A fake element with just enough surface for the poll functions'
+ * scrollTop save/restore and the failure-streak note's textContent. */
+function makeScrollEl() {
+  return { scrollTop: 0, textContent: '' };
+}
+
+/**
+ * Builds the real poll functions (`pollTick`/`refreshRunsList`/
+ * `refreshOpenRun`) extracted verbatim from the page, wired to a fake
+ * `document` and a fully test-controlled `getJSON(path)` stub (never a real
+ * `fetch` — these tests exercise the polling/staleness/skip logic on top of
+ * it, not the fetch wrapper itself). `runsFilterBar.setItems` and
+ * `renderRun` are recording stubs; `setItems`'s stub additionally resets
+ * `left-pane-body`'s scrollTop to 0 to simulate a real DOM rebuild, so the
+ * scroll-preservation test is a genuine proof of `withScrollPreserved`
+ * restoring it, not a vacuous "nothing touched it anyway" pass.
+ * @param {(path: string) => Promise<any>} getJSONImpl
+ */
+function makePollHarness(getJSONImpl) {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = [
+    extractFnSource(html, 'sig'),
+    extractFnSource(html, 'withScrollPreserved'),
+    extractFnSource(html, 'refreshRunsList'),
+    extractFnSource(html, 'refreshOpenRun'),
+    extractFnSource(html, 'pollTick'),
+  ].join('\n');
+
+  const elementsById = {};
+  const doc = {
+    hidden: false,
+    getElementById(id) {
+      if (!elementsById[id]) elementsById[id] = makeScrollEl();
+      return elementsById[id];
+    },
+  };
+
+  const getJSONCalls = [];
+  const renderRunCalls = [];
+  const setItemsCalls = [];
+
+  // eslint-disable-next-line no-new-func
+  const factory = new Function('document', 'getJSONImpl', 'getJSONCalls', 'renderRunCalls', 'setItemsCalls', `
+    function getJSON(path){ getJSONCalls.push(path); return getJSONImpl(path); }
+    var runsFilterBar = {
+      setItems: function(runs){
+        setItemsCalls.push(runs);
+        var el = document.getElementById("left-pane-body");
+        if (el) el.scrollTop = 0; // simulates a real innerHTML rebuild resetting scroll
+      }
+    };
+    function renderRun(detail){ renderRunCalls.push(detail); }
+    var currentRunid = null;
+    var runIsLive = false;
+    var selectToken = 0;
+    var lastRunsSig = null;
+    var lastRunDetailSig = null;
+    var pollFailStreak = 0;
+    ${src}
+    return {
+      pollTick: pollTick,
+      refreshRunsList: refreshRunsList,
+      refreshOpenRun: refreshOpenRun,
+      setCurrentRunid: function(v){ currentRunid = v; },
+      getCurrentRunid: function(){ return currentRunid; },
+      setRunIsLive: function(v){ runIsLive = v; },
+      getRunIsLive: function(){ return runIsLive; },
+      bumpSelectToken: function(){ selectToken += 1; return selectToken; },
+    };
+  `);
+  const page = factory(doc, getJSONImpl, getJSONCalls, renderRunCalls, setItemsCalls);
+  return {
+    ...page, doc, getJSONCalls, renderRunCalls, setItemsCalls,
+  };
+}
+
+/** A promise + its own resolve/reject, for controlling exactly when an
+ * in-flight `getJSON` response lands relative to other test actions
+ * (the stale-response race test needs this). */
+function deferredPromise() {
+  let resolve;
+  const promise = new Promise((res) => { resolve = res; });
+  return { promise, resolve };
+}
+
+test('refreshOpenRun: fetches the open live run and calls renderRun once for a changed payload', async () => {
+  const h = makePollHarness((path) => {
+    assert.equal(path, '/api/runs/r1');
+    return Promise.resolve({ glyph: '▶', died: false, x: 1 });
+  });
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.refreshOpenRun();
+  assert.equal(h.renderRunCalls.length, 1);
+  assert.deepEqual(h.renderRunCalls[0], { glyph: '▶', died: false, x: 1 });
+  assert.equal(h.getRunIsLive(), true, 'a still-running glyph keeps runIsLive true');
+});
+
+test('refreshOpenRun: a run that reaches a real verdict (✓) flips runIsLive false, and the NEXT tick fetches nothing more', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ glyph: '✓', died: false }); });
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.refreshOpenRun();
+  assert.equal(h.getRunIsLive(), false, 'a real verdict must stop the poll for this run');
+  assert.equal(calls, 1);
+  await h.refreshOpenRun(); // caller (pollTick) would call this again on the next 2s tick
+  assert.equal(calls, 1, 'no fetch at all once the run is no longer live — poll for THIS run has stopped');
+});
+
+test('refreshOpenRun: a died run (glyph ?) also flips runIsLive false — died stops the poll same as a real verdict', async () => {
+  const h = makePollHarness(() => Promise.resolve({ glyph: '?', died: true }));
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.refreshOpenRun();
+  assert.equal(h.getRunIsLive(), false);
+});
+
+test('refreshOpenRun: a stale in-flight response for a run switched away from never overwrites the newer selection', async () => {
+  const d = deferredPromise();
+  const h = makePollHarness(() => d.promise);
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  const inFlight = h.refreshOpenRun(); // request for r1 now in flight
+  // the person clicks a different run mid-poll — selectRun's own token bump
+  h.setCurrentRunid('r2');
+  h.bumpSelectToken();
+  d.resolve({ glyph: '▶', died: false }); // r1's stale response finally lands
+  await inFlight;
+  assert.equal(h.renderRunCalls.length, 0, 'a stale r1 response must never render onto the r2 selection now open');
+});
+
+test('refreshOpenRun: an unchanged payload does not call renderRun a second time', async () => {
+  const payload = { glyph: '▶', died: false, x: 1 };
+  const h = makePollHarness(() => Promise.resolve(payload));
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.refreshOpenRun();
+  await h.refreshOpenRun();
+  assert.equal(h.renderRunCalls.length, 1, 'the second identical payload must not rebuild the DOM again');
+});
+
+test('refreshOpenRun: does nothing (no fetch) when no run is selected, or the selected run is not live', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ glyph: '▶', died: false }); });
+  await h.refreshOpenRun(); // no currentRunid at all
+  assert.equal(calls, 0);
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(false); // e.g. already died/finished
+  await h.refreshOpenRun();
+  assert.equal(calls, 0);
+});
+
+test('refreshRunsList: skips re-render (setItems) when the fetched payload is unchanged, still re-renders on a real change', async () => {
+  let payload = { runs: [{ runid: 'a' }] };
+  const h = makePollHarness(() => Promise.resolve(payload));
+  await h.refreshRunsList();
+  assert.equal(h.setItemsCalls.length, 1);
+  await h.refreshRunsList(); // identical payload
+  assert.equal(h.setItemsCalls.length, 1, 'an unchanged runs list must not rebuild the DOM again');
+  payload = { runs: [{ runid: 'a' }, { runid: 'b' }] };
+  await h.refreshRunsList();
+  assert.equal(h.setItemsCalls.length, 2, 'a real change must still re-render');
+});
+
+test('refreshRunsList: preserves the left pane\'s scrollTop across a poll-driven re-render', async () => {
+  const h = makePollHarness(() => Promise.resolve({ runs: [{ runid: 'a' }] }));
+  h.doc.getElementById('left-pane-body').scrollTop = 240;
+  await h.refreshRunsList();
+  // the setItems stub itself resets scrollTop to 0 (simulating a real
+  // rebuild) — this only stays 240 if withScrollPreserved actually restores
+  // it afterward, not merely because nothing touched it.
+  assert.equal(h.doc.getElementById('left-pane-body').scrollTop, 240);
+});
+
+test('refreshRunsList: a failing fetch keeps the last good state and only surfaces a note after 3 consecutive failures', async () => {
+  const h = makePollHarness(() => Promise.reject(new Error('boom')));
+  await h.refreshRunsList();
+  await h.refreshRunsList();
+  assert.equal(h.doc.getElementById('runs-filter-count').textContent, '', 'no alarming note before 3 consecutive failures');
+  await h.refreshRunsList();
+  assert.match(h.doc.getElementById('runs-filter-count').textContent, /fetch failing/);
+  assert.equal(h.setItemsCalls.length, 0, 'never wiped/rebuilt the list on a failed fetch');
+});
+
+test('buildStepMapSVG: a running box draws the pulsing amber dot (mockup-verbatim circle+animate), a done/waiting box does not', () => {
+  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+  const parts = [
+    { kind: 'step', label: 'a', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
+    { kind: 'step', label: 'b', occurrence: 1, outcome: null, attempts: [] },
+  ];
+  const boxes = buildOrderedBoxes(parts, true); // isLive=true — the last part is the running one
+  const svg = buildStepMapSVG(boxes, 900);
+  const dots = [...svg.matchAll(/<circle[^>]*fill="#b8860b">/g)];
+  assert.equal(dots.length, 1, 'exactly one running box in this list, exactly one pulsing dot');
+  assert.match(svg, /<animate attributeName="opacity" values="1;0\.3;1" dur="1\.2s" repeatCount="indefinite">/);
+});
+
+test('pollTick: does nothing while document.hidden is true, and resumes fetching once visible again', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ runs: [] }); });
+  h.doc.hidden = true;
+  h.pollTick();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(calls, 0, 'a hidden tab must not poll');
+  h.doc.hidden = false;
+  h.pollTick();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.ok(calls >= 1, 'a visible tab does poll');
+});
