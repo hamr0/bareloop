@@ -3265,6 +3265,40 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   new runid so the panel can be exercised against a "live" run without a paid run — it is not
   a substitute for watching a real run start-to-end, which stays a separately authorized step.
 
+- **Panel P3 (chat/authoring, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27)** → the ONE
+  family of write routes the panel serves, all under `/api/author/*` (`src/panel/
+  authorroutes.js`); every other route stays GET/HEAD-only per P1's own rule. Every route
+  requires the human-click guard: an `x-bareloop-token` header matching a fresh token minted
+  once per server start (templated into `index.html` like the port) AND an Origin/Host
+  naming this exact `127.0.0.1:<port>` — a request failing either gets `403`, before the
+  route body ever runs. `POST /api/author/start` (one job-card body; `409` while a prior
+  session is still non-terminal — one authoring session at a time) creates a session
+  (`src/panel/authorsession.js`) that runs `prepareSource`/`detectLanguage`/`validateJob`/
+  `authorCloseForJob`/`assembleSpec`/`prepareSigning` in-process, exactly the library calls
+  `bareloop interview`/`bareloop author` already make — never a script's own readline loop,
+  never a reimplementation of any gate. `GET /api/author/:id` polls the session's state
+  (phase, chat messages, cost, `revisesLeft`, `specHash` once prepared). `POST /api/author/
+  :id/send {text}` answers whatever the confirm turn is currently asking (`worseThanBefore`/
+  `language`/a plan's own follow-up question) — refused outright when the pending ask is the
+  plan MENU itself (`{ok:false}`, no route from chat text to a plan decision, ever). `POST
+  /api/author/:id/revise {text}` is the menu's own `fix` pick, with the chat text as the
+  correction (D3: max 2 rounds, `revisesLeft` derived from the confirm turn's own round
+  number, never a second hardcoded cap). `POST /api/author/:id/sign-prepare` is the menu's
+  own `confirm` pick — it runs gates 1–4 and reaches `phase:'prepared'` with a `specHash`; it
+  NEVER signs. `POST /api/author/:id/sign {specHash}` is the ONLY route that spawns a run —
+  it refuses unless `phase==='prepared'` and the posted hash matches the session's own
+  `signing.json` `specHash` exactly, then spawns `setsid systemd-inhibit … node bin/
+  bareloop.mjs run-u --spec <resolved-spec.json> --approve <hash>` detached (array argv,
+  never a shell string), with its own log file inside the session's own dir, and the
+  server's own environment (a key is never read into or sent to the page — a missing one
+  refuses the session at $0, naming only the env var). `src/panel/authorsession.js` takes
+  test-only DI seams (`scout`/`generate`/`confirmGenerate`/`authorFn`/`prepareSigningFn`) so
+  a test can drive the real ask()-channel/revise/hash wiring without a live provider call;
+  none of them are reachable from `authorroutes.js`'s real construction path. Sessions live
+  under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
+  `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
+  `~/.config/bareloop/.env` keys-file loader, and Settings are P4, not built here.
+
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
   U-mode). `src/cli.js`'s `run-u` dispatch hands `rest` straight to
