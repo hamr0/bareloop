@@ -132,6 +132,18 @@
   .dot::before{content:"[·]";color:var(--grey-dot);}
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
+  /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
+     step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
+     their result glyph as PLAIN inline text inside a larger string (never
+     through `.dot`, which owns its own bracketed content), so `[✓]`/`[✗]`
+     there were colourless until now. `.glyph-green`/`.glyph-red` are the same
+     two existing colour tokens, applied via a plain inline `<span>` wrapper
+     (`glyphSpan()` in this file's script) rather than a new colour — `[▶]`
+     stays amber (already coloured via `.dot.amber` where it renders as a
+     dot; these two spans are never minted for `▶`/`·`/`?`) and the wording
+     ruling stands: colour only, never the words green/red/soft-green. */
+  .glyph-green{color:var(--green);}
+  .glyph-red{color:var(--red);}
   /* Panel P2 defect 1 (hamr-watched run mujjtrvd, 2026-09-27): the [▶] glyph
      itself pulses wherever a LIVE run shows it (runs list rows, the
      Workflows job row when its represented run is live, the run header) —
@@ -524,6 +536,20 @@
     if(outcome === null || outcome === undefined) return boxIsLive ? "▶" : "?";
     return "✗";
   }
+  // P3 addition: colour ONLY [✓]/[✗] (the standing wording ruling's own
+  // words/glyph vocabulary is unchanged — this wraps the same glyph
+  // character in a plain inline colour span for the two result-carrying
+  // cases; [▶]/[?] pass through unwrapped, exactly as before this addition).
+  function glyphSpan(g){
+    if(g === "✓") return '<span class="glyph-green">' + g + '</span>';
+    if(g === "✗") return '<span class="glyph-red">' + g + '</span>';
+    return g;
+  }
+  // PLAIN TEXT ONLY — feeds the SVG step map's title/width calculation
+  // (`stepTitleText`, an SVG <text> node), never innerHTML; a colour span
+  // here would render as literal "<span>" characters inside the map.
+  // {@link glyphSpan} (the P3 colour addition) is used only by the DOM
+  // part-card renderer below, never by this function.
   function attemptsInlineText(attempts, boxIsLive){
     if(!attempts || !attempts.length) return "";
     return attempts.map(function(a){ return "attempt " + a.n + " " + attemptGlyph(a.outcome, boxIsLive); }).join(" · ");
@@ -578,9 +604,9 @@
   function partResultGlyph(part, box){
     if(partHasNoVerdict(part)) return null;
     var boxIsLive = box.state === "running";
-    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome, boxIsLive); }).join("");
+    if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(attemptGlyph(a.outcome, boxIsLive)); }).join("");
     var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
-    return attemptGlyph(outcome, boxIsLive);
+    return glyphSpan(attemptGlyph(outcome, boxIsLive));
   }
   function buildOrderedBoxes(parts, isLive){
     var list = Array.isArray(parts) ? parts : [];

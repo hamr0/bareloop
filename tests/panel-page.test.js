@@ -930,18 +930,23 @@ test('build item B RED-PROOF: partResultGlyph/partHasNoVerdict — scout/plan/re
     assert.deepEqual(box.attempts, [], `${kind}'s synthetic attempt must not reach map/card display`);
     assert.equal(partResultGlyph(part, box), null, `${kind} must render no result glyph at all`);
   });
-  // a real single-attempt step (a genuine green) still shows its glyph.
+  // a real single-attempt step (a genuine green) still shows its glyph —
+  // P3 build (2026-09-27, glyph colour addition): wrapped in a plain inline
+  // colour span (`glyphSpan`), never a bare glyph any more — the part-card
+  // renderer inserts this string via innerHTML, so the span is real markup,
+  // not literal text.
   const stepPart = {
     kind: 'step', label: 'x', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }],
   };
   const [stepBox] = buildOrderedBoxes([stepPart], false);
-  assert.equal(partResultGlyph(stepPart, stepBox), '✓');
-  // a multi-attempt fix loop still joins every attempt's own glyph.
+  assert.equal(partResultGlyph(stepPart, stepBox), '<span class="glyph-green">✓</span>');
+  // a multi-attempt fix loop still joins every attempt's own glyph, each in
+  // its own colour span.
   const fixPart = {
     kind: 'fix', label: 'fix', occurrence: null, outcome: 'green', attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }],
   };
   const [fixBox] = buildOrderedBoxes([fixPart], false);
-  assert.equal(partResultGlyph(fixPart, fixBox), '✗✓');
+  assert.equal(partResultGlyph(fixPart, fixBox), '<span class="glyph-red">✗</span><span class="glyph-green">✓</span>');
 });
 
 // Panel P2 defect 2 (hamr-watched run mujjtrvd, 2026-09-27): `partBoxState`
