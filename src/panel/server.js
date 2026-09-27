@@ -556,7 +556,7 @@ export function getRunDetail(runid, opts = {}) {
     // `replayRun` (a single spine record, never audit-sidecar-sourced, so it
     // carries no contamination risk); `null` when the spine carries no
     // `memory-cache` record at all (never armed on this run).
-    behaviour: scopedBehaviour(row.spine, rawSpineRecords),
+    behaviour: scopedBehaviour(row, rawSpineRecords),
     memoryCache: summary.memoryCache,
   };
 }
@@ -634,6 +634,55 @@ function makeRoundLookup(spineRecords) {
 }
 
 /**
+ * One owner for "where does THIS run's gate-audit sidecar live on disk right
+ * now" — used by both {@link scopedBehaviour} (Run tab) and {@link
+ * getRunAudit} (Audit tab), so the two can never disagree. Two cases:
+ *  (a) the FINISHED convention ({@link resolveSiblings}: `<spine-stem>-
+ *      gate-audit.jsonl` beside the spine) — `run-u`'s end-of-run rename
+ *      (`src/userrun.js:1727-1729`) and every existing archived-run test
+ *      already reads this shape;
+ *  (b) LIVE fallback (panel P2 defect 3, hamr-watched run mujjtrvd,
+ *      2026-09-27): while a run has no `job-end` yet, its sidecar is still
+ *      sitting at its DURING-RUN path, `<row.patient>/gate-audit.jsonl` —
+ *      `run-u` writes it at `wd` (`src/userrun.js:1727`'s `auditSrc`) and
+ *      `bareloop run`/`via:'bundle'` writes it at the worktree
+ *      (`src/cli.js:448`'s `auditSrc`); `row.patient` already carries
+ *      exactly that path for both (`src/userrun.js:1355`, `src/cli.js:418`),
+ *      so this one fallback covers both without knowing which via wrote it.
+ *      Only tried when (a) found nothing AND this run's own spine carries no
+ *      `job-end` yet, so a finished run never pays the extra stat and never
+ *      risks reading a stale leftover file ((a)'s rename already moved it
+ *      away by the time job-end lands). `row.patient` is `null` on a
+ *      `backfill` row (never a live run) and on some pre-cutoff `run-u` rows
+ *      — both correctly fall through to `null` here.
+ * Callers still scope the rows they read from this file by this run's own
+ * job-start..job-end ts window ({@link runAuditWindow}) — a shared tree/
+ * worktree gate-audit file can carry another run's rows too (this file's own
+ * header comment on `runAuditWindow`), live or finished.
+ *
+ * NOT handled here (a separate, pre-existing gap, out of this fix's scope):
+ * a FINISHED `via:'bundle'` run's sidecar is renamed to a bare
+ * `gate-audit.jsonl` inside its own `runs/<runid>/` dir (`src/cli.js:449`),
+ * but its spine is named `spine.jsonl`, so {@link resolveSiblings} looks for
+ * `spine-gate-audit.jsonl` and never finds it — a finished bundle run reads
+ * `no-sidecar`/`toolLogSaved:false` even though its tool log really was
+ * saved. Reported, not fixed here (a naming mismatch in `src/cli.js`'s own
+ * rename target, not a panel-server read-path bug).
+ * @param {{spine: string, patient: string|null}} row
+ * @param {any[]} spineRecords
+ * @returns {string|null}
+ */
+function resolveAuditPathForRow(row, spineRecords) {
+  const { auditPath } = resolveSiblings(row.spine);
+  if (auditPath) return auditPath;
+  const hasJobEnd = spineRecords.some((r) => r && r.type === 'job-end');
+  if (hasJobEnd) return null;
+  if (typeof row.patient !== 'string' || row.patient.length === 0) return null;
+  const live = join(row.patient, 'gate-audit.jsonl');
+  return existsSync(live) ? live : null;
+}
+
+/**
  * `runBehaviour`, fed only the gate-audit rows inside this run's own ts
  * window (see {@link runAuditWindow}) — the panel-side fix for the same
  * contamination `getRunAudit` fixes for the Audit tab, kept as ONE shared
@@ -641,12 +690,14 @@ function makeRoundLookup(spineRecords) {
  * can never disagree with each other about which rows belong to this run.
  * `null` when no gate-audit sidecar exists at all (never a fake all-zero
  * object — same rule `replayRun`'s own `auditAvailable` already follows).
- * @param {string} spinePath
+ * `auditPath` resolution (finished sibling, or the live during-run fallback)
+ * is {@link resolveAuditPathForRow} — the one shared owner.
+ * @param {{spine: string, patient: string|null}} row
  * @param {any[]} spineRecords
  * @returns {ReturnType<typeof runBehaviour>|null}
  */
-function scopedBehaviour(spinePath, spineRecords) {
-  const { auditPath } = resolveSiblings(spinePath);
+function scopedBehaviour(row, spineRecords) {
+  const auditPath = resolveAuditPathForRow(row, spineRecords);
   if (!auditPath || !existsSync(auditPath)) return null;
   const { records } = parseJsonl(auditPath);
   const { startTs, endTs } = runAuditWindow(spineRecords);
@@ -803,13 +854,18 @@ export function getRunAudit(runid, opts = {}) {
       runid, rows: [], raw: '', empty: true, reason: 'no-sidecar',
     };
   }
-  const { auditPath } = resolveSiblings(row.spine);
+  const { records: spineRecords, skipped: spineSkipped } = parseJsonl(row.spine);
+  // {@link resolveAuditPathForRow} needs `spineRecords` (to know whether this
+  // run has reached `job-end` yet) before it can decide whether the LIVE
+  // during-run fallback is even worth trying — so the spine is parsed once,
+  // here, before the sidecar path is resolved (moved up from right after the
+  // old `resolveSiblings`-only check this replaces).
+  const auditPath = resolveAuditPathForRow(row, spineRecords);
   if (!auditPath || !existsSync(auditPath)) {
     return {
       runid, rows: [], raw: '', empty: true, reason: 'no-sidecar',
     };
   }
-  const { records: spineRecords, skipped: spineSkipped } = parseJsonl(row.spine);
   const { startTs, endTs } = runAuditWindow(spineRecords);
   const roundOf = makeRoundLookup(spineRecords);
   const roundRecords = sortedRoundRecords(spineRecords);
