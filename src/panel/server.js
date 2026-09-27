@@ -37,6 +37,7 @@ import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
+import { createAuthorRoutes, mintToken } from './authorroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -1406,16 +1407,21 @@ function sendText(res, code, text) {
  * separately from {@link createPanelServer} so tests can drive it without a
  * real listening socket where that is simpler (most path-safety/405 tests
  * still go through a real socket, per the build spec).
+ *
+ * PANEL-BUILD.md P3: this file's own GET/HEAD-only rule stands for every
+ * route it owns; `/api/author/*` is the ONE family of routes that may be
+ * POSTed to, and it is handled entirely by {@link createAuthorRoutes}
+ * (`src/panel/authorroutes.js`) — a separate module so this file's own
+ * "read-only, by construction" header comment stays true of everything else
+ * in it. `opts.authorRoutes` is absent on every P1/P2 caller (read-only
+ * tests, and the CLI's own `panelMain` when no author routes are wired) —
+ * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number }} opts
+ * @param {{ home?: string, port: number, authorRoutes?: ReturnType<typeof createAuthorRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
   const method = req.method ?? 'GET';
-  if (method !== 'GET' && method !== 'HEAD') {
-    sendText(res, 405, 'method not allowed — this panel is read-only (GET/HEAD only)');
-    return;
-  }
 
   let url;
   try {
@@ -1425,6 +1431,26 @@ export function handleRequest(req, res, opts) {
     return;
   }
   const { pathname } = url;
+
+  if (method !== 'GET' && method !== 'HEAD') {
+    if (opts.authorRoutes && pathname.startsWith('/api/author')) {
+      let raw = '';
+      req.on('data', (c) => { raw += c; });
+      req.on('end', () => {
+        /** @type {any} */
+        let body = null;
+        if (raw.length > 0) { try { body = JSON.parse(raw); } catch { body = null; } }
+        opts.authorRoutes?.handle(req, res, pathname, body);
+      });
+      return;
+    }
+    sendText(res, 405, 'method not allowed — this panel is read-only outside /api/author (GET/HEAD only)');
+    return;
+  }
+  if (opts.authorRoutes && pathname.startsWith('/api/author')) {
+    opts.authorRoutes.handle(req, res, pathname, null);
+    return;
+  }
 
   const send = (code, body) => {
     if (method === 'HEAD') {
@@ -1446,6 +1472,11 @@ export function handleRequest(req, res, opts) {
       return;
     }
     html = html.replace(/__BARELOOP_PANEL_PORT__/g, String(opts.port));
+    // PANEL-BUILD.md P3's human-click guard: a per-server-start token,
+    // templated into the page exactly like the port — absent on every P1/P2
+    // caller (no `opts.token`), which is fine: the page's own JS only reads
+    // it to send on a POST, and there are none to send without P3's routes.
+    html = html.replace(/__BARELOOP_PANEL_TOKEN__/g, String(opts.token ?? ''));
     if (method === 'HEAD') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
       res.end();
@@ -1509,12 +1540,24 @@ export function handleRequest(req, res, opts) {
  * header). Resolves once actually listening; rejects on a bind error
  * (including `EADDRINUSE`) with a `.port` field on the error for the
  * caller's message.
- * @param {{ port?: number, home?: string }} [opts]
- * @returns {Promise<{ server: import('node:http').Server, port: number, close: () => Promise<void> }>}
+ *
+ * PANEL-BUILD.md P3: a fresh {@link mintToken} token and one {@link
+ * createAuthorRoutes} instance are built here, ONCE per server start, and
+ * held for the server's lifetime — `opts.env`/`opts.sessionsRoot`/
+ * `opts.spawnFn`/`opts.bareloopBin` are test seams the author routes take
+ * (a real caller passes none of them and {@link createAuthorRoutes} defaults
+ * each one to the real environment/spawn/binary, this file itself touching
+ * none of them, and the real
+ * `~/.config/bareloop/panel-sessions`, the real `child_process.spawn`, and
+ * this package's own `bin/bareloop.mjs`).
+ * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
+ *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string }} [opts]
+ * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
   const requestedPort = opts.port ?? DEFAULT_PORT;
   const home = opts.home;
+  const token = mintToken();
   return new Promise((resolve, reject) => {
     // Bound port is resolved from the live socket (`server.address().port`)
     // once listening starts, not the requested value — this is what makes
@@ -1522,9 +1565,13 @@ export function createPanelServer(opts = {}) {
     // test suite, while `--port N` / DEFAULT_PORT callers still get back
     // exactly the port they asked for.
     let boundPort = requestedPort;
+    /** @type {ReturnType<typeof createAuthorRoutes>|undefined} */
+    let authorRoutes;
     const server = createServer((req, res) => {
       try {
-        handleRequest(req, res, { home, port: boundPort });
+        handleRequest(req, res, {
+          home, port: boundPort, token, authorRoutes,
+        });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
       }
@@ -1537,9 +1584,18 @@ export function createPanelServer(opts = {}) {
     server.listen(requestedPort, '127.0.0.1', () => {
       const addr = server.address();
       boundPort = typeof addr === 'object' && addr !== null ? addr.port : requestedPort;
+      authorRoutes = createAuthorRoutes({
+        port: boundPort,
+        token,
+        env: opts.env,
+        sessionsRoot: opts.sessionsRoot,
+        spawnFn: opts.spawnFn,
+        bareloopBin: opts.bareloopBin,
+      });
       resolve({
         server,
         port: boundPort,
+        token,
         close: () => new Promise((res2) => { server.close(() => res2(undefined)); }),
       });
     });

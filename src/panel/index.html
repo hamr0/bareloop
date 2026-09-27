@@ -308,7 +308,40 @@
   .field-row{display:flex;flex-wrap:wrap;gap:10px;}
   .field-row .field{flex:1 1 140px;margin-bottom:10px;}
 
-  .chat-thread{padding:20px 8px;color:var(--text-faint);font-size:13px;}
+  /* P3 build (Chat/authoring): job-card compact mode, radio row, the $/time/
+     drafting cap row, and the chat thread's message bubbles — ported from
+     design/panel-mockup.html (the visual contract), re-themed onto this
+     page's own existing colour tokens rather than the mockup's own. */
+  .job-card.compact{padding:14px 8px 8px;}
+  .job-card.compact .field{margin-bottom:6px;}
+  .job-card.compact label{margin-bottom:1px;font-size:11px;}
+  .job-card.compact input,
+  .job-card.compact select{padding:5px 7px;}
+  .expand-field{text-overflow:ellipsis;}
+  .radio-row{display:flex;gap:14px;align-items:center;margin-bottom:10px;}
+  .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;text-transform:none;}
+  .cap-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;}
+  .cap-field label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:1px;}
+  .cap-field input{width:100%;padding:5px 6px;box-sizing:border-box;}
+  @media (max-width: 480px){
+    .cap-row{grid-template-columns:1fr;}
+  }
+  .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700;}
+  .btn.primary::before,.btn.primary::after{color:var(--primary-text);opacity:0.6;}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+
+  .chat-thread{display:flex;flex-direction:column;gap:10px;margin-bottom:10px;}
+  .msg{padding:8px 10px;border:1px solid var(--border);max-width:100%;background:var(--panel2);font-size:13px;word-break:break-word;white-space:pre-wrap;}
+  .msg.bot{border-left:3px solid var(--border-strong);}
+  .msg.bot .who::before{content:"$ ";}
+  .msg.you{background:var(--bg);margin-left:20px;border-left:3px solid var(--accent);}
+  .msg.you .who::before{content:"> ";}
+  .msg.system{color:var(--text-faint);border-left:3px dotted var(--text-faint);font-size:12px;}
+  .msg .who{font-size:11px;color:var(--text-faint);margin-bottom:3px;text-transform:none;font-weight:400;}
+  .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
+  .chat-input-row input{width:100%;box-sizing:border-box;}
+  .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
+  .actions-row > .btn{flex:1 1 auto;}
 
   @media (max-width: 899px){
     .main{flex-direction:column;}
@@ -350,12 +383,86 @@
       <div class="pane-body" id="left-pane-body">
 
         <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
-          <div class="chat-thread">
-            Authoring a new job from this page comes later (PANEL-BUILD.md P3). This build
-            (P1) is read-only: it shows runs already started from the command line
-            (<code>bareloop run</code> / <code>bareloop run-u</code>). Use the Runs tab to
-            look at one.
+          <button class="btn" type="button" id="chat-new-btn" data-testid="chat-new">+ New</button>
+
+          <div class="job-card compact" id="job-card" data-testid="job-card" hidden>
+            <h4 id="job-card-title">Job card — draft</h4>
+
+            <div class="field">
+              <label id="jf-verdict-label">Check type</label>
+              <div class="radio-row" role="radiogroup" aria-labelledby="jf-verdict-label">
+                <label><input type="radio" name="jf-verdict" value="deterministic" checked> Deterministic</label>
+                <label><input type="radio" name="jf-verdict" value="rubric"> Rubric</label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="jf-model">Model</label>
+              <select id="jf-model">
+                <option value="claude-sonnet-5">claude-sonnet-5 · Anthropic</option>
+                <option value="deepseek-flash">deepseek-flash · DeepSeek</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="jf-name">Job name</label>
+              <input id="jf-name" type="text" placeholder="kebab-case, unique">
+            </div>
+            <div class="field">
+              <label for="jf-goal">Goal</label>
+              <input class="expand-field" id="jf-goal" type="text">
+            </div>
+            <div class="field">
+              <label for="jf-source">Source</label>
+              <input id="jf-source" type="text" placeholder="absolute path to a local repo">
+            </div>
+            <div class="field">
+              <label for="jf-dest">Destination</label>
+              <input id="jf-dest" type="text" placeholder="the write fence — where in the repo this run may change files">
+            </div>
+            <div class="field">
+              <label for="jf-success">Success</label>
+              <input class="expand-field" id="jf-success" type="text">
+            </div>
+            <div class="field">
+              <label for="jf-guardrails">Guardrails</label>
+              <input id="jf-guardrails" type="text">
+            </div>
+            <div class="field">
+              <label for="jf-judge">Judge examples <span class="hint" style="display:inline">(rubric only)</span></label>
+              <input class="expand-field" id="jf-judge" type="text" disabled>
+            </div>
+
+            <div class="cap-row" data-testid="cap-row">
+              <div class="cap-field">
+                <label for="jf-cap-money">$ cap</label>
+                <input id="jf-cap-money" type="text">
+              </div>
+              <div class="cap-field">
+                <label for="jf-cap-time">Time cap (min)</label>
+                <input id="jf-cap-time" type="text" placeholder="or blank = no wall">
+              </div>
+              <div class="cap-field">
+                <label for="jf-cap-draft">Drafting $ cap</label>
+                <input id="jf-cap-draft" type="text" data-testid="jf-cap-draft" placeholder="required, no default">
+              </div>
+            </div>
+            <button class="btn primary" type="button" id="chat-start-btn" data-testid="chat-start" disabled>Start drafting</button>
+            <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
+            <div class="hint" id="chat-hash-line" data-testid="chat-hash-line" hidden></div>
           </div>
+
+          <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
+
+          <div class="chat-input-row">
+            <label for="chat-msg" style="display:none">Message</label>
+            <input id="chat-msg" type="text" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg">
+          </div>
+
+          <div class="actions-row">
+            <button class="btn" type="button" id="chat-send-btn" data-testid="chat-send" disabled>Send</button>
+            <button class="btn primary" type="button" id="chat-sign-btn" data-testid="btn-sign-run" disabled>Sign &amp; run</button>
+            <button class="btn" type="button" id="chat-revise-btn" data-testid="btn-revise" disabled>Revise (2 left)</button>
+          </div>
+          <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
         <section id="panel-runs" class="tabpanel" role="tabpanel" aria-labelledby="tab-runs" hidden>
@@ -466,7 +573,23 @@
   "use strict";
 
   var PORT = "__BARELOOP_PANEL_PORT__";
+  // P3 human-click guard: minted once per server start, sent on every POST
+  // this page ever makes (`x-bareloop-token`) — never logged, never put in
+  // a URL, and it never signs anything on its own (the sign route also
+  // requires the exact spec hash, checked server-side).
+  var TOKEN = "__BARELOOP_PANEL_TOKEN__";
   document.getElementById("host-line").textContent = "127.0.0.1:" + PORT;
+
+  function authorPost(path, body){
+    return fetch(path, {
+      method: "POST",
+      headers: {"content-type": "application/json", "x-bareloop-token": TOKEN},
+      body: JSON.stringify(body || {}),
+    }).then(function(r){ return r.json().then(function(j){ return {status: r.status, body: j}; }); });
+  }
+  function authorGet(path){
+    return fetch(path, {headers: {"x-bareloop-token": TOKEN}}).then(function(r){ return r.json(); });
+  }
 
   function wireTabs(tabButtons){
     tabButtons.forEach(function(btn){
@@ -2169,6 +2292,181 @@
       try{ localStorage.setItem("bareloop-panel-theme", next); }catch(e){}
       paint();
     });
+  })();
+
+  // ---- Chat tab: job-card authoring (PANEL-BUILD.md P3) ----
+  (function(){
+    var newBtn = document.getElementById("chat-new-btn");
+    var card = document.getElementById("job-card");
+    var thread = document.getElementById("chat-thread");
+    var msgInput = document.getElementById("chat-msg");
+    var sendBtn = document.getElementById("chat-send-btn");
+    var signBtn = document.getElementById("chat-sign-btn");
+    var reviseBtn = document.getElementById("chat-revise-btn");
+    var startBtn = document.getElementById("chat-start-btn");
+    var errEl = document.getElementById("chat-card-error");
+    var hashLine = document.getElementById("chat-hash-line");
+    var draftCapInput = document.getElementById("jf-cap-draft");
+
+    var sessionId = null;
+    var pollTimer = null;
+    var lastPhase = null;
+    var signClickedOnce = false;
+
+    newBtn.addEventListener("click", function(){
+      card.hidden = false;
+      newBtn.hidden = true;
+      thread.innerHTML = "";
+      errEl.textContent = "";
+    });
+
+    function currentCard(){
+      var moneyCap = Number(document.getElementById("jf-cap-money").value);
+      var timeCapMin = document.getElementById("jf-cap-time").value.trim();
+      var draftCap = Number(draftCapInput.value);
+      return {
+        checkType: document.querySelector('input[name="jf-verdict"]:checked').value === "rubric" ? "rubric" : "deterministic",
+        model: document.getElementById("jf-model").value,
+        jobName: document.getElementById("jf-name").value.trim(),
+        goal: document.getElementById("jf-goal").value.trim(),
+        source: document.getElementById("jf-source").value.trim(),
+        destination: document.getElementById("jf-dest").value.trim(),
+        success: document.getElementById("jf-success").value.trim(),
+        guardrails: document.getElementById("jf-guardrails").value.trim(),
+        judgeExamples: document.getElementById("jf-judge").value.trim(),
+        capUsd: moneyCap,
+        maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
+        draftingCapUsd: draftCap,
+      };
+    }
+
+    // Drafting $ cap is REQUIRED every time, no default (Q2=A) — Start stays
+    // disabled until it parses as a positive number, checked client-side as
+    // a UX convenience only; the server (`validateJobCard`) is the real gate.
+    function refreshStartEnabled(){
+      var v = Number(draftCapInput.value);
+      startBtn.disabled = !(draftCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0);
+    }
+    draftCapInput.addEventListener("input", refreshStartEnabled);
+    document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
+      r.addEventListener("change", function(){
+        var isRubric = document.querySelector('input[name="jf-verdict"]:checked').value === "rubric";
+        document.getElementById("jf-judge").disabled = !isRubric;
+      });
+    });
+
+    function renderMessages(state){
+      thread.innerHTML = state.messages.map(function(m){
+        var cls = m.role === "you" ? "you" : (m.role === "system" ? "system" : "bot");
+        var who = m.role === "you" ? "you" : (m.role === "system" ? "bareloop (progress)" : "bareloop");
+        return '<div class="msg ' + cls + '"><div class="who">' + escapeXml(who) + '</div>' + escapeXml(m.text) + '</div>';
+      }).join("");
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    function renderActions(state){
+      var pending = state.pendingAsk;
+      var atMenu = !!pending && pending.kind === "menu";
+      sendBtn.disabled = !pending || atMenu;
+      reviseBtn.disabled = !atMenu || state.revisesLeft <= 0;
+      reviseBtn.textContent = "Revise (" + state.revisesLeft + " left)";
+      if(state.phase === "prepared" && !signClickedOnce){
+        signBtn.disabled = false;
+        signBtn.textContent = "Sign & run";
+      } else if(state.phase === "prepared" && signClickedOnce){
+        signBtn.disabled = false;
+        signBtn.textContent = "Sign " + (state.specHash || "").slice(0, 8) + " & run";
+      } else {
+        signBtn.disabled = !atMenu;
+        signBtn.textContent = "Sign & run";
+      }
+      if(state.specHash){
+        hashLine.hidden = false;
+        hashLine.textContent = "spec hash: " + state.specHash;
+      }
+      if(state.phase === "refused" || state.phase === "error" || state.phase === "abandoned"){
+        errEl.textContent = state.error || ("stopped: " + state.phase);
+      } else {
+        errEl.textContent = "";
+      }
+    }
+
+    function poll(){
+      if(!sessionId) return;
+      authorGet("/api/author/" + sessionId).then(function(j){
+        if(!j || !j.state) return;
+        renderMessages(j.state);
+        renderActions(j.state);
+        if(j.state.phase === "signed"){
+          clearInterval(pollTimer);
+          document.getElementById("tab-runs").click();
+        }
+        lastPhase = j.state.phase;
+      }).catch(function(){ /* transient — next poll tries again */ });
+    }
+
+    startBtn.addEventListener("click", function(){
+      errEl.textContent = "";
+      var body = currentCard();
+      authorPost("/api/author/start", body).then(function(r){
+        if(r.status !== 200 || !r.body.ok){
+          errEl.textContent = (r.body && r.body.error) || "refused";
+          return;
+        }
+        sessionId = r.body.sessionId;
+        signClickedOnce = false;
+        renderMessages(r.body.state);
+        renderActions(r.body.state);
+        if(pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(poll, 2000);
+      });
+    });
+
+    sendBtn.addEventListener("click", function(){
+      if(!sessionId) return;
+      var text = msgInput.value;
+      if(!text.trim()) return;
+      authorPost("/api/author/" + sessionId + "/send", {text: text}).then(function(r){
+        if(r.body && r.body.error && !r.body.ok) errEl.textContent = r.body.error;
+        msgInput.value = "";
+        poll();
+      });
+    });
+
+    reviseBtn.addEventListener("click", function(){
+      if(!sessionId) return;
+      var text = msgInput.value;
+      authorPost("/api/author/" + sessionId + "/revise", {text: text}).then(function(r){
+        if(r.body && r.body.error && !r.body.ok) errEl.textContent = r.body.error;
+        msgInput.value = "";
+        poll();
+      });
+    });
+
+    signBtn.addEventListener("click", function(){
+      if(!sessionId) return;
+      if(!signClickedOnce){
+        // click 1 — the confirm turn's own "confirm" pick. Never signs.
+        authorPost("/api/author/" + sessionId + "/sign-prepare", {}).then(function(r){
+          if(r.body && r.body.error && !r.body.ok) errEl.textContent = r.body.error;
+          signClickedOnce = true;
+          poll();
+        });
+        return;
+      }
+      // click 2 — the ONLY route that signs. Carries the hash shown on the
+      // card; the server re-checks it against signing.json regardless.
+      authorGet("/api/author/" + sessionId).then(function(j){
+        var hash = j.state && j.state.specHash;
+        if(!hash) return;
+        authorPost("/api/author/" + sessionId + "/sign", {specHash: hash}).then(function(r){
+          if(r.body && r.body.error && !r.body.ok){ errEl.textContent = r.body.error; return; }
+          poll();
+        });
+      });
+    });
+
+    refreshStartEnabled();
   })();
 
 })();
