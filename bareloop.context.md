@@ -3243,6 +3243,28 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   its own. Chat/Settings/authoring (P3/P4) are not built yet; the page says so rather than
   hiding the gap.
 
+- **Panel P2 (live run view, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27)** → the page
+  polls, it does not push (no SSE/websocket). One `setInterval` (2s) drives two throttled
+  fetches: the OPEN run's own detail (`GET /api/runs/:runid`) refetches every 2s while its
+  glyph is live `▶`, and stops the instant it reaches a real `✓`/`✗` or dies `?`; the left
+  Runs list refetches on a separate 10s throttle inside the same tick (`RUNS_LIST_POLL_MS`,
+  lowered from the original 2s per F195 — `listRuns()` re-replays every archived spine on
+  every call, ~457ms CPU at 250 rows, open/escalated), except the tick right after the open
+  run stops being live, which forces one immediate list refresh so that row's glyph doesn't
+  wait up to 10s. Both fetches skip re-rendering when the payload's JSON is byte-identical to
+  the last one, restore each pane's scroll position across a poll-driven rebuild, and pause
+  while the tab is hidden (`document.hidden`), catching up immediately on
+  `visibilitychange`. The Audit tab does **not** join this loop — it refetches only when
+  opened/switched to. A live run's gate-audit sidecar (before `run-u`/`bareloop run`'s
+  end-of-run rename) is read from its DURING-RUN path (`<row.patient>/gate-audit.jsonl`) via
+  `resolveAuditPathForRow` (`src/panel/server.js`), the one shared owner the Run tab's tools
+  summary and the Audit tab both read through — tried only while the run's own spine has no
+  `job-end` yet, so a finished run never risks reading a stale leftover file at that path.
+  `scripts/replay-live.mjs <sourceSpine> <outDir> [--speed N]` is a dev-only, unshipped ($0,
+  no provider call) instrument that paces a real archived spine's records back out under a
+  new runid so the panel can be exercised against a "live" run without a paid run — it is not
+  a substitute for watching a real run start-to-end, which stays a separately authorized step.
+
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
   U-mode). `src/cli.js`'s `run-u` dispatch hands `rest` straight to
