@@ -431,7 +431,6 @@
               <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
               <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
             </div>
-            <div class="field"><label>Job name</label><div class="ro-value" id="details-jobname">—</div></div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>Goal</label><div class="ro-value scroll" id="details-goal">—</div></div>
             <div class="field"><label>Success</label><div class="ro-value" id="details-success">—</div></div>
@@ -1881,7 +1880,6 @@
     var verdictEl = document.getElementById("details-verdict");
     if(job.checkTypeTitle){ verdictEl.title = job.checkTypeTitle; } else { verdictEl.removeAttribute("title"); }
     document.getElementById("details-model").textContent = job.model;
-    document.getElementById("details-jobname").textContent = job.job;
     var descField = document.getElementById("details-description-field");
     if(job.description){ descField.hidden = false; document.getElementById("details-description").textContent = job.description; }
     else { descField.hidden = true; }
