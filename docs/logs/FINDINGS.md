@@ -13527,3 +13527,47 @@ doesn't wait up to 10s to flip. The per-call server-side cost (`listRuns`/`summa
 re-replaying every spine) is unchanged and still grows with archive size — this is a
 client-side polling-frequency mitigation, not a fix to the underlying cost; the server-side
 candidates above remain open.
+
+## F196 — a finished `bareloop run` (bundle) run's tool log reads `no log saved`: its sidecar is renamed to a name the reader never looks for (open, parked)
+
+**Context:** found by the panel P2 builder while fixing the live-run gate-audit fallback
+(commit `2675130`, "live run's gate-audit falls back to the during-run tree/worktree path").
+When a bundle run finishes, `src/cli.js` (~line 448-449) renames its gate audit off the
+worktree into the run's own directory as a bare `gate-audit.jsonl`:
+
+```
+const auditSrc = join(worktree, 'gate-audit.jsonl');
+if (existsSync(auditSrc)) renameSync(auditSrc, join(runsDir, 'gate-audit.jsonl'));
+```
+
+but that run's spine sits alongside it as `spine.jsonl` — a stem of `spine`, not `gate-audit`.
+`src/replayio.js`'s `resolveSiblings` (line 85-92) derives the expected sidecar name from the
+spine's own stem: `join(dir, \`${stem}-gate-audit.jsonl\`)`, i.e. it looks for
+`spine-gate-audit.jsonl` next to `spine.jsonl`. That file never exists — the rename at
+`src/cli.js:449` never produces that name — so `resolveSiblings` always returns
+`auditPath: null` for a finished bundle run, even though the real sidecar sits right there
+under a different name.
+
+**Effect:** anything built on `resolveSiblings` (the panel's Audit tab and its Run tab
+tools/cache summary via `resolveAuditPathForRow`/`scopedBehaviour` in
+`src/panel/server.js`, and `replayOne`'s own `auditAvailable` flag) reads `auditAvailable:
+false` / `toolLogSaved: false` for a finished bundle run and shows "no log saved", even
+though `runs/<runid>/gate-audit.jsonl` exists on disk with real rows in it.
+`src/panel/server.js`'s `resolveAuditPathForRow` (line 675-683) already documents the finished
+vs. live split — it defers to `resolveSiblings` first and only falls back to the live
+during-run path (`join(row.patient, 'gate-audit.jsonl')`) when no `job-end` record exists yet
+— so a finished run gets neither the (mismatched) sibling name nor the live fallback.
+
+Live (during-run) reads are unaffected: since `2675130`, the panel falls back to
+`<row.patient>/gate-audit.jsonl'` while `job-end` hasn't been written yet, so an in-progress
+bundle run's tool log renders correctly. The gap is specific to runs that have already
+finished and been renamed.
+
+**Status: open, PARKED by hamr's ruling 2026-09-27 (option A: log, don't build — this is a
+reading-derived finding with no live failure driving it yet; PRD §8a scope rule applies).**
+
+**Fix direction (not built):** make the rename target and the sibling reader agree on one
+name for the sidecar — either rename to `spine-gate-audit.jsonl` at `src/cli.js:449`, or teach
+`resolveSiblings` to also check a bare `gate-audit.jsonl` in the same directory. Either way,
+the rename site and the reader should have one shared owner for the sidecar name rather than
+two independent spellings.
