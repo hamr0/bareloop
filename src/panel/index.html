@@ -643,6 +643,15 @@
     var attempts = Array.isArray(box.attempts) ? box.attempts : [];
     return attempts.length > 1 ? attempts.length : 0;
   }
+  // item 2 (2026-09-27): the ONE place a retry loop's x-coordinate (curve
+  // start/control/end, and the "try N" label) is kept inside the box that
+  // owns it — MIN_BOX_W (100) is comfortably wider than 2*RETRY_INSET, so
+  // this never inverts the clamp range.
+  var RETRY_INSET = 4;
+  function clampRetryX(v, boxX, boxW){
+    var lo = boxX + RETRY_INSET, hi = boxX + boxW - RETRY_INSET;
+    return Math.min(hi, Math.max(lo, v));
+  }
   function buildStepMapSVG(steps, availWidth){
     var n = steps.length;
     var naturalW = naturalBoxWidth(steps);
@@ -708,15 +717,28 @@
         // scaled to this box's own width. When this same box also carries the row-to-row
         // snake drop (which leaves from dead-center, x=cx), shift the loop's start away from
         // center by a fixed pixel offset so the two never begin at the same point.
+        // item 2 (2026-09-27): at a narrow box width, subtracting that same
+        // fixed pixel shift from proportionally-small x-fractions (e.g. the
+        // curve's own endpoint at 2.8% of boxW) can push the coordinate past
+        // the box's own left edge — the fixed shift was sized for desktop
+        // widths and never scaled down with boxW. clampRetryX is the ONE
+        // place every retry x-coordinate (curve start/control/end AND the
+        // "try N" label) is kept inside [x + RETRY_INSET, x + boxW -
+        // RETRY_INSET] — never re-clamped ad hoc per coordinate — so the
+        // whole loop and its label always stay inside the box that owns it,
+        // at every width, while keeping the mockup's proportions untouched
+        // wherever they already fit (every desktop-width box already fits).
         var retryShift = hasDrop ? 14 : 0;
         var bottom = y + boxH;
-        var sx = x + boxW * 0.50 - retryShift, sy = bottom + 5;
-        var c1x = x + boxW * 0.278 - retryShift, c1y = bottom + 30;
-        var c2x = x + boxW * 0.167 - retryShift, c2y = bottom + 30;
-        var ex = x + boxW * 0.028 - retryShift, ey = bottom + 2;
+        var sx = clampRetryX(x + boxW * 0.50 - retryShift, x, boxW);
+        var sy = bottom + 5;
+        var c1x = clampRetryX(x + boxW * 0.278 - retryShift, x, boxW), c1y = bottom + 30;
+        var c2x = clampRetryX(x + boxW * 0.167 - retryShift, x, boxW), c2y = bottom + 30;
+        var ex = clampRetryX(x + boxW * 0.028 - retryShift, x, boxW), ey = bottom + 2;
+        var labelX = clampRetryX(x + boxW * 0.267 - retryShift, x, boxW);
         body += '<path d="M ' + sx + ' ' + sy + ' C ' + c1x + ' ' + c1y + ', ' + c2x + ' ' + c2y + ', ' + ex + ' ' + ey +
           '" fill="none" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#' + uid + '-arrow-grey)"></path>';
-        body += '<text x="' + (x + boxW * 0.267 - retryShift) + '" y="' + (bottom + 32) +
+        body += '<text x="' + labelX + '" y="' + (bottom + 32) +
           '" text-anchor="middle" font-size="10" fill="var(--text-faint)">try ' + retryTry + '</text>';
       }
       if(idx < n - 1){

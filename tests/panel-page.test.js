@@ -1613,6 +1613,90 @@ test('buildStepMapSVG: a fix loop with 4 attempts renders a dashed retry path an
   assert.match(svg, />try 4</, 'expected the final try number in the label');
 });
 
+// item 2 (2026-09-27, hamr-reported: phone-width run mu2p83go's map): the
+// retry curve's x-coordinates and its own control points used a fixed pixel
+// `retryShift` (14px, sized for desktop) subtracted from proportionally-
+// small fractions of `boxW` (e.g. the curve's endpoint at 2.8% of boxW) —
+// at a narrow box width that pushed the endpoint past the box's own left
+// edge (reproduced exactly: availWidth=350, 3 steps, middle one with 2
+// attempts and a row change -> box x=10, boxW=330 -> endpoint x=5.24,
+// outside [10, 340]). RED-PROOF: this must fail against the pre-fix file
+// (at least the 350/hasDrop case), never pass by construction.
+function retryPathCoords(svg) {
+  const pathRe = /<path d="M ([\d.]+) [\d.]+ C ([\d.]+) [\d.]+, ([\d.]+) [\d.]+, ([\d.]+) [\d.]+"[^>]*stroke-dasharray="3,3"/g;
+  const out = [];
+  let m;
+  while ((m = pathRe.exec(svg))) out.push([Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]);
+  return out;
+}
+function retryLabelXs(svg) {
+  const labelRe = /<text x="([\d.]+)" y="[\d.]+" text-anchor="middle" font-size="10" fill="var\(--text-faint\)">try \d+</g;
+  const out = [];
+  let m;
+  while ((m = labelRe.exec(svg))) out.push(Number(m[1]));
+  return out;
+}
+function boxRects(svg) {
+  const rectRe = /<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="[\d.]+"/g;
+  const out = [];
+  let m;
+  while ((m = rectRe.exec(svg))) out.push({ x: Number(m[1]), w: Number(m[2]) });
+  return out;
+}
+// 3 steps, middle one carrying the retry loop — matches the reported repro
+// shape (a row change puts the retry-loop box at the end of its row, so it
+// also carries the snake-drop arrow -> hasDrop true -> retryShift applied).
+function threeStepRetryParts() {
+  return [
+    { kind: 'step', label: 'a', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
+    {
+      kind: 'step', label: 'b', occurrence: 1, outcome: 'green',
+      attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }],
+    },
+    { kind: 'step', label: 'c', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
+  ];
+}
+[350, 500, 800, 1200].forEach((availWidth) => {
+  test(`buildStepMapSVG: retry loop stays inside its own box at width=${availWidth} (hasDrop true — reported repro shape)`, () => {
+    const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+    const boxes = buildOrderedBoxes(threeStepRetryParts(), false);
+    const svg = buildStepMapSVG(boxes, availWidth);
+    const rects = boxRects(svg);
+    const box = rects[1]; // the middle box owns the retry loop in this fixture
+    assert.ok(box, 'precondition: expected 3 boxes rendered');
+    const paths = retryPathCoords(svg);
+    assert.ok(paths.length >= 1, 'precondition: expected at least one dashed retry path');
+    paths.forEach((xs) => {
+      xs.forEach((v, idx) => {
+        assert.ok(v >= box.x && v <= box.x + box.w, `retry path coord[${idx}]=${v} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth}`);
+      });
+    });
+    retryLabelXs(svg).forEach((lx) => {
+      assert.ok(lx >= box.x && lx <= box.x + box.w, `retry label x=${lx} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth}`);
+    });
+  });
+  test(`buildStepMapSVG: retry loop stays inside its own box at width=${availWidth} (hasDrop false — a single-row layout wide enough for all 3 boxes)`, () => {
+    const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+    const boxes = buildOrderedBoxes(threeStepRetryParts(), false);
+    // force a single row (no snake-drop) by giving the retry box the LAST
+    // slot in its row: swap so the retry-carrying box is index 2, then
+    // widen availWidth enough that perRow === 3 (no row change at all).
+    const svg = buildStepMapSVG(boxes, Math.max(availWidth, 1600));
+    const rects = boxRects(svg);
+    const box = rects[1];
+    const paths = retryPathCoords(svg);
+    assert.ok(paths.length >= 1, 'precondition: expected at least one dashed retry path');
+    paths.forEach((xs) => {
+      xs.forEach((v, idx) => {
+        assert.ok(v >= box.x && v <= box.x + box.w, `retry path coord[${idx}]=${v} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth} (hasDrop false)`);
+      });
+    });
+    retryLabelXs(svg).forEach((lx) => {
+      assert.ok(lx >= box.x && lx <= box.x + box.w, `retry label x=${lx} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth} (hasDrop false)`);
+    });
+  });
+});
+
 test('buildStepMapSVG: a single-attempt step and a no-verdict part (e.g. plan) render NO dashed retry path', () => {
   const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
   const parts = [
