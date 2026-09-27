@@ -510,14 +510,27 @@
   // "attempt 1 [✗] · attempt 2 [✓]" — appended to the box's own title text
   // (the existing wrapTitleLines 2-line wrap handles overflow the same way
   // it already does for a long step id; no third renderer, no new box shape).
-  function attemptGlyph(outcome){ return outcome === "green" ? "✓" : (outcome === null || outcome === undefined ? "?" : "✗"); }
-  function attemptsInlineText(attempts){
+  // item 1 (2026-09-27, panel P2 defect): an attempt's own outcome is null
+  // in exactly two situations — its window is still open on a LIVE run (the
+  // box carrying it is the run's own live/`running` part), or the run DIED
+  // before that window ever closed. hamr's glyph ruling reserves "?" for
+  // DIED only; a live open attempt reads the same "▶" the run glyph itself
+  // uses for "in progress / unresolved". `boxIsLive` is the ONE place that
+  // context is decided (every caller passes its own box's `state ===
+  // "running"` — never re-derives the rule itself), so a finished or died
+  // run's attempts (boxIsLive always false there) render exactly as before.
+  function attemptGlyph(outcome, boxIsLive){
+    if(outcome === "green") return "✓";
+    if(outcome === null || outcome === undefined) return boxIsLive ? "▶" : "?";
+    return "✗";
+  }
+  function attemptsInlineText(attempts, boxIsLive){
     if(!attempts || !attempts.length) return "";
-    return attempts.map(function(a){ return "attempt " + a.n + " " + attemptGlyph(a.outcome); }).join(" · ");
+    return attempts.map(function(a){ return "attempt " + a.n + " " + attemptGlyph(a.outcome, boxIsLive); }).join(" · ");
   }
   function stepTitleText(idx, s){
     var base = s.noNumber ? s.title : (idx + 1) + ' ' + s.title;
-    var at = attemptsInlineText(s.attempts);
+    var at = attemptsInlineText(s.attempts, s.state === "running");
     return at ? base + ' — ' + at : base;
   }
   // item 5 (F197): a box's step NUMBER must count only over boxes without
@@ -564,9 +577,10 @@
   // reads the part's own outcome.
   function partResultGlyph(part, box){
     if(partHasNoVerdict(part)) return null;
-    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome); }).join("");
+    var boxIsLive = box.state === "running";
+    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome, boxIsLive); }).join("");
     var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
-    return attemptGlyph(outcome);
+    return attemptGlyph(outcome, boxIsLive);
   }
   function buildOrderedBoxes(parts, isLive){
     var list = Array.isArray(parts) ? parts : [];
@@ -1548,7 +1562,7 @@
 
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
-  function buildAttemptsList(container, partIndex, attempts){
+  function buildAttemptsList(container, partIndex, attempts, boxIsLive){
     container.innerHTML = "";
     attempts.forEach(function(a){
       var row = document.createElement("div");
@@ -1556,7 +1570,7 @@
       row.setAttribute("data-testid", "audit-attempt-" + partIndex + "-" + a.n);
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
-          'attempt ' + a.n + ' ' + attemptGlyph(a.outcome) +
+          'attempt ' + a.n + ' ' + attemptGlyph(a.outcome, boxIsLive) +
         '</button>' +
         '<div class="rounds-list" hidden></div>';
       container.appendChild(row);
@@ -1749,7 +1763,7 @@
           var attemptsWrap = document.createElement("div");
           attemptsWrap.className = "attempts-list";
           body.appendChild(attemptsWrap);
-          buildAttemptsList(attemptsWrap, idx, attempts);
+          buildAttemptsList(attemptsWrap, idx, attempts, box.state === "running");
         } else {
           // parts with NO sub-loop (scout, plan, replan, judge, run, or a
           // single-attempt step) expand STRAIGHT to their rounds table.

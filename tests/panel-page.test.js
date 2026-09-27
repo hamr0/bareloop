@@ -951,9 +951,16 @@ test('build item B RED-PROOF: partResultGlyph/partHasNoVerdict — scout/plan/re
 // test) for this check to ever reach the isLastLivePart branch at all. This
 // test proves the PANEL side of that fix: given the now-correct null
 // outcome, the last live part reads "running" (with a pulsing map dot, this
-// file's own `s.state === "running"` branch), never "stopped", and its
-// result glyph is the honest "?" (unresolved), never a fabricated "✗".
-test('build item (2026-09-27, panel P2 defect 2): a live run\'s LAST part with outcome null reads state "running", never "stopped" — and its result glyph is "?" (unresolved), never a fabricated "✗"', () => {
+// file's own `s.state === "running"` branch), never "stopped".
+//
+// item 1 (2026-09-27, panel P2 defect: "a running attempt shows the died
+// glyph"): hamr's glyph ruling reserves "?" for DIED only — an open attempt
+// on a run that is genuinely still running must read the same "▶" the run
+// glyph itself uses for "in progress", never the died "?". This test was
+// updated in that same fix: it used to assert the openFixPart's result
+// glyph was "?" even while `box.state === 'running'`, which was itself the
+// bug this item fixes.
+test('build item (2026-09-27, panel P2 defect 2 + item 1): a live run\'s LAST part with outcome null reads state "running", never "stopped" — and its result glyph is "▶" (open, live), never the died "?" or a fabricated "✗"', () => {
   const {
     buildOrderedBoxes, partBoxState, partResultGlyph, attemptGlyph,
   } = loadStepMapGeometry();
@@ -963,8 +970,9 @@ test('build item (2026-09-27, panel P2 defect 2): a live run\'s LAST part with o
   const [box] = buildOrderedBoxes([openFixPart], /* isLive */ true);
   assert.equal(box.state, 'running', 'a live run\'s last part with outcome null must read running');
   assert.equal(partBoxState(openFixPart, /* isLastLivePart */ true), 'running');
-  assert.equal(attemptGlyph(null), '?', 'an unresolved attempt outcome must render "?", never "✗"');
-  assert.equal(partResultGlyph(openFixPart, box), '?');
+  assert.equal(attemptGlyph(null, /* boxIsLive */ true), '▶', 'an open attempt on a LIVE box must render "▶", never the died "?"');
+  assert.equal(attemptGlyph(null, /* boxIsLive */ false), '?', 'an unresolved attempt outcome on a non-live box still renders "?"');
+  assert.equal(partResultGlyph(openFixPart, box), '▶', 'the live box\'s own result glyph must be "▶", not the died "?"');
   // sanity: the pre-fix behaviour this replaces — outcome as a STRING (the
   // fabricated 'red' the source bug used to mint) reads "stopped" even when
   // it is genuinely the last live part, proving partBoxState really does
@@ -972,6 +980,56 @@ test('build item (2026-09-27, panel P2 defect 2): a live run\'s LAST part with o
   // on never flipping silently underneath it).
   const fabricatedRedPart = { ...openFixPart, outcome: 'red' };
   assert.equal(partBoxState(fabricatedRedPart, true), 'stopped');
+});
+
+// item 1 RED-PROOF, real fixture (mujjtrvd-midrun.jsonl via replayRun): the
+// SAME parts data read two ways — once as a genuinely live run (isLive
+// true, matching the run glyph "▶" and !died) and once as a died variant
+// (isLive false, matching hamr's glyph ruling that "?" is reserved for
+// DIED) — must render the open attempt differently: "▶" live, "?" died. A
+// finished run's (real, non-null-outcome) attempts are unaffected either
+// way, proving the fix never touches the resolved-outcome path.
+test('item 1 RED-PROOF (real fixture mujjtrvd-midrun): the open attempt on step 2 reads ▶ when the run is live, ? when it is a died variant of the same parts, and finished attempts are unchanged', async () => {
+  const { replayRun } = await import('../src/replay.js');
+  const { buildOrderedBoxes, partResultGlyph, attemptGlyph } = loadStepMapGeometry();
+  const spinePath = new URL('./fixtures/mujjtrvd-midrun.jsonl', import.meta.url).pathname;
+  const spine = readFileSync(spinePath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const s = replayRun(spine, [], { runId: 'mujjtrvd' });
+  const lastPart = s.parts[s.parts.length - 1];
+  assert.equal(lastPart.kind, 'step', 'precondition: step 2 (still running) is the last part on this slice');
+  assert.equal(lastPart.outcome, null, 'precondition: the open attempt has no outcome yet');
+
+  const liveBoxes = buildOrderedBoxes(s.parts, /* isLive */ true);
+  const liveLastBox = liveBoxes[liveBoxes.length - 1];
+  assert.equal(liveLastBox.state, 'running');
+  assert.equal(partResultGlyph(lastPart, liveLastBox), '▶', 'live variant: open attempt reads ▶, never the died ?');
+
+  const diedBoxes = buildOrderedBoxes(s.parts, /* isLive */ false);
+  const diedLastBox = diedBoxes[diedBoxes.length - 1];
+  assert.notEqual(diedLastBox.state, 'running', 'a died variant\'s last part must never read as running');
+  assert.equal(partResultGlyph(lastPart, diedLastBox), '?', 'died variant: the same open attempt reads the died ?');
+
+  // finished: a real, resolved-outcome attempt is untouched by boxIsLive.
+  assert.equal(attemptGlyph('green', true), '✓');
+  assert.equal(attemptGlyph('green', false), '✓');
+  assert.equal(attemptGlyph('red', true), '✗');
+  assert.equal(attemptGlyph('red', false), '✗');
+});
+
+// item 1 wiring check: every caller that can render an attempt glyph must
+// route through the ONE `attemptGlyph(outcome, boxIsLive)` rule with its own
+// box's live-ness — never re-derive live/died itself. Regex-checked against
+// the shipped source text (buildAttemptsList is DOM-only, not part of the
+// pure geometry block extracted above, so it can't be unit-called directly).
+test('item 1: every attemptGlyph call site passes a boxIsLive argument (map title, part cards / Audit headers via partResultGlyph, and the Audit attempt rows via buildAttemptsList)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /function attemptGlyph\(outcome, boxIsLive\)\{/);
+  assert.match(html, /attemptsInlineText\(attempts, boxIsLive\)/);
+  assert.match(html, /attemptsInlineText\(s\.attempts, s\.state === "running"\)/, 'map title (stepTitleText) must derive boxIsLive from the box\'s own state');
+  assert.match(html, /var boxIsLive = box\.state === "running";/, 'partResultGlyph (part cards + Audit grouped headers) must derive boxIsLive from the box\'s own state');
+  assert.match(html, /function buildAttemptsList\(container, partIndex, attempts, boxIsLive\)\{/);
+  assert.match(html, /attemptGlyph\(a\.outcome, boxIsLive\)/g);
+  assert.match(html, /buildAttemptsList\(attemptsWrap, idx, attempts, box\.state === "running"\)/, 'the Audit tab must pass its own box\'s live-ness into buildAttemptsList');
 });
 
 // ---------------------------------------------------------------------------
