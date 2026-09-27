@@ -132,7 +132,22 @@
   .dot::before{content:"[·]";color:var(--grey-dot);}
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
-  .dot.amber::before{content:"[▶]";color:var(--amber);}
+  /* Panel P2 defect 1 (hamr-watched run mujjtrvd, 2026-09-27): the [▶] glyph
+     itself pulses wherever a LIVE run shows it (runs list rows, the
+     Workflows job row when its represented run is live, the run header) —
+     `.dot.amber` is minted ONLY for glyph "▶" (glyphForOutcome,
+     src/panel/server.js: outcome null -> "▶", never for a died [?] or a
+     finished [✓]/[✗] run), so scoping the animation to this one selector
+     already excludes every other state, no extra "is it live" check needed
+     here. Same rhythm as the map box's own running-part dot (this file,
+     `buildMapSvg`'s `s.state === "running"` branch): opacity 1 -> 0.3 -> 1,
+     1.2s, matching design/panel-mockup.html's pulsing amber dot exactly —
+     one fixed rhythm, never re-derived per call site. */
+  @keyframes pulse-glyph{0%,100%{opacity:1;}50%{opacity:0.3;}}
+  .dot.amber::before{content:"[▶]";color:var(--amber);animation:pulse-glyph 1.2s ease-in-out infinite;}
+  @media (prefers-reduced-motion: reduce){
+    .dot.amber::before{animation:none;}
+  }
   .dot.grey::before{content:"[·]";color:var(--grey-dot);}
   /* died (hamr's ruling B, 2026-09-25): no ending was ever recorded — a
      DIFFERENT fact from a real [✗] close/arbiter "no", so it gets its own
@@ -320,7 +335,7 @@
         <button role="tab" id="tab-runs" aria-controls="panel-runs" aria-selected="false" data-testid="left-tab-runs">Runs</button>
       </div>
 
-      <div class="pane-body">
+      <div class="pane-body" id="left-pane-body">
 
         <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
           <div class="chat-thread">
@@ -361,7 +376,7 @@
         <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Job</button>
       </div>
 
-      <div class="pane-body">
+      <div class="pane-body" id="right-pane-body">
 
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
           <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
@@ -412,7 +427,10 @@
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
-            <div class="field"><label>Job name</label><div class="ro-value" id="details-jobname">—</div></div>
+            <div class="field-row">
+              <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
+              <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
+            </div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>Goal</label><div class="ro-value scroll" id="details-goal">—</div></div>
             <div class="field"><label>Success</label><div class="ro-value" id="details-success">—</div></div>
@@ -420,10 +438,6 @@
             <div class="field"><label>Source</label><div class="ro-value" id="details-source">—</div></div>
             <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
             <div class="field"><label>Tools</label><div class="ro-value" id="details-tools">—</div></div>
-            <div class="field-row">
-              <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
-              <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
-            </div>
             <div class="hint" id="job-note"></div>
           </div>
         </section>
@@ -496,14 +510,27 @@
   // "attempt 1 [✗] · attempt 2 [✓]" — appended to the box's own title text
   // (the existing wrapTitleLines 2-line wrap handles overflow the same way
   // it already does for a long step id; no third renderer, no new box shape).
-  function attemptGlyph(outcome){ return outcome === "green" ? "✓" : (outcome === null || outcome === undefined ? "?" : "✗"); }
-  function attemptsInlineText(attempts){
+  // item 1 (2026-09-27, panel P2 defect): an attempt's own outcome is null
+  // in exactly two situations — its window is still open on a LIVE run (the
+  // box carrying it is the run's own live/`running` part), or the run DIED
+  // before that window ever closed. hamr's glyph ruling reserves "?" for
+  // DIED only; a live open attempt reads the same "▶" the run glyph itself
+  // uses for "in progress / unresolved". `boxIsLive` is the ONE place that
+  // context is decided (every caller passes its own box's `state ===
+  // "running"` — never re-derives the rule itself), so a finished or died
+  // run's attempts (boxIsLive always false there) render exactly as before.
+  function attemptGlyph(outcome, boxIsLive){
+    if(outcome === "green") return "✓";
+    if(outcome === null || outcome === undefined) return boxIsLive ? "▶" : "?";
+    return "✗";
+  }
+  function attemptsInlineText(attempts, boxIsLive){
     if(!attempts || !attempts.length) return "";
-    return attempts.map(function(a){ return "attempt " + a.n + " " + attemptGlyph(a.outcome); }).join(" · ");
+    return attempts.map(function(a){ return "attempt " + a.n + " " + attemptGlyph(a.outcome, boxIsLive); }).join(" · ");
   }
   function stepTitleText(idx, s){
     var base = s.noNumber ? s.title : (idx + 1) + ' ' + s.title;
-    var at = attemptsInlineText(s.attempts);
+    var at = attemptsInlineText(s.attempts, s.state === "running");
     return at ? base + ' — ' + at : base;
   }
   // item 5 (F197): a box's step NUMBER must count only over boxes without
@@ -550,9 +577,10 @@
   // reads the part's own outcome.
   function partResultGlyph(part, box){
     if(partHasNoVerdict(part)) return null;
-    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome); }).join("");
+    var boxIsLive = box.state === "running";
+    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome, boxIsLive); }).join("");
     var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
-    return attemptGlyph(outcome);
+    return attemptGlyph(outcome, boxIsLive);
   }
   function buildOrderedBoxes(parts, isLive){
     var list = Array.isArray(parts) ? parts : [];
@@ -607,6 +635,23 @@
     var line2 = words.slice(i).join(' ');
     return line2 ? [line1, line2] : [line1];
   }
+  // ONE shared rule for "does this box draw a retry loop, and what try number" — a multi-attempt
+  // box (a re-run step, or the fix loop; `run` on an old-shape spine falls in here too, naturally,
+  // never special-cased) gets a dashed self-loop labelled with its final try number; anything
+  // else (incl. every no-verdict kind, whose attempts is already forced to [] upstream) gets 0.
+  function boxRetryTry(box){
+    var attempts = Array.isArray(box.attempts) ? box.attempts : [];
+    return attempts.length > 1 ? attempts.length : 0;
+  }
+  // item 2 (2026-09-27): the ONE place a retry loop's x-coordinate (curve
+  // start/control/end, and the "try N" label) is kept inside the box that
+  // owns it — MIN_BOX_W (100) is comfortably wider than 2*RETRY_INSET, so
+  // this never inverts the clamp range.
+  var RETRY_INSET = 4;
+  function clampRetryX(v, boxX, boxW){
+    var lo = boxX + RETRY_INSET, hi = boxX + boxW - RETRY_INSET;
+    return Math.min(hi, Math.max(lo, v));
+  }
   function buildStepMapSVG(steps, availWidth){
     var n = steps.length;
     var naturalW = naturalBoxWidth(steps);
@@ -626,6 +671,8 @@
       '<defs>' +
         '<marker id="' + uid + '-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
           '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-dim)"></path></marker>' +
+        '<marker id="' + uid + '-arrow-grey" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
+          '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-faint)"></path></marker>' +
       '</defs>';
     steps.forEach(function(s, idx){
       var row = Math.floor(idx / perRow);
@@ -636,6 +683,8 @@
       var y = 30 + row * rowH;
       var colors = stepMapColors(s.state);
       var lines = titleLines[idx];
+      var nextRow = idx < n - 1 ? Math.floor((idx + 1) / perRow) : null;
+      var hasDrop = nextRow !== null && nextRow !== row;
       var stateY = y + boxH - 18;
       var partIdxAttr = typeof s.partIndex === "number" ? (' data-part-index="' + s.partIndex + '" style="cursor:pointer;"') : '';
       body += '<rect x="' + x + '" y="' + y + '" width="' + boxW + '" height="' + boxH +
@@ -655,8 +704,44 @@
       }
       body += '<text x="' + (x + boxW / 2) + '" y="' + stateY +
         '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(s.state) + '</text>';
+      // P2 (2026-09-27 ruling): a running box gets the mockup's pulsing
+      // amber dot (design/panel-mockup.html ~line 1648) — same fixed color
+      // and animation, never re-derived from the state's own stroke color.
+      if(s.state === "running"){
+        body += '<circle cx="' + (x + 20) + '" cy="' + (y + 12) + '" r="4" fill="#b8860b">' +
+          '<animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"></animate></circle>';
+      }
+      var retryTry = boxRetryTry(s);
+      if(retryTry){
+        // dashed self-loop under the box, same proportions as the design mockup's curve,
+        // scaled to this box's own width. When this same box also carries the row-to-row
+        // snake drop (which leaves from dead-center, x=cx), shift the loop's start away from
+        // center by a fixed pixel offset so the two never begin at the same point.
+        // item 2 (2026-09-27): at a narrow box width, subtracting that same
+        // fixed pixel shift from proportionally-small x-fractions (e.g. the
+        // curve's own endpoint at 2.8% of boxW) can push the coordinate past
+        // the box's own left edge — the fixed shift was sized for desktop
+        // widths and never scaled down with boxW. clampRetryX is the ONE
+        // place every retry x-coordinate (curve start/control/end AND the
+        // "try N" label) is kept inside [x + RETRY_INSET, x + boxW -
+        // RETRY_INSET] — never re-clamped ad hoc per coordinate — so the
+        // whole loop and its label always stay inside the box that owns it,
+        // at every width, while keeping the mockup's proportions untouched
+        // wherever they already fit (every desktop-width box already fits).
+        var retryShift = hasDrop ? 14 : 0;
+        var bottom = y + boxH;
+        var sx = clampRetryX(x + boxW * 0.50 - retryShift, x, boxW);
+        var sy = bottom + 5;
+        var c1x = clampRetryX(x + boxW * 0.278 - retryShift, x, boxW), c1y = bottom + 30;
+        var c2x = clampRetryX(x + boxW * 0.167 - retryShift, x, boxW), c2y = bottom + 30;
+        var ex = clampRetryX(x + boxW * 0.028 - retryShift, x, boxW), ey = bottom + 2;
+        var labelX = clampRetryX(x + boxW * 0.267 - retryShift, x, boxW);
+        body += '<path d="M ' + sx + ' ' + sy + ' C ' + c1x + ' ' + c1y + ', ' + c2x + ' ' + c2y + ', ' + ex + ' ' + ey +
+          '" fill="none" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#' + uid + '-arrow-grey)"></path>';
+        body += '<text x="' + labelX + '" y="' + (bottom + 32) +
+          '" text-anchor="middle" font-size="10" fill="var(--text-faint)">try ' + retryTry + '</text>';
+      }
       if(idx < n - 1){
-        var nextRow = Math.floor((idx + 1) / perRow);
         if(nextRow === row){
           var midY = y + boxH / 2;
           if(!rtl){
@@ -684,6 +769,7 @@
       '<span><span class="dot red"></span>stopped</span>' +
       '<span><span class="dot grey"></span>waiting</span>' +
       '<span><span class="dot magenta"></span>died</span>' +
+      '<span>⤾ dashed = retry</span>' +
       '</div>';
   }
   var lastSteps = null;
@@ -1498,7 +1584,7 @@
 
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
-  function buildAttemptsList(container, partIndex, attempts){
+  function buildAttemptsList(container, partIndex, attempts, boxIsLive){
     container.innerHTML = "";
     attempts.forEach(function(a){
       var row = document.createElement("div");
@@ -1506,7 +1592,7 @@
       row.setAttribute("data-testid", "audit-attempt-" + partIndex + "-" + a.n);
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
-          'attempt ' + a.n + ' ' + attemptGlyph(a.outcome) +
+          'attempt ' + a.n + ' ' + attemptGlyph(a.outcome, boxIsLive) +
         '</button>' +
         '<div class="rounds-list" hidden></div>';
       container.appendChild(row);
@@ -1699,7 +1785,7 @@
           var attemptsWrap = document.createElement("div");
           attemptsWrap.className = "attempts-list";
           body.appendChild(attemptsWrap);
-          buildAttemptsList(attemptsWrap, idx, attempts);
+          buildAttemptsList(attemptsWrap, idx, attempts, box.state === "running");
         } else {
           // parts with NO sub-loop (scout, plan, replan, judge, run, or a
           // single-attempt step) expand STRAIGHT to their rounds table.
@@ -1830,7 +1916,6 @@
     var verdictEl = document.getElementById("details-verdict");
     if(job.checkTypeTitle){ verdictEl.title = job.checkTypeTitle; } else { verdictEl.removeAttribute("title"); }
     document.getElementById("details-model").textContent = job.model;
-    document.getElementById("details-jobname").textContent = job.job;
     var descField = document.getElementById("details-description-field");
     if(job.description){ descField.hidden = false; document.getElementById("details-description").textContent = job.description; }
     else { descField.hidden = true; }
@@ -1849,23 +1934,182 @@
 
   // ---- selection + loading ----
   var currentRunid = null;
+  // P2: guards a stale in-flight response (detail/audit/job, OR the poll
+  // loop's own run-detail refetch) from overwriting whatever run is
+  // actually selected by the time it resolves — bumped on every selectRun
+  // call, checked before any of those responses touch the DOM.
+  var selectToken = 0;
+  // P2: true while the OPEN run's own detail poll should keep firing (set
+  // from the run's own `glyph`/`died` fields, same rule `renderRun` already
+  // uses for `isLive` — never re-derived a second way).
+  var runIsLive = false;
   function selectRun(runid, rowEl, siblingSelector){
     clearSelection();
     document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
     if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
     currentRunid = runid;
     lastJobToolsList = null;
-    getJSON("/api/runs/" + encodeURIComponent(runid)).then(renderRun).catch(function(e){
+    lastRunDetailSig = null;
+    runIsLive = false;
+    var myToken = ++selectToken;
+    getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
+      if(myToken !== selectToken) return; // a different run was selected before this resolved
+      lastRunDetailSig = sig(detail);
+      runIsLive = detail.glyph === "▶" && !detail.died;
+      renderRun(detail);
+    }).catch(function(e){
+      if(myToken !== selectToken) return;
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "failed to load run: " + e.message;
       document.getElementById("run-content").hidden = true;
     });
-    getJSON("/api/runs/" + encodeURIComponent(runid) + "/audit").then(renderAudit).catch(function(){ renderAudit(null); });
-    getJSON("/api/runs/" + encodeURIComponent(runid) + "/job").then(renderJob).catch(function(){ renderJob(null); });
+    getJSON("/api/runs/" + encodeURIComponent(runid) + "/audit").then(function(result){
+      if(myToken !== selectToken) return;
+      renderAudit(result);
+    }).catch(function(){ if(myToken === selectToken) renderAudit(null); });
+    getJSON("/api/runs/" + encodeURIComponent(runid) + "/job").then(function(job){
+      if(myToken !== selectToken) return;
+      renderJob(job);
+    }).catch(function(){ if(myToken === selectToken) renderJob(null); });
   }
+
+  // Q2 (2026-09-27 ruling): the Audit tab does NOT live-refresh on the 2s
+  // poll — it re-fetches only when the person opens/switches to it.
+  document.getElementById("tab-audit").addEventListener("click", function(){
+    if(!currentRunid) return;
+    var myToken = selectToken;
+    getJSON("/api/runs/" + encodeURIComponent(currentRunid) + "/audit").then(function(result){
+      if(myToken !== selectToken) return;
+      renderAudit(result);
+    }).catch(function(){});
+  });
+
+  // ---- P2: live polling — ONE owner for both the left Runs list and the
+  // open live run's map/cards/counters/summary (hamr's ruling, 2026-09-27:
+  // 2s interval for the open run's own detail; the open run's own detail
+  // refetch stops once it is no longer live; the Audit tab is wired
+  // separately above and never joins this loop). A single `setInterval`
+  // drives both fetches — never two independent timers that could race
+  // each other. ----
+  //
+  // F195 (docs/logs/FINDINGS.md): /api/runs re-replays every spine on
+  // every call (~457ms CPU at 250 rows). hamr's ruling B, 2026-09-27:
+  // "refresh less often, up to 30s at most, choose the lesser when
+  // possible" — the Runs list polls every 10s (RUNS_LIST_POLL_MS) instead
+  // of every 2s tick; the open run's own detail is unaffected. The 2s
+  // `pollTick` still fires the list check every tick, but `refreshRunsList`
+  // itself skips the fetch unless RUNS_LIST_POLL_MS has elapsed since the
+  // last one — one timer, one owner, just a throttle inside it. The one
+  // exception: the instant the open run's own poll sees it stop being live
+  // (a real verdict or died), `pollTick` forces ONE immediate list refresh
+  // so that run's left-list glyph flips right away instead of waiting up
+  // to 10s.
+  var POLL_MS = 2000;
+  var RUNS_LIST_POLL_MS = 10000;
+  var pollTimer = null;
+  var lastRunsSig = null;
+  var lastRunDetailSig = null;
+  var lastRunsListRefreshAt = 0;
+  var pollFailStreak = 0;
+
+  function sig(obj){
+    try { return JSON.stringify(obj); } catch(e){ return null; }
+  }
+
+  // Saves/restores scrollTop of the given element ids around a re-render —
+  // both `.pane-body` scroll containers keep their offset across a poll-
+  // driven rebuild instead of snapping back to the top.
+  function withScrollPreserved(ids, fn){
+    var saved = ids.map(function(id){
+      var el = document.getElementById(id);
+      return el ? el.scrollTop : null;
+    });
+    fn();
+    ids.forEach(function(id, i){
+      if(saved[i] === null) return;
+      var el = document.getElementById(id);
+      if(el) el.scrollTop = saved[i];
+    });
+  }
+
+  function refreshRunsList(force){
+    var now = Date.now();
+    if(!force && (now - lastRunsListRefreshAt) < RUNS_LIST_POLL_MS) return Promise.resolve();
+    lastRunsListRefreshAt = now;
+    return getJSON("/api/runs").then(function(result){
+      pollFailStreak = 0;
+      var runs = result.runs || [];
+      var next = sig(runs);
+      if(next === lastRunsSig) return; // unchanged payload — never rebuild the DOM for nothing
+      lastRunsSig = next;
+      withScrollPreserved(["left-pane-body"], function(){
+        // setItems re-runs the SAME filter/search state and view mode
+        // (runsFilterFn/runsApplyFn close over runsViewMode and the filter
+        // bar's own state) — a poll tick never resets either.
+        runsFilterBar.setItems(runs);
+      });
+    }).catch(function(){
+      pollFailStreak++;
+      // Keep the last good render; a transient failure is invisible. Only a
+      // PERSISTENT failure (3+ ticks, ~6s) gets a quiet, non-alarming note —
+      // the page itself is never wiped.
+      if(pollFailStreak === 3){
+        var countEl = document.getElementById("runs-filter-count");
+        if(countEl) countEl.textContent = "runs list: fetch failing, showing last known data";
+      }
+    });
+  }
+
+  function refreshOpenRun(){
+    if(!currentRunid || !runIsLive) return Promise.resolve();
+    var runid = currentRunid;
+    var myToken = selectToken;
+    return getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
+      // stale guard: a different run was selected (or re-selected) while
+      // this request was in flight — never let it overwrite what's open now.
+      if(myToken !== selectToken || runid !== currentRunid) return;
+      var next = sig(detail);
+      var changed = next !== lastRunDetailSig;
+      lastRunDetailSig = next;
+      runIsLive = detail.glyph === "▶" && !detail.died;
+      if(changed){
+        withScrollPreserved(["right-pane-body"], function(){ renderRun(detail); });
+      }
+    }).catch(function(){ /* keep last good render; retry next tick */ });
+  }
+
+  function pollTick(forceList){
+    if(document.hidden) return;
+    refreshRunsList(forceList);
+    var wasLive = runIsLive;
+    return refreshOpenRun().then(function(){
+      // the open run just stopped being live (real verdict or died) —
+      // don't make the left-list glyph wait up to RUNS_LIST_POLL_MS to
+      // catch up; force one immediate refresh.
+      if(wasLive && !runIsLive) refreshRunsList(true);
+    });
+  }
+
+  function startPolling(){
+    if(pollTimer) return;
+    pollTimer = setInterval(pollTick, POLL_MS);
+  }
+  function stopPolling(){
+    if(!pollTimer) return;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  // Pause while the tab is hidden (cheap, standard); resume — with an
+  // immediate catch-up tick, forcing BOTH fetches regardless of the list's
+  // 10s throttle — on return, rather than waiting a full 2s (or up to 10s
+  // for the list).
+  document.addEventListener("visibilitychange", function(){
+    if(!document.hidden) pollTick(true);
+  });
 
   getJSON("/api/runs").then(function(result){
     var runs = result.runs || [];
+    lastRunsSig = sig(runs);
     runsFilterBar.setItems(runs);
     if(runs.length && !runs[0].fileMissing){
       document.getElementById("tab-runs").click();
@@ -1877,9 +2121,11 @@
       document.getElementById("tab-run").click();
       runsFilterBar.refresh();
     }
+    startPolling();
   }).catch(function(e){
     document.getElementById("wf-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
     document.getElementById("history-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
+    startPolling(); // still start — a transient initial failure shouldn't block all future polling
   });
 
   // theme toggle

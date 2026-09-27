@@ -34,7 +34,7 @@ function loadStepMapGeometry() {
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
   const factory = new Function(`${body}
-    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph };
+    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph, boxRetryTry, partBoxState, attemptGlyph };
   `);
   return factory();
 }
@@ -944,6 +944,121 @@ test('build item B RED-PROOF: partResultGlyph/partHasNoVerdict — scout/plan/re
   assert.equal(partResultGlyph(fixPart, fixBox), '✗✓');
 });
 
+// Panel P2 defect 2 (hamr-watched run mujjtrvd, 2026-09-27): `partBoxState`
+// checks `part.outcome` BEFORE `isLastLivePart`, so a live run's own
+// still-open fix-loop part must carry `outcome: null` (fixed at the source,
+// src/replay.js — see tests/replay.test.js's mujjtrvd-midrun.jsonl fixture
+// test) for this check to ever reach the isLastLivePart branch at all. This
+// test proves the PANEL side of that fix: given the now-correct null
+// outcome, the last live part reads "running" (with a pulsing map dot, this
+// file's own `s.state === "running"` branch), never "stopped".
+//
+// item 1 (2026-09-27, panel P2 defect: "a running attempt shows the died
+// glyph"): hamr's glyph ruling reserves "?" for DIED only — an open attempt
+// on a run that is genuinely still running must read the same "▶" the run
+// glyph itself uses for "in progress", never the died "?". This test was
+// updated in that same fix: it used to assert the openFixPart's result
+// glyph was "?" even while `box.state === 'running'`, which was itself the
+// bug this item fixes.
+test('build item (2026-09-27, panel P2 defect 2 + item 1): a live run\'s LAST part with outcome null reads state "running", never "stopped" — and its result glyph is "▶" (open, live), never the died "?" or a fabricated "✗"', () => {
+  const {
+    buildOrderedBoxes, partBoxState, partResultGlyph, attemptGlyph,
+  } = loadStepMapGeometry();
+  const openFixPart = {
+    kind: 'fix', label: 'fix', occurrence: null, outcome: null, attempts: [{ n: 1, outcome: null }],
+  };
+  const [box] = buildOrderedBoxes([openFixPart], /* isLive */ true);
+  assert.equal(box.state, 'running', 'a live run\'s last part with outcome null must read running');
+  assert.equal(partBoxState(openFixPart, /* isLastLivePart */ true), 'running');
+  assert.equal(attemptGlyph(null, /* boxIsLive */ true), '▶', 'an open attempt on a LIVE box must render "▶", never the died "?"');
+  assert.equal(attemptGlyph(null, /* boxIsLive */ false), '?', 'an unresolved attempt outcome on a non-live box still renders "?"');
+  assert.equal(partResultGlyph(openFixPart, box), '▶', 'the live box\'s own result glyph must be "▶", not the died "?"');
+  // sanity: the pre-fix behaviour this replaces — outcome as a STRING (the
+  // fabricated 'red' the source bug used to mint) reads "stopped" even when
+  // it is genuinely the last live part, proving partBoxState really does
+  // check part.outcome before isLastLivePart (the ordering the fix relies
+  // on never flipping silently underneath it).
+  const fabricatedRedPart = { ...openFixPart, outcome: 'red' };
+  assert.equal(partBoxState(fabricatedRedPart, true), 'stopped');
+});
+
+// item 1 RED-PROOF, real fixture (mujjtrvd-midrun.jsonl via replayRun): the
+// SAME parts data read two ways — once as a genuinely live run (isLive
+// true, matching the run glyph "▶" and !died) and once as a died variant
+// (isLive false, matching hamr's glyph ruling that "?" is reserved for
+// DIED) — must render the open attempt differently: "▶" live, "?" died. A
+// finished run's (real, non-null-outcome) attempts are unaffected either
+// way, proving the fix never touches the resolved-outcome path.
+test('item 1 RED-PROOF (real fixture mujjtrvd-midrun): the open attempt on step 2 reads ▶ when the run is live, ? when it is a died variant of the same parts, and finished attempts are unchanged', async () => {
+  const { replayRun } = await import('../src/replay.js');
+  const { buildOrderedBoxes, partResultGlyph, attemptGlyph } = loadStepMapGeometry();
+  const spinePath = new URL('./fixtures/mujjtrvd-midrun.jsonl', import.meta.url).pathname;
+  const spine = readFileSync(spinePath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const s = replayRun(spine, [], { runId: 'mujjtrvd' });
+  const lastPart = s.parts[s.parts.length - 1];
+  assert.equal(lastPart.kind, 'step', 'precondition: step 2 (still running) is the last part on this slice');
+  assert.equal(lastPart.outcome, null, 'precondition: the open attempt has no outcome yet');
+
+  const liveBoxes = buildOrderedBoxes(s.parts, /* isLive */ true);
+  const liveLastBox = liveBoxes[liveBoxes.length - 1];
+  assert.equal(liveLastBox.state, 'running');
+  assert.equal(partResultGlyph(lastPart, liveLastBox), '▶', 'live variant: open attempt reads ▶, never the died ?');
+
+  const diedBoxes = buildOrderedBoxes(s.parts, /* isLive */ false);
+  const diedLastBox = diedBoxes[diedBoxes.length - 1];
+  assert.notEqual(diedLastBox.state, 'running', 'a died variant\'s last part must never read as running');
+  assert.equal(partResultGlyph(lastPart, diedLastBox), '?', 'died variant: the same open attempt reads the died ?');
+
+  // finished: a real, resolved-outcome attempt is untouched by boxIsLive.
+  assert.equal(attemptGlyph('green', true), '✓');
+  assert.equal(attemptGlyph('green', false), '✓');
+  assert.equal(attemptGlyph('red', true), '✗');
+  assert.equal(attemptGlyph('red', false), '✗');
+});
+
+// item 1 wiring check: every caller that can render an attempt glyph must
+// route through the ONE `attemptGlyph(outcome, boxIsLive)` rule with its own
+// box's live-ness — never re-derive live/died itself. Regex-checked against
+// the shipped source text (buildAttemptsList is DOM-only, not part of the
+// pure geometry block extracted above, so it can't be unit-called directly).
+test('item 1: every attemptGlyph call site passes a boxIsLive argument (map title, part cards / Audit headers via partResultGlyph, and the Audit attempt rows via buildAttemptsList)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /function attemptGlyph\(outcome, boxIsLive\)\{/);
+  assert.match(html, /attemptsInlineText\(attempts, boxIsLive\)/);
+  assert.match(html, /attemptsInlineText\(s\.attempts, s\.state === "running"\)/, 'map title (stepTitleText) must derive boxIsLive from the box\'s own state');
+  assert.match(html, /var boxIsLive = box\.state === "running";/, 'partResultGlyph (part cards + Audit grouped headers) must derive boxIsLive from the box\'s own state');
+  assert.match(html, /function buildAttemptsList\(container, partIndex, attempts, boxIsLive\)\{/);
+  assert.match(html, /attemptGlyph\(a\.outcome, boxIsLive\)/g);
+  assert.match(html, /buildAttemptsList\(attemptsWrap, idx, attempts, box\.state === "running"\)/, 'the Audit tab must pass its own box\'s live-ness into buildAttemptsList');
+});
+
+// ---------------------------------------------------------------------------
+// Panel P2 defect 1 (hamr-watched run mujjtrvd, 2026-09-27): the [▶] glyph
+// itself pulses wherever a live run's `.dot.amber` is shown (runs list rows,
+// the Workflows job row, the run header) — same rhythm as the map box's own
+// running-part dot (opacity 1 -> 0.3 -> 1, 1.2s), off by
+// `prefers-reduced-motion: reduce`. `.dot.amber` is minted only for glyph
+// "▶" (glyphForOutcome, src/panel/server.js), never for a died [?] or
+// finished [✓]/[✗] run, so scoping the animation to this one CSS selector
+// alone already excludes every non-live state.
+// ---------------------------------------------------------------------------
+test('src/panel/index.html: .dot.amber (the live [▶] glyph) pulses via a keyframe animation, disabled under prefers-reduced-motion', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const amberRuleMatch = html.match(/\.dot\.amber::before\{[^}]*\}/);
+  assert.ok(amberRuleMatch, 'expected a .dot.amber::before rule');
+  assert.match(amberRuleMatch[0], /animation\s*:/, '.dot.amber::before must declare a pulsing animation');
+  assert.match(html, /@keyframes\s+pulse-glyph\s*\{[^}]*0%[^}]*100%[^}]*opacity\s*:\s*1[\s\S]*?50%[^}]*opacity\s*:\s*0\.3/, 'expected a pulse-glyph keyframe going 1 -> 0.3 -> 1, matching the map dot\'s own rhythm');
+  const reducedMotionBlock = html.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]*\.dot\.amber::before\s*\{[^}]*\})/);
+  assert.ok(reducedMotionBlock, 'expected prefers-reduced-motion: reduce to turn the .dot.amber pulse off');
+  assert.match(reducedMotionBlock[1], /animation\s*:\s*none/);
+  // never for a died [?] (magenta) or finished [✓]/[✗] (green/red) dot.
+  ['green', 'red', 'magenta', 'grey'].forEach((cls) => {
+    const rule = html.match(new RegExp(`\\.dot\\.${cls}::before\\{[^}]*\\}`));
+    assert.ok(rule, `expected a .dot.${cls}::before rule`);
+    assert.doesNotMatch(rule[0], /animation/, `.dot.${cls} must never pulse`);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // build item C (2026-09-26 rewrite): the Run tab's cards no longer expand at
 // all (build spec item B — "Remove Run-tab card expand/attempts/rounds UI");
@@ -1455,4 +1570,459 @@ test('build item (fix): picking an older run elsewhere (e.g. History) then rende
   assert.equal(runsWrap.children.length, 1);
   assert.equal(runsWrap.children[0].getAttribute('data-testid'), 'hist-row-older1');
   assert.equal(runsWrap.children[0].className, 'hist-row selected', 'the matching child must carry the selected marker on render, with no click needed');
+});
+
+// retry loop on the step map: ported from design/panel-mockup.html — a
+// multi-attempt step or fix box draws a dashed grey self-loop ("try N") under
+// the box, using the SAME one-owner rule (box.attempts.length > 1) that
+// already drives partResultGlyph's multi-glyph join, never a duplicate check.
+test('boxRetryTry: the one shared rule — a box with >1 attempts reports its final try number, a single-attempt or no-verdict (attempts: []) box reports 0', () => {
+  const { boxRetryTry } = loadStepMapGeometry();
+  assert.equal(boxRetryTry({ attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'red' }, { n: 3, outcome: 'green' }] }), 3);
+  assert.equal(boxRetryTry({ attempts: [{ n: 1, outcome: 'green' }] }), 0);
+  assert.equal(boxRetryTry({ attempts: [] }), 0);
+});
+
+test('buildStepMapSVG: a step with 3 attempts renders a dashed retry path and "try 3"', () => {
+  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+  const parts = [
+    {
+      kind: 'step', label: 'flaky step', occurrence: 1, outcome: 'green',
+      attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'red' }, { n: 3, outcome: 'green' }],
+    },
+  ];
+  const boxes = buildOrderedBoxes(parts, false);
+  const svg = buildStepMapSVG(boxes, 900);
+  assert.match(svg, /stroke-dasharray="3,3"/, 'expected a dashed retry path');
+  assert.match(svg, />try 3</, 'expected the final try number in the label');
+});
+
+test('buildStepMapSVG: a fix loop with 4 attempts renders a dashed retry path and "try 4"', () => {
+  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+  const parts = [
+    {
+      kind: 'fix', label: 'fix', occurrence: null, outcome: 'green',
+      attempts: [
+        { n: 1, outcome: 'red' }, { n: 2, outcome: 'red' }, { n: 3, outcome: 'red' }, { n: 4, outcome: 'green' },
+      ],
+    },
+  ];
+  const boxes = buildOrderedBoxes(parts, false);
+  const svg = buildStepMapSVG(boxes, 900);
+  assert.match(svg, /stroke-dasharray="3,3"/, 'expected a dashed retry path');
+  assert.match(svg, />try 4</, 'expected the final try number in the label');
+});
+
+// item 2 (2026-09-27, hamr-reported: phone-width run mu2p83go's map): the
+// retry curve's x-coordinates and its own control points used a fixed pixel
+// `retryShift` (14px, sized for desktop) subtracted from proportionally-
+// small fractions of `boxW` (e.g. the curve's endpoint at 2.8% of boxW) —
+// at a narrow box width that pushed the endpoint past the box's own left
+// edge (reproduced exactly: availWidth=350, 3 steps, middle one with 2
+// attempts and a row change -> box x=10, boxW=330 -> endpoint x=5.24,
+// outside [10, 340]). RED-PROOF: this must fail against the pre-fix file
+// (at least the 350/hasDrop case), never pass by construction.
+function retryPathCoords(svg) {
+  const pathRe = /<path d="M ([\d.]+) [\d.]+ C ([\d.]+) [\d.]+, ([\d.]+) [\d.]+, ([\d.]+) [\d.]+"[^>]*stroke-dasharray="3,3"/g;
+  const out = [];
+  let m;
+  while ((m = pathRe.exec(svg))) out.push([Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]);
+  return out;
+}
+function retryLabelXs(svg) {
+  const labelRe = /<text x="([\d.]+)" y="[\d.]+" text-anchor="middle" font-size="10" fill="var\(--text-faint\)">try \d+</g;
+  const out = [];
+  let m;
+  while ((m = labelRe.exec(svg))) out.push(Number(m[1]));
+  return out;
+}
+function boxRects(svg) {
+  const rectRe = /<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="[\d.]+"/g;
+  const out = [];
+  let m;
+  while ((m = rectRe.exec(svg))) out.push({ x: Number(m[1]), w: Number(m[2]) });
+  return out;
+}
+// 3 steps, middle one carrying the retry loop — matches the reported repro
+// shape (a row change puts the retry-loop box at the end of its row, so it
+// also carries the snake-drop arrow -> hasDrop true -> retryShift applied).
+function threeStepRetryParts() {
+  return [
+    { kind: 'step', label: 'a', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
+    {
+      kind: 'step', label: 'b', occurrence: 1, outcome: 'green',
+      attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }],
+    },
+    { kind: 'step', label: 'c', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
+  ];
+}
+[350, 500, 800, 1200].forEach((availWidth) => {
+  test(`buildStepMapSVG: retry loop stays inside its own box at width=${availWidth} (hasDrop true — reported repro shape)`, () => {
+    const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+    const boxes = buildOrderedBoxes(threeStepRetryParts(), false);
+    const svg = buildStepMapSVG(boxes, availWidth);
+    const rects = boxRects(svg);
+    const box = rects[1]; // the middle box owns the retry loop in this fixture
+    assert.ok(box, 'precondition: expected 3 boxes rendered');
+    const paths = retryPathCoords(svg);
+    assert.ok(paths.length >= 1, 'precondition: expected at least one dashed retry path');
+    paths.forEach((xs) => {
+      xs.forEach((v, idx) => {
+        assert.ok(v >= box.x && v <= box.x + box.w, `retry path coord[${idx}]=${v} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth}`);
+      });
+    });
+    retryLabelXs(svg).forEach((lx) => {
+      assert.ok(lx >= box.x && lx <= box.x + box.w, `retry label x=${lx} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth}`);
+    });
+  });
+  test(`buildStepMapSVG: retry loop stays inside its own box at width=${availWidth} (hasDrop false — a single-row layout wide enough for all 3 boxes)`, () => {
+    const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+    const boxes = buildOrderedBoxes(threeStepRetryParts(), false);
+    // force a single row (no snake-drop) by giving the retry box the LAST
+    // slot in its row: swap so the retry-carrying box is index 2, then
+    // widen availWidth enough that perRow === 3 (no row change at all).
+    const svg = buildStepMapSVG(boxes, Math.max(availWidth, 1600));
+    const rects = boxRects(svg);
+    const box = rects[1];
+    const paths = retryPathCoords(svg);
+    assert.ok(paths.length >= 1, 'precondition: expected at least one dashed retry path');
+    paths.forEach((xs) => {
+      xs.forEach((v, idx) => {
+        assert.ok(v >= box.x && v <= box.x + box.w, `retry path coord[${idx}]=${v} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth} (hasDrop false)`);
+      });
+    });
+    retryLabelXs(svg).forEach((lx) => {
+      assert.ok(lx >= box.x && lx <= box.x + box.w, `retry label x=${lx} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth} (hasDrop false)`);
+    });
+  });
+});
+
+test('buildStepMapSVG: a single-attempt step and a no-verdict part (e.g. plan) render NO dashed retry path', () => {
+  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+  const parts = [
+    { kind: 'plan', label: 'plan', occurrence: null, outcome: null, attempts: [] },
+    { kind: 'step', label: 'clean step', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
+  ];
+  const boxes = buildOrderedBoxes(parts, false);
+  const svg = buildStepMapSVG(boxes, 900);
+  assert.doesNotMatch(svg, /stroke-dasharray="3,3"/, 'no box here has >1 attempts, so no retry loop should render');
+});
+
+test('stepMapLegendHTML: includes the retry legend entry', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function stepMapLegendHTML');
+  const end = html.indexOf('function mapAvailWidth');
+  const body = html.slice(start, end);
+  assert.match(body, /dashed = retry/);
+});
+
+// ---------------------------------------------------------------------------
+// P2 (PANEL-BUILD.md, 2026-09-27 rulings) — the single poll owner that
+// drives the left Runs list (every 2s tick, Q1=A) and the open run's own
+// detail (only while it's live, stopping once it dies or gets a real
+// verdict). The five functions below (`sig`, `withScrollPreserved`,
+// `refreshRunsList`, `refreshOpenRun`, `pollTick`) are extracted VERBATIM
+// out of the page (never a reimplementation) and driven against a tiny
+// hand-rolled fake DOM + a fully injectable `getJSON` stub — same posture
+// as `makeWorkflowsPage` above (no jsdom — one-dep budget).
+//
+// Fail-first proof: none of these five function names exist anywhere in
+// the pre-P2 page (`git show 16825a7:src/panel/index.html` — the branch
+// HEAD before this session's polling commit) — `extractFnSource` would
+// throw "expected to find function X" for every one of them, so every test
+// below is a genuine red against the pre-change source, not a vacuous pass.
+// ---------------------------------------------------------------------------
+
+/** A fake element with just enough surface for the poll functions'
+ * scrollTop save/restore and the failure-streak note's textContent. */
+function makeScrollEl() {
+  return { scrollTop: 0, textContent: '' };
+}
+
+/**
+ * Builds the real poll functions (`pollTick`/`refreshRunsList`/
+ * `refreshOpenRun`) extracted verbatim from the page, wired to a fake
+ * `document` and a fully test-controlled `getJSON(path)` stub (never a real
+ * `fetch` — these tests exercise the polling/staleness/skip logic on top of
+ * it, not the fetch wrapper itself). `runsFilterBar.setItems` and
+ * `renderRun` are recording stubs; `setItems`'s stub additionally resets
+ * `left-pane-body`'s scrollTop to 0 to simulate a real DOM rebuild, so the
+ * scroll-preservation test is a genuine proof of `withScrollPreserved`
+ * restoring it, not a vacuous "nothing touched it anyway" pass.
+ * @param {(path: string) => Promise<any>} getJSONImpl
+ */
+function makePollHarness(getJSONImpl) {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = [
+    extractFnSource(html, 'sig'),
+    extractFnSource(html, 'withScrollPreserved'),
+    extractFnSource(html, 'refreshRunsList'),
+    extractFnSource(html, 'refreshOpenRun'),
+    extractFnSource(html, 'pollTick'),
+  ].join('\n');
+
+  const elementsById = {};
+  const doc = {
+    hidden: false,
+    getElementById(id) {
+      if (!elementsById[id]) elementsById[id] = makeScrollEl();
+      return elementsById[id];
+    },
+  };
+
+  const getJSONCalls = [];
+  const renderRunCalls = [];
+  const setItemsCalls = [];
+
+  // eslint-disable-next-line no-new-func
+  const factory = new Function('document', 'getJSONImpl', 'getJSONCalls', 'renderRunCalls', 'setItemsCalls', `
+    function getJSON(path){ getJSONCalls.push(path); return getJSONImpl(path); }
+    var runsFilterBar = {
+      setItems: function(runs){
+        setItemsCalls.push(runs);
+        var el = document.getElementById("left-pane-body");
+        if (el) el.scrollTop = 0; // simulates a real innerHTML rebuild resetting scroll
+      }
+    };
+    function renderRun(detail){ renderRunCalls.push(detail); }
+    var currentRunid = null;
+    var runIsLive = false;
+    var selectToken = 0;
+    var lastRunsSig = null;
+    var lastRunDetailSig = null;
+    var lastRunsListRefreshAt = 0;
+    var RUNS_LIST_POLL_MS = 10000;
+    var pollFailStreak = 0;
+    ${src}
+    return {
+      pollTick: pollTick,
+      refreshRunsList: refreshRunsList,
+      refreshOpenRun: refreshOpenRun,
+      setCurrentRunid: function(v){ currentRunid = v; },
+      getCurrentRunid: function(){ return currentRunid; },
+      setRunIsLive: function(v){ runIsLive = v; },
+      getRunIsLive: function(){ return runIsLive; },
+      bumpSelectToken: function(){ selectToken += 1; return selectToken; },
+      setLastRunsListRefreshAt: function(v){ lastRunsListRefreshAt = v; },
+      getLastRunsListRefreshAt: function(){ return lastRunsListRefreshAt; },
+    };
+  `);
+  const page = factory(doc, getJSONImpl, getJSONCalls, renderRunCalls, setItemsCalls);
+  return {
+    ...page, doc, getJSONCalls, renderRunCalls, setItemsCalls,
+  };
+}
+
+/** A promise + its own resolve/reject, for controlling exactly when an
+ * in-flight `getJSON` response lands relative to other test actions
+ * (the stale-response race test needs this). */
+function deferredPromise() {
+  let resolve;
+  const promise = new Promise((res) => { resolve = res; });
+  return { promise, resolve };
+}
+
+test('refreshOpenRun: fetches the open live run and calls renderRun once for a changed payload', async () => {
+  const h = makePollHarness((path) => {
+    assert.equal(path, '/api/runs/r1');
+    return Promise.resolve({ glyph: '▶', died: false, x: 1 });
+  });
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.refreshOpenRun();
+  assert.equal(h.renderRunCalls.length, 1);
+  assert.deepEqual(h.renderRunCalls[0], { glyph: '▶', died: false, x: 1 });
+  assert.equal(h.getRunIsLive(), true, 'a still-running glyph keeps runIsLive true');
+});
+
+test('refreshOpenRun: a run that reaches a real verdict (✓) flips runIsLive false, and the NEXT tick fetches nothing more', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ glyph: '✓', died: false }); });
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.refreshOpenRun();
+  assert.equal(h.getRunIsLive(), false, 'a real verdict must stop the poll for this run');
+  assert.equal(calls, 1);
+  await h.refreshOpenRun(); // caller (pollTick) would call this again on the next 2s tick
+  assert.equal(calls, 1, 'no fetch at all once the run is no longer live — poll for THIS run has stopped');
+});
+
+test('refreshOpenRun: a died run (glyph ?) also flips runIsLive false — died stops the poll same as a real verdict', async () => {
+  const h = makePollHarness(() => Promise.resolve({ glyph: '?', died: true }));
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.refreshOpenRun();
+  assert.equal(h.getRunIsLive(), false);
+});
+
+test('refreshOpenRun: a stale in-flight response for a run switched away from never overwrites the newer selection', async () => {
+  const d = deferredPromise();
+  const h = makePollHarness(() => d.promise);
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  const inFlight = h.refreshOpenRun(); // request for r1 now in flight
+  // the person clicks a different run mid-poll — selectRun's own token bump
+  h.setCurrentRunid('r2');
+  h.bumpSelectToken();
+  d.resolve({ glyph: '▶', died: false }); // r1's stale response finally lands
+  await inFlight;
+  assert.equal(h.renderRunCalls.length, 0, 'a stale r1 response must never render onto the r2 selection now open');
+});
+
+test('refreshOpenRun: an unchanged payload does not call renderRun a second time', async () => {
+  const payload = { glyph: '▶', died: false, x: 1 };
+  const h = makePollHarness(() => Promise.resolve(payload));
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.refreshOpenRun();
+  await h.refreshOpenRun();
+  assert.equal(h.renderRunCalls.length, 1, 'the second identical payload must not rebuild the DOM again');
+});
+
+test('refreshOpenRun: does nothing (no fetch) when no run is selected, or the selected run is not live', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ glyph: '▶', died: false }); });
+  await h.refreshOpenRun(); // no currentRunid at all
+  assert.equal(calls, 0);
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(false); // e.g. already died/finished
+  await h.refreshOpenRun();
+  assert.equal(calls, 0);
+});
+
+test('refreshRunsList: skips re-render (setItems) when the fetched payload is unchanged, still re-renders on a real change', async () => {
+  let payload = { runs: [{ runid: 'a' }] };
+  const h = makePollHarness(() => Promise.resolve(payload));
+  // force:true on every call here — this test is about the SIGNATURE dedup
+  // (setItems skipped on an unchanged payload), not the 10s list throttle,
+  // which has its own dedicated tests below.
+  await h.refreshRunsList(true);
+  assert.equal(h.setItemsCalls.length, 1);
+  await h.refreshRunsList(true); // identical payload
+  assert.equal(h.setItemsCalls.length, 1, 'an unchanged runs list must not rebuild the DOM again');
+  payload = { runs: [{ runid: 'a' }, { runid: 'b' }] };
+  await h.refreshRunsList(true);
+  assert.equal(h.setItemsCalls.length, 2, 'a real change must still re-render');
+});
+
+test('refreshRunsList: preserves the left pane\'s scrollTop across a poll-driven re-render', async () => {
+  const h = makePollHarness(() => Promise.resolve({ runs: [{ runid: 'a' }] }));
+  h.doc.getElementById('left-pane-body').scrollTop = 240;
+  await h.refreshRunsList();
+  // the setItems stub itself resets scrollTop to 0 (simulating a real
+  // rebuild) — this only stays 240 if withScrollPreserved actually restores
+  // it afterward, not merely because nothing touched it.
+  assert.equal(h.doc.getElementById('left-pane-body').scrollTop, 240);
+});
+
+test('refreshRunsList: a failing fetch keeps the last good state and only surfaces a note after 3 consecutive failures', async () => {
+  const h = makePollHarness(() => Promise.reject(new Error('boom')));
+  // force:true — this test is about the failure-streak counter, not the
+  // 10s list throttle (each call here must actually reach the fetch).
+  await h.refreshRunsList(true);
+  await h.refreshRunsList(true);
+  assert.equal(h.doc.getElementById('runs-filter-count').textContent, '', 'no alarming note before 3 consecutive failures');
+  await h.refreshRunsList(true);
+  assert.match(h.doc.getElementById('runs-filter-count').textContent, /fetch failing/);
+  assert.equal(h.setItemsCalls.length, 0, 'never wiped/rebuilt the list on a failed fetch');
+});
+
+// ---------------------------------------------------------------------------
+// F195 (docs/logs/FINDINGS.md) — hamr's ruling B, 2026-09-27: the Runs list
+// throttles to a 10s refresh (RUNS_LIST_POLL_MS) instead of every 2s tick;
+// the open run's own detail is unaffected. Fail-first: RUNS_LIST_POLL_MS
+// and the `force` param on `refreshRunsList`/`pollTick` do not exist on the
+// pre-throttle page — these tests red against that source.
+// ---------------------------------------------------------------------------
+
+test('refreshRunsList: a call made again immediately (well under 10s) skips the fetch entirely', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ runs: [{ runid: 'a' }] }); });
+  await h.refreshRunsList();
+  assert.equal(calls, 1);
+  await h.refreshRunsList(); // called again immediately — well under RUNS_LIST_POLL_MS
+  assert.equal(calls, 1, 'a tick inside the 10s window must not re-fetch the list at all');
+});
+
+test('refreshRunsList: fetches again once RUNS_LIST_POLL_MS has elapsed since the last real fetch', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ runs: [{ runid: 'a' }] }); });
+  await h.refreshRunsList();
+  assert.equal(calls, 1);
+  h.setLastRunsListRefreshAt(Date.now() - 10001); // simulate 10s+ having elapsed
+  await h.refreshRunsList();
+  assert.equal(calls, 2, 'once the throttle window has elapsed, the tick must fetch again');
+});
+
+test('refreshRunsList: force:true bypasses the throttle regardless of elapsed time', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ runs: [{ runid: 'a' }] }); });
+  await h.refreshRunsList();
+  await h.refreshRunsList(true); // immediately again, but forced
+  assert.equal(calls, 2, 'force:true must always reach the fetch, throttle or not');
+});
+
+test('pollTick: forces one immediate runs-list refresh the moment the open run stops being live', async () => {
+  let runsCalls = 0;
+  const h = makePollHarness((path) => {
+    if (path === '/api/runs') { runsCalls += 1; return Promise.resolve({ runs: [] }); }
+    return Promise.resolve({ glyph: '✓', died: false }); // the open run just finished
+  });
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.pollTick();
+  assert.equal(h.getRunIsLive(), false);
+  assert.equal(runsCalls, 2, 'one throttled list call at tick start, one forced call once the run ends');
+});
+
+test('pollTick: does NOT force an extra list refresh when the open run was already not live', async () => {
+  let runsCalls = 0;
+  const h = makePollHarness((path) => {
+    if (path === '/api/runs') { runsCalls += 1; return Promise.resolve({ runs: [] }); }
+    return Promise.resolve({ glyph: '✓', died: false });
+  });
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(false); // already finished before this tick
+  await h.pollTick();
+  assert.equal(runsCalls, 1, 'no run-ended transition this tick — only the normal (throttled) list call');
+});
+
+test('pollTick: visibilitychange-style forced tick refreshes the list even inside the 10s window', async () => {
+  let runsCalls = 0;
+  const h = makePollHarness((path) => {
+    if (path === '/api/runs') { runsCalls += 1; return Promise.resolve({ runs: [] }); }
+    return Promise.resolve({ glyph: '▶', died: false });
+  });
+  await h.refreshRunsList(); // normal call, sets lastRunsListRefreshAt
+  assert.equal(runsCalls, 1);
+  await h.pollTick(true); // the page wires this on visibilitychange when the tab returns
+  assert.equal(runsCalls, 2, 'a forced catch-up tick must not be swallowed by the 10s throttle');
+});
+
+test('buildStepMapSVG: a running box draws the pulsing amber dot (mockup-verbatim circle+animate), a done/waiting box does not', () => {
+  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+  const parts = [
+    { kind: 'step', label: 'a', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
+    { kind: 'step', label: 'b', occurrence: 1, outcome: null, attempts: [] },
+  ];
+  const boxes = buildOrderedBoxes(parts, true); // isLive=true — the last part is the running one
+  const svg = buildStepMapSVG(boxes, 900);
+  const dots = [...svg.matchAll(/<circle[^>]*fill="#b8860b">/g)];
+  assert.equal(dots.length, 1, 'exactly one running box in this list, exactly one pulsing dot');
+  assert.match(svg, /<animate attributeName="opacity" values="1;0\.3;1" dur="1\.2s" repeatCount="indefinite">/);
+});
+
+test('pollTick: does nothing while document.hidden is true, and resumes fetching once visible again', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ runs: [] }); });
+  h.doc.hidden = true;
+  h.pollTick();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(calls, 0, 'a hidden tab must not poll');
+  h.doc.hidden = false;
+  h.pollTick();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.ok(calls >= 1, 'a visible tab does poll');
 });

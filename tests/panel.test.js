@@ -1599,6 +1599,82 @@ test('/api/runs/:runid/rounds: real archived run mu2p83go — attempt 1 of the o
 });
 
 // ---------------------------------------------------------------------------
+// Panel P2 defect 3 (hamr-watched run mujjtrvd, 2026-09-27): a LIVE run's
+// gate-audit sidecar still sits at its DURING-RUN path (`<row.patient>/
+// gate-audit.jsonl` — `run-u`'s `wd`, or `bareloop run`'s worktree) until
+// `run-u`'s end-of-run rename (src/userrun.js:1727-1729) moves it beside the
+// spine; before that rename, `resolveSiblings` finds nothing and the panel
+// read "tool calls: no log saved" even while the sidecar existed and had
+// real rows. `resolveAuditPathForRow` (src/panel/server.js) falls back to
+// `row.patient` only when this run's own spine has no `job-end` yet.
+// ---------------------------------------------------------------------------
+
+test('/api/runs/:runid/audit: a LIVE run (no job-end yet) with no finished sidecar falls back to <row.patient>/gate-audit.jsonl and reports its real rows, scoped by this run\'s own ts window', async (t) => {
+  const home = tmp();
+  const patient = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-liverun.jsonl'), [
+    { type: 'job-start', job: 'live-job', ts: '2026-09-27T08:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'x', ts: '2026-09-27T08:00:01.000Z', seq: 2 },
+  ]);
+  // the sidecar still at its DURING-RUN path — no `u-liverun-gate-audit.jsonl`
+  // beside the spine exists yet (that rename only happens at job-end).
+  writeFileSync(join(patient, 'gate-audit.jsonl'), [
+    JSON.stringify({
+      ts: '2026-09-27T08:00:02.000Z', decision: 'allow', action: { type: 'read', path: 'src/x.js' }, run_id: 'liverun',
+    }),
+    // a row from an EARLIER, unrelated run sharing this same tree/worktree
+    // path, before this run's own job-start — must be scoped OUT, same rule
+    // `runAuditWindow` already applies to a finished shared sidecar.
+    JSON.stringify({
+      ts: '2026-09-27T07:00:00.000Z', decision: 'allow', action: { type: 'read', path: 'src/old.js' }, run_id: 'earlierrun',
+    }),
+  ].join('\n') + '\n');
+  appendRun({
+    at: '2026-09-27T08:00:00.000Z', runid: 'liverun', job: 'live-job', spine: join(dir, 'u-liverun.jsonl'), patient, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/liverun/audit`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.reason, null, 'the live tree sidecar must be found, not reported as no-sidecar');
+  assert.equal(body.empty, false);
+  assert.equal(body.rows.length, 1, 'only this run\'s own row, the earlier-run row before job-start scoped out');
+  assert.equal(body.rows[0].path, 'src/x.js');
+
+  const detailRes = await fetch(`${base}/api/runs/liverun`);
+  const detail = await detailRes.json();
+  assert.ok(detail.behaviour, 'the Run tab\'s tools/cache summary must also find the live sidecar, via the same resolveAuditPathForRow owner');
+  assert.equal(detail.behaviour.totalCalls, 1);
+});
+
+test('/api/runs/:runid/audit: a FINISHED run (job-end present) never tries the live <row.patient> fallback, even if a stale gate-audit.jsonl happens to sit there', async (t) => {
+  const home = tmp();
+  const patient = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-finishedrun.jsonl'), [
+    { type: 'job-start', job: 'finished-job', ts: '2026-09-27T08:00:00.000Z', seq: 1, verdictType: 'green' },
+    {
+      type: 'job-end', outcome: 'green', spentUsd: 0.01, spendComplete: true, ts: '2026-09-27T08:00:05.000Z', seq: 2,
+    },
+  ]);
+  // a leftover file at the during-run path (e.g. a stale/unrelated run reusing
+  // the same tree) — must NOT be read once this run has its own job-end.
+  writeFileSync(join(patient, 'gate-audit.jsonl'), [
+    JSON.stringify({
+      ts: '2026-09-27T08:00:02.000Z', decision: 'allow', action: { type: 'read', path: 'src/stale.js' }, run_id: 'someotherrun',
+    }),
+  ].join('\n') + '\n');
+  appendRun({
+    at: '2026-09-27T08:00:00.000Z', runid: 'finishedrun', job: 'finished-job', spine: join(dir, 'u-finishedrun.jsonl'), patient, via: 'run-u',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/finishedrun/audit`);
+  const body = await res.json();
+  assert.equal(body.reason, 'no-sidecar', 'a finished run with no renamed sidecar must never fall back to the live tree path');
+});
+
+// ---------------------------------------------------------------------------
 // item 2 (2026-09-26 build spec): short (tree-root-relative) paths — the
 // server resolves the run's tree root and shortens every audit row's path,
 // keeping the full path alongside as `path` (never losing information).

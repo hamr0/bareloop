@@ -357,3 +357,28 @@ and the expand caret itself only appears when at least one such other run also p
 active filters/search; a job with a single run, or whose only match is its represented run,
 never shows a caret. A manual collapse click still wins over auto-expand-for-selection on the
 next render.
+
+## Addendum 2026-09-27 — P2 rulings
+
+Signed this session (hamr), constraining P2's build:
+
+- **2-second polling**, confirmed again — not SSE.
+- **Q1 = A:** the left Runs list ALSO refreshes every 2s (new runs appear, glyphs flip
+  `▶`→`✓`/`✗`/`?`), not just the open run.
+- **Q2 = A:** the Audit tab does NOT live-refresh on the poll; it re-fetches only when the
+  person opens/switches to it.
+- The Run tab's map, part cards, counters line (`#run-counters`), and summary box refresh
+  every 2s while the open run is `▶`; polling for that run STOPS once it is no longer live
+  (a died `?` or a real `✓`/`✗` verdict).
+- The running box on the step map gets the mockup's pulsing amber dot
+  (`design/panel-mockup.html` ~line 1648: a `<circle fill="#b8860b">` with an `<animate
+  attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite">`), copied
+  verbatim into the one shared `buildStepMapSVG` — never a second map renderer.
+- The finish line (a real paid run watched start to end in the panel) is NOT delegated to the
+  builder — hamr authorizes that separately. The build instead ships a $0 replay instrument
+  (`scripts/replay-live.mjs`) that reconstructs a live-looking run from an already-archived
+  spine, for both the visual proof and future dev use.
+- **2026-09-27, ruling B (F195 mitigation):** "refresh less often, up to 30s at most, choose
+  the lesser when possible" — Q1=A's every-2s list refresh is superseded for the list only:
+  the Runs list now polls every **10s** (`RUNS_LIST_POLL_MS`); the open run's own detail stays
+  every 2s. One immediate list refresh still fires the moment the open run stops being live.

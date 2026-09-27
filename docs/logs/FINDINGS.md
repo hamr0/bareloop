@@ -13483,3 +13483,91 @@ classified non-prose by the existing per-character loop (each space character hi
 the character), so only the true zero-length case needed the fix.
 
 **Status: fixed.** `scripts/promptcommitlib.mjs`, `tests/promptcommit.test.js`.
+
+## F195 — `/api/runs` re-replays every archived spine on every call: ~300-460ms CPU at 250 rows (open, escalated)
+
+**Context:** panel rung P2 (live run view) wires the left Runs list to poll `/api/runs` every
+2 seconds (hamr's ruling, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27, Q1=A: the list
+refreshes every tick, not just the open run). Piece 3 of that build spec required measuring
+`/api/runs` and the run-detail endpoint against hamr's real archive (`HOME=/home/hamr`, the
+panel's real `~/.config/bareloop`, 250 listed rows) before shipping continuous polling against
+it, with an explicit instruction to STOP and report rather than invent a cache if the cost
+exceeded ~200ms of CPU per tick.
+
+**Measurement (this session, own panel instance on port 4763, `home:
+'/home/hamr/.config/bareloop'`, n=10 each):**
+
+- `GET /api/runs` over HTTP: median 346.72ms wall (range 306.5-426.6ms).
+- `listRuns()` called directly (no HTTP overhead), with `process.cpuUsage()` deltas: median
+  301.27ms wall, **median 457.40ms CPU** (range 277.3-574.7ms CPU) — `summarizeRow` fully
+  reads and `replayOne`-replays every listed run's ENTIRE spine file, on every single call, for
+  all 250 rows; there is no per-row caching keyed on the spine's own mtime/size.
+- `GET /api/runs/:runid` (single run detail) by contrast: median 8.85ms wall / 15.74ms CPU
+  (direct-call) — cheap, no concern.
+
+**Verdict:** `/api/runs` alone is ~2.3x over the ~200ms/tick CPU budget at hamr's real archive
+size, and will only grow as more runs accumulate (linear in row count — every row's spine is
+fully re-parsed and re-replayed per call). At a 2-second poll interval this means the panel's
+Node process spends a large, and growing, fraction of every tick synchronously blocked
+replaying data that (for all but the newest few rows) has not changed since the previous tick.
+
+**Status: open, escalated — not fixed.** Per the build spec's explicit instruction, this
+session did not invent a cache or change `listRuns`/`summarizeRow`. Candidate fixes (a
+per-row cache keyed on the spine file's mtime+size, an ETag/If-None-Match short-circuit,
+raising the poll interval, or paginating/limiting the list) are server-behavior changes beyond
+this rung's read-only-GET scope and are left for hamr's own call before this ships to
+continuous 2s polling against a large archive.
+
+**2026-09-27: mitigated by hamr's ruling B — "refresh less often, up to 30s at most, choose
+the lesser when possible."** `src/panel/index.html`'s single poll timer still ticks every 2s,
+but the Runs list itself now throttles to a 10s refresh (`RUNS_LIST_POLL_MS`); the open run's
+own detail fetch is unaffected (still every 2s, and only while live). The open run's poll
+also forces one immediate list refresh the moment it stops being live, so that row's glyph
+doesn't wait up to 10s to flip. The per-call server-side cost (`listRuns`/`summarizeRow`
+re-replaying every spine) is unchanged and still grows with archive size — this is a
+client-side polling-frequency mitigation, not a fix to the underlying cost; the server-side
+candidates above remain open.
+
+## F196 — a finished `bareloop run` (bundle) run's tool log reads `no log saved`: its sidecar is renamed to a name the reader never looks for (open, parked)
+
+**Context:** found by the panel P2 builder while fixing the live-run gate-audit fallback
+(commit `2675130`, "live run's gate-audit falls back to the during-run tree/worktree path").
+When a bundle run finishes, `src/cli.js` (~line 448-449) renames its gate audit off the
+worktree into the run's own directory as a bare `gate-audit.jsonl`:
+
+```
+const auditSrc = join(worktree, 'gate-audit.jsonl');
+if (existsSync(auditSrc)) renameSync(auditSrc, join(runsDir, 'gate-audit.jsonl'));
+```
+
+but that run's spine sits alongside it as `spine.jsonl` — a stem of `spine`, not `gate-audit`.
+`src/replayio.js`'s `resolveSiblings` (line 85-92) derives the expected sidecar name from the
+spine's own stem: `join(dir, \`${stem}-gate-audit.jsonl\`)`, i.e. it looks for
+`spine-gate-audit.jsonl` next to `spine.jsonl`. That file never exists — the rename at
+`src/cli.js:449` never produces that name — so `resolveSiblings` always returns
+`auditPath: null` for a finished bundle run, even though the real sidecar sits right there
+under a different name.
+
+**Effect:** anything built on `resolveSiblings` (the panel's Audit tab and its Run tab
+tools/cache summary via `resolveAuditPathForRow`/`scopedBehaviour` in
+`src/panel/server.js`, and `replayOne`'s own `auditAvailable` flag) reads `auditAvailable:
+false` / `toolLogSaved: false` for a finished bundle run and shows "no log saved", even
+though `runs/<runid>/gate-audit.jsonl` exists on disk with real rows in it.
+`src/panel/server.js`'s `resolveAuditPathForRow` (line 675-683) already documents the finished
+vs. live split — it defers to `resolveSiblings` first and only falls back to the live
+during-run path (`join(row.patient, 'gate-audit.jsonl')`) when no `job-end` record exists yet
+— so a finished run gets neither the (mismatched) sibling name nor the live fallback.
+
+Live (during-run) reads are unaffected: since `2675130`, the panel falls back to
+`<row.patient>/gate-audit.jsonl'` while `job-end` hasn't been written yet, so an in-progress
+bundle run's tool log renders correctly. The gap is specific to runs that have already
+finished and been renamed.
+
+**Status: open, PARKED by hamr's ruling 2026-09-27 (option A: log, don't build — this is a
+reading-derived finding with no live failure driving it yet; PRD §8a scope rule applies).**
+
+**Fix direction (not built):** make the rename target and the sibling reader agree on one
+name for the sidecar — either rename to `spine-gate-audit.jsonl` at `src/cli.js:449`, or teach
+`resolveSiblings` to also check a bare `gate-audit.jsonl` in the same directory. Either way,
+the rename site and the reader should have one shared owner for the sidecar name rather than
+two independent spellings.
