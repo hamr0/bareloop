@@ -134,6 +134,15 @@ export function createSession(card, deps = {}) {
   const env = deps.env ?? process.env;
   const sessionsRoot = deps.sessionsRoot ?? join(process.env.HOME ?? '/tmp', '.config', 'bareloop', 'panel-sessions');
   const timeoutMs = deps.timeoutMs ?? 300_000;
+  // TEST SEAMS ONLY (never set by `src/panel/authorroutes.js`'s real caller):
+  // override the declaration composer and/or `prepareSigning` itself so a
+  // test can drive the REAL confirm turn / ask() channel / revise-round /
+  // hash-matching machinery this file owns, without also re-running (and
+  // re-proving) `authorClose`'s own composer ladder or `prepareSigning`'s own
+  // gates — both already have their own test suites. Absent, both default to
+  // the real library functions, exactly as production always runs.
+  const authorFnOverride = deps.authorFn ?? null;
+  const prepareSigningFn = deps.prepareSigningFn ?? prepareSigning;
   const id = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const outDir = join(sessionsRoot, id);
   mkdirSync(outDir, { recursive: true });
@@ -306,8 +315,13 @@ export function createSession(card, deps = {}) {
       providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
       judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
     });
-    const generate = makeLoopGenerate(provider);
-    const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
+    // TEST SEAMS (see the constructor's own note): a test overrides
+    // `generate`/`confirmGenerate` directly (bypassing this real, constructed
+    // `provider` for the model boundary) and/or `scout` (bypassing the real
+    // paid scout) so it can drive the REAL confirm turn/ask()/revise/hash
+    // machinery below with a deterministic fake, never a live provider call.
+    const generate = deps.generate ?? makeLoopGenerate(provider);
+    const confirmGenerate = deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
 
     state.phase = 'drafting';
     say('system', `== drafting == ${modelChoice.provider}/${MODEL} — drafting cap $${card.draftingCapUsd}`);
@@ -319,6 +333,8 @@ export function createSession(card, deps = {}) {
       ceilingUsd: card.draftingCapUsd,
       onPhase, onCall,
       ask, confirmGenerate, isRepo: true, langResult,
+      ...(deps.scout ? { scout: deps.scout } : {}),
+      ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });
 
     if (!authored.ok) {
@@ -360,7 +376,7 @@ export function createSession(card, deps = {}) {
         judgeBaseUrl: judge.provider === modelChoice.provider ? modelChoice.baseUrl : undefined,
       }).judgeProvider;
     }
-    const signing = await prepareSigning({
+    const signing = await prepareSigningFn({
       spec, workdir: prep.tree, seedRef: authored.seedRef, timeoutMs,
       shellCapUsd: spec.budgetUsd, ceilingUsd: card.draftingCapUsd, priorCalls: [...metered],
       judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
