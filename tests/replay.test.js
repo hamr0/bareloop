@@ -1055,6 +1055,32 @@ test('replayRun: msf70nei (loop-shape, timelineKind:iterations) reports fixLoop 
   assert.equal(s.fixLoop, null);
 });
 
+// Panel P2 defect 2 (hamr live-watched run mujjtrvd, 2026-09-27): a LIVE
+// run's fix-loop attempt whose window hasn't closed yet (no close-verdict/
+// run-end/escalation boundary has landed after its iteration-start) used to
+// be fabricated as outcome 'red' — the panel's `partBoxState` checks
+// `part.outcome` before `isLastLivePart`, so a still-running fix loop read
+// as "stopped" (no pulse) instead of "running". Fixture is the first 71
+// lines of the REAL archived mujjtrvd spine — sliced right after its
+// iteration-start at seq 71 and before its first exit-eval (seq 80), the
+// exact mid-run instant hamr's panel snapshot (`/tmp/.../scratchpad/live.json`)
+// captured: fixLoop already exists (the outer-close/iteration scoping picks
+// up the step's own micro-loop iteration-start, a separate finding reported
+// alongside this fix, not built here) with one open attempt.
+test('replayRun: mujjtrvd sliced mid-run (real archived spine, truncated right after its one open iteration-start) reports the open fix-loop attempt as outcome null, never a fabricated red', () => {
+  const spine = parseJsonl(new URL('./fixtures/mujjtrvd-midrun.jsonl', import.meta.url).pathname);
+  const s = replayRun(spine, [], { runId: 'mujjtrvd' });
+  assert.ok(s.fixLoop, 'expected a fixLoop to exist at this mid-run instant');
+  assert.equal(s.fixLoop.attempts.length, 1);
+  const a = s.fixLoop.attempts[0];
+  assert.equal(a.verdict, null, 'precondition: no close-verdict/run-end/escalation has landed yet');
+  assert.equal(a.windowEndSeq, Infinity, 'precondition: the window is still open (serializes to null over JSON, matching the live snapshot)');
+  assert.equal(a.outcome, null, 'an open window must report outcome null, never red');
+  const fixPart = s.parts.find((p) => p.id === 'fix');
+  assert.ok(fixPart, 'expected a fix part in s.parts');
+  assert.equal(fixPart.outcome, null, 'the fix part\'s own outcome (its last attempt) must also read null while still running, so partBoxState falls through to the isLastLivePart check instead of reading it as already stopped');
+});
+
 // Panel build item 6 (2026-09-26): `parts` — the ONE ordered list of a run's
 // own high-level pieces (scout, plan, each step occurrence in run order, a
 // replan window between two steps, the fix loop, and a synthetic-only

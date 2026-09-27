@@ -869,7 +869,21 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           iteration: typeof is.iteration === 'number' ? is.iteration : null,
           verdict,
           stages: end && end.type === 'close-verdict' && Array.isArray(end.stages) ? end.stages : null,
-          outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red'),
+          // `end === null` means this iteration's own window hasn't closed
+          // yet (no close-verdict/run-end/escalation boundary has landed on
+          // the spine after its iteration-start) — a LIVE run reading this
+          // mid-iteration, never a finished one (a finished spine's last
+          // iteration always has a boundary). Fabricating 'red' here (as
+          // `verdict === null` used to fall through to) reads a still-running
+          // fix-loop attempt as an already-failed one; `null` (the same
+          // "unresolved" value every other in-progress outcome in this file
+          // uses) is the honest read. Fixed here, the one place this outcome
+          // is minted, rather than in the panel's `partBoxState` (which reads
+          // this field but has no ordering info to tell "genuinely red" from
+          // "still open" apart if this field itself already lies).
+          outcome: end
+            ? /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red')
+            : /** @type {null} */ (null),
           ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
           windowStartSeq: startSeq,
           windowEndSeq: endSeq,
