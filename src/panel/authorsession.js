@@ -127,7 +127,10 @@ export function validateJobCard(card) {
  * is the ONE thing a person answers next; `answer()`/`send()`/`revise()`/
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
- * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, timeoutMs?: number}} [deps]
+ * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, timeoutMs?: number,
+ *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
+ *   prepareSigningFn?: Function}} [deps] the last five are TEST SEAMS ONLY — see the note
+ *   just above where each is read, below.
  * @returns {any} the session object
  */
 export function createSession(card, deps = {}) {
@@ -279,6 +282,10 @@ export function createSession(card, deps = {}) {
     }
 
     const writeScope = card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    /** @type {any} the confirm turn (below) fills `goal` in once accepted —
+     * declared loosely rather than typed field-by-field, since this object's
+     * own shape is a `job-v1` draft `validateJob` itself is the real
+     * authority on, not a second hand-typed interface here. */
     const draft = {
       schema: 'job-v1',
       job: card.jobName,

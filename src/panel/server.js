@@ -1418,7 +1418,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number, authorRoutes?: ReturnType<typeof createAuthorRoutes> }} opts
+ * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
   const method = req.method ?? 'GET';
