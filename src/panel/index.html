@@ -607,6 +607,14 @@
     var line2 = words.slice(i).join(' ');
     return line2 ? [line1, line2] : [line1];
   }
+  // ONE shared rule for "does this box draw a retry loop, and what try number" — a multi-attempt
+  // box (a re-run step, or the fix loop; `run` on an old-shape spine falls in here too, naturally,
+  // never special-cased) gets a dashed self-loop labelled with its final try number; anything
+  // else (incl. every no-verdict kind, whose attempts is already forced to [] upstream) gets 0.
+  function boxRetryTry(box){
+    var attempts = Array.isArray(box.attempts) ? box.attempts : [];
+    return attempts.length > 1 ? attempts.length : 0;
+  }
   function buildStepMapSVG(steps, availWidth){
     var n = steps.length;
     var naturalW = naturalBoxWidth(steps);
@@ -626,6 +634,8 @@
       '<defs>' +
         '<marker id="' + uid + '-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
           '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-dim)"></path></marker>' +
+        '<marker id="' + uid + '-arrow-grey" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
+          '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-faint)"></path></marker>' +
       '</defs>';
     steps.forEach(function(s, idx){
       var row = Math.floor(idx / perRow);
@@ -636,6 +646,8 @@
       var y = 30 + row * rowH;
       var colors = stepMapColors(s.state);
       var lines = titleLines[idx];
+      var nextRow = idx < n - 1 ? Math.floor((idx + 1) / perRow) : null;
+      var hasDrop = nextRow !== null && nextRow !== row;
       var stateY = y + boxH - 18;
       var partIdxAttr = typeof s.partIndex === "number" ? (' data-part-index="' + s.partIndex + '" style="cursor:pointer;"') : '';
       body += '<rect x="' + x + '" y="' + y + '" width="' + boxW + '" height="' + boxH +
@@ -655,8 +667,24 @@
       }
       body += '<text x="' + (x + boxW / 2) + '" y="' + stateY +
         '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(s.state) + '</text>';
+      var retryTry = boxRetryTry(s);
+      if(retryTry){
+        // dashed self-loop under the box, same proportions as the design mockup's curve,
+        // scaled to this box's own width. When this same box also carries the row-to-row
+        // snake drop (which leaves from dead-center, x=cx), shift the loop's start away from
+        // center by a fixed pixel offset so the two never begin at the same point.
+        var retryShift = hasDrop ? 14 : 0;
+        var bottom = y + boxH;
+        var sx = x + boxW * 0.50 - retryShift, sy = bottom + 5;
+        var c1x = x + boxW * 0.278 - retryShift, c1y = bottom + 30;
+        var c2x = x + boxW * 0.167 - retryShift, c2y = bottom + 30;
+        var ex = x + boxW * 0.028 - retryShift, ey = bottom + 2;
+        body += '<path d="M ' + sx + ' ' + sy + ' C ' + c1x + ' ' + c1y + ', ' + c2x + ' ' + c2y + ', ' + ex + ' ' + ey +
+          '" fill="none" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#' + uid + '-arrow-grey)"></path>';
+        body += '<text x="' + (x + boxW * 0.267 - retryShift) + '" y="' + (bottom + 32) +
+          '" text-anchor="middle" font-size="10" fill="var(--text-faint)">try ' + retryTry + '</text>';
+      }
       if(idx < n - 1){
-        var nextRow = Math.floor((idx + 1) / perRow);
         if(nextRow === row){
           var midY = y + boxH / 2;
           if(!rtl){
@@ -684,6 +712,7 @@
       '<span><span class="dot red"></span>stopped</span>' +
       '<span><span class="dot grey"></span>waiting</span>' +
       '<span><span class="dot magenta"></span>died</span>' +
+      '<span>⤾ dashed = retry</span>' +
       '</div>';
   }
   var lastSteps = null;

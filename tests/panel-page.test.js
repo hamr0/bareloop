@@ -34,7 +34,7 @@ function loadStepMapGeometry() {
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
   const factory = new Function(`${body}
-    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph };
+    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph, boxRetryTry };
   `);
   return factory();
 }
@@ -1455,4 +1455,64 @@ test('build item (fix): picking an older run elsewhere (e.g. History) then rende
   assert.equal(runsWrap.children.length, 1);
   assert.equal(runsWrap.children[0].getAttribute('data-testid'), 'hist-row-older1');
   assert.equal(runsWrap.children[0].className, 'hist-row selected', 'the matching child must carry the selected marker on render, with no click needed');
+});
+
+// retry loop on the step map: ported from design/panel-mockup.html — a
+// multi-attempt step or fix box draws a dashed grey self-loop ("try N") under
+// the box, using the SAME one-owner rule (box.attempts.length > 1) that
+// already drives partResultGlyph's multi-glyph join, never a duplicate check.
+test('boxRetryTry: the one shared rule — a box with >1 attempts reports its final try number, a single-attempt or no-verdict (attempts: []) box reports 0', () => {
+  const { boxRetryTry } = loadStepMapGeometry();
+  assert.equal(boxRetryTry({ attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'red' }, { n: 3, outcome: 'green' }] }), 3);
+  assert.equal(boxRetryTry({ attempts: [{ n: 1, outcome: 'green' }] }), 0);
+  assert.equal(boxRetryTry({ attempts: [] }), 0);
+});
+
+test('buildStepMapSVG: a step with 3 attempts renders a dashed retry path and "try 3"', () => {
+  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+  const parts = [
+    {
+      kind: 'step', label: 'flaky step', occurrence: 1, outcome: 'green',
+      attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'red' }, { n: 3, outcome: 'green' }],
+    },
+  ];
+  const boxes = buildOrderedBoxes(parts, false);
+  const svg = buildStepMapSVG(boxes, 900);
+  assert.match(svg, /stroke-dasharray="3,3"/, 'expected a dashed retry path');
+  assert.match(svg, />try 3</, 'expected the final try number in the label');
+});
+
+test('buildStepMapSVG: a fix loop with 4 attempts renders a dashed retry path and "try 4"', () => {
+  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+  const parts = [
+    {
+      kind: 'fix', label: 'fix', occurrence: null, outcome: 'green',
+      attempts: [
+        { n: 1, outcome: 'red' }, { n: 2, outcome: 'red' }, { n: 3, outcome: 'red' }, { n: 4, outcome: 'green' },
+      ],
+    },
+  ];
+  const boxes = buildOrderedBoxes(parts, false);
+  const svg = buildStepMapSVG(boxes, 900);
+  assert.match(svg, /stroke-dasharray="3,3"/, 'expected a dashed retry path');
+  assert.match(svg, />try 4</, 'expected the final try number in the label');
+});
+
+test('buildStepMapSVG: a single-attempt step and a no-verdict part (e.g. plan) render NO dashed retry path', () => {
+  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+  const parts = [
+    { kind: 'plan', label: 'plan', occurrence: null, outcome: null, attempts: [] },
+    { kind: 'step', label: 'clean step', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
+  ];
+  const boxes = buildOrderedBoxes(parts, false);
+  const svg = buildStepMapSVG(boxes, 900);
+  assert.doesNotMatch(svg, /stroke-dasharray="3,3"/, 'no box here has >1 attempts, so no retry loop should render');
+});
+
+test('stepMapLegendHTML: includes the retry legend entry', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function stepMapLegendHTML');
+  const end = html.indexOf('function mapAvailWidth');
+  const body = html.slice(start, end);
+  assert.match(body, /dashed = retry/);
 });
