@@ -799,8 +799,40 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // plan run whose close was satisfied on the first outer-close precheck
   // never enters a fix loop, and this field must read exactly as it did
   // before this addition for that run).
+  // F196 (2026-09-27, live-observed on mujjtrvd): a step still RUNNING (no
+  // `step-end` on the spine yet) has its own in-flight micro-loop
+  // (`ralph({judge,...})`, src/planrun.js) that emits its OWN
+  // `iteration-start` — e.g. step 2's attempt 1 on mujjtrvd (seq 71,
+  // `strict-clean-whole-src`'s own step-start at seq 69, no step-end). The
+  // old `lastStepEndSeq` (the LAST *ended* step's own boundary — seq 68,
+  // step 1 `type-checks-jsdoc`'s step-end) left that still-running step's
+  // seq range wide open, so its iteration-start leaked in below as a fake
+  // fix-loop attempt: the Run tab showed step 2 as `[done]` with 0
+  // calls/`?` (`end` never found for it in the `steps` map) plus a phantom
+  // `FIX [running]` box after it. An un-ended step is its own right
+  // boundary: the fix loop can only start once the run's LAST-STARTED step
+  // (`steps[steps.length-1]` — `steps` preserves spine order, so this is
+  // the step with the highest `stepStartSeq` across the whole file,
+  // including every concatenated leg of a resumed chain) has reached its
+  // own step-end.
+  //
+  // Deliberately checks only the LAST step, never "every step" (measured
+  // and rejected: a first pass checking `steps.some(s => s.stepEndSeq ===
+  // Infinity)` broke a genuinely FINISHED resumed-chain archive,
+  // litectx-u-bareloop/reuse-msc6w93z.jsonl — its first leg's
+  // `fix-index-js-strict` attempt (step-start seq 34) crashed with no
+  // step-end before the chain resumed and re-ran that same step from seq
+  // 77 onward to a real step-end at seq 115; the file's LAST step
+  // (`achieve-strict-typecheck`, step-end seq 611) did end, and this run's
+  // real fixLoop must still be read). Checking only the last-started step
+  // preserves that file's output unchanged while still nulling fixLoop on
+  // mujjtrvd (last step `strict-clean-whole-src` never step-ends in the
+  // mid-run slice) and on every other archived spine this fix was diffed
+  // against that turned out to be a truncated/killed file with no
+  // `job-end` at all (its last step-start likewise never step-ended) —
+  // see the F196 commit's report for the full before/after list.
   let fixLoop = null;
-  if (timelineKind === 'steps' && stepStarts.length > 0) {
+  if (timelineKind === 'steps' && stepStarts.length > 0 && steps[steps.length - 1].stepEndSeq !== Infinity) {
     const lastStepEndSeq = stepEnds.reduce((max, se) => (typeof se.seq === 'number' && se.seq > max ? se.seq : max), -Infinity);
     const outerClosesAfter = spine
       .filter((e) => e.type === 'outer-close' && typeof e.seq === 'number' && e.seq > lastStepEndSeq)

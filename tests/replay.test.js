@@ -1061,24 +1061,33 @@ test('replayRun: msf70nei (loop-shape, timelineKind:iterations) reports fixLoop 
 // be fabricated as outcome 'red' — the panel's `partBoxState` checks
 // `part.outcome` before `isLastLivePart`, so a still-running fix loop read
 // as "stopped" (no pulse) instead of "running". Fixture is the first 71
-// lines of the REAL archived mujjtrvd spine — sliced right after its
-// iteration-start at seq 71 and before its first exit-eval (seq 80), the
-// exact mid-run instant hamr's panel snapshot (`/tmp/.../scratchpad/live.json`)
-// captured: fixLoop already exists (the outer-close/iteration scoping picks
-// up the step's own micro-loop iteration-start, a separate finding reported
-// alongside this fix, not built here) with one open attempt.
-test('replayRun: mujjtrvd sliced mid-run (real archived spine, truncated right after its one open iteration-start) reports the open fix-loop attempt as outcome null, never a fabricated red', () => {
+// lines of the REAL archived mujjtrvd spine — sliced right after step 2
+// (`strict-clean-whole-src`, step-start seq 69)'s OWN first iteration-start
+// (seq 71, its own micro-loop's attempt 1) and before its first exit-eval
+// (seq 80), the exact mid-run instant hamr's panel snapshot
+// (`/tmp/.../scratchpad/live.json`) captured.
+//
+// F196 (found while building the above): at this instant step 2 has NOT
+// step-ended yet (its `step-end` never lands in this 71-line slice) — the
+// OLD `lastStepEndSeq` (step 1 `type-checks-jsdoc`'s step-end at seq 68)
+// left step 2's seq range wide open, so ITS OWN iteration-start at seq 71
+// leaked in as a fake fix-loop attempt (fixLoop existed with 1 open
+// attempt, plus a phantom `fix` part after step 2). Fixed at the source:
+// the fix loop may only begin once EVERY step has reached its own
+// step-end. At this same mid-run instant that now means fixLoop is null
+// and there is no `fix` part at all — step 2 itself is the last live part.
+test('replayRun: mujjtrvd sliced mid-run (real archived spine, truncated right after step 2\'s own OPEN iteration-start) reports fixLoop null — a still-running step\'s own micro-loop iteration must never leak in as a fake fix-loop attempt', () => {
   const spine = parseJsonl(new URL('./fixtures/mujjtrvd-midrun.jsonl', import.meta.url).pathname);
   const s = replayRun(spine, [], { runId: 'mujjtrvd' });
-  assert.ok(s.fixLoop, 'expected a fixLoop to exist at this mid-run instant');
-  assert.equal(s.fixLoop.attempts.length, 1);
-  const a = s.fixLoop.attempts[0];
-  assert.equal(a.verdict, null, 'precondition: no close-verdict/run-end/escalation has landed yet');
-  assert.equal(a.windowEndSeq, Infinity, 'precondition: the window is still open (serializes to null over JSON, matching the live snapshot)');
-  assert.equal(a.outcome, null, 'an open window must report outcome null, never red');
+  assert.equal(s.steps.length, 2, 'precondition: two step-starts on this slice');
+  assert.equal(s.steps[1].id, 'strict-clean-whole-src');
+  assert.equal(s.steps[1].stepEndSeq, Infinity, 'precondition: step 2 has not step-ended yet in this slice');
+  assert.equal(s.fixLoop, null, 'a still-running step must never let its own iteration-start leak in as a fake fix-loop attempt');
   const fixPart = s.parts.find((p) => p.id === 'fix');
-  assert.ok(fixPart, 'expected a fix part in s.parts');
-  assert.equal(fixPart.outcome, null, 'the fix part\'s own outcome (its last attempt) must also read null while still running, so partBoxState falls through to the isLastLivePart check instead of reading it as already stopped');
+  assert.equal(fixPart, undefined, 'no fix part should exist while step 2 is still running');
+  const lastPart = s.parts[s.parts.length - 1];
+  assert.equal(lastPart.kind, 'step', 'step 2 (still running) is the last live part, not a phantom fix box after it');
+  assert.equal(lastPart.label, 'strict-clean-whole-src');
 });
 
 // Panel build item 6 (2026-09-26): `parts` — the ONE ordered list of a run's
