@@ -2031,3 +2031,68 @@ test('pollTick: does nothing while document.hidden is true, and resumes fetching
   await Promise.resolve();
   assert.ok(calls >= 1, 'a visible tab does poll');
 });
+
+// PANEL-BUILD.md P3 visual-contract fixes (2026-09-27): the built Chat tab
+// had drifted from design/panel-mockup.html on form-control font/width and
+// on the disabled look of the primary action buttons. These assertions pin
+// the ported rules so a future edit can't silently drop them again.
+
+test('Chat tab CSS: inputs/selects inherit the page monospace font (ported verbatim from the mockup, not left at the browser UA sans default)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(
+    html,
+    /input,select\{font:inherit;padding:6px 8px;border:1px solid var\(--border-strong\);border-radius:0;background:var\(--bg\);color:var\(--text\);\}/,
+    'expected the mockup-verbatim input,select{font:inherit;...} rule'
+  );
+  assert.match(html, /input::placeholder\{color:var\(--text-faint\);\}/, 'expected the mockup-verbatim input::placeholder rule');
+});
+
+test('Chat tab CSS: .field inputs/selects are full width (mockup .field input,.field select{width:100%}), not left at the browser default half-width', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /\.field input,\.field select\{width:100%;\}/);
+});
+
+test('Chat tab CSS: #chat-msg is the ~2x-height, 2px-border text box from the mockup', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /#chat-msg\{min-height:64px;padding:8px 12px;border:2px solid var\(--border-strong\);\}/);
+});
+
+test('Chat tab markup: Sign & run, Send, Revise and Start drafting all start disabled in the served HTML (before any session/phase exists, click 1 must not be clickable)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const startTag = html.match(/<button class="btn primary" type="button" id="chat-start-btn"[^>]*>/)[0];
+  const signTag = html.match(/<button class="btn primary" type="button" id="chat-sign-btn"[^>]*>/)[0];
+  const sendTag = html.match(/<button class="btn" type="button" id="chat-send-btn"[^>]*>/)[0];
+  const reviseTag = html.match(/<button class="btn" type="button" id="chat-revise-btn"[^>]*>/)[0];
+  for (const [name, tag] of [['chat-start-btn', startTag], ['chat-sign-btn', signTag], ['chat-send-btn', sendTag], ['chat-revise-btn', reviseTag]]) {
+    assert.match(tag, /\bdisabled\b/, `expected ${name} to render disabled by default`);
+  }
+});
+
+test('Chat tab CSS: a disabled .btn.primary is visibly different from the enabled primary fill (not just opacity on the same blue), so Sign & run / Start drafting do not look clickable while disabled', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const m = html.match(/\.btn\.primary:disabled\{([^}]*)\}/);
+  assert.ok(m, 'expected a .btn.primary:disabled override rule');
+  assert.ok(!/--primary-bg/.test(m[1]), 'a disabled primary button must not keep the enabled primary-bg background token');
+  assert.match(m[1], /background:var\(--btn-bg\)/);
+  assert.match(m[1], /color:var\(--text-faint\)/);
+});
+
+test('Job card cap row: $ cap | Time cap | Token price, matching design/panel-mockup.html field order; Token price is a disabled, unwired "est." placeholder (P4), and the required Drafting $ cap is its own full-width field below the cap row, not a 4th cap-row column', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const capRowStart = html.indexOf('<div class="cap-row"');
+  const block = html.slice(capRowStart, html.indexOf('<button class="btn primary" type="button" id="chat-start-btn"'));
+  const moneyIdx = block.indexOf('jf-cap-money');
+  const timeIdx = block.indexOf('jf-cap-time');
+  const priceIdx = block.indexOf('jf-price');
+  const draftIdx = block.indexOf('jf-cap-draft');
+  assert.ok(moneyIdx !== -1 && timeIdx !== -1 && priceIdx !== -1 && draftIdx !== -1, 'expected all four cap fields present');
+  assert.ok(moneyIdx < timeIdx && timeIdx < priceIdx && priceIdx < draftIdx, 'expected order $ cap, Time cap, Token price, then Drafting $ cap');
+  const priceTag = block.match(/<input id="jf-price"[^>]*>/)[0];
+  assert.match(priceTag, /placeholder="est\."/);
+  assert.match(priceTag, /\bdisabled\b/, 'Token price is unwired in P3 — must render disabled');
+  // Token price must sit INSIDE the 3-column cap-row; Drafting $ cap must sit OUTSIDE it.
+  const capRowInner = block.slice(0, block.indexOf('jf-cap-draft'));
+  assert.match(capRowInner, /jf-price/);
+  const draftFieldTag = block.slice(block.indexOf('jf-cap-draft') - 200, block.indexOf('jf-cap-draft') + 50);
+  assert.doesNotMatch(draftFieldTag.slice(0, draftFieldTag.indexOf('jf-cap-draft')), /cap-field/, 'Drafting $ cap must not be wrapped in a .cap-field (it is its own full-width .field, not a 4th cap-row column)');
+});

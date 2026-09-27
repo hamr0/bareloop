@@ -30,6 +30,11 @@
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
   body{overflow-x:hidden;}
   button{font:inherit;cursor:pointer;}
+  /* ported verbatim from design/panel-mockup.html: browsers default form
+     controls to a UA sans font, not the page's monospace — without this,
+     inputs/selects render off-theme even though buttons already inherit it. */
+  input,select{font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);}
+  input::placeholder{color:var(--text-faint);}
   table{border-collapse:collapse;width:100%;}
   th,td{text-align:left;padding:6px 8px;border-bottom:1px dotted var(--border-strong);font-size:12px;}
   th{color:var(--text-dim);font-weight:700;background:var(--panel2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;border-bottom:1px solid var(--border-strong);}
@@ -302,6 +307,7 @@
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
+  .field input,.field select{width:100%;}
   label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
   .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
   .ro-value.scroll{max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;}
@@ -317,18 +323,25 @@
   .job-card.compact label{margin-bottom:1px;font-size:11px;}
   .job-card.compact input,
   .job-card.compact select{padding:5px 7px;}
-  .expand-field{text-overflow:ellipsis;}
+  .expand-field{text-overflow:ellipsis;transition:height 0.12s ease;}
+  .expand-field:focus{height:52px;white-space:normal;}
   .radio-row{display:flex;gap:14px;align-items:center;margin-bottom:10px;}
   .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;text-transform:none;}
   .cap-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;}
   .cap-field label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:1px;}
   .cap-field input{width:100%;padding:5px 6px;box-sizing:border-box;}
-  @media (max-width: 480px){
+  @media (max-width: 899px){
     .cap-row{grid-template-columns:1fr;}
   }
   .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700;}
   .btn.primary::before,.btn.primary::after{color:var(--primary-text);opacity:0.6;}
   .btn:disabled{opacity:0.5;cursor:not-allowed;}
+  /* a disabled .btn.primary must read as disabled, not just a dimmed version
+     of the enabled primary fill — .btn.primary's own background/color
+     (declared above, equal specificity) would otherwise win over the plain
+     .btn:disabled rule and still look clickable at 50% opacity. */
+  .btn.primary:disabled{background:var(--btn-bg);color:var(--text-faint);border-color:var(--border);}
+  .btn.primary:disabled::before,.btn.primary:disabled::after{color:var(--text-faint);opacity:0.4;}
 
   .chat-thread{display:flex;flex-direction:column;gap:10px;margin-bottom:10px;}
   .msg{padding:8px 10px;border:1px solid var(--border);max-width:100%;background:var(--panel2);font-size:13px;word-break:break-word;white-space:pre-wrap;}
@@ -340,6 +353,9 @@
   .msg .who{font-size:11px;color:var(--text-faint);margin-bottom:3px;text-transform:none;font-weight:400;}
   .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
   .chat-input-row input{width:100%;box-sizing:border-box;}
+  /* chat message box reads as an unmistakable text box: ~2x the default
+     input height, thicker 2px border (ported verbatim from the mockup). */
+  #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--border-strong);}
   .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
   .actions-row > .btn{flex:1 1 auto;}
 
@@ -441,9 +457,13 @@
                 <input id="jf-cap-time" type="text" placeholder="or blank = no wall">
               </div>
               <div class="cap-field">
-                <label for="jf-cap-draft">Drafting $ cap</label>
-                <input id="jf-cap-draft" type="text" data-testid="jf-cap-draft" placeholder="required, no default">
+                <label for="jf-price">Token price</label>
+                <input id="jf-price" type="text" placeholder="est." disabled>
               </div>
+            </div>
+            <div class="field">
+              <label for="jf-cap-draft">Drafting $ cap</label>
+              <input id="jf-cap-draft" type="text" data-testid="jf-cap-draft" placeholder="required, no default">
             </div>
             <button class="btn primary" type="button" id="chat-start-btn" data-testid="chat-start" disabled>Start drafting</button>
             <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
