@@ -2094,11 +2094,6 @@
     if(pollTimer) return;
     pollTimer = setInterval(pollTick, POLL_MS);
   }
-  function stopPolling(){
-    if(!pollTimer) return;
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
   // Pause while the tab is hidden (cheap, standard); resume — with an
   // immediate catch-up tick, forcing BOTH fetches regardless of the list's
   // 10s throttle — on return, rather than waiting a full 2s (or up to 10s

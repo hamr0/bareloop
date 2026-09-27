@@ -1678,9 +1678,9 @@ function threeStepRetryParts() {
   test(`buildStepMapSVG: retry loop stays inside its own box at width=${availWidth} (hasDrop false — a single-row layout wide enough for all 3 boxes)`, () => {
     const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
     const boxes = buildOrderedBoxes(threeStepRetryParts(), false);
-    // force a single row (no snake-drop) by giving the retry box the LAST
-    // slot in its row: swap so the retry-carrying box is index 2, then
-    // widen availWidth enough that perRow === 3 (no row change at all).
+    // force a single row (no snake-drop) by reusing the same fixture and
+    // widening availWidth enough that perRow === 3 (no row change at all,
+    // so the retry-carrying box stays at index 1 with no drop arrow).
     const svg = buildStepMapSVG(boxes, Math.max(availWidth, 1600));
     const rects = boxRects(svg);
     const box = rects[1];
