@@ -320,7 +320,7 @@
         <button role="tab" id="tab-runs" aria-controls="panel-runs" aria-selected="false" data-testid="left-tab-runs">Runs</button>
       </div>
 
-      <div class="pane-body">
+      <div class="pane-body" id="left-pane-body">
 
         <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
           <div class="chat-thread">
@@ -361,7 +361,7 @@
         <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Job</button>
       </div>
 
-      <div class="pane-body">
+      <div class="pane-body" id="right-pane-body">
 
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
           <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
@@ -667,6 +667,13 @@
       }
       body += '<text x="' + (x + boxW / 2) + '" y="' + stateY +
         '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(s.state) + '</text>';
+      // P2 (2026-09-27 ruling): a running box gets the mockup's pulsing
+      // amber dot (design/panel-mockup.html ~line 1648) — same fixed color
+      // and animation, never re-derived from the state's own stroke color.
+      if(s.state === "running"){
+        body += '<circle cx="' + (x + 20) + '" cy="' + (y + 12) + '" r="4" fill="#b8860b">' +
+          '<animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"></animate></circle>';
+      }
       var retryTry = boxRetryTry(s);
       if(retryTry){
         // dashed self-loop under the box, same proportions as the design mockup's curve,
@@ -1878,23 +1885,156 @@
 
   // ---- selection + loading ----
   var currentRunid = null;
+  // P2: guards a stale in-flight response (detail/audit/job, OR the poll
+  // loop's own run-detail refetch) from overwriting whatever run is
+  // actually selected by the time it resolves — bumped on every selectRun
+  // call, checked before any of those responses touch the DOM.
+  var selectToken = 0;
+  // P2: true while the OPEN run's own detail poll should keep firing (set
+  // from the run's own `glyph`/`died` fields, same rule `renderRun` already
+  // uses for `isLive` — never re-derived a second way).
+  var runIsLive = false;
   function selectRun(runid, rowEl, siblingSelector){
     clearSelection();
     document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
     if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
     currentRunid = runid;
     lastJobToolsList = null;
-    getJSON("/api/runs/" + encodeURIComponent(runid)).then(renderRun).catch(function(e){
+    lastRunDetailSig = null;
+    runIsLive = false;
+    var myToken = ++selectToken;
+    getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
+      if(myToken !== selectToken) return; // a different run was selected before this resolved
+      lastRunDetailSig = sig(detail);
+      runIsLive = detail.glyph === "▶" && !detail.died;
+      renderRun(detail);
+    }).catch(function(e){
+      if(myToken !== selectToken) return;
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "failed to load run: " + e.message;
       document.getElementById("run-content").hidden = true;
     });
-    getJSON("/api/runs/" + encodeURIComponent(runid) + "/audit").then(renderAudit).catch(function(){ renderAudit(null); });
-    getJSON("/api/runs/" + encodeURIComponent(runid) + "/job").then(renderJob).catch(function(){ renderJob(null); });
+    getJSON("/api/runs/" + encodeURIComponent(runid) + "/audit").then(function(result){
+      if(myToken !== selectToken) return;
+      renderAudit(result);
+    }).catch(function(){ if(myToken === selectToken) renderAudit(null); });
+    getJSON("/api/runs/" + encodeURIComponent(runid) + "/job").then(function(job){
+      if(myToken !== selectToken) return;
+      renderJob(job);
+    }).catch(function(){ if(myToken === selectToken) renderJob(null); });
   }
+
+  // Q2 (2026-09-27 ruling): the Audit tab does NOT live-refresh on the 2s
+  // poll — it re-fetches only when the person opens/switches to it.
+  document.getElementById("tab-audit").addEventListener("click", function(){
+    if(!currentRunid) return;
+    var myToken = selectToken;
+    getJSON("/api/runs/" + encodeURIComponent(currentRunid) + "/audit").then(function(result){
+      if(myToken !== selectToken) return;
+      renderAudit(result);
+    }).catch(function(){});
+  });
+
+  // ---- P2: live polling — ONE owner for both the left Runs list and the
+  // open live run's map/cards/counters/summary (hamr's ruling, 2026-09-27:
+  // 2s interval, list refreshes every tick regardless of what's open (Q1=A),
+  // the open run's own detail refetch stops once it is no longer live, the
+  // Audit tab is wired separately above and never joins this loop). A
+  // single `setInterval` drives both fetches — never two independent
+  // timers that could race each other. ----
+  var POLL_MS = 2000;
+  var pollTimer = null;
+  var lastRunsSig = null;
+  var lastRunDetailSig = null;
+  var pollFailStreak = 0;
+
+  function sig(obj){
+    try { return JSON.stringify(obj); } catch(e){ return null; }
+  }
+
+  // Saves/restores scrollTop of the given element ids around a re-render —
+  // both `.pane-body` scroll containers keep their offset across a poll-
+  // driven rebuild instead of snapping back to the top.
+  function withScrollPreserved(ids, fn){
+    var saved = ids.map(function(id){
+      var el = document.getElementById(id);
+      return el ? el.scrollTop : null;
+    });
+    fn();
+    ids.forEach(function(id, i){
+      if(saved[i] === null) return;
+      var el = document.getElementById(id);
+      if(el) el.scrollTop = saved[i];
+    });
+  }
+
+  function refreshRunsList(){
+    return getJSON("/api/runs").then(function(result){
+      pollFailStreak = 0;
+      var runs = result.runs || [];
+      var next = sig(runs);
+      if(next === lastRunsSig) return; // unchanged payload — never rebuild the DOM for nothing
+      lastRunsSig = next;
+      withScrollPreserved(["left-pane-body"], function(){
+        // setItems re-runs the SAME filter/search state and view mode
+        // (runsFilterFn/runsApplyFn close over runsViewMode and the filter
+        // bar's own state) — a poll tick never resets either.
+        runsFilterBar.setItems(runs);
+      });
+    }).catch(function(){
+      pollFailStreak++;
+      // Keep the last good render; a transient failure is invisible. Only a
+      // PERSISTENT failure (3+ ticks, ~6s) gets a quiet, non-alarming note —
+      // the page itself is never wiped.
+      if(pollFailStreak === 3){
+        var countEl = document.getElementById("runs-filter-count");
+        if(countEl) countEl.textContent = "runs list: fetch failing, showing last known data";
+      }
+    });
+  }
+
+  function refreshOpenRun(){
+    if(!currentRunid || !runIsLive) return Promise.resolve();
+    var runid = currentRunid;
+    var myToken = selectToken;
+    return getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
+      // stale guard: a different run was selected (or re-selected) while
+      // this request was in flight — never let it overwrite what's open now.
+      if(myToken !== selectToken || runid !== currentRunid) return;
+      var next = sig(detail);
+      var changed = next !== lastRunDetailSig;
+      lastRunDetailSig = next;
+      runIsLive = detail.glyph === "▶" && !detail.died;
+      if(changed){
+        withScrollPreserved(["right-pane-body"], function(){ renderRun(detail); });
+      }
+    }).catch(function(){ /* keep last good render; retry next tick */ });
+  }
+
+  function pollTick(){
+    if(document.hidden) return;
+    refreshRunsList();
+    refreshOpenRun();
+  }
+
+  function startPolling(){
+    if(pollTimer) return;
+    pollTimer = setInterval(pollTick, POLL_MS);
+  }
+  function stopPolling(){
+    if(!pollTimer) return;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  // Pause while the tab is hidden (cheap, standard); resume — with an
+  // immediate catch-up tick — on return, rather than waiting a full 2s.
+  document.addEventListener("visibilitychange", function(){
+    if(!document.hidden) pollTick();
+  });
 
   getJSON("/api/runs").then(function(result){
     var runs = result.runs || [];
+    lastRunsSig = sig(runs);
     runsFilterBar.setItems(runs);
     if(runs.length && !runs[0].fileMissing){
       document.getElementById("tab-runs").click();
@@ -1906,9 +2046,11 @@
       document.getElementById("tab-run").click();
       runsFilterBar.refresh();
     }
+    startPolling();
   }).catch(function(e){
     document.getElementById("wf-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
     document.getElementById("history-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
+    startPolling(); // still start — a transient initial failure shouldn't block all future polling
   });
 
   // theme toggle
