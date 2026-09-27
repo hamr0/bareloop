@@ -1591,6 +1591,8 @@ function makePollHarness(getJSONImpl) {
     var selectToken = 0;
     var lastRunsSig = null;
     var lastRunDetailSig = null;
+    var lastRunsListRefreshAt = 0;
+    var RUNS_LIST_POLL_MS = 10000;
     var pollFailStreak = 0;
     ${src}
     return {
@@ -1602,6 +1604,8 @@ function makePollHarness(getJSONImpl) {
       setRunIsLive: function(v){ runIsLive = v; },
       getRunIsLive: function(){ return runIsLive; },
       bumpSelectToken: function(){ selectToken += 1; return selectToken; },
+      setLastRunsListRefreshAt: function(v){ lastRunsListRefreshAt = v; },
+      getLastRunsListRefreshAt: function(){ return lastRunsListRefreshAt; },
     };
   `);
   const page = factory(doc, getJSONImpl, getJSONCalls, renderRunCalls, setItemsCalls);
@@ -1690,12 +1694,15 @@ test('refreshOpenRun: does nothing (no fetch) when no run is selected, or the se
 test('refreshRunsList: skips re-render (setItems) when the fetched payload is unchanged, still re-renders on a real change', async () => {
   let payload = { runs: [{ runid: 'a' }] };
   const h = makePollHarness(() => Promise.resolve(payload));
-  await h.refreshRunsList();
+  // force:true on every call here — this test is about the SIGNATURE dedup
+  // (setItems skipped on an unchanged payload), not the 10s list throttle,
+  // which has its own dedicated tests below.
+  await h.refreshRunsList(true);
   assert.equal(h.setItemsCalls.length, 1);
-  await h.refreshRunsList(); // identical payload
+  await h.refreshRunsList(true); // identical payload
   assert.equal(h.setItemsCalls.length, 1, 'an unchanged runs list must not rebuild the DOM again');
   payload = { runs: [{ runid: 'a' }, { runid: 'b' }] };
-  await h.refreshRunsList();
+  await h.refreshRunsList(true);
   assert.equal(h.setItemsCalls.length, 2, 'a real change must still re-render');
 });
 
@@ -1711,12 +1718,86 @@ test('refreshRunsList: preserves the left pane\'s scrollTop across a poll-driven
 
 test('refreshRunsList: a failing fetch keeps the last good state and only surfaces a note after 3 consecutive failures', async () => {
   const h = makePollHarness(() => Promise.reject(new Error('boom')));
-  await h.refreshRunsList();
-  await h.refreshRunsList();
+  // force:true — this test is about the failure-streak counter, not the
+  // 10s list throttle (each call here must actually reach the fetch).
+  await h.refreshRunsList(true);
+  await h.refreshRunsList(true);
   assert.equal(h.doc.getElementById('runs-filter-count').textContent, '', 'no alarming note before 3 consecutive failures');
-  await h.refreshRunsList();
+  await h.refreshRunsList(true);
   assert.match(h.doc.getElementById('runs-filter-count').textContent, /fetch failing/);
   assert.equal(h.setItemsCalls.length, 0, 'never wiped/rebuilt the list on a failed fetch');
+});
+
+// ---------------------------------------------------------------------------
+// F195 (docs/logs/FINDINGS.md) — hamr's ruling B, 2026-09-27: the Runs list
+// throttles to a 10s refresh (RUNS_LIST_POLL_MS) instead of every 2s tick;
+// the open run's own detail is unaffected. Fail-first: RUNS_LIST_POLL_MS
+// and the `force` param on `refreshRunsList`/`pollTick` do not exist on the
+// pre-throttle page — these tests red against that source.
+// ---------------------------------------------------------------------------
+
+test('refreshRunsList: a call made again immediately (well under 10s) skips the fetch entirely', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ runs: [{ runid: 'a' }] }); });
+  await h.refreshRunsList();
+  assert.equal(calls, 1);
+  await h.refreshRunsList(); // called again immediately — well under RUNS_LIST_POLL_MS
+  assert.equal(calls, 1, 'a tick inside the 10s window must not re-fetch the list at all');
+});
+
+test('refreshRunsList: fetches again once RUNS_LIST_POLL_MS has elapsed since the last real fetch', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ runs: [{ runid: 'a' }] }); });
+  await h.refreshRunsList();
+  assert.equal(calls, 1);
+  h.setLastRunsListRefreshAt(Date.now() - 10001); // simulate 10s+ having elapsed
+  await h.refreshRunsList();
+  assert.equal(calls, 2, 'once the throttle window has elapsed, the tick must fetch again');
+});
+
+test('refreshRunsList: force:true bypasses the throttle regardless of elapsed time', async () => {
+  let calls = 0;
+  const h = makePollHarness(() => { calls += 1; return Promise.resolve({ runs: [{ runid: 'a' }] }); });
+  await h.refreshRunsList();
+  await h.refreshRunsList(true); // immediately again, but forced
+  assert.equal(calls, 2, 'force:true must always reach the fetch, throttle or not');
+});
+
+test('pollTick: forces one immediate runs-list refresh the moment the open run stops being live', async () => {
+  let runsCalls = 0;
+  const h = makePollHarness((path) => {
+    if (path === '/api/runs') { runsCalls += 1; return Promise.resolve({ runs: [] }); }
+    return Promise.resolve({ glyph: '✓', died: false }); // the open run just finished
+  });
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(true);
+  await h.pollTick();
+  assert.equal(h.getRunIsLive(), false);
+  assert.equal(runsCalls, 2, 'one throttled list call at tick start, one forced call once the run ends');
+});
+
+test('pollTick: does NOT force an extra list refresh when the open run was already not live', async () => {
+  let runsCalls = 0;
+  const h = makePollHarness((path) => {
+    if (path === '/api/runs') { runsCalls += 1; return Promise.resolve({ runs: [] }); }
+    return Promise.resolve({ glyph: '✓', died: false });
+  });
+  h.setCurrentRunid('r1');
+  h.setRunIsLive(false); // already finished before this tick
+  await h.pollTick();
+  assert.equal(runsCalls, 1, 'no run-ended transition this tick — only the normal (throttled) list call');
+});
+
+test('pollTick: visibilitychange-style forced tick refreshes the list even inside the 10s window', async () => {
+  let runsCalls = 0;
+  const h = makePollHarness((path) => {
+    if (path === '/api/runs') { runsCalls += 1; return Promise.resolve({ runs: [] }); }
+    return Promise.resolve({ glyph: '▶', died: false });
+  });
+  await h.refreshRunsList(); // normal call, sets lastRunsListRefreshAt
+  assert.equal(runsCalls, 1);
+  await h.pollTick(true); // the page wires this on visibilitychange when the tab returns
+  assert.equal(runsCalls, 2, 'a forced catch-up tick must not be swallowed by the 10s throttle');
 });
 
 test('buildStepMapSVG: a running box draws the pulsing amber dot (mockup-verbatim circle+animate), a done/waiting box does not', () => {

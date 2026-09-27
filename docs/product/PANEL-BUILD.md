@@ -378,3 +378,7 @@ Signed this session (hamr), constraining P2's build:
   builder — hamr authorizes that separately. The build instead ships a $0 replay instrument
   (`scripts/replay-live.mjs`) that reconstructs a live-looking run from an already-archived
   spine, for both the visual proof and future dev use.
+- **2026-09-27, ruling B (F195 mitigation):** "refresh less often, up to 30s at most, choose
+  the lesser when possible" — Q1=A's every-2s list refresh is superseded for the list only:
+  the Runs list now polls every **10s** (`RUNS_LIST_POLL_MS`); the open run's own detail stays
+  every 2s. One immediate list refresh still fires the moment the open run stops being live.

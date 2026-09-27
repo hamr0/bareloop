@@ -1937,15 +1937,30 @@
 
   // ---- P2: live polling — ONE owner for both the left Runs list and the
   // open live run's map/cards/counters/summary (hamr's ruling, 2026-09-27:
-  // 2s interval, list refreshes every tick regardless of what's open (Q1=A),
-  // the open run's own detail refetch stops once it is no longer live, the
-  // Audit tab is wired separately above and never joins this loop). A
-  // single `setInterval` drives both fetches — never two independent
-  // timers that could race each other. ----
+  // 2s interval for the open run's own detail; the open run's own detail
+  // refetch stops once it is no longer live; the Audit tab is wired
+  // separately above and never joins this loop). A single `setInterval`
+  // drives both fetches — never two independent timers that could race
+  // each other. ----
+  //
+  // F195 (docs/logs/FINDINGS.md): /api/runs re-replays every spine on
+  // every call (~457ms CPU at 250 rows). hamr's ruling B, 2026-09-27:
+  // "refresh less often, up to 30s at most, choose the lesser when
+  // possible" — the Runs list polls every 10s (RUNS_LIST_POLL_MS) instead
+  // of every 2s tick; the open run's own detail is unaffected. The 2s
+  // `pollTick` still fires the list check every tick, but `refreshRunsList`
+  // itself skips the fetch unless RUNS_LIST_POLL_MS has elapsed since the
+  // last one — one timer, one owner, just a throttle inside it. The one
+  // exception: the instant the open run's own poll sees it stop being live
+  // (a real verdict or died), `pollTick` forces ONE immediate list refresh
+  // so that run's left-list glyph flips right away instead of waiting up
+  // to 10s.
   var POLL_MS = 2000;
+  var RUNS_LIST_POLL_MS = 10000;
   var pollTimer = null;
   var lastRunsSig = null;
   var lastRunDetailSig = null;
+  var lastRunsListRefreshAt = 0;
   var pollFailStreak = 0;
 
   function sig(obj){
@@ -1968,7 +1983,10 @@
     });
   }
 
-  function refreshRunsList(){
+  function refreshRunsList(force){
+    var now = Date.now();
+    if(!force && (now - lastRunsListRefreshAt) < RUNS_LIST_POLL_MS) return Promise.resolve();
+    lastRunsListRefreshAt = now;
     return getJSON("/api/runs").then(function(result){
       pollFailStreak = 0;
       var runs = result.runs || [];
@@ -2011,10 +2029,16 @@
     }).catch(function(){ /* keep last good render; retry next tick */ });
   }
 
-  function pollTick(){
+  function pollTick(forceList){
     if(document.hidden) return;
-    refreshRunsList();
-    refreshOpenRun();
+    refreshRunsList(forceList);
+    var wasLive = runIsLive;
+    return refreshOpenRun().then(function(){
+      // the open run just stopped being live (real verdict or died) —
+      // don't make the left-list glyph wait up to RUNS_LIST_POLL_MS to
+      // catch up; force one immediate refresh.
+      if(wasLive && !runIsLive) refreshRunsList(true);
+    });
   }
 
   function startPolling(){
@@ -2027,9 +2051,11 @@
     pollTimer = null;
   }
   // Pause while the tab is hidden (cheap, standard); resume — with an
-  // immediate catch-up tick — on return, rather than waiting a full 2s.
+  // immediate catch-up tick, forcing BOTH fetches regardless of the list's
+  // 10s throttle — on return, rather than waiting a full 2s (or up to 10s
+  // for the list).
   document.addEventListener("visibilitychange", function(){
-    if(!document.hidden) pollTick();
+    if(!document.hidden) pollTick(true);
   });
 
   getJSON("/api/runs").then(function(result){

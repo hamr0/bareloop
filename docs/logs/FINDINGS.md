@@ -13517,3 +13517,13 @@ per-row cache keyed on the spine file's mtime+size, an ETag/If-None-Match short-
 raising the poll interval, or paginating/limiting the list) are server-behavior changes beyond
 this rung's read-only-GET scope and are left for hamr's own call before this ships to
 continuous 2s polling against a large archive.
+
+**2026-09-27: mitigated by hamr's ruling B — "refresh less often, up to 30s at most, choose
+the lesser when possible."** `src/panel/index.html`'s single poll timer still ticks every 2s,
+but the Runs list itself now throttles to a 10s refresh (`RUNS_LIST_POLL_MS`); the open run's
+own detail fetch is unaffected (still every 2s, and only while live). The open run's poll
+also forces one immediate list refresh the moment it stops being live, so that row's glyph
+doesn't wait up to 10s to flip. The per-call server-side cost (`listRuns`/`summarizeRow`
+re-replaying every spine) is unchanged and still grows with archive size — this is a
+client-side polling-frequency mitigation, not a fix to the underlying cost; the server-side
+candidates above remain open.
