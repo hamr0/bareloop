@@ -382,3 +382,80 @@ Signed this session (hamr), constraining P2's build:
   the lesser when possible" — Q1=A's every-2s list refresh is superseded for the list only:
   the Runs list now polls every **10s** (`RUNS_LIST_POLL_MS`); the open run's own detail stays
   every 2s. One immediate list refresh still fires the moment the open run stops being live.
+
+## Addendum 2026-09-27 — P3 rulings and build spec
+
+Signed this session (hamr, "yes, go"), constraining P3's build (branch `feat/panel-p3`).
+Rulings: **Q1 = A** (a job card form + chat review, not chat-only); **Q2 = A** (a required
+Drafting $ cap field every time, no default); **Q3 = A** (a signed run fires as its own
+detached background process); **Q4 = A** (new jobs only this rung — the edit workflow and
+re-sign are deferred).
+
+### Flow on the page (Chat tab)
+
+1. **+ New** opens an empty job card (field order: Check type, Model, Job name, Goal, Source,
+   Destination, Success, Guardrails, Judge examples (rubric only), plus a required **Drafting
+   $ cap** field with no default — the Start button stays disabled until it is a positive
+   number).
+2. **Start drafting** runs the interview's $0 half server-side — `prepareSource`,
+   `proveDestination`, `validateJob` on the assembled draft — the same library calls
+   `bareloop interview` makes. Any refusal shows in the chat at $0.
+3. The server runs the author pipeline (`authorCloseForJob` → `assembleSpec` → `validateJob`
+   → `prepareSigning`) IN the panel process, under the drafting cap, with an HTTP-backed
+   `ask()` — the same seam `runConfirmTurn` already takes. The model's plan and its own
+   questions render as chat messages; the person answers with **Send**. Progress/cost stream
+   via the existing `onPhase`/`onCall` hooks into the chat. Closing the panel mid-draft
+   abandons the session; spend already made is recorded on disk, never lost.
+4. **Revise (N left)** is the confirm turn's `fix` pick — the chat text box's current
+   contents become the correction. Max 2 rounds (D3); the counter is derived from the
+   confirm-turn round number the library reports through `onPhase`, never a second hardcoded
+   cap.
+5. **Sign & run**, click 1, is the confirm turn's `confirm` pick — gates 1–3 ($0) and gate 4
+   (calibration, paid, rubric-only) then run, and the card shows "SIGNING PREPARED" with the
+   spec hash. Click 2, labelled `Sign <hash8> & run`, is the only route that actually signs.
+
+### Server (`src/panel/server.js` + new `src/panel/authorsession.js`)
+
+- New POST routes; every existing route stays GET-only. One authoring session live at a
+  time — a second Start is refused while one is in progress.
+- **Human-click guard:** a random token minted per server start, templated into
+  `index.html` (like the port); every POST must carry it in an `x-bareloop-token` header AND
+  pass an Origin/Host check against `127.0.0.1:<port>`. The sign route additionally requires
+  the exact `specHash` from the session's own prepared `signing.json` — a mismatch refuses.
+  No route reachable from chat/send/revise can sign; the model's own output never flows into
+  a code path that signs.
+- **Run start (Q3=A):** the sign route spawns `bareloop run-u --spec <resolved-spec.json>
+  --approve <hash>` detached (`setsid` + `systemd-inhibit`, its own log file, the panel's own
+  env — keys are never read into or sent to the page) through an injectable spawn seam, and
+  returns the runid so the page can jump to the Runs tab, where P2's live view already polls it.
+- **Keys:** read from the panel process's own env, same as the CLI (the `~/.config/
+  bareloop/.env` file loader is still P4). A missing key refuses at $0, before any spend,
+  naming only the env var (never the value).
+- The panel stays a client of the arbiter: `validateJob`, `jobSpecHash`, `checkApproval`,
+  `prepareSigning`'s gates all live in the library, called, never reimplemented.
+
+### Glyph colour + hash display (additions, "yes, go")
+
+- `[✓]` renders in the page's existing green token, `[✗]` in its existing red token — on the
+  Run tab's part cards and the chat job card, both themes; `[▶]`/`[?]`/`[·]` are unchanged
+  (colour only, never the words green/red/soft-green, per the standing wording ruling).
+- After click 1 the spec hash shows on the job card as selectable, copyable text (the full
+  hash, plus its 8-char form on the click-2 button); after the run it shows on the Job tab
+  too. The person never copies it to sign — click 2 carries it and the server re-checks it
+  against `signing.json`.
+
+### Tests
+
+Sign refused with no token / wrong Origin / wrong hash / before gates passed; no path from
+chat/send/revise to signing; drafting refused on an empty/zero/non-numeric drafting cap or a
+missing key; a fake `generate` driving draft → revise → prepared → sign → a stubbed spawn
+seam asserting the exact argv including `--approve <hash>`; the Chat tab's layout at 390px.
+
+### Exit
+
+A job authored and signed from the page alone, end to end. The one real paid run (drafting
+~$1 plus the run's own cap) fires only on hamr's own word — the builder does not fire it.
+
+### Not in P3
+
+The edit workflow and re-sign, the keys-file loader (P4), Settings (P4), LAN.
