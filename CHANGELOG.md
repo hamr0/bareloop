@@ -5,6 +5,56 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.30.0] — 2026-09-27
+
+### Added
+
+- **Panel step map draws the retry loop** — a multi-attempt step (and the post-step fix loop)
+  now renders its "try N" curve and label on the map, alongside a pulsing amber dot on the
+  live-running box (same geometry as `design/panel-mockup.html`).
+- **Runs list and open run poll live** — a single poll owner refreshes the Runs list every
+  tick and the open run's own detail while it is still live (`▶`), stopping once it dies
+  (`?`) or gets a real `✓`/`✗` verdict; polling pauses on a hidden tab and catches up on
+  return. Re-renders are skipped when the fetched payload is unchanged, and scroll position
+  is preserved across poll-driven rebuilds.
+- `scripts/replay-live.mjs` (**dev-only, not shipped** — excluded from the published
+  package) paces an archived spine into a live-looking run for panel development and
+  screenshot proof, without touching the source spine or `~/.config/bareloop`.
+
+### Changed
+
+- **Job tab field order**: Check type, Model, `$` cap / Time cap, then the rest — moved per
+  hamr's ruling.
+- Job tab no longer shows a separate Job name field; the run's own card title already
+  carries it.
+
+### Fixed
+
+- The retry loop's "try N" curve and label now stay inside their own step box at every
+  width, including narrow/mobile widths (previously could render past the box's left edge
+  at widths like 350px).
+- An open (still-running) attempt on a live run now reads `▶` everywhere — map, part cards,
+  and Audit tab — never the died `?`, which is reserved for a genuinely died attempt.
+- The `[▶]` glyph now pulses for a live run everywhere it appears (runs list rows,
+  Workflows, the run header).
+- A running step's own in-progress attempt no longer leaks into a phantom fix-loop part on
+  the map.
+- A live fix-loop attempt whose window is still open now reports its outcome as unknown
+  rather than a fabricated red, so the map correctly shows it as running (with its pulsing
+  dot) instead of prematurely stopped.
+- A live run's Audit tab and tool-call/cache summary now fall back to the during-run
+  tree/worktree gate-audit path, so tool calls are visible while a run is still in progress,
+  not only after it finishes.
+
+### Notes
+
+- F195 (open): `/api/runs` re-replays every archived spine on every call (~457ms CPU at 250
+  rows, no per-row cache). Mitigated in this release by throttling the Runs list poll to
+  10s; the root cause is still open.
+- F196 (parked): a finished bundle run's tool log can be unreadable due to a sidecar naming
+  mismatch between `spine.jsonl` and its renamed gate-audit sidecar. Not fixed in this
+  release.
+
 ## [0.29.0] — 2026-09-26
 
 ### Added
