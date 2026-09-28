@@ -44,6 +44,7 @@ import {
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
+import { tallyCalls } from '../text.js';
 
 /**
  * The job card's "Model" select — a fixed, small, source-grounded mapping
@@ -198,6 +199,13 @@ export function createSession(card, deps = {}) {
     // either way. `signRun` (src/panel/authorroutes.js) reads this figure
     // straight off `state` to pass `--draft-spent-usd` to `run-u`.
     draftSpentUsd: 0,
+    // draftSpendComplete (hamr's ruling 2026-09-28, 2nd addendum) — was the
+    // floor above EXACT? Updated alongside `draftSpentUsd` by `onCall` below,
+    // off the same `tallyCalls` read `costSoFar()` (src/authorrun.js) uses for
+    // this same pipeline's own drafting-spend line — an unpriced OR
+    // unpriced-rounds-carrying call flips this false and it never heals.
+    // `signRun` reads it to pass `--draft-spend-incomplete` to `run-u`.
+    draftSpendComplete: true,
     // the short, human step label the progress indicator shows next to its
     // animated glyph (build item 3) — updated by `onPhase` below and by this
     // file's own top-level phase transitions; never a chat bubble of its own
@@ -283,10 +291,16 @@ export function createSession(card, deps = {}) {
   const metered = [];
   const onCall = (call) => {
     metered.push({ label: call.label, costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0 });
-    const known = metered.reduce((acc, c) => acc + (c.costUsd ?? 0), 0);
-    const unpriced = metered.some((c) => c.costUsd === null);
-    state.cost = unpriced ? `≥$${known.toFixed(4)} (unpriced calls present)` : `$${known.toFixed(4)}`;
-    state.draftSpentUsd = known;
+    // hamr's ruling 2026-09-28 (2nd addendum) — the SAME `tallyCalls` reader
+    // `src/authorrun.js`'s own `costSoFar()` uses over this same call-shape
+    // list, so this session's floor/complete read can never drift from the
+    // CLI author path's: `spendComplete` is false the moment ANY call came
+    // back with a null costUsd or a nonzero unpricedRounds (F6), never just
+    // costUsd===null alone as this used to read.
+    const t = tallyCalls(metered);
+    state.cost = t.spendComplete ? `$${t.knownUsd.toFixed(4)}` : `≥$${t.knownUsd.toFixed(4)} (unpriced calls present)`;
+    state.draftSpentUsd = t.knownUsd;
+    state.draftSpendComplete = t.spendComplete;
   };
 
   const refuse = (message) => {

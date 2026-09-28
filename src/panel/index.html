@@ -1059,7 +1059,7 @@
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(r.spend) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(rowSpendText(r)) + '</span>' +
         '<span class="wf-meta">' + escapeXml(r.wall) + '</span>' +
         '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
         '</span>';
@@ -1106,7 +1106,7 @@
         lastGlyph: last.glyph || "▶",
         lastCheckType: last.checkType || "unknown",
         lastModel: last.model || null,
-        lastSpend: last.spend || "unknown",
+        lastSpend: rowSpendText(last),
         lastWall: last.wall || "unknown",
         lastDate: last.date,
       };
@@ -1522,7 +1522,78 @@
   }
 
   // ---- Run tab ----
-  function money(n){ return (n === null || n === undefined) ? "unknown" : "$" + Number(n).toFixed(4); }
+  // panelMoney — hamr's ruling 2026-09-28 ("panel money 2-decimals"): every
+  // money display in THIS page (Run tab summary/counters, Runs list rows,
+  // Audit header/part cards, Job tab, chat cost lines) renders through this
+  // ONE function — no per-site rounding. The CLI's own 4-decimal `money()`
+  // (src/replay.js) is UNCHANGED; this is the panel-only render, the
+  // browser-script sibling of `src/panel/authorroutes.js`'s own
+  // `panelMoney2` (same rule, can't share code — one runs in Node, one
+  // inlined in the page).
+  //   - null/undefined/non-finite -> "unknown" (never a fabricated $0).
+  //   - a REAL positive amount below a cent -> "<$0.01", never "$0.00" (a
+  //     tiny real cost must never read as free).
+  //   - `floor` (this is a FLOOR/"at least" figure, never exact) rounds DOWN
+  //     to 2 decimals — never overstates a floor as exact-higher.
+  //   - otherwise rounds half-up to 2 decimals (an exact zero prints
+  //     "$0.00" — nothing spent is a real number, not an unknown).
+  // Two-step rounding guards against float-representation noise on BOTH
+  // sides: dollar figures here are derived from at most 6-decimal-precision
+  // money (the same precision `src/text.js`'s `tallyCalls`/`priceOf` use),
+  // so rounding to 6 decimals first erases that noise (e.g. 0.815 really
+  // stored as 0.81499999999999995), and ONLY THEN is the value rounded/
+  // floored to cents — a value already exactly on a cent boundary (e.g.
+  // 0.82) can be stored as 81.99999999999999 cents post-multiply, and a
+  // floor there would wrongly drop a whole cent; the tiny `+1e-6` nudge (at
+  // dollar-cents scale, far below anything a real half-cent tie could be)
+  // corrects that without ever crossing a true half-cent boundary the wrong
+  // way.
+  function panelMoney(n, floor){
+    if(n === null || n === undefined) return "unknown";
+    var v = Number(n);
+    if(!isFinite(v)) return "unknown";
+    if(v > 0 && v < 0.01) return "<$0.01";
+    var clean = Math.round(v * 1e6) / 1e6;
+    var cents = floor ? Math.floor(clean * 100 + 1e-6) : Math.round(clean * 100 + 1e-6);
+    if(cents < 0) cents = 0;
+    return "$" + (cents / 100).toFixed(2);
+  }
+  /**
+   * The panel's one composed "spend (drafting) of cap" renderer — the
+   * browser-script sibling of `src/replay.js`'s own `moneyWithDraft`, same
+   * rules, 2-decimal via {@link panelMoney} instead of 4. `spendCoreFloor`
+   * marks the LEADING figure a floor (a died run's own spend-floor, OR a
+   * complete run whose drafting share is itself incomplete — hamr's ruling:
+   * a reader summing the two must never read the leading number as exact
+   * when the bracket next to it isn't). `draftSpendComplete === false` marks
+   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX".
+   */
+  function panelMoneyWithDraft(spendCoreVal, spendCoreFloor, draftSpentUsd, draftSpendComplete, budgetUsd){
+    var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
+    var draftFloor = hasDraft && draftSpendComplete === false;
+    var core = (spendCoreVal === null || spendCoreVal === undefined)
+      ? "unknown"
+      : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
+    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting)" : "";
+    var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
+    return core + draftPart + capPart;
+  }
+  /**
+   * The Runs list row / Workflows grouping's own spend text — off the
+   * numeric fields `/api/runs`' row now carries (never `r.spend`, which is
+   * the LIBRARY's own 4-decimal string kept unchanged for `--all`'s CLI
+   * listing to share; `src/panel/server.js`'s `summarizeRow` doc says why).
+   * Same floor rules as {@link panelMoneyWithDraft}/`renderRun`'s own
+   * `spendText`: a died row's spend is a floor by construction, a live row's
+   * is a floor only when its own drafting share is incomplete.
+   * @param {any} r a `/api/runs` row (or a Workflows group's `last` row)
+   */
+  function rowSpendText(r){
+    var draftIncomplete = typeof r.draftSpentUsd === "number" && r.draftSpentUsd !== null && r.draftSpendComplete === false;
+    var coreVal = r.died ? r.spendFloorUsd : r.spentUsd;
+    var coreFloor = !!r.died || draftIncomplete;
+    return panelMoneyWithDraft(coreVal, coreFloor, r.draftSpentUsd, r.draftSpendComplete);
+  }
   function duration(ms){
     if(ms === null || ms === undefined) return "unknown";
     if(ms < 0) return "unknown";
@@ -1559,7 +1630,7 @@
   function auditDecisionCellHtml(r){
     if(auditIsModelCall(r)){
       var bits = [];
-      bits.push(typeof r.costUsd === "number" ? money(r.costUsd) : "unknown");
+      bits.push(typeof r.costUsd === "number" ? panelMoney(r.costUsd) : "unknown");
       bits.push((typeof r.tokens === "number" ? r.tokens : "unknown") + " tokens");
       bits.push(duration(r.durationMs));
       return escapeXml(bits.join(" · "));
@@ -1696,13 +1767,17 @@
     // no job-end means no final totals were ever recorded) are replaced with
     // the priced-rounds/first-to-last-record FLOORS the server derived —
     // never "unknown" when a priced round actually exists.
-    var spendCore = detail.died ? (detail.spendFloorUsd === null ? "unknown" : "at least " + money(detail.spendFloorUsd)) : money(detail.spentUsd);
-    // hamr's ruling 2026-09-28 ("one cap covers drafting + run") — append the
-    // drafting share, when this run carried one; unchanged otherwise (same
-    // string this line always produced).
-    var spendText = (typeof detail.draftSpentUsd === "number" && detail.draftSpentUsd !== null)
-      ? spendCore + " (" + money(detail.draftSpentUsd) + " drafting)"
-      : spendCore;
+    // hamr's ruling 2026-09-28 ("one cap covers drafting + run", 2nd
+    // addendum) — the leading figure reads as a floor ("at least $X") on a
+    // died run OR when the drafting share itself is incomplete (a reader
+    // summing the two must never take the leading number as exact when the
+    // bracket beside it isn't); the drafting bracket reads its own floor
+    // independently. {@link panelMoneyWithDraft} is the one place that
+    // decides all of this — see its own doc.
+    var draftIncomplete = typeof detail.draftSpentUsd === "number" && detail.draftSpentUsd !== null && detail.draftSpendComplete === false;
+    var spendCoreVal = detail.died ? detail.spendFloorUsd : detail.spentUsd;
+    var spendCoreFloor = detail.died || draftIncomplete;
+    var spendText = panelMoneyWithDraft(spendCoreVal, spendCoreFloor, detail.draftSpentUsd, detail.draftSpendComplete);
     var wallText = detail.died ? (detail.wallFloorMs === null ? "unknown" : "at least " + duration(detail.wallFloorMs)) : duration(detail.wallMs);
     // item 6 (2026-09-25): "took" for a finished (job-end reached) OR died
     // run — both are OVER, so the wall figure is a completed duration, never
@@ -1712,7 +1787,7 @@
     var wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);
 
     document.getElementById("run-counters").innerHTML =
-      spendText + " of $" + (detail.budgetUsd === null ? "unknown" : Number(detail.budgetUsd).toFixed(2)) +
+      spendText + " of " + panelMoney(detail.budgetUsd) +
       " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
@@ -1763,7 +1838,7 @@
         (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
         typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
         duration(part.wallMs),
-        part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : money(part.spentUsd),
+        part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : panelMoney(part.spentUsd),
       ];
       if(resultGlyph !== null) line1Bits.push(resultGlyph);
       var card = document.createElement("div");
@@ -1931,7 +2006,7 @@
       (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
       typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
       duration(part.wallMs),
-      part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : money(part.spentUsd),
+      part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : panelMoney(part.spentUsd),
     ].join(" &middot; ");
   }
   var currentAuditFilter = "all";
@@ -2138,7 +2213,7 @@
     document.getElementById("details-source").textContent = job.source;
     document.getElementById("details-dest").textContent = job.destination;
     document.getElementById("details-tools").textContent = job.tools;
-    document.getElementById("details-cap-money").textContent = job.budgetUsd === null ? "unknown" : ("$" + Number(job.budgetUsd).toFixed(2));
+    document.getElementById("details-cap-money").textContent = panelMoney(job.budgetUsd);
     document.getElementById("details-cap-time").textContent = job.maxWallMs === null ? "unknown" : duration(job.maxWallMs);
     document.getElementById("job-note").textContent = job.note || "";
     lastJobToolsList = Array.isArray(job.toolsList) ? job.toolsList : null;

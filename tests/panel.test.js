@@ -550,6 +550,51 @@ test('/api/runs sorts by `at` (real time), never by file/append order — a back
   assert.deepEqual(runs.map((r) => r.runid), ['kimi-a-1', '429-live-1', 'deepseek-4-1'], '/api/runs must be newest-first by `at`');
 });
 
+// hamr's ruling 2026-09-28 ("panel money 2-decimals") — `/api/runs`' row
+// carries the RAW numeric fields (never just the library's own 4-decimal
+// `spend` string) so the panel page can render its own 2-decimal text.
+// `spend` itself stays exactly what it always was (`--all`'s CLI listing
+// shares this same reader — never changed here).
+test('/api/runs row: carries spentUsd/spendComplete/draftSpentUsd/draftSpendComplete/budgetUsd as real numbers/booleans alongside the unchanged spend string', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-withdraft-1.jsonl'), [{
+    type: 'job-start', job: 'withdraft', ts: '2026-09-28T09:00:00.000Z', seq: 1, verdictType: 'green', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false,
+  }, { type: 'job-end', outcome: 'green', spentUsd: 3.71, spendComplete: true, ts: '2026-09-28T09:01:00.000Z', seq: 2 }]);
+  appendRun({ at: '2026-09-28T09:00:00.000Z', runid: 'withdraft-1', job: 'withdraft', spine: join(dir, 'u-withdraft-1.jsonl'), patient: null, via: 'backfill' }, { home });
+  const { base } = await startServer(t, { home });
+  const runsRes = await fetch(base + '/api/runs');
+  const { runs } = await runsRes.json();
+  const row = runs.find((r) => r.runid === 'withdraft-1');
+  assert.ok(row);
+  assert.equal(row.spentUsd, 3.71);
+  assert.equal(row.spendComplete, true);
+  assert.equal(row.draftSpentUsd, 0.81);
+  assert.equal(row.draftSpendComplete, false);
+  assert.equal(row.budgetUsd, 5);
+  // the library's own 4-decimal `spend` string stays exactly what
+  // `summarizeForAllLine`/`--all` would print for this same job-start —
+  // never a NEW 2-decimal render (that's the panel page's own job, off the
+  // numeric fields above). This fixture's own draftSpendComplete:false
+  // correctly reads as "at least" per moneyWithDraft's own (unrelated to
+  // this task's scope-1 change) 2nd-addendum rule.
+  assert.equal(row.spend, 'at least $3.7100 (at least $0.8100 drafting)', 'the library\'s own 4-decimal money() text, unchanged in PRECISION by this build (still 4 decimals, never migrated to 2)');
+});
+
+test('/api/runs/:runid job-detail: draftSpendComplete rides beside draftSpentUsd', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-withdraft2-1.jsonl'), [{
+    type: 'job-start', job: 'withdraft2', ts: '2026-09-28T09:00:00.000Z', seq: 1, verdictType: 'green', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false,
+  }, { type: 'job-end', outcome: 'green', spentUsd: 3.71, spendComplete: true, ts: '2026-09-28T09:01:00.000Z', seq: 2 }]);
+  appendRun({ at: '2026-09-28T09:00:00.000Z', runid: 'withdraft2-1', job: 'withdraft2', spine: join(dir, 'u-withdraft2-1.jsonl'), patient: null, via: 'backfill' }, { home });
+  const { base } = await startServer(t, { home });
+  const detailRes = await fetch(`${base}/api/runs/withdraft2-1`);
+  const detail = await detailRes.json();
+  assert.equal(detail.draftSpentUsd, 0.81);
+  assert.equal(detail.draftSpendComplete, false);
+});
+
 // ---------------------------------------------------------------------------
 // /api/runs/:runid/job — resolved (bundle layout) vs honest unknown
 // ---------------------------------------------------------------------------

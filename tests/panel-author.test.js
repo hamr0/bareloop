@@ -225,7 +225,45 @@ test('signRun: a session that spent $0.81 drafting passes --draft-spent-usd 0.81
   const flagIdx = captured.args.indexOf('--draft-spent-usd');
   assert.ok(flagIdx !== -1, '--draft-spent-usd must be a literal argv element when the session spent > 0 drafting');
   assert.equal(captured.args[flagIdx + 1], '0.81');
-  assert.match(session.state.messages.at(-1).text, /drafting spent \$0\.8100/);
+  // hamr's ruling 2026-09-28 ("panel money 2-decimals") — the chat line
+  // renders through the panel's own 2-decimal `panelMoney2`, never the
+  // 4-decimal library money().
+  assert.match(session.state.messages.at(-1).text, /drafting spent \$0\.81 /);
+  assert.doesNotMatch(session.state.messages.at(-1).text, /at least/, 'a complete drafting fold must never read as a floor');
+});
+
+// hamr's ruling 2026-09-28 (2nd addendum, "drafting completeness travels
+// with draftSpentUsd") — an INCOMPLETE session floor (draftSpendComplete:
+// false) must pass --draft-spend-incomplete to run-u and read as a floor in
+// the chat line, never as an exact figure.
+test('signRun: an INCOMPLETE session floor (draftSpendComplete:false) passes --draft-spend-incomplete and reads "at least" in the chat line', () => {
+  let captured = null;
+  const spawnFn = (cmd, args, opts) => { captured = { cmd, args, opts }; return { unref: () => {} }; };
+  const outDir = tmp('panel-author-signrun-draftincomplete-');
+  const specPath = join(outDir, 'resolved-spec.json');
+  writeFileSync(specPath, '{}');
+  const session = fakeSession({
+    phase: 'prepared', specHash: 'deadbeef03', resolvedSpecPath: specPath, outDir, messages: [], draftSpentUsd: 0.81, draftSpendComplete: false,
+  });
+  const r = signRun(session, 'deadbeef03', { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs' });
+  assert.equal(r.ok, true);
+  assert.ok(captured.args.includes('--draft-spend-incomplete'), '--draft-spend-incomplete must be a literal argv element when the session\'s own floor was not exact');
+  assert.match(session.state.messages.at(-1).text, /drafting spent at least \$0\.81 /);
+});
+
+// a COMPLETE session (draftSpendComplete left at its default true) must
+// never carry the incomplete flag — the common case stays exactly as before.
+test('signRun: a complete session never passes --draft-spend-incomplete', () => {
+  let captured = null;
+  const spawnFn = (cmd, args, opts) => { captured = { cmd, args, opts }; return { unref: () => {} }; };
+  const outDir = tmp('panel-author-signrun-draftcomplete-');
+  const specPath = join(outDir, 'resolved-spec.json');
+  writeFileSync(specPath, '{}');
+  const session = fakeSession({
+    phase: 'prepared', specHash: 'deadbeef04', resolvedSpecPath: specPath, outDir, messages: [], draftSpentUsd: 0.81, draftSpendComplete: true,
+  });
+  signRun(session, 'deadbeef04', { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs' });
+  assert.ok(!captured.args.includes('--draft-spend-incomplete'));
 });
 
 test('signRun: a session with no drafting spend (0/undefined) omits --draft-spent-usd entirely — never a decorative 0', () => {

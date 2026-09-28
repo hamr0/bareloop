@@ -204,6 +204,29 @@ export function createAuthorRoutes(opts) {
 }
 
 /**
+ * The panel's OWN 2-decimal money render for a chat line — hamr's ruling
+ * 2026-09-28 (2nd addendum, panel money 2-decimals): a positive amount below
+ * a cent reads `<$0.01`, never `$0.00` (a real cost must never read as
+ * free). This is the server-side (Node, chat-text) sibling of
+ * `src/panel/index.html`'s own inline `panelMoney` — the two can't share
+ * code (one runs in the browser as inlined script, the other in Node), the
+ * same duplication `src/replay.js`'s `money()`/`index.html`'s `money()`
+ * already carry, so both apply the identical rule rather than drift.
+ * @param {number} n a non-negative dollar amount
+ * @returns {string}
+ */
+function panelMoney2(n) {
+  if (n > 0 && n < 0.01) return '<$0.01';
+  // two-step rounding (matching index.html's own panelMoney): clean to
+  // 6-decimal precision first (the same precision src/text.js's tallyCalls
+  // sums to) before rounding to cents, so a summed float landing just under
+  // an exact cent boundary is never mis-rounded.
+  const clean = Math.round(n * 1e6) / 1e6;
+  const cents = Math.round(clean * 100 + 1e-6);
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
  * THE ONLY function in this file (or anywhere in the panel) that spawns a
  * run. Refuses unless the session is `prepared` AND the hash the request
  * carried matches the session's OWN `signing.json` `specHash` exactly — the
@@ -233,11 +256,16 @@ export function signRun(session, claimedHash, o) {
   // silent difference.
   const draftSpentUsd = typeof session.state.draftSpentUsd === 'number' && session.state.draftSpentUsd > 0
     ? session.state.draftSpentUsd : null;
+  // hamr's ruling 2026-09-28 (2nd addendum) — a NEW field beside draftSpentUsd
+  // (never a value inside it): whether this session's own known floor was
+  // EXACT. Meaningless without a drafting spend, so only ever passed
+  // alongside --draft-spent-usd, matching run-u's own guard.
+  const draftIncomplete = draftSpentUsd !== null && session.state.draftSpendComplete === false;
   const args = [
     'systemd-inhibit', '--why=bareloop panel run',
     process.execPath, o.bareloopBin,
     'run-u', '--spec', session.state.resolvedSpecPath, '--approve', session.state.specHash,
-    ...(draftSpentUsd !== null ? ['--draft-spent-usd', String(draftSpentUsd)] : []),
+    ...(draftSpentUsd !== null ? ['--draft-spent-usd', String(draftSpentUsd), ...(draftIncomplete ? ['--draft-spend-incomplete'] : [])] : []),
   ];
   /** @type {number|null} */
   let logFd = null;
@@ -247,7 +275,9 @@ export function signRun(session, claimedHash, o) {
   });
   if (typeof child?.unref === 'function') child.unref();
   session.state.phase = 'signed';
-  const draftLine = draftSpentUsd !== null ? ` — drafting spent $${draftSpentUsd.toFixed(4)} (folds out of the run's own cap)` : '';
+  const draftLine = draftSpentUsd !== null
+    ? ` — drafting spent ${draftIncomplete ? 'at least ' : ''}${panelMoney2(draftSpentUsd)} (folds out of the run's own cap)`
+    : '';
   session.state.messages.push({ role: 'system', text: `signed — spec hash ${session.state.specHash}${draftLine} — run starting detached, own log at ${logFile}` });
   return { ok: true, job: session.state.resolvedSpecPath };
 }

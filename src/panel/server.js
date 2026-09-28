@@ -323,9 +323,24 @@ function summarizeRow(row) {
     model: summary.model,
     // died: never "unknown" when a priced round exists — glyph [?] already
     // carries the word "died", so the row meta text itself never repeats it.
+    // `spend` is the LIBRARY's own 4-decimal string (never changed here —
+    // `--all`'s CLI listing reads the same `summarizeForAllLine`, F: "do not
+    // change the library's CLI output"). The panel page renders its own
+    // 2-decimal text off the numeric fields below instead of this string.
     spend: death.died ? (death.spendFloorUsd !== null ? `at least $${death.spendFloorUsd.toFixed(4)}` : 'unknown') : line.spend,
     wall: death.died ? (death.wallFloorMs !== null ? `at least ${formatDurationMs(death.wallFloorMs)}` : 'unknown') : line.wall,
     date: typeof row.at === 'string' ? row.at.slice(0, 10) : null,
+    // numeric fields for the panel's own 2-decimal render (hamr's ruling
+    // 2026-09-28, "panel money 2-decimals") — `spentUsd`/`spendComplete` are
+    // `null`/`false` on a died row (no job-end, see `spendFloorUsd` instead);
+    // `draftSpentUsd`/`draftSpendComplete` are `null` when this run carried
+    // no drafting fold at all, exactly like `summary.draftSpentUsd` itself.
+    spentUsd: death.died ? null : summary.spentUsd,
+    spendComplete: death.died ? false : summary.spendComplete,
+    spendFloorUsd: death.died ? death.spendFloorUsd : null,
+    draftSpentUsd: summary.draftSpentUsd,
+    draftSpendComplete: summary.draftSpendComplete,
+    budgetUsd: summary.budgetUsd,
   };
 }
 
@@ -514,6 +529,10 @@ export function getRunDetail(runid, opts = {}) {
     // run's cap, or null when this run carried none. `src/replay.js`'s
     // `moneyWithDraft` is the one place that decides how to render it.
     draftSpentUsd: summary.draftSpentUsd,
+    // draftSpendComplete (hamr's ruling 2026-09-28, 2nd addendum) — whether
+    // the drafting share above was EXACT; `null` when there is no drafting
+    // share to qualify at all. Read by the panel's own `panelMoneyWithDraft`.
+    draftSpendComplete: summary.draftSpendComplete,
     // died: a spend floor summed from real priced rounds present in the
     // file — never null/unknown when at least one priced round exists.
     // `null` on a non-died run (the normal `spentUsd`/`wallMs` fields above

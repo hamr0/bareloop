@@ -400,6 +400,90 @@ test('item 7: cacheLine — not recorded when memoryCache is null; real numbers 
   assert.equal(cacheLine({ pointered: 7, bytesWithheld: 4865 }), '7 re-reads answered from memory · 4.8 KB not re-sent');
 });
 
+// ---------------------------------------------------------------------------
+// hamr's ruling 2026-09-28 ("panel money 2-decimals") — panelMoney is the
+// ONE money render every display in the page goes through; RED-PROVEN by
+// breaking the function (dropped the <$0.01 branch, dropped the epsilon
+// guard, swapped floor for round) and confirming each assertion below turns
+// red before restoring — see the build report for the exact breaks used.
+// ---------------------------------------------------------------------------
+
+function loadMoneyFns(html) {
+  return loadFns2(
+    html,
+    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText'],
+    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText'],
+  );
+}
+
+test('panelMoney: exact amounts round half-up to 2 decimals', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  assert.equal(panelMoney(3.71), '$3.71');
+  assert.equal(panelMoney(3.71), '$3.71', 'a 4-decimal-clean value stays exact');
+  assert.equal(panelMoney(0.815), '$0.82', 'exact half-up — 0.815 rounds UP to 0.82, not down (float-representation guarded)');
+  assert.equal(panelMoney(0), '$0.00', 'a real exact zero prints $0.00, never "unknown"');
+});
+
+test('panelMoney: a real positive amount under a cent renders "<$0.01", never "$0.00"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  assert.equal(panelMoney(0.004), '<$0.01');
+  assert.equal(panelMoney(0.0001), '<$0.01');
+  assert.equal(panelMoney(0.01), '$0.01', 'exactly a cent is never "<$0.01"');
+});
+
+test('panelMoney: floor mode rounds DOWN, never overstating a floor as exact-higher', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  assert.equal(panelMoney(0.819, true), '$0.81', 'floor 0.819 -> $0.81, never rounded up to $0.82');
+  assert.equal(panelMoney(0.82, true), '$0.82', 'a floor that lands exactly on a cent stays that cent (float-guarded, not understated)');
+});
+
+test('panelMoney: null/undefined/non-finite keeps the honest "unknown" text, never a fabricated $0', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  assert.equal(panelMoney(null), 'unknown');
+  assert.equal(panelMoney(undefined), 'unknown');
+  assert.equal(panelMoney(NaN), 'unknown');
+});
+
+test('panelMoneyWithDraft: 2-decimal composite, matching src/replay.js\'s moneyWithDraft shape but at 2 decimals', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoneyWithDraft } = loadMoneyFns(html);
+  assert.equal(panelMoneyWithDraft(3.71, false, 0.81, true, 5), '$3.71 ($0.81 drafting) of $5.00');
+  assert.equal(panelMoneyWithDraft(3.68, false, null, null, 5), '$3.68 of $5.00');
+  assert.equal(panelMoneyWithDraft(3.68, false, null, null), '$3.68', 'no drafting share, no cap -> unchanged base render');
+});
+
+test('panelMoneyWithDraft: an INCOMPLETE drafting fold reads "at least" on BOTH the bracket and the leading figure — hamr\'s ruling 2026-09-28 (2nd addendum)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoneyWithDraft } = loadMoneyFns(html);
+  assert.equal(
+    panelMoneyWithDraft(3.71, false, 0.81, false, 5),
+    'at least $3.71 (at least $0.81 drafting) of $5.00',
+  );
+});
+
+test('panelMoneyWithDraft: an already-floor leading figure (e.g. a died run\'s own spend-floor) never doubles the "at least" prefix', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoneyWithDraft } = loadMoneyFns(html);
+  assert.equal(panelMoneyWithDraft(0.018, true, null, null), 'at least $0.02');
+  assert.equal(panelMoneyWithDraft(0.018, true, 0.81, false), 'at least $0.02 (at least $0.81 drafting)');
+});
+
+test('rowSpendText: a died row reads its own spend-floor as "at least $X"; a live row with an incomplete draft reads "at least" on both parts', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { rowSpendText } = loadMoneyFns(html);
+  assert.equal(rowSpendText({ died: true, spendFloorUsd: 0.018, spentUsd: null }), 'at least $0.02');
+  assert.equal(rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: true }), '$3.71 ($0.81 drafting)');
+  assert.equal(
+    rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: false }),
+    'at least $3.71 (at least $0.81 drafting)',
+  );
+  assert.equal(rowSpendText({ died: false, spentUsd: 3.68, draftSpentUsd: null, draftSpendComplete: null }), '$3.68', 'no drafting share -> unchanged from the plain render');
+});
+
 test('item 4: desktop (min-width:900px) bounds #BareloopPanel/.main to the viewport so each pane-body scrolls internally, never the whole page', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const cssBlockMatch = html.match(/<style>[\s\S]*?<\/style>/);
@@ -1241,7 +1325,7 @@ function loadFns2(html, sourceNames, returnNames, extraSrc) {
 
 test('item 2: groupRunsByJob groups the /api/runs payload by job, newest run per job wins as "last", full per-job run list preserved', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const groupRunsByJob = loadFns(html, ['groupRunsByJob'], 'groupRunsByJob');
+  const groupRunsByJob = loadFns(html, ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'groupRunsByJob'], 'groupRunsByJob');
   const runs = [
     {
       runid: 'a2', job: 'alpha', at: '2026-09-02T00:00:00.000Z', glyph: '✓', checkType: 'deterministic', model: 'deepseek-chat', spend: '$0.60', wall: '2m00s', date: '2026-09-02',
@@ -1266,7 +1350,7 @@ test('item 2: workflow search matches a job if the query matches ANY of its runs
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { groupRunsByJob, filterWorkflows } = loadFns2(
     html,
-    ['matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
     ['groupRunsByJob', 'filterWorkflows'],
   );
   const runs = [
@@ -1294,7 +1378,7 @@ test('item 2: a ✗ result filter keeps a job whose LATEST run is ✓ but an OLD
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { groupRunsByJob, filterWorkflows } = loadFns2(
     html,
-    ['matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
     ['groupRunsByJob', 'filterWorkflows'],
   );
   const runs = [
@@ -1378,6 +1462,12 @@ function makeWorkflowsPage() {
     extractFnSource(html, 'autoExpandJob'),
     extractFnSource(html, 'representedRun'),
     extractFnSource(html, 'activeOlderRun'),
+    // panelMoney/panelMoneyWithDraft/rowSpendText (2026-09-28) — buildRunRowEl
+    // and groupRunsByJob's own `lastSpend` both now render through
+    // rowSpendText, a real dependency, pulled in verbatim rather than faked.
+    extractFnSource(html, 'panelMoney'),
+    extractFnSource(html, 'panelMoneyWithDraft'),
+    extractFnSource(html, 'rowSpendText'),
     extractFnSource(html, 'buildRunRowEl'),
     extractFnSource(html, 'renderWorkflows'),
   ].join('\n');
