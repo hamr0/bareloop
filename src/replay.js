@@ -1130,6 +1130,26 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     if (planRoundsInitialArr.length > 0) {
       const { spentUsd, unpricedRounds } = windowSpend(planRoundsInitialArr);
       const b = partBehaviour(scoutTsHi, firstTs);
+      // F: the plan part's own wall time (build item 8, 2026-09-28, run
+      // mul5fofw: a $0.28/20623-token paid call read as "0.0s"). Root cause:
+      // `scoutTsHi` is literally `planRoundsInitialArr[0].ts` — the plan
+      // round's OWN completion timestamp (every round record is stamped
+      // AFTER the call returns, never before) — so using it as plan's own
+      // START boundary measures the call against ITSELF, leaving only the
+      // few-ms gap to the next logged record (`firstTs`, the following
+      // step-start) as the "duration". Measured on mul5fofw's real spine:
+      // scout's own last round ts 11:15:00.335Z -> the plan round's ts
+      // 11:16:22.667Z is 82.3s, the plan call's real wall time; the old
+      // window (11:16:22.667Z -> 11:16:22.679Z, the step-start 12ms later)
+      // could never show anything but ~0. Fixed HERE ONLY (the reader/
+      // display side, never the seq-scoped `b`/`attempts` windows above,
+      // which were already correctly bounded and are left untouched): the
+      // wall window now runs from scout's own true end (its last round's
+      // ts, or job-start when there was no scout) to plan's own true end
+      // (its last round's ts) — never the NEXT phase's timestamps on either
+      // side, which is what made this unmeasurable by construction.
+      const scoutEndTs = scoutRoundsArr.length ? parseTs(scoutRoundsArr[scoutRoundsArr.length - 1].ts) : jobStartTs;
+      const planEndTs = parseTs(planRoundsInitialArr[planRoundsInitialArr.length - 1].ts);
       parts.push({
         id: 'plan',
         kind: 'plan',
@@ -1140,7 +1160,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         toolCalls: b ? b.totalCalls : null,
         byTool: b ? b.byTool : null,
         blocked: b ? b.denied : null,
-        wallMs: windowWallMs(scoutTsHi, firstTs),
+        wallMs: windowWallMs(scoutEndTs, planEndTs),
         spentUsd,
         unpricedRounds,
         outcome: null,

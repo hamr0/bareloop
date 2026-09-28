@@ -1106,6 +1106,52 @@ test('replayRun: parts on mu2p83go — scout/plan/step/fix in order, each part\'
   assert.equal(s.parts[3].outcome, 'green', 'the fix loop\'s last attempt is green, matching fixLoop.attempts');
 });
 
+// build item 8 (2026-09-28, panel session mul5fofw): "plan · 1 call · 0.0s ·
+// $0.28" — a real $0.28/20623-token paid call cannot take 0.0s. ROOT CAUSE
+// (measured on this exact real spine): the plan part's wallMs window used
+// to be `windowWallMs(scoutTsHi, firstTs)`, where `scoutTsHi` is literally
+// `planRoundsInitialArr[0].ts` — the plan round's OWN completion
+// timestamp — so the window started at the call's own end and measured
+// only the ~12ms gap to the next logged record (the following step-start),
+// never the call's real ~82s duration (scout's own last round 11:15:00.335Z
+// -> the plan round's own ts 11:16:22.667Z). Fixed by anchoring the window
+// to scout's own true end (its last round's ts) and plan's own true end
+// (its last round's ts) instead.
+test('RED->GREEN (build item 8): a minimal synthetic spine reproducing mul5fofw\'s exact shape — one scout round, one plan round, a step-start 12ms later — gives the plan part its real ~82s wall time, never 0', () => {
+  const spine = [
+    { type: 'job-start', job: 'x', ts: '2026-09-28T11:14:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'worker-round', phase: 'scout', costUsd: 0.1, tokens: 100, seq: 2, ts: '2026-09-28T11:15:00.335Z' },
+    // the plan round's OWN ts is stamped at completion — 82332ms after
+    // scout's last round, itself the REAL duration of this paid call.
+    { type: 'worker-round', phase: 'plan', costUsd: 0.28259700000000004, tokens: 20623, seq: 3, ts: '2026-09-28T11:16:22.667Z' },
+    // the next logged record follows within milliseconds — the OLD bug used
+    // this gap (not the call's own real duration) as "the" plan wall time.
+    { type: 'step-start', step: 'strict-type-checks-js', rounds: 14, tools: [], seq: 4, ts: '2026-09-28T11:16:22.679Z' },
+  ];
+  const s = replayRun(spine, [], { runId: 'synthetic-mul5fofw-shape' });
+  const plan = s.parts.find((p) => p.kind === 'plan');
+  assert.ok(plan, 'expected a plan part');
+  assert.equal(plan.rounds, 1);
+  assert.equal(plan.wallMs, 82332, `expected the real 82332ms call duration, got ${plan.wallMs}`);
+});
+
+const MUL5FOFW_SPINE = '/home/hamr/.config/bareloop/panel-sessions/smul3ar4uzs8j/source-seed/pulselog-panel-strict-bareloop/u-mul5fofw.jsonl';
+test(
+  'replayRun: parts on the real archived run mul5fofw — the plan part\'s wallMs is the real ~82.3s the paid call took, never 0',
+  { skip: !existsSync(MUL5FOFW_SPINE) && 'real fixture not present on this machine' },
+  () => {
+    const spine = parseJsonl(MUL5FOFW_SPINE);
+    const s = replayRun(spine, [], { runId: 'mul5fofw' });
+    const plan = s.parts.find((p) => p.kind === 'plan');
+    assert.ok(plan, 'expected a plan part on this run');
+    assert.equal(plan.rounds, 1, 'precondition: exactly one plan round on this real run');
+    assert.ok(Math.abs(plan.spentUsd - 0.28259700000000004) < 1e-9, 'precondition: the real $0.28 cost');
+    // scout's own last worker-round ts (11:15:00.335Z) -> the plan round's
+    // own ts (11:16:22.667Z) = 82332ms, verified directly against the spine.
+    assert.equal(plan.wallMs, 82332, `expected the real ~82.3s call duration, got ${plan.wallMs}ms`);
+  },
+);
+
 test('replayRun: parts on bareagent-u-bareloop/u-mshcpdg4 — a real replan between two steps gets its own box, and a step id re-running after a replan gets occurrence 2 (numbered separately from occurrence 1)', { skip: !existsSync(join(BAREAGENT_U, 'u-mshcpdg4.jsonl')) && 'real fixture not present on this machine' }, () => {
   const spine = parseJsonl(join(BAREAGENT_U, 'u-mshcpdg4.jsonl'));
   const s = replayRun(spine, [], { runId: 'mshcpdg4' });
