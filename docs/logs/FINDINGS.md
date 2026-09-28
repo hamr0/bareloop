@@ -13602,7 +13602,7 @@ already enforces. The panel (`src/panel/server.js`) only ever renders `an escala
 
 **Test:** `tests/planrun-decl.test.js` — "F197/mul5fofw: an ESCALATED run's exhaustion
 options never advertise --resume — escalated is a graded red, not a checkpoint" — reuses the
-`makeCountPatient`/`countJob` fixture already built for F195 ("the exact shape mul5fofw's fix
+`makeCountPatient`/`countJob` fixture already built for F198 ("the exact shape mul5fofw's fix
 loop graded blind"), drives the same flat/improved/flat/flat strike-out to `escalated`, and
 asserts the escalation's options never match `--resume` and do state plainly that the run
 cannot be resumed. Verified red against the pre-fix `fixGovernor.terminal()` and green after.
@@ -13864,7 +13864,3 @@ under the Model field before drafting, never returning key material.
 
 **Status: fixed.** `src/panel/server.js`, `src/panel/index.html`, `src/providers.js`
 (5410aa3).
-
----
-_2026-09-28: F198-F204 logged from the panel P3 live test (session mul5fofw / mulbz0ny).
-docs/index.md is generated tooling and needs no hand edit for this entry._
