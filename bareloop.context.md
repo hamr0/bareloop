@@ -1604,7 +1604,10 @@ greens harmed — all three historical fix-loop greens converted in ≤ 2 verdic
 case caught, dead flat at 2 errors for 7 verdicts until the wall). It now stops on the same
 2-strike no-progress rule, read off a DIFFERENT signal: the close's own graded numbers, **per
 stage** (`src/trend.js`). A stage's series is the first number on the first red-marked line of
-its output, compared only against that stage's own BEST so far (never last-only, the same
+its output (for a DECLARED close the structured `{stage, value}` its verdict already carries —
+`closeGrade`, F198 — never a re-parse of the gap prose, which reads every declared grade as
+uncomparable; a command close, and a worker-crash's synthetic gap, still read the text),
+compared only against that stage's own BEST so far (never last-only, the same
 oscillator reason the ladder keeps a seen-set); reaching a LATER stage than ever before is
 progress too, since a staged close is first-red-wins. Two consecutive comparable readings with
 nothing improving ends the loop, under the unchanged `cap-halt` terminal and the unchanged
@@ -1628,6 +1631,10 @@ vs `the target files are clean but M error(s) exist outside them`) donates both 
 series, and a run crossing that seam can read converging on work that only swapped which wall
 it is behind. Neither is sharpened by teaching the reader to tell prose shapes apart (the F49
 precedent); the second's root fix is a stage split in the close, which is the spec's to change.
+The fix worker's prompt also gains one facts-only line ("The close's own numbers so far, oldest
+first": checks-satisfied counts and each stage's number history, F198) — no advice, omitted when
+nothing was graded. This exhaustion terminal is `escalated`, a graded red that `--resume`
+refuses, so its options say plainly it cannot be resumed (revise the spec and rerun fresh, F197).
 The spine gains a per-iteration `ladder` record here too; every reading names its `governor`
 (`step-ladder` | `close-trend`) so two instruments under one event type can never be averaged
 into one number.
@@ -3287,7 +3294,14 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   paged, for the Audit tab's Grouped view); `GET /api/runs/:runid/job` (the signed spec's
   own fields, ONLY when a bundle-layout run's `spec.json` is reachable — a run-u run has
   none on disk, and this reads `resolved:false` with every spec-only field honestly
-  `'unknown'`, never guessed from the spine's own narrower `job-start` record). Every
+  `'unknown'`, never guessed from the spine's own narrower `job-start` record). The run
+  detail also carries `draftSpentUsd`/`draftSpendComplete` (the drafting share of the one cap,
+  `null` when none), `spendFloorUsd`/`wallFloorMs` for a died OR still-running spine (a
+  floor, never `unknown`), and — when a spec resolves — per part attempt `declaredStagesTotal`
+  and `declaredStages[{name, question}]` in DECLARED order, plus per stage `kind`/`direction`/
+  `baselineKind`/`question`: the plain-English question is derived in `src/panel/server.js`
+  (`stageQuestionText`) from the signed stage's kind/params only, `null` when no honest
+  wording exists (the client then shows the stage's own name). Every
   endpoint is GET/HEAD only (anything else — including every write verb — is `405`); a URL
   never joins a path segment into a filesystem read — a runid is looked up in the run list
   first (`RUNID_RE`, `src/panel/server.js` — accepts a `~2`-style backfill-disambiguated
@@ -3333,10 +3347,15 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   (`src/panel/authorsession.js`) that runs `prepareSource`/`detectLanguage`/`validateJob`/
   `authorCloseForJob`/`assembleSpec`/`prepareSigning` in-process, exactly the library calls
   `bareloop interview`/`bareloop author` already make — never a script's own readline loop,
-  never a reimplementation of any gate. `GET /api/author/:id` polls the session's state
+  never a reimplementation of any gate. `GET /api/author/model-check?model=<id>` is the $0 readiness probe the job card runs
+  before Start (`checkProviderReachable`, `src/providers.js` — a models-list GET only, never a
+  completion; the page sees the key's NAME and a status word, never the value). `POST
+  /api/author/:id/check-deps` is the install-gap's "Check again" (`phase:'install-needed'`:
+  the session waits on the person's own install, then re-runs `missingDependencies` on the
+  same copy — bareloop never installs). `GET /api/author/:id` polls the session's state
   (phase, chat messages, cost, `revisesLeft`, `specHash` once prepared). `POST /api/author/
-  :id/send {text}` answers whatever the confirm turn is currently asking (`worseThanBefore`/
-  `language`/a plan's own follow-up question) — refused outright when the pending ask is the
+  :id/send {text}` answers whatever the confirm turn is currently asking (the `language` pick or a plan's
+  own follow-up question — the old `worseThanBefore` ask is retired, 2026-09-28) — refused outright when the pending ask is the
   plan MENU itself (`{ok:false}`, no route from chat text to a plan decision, ever). `POST
   /api/author/:id/revise {text}` is the menu's own `fix` pick, with the chat text as the
   correction (D3: max 2 rounds, `revisesLeft` derived from the confirm turn's own round
@@ -3345,7 +3364,9 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   NEVER signs. `POST /api/author/:id/sign {specHash}` is the ONLY route that spawns a run —
   it refuses unless `phase==='prepared'` and the posted hash matches the session's own
   `signing.json` `specHash` exactly, then spawns `setsid systemd-inhibit … node bin/
-  bareloop.mjs run-u --spec <resolved-spec.json> --approve <hash>` detached (array argv,
+  bareloop.mjs run-u --spec <resolved-spec.json> --approve <hash>` (plus `--draft-spent-usd <n>`
+  [`--draft-spend-incomplete`] when the session's drafting spend is > 0 — one cap covers
+  drafting + run) detached (array argv,
   never a shell string), with its own log file inside the session's own dir, and the
   server's own environment (a key is never read into or sent to the page — a missing one
   refuses the session at $0, naming only the env var). `src/panel/authorsession.js` takes
