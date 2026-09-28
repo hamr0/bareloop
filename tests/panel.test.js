@@ -2061,9 +2061,11 @@ test('build item 1: a bundle-layout spec.json\'s closeDecl attaches kind/directi
   const fixPart = detail.parts.find((p) => p.kind === 'fix');
   assert.ok(fixPart, 'a post-step outer-close builds a "fix" part');
   const stages = fixPart.attempts[0].stages;
-  assert.deepEqual(stages[0], { name: 'changed-from-seed', verdict: 'satisfied', kind: 'files-changed', direction: null, baselineKind: null });
+  assert.deepEqual(stages[0], {
+    name: 'changed-from-seed', verdict: 'satisfied', kind: 'files-changed', direction: null, baselineKind: null, question: 'did it change any file?',
+  });
   assert.deepEqual(stages[1], {
-    name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, kind: 'count-not-worse', direction: 'lower-is-better', baselineKind: 0,
+    name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, kind: 'count-not-worse', direction: 'lower-is-better', baselineKind: 0, question: null,
   });
 });
 
@@ -2177,4 +2179,236 @@ test('build item 1: real archived run mu2p83go (pulselog-person-live-2) — its 
   assert.equal(byName.get('tests-executed-floor').baselineKind, 'seed');
   assert.equal(byName.get('changed-from-seed').kind, 'files-changed');
   assert.equal(byName.get('suite-green').kind, 'command-exit');
+});
+
+// ---------------------------------------------------------------------------
+// plain-checks build (2026-09-28, hamr's ruling): the "checks N/M" headline
+// is WITHDRAWN ("confusing — reads like 6 failed when 5 never ran"). The
+// server now attaches a plain-English `question` per declared stage (the ONE
+// owner, `stageQuestionText`, keyed off the signed `kind`+`params`+`genre` —
+// never the model-authored stage name) and a full `declaredStages` list (in
+// declared order) onto every attempt, so the client can render stages that
+// never ran ("not run") without re-deriving any of this itself.
+// ---------------------------------------------------------------------------
+
+test('plain-checks: stageQuestionText — the mechanical guards (files-changed, pattern-absent-in-diff) get their fixed questions regardless of genre', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-guards-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'no-suppressions',
+      stages: [
+        { name: 'changed-from-seed', verdict: 'satisfied' },
+        { name: 'no-suppressions', verdict: 'needs_revision' },
+      ],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-guards-job',
+    closeDecl: {
+      genre: 'TYPES',
+      stages: [
+        { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['src/'] } },
+        { name: 'no-suppressions', kind: 'pattern-absent-in-diff', params: {} },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqguardsrun', job: 'pq-guards-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqguardsrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  const byName = new Map(fixPart.attempts[0].stages.map((s) => [s.name, s]));
+  assert.equal(byName.get('changed-from-seed').question, 'did it change any file?');
+  assert.equal(byName.get('no-suppressions').question, 'no casts or silencers added?');
+});
+
+test('plain-checks: stageQuestionText — count-not-worse\'s three TYPES-genre shapes (in-scope-zero, outside-scope-ceiling, tests-kept-floor) and command-exit\'s suite question', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-shapes-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'typecheck-target-zero-errors',
+      stages: [
+        { name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 4, baseline: 0 },
+      ],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-shapes-job',
+    closeDecl: {
+      genre: 'TYPES',
+      stages: [
+        {
+          name: 'typecheck-target-zero-errors',
+          kind: 'count-not-worse',
+          params: { direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['src/checks.js'] } },
+        },
+        {
+          name: 'typecheck-target-multi',
+          kind: 'count-not-worse',
+          params: { direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['src/checks.js', 'src/other.js'] } },
+        },
+        {
+          name: 'typecheck-outside-not-worse',
+          kind: 'count-not-worse',
+          params: { direction: 'lower-is-better', baseline: 'seed', scope: { excludePrefixes: ['src/checks.js'] } },
+        },
+        {
+          name: 'tests-kept',
+          kind: 'count-not-worse',
+          params: { direction: 'higher-is-better', baseline: 'seed' },
+        },
+        { name: 'suite-green', kind: 'command-exit', params: { cmd: 'npm', args: ['test'], expectExit: 0 } },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqshapesrun', job: 'pq-shapes-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqshapesrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  const declaredByName = new Map(fixPart.attempts[0].declaredStages.map((s) => [s.name, s.question]));
+  assert.equal(declaredByName.get('typecheck-target-zero-errors'), 'src/checks.js has 0 type errors?', 'a single includePrefixes entry is quoted verbatim as the target file');
+  assert.equal(declaredByName.get('typecheck-target-multi'), 'type errors is 0?', 'more than one scoped file falls back to the generic zero-goal wording, never a guessed filename');
+  assert.equal(declaredByName.get('typecheck-outside-not-worse'), "other files didn't get more type errors?");
+  assert.equal(declaredByName.get('tests-kept'), 'did all the old tests still exist?');
+  assert.equal(declaredByName.get('suite-green'), 'does the test suite pass?');
+});
+
+test('plain-checks: stageQuestionText returns null (caller falls back to the stage\'s own name) for an unrecognised genre, a locked kind, and a count-not-worse shape none of the three TYPES rules cover', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-null-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'weird-outside-in-scope',
+      stages: [{ name: 'weird-outside-in-scope', verdict: 'needs_revision' }],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-null-job',
+    closeDecl: {
+      // no genre at all -> the "type errors" wording has no honest source
+      stages: [
+        {
+          name: 'no-genre-in-scope', kind: 'count-not-worse', params: { direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['src/checks.js'] } },
+        },
+        { name: 'a-human-stage', kind: 'human-confirms', params: {} },
+        {
+          name: 'weird-outside-in-scope', kind: 'count-not-worse', params: { direction: 'lower-is-better', baseline: 'seed', scope: { includePrefixes: ['src/checks.js'] } },
+        },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqnullrun', job: 'pq-null-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqnullrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  const declaredByName = new Map(fixPart.attempts[0].declaredStages.map((s) => [s.name, s.question]));
+  assert.equal(declaredByName.get('no-genre-in-scope'), null, 'no genre resolved -> no "type errors" wording to fill in with, never a guess');
+  assert.equal(declaredByName.get('a-human-stage'), null, 'human-confirms has no plain-question mapping (never offered by the TYPES genre today)');
+  assert.equal(declaredByName.get('weird-outside-in-scope'), null, 'lower-is-better + seed baseline with includePrefixes (not excludePrefixes) matches none of the three declared shapes');
+});
+
+test('plain-checks: declaredStages travels in DECLARED order and is omitted when no spec resolves', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-order-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    // first-red-wins: only the first of 3 declared stages ran
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'stage-a',
+      stages: [{ name: 'stage-a', verdict: 'needs_revision' }],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-order-job',
+    closeDecl: {
+      genre: 'TYPES',
+      stages: [
+        { name: 'stage-a', kind: 'files-changed', params: { requireNonEmpty: true } },
+        { name: 'stage-b', kind: 'pattern-absent-in-diff', params: {} },
+        { name: 'stage-c', kind: 'command-exit', params: { cmd: 'npm', args: ['test'], expectExit: 0 } },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqorderrun', job: 'pq-order-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqorderrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.deepEqual(fixPart.attempts[0].declaredStages, [
+    { name: 'stage-a', question: 'did it change any file?' },
+    { name: 'stage-b', question: 'no casts or silencers added?' },
+    { name: 'stage-c', question: 'does the test suite pass?' },
+  ], 'full declared order, including stage-b/stage-c which never ran this attempt');
+  assert.equal(fixPart.attempts[0].stages.length, 1, 'only stage-a actually ran (first-red-wins)');
+});
+
+test('plain-checks: no resolvable spec -> declaredStages is omitted entirely (never a fabricated list)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-nospec-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close', verdict: 'needs_revision', stage: 'some-stage', stages: [{ name: 'some-stage', verdict: 'needs_revision' }], ts: '2026-09-05T00:00:03.000Z', seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqnospecrun', job: 'pq-nospec-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqnospecrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.equal(fixPart.attempts[0].declaredStages, undefined);
+  assert.equal(fixPart.attempts[0].declaredStagesTotal, undefined);
 });

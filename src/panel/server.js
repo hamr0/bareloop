@@ -1226,25 +1226,99 @@ function resolveSpecForRow(row) {
 }
 
 /**
- * Per-stage `{kind, direction, baselineKind}`, keyed by stage NAME, off a
- * resolved spec's own signed `closeDecl.stages` — the facts the client needs
- * to pick §3a's wording (down-to-a-goal / up-out-of-a-total / not-worse-
- * than-a-baseline / pass-fail-only), never guessed from the runtime number
- * alone: a `lower-is-better` stage whose SEED happened to measure 0 is
- * numerically indistinguishable from a `baseline: 0` declared goal, so the
- * declared baseline KIND (`'seed'` vs the literal `0`) has to travel
- * separately from the measured number. Only `count-not-worse` stages ever
- * carry `direction`/`baselineKind` (src/kinds.js: every other kind's
- * `StageResult` defaults `value`/`baseline` to `null`, so no other kind ever
- * has a number for these fields to qualify) — every other kind's entry
- * carries `kind` alone. `null` when the spec has no `closeDecl.stages` array
- * at all (a command-close spec, or no spec resolved).
+ * THE PLAIN-QUESTION OWNER (plain-checks build, 2026-09-28, hamr's ruling:
+ * the "checks N/M" headline is WITHDRAWN — "confusing, reads like 6 failed
+ * when 5 never ran"). ONE pure function mapping a declared stage's own
+ * signed `kind`+`params` (plus the close's own `genre`, also a signed field)
+ * to a short plain-English question a person can read without knowing the
+ * catalogue — never a second spelling on the client, and never anything the
+ * model authored (the catalogue's kinds/params are the whole vocabulary this
+ * reads).
+ *
+ * Every branch is traced straight off `src/kinds.js`'s runner semantics and
+ * the TYPES genre template (`src/authoring.js` `TYPES_GENRE_TEMPLATE`,
+ * `classGuards`'s `MECHANICAL_GUARDS`) — never guessed:
+ *   - `files-changed` is always the `changed-from-seed` guard: "did it
+ *     change any file?"
+ *   - `pattern-absent-in-diff` is always the `no-suppressions` guard: "no
+ *     casts or silencers added?"
+ *   - `command-exit` is the genre's `suite-green` stage (the only shipped use
+ *     of this kind): "does the test suite pass?"
+ *   - `count-not-worse` splits three ways on its own declared
+ *     `direction`/`baseline` (never the runtime number — see
+ *     {@link stageKindMetaFromSpec}'s own doc for why the baseline KIND must
+ *     travel separately from the measured figure):
+ *       - `higher-is-better` + `baseline: 'seed'` is the genre's `tests-kept`
+ *         floor: "did all the old tests still exist?"
+ *       - `lower-is-better` + `baseline: 0` is the genre's in-scope
+ *         `typecheck` stage. When the declared `scope.includePrefixes` names
+ *         exactly ONE path, that path is quoted verbatim (a signed param,
+ *         never invented): "<path> has 0 type errors?" — otherwise the
+ *         generic "type errors is 0?", never a guessed filename.
+ *       - `lower-is-better` + `baseline: 'seed'` with a non-empty
+ *         `scope.excludePrefixes` is the genre's `typecheck-outside` ceiling:
+ *         "other files didn't get more type errors?"
+ * The "type errors" wording is genre-owned (`GENRE_WHAT`), because TYPES is
+ * the only genre this catalogue admits today (doc-genre kinds are not yet
+ * built) — an unrecognised genre, or a `count-not-worse` shape none of the
+ * three above matches, returns `null` rather than invent a fourth shape.
+ *
+ * `null` means "no honest plain question" — the caller (buildAttemptsList,
+ * partLine1Text's `attemptChecksLine`) falls back to the stage's OWN name,
+ * exactly as it already does for a stage with no resolvable kind at all.
+ * @param {{kind: string|null, params: any, genre: string|null}} o
+ * @returns {string|null}
+ */
+const GENRE_WHAT = Object.freeze({ TYPES: 'type errors' });
+
+function stageQuestionText({ kind, params, genre }) {
+  if (kind === 'files-changed') return 'did it change any file?';
+  if (kind === 'pattern-absent-in-diff') return 'no casts or silencers added?';
+  if (kind === 'command-exit') return 'does the test suite pass?';
+  if (kind !== 'count-not-worse' || !params || typeof params !== 'object') return null;
+  const what = Object.hasOwn(GENRE_WHAT, String(genre)) ? GENRE_WHAT[String(genre)] : null;
+  if (params.direction === 'higher-is-better' && params.baseline === 'seed') {
+    return 'did all the old tests still exist?';
+  }
+  if (!what) return null;
+  const scope = params.scope && typeof params.scope === 'object' ? params.scope : null;
+  if (params.direction === 'lower-is-better' && params.baseline === 0) {
+    const include = scope && Array.isArray(scope.includePrefixes) ? scope.includePrefixes : null;
+    if (include && include.length === 1 && typeof include[0] === 'string' && include[0].length > 0) {
+      return `${include[0]} has 0 ${what}?`;
+    }
+    return `${what} is 0?`;
+  }
+  if (params.direction === 'lower-is-better' && params.baseline === 'seed') {
+    const exclude = scope && Array.isArray(scope.excludePrefixes) ? scope.excludePrefixes : null;
+    if (exclude && exclude.length > 0) return `other files didn't get more ${what}?`;
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Per-stage `{kind, direction, baselineKind, question}`, keyed by stage NAME,
+ * off a resolved spec's own signed `closeDecl.stages` — the facts the client
+ * needs to pick §3a's numeric wording (down-to-a-goal / up-out-of-a-total /
+ * not-worse-than-a-baseline / pass-fail-only) AND the plain-checks build's
+ * own question text ({@link stageQuestionText}), never guessed from the
+ * runtime number or the stage's model-authored name alone: a `lower-is-better`
+ * stage whose SEED happened to measure 0 is numerically indistinguishable
+ * from a `baseline: 0` declared goal, so the declared baseline KIND (`'seed'`
+ * vs the literal `0`) has to travel separately from the measured number.
+ * Iteration order is `spec.closeDecl.stages`' own DECLARED order (a `Map`
+ * preserves insertion order) — the plain-checks build's client reads this
+ * same order for a stage's `#N` position and for which declared stages never
+ * ran. `null` when the spec has no `closeDecl.stages` array at all (a
+ * command-close spec, or no spec resolved).
  * @param {any} spec
- * @returns {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null}>|null}
+ * @returns {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>|null}
  */
 function stageKindMetaFromSpec(spec) {
   if (!spec || typeof spec !== 'object' || !spec.closeDecl || !Array.isArray(spec.closeDecl.stages)) return null;
-  /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null}>} */
+  const genre = typeof spec.closeDecl.genre === 'string' ? spec.closeDecl.genre : null;
+  /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>} */
   const map = new Map();
   for (const s of spec.closeDecl.stages) {
     if (!s || typeof s.name !== 'string' || s.name.length === 0) continue;
@@ -1252,21 +1326,24 @@ function stageKindMetaFromSpec(spec) {
     const params = s.params && typeof s.params === 'object' ? s.params : null;
     const direction = params && typeof params.direction === 'string' ? params.direction : null;
     const baselineKind = params && (params.baseline === 'seed' || params.baseline === 0) ? params.baseline : null;
-    map.set(s.name, { kind, direction, baselineKind });
+    const question = stageQuestionText({ kind, params, genre });
+    map.set(s.name, {
+      kind, direction, baselineKind, question,
+    });
   }
   return map;
 }
 
 /**
- * Attaches one stage's `{kind, direction, baselineKind}` (from {@link
- * stageKindMetaFromSpec}'s map) onto its already-recorded runtime shape
- * (`{name, verdict, value?, baseline?, …}`, straight off the spine) — a
- * shallow copy, never a mutation of the spine-derived object, and only when
+ * Attaches one stage's `{kind, direction, baselineKind, question}` (from
+ * {@link stageKindMetaFromSpec}'s map) onto its already-recorded runtime
+ * shape (`{name, verdict, value?, baseline?, …}`, straight off the spine) —
+ * a shallow copy, never a mutation of the spine-derived object, and only when
  * BOTH a name and a matching declaration entry exist; otherwise the stage
- * passes through unchanged (the client's existing spec-verbatim fallback
- * still renders for it).
+ * passes through unchanged (the client's existing name fallback still
+ * renders for it).
  * @param {any} stage
- * @param {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null}>|null} kindMeta
+ * @param {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>|null} kindMeta
  * @returns {any}
  */
 function attachStageKind(stage, kindMeta) {
@@ -1274,7 +1351,7 @@ function attachStageKind(stage, kindMeta) {
   const meta = kindMeta.get(stage.name);
   if (!meta) return stage;
   return {
-    ...stage, kind: meta.kind, direction: meta.direction, baselineKind: meta.baselineKind,
+    ...stage, kind: meta.kind, direction: meta.direction, baselineKind: meta.baselineKind, question: meta.question,
   };
 }
 
@@ -1289,13 +1366,25 @@ function attachStageKind(stage, kindMeta) {
  * 2026-09-28): `kindMeta.size` — the number of stages the signed
  * `closeDecl` DECLARED, never `stages.length` (the number that RAN). First-
  * red-wins means an attempt that stopped early carries a `stages` array
- * shorter than the declaration; the client's `checksSummary`/`checksHeadline`
- * read this field for the "N/M" total (M) so an unrun stage still counts in
- * the total exactly once, computed here and never re-derived client-side —
- * "checks 1/2" on a 7-stage close (hamr's live catch) was this exact bug.
- * `null` (omitted, so the client falls back to `stages.length`) whenever
- * `kindMeta` is `null` — no spec resolved, or the spec carries no
- * `closeDecl.stages` at all.
+ * shorter than the declaration; the client reads this field for the total
+ * count so an unrun stage still counts in the total exactly once, computed
+ * here and never re-derived client-side — "checks 1/2" on a 7-stage close
+ * (hamr's live catch) was this exact bug.
+ *
+ * `declaredStages` (plain-checks build, 2026-09-28): every declared stage's
+ * `{name, question}`, in DECLARED order — `Array.from(kindMeta)` walks a
+ * `Map`'s own insertion order, which is `spec.closeDecl.stages`' order. The
+ * client zips this against the attempt's own (shorter, when first-red-wins
+ * stopped it early) `stages` array BY NAME to render every declared stage in
+ * the expanded view, including ones that never ran ("· not run") — never by
+ * POSITION, because a stage's declared index is exactly what `#N` in the
+ * headline/expanded view already means, and a name lookup is robust to any
+ * future reordering between the resolved spec and the executed close.
+ *
+ * Both fields are `null`/omitted whenever `kindMeta` is `null` — no spec
+ * resolved, or the spec carries no `closeDecl.stages` at all — so the client
+ * falls back to `stages.length` and renders only the stages that ran, exactly
+ * as before this build.
  * @param {any[]|null|undefined} parts
  * @param {Map<string, any>|null} kindMeta
  * @returns {any[]|null|undefined}
@@ -1303,12 +1392,16 @@ function attachStageKind(stage, kindMeta) {
 function enrichPartsWithStageKind(parts, kindMeta) {
   if (!Array.isArray(parts)) return parts;
   const declaredStagesTotal = kindMeta ? kindMeta.size : null;
+  const declaredStages = kindMeta
+    ? Array.from(kindMeta, ([name, meta]) => ({ name, question: meta.question }))
+    : null;
   return parts.map((part) => ({
     ...part,
     attempts: Array.isArray(part.attempts) ? part.attempts.map((a) => ({
       ...a,
       stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages,
       ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
+      ...(declaredStages ? { declaredStages } : {}),
     })) : part.attempts,
   }));
 }
