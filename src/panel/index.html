@@ -2456,6 +2456,17 @@
     // load and whenever the selection changes. Start stays disabled while
     // the key isn't usable; a reachability failure shows red but never
     // blocks (an endpoint can be flaky).
+    // fix (2026-09-28): a 401/403 from the reachability probe is not
+    // flakiness — it means the key itself was REJECTED by the provider.
+    // Neither blocks Start (unchanged rule); only the WORDING differs.
+    // Every other status (timeout, network error, 5xx, 429,
+    // unsupported-provider) keeps the original "may be flaky" wording.
+    function reachStatusText(status){
+      var rejectedMatch = /^HTTP (401|403)$/.exec(status);
+      return rejectedMatch
+        ? "[✗] key rejected (HTTP " + rejectedMatch[1] + ")"
+        : "[✗] " + status + " — may be flaky, not blocking";
+    }
     function refreshModelStatus(){
       var modelId = modelSelect.value;
       authorGet("/api/author/model-check?model=" + encodeURIComponent(modelId)).then(function(r){
@@ -2481,7 +2492,7 @@
           reachStatusEl.textContent = "[✓] reachable" + (reach.modelListed === false ? " (model not listed)" : "");
         } else {
           reachStatusEl.className = "jf-readiness bad";
-          reachStatusEl.textContent = "[✗] " + reach.status + " — may be flaky, not blocking";
+          reachStatusEl.textContent = reachStatusText(reach.status);
         }
         refreshStartEnabled();
       }).catch(function(){

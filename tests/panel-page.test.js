@@ -2264,3 +2264,22 @@ test('build item 7 (2026-09-28): refreshModelStatus calls the model-check route 
   const callIdx = html.indexOf('refreshModelStatus();', start);
   assert.ok(start !== -1 && callIdx !== -1 && callIdx > start, 'refreshModelStatus must also be called once on load, not just on change');
 });
+
+// fix (2026-09-28): a 401/403 means the key was REJECTED, not flakiness —
+// RED-PROVEN below against the extracted, real page function.
+test('fix (2026-09-28): reachStatusText — a 401/403 reads "key rejected", never "may be flaky"; every other status keeps "may be flaky, not blocking"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const reachStatusText = extractFn(html, 'reachStatusText');
+  assert.equal(reachStatusText('HTTP 401'), '[✗] key rejected (HTTP 401)');
+  assert.equal(reachStatusText('HTTP 403'), '[✗] key rejected (HTTP 403)');
+  for (const status of ['timeout', 'network-error', 'HTTP 500', 'HTTP 429', 'HTTP 503', 'unsupported-provider', 'ECONNRESET']) {
+    assert.equal(reachStatusText(status), `[✗] ${status} — may be flaky, not blocking`, `${status} must keep the original "may be flaky" wording, not read as a key rejection`);
+  }
+});
+
+test('fix (2026-09-28): refreshModelStatus renders its reach text through reachStatusText, never a second hand-composed string', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'refreshModelStatus');
+  assert.match(src, /reachStatusEl\.textContent = reachStatusText\(reach\.status\)/);
+  assert.doesNotMatch(src, /may be flaky/, 'the wording must live in ONE place (reachStatusText), not be re-spelled inline here too');
+});
