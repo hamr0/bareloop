@@ -2773,16 +2773,51 @@ test('build item 3: checksSummary on an all-green declared close reads N/N with 
   assert.deepEqual(checksSummary(stages), { passed: 2, total: 2, stoppedAt: null });
 });
 
-test('build item 3: checksHeadline renders "checks N/M", or "" for a rubric/command close', () => {
+test('checks-wording build item 2: checksHeadline renders "checks N/M" alone on an all-pass close, or "" for a rubric/command close (no wording line needed — nothing failed)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const checksHeadline = loadFns(html, ['checksSummary', 'checksHeadline'], 'checksHeadline');
-  assert.equal(checksHeadline([{ name: 'a', verdict: 'satisfied' }, { name: 'b', verdict: 'needs_revision' }]), 'checks 1/2');
+  const checksHeadline = loadFns(html, ['escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline'], 'checksHeadline');
+  assert.equal(checksHeadline([{ name: 'a', verdict: 'satisfied' }, { name: 'b', verdict: 'satisfied' }]), 'checks 2/2');
   assert.equal(checksHeadline(null), '');
+});
+
+test('checks-wording build item 2: checksHeadline appends the first FAILING stage\'s own wording line, hamr\'s exact example — "checks 6/7 · typecheck-outside-not-worse 47 · limit 46"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const checksHeadline = loadFns(html, ['escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline'], 'checksHeadline');
+  const stages = [
+    { name: 'changed-from-seed', verdict: 'satisfied' },
+    { name: 'typecheck-target-zero-errors', verdict: 'satisfied', value: 0, baseline: 0, direction: 'lower-is-better', baselineKind: 0 },
+    {
+      name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed',
+    },
+    { name: 'tests-kept', verdict: 'satisfied', value: 67, baseline: 67, direction: 'higher-is-better', baselineKind: 'seed' },
+    { name: 'suite-green', verdict: 'satisfied' },
+    { name: 'suite-zero-failing-tests', verdict: 'satisfied', value: 0, baseline: 0, direction: 'lower-is-better', baselineKind: 0 },
+    { name: 'no-suppressions', verdict: 'satisfied' },
+  ];
+  assert.equal(checksHeadline(stages), 'checks 6/7 · typecheck-outside-not-worse 47 · limit 46');
+});
+
+test('checks-wording build item 2: stageNumberText — the 3 closed numeric shapes (goal / of-total / limit), and "" for a value-less (pass/fail) stage', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const stageNumberText = loadFns(html, ['stageNumberText'], 'stageNumberText');
+  assert.equal(stageNumberText({
+    value: 12, baseline: 0, direction: 'lower-is-better', baselineKind: 0,
+  }), '12 left · goal 0');
+  assert.equal(stageNumberText({
+    value: 40, baseline: 45, direction: 'higher-is-better', baselineKind: 'seed',
+  }), '40 of 45');
+  assert.equal(stageNumberText({
+    value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed',
+  }), '47 · limit 46');
+  assert.equal(stageNumberText({ verdict: 'satisfied' }), '', 'no value at all -> pass/fail, no number text');
+  assert.equal(stageNumberText({
+    value: 47, baseline: 46,
+  }), '47 (baseline 46)', 'a numeric stage with no resolvable kind/direction falls back to the spec-verbatim wording, never a guessed shape');
 });
 
 test('build item 3: partLine1Text appends the LATEST attempt\'s "checks N/M" for the fix part, never for a part with no attempts/stages', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'checksSummary', 'checksHeadline', 'partLine1Text'], 'partLine1Text');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline', 'partLine1Text'], 'partLine1Text');
   const fixPart = {
     kind: 'fix', rounds: 3, toolCalls: 4, wallMs: 1000, spentUsd: 0.1, unpricedRounds: 0,
     attempts: [

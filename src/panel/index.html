@@ -2127,12 +2127,59 @@
     }
     return { passed: passed, total: stages.length, stoppedAt: stoppedAt };
   }
-  /** the short "checks N/M" headline — "" (never shown) for a rubric/command
-   * close or an unresolved attempt (still running, no stages yet).
+  /** the short "checks N/M" headline, PLUS the first failing check's own
+   * wording line (checks-wording build item 2, 2026-09-28, hamr's ruling:
+   * "checks 6/7 · typecheck-outside-not-worse 47 · limit 46"). "" (never
+   * shown) for a rubric/command close or an unresolved attempt (still
+   * running, no stages yet). All-pass reads "checks N/N" alone.
    * @param {any[]|null|undefined} stages @returns {string} */
   function checksHeadline(stages){
     var c = checksSummary(stages);
-    return c ? ("checks " + c.passed + "/" + c.total) : "";
+    if(!c) return "";
+    if(c.passed === c.total) return "checks " + c.passed + "/" + c.total;
+    var failing = null;
+    for(var i = 0; i < stages.length; i++){
+      if(stages[i] && stages[i].verdict !== "satisfied"){ failing = stages[i]; break; }
+    }
+    return "checks " + c.passed + "/" + c.total + (failing ? " · " + stageHeadlineText(failing) : "");
+  }
+  /**
+   * §3a's closed wording table, one owner (checks-wording build spec,
+   * 2026-09-28): a numeric stage's own DECLARED `direction`/`baselineKind`
+   * (server-sent, {@link stageKindMetaFromSpec} on the panel server — the
+   * signed close declaration's own per-stage facts, never guessed from the
+   * runtime number alone) picks one of hamr's 3 shapes:
+   *   - lower-is-better toward a DECLARED-ZERO goal (`baselineKind === 0`):
+   *     "N left · goal T"
+   *   - higher-is-better (a floor): "N of total"
+   *   - lower-is-better toward a SEED-MEASURED baseline (`baselineKind ===
+   *     "seed"`): "N · limit M"
+   * Only `count-not-worse` ever carries a numeric value/baseline at all
+   * (src/kinds.js — every other kind's StageResult defaults both to null),
+   * so a value-less stage always renders "" here (pass/fail, glyph only).
+   * Every shipped kind fits one of the 3 shapes above; a stage that somehow
+   * carries a number with no resolvable direction/baselineKind (no spec
+   * resolved server-side, or an old archived run) falls back to the spec's
+   * own explicit "N (baseline M)" wording verbatim, never a 5th invented
+   * shape.
+   * @param {any} stage @returns {string}
+   */
+  function stageNumberText(stage){
+    var hasValue = typeof stage.value === "number";
+    var hasBaseline = typeof stage.baseline === "number";
+    if(!hasValue) return "";
+    if(stage.direction === "higher-is-better" && hasBaseline) return stage.value + " of " + stage.baseline;
+    if(stage.direction === "lower-is-better" && stage.baselineKind === 0 && hasBaseline) return stage.value + " left · goal " + stage.baseline;
+    if(stage.direction === "lower-is-better" && stage.baselineKind === "seed" && hasBaseline) return stage.value + " · limit " + stage.baseline;
+    return hasBaseline ? (stage.value + " (baseline " + stage.baseline + ")") : String(stage.value);
+  }
+  /** one stage's headline-line text — "name numberText", no colon, no mark
+   * (used only inline after "checks N/M · …", the mark being implied by
+   * "N/M" already saying it failed).
+   * @param {any} stage @returns {string} */
+  function stageHeadlineText(stage){
+    var numberText = stageNumberText(stage);
+    return escapeXml(stage.name || "unknown") + (numberText ? " " + numberText : "");
   }
   /**
    * §3a — one stage's expand-view line. The wording table (down-to-a-goal /
