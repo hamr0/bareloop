@@ -2732,110 +2732,110 @@ test('build item 4: BOTH call sites (Run-tab cards and Audit Grouped headers) no
 });
 
 // ---------------------------------------------------------------------------
-// build item 3/3a (2026-09-28, hamr: "goal on deterministic should say x out
-// of y on cards, audit headers"). `checksSummary`/`checksHeadline` derive
-// "checks N/M" (passed stages over stages DECLARED, first-red-wins) from a
-// declared close's own `stages` list, the SAME shape src/declaredclose.js's
-// runDeclaredStages already attaches to every close-verdict/outer-close
-// record and src/replay.js already carries through to each fix-loop attempt
-// (including the opening outer-close grade as attempt 1). A rubric/command
-// close carries no such list — "leave as today", per hamr's own ruling.
+// plain-checks build (2026-09-28, hamr's ruling): the "checks N/M" headline
+// is WITHDRAWN ("confusing — reads like 6 failed when 5 never ran"), replaced
+// everywhere by plain words. `attemptChecksLine` derives "all N checks
+// passed" / "check #N <question> — <number>" from a declared close's own
+// `stages` list (the SAME shape src/declaredclose.js's runDeclaredStages
+// already attaches to every close-verdict/outer-close record and
+// src/replay.js already carries through to each fix-loop attempt, including
+// the opening outer-close grade as attempt 1) plus the server's own
+// `declaredStages`/`question` fields. A rubric/command close carries no such
+// list — "" (leave as today), per hamr's own ruling.
 // ---------------------------------------------------------------------------
 
-test('build item 3: checksSummary counts PASSED over DECLARED, never counting an unrun (post-stop) stage as passed', () => {
+test('plain-checks: attemptChecksLine reads "all N checks passed" on an all-green declared close', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const checksSummary = loadFns(html, ['checksSummary'], 'checksSummary');
-  // mul5fofw's own outer-close: 6 satisfied stages, stopped at no-suppressions (7th)
-  const stages = [
-    { name: 'changed-from-seed', verdict: 'satisfied' },
-    { name: 'typecheck-target-zero-errors', verdict: 'satisfied', value: 0, baseline: 0 },
-    { name: 'typecheck-outside-not-worse', verdict: 'satisfied', value: 46, baseline: 46 },
-    { name: 'tests-kept', verdict: 'satisfied', value: 67, baseline: 67 },
-    { name: 'suite-green', verdict: 'satisfied' },
-    { name: 'suite-zero-failing-tests', verdict: 'satisfied', value: 0, baseline: 0 },
-    { name: 'no-suppressions', verdict: 'needs_revision' },
-  ];
-  assert.deepEqual(checksSummary(stages), { passed: 6, total: 7, stoppedAt: 'no-suppressions' });
+  const attemptChecksLine = loadFns(html, ['escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine'], 'attemptChecksLine');
+  const attempt = { stages: [{ name: 'a', verdict: 'satisfied' }, { name: 'b', verdict: 'satisfied' }] };
+  assert.equal(attemptChecksLine(attempt), 'all 2 checks passed');
 });
 
-test('build item 3: checksSummary returns null for a rubric/command close (no stages list) or an empty one — "leave as today"', () => {
+test('plain-checks: attemptChecksLine returns "" for a rubric/command close (no stages list) or an empty one — "leave as today"', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const checksSummary = loadFns(html, ['checksSummary'], 'checksSummary');
-  assert.equal(checksSummary(null), null);
-  assert.equal(checksSummary(undefined), null);
-  assert.equal(checksSummary([]), null);
+  const attemptChecksLine = loadFns(html, ['escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine'], 'attemptChecksLine');
+  assert.equal(attemptChecksLine({ stages: null }), '');
+  assert.equal(attemptChecksLine({ stages: undefined }), '');
+  assert.equal(attemptChecksLine({ stages: [] }), '');
 });
 
-test('build item 3: checksSummary on an all-green declared close reads N/N with no stoppedAt', () => {
+test('checks-count fix (2026-09-28, hamr\'s live catch on run mulbz0ny) stays true under plain words: attemptChecksLine\'s "#N" total comes from `declaredStagesTotal`, never `stages.length`, when an attempt\'s own stages array is shorter than the close it belongs to (first-red-wins stopped it early)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const checksSummary = loadFns(html, ['checksSummary'], 'checksSummary');
-  const stages = [{ name: 'a', verdict: 'satisfied' }, { name: 'b', verdict: 'satisfied' }];
-  assert.deepEqual(checksSummary(stages), { passed: 2, total: 2, stoppedAt: null });
-});
-
-test('checks-count fix (2026-09-28, hamr\'s live catch on run mulbz0ny): checksSummary/checksHeadline take the DECLARED total from `declaredTotal`, never `stages.length`, when an attempt\'s own stages array is shorter than the close it belongs to (first-red-wins stopped it early)', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const checksSummary = loadFns(html, ['checksSummary'], 'checksSummary');
-  const checksHeadline = loadFns(html, ['escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline'], 'checksHeadline');
+  const attemptChecksLine = loadFns(html, ['escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine'], 'attemptChecksLine');
   // mul5fofw's attempt 2: only 2 of 7 declared stages ran before the close stopped
   const stages = [
     { name: 'changed-from-seed', verdict: 'satisfied' },
     {
-      name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 4, baseline: 0, direction: 'lower-is-better', baselineKind: 0,
+      name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 4, baseline: 0, direction: 'lower-is-better', baselineKind: 0, question: 'src/checks.js has 0 type errors?',
     },
   ];
-  assert.deepEqual(checksSummary(stages, 7), { passed: 1, total: 7, stoppedAt: 'typecheck-target-zero-errors' });
-  assert.equal(checksHeadline(stages, 7), 'checks 1/7 · typecheck-target-zero-errors 4 left · goal 0', 'was "checks 1/2" before the fix');
-  // no declaredTotal (no spec resolvable) -> falls back to stages.length, unchanged from before
-  assert.deepEqual(checksSummary(stages, null), { passed: 1, total: 2, stoppedAt: 'typecheck-target-zero-errors' });
-  assert.equal(checksHeadline(stages, undefined), 'checks 1/2 · typecheck-target-zero-errors 4 left · goal 0');
+  const declaredStages = [
+    { name: 'changed-from-seed', question: 'did it change any file?' },
+    { name: 'typecheck-target-zero-errors', question: 'src/checks.js has 0 type errors?' },
+  ];
+  assert.equal(
+    attemptChecksLine({ stages, declaredStagesTotal: 7, declaredStages }),
+    'check #2 src/checks.js has 0 type errors? — 4 left, need 0',
+  );
+  // no declaredStagesTotal/declaredStages (no spec resolvable) -> falls back
+  // to the ran-array's own position/length, unchanged from before this fix
+  assert.equal(
+    attemptChecksLine({ stages }),
+    'check #2 src/checks.js has 0 type errors? — 4 left, need 0',
+  );
 });
 
-test('checks-wording build item 2: checksHeadline renders "checks N/M" alone on an all-pass close, or "" for a rubric/command close (no wording line needed — nothing failed)', () => {
+test('plain-checks: attemptChecksLine — hamr\'s exact examples, "attempt 2 ✗ · check #2 …" and "attempt 3 ✓ · all 7 checks passed" (minus the "attempt N" prefix, which the caller adds)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const checksHeadline = loadFns(html, ['escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline'], 'checksHeadline');
-  assert.equal(checksHeadline([{ name: 'a', verdict: 'satisfied' }, { name: 'b', verdict: 'satisfied' }]), 'checks 2/2');
-  assert.equal(checksHeadline(null), '');
-});
-
-test('checks-wording build item 2: checksHeadline appends the first FAILING stage\'s own wording line, hamr\'s exact example — "checks 6/7 · typecheck-outside-not-worse 47 · limit 46"', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const checksHeadline = loadFns(html, ['escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline'], 'checksHeadline');
+  const attemptChecksLine = loadFns(html, ['escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine'], 'attemptChecksLine');
+  const declaredStages = ['changed-from-seed', 'typecheck-target-zero-errors', 'typecheck-outside-not-worse', 'tests-kept', 'suite-green', 'suite-zero-failing-tests', 'no-suppressions']
+    .map((name) => ({ name, question: `${name}?` }));
   const stages = [
     { name: 'changed-from-seed', verdict: 'satisfied' },
     { name: 'typecheck-target-zero-errors', verdict: 'satisfied', value: 0, baseline: 0, direction: 'lower-is-better', baselineKind: 0 },
     {
-      name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed',
+      name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed', question: "other files didn't get more type errors?",
     },
-    { name: 'tests-kept', verdict: 'satisfied', value: 67, baseline: 67, direction: 'higher-is-better', baselineKind: 'seed' },
-    { name: 'suite-green', verdict: 'satisfied' },
-    { name: 'suite-zero-failing-tests', verdict: 'satisfied', value: 0, baseline: 0, direction: 'lower-is-better', baselineKind: 0 },
-    { name: 'no-suppressions', verdict: 'satisfied' },
   ];
-  assert.equal(checksHeadline(stages), 'checks 6/7 · typecheck-outside-not-worse 47 · limit 46');
+  assert.equal(
+    attemptChecksLine({ stages, declaredStagesTotal: 7, declaredStages }),
+    "check #3 other files didn't get more type errors? — 47, limit 46",
+  );
+  const allPass = [
+    { name: 'changed-from-seed', verdict: 'satisfied' },
+  ];
+  assert.equal(attemptChecksLine({ stages: allPass, declaredStagesTotal: 7 }), 'all 7 checks passed');
 });
 
-test('checks-wording build item 2: stageNumberText — the 3 closed numeric shapes (goal / of-total / limit), and "" for a value-less (pass/fail) stage', () => {
+test('plain-checks: stageQuestionText falls back to the stage\'s own name when `question` is absent (no honest plain question, or no spec resolved)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const stageQuestionText = loadFns(html, ['stageQuestionText'], 'stageQuestionText');
+  assert.equal(stageQuestionText({ name: 'a-human-stage', question: null }), 'a-human-stage');
+  assert.equal(stageQuestionText({ name: 'no-suppressions', question: 'no casts or silencers added?' }), 'no casts or silencers added?');
+  assert.equal(stageQuestionText({ name: null, question: null }), 'unknown');
+});
+
+test('checks-wording build item 2 (plain-checks reworded separators): stageNumberText — the 3 closed numeric shapes ("left, need" / "of" / ", limit"), and "" for a value-less (pass/fail) stage', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const stageNumberText = loadFns(html, ['stageNumberText'], 'stageNumberText');
   assert.equal(stageNumberText({
     value: 12, baseline: 0, direction: 'lower-is-better', baselineKind: 0,
-  }), '12 left · goal 0');
+  }), '12 left, need 0');
   assert.equal(stageNumberText({
     value: 40, baseline: 45, direction: 'higher-is-better', baselineKind: 'seed',
   }), '40 of 45');
   assert.equal(stageNumberText({
     value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed',
-  }), '47 · limit 46');
+  }), '47, limit 46');
   assert.equal(stageNumberText({ verdict: 'satisfied' }), '', 'no value at all -> pass/fail, no number text');
   assert.equal(stageNumberText({
     value: 47, baseline: 46,
   }), '47 (baseline 46)', 'a numeric stage with no resolvable kind/direction falls back to the spec-verbatim wording, never a guessed shape');
 });
 
-test('build item 3: partLine1Text appends the LATEST attempt\'s "checks N/M" for the fix part, never for a part with no attempts/stages', () => {
+test('plain-checks: partLine1Text appends the LATEST attempt\'s plain checks line for the fix part, never for a part with no attempts/stages', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline', 'partLine1Text'], 'partLine1Text');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine', 'partLine1Text'], 'partLine1Text');
   const fixPart = {
     kind: 'fix', rounds: 3, toolCalls: 4, wallMs: 1000, spentUsd: 0.1, unpricedRounds: 0,
     attempts: [
@@ -2844,41 +2844,82 @@ test('build item 3: partLine1Text appends the LATEST attempt\'s "checks N/M" for
     ],
   };
   const text = partLine1Text(fixPart, null);
-  assert.match(text, /checks 2\/2$/, `the LAST attempt's grading decides the card's headline: ${text}`);
+  assert.match(text, /all 2 checks passed$/, `the LAST attempt's grading decides the card's headline: ${text}`);
 
   const noAttemptsPart = { kind: 'step', rounds: 1, toolCalls: 1, wallMs: 100, spentUsd: 0.01, unpricedRounds: 0 };
-  assert.doesNotMatch(partLine1Text(noAttemptsPart, null), /checks/, 'no attempts, no stages -> no headline at all');
+  assert.doesNotMatch(partLine1Text(noAttemptsPart, null), /checks passed|check #/, 'no attempts, no stages -> no headline at all');
 });
 
-test('checks-wording build item 3: stageCheckLine — a numeric stage with no resolvable kind falls back to the spec\'s "N (baseline M)" wording verbatim; a value-less stage shows the mark alone', () => {
+test('plain-checks: fullStageList/stageLineHtml — a numeric stage with no resolvable kind falls back to the spec\'s "N (baseline M)" wording verbatim; a value-less stage shows the mark alone', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const stageCheckLine = loadFns(html, ['escapeXml', 'glyphSpan', 'stageNumberText', 'stageCheckLine'], 'stageCheckLine');
-  assert.match(stageCheckLine({ name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46 }), /typecheck-outside-not-worse: 47 \(baseline 46\)/);
-  assert.match(stageCheckLine({ name: 'no-suppressions', verdict: 'satisfied' }), /^no-suppressions /);
-  assert.doesNotMatch(stageCheckLine({ name: 'no-suppressions', verdict: 'satisfied' }), /\(baseline/);
+  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
+  const attempt = { stages: [{ name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46 }] };
+  const lines = fullStageList(attempt).map(stageLineHtml);
+  assert.match(lines[0], /^#1 typecheck-outside-not-worse .*47 \(baseline 46\)$/);
+
+  const passAttempt = { stages: [{ name: 'no-suppressions', verdict: 'satisfied' }] };
+  const passLines = fullStageList(passAttempt).map(stageLineHtml);
+  assert.match(passLines[0], /^#1 no-suppressions /);
+  assert.doesNotMatch(passLines[0], /\(baseline/);
 });
 
-test('checks-wording build item 3: stageCheckLine — every declared stage in the expanded attempt row renders the SAME closed §3a wording the headline uses (replaces the old unconditional "N (baseline M)" fallback)', () => {
+test('plain-checks: fullStageList/stageLineHtml — every declared stage in the expanded attempt row renders the SAME closed §3a wording the headline uses, "#N <question> <mark> <number>"', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const stageCheckLine = loadFns(html, ['escapeXml', 'glyphSpan', 'stageNumberText', 'stageCheckLine'], 'stageCheckLine');
-  const goalLine = stageCheckLine({
-    name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, direction: 'lower-is-better', baselineKind: 0,
-  });
-  assert.match(goalLine, /^typecheck-target-zero-errors: 12 left · goal 0 /);
-  const totalLine = stageCheckLine({
-    name: 'tests-kept', verdict: 'satisfied', value: 40, baseline: 45, direction: 'higher-is-better', baselineKind: 'seed',
-  });
-  assert.match(totalLine, /^tests-kept: 40 of 45 /);
-  const limitLine = stageCheckLine({
-    name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed',
-  });
-  assert.match(limitLine, /^typecheck-outside-not-worse: 47 · limit 46 /);
+  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
+  const attempt = {
+    stages: [
+      {
+        name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, direction: 'lower-is-better', baselineKind: 0, question: 'src/checks.js has 0 type errors?',
+      },
+      {
+        name: 'tests-kept', verdict: 'satisfied', value: 40, baseline: 45, direction: 'higher-is-better', baselineKind: 'seed', question: 'did all the old tests still exist?',
+      },
+      {
+        name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed', question: "other files didn't get more type errors?",
+      },
+    ],
+  };
+  const lines = fullStageList(attempt).map(stageLineHtml);
+  assert.match(lines[0], /^#1 src\/checks\.js has 0 type errors\? .*12 left, need 0$/);
+  assert.match(lines[1], /^#2 did all the old tests still exist\? .*40 of 45$/);
+  assert.match(lines[2], /^#3 other files didn't get more type errors\? .*47, limit 46$/);
 });
 
-test('build item 3: the Audit Grouped attempt row (buildAttemptsList) wires checksHeadline into its button and stageCheckLine into an expandable checks-list, one owner with the Run-tab card', () => {
+test('plain-checks: fullStageList pads a declared stage that never ran (first-red-wins stopped the close early) as a "not run" stub, matched by NAME against the server\'s declaredStages', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /var checksText = checksHeadline\(a\.stages, a\.declaredStagesTotal\);/);
-  assert.match(html, /var checksList = Array\.isArray\(a\.stages\) \? a\.stages\.map\(stageCheckLine\)\.join\("<br>"\) : "";/);
+  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
+  const attempt = {
+    stages: [{ name: 'changed-from-seed', verdict: 'satisfied' }],
+    declaredStages: [
+      { name: 'changed-from-seed', question: 'did it change any file?' },
+      { name: 'typecheck-target-zero-errors', question: 'src/checks.js has 0 type errors?' },
+      { name: 'no-suppressions', question: 'no casts or silencers added?' },
+    ],
+  };
+  const entries = fullStageList(attempt);
+  assert.equal(entries.length, 3, 'all 3 DECLARED stages render, not just the 1 that ran');
+  assert.equal(entries[0].ran, true);
+  assert.equal(entries[1].ran, false);
+  assert.equal(entries[2].ran, false);
+  const lines = entries.map(stageLineHtml);
+  assert.equal(lines[1], '#2 src/checks.js has 0 type errors? &middot; not run');
+  assert.equal(lines[2], '#3 no casts or silencers added? &middot; not run');
+});
+
+test('plain-checks: fullStageList falls back to whatever ran, unpadded, when no declaredStages travelled at all (no spec resolvable)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { fullStageList } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
+  const attempt = { stages: [{ name: 'some-stage', verdict: 'needs_revision', value: 5, baseline: 0 }] };
+  const entries = fullStageList(attempt);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].ran, true);
+  assert.equal(entries[0].stage.name, 'some-stage');
+});
+
+test('plain-checks: the Audit Grouped attempt row (buildAttemptsList) wires attemptChecksLine into its button and fullStageList/stageLineHtml into an expandable checks-list, one owner with the Run-tab card', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /var checksText = attemptChecksLine\(a\);/);
+  assert.match(html, /var checksList = fullStageList\(a\)\.map\(stageLineHtml\)\.join\("<br>"\);/);
   assert.match(html, /checksText \? ' &middot; ' \+ checksText : ''/);
 });
 

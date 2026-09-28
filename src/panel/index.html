@@ -1927,12 +1927,13 @@
       var row = document.createElement("div");
       row.className = "attempt-row";
       row.setAttribute("data-testid", "audit-attempt-" + partIndex + "-" + a.n);
-      // build item 3: "checks N/M" on a declared close's own attempt header
-      // (including the opening outer-close grade, which is attempt 1 on this
-      // SAME list — src/replay.js's fixLoop.attempts) — "" for a rubric/
-      // command close or a still-running attempt with no stages yet.
-      var checksText = checksHeadline(a.stages, a.declaredStagesTotal);
-      var checksList = Array.isArray(a.stages) ? a.stages.map(stageCheckLine).join("<br>") : "";
+      // plain-checks build (2026-09-28): the withdrawn "checks N/M" headline
+      // is replaced by attemptChecksLine's plain words (including the
+      // opening outer-close grade, which is attempt 1 on this SAME list —
+      // src/replay.js's fixLoop.attempts) — "" for a rubric/command close or
+      // a still-running attempt with no stages yet.
+      var checksText = attemptChecksLine(a);
+      var checksList = fullStageList(a).map(stageLineHtml).join("<br>");
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
           'attempt ' + a.n + ' ' + attemptGlyph(a.outcome, boxIsLive) +
@@ -2095,89 +2096,96 @@
       wallText,
       spendText,
     ];
-    // build item 3 (2026-09-28): the part's headline check count — its MOST
-    // RECENT attempt's own declared-close grading (the opening outer-close
-    // grade counts as attempt 1, same list `buildAttemptsList` reads).
+    // plain-checks build (2026-09-28): the part's headline check LINE — its
+    // MOST RECENT attempt's own declared-close grading (the opening
+    // outer-close grade counts as attempt 1, same list `buildAttemptsList`
+    // reads), in the withdrawn headline's place.
     var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
-    var headline = latestAttempt ? checksHeadline(latestAttempt.stages, latestAttempt.declaredStagesTotal) : "";
+    var headline = latestAttempt ? attemptChecksLine(latestAttempt) : "";
     if(headline) bits.push(headline);
     return bits.join(" &middot; ");
   }
   /**
-   * build item 3/3a (2026-09-28, hamr: "goal on deterministic should say x
-   * out of y on cards, audit headers"). `stages` is a DECLARED close's own
-   * per-stage verdict list (`{name, verdict, value?, baseline?}[]`, first-red-
-   * wins) — present only on a declared close's outer-close/close-verdict
-   * record (`src/declaredclose.js`'s `runDeclaredStages`); a command close's
-   * gap carries no such list, so this reads `null` and every caller below
-   * shows nothing — "leave as today" for a rubric/command close, exactly as
-   * hamr ruled. An unrun stage (after first-red-wins stopped the close) is
-   * counted in `total` (it was DECLARED) but never in `passed` (it never ran).
-   *
-   * checks-count fix (2026-09-28, hamr's live catch on run mulbz0ny —
-   * "attempt 2 ✗ · checks 1/2" on a 7-stage close): `stages.length` is the
-   * number of stages that RAN this attempt, never the number DECLARED —
-   * first-red-wins means a later attempt's own `stages` array can be shorter
-   * than the close it belongs to. `declaredTotal` (the server's
-   * `attempt.declaredStagesTotal`, {@link enrichPartsWithStageKind} in
-   * src/panel/server.js — the one place this is derived, off the signed
-   * spec's `closeDecl.stages.length`) is the real total when present; this
-   * function never re-derives it. Falls back to `stages.length` only when
-   * `declaredTotal` is absent (no spec resolvable for the run) — the caller
-   * gets a stage-count total for a run this can't do better for, rather than
-   * nothing.
-   * @param {any[]|null|undefined} stages
-   * @param {number|null|undefined} [declaredTotal]
-   * @returns {{passed: number, total: number, stoppedAt: string|null}|null}
+   * plain-checks build (2026-09-28, hamr's ruling): the "checks N/M" headline
+   * is WITHDRAWN — "confusing, reads like 6 failed when 5 never ran".
+   * Replaced everywhere by this plain-words line:
+   *   - all declared stages passed: "all N checks passed"
+   *   - a stage failed: "check #N <plain question> — <number>", where `#N`
+   *     is the failing stage's 1-based position in the DECLARED close
+   *     ({@link declaredPosition}), the question is `stage.question` (the
+   *     server's one owner, `src/panel/server.js`'s `stageQuestionText` —
+   *     falls back to the stage's own name when the catalogue has no honest
+   *     plain question for it) and the number is {@link stageNumberText}'s
+   *     reworded shape, omitted entirely for a pass/fail stage with no
+   *     number.
+   * "" (never shown) for a rubric/command close or an unresolved attempt
+   * (still running, no stages yet). `attempt.declaredStagesTotal` is the
+   * DECLARED stage count (never `stages.length`, the RAN count — first-red-
+   * wins means a later attempt's own `stages` array can be shorter than the
+   * close it belongs to; hamr's live catch on run mulbz0ny, checks-count fix
+   * 2026-09-28), falling back to `stages.length` only when no spec resolved.
+   * The caller (buildAttemptsList) prefixes "attempt N ✓/✗ · " for the
+   * attempt header, and the Run tab card / Audit Grouped header show this
+   * SAME text bare (hamr: "same text as its attempt header, minus 'attempt
+   * N'").
+   * @param {any} attempt @returns {string}
    */
-  function checksSummary(stages, declaredTotal){
-    if(!Array.isArray(stages) || stages.length === 0) return null;
-    var passed = 0, stoppedAt = null;
-    for(var i = 0; i < stages.length; i++){
-      var s = stages[i];
-      if(!s) continue;
-      if(s.verdict === "satisfied") passed += 1;
-      else if(stoppedAt === null) stoppedAt = s.name || null;
-    }
-    var total = (typeof declaredTotal === "number" && declaredTotal > 0) ? declaredTotal : stages.length;
-    return { passed: passed, total: total, stoppedAt: stoppedAt };
-  }
-  /** the short "checks N/M" headline, PLUS the first failing check's own
-   * wording line (checks-wording build item 2, 2026-09-28, hamr's ruling:
-   * "checks 6/7 · typecheck-outside-not-worse 47 · limit 46"). "" (never
-   * shown) for a rubric/command close or an unresolved attempt (still
-   * running, no stages yet). All-pass reads "checks N/N" alone. `declaredTotal`
-   * is passed straight through to {@link checksSummary} — see its own doc for
-   * the checks-count fix (declared vs. ran stage count).
-   * @param {any[]|null|undefined} stages @param {number|null|undefined} [declaredTotal] @returns {string} */
-  function checksHeadline(stages, declaredTotal){
-    var c = checksSummary(stages, declaredTotal);
-    if(!c) return "";
-    if(c.passed === c.total) return "checks " + c.passed + "/" + c.total;
+  function attemptChecksLine(attempt){
+    var stages = attempt && attempt.stages;
+    if(!Array.isArray(stages) || stages.length === 0) return "";
+    var total = (typeof attempt.declaredStagesTotal === "number" && attempt.declaredStagesTotal > 0) ? attempt.declaredStagesTotal : stages.length;
     var failing = null;
     for(var i = 0; i < stages.length; i++){
       if(stages[i] && stages[i].verdict !== "satisfied"){ failing = stages[i]; break; }
     }
-    return "checks " + c.passed + "/" + c.total + (failing ? " · " + stageHeadlineText(failing) : "");
+    if(failing === null) return "all " + total + " checks passed";
+    var pos = declaredPosition(attempt, failing.name);
+    if(pos === null) pos = stages.indexOf(failing) + 1;
+    var numberText = stageNumberText(failing);
+    return "check #" + pos + " " + escapeXml(stageQuestionText(failing)) + (numberText ? " — " + numberText : "");
+  }
+  /** a stage's DECLARED 1-based position, from `attempt.declaredStages` (the
+   * server's full declared-order list, {@link enrichPartsWithStageKind} in
+   * src/panel/server.js) — matched by NAME, never by array index (robust to
+   * any reordering between the resolved spec and the stages that actually
+   * ran). `null` when no `declaredStages` travelled (no spec resolvable) or
+   * the name isn't found there; the caller falls back to the stage's
+   * position within whatever ran.
+   * @param {any} attempt @param {string|null|undefined} stageName @returns {number|null} */
+  function declaredPosition(attempt, stageName){
+    if(!Array.isArray(attempt.declaredStages)) return null;
+    var idx = attempt.declaredStages.findIndex(function(ds){ return ds && ds.name === stageName; });
+    return idx === -1 ? null : idx + 1;
+  }
+  /** a stage's plain-English question — `stage.question` (the server's one
+   * owner, `src/panel/server.js`'s `stageQuestionText`) when the catalogue
+   * has an honest one for this stage's kind+params, else the stage's OWN
+   * name (a command-close's hand-written stage name, or a kind/genre shape
+   * the owner has no wording for — never invented here).
+   * @param {any} stage @returns {string} */
+  function stageQuestionText(stage){
+    if(stage && typeof stage.question === "string" && stage.question) return stage.question;
+    return (stage && stage.name) ? stage.name : "unknown";
   }
   /**
-   * §3a's closed wording table, one owner (checks-wording build spec,
-   * 2026-09-28): a numeric stage's own DECLARED `direction`/`baselineKind`
-   * (server-sent, {@link stageKindMetaFromSpec} on the panel server — the
-   * signed close declaration's own per-stage facts, never guessed from the
-   * runtime number alone) picks one of hamr's 3 shapes:
+   * §3a's closed numeric wording, one owner (checks-wording build spec,
+   * 2026-09-28, reworded by the plain-checks build's own separators): a
+   * numeric stage's own DECLARED `direction`/`baselineKind` (server-sent,
+   * {@link stageKindMetaFromSpec} on the panel server — the signed close
+   * declaration's own per-stage facts, never guessed from the runtime number
+   * alone) picks one of hamr's 3 shapes:
    *   - lower-is-better toward a DECLARED-ZERO goal (`baselineKind === 0`):
-   *     "N left · goal T"
+   *     "N left, need T"
    *   - higher-is-better (a floor): "N of total"
    *   - lower-is-better toward a SEED-MEASURED baseline (`baselineKind ===
-   *     "seed"`): "N · limit M"
+   *     "seed"`): "N, limit M"
    * Only `count-not-worse` ever carries a numeric value/baseline at all
    * (src/kinds.js — every other kind's StageResult defaults both to null),
    * so a value-less stage always renders "" here (pass/fail, glyph only).
    * Every shipped kind fits one of the 3 shapes above; a stage that somehow
    * carries a number with no resolvable direction/baselineKind (no spec
    * resolved server-side, or an old archived run) falls back to the spec's
-   * own explicit "N (baseline M)" wording verbatim, never a 5th invented
+   * own explicit "N (baseline M)" wording verbatim, never a 4th invented
    * shape.
    * @param {any} stage @returns {string}
    */
@@ -2186,31 +2194,55 @@
     var hasBaseline = typeof stage.baseline === "number";
     if(!hasValue) return "";
     if(stage.direction === "higher-is-better" && hasBaseline) return stage.value + " of " + stage.baseline;
-    if(stage.direction === "lower-is-better" && stage.baselineKind === 0 && hasBaseline) return stage.value + " left · goal " + stage.baseline;
-    if(stage.direction === "lower-is-better" && stage.baselineKind === "seed" && hasBaseline) return stage.value + " · limit " + stage.baseline;
+    if(stage.direction === "lower-is-better" && stage.baselineKind === 0 && hasBaseline) return stage.value + " left, need " + stage.baseline;
+    if(stage.direction === "lower-is-better" && stage.baselineKind === "seed" && hasBaseline) return stage.value + ", limit " + stage.baseline;
     return hasBaseline ? (stage.value + " (baseline " + stage.baseline + ")") : String(stage.value);
   }
-  /** one stage's headline-line text — "name numberText", no colon, no mark
-   * (used only inline after "checks N/M · …", the mark being implied by
-   * "N/M" already saying it failed).
-   * @param {any} stage @returns {string} */
-  function stageHeadlineText(stage){
-    var numberText = stageNumberText(stage);
-    return escapeXml(stage.name || "unknown") + (numberText ? " " + numberText : "");
+  /**
+   * plain-checks build (2026-09-28): the expanded attempt row's FULL declared
+   * stage list, in declared order, including stages that never ran (first-
+   * red-wins stopped the close early) — hamr's ruling: "one line per DECLARED
+   * stage, in order, including stages that never ran". Zips
+   * `attempt.declaredStages` (the server's full ordered `{name, question}`
+   * list) against `attempt.stages` (the shorter, possibly-partial RAN list)
+   * BY NAME: a declared stage with a matching ran entry renders that entry
+   * (`ran: true`); one with no match renders a synthetic not-run stub
+   * (`ran: false`, `verdict: null`). When no `declaredStages` travelled at
+   * all (no spec resolvable), falls back to whatever ran, unpadded — exactly
+   * today's behaviour for a rubric/command close or an unresolvable spec.
+   * @param {any} attempt @returns {{n: number, ran: boolean, stage: any}[]}
+   */
+  function fullStageList(attempt){
+    var ran = Array.isArray(attempt.stages) ? attempt.stages : [];
+    if(!Array.isArray(attempt.declaredStages) || attempt.declaredStages.length === 0){
+      return ran.map(function(s, i){ return { n: i + 1, ran: true, stage: s }; });
+    }
+    var byName = {};
+    ran.forEach(function(s){ if(s && typeof s.name === "string") byName[s.name] = s; });
+    return attempt.declaredStages.map(function(ds, i){
+      var s = ds && Object.prototype.hasOwnProperty.call(byName, ds.name) ? byName[ds.name] : null;
+      if(s) return { n: i + 1, ran: true, stage: s };
+      return { n: i + 1, ran: false, stage: { name: ds ? ds.name : null, question: ds ? ds.question : null, verdict: null } };
+    });
   }
   /**
-   * checks-wording build item 3 (2026-09-28): one stage's expand-view line,
-   * every declared stage in the same closed §3a wording {@link
-   * stageNumberText} already gives the card/Audit headline (build item 2) —
-   * replaces the earlier per-spec "N (baseline M)" fallback that rendered
-   * here unconditionally. A stage with no recorded number (a guard, a
-   * pass/fail command stage) still renders the mark alone.
-   * @param {any} stage @returns {string}
+   * one stage's expand-view line — "#N <question> <mark> <number>", hamr's
+   * closed illustration:
+   *   #1 did it change any file?                     ✓
+   *   #2 src/checks.js has 0 type errors?            ✗  4 left, need 0
+   *   #3 other files didn't get more type errors?    ·  not run
+   * A never-run declared stage (`entry.ran === false`) always reads "·  not
+   * run", no number. A ran stage with no recorded number (a guard, a
+   * pass/fail command stage) renders the mark alone.
+   * @param {{n: number, ran: boolean, stage: any}} entry @returns {string}
    */
-  function stageCheckLine(stage){
-    var mark = stage.verdict === "satisfied" ? glyphSpan("✓") : (stage.verdict ? glyphSpan("✗") : "&ndash;");
-    var numberText = stageNumberText(stage);
-    return escapeXml(stage.name || "unknown") + (numberText ? ": " + numberText : "") + " " + mark;
+  function stageLineHtml(entry){
+    var s = entry.stage;
+    var q = escapeXml(stageQuestionText(s));
+    if(!entry.ran) return "#" + entry.n + " " + q + " &middot; not run";
+    var mark = s.verdict === "satisfied" ? glyphSpan("✓") : (s.verdict ? glyphSpan("✗") : "&ndash;");
+    var numberText = stageNumberText(s);
+    return "#" + entry.n + " " + q + " " + mark + (numberText ? " " + numberText : "");
   }
   var currentAuditFilter = "all";
   function auditPartMatchesFilter(rowWrap, filter){
