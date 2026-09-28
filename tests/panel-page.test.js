@@ -2157,3 +2157,11 @@ test('Job card cap row: $ cap | Time cap | Token price, matching design/panel-mo
   const draftFieldTag = block.slice(block.indexOf('jf-cap-draft') - 200, block.indexOf('jf-cap-draft') + 50);
   assert.doesNotMatch(draftFieldTag.slice(0, draftFieldTag.indexOf('jf-cap-draft')), /cap-field/, 'Drafting $ cap must not be wrapped in a .cap-field (it is its own full-width .field, not a 4th cap-row column)');
 });
+
+test('fix (2026-09-28): the four cap-row/drafting labels read "Cap $", "Time cap (min)", "Token price $", "Drafting cap $" (label CSS already uppercases)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<label for="jf-cap-money">Cap \$<\/label>/);
+  assert.match(html, /<label for="jf-cap-time">Time cap \(min\)<\/label>/);
+  assert.match(html, /<label for="jf-price">Token price \$<\/label>/);
+  assert.match(html, /<label for="jf-cap-draft">Drafting cap \$<\/label>/);
+});
