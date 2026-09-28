@@ -140,6 +140,13 @@ strength of the reading alone.
   skill text, ~$0.10–0.30): identical plan shapes closes "no", different triggers a pre-registered
   full-loop contrast. Targets the planner, not the worker — a worker self-review is never a
   verdict (hamr, ruling A, 2026-09-28).
+- **Read/write fence re-check with the first rubric plain-folder live run** — bareloop already
+  fences the worker with bareguard's own `fs.readScope`/`fs.writeScope`/`fs.deny` (worker on a
+  hidden-git copy, arbiter books denied, destination copied out only on a minted green, never
+  overwritten). Not a sandbox (local-trust ruling stands). The plain-folder rubric path has never
+  had a full live run, so its fence is test-proven only. Trigger: that first live run — verify the
+  fence end-to-end then, and review bareguard 0.13.0 → 0.19.0 (6 minors behind) for newer path
+  primitives before building anything (hamr, 2026-09-28).
 
 ## §9 Risks and their pre-registered handles
 
