@@ -2524,3 +2524,33 @@ test('build item 3: renderProgress delegates the label to progressLabelFor — n
   assert.match(src, /progressLabelEl\.textContent = progressLabelFor\(state\);/);
   assert.doesNotMatch(src, /waiting for you"/, 'the wording must live only in progressLabelFor, not be re-spelled here too');
 });
+
+// ---------------------------------------------------------------------------
+// build item 4 (2026-09-28, session mul5fofw): chat messages are one short
+// plain line per step, no "bareloop" who-label on SYSTEM lines (they are
+// step notices, not a message from anyone) — only "you" and the model's own
+// bot replies keep a who-label.
+// ---------------------------------------------------------------------------
+
+test('build item 4: chatWhoLabel — "you" and bot keep a label, system carries none', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const chatWhoLabel = extractFn(html, 'chatWhoLabel');
+  assert.equal(chatWhoLabel('you'), 'you');
+  assert.equal(chatWhoLabel('bot'), 'bareloop');
+  assert.equal(chatWhoLabel('system'), '');
+});
+
+test('build item 4: renderMessages source builds html without a .who div when chatWhoLabel returns empty, WITH one otherwise', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'renderMessages');
+  assert.match(src, /var who = chatWhoLabel\(m\.role\);/);
+  assert.match(src, /var whoHtml = who \? \('<div class="who">' \+ escapeXml\(who\) \+ '<\/div>'\) : "";/);
+  assert.doesNotMatch(src, /<div class="who">' \+ escapeXml\(who\) \+ '<\/div>' \+ escapeXml\(m\.text\)/, 'must never unconditionally emit the .who div any more');
+});
+
+test('build item 4: the three named step lines are short and plain (Copying source, Packages found, Drafting with <model>)', () => {
+  const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
+  assert.match(src, /say\('system', 'Copying source \(\$0\)'\);/);
+  assert.match(src, /say\('system', 'Packages found'\);/);
+  assert.match(src, /say\('system', `Drafting with \$\{card\.model\}, \$\$\{card\.capUsd\.toFixed\(2\)\} cap`\);/);
+});

@@ -323,7 +323,7 @@ export function createSession(card, deps = {}) {
 
     state.phase = 'preparing-source';
     state.progressLabel = 'copying source';
-    say('system', 'Copying source ($0)…');
+    say('system', 'Copying source ($0)');
     const prep = await prepareSource({
       source: card.source, into, destination: isRepoLike ? card.destination : card.destination,
     });
@@ -367,7 +367,7 @@ export function createSession(card, deps = {}) {
           if (!depsGap) break;
           say('system', `Still missing (${depsGap.reason}). Install, then Check again.`);
         }
-        say('system', 'Packages found — continuing.');
+        say('system', 'Packages found');
         state.phase = 'drafting';
       }
     }
@@ -429,7 +429,10 @@ export function createSession(card, deps = {}) {
 
     state.phase = 'drafting';
     state.progressLabel = 'drafting';
-    say('system', `Drafting (${modelChoice.provider}/${MODEL}, cap $${card.capUsd})…`);
+    // build item 4 — the DISPLAY id (card.model, e.g. "deepseek-flash"), not
+    // the internal resolved tier model string (MODEL) or the raw provider
+    // name — the same id the Model field's own dropdown showed.
+    say('system', `Drafting with ${card.model}, $${card.capUsd.toFixed(2)} cap`);
     const authored = await authorCloseForJob({
       judgeModel: draftJudge.model,
       answers, verdictType, repoPath: prep.tree, lang: LANG,

@@ -2600,11 +2600,21 @@
     // suffix: `onPhase` no longer posts its own bubble (see
     // src/panel/authorsession.js), so every remaining message is already
     // something a person needs to read.
+    // build item 4 — a system line (a step notice: "Copying source ($0)",
+    // "Packages found", …) carries no who-label at all — it is not a
+    // message FROM anyone, just a plain step line. Only "you" and the
+    // model's own bot replies get one.
+    function chatWhoLabel(role){
+      if(role === "you") return "you";
+      if(role === "system") return "";
+      return "bareloop";
+    }
     function renderMessages(state){
       thread.innerHTML = state.messages.map(function(m){
         var cls = m.role === "you" ? "you" : (m.role === "system" ? "system" : "bot");
-        var who = m.role === "you" ? "you" : "bareloop";
-        return '<div class="msg ' + cls + '"><div class="who">' + escapeXml(who) + '</div>' + escapeXml(m.text) + '</div>';
+        var who = chatWhoLabel(m.role);
+        var whoHtml = who ? ('<div class="who">' + escapeXml(who) + '</div>') : "";
+        return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
       }).join("");
       thread.scrollTop = thread.scrollHeight;
     }
