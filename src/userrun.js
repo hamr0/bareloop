@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { runJob } from './run.js';
+import { moneyWithDraft } from './replay.js';
 import { jobSpecHash, resolveWorkerModel, validateJob } from './job.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
@@ -242,6 +243,11 @@ class ExitSignal extends Error {
  * @property {string|null} [model] the raw `--model` tier name (`sonnet`/`haiku`), or null for the default
  * @property {string|null} [readShim] the raw `--read-shim` arm name, or null for the default
  * @property {string|null} [scout] the raw `--scout` value (`on`/`off`), or null for the default
+ * @property {string|null} [draftSpentUsd] the raw `--draft-spent-usd` value (hamr's
+ *   ruling 2026-09-28, "one cap covers drafting + run"), or null when the job never
+ *   drafted through the panel/`bareloop author`. Parsed and validated in `execute`
+ *   (finite, >= 0, else refused) — never coerced silently, the same param-guard
+ *   class `--read-shim`/`--scout` already are.
  * @property {string|null} [registry] a bridge registry directory
  * @property {string|null} [workflow] the registry's workflow name (defaults to `spec.job`)
  * @property {string|null} [approve] the spec hash being signed; omitted previews only
@@ -263,6 +269,7 @@ class ExitSignal extends Error {
  * @property {string|null} model
  * @property {string|null} readShim
  * @property {string|null} scout
+ * @property {string|null} draftSpentUsd
  * @property {string|null} registry
  * @property {string|null} workflow
  * @property {string|null} approve
@@ -393,6 +400,29 @@ async function execute(ctx) {
   /** every re-invocation this script PRINTS carries the arm — the SHIM_TAIL rule,
    * so a resume never silently drops it and runs the default under the arm's label. */
   const SCOUT_TAIL = scoutArg !== null && !SCOUT ? ' --scout off' : '';
+
+  // --draft-spent-usd (hamr's ruling 2026-09-28, "one cap covers drafting +
+  // run") — runner territory exactly like --read-shim/--scout above: the
+  // spec's signed budgetUsd is unaffected, this only shrinks THIS leg's own
+  // enforced ceiling. Same param-guard class and the same reason: an
+  // unreadable value here would either silently widen the ceiling (garbage
+  // read as 0) or silently narrow it (garbage read as Infinity) — neither is
+  // acceptable, so this refuses at argv, before the approval gate, rather
+  // than coercing.
+  const draftSpentArg = ctx.draftSpentUsd ?? null;
+  let DRAFT_SPENT_USD = 0;
+  if (draftSpentArg !== null) {
+    const v = Number(draftSpentArg);
+    if (draftSpentArg.trim() === '' || !Number.isFinite(v) || v < 0) {
+      err(`--draft-spent-usd "${draftSpentArg}" is not a finite number >= 0 — refusing rather than coercing it into $0 (which would widen the ceiling) or letting a NaN poison the ceiling arithmetic`);
+      throw new ExitSignal(2);
+    }
+    DRAFT_SPENT_USD = v;
+  }
+  /** every re-invocation this script PRINTS carries the drafting fold, the
+   * same SHIM_TAIL/SCOUT_TAIL rule: a resume that dropped it would silently
+   * WIDEN the ceiling back up by the drafting spend on its next leg. */
+  const DRAFT_TAIL = DRAFT_SPENT_USD > 0 ? ` --draft-spent-usd ${DRAFT_SPENT_USD}` : '';
 
   const WORKDIR = target.workdir;
   const SEED = target.seed;
@@ -1040,7 +1070,7 @@ async function execute(ctx) {
     // right key only by accident of the runner's own generic error message,
     // never from this hint. `providerEntry.envKey` is the same resolved name
     // the real key check at launch (`:1157-1158` below) reads.
-    const invoke = (/** @type {string} */ tail) => `  ${providerEntry.envKey}=... node scripts/run-u.mjs ${SELECTOR}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
+    const invoke = (/** @type {string} */ tail) => `  ${providerEntry.envKey}=... node scripts/run-u.mjs ${SELECTOR}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${tail} --approve ${specHash}`;
     /** the door the operator has already picked, as flags — hoisted out of the else
      * below so the inhibitor line at the bottom can print the WHOLE command rather
      * than a shape the operator has to assemble. Empty on an ordinary run and on the
@@ -1205,8 +1235,8 @@ async function execute(ctx) {
     out(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
     out(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
     out('  resume   the SAME runid, whenever you want, with the door you pick then:');
-    out(`           node scripts/run-u.mjs ${SELECTOR} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL} --decide accept --approve ${specHash}`);
-    out(`           node scripts/run-u.mjs ${SELECTOR} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
+    out(`           node scripts/run-u.mjs ${SELECTOR} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --decide accept --approve ${specHash}`);
+    out(`           node scripts/run-u.mjs ${SELECTOR} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
     out(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
     throw new ExitSignal(0);
   }
@@ -1458,6 +1488,14 @@ async function execute(ctx) {
   // driver's plan is a row nobody can audit from its own log.
   out(`   ${READ_SHIM_LABEL}`);
   out(`   ${SCOUT_LABEL}`);
+  // hamr's ruling 2026-09-28 — advertised = enforced: the banner states the
+  // SIGNED cap above unconditionally (it never changes, same spec hash), and
+  // this line states the drafting fold whenever there is one, so the number
+  // this run actually enforces (Cap $ − drafting spent) is never a second,
+  // silent figure a reader has to compute themselves.
+  if (DRAFT_SPENT_USD > 0) {
+    out(`   drafting spent $${DRAFT_SPENT_USD.toFixed(4)} — this run's own enforced ceiling is $${(spec.budgetUsd - DRAFT_SPENT_USD).toFixed(4)} of the signed $${spec.budgetUsd}`);
+  }
 
   // F67 — the OUTSIDE watchdog, started before the run and sharing nothing with it.
   // Every guard bareloop had lived inside this process, and ms3197n8/ms3jh76q proved
@@ -1642,6 +1680,7 @@ async function execute(ctx) {
       closeDir: spineDir,
       readShim: READ_SHIM,
       scout: SCOUT,
+      draftSpentUsd: DRAFT_SPENT_USD,
       // RESUME: the money and the wall the halted run already burned are FOLDED IN (so
       // the signed ceiling cannot widen by being re-invoked), and the checkpoint it
       // reached is handed over so the plan is reloaded rather than re-drafted and the
@@ -1731,7 +1770,14 @@ async function execute(ctx) {
   const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type === 'write' || e.action?.type === 'edit'));
 
   out(`\noutcome   ${outcome}`);
-  out(`spent     ${je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete === false ? '≥' : ''}$${je.spentUsd.toFixed(4)}`} of $${spec.budgetUsd}`);
+  // hamr's ruling 2026-09-28 — the drafting share (this leg's own job-start
+  // record) rides beside the run's own spend via the ONE shared formatter,
+  // so this line never disagrees with the panel's Run tab/Runs list about
+  // what "$X of $Y" means for a job that drafted through the panel/author.
+  const jobStartRec = events.find((e) => e.type === 'job-start');
+  const legDraftSpentUsd = typeof jobStartRec?.draftSpentUsd === 'number' && jobStartRec.draftSpentUsd > 0 ? jobStartRec.draftSpentUsd : null;
+  const spendCore = je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete === false ? '≥' : ''}$${je.spentUsd.toFixed(4)}`;
+  out(`spent     ${moneyWithDraft(spendCore, legDraftSpentUsd, spec.budgetUsd)}`);
   // FOLDED, exactly like the money line above it: on a resume the cap governs both legs
   // together, and a leg-only wall next to a folded spend is two framings on one cap with
   // no label to tell them apart (F83). The leg stays on the line beside it.
@@ -1768,7 +1814,7 @@ async function execute(ctx) {
     out(`  trend   ${mh.trend} — ${mh.reading}`);
     out(`  lever   ${mh.lever}`);
     for (const o of mh.options ?? []) out(`          · ${o}`);
-    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
+    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
     out('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
   }
   // A STALL is a checkpoint too (hamr's go, 2026-08-13). Its own escalation prints one
@@ -1778,7 +1824,7 @@ async function execute(ctx) {
   // the hash already approved is the hash that resumes.
   if (outcome === 'step-stalled') {
     out('\nSTALL HALT — the model stopped producing rounds and reissuing the call did not recover it. The tree, the plan and the steps already finished STAND.');
-    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve ${specHash}`);
+    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve ${specHash}`);
     out('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
     out('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
   }
@@ -1799,7 +1845,7 @@ async function execute(ctx) {
     out(`  died    ${total === null ? 'before a plan was accepted — nothing paid is re-payable'
       : done >= total ? `at the close — all ${total} step(s) finished`
         : `in step ${done + 1} of ${total}`}`);
-    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL} --approve ${specHash}`);
+    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve ${specHash}`);
     out('          (no spec edit, so the hash is unchanged — this re-enters at the recorded step and re-pays for none of the ones before it)');
     out('          (if the allowance is what actually ran out underneath the transport fault, that preview says so and refuses — it is read there, not asserted here)');
   }
@@ -1820,7 +1866,7 @@ async function execute(ctx) {
     ]);
     out('  clock    STOPPED — the wall does not run while a person is reading (W-2), and this leg\'s elapsed is what folds into the resume');
     out('');
-    const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${tail} --approve ${specHash}`;
+    const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${tail} --approve ${specHash}`;
     for (const l of doorLines({
       rerun: answer(' --decide rerun --text "<what you want done differently>"'),
       accept: answer(' --decide accept'),
@@ -2057,6 +2103,7 @@ function buildCtx(mode, opts) {
     model: opts.model ?? null,
     readShim: opts.readShim ?? null,
     scout: opts.scout ?? null,
+    draftSpentUsd: opts.draftSpentUsd ?? null,
     registry: opts.registry ?? null,
     workflow: opts.workflow ?? null,
     approve: opts.approve ?? null,
@@ -2275,6 +2322,7 @@ export async function main(argv, deps = {}) {
       model: argFlag('model'),
       readShim: argFlag('read-shim'),
       scout: argFlag('scout'),
+      draftSpentUsd: argFlag('draft-spent-usd'),
       registry: argFlag('registry'),
       workflow: argFlag('workflow'),
       approve: argFlag('approve'),
