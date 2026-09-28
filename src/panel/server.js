@@ -1251,10 +1251,27 @@ function resolveSpecForRow(row) {
  *       - `higher-is-better` + `baseline: 'seed'` is the genre's `tests-kept`
  *         floor: "did all the old tests still exist?"
  *       - `lower-is-better` + `baseline: 0` is the genre's in-scope
- *         `typecheck` stage. When the declared `scope.includePrefixes` names
- *         exactly ONE path, that path is quoted verbatim (a signed param,
- *         never invented): "<path> has 0 type errors?" — otherwise the
- *         generic "type errors is 0?", never a guessed filename.
+ *         `typecheck` stage — UNLESS its own `cmd`+`args` is the SAME
+ *         command a `command-exit` stage in the same close already runs
+ *         (`suiteCmdKeys`, below): the TYPES template's `suite-green` is "the
+ *         suite exits clean AND reports zero failing tests — TWO assertions"
+ *         over ONE population (the same `npm test`/`pytest` invocation), so a
+ *         `count-not-worse` stage sharing that exact command is the failing-
+ *         test-count half of that pair, never a typecheck stage — the live
+ *         check that found this (run mul5fofw's own `suite-zero-failing-
+ *         tests`, cmd `npm test`, same as its sibling `suite-green` command-
+ *         exit stage) would otherwise have read "test/ has 0 type errors?",
+ *         which is false: its parser counts FAILING TESTS
+ *         (`^# fail (\d+)$`), not type-checker output. hamr's build spec
+ *         names only "suite-green" (the command-exit half) with a plain
+ *         question; it does not name this second half, so this is treated as
+ *         a genuine gap — `null`, never a guessed wording — rather than
+ *         reusing "type errors" for a population it was never about. When
+ *         the command differs from every sibling `command-exit` stage, the
+ *         declared `scope.includePrefixes` naming exactly ONE path is quoted
+ *         verbatim (a signed param, never invented): "<path> has 0 type
+ *         errors?" — otherwise the generic "type errors is 0?", never a
+ *         guessed filename.
  *       - `lower-is-better` + `baseline: 'seed'` with a non-empty
  *         `scope.excludePrefixes` is the genre's `typecheck-outside` ceiling:
  *         "other files didn't get more type errors?"
@@ -1266,12 +1283,29 @@ function resolveSpecForRow(row) {
  * `null` means "no honest plain question" — the caller (buildAttemptsList,
  * partLine1Text's `attemptChecksLine`) falls back to the stage's OWN name,
  * exactly as it already does for a stage with no resolvable kind at all.
- * @param {{kind: string|null, params: any, genre: string|null}} o
+ * @param {{kind: string|null, params: any, genre: string|null, suiteCmdKeys: Set<string>}} o
  * @returns {string|null}
  */
 const GENRE_WHAT = Object.freeze({ TYPES: 'type errors' });
 
-function stageQuestionText({ kind, params, genre }) {
+/** `cmd`+`args`, as a comparable key — the one signal (besides `kind`
+ * itself) that two stages measure the SAME command's output, used to tell a
+ * genuine typecheck stage apart from the TYPES genre's other `lower-is-
+ * better`/`baseline: 0` stage (the failing-test-count half of `suite-green`'s
+ * "two assertions"), which shares that stage's own shape but not its
+ * population. `null` for a stage whose `cmd` isn't a non-empty string —
+ * never matches anything, so it never falsely suppresses a real typecheck
+ * question.
+ * @param {any} params @returns {string|null} */
+function cmdKey(params) {
+  if (!params || typeof params.cmd !== 'string' || params.cmd.length === 0) return null;
+  const args = Array.isArray(params.args) ? params.args : [];
+  return JSON.stringify([params.cmd, args]);
+}
+
+function stageQuestionText({
+  kind, params, genre, suiteCmdKeys,
+}) {
   if (kind === 'files-changed') return 'did it change any file?';
   if (kind === 'pattern-absent-in-diff') return 'no casts or silencers added?';
   if (kind === 'command-exit') return 'does the test suite pass?';
@@ -1283,6 +1317,8 @@ function stageQuestionText({ kind, params, genre }) {
   if (!what) return null;
   const scope = params.scope && typeof params.scope === 'object' ? params.scope : null;
   if (params.direction === 'lower-is-better' && params.baseline === 0) {
+    const key = cmdKey(params);
+    if (key !== null && suiteCmdKeys instanceof Set && suiteCmdKeys.has(key)) return null;
     const include = scope && Array.isArray(scope.includePrefixes) ? scope.includePrefixes : null;
     if (include && include.length === 1 && typeof include[0] === 'string' && include[0].length > 0) {
       return `${include[0]} has 0 ${what}?`;
@@ -1318,6 +1354,17 @@ function stageQuestionText({ kind, params, genre }) {
 function stageKindMetaFromSpec(spec) {
   if (!spec || typeof spec !== 'object' || !spec.closeDecl || !Array.isArray(spec.closeDecl.stages)) return null;
   const genre = typeof spec.closeDecl.genre === 'string' ? spec.closeDecl.genre : null;
+  // every command-exit stage's own cmd+args, gathered FIRST (a separate pass)
+  // so stageQuestionText can tell the failing-test-count half of suite-green's
+  // "two assertions" apart from a genuine typecheck stage — see its own doc.
+  /** @type {Set<string>} */
+  const suiteCmdKeys = new Set();
+  for (const s of spec.closeDecl.stages) {
+    if (s && s.kind === 'command-exit') {
+      const key = cmdKey(s.params);
+      if (key !== null) suiteCmdKeys.add(key);
+    }
+  }
   /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>} */
   const map = new Map();
   for (const s of spec.closeDecl.stages) {
@@ -1326,7 +1373,9 @@ function stageKindMetaFromSpec(spec) {
     const params = s.params && typeof s.params === 'object' ? s.params : null;
     const direction = params && typeof params.direction === 'string' ? params.direction : null;
     const baselineKind = params && (params.baseline === 'seed' || params.baseline === 0) ? params.baseline : null;
-    const question = stageQuestionText({ kind, params, genre });
+    const question = stageQuestionText({
+      kind, params, genre, suiteCmdKeys,
+    });
     map.set(s.name, {
       kind, direction, baselineKind, question,
     });

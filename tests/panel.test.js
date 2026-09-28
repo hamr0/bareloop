@@ -2344,6 +2344,60 @@ test('plain-checks: stageQuestionText returns null (caller falls back to the sta
   assert.equal(declaredByName.get('weird-outside-in-scope'), null, 'lower-is-better + seed baseline with includePrefixes (not excludePrefixes) matches none of the three declared shapes');
 });
 
+test('plain-checks REGRESSION (found live on run mul5fofw\'s own scratch server): a lower-is-better/baseline-0 count-not-worse stage sharing its cmd+args with a command-exit stage is the failing-test-count half of suite-green\'s "two assertions" — never "type errors" (would have read "test/ has 0 type errors?", which is false: its parser counts FAILING TESTS)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-suitecmd-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'suite-zero-failing-tests',
+      stages: [{ name: 'suite-zero-failing-tests', verdict: 'needs_revision', value: 2, baseline: 0 }],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-suitecmd-job',
+    closeDecl: {
+      genre: 'TYPES',
+      stages: [
+        {
+          name: 'typecheck-target-zero-errors',
+          kind: 'count-not-worse',
+          params: {
+            cmd: 'npm', args: ['run', 'typecheck', '--', '--strict'], direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['src/checks.js'] },
+          },
+        },
+        { name: 'suite-green', kind: 'command-exit', params: { cmd: 'npm', args: ['test'], expectExit: 0 } },
+        {
+          name: 'suite-zero-failing-tests',
+          kind: 'count-not-worse',
+          params: {
+            cmd: 'npm', args: ['test'], direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['test/'] },
+          },
+        },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqsuitecmdrun', job: 'pq-suitecmd-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqsuitecmdrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  const declaredByName = new Map(fixPart.attempts[0].declaredStages.map((s) => [s.name, s.question]));
+  assert.equal(declaredByName.get('typecheck-target-zero-errors'), 'src/checks.js has 0 type errors?', 'a DIFFERENT cmd (typecheck) still gets its real question');
+  assert.equal(declaredByName.get('suite-green'), 'does the test suite pass?');
+  assert.equal(declaredByName.get('suite-zero-failing-tests'), null, 'same cmd+args as the command-exit suite-green stage -> not honestly "type errors", falls back to the stage\'s own name');
+});
+
 test('plain-checks: declaredStages travels in DECLARED order and is omitted when no spec resolves', async (t) => {
   const home = tmp();
   const dir = tmp();
