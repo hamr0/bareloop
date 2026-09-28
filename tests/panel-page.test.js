@@ -2283,14 +2283,16 @@ test('build item 3 (2026-09-28): the single progress-indicator row is in the pag
   assert.ok(progressIdx !== -1 && threadIdx !== -1 && progressIdx < threadIdx, 'the progress row must render ahead of the chat thread');
 });
 
-test('build item 3 RED-PROOF (2026-09-28): the progress dots reduced-motion fallback renders a STATIC "[progress...]", never the animated cycle', () => {
+test('build item 3 RED-PROOF (2026-09-28): the progress dots reduced-motion fallback renders a STATIC fully-dotted form, never the animated cycle', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function startProgressDots(){');
-  const end = html.indexOf('function renderProgress(state){');
+  const end = html.indexOf('function progressLabelFor(state){');
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected startProgressDots to be present');
   const body = html.slice(start, end);
   assert.match(body, /reducedMotion/);
-  assert.match(body, /\[progress\.\.\.\]/, 'the static reduced-motion fallback must be the fully-dotted form, not a half-cycled one');
+  // 4 dots now (build item 3, 2026-09-28 2nd pass) — was 3 dots ("...")
+  // before the dot cycle itself was widened to 1..4 in the same change.
+  assert.match(body, /\[progress\.\.\.\.\]/, 'the static reduced-motion fallback must be the fully-dotted (4-dot) form, not a half-cycled one');
 });
 
 test('build item 2 (2026-09-28): onPhase no longer posts a chat bubble — the progress label is collapsed into state.progressLabel only, never say()\'d', () => {
@@ -2452,4 +2454,73 @@ test('build item 1: #chat-action-error exists in the markup, distinct from #chat
   const newStart = html.indexOf('newBtn.addEventListener("click"');
   const newSrc = html.slice(newStart, html.indexOf('});', newStart) + 3);
   assert.match(newSrc, /actionErrEl\.textContent = "";/);
+});
+
+// ---------------------------------------------------------------------------
+// build item 3 (2026-09-28, session mul5fofw): the progress line. Observed
+// bugs: "checking prior behaviour" shown while waiting on hamr's own answer,
+// and "plan confirmed" shown while the plan was actually awaiting his
+// confirm — a pending ask must always win over the last machine phase name.
+// Also: the label must sit BEFORE the animated dots in the markup so the
+// cycling indicator never pushes it around.
+// ---------------------------------------------------------------------------
+
+test('build item 3: progressLabelFor — a pending ask always beats the stale progressLabel, with the right wording per kind', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const progressLabelFor = extractFn(html, 'progressLabelFor');
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'menu' }, progressLabel: 'checking prior behaviour' }),
+    'waiting for your OK',
+    'a menu ask must never show a stale machine step name',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'install-needed' }, progressLabel: 'drafting' }),
+    'install needed',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'answer' }, progressLabel: 'drafting' }),
+    'waiting for your answer',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'language' }, progressLabel: 'confirming plan' }),
+    'waiting for your answer',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'fix' }, progressLabel: 'confirming plan' }),
+    'waiting for your answer',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: null, progressLabel: 'drafting' }),
+    'drafting',
+    'no pending ask -> the real machine step label',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: null, progressLabel: null }),
+    'working',
+    'no pending ask and no label yet -> the generic fallback, never blank',
+  );
+});
+
+test('build item 3: the progress row markup shows the LABEL span before the GLYPH span (label first, dots never push it)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const rowStart = html.indexOf('id="chat-progress-row"');
+  const rowEnd = html.indexOf('</div>', rowStart);
+  const row = html.slice(rowStart, rowEnd);
+  const labelIdx = row.indexOf('id="chat-progress-label"');
+  const glyphIdx = row.indexOf('id="chat-progress-glyph"');
+  assert.ok(labelIdx !== -1 && glyphIdx !== -1 && labelIdx < glyphIdx, 'chat-progress-label must come before chat-progress-glyph in the markup');
+});
+
+test('build item 3: the progress dots cycle 1..4 (never 1..3) — [progress.] up to [progress....]', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'startProgressDots');
+  assert.match(src, /progressDotCount % 4/);
+  assert.match(src, /\[progress\.\.\.\.\]/, 'the reduced-motion fallback must show the FULL 4-dot form, never the old 3-dot one');
+});
+
+test('build item 3: renderProgress delegates the label to progressLabelFor — never a second hand-composed "waiting for you" string', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'renderProgress');
+  assert.match(src, /progressLabelEl\.textContent = progressLabelFor\(state\);/);
+  assert.doesNotMatch(src, /waiting for you"/, 'the wording must live only in progressLabelFor, not be re-spelled here too');
 });

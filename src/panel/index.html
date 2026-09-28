@@ -485,9 +485,12 @@
             <div class="hint" id="chat-hash-line" data-testid="chat-hash-line" hidden></div>
           </div>
 
+          <!-- build item 3 — the label comes FIRST, then the animated
+               indicator, so the cycling dots ([progress.] .. [progress....])
+               never push the label around. -->
           <div class="chat-progress-row" id="chat-progress-row" data-testid="chat-progress-row" hidden>
-            <span class="chat-progress-glyph" id="chat-progress-glyph" data-testid="chat-progress-glyph"></span>
             <span class="chat-progress-label" id="chat-progress-label" data-testid="chat-progress-label"></span>
+            <span class="chat-progress-glyph" id="chat-progress-glyph" data-testid="chat-progress-glyph"></span>
           </div>
 
           <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
@@ -2606,7 +2609,9 @@
       thread.scrollTop = thread.scrollHeight;
     }
 
-    // build item 3 — the single live progress line.
+    // build item 3 — the single live progress line: the LABEL sits first in
+    // the markup, then the animated indicator (never the other way — the
+    // dots must not push the label around as they cycle 1..4).
     var progressDotTimer = null;
     var progressDotCount = 1;
     var reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -2614,14 +2619,26 @@
       if(progressDotTimer){ clearInterval(progressDotTimer); progressDotTimer = null; }
     }
     function startProgressDots(){
-      if(reducedMotion){ progressGlyph.textContent = "[progress...]"; return; }
+      if(reducedMotion){ progressGlyph.textContent = "[progress....]"; return; }
       if(progressDotTimer) return;
       progressDotCount = 1;
       progressGlyph.textContent = "[progress.]";
       progressDotTimer = setInterval(function(){
-        progressDotCount = (progressDotCount % 3) + 1;
+        progressDotCount = (progressDotCount % 4) + 1;
         progressGlyph.textContent = "[progress" + new Array(progressDotCount + 1).join(".") + "]";
       }, 500);
+    }
+    // build item 3 — pure: what the label must say for a given state. A
+    // person waiting on their OWN next action (an ask is pending) must never
+    // see a stale machine step name (observed: "checking prior behaviour"
+    // shown while waiting on hamr; "plan confirmed" shown while the plan was
+    // awaiting his confirm) — a pending ask always wins over progressLabel.
+    function progressLabelFor(state){
+      var pending = state && state.pendingAsk;
+      if(pending && pending.kind === "menu") return "waiting for your OK";
+      if(pending && pending.kind === "install-needed") return "install needed";
+      if(pending) return "waiting for your answer";
+      return (state && state.progressLabel) || "working";
     }
     function renderProgress(state){
       progressRow.hidden = false;
@@ -2637,7 +2654,7 @@
         progressLabelEl.textContent = state.error || "";
       } else {
         progressGlyph.className = "chat-progress-glyph";
-        progressLabelEl.textContent = state.pendingAsk ? "waiting for you" : (state.progressLabel || "working");
+        progressLabelEl.textContent = progressLabelFor(state);
         startProgressDots();
       }
     }
