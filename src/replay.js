@@ -462,6 +462,16 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
 
   const spentUsd = jobEnd && typeof jobEnd.spentUsd === 'number' && Number.isFinite(jobEnd.spentUsd) ? jobEnd.spentUsd : null;
   const spendComplete = jobEnd ? jobEnd.spendComplete === true && spentUsd !== null : false;
+
+  // draftSpentUsd (hamr's ruling 2026-09-28, "one cap covers drafting +
+  // run") — the AUTHORING pipeline's own spend on this job before it was
+  // signed, off `job-start`'s dedicated field (never `priorSpentUsd`, which
+  // is the RESUME fold `resumed` above keys on). `null` when the run never
+  // carried one (the common case, and every run predating this field) —
+  // never a decorative 0 a reader could mistake for "drafting spent
+  // nothing".
+  const draftSpentUsd = jobStart && typeof jobStart.draftSpentUsd === 'number' && Number.isFinite(jobStart.draftSpentUsd) && jobStart.draftSpentUsd > 0
+    ? jobStart.draftSpentUsd : null;
   const floorReasonList = floorReasons(spine, jobStart, spendComplete);
 
   const wallMs = windowWallMs(parseTs(jobStart?.ts), parseTs(jobEnd?.ts));
@@ -1328,6 +1338,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     stopReason,
     spentUsd,
     spendComplete,
+    draftSpentUsd,
     floorReasons: floorReasonList,
     transportRetryCount: transportRetries.length,
     transportRetriesOutsideWindows,
@@ -1382,6 +1393,28 @@ function money(n) {
 /** @param {number|null} n 2-decimal money — a signed BUDGET figure, never a spend one. */
 function money2(n) {
   return n === null ? 'unknown' : `$${n.toFixed(2)}`;
+}
+
+/**
+ * hamr's ruling 2026-09-28 ("one cap covers drafting + run") — the ONE
+ * spend display for a run that may carry a drafting share, so every surface
+ * that shows a run's money (the CLI's own `spent` line, the panel's Run tab
+ * summary/counters, the Runs list row, the Audit header, the Job tab) reads
+ * the same string rather than each hand-composing its own. `spendCore` is
+ * already-formatted text (`money(...)`, or a `died`/floor line's "at least
+ * $X") — this only decides whether to append the `(<draft> drafting)`
+ * clause and the `of $<cap>` tail, never re-derives the money itself.
+ * Unchanged (`spendCore` alone, or `spendCore of $cap`) when there is no
+ * drafting share — a run without one prints exactly what it always did.
+ * @param {string} spendCore already-formatted spend text (e.g. `$3.71` or `at least $2.00`)
+ * @param {number|null} draftSpentUsd the drafting share, or null when there isn't one
+ * @param {number|null} [budgetUsd] the signed cap, appended as `of $X.XX` when given
+ * @returns {string}
+ */
+export function moneyWithDraft(spendCore, draftSpentUsd, budgetUsd) {
+  const draftPart = draftSpentUsd !== null && draftSpentUsd !== undefined ? ` (${money(draftSpentUsd)} drafting)` : '';
+  const capPart = budgetUsd === undefined ? '' : ` of ${money2(budgetUsd)}`;
+  return `${spendCore}${draftPart}${capPart}`;
 }
 
 /**
@@ -1827,7 +1860,7 @@ export function summarizeForAllLine(summary) {
     // shown on a run with zero retries.
     outcome: `${summary.outcome ?? 'unknown'}${summary.transportRetryCount > 0 ? ` ⟲${summary.transportRetryCount}` : ''}`,
     hadTransportRetries: summary.transportRetryCount > 0,
-    spend: money(summary.spentUsd),
+    spend: moneyWithDraft(money(summary.spentUsd), summary.draftSpentUsd),
     wall: duration(summary.wallMs),
     steps: stepsCol,
     reason,
