@@ -2678,3 +2678,55 @@ test('build item 6: renderRun uses liveSpendText/liveWallPhrase exactly when liv
   assert.match(src, /wallPhrase = liveWallPhrase\(detail\.wallFloorMs\);/);
   void end;
 });
+
+// ---------------------------------------------------------------------------
+// build item 4 (2026-09-28, session mul5fofw): the Run-tab card for a LIVE
+// run's own `kind:"run"` synthetic part (replay.js — shown when no step has
+// started yet: still scouting/planning) still read a bare "unknown" between
+// "N tools" and the $ amount, because `partLine1Text`/the Run-tab's own
+// inline card builder each independently called `duration(part.wallMs)`/
+// `panelMoney(part.spentUsd)` — a SECOND wall/spend reader next to the
+// Summary box's already-fixed `liveSpendText`/`liveWallPhrase` (build item 6,
+// commit 4d31377). Fixed by giving `partLine1Text` ONE owner: it now floats
+// to the run-level floor for exactly the `kind:"run"` part of a still-live
+// run, and is called (with `detail`) from BOTH the Run tab's cards and the
+// Audit tab's Grouped headers.
+// ---------------------------------------------------------------------------
+
+test('build item 4: partLine1Text floats a LIVE run-part\'s "unknown" wall/spend to the same floor liveWallPhrase/liveSpendText already give the Summary box', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'partLine1Text'], 'partLine1Text');
+  const liveDetail = { died: false, spentUsd: null, wallFloorMs: 4 * 60 * 1000 + 12 * 1000, spendFloorUsd: 0.72, draftSpentUsd: null, draftSpendComplete: null };
+  const part = { kind: 'run', rounds: 3, toolCalls: 5, wallMs: null, spentUsd: null, unpricedRounds: 0 };
+  const text = partLine1Text(part, liveDetail);
+  assert.equal(text, '3 calls &middot; 5 tools &middot; running 4m12s &middot; $0.72 so far',
+    `bare "unknown" must never appear between "N tools" and the money figure on a live run's own card: ${text}`);
+  assert.doesNotMatch(text, /unknown/, 'no "unknown" survives once the run-level floor is available');
+});
+
+test('build item 4: partLine1Text leaves a DIED or finished run\'s "unknown" exactly as before — the floor substitution is for the LIVE case only', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'partLine1Text'], 'partLine1Text');
+  const diedDetail = { died: true, spentUsd: null, wallFloorMs: 12000, spendFloorUsd: 0.1, draftSpentUsd: null, draftSpendComplete: null };
+  const part = { kind: 'run', rounds: 1, toolCalls: 2, wallMs: null, spentUsd: null, unpricedRounds: 0 };
+  const text = partLine1Text(part, diedDetail);
+  assert.match(text, /unknown/, 'a died run\'s own card is unaffected — it has no live floor to borrow, only its already-honest "unknown"');
+});
+
+test('build item 4: partLine1Text never floats a non-run part (step/scout/plan/fix/judge) — only the whole-run\'s own kind:"run" card borrows the run-level floor', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'partLine1Text'], 'partLine1Text');
+  const liveDetail = { died: false, spentUsd: null, wallFloorMs: 999999, spendFloorUsd: 9.99, draftSpentUsd: null, draftSpendComplete: null };
+  const stepPart = { kind: 'step', rounds: 2, toolCalls: 1, wallMs: null, spentUsd: null, unpricedRounds: 0 };
+  const text = partLine1Text(stepPart, liveDetail);
+  assert.match(text, /unknown/, 'a step part\'s own null wall/spend has no run-level floor to borrow — untouched');
+  assert.doesNotMatch(text, /999999|9\.99|running 16/i);
+});
+
+test('build item 4: BOTH call sites (Run-tab cards and Audit Grouped headers) now route through the SAME partLine1Text(part, detail) — never a second inline reader', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const runCallIdx = html.indexOf('var line1Bits = [partLine1Text(part, detail)];');
+  assert.ok(runCallIdx > -1, 'the Run tab\'s card builder calls the shared function with detail, not an inline array');
+  const groupCallIdx = html.indexOf("partLine1Text(part, detail) +");
+  assert.ok(groupCallIdx > -1, 'the Audit tab\'s Grouped header calls the same shared function with detail');
+});

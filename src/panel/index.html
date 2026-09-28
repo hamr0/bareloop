@@ -1884,12 +1884,10 @@
       var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
       var titleText = box.kind === "step" ? ((cardStepNumbers[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
       var resultGlyph = partResultGlyph(part, box);
-      var line1Bits = [
-        (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
-        typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
-        duration(part.wallMs),
-        part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : panelMoney(part.spentUsd),
-      ];
+      // build item 4: ONE owner (partLine1Text, shared with the Audit tab's
+      // Grouped headers) for the wall/money bits, so a live run's card never
+      // reads a bare "unknown" a second reader independently failed to float.
+      var line1Bits = [partLine1Text(part, detail)];
       if(resultGlyph !== null) line1Bits.push(resultGlyph);
       var card = document.createElement("div");
       card.className = "step-card part-card" + (box.state === "running" ? " running" : "");
@@ -2051,12 +2049,40 @@
     if(!bt) return false;
     return !!(bt.edit || bt.write);
   }
-  function partLine1Text(part){
+  /**
+   * build item 4 (2026-09-28, session mul5fofw's own live run): the wall/money
+   * bits of a part card — ONE owner, used by both the Run tab's cards
+   * ({@link renderRun}) and the Audit tab's Grouped headers
+   * ({@link renderAuditGroups}), which used to compute these independently (a
+   * second wall/spend reader — exactly the class of bug F198 already named).
+   *
+   * A part's `wallMs`/`spentUsd` are `null` while it is genuinely still being
+   * measured (`replay.js`'s own `windowWallMs`/`thisFileSpend`, unresolved
+   * until a later record — or, for the `kind:"run"` synthetic whole-run part,
+   * unresolved until `job-end`). `duration(null)`/`panelMoney(null)` both read
+   * "unknown", which is honest for a DEAD run but wrong for a LIVE one — the
+   * same distinction {@link liveSpendText}/{@link liveWallPhrase} already draw
+   * for the Summary box. Only the run's OWN card (`box.kind === "run"`, the
+   * one shown when no step has started yet) can be substituted this way: its
+   * `wallMs`/`spentUsd` (`replay.js`'s top-level `wallMs`/`thisFileSpend`) ARE
+   * the run's own totals-so-far, so `detail.wallFloorMs`/`spendFloorUsd` (the
+   * server's floor over the SAME spine) is the right number, not a guess. A
+   * step/scout/plan/fix/judge part's own wall/spend has no run-level floor to
+   * borrow, so it is left exactly as before.
+   * @param {any} part @param {any} [detail] the run detail, when available
+   * @returns {string}
+   */
+  function partLine1Text(part, detail){
+    var isLiveRunPart = part && part.kind === "run" && detail && !detail.died && detail.spentUsd === null;
+    var wallText = (isLiveRunPart && part.wallMs === null) ? liveWallPhrase(detail.wallFloorMs) : duration(part.wallMs);
+    var spendText = (isLiveRunPart && part.spentUsd === null)
+      ? liveSpendText(detail.spendFloorUsd, detail.draftSpentUsd, detail.draftSpendComplete)
+      : (part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : panelMoney(part.spentUsd));
     return [
       (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
       typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
-      duration(part.wallMs),
-      part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : panelMoney(part.spentUsd),
+      wallText,
+      spendText,
     ].join(" &middot; ");
   }
   var currentAuditFilter = "all";
@@ -2101,7 +2127,7 @@
       headBtn.setAttribute("data-testid", "audit-part-toggle-" + idx);
       var groupResultGlyph = partResultGlyph(part, box);
       headBtn.innerHTML =
-        '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span> ' + titleText + ' &middot; ' + partLine1Text(part) +
+        '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span> ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
         (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
         (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '');
       var body = document.createElement("div");
