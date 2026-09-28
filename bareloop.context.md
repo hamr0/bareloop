@@ -1160,7 +1160,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
 
 **`draftSpentUsd` (hamr's ruling 2026-09-28, "one cap covers drafting + run") — money the
 AUTHORING pipeline already spent on this job before it was signed.** Shrinks THIS run's own
@@ -1174,9 +1174,23 @@ non-finite or negative value reads as 0). Rides onto `job-start` as its own fiel
 run-only. `bareloop run-u --draft-spent-usd <n>` is the CLI door (validated: finite, ≥ 0, else
 refused); `bareloop author` prints its own known drafting spend floor and the exact `run-u`
 command including the flag; the panel's sign route passes the session's own tracked drafting
-spend the same way. `src/replay.js`'s `moneyWithDraft(spendCore, draftSpentUsd, budgetUsd?)` is
+spend the same way. `src/replay.js`'s `moneyWithDraft(spendCore, draftSpentUsd, budgetUsd?, draftSpendComplete?)` is
 the one shared display formatter: `"$3.71 ($0.81 drafting) of $5.00"`, unchanged
-(`spendCore`/`spendCore of $cap`) when a run carries no drafting share.
+(`spendCore`/`spendCore of $cap`) when a run carries no drafting share. When
+`draftSpendComplete === false` it reads `"at least $3.71 (at least $0.81 drafting) of $5.00"`
+(the core is not double-prefixed if it is already a floor).
+
+**`draftSpendComplete` (default `true`; hamr's ruling 2026-09-28, 2nd addendum) — was the
+`draftSpentUsd` fold EXACT?** The authoring pipeline's metered-call list can go unpriced (F6)
+and the unknown does not heal by folding forward, so a drafting figure that is only a floor
+must say so. A NEW field beside `draftSpentUsd`, never a value inside `spendComplete` or
+`priorSpendComplete` (those answer "is THIS run's own ledger exact"; merging them would let a
+floor drafting spend read as an exact run). Read only when `draftSpentUsd` is emitted: rides
+onto `job-start` as `draftSpendComplete` beside `draftSpentUsd` (only when the fold is > 0);
+only an explicit `false` counts as incomplete — anything else, garbage included, reads `true`,
+so an unreadable flag never manufactures a false floor. `src/replay.js` surfaces it as
+`summary.draftSpendComplete` (`null` when no drafting fold; a job-start lacking the field reads
+`true`) and feeds it to `moneyWithDraft`.
 
 **`closeTimeoutMs` (PRD item 27/M3) is now OPTIONAL for every real caller.** Omit it (both
 `src/cli.js`'s bundle runner and `src/userrun.js` — lifted out of `scripts/run-u.mjs` by
@@ -1291,6 +1305,14 @@ knob, not a product default — the spec names no scout, so the signed hash is u
 `scripts/run-u.mjs --scout on|off` (default `on`) is its runner-territory surface, modelled on
 `--read-shim`: an unrecognised value exits 2 at argv, and every re-invocation the runner prints
 carries `--scout off` when set, so a resume never silently drops the arm.
+
+**`bareloop run-u --draft-spend-incomplete`** is a boolean presence-flag (no value) that sets
+`runJob`'s `draftSpendComplete: false`, saying the `--draft-spent-usd` figure is a floor. It
+has no guard against being passed without `--draft-spent-usd` — alone it is inert (nothing is
+folded, so no `job-start` field is emitted). Every printed re-invocation tail carries it
+alongside `--draft-spent-usd` (only when drafting spend > 0), so a resumed leg never turns the
+floor back into an exact figure; `bareloop author` and the panel's sign route pass it when the
+session's drafting spend was incomplete.
 
 **`bareloop run-u --draft-spent-usd <n>`** (hamr's ruling 2026-09-28, "one cap covers drafting +
 run") is the same runner-territory class: a non-finite or negative value exits 2 at argv, before

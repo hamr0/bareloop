@@ -406,6 +406,7 @@ re-sign are deferred).
    questions render as chat messages; the person answers with **Send**. Progress/cost stream
    via the existing `onPhase`/`onCall` hooks into the chat. Closing the panel mid-draft
    abandons the session; spend already made is recorded on disk, never lost.
+   > 2026-09-28: the separate drafting cap was removed — one Cap $ covers drafting + run, see PRD one-cap addendum / 8d1102c
 4. **Revise (N left)** is the confirm turn's `fix` pick — the chat text box's current
    contents become the correction. Max 2 rounds (D3); the counter is derived from the
    confirm-turn round number the library reports through `onPhase`, never a second hardcoded
@@ -450,6 +451,7 @@ Sign refused with no token / wrong Origin / wrong hash / before gates passed; no
 chat/send/revise to signing; drafting refused on an empty/zero/non-numeric drafting cap or a
 missing key; a fake `generate` driving draft → revise → prepared → sign → a stubbed spawn
 seam asserting the exact argv including `--approve <hash>`; the Chat tab's layout at 390px.
+> 2026-09-28: the separate drafting cap was removed — one Cap $ covers drafting + run, see PRD one-cap addendum / 8d1102c
 
 ### Exit
 
