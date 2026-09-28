@@ -2006,3 +2006,111 @@ test('build item B/C no-regression: real archived run spines-poc-openai poc-p2oc
   const roundsRes = await fetch(`${base}/api/runs/p2ocuxj8-parts/rounds?part=${detail.parts.length - 1}&attempt=1`);
   assert.equal(roundsRes.status, 200); // never a crash/404 on the synthetic-attempt part
 });
+
+// ---------------------------------------------------------------------------
+// checks-wording build item 1 (2026-09-28): the gap 764a9ef named — a
+// declared close's own per-stage `kind`/`direction`/declared `baselineKind`
+// (`'seed'` vs the literal `0`) now travels from the resolved signed spec's
+// `closeDecl.stages` onto each attempt's `stages` entries in `/api/runs/
+// :runid`'s `parts` field, so the client can pick §3a's wording instead of
+// falling back to the spec's verbatim "N (baseline M)" for every numeric
+// stage.
+// ---------------------------------------------------------------------------
+
+test('build item 1: a bundle-layout spec.json\'s closeDecl attaches kind/direction/baselineKind onto the fix-loop attempt\'s own recorded stages, matching by name', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'checkswording-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'typecheck-target-zero-errors',
+      stages: [
+        { name: 'changed-from-seed', verdict: 'satisfied' },
+        { name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0 },
+      ],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    {
+      type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5,
+    },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'checkswording-job',
+    closeDecl: {
+      stages: [
+        { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true } },
+        {
+          name: 'typecheck-target-zero-errors', kind: 'count-not-worse', params: { direction: 'lower-is-better', baseline: 0 },
+        },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'checkswordingrun', job: 'checkswording-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/checkswordingrun`);
+  assert.equal(res.status, 200);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.ok(fixPart, 'a post-step outer-close builds a "fix" part');
+  const stages = fixPart.attempts[0].stages;
+  assert.deepEqual(stages[0], { name: 'changed-from-seed', verdict: 'satisfied', kind: 'files-changed', direction: null, baselineKind: null });
+  assert.deepEqual(stages[1], {
+    name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, kind: 'count-not-worse', direction: 'lower-is-better', baselineKind: 0,
+  });
+});
+
+test('build item 1: no resolvable spec at all -> stages pass through UNCHANGED (never a fabricated kind)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'nospec-checkswording-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close', verdict: 'needs_revision', stage: 'some-stage', stages: [{ name: 'some-stage', verdict: 'needs_revision', value: 5, baseline: 0 }], ts: '2026-09-05T00:00:03.000Z', seq: 4,
+    },
+    {
+      type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5,
+    },
+  ]);
+  // no spec.json beside runs/, no jobs/<job>.json entry, no resolved-spec.json
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'nospeccheckswordingrun', job: 'nospec-checkswording-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/nospeccheckswordingrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.deepEqual(fixPart.attempts[0].stages, [{ name: 'some-stage', verdict: 'needs_revision', value: 5, baseline: 0 }]);
+});
+
+test('build item 1: real archived run mu2p83go (pulselog-person-live-2) — its own resolved-spec.json closeDecl attaches real kind/direction/baselineKind onto the fix loop\'s declared stages, all 3 numeric shapes present', { skip: !havePersonFixture && `${REAL_PERSON_OUT} not present on this machine` }, async (t) => {
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-kindmeta', job: 'pulselog-strict-checks', spine: REAL_PERSON_SPINE, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/mu2p83go-kindmeta`);
+  assert.equal(res.status, 200);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.ok(fixPart, 'mu2p83go\'s outer-close came back needs_revision, so a fix part exists');
+  const byName = new Map(fixPart.attempts[0].stages.map((s) => [s.name, s]));
+  assert.equal(byName.get('typecheck-checks-strict').direction, 'lower-is-better');
+  assert.equal(byName.get('typecheck-checks-strict').baselineKind, 0);
+  assert.equal(byName.get('typecheck-outside-checks').direction, 'lower-is-better');
+  assert.equal(byName.get('typecheck-outside-checks').baselineKind, 'seed');
+  assert.equal(byName.get('tests-executed-floor').direction, 'higher-is-better');
+  assert.equal(byName.get('tests-executed-floor').baselineKind, 'seed');
+  assert.equal(byName.get('changed-from-seed').kind, 'files-changed');
+  assert.equal(byName.get('suite-green').kind, 'command-exit');
+});

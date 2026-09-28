@@ -585,9 +585,15 @@ export function getRunDetail(runid, opts = {}) {
     // parts (panel build item B/C, 2026-09-26): the ONE ordered part list
     // (`src/replay.js`'s own field, computed once server-side) — drives the
     // Run tab's map+cards and the Audit tab's grouped rows. Passed through
-    // VERBATIM (never re-derived client-side) so the two tabs can never
-    // disagree about run order, counts, or blocked-call figures.
-    parts: summary.parts,
+    // VERBATIM (never re-derived client-side) EXCEPT each attempt's own
+    // declared-close `stages` array, which gets its per-stage `kind`/
+    // `direction`/`baselineKind` attached here (build item, 2026-09-28: the
+    // gap 764a9ef named — the signed closeDecl is the only place this lives,
+    // and it is not part of `replayOne`'s own spine-derived shape) — see
+    // {@link enrichPartsWithStageKind}. `kindMeta` is `null` (every stage
+    // passes through unchanged) whenever no spec resolves at all, so the two
+    // tabs still never disagree about order/counts/blocked-call figures.
+    parts: enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row))),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -1175,6 +1181,123 @@ function sourceNearSpine(spinePath) {
     specPath: existsSync(specPath) ? specPath : null,
     sourceJsonPath: existsSync(sourceJsonPath) ? sourceJsonPath : null,
   };
+}
+
+/**
+ * The resolved SPEC OBJECT for a run — routes (a) bundle `spec.json`, (b)
+ * `jobs/<job>.json`, (c) the run's own `resolved-spec.json` beside the spine
+ * (the three real-spec routes {@link getRunJob}'s `fromSpec` also tries, in
+ * the same order; never route (d), the run's own job-start record, which
+ * carries no `closeDecl` for {@link stageKindMetaFromSpec} to read a
+ * stage's kind from). A specHash mismatch against `jobs/<job>.json` is NOT
+ * checked here — the Job tab's own mismatch note is a display concern of
+ * that endpoint, not a reason to withhold a stage's kind (the declaration a
+ * hash mismatch flags is still the one the close actually ran under until
+ * the run is repeated). `null` when no route resolves or every candidate
+ * fails to parse as an object — never a guessed spec.
+ * @param {{ spine: string, job: string }} row
+ * @returns {any|null}
+ */
+function resolveSpecForRow(row) {
+  if (!existsSync(row.spine)) return null;
+  const bundleDir = bundleDirForSpine(row.spine);
+  const bundleSpecPath = bundleDir ? join(bundleDir, 'spec.json') : null;
+  if (bundleSpecPath && existsSync(bundleSpecPath)) {
+    try {
+      const spec = JSON.parse(readFileSync(bundleSpecPath, 'utf8'));
+      if (spec && typeof spec === 'object') return spec;
+    } catch { /* falls through to the next route */ }
+  }
+  const jobsSpecPath = join(jobsDir(), `${row.job}.json`);
+  if (existsSync(jobsSpecPath)) {
+    try {
+      const spec = JSON.parse(readFileSync(jobsSpecPath, 'utf8'));
+      if (spec && typeof spec === 'object') return spec;
+    } catch { /* falls through to the next route */ }
+  }
+  const near = sourceNearSpine(row.spine);
+  if (near.specPath) {
+    try {
+      const spec = JSON.parse(readFileSync(near.specPath, 'utf8'));
+      if (spec && typeof spec === 'object') return spec;
+    } catch { /* no spec resolvable */ }
+  }
+  return null;
+}
+
+/**
+ * Per-stage `{kind, direction, baselineKind}`, keyed by stage NAME, off a
+ * resolved spec's own signed `closeDecl.stages` — the facts the client needs
+ * to pick §3a's wording (down-to-a-goal / up-out-of-a-total / not-worse-
+ * than-a-baseline / pass-fail-only), never guessed from the runtime number
+ * alone: a `lower-is-better` stage whose SEED happened to measure 0 is
+ * numerically indistinguishable from a `baseline: 0` declared goal, so the
+ * declared baseline KIND (`'seed'` vs the literal `0`) has to travel
+ * separately from the measured number. Only `count-not-worse` stages ever
+ * carry `direction`/`baselineKind` (src/kinds.js: every other kind's
+ * `StageResult` defaults `value`/`baseline` to `null`, so no other kind ever
+ * has a number for these fields to qualify) — every other kind's entry
+ * carries `kind` alone. `null` when the spec has no `closeDecl.stages` array
+ * at all (a command-close spec, or no spec resolved).
+ * @param {any} spec
+ * @returns {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null}>|null}
+ */
+function stageKindMetaFromSpec(spec) {
+  if (!spec || typeof spec !== 'object' || !spec.closeDecl || !Array.isArray(spec.closeDecl.stages)) return null;
+  /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null}>} */
+  const map = new Map();
+  for (const s of spec.closeDecl.stages) {
+    if (!s || typeof s.name !== 'string' || s.name.length === 0) continue;
+    const kind = typeof s.kind === 'string' ? s.kind : null;
+    const params = s.params && typeof s.params === 'object' ? s.params : null;
+    const direction = params && typeof params.direction === 'string' ? params.direction : null;
+    const baselineKind = params && (params.baseline === 'seed' || params.baseline === 0) ? params.baseline : null;
+    map.set(s.name, { kind, direction, baselineKind });
+  }
+  return map;
+}
+
+/**
+ * Attaches one stage's `{kind, direction, baselineKind}` (from {@link
+ * stageKindMetaFromSpec}'s map) onto its already-recorded runtime shape
+ * (`{name, verdict, value?, baseline?, …}`, straight off the spine) — a
+ * shallow copy, never a mutation of the spine-derived object, and only when
+ * BOTH a name and a matching declaration entry exist; otherwise the stage
+ * passes through unchanged (the client's existing spec-verbatim fallback
+ * still renders for it).
+ * @param {any} stage
+ * @param {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null}>|null} kindMeta
+ * @returns {any}
+ */
+function attachStageKind(stage, kindMeta) {
+  if (!stage || typeof stage !== 'object' || typeof stage.name !== 'string' || !kindMeta) return stage;
+  const meta = kindMeta.get(stage.name);
+  if (!meta) return stage;
+  return {
+    ...stage, kind: meta.kind, direction: meta.direction, baselineKind: meta.baselineKind,
+  };
+}
+
+/**
+ * `summary.parts` (verbatim except each attempt's `stages` array, which gets
+ * {@link attachStageKind} applied per stage) — a shallow re-map, never a
+ * mutation of `replayOne`'s own returned objects (other endpoints, e.g.
+ * {@link getRunAudit}, call `replayOne` fresh per request, but this stays
+ * defensive rather than relying on that).
+ * @param {any[]|null|undefined} parts
+ * @param {Map<string, any>|null} kindMeta
+ * @returns {any[]|null|undefined}
+ */
+function enrichPartsWithStageKind(parts, kindMeta) {
+  if (!Array.isArray(parts)) return parts;
+  if (!kindMeta) return parts;
+  return parts.map((part) => ({
+    ...part,
+    attempts: Array.isArray(part.attempts) ? part.attempts.map((a) => ({
+      ...a,
+      stages: Array.isArray(a.stages) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages,
+    })) : part.attempts,
+  }));
 }
 
 /**
