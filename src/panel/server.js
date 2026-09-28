@@ -409,9 +409,19 @@ export function getRunDetail(runid, opts = {}) {
       runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
     };
   }
-  const summary = replayOne(row.spine);
-  const timelineKind = summary.timelineKind;
+  // build item 7 (2026-09-28): resolve the audit path through the ONE
+  // shared resolver (`resolveAuditPathForRow`, already the sole owner for
+  // `scopedBehaviour`/`getRunAudit`) BEFORE calling `replayOne`, and hand it
+  // the result — otherwise `replayOne`'s own internal resolution only ever
+  // finds the FINISHED-run convention, so a still-LIVE run's part-level
+  // `byTool`/`toolCalls` (summary.parts, read from `replayRun`) read
+  // "unknown" even though the SAME run's Run-tab tools/cache summary and
+  // Audit tab (both driven through `resolveAuditPathForRow` already) can
+  // see the during-run sidecar just fine.
   const rawSpineRecords = parseJsonl(row.spine).records;
+  const auditPath = resolveAuditPathForRow(row, rawSpineRecords);
+  const summary = replayOne(row.spine, { auditPathOverride: auditPath });
+  const timelineKind = summary.timelineKind;
   const death = deriveDeath(row.spine, rawSpineRecords, summary.outcome);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green

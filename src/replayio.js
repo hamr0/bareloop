@@ -95,7 +95,8 @@ export function resolveSiblings(spinePath) {
  * Read one run's spine (+ its gate-audit sidecar, when present) off disk and
  * hand both to {@link replayRun}. Read-only, $0, mints no verdict.
  * @param {string} spinePath absolute or cwd-relative path to a `.jsonl` spine
- * @param {{preParsedSpine?: {records: any[], skipped: number}, skipAudit?: boolean}} [opts]
+ * @param {{preParsedSpine?: {records: any[], skipped: number}, skipAudit?: boolean,
+ *   auditPathOverride?: string|null}} [opts]
  *   `preParsedSpine`: avoids a second parse of the same file when the caller
  *   ({@link listSpines}) already read it once to run {@link looksLikeSpine}.
  *   `skipAudit` (PR #23 review item 5, 2026-08-26, carried over): a
@@ -103,11 +104,21 @@ export function resolveSiblings(spinePath) {
  *   `summarizeForAllLine` reads none of the fields that sidecar feeds inside
  *   `replayRun`, so reading every run's sidecar in a directory listing was
  *   pure unused I/O, multiplied by every spine found.
+ *   `auditPathOverride` (build item 7, 2026-09-28): when a caller has ALREADY
+ *   resolved the real audit path through the one shared resolver
+ *   (`src/panel/server.js`'s `resolveAuditPathForRow`, which also covers a
+ *   still-LIVE run's during-run sidecar location — this function's own
+ *   `resolveSiblings` call only ever finds the FINISHED-run convention), it
+ *   passes that path here (`null` included) instead of letting this
+ *   function re-derive a finished-only path on its own. `undefined` (the
+ *   default) keeps the original resolveSiblings-only behaviour — every
+ *   existing caller is unaffected.
  * @returns {ReturnType<typeof replayRun>}
  */
 export function replayOne(spinePath, opts = {}) {
-  const { preParsedSpine, skipAudit = false } = opts;
-  const { runId, auditPath } = resolveSiblings(spinePath);
+  const { preParsedSpine, skipAudit = false, auditPathOverride } = opts;
+  const { runId, auditPath: resolvedAuditPath } = resolveSiblings(spinePath);
+  const auditPath = auditPathOverride !== undefined ? auditPathOverride : resolvedAuditPath;
   const spine = preParsedSpine ?? parseJsonl(spinePath);
   const audit = (!skipAudit && auditPath) ? parseJsonl(auditPath) : { records: [], skipped: 0 };
   // `auditAvailable`: true only when a sidecar was actually FOUND AND READ.

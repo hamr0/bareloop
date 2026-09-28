@@ -386,6 +386,50 @@ test('a FRESH spine (no job-end, mtime just written) is still just "running" [�
   assert.equal(detail.glyph, '▶');
 });
 
+// build item 7 (2026-09-28, session mul5fofw): part-level tool counts
+// (summary.parts[*].byTool/toolCalls, what the Run tab's part cards AND the
+// Audit tab's Grouped part headers both read) came from `replayOne`'s own
+// internal `resolveSiblings` call, which only ever finds the FINISHED-run
+// gate-audit sidecar convention — while a run is still live, its sidecar
+// sits at the DURING-RUN path (`<patient>/gate-audit.jsonl`), which only
+// `resolveAuditPathForRow` (scopedBehaviour/getRunAudit's resolver) knew
+// how to find. Fixed by threading that SAME resolver's result into
+// `replayOne` via `auditPathOverride`, so there is only one owner of "where
+// is this run's audit sidecar" — `getRunDetail`'s `parts` (== summary.parts)
+// must now show real counts even with no job-end.
+test('build item 7: a LIVE run (no job-end) with its gate-audit sidecar at the DURING-RUN patient path shows real part-level byTool/toolCalls, never "unknown"', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const patient = tmp();
+  const spinePath = join(dir, 'u-liveaudit.jsonl');
+  writeSpine(spinePath, [
+    { type: 'job-start', job: 'still-going', ts: '2026-09-28T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'worker-round', ts: '2026-09-28T00:00:05.000Z', seq: 2, costUsd: 0.1 },
+  ]);
+  // the LIVE (during-run) sidecar location — a bare gate-audit.jsonl sitting
+  // in the run's own patient dir, NOT the finished `<stem>-gate-audit.jsonl`
+  // sibling `resolveSiblings` alone would look for.
+  writeFileSync(join(patient, 'gate-audit.jsonl'), `${JSON.stringify({
+    ts: '2026-09-28T00:00:06.000Z', action: { type: 'read', path: 'a.js' }, decision: 'allow',
+  })}\n${JSON.stringify({
+    ts: '2026-09-28T00:00:07.000Z', action: { type: 'edit', path: 'a.js' }, decision: 'allow',
+  })}\n`);
+  appendRun({
+    at: '2026-09-28T00:00:00.000Z', runid: 'liveaudit', job: 'still-going', spine: spinePath, patient, via: 'run-u',
+  }, { home });
+
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/liveaudit`);
+  const detail = await res.json();
+  assert.equal(detail.died, false);
+  assert.ok(Array.isArray(detail.parts) && detail.parts.length >= 1, 'expected at least one part');
+  const part = detail.parts[0];
+  assert.equal(part.toolCalls, 2, `expected the 2 live-sidecar rows to be counted, got ${JSON.stringify(part)}`);
+  assert.ok(part.byTool && typeof part.byTool === 'object', 'byTool must not be null once the live sidecar was found');
+  assert.equal(part.byTool.read, 1);
+  assert.equal(part.byTool.edit, 1);
+});
+
 // build item 6 (2026-09-28, session mul5fofw): a LIVE run (no job-end,
 // glyph [▶]) with real metered rounds already on the spine must expose a
 // running spend/wall FLOOR (spendFloorUsd/wallFloorMs), never null/unknown
