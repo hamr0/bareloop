@@ -3865,7 +3865,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       blindCap: capRuns,
       directions: stageDirections,
     });
-    // F195: feed the STRUCTURED {stage, value} a declared close already produced
+    // F198: feed the STRUCTURED {stage, value} a declared close already produced
     // (`closeGrade`, src/declaredclose.js) rather than re-parsing `post.gap` through
     // `readGrade`'s `\bred\b` scan — a declared close's own gap prose never carries
     // that word, so the text path read every declared grade as an uncomparable
@@ -3874,7 +3874,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // `closeGrade(post)` is exact. `readGrade` stays the fallback INSIDE
     // `trend.record` for a command close, where `closeGrade` returns `{gap}` only.
     fixTrend.record(closeGrade(post));
-    // F195 item 2 — TRACE: before this, `middle` (below) handed the fix worker
+    // F198 item 2 — TRACE: before this, `middle` (below) handed the fix worker
     // ONLY the current gap (this iteration's raw close output, or the previous
     // attempt's — planrun.js's `await w.ask([...])` at the end of `middle`) and
     // never any history of prior grades. Nothing else about the close's own
@@ -4048,7 +4048,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         })
         : null;
       if (rootInj) emit('root-injected', { phase: 'fix', ...rootInj.event });
-      // F195 item 2 — the facts-only history: JOINED numbers only, no prose the
+      // F198 item 2 — the facts-only history: JOINED numbers only, no prose the
       // model didn't already earn by writing the close's own output. `values`
       // joins with `→` (fixTrend's own vocabulary), stages join with `·`; a
       // stage this leg has read only once still shows its one number (no arrow),

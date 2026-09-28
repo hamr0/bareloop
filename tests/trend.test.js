@@ -543,7 +543,7 @@ test('DIRECTION mixed close: one up stage and one down stage are each graded aga
   assert.equal(v.trend, 'converging', 'the down-stage alone made net progress, which is enough to headline converging');
 });
 
-// ══ F195 — REPLAY: run mul5fofw's own recorded grades through the FIXED
+// ══ F198 — REPLAY: run mul5fofw's own recorded grades through the FIXED
 // governor (closeGrade's structured {stage, value} instead of readGrade(gap))
 // and report what it would now decide. Real records, copied verbatim from the
 // spine (tests/fixtures/mul5fofw-fix-loop-grades.jsonl) — nothing crafted. ══
@@ -559,13 +559,13 @@ test('readGrade is BLIND on every one of mul5fofw\'s real declared grades — th
   }
 });
 
-test('F195 REPLAY: mul5fofw\'s 4 recorded grades through the fixed governor (closeGrade, structured) — reports the real decision, not the old blind null', () => {
+test('F198 REPLAY: mul5fofw\'s 4 recorded grades through the fixed governor (closeGrade, structured) — reports the real decision, not the old blind null', () => {
   // mul5fofw's own declared stage order (from its `stages` list, outer-close record)
   const stageOrder = ['changed-from-seed', 'typecheck-target-zero-errors', 'typecheck-outside-not-worse',
     'tests-kept', 'suite-green', 'suite-zero-failing-tests', 'no-suppressions'];
   const tr = createTrend({ stageOrder, limit: FIX_STRIKE_LIMIT, blindCap: null, directions: {} });
   const [seed, ...fixIterations] = MUL5FOFW_GRADES;
-  // the seed: the OUTER-CLOSE grade the fix loop opens on (F195's fix in
+  // the seed: the OUTER-CLOSE grade the fix loop opens on (F198's fix in
   // src/planrun.js feeds this through `closeGrade`, not `{ gap: post.gap }`)
   tr.record(closeGrade(seed));
   const decisions = fixIterations.map((rec) => tr.record(closeGrade(rec)));
@@ -590,7 +590,7 @@ test('F195 REPLAY: mul5fofw\'s 4 recorded grades through the fixed governor (clo
     'REPLAY DECISION: the fixed governor would still strike this run out at fix iteration 3, same as the real run');
 });
 
-test('F195: a SYNTHETIC same-stage improving run (12 -> 5) resets noProgress through the fixed structured feed — the exact case readGrade could never see', () => {
+test('F198: a SYNTHETIC same-stage improving run (12 -> 5) resets noProgress through the fixed structured feed — the exact case readGrade could never see', () => {
   const tr = createTrend({ stageOrder: ['typecheck-target-zero-errors'], limit: FIX_STRIKE_LIMIT });
   // a declared close's real shape: `closeGrade` on a `declared: true` verdict
   const r1 = tr.record(closeGrade({ declared: true, stage: 'typecheck-target-zero-errors', trendValue: 12, gap: 'close stage "typecheck-target-zero-errors" failed:\nclose: typecheck-target-zero-errors: 12 against a baseline of 0 (lower-is-better) — worse' }));

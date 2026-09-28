@@ -220,7 +220,7 @@ test('a red declared close prefixes every gap line with DECLARED_GAP_PREFIX, und
   assert.ok(body.some((l) => l.includes('FAILED src/fix.js')), 'the gap carries what the stage actually said');
 });
 
-// ══ F195 — the fix-loop governor reads a DECLARED close's own {stage, value},
+// ══ F198 — the fix-loop governor reads a DECLARED close's own {stage, value},
 // never re-parses its gap text ══════════════════════════════════════════════
 //
 // Proven cause (orchestrator's $0 replay of readGrade over run mul5fofw's own
@@ -303,7 +303,7 @@ const writeCount = (/** @type {string} */ dir, /** @type {string} */ n, /** @typ
   { text: `count -> ${n}` },
 ];
 
-test('F195: the fix-loop governor reads a declared close\'s own value — flat/improved/flat/flat strikes out on the REAL numbers, never on a blind null', async (t) => {
+test('F198: the fix-loop governor reads a declared close\'s own value — flat/improved/flat/flat strikes out on the REAL numbers, never on a blind null', async (t) => {
   const { dir, spine } = makeCountPatient(t);
   const job = countJob();
   assert.deepEqual(validateJob(job, { shellCapUsd: job.budgetUsd }).reds, []);
@@ -386,7 +386,7 @@ test('F197/mul5fofw: an ESCALATED run\'s exhaustion options never advertise --re
     `an escalated run's options must say plainly it cannot be resumed — got ${JSON.stringify(esc.options)}`);
 });
 
-// ══ F195 item 2 — the fix worker gets a FACTS-ONLY number history, never just
+// ══ F198 item 2 — the fix worker gets a FACTS-ONLY number history, never just
 // the current gap in isolation ═══════════════════════════════════════════════
 //
 // TRACE (planrun.js's `middle`, the fix loop's worker turn): before this test's
@@ -395,7 +395,7 @@ test('F197/mul5fofw: an ESCALATED run\'s exhaustion options never advertise --re
 // the plan's own working-context artifacts, and EITHER the close's original
 // output (first attempt) OR the PREVIOUS attempt's raw gap (every attempt
 // after) — one iteration's worth of text, never a history of prior numbers.
-test('F195 item 2: the fix worker\'s prompt carries the close\'s own number history, growing one entry per attempt — facts only, no advice', async (t) => {
+test('F198 item 2: the fix worker\'s prompt carries the close\'s own number history, growing one entry per attempt — facts only, no advice', async (t) => {
   const { dir, spine } = makeCountPatient(t);
   const job = countJob();
   assert.deepEqual(validateJob(job, { shellCapUsd: job.budgetUsd }).reds, []);
