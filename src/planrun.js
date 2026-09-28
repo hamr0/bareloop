@@ -3864,7 +3864,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       blindCap: capRuns,
       directions: stageDirections,
     });
-    fixTrend.record({ gap: post.gap ?? '' });
+    // F195: feed the STRUCTURED {stage, value} a declared close already produced
+    // (`closeGrade`, src/declaredclose.js) rather than re-parsing `post.gap` through
+    // `readGrade`'s `\bred\b` scan — a declared close's own gap prose never carries
+    // that word, so the text path read every declared grade as an uncomparable
+    // null. `post` IS `lastCloseVerdict` here (this is the opening grade, straight
+    // off `judgeClose()`, before any crash-message substitution can occur), so
+    // `closeGrade(post)` is exact. `readGrade` stays the fallback INSIDE
+    // `trend.record` for a command close, where `closeGrade` returns `{gap}` only.
+    fixTrend.record(closeGrade(post));
     /** ralph's `ladder` seam, filled by the trend reader instead of the step
      * ladder's repeat/write pair. ONE exhaustion terminal, two triggers (ralph's own
      * rule): the category stays `cap-halt` and the outcome stays `escalated`, so the
@@ -3883,7 +3891,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         if (lastCloseVerdict?.verdict === HUMAN_PAUSE) {
           return { governor: 'close-trend', trend: 'unknown', reading: 'the close is waiting on a person — not a grade', iteration: o.iteration, paused: true };
         }
-        return { governor: 'close-trend', ...fixTrend.record({ gap: o.gap }), iteration: o.iteration };
+        // Same structured-first read as the seed above. `lastCloseVerdict` is THIS
+        // iteration's verdict (judge() ran immediately before ralph calls this
+        // record) UNLESS a worker-crash overwrote `gap` with a synthetic message
+        // (src/ralph.js) that no longer matches `lastCloseVerdict.gap` — guarded by
+        // the equality check so a crash still reads through the text fallback on
+        // its own synthetic gap, exactly as before.
+        const graded = lastCloseVerdict && lastCloseVerdict.gap === o.gap ? closeGrade(lastCloseVerdict) : { gap: o.gap };
+        return { governor: 'close-trend', ...fixTrend.record(graded), iteration: o.iteration };
       },
       struckOut: fixTrend.struckOut,
       report: fixTrend.report,

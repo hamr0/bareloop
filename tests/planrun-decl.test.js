@@ -219,3 +219,127 @@ test('a red declared close prefixes every gap line with DECLARED_GAP_PREFIX, und
   }
   assert.ok(body.some((l) => l.includes('FAILED src/fix.js')), 'the gap carries what the stage actually said');
 });
+
+// ══ F195 — the fix-loop governor reads a DECLARED close's own {stage, value},
+// never re-parses its gap text ══════════════════════════════════════════════
+//
+// Proven cause (orchestrator's $0 replay of readGrade over run mul5fofw's own
+// spine, 2026-09-28): a `count-not-worse` gap reads `"12 against a baseline of
+// 0 (lower-is-better) — worse"` — no line contains the word "red", so
+// `readGrade`'s `\bred\b` scan (src/trend.js) returned `value: null` on EVERY
+// declared grade the fix loop ever produced, real spine included. The stage
+// name still came through (the header regex reads it independent of the count),
+// so the governor's STAGE-position comparison kept working while its NUMBER
+// comparison never did — exactly what mul5fofw's own `ladder` records show
+// (`"stage":"typecheck-target-zero-errors","value":null`, three separate
+// stages). `runDeclaredStages` already hands back the number as `trendValue`
+// (`closeGrade`, src/declaredclose.js) — planrun.js's fix governor now feeds
+// that structured reading straight to the trend instead of `{ gap }`.
+
+/** a `count-not-worse` stage whose count comes from a file the worker edits
+ * directly — a real subprocess, real parsed output, no crafted fixture text. */
+const COUNT_STAGE = {
+  name: 'count-stage',
+  kind: 'count-not-worse',
+  params: {
+    cmd: 'node',
+    args: ['check-count.mjs'],
+    parser: { terms: [{ lineMatch: 'ERR\\d+', sign: 1, aggregate: 'sum', region: 'whole-output' }] },
+    scope: { includePrefixes: ['src/'] },
+    direction: 'lower-is-better',
+    baseline: 0,
+  },
+};
+
+const DECL_COUNT = () => ({
+  genre: GENRE,
+  lang: 'js',
+  stages: [guards(['src/'])[0], COUNT_STAGE, guards(['src/'])[1]],
+});
+
+const countJob = () => ({
+  schema: 'job-v1',
+  job: 'declared-count-through-runjob',
+  description: 'a declared count-not-worse stage — the exact shape mul5fofw\'s fix loop graded blind',
+  provider: 'anthropic-api',
+  cadence: { unit: 'day', every: 1 },
+  budgetUsd: 1.5,
+  writeScope: ['src/**'],
+  goal: 'Lower the value in src/count.txt to 0.',
+  verdictType: 'green',
+  closeDecl: DECL_COUNT(),
+  tools: ['read', 'write', 'edit'],
+  escalation: { mode: 'decision-ready' },
+});
+
+/**
+ * A patient whose close COUNTS `ERR\d+` lines a real subprocess prints, one per
+ * unit in `src/count.txt` — the worker's own edit drives a real, measured
+ * number through the declared executor. Seeded at 9 so the step's OWN first
+ * write (9 → 5) satisfies `changed-from-seed` before the count stage is ever
+ * reached, exactly like a real run's first pass through a staged close.
+ * @param {any} t
+ */
+function makeCountPatient(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'planrun-decl-count-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'src', 'mod.js'), '// nothing yet\n');
+  writeFileSync(join(dir, '.gitignore'), '.smoke/\n');
+  writeFileSync(join(dir, 'src', 'count.txt'), '9\n');
+  writeFileSync(join(dir, 'check-count.mjs'), `import { readFileSync } from 'node:fs';
+const n = Number(readFileSync(new URL('./src/count.txt', import.meta.url).pathname, 'utf8').trim() || '0');
+for (let i = 0; i < n; i++) console.log('ERR' + i + ' at src/count.txt');
+process.exit(0);
+`);
+  const seed = initPatientRepo(dir);
+  const spineDir = mkdtempSync(join(tmpdir(), 'planrun-decl-count-spine-'));
+  t.after(() => rmSync(spineDir, { recursive: true, force: true }));
+  return { dir, seed, spine: join(spineDir, 'spine.jsonl') };
+}
+
+const writeCount = (/** @type {string} */ dir, /** @type {string} */ n, /** @type {string} */ id) => [
+  { toolCalls: [{ id, name: 'shell_write', arguments: { path: join(dir, 'src', 'count.txt'), content: `${n}\n` } }] },
+  { text: `count -> ${n}` },
+];
+
+test('F195: the fix-loop governor reads a declared close\'s own value — flat/improved/flat/flat strikes out on the REAL numbers, never on a blind null', async (t) => {
+  const { dir, spine } = makeCountPatient(t);
+  const job = countJob();
+  assert.deepEqual(validateJob(job, { shellCapUsd: job.budgetUsd }).reds, []);
+
+  const provider = scriptedProvider([
+    { text: 'src/count.txt holds a number; check-count.mjs is the gate.' },
+    { text: PLAN([{ type: 'tree-changed', scope: 'src/**' }]) },
+    ...writeCount(dir, '5', 't0'),  // the step: 9 -> 5, tree-changed satisfied; outer-close reds at count-stage=5
+    ...writeCount(dir, '5', 't1'),  // fix 1: flat (5 == 5) -> strike 1
+    ...writeCount(dir, '3', 't2'),  // fix 2: improved (3 < 5) -> resets to 0
+    ...writeCount(dir, '3', 't3'),  // fix 3: flat (3 == 3) -> strike 1
+    ...writeCount(dir, '3', 't4'),  // fix 4: flat (3 == 3) -> strike 2, struck out
+    { text: 'never bought' },
+  ]);
+  const outcome = await runJob(job, {
+    approvals: approve(job), workdir: dir, provider, emit: makeSpine(spine), capRuns: 9,
+  });
+  const events = readSpine(spine);
+  assert.equal(outcome, 'escalated', JSON.stringify(events.filter((e) => e.type === 'escalation')));
+
+  const post = events.find((e) => e.type === 'outer-close');
+  assert.equal(post.declared, true);
+  assert.equal(post.stage, 'count-stage');
+  assert.equal(post.trendValue, 5, 'the opening grade carries a REAL number — the seed for the fix loop\'s comparisons');
+
+  const reads = events.filter((e) => e.type === 'ladder' && e.governor === 'close-trend');
+  assert.deepEqual(reads.map((r) => r.stage), ['count-stage', 'count-stage', 'count-stage', 'count-stage']);
+  // THE BUG'S SIGNATURE: under readGrade, every one of these reads `value: null`
+  // because no `count-not-worse` gap line ever contains the word "red". Fixed,
+  // they read the close's own measured number.
+  assert.deepEqual(reads.map((r) => r.value), [5, 3, 3, 3], 'the governor now sees the SAME numbers the close measured — never a re-parsed null');
+  assert.deepEqual(reads.map((r) => r.comparable), [true, true, true, true], 'every reading compares against this stage\'s own history');
+  assert.deepEqual(reads.map((r) => r.improved), [false, true, false, false], 'fix 2\'s 5 -> 3 is a real improvement, read as one');
+  assert.deepEqual(reads.map((r) => r.noProgress), [1, 0, 1, 2], 'a real improvement RESETS the strike count — fix 2 clears fix 1\'s strike');
+
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'cap-halt');
+  assert.match(esc.decision, /2\/2 strike|no progress|stopped making progress/i);
+});
