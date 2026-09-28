@@ -1106,6 +1106,44 @@ test('draftSpentUsd: a garbage value (negative/non-finite) is belted to 0, exact
   assert.equal('draftSpentUsd' in start, false, 'a garbage (0-reading) fold is absent, never a decorative 0');
 });
 
+// hamr's ruling 2026-09-28 (2nd addendum, "drafting completeness travels
+// with draftSpentUsd") — a NEW field beside draftSpentUsd, never a value
+// inside it: whether the drafting fold above was EXACT.
+test('draftSpendComplete: rides beside draftSpentUsd on job-start; false when the caller says the fold was a floor, true (and RED-PROVEN garbage-belted) otherwise', async () => {
+  const wdComplete = makePlanWork('plan-draft-complete');
+  const jobA = planJob();
+  const fileA = join(wdComplete, 'spine.jsonl');
+  await runJob(jobA, {
+    approvals: [{ specHash: jobSpecHash(jobA), signer: 'hamr', ts: 'now' }],
+    workdir: wdComplete, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]), emit: makeSpine(fileA),
+    draftSpentUsd: 0.5,
+  });
+  const startA = readSpine(fileA).find((e) => e.type === 'job-start');
+  assert.equal(startA.draftSpendComplete, true, 'draftSpendComplete defaults to true — the common case, unchanged');
+
+  const wdIncomplete = makePlanWork('plan-draft-incomplete');
+  const jobB = planJob();
+  const fileB = join(wdIncomplete, 'spine.jsonl');
+  await runJob(jobB, {
+    approvals: [{ specHash: jobSpecHash(jobB), signer: 'hamr', ts: 'now' }],
+    workdir: wdIncomplete, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]), emit: makeSpine(fileB),
+    draftSpentUsd: 0.5, draftSpendComplete: false,
+  });
+  const startB = readSpine(fileB).find((e) => e.type === 'job-start');
+  assert.equal(startB.draftSpendComplete, false, 'an explicit false reads through — the drafting fold was a floor');
+
+  const wdGarbage = makePlanWork('plan-draft-complete-garbage');
+  const jobC = planJob();
+  const fileC = join(wdGarbage, 'spine.jsonl');
+  await runJob(jobC, {
+    approvals: [{ specHash: jobSpecHash(jobC), signer: 'hamr', ts: 'now' }],
+    workdir: wdGarbage, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]), emit: makeSpine(fileC),
+    draftSpentUsd: 0.5, draftSpendComplete: /** @type {any} */ ('garbage'),
+  });
+  const startC = readSpine(fileC).find((e) => e.type === 'job-start');
+  assert.equal(startC.draftSpendComplete, true, 'a garbage (non-boolean) value is belted to true, exactly like priorSpendComplete\'s own belt — never manufactures a false floor');
+});
+
 test('§3 resume: a FLOOR fold stays a floor — a dead run whose spend was only partly priced cannot come back as an exact total (F6)', async () => {
   // The fold is the dead run's own figure, and `readResume` marks it
   // `priorSpendComplete: false` when any round in it came back unpriced. Declaring

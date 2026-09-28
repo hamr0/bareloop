@@ -1230,12 +1230,19 @@ export async function main(argv, deps = {}) {
           // person needs to run their own job, nothing left to hand off.
           // `providerEntry.envKey` (never a hardcoded ANTHROPIC_API_KEY) is the
           // same F187 rule scripts/run-u.mjs's own hint already follows.
+          // hamr's ruling 2026-09-28 (2nd addendum) — `totalCost.costUsd === null`
+          // means this pipeline's own metered list carried at least one unpriced
+          // call (`tallyCalls`'s `spendComplete: false`), so the drafting fold is
+          // a FLOOR, and the run-u command below must say so via its own
+          // presence-flag rather than let the next leg's job-start read it as
+          // exact.
+          const draftIncomplete = totalCost.costUsd === null;
           if (draftSpentUsd > 0) {
-            out(`\n  drafting spent ${totalCost.costUsd === null ? `at least $${draftSpentUsd.toFixed(6)}` : `$${draftSpentUsd.toFixed(6)}`} — the run's own cap is the SAME signed $${spec.budgetUsd}, `
+            out(`\n  drafting spent ${draftIncomplete ? `at least $${draftSpentUsd.toFixed(6)}` : `$${draftSpentUsd.toFixed(6)}`} — the run's own cap is the SAME signed $${spec.budgetUsd}, `
               + 'and run-u will enforce the remainder (Cap $ minus this) as ITS ceiling — pass --draft-spent-usd exactly as shown below, never a rounded or re-typed figure.');
           }
           out('\nTo run it (the same signature and gates as any other job — nothing here bypasses them):');
-          out(`  ${providerEntry.envKey}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}` : ''}`);
+          out(`  ${providerEntry.envKey}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}${draftIncomplete ? ' --draft-spend-incomplete' : ''}` : ''}`);
           emit('author-end', { outcome: 'prepared', specHash: hash });
         }
       }

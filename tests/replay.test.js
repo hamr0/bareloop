@@ -1186,6 +1186,38 @@ test('moneyWithDraft: exact display strings — "$3.71 ($0.81 drafting) of $5.00
   assert.equal(moneyWithDraft('$3.68', null), '$3.68', 'a run without a drafting share prints exactly what it always did');
 });
 
+// hamr's ruling 2026-09-28 (2nd addendum, "drafting completeness travels
+// with draftSpentUsd") — an incomplete drafting fold reads "at least" on
+// BOTH the bracket and the leading figure (a reader summing the two must
+// never take the leading number as exact when the bracket beside it isn't).
+test('moneyWithDraft: an incomplete draftSpendComplete:false reads "at least" on the bracket AND the leading spendCore', () => {
+  assert.equal(
+    moneyWithDraft('$3.71', 0.81, 5, false),
+    'at least $3.71 (at least $0.8100 drafting) of $5.00',
+  );
+  // a complete fold (true, or the parameter simply omitted) is UNCHANGED —
+  // never a new enum value anywhere else in the string.
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, true), '$3.71 ($0.8100 drafting) of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, undefined), '$3.71 ($0.8100 drafting) of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, null), '$3.71 ($0.8100 drafting) of $5.00');
+});
+
+test('moneyWithDraft: an already-floor spendCore (e.g. a died run\'s "at least $X") never doubles the "at least" prefix when the draft is also incomplete', () => {
+  assert.equal(
+    moneyWithDraft('at least $0.0182', 0.81, 5, false),
+    'at least $0.0182 (at least $0.8100 drafting) of $5.00',
+  );
+  assert.equal(
+    moneyWithDraft('≥$3.71', 0.81, 5, false),
+    '≥$3.71 (at least $0.8100 drafting) of $5.00',
+    'the run\'s own "≥" floor spelling is recognized too, never double-prefixed',
+  );
+});
+
+test('moneyWithDraft: no drafting share at all -> draftSpendComplete is never even consulted, output unchanged', () => {
+  assert.equal(moneyWithDraft('$3.68', null, 5, false), '$3.68 of $5.00');
+});
+
 test('summarizeForAllLine: the spend column carries the drafting share for a run that has one, unchanged for a run that does not', () => {
   const withDraft = replayRun([
     { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, shape: 'plan' },
@@ -1198,4 +1230,35 @@ test('summarizeForAllLine: the spend column carries the drafting share for a run
     { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.68, spendComplete: true },
   ], [], { runId: 'x' });
   assert.equal(summarizeForAllLine(withoutDraft).spend, '$3.6800', 'a run without a drafting share prints exactly what it always did');
+});
+
+// hamr's ruling 2026-09-28 (2nd addendum) — replayRun reads draftSpendComplete
+// off job-start's own field, defaulting to true on an archive that predates
+// the companion field (it was exact then, the field just didn't exist yet).
+test('replayRun: draftSpendComplete reads off job-start — null when there is no drafting fold, true on a pre-field archive, false only when the fold explicitly said so', () => {
+  const noDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5 },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(noDraft.draftSpendComplete, null, 'no drafting fold at all -> never paired with a draftSpentUsd of null');
+
+  const preField = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81 },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(preField.draftSpendComplete, true, 'an archive with draftSpentUsd but no companion field defaults to true (it was exact when it was written)');
+
+  const incomplete = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(incomplete.draftSpendComplete, false);
+});
+
+test('summarizeForAllLine: an INCOMPLETE drafting fold reads "at least" on both the leading spend and the bracket, off the CLI\'s own 4-decimal money() — the CLI\'s own --all output is unchanged (never migrated to 2 decimals)', () => {
+  const incomplete = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false, shape: 'plan' },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(summarizeForAllLine(incomplete).spend, 'at least $3.7100 (at least $0.8100 drafting)');
 });

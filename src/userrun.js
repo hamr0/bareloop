@@ -248,6 +248,10 @@ class ExitSignal extends Error {
  *   drafted through the panel/`bareloop author`. Parsed and validated in `execute`
  *   (finite, >= 0, else refused) — never coerced silently, the same param-guard
  *   class `--read-shim`/`--scout` already are.
+ * @property {boolean} [draftSpendIncomplete] the raw `--draft-spend-incomplete` presence-
+ *   flag (hamr's ruling 2026-09-28, 2nd addendum) — whether the drafting fold above was a
+ *   FLOOR, never an exact figure. A new field beside `draftSpentUsd`, same param-guard
+ *   class, no value to misread.
  * @property {string|null} [registry] a bridge registry directory
  * @property {string|null} [workflow] the registry's workflow name (defaults to `spec.job`)
  * @property {string|null} [approve] the spec hash being signed; omitted previews only
@@ -270,6 +274,7 @@ class ExitSignal extends Error {
  * @property {string|null} readShim
  * @property {string|null} scout
  * @property {string|null} draftSpentUsd
+ * @property {boolean} draftSpendIncomplete
  * @property {string|null} registry
  * @property {string|null} workflow
  * @property {string|null} approve
@@ -419,10 +424,20 @@ async function execute(ctx) {
     }
     DRAFT_SPENT_USD = v;
   }
+  // --draft-spend-incomplete (hamr's ruling 2026-09-28, 2nd addendum) — a NEW
+  // field beside --draft-spent-usd, never a value inside it: whether the
+  // drafting fold above was EXACT. Boolean presence-flag, same class as
+  // --review-door above (no argument, no value to misread as 0/Infinity).
+  // Meaningless alone (no drafting fold to qualify) but never refused for
+  // being passed without --draft-spent-usd — a re-invocation tail that always
+  // pairs the two never needs a second guard to prove it did.
+  const DRAFT_SPEND_INCOMPLETE = ctx.draftSpendIncomplete === true;
   /** every re-invocation this script PRINTS carries the drafting fold, the
    * same SHIM_TAIL/SCOUT_TAIL rule: a resume that dropped it would silently
-   * WIDEN the ceiling back up by the drafting spend on its next leg. */
-  const DRAFT_TAIL = DRAFT_SPENT_USD > 0 ? ` --draft-spent-usd ${DRAFT_SPENT_USD}` : '';
+   * WIDEN the ceiling back up by the drafting spend on its next leg (and
+   * dropping the incomplete flag would silently turn a floor into an exact
+   * figure on the next leg's own job-start). */
+  const DRAFT_TAIL = DRAFT_SPENT_USD > 0 ? ` --draft-spent-usd ${DRAFT_SPENT_USD}${DRAFT_SPEND_INCOMPLETE ? ' --draft-spend-incomplete' : ''}` : '';
 
   const WORKDIR = target.workdir;
   const SEED = target.seed;
@@ -1681,6 +1696,7 @@ async function execute(ctx) {
       readShim: READ_SHIM,
       scout: SCOUT,
       draftSpentUsd: DRAFT_SPENT_USD,
+      draftSpendComplete: !DRAFT_SPEND_INCOMPLETE,
       // RESUME: the money and the wall the halted run already burned are FOLDED IN (so
       // the signed ceiling cannot widen by being re-invoked), and the checkpoint it
       // reached is handed over so the plan is reloaded rather than re-drafted and the
@@ -1776,8 +1792,9 @@ async function execute(ctx) {
   // what "$X of $Y" means for a job that drafted through the panel/author.
   const jobStartRec = events.find((e) => e.type === 'job-start');
   const legDraftSpentUsd = typeof jobStartRec?.draftSpentUsd === 'number' && jobStartRec.draftSpentUsd > 0 ? jobStartRec.draftSpentUsd : null;
+  const legDraftSpendComplete = legDraftSpentUsd === null ? null : jobStartRec.draftSpendComplete !== false;
   const spendCore = je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete === false ? '≥' : ''}$${je.spentUsd.toFixed(4)}`;
-  out(`spent     ${moneyWithDraft(spendCore, legDraftSpentUsd, spec.budgetUsd)}`);
+  out(`spent     ${moneyWithDraft(spendCore, legDraftSpentUsd, spec.budgetUsd, legDraftSpendComplete)}`);
   // FOLDED, exactly like the money line above it: on a resume the cap governs both legs
   // together, and a leg-only wall next to a folded spend is two framings on one cap with
   // no label to tell them apart (F83). The leg stays on the line beside it.
@@ -2104,6 +2121,7 @@ function buildCtx(mode, opts) {
     readShim: opts.readShim ?? null,
     scout: opts.scout ?? null,
     draftSpentUsd: opts.draftSpentUsd ?? null,
+    draftSpendIncomplete: opts.draftSpendIncomplete === true,
     registry: opts.registry ?? null,
     workflow: opts.workflow ?? null,
     approve: opts.approve ?? null,
@@ -2323,6 +2341,7 @@ export async function main(argv, deps = {}) {
       readShim: argFlag('read-shim'),
       scout: argFlag('scout'),
       draftSpentUsd: argFlag('draft-spent-usd'),
+      draftSpendIncomplete: argv.includes('--draft-spend-incomplete'),
       registry: argFlag('registry'),
       workflow: argFlag('workflow'),
       approve: argFlag('approve'),

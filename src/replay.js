@@ -472,6 +472,14 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // nothing".
   const draftSpentUsd = jobStart && typeof jobStart.draftSpentUsd === 'number' && Number.isFinite(jobStart.draftSpentUsd) && jobStart.draftSpentUsd > 0
     ? jobStart.draftSpentUsd : null;
+  // draftSpendComplete (hamr's ruling 2026-09-28) — was the drafting fold above
+  // EXACT? `null` when there is no drafting fold at all (the common case, and
+  // every run predating both fields) — never paired with a `draftSpentUsd` of
+  // `null`. An archive whose `job-start` carries `draftSpentUsd` but predates
+  // this companion field (src/run.js's own belt) defaults to `true` — it was
+  // exact then, the field simply didn't exist yet to say so.
+  const draftSpendComplete = draftSpentUsd === null ? null
+    : (jobStart.draftSpendComplete !== false);
   const floorReasonList = floorReasons(spine, jobStart, spendComplete);
 
   const wallMs = windowWallMs(parseTs(jobStart?.ts), parseTs(jobEnd?.ts));
@@ -1339,6 +1347,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     spentUsd,
     spendComplete,
     draftSpentUsd,
+    draftSpendComplete,
     floorReasons: floorReasonList,
     transportRetryCount: transportRetries.length,
     transportRetriesOutsideWindows,
@@ -1406,15 +1415,31 @@ function money2(n) {
  * clause and the `of $<cap>` tail, never re-derives the money itself.
  * Unchanged (`spendCore` alone, or `spendCore of $cap`) when there is no
  * drafting share — a run without one prints exactly what it always did.
+ *
+ * hamr's ruling 2026-09-28 (2nd addendum) — an INCOMPLETE drafting fold
+ * (`draftSpendComplete === false`) is a floor, not a total, and F6's rule
+ * ("unpriced is never free, a floor never dresses as exact") applies here
+ * exactly as it does to `spendCore` itself: the drafting clause reads `at
+ * least $X drafting`, and because a reader summing the two figures would
+ * otherwise take the LEADING number as exact too, `spendCore` itself also
+ * gains the `at least ` prefix — unless it already carries one (a `died`
+ * floor, or an already-prefixed caller), never doubled.
  * @param {string} spendCore already-formatted spend text (e.g. `$3.71` or `at least $2.00`)
  * @param {number|null} draftSpentUsd the drafting share, or null when there isn't one
  * @param {number|null} [budgetUsd] the signed cap, appended as `of $X.XX` when given
+ * @param {boolean|null} [draftSpendComplete] whether the drafting fold above was EXACT;
+ *   `null`/`undefined`/`true` all read as exact (never a new enum value elsewhere) —
+ *   only an explicit `false` triggers the floor wording.
  * @returns {string}
  */
-export function moneyWithDraft(spendCore, draftSpentUsd, budgetUsd) {
-  const draftPart = draftSpentUsd !== null && draftSpentUsd !== undefined ? ` (${money(draftSpentUsd)} drafting)` : '';
+export function moneyWithDraft(spendCore, draftSpentUsd, budgetUsd, draftSpendComplete) {
+  const hasDraft = draftSpentUsd !== null && draftSpentUsd !== undefined;
+  const draftFloor = hasDraft && draftSpendComplete === false;
+  const coreAlreadyFloor = /^(at least |≥)/.test(spendCore);
+  const core = draftFloor && !coreAlreadyFloor ? `at least ${spendCore}` : spendCore;
+  const draftPart = hasDraft ? ` (${draftFloor ? 'at least ' : ''}${money(draftSpentUsd)} drafting)` : '';
   const capPart = budgetUsd === undefined ? '' : ` of ${money2(budgetUsd)}`;
-  return `${spendCore}${draftPart}${capPart}`;
+  return `${core}${draftPart}${capPart}`;
 }
 
 /**
@@ -1860,7 +1885,7 @@ export function summarizeForAllLine(summary) {
     // shown on a run with zero retries.
     outcome: `${summary.outcome ?? 'unknown'}${summary.transportRetryCount > 0 ? ` ⟲${summary.transportRetryCount}` : ''}`,
     hadTransportRetries: summary.transportRetryCount > 0,
-    spend: moneyWithDraft(money(summary.spentUsd), summary.draftSpentUsd),
+    spend: moneyWithDraft(money(summary.spentUsd), summary.draftSpentUsd, undefined, summary.draftSpendComplete),
     wall: duration(summary.wallMs),
     steps: stepsCol,
     reason,

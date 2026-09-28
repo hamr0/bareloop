@@ -108,6 +108,18 @@ test('bareloop run-u: a real, valid --draft-spent-usd (0.81) is accepted — the
   assert.equal(rc, 0, err.text());
 });
 
+// hamr's ruling 2026-09-28 (2nd addendum) — --draft-spend-incomplete is a
+// bare presence-flag beside --draft-spent-usd (no value to misread), same
+// param-guard class, never refused for being passed alongside a real
+// --draft-spent-usd value.
+test('bareloop run-u: --draft-spend-incomplete alongside a real --draft-spent-usd is accepted — the preview still reaches exit 0', async () => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run-u', '--job', 'aurora-spawner', '--draft-spent-usd', '0.81', '--draft-spend-incomplete'], {
+    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
+  });
+  assert.equal(rc, 0, err.text());
+});
+
 // ---------------------------------------------------------------------------
 // the real preview path, still $0: no key -> print hints, exit 0, no spend
 // ---------------------------------------------------------------------------
