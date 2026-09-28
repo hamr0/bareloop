@@ -69,7 +69,6 @@ export const MODEL_OPTIONS = Object.freeze({
  * @type {Readonly<Record<string, string>>}
  */
 const PROGRESS_LABELS = Object.freeze({
-  'confirm-worse-than-before': 'checking prior behaviour',
   'confirm-language-pick': 'confirming language',
   'confirm-round': 'confirming plan',
   'confirm-done': 'plan confirmed',
@@ -239,8 +238,7 @@ export function createSession(card, deps = {}) {
   const ask = (step) => new Promise((resolveFn) => {
     state.pendingAsk = step;
     resolvePending = resolveFn;
-    if (step.kind === 'worseThanBefore') say('bot', step.field?.prompt ?? 'Anything about this run that must not get worse than before?');
-    else if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
+    if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       const p = step.plan ?? {};
       const lines = [`Plan: ${JSON.stringify(p.goal ?? '')}`, `Checks: ${(p.checks ?? []).join(' · ') || '(none)'}`];
@@ -263,7 +261,7 @@ export function createSession(card, deps = {}) {
     return true;
   };
 
-  /** @param {'menu'|'fix'|'answer'|'worseThanBefore'|'language'|'goal'} kind @param {number} timeoutMsInner */
+  /** @param {'menu'|'fix'|'answer'|'language'|'goal'} kind @param {number} timeoutMsInner */
   const waitForPendingKind = async (kind, timeoutMsInner = 2000) => {
     const start = Date.now();
     while (Date.now() - start < timeoutMsInner) {

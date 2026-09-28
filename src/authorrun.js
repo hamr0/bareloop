@@ -348,8 +348,9 @@ export async function main(argv, deps = {}) {
   // Only meaningful for a REPO source (PRD item 33 M3 piece 4, step S6): a
   // plain folder has no genre to detect and no code-shaped manifest to walk —
   // `LANG`/`langResult` stay at their "nothing to see" values and the confirm
-  // turn further down runs with `isRepo: false` (D5), which is what already
-  // skips the repo-only "worse than before" ask and the language pick alike.
+  // turn further down runs with `isRepo: false` (D5), which is what skips
+  // the language pick (the old repo-only "worse than before" ask is retired
+  // entirely as of 2026-09-28 — see src/authorflow.js's own retirement note).
   let langResult = /** @type {ReturnType<typeof detectLanguage>|null} */ (null);
   let LANG = 'none-detected';
   if (IS_REPO_SOURCE) {
@@ -702,9 +703,10 @@ export async function main(argv, deps = {}) {
     return String(value);
   };
   /** one free-text answer, possibly several lines; a blank line ends it.
-   * `allowBlank` lets the FIRST line be blank — `worseThanBefore`'s "nothing
-   * beyond Guardrails" is a legal, non-required answer, unlike every other
-   * free-text step below.
+   * `allowBlank` lets the FIRST line be blank — kept as a general option for
+   * a future optional free-text step; every current step below passes
+   * `false` (the old "worse than before" ask, retired 2026-09-28, was the
+   * only caller that ever passed `true`).
    * @param {boolean} allowBlank @returns {Promise<string|null>} */
   const readFreeText = async (allowBlank) => {
     /** @type {string[]} */
@@ -729,11 +731,6 @@ export async function main(argv, deps = {}) {
    * @param {{kind: string, [k: string]: any}} step @returns {Promise<string|null>} */
   const ask = async (step) => {
     out('');
-    if (step.kind === 'worseThanBefore') {
-      out(step.field.prompt);
-      out('  (press Enter on a blank line for "nothing beyond Guardrails")');
-      return readFreeText(true);
-    }
     if (step.kind === 'language') {
       out(step.field.prompt);
       for (const c of step.candidates ?? []) out(`  · ${c}`);

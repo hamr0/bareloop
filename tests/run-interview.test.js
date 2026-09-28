@@ -301,7 +301,7 @@ test('the SOFT-GREEN interview shows each free-text field\'s LABEL, in order, fr
   }
 });
 
-test('"worse than before" is gone from the form entirely (PRD item 33 M3 piece 3 wording fix — it is asked by the confirm turn instead, run-author.mjs, repo-only, never by THIS script)', () => {
+test('"worse than before" is gone from the form entirely (PRD item 33 M3 piece 3 wording fix; the confirm turn\'s own ask of it is ALSO retired now, hamr\'s ruling 2026-09-28 — it is never asked anywhere any more)', () => {
   const out = outDir();
   const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
   assert.equal(r.code, 0, r.out);

@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   runConfirmTurn, CONFIRM_TOOL_NAME, CONFIRM_ACK, CONFIRM_SYSTEM, confirmPrompt,
-  makeCostBook, WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
+  makeCostBook, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
   GREEN_QUESTIONS, FIELD_LABELS, confirmProtections, GUARD_DESCRIPTIONS,
   makeLoopGenerate, MAX_STRUCTURE_RETRIES,
 } from '../src/authorflow.js';
@@ -79,7 +79,7 @@ const BASE_PROTECTIONS = confirmProtections({ verdictType: 'green', lang: 'js', 
 
 test('(a) confirm on round 1 costs exactly one model call', async () => {
   const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
-  const { ask, seen } = scriptAsk(['', 'confirm']); // worseThanBefore, then the menu pick
+  const { ask, seen } = scriptAsk(['confirm']); // the menu pick — worseThanBefore is retired, never asked
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(calls.length, 1, 'exactly one paid call');
@@ -90,9 +90,8 @@ test('(a) confirm on round 1 costs exactly one model call', async () => {
     goal: 'Keep the tests green.', checks: ['tests stay green'], protections: BASE_PROTECTIONS,
     lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [], answeredQuestions: [],
   });
-  assert.equal(seen[0].kind, 'worseThanBefore');
-  assert.equal(seen[1].kind, 'menu');
-  assert.equal(seen.length, 2, 'a plan with no questions asks nothing beyond worseThanBefore + menu — behaviour byte-identical to before F175\'s open half');
+  assert.equal(seen[0].kind, 'menu');
+  assert.equal(seen.length, 1, 'a plan with no questions asks nothing beyond the menu — worseThanBefore is retired (hamr\'s ruling 2026-09-28)');
 });
 
 test('(b) fix,fix costs exactly 2 calls (never 3), and ONLY round-2\'s own fix lands in openQuestions — FAIL-FIRST', async () => {
@@ -100,7 +99,7 @@ test('(b) fix,fix costs exactly 2 calls (never 3), and ONLY round-2\'s own fix l
   // — round 2's plan is the response to it — so it must never itself land in
   // openQuestions. Only round 2's OWN terminal "fix" (D3: no 3rd call) does.
   const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }, { plan: { ...PLAN_ONE, goal: 'Keep the tests green, round 2.' } }]);
-  const { ask } = scriptAsk(['', 'fix', 'make it stricter', 'fix', 'also check the CLI']);
+  const { ask } = scriptAsk(['fix', 'make it stricter', 'fix', 'also check the CLI']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(calls.length, 2, 'never a 3rd call after 2 fix rounds — this is the loop-bound this test would catch if broken');
@@ -119,7 +118,7 @@ test('(b) fix,fix costs exactly 2 calls (never 3), and ONLY round-2\'s own fix l
 
 test('(b2) F175 ledger scenario: round-1 fix superseded, round-2 plan has NO questions of its own → openQuestions is []', async () => {
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }, { plan: { ...PLAN_ONE, goal: 'Keep the tests green, round 2.' } }]);
-  const { ask } = scriptAsk(['', 'fix', 'make it stricter', 'confirm']);
+  const { ask } = scriptAsk(['fix', 'make it stricter', 'confirm']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true);
@@ -130,7 +129,7 @@ test('(b3) F175 OPEN HALF: a round-1 plan\'s honest `questions` entry is FORCED 
   const question = 'Does "in strict mode" mean tsconfig\'s existing setting, or flipping strict:true?';
   const planWithQuestion = { ...PLAN_ONE, questions: [question] };
   const { generate, calls } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
-  const { ask, seen } = scriptAsk(['', 'confirm', 'flipping strict:true']);
+  const { ask, seen } = scriptAsk(['confirm', 'flipping strict:true']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(calls.length, 1, 'forcing the answer costs no extra model call');
@@ -148,7 +147,7 @@ test('(b3b) F175 OPEN HALF: a blank answer re-asks the SAME question rather than
   const question = 'which command counts as the check?';
   const planWithQuestion = { ...PLAN_ONE, questions: [question] };
   const { generate } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
-  const { ask, seen } = scriptAsk(['', 'confirm', '   ', 'npm run typecheck']);
+  const { ask, seen } = scriptAsk(['confirm', '   ', 'npm run typecheck']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true);
@@ -162,7 +161,7 @@ test('(b3b) F175 OPEN HALF: a blank answer re-asks the SAME question rather than
 test('(b3c) F175 OPEN HALF: a `null` from the forced answer ask abandons the turn, exactly like every other ask', async () => {
   const planWithQuestion = { ...PLAN_ONE, questions: ['unanswerable here?'] };
   const { generate, calls } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
-  const { ask } = scriptAsk(['', 'confirm']); // exhausted right after the menu pick — the answer ask gets null
+  const { ask } = scriptAsk(['confirm']); // exhausted right after the menu pick — the answer ask gets null
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(calls.length, 1, 'the model call already happened — abandoning after it spends nothing further');
@@ -174,7 +173,7 @@ test('(b3c) F175 OPEN HALF: a `null` from the forced answer ask abandons the tur
 test('(b4) F175: round-2 fix path carries round-2\'s OWN questions first, then the person\'s fix text', async () => {
   const round2Plan = { ...PLAN_ONE, questions: ['still unclear whether X or Y'] };
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }, { plan: round2Plan }]);
-  const { ask } = scriptAsk(['', 'fix', 'make it stricter', 'fix', 'also check the CLI']);
+  const { ask } = scriptAsk(['fix', 'make it stricter', 'fix', 'also check the CLI']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.deepEqual(r.accepted?.openQuestions, ['still unclear whether X or Y', 'also check the CLI']);
@@ -184,19 +183,19 @@ test('(b5) F175 OPEN HALF: "type the goal yourself" forces the drafted plan\'s o
   const question = 'is the CLI in or out of scope?';
   const planWithQuestion = { ...PLAN_ONE, questions: [question] };
   const { generate } = scriptConfirmGenerate([{ plan: planWithQuestion }]);
-  const { ask, seen } = scriptAsk(['', 'type-goal', 'out of scope', 'My own goal sentence.']);
+  const { ask, seen } = scriptAsk(['type-goal', 'out of scope', 'My own goal sentence.']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true);
   assert.deepEqual(r.accepted?.openQuestions, []);
   assert.deepEqual(r.accepted?.answeredQuestions, [`Q: ${question}\nA: out of scope`]);
   assert.equal(r.accepted?.goal, 'My own goal sentence.', 'the typed goal still replaces the drafted one');
-  assert.deepEqual(seen.map((s) => s.kind), ['worseThanBefore', 'menu', 'answer', 'goal']);
+  assert.deepEqual(seen.map((s) => s.kind), ['menu', 'answer', 'goal']);
 });
 
 test('(c) a book already at its ceiling from absorbed scout calls costs 0 confirm calls and cap-halts', async () => {
   const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const book = makeCostBook({ ceilingUsd: 0.01 });
   book.absorb([{ label: 'scout', costUsd: 0.01, unpricedRounds: 0 }]);
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
@@ -209,30 +208,52 @@ test('(c) a book already at its ceiling from absorbed scout calls costs 0 confir
 
 test('(d) a null costUsd (unpriced) reply is a pricing-red, never a silent free pass', async () => {
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE, costUsd: null }]);
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const book = makeCostBook({ ceilingUsd: 1 });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'pricing-red');
 });
 
-test('(e) input ending at the $0 question is confirm-abandoned, and costs 0 calls', async () => {
+// worseThanBefore was this turn's own $0-before-any-call ask (retired,
+// hamr's ruling 2026-09-28); the ONLY $0 ask left is the ambiguous-language
+// pick, so that is what this test now exercises to keep proving the same
+// invariant: ending input at a still-live $0 question costs 0 calls.
+test('(e) input ending at the (remaining) $0 question — the ambiguous-language pick — is confirm-abandoned, and costs 0 calls', async () => {
   const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
   const { ask } = scriptAsk([]); // ends immediately — the very first ask() returns null
   const book = makeCostBook({ ceilingUsd: null });
-  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  const r = await runConfirmTurn({
+    ...baseArgs(), lang: { kind: 'ambiguous', candidates: ['js', 'python'], dir: '/repo' }, generate, book, ask,
+  });
   assert.equal(calls.length, 0);
   assert.equal(r.ok, false);
   assert.equal(r.stop, 'confirm-abandoned');
   assert.equal(r.rounds, 0);
 });
 
-test('(f) "worse than before" is asked only for a repo source', async () => {
+// with NO ambiguous language and no worseThanBefore ask left, there is no $0
+// ask left at all before the first paid call — proves the turn goes straight
+// to the model, spending exactly 0 calls only if the person answers nothing.
+test('(e2) with no ambiguous language, input ending at the menu ask (the first ask now) still costs the round\'s one paid call, never 0 — there is no $0 ask left to abandon at', async () => {
+  const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
+  const { ask, seen } = scriptAsk([]); // the menu ask (now the very first) gets null
+  const book = makeCostBook({ ceilingUsd: null });
+  const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
+  assert.equal(seen[0].kind, 'menu');
+  assert.equal(calls.length, 1, 'the paid confirm call already happened before the menu ask can even fire');
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'confirm-abandoned');
+  assert.equal(r.rounds, 1);
+});
+
+test('(f) "worse than before" is retired (hamr\'s ruling 2026-09-28) — never asked, for a repo source OR a plain folder alike; accepted.worseThanBefore is always \'\'', async () => {
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
-  const repoAsk = scriptAsk(['nothing worse', 'confirm']);
+  const repoAsk = scriptAsk(['confirm']);
   const bookRepo = makeCostBook({ ceilingUsd: null });
-  await runConfirmTurn({ ...baseArgs({ isRepo: true }), generate, book: bookRepo, ask: repoAsk.ask });
-  assert.equal(repoAsk.seen[0].kind, 'worseThanBefore');
+  const r1 = await runConfirmTurn({ ...baseArgs({ isRepo: true }), generate, book: bookRepo, ask: repoAsk.ask });
+  assert.equal(repoAsk.seen[0].kind, 'menu', 'no worseThanBefore ask at all for a repo source either');
+  assert.equal(r1.accepted?.worseThanBefore, '');
 
   const folderAsk = scriptAsk(['confirm']);
   const bookFolder = makeCostBook({ ceilingUsd: null });
@@ -243,7 +264,7 @@ test('(f) "worse than before" is asked only for a repo source', async () => {
 
 test('(g) an ambiguous language offers exactly the candidates detectLanguage found', async () => {
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
-  const { ask, seen } = scriptAsk(['', 'python', 'confirm']);
+  const { ask, seen } = scriptAsk(['python', 'confirm']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({
     ...baseArgs(), lang: { kind: 'ambiguous', candidates: ['js', 'python'], dir: '/repo' }, generate, book, ask,
@@ -256,7 +277,7 @@ test('(g) an ambiguous language offers exactly the candidates detectLanguage fou
 test('(h) a drafted goal naming none of the listed checks is still accepted — no code matcher (ruling 6)', async () => {
   const oddPlan = { checks: ['tests stay green'], goal: 'Ship it.', questions: [], notChecked: [] };
   const { generate } = scriptConfirmGenerate([{ plan: oddPlan }]);
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true, 'never refused for a goal/checks mismatch — that judgement is the person\'s, not code\'s');
@@ -270,7 +291,7 @@ test('(i) a secret typed into a fix is redacted before it reaches openQuestions 
   // fix text (F175: the only one that can still land in openQuestions, since
   // round 1's is superseded by the redraft it fed) is what the first
   // assertion checks — the same secret string covers both redaction points.
-  const { ask } = scriptAsk(['', 'fix', secretFix, 'fix', secretFix]);
+  const { ask } = scriptAsk(['fix', secretFix, 'fix', secretFix]);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.accepted?.openQuestions[0], redactSecrets(secretFix));
@@ -281,7 +302,7 @@ test('(i) a secret typed into a fix is redacted before it reaches openQuestions 
 
 test('(j) "type the goal yourself" replaces the drafted goal, redacted, and keeps the drafted checks/protections', async () => {
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
-  const { ask } = scriptAsk(['', 'type-goal', 'My own goal sentence.']);
+  const { ask } = scriptAsk(['type-goal', 'My own goal sentence.']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true);
@@ -302,7 +323,7 @@ test('a model-invented "protection" (e.g. a behavior-preservation guard this bui
   };
   const { generate } = scriptConfirmGenerate([{ plan: inventedPlan }]);
   const seenPlans = [];
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const wrappedAsk = async (/** @type {any} */ step) => {
     if (step.kind === 'menu') seenPlans.push(step.plan);
     return ask(step);
@@ -319,7 +340,7 @@ test('a model-invented "protection" (e.g. a behavior-preservation guard this bui
 test('the real protections equal classGuards\' own guard list (+ the write fence when set, absent when not)', async () => {
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
   const seenPlans = [];
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const wrappedAsk = async (/** @type {any} */ step) => {
     if (step.kind === 'menu') seenPlans.push(step.plan);
     return ask(step);
@@ -341,7 +362,7 @@ test('notChecked lines from the model are carried through to accepted and to wha
   };
   const { generate } = scriptConfirmGenerate([{ plan: planWithGap }]);
   const seenPlans = [];
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const wrappedAsk = async (/** @type {any} */ step) => {
     if (step.kind === 'menu') seenPlans.push(step.plan);
     return ask(step);
@@ -355,7 +376,7 @@ test('notChecked lines from the model are carried through to accepted and to wha
 
 test('start-over stops the whole turn as confirm-restart, never a signable accept', async () => {
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
-  const { ask } = scriptAsk(['', 'start-over']);
+  const { ask } = scriptAsk(['start-over']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, false);
@@ -365,7 +386,7 @@ test('start-over stops the whole turn as confirm-restart, never a signable accep
 
 test('a transport failure on the confirm call is provider-red, not artifact-red', async () => {
   const { generate } = scriptConfirmGenerate([{ error: 'ECONNRESET', text: '' }]);
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, false);
@@ -374,7 +395,7 @@ test('a transport failure on the confirm call is provider-red, not artifact-red'
 
 test('a reply with no confirm-tool call is artifact-red', async () => {
   const { generate } = scriptConfirmGenerate([{ text: 'sure, sounds good' }]);
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, false);
@@ -419,19 +440,18 @@ test('the confirm tool acknowledges without acting', async () => {
     const ack = await tool.execute(PLAN_ONE);
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 }, ack };
   };
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true);
 });
 
-test('WORSE_THAN_BEFORE_FIELD / LANGUAGE_PICK_FIELD / CONFIRM_MENU are handed through as the `field` on their steps', async () => {
+test('LANGUAGE_PICK_FIELD / CONFIRM_MENU are handed through as the `field` on their steps', async () => {
   const { generate } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
-  const { ask, seen } = scriptAsk(['', 'confirm']);
+  const { ask, seen } = scriptAsk(['confirm']);
   const book = makeCostBook({ ceilingUsd: null });
   await runConfirmTurn({ ...baseArgs(), generate, book, ask });
-  assert.equal(seen[0].field, WORSE_THAN_BEFORE_FIELD);
-  assert.equal(seen[1].field, CONFIRM_MENU);
+  assert.equal(seen[0].field, CONFIRM_MENU);
   void LANGUAGE_PICK_FIELD; // exercised in test (g) above via the ambiguous-language path
   void CONFIRM_ACK;
 });
@@ -461,7 +481,7 @@ test('runConfirmTurn (F179): a REAL OpenAIProvider malformed tool-call reply ret
     };
   };
   const generate = makeLoopGenerate(provider);
-  const { ask } = scriptAsk(['', 'confirm']); // worseThanBefore, then the menu pick
+  const { ask } = scriptAsk(['confirm']); // the menu pick — worseThanBefore is retired
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
 
@@ -493,7 +513,7 @@ test('runConfirmTurn (F179): every attempt malformed exhausts the retry ladder i
     };
   };
   const generate = makeLoopGenerate(provider);
-  const { ask } = scriptAsk(['']); // worseThanBefore only — no menu pick reached
+  const { ask } = scriptAsk([]); // the menu ask (the first now) gets null — no menu pick reached
   const book = makeCostBook({ ceilingUsd: null });
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
 
@@ -546,7 +566,7 @@ test('F183: the protections fed into the prompt are CODE-DERIVED, not hardcoded 
 
 test('F183: runConfirmTurn feeds the model call itself (not just confirmPrompt in isolation) the real protections — the convo the model sees carries them', async () => {
   const { generate, calls } = scriptConfirmGenerate([{ plan: PLAN_ONE }]);
-  const { ask } = scriptAsk(['', 'confirm']);
+  const { ask } = scriptAsk(['confirm']);
   const book = makeCostBook({ ceilingUsd: null });
   await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   const firstCallMessages = calls[0].messages;

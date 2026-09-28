@@ -467,11 +467,9 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
     return false;
   }
 
-  // D7 (authorCloseForJob's own $0 half): a repo job is asked
-  // "worseThanBefore" BEFORE the scout even runs — answered here with the
-  // library's own "blank is legal" allowance (see runConfirmTurn's doc).
-  assert.ok(await waitForAskKind('worseThanBefore'), `expected worseThanBefore first; got phase=${session.state.phase} error=${session.state.error}`);
-  session.send('');
+  // worseThanBefore is RETIRED (hamr's ruling 2026-09-28) — no ask for it
+  // any more, so the first (and only, for a non-ambiguous-language repo)
+  // ask the confirm turn raises is the menu itself.
   assert.ok(await waitForAskKind('menu'), `expected a menu ask; got phase=${session.state.phase} error=${session.state.error}`);
   assert.equal(session.state.revisesLeft, 2, 'D3: 2 revises available before the first fix');
 
@@ -623,9 +621,9 @@ test('createSession: Check again AFTER the gap is closed on the SAME copy contin
     }
     return false;
   }
-  assert.ok(await waitForAskKind('worseThanBefore'), `expected the pipeline to continue past the install gap; phase=${session.state.phase} error=${session.state.error}`);
-  session.send('');
-  assert.ok(await waitForAskKind('menu'));
+  // worseThanBefore is RETIRED (hamr's ruling 2026-09-28) — the pipeline
+  // continues straight past the install gap to the menu ask.
+  assert.ok(await waitForAskKind('menu'), `expected the pipeline to continue past the install gap; phase=${session.state.phase} error=${session.state.error}`);
   const prepped = session.signPrepare();
   assert.equal(prepped.ok, true);
   const start2 = Date.now();

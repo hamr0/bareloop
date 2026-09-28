@@ -883,7 +883,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 
     The code only checks each answer is non-empty and hands it on verbatim
     (`src/authorjob.js:298`), so the re-shape changes wording, not machinery. For a repo
-    source, the confirm turn asks Q5's "what counts as worse than before".
+    source, the confirm turn asks Q5's "what counts as worse than before" — **retired
+    2026-09-28** (hamr's ruling, session mul5fofw): it was optional, and an empty answer
+    already meant "nothing beyond Guardrails", so it never earned its own turn; `worseThanBefore`
+    now always resolves to `''`, byte-identical to what an empty answer always produced.
 
     **The confirm turn (RULED).** After the form, the AI reads the source and answers once:
     "here is what I understood" — the checks it will make, and any questions. The person
