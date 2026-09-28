@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  replayRun, formatReplay, summarizeForAllLine, formatAllLines, auditWindow,
+  replayRun, formatReplay, summarizeForAllLine, formatAllLines, auditWindow, moneyWithDraft,
 } from '../src/replay.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
@@ -1155,4 +1155,47 @@ test('replayRun: parts — a judge-round with no step/fix/scout/plan window cove
   assert.equal(s.parts[1].id, 'judge');
   assert.equal(s.parts[1].rounds, 1);
   assert.equal(s.parts[1].attempts.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// draftSpentUsd / moneyWithDraft — hamr's ruling 2026-09-28 ("one cap covers
+// drafting + run"): a run's summary carries its drafting share off
+// job-start's own field, and every money display uses the ONE shared
+// formatter rather than each hand-composing "$X ($Y drafting) of $Z".
+// ---------------------------------------------------------------------------
+
+test('replayRun: draftSpentUsd reads off job-start\'s own field, never priorSpentUsd — null when absent', () => {
+  const withDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81 },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(withDraft.draftSpentUsd, 0.81);
+  assert.equal(withDraft.resumed, false, 'a drafting fold is never a resume');
+
+  const withoutDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5 },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(withoutDraft.draftSpentUsd, null, 'a run that never drafted carries no decorative 0');
+});
+
+test('moneyWithDraft: exact display strings — "$3.71 ($0.81 drafting) of $5.00" with a cap, "$3.71 ($0.81 drafting)" without, unchanged with no draft share', () => {
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5), '$3.71 ($0.8100 drafting) of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81), '$3.71 ($0.8100 drafting)');
+  assert.equal(moneyWithDraft('$3.68', null, 5), '$3.68 of $5.00');
+  assert.equal(moneyWithDraft('$3.68', null), '$3.68', 'a run without a drafting share prints exactly what it always did');
+});
+
+test('summarizeForAllLine: the spend column carries the drafting share for a run that has one, unchanged for a run that does not', () => {
+  const withDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, shape: 'plan' },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.match(summarizeForAllLine(withDraft).spend, /^\$3\.7100 \(\$0\.8100 drafting\)$/);
+
+  const withoutDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, shape: 'plan' },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.68, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(summarizeForAllLine(withoutDraft).spend, '$3.6800', 'a run without a drafting share prints exactly what it always did');
 });

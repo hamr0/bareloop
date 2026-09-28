@@ -24,6 +24,7 @@ import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
 import { STALL_MS } from '../src/stall.js';
 import { readSpine, scriptedProvider, initPatientRepo, mockWallClock, reply } from './helpers.js';
+import { replayOne } from '../src/replayio.js';
 // PRD v1.80 TODO #4 / F115 — reading, never modifying: `CHECKPOINT_OUTCOMES` is
 // the LIBRARY's own resumable-terminal list (src/reuse.js, folded 2026-08-25),
 // and `readResume` is the ONE reader `--resume` and this test both drive — never
@@ -1009,6 +1010,100 @@ test('§3 CONTROL: a COLD run\'s job-start carries no fold fields at all — an 
   const start = readSpine(file).find((e) => e.type === 'job-start');
   assert.equal('priorSpentUsd' in start, false);
   assert.equal('priorWallMs' in start, false);
+});
+
+// ---------------------------------------------------------------------------
+// draftSpentUsd — hamr's ruling 2026-09-28 ("one cap covers drafting +
+// run"): the run's own enforced ceiling is Cap $ minus what drafting already
+// spent, and this fold is kept structurally APART from the resume fold above
+// (never priorSpentUsd, never spentUsd/chainFoldUsd, never `resumed`).
+// ---------------------------------------------------------------------------
+
+test('draftSpentUsd: shrinks the run\'s enforced ceiling by exactly the drafting spend — budgetUsd 5, draftSpentUsd 0.81 -> the drafter is handed a $4.19 remainder', async () => {
+  const wd = makePlanWork('plan-draft-fold');
+  const job = { ...planJob(), budgetUsd: 5 };
+  const provider = scriptedProvider([{ text: 'scout' }, { text: 'plan' }]);
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+    shellCapUsd: 5, draftSpentUsd: 0.81,
+  });
+  const events = readSpine(file);
+  const materials = events.find((e) => e.type === 'materials');
+  assert.ok(materials, `expected a 'materials' event; got types: ${events.map((e) => e.type).join(', ')}`);
+  // the PLAN phase's materials reads live, after the scout round's own tiny
+  // spend, so this is "at most 4.19, and close to it" — not bit-exact.
+  assert.ok(materials.balanceUsd <= 4.19 + 1e-9, `the drafter must never be handed MORE than the cap-minus-draft remainder: ${materials.balanceUsd}`);
+  assert.ok(materials.balanceUsd > 4.1, `the drafter must be handed close to $4.19 (cap $5 minus draft $0.81), not the signed $5: got ${materials.balanceUsd}`);
+});
+
+test('draftSpentUsd: job-start carries it as its OWN field, never priorSpentUsd — a first, un-resumed run must never read as resumed', async () => {
+  const wd = makePlanWork('plan-draft-not-resumed');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]), emit: makeSpine(file),
+    draftSpentUsd: 0.5,
+  });
+  const start = readSpine(file).find((e) => e.type === 'job-start');
+  assert.equal(start.draftSpentUsd, 0.5, 'the drafting fold is on job-start under its own name');
+  assert.equal('priorSpentUsd' in start, false, 'a drafting fold must NEVER be spelled as priorSpentUsd — that key means "a previous attempt of this run died"');
+});
+
+test('draftSpentUsd: replay.js reads a drafted-but-never-resumed run as resumed=false, and exposes draftSpentUsd on the summary', async () => {
+  const wd = makePlanWork('plan-draft-replay');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]), emit: makeSpine(file),
+    draftSpentUsd: 0.5,
+  });
+  const summary = replayOne(file, { skipAudit: true });
+  assert.equal(summary.resumed, false, 'drafting is not a resume — the reader must never conflate the two folds');
+  assert.equal(summary.draftSpentUsd, 0.5);
+});
+
+test('draftSpentUsd: never folds into spentUsd/engagementSpentUsd — the run\'s own ledger stays run-only', async () => {
+  const wd = makePlanWork('plan-draft-not-in-ledger');
+  const job = planJob();
+  const provider = scriptedProvider([
+    { text: 'no tests exist yet' },
+    { text: JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'write-test', action: 'Write the missing test.', tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }] }] }) },
+    { toolCalls: [tcall2('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'wrote it' },
+  ]);
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider, emit: makeSpine(file),
+    draftSpentUsd: 0.5,
+  });
+  const end = readSpine(file).find((e) => e.type === 'job-end');
+  const rounds = readSpine(file).filter((e) => e.type === 'worker-round');
+  const roundSum = rounds.reduce((acc, r) => acc + (r.costUsd ?? 0), 0);
+  assert.ok(Math.abs(end.spentUsd - roundSum) < 1e-9, `spentUsd (${end.spentUsd}) must be exactly this run's own rounds (${roundSum}) — the 0.5 draft fold must never be inside it`);
+  assert.ok(Math.abs(end.engagementSpentUsd - end.spentUsd) < 1e-9, 'engagementSpentUsd must equal spentUsd on a cold (never-resumed) run — the draft fold rides nowhere near either');
+});
+
+test('draftSpentUsd: a garbage value (negative/non-finite) is belted to 0, exactly like priorSpentUsd — never widens or poisons the ceiling', async () => {
+  const wd = makePlanWork('plan-draft-garbage');
+  const job = planJob();
+  const file = join(wd, 'spine.jsonl');
+  await runJob(job, {
+    approvals: [{ specHash: jobSpecHash(job), signer: 'hamr', ts: 'now' }],
+    workdir: wd, provider: scriptedProvider([{ text: 'scout' }, { text: 'plan' }]), emit: makeSpine(file),
+    draftSpentUsd: NaN,
+  });
+  const events = readSpine(file);
+  const materials = events.find((e) => e.type === 'materials');
+  assert.ok(materials, `expected a 'materials' event; got types: ${events.map((e) => e.type).join(', ')}`);
+  assert.ok(Number.isFinite(materials.balanceUsd), `a NaN draftSpentUsd must never poison the ceiling into NaN/Infinity: got ${materials.balanceUsd}`);
+  assert.ok(materials.balanceUsd <= 1.5 + 1e-9 && materials.balanceUsd > 1.49, `a NaN draftSpentUsd must read as 0 (signed $1.5, minus the scout round's tiny own spend): got ${materials.balanceUsd}`);
+  const start = events.find((e) => e.type === 'job-start');
+  assert.equal('draftSpentUsd' in start, false, 'a garbage (0-reading) fold is absent, never a decorative 0');
 });
 
 test('§3 resume: a FLOOR fold stays a floor — a dead run whose spend was only partly priced cannot come back as an exact total (F6)', async () => {
