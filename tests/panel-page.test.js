@@ -2337,15 +2337,106 @@ test('build item 4 RED-PROOF (2026-09-28): CLIENT_TERMINAL_PHASES matches the se
   assert.deepEqual([...clientSet].sort(), [...serverSet].sort());
 });
 
-test('build item 7 (2026-09-28): two $0 readiness lines render under the Model field, and Start is gated on the key being usable', () => {
+test('build item 5 (2026-09-28): ONE $0 readiness line renders under the Model field (superseding item 7\'s two lines), and Start is gated on the key being usable', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const modelFieldStart = html.indexOf('<label for="jf-model">Model</label>');
   const modelFieldEnd = html.indexOf('jf-name', modelFieldStart); // the NEXT field, Job name
   const modelField = html.slice(modelFieldStart, modelFieldEnd);
-  assert.match(modelField, /id="jf-key-status"/);
-  assert.match(modelField, /id="jf-reach-status"/);
+  assert.match(modelField, /id="jf-model-status"/);
+  assert.doesNotMatch(modelField, /id="jf-key-status"/, 'the old two-element split must be gone');
+  assert.doesNotMatch(modelField, /id="jf-reach-status"/);
   assert.match(html, /var keyOk = false;/);
   assert.match(html, /startBtn\.disabled = !capOk \|\| sessionLive \|\| !keyOk;/);
+});
+
+// ---------------------------------------------------------------------------
+// build item 5 (2026-09-28, session mul5fofw): collapse the key + reachability
+// read into ONE line. All good: "[✓] OPENAI_API_KEY found · deepseek-flash
+// reachable". Otherwise: one red line with the FIRST problem. Start-gating
+// (`keyOk`) stays on the key alone — a reachability failure shows red but
+// never blocks (an endpoint can be flaky), unchanged from item 7.
+// ---------------------------------------------------------------------------
+
+test('build item 5: modelStatusLine — the all-good line, verbatim shape', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'OPENAI_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: true, reachable: true, modelListed: true, status: 'ok', note: null },
+  };
+  const line = modelStatusLine(r, 'deepseek-flash');
+  assert.equal(line.text, '[✓] OPENAI_API_KEY found · deepseek-flash reachable');
+  assert.equal(line.ok, true);
+  assert.equal(line.keyOk, true);
+});
+
+test('build item 5: modelStatusLine — a missing key is red, keyOk false, reachability never even mentioned', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'ANTHROPIC_API_KEY', keyStatus: 'missing', keyProblem: null,
+    reachability: { checked: false, reachable: null, modelListed: null, status: null, note: 'no usable key' },
+  };
+  const line = modelStatusLine(r, 'claude-sonnet-5');
+  assert.equal(line.text, '[✗] ANTHROPIC_API_KEY not set');
+  assert.equal(line.ok, false);
+  assert.equal(line.keyOk, false);
+});
+
+test('build item 5: modelStatusLine — a rejected key (401) is red', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'OPENAI_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: true, reachable: false, modelListed: null, status: 'HTTP 401', note: null },
+  };
+  const line = modelStatusLine(r, 'deepseek-flash');
+  assert.equal(line.text, '[✗] key rejected (HTTP 401)');
+  assert.equal(line.ok, false);
+  assert.equal(line.keyOk, true, 'the KEY was found — a 401 on the reachability probe is a separate axis');
+});
+
+test('build item 5: modelStatusLine — key found, reachability unreachable (flaky) — RED line, but keyOk stays true (never blocks Start)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'OPENAI_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: true, reachable: false, modelListed: null, status: 'timeout', note: null },
+  };
+  const line = modelStatusLine(r, 'deepseek-flash');
+  assert.equal(line.text, '[✗] timeout — may be flaky, not blocking');
+  assert.equal(line.ok, false);
+  assert.equal(line.keyOk, true);
+});
+
+test('build item 5: modelStatusLine — key found, reachability not yet checked (e.g. key just found, probe in flight state modelled as checked:false) — green, no reachability clause', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'OPENAI_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: false, reachable: null, modelListed: null, status: null, note: null },
+  };
+  const line = modelStatusLine(r, 'deepseek-flash');
+  assert.equal(line.text, '[✓] OPENAI_API_KEY found');
+  assert.equal(line.ok, true);
+  assert.equal(line.keyOk, true);
+});
+
+test('build item 5: modelStatusLine — an unusable model-check response (server error) reads as one red line, keyOk false', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  assert.equal(modelStatusLine(null, 'deepseek-flash').text, '[✗] could not check the key');
+  assert.equal(modelStatusLine({ ok: false }, 'deepseek-flash').text, '[✗] could not check the key');
+  assert.equal(modelStatusLine({ ok: false }, 'deepseek-flash').keyOk, false);
+});
+
+test('build item 5: refreshModelStatus renders through modelStatusLine into ONE element (#jf-model-status), never the retired two-element split', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'refreshModelStatus');
+  assert.match(src, /var line = modelStatusLine\(r, modelId\);/);
+  assert.match(src, /modelStatusEl\.textContent = line\.text;/);
+  assert.match(src, /keyOk = line\.keyOk;/);
+  assert.doesNotMatch(src, /keyStatusEl|reachStatusEl/, 'the old two-element vars must be gone');
 });
 
 test('build item 7 (2026-09-28): refreshModelStatus calls the model-check route with the SELECTED model id, and runs on both load and change', () => {
@@ -2369,10 +2460,10 @@ test('fix (2026-09-28): reachStatusText — a 401/403 reads "key rejected", neve
   }
 });
 
-test('fix (2026-09-28): refreshModelStatus renders its reach text through reachStatusText, never a second hand-composed string', () => {
+test('fix (2026-09-28): modelStatusLine renders its reach text through reachStatusText, never a second hand-composed string (build item 5 moved this call from refreshModelStatus into modelStatusLine)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const src = extractFnSource(html, 'refreshModelStatus');
-  assert.match(src, /reachStatusEl\.textContent = reachStatusText\(reach\.status\)/);
+  const src = extractFnSource(html, 'modelStatusLine');
+  assert.match(src, /return \{ keyOk: true, ok: false, text: reachStatusText\(reach\.status\) \};/);
   assert.doesNotMatch(src, /may be flaky/, 'the wording must live in ONE place (reachStatusText), not be re-spelled inline here too');
 });
 

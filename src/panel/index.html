@@ -434,8 +434,9 @@
                 <option value="claude-sonnet-5">claude-sonnet-5 · Anthropic</option>
                 <option value="deepseek-flash">deepseek-flash · DeepSeek</option>
               </select>
-              <div class="jf-readiness unknown" id="jf-key-status" data-testid="jf-key-status"></div>
-              <div class="jf-readiness unknown" id="jf-reach-status" data-testid="jf-reach-status"></div>
+              <!-- build item 5 (2026-09-28) — ONE line under Model, not two:
+                   key + reachability collapsed into a single readiness read. -->
+              <div class="jf-readiness unknown" id="jf-model-status" data-testid="jf-model-status"></div>
             </div>
             <div class="field">
               <label for="jf-name">Job name</label>
@@ -2466,8 +2467,7 @@
     var hashLine = document.getElementById("chat-hash-line");
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
-    var keyStatusEl = document.getElementById("jf-key-status");
-    var reachStatusEl = document.getElementById("jf-reach-status");
+    var modelStatusEl = document.getElementById("jf-model-status");
     var progressRow = document.getElementById("chat-progress-row");
     var progressGlyph = document.getElementById("chat-progress-glyph");
     var progressLabelEl = document.getElementById("chat-progress-label");
@@ -2542,10 +2542,10 @@
       });
     });
 
-    // build item 7 — key + reachability, $0, shown right under Model, on
-    // load and whenever the selection changes. Start stays disabled while
-    // the key isn't usable; a reachability failure shows red but never
-    // blocks (an endpoint can be flaky).
+    // build item 7 / build item 5 (2026-09-28) — key + reachability, $0,
+    // shown right under Model, on load and whenever the selection changes.
+    // Start stays disabled while the key isn't usable; a reachability
+    // failure shows red but never blocks (an endpoint can be flaky).
     // fix (2026-09-28): a 401/403 from the reachability probe is not
     // flakiness — it means the key itself was REJECTED by the provider.
     // Neither blocks Start (unchanged rule); only the WORDING differs.
@@ -2557,39 +2557,44 @@
         ? "[✗] key rejected (HTTP " + rejectedMatch[1] + ")"
         : "[✗] " + status + " — may be flaky, not blocking";
     }
+    // build item 5 — ONE line, not two: pure decision from the model-check
+    // response (`r`) + the selected model's display id, so the whole
+    // key/reachability read can be unit-tested without any DOM at all.
+    // All good: "[✓] <ENV_KEY> found · <modelId> reachable". Otherwise: one
+    // red line with the FIRST problem — a missing/bad key short-circuits
+    // before reachability is even mentioned (reachability was never
+    // checked in that case anyway — see the server route).
+    // `keyOk` (Start-gating) and `ok` (display color) are DIFFERENT axes: a
+    // reachability failure shows red (`ok:false`) but never blocks Start
+    // (`keyOk` stays true) — an endpoint can be flaky; a missing/bad KEY
+    // blocks Start and always shows red.
+    function modelStatusLine(r, modelId){
+      if(!r || !r.ok) return { keyOk: false, ok: false, text: "[✗] could not check the key" };
+      var keyFound = r.keyStatus === "found";
+      if(!keyFound){
+        var problem = r.keyStatus === "missing" ? " not set" : (" " + r.keyProblem);
+        return { keyOk: false, ok: false, text: "[✗] " + r.envKey + problem };
+      }
+      var reach = r.reachability;
+      if(!reach || !reach.checked) return { keyOk: true, ok: true, text: "[✓] " + r.envKey + " found" };
+      if(reach.reachable){
+        var suffix = reach.modelListed === false ? " (model not listed)" : "";
+        return { keyOk: true, ok: true, text: "[✓] " + r.envKey + " found · " + modelId + " reachable" + suffix };
+      }
+      return { keyOk: true, ok: false, text: reachStatusText(reach.status) };
+    }
     function refreshModelStatus(){
       var modelId = modelSelect.value;
       authorGet("/api/author/model-check?model=" + encodeURIComponent(modelId)).then(function(r){
-        if(!r || !r.ok){
-          keyOk = false;
-          keyStatusEl.className = "jf-readiness bad";
-          keyStatusEl.textContent = "[✗] could not check the key";
-          reachStatusEl.textContent = "";
-          refreshStartEnabled();
-          return;
-        }
-        keyOk = r.keyStatus === "found";
-        keyStatusEl.className = "jf-readiness " + (keyOk ? "ok" : "bad");
-        keyStatusEl.textContent = keyOk
-          ? ("[✓] " + r.envKey + " found")
-          : ("[✗] " + r.envKey + (r.keyStatus === "missing" ? " not set" : (" " + r.keyProblem)));
-        var reach = r.reachability;
-        if(!reach || !reach.checked){
-          reachStatusEl.className = "jf-readiness unknown";
-          reachStatusEl.textContent = "";
-        } else if(reach.reachable){
-          reachStatusEl.className = "jf-readiness ok";
-          reachStatusEl.textContent = "[✓] reachable" + (reach.modelListed === false ? " (model not listed)" : "");
-        } else {
-          reachStatusEl.className = "jf-readiness bad";
-          reachStatusEl.textContent = reachStatusText(reach.status);
-        }
+        var line = modelStatusLine(r, modelId);
+        keyOk = line.keyOk;
+        modelStatusEl.className = "jf-readiness " + (line.ok ? "ok" : "bad");
+        modelStatusEl.textContent = line.text;
         refreshStartEnabled();
       }).catch(function(){
         keyOk = false;
-        keyStatusEl.className = "jf-readiness bad";
-        keyStatusEl.textContent = "[✗] could not check the key";
-        reachStatusEl.textContent = "";
+        modelStatusEl.className = "jf-readiness bad";
+        modelStatusEl.textContent = "[✗] could not check the key";
         refreshStartEnabled();
       });
     }
