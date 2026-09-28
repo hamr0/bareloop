@@ -130,6 +130,16 @@ strength of the reading alone.
 - **F183's write-fence wording** — same shape of problem, not safely fixable by wording alone:
   whether tests are covered by the fence depends on where they live relative to it, so a generic
   wording claim would overclaim for some repo shapes (`docs/logs/FINDINGS.md` F183).
+- **Jev (bare-agent's `JevProvider`)** — PARKED candidate for the soft-green judge's DECIDE half
+  only (locate stays an LLM); typed output + a measurable confidence, not money. Blocked by F192,
+  arbiter-signed threshold, same 10/10 calibration floor, new-vendor probe rule; deterministic
+  closes excluded. Build trigger: a live rubric-job failure it would fix (hamr, ruling A,
+  2026-09-28; also relayed to fwdloop as a HITL-triage idea, not bareloop's lane).
+- **Skill injection** (TDD/QA/debrief/branch-review text given to the agent) — PARKED; test after
+  P3 ships with a cheap planner-only ON/OFF probe (drafter drafts the same job with/without the
+  skill text, ~$0.10–0.30): identical plan shapes closes "no", different triggers a pre-registered
+  full-loop contrast. Targets the planner, not the worker — a worker self-review is never a
+  verdict (hamr, ruling A, 2026-09-28).
 
 ## §9 Risks and their pre-registered handles
 
