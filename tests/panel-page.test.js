@@ -2863,3 +2863,28 @@ test('build item 3: the Audit Grouped attempt row (buildAttemptsList) wires chec
   assert.match(html, /var checksList = Array\.isArray\(a\.stages\) \? a\.stages\.map\(stageCheckLine\)\.join\("<br>"\) : "";/);
   assert.match(html, /checksText \? ' &middot; ' \+ checksText : ''/);
 });
+
+test('bug fix: no duplicate HTML "id" attributes in the panel page — a repeated id makes getElementById(...) silently resolve to the WRONG element (the Job tab bug: the Chat tab\'s draft `#job-card` shadowed the Details tab\'s readonly `#job-card`, leaving the Job tab permanently blank)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+  const seen = new Map();
+  const dupes = [];
+  for (const id of ids) {
+    seen.set(id, (seen.get(id) || 0) + 1);
+  }
+  for (const [id, count] of seen) {
+    if (count > 1) dupes.push(`${id} (${count}x)`);
+  }
+  assert.deepEqual(dupes, [], `duplicate id attribute(s) found: ${dupes.join(', ')}`);
+});
+
+test('bug fix: the Details/Job tabpanel\'s readonly job card has its own unique id, and renderJob() targets that id (not the Chat tab\'s draft job-card, which sits earlier in the DOM and would otherwise win any getElementById lookup)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<div class="job-card compact" id="job-card" data-testid="job-card" hidden>/);
+  assert.match(html, /<div class="job-card" id="job-card-readonly" hidden data-testid="job-card-readonly">/);
+  const renderJobStart = html.indexOf('function renderJob(job){');
+  const renderJobEnd = html.indexOf('\n  }', renderJobStart);
+  const renderJobBody = html.slice(renderJobStart, renderJobEnd);
+  assert.match(renderJobBody, /getElementById\("job-card-readonly"\)/);
+  assert.doesNotMatch(renderJobBody, /getElementById\("job-card"\)/);
+});

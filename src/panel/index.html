@@ -596,7 +596,7 @@
 
         <section id="panel-details" class="tabpanel" role="tabpanel" aria-labelledby="tab-details" hidden data-testid="panel-details">
           <div id="job-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
-          <div class="job-card" id="job-card" hidden data-testid="job-card-readonly">
+          <div class="job-card" id="job-card-readonly" hidden data-testid="job-card-readonly">
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
@@ -2381,7 +2381,7 @@
   // ---- Job tab ----
   function renderJob(job){
     var empty = document.getElementById("job-empty");
-    var card = document.getElementById("job-card");
+    var card = document.getElementById("job-card-readonly");
     if(!job){ empty.hidden = false; card.hidden = true; return; }
     empty.hidden = true;
     card.hidden = false;
