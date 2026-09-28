@@ -459,3 +459,62 @@ A job authored and signed from the page alone, end to end. The one real paid run
 ### Not in P3
 
 The edit workflow and re-sign, the keys-file loader (P4), Settings (P4), LAN.
+
+## Addendum 2026-09-28 — one cap covers drafting + run
+
+hamr's ruling (arbiter territory, signed by his word: "clean separation, agreed … keep it
+clean, simple"). **Supersedes P3 Q2's ruling A above** (a separate required Drafting $ cap
+field, no default) — that field is gone. The prose above stays as written; this addendum is
+the current rule.
+
+- The job card carries **ONE** money cap, `Cap $` (the signed `budgetUsd`). Drafting
+  (the authoring pipeline) now runs under ceiling = `Cap $`, the same field the run itself
+  uses — no second, separately-required number.
+- At sign, the run's own enforced ceiling becomes `Cap $ − drafting spent`. The signed
+  number stays `Cap $` (unchanged spec, same hash) — drafting spend never widens or edits
+  it. A later run of the same signed job that never drafted (or drafted $0) gets the full
+  `Cap $`, unchanged from before this addendum.
+- Unpriced/incomplete drafting spend is never treated as $0 (F6's rule, in this addendum's
+  coat): the known floor is what folds into the ceiling arithmetic and what displays.
+- **The one place the ceiling arithmetic lives:** `src/run.js`'s `runJob`, the `remainingUsd`
+  passed into `runPlan` — `Math.min(shellCapUsd, job.budgetUsd - draftFoldUsd - spentUsd)`.
+  Every caller (CLI, panel) only ever supplies the one number (`draftSpentUsd`); nothing
+  re-derives the subtraction anywhere else.
+- **Clean separation, on the record:** the drafting fold rides on `job-start` as its own
+  field, `draftSpentUsd` — deliberately never `priorSpentUsd` (that key means "a previous
+  attempt of THIS run died and folded its spend forward," read by `src/replay.js`'s
+  `resumed` flag off the key's bare presence). A drafted-then-signed first run of a job
+  must never read as a resume. `spentUsd`/`engagementSpentUsd` stay run-only; the drafting
+  share is reported BESIDE them, never inside them.
+- **Display**, one format everywhere a run's money shows (Run tab summary + counters, Runs
+  list row, Audit tab header, Job tab, chat after sign): `$3.71 ($0.81 drafting) of $5.00`
+  — total first, drafting share in brackets, `of $<cap>` where the surface already had one.
+  Where a surface has no "of $cap" part, the bracket alone: `$3.71 ($0.81 drafting)`. A run
+  with no drafting share is unchanged — exactly the string it always printed. The one shared
+  formatter is `src/replay.js`'s `moneyWithDraft`.
+- **CLI:** `run-u` gains `--draft-spent-usd <n>` (validated: finite, ≥ 0, else refused — the
+  same param-guard class `--read-shim`/`--scout` already are; a garbage value is never
+  coerced, since reading it as 0 would silently widen the ceiling). `bareloop author` prints
+  its own known drafting spend floor and the exact `run-u` command including the flag — the
+  same "nothing here is left for a person to hand-compute or re-type" rule F185 set for
+  `--spec`. Every printed resume/decide/door re-invocation carries the flag too (mirroring
+  `--read-shim`/`--scout`'s own tails), or a resumed leg would silently widen its ceiling
+  back up by dropping the fold.
+- **Panel:** the Drafting $ cap field is removed from the job card; `Start drafting` gates on
+  `Cap $` alone. The session tracks its own known drafting spend floor (off the same metered
+  list the chat's cost readout already used) and the sign route passes it to `run-u` as
+  `--draft-spent-usd`, omitted (never a decorative 0) when the session spent nothing
+  drafting.
+
+### Open items from this addendum's build
+
+- The Job tab's `$ cap` field shows only the signed cap (unchanged) — it has no run-scoped
+  spend readout to attach a drafting bracket to; a job-level (not run-level) drafting display
+  was not invented for it.
+- `draftSpentUsd` is passed to `runJob` as a single already-resolved floor number; there is
+  no separate `draftSpendComplete` flag threaded end-to-end through the CLI (a single
+  `--draft-spent-usd <n>` flag, per this ruling, carries only the number). The floor itself
+  is still honest (never $0 on an unpriced drafting call) — what is not wired is the "at
+  least $X" wording distinguishing an exact vs. floor drafting figure specifically in the
+  run's own display; a run's OWN spend keeps that distinction via its existing
+  `spendComplete` field.

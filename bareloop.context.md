@@ -1160,7 +1160,23 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+
+**`draftSpentUsd` (hamr's ruling 2026-09-28, "one cap covers drafting + run") — money the
+AUTHORING pipeline already spent on this job before it was signed.** Shrinks THIS run's own
+enforced ceiling (the one place the arithmetic lives: `remainingUsd() => Math.min(shellCapUsd,
+job.budgetUsd - draftFoldUsd - spentUsd)`), never the signed `budgetUsd` itself. Deliberately
+NOT `priorSpentUsd` — that key means "a previous attempt of this run died and folded its spend
+forward," read by `src/replay.js`'s `resumed` flag off the key's bare presence; a drafting fold
+must never make an ordinary first run read as a resume. Belted like `priorSpentUsd` (a
+non-finite or negative value reads as 0). Rides onto `job-start` as its own field,
+`draftSpentUsd`, only when > 0 — never inside `spentUsd`/`engagementSpentUsd`, which stay
+run-only. `bareloop run-u --draft-spent-usd <n>` is the CLI door (validated: finite, ≥ 0, else
+refused); `bareloop author` prints its own known drafting spend floor and the exact `run-u`
+command including the flag; the panel's sign route passes the session's own tracked drafting
+spend the same way. `src/replay.js`'s `moneyWithDraft(spendCore, draftSpentUsd, budgetUsd?)` is
+the one shared display formatter: `"$3.71 ($0.81 drafting) of $5.00"`, unchanged
+(`spendCore`/`spendCore of $cap`) when a run carries no drafting share.
 
 **`closeTimeoutMs` (PRD item 27/M3) is now OPTIONAL for every real caller.** Omit it (both
 `src/cli.js`'s bundle runner and `src/userrun.js` — lifted out of `scripts/run-u.mjs` by
@@ -1275,6 +1291,18 @@ knob, not a product default — the spec names no scout, so the signed hash is u
 `scripts/run-u.mjs --scout on|off` (default `on`) is its runner-territory surface, modelled on
 `--read-shim`: an unrecognised value exits 2 at argv, and every re-invocation the runner prints
 carries `--scout off` when set, so a resume never silently drops the arm.
+
+**`bareloop run-u --draft-spent-usd <n>`** (hamr's ruling 2026-09-28, "one cap covers drafting +
+run") is the same runner-territory class: a non-finite or negative value exits 2 at argv, before
+the approval gate — never coerced, since reading garbage as 0 would silently WIDEN the run's own
+enforced ceiling and reading it as `Infinity` would silently narrow it into "no cap". The spec
+names no drafting spend, so the signed `budgetUsd` is unaffected; this only shrinks THIS leg's
+own enforced remainder (`job.budgetUsd - draftSpentUsd - spentUsd`). Every printed
+resume/decide/door re-invocation carries `--draft-spent-usd` too, mirroring `--read-shim`'s own
+tail — a resumed leg that dropped it would silently widen its ceiling back up. `bareloop author`
+prints the exact `run-u` command including this flag, with its own known drafting spend (a floor,
+never $0 on an unpriced call — F6). The panel's sign route (`src/panel/authorroutes.js`)
+passes the same flag off the authoring session's own tracked spend.
 
 **The review door's two checkpoint terminals (N4 slice 1, doors re-cut 2026-08-18)** are the
 class's whole surface at this layer, and each is a CLEAN exit (`spendComplete` stays true —
@@ -2553,7 +2581,7 @@ reimplements for the tool-call breakdown. It returns one plain object:
 
 ```
 { runId, job, goal, budgetUsd, specHash, branch, verdictType, model, code,
-  outcome, stopReason, spentUsd, spendComplete, wallMs, chainClock,
+  outcome, stopReason, spentUsd, spendComplete, draftSpentUsd, wallMs, chainClock,
   resumed, resumeSeed, thisFileSpend, spendMismatch,
   timelineKind: 'steps'|'iterations', replans, close,
   steps: [{ id, occurrence, outcome, rounds, toolCalls, checks: {passed, failed},
@@ -2582,6 +2610,13 @@ an archive-age gap, a missing `model` can happen on any spine, old or new). `--a
 the model string, or `-`) — `model` is kept FULL, never truncated, unlike the compact `reason`
 column: a wrong or uncertain model reading is exactly the thing a directory-wide scan needs in
 full, not cut.
+
+**`draftSpentUsd`** (hamr's ruling 2026-09-28, "one cap covers drafting + run") reads
+`job-start.draftSpentUsd` — `null` on every run that never drafted through the panel/`bareloop
+author` (the common case, and every spine predating the field), the drafting spend FLOOR
+otherwise. Never `priorSpentUsd` (that key drives `resumed` below — see `runJob`'s own doc) and
+never folded into `spentUsd`. `summarizeForAllLine`'s `spend` column and every panel money
+display route this through `moneyWithDraft` (above).
 
 **`code`** (F118, the run→code direction — the commit→run direction is the prompt-commit
 check's `Failure:` run-reference rule; the two are companion halves of one loop, built the
@@ -3360,6 +3395,15 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   `throw new ExitSignal(n)`, caught at the bottom of `main`), the same "a library function
   returns a code / throws" rule `src/userrun.js` already keeps. Like `interview`, `src/cli.js`
   hands it raw `stdin`/`stdout`/`stderr` (its one interactive seam is the confirm turn).
+
+  **`--budget` and `--draft-spent-usd` (hamr's ruling 2026-09-28, "one cap covers drafting +
+  run"):** `--budget` still means the AUTHORING ceiling, unchanged — the panel sets it equal to
+  the job card's one `Cap $`. On a SIGNING PREPARED stop, `author` prints its own known
+  drafting spend (a floor, never $0 on an unpriced call — F6) and the exact `run-u` command to
+  run it, now including `--draft-spent-usd <known-floor>` when that floor is > 0 — the SAME
+  signed `budgetUsd` is the run's cap too, and `run-u` enforces the remainder
+  (`Cap $ − drafting spent`) as ITS own ceiling. Nothing here is left for a person to
+  hand-compute or re-type, the same rule F185 set for `--spec`.
 
 **Tighten-only budget/wall.** `--budget`/`--wall` on `bareloop run` may only lower the
 bundle's own signed `budgetUsd`/`maxWallMs` — `checkEnvelope`'s `envelope-widen` red refuses
