@@ -739,14 +739,14 @@ test('item: Audit table cells are built in Round, Step, Action, Path, Decision, 
   const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
   const body = html.slice(start, end);
   const trStart = body.indexOf('tr.innerHTML =');
-  const trEnd = body.indexOf(';', body.indexOf('escapeXml(r.time'));
+  const trEnd = body.indexOf(';', body.indexOf('auditTimeCellHtml(r)'));
   const trBody = body.slice(trStart, trEnd);
   const roundIdx = trBody.indexOf('roundCell');
   const stepIdx = trBody.indexOf('stepCell');
   const actionIdx = trBody.indexOf('auditActionCellHtml(r)');
   const pathIdx = trBody.indexOf('pathCell');
   const decisionIdx = trBody.indexOf('decisionCell');
-  const timeIdx = trBody.indexOf('escapeXml(r.time');
+  const timeIdx = trBody.indexOf('auditTimeCellHtml(r)');
   assert.ok(roundIdx < stepIdx && stepIdx < actionIdx && actionIdx < pathIdx && pathIdx < decisionIdx && decisionIdx < timeIdx,
     `expected Round < Step < Action < Path < Decision < Time in tr.innerHTML build order, got: ${trBody}`);
 });
@@ -828,6 +828,67 @@ test('item 1: the round-header-row is visually distinct (its own CSS rule), and 
   assert.match(html, /tr\.round-header-row td\{[^}]*background:var\(--panel2\)/);
   assert.match(html, /tr\.round-header-row td\{[^}]*font-weight:700/);
   assert.match(html, /\.audit-table-scroll table th\{[^}]*position:sticky/);
+});
+
+// ---------------------------------------------------------------------------
+// fix (2026-09-28): Time cell overflowed the Audit tab sideways at 390px by
+// showing the full ISO timestamp. `auditShortTime`/`auditTimeCellHtml` shows
+// `HH:MM:SS` taken from the ISO string AS-IS (UTC, no local-time conversion),
+// full ISO kept in the cell's `title`; ONE helper shared by the Flat table
+// and both Grouped-view rounds-table row builders.
+// ---------------------------------------------------------------------------
+
+test('fix: auditShortTime extracts HH:MM:SS as-is from an ISO string, no timezone conversion', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function auditShortTime(');
+  const end = html.indexOf('function auditTimeCellHtml(');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected auditShortTime in src/panel/index.html');
+  const fn = new Function('String', html.slice(start, end) + 'return auditShortTime;')(String);
+  assert.strictEqual(fn('2026-09-27T08:20:58.924Z'), '08:20:58');
+  assert.strictEqual(fn(null), null);
+  assert.strictEqual(fn(undefined), null);
+});
+
+test('fix: auditTimeCellHtml renders the short time with the full ISO string in a title tooltip', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  // auditTimeCellHtml calls escapeXml + auditShortTime; load both plus the
+  // real escapeXml implementation so the helper runs for real, not stubbed.
+  const escStart = html.indexOf('function escapeXml(');
+  const escEnd = html.indexOf('function ', escStart + 20);
+  const escSrc = html.slice(escStart, escEnd);
+  const helpersStart = html.indexOf('function auditShortTime(');
+  const helpersEnd = html.indexOf('// item 7: tools/cache summary rows');
+  assert.ok(helpersStart !== -1 && helpersEnd !== -1 && helpersEnd > helpersStart, 'expected auditShortTime/auditTimeCellHtml in src/panel/index.html');
+  const helpersSrc = html.slice(helpersStart, helpersEnd);
+  const fn = new Function('String', escSrc + helpersSrc + 'return auditTimeCellHtml;')(String);
+  const withTime = fn({ time: '2026-09-27T08:20:58.924Z' });
+  assert.match(withTime, /^<span title="2026-09-27T08:20:58\.924Z">08:20:58<\/span>$/);
+  assert.strictEqual(fn({}), 'unknown');
+});
+
+test('fix: all three Audit-tab Time cells (Flat table row, Grouped round-header row, Grouped tool-call row) use the shared auditTimeCellHtml helper, not a duplicate', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  // Flat table (renderAudit)
+  const flatStart = html.indexOf('function renderAudit(result){');
+  const flatEnd = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
+  assert.match(html.slice(flatStart, flatEnd), /auditTimeCellHtml\(r\)/);
+  // Grouped round-header row (the round's own model call)
+  const headStart = html.indexOf('function renderRoundHeaderRow(r){');
+  const headEnd = html.indexOf('function renderRoundToolRow(');
+  assert.match(html.slice(headStart, headEnd), /auditTimeCellHtml\(pseudo\)/);
+  // Grouped tool-call row
+  const toolStart = html.indexOf('function renderRoundToolRow(tc){');
+  const toolEnd = html.indexOf('function renderRoundRows(');
+  assert.match(html.slice(toolStart, toolEnd), /auditTimeCellHtml\(tc\)/);
+  // no leftover raw-ISO rendering at any of the three call sites
+  assert.doesNotMatch(html.slice(flatStart, flatEnd), /escapeXml\(r\.time/);
+  assert.doesNotMatch(html.slice(headStart, headEnd), /escapeXml\(pseudo\.time/);
+  assert.doesNotMatch(html.slice(toolStart, toolEnd), /escapeXml\(tc\.time/);
+});
+
+test('fix: the Raw log view is untouched — result.raw is rendered verbatim, not run through the time helper', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /document\.getElementById\("audit-rawlog"\)\.textContent = result\.raw \|\| "";/);
 });
 
 // ---------------------------------------------------------------------------

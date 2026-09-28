@@ -1554,6 +1554,25 @@
     if(auditIsBlocked(r)) cls = (cls ? cls + " " : "") + "row-blocked";
     return cls;
   }
+  // fix (2026-09-28): the Time cell showed the full ISO timestamp
+  // (`2026-09-27T08:20:58.924Z`), overflowing every Audit-tab table sideways
+  // at 390px. Shows time-only `HH:MM:SS` taken from the ISO string AS-IS
+  // (UTC, no timezone conversion), full ISO kept in the cell's `title` for
+  // hover — ONE helper, shared by the Flat table and the Grouped view's
+  // per-attempt rounds table (both the header row and the tool-call rows),
+  // so the three call sites can never drift on how a Time cell reads.
+  function auditShortTime(iso){
+    if(!iso) return null;
+    var m = /T(\d\d:\d\d:\d\d)/.exec(String(iso));
+    return m ? m[1] : null;
+  }
+  function auditTimeCellHtml(r){
+    var iso = r.time;
+    if(!iso) return "unknown";
+    var short = auditShortTime(iso);
+    if(!short) return escapeXml(iso);
+    return '<span title="' + escapeXml(iso) + '">' + escapeXml(short) + '</span>';
+  }
 
   // item 7: tools/cache summary rows — built ONLY from replay's own already-
   // computed `behaviour`/`memoryCache` fields (never recomputed a second way).
@@ -1804,7 +1823,7 @@
       '<td>' + auditActionCellHtml(pseudo) + '</td>' +
       '<td>' + auditPathCellHtml(pseudo) + '</td>' +
       '<td>' + auditDecisionCellHtml(pseudo) + '</td>' +
-      '<td>' + escapeXml(pseudo.time || "unknown") + '</td>' +
+      '<td>' + auditTimeCellHtml(pseudo) + '</td>' +
     '</tr>';
   }
   function renderRoundToolRow(tc){
@@ -1814,7 +1833,7 @@
       '<td>' + auditActionCellHtml(tc) + '</td>' +
       '<td>' + auditPathCellHtml(tc) + '</td>' +
       '<td>' + auditDecisionCellHtml(tc) + '</td>' +
-      '<td>' + escapeXml(tc.time || "unknown") + '</td>' +
+      '<td>' + auditTimeCellHtml(tc) + '</td>' +
     '</tr>';
   }
   function renderRoundRows(r, toolLogSaved){
@@ -2043,7 +2062,7 @@
         "<td>" + auditActionCellHtml(r) + "</td>" +
         "<td>" + pathCell + "</td>" +
         "<td>" + decisionCell + "</td>" +
-        "<td>" + escapeXml(r.time || "unknown") + "</td>";
+        "<td>" + auditTimeCellHtml(r) + "</td>";
       tbody.appendChild(tr);
     });
     document.getElementById("audit-rawlog").textContent = result.raw || "";
