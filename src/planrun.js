@@ -3873,6 +3873,29 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // `closeGrade(post)` is exact. `readGrade` stays the fallback INSIDE
     // `trend.record` for a command close, where `closeGrade` returns `{gap}` only.
     fixTrend.record(closeGrade(post));
+    // F195 item 2 — TRACE: before this, `middle` (below) handed the fix worker
+    // ONLY the current gap (this iteration's raw close output, or the previous
+    // attempt's — planrun.js's `await w.ask([...])` at the end of `middle`) and
+    // never any history of prior grades. Nothing else about the close's own
+    // numbers travelled between tries.
+    //
+    // The fix: a FACTS-ONLY number history, one entry per grade fixTrend has
+    // already read (never advice, never model-generated text — a prompt
+    // register change, `src/promptregisters.js`'s inventory, `src/planrun.js`
+    // already listed there). `checksHistory` is the "N passed of M declared"
+    // count per grade (first-red-wins: everything before the deciding stage),
+    // read straight off each declared verdict's own `stages` list — nothing a
+    // command close's verdict carries, so it stays empty there and the line is
+    // simply omitted. The per-stage number history rides on `fixTrend.report()`
+    // already, so nothing new is stored for that half.
+    /** @type {string[]} */
+    const checksHistory = [];
+    const pushChecks = (/** @type {any} */ v) => {
+      if (Array.isArray(v?.stages)) {
+        checksHistory.push(`${v.stages.filter((/** @type {any} */ s) => s.verdict === 'satisfied').length}/${v.stages.length}`);
+      }
+    };
+    pushChecks(post);
     /** ralph's `ladder` seam, filled by the trend reader instead of the step
      * ladder's repeat/write pair. ONE exhaustion terminal, two triggers (ralph's own
      * rule): the category stays `cap-halt` and the outcome stays `escalated`, so the
@@ -3898,6 +3921,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // the equality check so a crash still reads through the text fallback on
         // its own synthetic gap, exactly as before.
         const graded = lastCloseVerdict && lastCloseVerdict.gap === o.gap ? closeGrade(lastCloseVerdict) : { gap: o.gap };
+        if (lastCloseVerdict && lastCloseVerdict.gap === o.gap) pushChecks(lastCloseVerdict);
         return { governor: 'close-trend', ...fixTrend.record(graded), iteration: o.iteration };
       },
       struckOut: fixTrend.struckOut,
@@ -4011,12 +4035,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         })
         : null;
       if (rootInj) emit('root-injected', { phase: 'fix', ...rootInj.event });
+      // F195 item 2 — the facts-only history: JOINED numbers only, no prose the
+      // model didn't already earn by writing the close's own output. `values`
+      // joins with `→` (fixTrend's own vocabulary), stages join with `·`; a
+      // stage this leg has read only once still shows its one number (no arrow),
+      // which is still a fact the worker did not otherwise have.
+      const checksFact = checksHistory.length > 0 ? `checks passed ${checksHistory.join(' → ')}` : null;
+      const stageFacts = fixTrend.report().stages
+        .filter((s) => s.values.length > 0)
+        .map((s) => `${s.stage} ${s.values.join(' → ')}`);
+      const factsLine = [checksFact, ...stageFacts].filter(Boolean).join(' · ');
       await w.ask([
         'The job\'s final verification is failing. Fix the repository so it passes.',
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
         artifacts.length > 0 && `Working context (read-only) — the plan's steps produced:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
         !gap && post.gap && `The verification's output on the tree as it stands (not an attempt of yours):\n${post.gap}`,
         gap && `Previous attempt failed the verification:\n${gap}`,
+        factsLine && `The close's own numbers so far, oldest first (facts only — no advice):\n${factsLine}`,
         rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
     };

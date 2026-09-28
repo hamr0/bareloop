@@ -343,3 +343,38 @@ test('F195: the fix-loop governor reads a declared close\'s own value — flat/i
   assert.equal(esc.category, 'cap-halt');
   assert.match(esc.decision, /2\/2 strike|no progress|stopped making progress/i);
 });
+
+// ══ F195 item 2 — the fix worker gets a FACTS-ONLY number history, never just
+// the current gap in isolation ═══════════════════════════════════════════════
+//
+// TRACE (planrun.js's `middle`, the fix loop's worker turn): before this test's
+// fix landed, `w.ask([...])` (src/planrun.js, the fix loop's own `middle`) sent
+// the worker exactly: the fixed "fix the repository" sentence, the repo root,
+// the plan's own working-context artifacts, and EITHER the close's original
+// output (first attempt) OR the PREVIOUS attempt's raw gap (every attempt
+// after) — one iteration's worth of text, never a history of prior numbers.
+test('F195 item 2: the fix worker\'s prompt carries the close\'s own number history, growing one entry per attempt — facts only, no advice', async (t) => {
+  const { dir, spine } = makeCountPatient(t);
+  const job = countJob();
+  assert.deepEqual(validateJob(job, { shellCapUsd: job.budgetUsd }).reds, []);
+
+  const provider = scriptedProvider([
+    { text: 'src/count.txt holds a number; check-count.mjs is the gate.' },
+    { text: PLAN([{ type: 'tree-changed', scope: 'src/**' }]) },
+    ...writeCount(dir, '5', 't0'),
+    ...writeCount(dir, '5', 't1'),
+    ...writeCount(dir, '3', 't2'),
+    { text: 'stop here' },
+  ]);
+  await runJob(job, { approvals: approve(job), workdir: dir, provider, emit: makeSpine(spine), capRuns: 9 });
+
+  const fixCalls = provider.calls.filter((c) => c.includes('The close\'s own numbers so far'));
+  // t1, t2, then two more flat auto-continuation attempts (the scripted provider
+  // sticks on its last entry) before the loop strikes out at noProgress 2/2 —
+  // one facts line per fix ATTEMPT, never on the step's own turn.
+  assert.equal(fixCalls.length, 4, 'one facts line per fix attempt');
+  assert.match(fixCalls[0], /checks passed \d+\/\d+/, 'the checks-passed count rides the same line');
+  assert.match(fixCalls[0], /count-stage 5/, 'fix attempt 1 sees the seed grade (5) already on the record');
+  assert.match(fixCalls[1], /count-stage 5 → 5/, 'fix attempt 2 sees BOTH prior grades — the history GROWS, one entry per attempt');
+  assert.doesNotMatch(fixCalls[0], /top up|revise|abandon|converging|strike/i, 'facts only — no lever, no advice, no model-generated prose');
+});

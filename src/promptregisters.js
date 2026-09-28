@@ -76,6 +76,9 @@ export const PROMPT_REGISTERS = Object.freeze([
 
   // src/planrun.js — the native-surface read-truncation strategy line
   Object.freeze({ file: 'src/planrun.js', name: 'NATIVE_READ_STRATEGY' }),
+  // src/planrun.js — the fix loop's facts-only close-grade history line
+  // (F195 item 2), built inline inside `middle` and appended to `w.ask([...])`
+  Object.freeze({ file: 'src/planrun.js', name: 'middle()\'s facts-only "The close\'s own numbers so far" block (inline template, not a const)' }),
 
   // src/authoring.js — the types-genre close template, interpolated verbatim
   // into the authoring prompt (src/authorflow.js's assembled system message,
