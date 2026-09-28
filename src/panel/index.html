@@ -343,6 +343,21 @@
   .btn.primary:disabled{background:var(--btn-bg);color:var(--text-faint);border-color:var(--border);}
   .btn.primary:disabled::before,.btn.primary:disabled::after{color:var(--text-faint);opacity:0.4;}
 
+  /* P3 build item 3 — the single live progress line: an amber cycling
+     [progress.]/[progress..]/[progress...] glyph while a phase is running,
+     [done] in green once it finishes, [stopped] in red on a refusal. A
+     static [progress...] under prefers-reduced-motion (no animation). */
+  .chat-progress-row{display:flex;align-items:center;gap:8px;margin:2px 0 10px;font-size:12px;}
+  .chat-progress-glyph{font-weight:700;color:var(--amber);}
+  .chat-progress-glyph.done{color:var(--green);}
+  .chat-progress-glyph.stopped{color:var(--red);}
+  .chat-progress-label{color:var(--text-faint);}
+  /* build item 7 — the two $0 readiness lines under the Model field. */
+  .jf-readiness{font-size:11px;margin-top:2px;}
+  .jf-readiness.ok{color:var(--green);}
+  .jf-readiness.bad{color:var(--red);}
+  .jf-readiness.unknown{color:var(--text-faint);}
+
   .chat-thread{display:flex;flex-direction:column;gap:10px;margin-bottom:10px;}
   .msg{padding:8px 10px;border:1px solid var(--border);max-width:100%;background:var(--panel2);font-size:13px;word-break:break-word;white-space:pre-wrap;}
   .msg.bot{border-left:3px solid var(--border-strong);}
@@ -417,6 +432,8 @@
                 <option value="claude-sonnet-5">claude-sonnet-5 · Anthropic</option>
                 <option value="deepseek-flash">deepseek-flash · DeepSeek</option>
               </select>
+              <div class="jf-readiness unknown" id="jf-key-status" data-testid="jf-key-status"></div>
+              <div class="jf-readiness unknown" id="jf-reach-status" data-testid="jf-reach-status"></div>
             </div>
             <div class="field">
               <label for="jf-name">Job name</label>
@@ -470,12 +487,18 @@
             <div class="hint" id="chat-hash-line" data-testid="chat-hash-line" hidden></div>
           </div>
 
+          <div class="chat-progress-row" id="chat-progress-row" data-testid="chat-progress-row" hidden>
+            <span class="chat-progress-glyph" id="chat-progress-glyph" data-testid="chat-progress-glyph"></span>
+            <span class="chat-progress-label" id="chat-progress-label" data-testid="chat-progress-label"></span>
+          </div>
+
           <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
 
           <div class="chat-input-row">
             <label for="chat-msg" style="display:none">Message</label>
             <input id="chat-msg" type="text" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg">
           </div>
+          <button class="btn" type="button" id="chat-check-deps-btn" data-testid="chat-check-deps" hidden>Check again</button>
 
           <div class="actions-row">
             <button class="btn" type="button" id="chat-send-btn" data-testid="chat-send" disabled>Send</button>
@@ -2295,11 +2318,15 @@
     lastRunsSig = sig(runs);
     runsFilterBar.setItems(runs);
     if(runs.length && !runs[0].fileMissing){
-      document.getElementById("tab-runs").click();
-      // newest run overall, opened directly — the Workflows view starts
-      // collapsed, but its job row still renders "selected" (build item,
-      // 2026-09-26: a job row shows selected state like a child row) since
-      // `runsFilterBar.refresh()` re-renders AFTER `currentRunid` is set.
+      // build item 5 — the LEFT pane opens on Chat by default; this no
+      // longer force-clicks "tab-runs" (it used to switch the left pane
+      // away from Chat on every load that had a run). The RIGHT pane still
+      // loads the newest run's details so they're ready the moment a
+      // person switches to the Runs tab themselves — the Workflows view
+      // starts collapsed, but its job row still renders "selected" (build
+      // item, 2026-09-26: a job row shows selected state like a child row)
+      // since `runsFilterBar.refresh()` re-renders AFTER `currentRunid` is
+      // set.
       selectRun(runs[0].runid, null, ".hist-row");
       document.getElementById("tab-run").click();
       runsFilterBar.refresh();
@@ -2343,20 +2370,46 @@
     var signBtn = document.getElementById("chat-sign-btn");
     var reviseBtn = document.getElementById("chat-revise-btn");
     var startBtn = document.getElementById("chat-start-btn");
+    var checkDepsBtn = document.getElementById("chat-check-deps-btn");
     var errEl = document.getElementById("chat-card-error");
     var hashLine = document.getElementById("chat-hash-line");
     var draftCapInput = document.getElementById("jf-cap-draft");
+    var modelSelect = document.getElementById("jf-model");
+    var keyStatusEl = document.getElementById("jf-key-status");
+    var reachStatusEl = document.getElementById("jf-reach-status");
+    var progressRow = document.getElementById("chat-progress-row");
+    var progressGlyph = document.getElementById("chat-progress-glyph");
+    var progressLabelEl = document.getElementById("chat-progress-label");
 
     var sessionId = null;
     var pollTimer = null;
     var lastPhase = null;
     var signClickedOnce = false;
+    // build item 4 — Start disables the moment it's clicked and stays
+    // disabled for the whole life of a non-terminal session (the server's
+    // own one-at-a-time rule, `TERMINAL_PHASES` in
+    // src/panel/authorroutes.js, mirrored here so Start never even offers a
+    // click the server would 409 anyway).
+    var CLIENT_TERMINAL_PHASES = ["refused", "abandoned", "error", "signed", "signing-failed"];
+    var DONE_PHASES = ["prepared", "signed"];
+    var sessionLive = false;
+    // build item 7 — Start also stays disabled while the chosen model's key
+    // isn't usable; updated by refreshModelStatus() below.
+    var keyOk = false;
 
     newBtn.addEventListener("click", function(){
       card.hidden = false;
       newBtn.hidden = true;
       thread.innerHTML = "";
       errEl.textContent = "";
+      sessionId = null;
+      sessionLive = false;
+      signClickedOnce = false;
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+      stopProgressDots();
+      progressRow.hidden = true;
+      checkDepsBtn.hidden = true;
+      refreshStartEnabled();
     });
 
     function currentCard(){
@@ -2382,9 +2435,12 @@
     // Drafting $ cap is REQUIRED every time, no default (Q2=A) — Start stays
     // disabled until it parses as a positive number, checked client-side as
     // a UX convenience only; the server (`validateJobCard`) is the real gate.
+    // Also disabled while a session is already live (build item 4) or the
+    // chosen model's key isn't usable (build item 7).
     function refreshStartEnabled(){
       var v = Number(draftCapInput.value);
-      startBtn.disabled = !(draftCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0);
+      var capOk = draftCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
+      startBtn.disabled = !capOk || sessionLive || !keyOk;
     }
     draftCapInput.addEventListener("input", refreshStartEnabled);
     document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
@@ -2394,21 +2450,107 @@
       });
     });
 
+    // build item 7 — key + reachability, $0, shown right under Model, on
+    // load and whenever the selection changes. Start stays disabled while
+    // the key isn't usable; a reachability failure shows red but never
+    // blocks (an endpoint can be flaky).
+    function refreshModelStatus(){
+      var modelId = modelSelect.value;
+      authorGet("/api/author/model-check?model=" + encodeURIComponent(modelId)).then(function(r){
+        if(!r || !r.ok){
+          keyOk = false;
+          keyStatusEl.className = "jf-readiness bad";
+          keyStatusEl.textContent = "[✗] could not check the key";
+          reachStatusEl.textContent = "";
+          refreshStartEnabled();
+          return;
+        }
+        keyOk = r.keyStatus === "found";
+        keyStatusEl.className = "jf-readiness " + (keyOk ? "ok" : "bad");
+        keyStatusEl.textContent = keyOk
+          ? ("[✓] " + r.envKey + " found")
+          : ("[✗] " + r.envKey + (r.keyStatus === "missing" ? " not set" : (" " + r.keyProblem)));
+        var reach = r.reachability;
+        if(!reach || !reach.checked){
+          reachStatusEl.className = "jf-readiness unknown";
+          reachStatusEl.textContent = "";
+        } else if(reach.reachable){
+          reachStatusEl.className = "jf-readiness ok";
+          reachStatusEl.textContent = "[✓] reachable" + (reach.modelListed === false ? " (model not listed)" : "");
+        } else {
+          reachStatusEl.className = "jf-readiness bad";
+          reachStatusEl.textContent = "[✗] " + reach.status + " — may be flaky, not blocking";
+        }
+        refreshStartEnabled();
+      }).catch(function(){
+        keyOk = false;
+        keyStatusEl.className = "jf-readiness bad";
+        keyStatusEl.textContent = "[✗] could not check the key";
+        reachStatusEl.textContent = "";
+        refreshStartEnabled();
+      });
+    }
+    modelSelect.addEventListener("change", refreshModelStatus);
+    refreshModelStatus();
+
+    // build item 2 — one plain line per event, no "(progress)" jargon
+    // suffix: `onPhase` no longer posts its own bubble (see
+    // src/panel/authorsession.js), so every remaining message is already
+    // something a person needs to read.
     function renderMessages(state){
       thread.innerHTML = state.messages.map(function(m){
         var cls = m.role === "you" ? "you" : (m.role === "system" ? "system" : "bot");
-        var who = m.role === "you" ? "you" : (m.role === "system" ? "bareloop (progress)" : "bareloop");
+        var who = m.role === "you" ? "you" : "bareloop";
         return '<div class="msg ' + cls + '"><div class="who">' + escapeXml(who) + '</div>' + escapeXml(m.text) + '</div>';
       }).join("");
       thread.scrollTop = thread.scrollHeight;
     }
 
+    // build item 3 — the single live progress line.
+    var progressDotTimer = null;
+    var progressDotCount = 1;
+    var reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    function stopProgressDots(){
+      if(progressDotTimer){ clearInterval(progressDotTimer); progressDotTimer = null; }
+    }
+    function startProgressDots(){
+      if(reducedMotion){ progressGlyph.textContent = "[progress...]"; return; }
+      if(progressDotTimer) return;
+      progressDotCount = 1;
+      progressGlyph.textContent = "[progress.]";
+      progressDotTimer = setInterval(function(){
+        progressDotCount = (progressDotCount % 3) + 1;
+        progressGlyph.textContent = "[progress" + new Array(progressDotCount + 1).join(".") + "]";
+      }, 500);
+    }
+    function renderProgress(state){
+      progressRow.hidden = false;
+      if(DONE_PHASES.indexOf(state.phase) !== -1){
+        stopProgressDots();
+        progressGlyph.className = "chat-progress-glyph done";
+        progressGlyph.textContent = "[done]";
+        progressLabelEl.textContent = "";
+      } else if(CLIENT_TERMINAL_PHASES.indexOf(state.phase) !== -1){
+        stopProgressDots();
+        progressGlyph.className = "chat-progress-glyph stopped";
+        progressGlyph.textContent = "[stopped]";
+        progressLabelEl.textContent = state.error || "";
+      } else {
+        progressGlyph.className = "chat-progress-glyph";
+        progressLabelEl.textContent = state.pendingAsk ? "waiting for you" : (state.progressLabel || "working");
+        startProgressDots();
+      }
+    }
+
     function renderActions(state){
       var pending = state.pendingAsk;
       var atMenu = !!pending && pending.kind === "menu";
-      sendBtn.disabled = !pending || atMenu;
+      var atDepsWait = !!pending && pending.kind === "install-needed";
+      sendBtn.disabled = !pending || atMenu || atDepsWait;
       reviseBtn.disabled = !atMenu || state.revisesLeft <= 0;
       reviseBtn.textContent = "Revise (" + state.revisesLeft + " left)";
+      checkDepsBtn.hidden = !atDepsWait;
+      checkDepsBtn.disabled = !atDepsWait;
       if(state.phase === "prepared" && !signClickedOnce){
         signBtn.disabled = false;
         signBtn.textContent = "Sign & run";
@@ -2428,6 +2570,11 @@
       } else {
         errEl.textContent = "";
       }
+      renderProgress(state);
+      // build item 4 — re-enable Start only once the session has settled
+      // into a terminal phase (a fresh Start becomes possible again).
+      sessionLive = CLIENT_TERMINAL_PHASES.indexOf(state.phase) === -1;
+      refreshStartEnabled();
     }
 
     function poll(){
@@ -2446,10 +2593,16 @@
 
     startBtn.addEventListener("click", function(){
       errEl.textContent = "";
+      // build item 4 — disable the moment it's clicked, not just once the
+      // response comes back; re-enabled below only if the start is refused.
+      sessionLive = true;
+      refreshStartEnabled();
       var body = currentCard();
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
           errEl.textContent = (r.body && r.body.error) || "refused";
+          sessionLive = false;
+          refreshStartEnabled();
           return;
         }
         sessionId = r.body.sessionId;
@@ -2458,6 +2611,15 @@
         renderActions(r.body.state);
         if(pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(poll, 2000);
+      });
+    });
+
+    checkDepsBtn.addEventListener("click", function(){
+      if(!sessionId) return;
+      checkDepsBtn.disabled = true;
+      authorPost("/api/author/" + sessionId + "/check-deps", {}).then(function(r){
+        if(r.body && r.body.error && !r.body.ok) errEl.textContent = r.body.error;
+        poll();
       });
     });
 

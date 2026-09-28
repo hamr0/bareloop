@@ -59,6 +59,37 @@ export const MODEL_OPTIONS = Object.freeze({
   'deepseek-flash': Object.freeze({ provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' }),
 });
 
+/**
+ * Plain-language labels for the library's own `onPhase(name, …)` calls
+ * (`src/authorjob.js`/`src/authorflow.js`) — build item 3's progress
+ * indicator shows one of these next to its animated glyph instead of a new
+ * chat bubble per phase. A phase with no entry here leaves the label as it
+ * was (never blanks it — a missing mapping should not flicker the line).
+ * @type {Readonly<Record<string, string>>}
+ */
+const PROGRESS_LABELS = Object.freeze({
+  'confirm-worse-than-before': 'checking prior behaviour',
+  'confirm-language-pick': 'confirming language',
+  'confirm-round': 'confirming plan',
+  'confirm-done': 'plan confirmed',
+  'author-call': 'drafting',
+  'author-fallback': 'drafting',
+  'seed-read': 'reading repo',
+  'seed-read-done': 'reading repo',
+  stage: 'checking',
+  seed: 'reading repo',
+  scout: 'scouting repo',
+  'scout-done': 'scouting repo',
+  confirm: 'confirming plan',
+  'confirm-turn-done': 'plan confirmed',
+  listing: 'listing files',
+  'listing-done': 'listing files',
+  author: 'drafting',
+  rubric: 'calibrating',
+  'rubric-done': 'calibrating',
+  'rubric-scrubbed': 'calibrating',
+});
+
 /** the confirm turn's own fixed round cap (`src/authorflow.js`'s
  * `runConfirmTurn`: `for (let round = 1; round <= 2; round += 1)`) — named
  * here, once, rather than re-guessed at every `onPhase('confirm-round')`
@@ -162,6 +193,12 @@ export function createSession(card, deps = {}) {
     resolvedSpecPath: /** @type {string|null} */ (null),
     error: /** @type {string|null} */ (null),
     outDir,
+    // the short, human step label the progress indicator shows next to its
+    // animated glyph (build item 3) — updated by `onPhase` below and by this
+    // file's own top-level phase transitions; never a chat bubble of its own
+    // (build item 2: onPhase used to post one, and it read as jargon/
+    // duplicate of the refusal that often followed it in the same breath).
+    progressLabel: /** @type {string|null} */ (null),
   };
 
   /** @param {'bot'|'you'|'system'} role @param {string} text */
@@ -169,6 +206,15 @@ export function createSession(card, deps = {}) {
 
   /** @type {((value: string|null) => void)|null} */
   let resolvePending = null;
+
+  /** @type {(() => void)|null} the F182-mirrored install-gap wait's own
+   * resolver — a SEPARATE channel from `resolvePending`/`ask()` above (the
+   * confirm turn hasn't started yet when this one is live), signalled by
+   * `checkDeps()`, below, itself called only from the "Check again" POST
+   * route (`src/panel/authorroutes.js`). */
+  let resolveDepsCheck = null;
+  /** @returns {Promise<void>} resolves once `checkDeps()` is called */
+  const waitForDepsCheck = () => new Promise((resolveFn) => { resolveDepsCheck = resolveFn; });
 
   /**
    * The confirm turn's own `ask` seam — HTTP-backed, depth one. `describe`
@@ -219,7 +265,14 @@ export function createSession(card, deps = {}) {
     if (name === 'confirm-round' && typeof data.round === 'number') {
       state.revisesLeft = Math.max(0, CONFIRM_ROUND_CAP - (data.round - 1));
     }
-    say('system', `… ${name}`);
+    // COLLAPSED INTO THE PROGRESS INDICATOR ONLY (build item 3) — this used
+    // to also `say('system', `… ${name}`)`, one jargon chat bubble per
+    // library phase (`… confirm-turn-done`, `… seed-read`, …), read back to
+    // back with the plain-language refusal that often followed a phase like
+    // `confirm-turn-done` in the very next line (build item 2's "the
+    // refusal line appears twice"). The thread now carries only what a
+    // person needs to read; the step-by-step detail lives in one line.
+    state.progressLabel = PROGRESS_LABELS[name] ?? state.progressLabel;
   };
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const metered = [];
@@ -242,20 +295,21 @@ export function createSession(card, deps = {}) {
     let providerEntry;
     try { providerEntry = resolveProvider(modelChoice.provider); } catch (e) { refuse(/** @type {Error} */ (e).message); return; }
     const apiKey = env[providerEntry.envKey];
-    if (!apiKey) { refuse(`${providerEntry.envKey} not set — refusing at $0, before any spend`); return; }
+    if (!apiKey) { refuse(`${providerEntry.envKey} not set. Stopped — nothing spent.`); return; }
     const keyProblem = apiKeyProblem(apiKey);
-    if (keyProblem) { refuse(`${providerEntry.envKey} ${keyProblem} — refusing rather than crashing mid-call`); return; }
+    if (keyProblem) { refuse(`${providerEntry.envKey} ${keyProblem}. Stopped — nothing spent.`); return; }
 
     const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
     const isRepoLike = looksLikeRepoSource(card.source);
 
     state.phase = 'preparing-source';
-    say('system', 'preparing the source — a hidden, frozen copy this job works from ($0, no provider)…');
+    state.progressLabel = 'copying source';
+    say('system', 'Copying source ($0)…');
     const prep = await prepareSource({
       source: card.source, into, destination: isRepoLike ? card.destination : card.destination,
     });
-    if (prep.stop !== null) { refuse(`source/destination refused (${prep.code}): ${prep.stop}`); return; }
+    if (prep.stop !== null) { refuse(prep.stop); return; }
 
     const IS_REPO_SOURCE = prep.manifest.kind === 'repo';
     let LANG = 'none-detected';
@@ -268,16 +322,41 @@ export function createSession(card, deps = {}) {
         return;
       }
       LANG = langResult.kind === 'resolved' ? langResult.lang : (langResult.kind === 'ambiguous' ? langResult.candidates[0] : 'none-detected');
-      const depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
+
+      // ── the install gap, WAITED FOR, never a dead end (build item 1,
+      // mirroring F182's fix in `src/interviewrun.js`) ── the copy this
+      // session works from (`prep.tree`) is `prepareSource`'s own hidden
+      // seed, tracked-files-only, so a JS/TS repo's copy never carries
+      // `node_modules`. Refusing outright here was ITSELF the F182 class of
+      // bug one layer up: a person who ran the printed command and then
+      // reloaded the page got a BRAND NEW seed with no `node_modules`
+      // either, so the refusal could never be satisfied. bareloop still
+      // never runs an install itself — this only re-checks the SAME copy
+      // (`missingDependencies` over `prep.tree`, the identical rule
+      // `src/interviewrun.js` uses) on demand, via the "Check again" button
+      // (`checkDeps()`, below), instead of ending the session.
+      let depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
       if (depsGap) {
-        refuse(`${prep.tree} has no installed packages (${depsGap.reason}). bareloop never installs — run \`${depsGap.command}\` in the copy, then start a new session.`);
-        return;
+        state.phase = 'install-needed';
+        state.progressLabel = 'waiting on install';
+        say('system', `Packages missing in the copy. Run:\ncd ${prep.tree} && ${depsGap.command}`);
+        for (;;) {
+          state.pendingAsk = { kind: 'install-needed', tree: prep.tree, command: depsGap.command, reason: depsGap.reason };
+          // eslint-disable-next-line no-await-in-loop
+          await waitForDepsCheck();
+          state.pendingAsk = null;
+          depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
+          if (!depsGap) break;
+          say('system', `Still missing (${depsGap.reason}). Install, then Check again.`);
+        }
+        say('system', 'Packages found — continuing.');
+        state.phase = 'drafting';
       }
     }
     if (!IS_REPO_SOURCE) {
       state.phase = 'refused';
       state.error = 'non-code-source';
-      say('system', "This is a plain folder, not a code project. bareloop can't check this kind of job yet. Nothing was spent.");
+      say('system', "Plain folder, not a code project — bareloop can't check this kind of job yet. Nothing spent.");
       return;
     }
 
@@ -331,7 +410,8 @@ export function createSession(card, deps = {}) {
     const confirmGenerate = deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
 
     state.phase = 'drafting';
-    say('system', `== drafting == ${modelChoice.provider}/${MODEL} — drafting cap $${card.draftingCapUsd}`);
+    state.progressLabel = 'drafting';
+    say('system', `Drafting (${modelChoice.provider}/${MODEL}, cap $${card.draftingCapUsd})…`);
     const authored = await authorCloseForJob({
       judgeModel: draftJudge.model,
       answers, verdictType, repoPath: prep.tree, lang: LANG,
@@ -347,7 +427,7 @@ export function createSession(card, deps = {}) {
     if (!authored.ok) {
       state.phase = authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused';
       state.error = authored.stop ?? 'authoring-failed';
-      say('system', `stopped: ${authored.stop ?? 'authoring-failed'}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`);
+      say('system', `Stopped: ${state.error}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`);
       return;
     }
 
@@ -366,7 +446,8 @@ export function createSession(card, deps = {}) {
     }
 
     state.phase = 'signing-gates';
-    say('system', 'running gates 1–3 ($0) and gate 4 (calibration, paid, rubric only if this close judges)…');
+    state.progressLabel = 'checking';
+    say('system', 'Checking (gates 1–3, $0; gate 4 only if rubric)…');
     const judges = closeJudges(spec.closeDecl);
     const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
     let judgeProvider = null;
@@ -420,8 +501,18 @@ export function createSession(card, deps = {}) {
     send: (text) => {
       if (!state.pendingAsk) return { ok: false, error: 'nothing is being asked right now' };
       if (state.pendingAsk.kind === 'menu') return { ok: false, error: 'use Sign & run or Revise for a plan, never Send — the chat can never sign or pick a plan action' };
+      if (state.pendingAsk.kind === 'install-needed') return { ok: false, error: 'install the packages, then click Check again — nothing to send here' };
       say('you', text);
       answer(text);
+      return { ok: true };
+    },
+    /** the [Check again] button — re-runs the SAME `missingDependencies`
+     * check on the SAME copy, never a second install of its own. */
+    checkDeps: () => {
+      if (state.phase !== 'install-needed' || !resolveDepsCheck) return { ok: false, error: 'not waiting on an install check right now' };
+      const r = resolveDepsCheck;
+      resolveDepsCheck = null;
+      r();
       return { ok: true };
     },
     /** @param {string} text */

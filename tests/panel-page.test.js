@@ -2165,3 +2165,104 @@ test('fix (2026-09-28): the four cap-row/drafting labels read "Cap $", "Time cap
   assert.match(html, /<label for="jf-price">Token price \$<\/label>/);
   assert.match(html, /<label for="jf-cap-draft">Drafting cap \$<\/label>/);
 });
+
+test('build item 5 (2026-09-28): the page opens on the Chat tab by default — tab-chat is aria-selected, panel-chat is active/visible, panel-runs starts hidden', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<button role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="true"/);
+  assert.match(html, /<button role="tab" id="tab-runs" aria-controls="panel-runs" aria-selected="false"/);
+  assert.match(html, /<section id="panel-chat" class="tabpanel active"/);
+  const runsSectionTag = html.match(/<section id="panel-runs"[^>]*>/)[0];
+  assert.match(runsSectionTag, /\bhidden\b/, 'panel-runs must start hidden so Chat is the visible left pane on load');
+});
+
+test('build item 5 RED-PROOF (2026-09-28): the initial /api/runs load no longer force-clicks the LEFT "tab-runs" tab — only the RIGHT "tab-run" details tab', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('getJSON("/api/runs").then(function(result){');
+  const end = html.indexOf('startPolling();', start) + 'startPolling();'.length;
+  assert.ok(start !== -1 && end > start, 'expected the initial /api/runs load block to be present');
+  const block = html.slice(start, end);
+  assert.doesNotMatch(block, /tab-runs"\)\.click\(\)/, 'the left-pane Runs tab must not be auto-clicked on load (build item 5: Chat is the default)');
+  assert.match(block, /tab-run"\)\.click\(\)/, 'the right-pane Run details tab still loads the newest run, ready for when the person switches to Runs themselves');
+});
+
+test('build item 3 (2026-09-28): the single progress-indicator row is in the page, ahead of the chat thread, with a glyph and a label element', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<div class="chat-progress-row" id="chat-progress-row"[^>]*hidden>/);
+  assert.match(html, /id="chat-progress-glyph"/);
+  assert.match(html, /id="chat-progress-label"/);
+  const progressIdx = html.indexOf('id="chat-progress-row"');
+  const threadIdx = html.indexOf('id="chat-thread"');
+  assert.ok(progressIdx !== -1 && threadIdx !== -1 && progressIdx < threadIdx, 'the progress row must render ahead of the chat thread');
+});
+
+test('build item 3 RED-PROOF (2026-09-28): the progress dots reduced-motion fallback renders a STATIC "[progress...]", never the animated cycle', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function startProgressDots(){');
+  const end = html.indexOf('function renderProgress(state){');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected startProgressDots to be present');
+  const body = html.slice(start, end);
+  assert.match(body, /reducedMotion/);
+  assert.match(body, /\[progress\.\.\.\]/, 'the static reduced-motion fallback must be the fully-dotted form, not a half-cycled one');
+});
+
+test('build item 2 (2026-09-28): onPhase no longer posts a chat bubble — the progress label is collapsed into state.progressLabel only, never say()\'d', () => {
+  const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
+  const start = src.indexOf('const onPhase = (name, data = {}) => {');
+  const end = src.indexOf('};', start) + 2;
+  assert.ok(start !== -1, 'expected onPhase to be present');
+  const body = src.slice(start, end);
+  // strip `//` comment lines before scanning — this function's own doc
+  // comment mentions `say(` in prose, which must not itself trip the check.
+  const codeOnly = body.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+  assert.doesNotMatch(codeOnly, /say\(/, 'onPhase must never post a chat message of its own (build item 2: it used to double up with the refusal that often followed)');
+  assert.match(body, /state\.progressLabel/);
+});
+
+test('build item 2 (2026-09-28): the rendered "who" label for a system/bot message is plain "bareloop", never the jargon "bareloop (progress)" suffix', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.doesNotMatch(html, /bareloop \(progress\)/, 'the "(progress)" suffix must be gone — progress now lives in the single indicator line, not the chat label');
+});
+
+test('build item 4 (2026-09-28): Start drafting disables immediately on click (before the network response), and is re-enabled only on a terminal phase', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('startBtn.addEventListener("click", function(){');
+  const end = html.indexOf('checkDepsBtn.addEventListener', start);
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected the Start click handler to be present');
+  const body = html.slice(start, end);
+  const sessionLiveIdx = body.indexOf('sessionLive = true;');
+  const postIdx = body.indexOf('authorPost("/api/author/start"');
+  assert.ok(sessionLiveIdx !== -1 && postIdx !== -1 && sessionLiveIdx < postIdx, 'sessionLive must be set to true BEFORE the start request is sent, not after the response arrives');
+  assert.match(body, /refreshStartEnabled\(\)/);
+});
+
+test('build item 4 RED-PROOF (2026-09-28): CLIENT_TERMINAL_PHASES matches the server\'s own TERMINAL_PHASES set exactly — a drift here would silently re-lock or silently unlock Start', () => {
+  const pageHtml = readFileSync(PAGE_PATH, 'utf8');
+  const clientMatch = pageHtml.match(/var CLIENT_TERMINAL_PHASES = \[([^\]]*)\];/);
+  assert.ok(clientMatch, 'expected CLIENT_TERMINAL_PHASES to be declared');
+  const clientSet = new Set(clientMatch[1].split(',').map((s) => s.trim().replace(/"/g, '')));
+  const routesSrc = readFileSync(new URL('../src/panel/authorroutes.js', import.meta.url), 'utf8');
+  const serverMatch = routesSrc.match(/const TERMINAL_PHASES = new Set\(\[([^\]]*)\]\);/);
+  assert.ok(serverMatch, 'expected TERMINAL_PHASES to be declared in authorroutes.js');
+  const serverSet = new Set(serverMatch[1].split(',').map((s) => s.trim().replace(/'/g, '')));
+  assert.deepEqual([...clientSet].sort(), [...serverSet].sort());
+});
+
+test('build item 7 (2026-09-28): two $0 readiness lines render under the Model field, and Start is gated on the key being usable', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelFieldStart = html.indexOf('<label for="jf-model">Model</label>');
+  const modelFieldEnd = html.indexOf('jf-name', modelFieldStart); // the NEXT field, Job name
+  const modelField = html.slice(modelFieldStart, modelFieldEnd);
+  assert.match(modelField, /id="jf-key-status"/);
+  assert.match(modelField, /id="jf-reach-status"/);
+  assert.match(html, /var keyOk = false;/);
+  assert.match(html, /startBtn\.disabled = !capOk \|\| sessionLive \|\| !keyOk;/);
+});
+
+test('build item 7 (2026-09-28): refreshModelStatus calls the model-check route with the SELECTED model id, and runs on both load and change', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /\/api\/author\/model-check\?model=" \+ encodeURIComponent\(modelId\)/);
+  assert.match(html, /modelSelect\.addEventListener\("change", refreshModelStatus\)/);
+  const start = html.indexOf('function refreshModelStatus(){');
+  const callIdx = html.indexOf('refreshModelStatus();', start);
+  assert.ok(start !== -1 && callIdx !== -1 && callIdx > start, 'refreshModelStatus must also be called once on load, not just on change');
+});

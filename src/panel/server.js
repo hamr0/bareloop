@@ -1551,7 +1551,8 @@ export function handleRequest(req, res, opts) {
  * `~/.config/bareloop/panel-sessions`, the real `child_process.spawn`, and
  * this package's own `bin/bareloop.mjs`).
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
- *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string }} [opts]
+ *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
+ *   fetchImpl?: typeof fetch }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
@@ -1591,6 +1592,7 @@ export function createPanelServer(opts = {}) {
         sessionsRoot: opts.sessionsRoot,
         spawnFn: opts.spawnFn,
         bareloopBin: opts.bareloopBin,
+        fetchImpl: opts.fetchImpl,
       });
       resolve({
         server,

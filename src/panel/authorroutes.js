@@ -21,7 +21,8 @@ import { randomBytes } from 'node:crypto';
 import { spawn as realSpawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import { join } from 'node:path';
-import { createSession, validateJobCard } from './authorsession.js';
+import { createSession, validateJobCard, MODEL_OPTIONS } from './authorsession.js';
+import { resolveProvider, apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
 export function mintToken() {
@@ -67,12 +68,16 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * deliberately has none of).
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
- *   jobsDir?: string }} opts
+ *   jobsDir?: string, fetchImpl?: typeof fetch }} opts
  */
 export function createAuthorRoutes(opts) {
   const env = opts.env ?? process.env;
   const spawnFn = opts.spawnFn ?? realSpawn;
   const bareloopBin = opts.bareloopBin ?? new URL('../../bin/bareloop.mjs', import.meta.url).pathname;
+  // TEST SEAM ONLY: a test injects a fake `fetch`-shaped function so the
+  // model-readiness route's own network probe (item 7 below) never makes a
+  // real request — production always uses the real global `fetch`.
+  const fetchImpl = opts.fetchImpl ?? fetch;
   /** @type {Map<string, ReturnType<typeof createSession>>} */
   const sessions = new Map();
 
@@ -97,6 +102,50 @@ export function createAuthorRoutes(opts) {
     const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });
     if (!guard.ok) { send(403, { ok: false, error: `refused — ${guard.reason}` }); return true; }
 
+    // ── build item 7: model readiness, BEFORE drafting, $0/no tokens ──────
+    // ONE server-side function (`checkProviderReachable`, src/providers.js)
+    // the future Settings providers table (PANEL-BUILD.md P4) reuses as-is —
+    // this route is the ONLY caller today. Never returns key material: the
+    // page sees the key's NAME (`envKey`) and a status word, never the value.
+    if (pathname === '/api/author/model-check') {
+      if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      const q = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
+      const modelId = q.get('model') ?? '';
+      const choice = MODEL_OPTIONS[modelId];
+      if (!choice) { send(400, { ok: false, error: `unknown model "${modelId}"` }); return true; }
+      /** @type {any} */
+      let providerEntry;
+      try { providerEntry = resolveProvider(choice.provider); } catch (e) { send(400, { ok: false, error: /** @type {Error} */ (e).message }); return true; }
+      const raw = env[providerEntry.envKey];
+      const problem = raw ? apiKeyProblem(raw) : null;
+      const keyStatus = !raw ? 'missing' : (problem ? 'bad-shape' : 'found');
+      if (keyStatus !== 'found') {
+        send(200, {
+          ok: true, envKey: providerEntry.envKey, keyStatus, keyProblem: problem,
+          reachability: { checked: false, reachable: null, modelListed: null, status: null, note: 'no usable key to check reachability with' },
+        });
+        return true;
+      }
+      // GET ONLY, no completion request, never spends a token (see
+      // `checkProviderReachable`'s own doc) — a short timeout so a flaky
+      // endpoint never hangs the card.
+      checkProviderReachable({
+        providerName: choice.provider, apiKey: /** @type {string} */ (raw), model: providerEntry.tiers.sonnet,
+        baseUrl: choice.baseUrl, fetchImpl, timeoutMs: 4000,
+      }).then((r) => {
+        send(200, {
+          ok: true,
+          envKey: providerEntry.envKey,
+          keyStatus,
+          keyProblem: null,
+          reachability: {
+            checked: true, reachable: r.reachable, modelListed: r.modelListed, status: r.status, note: r.note,
+          },
+        });
+      });
+      return true;
+    }
+
     if (pathname === '/api/author/start') {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
@@ -109,7 +158,7 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
-    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|revise|sign-prepare|sign))?$/.exec(pathname);
+    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|revise|sign-prepare|sign|check-deps))?$/.exec(pathname);
     if (!m) { send(404, { ok: false, error: 'not found' }); return true; }
     const session = sessions.get(m[1]);
     if (!session) { send(404, { ok: false, error: 'no such session' }); return true; }
@@ -129,6 +178,11 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'revise') {
       session.revise(String(body?.text ?? '')).then((r) => send(r.ok ? 200 : 400, { ...r, state: session.state }));
+      return true;
+    }
+    if (sub === 'check-deps') {
+      const r = session.checkDeps();
+      send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
     }
     if (sub === 'sign-prepare') {

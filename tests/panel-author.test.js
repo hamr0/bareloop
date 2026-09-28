@@ -66,6 +66,24 @@ function makeRepo() {
   return dir;
 }
 
+/** a repo whose package.json DECLARES a dependency (so `missingDependencies`
+ * reads a real gap) but never gets a `node_modules` — build item 1's F182
+ * mirror. `prepareSource` copies only git-tracked files, so any
+ * `node_modules` a test created BEFORE `git add`/commit would never even
+ * reach the copy this session works from — that is the point: only
+ * creating one in the ORIGINAL repo after the session is already waiting
+ * (mimicking a person running the printed install command) can resolve it. */
+function makeRepoWithDeps() {
+  const dir = tmp('panel-author-repo-deps-');
+  git(dir, ['init', '-q', '-b', 'main']);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0', dependencies: { lodash: '^4.0.0' } }));
+  mkdirSync(join(dir, 'src'));
+  writeFileSync(join(dir, 'src', 'mod.js'), '// nothing yet\n');
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-q', '-m', 'seed']);
+  return dir;
+}
+
 const baseCard = (overrides = {}) => ({
   checkType: 'deterministic',
   model: 'claude-sonnet-5',
@@ -190,7 +208,7 @@ test('signRun: exact argv, including "--approve <hash>" as a literal array eleme
 
 async function startAuthorServer(t, opts = {}) {
   const { server, port, token, close } = await createPanelServer({
-    port: 0, sessionsRoot: opts.sessionsRoot ?? tmp('panel-author-sessions-'), env: opts.env ?? {},
+    port: 0, sessionsRoot: opts.sessionsRoot ?? tmp('panel-author-sessions-'), env: opts.env ?? {}, fetchImpl: opts.fetchImpl,
   });
   t.after(() => close());
   const base = `http://127.0.0.1:${port}`;
@@ -438,4 +456,225 @@ test('Chat tab CSS: the P3 job-card/cap-row/chat-thread rules use fluid widths (
   while ((m = fixedPx.exec(withoutMediaHints)) !== null) {
     assert.ok(Number(m[1]) <= 320, `a fixed width of ${m[1]}px in the P3 CSS block would not fit a 390px viewport`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// build item 1 — the install-gap dead end (F182 mirrored into the panel):
+// missing deps must WAIT (phase 'install-needed'), never refuse outright,
+// and "Check again" must re-check the SAME copy, never a new one.
+// ---------------------------------------------------------------------------
+
+test('bareloop never runs an install itself: authorsession.js spawns/execs nothing at all (no child_process import)', () => {
+  const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
+  assert.ok(!/child_process/.test(src), 'authorsession.js must never import node:child_process — it only NAMES the install command, never runs it');
+});
+
+test('createSession: a repo with a dependency and no node_modules WAITS (install-needed), never refuses outright', async (t) => {
+  const repo = makeRepoWithDeps();
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-deps-wait' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' },
+    sessionsRoot: tmp('panel-author-sess-deps-'),
+  });
+  const start = Date.now();
+  while (session.state.phase !== 'install-needed' && Date.now() - start < 3000) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+  assert.equal(session.state.phase, 'install-needed', `expected install-needed, got ${session.state.phase} / ${session.state.error}`);
+  assert.equal(session.state.pendingAsk?.kind, 'install-needed');
+  assert.match(session.state.pendingAsk.command, /npm (ci|install)/);
+  assert.ok(session.state.pendingAsk.tree.includes('source-seed'), 'must point at THIS session\'s own copy, never the original repo');
+  // build item 4 (mirrored server-side): a waiting session is still LIVE —
+  // TERMINAL_PHASES (authorroutes.js) does not include install-needed.
+  assert.notEqual(session.state.error, 'refused', 'install-needed must not be reported as a refusal');
+});
+
+test('createSession: RED-PROOF — Check again while STILL missing stays waiting, never silently advances', async (t) => {
+  const repo = makeRepoWithDeps();
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-deps-still-missing' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' },
+    sessionsRoot: tmp('panel-author-sess-deps-still-'),
+  });
+  const start = Date.now();
+  while (session.state.phase !== 'install-needed' && Date.now() - start < 3000) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+  assert.equal(session.state.phase, 'install-needed');
+  const r = session.checkDeps();
+  assert.equal(r.ok, true, 'the check-again SIGNAL itself is accepted');
+  await new Promise((resolveFn) => { setTimeout(resolveFn, 150); });
+  // RED-PROOF: nothing was installed — the session must still be waiting,
+  // not silently continue as if the gap had closed.
+  assert.equal(session.state.phase, 'install-needed', 'a check-again with nothing installed must stay waiting');
+  assert.ok(session.state.messages.some((m) => /[Ss]till missing/.test(m.text)));
+});
+
+test('createSession: Check again AFTER the gap is closed on the SAME copy continues the pipeline through to prepared', async (t) => {
+  const repo = makeRepoWithDeps();
+  const specHash = 'deadinstall00112233';
+  const plans = [{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }];
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-deps-resolved' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' },
+    sessionsRoot: tmp('panel-author-sess-deps-resolved-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('generate must not be called in this test'); },
+    confirmGenerate: makeFakeConfirmGenerate(plans),
+    authorFn: fakeAuthorFn(),
+    prepareSigningFn: fakePrepareSigningFn(specHash),
+  });
+  const start = Date.now();
+  while (session.state.phase !== 'install-needed' && Date.now() - start < 3000) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+  assert.equal(session.state.phase, 'install-needed');
+  // mimic the person running the printed command IN THE COPY named by the
+  // pendingAsk — never a new session's own fresh seed.
+  const tree = session.state.pendingAsk.tree;
+  mkdirSync(join(tree, 'node_modules'), { recursive: true });
+
+  const r = session.checkDeps();
+  assert.equal(r.ok, true);
+
+  async function waitForAskKind(kind, timeoutMs = 5000) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+      if (session.state.pendingAsk?.kind === kind) return true;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((rr) => { setTimeout(rr, 10); });
+    }
+    return false;
+  }
+  assert.ok(await waitForAskKind('worseThanBefore'), `expected the pipeline to continue past the install gap; phase=${session.state.phase} error=${session.state.error}`);
+  session.send('');
+  assert.ok(await waitForAskKind('menu'));
+  const prepped = session.signPrepare();
+  assert.equal(prepped.ok, true);
+  const start2 = Date.now();
+  while (!['prepared', 'refused', 'error'].includes(session.state.phase) && Date.now() - start2 < 5000) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+  assert.equal(session.state.phase, 'prepared', `expected prepared, got ${session.state.phase} / ${session.state.error}`);
+  assert.equal(session.state.specHash, specHash);
+});
+
+test('checkDeps() RED-PROOF: refuses when the session is not in install-needed (e.g. right after creation, before any wait)', () => {
+  const repo = makeRepo();
+  const session = createSession(baseCard({ source: repo, jobName: 'panel-author-checkdeps-wrong-phase' }), {
+    env: {}, sessionsRoot: tmp('panel-author-sess-checkdeps-wrong-'),
+  });
+  const r = session.checkDeps();
+  assert.equal(r.ok, false);
+});
+
+test('POST /api/author/:id/check-deps over HTTP: guarded the same way, refuses (400) when not waiting, and dispatches through to the session when it is', async (t) => {
+  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' } });
+  const repo = makeRepoWithDeps();
+  const started = await (await fetch(`${base}/api/author/start`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(baseCard({ source: repo })),
+  })).json();
+  // no token: guard refuses before it ever reaches the session
+  const noToken = await fetch(`${base}/api/author/${started.sessionId}/check-deps`, { method: 'POST' });
+  assert.equal(noToken.status, 403);
+  // right guard, but the session has not reached install-needed yet (or ever, if this races) — either way the route must be REACHABLE and answer honestly, never crash.
+  const early = await fetch(`${base}/api/author/${started.sessionId}/check-deps`, { method: 'POST', headers: { 'x-bareloop-token': token } });
+  assert.ok(early.status === 400 || early.status === 200, `check-deps must answer, not crash — got ${early.status}`);
+
+  const start = Date.now();
+  let phase = null;
+  while (Date.now() - start < 3000) {
+    // eslint-disable-next-line no-await-in-loop
+    const s = await (await fetch(`${base}/api/author/${started.sessionId}`, { headers: { 'x-bareloop-token': token } })).json();
+    phase = s.state.phase;
+    if (phase === 'install-needed') break;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 20); });
+  }
+  assert.equal(phase, 'install-needed');
+  // a SECOND Start must still 409 while waiting on install (build item 4:
+  // "install-waiting" is non-terminal, the one-at-a-time rule still binds).
+  const second = await fetch(`${base}/api/author/start`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(baseCard({ source: repo, jobName: 'panel-author-deps-2' })),
+  });
+  assert.equal(second.status, 409);
+
+  const again = await fetch(`${base}/api/author/${started.sessionId}/check-deps`, { method: 'POST', headers: { 'x-bareloop-token': token } });
+  assert.equal(again.status, 200);
+  const body = await again.json();
+  assert.equal(body.ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// build item 7 — model readiness (key + $0 reachability) BEFORE drafting.
+// ---------------------------------------------------------------------------
+
+test('GET /api/author/model-check: key missing -> keyStatus "missing", never returns the key, reachability not checked', async (t) => {
+  const { base, token } = await startAuthorServer(t, { env: {} });
+  const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.envKey, 'ANTHROPIC_API_KEY');
+  assert.equal(body.keyStatus, 'missing');
+  assert.equal(body.reachability.checked, false);
+});
+
+test('GET /api/author/model-check: a bad-shape key (F181 class — embedded newline) -> keyStatus "bad-shape", key value never echoed', async (t) => {
+  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'sk-real\nmeta' } });
+  const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
+  const body = await res.json();
+  assert.equal(body.keyStatus, 'bad-shape');
+  assert.ok(!JSON.stringify(body).includes('sk-real'), 'the raw key value must never appear in the response');
+});
+
+test('GET /api/author/model-check: a found key triggers the $0 reachability GET (stubbed fetchImpl) — method+path asserted, no real network', async (t) => {
+  /** @type {any[]} */
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), method: init.method, headers: init.headers });
+    return { ok: true, json: async () => ({ data: [{ id: 'claude-sonnet-5' }] }) };
+  };
+  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'sk-real-enough' }, fetchImpl });
+  const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.keyStatus, 'found');
+  assert.equal(body.reachability.checked, true);
+  assert.equal(body.reachability.reachable, true);
+  assert.equal(body.reachability.modelListed, true);
+  assert.equal(calls.length, 1, 'exactly one $0 GET — never a completion request');
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].url, 'https://api.anthropic.com/v1/models');
+  assert.equal(calls[0].headers['x-api-key'], 'sk-real-enough');
+  assert.ok(!JSON.stringify(body).includes('sk-real-enough'), 'RED-PROOF sentinel — the key value never comes back in the response');
+});
+
+test('GET /api/author/model-check: an unreachable endpoint (stubbed failure) reads reachability.reachable=false with a status, and never blocks the key check', async (t) => {
+  const fetchImpl = async () => ({ ok: false, status: 503, json: async () => ({}) });
+  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'sk-real-enough' }, fetchImpl });
+  const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
+  const body = await res.json();
+  assert.equal(body.keyStatus, 'found', 'the key IS usable — only the network call failed');
+  assert.equal(body.reachability.reachable, false);
+  assert.equal(body.reachability.status, 'HTTP 503');
+});
+
+test('GET /api/author/model-check: an unknown model id refuses (400), never crashes', async (t) => {
+  const { base, token } = await startAuthorServer(t, { env: {} });
+  const res = await fetch(`${base}/api/author/model-check?model=not-a-real-model`, { headers: { 'x-bareloop-token': token } });
+  assert.equal(res.status, 400);
+});
+
+test('GET /api/author/model-check: POST is refused (GET only)', async (t) => {
+  const { base, token } = await startAuthorServer(t, { env: {} });
+  const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { method: 'POST', headers: { 'x-bareloop-token': token } });
+  assert.equal(res.status, 405);
+});
+
+test('GET /api/author/model-check: no token still refuses (403) — same human-click guard as every other author route', async (t) => {
+  const { base } = await startAuthorServer(t, { env: {} });
+  const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`);
+  assert.equal(res.status, 403);
 });
