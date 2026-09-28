@@ -1257,20 +1257,20 @@ function resolveSpecForRow(row) {
  *         suite exits clean AND reports zero failing tests — TWO assertions"
  *         over ONE population (the same `npm test`/`pytest` invocation), so a
  *         `count-not-worse` stage sharing that exact command is the failing-
- *         test-count half of that pair, never a typecheck stage — the live
- *         check that found this (run mul5fofw's own `suite-zero-failing-
- *         tests`, cmd `npm test`, same as its sibling `suite-green` command-
- *         exit stage) would otherwise have read "test/ has 0 type errors?",
- *         which is false: its parser counts FAILING TESTS
- *         (`^# fail (\d+)$`), not type-checker output. hamr's build spec
- *         names only "suite-green" (the command-exit half) with a plain
- *         question; it does not name this second half, so this is treated as
- *         a genuine gap — `null`, never a guessed wording — rather than
- *         reusing "type errors" for a population it was never about. When
- *         the command differs from every sibling `command-exit` stage, the
- *         declared `scope.includePrefixes` naming exactly ONE path is quoted
- *         verbatim (a signed param, never invented): "<path> has 0 type
- *         errors?" — otherwise the generic "type errors is 0?", never a
+ *         test-count half of that pair, never a typecheck stage: "no failing
+ *         tests?" — derived from the same cmd+args correlation (the stage
+ *         counts the suite's own failing tests), never from the stage's own
+ *         name string. The live check that found this (run mul5fofw's own
+ *         `suite-zero-failing-tests`, cmd `npm test`, same as its sibling
+ *         `suite-green` command-exit stage) would otherwise have read "test/
+ *         has 0 type errors?", which is false: its parser counts FAILING
+ *         TESTS (`^# fail (\d+)$`), not type-checker output. hamr's ruling:
+ *         name this half honestly rather than reusing "type errors" for a
+ *         population it was never about, or falling back to the stage's raw
+ *         name. When the command differs from every sibling `command-exit`
+ *         stage, the declared `scope.includePrefixes` naming exactly ONE path
+ *         is quoted verbatim (a signed param, never invented): "<path> has 0
+ *         type errors?" — otherwise the generic "type errors is 0?", never a
  *         guessed filename.
  *       - `lower-is-better` + `baseline: 'seed'` with a non-empty
  *         `scope.excludePrefixes` is the genre's `typecheck-outside` ceiling:
@@ -1318,7 +1318,7 @@ function stageQuestionText({
   const scope = params.scope && typeof params.scope === 'object' ? params.scope : null;
   if (params.direction === 'lower-is-better' && params.baseline === 0) {
     const key = cmdKey(params);
-    if (key !== null && suiteCmdKeys instanceof Set && suiteCmdKeys.has(key)) return null;
+    if (key !== null && suiteCmdKeys instanceof Set && suiteCmdKeys.has(key)) return 'no failing tests?';
     const include = scope && Array.isArray(scope.includePrefixes) ? scope.includePrefixes : null;
     if (include && include.length === 1 && typeof include[0] === 'string' && include[0].length > 0) {
       return `${include[0]} has 0 ${what}?`;

@@ -2344,7 +2344,7 @@ test('plain-checks: stageQuestionText returns null (caller falls back to the sta
   assert.equal(declaredByName.get('weird-outside-in-scope'), null, 'lower-is-better + seed baseline with includePrefixes (not excludePrefixes) matches none of the three declared shapes');
 });
 
-test('plain-checks REGRESSION (found live on run mul5fofw\'s own scratch server): a lower-is-better/baseline-0 count-not-worse stage sharing its cmd+args with a command-exit stage is the failing-test-count half of suite-green\'s "two assertions" — never "type errors" (would have read "test/ has 0 type errors?", which is false: its parser counts FAILING TESTS)', async (t) => {
+test('plain-checks REGRESSION (found live on run mul5fofw\'s own scratch server): a lower-is-better/baseline-0 count-not-worse stage sharing its cmd+args with a command-exit stage is the failing-test-count half of suite-green\'s "two assertions" — never "type errors" (would have read "test/ has 0 type errors?", which is false: its parser counts FAILING TESTS) — reads "no failing tests?" instead', async (t) => {
   const home = tmp();
   const dir = tmp();
   mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
@@ -2395,7 +2395,7 @@ test('plain-checks REGRESSION (found live on run mul5fofw\'s own scratch server)
   const declaredByName = new Map(fixPart.attempts[0].declaredStages.map((s) => [s.name, s.question]));
   assert.equal(declaredByName.get('typecheck-target-zero-errors'), 'src/checks.js has 0 type errors?', 'a DIFFERENT cmd (typecheck) still gets its real question');
   assert.equal(declaredByName.get('suite-green'), 'does the test suite pass?');
-  assert.equal(declaredByName.get('suite-zero-failing-tests'), null, 'same cmd+args as the command-exit suite-green stage -> not honestly "type errors", falls back to the stage\'s own name');
+  assert.equal(declaredByName.get('suite-zero-failing-tests'), 'no failing tests?', 'same cmd+args as the command-exit suite-green stage -> the failing-test-count half, never "type errors" and never the stage\'s raw name');
 });
 
 test('plain-checks: declaredStages travels in DECLARED order and is omitted when no spec resolves', async (t) => {
