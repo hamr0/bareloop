@@ -2067,6 +2067,70 @@ test('build item 1: a bundle-layout spec.json\'s closeDecl attaches kind/directi
   });
 });
 
+test('checks-count fix (2026-09-28, hamr\'s live catch on run mulbz0ny): declaredStagesTotal is the DECLARED stage count (closeDecl.stages.length), never the RAN count (stages.length) — first-red-wins means a later fix-loop attempt can stop after 1 of 7 declared stages and its own stages array carries only that one', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'checkscount-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    // the outer-close ran all 7 (stops at the last, but the first 6 satisfied)
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'stage-g',
+      stages: [
+        { name: 'stage-a', verdict: 'satisfied' },
+        { name: 'stage-b', verdict: 'satisfied' },
+        { name: 'stage-c', verdict: 'satisfied' },
+        { name: 'stage-d', verdict: 'satisfied' },
+        { name: 'stage-e', verdict: 'satisfied' },
+        { name: 'stage-f', verdict: 'satisfied' },
+        { name: 'stage-g', verdict: 'needs_revision', value: 4, baseline: 0 },
+      ],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'iteration-start', iteration: 1, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+    // the fix-loop's next attempt (first-red-wins) stops at stage-a itself —
+    // only ONE of the 7 declared stages ran, so its own `stages` array has
+    // length 1
+    {
+      type: 'close-verdict',
+      verdict: 'needs_revision',
+      stage: 'stage-a',
+      stages: [{ name: 'stage-a', verdict: 'needs_revision', value: 9, baseline: 0 }],
+      ts: '2026-09-05T00:00:05.000Z',
+      seq: 6,
+    },
+    {
+      type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:06.000Z', seq: 7,
+    },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'checkscount-job',
+    closeDecl: {
+      stages: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((letter) => ({
+        name: `stage-${letter}`, kind: 'count-not-worse', params: { direction: 'lower-is-better', baseline: 0 },
+      })),
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'checkscountrun', job: 'checkscount-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/checkscountrun`);
+  assert.equal(res.status, 200);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.ok(fixPart, 'a post-step outer-close builds a "fix" part');
+  assert.equal(fixPart.attempts[0].stages.length, 7, 'attempt 1 (the outer-close) ran all 7 declared stages');
+  assert.equal(fixPart.attempts[0].declaredStagesTotal, 7, 'declared total is 7, matching closeDecl.stages.length');
+  assert.equal(fixPart.attempts[1].stages.length, 1, 'attempt 2 stopped after only 1 of the 7 declared stages ran (first-red-wins)');
+  assert.equal(fixPart.attempts[1].declaredStagesTotal, 7, 'the DECLARED total stays 7 even though only 1 stage ran this attempt');
+});
+
 test('build item 1: no resolvable spec at all -> stages pass through UNCHANGED (never a fabricated kind)', async (t) => {
   const home = tmp();
   const dir = tmp();

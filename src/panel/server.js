@@ -1284,18 +1284,31 @@ function attachStageKind(stage, kindMeta) {
  * mutation of `replayOne`'s own returned objects (other endpoints, e.g.
  * {@link getRunAudit}, call `replayOne` fresh per request, but this stays
  * defensive rather than relying on that).
+ *
+ * Also stamps each attempt with `declaredStagesTotal` (checks-count fix,
+ * 2026-09-28): `kindMeta.size` — the number of stages the signed
+ * `closeDecl` DECLARED, never `stages.length` (the number that RAN). First-
+ * red-wins means an attempt that stopped early carries a `stages` array
+ * shorter than the declaration; the client's `checksSummary`/`checksHeadline`
+ * read this field for the "N/M" total (M) so an unrun stage still counts in
+ * the total exactly once, computed here and never re-derived client-side —
+ * "checks 1/2" on a 7-stage close (hamr's live catch) was this exact bug.
+ * `null` (omitted, so the client falls back to `stages.length`) whenever
+ * `kindMeta` is `null` — no spec resolved, or the spec carries no
+ * `closeDecl.stages` at all.
  * @param {any[]|null|undefined} parts
  * @param {Map<string, any>|null} kindMeta
  * @returns {any[]|null|undefined}
  */
 function enrichPartsWithStageKind(parts, kindMeta) {
   if (!Array.isArray(parts)) return parts;
-  if (!kindMeta) return parts;
+  const declaredStagesTotal = kindMeta ? kindMeta.size : null;
   return parts.map((part) => ({
     ...part,
     attempts: Array.isArray(part.attempts) ? part.attempts.map((a) => ({
       ...a,
-      stages: Array.isArray(a.stages) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages,
+      stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages,
+      ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
     })) : part.attempts,
   }));
 }

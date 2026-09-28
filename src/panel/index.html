@@ -1931,7 +1931,7 @@
       // (including the opening outer-close grade, which is attempt 1 on this
       // SAME list — src/replay.js's fixLoop.attempts) — "" for a rubric/
       // command close or a still-running attempt with no stages yet.
-      var checksText = checksHeadline(a.stages);
+      var checksText = checksHeadline(a.stages, a.declaredStagesTotal);
       var checksList = Array.isArray(a.stages) ? a.stages.map(stageCheckLine).join("<br>") : "";
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
@@ -2099,7 +2099,7 @@
     // RECENT attempt's own declared-close grading (the opening outer-close
     // grade counts as attempt 1, same list `buildAttemptsList` reads).
     var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
-    var headline = latestAttempt ? checksHeadline(latestAttempt.stages) : "";
+    var headline = latestAttempt ? checksHeadline(latestAttempt.stages, latestAttempt.declaredStagesTotal) : "";
     if(headline) bits.push(headline);
     return bits.join(" &middot; ");
   }
@@ -2113,10 +2113,24 @@
    * shows nothing — "leave as today" for a rubric/command close, exactly as
    * hamr ruled. An unrun stage (after first-red-wins stopped the close) is
    * counted in `total` (it was DECLARED) but never in `passed` (it never ran).
+   *
+   * checks-count fix (2026-09-28, hamr's live catch on run mulbz0ny —
+   * "attempt 2 ✗ · checks 1/2" on a 7-stage close): `stages.length` is the
+   * number of stages that RAN this attempt, never the number DECLARED —
+   * first-red-wins means a later attempt's own `stages` array can be shorter
+   * than the close it belongs to. `declaredTotal` (the server's
+   * `attempt.declaredStagesTotal`, {@link enrichPartsWithStageKind} in
+   * src/panel/server.js — the one place this is derived, off the signed
+   * spec's `closeDecl.stages.length`) is the real total when present; this
+   * function never re-derives it. Falls back to `stages.length` only when
+   * `declaredTotal` is absent (no spec resolvable for the run) — the caller
+   * gets a stage-count total for a run this can't do better for, rather than
+   * nothing.
    * @param {any[]|null|undefined} stages
+   * @param {number|null|undefined} [declaredTotal]
    * @returns {{passed: number, total: number, stoppedAt: string|null}|null}
    */
-  function checksSummary(stages){
+  function checksSummary(stages, declaredTotal){
     if(!Array.isArray(stages) || stages.length === 0) return null;
     var passed = 0, stoppedAt = null;
     for(var i = 0; i < stages.length; i++){
@@ -2125,16 +2139,19 @@
       if(s.verdict === "satisfied") passed += 1;
       else if(stoppedAt === null) stoppedAt = s.name || null;
     }
-    return { passed: passed, total: stages.length, stoppedAt: stoppedAt };
+    var total = (typeof declaredTotal === "number" && declaredTotal > 0) ? declaredTotal : stages.length;
+    return { passed: passed, total: total, stoppedAt: stoppedAt };
   }
   /** the short "checks N/M" headline, PLUS the first failing check's own
    * wording line (checks-wording build item 2, 2026-09-28, hamr's ruling:
    * "checks 6/7 · typecheck-outside-not-worse 47 · limit 46"). "" (never
    * shown) for a rubric/command close or an unresolved attempt (still
-   * running, no stages yet). All-pass reads "checks N/N" alone.
-   * @param {any[]|null|undefined} stages @returns {string} */
-  function checksHeadline(stages){
-    var c = checksSummary(stages);
+   * running, no stages yet). All-pass reads "checks N/N" alone. `declaredTotal`
+   * is passed straight through to {@link checksSummary} — see its own doc for
+   * the checks-count fix (declared vs. ran stage count).
+   * @param {any[]|null|undefined} stages @param {number|null|undefined} [declaredTotal] @returns {string} */
+  function checksHeadline(stages, declaredTotal){
+    var c = checksSummary(stages, declaredTotal);
     if(!c) return "";
     if(c.passed === c.total) return "checks " + c.passed + "/" + c.total;
     var failing = null;

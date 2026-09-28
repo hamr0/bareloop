@@ -2773,6 +2773,24 @@ test('build item 3: checksSummary on an all-green declared close reads N/N with 
   assert.deepEqual(checksSummary(stages), { passed: 2, total: 2, stoppedAt: null });
 });
 
+test('checks-count fix (2026-09-28, hamr\'s live catch on run mulbz0ny): checksSummary/checksHeadline take the DECLARED total from `declaredTotal`, never `stages.length`, when an attempt\'s own stages array is shorter than the close it belongs to (first-red-wins stopped it early)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const checksSummary = loadFns(html, ['checksSummary'], 'checksSummary');
+  const checksHeadline = loadFns(html, ['escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline'], 'checksHeadline');
+  // mul5fofw's attempt 2: only 2 of 7 declared stages ran before the close stopped
+  const stages = [
+    { name: 'changed-from-seed', verdict: 'satisfied' },
+    {
+      name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 4, baseline: 0, direction: 'lower-is-better', baselineKind: 0,
+    },
+  ];
+  assert.deepEqual(checksSummary(stages, 7), { passed: 1, total: 7, stoppedAt: 'typecheck-target-zero-errors' });
+  assert.equal(checksHeadline(stages, 7), 'checks 1/7 · typecheck-target-zero-errors 4 left · goal 0', 'was "checks 1/2" before the fix');
+  // no declaredTotal (no spec resolvable) -> falls back to stages.length, unchanged from before
+  assert.deepEqual(checksSummary(stages, null), { passed: 1, total: 2, stoppedAt: 'typecheck-target-zero-errors' });
+  assert.equal(checksHeadline(stages, undefined), 'checks 1/2 · typecheck-target-zero-errors 4 left · goal 0');
+});
+
 test('checks-wording build item 2: checksHeadline renders "checks N/M" alone on an all-pass close, or "" for a rubric/command close (no wording line needed — nothing failed)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const checksHeadline = loadFns(html, ['escapeXml', 'checksSummary', 'stageNumberText', 'stageHeadlineText', 'checksHeadline'], 'checksHeadline');
@@ -2859,7 +2877,7 @@ test('checks-wording build item 3: stageCheckLine — every declared stage in th
 
 test('build item 3: the Audit Grouped attempt row (buildAttemptsList) wires checksHeadline into its button and stageCheckLine into an expandable checks-list, one owner with the Run-tab card', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /var checksText = checksHeadline\(a\.stages\);/);
+  assert.match(html, /var checksText = checksHeadline\(a\.stages, a\.declaredStagesTotal\);/);
   assert.match(html, /var checksList = Array\.isArray\(a\.stages\) \? a\.stages\.map\(stageCheckLine\)\.join\("<br>"\) : "";/);
   assert.match(html, /checksText \? ' &middot; ' \+ checksText : ''/);
 });
