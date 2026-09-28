@@ -182,6 +182,8 @@
   .badge.cyan{color:var(--cyan);}
 
   .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
+  #chat-action-error:empty{display:none;}
+  #chat-action-error{font-size:12px;color:var(--red);margin:4px 0;}
   .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);white-space:nowrap;flex:none;position:relative;}
   .btn::before{content:"[ ";color:var(--text-faint);}
   .btn::after{content:" ]";color:var(--text-faint);}
@@ -489,6 +491,14 @@
           </div>
 
           <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
+
+          <!-- build item 1 — a failed/rejected send, revise, sign-prepare,
+               sign or check-deps POST shows here and STAYS shown: it is set
+               only by this tab's own action handlers below and is never
+               touched by renderActions()/poll() (which own #chat-card-error
+               instead), so it can never be wiped by the next 2s poll tick
+               before a person reads it. -->
+          <div class="hint" id="chat-action-error" data-testid="chat-action-error"></div>
 
           <div class="chat-input-row">
             <label for="chat-msg" style="display:none">Message</label>
@@ -2449,6 +2459,7 @@
     var startBtn = document.getElementById("chat-start-btn");
     var checkDepsBtn = document.getElementById("chat-check-deps-btn");
     var errEl = document.getElementById("chat-card-error");
+    var actionErrEl = document.getElementById("chat-action-error");
     var hashLine = document.getElementById("chat-hash-line");
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
@@ -2479,6 +2490,7 @@
       newBtn.hidden = true;
       thread.innerHTML = "";
       errEl.textContent = "";
+      actionErrEl.textContent = "";
       sessionId = null;
       sessionLive = false;
       signClickedOnce = false;
@@ -2681,6 +2693,7 @@
 
     startBtn.addEventListener("click", function(){
       errEl.textContent = "";
+      actionErrEl.textContent = "";
       // build item 4 — disable the moment it's clicked, not just once the
       // response comes back; re-enabled below only if the start is refused.
       sessionLive = true;
@@ -2702,13 +2715,48 @@
       });
     });
 
+    // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
+    // (fed by the every-2s `poll()`) unconditionally overwrites
+    // `#chat-card-error` on every tick (`errEl.textContent = state.error ||
+    // ""`), including the SAME tick the send/revise/sign handlers below
+    // used to call `poll()` in their own `.then` — so a refused/failed POST's
+    // error was wiped before a person could read it (often on the very next
+    // line of the same callback). Compounding it, `send`/`revise` cleared
+    // `msgInput.value` unconditionally, even on failure — so a rejected
+    // answer vanished from the box with no trace at all. Fixed by: (1) a
+    // dedicated `#chat-action-error` element only these handlers touch,
+    // never `poll()`/`renderActions`; (2) only clearing the input on a
+    // confirmed 200+ok response; (3) an explicit `.catch` so a rejected
+    // fetch (network drop, server restart) shows an error too, instead of
+    // silently doing nothing.
+    // build item 1 — the ONE place that decides "did this chat POST
+    // succeed" — pure, no DOM, unit-tested directly
+    // (tests/panel-page.test.js). Before this existed, each handler decided
+    // ad hoc via `r.body && r.body.error && !r.body.ok`, which is true only
+    // when the server bothered to hand back BOTH `ok:false` AND a non-empty
+    // `error` string — a malformed/short-circuited response (e.g. a 403 the
+    // guard returns with `{ok:false, error:'refused — ...'}` reaching a
+    // caller that never checked `r.status`, or any response missing
+    // `.error`) read as neither branch and was silently treated as fine.
+    function chatPostOutcome(r){
+      var ok = !!(r && r.status === 200 && r.body && r.body.ok === true);
+      return { ok: ok, error: ok ? "" : ((r && r.body && r.body.error) || "the request failed — nothing was sent") };
+    }
+    function chatActionFailed(message){
+      actionErrEl.textContent = message || "the request failed — nothing was sent";
+    }
+    function chatActionOk(){
+      actionErrEl.textContent = "";
+    }
+
     checkDepsBtn.addEventListener("click", function(){
       if(!sessionId) return;
       checkDepsBtn.disabled = true;
       authorPost("/api/author/" + sessionId + "/check-deps", {}).then(function(r){
-        if(r.body && r.body.error && !r.body.ok) errEl.textContent = r.body.error;
+        var o = chatPostOutcome(r);
+        if(o.ok) chatActionOk(); else chatActionFailed(o.error);
         poll();
-      });
+      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, nothing was sent"); });
     });
 
     sendBtn.addEventListener("click", function(){
@@ -2716,20 +2764,32 @@
       var text = msgInput.value;
       if(!text.trim()) return;
       authorPost("/api/author/" + sessionId + "/send", {text: text}).then(function(r){
-        if(r.body && r.body.error && !r.body.ok) errEl.textContent = r.body.error;
-        msgInput.value = "";
+        var o = chatPostOutcome(r);
+        if(o.ok){
+          chatActionOk();
+          msgInput.value = "";
+        } else {
+          // failure — the text stays in the box so nothing is lost; the
+          // person can just click Send again once the error is fixed.
+          chatActionFailed(o.error);
+        }
         poll();
-      });
+      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
     });
 
     reviseBtn.addEventListener("click", function(){
       if(!sessionId) return;
       var text = msgInput.value;
       authorPost("/api/author/" + sessionId + "/revise", {text: text}).then(function(r){
-        if(r.body && r.body.error && !r.body.ok) errEl.textContent = r.body.error;
-        msgInput.value = "";
+        var o = chatPostOutcome(r);
+        if(o.ok){
+          chatActionOk();
+          msgInput.value = "";
+        } else {
+          chatActionFailed(o.error);
+        }
         poll();
-      });
+      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
     });
 
     signBtn.addEventListener("click", function(){
@@ -2737,10 +2797,11 @@
       if(!signClickedOnce){
         // click 1 — the confirm turn's own "confirm" pick. Never signs.
         authorPost("/api/author/" + sessionId + "/sign-prepare", {}).then(function(r){
-          if(r.body && r.body.error && !r.body.ok) errEl.textContent = r.body.error;
+          var o = chatPostOutcome(r);
+          if(o.ok) chatActionOk(); else chatActionFailed(o.error);
           signClickedOnce = true;
           poll();
-        });
+        }).catch(function(){ chatActionFailed("network error — could not reach the panel server"); });
         return;
       }
       // click 2 — the ONLY route that signs. Carries the hash shown on the
@@ -2749,9 +2810,10 @@
         var hash = j.state && j.state.specHash;
         if(!hash) return;
         authorPost("/api/author/" + sessionId + "/sign", {specHash: hash}).then(function(r){
-          if(r.body && r.body.error && !r.body.ok){ errEl.textContent = r.body.error; return; }
+          var o = chatPostOutcome(r);
+          if(o.ok){ chatActionOk(); } else { chatActionFailed(o.error); return; }
           poll();
-        });
+        }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not signed"); });
       });
     });
 

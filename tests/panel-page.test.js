@@ -2373,3 +2373,83 @@ test('fix (2026-09-28): refreshModelStatus renders its reach text through reachS
   assert.match(src, /reachStatusEl\.textContent = reachStatusText\(reach\.status\)/);
   assert.doesNotMatch(src, /may be flaky/, 'the wording must live in ONE place (reachStatusText), not be re-spelled inline here too');
 });
+
+// ---------------------------------------------------------------------------
+// build item 1 (2026-09-28, session mul5fofw): the "lost answer" bug. hamr
+// typed an answer to the worseThanBefore question and clicked Send; the
+// server never received it and no error was ever visible. ROOT CAUSE (found
+// by reading the real handlers, not guessed): (a) `sendBtn`/`reviseBtn`
+// unconditionally cleared `msgInput.value` even when the POST failed, so a
+// rejected answer vanished from the box with zero trace; (b) any error they
+// DID surface went to `#chat-card-error`, the SAME element `renderActions`
+// (driven by the 2s `poll()`, which every one of these handlers also calls
+// in its own `.then`) unconditionally overwrites every tick — so the error
+// was wiped before a person could read it, often within the same callback.
+// Fixed by chatPostOutcome() (the one place that now decides success) plus
+// a dedicated #chat-action-error element poll()/renderActions never touches.
+// ---------------------------------------------------------------------------
+
+test('build item 1: chatPostOutcome — RED-PROOF against the pre-fix decision rule', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const chatPostOutcome = extractFn(html, 'chatPostOutcome');
+  // the real, still-live server shape for a REFUSED request (e.g. a stale
+  // token after a server restart): {ok:false, error:'refused — ...'} at a
+  // non-200 status. The OLD per-handler rule (`r.body && r.body.error &&
+  // !r.body.ok`) happened to catch this ONE shape, but nothing before this
+  // function existed checked `r.status` at all, so a same-shaped 200 (a
+  // route that mistakenly reports ok:false with no distinct status) and a
+  // malformed body both fell through uncaught. chatPostOutcome must refuse
+  // on ALL of them.
+  assert.equal(chatPostOutcome({ status: 403, body: { ok: false, error: 'refused — bad token' } }).ok, false);
+  assert.equal(chatPostOutcome({ status: 403, body: { ok: false, error: 'refused — bad token' } }).error, 'refused — bad token');
+  // a 200 whose body forgot `.error` (or set it to '') must still read as a
+  // failure once `ok` isn't literally `true` — the old `r.body.error &&
+  // !r.body.ok` rule read this as "no branch matches" and quietly did
+  // nothing (no error shown, but the send handler still cleared the input).
+  assert.equal(chatPostOutcome({ status: 200, body: { ok: false, error: '' } }).ok, false);
+  assert.match(chatPostOutcome({ status: 200, body: { ok: false, error: '' } }).error, /the request failed/);
+  // a genuine success only when status is exactly 200 AND ok is exactly true.
+  assert.equal(chatPostOutcome({ status: 200, body: { ok: true } }).ok, true);
+  assert.equal(chatPostOutcome({ status: 200, body: { ok: true } }).error, '');
+  // undefined/null r (what a misbehaving fetch shim could hand back) must
+  // never throw — it's a failure, not a crash.
+  assert.equal(chatPostOutcome(undefined).ok, false);
+  assert.equal(chatPostOutcome(null).ok, false);
+});
+
+test('build item 1: sendBtn/reviseBtn only clear msgInput inside the o.ok branch — a failed POST must never wipe the typed answer', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const sendSrc = html.slice(html.indexOf('sendBtn.addEventListener("click"'), html.indexOf('reviseBtn.addEventListener("click"'));
+  const reviseSrc = html.slice(html.indexOf('reviseBtn.addEventListener("click"'), html.indexOf('signBtn.addEventListener("click"'));
+  for (const [name, src] of [['send', sendSrc], ['revise', reviseSrc]]) {
+    assert.match(src, /if\(o\.ok\)\{\s*chatActionOk\(\);\s*msgInput\.value = "";/, `${name}: msgInput.value = "" must sit inside the o.ok branch`);
+    // the ONLY place msgInput.value is assigned in this handler is that one
+    // success-branch line — never a second unconditional clear elsewhere.
+    const assigns = src.match(/msgInput\.value = /g) || [];
+    assert.equal(assigns.length, 1, `${name}: msgInput.value must be assigned exactly once (inside the success branch), found ${assigns.length}`);
+  }
+});
+
+test('build item 1: every chat POST site (send, revise, sign-prepare, sign, check-deps) has a .catch so a rejected fetch (network drop, server restart) surfaces, never silently no-ops', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const chatBlock = html.slice(html.indexOf('checkDepsBtn.addEventListener("click"'), html.indexOf('refreshStartEnabled();\n  })();'));
+  const catches = chatBlock.match(/\}\)\.catch\(function\(\)\{ chatActionFailed\(/g) || [];
+  assert.equal(catches.length, 5, `expected 5 .catch(...chatActionFailed...) call sites (check-deps, send, revise, sign-prepare, sign), found ${catches.length}`);
+});
+
+test('build item 1: #chat-action-error is never written to inside renderActions/renderProgress/poll — only the chat action handlers own it, so the 2s poll can never wipe an error before it is read', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  for (const fn of ['renderActions', 'renderProgress', 'poll', 'renderMessages']) {
+    const src = extractFnSource(html, fn);
+    assert.doesNotMatch(src, /actionErrEl/, `${fn} must never touch #chat-action-error`);
+  }
+});
+
+test('build item 1: #chat-action-error exists in the markup, distinct from #chat-card-error, and is cleared on New session / Start', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /id="chat-action-error"/);
+  assert.match(html, /var actionErrEl = document\.getElementById\("chat-action-error"\);/);
+  const newStart = html.indexOf('newBtn.addEventListener("click"');
+  const newSrc = html.slice(newStart, html.indexOf('});', newStart) + 3);
+  assert.match(newSrc, /actionErrEl\.textContent = "";/);
+});
