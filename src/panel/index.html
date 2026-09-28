@@ -2182,24 +2182,17 @@
     return escapeXml(stage.name || "unknown") + (numberText ? " " + numberText : "");
   }
   /**
-   * §3a — one stage's expand-view line. The wording table (down-to-a-goal /
-   * up-out-of-a-total / not-worse-than-a-baseline / pass-fail-only) is keyed
-   * to the SIGNED close declaration's own per-stage direction and baseline
-   * SOURCE (declared-zero vs measured), which is not part of the `stages`
-   * list this build's run-detail API already carries — plumbing the
-   * declaration itself through to the client is open, reported rather than
-   * guessed at. So every stage that carries a number renders the spec's own
-   * explicit fallback verbatim ("If it can't be determined, show `N
-   * (baseline M)`"), never a guessed kind; a stage with no recorded number
-   * (a guard, a pass/fail command stage) renders the mark alone.
+   * checks-wording build item 3 (2026-09-28): one stage's expand-view line,
+   * every declared stage in the same closed §3a wording {@link
+   * stageNumberText} already gives the card/Audit headline (build item 2) —
+   * replaces the earlier per-spec "N (baseline M)" fallback that rendered
+   * here unconditionally. A stage with no recorded number (a guard, a
+   * pass/fail command stage) still renders the mark alone.
    * @param {any} stage @returns {string}
    */
   function stageCheckLine(stage){
     var mark = stage.verdict === "satisfied" ? glyphSpan("✓") : (stage.verdict ? glyphSpan("✗") : "&ndash;");
-    var hasValue = typeof stage.value === "number";
-    var hasBaseline = typeof stage.baseline === "number";
-    var numberText = hasValue && hasBaseline ? (stage.value + " (baseline " + stage.baseline + ")")
-      : (hasValue ? String(stage.value) : "");
+    var numberText = stageNumberText(stage);
     return escapeXml(stage.name || "unknown") + (numberText ? ": " + numberText : "") + " " + mark;
   }
   var currentAuditFilter = "all";

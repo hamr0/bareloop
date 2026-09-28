@@ -2832,12 +2832,29 @@ test('build item 3: partLine1Text appends the LATEST attempt\'s "checks N/M" for
   assert.doesNotMatch(partLine1Text(noAttemptsPart, null), /checks/, 'no attempts, no stages -> no headline at all');
 });
 
-test('build item 3: stageCheckLine — a stage with value+baseline shows the spec\'s "N (baseline M)" fallback (kind not derivable without the signed declaration, reported open); a value-less stage shows the mark alone', () => {
+test('checks-wording build item 3: stageCheckLine — a numeric stage with no resolvable kind falls back to the spec\'s "N (baseline M)" wording verbatim; a value-less stage shows the mark alone', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const stageCheckLine = loadFns(html, ['escapeXml', 'glyphSpan', 'stageCheckLine'], 'stageCheckLine');
+  const stageCheckLine = loadFns(html, ['escapeXml', 'glyphSpan', 'stageNumberText', 'stageCheckLine'], 'stageCheckLine');
   assert.match(stageCheckLine({ name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46 }), /typecheck-outside-not-worse: 47 \(baseline 46\)/);
   assert.match(stageCheckLine({ name: 'no-suppressions', verdict: 'satisfied' }), /^no-suppressions /);
   assert.doesNotMatch(stageCheckLine({ name: 'no-suppressions', verdict: 'satisfied' }), /\(baseline/);
+});
+
+test('checks-wording build item 3: stageCheckLine — every declared stage in the expanded attempt row renders the SAME closed §3a wording the headline uses (replaces the old unconditional "N (baseline M)" fallback)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const stageCheckLine = loadFns(html, ['escapeXml', 'glyphSpan', 'stageNumberText', 'stageCheckLine'], 'stageCheckLine');
+  const goalLine = stageCheckLine({
+    name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, direction: 'lower-is-better', baselineKind: 0,
+  });
+  assert.match(goalLine, /^typecheck-target-zero-errors: 12 left · goal 0 /);
+  const totalLine = stageCheckLine({
+    name: 'tests-kept', verdict: 'satisfied', value: 40, baseline: 45, direction: 'higher-is-better', baselineKind: 'seed',
+  });
+  assert.match(totalLine, /^tests-kept: 40 of 45 /);
+  const limitLine = stageCheckLine({
+    name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed',
+  });
+  assert.match(limitLine, /^typecheck-outside-not-worse: 47 · limit 46 /);
 });
 
 test('build item 3: the Audit Grouped attempt row (buildAttemptsList) wires checksHeadline into its button and stageCheckLine into an expandable checks-list, one owner with the Run-tab card', () => {
