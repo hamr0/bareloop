@@ -13571,3 +13571,40 @@ name for the sidecar — either rename to `spine-gate-audit.jsonl` at `src/cli.j
 `resolveSiblings` to also check a bare `gate-audit.jsonl` in the same directory. Either way,
 the rename site and the reader should have one shared owner for the sidecar name rather than
 two independent spellings.
+
+## F197 — an ESCALATED run's exhaustion message advertised `--resume`, which `--resume` itself refuses (fixed)
+
+**Context:** found on a live run (mul5fofw), ESCALATED cap-halt at fix-loop strikes 2/2. The
+escalation's decision-ready options told the person: "top up budgetUsd and rerun with
+--resume (resume-to-cap; a spec edit, so the new hash needs re-approval)". Typing that
+`--resume` refuses: `src/userrun.js`'s `RESUMABLE_HALTS = CHECKPOINT_OUTCOMES` (src/reuse.js)
+does not list `escalated` among the resumable terminals — and by design: `escalated` is a
+GRADED RED (`REUSE_GRADED_RED`, src/reuse.js) — the close rendered a verdict on the tree and
+it was red — not a governance checkpoint (money/time/stall/pause) that left an allowance
+unspent. The run advertised a lever that cannot work.
+
+**Root cause:** `src/planrun.js`'s `fixGovernor.terminal()` (the fix-loop exhaustion terminal,
+~line 3930) built its options unconditionally from the `resumable` flag alone, never checking
+whether the outcome this terminal always produces (`escalated`, hardcoded in `ralph.js`'s
+`exhausted()`) is actually on the resumable list. The `resumable` flag only ever chose BETWEEN
+two `--resume`-shaped sentences (`run-u` vs. the exported bundle CLI) — neither branch ever
+considered "not resumable at all".
+
+**Fix:** `src/planrun.js` now imports `CHECKPOINT_OUTCOMES` from `src/reuse.js` (one owner,
+never a second hand-typed list) and checks `CHECKPOINT_OUTCOMES.includes('escalated')` before
+building the resume-shaped sentence. Since `escalated` is deliberately never a member, the
+terminal now names the honest lever instead: "this cannot be resumed — the close already
+rendered its verdict against the tree; revise the goal/spec and rerun fresh (a new hash needs
+re-approval)". Tighten-only: `escalated` still cannot be resumed (the parked "keep going"
+feature stays parked, arbiter territory) — only the ADVICE changed, to match what `--resume`
+already enforces. The panel (`src/panel/server.js`) only ever renders `an escalation
+(<category>)`, never this options text, so it needed no change.
+
+**Test:** `tests/planrun-decl.test.js` — "F197/mul5fofw: an ESCALATED run's exhaustion
+options never advertise --resume — escalated is a graded red, not a checkpoint" — reuses the
+`makeCountPatient`/`countJob` fixture already built for F195 ("the exact shape mul5fofw's fix
+loop graded blind"), drives the same flat/improved/flat/flat strike-out to `escalated`, and
+asserts the escalation's options never match `--resume` and do state plainly that the run
+cannot be resumed. Verified red against the pre-fix `fixGovernor.terminal()` and green after.
+
+**Status: fixed.**

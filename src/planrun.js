@@ -43,6 +43,7 @@ import { extractArtifact } from './text.js';
 import { defaultJudgeLoop } from './judged.js';
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
+import { CHECKPOINT_OUTCOMES } from './reuse.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
@@ -3936,9 +3937,21 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
             : `${rep.strikes}/${rep.limit} strikes — the fix loop stopped making progress against the close's own numbers (${t.reading}). Continue, change approach, or stop?`,
           options: [
             'revise the goal/spec so the work is reachable (a spec edit, so the new hash needs re-approval)',
-            resumable
-              ? 'top up budgetUsd and rerun with --resume, if the trend above says it was still converging'
-              : 'resume is `run-u`-only in v1 — top up budgetUsd and re-fire the bundle from the start, if the trend above says it was still converging',
+            // F197/mul5fofw — this terminal is ONE exhaustion terminal, and ralph.js
+            // hardcodes its outcome as `escalated` (a GRADED RED, src/reuse.js's
+            // `REUSE_GRADED_RED`: the close rendered a verdict and it was red).
+            // `escalated` is deliberately NOT in `CHECKPOINT_OUTCOMES` — a graded
+            // verdict is not a checkpoint to resume, it is an answer already in
+            // hand — so `--resume` refuses it (`userrun.js`'s `RESUMABLE_HALTS`
+            // check). Deriving the sentence from `CHECKPOINT_OUTCOMES` itself
+            // (one owner, never a second hand-typed list) means this stays honest
+            // even if the outcome set ever changes, instead of advertising a flag
+            // that fails if typed.
+            CHECKPOINT_OUTCOMES.includes('escalated')
+              ? (resumable
+                ? 'top up budgetUsd and rerun with --resume, if the trend above says it was still converging'
+                : 'resume is `run-u`-only in v1 — top up budgetUsd and re-fire the bundle from the start, if the trend above says it was still converging')
+              : 'this cannot be resumed — the close already rendered its verdict against the tree; revise the goal/spec and rerun fresh (a new hash needs re-approval)',
             'abandon the task',
           ],
         };

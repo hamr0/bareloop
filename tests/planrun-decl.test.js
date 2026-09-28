@@ -344,6 +344,48 @@ test('F195: the fix-loop governor reads a declared close\'s own value — flat/i
   assert.match(esc.decision, /2\/2 strike|no progress|stopped making progress/i);
 });
 
+// ══ mul5fofw — the fix-loop exhaustion terminal must never advertise `--resume`
+// on an ESCALATED run ═══════════════════════════════════════════════════════
+//
+// TRACE: this terminal (planrun.js's `fixGovernor.terminal()`) always rides out
+// through ralph.js's `exhausted()` as `outcome: 'escalated'` — ralph.js's own
+// comment: "the category stays `cap-halt` and the outcome stays `escalated`".
+// `escalated` is a GRADED RED (src/reuse.js's `REUSE_GRADED_RED`): the close
+// rendered a verdict and it was red, which is why `escalated` is deliberately
+// NOT a member of `CHECKPOINT_OUTCOMES` — a rendered verdict is an answer
+// already in hand, not a checkpoint to resume. Before the fix, this terminal's
+// options always named `--resume` as a lever anyway (byte-identical whether
+// `resumable` was true or false), so a real live run (mul5fofw, ESCALATED
+// cap-halt strikes 2/2) told the person to "top up and rerun with --resume" —
+// advice `userrun.js`'s own `RESUMABLE_HALTS` check (built on `CHECKPOINT_OUTCOMES`)
+// refuses outright.
+test('F197/mul5fofw: an ESCALATED run\'s exhaustion options never advertise --resume — escalated is a graded red, not a checkpoint', async (t) => {
+  const { dir, spine } = makeCountPatient(t);
+  const job = countJob();
+  assert.deepEqual(validateJob(job, { shellCapUsd: job.budgetUsd }).reds, []);
+
+  const provider = scriptedProvider([
+    { text: 'src/count.txt holds a number; check-count.mjs is the gate.' },
+    { text: PLAN([{ type: 'tree-changed', scope: 'src/**' }]) },
+    ...writeCount(dir, '5', 't0'),
+    ...writeCount(dir, '5', 't1'),
+    ...writeCount(dir, '3', 't2'),
+    ...writeCount(dir, '3', 't3'),
+    ...writeCount(dir, '3', 't4'),
+    { text: 'never bought' },
+  ]);
+  const outcome = await runJob(job, {
+    approvals: approve(job), workdir: dir, provider, emit: makeSpine(spine), capRuns: 9,
+  });
+  assert.equal(outcome, 'escalated');
+
+  const esc = readSpine(spine).filter((e) => e.type === 'escalation').at(-1);
+  assert.ok(!esc.options.some((o) => /--resume/.test(o)),
+    `an escalated run's options must never name --resume (it will refuse) — got ${JSON.stringify(esc.options)}`);
+  assert.ok(esc.options.some((o) => /cannot be resumed/i.test(o)),
+    `an escalated run's options must say plainly it cannot be resumed — got ${JSON.stringify(esc.options)}`);
+});
+
 // ══ F195 item 2 — the fix worker gets a FACTS-ONLY number history, never just
 // the current gap in isolation ═══════════════════════════════════════════════
 //
