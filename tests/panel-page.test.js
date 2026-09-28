@@ -2730,3 +2730,84 @@ test('build item 4: BOTH call sites (Run-tab cards and Audit Grouped headers) no
   const groupCallIdx = html.indexOf("partLine1Text(part, detail) +");
   assert.ok(groupCallIdx > -1, 'the Audit tab\'s Grouped header calls the same shared function with detail');
 });
+
+// ---------------------------------------------------------------------------
+// build item 3/3a (2026-09-28, hamr: "goal on deterministic should say x out
+// of y on cards, audit headers"). `checksSummary`/`checksHeadline` derive
+// "checks N/M" (passed stages over stages DECLARED, first-red-wins) from a
+// declared close's own `stages` list, the SAME shape src/declaredclose.js's
+// runDeclaredStages already attaches to every close-verdict/outer-close
+// record and src/replay.js already carries through to each fix-loop attempt
+// (including the opening outer-close grade as attempt 1). A rubric/command
+// close carries no such list — "leave as today", per hamr's own ruling.
+// ---------------------------------------------------------------------------
+
+test('build item 3: checksSummary counts PASSED over DECLARED, never counting an unrun (post-stop) stage as passed', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const checksSummary = loadFns(html, ['checksSummary'], 'checksSummary');
+  // mul5fofw's own outer-close: 6 satisfied stages, stopped at no-suppressions (7th)
+  const stages = [
+    { name: 'changed-from-seed', verdict: 'satisfied' },
+    { name: 'typecheck-target-zero-errors', verdict: 'satisfied', value: 0, baseline: 0 },
+    { name: 'typecheck-outside-not-worse', verdict: 'satisfied', value: 46, baseline: 46 },
+    { name: 'tests-kept', verdict: 'satisfied', value: 67, baseline: 67 },
+    { name: 'suite-green', verdict: 'satisfied' },
+    { name: 'suite-zero-failing-tests', verdict: 'satisfied', value: 0, baseline: 0 },
+    { name: 'no-suppressions', verdict: 'needs_revision' },
+  ];
+  assert.deepEqual(checksSummary(stages), { passed: 6, total: 7, stoppedAt: 'no-suppressions' });
+});
+
+test('build item 3: checksSummary returns null for a rubric/command close (no stages list) or an empty one — "leave as today"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const checksSummary = loadFns(html, ['checksSummary'], 'checksSummary');
+  assert.equal(checksSummary(null), null);
+  assert.equal(checksSummary(undefined), null);
+  assert.equal(checksSummary([]), null);
+});
+
+test('build item 3: checksSummary on an all-green declared close reads N/N with no stoppedAt', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const checksSummary = loadFns(html, ['checksSummary'], 'checksSummary');
+  const stages = [{ name: 'a', verdict: 'satisfied' }, { name: 'b', verdict: 'satisfied' }];
+  assert.deepEqual(checksSummary(stages), { passed: 2, total: 2, stoppedAt: null });
+});
+
+test('build item 3: checksHeadline renders "checks N/M", or "" for a rubric/command close', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const checksHeadline = loadFns(html, ['checksSummary', 'checksHeadline'], 'checksHeadline');
+  assert.equal(checksHeadline([{ name: 'a', verdict: 'satisfied' }, { name: 'b', verdict: 'needs_revision' }]), 'checks 1/2');
+  assert.equal(checksHeadline(null), '');
+});
+
+test('build item 3: partLine1Text appends the LATEST attempt\'s "checks N/M" for the fix part, never for a part with no attempts/stages', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'checksSummary', 'checksHeadline', 'partLine1Text'], 'partLine1Text');
+  const fixPart = {
+    kind: 'fix', rounds: 3, toolCalls: 4, wallMs: 1000, spentUsd: 0.1, unpricedRounds: 0,
+    attempts: [
+      { n: 1, stages: [{ name: 'typecheck-target-zero-errors', verdict: 'satisfied' }, { name: 'no-suppressions', verdict: 'needs_revision' }] },
+      { n: 2, stages: [{ name: 'typecheck-target-zero-errors', verdict: 'satisfied' }, { name: 'no-suppressions', verdict: 'satisfied' }] },
+    ],
+  };
+  const text = partLine1Text(fixPart, null);
+  assert.match(text, /checks 2\/2$/, `the LAST attempt's grading decides the card's headline: ${text}`);
+
+  const noAttemptsPart = { kind: 'step', rounds: 1, toolCalls: 1, wallMs: 100, spentUsd: 0.01, unpricedRounds: 0 };
+  assert.doesNotMatch(partLine1Text(noAttemptsPart, null), /checks/, 'no attempts, no stages -> no headline at all');
+});
+
+test('build item 3: stageCheckLine — a stage with value+baseline shows the spec\'s "N (baseline M)" fallback (kind not derivable without the signed declaration, reported open); a value-less stage shows the mark alone', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const stageCheckLine = loadFns(html, ['escapeXml', 'glyphSpan', 'stageCheckLine'], 'stageCheckLine');
+  assert.match(stageCheckLine({ name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46 }), /typecheck-outside-not-worse: 47 \(baseline 46\)/);
+  assert.match(stageCheckLine({ name: 'no-suppressions', verdict: 'satisfied' }), /^no-suppressions /);
+  assert.doesNotMatch(stageCheckLine({ name: 'no-suppressions', verdict: 'satisfied' }), /\(baseline/);
+});
+
+test('build item 3: the Audit Grouped attempt row (buildAttemptsList) wires checksHeadline into its button and stageCheckLine into an expandable checks-list, one owner with the Run-tab card', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /var checksText = checksHeadline\(a\.stages\);/);
+  assert.match(html, /var checksList = Array\.isArray\(a\.stages\) \? a\.stages\.map\(stageCheckLine\)\.join\("<br>"\) : "";/);
+  assert.match(html, /checksText \? ' &middot; ' \+ checksText : ''/);
+});

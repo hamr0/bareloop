@@ -262,6 +262,7 @@
   .attempt-row{margin-bottom:6px;}
   .attempt-toggle{margin-bottom:4px;}
   .rounds-list{margin:6px 0 6px 12px;padding-left:8px;border-left:2px solid var(--border-strong);}
+  .checks-list{margin:6px 0 0 12px;padding:6px 8px;border-left:2px solid var(--border-strong);font-size:12px;color:var(--text-faint);}
   /* item 1 (2026-09-26): a round's own model call renders as this table's
      header ROW (visually distinct from its tool-call rows below it). */
   tr.round-header-row td{background:var(--panel2);font-weight:700;}
@@ -1926,19 +1927,29 @@
       var row = document.createElement("div");
       row.className = "attempt-row";
       row.setAttribute("data-testid", "audit-attempt-" + partIndex + "-" + a.n);
+      // build item 3: "checks N/M" on a declared close's own attempt header
+      // (including the opening outer-close grade, which is attempt 1 on this
+      // SAME list — src/replay.js's fixLoop.attempts) — "" for a rubric/
+      // command close or a still-running attempt with no stages yet.
+      var checksText = checksHeadline(a.stages);
+      var checksList = Array.isArray(a.stages) ? a.stages.map(stageCheckLine).join("<br>") : "";
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
           'attempt ' + a.n + ' ' + attemptGlyph(a.outcome, boxIsLive) +
+          (checksText ? ' &middot; ' + checksText : '') +
         '</button>' +
+        (checksList ? '<div class="checks-list" data-testid="audit-attempt-checks-' + partIndex + '-' + a.n + '" hidden>' + checksList + '</div>' : '') +
         '<div class="rounds-list" hidden></div>';
       container.appendChild(row);
       var btn = row.querySelector(".attempt-toggle");
       var roundsEl = row.querySelector(".rounds-list");
+      var checksEl = row.querySelector(".checks-list");
       var built = false;
       btn.addEventListener("click", function(){
         var expanded = btn.getAttribute("aria-expanded") === "true";
         btn.setAttribute("aria-expanded", expanded ? "false" : "true");
         roundsEl.hidden = expanded;
+        if(checksEl) checksEl.hidden = expanded;
         if(!expanded && !built){
           built = true;
           loadRounds(roundsEl, partIndex, a, 0);
@@ -2078,12 +2089,71 @@
     var spendText = (isLiveRunPart && part.spentUsd === null)
       ? liveSpendText(detail.spendFloorUsd, detail.draftSpentUsd, detail.draftSpendComplete)
       : (part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : panelMoney(part.spentUsd));
-    return [
+    var bits = [
       (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
       typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
       wallText,
       spendText,
-    ].join(" &middot; ");
+    ];
+    // build item 3 (2026-09-28): the part's headline check count — its MOST
+    // RECENT attempt's own declared-close grading (the opening outer-close
+    // grade counts as attempt 1, same list `buildAttemptsList` reads).
+    var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
+    var headline = latestAttempt ? checksHeadline(latestAttempt.stages) : "";
+    if(headline) bits.push(headline);
+    return bits.join(" &middot; ");
+  }
+  /**
+   * build item 3/3a (2026-09-28, hamr: "goal on deterministic should say x
+   * out of y on cards, audit headers"). `stages` is a DECLARED close's own
+   * per-stage verdict list (`{name, verdict, value?, baseline?}[]`, first-red-
+   * wins) — present only on a declared close's outer-close/close-verdict
+   * record (`src/declaredclose.js`'s `runDeclaredStages`); a command close's
+   * gap carries no such list, so this reads `null` and every caller below
+   * shows nothing — "leave as today" for a rubric/command close, exactly as
+   * hamr ruled. An unrun stage (after first-red-wins stopped the close) is
+   * counted in `total` (it was DECLARED) but never in `passed` (it never ran).
+   * @param {any[]|null|undefined} stages
+   * @returns {{passed: number, total: number, stoppedAt: string|null}|null}
+   */
+  function checksSummary(stages){
+    if(!Array.isArray(stages) || stages.length === 0) return null;
+    var passed = 0, stoppedAt = null;
+    for(var i = 0; i < stages.length; i++){
+      var s = stages[i];
+      if(!s) continue;
+      if(s.verdict === "satisfied") passed += 1;
+      else if(stoppedAt === null) stoppedAt = s.name || null;
+    }
+    return { passed: passed, total: stages.length, stoppedAt: stoppedAt };
+  }
+  /** the short "checks N/M" headline — "" (never shown) for a rubric/command
+   * close or an unresolved attempt (still running, no stages yet).
+   * @param {any[]|null|undefined} stages @returns {string} */
+  function checksHeadline(stages){
+    var c = checksSummary(stages);
+    return c ? ("checks " + c.passed + "/" + c.total) : "";
+  }
+  /**
+   * §3a — one stage's expand-view line. The wording table (down-to-a-goal /
+   * up-out-of-a-total / not-worse-than-a-baseline / pass-fail-only) is keyed
+   * to the SIGNED close declaration's own per-stage direction and baseline
+   * SOURCE (declared-zero vs measured), which is not part of the `stages`
+   * list this build's run-detail API already carries — plumbing the
+   * declaration itself through to the client is open, reported rather than
+   * guessed at. So every stage that carries a number renders the spec's own
+   * explicit fallback verbatim ("If it can't be determined, show `N
+   * (baseline M)`"), never a guessed kind; a stage with no recorded number
+   * (a guard, a pass/fail command stage) renders the mark alone.
+   * @param {any} stage @returns {string}
+   */
+  function stageCheckLine(stage){
+    var mark = stage.verdict === "satisfied" ? glyphSpan("✓") : (stage.verdict ? glyphSpan("✗") : "&ndash;");
+    var hasValue = typeof stage.value === "number";
+    var hasBaseline = typeof stage.baseline === "number";
+    var numberText = hasValue && hasBaseline ? (stage.value + " (baseline " + stage.baseline + ")")
+      : (hasValue ? String(stage.value) : "");
+    return escapeXml(stage.name || "unknown") + (numberText ? ": " + numberText : "") + " " + mark;
   }
   var currentAuditFilter = "all";
   function auditPartMatchesFilter(rowWrap, filter){
