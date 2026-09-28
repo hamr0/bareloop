@@ -1243,10 +1243,10 @@ test('item 5: renderRoundsPage builds "showing A–B of N" text and a load-more 
 // item 6 (2026-09-25): "took" (finished/died) vs "elapsed" (live [▶] only)
 // ---------------------------------------------------------------------------
 
-test('item 6: run-counters reads "took Xs" for a finished or died run, "Xs elapsed" only for a live [▶] run', () => {
+test('item 6: run-counters reads "took Xs" for a finished or died run, "Xs elapsed" only for a live [▶] run (with a job-end reached OR died — the still-running-with-no-end case is build item 6 2026-09-28\'s liveWallPhrase instead)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.ok(html.indexOf('var isLive = detail.glyph === "▶" && !detail.died;') !== -1);
-  assert.ok(html.indexOf('var wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);') !== -1);
+  assert.ok(html.indexOf('wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);') !== -1);
 });
 
 // ---------------------------------------------------------------------------
@@ -2644,4 +2644,37 @@ test('build item 4: the three named step lines are short and plain (Copying sour
   assert.match(src, /say\('system', 'Copying source \(\$0\)'\);/);
   assert.match(src, /say\('system', 'Packages found'\);/);
   assert.match(src, /say\('system', `Drafting with \$\{card\.model\}, \$\$\{card\.capUsd\.toFixed\(2\)\} cap`\);/);
+});
+
+// ---------------------------------------------------------------------------
+// build item 6 (2026-09-28, session mul5fofw): the Run tab must show a
+// running floor while a run is live (no job-end), instead of the observed
+// "unknown ($0.73 drafting) of $5.00 · unknown elapsed".
+// ---------------------------------------------------------------------------
+
+test('build item 6: liveSpendText — "$X so far" using panelMoney, plus the drafting bracket, never "at least" for the leading figure', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const liveSpendText = loadFns(html, ['panelMoney', 'liveSpendText'], 'liveSpendText');
+  assert.equal(liveSpendText(0.72, 0.73, true), '$0.72 so far ($0.73 drafting)');
+  assert.equal(liveSpendText(0.72, 0.73, false), '$0.72 so far (at least $0.73 drafting)');
+  assert.equal(liveSpendText(0.72, null, null), '$0.72 so far');
+  assert.equal(liveSpendText(null, 0.73, true), 'unknown');
+});
+
+test('build item 6: liveWallPhrase — "running <duration>", never "unknown" once the spine has a timed record', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const liveWallPhrase = loadFns(html, ['duration', 'liveWallPhrase'], 'liveWallPhrase');
+  assert.equal(liveWallPhrase(4 * 60 * 1000 + 12 * 1000), 'running 4m12s');
+  assert.equal(liveWallPhrase(null), 'elapsed unknown');
+});
+
+test('build item 6: renderRun uses liveSpendText/liveWallPhrase exactly when live with no job-end (spentUsd null, not died), never for a died or finished run', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function renderRun(detail){');
+  const end = html.indexOf('function renderRun(', start + 1) === -1 ? html.indexOf('</script>', start) : html.length;
+  const src = html.slice(start, start + 4000);
+  assert.match(src, /var isLiveNoEnd = !detail\.died && detail\.spentUsd === null;/);
+  assert.match(src, /spendText = liveSpendText\(detail\.spendFloorUsd, detail\.draftSpentUsd, detail\.draftSpendComplete\);/);
+  assert.match(src, /wallPhrase = liveWallPhrase\(detail\.wallFloorMs\);/);
+  void end;
 });

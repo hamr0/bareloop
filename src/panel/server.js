@@ -237,20 +237,17 @@ export function formatTimestamp(ts) {
  * @param {string|null} outcome `replayRun`'s own `summary.outcome`
  * @returns {{died: boolean, why: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
  */
-function deriveDeath(spinePath, records, outcome) {
-  const notDied = {
-    died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
-  };
-  if (outcome !== null && outcome !== undefined) return notDied; // a real job-end was reached
-  let mtimeMs;
-  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return notDied; }
-  if (Date.now() - mtimeMs <= DIED_MTIME_MS) return notDied; // still fresh — genuinely `running`, not died
-
-  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
-  const last = withTs.length ? withTs[withTs.length - 1] : null;
-  const when = last ? formatTimestamp(last.ts) : 'an unknown time';
-  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${describeLastRecord(last)} at ${when}.`;
-
+/**
+ * The priced-rounds spend floor + first-record→last-record wall floor,
+ * derived straight off the spine's raw records — the same derivation a
+ * died run's "at least …" figures use, factored out so build item 6
+ * (2026-09-28) can hand a genuinely-still-running spine the identical
+ * floor instead of "unknown" on the Run tab, without a second copy of this
+ * math.
+ * @param {any[]} records raw parsed spine records
+ * @returns {{spendFloorUsd: number|null, wallFloorMs: number|null}}
+ */
+function floorsFromRecords(records) {
   let spendSum = 0;
   let pricedCount = 0;
   for (const r of records) {
@@ -259,12 +256,33 @@ function deriveDeath(spinePath, records, outcome) {
   }
   const spendFloorUsd = pricedCount > 0 ? spendSum : null;
 
+  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
   const firstMs = withTs.length ? Date.parse(withTs[0].ts) : NaN;
   const lastMs = withTs.length ? Date.parse(withTs[withTs.length - 1].ts) : NaN;
   const wallFloorMs = Number.isFinite(firstMs) && Number.isFinite(lastMs) && lastMs >= firstMs ? lastMs - firstMs : null;
+  return { spendFloorUsd, wallFloorMs };
+}
+
+function deriveDeath(spinePath, records, outcome) {
+  const notDied = {
+    died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
+  };
+  if (outcome !== null && outcome !== undefined) return notDied; // a real job-end was reached
+  // no job-end yet — the floor derivation is identical whether this turns
+  // out to be a died run or one that is genuinely still running (build item
+  // 6): computed here, once, before the died/still-running branch below.
+  const floors = floorsFromRecords(records);
+  let mtimeMs;
+  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return { ...notDied, ...floors }; }
+  if (Date.now() - mtimeMs <= DIED_MTIME_MS) return { ...notDied, ...floors }; // still fresh — genuinely `running`, not died
+
+  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
+  const last = withTs.length ? withTs[withTs.length - 1] : null;
+  const when = last ? formatTimestamp(last.ts) : 'an unknown time';
+  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${describeLastRecord(last)} at ${when}.`;
 
   return {
-    died: true, why, spendFloorUsd, wallFloorMs,
+    died: true, why, ...floors,
   };
 }
 
@@ -533,12 +551,16 @@ export function getRunDetail(runid, opts = {}) {
     // the drafting share above was EXACT; `null` when there is no drafting
     // share to qualify at all. Read by the panel's own `panelMoneyWithDraft`.
     draftSpendComplete: summary.draftSpendComplete,
-    // died: a spend floor summed from real priced rounds present in the
-    // file — never null/unknown when at least one priced round exists.
-    // `null` on a non-died run (the normal `spentUsd`/`wallMs` fields above
-    // are already the real, complete figures there).
-    spendFloorUsd: death.died ? death.spendFloorUsd : null,
-    wallFloorMs: death.died ? death.wallFloorMs : null,
+    // a spend/wall floor summed from real priced rounds/timestamped records
+    // present in the file — never null/unknown when at least one priced
+    // round exists. `deriveDeath` already returns `null` for both whenever
+    // a real job-end WAS reached (the normal `spentUsd`/`wallMs` fields
+    // above are the real, complete figures there); build item 6
+    // (2026-09-28) widened this from "died runs only" to ALSO cover a
+    // genuinely still-running spine, so the Run tab can show a running
+    // floor instead of "unknown" while a run is live.
+    spendFloorUsd: death.spendFloorUsd,
+    wallFloorMs: death.wallFloorMs,
     spendComplete: summary.spendComplete,
     wallMs: summary.wallMs,
     timelineKind,

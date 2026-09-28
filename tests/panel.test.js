@@ -386,6 +386,36 @@ test('a FRESH spine (no job-end, mtime just written) is still just "running" [�
   assert.equal(detail.glyph, '▶');
 });
 
+// build item 6 (2026-09-28, session mul5fofw): a LIVE run (no job-end,
+// glyph [▶]) with real metered rounds already on the spine must expose a
+// running spend/wall FLOOR (spendFloorUsd/wallFloorMs), never null/unknown
+// — the Run tab needs this to show "$X so far … · running Ym" instead of
+// the old "unknown ($X drafting) of $5.00 · unknown elapsed".
+test('build item 6: a LIVE, still-running spine (no job-end) with priced rounds exposes spendFloorUsd/wallFloorMs — never null, never "died"', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const spinePath = join(dir, 'u-liverunning.jsonl');
+  const t0 = new Date(Date.now() - 4 * 60 * 1000 - 12 * 1000); // 4m12s ago
+  const t1 = new Date();
+  writeSpine(spinePath, [
+    { type: 'job-start', job: 'still-going', ts: t0.toISOString(), seq: 1, verdictType: 'green' },
+    { type: 'worker-round', ts: t0.toISOString(), seq: 2, costUsd: 0.4 },
+    { type: 'worker-round', ts: t1.toISOString(), seq: 3, costUsd: 0.32 },
+  ]);
+  appendRun({
+    at: t0.toISOString(), runid: 'liverunning', job: 'still-going', spine: spinePath, patient: null, via: 'run-u',
+  }, { home });
+
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/liverunning`);
+  const detail = await res.json();
+  assert.equal(detail.died, false, 'a fresh spine is running, never died');
+  assert.equal(detail.glyph, '▶');
+  assert.equal(detail.spentUsd, null, 'no job-end reached yet — the real, exact figure is still null');
+  assert.ok(Math.abs(detail.spendFloorUsd - 0.72) < 1e-9, `expected the priced-rounds sum 0.72, got ${detail.spendFloorUsd}`);
+  assert.ok(typeof detail.wallFloorMs === 'number' && detail.wallFloorMs >= 4 * 60 * 1000 && detail.wallFloorMs < 5 * 60 * 1000, `expected ~4m12s (252000ms), got ${detail.wallFloorMs}`);
+});
+
 const POC_RED = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl';
 const havePocRed = existsSync(POC_RED);
 

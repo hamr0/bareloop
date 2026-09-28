@@ -1618,6 +1618,31 @@
     return m + "m" + String(rem).padStart(2, "0") + "s";
   }
 
+  /**
+   * build item 6 (2026-09-28, session mul5fofw) — while a run is LIVE (no
+   * job-end reached yet: `detail.spentUsd === null` and not died), the Run
+   * tab's summary must show a running FLOOR from the spine's own metered
+   * rounds instead of "unknown" — never presented as exact ("so far", never
+   * "at least" — this is a live, still-growing number, not a died run's
+   * fixed floor). Reuses {@link panelMoney} for the actual digits; never a
+   * second hand-rolled money format.
+   * @param {number|null} spendFloorUsd @param {number|null} draftSpentUsd
+   * @param {boolean|null} draftSpendComplete @returns {string}
+   */
+  function liveSpendText(spendFloorUsd, draftSpentUsd, draftSpendComplete){
+    if(spendFloorUsd === null || spendFloorUsd === undefined) return "unknown";
+    var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
+    var draftFloor = hasDraft && draftSpendComplete === false;
+    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting)" : "";
+    return panelMoney(spendFloorUsd) + " so far" + draftPart;
+  }
+  /** build item 6 — the matching wall-clock phrase: "running <duration>",
+   * never "unknown" once the spine has at least one timestamped record.
+   * @param {number|null} wallFloorMs @returns {string} */
+  function liveWallPhrase(wallFloorMs){
+    return (wallFloorMs === null || wallFloorMs === undefined) ? "elapsed unknown" : ("running " + duration(wallFloorMs));
+  }
+
   // ---- Audit row cell builders — ONE shared renderer for a gate-audit row,
   // used by both the Flat table (renderAudit) and the Grouped view's
   // per-attempt rounds table (renderRoundsTable) so the two views can never
@@ -1788,17 +1813,28 @@
     // bracket beside it isn't); the drafting bracket reads its own floor
     // independently. {@link panelMoneyWithDraft} is the one place that
     // decides all of this — see its own doc.
-    var draftIncomplete = typeof detail.draftSpentUsd === "number" && detail.draftSpentUsd !== null && detail.draftSpendComplete === false;
-    var spendCoreVal = detail.died ? detail.spendFloorUsd : detail.spentUsd;
-    var spendCoreFloor = detail.died || draftIncomplete;
-    var spendText = panelMoneyWithDraft(spendCoreVal, spendCoreFloor, detail.draftSpentUsd, detail.draftSpendComplete);
-    var wallText = detail.died ? (detail.wallFloorMs === null ? "unknown" : "at least " + duration(detail.wallFloorMs)) : duration(detail.wallMs);
-    // item 6 (2026-09-25): "took" for a finished (job-end reached) OR died
-    // run — both are OVER, so the wall figure is a completed duration, never
-    // an in-progress one. "elapsed" is reserved for the one state that IS
-    // still in progress: a live [▶] run (glyph "▶" and not died).
-    var isLive = detail.glyph === "▶" && !detail.died;
-    var wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);
+    // build item 6 (2026-09-28): a LIVE run (no job-end reached: died is
+    // false and spentUsd is still null) shows the RUNNING floor instead of
+    // "unknown" — the server now derives the same spendFloorUsd/wallFloorMs
+    // for a still-running spine that it already derived for a died one.
+    var isLiveNoEnd = !detail.died && detail.spentUsd === null;
+    var spendText, wallPhrase;
+    if(isLiveNoEnd){
+      spendText = liveSpendText(detail.spendFloorUsd, detail.draftSpentUsd, detail.draftSpendComplete);
+      wallPhrase = liveWallPhrase(detail.wallFloorMs);
+    } else {
+      var draftIncomplete = typeof detail.draftSpentUsd === "number" && detail.draftSpentUsd !== null && detail.draftSpendComplete === false;
+      var spendCoreVal = detail.died ? detail.spendFloorUsd : detail.spentUsd;
+      var spendCoreFloor = detail.died || draftIncomplete;
+      spendText = panelMoneyWithDraft(spendCoreVal, spendCoreFloor, detail.draftSpentUsd, detail.draftSpendComplete);
+      var wallText = detail.died ? (detail.wallFloorMs === null ? "unknown" : "at least " + duration(detail.wallFloorMs)) : duration(detail.wallMs);
+      // item 6 (2026-09-25): "took" for a finished (job-end reached) OR died
+      // run — both are OVER, so the wall figure is a completed duration, never
+      // an in-progress one. "elapsed" is reserved for the one state that IS
+      // still in progress: a live [▶] run (glyph "▶" and not died).
+      var isLive = detail.glyph === "▶" && !detail.died;
+      wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);
+    }
 
     document.getElementById("run-counters").innerHTML =
       spendText + " of " + panelMoney(detail.budgetUsd) +
