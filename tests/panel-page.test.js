@@ -2138,32 +2138,30 @@ test('Chat tab CSS: a disabled .btn.primary is visibly different from the enable
   assert.match(m[1], /color:var\(--text-faint\)/);
 });
 
-test('Job card cap row: $ cap | Time cap | Token price, matching design/panel-mockup.html field order; Token price is a disabled, unwired "est." placeholder (P4), and the required Drafting $ cap is its own full-width field below the cap row, not a 4th cap-row column', () => {
+// fix (2026-09-28, hamr's ruling "one cap covers drafting + run", supersedes
+// the P3 Q2=A drafting-cap-field tests above): the separate Drafting $ cap
+// field is GONE — drafting now runs under the same Cap $ every run does.
+test('Job card cap row: $ cap | Time cap | Token price, matching design/panel-mockup.html field order; Token price is a disabled, unwired "est." placeholder (P4); there is no separate Drafting $ cap field', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const capRowStart = html.indexOf('<div class="cap-row"');
   const block = html.slice(capRowStart, html.indexOf('<button class="btn primary" type="button" id="chat-start-btn"'));
   const moneyIdx = block.indexOf('jf-cap-money');
   const timeIdx = block.indexOf('jf-cap-time');
   const priceIdx = block.indexOf('jf-price');
-  const draftIdx = block.indexOf('jf-cap-draft');
-  assert.ok(moneyIdx !== -1 && timeIdx !== -1 && priceIdx !== -1 && draftIdx !== -1, 'expected all four cap fields present');
-  assert.ok(moneyIdx < timeIdx && timeIdx < priceIdx && priceIdx < draftIdx, 'expected order $ cap, Time cap, Token price, then Drafting $ cap');
+  assert.ok(moneyIdx !== -1 && timeIdx !== -1 && priceIdx !== -1, 'expected all three cap fields present');
+  assert.ok(moneyIdx < timeIdx && timeIdx < priceIdx, 'expected order $ cap, Time cap, Token price');
   const priceTag = block.match(/<input id="jf-price"[^>]*>/)[0];
   assert.match(priceTag, /placeholder="est\."/);
   assert.match(priceTag, /\bdisabled\b/, 'Token price is unwired in P3 — must render disabled');
-  // Token price must sit INSIDE the 3-column cap-row; Drafting $ cap must sit OUTSIDE it.
-  const capRowInner = block.slice(0, block.indexOf('jf-cap-draft'));
-  assert.match(capRowInner, /jf-price/);
-  const draftFieldTag = block.slice(block.indexOf('jf-cap-draft') - 200, block.indexOf('jf-cap-draft') + 50);
-  assert.doesNotMatch(draftFieldTag.slice(0, draftFieldTag.indexOf('jf-cap-draft')), /cap-field/, 'Drafting $ cap must not be wrapped in a .cap-field (it is its own full-width .field, not a 4th cap-row column)');
+  assert.doesNotMatch(html, /jf-cap-draft/, 'the separate Drafting $ cap field is gone (superseded 2026-09-28)');
 });
 
-test('fix (2026-09-28): the four cap-row/drafting labels read "Cap $", "Time cap (min)", "Token price $", "Drafting cap $" (label CSS already uppercases)', () => {
+test('fix (2026-09-28): the three cap-row labels read "Cap $", "Time cap (min)", "Token price $" (label CSS already uppercases); no "Drafting cap $" label exists', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /<label for="jf-cap-money">Cap \$<\/label>/);
   assert.match(html, /<label for="jf-cap-time">Time cap \(min\)<\/label>/);
   assert.match(html, /<label for="jf-price">Token price \$<\/label>/);
-  assert.match(html, /<label for="jf-cap-draft">Drafting cap \$<\/label>/);
+  assert.doesNotMatch(html, /Drafting cap \$/);
 });
 
 test('build item 5 (2026-09-28): the page opens on the Chat tab by default — tab-chat is aria-selected, panel-chat is active/visible, panel-runs starts hidden', () => {

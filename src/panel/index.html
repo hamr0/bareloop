@@ -478,10 +478,6 @@
                 <input id="jf-price" type="text" placeholder="est." disabled>
               </div>
             </div>
-            <div class="field">
-              <label for="jf-cap-draft">Drafting cap $</label>
-              <input id="jf-cap-draft" type="text" data-testid="jf-cap-draft" placeholder="required, no default">
-            </div>
             <button class="btn primary" type="button" id="chat-start-btn" data-testid="chat-start" disabled>Start drafting</button>
             <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
             <div class="hint" id="chat-hash-line" data-testid="chat-hash-line" hidden></div>
@@ -1700,7 +1696,13 @@
     // no job-end means no final totals were ever recorded) are replaced with
     // the priced-rounds/first-to-last-record FLOORS the server derived —
     // never "unknown" when a priced round actually exists.
-    var spendText = detail.died ? (detail.spendFloorUsd === null ? "unknown" : "at least " + money(detail.spendFloorUsd)) : money(detail.spentUsd);
+    var spendCore = detail.died ? (detail.spendFloorUsd === null ? "unknown" : "at least " + money(detail.spendFloorUsd)) : money(detail.spentUsd);
+    // hamr's ruling 2026-09-28 ("one cap covers drafting + run") — append the
+    // drafting share, when this run carried one; unchanged otherwise (same
+    // string this line always produced).
+    var spendText = (typeof detail.draftSpentUsd === "number" && detail.draftSpentUsd !== null)
+      ? spendCore + " (" + money(detail.draftSpentUsd) + " drafting)"
+      : spendCore;
     var wallText = detail.died ? (detail.wallFloorMs === null ? "unknown" : "at least " + duration(detail.wallFloorMs)) : duration(detail.wallMs);
     // item 6 (2026-09-25): "took" for a finished (job-end reached) OR died
     // run — both are OVER, so the wall figure is a completed duration, never
@@ -2373,7 +2375,7 @@
     var checkDepsBtn = document.getElementById("chat-check-deps-btn");
     var errEl = document.getElementById("chat-card-error");
     var hashLine = document.getElementById("chat-hash-line");
-    var draftCapInput = document.getElementById("jf-cap-draft");
+    var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
     var keyStatusEl = document.getElementById("jf-key-status");
     var reachStatusEl = document.getElementById("jf-reach-status");
@@ -2415,7 +2417,6 @@
     function currentCard(){
       var moneyCap = Number(document.getElementById("jf-cap-money").value);
       var timeCapMin = document.getElementById("jf-cap-time").value.trim();
-      var draftCap = Number(draftCapInput.value);
       return {
         checkType: document.querySelector('input[name="jf-verdict"]:checked').value === "rubric" ? "rubric" : "deterministic",
         model: document.getElementById("jf-model").value,
@@ -2428,21 +2429,22 @@
         judgeExamples: document.getElementById("jf-judge").value.trim(),
         capUsd: moneyCap,
         maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
-        draftingCapUsd: draftCap,
       };
     }
 
-    // Drafting $ cap is REQUIRED every time, no default (Q2=A) — Start stays
-    // disabled until it parses as a positive number, checked client-side as
-    // a UX convenience only; the server (`validateJobCard`) is the real gate.
-    // Also disabled while a session is already live (build item 4) or the
-    // chosen model's key isn't usable (build item 7).
+    // hamr's ruling 2026-09-28 ("one cap covers drafting + run") — the
+    // separate Drafting cap field is GONE; drafting runs under the same
+    // `Cap $` field every run does. Start stays disabled until Cap $ parses
+    // as a positive number, checked client-side as a UX convenience only;
+    // the server (`validateJobCard`) is the real gate. Also disabled while a
+    // session is already live (build item 4) or the chosen model's key
+    // isn't usable (build item 7).
     function refreshStartEnabled(){
-      var v = Number(draftCapInput.value);
-      var capOk = draftCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
+      var v = Number(moneyCapInput.value);
+      var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
       startBtn.disabled = !capOk || sessionLive || !keyOk;
     }
-    draftCapInput.addEventListener("input", refreshStartEnabled);
+    moneyCapInput.addEventListener("input", refreshStartEnabled);
     document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
       r.addEventListener("change", function(){
         var isRubric = document.querySelector('input[name="jf-verdict"]:checked').value === "rubric";

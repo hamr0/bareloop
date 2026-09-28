@@ -95,7 +95,6 @@ const baseCard = (overrides = {}) => ({
   guardrails: 'no new deps',
   judgeExamples: '',
   capUsd: 2,
-  draftingCapUsd: 1,
   ...overrides,
 });
 
@@ -103,13 +102,20 @@ const baseCard = (overrides = {}) => ({
 // validateJobCard — $0, before a session is ever created
 // ---------------------------------------------------------------------------
 
-test('validateJobCard: RED-PROOF — an empty/zero/non-number Drafting $ cap is refused; a real positive number is not', () => {
+// fix (2026-09-28, hamr's ruling "one cap covers drafting + run"): the
+// separate Drafting $ cap field is GONE — this supersedes the prior
+// draftingCapUsd-is-required test above. Drafting now runs under the SAME
+// `capUsd` every run does, so the one money-cap rule left is capUsd's own.
+test('validateJobCard: RED-PROOF — an empty/zero/non-number Cap $ is refused; a real positive number is not; there is no separate drafting cap field', () => {
   for (const bad of [undefined, 0, -1, NaN, 'oops']) {
-    const r = validateJobCard(baseCard({ draftingCapUsd: bad }));
-    assert.equal(r.ok, false, `draftingCapUsd=${bad} must refuse`);
-    assert.match(r.error, /Drafting \$ cap/);
+    const r = validateJobCard(baseCard({ capUsd: bad }));
+    assert.equal(r.ok, false, `capUsd=${bad} must refuse`);
+    assert.match(r.error, /\$ cap/);
   }
   assert.equal(validateJobCard(baseCard()).ok, true);
+  // a card carrying the OLD draftingCapUsd field is accepted and ignored —
+  // the field is dead, never read, never required.
+  assert.equal(validateJobCard(baseCard({ draftingCapUsd: undefined })).ok, true);
 });
 
 test('validateJobCard: a taken job name refuses (P3 is new jobs only, Q4=A) — RED-PROOF against a fabricated jobs/ dir', () => {
@@ -199,6 +205,39 @@ test('signRun: exact argv, including "--approve <hash>" as a literal array eleme
   assert.equal(captured.args[approveIdx + 1], 'deadbeef01', '--approve is followed by the exact hash, nothing else');
   assert.equal(captured.opts.detached, true);
   assert.equal(captured.opts.env.X, '1');
+});
+
+// hamr's ruling 2026-09-28 ("one cap covers drafting + run") — signRun reads
+// the session's OWN known drafting spend off state.draftSpentUsd (set by
+// authorsession.js's onCall, off the same metered list the chat cost readout
+// already used) and passes it as run-u's own --draft-spent-usd flag.
+test('signRun: a session that spent $0.81 drafting passes --draft-spent-usd 0.81 to run-u', () => {
+  let captured = null;
+  const spawnFn = (cmd, args, opts) => { captured = { cmd, args, opts }; return { unref: () => {} }; };
+  const outDir = tmp('panel-author-signrun-draft-');
+  const specPath = join(outDir, 'resolved-spec.json');
+  writeFileSync(specPath, '{}');
+  const session = fakeSession({
+    phase: 'prepared', specHash: 'deadbeef02', resolvedSpecPath: specPath, outDir, messages: [], draftSpentUsd: 0.81,
+  });
+  const r = signRun(session, 'deadbeef02', { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs' });
+  assert.equal(r.ok, true);
+  const flagIdx = captured.args.indexOf('--draft-spent-usd');
+  assert.ok(flagIdx !== -1, '--draft-spent-usd must be a literal argv element when the session spent > 0 drafting');
+  assert.equal(captured.args[flagIdx + 1], '0.81');
+  assert.match(session.state.messages.at(-1).text, /drafting spent \$0\.8100/);
+});
+
+test('signRun: a session with no drafting spend (0/undefined) omits --draft-spent-usd entirely — never a decorative 0', () => {
+  let captured = null;
+  const spawnFn = (cmd, args, opts) => { captured = { cmd, args, opts }; return { unref: () => {} }; };
+  const outDir = tmp('panel-author-signrun-nodraft-');
+  const specPath = join(outDir, 'resolved-spec.json');
+  writeFileSync(specPath, '{}');
+  const session = fakeSession({ phase: 'prepared', specHash: 'deadbeef03', resolvedSpecPath: specPath, outDir, messages: [] });
+  const r = signRun(session, 'deadbeef03', { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs' });
+  assert.equal(r.ok, true);
+  assert.equal(captured.args.indexOf('--draft-spent-usd'), -1, 'a session that never drafted (state.draftSpentUsd absent) must never pass the flag');
 });
 
 // ---------------------------------------------------------------------------

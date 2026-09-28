@@ -130,10 +130,7 @@ export function jobNameTaken(name, opts = {}) {
  */
 export function validateJobCard(card) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
-  const { draftingCapUsd, jobName, checkType, model, goal, source, destination, success, guardrails, capUsd } = card;
-  if (typeof draftingCapUsd !== 'number' || !Number.isFinite(draftingCapUsd) || draftingCapUsd <= 0) {
-    return { ok: false, error: 'Drafting $ cap is required and must be a positive number — there is no default (Q2=A)' };
-  }
+  const { jobName, checkType, model, goal, source, destination, success, guardrails, capUsd } = card;
   if (!isSlug(jobName)) return { ok: false, error: 'Job name must be a kebab-case slug (letters, digits, dashes)' };
   if (jobNameTaken(jobName, card.jobsDirOverride ? { jobsDir: card.jobsDirOverride } : {})) {
     return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)` };
@@ -193,6 +190,14 @@ export function createSession(card, deps = {}) {
     resolvedSpecPath: /** @type {string|null} */ (null),
     error: /** @type {string|null} */ (null),
     outDir,
+    // draftSpentUsd (hamr's ruling 2026-09-28, "one cap covers drafting +
+    // run") — the KNOWN FLOOR of this session's own drafting spend, updated
+    // by `onCall` below off the SAME `metered` list `state.cost` already
+    // reads (never a second running total). Never $0 when a call came back
+    // unpriced (F6: unpriced is never free) — `known` below is the floor
+    // either way. `signRun` (src/panel/authorroutes.js) reads this figure
+    // straight off `state` to pass `--draft-spent-usd` to `run-u`.
+    draftSpentUsd: 0,
     // the short, human step label the progress indicator shows next to its
     // animated glyph (build item 3) — updated by `onPhase` below and by this
     // file's own top-level phase transitions; never a chat bubble of its own
@@ -281,6 +286,7 @@ export function createSession(card, deps = {}) {
     const known = metered.reduce((acc, c) => acc + (c.costUsd ?? 0), 0);
     const unpriced = metered.some((c) => c.costUsd === null);
     state.cost = unpriced ? `≥$${known.toFixed(4)} (unpriced calls present)` : `$${known.toFixed(4)}`;
+    state.draftSpentUsd = known;
   };
 
   const refuse = (message) => {
@@ -411,13 +417,13 @@ export function createSession(card, deps = {}) {
 
     state.phase = 'drafting';
     state.progressLabel = 'drafting';
-    say('system', `Drafting (${modelChoice.provider}/${MODEL}, cap $${card.draftingCapUsd})…`);
+    say('system', `Drafting (${modelChoice.provider}/${MODEL}, cap $${card.capUsd})…`);
     const authored = await authorCloseForJob({
       judgeModel: draftJudge.model,
       answers, verdictType, repoPath: prep.tree, lang: LANG,
       questions: questionsFor(verdictType),
       writeScope, provider, generate,
-      ceilingUsd: card.draftingCapUsd,
+      ceilingUsd: card.capUsd,
       onPhase, onCall,
       ask, confirmGenerate, isRepo: true, langResult,
       ...(deps.scout ? { scout: deps.scout } : {}),
@@ -466,7 +472,7 @@ export function createSession(card, deps = {}) {
     }
     const signing = await prepareSigningFn({
       spec, workdir: prep.tree, seedRef: authored.seedRef, timeoutMs,
-      shellCapUsd: spec.budgetUsd, ceilingUsd: card.draftingCapUsd, priorCalls: [...metered],
+      shellCapUsd: spec.budgetUsd, ceilingUsd: card.capUsd, priorCalls: [...metered],
       judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
       judgeModel: judge?.model ?? null,
       onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),

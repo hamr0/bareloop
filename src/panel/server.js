@@ -510,6 +510,10 @@ export function getRunDetail(runid, opts = {}) {
     died: death.died,
     stopReason: death.died ? death.why : summary.stopReason,
     spentUsd: summary.spentUsd,
+    // draftSpentUsd (hamr's ruling 2026-09-28) — the drafting share of this
+    // run's cap, or null when this run carried none. `src/replay.js`'s
+    // `moneyWithDraft` is the one place that decides how to render it.
+    draftSpentUsd: summary.draftSpentUsd,
     // died: a spend floor summed from real priced rounds present in the
     // file — never null/unknown when at least one priced round exists.
     // `null` on a non-died run (the normal `spentUsd`/`wallMs` fields above

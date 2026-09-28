@@ -222,10 +222,22 @@ export function signRun(session, claimedHash, o) {
   // array argv, never a shell string — `--approve <hash>` is a literal
   // element, checkable byte-for-byte by a test stubbing `spawnFn`, and there
   // is no shell to mis-quote a path or a hash through.
+  // hamr's ruling 2026-09-28 ("one cap covers drafting + run") — this
+  // session's own drafting spend (the known floor `authorsession.js`'s
+  // `onCall` tracks, off the SAME `metered` list the chat's cost readout
+  // already used) rides along so the run's own enforced ceiling is
+  // `Cap $ − drafting spent`, computed in the ONE place (`src/run.js`'s
+  // `remainingUsd`) that arithmetic lives. Omitted when there is nothing to
+  // report (a session that spent $0 drafting, e.g. every gate 1-3-only
+  // path) — `run-u`'s own flag default (0) is identical, so this is never a
+  // silent difference.
+  const draftSpentUsd = typeof session.state.draftSpentUsd === 'number' && session.state.draftSpentUsd > 0
+    ? session.state.draftSpentUsd : null;
   const args = [
     'systemd-inhibit', '--why=bareloop panel run',
     process.execPath, o.bareloopBin,
     'run-u', '--spec', session.state.resolvedSpecPath, '--approve', session.state.specHash,
+    ...(draftSpentUsd !== null ? ['--draft-spent-usd', String(draftSpentUsd)] : []),
   ];
   /** @type {number|null} */
   let logFd = null;
@@ -235,6 +247,7 @@ export function signRun(session, claimedHash, o) {
   });
   if (typeof child?.unref === 'function') child.unref();
   session.state.phase = 'signed';
-  session.state.messages.push({ role: 'system', text: `signed — spec hash ${session.state.specHash} — run starting detached, own log at ${logFile}` });
+  const draftLine = draftSpentUsd !== null ? ` — drafting spent $${draftSpentUsd.toFixed(4)} (folds out of the run's own cap)` : '';
+  session.state.messages.push({ role: 'system', text: `signed — spec hash ${session.state.specHash}${draftLine} — run starting detached, own log at ${logFile}` });
   return { ok: true, job: session.state.resolvedSpecPath };
 }
