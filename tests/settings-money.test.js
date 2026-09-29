@@ -113,12 +113,12 @@ test('chat can never reach Settings: authoring routes have no /api/settings hand
   assert.equal(/updateConfig/.test(session), false, 'the chat session engine never imports the config writer');
 });
 
-test('panel page: Settings button, Money tab, limit input, breakdown table are in the page; money renders "at least" for a floor', () => {
+test('panel page: Settings button, Money tab, limit input, breakdown table are in the page; money cells carry ≥ for a floor', () => {
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
-  for (const id of ['btn-settings', 'settings-view', 'ml-total', 'ml-month', 'ml-money', 'ml-breakdown']) {
+  for (const id of ['btn-settings', 'settings-view', 'ml-usd', 'ml-tokens', 'ml-money', 'ml-breakdown']) {
     assert.ok(html.includes(`id="${id}"`), id);
   }
-  assert.match(html, /\(atLeast \? "at least " : ""\) \+ panelMoney\(n\)/);
+  assert.match(html, /function moneyCell\(n, atLeast\)\{ return \(atLeast \? "≥" : ""\) \+ panelMoney\(n\)/);
   assert.doesNotMatch(html, /Monthly time limit/, 'R1: the monthly TIME limit is dropped');
 });
 
@@ -224,9 +224,12 @@ test('top tiles carry tokens: /api/settings/money returns totalTokens/monthToken
   assert.equal(body.monthTokens, 1500);
   assert.equal(body.totalTokens, 2_001_500);
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
-  for (const id of ['ml-total-tokens', 'ml-month-tokens']) assert.ok(html.includes(`id="${id}"`), id);
-  assert.match(html, /"ml-total-tokens"\)\.textContent = tokensText\(r\.totalTokens\)/);
-  assert.match(html, /"ml-month-tokens"\)\.textContent = tokensText\(r\.monthTokens\)/);
+  // exactly two header tiles, month first then to date, same formatters as the table
+  assert.ok(html.includes('<label>$ month / to date</label>') && html.includes('<label>Tokens month / to date</label>'));
+  assert.equal((html.match(/class="money-value"/g) || []).length, 2);
+  for (const gone of ['Total spent to date', 'This month spent', 'Tokens to date', 'Tokens this month', 'ml-total', 'ml-month']) assert.ok(!html.includes(gone), gone);
+  assert.match(html, /"ml-usd"\)\.textContent = moneyCell\(r\.monthUsd, r\.monthAtLeast\) \+ " \/ " \+ moneyCell\(r\.totalUsd, r\.totalAtLeast\)/);
+  assert.match(html, /"ml-tokens"\)\.textContent = tokensText\(r\.monthTokens\) \+ " \/ " \+ tokensText\(r\.totalTokens\)/);
 });
 
 test('breakdown table is exactly 4 columns and its cells format per the rules: 2-dec/<$0.01 money, ≥ on at-least, 1-dec minutes under 100 else thousands, unknown never 0, tokens k/M', () => {

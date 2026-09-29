@@ -380,7 +380,7 @@
   .settings-header h2{margin:0;font-size:15px;display:inline;}
   .settings-header h2::before{content:"┤ ";color:var(--text-faint);}
   .settings-header h2::after{content:" ├";color:var(--text-faint);}
-  .money-strip{display:grid;grid-template-columns:repeat(5, 1fr);gap:12px;align-items:end;padding:10px;border:1px solid var(--border-strong);background:var(--panel2);}
+  .money-strip{display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;align-items:end;padding:10px;border:1px solid var(--border-strong);background:var(--panel2);}
   .money-item{min-width:0;}
   .money-item label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;}
   .money-value{font-size:16px;font-weight:700;padding:6px 0;overflow-wrap:anywhere;}
@@ -678,20 +678,12 @@
       <section id="panel-money" class="tabpanel" role="tabpanel" aria-labelledby="tab-money" hidden>
         <div class="money-strip" data-testid="money-strip">
           <div class="money-item">
-            <label>Total spent to date</label>
-            <div class="money-value" id="ml-total" data-testid="ml-total">…</div>
+            <label>$ month / to date</label>
+            <div class="money-value" id="ml-usd" data-testid="ml-usd">…</div>
           </div>
           <div class="money-item">
-            <label>This month spent</label>
-            <div class="money-value" id="ml-month" data-testid="ml-month">…</div>
-          </div>
-          <div class="money-item">
-            <label>Tokens to date</label>
-            <div class="money-value" id="ml-total-tokens" data-testid="ml-total-tokens">…</div>
-          </div>
-          <div class="money-item">
-            <label>Tokens this month</label>
-            <div class="money-value" id="ml-month-tokens" data-testid="ml-month-tokens">…</div>
+            <label>Tokens month / to date</label>
+            <div class="money-value" id="ml-tokens" data-testid="ml-tokens">…</div>
           </div>
           <div class="money-item">
             <label for="ml-money">Monthly money limit ($)</label>
@@ -2772,8 +2764,6 @@
     var limitInput = document.getElementById("ml-money");
     var noteEl = document.getElementById("ml-note");
     var NOTE_DEFAULT = noteEl.textContent;
-    // "at least" whenever the figure is a floor — never a clean number for an unknown total
-    function moneyText(n, atLeast){ return (atLeast ? "at least " : "") + panelMoney(n); }
     // table cells: an "at least" figure keeps its marker as a "≥" prefix on that number — never dropped
     function moneyCell(n, atLeast){ return (atLeast ? "≥" : "") + panelMoney(n); }
     // wall minutes: "unknown" when no run had a known wall (never a clean 0); 1 decimal under 100, else a whole number with a thousands separator
@@ -2787,10 +2777,8 @@
     function loadMoney(){
       authorGet("/api/settings/money").then(function(r){
         if(!r || !r.ok){ noteEl.textContent = "could not read your spend"; return; }
-        document.getElementById("ml-total").textContent = moneyText(r.totalUsd, r.totalAtLeast);
-        document.getElementById("ml-month").textContent = moneyText(r.monthUsd, r.monthAtLeast);
-        document.getElementById("ml-total-tokens").textContent = tokensText(r.totalTokens);
-        document.getElementById("ml-month-tokens").textContent = tokensText(r.monthTokens);
+        document.getElementById("ml-usd").textContent = moneyCell(r.monthUsd, r.monthAtLeast) + " / " + moneyCell(r.totalUsd, r.totalAtLeast);
+        document.getElementById("ml-tokens").textContent = tokensText(r.monthTokens) + " / " + tokensText(r.totalTokens);
         if(document.activeElement !== limitInput){
           limitInput.value = r.monthlyLimitUsd === null ? "" : r.monthlyLimitUsd.toFixed(2);
         }
