@@ -311,6 +311,90 @@ test('userrun.main cannot build a bundle run: the bundle seam is reachable only 
   assert.doesNotMatch(src.slice(at), /bundle/i, 'main (the argv door) never names or builds `bundle` — a local job cannot reach it');
 });
 
+test('bareloop run --resume: a cap-halted bundle run resumes into the SAME worktree, folds prior spend, mints a new runs/<id>, records resumedFrom, and blesses on the eventual green', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  const t1 = 1_700_000_200_000;
+  const id1 = t1.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', id1);
+
+  // leg 1: a near-$0 tightened budget cap-halts it before it can write anything
+  const out1 = sink(); const err1 = sink();
+  const rc1 = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '0.0005'], {
+    stdout: out1, stderr: err1, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: home,
+  });
+  assert.equal(rc1, 1, `leg 1 must halt: ${out1.text()}\n${err1.text()}`);
+  assert.equal(existsSync(join(bundleDir, 'blessing.json')), false, 'a halted first run blesses nothing');
+  const run1 = JSON.parse(readFileSync(join(bundleDir, 'runs', id1, 'run.json'), 'utf8'));
+  assert.equal(run1.worktree, worktree);
+  assert.equal(run1.resumedFrom, undefined);
+  assert.match(out1.text(), /bareloop run .* --resume /, 'the halt readout names the bundle door\'s own resume command');
+
+  // leg 2: resume by run id, no --repo needed
+  const t2 = 1_700_000_300_000;
+  const id2 = t2.toString(36);
+  const out2 = sink(); const err2 = sink();
+  const rc2 = await main(['run', bundleDir, '--resume', id1, '--approve', bundleHash], {
+    // the resumed leg re-enters the accepted plan at its step: no scout, no draft
+    stdout: out2, stderr: err2, cwd: process.cwd(), now: makeNow(t2), runlistHome: home,
+    provider: scriptedProvider([
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(worktree, 'src', 'mod.mjs'), content: 'export const x = 1;\nMARKER_OK\n' })] },
+      { text: 'wrote the marker' },
+    ]),
+  });
+  assert.equal(rc2, 0, `the resume must green: ${out2.text()}\n${err2.text()}`);
+  assert.match(out2.text(), /outcome   green/);
+  const run2 = JSON.parse(readFileSync(join(bundleDir, 'runs', id2, 'run.json'), 'utf8'));
+  assert.equal(run2.worktree, worktree, 'the SAME worktree, not a fresh one');
+  assert.equal(run2.resumedFrom, id1);
+  assert.equal(existsSync(join(repo, '.bareloop', 'wt', id2)), false, 'no second worktree');
+  const spine2 = readFileSync(join(bundleDir, 'runs', id2, 'spine.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const start = spine2.find((e) => e.type === 'job-start');
+  assert.ok(start.priorSpentUsd > 0, `the halted leg's spend is folded in: ${JSON.stringify(start)}`);
+  const rows = readFileSync(join(bundleDir, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1].resumedFrom, id1);
+  assert.equal(rows[1].worktree, worktree);
+  const blessing = JSON.parse(readFileSync(join(bundleDir, 'blessing.json'), 'utf8'));
+  assert.equal(blessing.runid, id2, 'the eventual green blesses');
+});
+
+test('bareloop run --resume: refuses at $0 a run with no run.json, a vanished worktree, a different --repo, and an unblessed bundle without --approve', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const run = async (/** @type {string[]} */ a) => {
+    const out = sink(); const err = sink();
+    const rc = await main(['run', bundleDir, ...a], { stdout: out, stderr: err, cwd: process.cwd(), provider, runlistHome: home });
+    return { rc, said: out.text() + err.text() };
+  };
+  let r = await run(['--resume', 'nosuchid', '--approve', bundleHash]);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /not a run of this bundle/);
+  r = await run(['--resume', '../../etc', '--approve', bundleHash]);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /not a run id/);
+
+  // a recorded run whose worktree is gone, then one asked with a different repo
+  const dir = join(bundleDir, 'runs', 'abc');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'run.json'), JSON.stringify({ runid: 'abc', worktree: join(repo, '.bareloop', 'wt', 'abc'), seed: 'x', repo }));
+  r = await run(['--resume', 'abc', '--approve', bundleHash]);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /is gone/);
+  r = await run(['--resume', 'abc', '--repo', tmp(t, 'cli-other-repo-'), '--approve', bundleHash]);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /not the repo run abc used/);
+  r = await run(['--resume', 'abc']);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /--approve .* is required/, 'an unblessed bundle needs --approve on a resume too');
+  assert.deepEqual(provider.calls, []);
+});
+
 test('bareloop run: a tampered bundle reds bundle-tampered BEFORE any worktree/provider', async (t) => {
   const { bundleDir } = await exportFixture(t);
   const scriptFile = join(bundleDir, 'close', 'close.mjs');

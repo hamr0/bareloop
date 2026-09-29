@@ -15,7 +15,7 @@
 
 import { hostname } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import {
@@ -23,10 +23,11 @@ import {
 } from './bundle.js';
 import { jobSpecHash } from './job.js';
 import { parseJsonl } from './replayio.js';
-import { startRun } from './userrun.js';
+import { startRun, resumeRun } from './userrun.js';
 
 /**
  * `bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]`
+ * `bareloop run <bundleDir> --resume <runid> [--repo <path>] [--budget N] [--wall MIN] [--approve <bundleHash>]`
  * @param {string[]} args
  * @param {{
  *   out: (s: string) => void, err: (s: string) => void, cwd: string,
@@ -42,12 +43,13 @@ export async function bundleMain(args, {
   const { positional, flags } = parseFlags(args);
   const bundleDirArg = positional[0];
   const repoArg = typeof flags.repo === 'string' ? flags.repo : undefined;
-  if (!bundleDirArg || !repoArg) {
-    err('usage: bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]');
+  const resumeArg = typeof flags.resume === 'string' ? flags.resume : undefined;
+  if (flags.resume === true || (!bundleDirArg) || (resumeArg === undefined && !repoArg)) {
+    err('usage: bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]\n'
+      + '       bareloop run <bundleDir> --resume <runid> [--repo <path>] [--budget N] [--wall MIN] [--approve <bundleHash>]');
     return 1;
   }
   const bundleDir = resolve(cwd, bundleDirArg);
-  const repo = resolve(cwd, repoArg);
 
   // 1. readBundle — this must complete, clean, before anything else touches the bundle or
   // the repo. Any red (incl. bundle-tampered) stops here.
@@ -112,18 +114,54 @@ export async function bundleMain(args, {
   // 4. the tree — refuse a non-repo, a repo with no commit, or a collision; ALWAYS fresh,
   // never reused (a reused worktree reads last run's edits as "already-green" — the
   // negative POC's exact finding). Only PLANNED here: the engine creates it (prepareTree)
-  // after its own $0 refusals, so a refusal leaves no worktree behind.
+  // after its own $0 refusals, so a refusal leaves no worktree behind. A RESUME is the one
+  // exception: it re-enters the SAME worktree its halted run left (recorded in that run's
+  // `run.json`), and a gone tree is a stop, never a silent fresh start.
+  const runid = now().toString(36);
+  /** @type {string} */
+  let repo;
   /** @type {string} */
   let seed;
-  try {
-    seed = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  } catch (e) {
-    err(`--repo ${repoArg} must be a git repository with at least one commit: ${/** @type {Error} */ (e).message}`);
-    return 1;
+  /** @type {string} */
+  let worktree;
+  /** @type {string|null} */
+  let deadSpine = null;
+  if (resumeArg !== undefined) {
+    if (!/^[a-z0-9]+$/.test(resumeArg)) { err(`--resume ${JSON.stringify(resumeArg)} is not a run id of this bundle`); return 1; }
+    const deadRunJson = join(bundleDir, 'runs', resumeArg, 'run.json');
+    /** @type {any} */
+    let rec;
+    try { rec = JSON.parse(readFileSync(deadRunJson, 'utf8')); } catch {
+      err(`--resume ${resumeArg}: no readable ${deadRunJson} — not a run of this bundle (or one that never started)`);
+      return 1;
+    }
+    if (typeof rec?.worktree !== 'string' || typeof rec?.seed !== 'string' || typeof rec?.repo !== 'string') {
+      err(`--resume ${resumeArg}: ${deadRunJson} does not record a worktree, seed and repo`);
+      return 1;
+    }
+    if (repoArg !== undefined && resolve(cwd, repoArg) !== rec.repo) {
+      err(`--repo ${repoArg} is not the repo run ${resumeArg} used (${rec.repo}) — a resume re-enters that run's own worktree`);
+      return 1;
+    }
+    if (!existsSync(rec.worktree)) {
+      err(`--resume ${resumeArg}: its worktree ${rec.worktree} is gone — a resume needs the tree the halted run left`);
+      return 1;
+    }
+    repo = rec.repo;
+    seed = rec.seed;
+    worktree = rec.worktree;
+    deadSpine = join(bundleDir, 'runs', resumeArg, 'spine.jsonl');
+  } else {
+    repo = resolve(cwd, /** @type {string} */ (repoArg));
+    try {
+      seed = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    } catch (e) {
+      err(`--repo ${repoArg} must be a git repository with at least one commit: ${/** @type {Error} */ (e).message}`);
+      return 1;
+    }
+    worktree = join(repo, '.bareloop', 'wt', runid);
+    if (existsSync(worktree)) { err(`worktree already exists: ${worktree}`); return 1; }
   }
-  const runid = now().toString(36);
-  const worktree = join(repo, '.bareloop', 'wt', runid);
-  if (existsSync(worktree)) { err(`worktree already exists: ${worktree}`); return 1; }
 
   // 5. resolve (in-memory $BARELOOP_BUNDLE substitution) + tighten. The envelope tightens
   // the ACTUAL spec that runs (budgetUsd/maxWallMs have no separate override — the library
@@ -137,21 +175,30 @@ export async function bundleMain(args, {
 
   const runDir = join(bundleDir, 'runs', runid);
   const spineFile = join(runDir, 'spine.jsonl');
+  // `run.json` is written by EVERY leg (a resume leg's points at the SAME worktree/seed): it is
+  // the bundle-local, always-present record of where the tree is — history.jsonl is written only
+  // at job-end (a killed run has none) and the run list is machine-global.
   const prepareTree = () => {
-    mkdirSync(dirname(worktree), { recursive: true });
-    try {
-      execFileSync('git', ['-C', repo, 'worktree', 'add', '--detach', worktree, 'HEAD'], { encoding: 'utf8' });
-    } catch (e) {
-      throw new Error(`git worktree add failed: ${/** @type {Error} */ (e).message}`);
+    if (deadSpine === null) {
+      mkdirSync(dirname(worktree), { recursive: true });
+      try {
+        execFileSync('git', ['-C', repo, 'worktree', 'add', '--detach', worktree, 'HEAD'], { encoding: 'utf8' });
+      } catch (e) {
+        throw new Error(`git worktree add failed: ${/** @type {Error} */ (e).message}`);
+      }
     }
     mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, 'run.json'), `${JSON.stringify({
+      runid, worktree, seed, repo, at: new Date(now()).toISOString(), ...(resumeArg === undefined ? {} : { resumedFrom: resumeArg }),
+    }, null, 2)}\n`);
   };
 
   // 6. the engine. `deps` passes through exactly as `bareloop run-u` passes it, so every
   // test seam (provider/providerFor/judgeProvider/runlistHome/keysHome) is the same one.
   let engineCode;
   try {
-    engineCode = await startRun(runSpec, {
+    /** @type {import('./userrun.js').RunOpts} */
+    const opts = {
       workdir: worktree,
       seed,
       approve: approveHash,
@@ -159,11 +206,12 @@ export async function bundleMain(args, {
       bundle: {
         runid,
         runDir,
-        invoke: `bareloop run ${bundleDirArg} --repo ${repoArg}`,
+        invoke: `bareloop run ${bundleDirArg} --repo ${repo}`,
         printApprove: manifest.bundleHash,
         prepareTree,
       },
-    });
+    };
+    engineCode = deadSpine === null ? await startRun(runSpec, opts) : await resumeRun(deadSpine, { ...opts, spec: runSpec });
   } catch (e) {
     err(`${/** @type {Error} */ (e).message}`);
     return 1;
@@ -191,6 +239,7 @@ export async function bundleMain(args, {
     branch,
     bundleHash: manifest.bundleHash,
     approveHash,
+    ...(resumeArg === undefined ? {} : { resumedFrom: resumeArg }),
   });
   if (outcome === 'green' && !bundle.blessing) {
     bless(bundleDir, {
