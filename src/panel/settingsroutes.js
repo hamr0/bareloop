@@ -64,6 +64,7 @@ export function createSettingsRoutes(opts) {
           configProblem: cfg.problem,
           totalUsd: s.total.usd, totalAtLeast: s.total.atLeast,
           monthUsd: s.month.usd, monthAtLeast: s.month.atLeast,
+          totalTokens: s.total.tokens, monthTokens: s.month.tokens,
           monthlyLimitUsd: typeof limit === 'number' && Number.isFinite(limit) ? limit : null,
           byProvider: Object.values(s.byProvider).sort((a, b) => b.totalUsd - a.totalUsd),
         });

@@ -201,13 +201,13 @@ export function monthSpend(opts = {}) {
  * pooled into another row). Any leg with unknown spend makes the figure it belongs to
  * an "at least".
  * @param {{ home?: string, now?: () => number, rows?: readonly import('./providerrows.js').KeyRow[] }} [opts] `rows` = the Providers rows: when given, `tokensByRow` sums each row's tokens
- * @returns {{ tokensByRow: Record<string, number>, total: {usd: number, atLeast: boolean}, month: {usd: number, atLeast: boolean},
+ * @returns {{ tokensByRow: Record<string, number>, total: {usd: number, atLeast: boolean, tokens: number}, month: {usd: number, atLeast: boolean, tokens: number},
  *   byProvider: Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number, monthWallMs: number|null, monthWallAtLeast: boolean, totalWallMs: number|null, totalWallAtLeast: boolean}> }}
  */
 export function spendSummary(opts = {}) {
   const nowDate = new Date((opts.now ?? Date.now)());
-  const total = { usd: 0, atLeast: false };
-  const month = { usd: 0, atLeast: false };
+  const total = { usd: 0, atLeast: false, tokens: 0 };
+  const month = { usd: 0, atLeast: false, tokens: 0 };
   /** @type {Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number, monthWallMs: number|null, monthWallAtLeast: boolean, totalWallMs: number|null, totalWallAtLeast: boolean}>} */
   const byProvider = {};
   /** runs per provider in each scope, and how many had a known wall — unknown is never 0
@@ -237,12 +237,12 @@ export function spendSummary(opts = {}) {
     const unknown = leg.unreadable || !leg.complete;
     const wallKnown = !leg.unreadable && leg.wallMs !== null;
     const wallAtLeast = !wallKnown || !leg.wallComplete;
-    total.usd += leg.usd; if (unknown) total.atLeast = true;
+    total.usd += leg.usd; total.tokens += leg.tokens; if (unknown) total.atLeast = true;
     p.totalUsd += leg.usd; p.tokens += leg.tokens; p.vouchedRounds += leg.vouchedRounds; p.otherRounds += leg.otherRounds; if (unknown) p.totalAtLeast = true;
     if (wallKnown) { p.totalWallMs = /** @type {number} */ (p.totalWallMs) + /** @type {number} */ (leg.wallMs); w.totalKnown += 1; }
     if (wallAtLeast) p.totalWallAtLeast = true;
     if (inMonth) {
-      month.usd += leg.usd; if (unknown) month.atLeast = true;
+      month.usd += leg.usd; month.tokens += leg.tokens; if (unknown) month.atLeast = true;
       p.monthUsd += leg.usd; if (unknown) p.monthAtLeast = true;
       w.monthRuns += 1;
       if (wallKnown) { p.monthWallMs = /** @type {number} */ (p.monthWallMs) + /** @type {number} */ (leg.wallMs); w.monthKnown += 1; }

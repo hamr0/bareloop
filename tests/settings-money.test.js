@@ -38,8 +38,8 @@ test('spendSummary: total vs this month, per provider (DeepSeek apart from OpenA
   addRun(home, d, { runid: 'c', atIso: at(2026, 8, 3), provider: 'openai-api', baseUrl: DEEPSEEK_BASE_URL, usd: 1, tokens: 200 });
   addRun(home, d, { runid: 'd', atIso: at(2026, 8, 4), provider: 'openai-api', usd: 0.5, tokens: 100 });
   const s = spendSummary({ home, now: NOW });
-  assert.deepEqual(s.total, { usd: 8.5, atLeast: false });
-  assert.deepEqual(s.month, { usd: 3.5, atLeast: false });
+  assert.deepEqual(s.total, { usd: 8.5, atLeast: false, tokens: 1800 });
+  assert.deepEqual(s.month, { usd: 3.5, atLeast: false, tokens: 1300 }, 'last month\'s 500 tokens stay out of this month');
   assert.deepEqual(Object.keys(s.byProvider).sort(), ['anthropic', 'deepseek', 'openai']);
   assert.equal(s.byProvider.anthropic.monthUsd, 2);
   assert.equal(s.byProvider.anthropic.totalUsd, 7);
@@ -213,4 +213,19 @@ test('monthly limit auto-saves on change: no Save button, the POST sends the raw
   assert.equal(readConfig({ home }).config.monthlyLimitUsd, 12.5, 'refusal saves nothing');
   assert.equal((await post(null)).status, 200);
   assert.equal(readConfig({ home }).config.monthlyLimitUsd ?? null, null, 'blank = no limit');
+});
+
+test('top tiles carry tokens: /api/settings/money returns totalTokens/monthTokens from the one spendSummary walk, and the page renders them k/M', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  addRun(home, d, { runid: 't1', atIso: new Date().toISOString(), provider: 'anthropic-api', usd: 1, tokens: 1500 });
+  addRun(home, d, { runid: 't2', atIso: new Date(2020, 0, 5).toISOString(), provider: 'anthropic-api', usd: 1, tokens: 2_000_000 });
+  const { base, token } = await panel(t, home);
+  const body = await (await fetch(`${base}/api/settings/money`, { headers: { 'x-bareloop-token': token } })).json();
+  assert.equal(body.monthTokens, 1500);
+  assert.equal(body.totalTokens, 2_001_500);
+  const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  for (const id of ['ml-total-tokens', 'ml-month-tokens']) assert.ok(html.includes(`id="${id}"`), id);
+  assert.match(html, /"ml-total-tokens"\)\.textContent = tokensText\(r\.totalTokens\)/);
+  assert.match(html, /"ml-month-tokens"\)\.textContent = tokensText\(r\.monthTokens\)/);
 });

@@ -380,7 +380,7 @@
   .settings-header h2{margin:0;font-size:15px;display:inline;}
   .settings-header h2::before{content:"┤ ";color:var(--text-faint);}
   .settings-header h2::after{content:" ├";color:var(--text-faint);}
-  .money-strip{display:grid;grid-template-columns:repeat(4, 1fr);gap:12px;align-items:end;padding:10px;border:1px solid var(--border-strong);background:var(--panel2);}
+  .money-strip{display:grid;grid-template-columns:repeat(5, 1fr);gap:12px;align-items:end;padding:10px;border:1px solid var(--border-strong);background:var(--panel2);}
   .money-item{min-width:0;}
   .money-item label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;}
   .money-value{font-size:16px;font-weight:700;padding:6px 0;overflow-wrap:anywhere;}
@@ -684,6 +684,14 @@
           <div class="money-item">
             <label>This month spent</label>
             <div class="money-value" id="ml-month" data-testid="ml-month">…</div>
+          </div>
+          <div class="money-item">
+            <label>Tokens to date</label>
+            <div class="money-value" id="ml-total-tokens" data-testid="ml-total-tokens">…</div>
+          </div>
+          <div class="money-item">
+            <label>Tokens this month</label>
+            <div class="money-value" id="ml-month-tokens" data-testid="ml-month-tokens">…</div>
           </div>
           <div class="money-item">
             <label for="ml-money">Monthly money limit ($)</label>
@@ -2779,6 +2787,8 @@
         if(!r || !r.ok){ noteEl.textContent = "could not read your spend"; return; }
         document.getElementById("ml-total").textContent = moneyText(r.totalUsd, r.totalAtLeast);
         document.getElementById("ml-month").textContent = moneyText(r.monthUsd, r.monthAtLeast);
+        document.getElementById("ml-total-tokens").textContent = tokensText(r.totalTokens);
+        document.getElementById("ml-month-tokens").textContent = tokensText(r.monthTokens);
         if(document.activeElement !== limitInput){
           limitInput.value = r.monthlyLimitUsd === null ? "" : r.monthlyLimitUsd.toFixed(2);
         }
