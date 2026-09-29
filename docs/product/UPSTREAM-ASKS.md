@@ -322,7 +322,7 @@ the signal. **The load-bearing change is reading `stop_reason`.**
    and a fix that errors on every zero-tool-call round (breaking every consumer's happy path) fails.
 4. **All three must FAIL against 0.26.2.**
 
-## OPEN (2026-07-14) — BA-7: thinking blocks are neither requested nor preserved
+## DELIVERED (2026-07-14) — BA-7: thinking blocks are neither requested nor preserved
 
 **Package:** bare-agent (`src/provider-anthropic.js`, `src/loop.js`) · **Severity: HIGH —
 correctness and protocol conformance. NOT performance.**

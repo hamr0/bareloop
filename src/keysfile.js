@@ -76,7 +76,7 @@ export function filledKeyNames(home) {
 }
 
 /**
- * Create the keys file with the four empty preset lines when — and only when — it does not
+ * Create the keys file with the five empty preset lines when — and only when — it does not
  * exist (mode 600). An existing file is never touched.
  * @param {readonly string[]} presetNames the names to seed, in order
  * @param {string} [home]
