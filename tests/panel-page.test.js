@@ -2243,6 +2243,12 @@ test('Job card cap row: $ cap | Time cap only (P4b: no Token price field anywher
   assert.doesNotMatch(html, /jf-cap-draft/, 'the separate Drafting $ cap field is gone (superseded 2026-09-28)');
 });
 
+test('fix (2026-09-29): the cap-row is two equal full-width columns (Cap $ | Time cap) at every width, no stacking media rule', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /\.cap-row\{display:grid;grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\);/);
+  assert.doesNotMatch(html, /\.cap-row\{grid-template-columns:1fr;\}/);
+});
+
 test('fix (2026-09-28): the cap-row labels read "Cap $" and "Time cap (min)"; no "Drafting cap $" label exists', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /<label for="jf-cap-money">Cap \$<\/label>/);
