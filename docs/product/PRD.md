@@ -1270,3 +1270,15 @@ environment; they never enter the tree, the spine, the configs, or the ledger).
 logic of its own. The panel is built per `docs/product/PANEL-BUILD.md`, which holds the
 measured gap between today's code and a panel and the rung-by-rung build plan (each rung its
 own exit condition, per the build-ladder discipline this PRD already holds at §1).
+
+### One runner: `bareloop run <bundle>` is a door to the run-u engine (v1.85 — 2026-09-29)
+
+The exported-bundle runner no longer has a second execution path: `src/bundlerun.js` does the
+bundle-specific $0 checks and hands the run to `src/userrun.js`, the engine `run-u` and the panel
+already use, so keys, providers, the monthly limit, the watchdog and the readout are defined once.
+Rulings (hamr, 2026-09-29): the watchdog ships in `src/` (F205); one close-fix cap (run-u's 4) for
+every caller; a missing key is the engine's exit-2 refusal; a bundle green mints no bridge file;
+`--door/--decide/--review-door` are not exposed on `run`; bundles resume
+(`bareloop run <bundle> --resume <runid>`). The arbiter rules are unchanged (tighten-only
+`--budget/--wall`, merge stays human, the bundleHash is the human signature). Detail: `CHANGELOG.md`
+Unreleased, `bareloop.context.md` "The CLI".

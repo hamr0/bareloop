@@ -1375,7 +1375,7 @@ async function execute(ctx) {
   /** @type {string|undefined} */
   let judgeApiKey;
   // TEST SEAM (constraint: `deps.provider` skips the real-key check entirely,
-  // the same shape src/cli.js's `doRun` already uses) — a caller that hands in
+  // the same shape src/bundlerun.js's door uses) — a caller that hands in
   // its own provider IS the run, so nothing here needs a real secret.
   if (!deps.provider) {
     // P4b — the Settings row (keys file line) whose API shape + Base URL match this spec
@@ -1529,7 +1529,7 @@ async function execute(ctx) {
   // for an openai-api job that names none (bare-agent's OpenAIProvider then
   // defaults to api.openai.com/v1 on its own).
   const baseUrl = typeof spec.baseUrl === 'string' ? spec.baseUrl : undefined;
-  // TEST SEAM — same shape as src/cli.js's `doRun`: a caller that supplies
+  // TEST SEAM — same shape as the bundle door (src/bundlerun.js): a caller that supplies
   // `deps.provider` skips the real-key check above entirely and this
   // construction never runs (a scripted provider IS the run).
   let provider = deps.provider;

@@ -13,7 +13,7 @@
 // caller doesn't know one) — a relative path here would resolve differently
 // depending on who later reads the file. `via` says how the row was minted:
 // `'run-u'` (src/userrun.js, the person-path run), `'bundle'`
-// (src/cli.js:doRun, `bareloop run`), or `'backfill'` (`bareloop runs
+// (src/userrun.js's bundle door, `bareloop run`), or `'backfill'` (`bareloop runs
 // backfill`, reconstructed from an archived spine already on disk).
 //
 // SECRETS: a row carries only paths/ids/names — never a key, a prompt, or any

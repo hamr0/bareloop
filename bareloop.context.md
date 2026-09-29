@@ -91,8 +91,9 @@ inherited rule carries the green that minted it and the contrast that attributed
   chose. `JUDGE_MODEL` stays exported as the pre-item-32 pin — no grading path reads it.
   The judge's key follows the resolved judge provider's own `envKey`, with `JUDGE_API_KEY`
   as a role-named override in front of it. The bundle runner
-  (`bareloop run`) is `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would
-  have needed, rather than constructing another provider with the wrong key.
+  (`bareloop run`) is a door to this same engine (`src/bundlerun.js` → `src/userrun.js`), so it
+  reads whatever key the bundle's provider names (keys file or env) and refuses a missing one
+  at $0, exit 2, naming it.
 - **Reuse — where a workflow comes from:** a plain `runJob` always drafts cold. Passing
   `bridge` starts from one standalone bridge file (`src/reuse.js`'s envelope, `## The reuse
   ENVELOPE and runReuse` below). The CLI's `--registry <dir>` / library-level `registryDir`
@@ -1215,9 +1216,9 @@ readout seed (grades) — the distinction matters and is spelled out there.
 
 `resumable` (default `true`, PRD item 27(c)/F130) says whether THIS runner supports
 `--resume` at all — `run-u.mjs` leaves it at the default (byte-identical to before this
-flag existed); the exported bundle CLI (`src/cli.js`) passes `false` so the run's
-escalation tail says "resume is `run-u`-only in v1" instead of naming a flag it does not
-implement.
+flag existed). The exported bundle CLI is no longer a second `runJob` caller (`bareloop run`
+goes through `src/userrun.js`), so it leaves it at the default too and supports
+`bareloop run <bundle> --resume <runid>`; the F130 `resumable: false` was retired with `doRun`.
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -2986,7 +2987,8 @@ separate tarball step).
   README.md           the operator questions, in the order `bareloop run` asks them
   blessing.json        absent at export; written by the run that first greens it
   history.jsonl        absent at export; one line appended per `bareloop run` on this machine
-  runs/<runid>/        absent at export; one per run — that run's own spine.jsonl + gate-audit.jsonl
+  runs/<runid>/        absent at export; one per run leg — spine.jsonl, gate-audit.jsonl, close/ (the
+                       close's books) and run.json ({runid, worktree, seed, repo, at, resumedFrom?})
 ```
 
 **`bundleHash`** = sha256 over the sorted `path:contentSha256` lines of exactly `spec.json`
@@ -3001,7 +3003,7 @@ a `package.json` (name/version/`dependencies: {"bareloop": "^…"}`, `private: t
 corrects an earlier, now-stale reading of this section that claimed no `package.json` was
 written; `tests/bundle.test.js` proves both the write and the hash-exclusion directly. The
 `runs/<runid>/` directory (this run's relocated `spine.jsonl`/`gate-audit.jsonl`,
-written by `bareloop run`, step 6 below) is real and live but is not in the frozen spec's
+written by `bareloop run`, step 6 below; `run.json` records where the worktree is, for a resume) is real and live but is not in the frozen spec's
 layout table at all. `history.jsonl`'s row also carries `bundleHash` and `approveHash`
 (the POC-fact correction, below) beyond the fields the original layout table named.
 
@@ -3126,8 +3128,8 @@ script leaves the signed spec's own hash intact. `runJob`'s close-first precheck
 one — a fake green, $0 spent, no work done, reported as success. `readBundle`'s
 `bundle-tampered` red is therefore not a courtesy check: it is the only thing standing
 between a swapped script and a fake green, so `bareloop run` calls it as literal step 1,
-before the envelope check, before the key check, before the worktree, before `runJob` is
-ever reached.
+before the envelope check, before the blessing check, before any key is read, before the
+worktree, before the engine is ever reached.
 
 #### The CLI — `bareloop export | run | history | replay | run-u | interview | author`, `bin/bareloop.mjs`
 
@@ -3138,7 +3140,7 @@ ever reached.
 (`export { main as cliMain } from './cli.js'` — renamed on export so it never collides with
 some other module's own generic `main`). `cliMain(argv, deps)` is the in-process test/
 integration seam: pass `deps.provider` (and optionally `providerFor`/`judgeProvider`) and the
-real `ANTHROPIC_API_KEY` check is skipped entirely — a scripted provider *is* the run, the
+real key check is skipped entirely — a scripted provider *is* the run, the
 same seam `tests/planrun.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
 
@@ -3158,54 +3160,58 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   missing flag, `0` on success.
 
 - **`bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]`**
-  — the exact order below; no step is ever reordered:
+  and **`bareloop run <bundleDir> --resume <runid> [--repo <path>] [...]`** — a thin door
+  (`src/bundlerun.js`) to the same engine `bareloop run-u` drives (`src/userrun.js`): one
+  runner, so providers, keys (any provider the bundle's spec names — the keys file or env), the
+  judge, the monthly $ limit, the outside watchdog and the readout are that engine's. The door
+  does only what is bundle-specific, in this order, no step reordered:
   1. `readBundle(bundleDir)` — the tamper check (N4, above). Any red stops here, exit `1`.
   2. `checkBundleDeps(bundleDir)` (F128) — can the bundle's own `close/` directory resolve
-     `require.resolve('bareloop')`? A bundle installed the WRONG way (as someone else's
-     dependency — see the corrected adopter flow below) has no `node_modules` of its own,
-     which would otherwise crash the close deep inside the precheck with a bare
-     `ERR_MODULE_NOT_FOUND`. A red here (`bundle-deps-missing`) prints the exact cure line
+     `require.resolve('bareloop')`? A red (`bundle-deps-missing`) prints the exact cure line
      (`cd <bundleDir> && npm install`) and stops, exit `1`, before the envelope check, the
-     key, or any worktree.
+     blessing check, any key, or any worktree.
   3. `checkEnvelope(spec, { budgetUsd?, maxWallMs? })` — `--wall` is minutes, converted to ms.
      A red (an invalid number, or a widen) stops here, exit `1`.
-  4. The provider key: `deps.provider` if the caller injected one (the test seam), else
-     `ANTHROPIC_API_KEY` from `env`. Absent and no injected provider: print the bundle's own
-     `README.md` plus `bundleHash:`, spend nothing, **exit `0`** (this is a legitimate,
-     non-error stop, not a red).
-  5. Blessing. No `blessing.json` yet: print the "first run" notice + the minting-run line
-     (F128-corrected — see below), the `bundleHash`, and **require** `--approve <bundleHash>`
-     to match exactly, or exit `1`. A `blessing.json` present: `verifyBlessing` must pass
-     (`blessing-stale` stops here, exit `1`); a `--approve` flag is accepted but ignored with
-     a printed note ("no-resign" — hamr's ruling).
-  6. The worktree: refuse (exit `1`) if `--repo` is not a git repo with ≥1 commit, or if
-     `<repo>/.bareloop/wt/<runid>` already exists; otherwise `git worktree add --detach
-     <repo>/.bareloop/wt/<runid> HEAD` — **always fresh, never reused** (a reused worktree
-     would read a prior run's edits as "already-green" — a negative POC's exact finding).
-  7. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/
-     `maxWallMs` on that resolved spec in memory if `--budget`/`--wall` were given → mint a
-     **fresh** `approveHash = jobSpecHash(that tightened+resolved spec)` (the runner signs
-     the spec it is actually about to run; the human-approved `bundleHash` never changes) →
-     `runJob(runSpec, { approvals: [{ specHash: approveHash, signer: 'bundle', ts }], workdir:
-     worktree, provider, providerFor, judgeProvider, emit, shellCapUsd: runSpec.budgetUsd,
-     readShim: 'cap', scout: true })`, spine written to `<bundleDir>/runs/<runid>/spine.jsonl`.
-     A thrown `runJob` crash is caught and reported, exit `1`.
-  8. The worktree's `gate-audit.jsonl` is moved to `<bundleDir>/runs/<runid>/gate-audit.jsonl`
-     (same relocation `src/userrun.js`, lifted out of `scripts/run-u.mjs`, does for in-repo runs). `spentUsd`/`spendComplete`
-     are read off this run's own `job-end` spine event — never fabricated as `0` when unknown.
-  9. `appendHistory` — one `history.jsonl` line: `{ runid, at, outcome, spentUsd,
-     spendComplete, budgetUsd, maxWallMs, worktree, branch, bundleHash, approveHash }` (the
-     `bundleHash` ↔ `approveHash` pairing, POC fact 2, so the human-signed hash and the
-     hash actually enforced can never drift apart silently). A `green` outcome on a still-
-     unblessed bundle also calls `bless(bundleDir, { bundleHash, runid, outcome, host })`.
-  10. The tail: `outcome`, `spent` (`≥$…` when `spendComplete === false`, `UNKNOWN` when
-      `spentUsd` is `null`), `branch`, `worktree`, a `git merge <branch>` instruction
-      ("merge stays human — this CLI never merges"), and "the worktree is kept until you
-      remove it: `git worktree remove <worktree>`" (F110: never delete it for the user).
-      **Exit `0` ONLY for `green`/`already-green` (F128) — every other outcome (close-red,
-      plan-red, escalated, cap/wall-halted, provider-red, a crashed `runJob`, …) exits `1`,**
-      so a caller scripting off the exit code can never mistake a red run for a green one.
-      The tail's printed lines are unchanged either way.
+  4. Blessing — BEFORE any key is read. No `blessing.json` yet: print the bundle's `README.md`
+     (the operator questions), the "first run" notice + the minting-run line (F128-corrected —
+     see below), the `bundleHash`, and **require** `--approve <bundleHash>` to match exactly, or
+     exit `1`. A `blessing.json` present: `verifyBlessing` must pass (`blessing-stale` stops here,
+     exit `1`); a `--approve` flag is accepted but ignored with a printed note ("no-resign").
+     A resume passes the same checks (an unblessed bundle whose first run halted still needs
+     `--approve`).
+  5. The tree, planned not created: a fresh run refuses (exit `1`) if `--repo` is not a git repo
+     with ≥1 commit or `<repo>/.bareloop/wt/<runid>` already exists; the engine then creates
+     `git worktree add --detach <repo>/.bareloop/wt/<runid> HEAD` only once ITS OWN $0 refusals
+     (missing key, monthly limit, param guards) have passed, so a refusal leaves no worktree —
+     **always fresh, never reused** (a reused worktree would read a prior run's edits as
+     "already-green"). A **resume** (`--resume <runid>`) instead reads `runs/<runid>/run.json`,
+     re-enters that run's own worktree (a missing `run.json`, a vanished worktree, or a `--repo`
+     different from the recorded one is a stop, exit `1`, spending nothing; `--repo` is optional
+     on a resume) and hands the engine `resumeRun` on that run's spine — the engine's own gates
+     (checkpoint age, tree-at-seed, liveness) and spend fold apply, so `--budget` can never widen
+     a resume. The new leg gets its own `runs/<newid>/`.
+  6. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/`maxWallMs`
+     in memory if `--budget`/`--wall` were given → `approveHash = jobSpecHash(that tightened+
+     resolved spec)`, handed to the engine as the approval it checks against (`signer: 'bundle'`;
+     the human-approved `bundleHash` never changes). The spine, the close's books, the relocated
+     `gate-audit.jsonl` and `run.json` are written under `<bundleDir>/runs/<runid>/`.
+  7. Engine outcomes the door keeps: a missing key is the engine's refusal, **exit `2`**, naming
+     the key (it used to print the README and exit `0`); the close-fix cap is run-u's `CAP_RUNS`
+     (4 — one number for every caller; a bundle used 3 before); the monthly limit applies (exit
+     `2`, nothing spent); a bundle green mints **no bridge file** (a bundle's bridges are shipped
+     inputs); `--door`/`--decide`/`--review-door` are not exposed on `run`.
+  8. `appendHistory` — one `history.jsonl` line off this leg's own `job-end`: `{ runid, at,
+     outcome, spentUsd, spendComplete, budgetUsd, maxWallMs, worktree, branch, bundleHash,
+     approveHash, resumedFrom? }` (the `bundleHash` ↔ `approveHash` pairing, POC fact 2).
+     `spentUsd`/`spendComplete` are never fabricated as `0` when unknown. No `job-end` (a $0
+     refusal, a crash) writes no row. A `green` outcome on a still-unblessed bundle also calls
+     `bless(bundleDir, { bundleHash, runid, outcome, host })`.
+  9. The tail: the engine's readout (`outcome`, `spent` with `≥$…` when incomplete, …), then the
+     door's `branch`, `worktree`, a `git merge <branch>` instruction ("merge stays human — this
+     CLI never merges") and "the worktree is kept until you remove it: `git worktree remove
+     <worktree>`" (F110). **Exit `0` ONLY for `green`/`already-green` — every other outcome
+     exits `1`**, and the engine's `2` (refusal) / `3` (spine leak) are preserved, so a caller
+     scripting off the exit code can never mistake a red run for a green one.
 
   **Adopter flow, corrected (F128, 2026-09-06 — hamr's paid fire found the frozen spec's
   validation step 2 named the wrong install shape):** `npm install <bundle dir>` run from a

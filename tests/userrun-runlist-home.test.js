@@ -1,5 +1,5 @@
 // F196 — src/userrun.js's `execute()` calls `appendRun` (src/runlist.js) right
-// before its first paid call, the same way src/cli.js's `doRun` does. Every
+// before its first paid call, the same way the bundle door's engine call does. Every
 // OTHER test in this repo that touches `src/userrun.js` drives it only through
 // its $0 preview path (no `--approve`, so appendRun is never reached — see the
 // header comments on tests/resume-u.test.js, tests/hitl-u.test.js,

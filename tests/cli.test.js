@@ -35,7 +35,7 @@ const tmp = (t, prefix) => {
   return d;
 };
 
-// F196 — `doRun` (src/cli.js) calls `appendRun` (src/runlist.js), which
+// F196 — the engine (src/userrun.js, behind `bareloop run`) calls `appendRun` (src/runlist.js), which
 // defaults to the REAL `os.homedir()`/`~/.config/bareloop/runs.jsonl` when no
 // `home` override is given. `npm test` is safe (scripts/hermetic.mjs
 // redirects HOME), but this file's tests drive `main(['run', ...])` directly
@@ -490,7 +490,7 @@ test('bareloop run: first GREEN run blesses the bundle, records history, and lea
 });
 
 test('bareloop run: a spine with a malformed/truncated line (process-killed-mid-append shape) does not crash the job-end tail read', async (t) => {
-  // PANEL-BUILD.md P0 — `doRun`'s own job-end read (src/cli.js) used to
+  // PANEL-BUILD.md P0 — the bundle door's old job-end read (`doRun`, src/cli.js) used to
   // hand-roll `readFileSync(...).split('\n').filter(Boolean).map(JSON.parse)`
   // OUTSIDE any try/catch, the exact parse `parseJsonl` (src/replayio.js)
   // already tolerates elsewhere (`doHistory`/`doReplay`). A spine carrying
@@ -499,7 +499,7 @@ test('bareloop run: a spine with a malformed/truncated line (process-killed-mid-
   // run. `makeSpine` only APPENDS (`appendFileSync`), so we seed one bad,
   // newline-terminated line into the spine file before the run starts; every
   // event the run itself emits (including the job-end record the tail
-  // reads) lands after it, well-formed. `doRun`'s current buggy read maps
+  // reads) lands after it, well-formed. the old strict read maps
   // JSON.parse over EVERY line unconditionally, so a malformed line anywhere
   // in the file reproduces the exact same uncaught throw regardless of
   // position — this is the same defect class, proven without needing to

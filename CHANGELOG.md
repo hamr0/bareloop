@@ -5,6 +5,36 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **One runner: `bareloop run <bundle>` is now a thin door to the `run-u` engine.** The exported
+  bundle CLI no longer carries its own `runJob` caller (`doRun`) and provider wiring
+  (`buildProviders`); `src/bundlerun.js` keeps only the bundle checks (integrity, deps, envelope,
+  blessing before any key read), the tightened spec, the fresh worktree, the history row, the
+  first-green blessing and the merge hints. Consequences: a bundle can name any provider whose key
+  is in your keys file or env (the ANTHROPIC-only refusal is gone); the **monthly $ limit now
+  applies to a bundle** run (exit 2, nothing spent, no worktree); a missing key is the engine's
+  refusal, **exit 2 naming the key** (it used to print the bundle README and exit 0 — the README now
+  prints on the unblessed first-run screen); the close-fix cap for a bundle is run-u's 4 (was 3 —
+  one number for every caller); the outside watchdog now guards a bundle run; a bundle green mints
+  no bridge file; the engine's job-end tail read tolerates a torn spine line (as the bundle door's
+  already did).
+- **`bareloop run <bundle> --resume <runid> [--repo <path>]`** — a halted bundle run resumes into
+  its own worktree through the engine's resume gates and spend fold. Each run leg writes
+  `runs/<runid>/run.json`; a resume's `history.jsonl` row carries `resumedFrom`.
+
+### Fixed
+
+- **The outside watchdog now ships in the package (F205).** `scripts/u-watchdog.mjs` moved to
+  `src/u-watchdog.mjs`: `package.json` `files` omits `scripts/`, so an installed run spawned a guard
+  whose script did not exist and it died silently at startup.
+
+### Removed
+
+- `doRun`/`buildProviders` in `src/cli.js` and the `resumable: false` wiring for bundles (F130).
+
 ## [0.32.0] — 2026-09-29
 
 ### Added

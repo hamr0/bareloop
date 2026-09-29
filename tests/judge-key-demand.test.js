@@ -135,7 +135,7 @@ test('the judge provider is built through the factory only when its key exists �
   //
   // PANEL-BUILD.md P0 — this construction moved into src/userrun.js's
   // execute(), wrapped in a TEST-SEAM guard (`if (!provider) { … }`, the same
-  // shape src/cli.js's `doRun` uses): `judgeProvider` is `let`-reassigned,
+  // shape the retired bundle `doRun` uses): `judgeProvider` is `let`-reassigned,
   // never `const`, and the `apiKey` argument carries a `/** @type {string} */`
   // cast — the patterns below are loosened to match that shape, never the
   // substance (still the SAME factory, still null with no key).

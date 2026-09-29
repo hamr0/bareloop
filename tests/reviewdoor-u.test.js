@@ -245,7 +245,7 @@ test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provide
   //
   // PANEL-BUILD.md P0 — this wiring moved into src/userrun.js's `execute()`;
   // the construction is now wrapped in `if (!provider) { … }` (a TEST SEAM,
-  // the same shape src/cli.js's `doRun` already uses: `deps.provider` skips
+  // the same shape the bundle door (src/bundlerun.js) uses: `deps.provider` skips
   // this real-key construction entirely) — `judgeProvider` is declared with
   // `let` and reassigned inside that guard, rather than a bare `const`, and
   // the `apiKey` arguments below carry a `/** @type {string} */` cast; the
