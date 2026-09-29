@@ -5,6 +5,16 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **Panel Settings (P4a)** — `~/.config/bareloop/.env` keys-file loader (shell env wins; keys
+  never reach the page), `config.json` (monthly $ limit, chosen key variables, Anthropic balance
+  note), a monthly $ limit that refuses a run start with `Max $X (monthly limit)` at both the CLI
+  and the panel Sign & run, and a Settings view with a Money & limits tab and a Providers tab
+  (read, $0 Test, key-name dropdown). Add/edit/remove providers is P4b.
+
 ## [0.31.0] — 2026-09-29
 
 ### Added

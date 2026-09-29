@@ -3377,7 +3377,7 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   none of them are reachable from `authorroutes.js`'s real construction path. Sessions live
   under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
   `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
-  `~/.config/bareloop/.env` keys-file loader, and Settings are P4, not built here.
+  `~/.config/bareloop/.env` keys-file loader, and Settings are P4 (P4a landed — see "Settings" below).
 
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
@@ -3491,6 +3491,42 @@ reaches that far.)
 provider but `anthropic-api`, spine bundling for `formatReplay` on the minting run (only its
 `runid` is noted), and tarball packing — a bundle is a plain directory; use `npm pack` on it
 yourself if you want a tarball.
+
+### Settings — the keys file, `config.json`, the monthly $ limit, the Providers tab (PANEL-BUILD.md P4a, `src/keysfile.js`, `src/config.js`, `src/monthly.js`, `src/providerrows.js`, `src/panel/settingsroutes.js`)
+
+Two files in `~/.config/bareloop/`, outside any repo:
+
+- **`.env` — key VALUES only.** Plain `NAME=value` lines (optional `export `, `#` comments, one pair
+  of quotes). `loadKeysEnv({ env?, home? })` merges it over the environment; **the shell wins** —
+  the file only fills names the shell leaves unset. Mode other than 600 = a `warning` string
+  (printed on CLI start, shown in Settings), never a refusal. Values go only to provider
+  construction; the page and every log get NAMES and found / not set. `keysForDoor(deps)` is the
+  door helper: an injected `env` with no `keysHome` skips the file entirely (tests never read the
+  real one). The CLI (`run-u`, `interview`, `author`) and the panel both use it.
+- **`config.json` — every setting, never a key value.** `readConfig({ home })` /
+  `updateConfig(patch, { home })` (atomic tmp + rename, mode 600, unknown fields kept).
+  Fields: `monthlyLimitUsd` (number above 0; absent = no limit), `anthropicBalanceNote` (a note the
+  person types; no check ever reads it), `providers.<row>.key` (an env-var NAME). A secret-shaped
+  string anywhere in the document is refused on save. An unreadable file is a `problem` string and
+  a refused run start ($0), never "no limit". There is no monthly TIME limit (dropped).
+
+**Monthly $ limit.** `checkMonthlyRoom({ capUsd, home, now })` → `{ ok, leftUsd, limitUsd,
+atLeast }`; `monthlyRefusalText(room)` is the ONE spelling: `Max $<left, 2 decimals> (monthly
+limit)`. It is called at the run-start seam in `src/userrun.js` `execute` (before any token
+spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`signRun` in
+`src/panel/authorroutes.js`, refused server-side whatever the page shows). The page only echoes the
+same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
+calendar month; a died or incomplete-spend run makes the total an "at least" figure.
+
+**Providers tab.** Four rows (`PROVIDER_ROWS`): Anthropic, OpenAI, Gemini, DeepSeek (`openai-api` +
+DeepSeek base URL). `keyNameFor` / `applyConfiguredKey` resolve which key VARIABLE a row reads: the
+person's pick from the dropdown (names from the keys file only), else the built-in; a pick whose
+variable is unset leaves the provider keyless rather than falling back. All doors (`run-u`,
+`interview`, `author`, the panel's drafting) use it. Routes (all behind the per-start token and
+Origin check; the chat can never reach them): `GET /api/settings/providers`, `POST .../key`,
+`POST .../balance-note`, `POST .../test` (one `checkProviderReachable` models-list GET, $0),
+`GET .../balance` (DeepSeek, server-side). Adding, editing or removing providers and Ollama are P4b,
+not built.
 
 ### The source front door — a plain folder/file/URL, no `--patient` (PRD item 33/M2, `src/source.js`)
 
