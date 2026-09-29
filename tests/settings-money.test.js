@@ -134,3 +134,26 @@ test('panel page: Settings button, Money tab, limit input + Save, breakdown tabl
   assert.match(html, /\(atLeast \? "at least " : ""\) \+ panelMoney\(n\)/);
   assert.doesNotMatch(html, /Monthly time limit/, 'R1: the monthly TIME limit is dropped');
 });
+
+function addSpine(home, dir, runid, atIso, recs) {
+  const spine = join(dir, `u-${runid}.jsonl`);
+  writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
+  appendRun({ at: atIso, runid, job: 'j', spine, patient: null, via: 'run-u' }, { home });
+}
+
+test('spendSummary: an older spine with a model but no provider is labelled "not recorded (model X)", one row per model, money unchanged, no provider guessed', (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const rec = (model, usd) => [{ type: 'job-start', job: 'j', ...(model ? { model } : {}) }, { type: 'worker-round', costUsd: usd }, { type: 'job-end', engagementSpentUsd: usd, spentUsd: usd, spendComplete: true }];
+  addSpine(home, d, 'o1', at(2026, 8, 2), rec('claude-sonnet-5-20260101', 1));
+  addSpine(home, d, 'o2', at(2026, 8, 3), rec('claude-sonnet-5-20260101', 2));
+  addSpine(home, d, 'o3', at(2026, 8, 4), rec('claude-haiku-4-5', 0.5));
+  addSpine(home, d, 'o4', at(2026, 8, 5), rec(null, 0.25));
+  const s = spendSummary({ home, now: NOW });
+  const labels = Object.values(s.byProvider).map((p) => p.label).sort();
+  assert.deepEqual(labels, ['not recorded', 'not recorded (model claude-haiku-4-5)', 'not recorded (model claude-sonnet-5-20260101)']);
+  const sonnet = Object.values(s.byProvider).find((p) => p.label.includes('sonnet'));
+  assert.equal(sonnet.totalUsd, 3);
+  assert.equal(s.total.usd, 3.75);
+  assert.ok(!Object.keys(s.byProvider).includes('anthropic'), 'never guessed into a provider row from the model name');
+});

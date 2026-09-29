@@ -72,6 +72,7 @@ export function legTokens(records) {
  * @property {number} usd this leg's spend (a floor when `!complete`)
  * @property {boolean} complete every figure behind `usd` is known
  * @property {number} tokens
+ * @property {string|null} model job-start's model (older spines carry a model but no provider)
  * @property {number} vouchedRounds rounds priced by a rate somebody vouched for (`provider`/`caller`)
  * @property {number} otherRounds every other round: a built-in guess, unpriced, or no provenance on record
  * @property {boolean} unreadable the spine was missing/unreadable or the listed date was bad (spend unknown)
@@ -89,7 +90,7 @@ export function readLegs(opts = {}) {
   const legs = [];
   for (const row of rows) {
     const at = new Date(row.at);
-    const base = { at, provider: null, baseUrl: null, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, unreadable: true };
+    const base = { at, provider: null, baseUrl: null, model: null, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, unreadable: true };
     if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push(base); continue; }
     /** @type {any[]} */
     let records;
@@ -99,6 +100,7 @@ export function readLegs(opts = {}) {
     const prov = spendProvenance(records);
     legs.push({
       at,
+      model: typeof start?.model === 'string' ? start.model : null,
       provider: typeof start?.provider === 'string' ? start.provider : null,
       baseUrl: typeof start?.baseUrl === 'string' ? start.baseUrl : null,
       usd: leg.usd,
@@ -158,8 +160,12 @@ export function spendSummary(opts = {}) {
   for (const leg of readLegs({ home: opts.home })) {
     const inMonth = Number.isNaN(leg.at.getTime()) ? true : sameLocalMonth(leg.at, nowDate);
     const id = rowIdFor(leg.provider, leg.baseUrl);
-    const key = id ?? `other:${leg.provider ?? 'unknown'}${leg.baseUrl ? ` @ ${leg.baseUrl}` : ''}`;
-    const label = id ? (PROVIDER_ROWS.find((r) => r.id === id)?.name ?? id) : key.slice('other:'.length);
+    // an older spine carries a model but no provider: say so honestly, one row per model —
+    // never a provider guessed from the model's name
+    const notRecorded = id === null && leg.provider === null;
+    const key = id ?? (notRecorded ? `not-recorded:${leg.model ?? ''}` : `other:${leg.provider}${leg.baseUrl ? ` @ ${leg.baseUrl}` : ''}`);
+    const label = id ? (PROVIDER_ROWS.find((r) => r.id === id)?.name ?? id)
+      : (notRecorded ? (leg.model ? `not recorded (model ${leg.model})` : 'not recorded') : key.slice('other:'.length));
     const p = (byProvider[key] ??= { label, monthUsd: 0, monthAtLeast: false, totalUsd: 0, totalAtLeast: false, tokens: 0, vouchedRounds: 0, otherRounds: 0 });
     const unknown = leg.unreadable || !leg.complete;
     total.usd += leg.usd; if (unknown) total.atLeast = true;
