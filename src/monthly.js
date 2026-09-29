@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs';
 import { readConfig, ConfigError } from './config.js';
 import { readRunList } from './runlist.js';
 import { parseJsonl } from './replayio.js';
-import { SPEND_RECORD_TYPES } from './ledger.js';
+import { SPEND_RECORD_TYPES, spendProvenance } from './ledger.js';
 import { PROVIDER_ROWS, rowIdFor } from './providerrows.js';
 
 /**
@@ -72,6 +72,8 @@ export function legTokens(records) {
  * @property {number} usd this leg's spend (a floor when `!complete`)
  * @property {boolean} complete every figure behind `usd` is known
  * @property {number} tokens
+ * @property {number} vouchedRounds rounds priced by a rate somebody vouched for (`provider`/`caller`)
+ * @property {number} otherRounds every other round: a built-in guess, unpriced, or no provenance on record
  * @property {boolean} unreadable the spine was missing/unreadable or the listed date was bad (spend unknown)
  */
 
@@ -87,13 +89,14 @@ export function readLegs(opts = {}) {
   const legs = [];
   for (const row of rows) {
     const at = new Date(row.at);
-    const base = { at, provider: null, baseUrl: null, usd: 0, complete: false, tokens: 0, unreadable: true };
+    const base = { at, provider: null, baseUrl: null, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, unreadable: true };
     if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push(base); continue; }
     /** @type {any[]} */
     let records;
     try { records = parseJsonl(row.spine).records; } catch { legs.push(base); continue; }
     const start = records.find((r) => r && r.type === 'job-start') ?? null;
     const leg = legSpend(records);
+    const prov = spendProvenance(records);
     legs.push({
       at,
       provider: typeof start?.provider === 'string' ? start.provider : null,
@@ -101,6 +104,8 @@ export function readLegs(opts = {}) {
       usd: leg.usd,
       complete: leg.complete,
       tokens: legTokens(records),
+      vouchedRounds: prov.vouched.rounds,
+      otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
       unreadable: false,
     });
   }
@@ -142,23 +147,23 @@ export function monthSpend(opts = {}) {
  * an "at least".
  * @param {{ home?: string, now?: () => number }} [opts]
  * @returns {{ total: {usd: number, atLeast: boolean}, month: {usd: number, atLeast: boolean},
- *   byProvider: Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number}> }}
+ *   byProvider: Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number}> }}
  */
 export function spendSummary(opts = {}) {
   const nowDate = new Date((opts.now ?? Date.now)());
   const total = { usd: 0, atLeast: false };
   const month = { usd: 0, atLeast: false };
-  /** @type {Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number}>} */
+  /** @type {Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number}>} */
   const byProvider = {};
   for (const leg of readLegs({ home: opts.home })) {
     const inMonth = Number.isNaN(leg.at.getTime()) ? true : sameLocalMonth(leg.at, nowDate);
     const id = rowIdFor(leg.provider, leg.baseUrl);
     const key = id ?? `other:${leg.provider ?? 'unknown'}${leg.baseUrl ? ` @ ${leg.baseUrl}` : ''}`;
     const label = id ? (PROVIDER_ROWS.find((r) => r.id === id)?.name ?? id) : key.slice('other:'.length);
-    const p = (byProvider[key] ??= { label, monthUsd: 0, monthAtLeast: false, totalUsd: 0, totalAtLeast: false, tokens: 0 });
+    const p = (byProvider[key] ??= { label, monthUsd: 0, monthAtLeast: false, totalUsd: 0, totalAtLeast: false, tokens: 0, vouchedRounds: 0, otherRounds: 0 });
     const unknown = leg.unreadable || !leg.complete;
     total.usd += leg.usd; if (unknown) total.atLeast = true;
-    p.totalUsd += leg.usd; p.tokens += leg.tokens; if (unknown) p.totalAtLeast = true;
+    p.totalUsd += leg.usd; p.tokens += leg.tokens; p.vouchedRounds += leg.vouchedRounds; p.otherRounds += leg.otherRounds; if (unknown) p.totalAtLeast = true;
     if (inMonth) {
       month.usd += leg.usd; if (unknown) month.atLeast = true;
       p.monthUsd += leg.usd; if (unknown) p.monthAtLeast = true;

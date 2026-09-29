@@ -687,7 +687,7 @@ export async function main(argv, deps = {}) {
   // then `env`/`out`/`err` are overridden to the SAME resolved values every
   // other command here prints through, so `run-u`'s output lands on the
   // `stdout`/`stderr` a caller of `main` actually passed.
-  if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err });
+  if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err, keysHome: keys.home });
   // `bareloop interview` — the close-authoring interview (PANEL-BUILD.md P0
   // task 3/4). This flow reads a TTY (or a piped stdin) directly rather than
   // through the `out`/`err` line-functions every other command here uses, so
@@ -697,11 +697,11 @@ export async function main(argv, deps = {}) {
   // person actually typed, never a script path they never invoked and may
   // not have on disk (a branch-review nit; `scripts/run-interview.mjs` still
   // supplies none, so it keeps naming itself when run directly).
-  if (cmd === 'interview') return interviewMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr, invokedAs: 'bareloop interview' });
+  if (cmd === 'interview') return interviewMain(rest, { ...deps, env, keysHome: keys.home, stdin: deps.stdin ?? process.stdin, stdout, stderr, invokedAs: 'bareloop interview' });
   // `bareloop author` — the authoring pipeline (scout, declaration, D9's
   // gates), same task. Same raw-stream reasoning: its one interactive seam
   // (the confirm turn) reads stdin directly. Same `invokedAs` reasoning too.
-  if (cmd === 'author') return authorMain(rest, { ...deps, env, stdin: deps.stdin ?? process.stdin, stdout, stderr, invokedAs: 'bareloop author' });
+  if (cmd === 'author') return authorMain(rest, { ...deps, env, keysHome: keys.home, stdin: deps.stdin ?? process.stdin, stdout, stderr, invokedAs: 'bareloop author' });
   // `bareloop replay` — the spine/gate-audit read side (PANEL-BUILD.md P0,
   // last of the rung's four tasks). Synchronous, file-based, no interactive
   // seam — same shape as `doHistory`/`doExport`, not the argv-owning

@@ -110,11 +110,15 @@ export function loadKeysEnv(opts = {}) {
  * on the REAL environment (no injected env) or names a keys home explicitly — so a
  * test that injects `env` alone never reads the real `~/.config/bareloop/.env`.
  * @param {{ env?: Record<string,string|undefined>, keysHome?: string }} deps
- * @returns {KeysLoad & { env: Record<string,string|undefined> }}
+ * @returns {KeysLoad & { env: Record<string,string|undefined>, home: string|undefined }}
+ *   `home` = the home the file was loaded from (the real `~/.config/bareloop` when none was
+ *   injected) — or `undefined` when loading was skipped (injected env, no keysHome). The
+ *   door passes it on so config.json (src/config.js) is read from the SAME place, and never
+ *   from the real home in a test.
  */
 export function keysForDoor(deps) {
   if (deps.env !== undefined && deps.keysHome === undefined) {
-    return { exists: false, names: [], warning: null, env: deps.env };
+    return { exists: false, names: [], warning: null, env: deps.env, home: undefined };
   }
-  return loadKeysEnv({ env: deps.env, home: deps.keysHome });
+  return { ...loadKeysEnv({ env: deps.env, home: deps.keysHome }), home: keysHome(deps.keysHome) };
 }

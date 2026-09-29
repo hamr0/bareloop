@@ -101,6 +101,8 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import { keysForDoor } from './keysfile.js';
+import { readConfig } from './config.js';
+import { applyConfiguredKey, keyNameFor } from './providerrows.js';
 import {
   readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync,
 } from 'node:fs';
@@ -504,8 +506,12 @@ export async function main(argv, deps = {}) {
 
   // Secrets load from the environment; they never enter argv (a command line is
   // world-readable on /proc) and they are never printed.
-  const AUTHOR_ENV_KEY = /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).envKey;
-  const apiKey = env[AUTHOR_ENV_KEY];
+  // P4a item 4 — the key variable the person picked in Settings (config.json) stands in for
+  // the provider's built-in one; none picked = the built-in. Names only.
+  const keyCfg = keys.home !== undefined ? readConfig({ home: keys.home }).config : {};
+  const authorEnv = applyConfiguredKey(env, PROVIDER_NAME, baseUrl, keyCfg);
+  const AUTHOR_ENV_KEY = keyNameFor(PROVIDER_NAME, baseUrl, keyCfg).name;
+  const apiKey = authorEnv[/** @type {NonNullable<typeof providerEntry>} */ (providerEntry).envKey];
   if (!apiKey) { err(`${AUTHOR_ENV_KEY} not set (secrets load from the environment — never the tree, never argv)`); throw new ExitSignal(2); }
   // F181 — a key that carries a line break/control char/stray whitespace (a
   // two-line secret-store entry, e.g.) reads as "set" by the presence check
@@ -519,7 +525,7 @@ export async function main(argv, deps = {}) {
    * contract `scripts/run-u.mjs` keeps, so one story covers both surfaces. When the
    * judge IS the authoring provider this is the key already read above. */
   const judgeKeyFor = (/** @type {string} */ providerName) => (
-    env.JUDGE_API_KEY ?? env[resolveProvider(providerName).envKey]
+    env.JUDGE_API_KEY ?? (providerName === PROVIDER_NAME ? authorEnv : applyConfiguredKey(env, providerName, undefined, keyCfg))[resolveProvider(providerName).envKey]
   );
 
   /** F6 — an unpriced call makes the TOTAL unknown, and unknown is reported as

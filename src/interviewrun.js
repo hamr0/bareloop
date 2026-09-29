@@ -87,6 +87,8 @@
 // non-repo source gets the form up to here and then an honest named stop:
 // bareloop has no checks for that kind of job yet (ruling 7 → M4).
 import { keysForDoor } from './keysfile.js';
+import { readConfig } from './config.js';
+import { applyConfiguredKey } from './providerrows.js';
 import {
   writeFileSync, mkdirSync, existsSync, readFileSync, statSync,
 } from 'node:fs';
@@ -770,7 +772,9 @@ export async function main(argv, deps = {}) {
   // (a line break/control char/stray whitespace, e.g. a two-line secret-store
   // entry). A malformed key must not count as KEYED: this offer must read the
   // same "will it actually run" question run-author itself asks at its door.
-  const rawKeyValue = providerEnvKey ? env[providerEnvKey] : undefined;
+  // P4a item 4 — the key variable the person picked in Settings stands in for the built-in one
+  const keyEnv = keys.home !== undefined ? applyConfiguredKey(env, PROVIDER, draft.baseUrl, readConfig({ home: keys.home }).config) : env;
+  const rawKeyValue = providerEnvKey ? keyEnv[providerEnvKey] : undefined;
   const keyProblem = rawKeyValue ? apiKeyProblem(rawKeyValue) : null;
   const KEYED = providerEnvKey !== null && Boolean(rawKeyValue) && !keyProblem;
   if (!KEYED) {

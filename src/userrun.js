@@ -75,7 +75,8 @@ import { coldReset, moveStaleGateAudit } from './u-patient.js';
 import { appendRun } from './runlist.js';
 import { keysForDoor } from './keysfile.js';
 import { checkMonthlyRoom, monthlyRefusalText } from './monthly.js';
-import { ConfigError } from './config.js';
+import { ConfigError, readConfig } from './config.js';
+import { applyConfiguredKey, keyNameFor } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -320,6 +321,10 @@ async function execute(ctx) {
   const keys = keysForDoor(deps);
   const env = keys.env;
   if (keys.warning && deps.env === undefined) err(`WARNING: ${keys.warning}`);
+  // config.json (monthly limit, chosen key variables) lives beside the run list. An injected
+  // `env` with no injected home means a test — the real ~/.config/bareloop is never read then.
+  const cfgHome = keys.home ?? deps.runlistHome;
+  const cfgOn = cfgHome !== undefined;
   /** every operator/config stop this engine makes, in one exit code — thrown,
    * never `process.exit()`'d, so this stays a library function (constraint:
    * "never process.exit() inside the library — return an exit code").
@@ -1353,22 +1358,32 @@ async function execute(ctx) {
   // the same shape src/cli.js's `doRun` already uses) — a caller that hands in
   // its own provider IS the run, so nothing here needs a real secret.
   if (!deps.provider) {
+    // P4a item 4 — the key VARIABLE the person picked for this provider in Settings
+    // (config.json `providers.<row>.key`) stands in for the provider's built-in one; no
+    // choice = the built-in, byte-identical to before. Names only — values come from the
+    // env / keys file. The judge follows the worker's choice when it is the same provider
+    // (the same rule that gives it the worker's baseUrl below).
+    const keyCfg = cfgOn ? readConfig({ home: cfgHome }).config : {};
+    const workerEnv = applyConfiguredKey(env, spec.provider, spec.baseUrl, keyCfg);
+    const judgeEnv = judge.provider === spec.provider ? workerEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg);
+    /** the variable NAME this worker's key is read from (the person's pick, else built-in) — for messages only */
+    const workerKeyName = keyNameFor(spec.provider, spec.baseUrl, keyCfg).name;
     // A green anthropic-api job's behaviour is byte-identical to before: its
     // worker key IS `ANTHROPIC_API_KEY`, demanded as ever.
-    workerApiKey = env[providerEntry.envKey];
-    if (!workerApiKey) { err(`${providerEntry.envKey} not set (secrets load from the environment — never the tree)`); throw new ExitSignal(2); }
+    workerApiKey = workerEnv[providerEntry.envKey];
+    if (!workerApiKey) { err(`${workerKeyName} not set (secrets load from the environment — never the tree)`); throw new ExitSignal(2); }
     // F181 — a key that reads as "set" above can still carry a line break/
     // control char/stray whitespace (a two-line secret-store entry, e.g.) and
     // crash Node's own header-encode inside the paid span. Refuse at the SAME
     // door, before any provider is constructed; never echo the value.
     const workerKeyProblem = apiKeyProblem(workerApiKey);
-    if (workerKeyProblem) { err(`${providerEntry.envKey} ${workerKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`); throw new ExitSignal(2); }
+    if (workerKeyProblem) { err(`${workerKeyName} ${workerKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`); throw new ExitSignal(2); }
     // The judge's KEY follows the RESOLVED judge provider's own env var, with
     // `JUDGE_API_KEY` as a role-named override in front of it (PRD item 32.3). The
     // override matters most in the case this item exists for: a job whose worker and
     // judge are the SAME provider but different accounts, and the anthropic case
     // where one variable used to do two jobs.
-    judgeApiKey = env.JUDGE_API_KEY ?? env[judgeEntry.envKey];
+    judgeApiKey = env.JUDGE_API_KEY ?? judgeEnv[judgeEntry.envKey];
     if (JUDGES && !judgeApiKey) {
       err(`This job's close JUDGES (${judgedStages(spec.closeDecl).length} judged stage(s)) and its judge is ${judge.model} on ${judge.provider}${spec.judge ? ' (signed override)' : " (this job's own worker model — no `judge` override signed)"}.`);
       err(`Neither JUDGE_API_KEY nor ${judgeEntry.envKey} is set — secrets load from the environment, never the tree.`);
@@ -1402,7 +1417,7 @@ async function execute(ctx) {
     /** @type {string|null} */
     let refusal = null;
     try {
-      refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: legCapUsd, home: deps.runlistHome }));
+      if (cfgOn) refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: legCapUsd, home: cfgHome }));
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       err(`${e.message} — refusing to start rather than guess the monthly limit. Nothing spent.`);
