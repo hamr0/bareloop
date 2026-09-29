@@ -386,6 +386,80 @@ test('a FRESH spine (no job-end, mtime just written) is still just "running" [�
   assert.equal(detail.glyph, '▶');
 });
 
+// build item 7 (2026-09-28, session mul5fofw): part-level tool counts
+// (summary.parts[*].byTool/toolCalls, what the Run tab's part cards AND the
+// Audit tab's Grouped part headers both read) came from `replayOne`'s own
+// internal `resolveSiblings` call, which only ever finds the FINISHED-run
+// gate-audit sidecar convention — while a run is still live, its sidecar
+// sits at the DURING-RUN path (`<patient>/gate-audit.jsonl`), which only
+// `resolveAuditPathForRow` (scopedBehaviour/getRunAudit's resolver) knew
+// how to find. Fixed by threading that SAME resolver's result into
+// `replayOne` via `auditPathOverride`, so there is only one owner of "where
+// is this run's audit sidecar" — `getRunDetail`'s `parts` (== summary.parts)
+// must now show real counts even with no job-end.
+test('build item 7: a LIVE run (no job-end) with its gate-audit sidecar at the DURING-RUN patient path shows real part-level byTool/toolCalls, never "unknown"', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const patient = tmp();
+  const spinePath = join(dir, 'u-liveaudit.jsonl');
+  writeSpine(spinePath, [
+    { type: 'job-start', job: 'still-going', ts: '2026-09-28T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'worker-round', ts: '2026-09-28T00:00:05.000Z', seq: 2, costUsd: 0.1 },
+  ]);
+  // the LIVE (during-run) sidecar location — a bare gate-audit.jsonl sitting
+  // in the run's own patient dir, NOT the finished `<stem>-gate-audit.jsonl`
+  // sibling `resolveSiblings` alone would look for.
+  writeFileSync(join(patient, 'gate-audit.jsonl'), `${JSON.stringify({
+    ts: '2026-09-28T00:00:06.000Z', action: { type: 'read', path: 'a.js' }, decision: 'allow',
+  })}\n${JSON.stringify({
+    ts: '2026-09-28T00:00:07.000Z', action: { type: 'edit', path: 'a.js' }, decision: 'allow',
+  })}\n`);
+  appendRun({
+    at: '2026-09-28T00:00:00.000Z', runid: 'liveaudit', job: 'still-going', spine: spinePath, patient, via: 'run-u',
+  }, { home });
+
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/liveaudit`);
+  const detail = await res.json();
+  assert.equal(detail.died, false);
+  assert.ok(Array.isArray(detail.parts) && detail.parts.length >= 1, 'expected at least one part');
+  const part = detail.parts[0];
+  assert.equal(part.toolCalls, 2, `expected the 2 live-sidecar rows to be counted, got ${JSON.stringify(part)}`);
+  assert.ok(part.byTool && typeof part.byTool === 'object', 'byTool must not be null once the live sidecar was found');
+  assert.equal(part.byTool.read, 1);
+  assert.equal(part.byTool.edit, 1);
+});
+
+// build item 6 (2026-09-28, session mul5fofw): a LIVE run (no job-end,
+// glyph [▶]) with real metered rounds already on the spine must expose a
+// running spend/wall FLOOR (spendFloorUsd/wallFloorMs), never null/unknown
+// — the Run tab needs this to show "$X so far … · running Ym" instead of
+// the old "unknown ($X drafting) of $5.00 · unknown elapsed".
+test('build item 6: a LIVE, still-running spine (no job-end) with priced rounds exposes spendFloorUsd/wallFloorMs — never null, never "died"', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const spinePath = join(dir, 'u-liverunning.jsonl');
+  const t0 = new Date(Date.now() - 4 * 60 * 1000 - 12 * 1000); // 4m12s ago
+  const t1 = new Date();
+  writeSpine(spinePath, [
+    { type: 'job-start', job: 'still-going', ts: t0.toISOString(), seq: 1, verdictType: 'green' },
+    { type: 'worker-round', ts: t0.toISOString(), seq: 2, costUsd: 0.4 },
+    { type: 'worker-round', ts: t1.toISOString(), seq: 3, costUsd: 0.32 },
+  ]);
+  appendRun({
+    at: t0.toISOString(), runid: 'liverunning', job: 'still-going', spine: spinePath, patient: null, via: 'run-u',
+  }, { home });
+
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/liverunning`);
+  const detail = await res.json();
+  assert.equal(detail.died, false, 'a fresh spine is running, never died');
+  assert.equal(detail.glyph, '▶');
+  assert.equal(detail.spentUsd, null, 'no job-end reached yet — the real, exact figure is still null');
+  assert.ok(Math.abs(detail.spendFloorUsd - 0.72) < 1e-9, `expected the priced-rounds sum 0.72, got ${detail.spendFloorUsd}`);
+  assert.ok(typeof detail.wallFloorMs === 'number' && detail.wallFloorMs >= 4 * 60 * 1000 && detail.wallFloorMs < 5 * 60 * 1000, `expected ~4m12s (252000ms), got ${detail.wallFloorMs}`);
+});
+
 const POC_RED = '/home/hamr/PycharmProjects/bareloop-patients/spines-poc-openai/poc-p2ocuxj8.jsonl';
 const havePocRed = existsSync(POC_RED);
 
@@ -548,6 +622,51 @@ test('/api/runs sorts by `at` (real time), never by file/append order — a back
   const runsRes = await fetch(base + '/api/runs');
   const { runs } = await runsRes.json();
   assert.deepEqual(runs.map((r) => r.runid), ['kimi-a-1', '429-live-1', 'deepseek-4-1'], '/api/runs must be newest-first by `at`');
+});
+
+// hamr's ruling 2026-09-28 ("panel money 2-decimals") — `/api/runs`' row
+// carries the RAW numeric fields (never just the library's own 4-decimal
+// `spend` string) so the panel page can render its own 2-decimal text.
+// `spend` itself stays exactly what it always was (`--all`'s CLI listing
+// shares this same reader — never changed here).
+test('/api/runs row: carries spentUsd/spendComplete/draftSpentUsd/draftSpendComplete/budgetUsd as real numbers/booleans alongside the unchanged spend string', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-withdraft-1.jsonl'), [{
+    type: 'job-start', job: 'withdraft', ts: '2026-09-28T09:00:00.000Z', seq: 1, verdictType: 'green', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false,
+  }, { type: 'job-end', outcome: 'green', spentUsd: 3.71, spendComplete: true, ts: '2026-09-28T09:01:00.000Z', seq: 2 }]);
+  appendRun({ at: '2026-09-28T09:00:00.000Z', runid: 'withdraft-1', job: 'withdraft', spine: join(dir, 'u-withdraft-1.jsonl'), patient: null, via: 'backfill' }, { home });
+  const { base } = await startServer(t, { home });
+  const runsRes = await fetch(base + '/api/runs');
+  const { runs } = await runsRes.json();
+  const row = runs.find((r) => r.runid === 'withdraft-1');
+  assert.ok(row);
+  assert.equal(row.spentUsd, 3.71);
+  assert.equal(row.spendComplete, true);
+  assert.equal(row.draftSpentUsd, 0.81);
+  assert.equal(row.draftSpendComplete, false);
+  assert.equal(row.budgetUsd, 5);
+  // the library's own 4-decimal `spend` string stays exactly what
+  // `summarizeForAllLine`/`--all` would print for this same job-start —
+  // never a NEW 2-decimal render (that's the panel page's own job, off the
+  // numeric fields above). This fixture's own draftSpendComplete:false
+  // correctly reads as "at least" per moneyWithDraft's own (unrelated to
+  // this task's scope-1 change) 2nd-addendum rule.
+  assert.equal(row.spend, 'at least $3.7100 (at least $0.8100 drafting)', 'the library\'s own 4-decimal money() text, unchanged in PRECISION by this build (still 4 decimals, never migrated to 2)');
+});
+
+test('/api/runs/:runid job-detail: draftSpendComplete rides beside draftSpentUsd', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  writeSpine(join(dir, 'u-withdraft2-1.jsonl'), [{
+    type: 'job-start', job: 'withdraft2', ts: '2026-09-28T09:00:00.000Z', seq: 1, verdictType: 'green', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false,
+  }, { type: 'job-end', outcome: 'green', spentUsd: 3.71, spendComplete: true, ts: '2026-09-28T09:01:00.000Z', seq: 2 }]);
+  appendRun({ at: '2026-09-28T09:00:00.000Z', runid: 'withdraft2-1', job: 'withdraft2', spine: join(dir, 'u-withdraft2-1.jsonl'), patient: null, via: 'backfill' }, { home });
+  const { base } = await startServer(t, { home });
+  const detailRes = await fetch(`${base}/api/runs/withdraft2-1`);
+  const detail = await detailRes.json();
+  assert.equal(detail.draftSpentUsd, 0.81);
+  assert.equal(detail.draftSpendComplete, false);
 });
 
 // ---------------------------------------------------------------------------
@@ -1886,4 +2005,464 @@ test('build item B/C no-regression: real archived run spines-poc-openai poc-p2oc
   assert.equal(crashedStep.attempts.length, 1); // fell back to ONE synthetic whole-step attempt, never an empty list
   const roundsRes = await fetch(`${base}/api/runs/p2ocuxj8-parts/rounds?part=${detail.parts.length - 1}&attempt=1`);
   assert.equal(roundsRes.status, 200); // never a crash/404 on the synthetic-attempt part
+});
+
+// ---------------------------------------------------------------------------
+// checks-wording build item 1 (2026-09-28): the gap 764a9ef named — a
+// declared close's own per-stage `kind`/`direction`/declared `baselineKind`
+// (`'seed'` vs the literal `0`) now travels from the resolved signed spec's
+// `closeDecl.stages` onto each attempt's `stages` entries in `/api/runs/
+// :runid`'s `parts` field, so the client can pick §3a's wording instead of
+// falling back to the spec's verbatim "N (baseline M)" for every numeric
+// stage.
+// ---------------------------------------------------------------------------
+
+test('build item 1: a bundle-layout spec.json\'s closeDecl attaches kind/direction/baselineKind onto the fix-loop attempt\'s own recorded stages, matching by name', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'checkswording-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'typecheck-target-zero-errors',
+      stages: [
+        { name: 'changed-from-seed', verdict: 'satisfied' },
+        { name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0 },
+      ],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    {
+      type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5,
+    },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'checkswording-job',
+    closeDecl: {
+      stages: [
+        { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true } },
+        {
+          name: 'typecheck-target-zero-errors', kind: 'count-not-worse', params: { direction: 'lower-is-better', baseline: 0 },
+        },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'checkswordingrun', job: 'checkswording-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/checkswordingrun`);
+  assert.equal(res.status, 200);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.ok(fixPart, 'a post-step outer-close builds a "fix" part');
+  const stages = fixPart.attempts[0].stages;
+  assert.deepEqual(stages[0], {
+    name: 'changed-from-seed', verdict: 'satisfied', kind: 'files-changed', direction: null, baselineKind: null, question: 'did it change any file?',
+  });
+  assert.deepEqual(stages[1], {
+    name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, kind: 'count-not-worse', direction: 'lower-is-better', baselineKind: 0, question: null,
+  });
+});
+
+test('checks-count fix (2026-09-28, hamr\'s live catch on run mulbz0ny): declaredStagesTotal is the DECLARED stage count (closeDecl.stages.length), never the RAN count (stages.length) — first-red-wins means a later fix-loop attempt can stop after 1 of 7 declared stages and its own stages array carries only that one', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'checkscount-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    // the outer-close ran all 7 (stops at the last, but the first 6 satisfied)
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'stage-g',
+      stages: [
+        { name: 'stage-a', verdict: 'satisfied' },
+        { name: 'stage-b', verdict: 'satisfied' },
+        { name: 'stage-c', verdict: 'satisfied' },
+        { name: 'stage-d', verdict: 'satisfied' },
+        { name: 'stage-e', verdict: 'satisfied' },
+        { name: 'stage-f', verdict: 'satisfied' },
+        { name: 'stage-g', verdict: 'needs_revision', value: 4, baseline: 0 },
+      ],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'iteration-start', iteration: 1, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+    // the fix-loop's next attempt (first-red-wins) stops at stage-a itself —
+    // only ONE of the 7 declared stages ran, so its own `stages` array has
+    // length 1
+    {
+      type: 'close-verdict',
+      verdict: 'needs_revision',
+      stage: 'stage-a',
+      stages: [{ name: 'stage-a', verdict: 'needs_revision', value: 9, baseline: 0 }],
+      ts: '2026-09-05T00:00:05.000Z',
+      seq: 6,
+    },
+    {
+      type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:06.000Z', seq: 7,
+    },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'checkscount-job',
+    closeDecl: {
+      stages: ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((letter) => ({
+        name: `stage-${letter}`, kind: 'count-not-worse', params: { direction: 'lower-is-better', baseline: 0 },
+      })),
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'checkscountrun', job: 'checkscount-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/checkscountrun`);
+  assert.equal(res.status, 200);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.ok(fixPart, 'a post-step outer-close builds a "fix" part');
+  assert.equal(fixPart.attempts[0].stages.length, 7, 'attempt 1 (the outer-close) ran all 7 declared stages');
+  assert.equal(fixPart.attempts[0].declaredStagesTotal, 7, 'declared total is 7, matching closeDecl.stages.length');
+  assert.equal(fixPart.attempts[1].stages.length, 1, 'attempt 2 stopped after only 1 of the 7 declared stages ran (first-red-wins)');
+  assert.equal(fixPart.attempts[1].declaredStagesTotal, 7, 'the DECLARED total stays 7 even though only 1 stage ran this attempt');
+});
+
+test('build item 1: no resolvable spec at all -> stages pass through UNCHANGED (never a fabricated kind)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'nospec-checkswording-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close', verdict: 'needs_revision', stage: 'some-stage', stages: [{ name: 'some-stage', verdict: 'needs_revision', value: 5, baseline: 0 }], ts: '2026-09-05T00:00:03.000Z', seq: 4,
+    },
+    {
+      type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5,
+    },
+  ]);
+  // no spec.json beside runs/, no jobs/<job>.json entry, no resolved-spec.json
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'nospeccheckswordingrun', job: 'nospec-checkswording-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/nospeccheckswordingrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.deepEqual(fixPart.attempts[0].stages, [{ name: 'some-stage', verdict: 'needs_revision', value: 5, baseline: 0 }]);
+});
+
+test('build item 1: real archived run mu2p83go (pulselog-person-live-2) — its own resolved-spec.json closeDecl attaches real kind/direction/baselineKind onto the fix loop\'s declared stages, all 3 numeric shapes present', { skip: !havePersonFixture && `${REAL_PERSON_OUT} not present on this machine` }, async (t) => {
+  const home = tmp();
+  appendRun({
+    at: '2026-09-15T00:00:00.000Z', runid: 'mu2p83go-kindmeta', job: 'pulselog-strict-checks', spine: REAL_PERSON_SPINE, patient: null, via: 'backfill',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/mu2p83go-kindmeta`);
+  assert.equal(res.status, 200);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.ok(fixPart, 'mu2p83go\'s outer-close came back needs_revision, so a fix part exists');
+  const byName = new Map(fixPart.attempts[0].stages.map((s) => [s.name, s]));
+  assert.equal(byName.get('typecheck-checks-strict').direction, 'lower-is-better');
+  assert.equal(byName.get('typecheck-checks-strict').baselineKind, 0);
+  assert.equal(byName.get('typecheck-outside-checks').direction, 'lower-is-better');
+  assert.equal(byName.get('typecheck-outside-checks').baselineKind, 'seed');
+  assert.equal(byName.get('tests-executed-floor').direction, 'higher-is-better');
+  assert.equal(byName.get('tests-executed-floor').baselineKind, 'seed');
+  assert.equal(byName.get('changed-from-seed').kind, 'files-changed');
+  assert.equal(byName.get('suite-green').kind, 'command-exit');
+});
+
+// ---------------------------------------------------------------------------
+// plain-checks build (2026-09-28, hamr's ruling): the "checks N/M" headline
+// is WITHDRAWN ("confusing — reads like 6 failed when 5 never ran"). The
+// server now attaches a plain-English `question` per declared stage (the ONE
+// owner, `stageQuestionText`, keyed off the signed `kind`+`params`+`genre` —
+// never the model-authored stage name) and a full `declaredStages` list (in
+// declared order) onto every attempt, so the client can render stages that
+// never ran ("not run") without re-deriving any of this itself.
+// ---------------------------------------------------------------------------
+
+test('plain-checks: stageQuestionText — the mechanical guards (files-changed, pattern-absent-in-diff) get their fixed questions regardless of genre', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-guards-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'no-suppressions',
+      stages: [
+        { name: 'changed-from-seed', verdict: 'satisfied' },
+        { name: 'no-suppressions', verdict: 'needs_revision' },
+      ],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-guards-job',
+    closeDecl: {
+      genre: 'TYPES',
+      stages: [
+        { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['src/'] } },
+        { name: 'no-suppressions', kind: 'pattern-absent-in-diff', params: {} },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqguardsrun', job: 'pq-guards-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqguardsrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  const byName = new Map(fixPart.attempts[0].stages.map((s) => [s.name, s]));
+  assert.equal(byName.get('changed-from-seed').question, 'did it change any file?');
+  assert.equal(byName.get('no-suppressions').question, 'no casts or silencers added?');
+});
+
+test('plain-checks: stageQuestionText — count-not-worse\'s three TYPES-genre shapes (in-scope-zero, outside-scope-ceiling, tests-kept-floor) and command-exit\'s suite question', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-shapes-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'typecheck-target-zero-errors',
+      stages: [
+        { name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 4, baseline: 0 },
+      ],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-shapes-job',
+    closeDecl: {
+      genre: 'TYPES',
+      stages: [
+        {
+          name: 'typecheck-target-zero-errors',
+          kind: 'count-not-worse',
+          params: { direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['src/checks.js'] } },
+        },
+        {
+          name: 'typecheck-target-multi',
+          kind: 'count-not-worse',
+          params: { direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['src/checks.js', 'src/other.js'] } },
+        },
+        {
+          name: 'typecheck-outside-not-worse',
+          kind: 'count-not-worse',
+          params: { direction: 'lower-is-better', baseline: 'seed', scope: { excludePrefixes: ['src/checks.js'] } },
+        },
+        {
+          name: 'tests-kept',
+          kind: 'count-not-worse',
+          params: { direction: 'higher-is-better', baseline: 'seed' },
+        },
+        { name: 'suite-green', kind: 'command-exit', params: { cmd: 'npm', args: ['test'], expectExit: 0 } },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqshapesrun', job: 'pq-shapes-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqshapesrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  const declaredByName = new Map(fixPart.attempts[0].declaredStages.map((s) => [s.name, s.question]));
+  assert.equal(declaredByName.get('typecheck-target-zero-errors'), 'src/checks.js has 0 type errors?', 'a single includePrefixes entry is quoted verbatim as the target file');
+  assert.equal(declaredByName.get('typecheck-target-multi'), 'type errors is 0?', 'more than one scoped file falls back to the generic zero-goal wording, never a guessed filename');
+  assert.equal(declaredByName.get('typecheck-outside-not-worse'), "other files didn't get more type errors?");
+  assert.equal(declaredByName.get('tests-kept'), 'did all the old tests still exist?');
+  assert.equal(declaredByName.get('suite-green'), 'does the test suite pass?');
+});
+
+test('plain-checks: stageQuestionText returns null (caller falls back to the stage\'s own name) for an unrecognised genre, a locked kind, and a count-not-worse shape none of the three TYPES rules cover', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-null-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'weird-outside-in-scope',
+      stages: [{ name: 'weird-outside-in-scope', verdict: 'needs_revision' }],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-null-job',
+    closeDecl: {
+      // no genre at all -> the "type errors" wording has no honest source
+      stages: [
+        {
+          name: 'no-genre-in-scope', kind: 'count-not-worse', params: { direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['src/checks.js'] } },
+        },
+        { name: 'a-human-stage', kind: 'human-confirms', params: {} },
+        {
+          name: 'weird-outside-in-scope', kind: 'count-not-worse', params: { direction: 'lower-is-better', baseline: 'seed', scope: { includePrefixes: ['src/checks.js'] } },
+        },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqnullrun', job: 'pq-null-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqnullrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  const declaredByName = new Map(fixPart.attempts[0].declaredStages.map((s) => [s.name, s.question]));
+  assert.equal(declaredByName.get('no-genre-in-scope'), null, 'no genre resolved -> no "type errors" wording to fill in with, never a guess');
+  assert.equal(declaredByName.get('a-human-stage'), null, 'human-confirms has no plain-question mapping (never offered by the TYPES genre today)');
+  assert.equal(declaredByName.get('weird-outside-in-scope'), null, 'lower-is-better + seed baseline with includePrefixes (not excludePrefixes) matches none of the three declared shapes');
+});
+
+test('plain-checks REGRESSION (found live on run mul5fofw\'s own scratch server): a lower-is-better/baseline-0 count-not-worse stage sharing its cmd+args with a command-exit stage is the failing-test-count half of suite-green\'s "two assertions" — never "type errors" (would have read "test/ has 0 type errors?", which is false: its parser counts FAILING TESTS) — reads "no failing tests?" instead', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-suitecmd-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'suite-zero-failing-tests',
+      stages: [{ name: 'suite-zero-failing-tests', verdict: 'needs_revision', value: 2, baseline: 0 }],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-suitecmd-job',
+    closeDecl: {
+      genre: 'TYPES',
+      stages: [
+        {
+          name: 'typecheck-target-zero-errors',
+          kind: 'count-not-worse',
+          params: {
+            cmd: 'npm', args: ['run', 'typecheck', '--', '--strict'], direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['src/checks.js'] },
+          },
+        },
+        { name: 'suite-green', kind: 'command-exit', params: { cmd: 'npm', args: ['test'], expectExit: 0 } },
+        {
+          name: 'suite-zero-failing-tests',
+          kind: 'count-not-worse',
+          params: {
+            cmd: 'npm', args: ['test'], direction: 'lower-is-better', baseline: 0, scope: { includePrefixes: ['test/'] },
+          },
+        },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqsuitecmdrun', job: 'pq-suitecmd-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqsuitecmdrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  const declaredByName = new Map(fixPart.attempts[0].declaredStages.map((s) => [s.name, s.question]));
+  assert.equal(declaredByName.get('typecheck-target-zero-errors'), 'src/checks.js has 0 type errors?', 'a DIFFERENT cmd (typecheck) still gets its real question');
+  assert.equal(declaredByName.get('suite-green'), 'does the test suite pass?');
+  assert.equal(declaredByName.get('suite-zero-failing-tests'), 'no failing tests?', 'same cmd+args as the command-exit suite-green stage -> the failing-test-count half, never "type errors" and never the stage\'s raw name');
+});
+
+test('plain-checks: declaredStages travels in DECLARED order and is omitted when no spec resolves', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-order-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    // first-red-wins: only the first of 3 declared stages ran
+    {
+      type: 'outer-close',
+      verdict: 'needs_revision',
+      stage: 'stage-a',
+      stages: [{ name: 'stage-a', verdict: 'needs_revision' }],
+      ts: '2026-09-05T00:00:03.000Z',
+      seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'pq-order-job',
+    closeDecl: {
+      genre: 'TYPES',
+      stages: [
+        { name: 'stage-a', kind: 'files-changed', params: { requireNonEmpty: true } },
+        { name: 'stage-b', kind: 'pattern-absent-in-diff', params: {} },
+        { name: 'stage-c', kind: 'command-exit', params: { cmd: 'npm', args: ['test'], expectExit: 0 } },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqorderrun', job: 'pq-order-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqorderrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.deepEqual(fixPart.attempts[0].declaredStages, [
+    { name: 'stage-a', question: 'did it change any file?' },
+    { name: 'stage-b', question: 'no casts or silencers added?' },
+    { name: 'stage-c', question: 'does the test suite pass?' },
+  ], 'full declared order, including stage-b/stage-c which never ran this attempt');
+  assert.equal(fixPart.attempts[0].stages.length, 1, 'only stage-a actually ran (first-red-wins)');
+});
+
+test('plain-checks: no resolvable spec -> declaredStages is omitted entirely (never a fabricated list)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'pq-nospec-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close', verdict: 'needs_revision', stage: 'some-stage', stages: [{ name: 'some-stage', verdict: 'needs_revision' }], ts: '2026-09-05T00:00:03.000Z', seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'pqnospecrun', job: 'pq-nospec-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const res = await fetch(`${base}/api/runs/pqnospecrun`);
+  const detail = await res.json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.equal(fixPart.attempts[0].declaredStages, undefined);
+  assert.equal(fixPart.attempts[0].declaredStagesTotal, undefined);
 });

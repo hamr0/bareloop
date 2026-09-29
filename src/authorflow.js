@@ -425,32 +425,18 @@ export function labelsFor(verdictType) { return questionSet(verdictType).labels;
 
 // ── CONFIRM TURN — person-facing wording (PRD item 33 M3 piece 4) ──────────
 //
-// These three are the $0, no-provider half of the confirm turn (D7): asked
-// before the scout ever runs, so a missing person at end of input stops at
-// $0 rather than after a paid call. FROZEN wording, exactly like SOURCE_FIELD
+// These are the $0, no-provider half of the confirm turn (D7): asked before
+// the scout ever runs, so a missing person at end of input stops at $0
+// rather than after a paid call. FROZEN wording, exactly like SOURCE_FIELD
 // and DESTINATION_FIELD_* above — a caller prints these verbatim, never
 // rewords or reorders them.
-
-/**
- * Asked ONLY for a repo source (ruling 2 addendum's D7) — a plain folder or a
- * URL has no "before" a repo's own history gives it to compare against. This
- * is the OLD Q5 wording, verbatim ("What would make you say this came back
- * worse than before?"), which M3 piece 3's reshape folded into Guardrails —
- * it survives here as its OWN field because the confirm turn (ruling 5's
- * 2026-09-13 addendum) includes it as a constraint only when the person
- * actually gave one, and folding it silently into the Guardrails free-text
- * slot would lose that "present or absent" distinction. An empty answer is
- * "nothing beyond what Guardrails already said" and is not required — see
- * the frozen-wording test below: this phrase appears NOWHERE in
- * {@link questionsFor}'s own sets, so a caller cannot double-ask it by
- * reading the wrong table.
- */
-export const WORSE_THAN_BEFORE_FIELD = Object.freeze({
-  id: 'worseThanBefore',
-  kind: 'mechanical',
-  label: 'Worse than before',
-  prompt: 'What would make you say this came back worse than before?',
-});
+//
+// RETIRED (hamr's ruling, 2026-09-28): the old Q5 "worse than before" field
+// and ask are gone — it was optional, and an EMPTY answer already meant
+// "nothing beyond Guardrails", so it never earned its own turn. `worseThanBefore`
+// downstream (confirmPrompt, `accepted.worseThanBefore`) is kept and always
+// resolves to `''` — the same value an empty answer always produced — so
+// nothing downstream needed to change shape, only the ask itself is gone.
 
 /**
  * Asked ONLY when `src/detectlang.js`'s `detectLanguage` reports its
@@ -1832,7 +1818,10 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   generate: Function, book: ReturnType<typeof makeCostBook>,
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
- *   worseThanBefore?: string}} o
+ *   worseThanBefore?: string}} o retired field (hamr's ruling 2026-09-28):
+ *   `worseThanBefore` is never asked any more and defaults to `''` — a
+ *   caller may still pass a string through (kept for a future, non-ask
+ *   source of the same constraint), it just never comes from an ask() step.
  * @returns {Promise<{ok: boolean,
  *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
  *   rounds: number,
@@ -1843,13 +1832,12 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
 export async function runConfirmTurn({
   verdictType, answers, questions, labels = {}, facts = null, listing = null, writeScope = null,
   isRepo, lang, generate, book, ask, onPhase = () => {}, mode = 'tool',
-  // `undefined` (the default) means "ask me" — every S2 caller (nothing
-  // pre-resolves this). A caller that already asked worseThanBefore itself
-  // (`authorCloseForJob`'s own $0 phase, run BEFORE the scout per D7) passes
-  // the resolved string straight through, and this turn asks nothing a
-  // second time. `''` is a legal resolved answer ("nothing beyond
-  // Guardrails") and is NOT the same as "ask me" — only `undefined` is.
-  worseThanBefore: presetWorseThanBefore = undefined,
+  // RETIRED ASK (hamr's ruling 2026-09-28): this turn never asks
+  // "worseThanBefore" any more — an absent value always resolves to `''`,
+  // byte-identical to what an empty answer always produced. A caller may
+  // still pass a resolved string through (kept as a plain pass-through, not
+  // an ask trigger).
+  worseThanBefore: presetWorseThanBefore = '',
 }) {
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
@@ -1858,16 +1846,8 @@ export async function runConfirmTurn({
   const abandon = (rounds) => ({ ...base(), stop: /** @type {ConfirmStop} */ ('confirm-abandoned'), rounds, cost: book.report() });
 
   // ── the $0 half, entirely before any token spends (D7) ────────────────────
-  /** @type {string} */
-  let worseThanBefore = '';
-  if (presetWorseThanBefore !== undefined) {
-    worseThanBefore = presetWorseThanBefore;
-  } else if (isRepo) {
-    onPhase('confirm-worse-than-before');
-    const wtb = await ask({ kind: 'worseThanBefore', field: WORSE_THAN_BEFORE_FIELD });
-    if (wtb === null) return abandon(0);
-    worseThanBefore = redactSecrets(String(wtb).trim());
-  }
+  // no ask here any more — see the retirement note above.
+  const worseThanBefore = typeof presetWorseThanBefore === 'string' ? presetWorseThanBefore : '';
 
   /** @type {string} */
   let resolvedLang = typeof lang === 'string' ? lang : '';

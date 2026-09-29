@@ -462,6 +462,24 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
 
   const spentUsd = jobEnd && typeof jobEnd.spentUsd === 'number' && Number.isFinite(jobEnd.spentUsd) ? jobEnd.spentUsd : null;
   const spendComplete = jobEnd ? jobEnd.spendComplete === true && spentUsd !== null : false;
+
+  // draftSpentUsd (hamr's ruling 2026-09-28, "one cap covers drafting +
+  // run") — the AUTHORING pipeline's own spend on this job before it was
+  // signed, off `job-start`'s dedicated field (never `priorSpentUsd`, which
+  // is the RESUME fold `resumed` above keys on). `null` when the run never
+  // carried one (the common case, and every run predating this field) —
+  // never a decorative 0 a reader could mistake for "drafting spent
+  // nothing".
+  const draftSpentUsd = jobStart && typeof jobStart.draftSpentUsd === 'number' && Number.isFinite(jobStart.draftSpentUsd) && jobStart.draftSpentUsd > 0
+    ? jobStart.draftSpentUsd : null;
+  // draftSpendComplete (hamr's ruling 2026-09-28) — was the drafting fold above
+  // EXACT? `null` when there is no drafting fold at all (the common case, and
+  // every run predating both fields) — never paired with a `draftSpentUsd` of
+  // `null`. An archive whose `job-start` carries `draftSpentUsd` but predates
+  // this companion field (src/run.js's own belt) defaults to `true` — it was
+  // exact then, the field simply didn't exist yet to say so.
+  const draftSpendComplete = draftSpentUsd === null ? null
+    : (jobStart.draftSpendComplete !== false);
   const floorReasonList = floorReasons(spine, jobStart, spendComplete);
 
   const wallMs = windowWallMs(parseTs(jobStart?.ts), parseTs(jobEnd?.ts));
@@ -1112,6 +1130,26 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     if (planRoundsInitialArr.length > 0) {
       const { spentUsd, unpricedRounds } = windowSpend(planRoundsInitialArr);
       const b = partBehaviour(scoutTsHi, firstTs);
+      // F: the plan part's own wall time (build item 8, 2026-09-28, run
+      // mul5fofw: a $0.28/20623-token paid call read as "0.0s"). Root cause:
+      // `scoutTsHi` is literally `planRoundsInitialArr[0].ts` — the plan
+      // round's OWN completion timestamp (every round record is stamped
+      // AFTER the call returns, never before) — so using it as plan's own
+      // START boundary measures the call against ITSELF, leaving only the
+      // few-ms gap to the next logged record (`firstTs`, the following
+      // step-start) as the "duration". Measured on mul5fofw's real spine:
+      // scout's own last round ts 11:15:00.335Z -> the plan round's ts
+      // 11:16:22.667Z is 82.3s, the plan call's real wall time; the old
+      // window (11:16:22.667Z -> 11:16:22.679Z, the step-start 12ms later)
+      // could never show anything but ~0. Fixed HERE ONLY (the reader/
+      // display side, never the seq-scoped `b`/`attempts` windows above,
+      // which were already correctly bounded and are left untouched): the
+      // wall window now runs from scout's own true end (its last round's
+      // ts, or job-start when there was no scout) to plan's own true end
+      // (its last round's ts) — never the NEXT phase's timestamps on either
+      // side, which is what made this unmeasurable by construction.
+      const scoutEndTs = scoutRoundsArr.length ? parseTs(scoutRoundsArr[scoutRoundsArr.length - 1].ts) : jobStartTs;
+      const planEndTs = parseTs(planRoundsInitialArr[planRoundsInitialArr.length - 1].ts);
       parts.push({
         id: 'plan',
         kind: 'plan',
@@ -1122,7 +1160,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         toolCalls: b ? b.totalCalls : null,
         byTool: b ? b.byTool : null,
         blocked: b ? b.denied : null,
-        wallMs: windowWallMs(scoutTsHi, firstTs),
+        wallMs: windowWallMs(scoutEndTs, planEndTs),
         spentUsd,
         unpricedRounds,
         outcome: null,
@@ -1328,6 +1366,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     stopReason,
     spentUsd,
     spendComplete,
+    draftSpentUsd,
+    draftSpendComplete,
     floorReasons: floorReasonList,
     transportRetryCount: transportRetries.length,
     transportRetriesOutsideWindows,
@@ -1382,6 +1422,44 @@ function money(n) {
 /** @param {number|null} n 2-decimal money — a signed BUDGET figure, never a spend one. */
 function money2(n) {
   return n === null ? 'unknown' : `$${n.toFixed(2)}`;
+}
+
+/**
+ * hamr's ruling 2026-09-28 ("one cap covers drafting + run") — the ONE
+ * spend display for a run that may carry a drafting share, so every surface
+ * that shows a run's money (the CLI's own `spent` line, the panel's Run tab
+ * summary/counters, the Runs list row, the Audit header, the Job tab) reads
+ * the same string rather than each hand-composing its own. `spendCore` is
+ * already-formatted text (`money(...)`, or a `died`/floor line's "at least
+ * $X") — this only decides whether to append the `(<draft> drafting)`
+ * clause and the `of $<cap>` tail, never re-derives the money itself.
+ * Unchanged (`spendCore` alone, or `spendCore of $cap`) when there is no
+ * drafting share — a run without one prints exactly what it always did.
+ *
+ * hamr's ruling 2026-09-28 (2nd addendum) — an INCOMPLETE drafting fold
+ * (`draftSpendComplete === false`) is a floor, not a total, and F6's rule
+ * ("unpriced is never free, a floor never dresses as exact") applies here
+ * exactly as it does to `spendCore` itself: the drafting clause reads `at
+ * least $X drafting`, and because a reader summing the two figures would
+ * otherwise take the LEADING number as exact too, `spendCore` itself also
+ * gains the `at least ` prefix — unless it already carries one (a `died`
+ * floor, or an already-prefixed caller), never doubled.
+ * @param {string} spendCore already-formatted spend text (e.g. `$3.71` or `at least $2.00`)
+ * @param {number|null} draftSpentUsd the drafting share, or null when there isn't one
+ * @param {number|null} [budgetUsd] the signed cap, appended as `of $X.XX` when given
+ * @param {boolean|null} [draftSpendComplete] whether the drafting fold above was EXACT;
+ *   `null`/`undefined`/`true` all read as exact (never a new enum value elsewhere) —
+ *   only an explicit `false` triggers the floor wording.
+ * @returns {string}
+ */
+export function moneyWithDraft(spendCore, draftSpentUsd, budgetUsd, draftSpendComplete) {
+  const hasDraft = draftSpentUsd !== null && draftSpentUsd !== undefined;
+  const draftFloor = hasDraft && draftSpendComplete === false;
+  const coreAlreadyFloor = /^(at least |≥)/.test(spendCore);
+  const core = draftFloor && !coreAlreadyFloor ? `at least ${spendCore}` : spendCore;
+  const draftPart = hasDraft ? ` (${draftFloor ? 'at least ' : ''}${money(draftSpentUsd)} drafting)` : '';
+  const capPart = budgetUsd === undefined ? '' : ` of ${money2(budgetUsd)}`;
+  return `${core}${draftPart}${capPart}`;
 }
 
 /**
@@ -1827,7 +1905,7 @@ export function summarizeForAllLine(summary) {
     // shown on a run with zero retries.
     outcome: `${summary.outcome ?? 'unknown'}${summary.transportRetryCount > 0 ? ` ⟲${summary.transportRetryCount}` : ''}`,
     hadTransportRetries: summary.transportRetryCount > 0,
-    spend: money(summary.spentUsd),
+    spend: moneyWithDraft(money(summary.spentUsd), summary.draftSpentUsd, undefined, summary.draftSpendComplete),
     wall: duration(summary.wallMs),
     steps: stepsCol,
     reason,

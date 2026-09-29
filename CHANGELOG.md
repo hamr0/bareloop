@@ -5,6 +5,88 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.31.0] — 2026-09-29
+
+### Added
+
+- **Panel Chat authoring (P3)** — the Chat tab now drafts a job from the page: a job card
+  (source, goal, Model, `Cap $` / Time cap), a chat thread, and Send / Revise / **Sign &
+  run** actions, backed by new `POST /api/author/*` routes. Every POST needs the
+  per-server-start token plus an Origin/Host check (the human-click guard); the sign route
+  additionally requires the exact spec hash from the session's own signing file and is the
+  only path that ever spawns `run-u` (argv array, ends in `--approve <hash>`). A single
+  progress indicator (amber cycling dots, green `[done]`, red `[stopped]` with the reason)
+  replaces per-phase chat bubbles; step lines carry no who-label; a pending ask always wins
+  the label ("waiting for your OK" / "install needed" / "waiting for your answer"). The
+  page opens on the Chat tab.
+- **Install-needed pause + Check again** — a repo copy with missing dependencies no longer
+  refuses outright: the session pauses, names the copy and the exact install command, and a
+  **Check again** button re-runs the same check on the same copy (bareloop still never
+  installs anything).
+- **Model check under Model** — one `[✓]`/`[✗]` line: key found/missing/bad-shape/rejected
+  (401/403 reads "key rejected", not "may be flaky") plus a $0 GET-only reachability probe
+  (`GET /api/author/model-check`, `checkProviderReachable` in `src/providers.js`). A missing
+  or bad key blocks Start; an unreachable endpoint shows red but never blocks.
+- **One cap covers drafting + run** — the separate Drafting cap field is gone. Drafting runs
+  under the same signed Cap `$`, and at sign the run's enforced ceiling is Cap minus what
+  drafting already spent. `runJob` takes `draftSpentUsd` and `draftSpendComplete` (carried on
+  `job-start` as their own fields, never `priorSpentUsd`, so a first run never reads as a
+  resume); `run-u` gains `--draft-spent-usd <n>` and `--draft-spend-incomplete` (validated
+  like `--read-shim`/`--scout`, carried in every resume/decide re-invocation tail);
+  `bareloop author` prints its drafting spend and the exact `run-u` command. Spend renders
+  as "$X ($Y drafting) of $Z", and an incomplete drafting fold reads "at least" on both
+  figures.
+- **Plain-question check lines** — the "checks N/M" headline is withdrawn. Run-tab part
+  cards and the Audit tab show "all N checks passed" or the first failing check in plain
+  words, e.g. "check #2 src/checks.js has 0 type errors? — 4 left, need 0"; an expanded
+  attempt row lists every declared check in order, including ones that never ran
+  ("not run"). One server-side owner maps each declared stage to its question ("did it
+  change any file?", "no casts or silencers added?", "does the test suite pass?", "no
+  failing tests?", …); numbers use three closed shapes ("N left, need T" / "N of total" /
+  "N, limit M").
+- Coloured `[✓]`/`[✗]` result glyphs on Run-tab part cards.
+- The fix worker's prompt now carries a facts-only close-grade history: "checks passed
+  N/M -> N/M -> …" (over the DECLARED stage count) and each stage's own number history
+  ("count-stage 12 -> 0"). Nothing generated, no advice.
+
+### Changed
+
+- **Panel money renders at 2 decimals everywhere** (`<$0.01` for a real sub-cent amount, a
+  floor rounds down). The CLI's 4-decimal `--all` output is unchanged.
+- **The "worse than before" confirm-turn question is retired** from both the panel and the
+  CLI — an empty answer always meant "nothing beyond Guardrails"; it now is never asked.
+- Chat tab cap row and labels follow the mockup (`Cap $`, `Token price $`, Time cap);
+  Audit tab Time cells show `HH:MM:SS` (full ISO on hover) instead of overflowing at
+  390px.
+
+### Fixed
+
+- **Live runs show a running floor, not "unknown"** — "$X so far (Y drafting) of $CAP ·
+  running Zm" on the Summary box and on a live run's own card; part-level tool counts on
+  a live run resolve through the same live audit-sidecar reader as the Audit tab.
+- **Job tab was permanently blank** — two elements shared `id="job-card"`; the read-only
+  card is now `job-card-readonly`, with a regression test banning duplicate ids.
+- **A failed or rejected chat POST no longer loses the typed answer** — the input clears only
+  on a proven success and errors persist in their own element instead of being wiped by
+  the 2-second poll.
+- **Fix-loop governor reads a declared close's numbers (F198)** — it fed on text-parsed
+  grades that read `null` for every declared count-not-worse gap; it now reads the close's
+  structured `{stage, value}`, so its progress/strike counting sees real convergence or
+  stalling. No limit or direction change.
+- **Escalated fix-loop exhaustion no longer advertises `--resume` (F197)** — `escalated` is
+  not resumable, so the option states that plainly instead of an unreachable "rerun with
+  --resume".
+- The plan part's wall time no longer reads ~0.0s for a real multi-second call (replay-side
+  fix; display only).
+- "Checks passed N/M" uses the declared stage count, not the count that ran under
+  first-red-wins — in the panel and in the fix worker's prompt (F203).
+
+### Docs
+
+- `bareloop.context.md` documents the `/api/author/*` routes, `draftSpentUsd`,
+  `draftSpendComplete`, `--draft-spent-usd`, `--draft-spend-incomplete` and
+  `moneyWithDraft`; PANEL-BUILD.md and the PRD carry the dated P3 / one-cap addenda.
+
 ## [0.30.0] — 2026-09-27
 
 ### Added

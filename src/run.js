@@ -134,6 +134,29 @@ async function primitiveSmoke(workdir) {
  *   load gate refuses one: a refusal returns the distinct `recipe-stale` outcome with zero
  *   spend rather than silently drafting cold, because starting a paid run on a decision
  *   nobody made is the same class of error as widening a cap to manufacture a green.
+ * @param {number} [opts.draftSpentUsd=0] hamr's ruling 2026-09-28 ("one cap covers
+ *   drafting + run") — money the AUTHORING pipeline (`authorCloseForJob`/
+ *   `prepareSigning`, run under the SAME signed `budgetUsd` as its ceiling) already
+ *   spent on THIS job before it was ever signed. The signed `budgetUsd` stays the
+ *   one number in the spec hash; this shrinks the RUN's own enforced ceiling by
+ *   what drafting already took, so the two phases never spend more than the one
+ *   cap together. Deliberately NOT `priorSpentUsd` — that key means "a previous
+ *   ATTEMPT of this same run died and folded its spend forward" and is read by
+ *   `readResume`/`replay.js`'s `resumed` flag; a drafting spend is not a resume and
+ *   must never make an ordinary first run of a job read as one. It is also never
+ *   folded into `spentUsd` (the run's own ledger, cumulative-so-far and what a
+ *   resume's `priorSpentUsd` seeds) or into `engagementSpentUsd` — drafting is a
+ *   DIFFERENT phase's spend, reported beside the run's, never inside it. A garbage
+ *   value (non-finite, negative) is read as 0, belted exactly like `priorSpentUsd`.
+ * @param {boolean} [opts.draftSpendComplete=true] hamr's ruling 2026-09-28 — was the
+ *   `draftSpentUsd` fold above EXACT? The authoring pipeline's own metered-call list can
+ *   go unpriced (F6) exactly like a resumed attempt's can, and the unknown does not heal
+ *   by folding forward. A NEW field beside `draftSpentUsd`, never a new state inside
+ *   `spendComplete`/`priorSpendComplete` — those answer "is THIS run's own ledger exact,"
+ *   this answers "was the OTHER phase's ledger exact," and the two must never merge into
+ *   one flag or a floor drafting spend could read as an exact run. Read only when
+ *   `draftSpentUsd` itself is emitted; a garbage value is read as `true` (the same belt
+ *   `priorSpendComplete` gets — an unreadable flag never manufactures a false floor).
  * @param {number} [opts.priorSpentUsd=0] RESUME (module C) — money a PREVIOUS, killed
  *   attempt of this same try already spent. It seeds the ledger, so the restarted
  *   attempt runs under the REMAINDER of the signed `budgetUsd` and the terminal
@@ -242,7 +265,7 @@ async function primitiveSmoke(workdir) {
  *   deliberately NOT in the resumable/checkpoint set (`src/reuse.js`) — an
  *   unknown in-flight state is not a known-safe resume point.
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true }) {
   // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
   // before the ledger, before the approval gate, before a byte of the spec is read.
   // An unrecognised spelling throws here at zero cost instead of being coerced by
@@ -270,6 +293,18 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
    * ENGAGEMENT's spend can be stated side by side on every terminal. Two things
    * counted by one number will eventually be asked to disagree. */
   const chainFoldUsd = spentUsd;
+  // hamr's ruling 2026-09-28 — the DRAFTING fold, kept apart from the RESUME
+  // fold above on purpose (see the param's own doc): it shrinks the run's
+  // enforced ceiling below but never seeds `spentUsd`/`chainFoldUsd`, so it
+  // can never be read as "a previous attempt of THIS run died" by `readResume`
+  // or by `replay.js`'s `resumed` flag (which keys on `priorSpentUsd`'s
+  // presence alone). Belted exactly like `priorSpentUsd`: a garbage value
+  // (non-finite, negative) reads as 0 rather than poisoning the ceiling
+  // arithmetic into "no cap" or "already over".
+  const draftFoldUsd = typeof draftSpentUsd === 'number' && Number.isFinite(draftSpentUsd) && draftSpentUsd > 0 ? draftSpentUsd : 0;
+  // Belted exactly like `priorSpendComplete`'s own read below: a garbage value
+  // (non-boolean) reads as `true` rather than manufacturing a false floor.
+  const draftFoldComplete = draftSpendComplete !== false;
   let unpriced = false;
   // RESUME (v1.46 §3): was the FOLD itself exact? `readResume` marks it false when any
   // round inside the dead attempt came back unpriced, and that unknown does not heal by
@@ -379,6 +414,11 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // A fold of $0 that is NOT exact is still a fold — the unknown is the whole of what
     // it inherited, and it is the only field that can carry it forward.
     ...(spentUsd > 0 || priorFloor ? { priorSpentUsd: spentUsd, priorSpendComplete: !priorFloor } : {}),
+    // …and the DRAFTING fold, on its own dedicated field — never `priorSpentUsd`
+    // (see the param's own doc above: that key means "resumed", and this run
+    // was not). Emitted only when there is one, same "a decorative 0 is
+    // indistinguishable from none" rule every other fold field here follows.
+    ...(draftFoldUsd > 0 ? { draftSpentUsd: draftFoldUsd, draftSpendComplete: draftFoldComplete } : {}),
     // …and the TIME fold, which F103 splits in two. `priorWallMs` is what the next
     // reader ADDS to (the bound), and it is engagement-scoped: a rerun opens a fresh
     // engagement, so the minutes the person did not commission are not a bound on
@@ -493,7 +533,13 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   {
     const outcome = await runPlan(job, {
       workdir, provider, nativeProvider, providerFor, judgeProvider, judgeModel, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, closeDir, layerRoot, readShim, scout, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd, resumable,
-      remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - spentUsd),
+      // hamr's ruling 2026-09-28 — ONE cap covers drafting + run: the run's
+      // enforced ceiling is the signed `budgetUsd` (unchanged, still in the
+      // spec hash) MINUS whatever drafting already spent on this job before
+      // signing. Advertised = enforced: this is the ONE place the ceiling
+      // arithmetic lives, so every readout of "what's left" is this same
+      // subtraction, never a second one computed elsewhere.
+      remainingUsd: () => Math.min(shellCapUsd, job.budgetUsd - draftFoldUsd - spentUsd),
       isUnpriced: () => unpriced, // F6: let the plan flow bail in-flight, not just after it returns
       spendComplete, // …and let its money-halt readout say whether the remaining it quotes is exact
     });

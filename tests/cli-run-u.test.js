@@ -67,6 +67,60 @@ test('bareloop run-u: a misused --model value refuses at $0, before any key/prov
 });
 
 // ---------------------------------------------------------------------------
+// --draft-spent-usd — hamr's ruling 2026-09-28 ("one cap covers drafting +
+// run"): refused at $0 the same param-guard way --model/--read-shim/--scout
+// already are, never coerced (NaN/negative into 0 would silently widen the
+// ceiling; a garbage value read as Infinity would silently narrow it).
+// ---------------------------------------------------------------------------
+
+test('bareloop run-u: --draft-spent-usd NaN refuses at $0, before any key/provider check', async () => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run-u', '--job', 'aurora-spawner', '--draft-spent-usd', 'not-a-number'], {
+    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
+  });
+  assert.equal(rc, 2);
+  assert.match(err.text(), /--draft-spent-usd "not-a-number" is not a finite number >= 0/);
+});
+
+test('bareloop run-u: --draft-spent-usd -1 (negative) refuses at $0', async () => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run-u', '--job', 'aurora-spawner', '--draft-spent-usd', '-1'], {
+    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
+  });
+  assert.equal(rc, 2);
+  assert.match(err.text(), /--draft-spent-usd "-1" is not a finite number >= 0/);
+});
+
+test('bareloop run-u: --draft-spent-usd Infinity refuses at $0 (a real number that is not finite)', async () => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run-u', '--job', 'aurora-spawner', '--draft-spent-usd', 'Infinity'], {
+    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
+  });
+  assert.equal(rc, 2);
+  assert.match(err.text(), /--draft-spent-usd "Infinity" is not a finite number >= 0/);
+});
+
+test('bareloop run-u: a real, valid --draft-spent-usd (0.81) is accepted — the preview still reaches exit 0', async () => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run-u', '--job', 'aurora-spawner', '--draft-spent-usd', '0.81'], {
+    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
+  });
+  assert.equal(rc, 0, err.text());
+});
+
+// hamr's ruling 2026-09-28 (2nd addendum) — --draft-spend-incomplete is a
+// bare presence-flag beside --draft-spent-usd (no value to misread), same
+// param-guard class, never refused for being passed alongside a real
+// --draft-spent-usd value.
+test('bareloop run-u: --draft-spend-incomplete alongside a real --draft-spent-usd is accepted — the preview still reaches exit 0', async () => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run-u', '--job', 'aurora-spawner', '--draft-spent-usd', '0.81', '--draft-spend-incomplete'], {
+    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
+  });
+  assert.equal(rc, 0, err.text());
+});
+
+// ---------------------------------------------------------------------------
 // the real preview path, still $0: no key -> print hints, exit 0, no spend
 // ---------------------------------------------------------------------------
 

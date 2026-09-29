@@ -718,7 +718,7 @@ test('confirm turn: wires into the phase order between scout-done and listing, r
   const phases = [];
   const r = await authorCloseForJob({
     verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
-    isRepo: true, ask: scriptedAsk(['nothing worse', 'confirm']),
+    isRepo: true, ask: scriptedAsk(['confirm']),
     confirmGenerate: scriptedConfirmer([CONFIRM_PLAN]),
     onPhase: (/** @type {string} */ n) => phases.push(n),
     scoutFn: async () => SURVEY(p.dir),
@@ -741,7 +741,7 @@ test('confirm turn: an ABSENT survey (state !== PRESENT) skips confirm entirely,
   let confirmCalled = false;
   const r = await authorCloseForJob({
     verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
-    isRepo: true, ask: scriptedAsk(['nothing worse', 'confirm']),
+    isRepo: true, ask: scriptedAsk(['confirm']),
     confirmGenerate: async () => { confirmCalled = true; return { text: '', metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
     onPhase: (/** @type {string} */ n) => phases.push(n),
     scoutFn: async () => ({ state: 'ABSENT', facts: null, reason: 'the ladder never produced a fact', calls: [], raws: [] }),
@@ -786,7 +786,7 @@ test('confirm turn: scout $0.40 + confirm $0.40 at a $0.80 ceiling cap-halts the
   const r = await authorCloseForJob({
     verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
     isRepo: true, ceilingUsd: 0.8,
-    ask: scriptedAsk(['nothing worse', 'confirm']),
+    ask: scriptedAsk(['confirm']),
     confirmGenerate: scriptedConfirmer([CONFIRM_PLAN], 0.4),
     scout: scoutWithCost,
     listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
@@ -843,7 +843,7 @@ test('confirm turn: FAIL-FIRST — dropping authorCloseForJob\'s priorCalls lets
   const args = () => ({
     verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
     isRepo: true, ceilingUsd: 0.601,
-    ask: scriptedAsk(['nothing worse', 'confirm']),
+    ask: scriptedAsk(['confirm']),
     confirmGenerate: scriptedConfirmer([CONFIRM_PLAN], 0.3),
     scout: scoutWithCost,
     listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
@@ -888,7 +888,7 @@ test('confirm turn: a scout that already spent the whole ceiling costs the confi
   const r = await authorCloseForJob({
     verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
     isRepo: true, ceilingUsd: 0.8,
-    ask: scriptedAsk(['nothing worse', 'confirm']),
+    ask: scriptedAsk(['confirm']),
     confirmGenerate: countingConfirmer,
     scout: scoutAtCeiling,
     listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
@@ -909,7 +909,7 @@ test('confirm turn: a scout call with a null costUsd stops the confirm turn pric
   const r = await authorCloseForJob({
     verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
     isRepo: true, ceilingUsd: 1,
-    ask: scriptedAsk(['nothing worse', 'confirm']),
+    ask: scriptedAsk(['confirm']),
     confirmGenerate: countingConfirmer,
     scout: scoutUnpriced,
     listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
@@ -930,7 +930,7 @@ test('confirm turn: scout $0.40 + confirm $0.40 — the FINAL reported spend is 
   const r = await authorCloseForJob({
     verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed,
     isRepo: true, ceilingUsd: 0.8,
-    ask: scriptedAsk(['nothing worse', 'confirm']),
+    ask: scriptedAsk(['confirm']),
     confirmGenerate: scriptedConfirmer([CONFIRM_PLAN], 0.4),
     scout: scoutWithCost,
     listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),
@@ -954,7 +954,7 @@ test('confirm turn: an ambiguous language pick lands in closeDecl.lang', async (
   const r = await authorCloseForJob({
     verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'python', seedRef: p.seed,
     isRepo: true, langResult: { kind: 'ambiguous', candidates: ['js', 'python'], dir: p.dir },
-    ask: scriptedAsk(['nothing worse', 'js', 'confirm']),
+    ask: scriptedAsk(['js', 'confirm']),
     confirmGenerate: scriptedConfirmer([CONFIRM_PLAN]),
     scoutFn: async () => SURVEY(p.dir),
     listingFn: async () => ({ stop: null, files: ['src/fix.js', 'check.mjs'] }),

@@ -348,8 +348,9 @@ export async function main(argv, deps = {}) {
   // Only meaningful for a REPO source (PRD item 33 M3 piece 4, step S6): a
   // plain folder has no genre to detect and no code-shaped manifest to walk —
   // `LANG`/`langResult` stay at their "nothing to see" values and the confirm
-  // turn further down runs with `isRepo: false` (D5), which is what already
-  // skips the repo-only "worse than before" ask and the language pick alike.
+  // turn further down runs with `isRepo: false` (D5), which is what skips
+  // the language pick (the old repo-only "worse than before" ask is retired
+  // entirely as of 2026-09-28 — see src/authorflow.js's own retirement note).
   let langResult = /** @type {ReturnType<typeof detectLanguage>|null} */ (null);
   let LANG = 'none-detected';
   if (IS_REPO_SOURCE) {
@@ -702,9 +703,10 @@ export async function main(argv, deps = {}) {
     return String(value);
   };
   /** one free-text answer, possibly several lines; a blank line ends it.
-   * `allowBlank` lets the FIRST line be blank — `worseThanBefore`'s "nothing
-   * beyond Guardrails" is a legal, non-required answer, unlike every other
-   * free-text step below.
+   * `allowBlank` lets the FIRST line be blank — kept as a general option for
+   * a future optional free-text step; every current step below passes
+   * `false` (the old "worse than before" ask, retired 2026-09-28, was the
+   * only caller that ever passed `true`).
    * @param {boolean} allowBlank @returns {Promise<string|null>} */
   const readFreeText = async (allowBlank) => {
     /** @type {string[]} */
@@ -729,11 +731,6 @@ export async function main(argv, deps = {}) {
    * @param {{kind: string, [k: string]: any}} step @returns {Promise<string|null>} */
   const ask = async (step) => {
     out('');
-    if (step.kind === 'worseThanBefore') {
-      out(step.field.prompt);
-      out('  (press Enter on a blank line for "nothing beyond Guardrails")');
-      return readFreeText(true);
-    }
     if (step.kind === 'language') {
       out(step.field.prompt);
       for (const c of step.candidates ?? []) out(`  · ${c}`);
@@ -1201,7 +1198,15 @@ export async function main(argv, deps = {}) {
         // buys a real judge call per case, so a line saying "the gates spend no
         // tokens" would have been false the moment a judged close reached here.
         out(`authoring  ${costLine(authored.cost)}`);
-        out(`total cost ${costLine(costSoFar())}${judges ? '   (includes the calibration gate\'s judge calls)' : '   (gates 1-3 spend no tokens — they run commands)'}`);
+        const totalCost = costSoFar();
+        out(`total cost ${costLine(totalCost)}${judges ? '   (includes the calibration gate\'s judge calls)' : '   (gates 1-3 spend no tokens — they run commands)'}`);
+        // hamr's ruling 2026-09-28 ("one cap covers drafting + run") — this
+        // run's own known FLOOR (never $0 on an unpriced call, F6), handed to
+        // the run-u command below as `--draft-spent-usd` so the SIGNED run's
+        // own enforced ceiling becomes Cap $ minus what THIS pipeline already
+        // spent, computed in the one place (`src/run.js`'s `remainingUsd`)
+        // that arithmetic lives — never re-derived here.
+        const draftSpentUsd = typeof totalCost.costUsd === 'number' ? totalCost.costUsd : totalCost.knownUsd;
 
         if (!signing.ok) {
           out('\nSIGNING NOT PREPARED — the close did not clear D9\'s gates. Nothing was signed and nothing was run.');
@@ -1222,8 +1227,19 @@ export async function main(argv, deps = {}) {
           // person needs to run their own job, nothing left to hand off.
           // `providerEntry.envKey` (never a hardcoded ANTHROPIC_API_KEY) is the
           // same F187 rule scripts/run-u.mjs's own hint already follows.
+          // hamr's ruling 2026-09-28 (2nd addendum) — `totalCost.costUsd === null`
+          // means this pipeline's own metered list carried at least one unpriced
+          // call (`tallyCalls`'s `spendComplete: false`), so the drafting fold is
+          // a FLOOR, and the run-u command below must say so via its own
+          // presence-flag rather than let the next leg's job-start read it as
+          // exact.
+          const draftIncomplete = totalCost.costUsd === null;
+          if (draftSpentUsd > 0) {
+            out(`\n  drafting spent ${draftIncomplete ? `at least $${draftSpentUsd.toFixed(6)}` : `$${draftSpentUsd.toFixed(6)}`} — the run's own cap is the SAME signed $${spec.budgetUsd}, `
+              + 'and run-u will enforce the remainder (Cap $ minus this) as ITS ceiling — pass --draft-spent-usd exactly as shown below, never a rounded or re-typed figure.');
+          }
           out('\nTo run it (the same signature and gates as any other job — nothing here bypasses them):');
-          out(`  ${providerEntry.envKey}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}`);
+          out(`  ${providerEntry.envKey}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}${draftIncomplete ? ' --draft-spend-incomplete' : ''}` : ''}`);
           emit('author-end', { outcome: 'prepared', specHash: hash });
         }
       }

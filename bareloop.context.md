@@ -1160,7 +1160,37 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+
+**`draftSpentUsd` (hamr's ruling 2026-09-28, "one cap covers drafting + run") — money the
+AUTHORING pipeline already spent on this job before it was signed.** Shrinks THIS run's own
+enforced ceiling (the one place the arithmetic lives: `remainingUsd() => Math.min(shellCapUsd,
+job.budgetUsd - draftFoldUsd - spentUsd)`), never the signed `budgetUsd` itself. Deliberately
+NOT `priorSpentUsd` — that key means "a previous attempt of this run died and folded its spend
+forward," read by `src/replay.js`'s `resumed` flag off the key's bare presence; a drafting fold
+must never make an ordinary first run read as a resume. Belted like `priorSpentUsd` (a
+non-finite or negative value reads as 0). Rides onto `job-start` as its own field,
+`draftSpentUsd`, only when > 0 — never inside `spentUsd`/`engagementSpentUsd`, which stay
+run-only. `bareloop run-u --draft-spent-usd <n>` is the CLI door (validated: finite, ≥ 0, else
+refused); `bareloop author` prints its own known drafting spend floor and the exact `run-u`
+command including the flag; the panel's sign route passes the session's own tracked drafting
+spend the same way. `src/replay.js`'s `moneyWithDraft(spendCore, draftSpentUsd, budgetUsd?, draftSpendComplete?)` is
+the one shared display formatter: `"$3.71 ($0.81 drafting) of $5.00"`, unchanged
+(`spendCore`/`spendCore of $cap`) when a run carries no drafting share. When
+`draftSpendComplete === false` it reads `"at least $3.71 (at least $0.81 drafting) of $5.00"`
+(the core is not double-prefixed if it is already a floor).
+
+**`draftSpendComplete` (default `true`; hamr's ruling 2026-09-28, 2nd addendum) — was the
+`draftSpentUsd` fold EXACT?** The authoring pipeline's metered-call list can go unpriced (F6)
+and the unknown does not heal by folding forward, so a drafting figure that is only a floor
+must say so. A NEW field beside `draftSpentUsd`, never a value inside `spendComplete` or
+`priorSpendComplete` (those answer "is THIS run's own ledger exact"; merging them would let a
+floor drafting spend read as an exact run). Read only when `draftSpentUsd` is emitted: rides
+onto `job-start` as `draftSpendComplete` beside `draftSpentUsd` (only when the fold is > 0);
+only an explicit `false` counts as incomplete — anything else, garbage included, reads `true`,
+so an unreadable flag never manufactures a false floor. `src/replay.js` surfaces it as
+`summary.draftSpendComplete` (`null` when no drafting fold; a job-start lacking the field reads
+`true`) and feeds it to `moneyWithDraft`.
 
 **`closeTimeoutMs` (PRD item 27/M3) is now OPTIONAL for every real caller.** Omit it (both
 `src/cli.js`'s bundle runner and `src/userrun.js` — lifted out of `scripts/run-u.mjs` by
@@ -1275,6 +1305,26 @@ knob, not a product default — the spec names no scout, so the signed hash is u
 `scripts/run-u.mjs --scout on|off` (default `on`) is its runner-territory surface, modelled on
 `--read-shim`: an unrecognised value exits 2 at argv, and every re-invocation the runner prints
 carries `--scout off` when set, so a resume never silently drops the arm.
+
+**`bareloop run-u --draft-spend-incomplete`** is a boolean presence-flag (no value) that sets
+`runJob`'s `draftSpendComplete: false`, saying the `--draft-spent-usd` figure is a floor. It
+has no guard against being passed without `--draft-spent-usd` — alone it is inert (nothing is
+folded, so no `job-start` field is emitted). Every printed re-invocation tail carries it
+alongside `--draft-spent-usd` (only when drafting spend > 0), so a resumed leg never turns the
+floor back into an exact figure; `bareloop author` and the panel's sign route pass it when the
+session's drafting spend was incomplete.
+
+**`bareloop run-u --draft-spent-usd <n>`** (hamr's ruling 2026-09-28, "one cap covers drafting +
+run") is the same runner-territory class: a non-finite or negative value exits 2 at argv, before
+the approval gate — never coerced, since reading garbage as 0 would silently WIDEN the run's own
+enforced ceiling and reading it as `Infinity` would silently narrow it into "no cap". The spec
+names no drafting spend, so the signed `budgetUsd` is unaffected; this only shrinks THIS leg's
+own enforced remainder (`job.budgetUsd - draftSpentUsd - spentUsd`). Every printed
+resume/decide/door re-invocation carries `--draft-spent-usd` too, mirroring `--read-shim`'s own
+tail — a resumed leg that dropped it would silently widen its ceiling back up. `bareloop author`
+prints the exact `run-u` command including this flag, with its own known drafting spend (a floor,
+never $0 on an unpriced call — F6). The panel's sign route (`src/panel/authorroutes.js`)
+passes the same flag off the authoring session's own tracked spend.
 
 **The review door's two checkpoint terminals (N4 slice 1, doors re-cut 2026-08-18)** are the
 class's whole surface at this layer, and each is a CLEAN exit (`spendComplete` stays true —
@@ -1554,7 +1604,10 @@ greens harmed — all three historical fix-loop greens converted in ≤ 2 verdic
 case caught, dead flat at 2 errors for 7 verdicts until the wall). It now stops on the same
 2-strike no-progress rule, read off a DIFFERENT signal: the close's own graded numbers, **per
 stage** (`src/trend.js`). A stage's series is the first number on the first red-marked line of
-its output, compared only against that stage's own BEST so far (never last-only, the same
+its output (for a DECLARED close the structured `{stage, value}` its verdict already carries —
+`closeGrade`, F198 — never a re-parse of the gap prose, which reads every declared grade as
+uncomparable; a command close, and a worker-crash's synthetic gap, still read the text),
+compared only against that stage's own BEST so far (never last-only, the same
 oscillator reason the ladder keeps a seen-set); reaching a LATER stage than ever before is
 progress too, since a staged close is first-red-wins. Two consecutive comparable readings with
 nothing improving ends the loop, under the unchanged `cap-halt` terminal and the unchanged
@@ -1578,6 +1631,10 @@ vs `the target files are clean but M error(s) exist outside them`) donates both 
 series, and a run crossing that seam can read converging on work that only swapped which wall
 it is behind. Neither is sharpened by teaching the reader to tell prose shapes apart (the F49
 precedent); the second's root fix is a stage split in the close, which is the spec's to change.
+The fix worker's prompt also gains one facts-only line ("The close's own numbers so far, oldest
+first": checks-satisfied counts and each stage's number history, F198) — no advice, omitted when
+nothing was graded. This exhaustion terminal is `escalated`, a graded red that `--resume`
+refuses, so its options say plainly it cannot be resumed (revise the spec and rerun fresh, F197).
 The spine gains a per-iteration `ladder` record here too; every reading names its `governor`
 (`step-ladder` | `close-trend`) so two instruments under one event type can never be averaged
 into one number.
@@ -2553,7 +2610,7 @@ reimplements for the tool-call breakdown. It returns one plain object:
 
 ```
 { runId, job, goal, budgetUsd, specHash, branch, verdictType, model, code,
-  outcome, stopReason, spentUsd, spendComplete, wallMs, chainClock,
+  outcome, stopReason, spentUsd, spendComplete, draftSpentUsd, wallMs, chainClock,
   resumed, resumeSeed, thisFileSpend, spendMismatch,
   timelineKind: 'steps'|'iterations', replans, close,
   steps: [{ id, occurrence, outcome, rounds, toolCalls, checks: {passed, failed},
@@ -2582,6 +2639,13 @@ an archive-age gap, a missing `model` can happen on any spine, old or new). `--a
 the model string, or `-`) — `model` is kept FULL, never truncated, unlike the compact `reason`
 column: a wrong or uncertain model reading is exactly the thing a directory-wide scan needs in
 full, not cut.
+
+**`draftSpentUsd`** (hamr's ruling 2026-09-28, "one cap covers drafting + run") reads
+`job-start.draftSpentUsd` — `null` on every run that never drafted through the panel/`bareloop
+author` (the common case, and every spine predating the field), the drafting spend FLOOR
+otherwise. Never `priorSpentUsd` (that key drives `resumed` below — see `runJob`'s own doc) and
+never folded into `spentUsd`. `summarizeForAllLine`'s `spend` column and every panel money
+display route this through `moneyWithDraft` (above).
 
 **`code`** (F118, the run→code direction — the commit→run direction is the prompt-commit
 check's `Failure:` run-reference rule; the two are companion halves of one loop, built the
@@ -3230,7 +3294,14 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   paged, for the Audit tab's Grouped view); `GET /api/runs/:runid/job` (the signed spec's
   own fields, ONLY when a bundle-layout run's `spec.json` is reachable — a run-u run has
   none on disk, and this reads `resolved:false` with every spec-only field honestly
-  `'unknown'`, never guessed from the spine's own narrower `job-start` record). Every
+  `'unknown'`, never guessed from the spine's own narrower `job-start` record). The run
+  detail also carries `draftSpentUsd`/`draftSpendComplete` (the drafting share of the one cap,
+  `null` when none), `spendFloorUsd`/`wallFloorMs` for a died OR still-running spine (a
+  floor, never `unknown`), and — when a spec resolves — per part attempt `declaredStagesTotal`
+  and `declaredStages[{name, question}]` in DECLARED order, plus per stage `kind`/`direction`/
+  `baselineKind`/`question`: the plain-English question is derived in `src/panel/server.js`
+  (`stageQuestionText`) from the signed stage's kind/params only, `null` when no honest
+  wording exists (the client then shows the stage's own name). Every
   endpoint is GET/HEAD only (anything else — including every write verb — is `405`); a URL
   never joins a path segment into a filesystem read — a runid is looked up in the run list
   first (`RUNID_RE`, `src/panel/server.js` — accepts a `~2`-style backfill-disambiguated
@@ -3264,6 +3335,47 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   no provider call) instrument that paces a real archived spine's records back out under a
   new runid so the panel can be exercised against a "live" run without a paid run — it is not
   a substitute for watching a real run start-to-end, which stays a separately authorized step.
+
+- **Panel P3 (chat/authoring, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27)** → the ONE
+  family of write routes the panel serves, all under `/api/author/*` (`src/panel/
+  authorroutes.js`); every other route stays GET/HEAD-only per P1's own rule. Every route
+  requires the human-click guard: an `x-bareloop-token` header matching a fresh token minted
+  once per server start (templated into `index.html` like the port) AND an Origin/Host
+  naming this exact `127.0.0.1:<port>` — a request failing either gets `403`, before the
+  route body ever runs. `POST /api/author/start` (one job-card body; `409` while a prior
+  session is still non-terminal — one authoring session at a time) creates a session
+  (`src/panel/authorsession.js`) that runs `prepareSource`/`detectLanguage`/`validateJob`/
+  `authorCloseForJob`/`assembleSpec`/`prepareSigning` in-process, exactly the library calls
+  `bareloop interview`/`bareloop author` already make — never a script's own readline loop,
+  never a reimplementation of any gate. `GET /api/author/model-check?model=<id>` is the $0 readiness probe the job card runs
+  before Start (`checkProviderReachable`, `src/providers.js` — a models-list GET only, never a
+  completion; the page sees the key's NAME and a status word, never the value). `POST
+  /api/author/:id/check-deps` is the install-gap's "Check again" (`phase:'install-needed'`:
+  the session waits on the person's own install, then re-runs `missingDependencies` on the
+  same copy — bareloop never installs). `GET /api/author/:id` polls the session's state
+  (phase, chat messages, cost, `revisesLeft`, `specHash` once prepared). `POST /api/author/
+  :id/send {text}` answers whatever the confirm turn is currently asking (the `language` pick or a plan's
+  own follow-up question — the old `worseThanBefore` ask is retired, 2026-09-28) — refused outright when the pending ask is the
+  plan MENU itself (`{ok:false}`, no route from chat text to a plan decision, ever). `POST
+  /api/author/:id/revise {text}` is the menu's own `fix` pick, with the chat text as the
+  correction (D3: max 2 rounds, `revisesLeft` derived from the confirm turn's own round
+  number, never a second hardcoded cap). `POST /api/author/:id/sign-prepare` is the menu's
+  own `confirm` pick — it runs gates 1–4 and reaches `phase:'prepared'` with a `specHash`; it
+  NEVER signs. `POST /api/author/:id/sign {specHash}` is the ONLY route that spawns a run —
+  it refuses unless `phase==='prepared'` and the posted hash matches the session's own
+  `signing.json` `specHash` exactly, then spawns `setsid systemd-inhibit … node bin/
+  bareloop.mjs run-u --spec <resolved-spec.json> --approve <hash>` (plus `--draft-spent-usd <n>`
+  [`--draft-spend-incomplete`] when the session's drafting spend is > 0 — one cap covers
+  drafting + run) detached (array argv,
+  never a shell string), with its own log file inside the session's own dir, and the
+  server's own environment (a key is never read into or sent to the page — a missing one
+  refuses the session at $0, naming only the env var). `src/panel/authorsession.js` takes
+  test-only DI seams (`scout`/`generate`/`confirmGenerate`/`authorFn`/`prepareSigningFn`) so
+  a test can drive the real ask()-channel/revise/hash wiring without a live provider call;
+  none of them are reachable from `authorroutes.js`'s real construction path. Sessions live
+  under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
+  `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
+  `~/.config/bareloop/.env` keys-file loader, and Settings are P4, not built here.
 
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
@@ -3326,6 +3438,15 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   `throw new ExitSignal(n)`, caught at the bottom of `main`), the same "a library function
   returns a code / throws" rule `src/userrun.js` already keeps. Like `interview`, `src/cli.js`
   hands it raw `stdin`/`stdout`/`stderr` (its one interactive seam is the confirm turn).
+
+  **`--budget` and `--draft-spent-usd` (hamr's ruling 2026-09-28, "one cap covers drafting +
+  run"):** `--budget` still means the AUTHORING ceiling, unchanged — the panel sets it equal to
+  the job card's one `Cap $`. On a SIGNING PREPARED stop, `author` prints its own known
+  drafting spend (a floor, never $0 on an unpriced call — F6) and the exact `run-u` command to
+  run it, now including `--draft-spent-usd <known-floor>` when that floor is > 0 — the SAME
+  signed `budgetUsd` is the run's cap too, and `run-u` enforces the remainder
+  (`Cap $ − drafting spent`) as ITS own ceiling. Nothing here is left for a person to
+  hand-compute or re-type, the same rule F185 set for `--spec`.
 
 **Tighten-only budget/wall.** `--budget`/`--wall` on `bareloop run` may only lower the
 bundle's own signed `budgetUsd`/`maxWallMs` — `checkEnvelope`'s `envelope-widen` red refuses

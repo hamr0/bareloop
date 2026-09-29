@@ -30,6 +30,11 @@
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
   body{overflow-x:hidden;}
   button{font:inherit;cursor:pointer;}
+  /* ported verbatim from design/panel-mockup.html: browsers default form
+     controls to a UA sans font, not the page's monospace — without this,
+     inputs/selects render off-theme even though buttons already inherit it. */
+  input,select{font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);}
+  input::placeholder{color:var(--text-faint);}
   table{border-collapse:collapse;width:100%;}
   th,td{text-align:left;padding:6px 8px;border-bottom:1px dotted var(--border-strong);font-size:12px;}
   th{color:var(--text-dim);font-weight:700;background:var(--panel2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;border-bottom:1px solid var(--border-strong);}
@@ -132,6 +137,18 @@
   .dot::before{content:"[·]";color:var(--grey-dot);}
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
+  /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
+     step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
+     their result glyph as PLAIN inline text inside a larger string (never
+     through `.dot`, which owns its own bracketed content), so `[✓]`/`[✗]`
+     there were colourless until now. `.glyph-green`/`.glyph-red` are the same
+     two existing colour tokens, applied via a plain inline `<span>` wrapper
+     (`glyphSpan()` in this file's script) rather than a new colour — `[▶]`
+     stays amber (already coloured via `.dot.amber` where it renders as a
+     dot; these two spans are never minted for `▶`/`·`/`?`) and the wording
+     ruling stands: colour only, never the words green/red/soft-green. */
+  .glyph-green{color:var(--green);}
+  .glyph-red{color:var(--red);}
   /* Panel P2 defect 1 (hamr-watched run mujjtrvd, 2026-09-27): the [▶] glyph
      itself pulses wherever a LIVE run shows it (runs list rows, the
      Workflows job row when its represented run is live, the run header) —
@@ -165,6 +182,8 @@
   .badge.cyan{color:var(--cyan);}
 
   .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
+  #chat-action-error:empty{display:none;}
+  #chat-action-error{font-size:12px;color:var(--red);margin:4px 0;}
   .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);white-space:nowrap;flex:none;position:relative;}
   .btn::before{content:"[ ";color:var(--text-faint);}
   .btn::after{content:" ]";color:var(--text-faint);}
@@ -243,6 +262,7 @@
   .attempt-row{margin-bottom:6px;}
   .attempt-toggle{margin-bottom:4px;}
   .rounds-list{margin:6px 0 6px 12px;padding-left:8px;border-left:2px solid var(--border-strong);}
+  .checks-list{margin:6px 0 0 12px;padding:6px 8px;border-left:2px solid var(--border-strong);font-size:12px;color:var(--text-faint);}
   /* item 1 (2026-09-26): a round's own model call renders as this table's
      header ROW (visually distinct from its tool-call rows below it). */
   tr.round-header-row td{background:var(--panel2);font-weight:700;}
@@ -290,13 +310,72 @@
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
+  .field input,.field select{width:100%;}
   label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
   .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
   .ro-value.scroll{max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;}
   .field-row{display:flex;flex-wrap:wrap;gap:10px;}
   .field-row .field{flex:1 1 140px;margin-bottom:10px;}
 
-  .chat-thread{padding:20px 8px;color:var(--text-faint);font-size:13px;}
+  /* P3 build (Chat/authoring): job-card compact mode, radio row, the $/time/
+     drafting cap row, and the chat thread's message bubbles — ported from
+     design/panel-mockup.html (the visual contract), re-themed onto this
+     page's own existing colour tokens rather than the mockup's own. */
+  .job-card.compact{padding:14px 8px 8px;}
+  .job-card.compact .field{margin-bottom:6px;}
+  .job-card.compact label{margin-bottom:1px;font-size:11px;}
+  .job-card.compact input,
+  .job-card.compact select{padding:5px 7px;}
+  .expand-field{text-overflow:ellipsis;transition:height 0.12s ease;}
+  .expand-field:focus{height:52px;white-space:normal;}
+  .radio-row{display:flex;gap:14px;align-items:center;margin-bottom:10px;}
+  .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;text-transform:none;}
+  .cap-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;}
+  .cap-field label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:1px;}
+  .cap-field input{width:100%;padding:5px 6px;box-sizing:border-box;}
+  @media (max-width: 899px){
+    .cap-row{grid-template-columns:1fr;}
+  }
+  .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700;}
+  .btn.primary::before,.btn.primary::after{color:var(--primary-text);opacity:0.6;}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+  /* a disabled .btn.primary must read as disabled, not just a dimmed version
+     of the enabled primary fill — .btn.primary's own background/color
+     (declared above, equal specificity) would otherwise win over the plain
+     .btn:disabled rule and still look clickable at 50% opacity. */
+  .btn.primary:disabled{background:var(--btn-bg);color:var(--text-faint);border-color:var(--border);}
+  .btn.primary:disabled::before,.btn.primary:disabled::after{color:var(--text-faint);opacity:0.4;}
+
+  /* P3 build item 3 — the single live progress line: an amber cycling
+     [progress.]/[progress..]/[progress...] glyph while a phase is running,
+     [done] in green once it finishes, [stopped] in red on a refusal. A
+     static [progress...] under prefers-reduced-motion (no animation). */
+  .chat-progress-row{display:flex;align-items:center;gap:8px;margin:2px 0 10px;font-size:12px;}
+  .chat-progress-glyph{font-weight:700;color:var(--amber);}
+  .chat-progress-glyph.done{color:var(--green);}
+  .chat-progress-glyph.stopped{color:var(--red);}
+  .chat-progress-label{color:var(--text-faint);}
+  /* build item 7 — the two $0 readiness lines under the Model field. */
+  .jf-readiness{font-size:11px;margin-top:2px;}
+  .jf-readiness.ok{color:var(--green);}
+  .jf-readiness.bad{color:var(--red);}
+  .jf-readiness.unknown{color:var(--text-faint);}
+
+  .chat-thread{display:flex;flex-direction:column;gap:10px;margin-bottom:10px;}
+  .msg{padding:8px 10px;border:1px solid var(--border);max-width:100%;background:var(--panel2);font-size:13px;word-break:break-word;white-space:pre-wrap;}
+  .msg.bot{border-left:3px solid var(--border-strong);}
+  .msg.bot .who::before{content:"$ ";}
+  .msg.you{background:var(--bg);margin-left:20px;border-left:3px solid var(--accent);}
+  .msg.you .who::before{content:"> ";}
+  .msg.system{color:var(--text-faint);border-left:3px dotted var(--text-faint);font-size:12px;}
+  .msg .who{font-size:11px;color:var(--text-faint);margin-bottom:3px;text-transform:none;font-weight:400;}
+  .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
+  .chat-input-row input{width:100%;box-sizing:border-box;}
+  /* chat message box reads as an unmistakable text box: ~2x the default
+     input height, thicker 2px border (ported verbatim from the mockup). */
+  #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--border-strong);}
+  .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
+  .actions-row > .btn{flex:1 1 auto;}
 
   @media (max-width: 899px){
     .main{flex-direction:column;}
@@ -338,12 +417,106 @@
       <div class="pane-body" id="left-pane-body">
 
         <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
-          <div class="chat-thread">
-            Authoring a new job from this page comes later (PANEL-BUILD.md P3). This build
-            (P1) is read-only: it shows runs already started from the command line
-            (<code>bareloop run</code> / <code>bareloop run-u</code>). Use the Runs tab to
-            look at one.
+          <button class="btn" type="button" id="chat-new-btn" data-testid="chat-new">+ New</button>
+
+          <div class="job-card compact" id="job-card" data-testid="job-card" hidden>
+            <h4 id="job-card-title">Job card — draft</h4>
+
+            <div class="field">
+              <label id="jf-verdict-label">Check type</label>
+              <div class="radio-row" role="radiogroup" aria-labelledby="jf-verdict-label">
+                <label><input type="radio" name="jf-verdict" value="deterministic" checked> Deterministic</label>
+                <label><input type="radio" name="jf-verdict" value="rubric"> Rubric</label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="jf-model">Model</label>
+              <select id="jf-model">
+                <option value="claude-sonnet-5">claude-sonnet-5 · Anthropic</option>
+                <option value="deepseek-flash">deepseek-flash · DeepSeek</option>
+              </select>
+              <!-- build item 5 (2026-09-28) — ONE line under Model, not two:
+                   key + reachability collapsed into a single readiness read. -->
+              <div class="jf-readiness unknown" id="jf-model-status" data-testid="jf-model-status"></div>
+            </div>
+            <div class="field">
+              <label for="jf-name">Job name</label>
+              <input id="jf-name" type="text" placeholder="kebab-case, unique">
+            </div>
+            <div class="field">
+              <label for="jf-goal">Goal</label>
+              <input class="expand-field" id="jf-goal" type="text">
+            </div>
+            <div class="field">
+              <label for="jf-source">Source</label>
+              <input id="jf-source" type="text" placeholder="absolute path to a local repo">
+            </div>
+            <div class="field">
+              <label for="jf-dest">Destination</label>
+              <input id="jf-dest" type="text" placeholder="the write fence — where in the repo this run may change files">
+            </div>
+            <div class="field">
+              <label for="jf-success">Success</label>
+              <input class="expand-field" id="jf-success" type="text">
+            </div>
+            <div class="field">
+              <label for="jf-guardrails">Guardrails</label>
+              <input id="jf-guardrails" type="text">
+            </div>
+            <div class="field">
+              <label for="jf-judge">Judge examples <span class="hint" style="display:inline">(rubric only)</span></label>
+              <input class="expand-field" id="jf-judge" type="text" disabled>
+            </div>
+
+            <div class="cap-row" data-testid="cap-row">
+              <div class="cap-field">
+                <label for="jf-cap-money">Cap $</label>
+                <input id="jf-cap-money" type="text">
+              </div>
+              <div class="cap-field">
+                <label for="jf-cap-time">Time cap (min)</label>
+                <input id="jf-cap-time" type="text" placeholder="or blank = no wall">
+              </div>
+              <div class="cap-field">
+                <label for="jf-price">Token price $</label>
+                <input id="jf-price" type="text" placeholder="est." disabled>
+              </div>
+            </div>
+            <button class="btn primary" type="button" id="chat-start-btn" data-testid="chat-start" disabled>Start drafting</button>
+            <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
+            <div class="hint" id="chat-hash-line" data-testid="chat-hash-line" hidden></div>
           </div>
+
+          <!-- build item 3 — the label comes FIRST, then the animated
+               indicator, so the cycling dots ([progress.] .. [progress....])
+               never push the label around. -->
+          <div class="chat-progress-row" id="chat-progress-row" data-testid="chat-progress-row" hidden>
+            <span class="chat-progress-label" id="chat-progress-label" data-testid="chat-progress-label"></span>
+            <span class="chat-progress-glyph" id="chat-progress-glyph" data-testid="chat-progress-glyph"></span>
+          </div>
+
+          <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
+
+          <!-- build item 1 — a failed/rejected send, revise, sign-prepare,
+               sign or check-deps POST shows here and STAYS shown: it is set
+               only by this tab's own action handlers below and is never
+               touched by renderActions()/poll() (which own #chat-card-error
+               instead), so it can never be wiped by the next 2s poll tick
+               before a person reads it. -->
+          <div class="hint" id="chat-action-error" data-testid="chat-action-error"></div>
+
+          <div class="chat-input-row">
+            <label for="chat-msg" style="display:none">Message</label>
+            <input id="chat-msg" type="text" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg">
+          </div>
+          <button class="btn" type="button" id="chat-check-deps-btn" data-testid="chat-check-deps" hidden>Check again</button>
+
+          <div class="actions-row">
+            <button class="btn" type="button" id="chat-send-btn" data-testid="chat-send" disabled>Send</button>
+            <button class="btn primary" type="button" id="chat-sign-btn" data-testid="btn-sign-run" disabled>Sign &amp; run</button>
+            <button class="btn" type="button" id="chat-revise-btn" data-testid="btn-revise" disabled>Revise (2 left)</button>
+          </div>
+          <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
         <section id="panel-runs" class="tabpanel" role="tabpanel" aria-labelledby="tab-runs" hidden>
@@ -423,7 +596,7 @@
 
         <section id="panel-details" class="tabpanel" role="tabpanel" aria-labelledby="tab-details" hidden data-testid="panel-details">
           <div id="job-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
-          <div class="job-card" id="job-card" hidden data-testid="job-card-readonly">
+          <div class="job-card" id="job-card-readonly" hidden data-testid="job-card-readonly">
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
@@ -454,7 +627,23 @@
   "use strict";
 
   var PORT = "__BARELOOP_PANEL_PORT__";
+  // P3 human-click guard: minted once per server start, sent on every POST
+  // this page ever makes (`x-bareloop-token`) — never logged, never put in
+  // a URL, and it never signs anything on its own (the sign route also
+  // requires the exact spec hash, checked server-side).
+  var TOKEN = "__BARELOOP_PANEL_TOKEN__";
   document.getElementById("host-line").textContent = "127.0.0.1:" + PORT;
+
+  function authorPost(path, body){
+    return fetch(path, {
+      method: "POST",
+      headers: {"content-type": "application/json", "x-bareloop-token": TOKEN},
+      body: JSON.stringify(body || {}),
+    }).then(function(r){ return r.json().then(function(j){ return {status: r.status, body: j}; }); });
+  }
+  function authorGet(path){
+    return fetch(path, {headers: {"x-bareloop-token": TOKEN}}).then(function(r){ return r.json(); });
+  }
 
   function wireTabs(tabButtons){
     tabButtons.forEach(function(btn){
@@ -524,6 +713,20 @@
     if(outcome === null || outcome === undefined) return boxIsLive ? "▶" : "?";
     return "✗";
   }
+  // P3 addition: colour ONLY [✓]/[✗] (the standing wording ruling's own
+  // words/glyph vocabulary is unchanged — this wraps the same glyph
+  // character in a plain inline colour span for the two result-carrying
+  // cases; [▶]/[?] pass through unwrapped, exactly as before this addition).
+  function glyphSpan(g){
+    if(g === "✓") return '<span class="glyph-green">' + g + '</span>';
+    if(g === "✗") return '<span class="glyph-red">' + g + '</span>';
+    return g;
+  }
+  // PLAIN TEXT ONLY — feeds the SVG step map's title/width calculation
+  // (`stepTitleText`, an SVG <text> node), never innerHTML; a colour span
+  // here would render as literal "<span>" characters inside the map.
+  // {@link glyphSpan} (the P3 colour addition) is used only by the DOM
+  // part-card renderer below, never by this function.
   function attemptsInlineText(attempts, boxIsLive){
     if(!attempts || !attempts.length) return "";
     return attempts.map(function(a){ return "attempt " + a.n + " " + attemptGlyph(a.outcome, boxIsLive); }).join(" · ");
@@ -578,9 +781,9 @@
   function partResultGlyph(part, box){
     if(partHasNoVerdict(part)) return null;
     var boxIsLive = box.state === "running";
-    if(box.attempts.length > 1) return box.attempts.map(function(a){ return attemptGlyph(a.outcome, boxIsLive); }).join("");
+    if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(attemptGlyph(a.outcome, boxIsLive)); }).join("");
     var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
-    return attemptGlyph(outcome, boxIsLive);
+    return glyphSpan(attemptGlyph(outcome, boxIsLive));
   }
   function buildOrderedBoxes(parts, isLive){
     var list = Array.isArray(parts) ? parts : [];
@@ -871,7 +1074,7 @@
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(r.spend) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(rowSpendText(r)) + '</span>' +
         '<span class="wf-meta">' + escapeXml(r.wall) + '</span>' +
         '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
         '</span>';
@@ -918,7 +1121,7 @@
         lastGlyph: last.glyph || "▶",
         lastCheckType: last.checkType || "unknown",
         lastModel: last.model || null,
-        lastSpend: last.spend || "unknown",
+        lastSpend: rowSpendText(last),
         lastWall: last.wall || "unknown",
         lastDate: last.date,
       };
@@ -1334,7 +1537,78 @@
   }
 
   // ---- Run tab ----
-  function money(n){ return (n === null || n === undefined) ? "unknown" : "$" + Number(n).toFixed(4); }
+  // panelMoney — hamr's ruling 2026-09-28 ("panel money 2-decimals"): every
+  // money display in THIS page (Run tab summary/counters, Runs list rows,
+  // Audit header/part cards, Job tab, chat cost lines) renders through this
+  // ONE function — no per-site rounding. The CLI's own 4-decimal `money()`
+  // (src/replay.js) is UNCHANGED; this is the panel-only render, the
+  // browser-script sibling of `src/panel/authorroutes.js`'s own
+  // `panelMoney2` (same rule, can't share code — one runs in Node, one
+  // inlined in the page).
+  //   - null/undefined/non-finite -> "unknown" (never a fabricated $0).
+  //   - a REAL positive amount below a cent -> "<$0.01", never "$0.00" (a
+  //     tiny real cost must never read as free).
+  //   - `floor` (this is a FLOOR/"at least" figure, never exact) rounds DOWN
+  //     to 2 decimals — never overstates a floor as exact-higher.
+  //   - otherwise rounds half-up to 2 decimals (an exact zero prints
+  //     "$0.00" — nothing spent is a real number, not an unknown).
+  // Two-step rounding guards against float-representation noise on BOTH
+  // sides: dollar figures here are derived from at most 6-decimal-precision
+  // money (the same precision `src/text.js`'s `tallyCalls`/`priceOf` use),
+  // so rounding to 6 decimals first erases that noise (e.g. 0.815 really
+  // stored as 0.81499999999999995), and ONLY THEN is the value rounded/
+  // floored to cents — a value already exactly on a cent boundary (e.g.
+  // 0.82) can be stored as 81.99999999999999 cents post-multiply, and a
+  // floor there would wrongly drop a whole cent; the tiny `+1e-6` nudge (at
+  // dollar-cents scale, far below anything a real half-cent tie could be)
+  // corrects that without ever crossing a true half-cent boundary the wrong
+  // way.
+  function panelMoney(n, floor){
+    if(n === null || n === undefined) return "unknown";
+    var v = Number(n);
+    if(!isFinite(v)) return "unknown";
+    if(v > 0 && v < 0.01) return "<$0.01";
+    var clean = Math.round(v * 1e6) / 1e6;
+    var cents = floor ? Math.floor(clean * 100 + 1e-6) : Math.round(clean * 100 + 1e-6);
+    if(cents < 0) cents = 0;
+    return "$" + (cents / 100).toFixed(2);
+  }
+  /**
+   * The panel's one composed "spend (drafting) of cap" renderer — the
+   * browser-script sibling of `src/replay.js`'s own `moneyWithDraft`, same
+   * rules, 2-decimal via {@link panelMoney} instead of 4. `spendCoreFloor`
+   * marks the LEADING figure a floor (a died run's own spend-floor, OR a
+   * complete run whose drafting share is itself incomplete — hamr's ruling:
+   * a reader summing the two must never read the leading number as exact
+   * when the bracket next to it isn't). `draftSpendComplete === false` marks
+   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX".
+   */
+  function panelMoneyWithDraft(spendCoreVal, spendCoreFloor, draftSpentUsd, draftSpendComplete, budgetUsd){
+    var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
+    var draftFloor = hasDraft && draftSpendComplete === false;
+    var core = (spendCoreVal === null || spendCoreVal === undefined)
+      ? "unknown"
+      : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
+    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting)" : "";
+    var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
+    return core + draftPart + capPart;
+  }
+  /**
+   * The Runs list row / Workflows grouping's own spend text — off the
+   * numeric fields `/api/runs`' row now carries (never `r.spend`, which is
+   * the LIBRARY's own 4-decimal string kept unchanged for `--all`'s CLI
+   * listing to share; `src/panel/server.js`'s `summarizeRow` doc says why).
+   * Same floor rules as {@link panelMoneyWithDraft}/`renderRun`'s own
+   * `spendText`: a died row's spend is a floor by construction, a live row's
+   * is a floor only when its own drafting share is incomplete.
+   * @param {any} r a `/api/runs` row (or a Workflows group's `last` row)
+   */
+  function rowSpendText(r){
+    var draftIncomplete = typeof r.draftSpentUsd === "number" && r.draftSpentUsd !== null && r.draftSpendComplete === false;
+    var coreVal = r.died ? r.spendFloorUsd : r.spentUsd;
+    var coreFloor = !!r.died || draftIncomplete;
+    return panelMoneyWithDraft(coreVal, coreFloor, r.draftSpentUsd, r.draftSpendComplete);
+  }
   function duration(ms){
     if(ms === null || ms === undefined) return "unknown";
     if(ms < 0) return "unknown";
@@ -1343,6 +1617,31 @@
     var m = Math.floor(s / 60), rem = Math.round(s - m * 60);
     if(rem === 60){ m += 1; rem = 0; }
     return m + "m" + String(rem).padStart(2, "0") + "s";
+  }
+
+  /**
+   * build item 6 (2026-09-28, session mul5fofw) — while a run is LIVE (no
+   * job-end reached yet: `detail.spentUsd === null` and not died), the Run
+   * tab's summary must show a running FLOOR from the spine's own metered
+   * rounds instead of "unknown" — never presented as exact ("so far", never
+   * "at least" — this is a live, still-growing number, not a died run's
+   * fixed floor). Reuses {@link panelMoney} for the actual digits; never a
+   * second hand-rolled money format.
+   * @param {number|null} spendFloorUsd @param {number|null} draftSpentUsd
+   * @param {boolean|null} draftSpendComplete @returns {string}
+   */
+  function liveSpendText(spendFloorUsd, draftSpentUsd, draftSpendComplete){
+    if(spendFloorUsd === null || spendFloorUsd === undefined) return "unknown";
+    var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
+    var draftFloor = hasDraft && draftSpendComplete === false;
+    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting)" : "";
+    return panelMoney(spendFloorUsd) + " so far" + draftPart;
+  }
+  /** build item 6 — the matching wall-clock phrase: "running <duration>",
+   * never "unknown" once the spine has at least one timestamped record.
+   * @param {number|null} wallFloorMs @returns {string} */
+  function liveWallPhrase(wallFloorMs){
+    return (wallFloorMs === null || wallFloorMs === undefined) ? "elapsed unknown" : ("running " + duration(wallFloorMs));
   }
 
   // ---- Audit row cell builders — ONE shared renderer for a gate-audit row,
@@ -1371,7 +1670,7 @@
   function auditDecisionCellHtml(r){
     if(auditIsModelCall(r)){
       var bits = [];
-      bits.push(typeof r.costUsd === "number" ? money(r.costUsd) : "unknown");
+      bits.push(typeof r.costUsd === "number" ? panelMoney(r.costUsd) : "unknown");
       bits.push((typeof r.tokens === "number" ? r.tokens : "unknown") + " tokens");
       bits.push(duration(r.durationMs));
       return escapeXml(bits.join(" · "));
@@ -1384,6 +1683,25 @@
     var cls = isWrite ? "row-write" : "";
     if(auditIsBlocked(r)) cls = (cls ? cls + " " : "") + "row-blocked";
     return cls;
+  }
+  // fix (2026-09-28): the Time cell showed the full ISO timestamp
+  // (`2026-09-27T08:20:58.924Z`), overflowing every Audit-tab table sideways
+  // at 390px. Shows time-only `HH:MM:SS` taken from the ISO string AS-IS
+  // (UTC, no timezone conversion), full ISO kept in the cell's `title` for
+  // hover — ONE helper, shared by the Flat table and the Grouped view's
+  // per-attempt rounds table (both the header row and the tool-call rows),
+  // so the three call sites can never drift on how a Time cell reads.
+  function auditShortTime(iso){
+    if(!iso) return null;
+    var m = /T(\d\d:\d\d:\d\d)/.exec(String(iso));
+    return m ? m[1] : null;
+  }
+  function auditTimeCellHtml(r){
+    var iso = r.time;
+    if(!iso) return "unknown";
+    var short = auditShortTime(iso);
+    if(!short) return escapeXml(iso);
+    return '<span title="' + escapeXml(iso) + '">' + escapeXml(short) + '</span>';
   }
 
   // item 7: tools/cache summary rows — built ONLY from replay's own already-
@@ -1489,17 +1807,38 @@
     // no job-end means no final totals were ever recorded) are replaced with
     // the priced-rounds/first-to-last-record FLOORS the server derived —
     // never "unknown" when a priced round actually exists.
-    var spendText = detail.died ? (detail.spendFloorUsd === null ? "unknown" : "at least " + money(detail.spendFloorUsd)) : money(detail.spentUsd);
-    var wallText = detail.died ? (detail.wallFloorMs === null ? "unknown" : "at least " + duration(detail.wallFloorMs)) : duration(detail.wallMs);
-    // item 6 (2026-09-25): "took" for a finished (job-end reached) OR died
-    // run — both are OVER, so the wall figure is a completed duration, never
-    // an in-progress one. "elapsed" is reserved for the one state that IS
-    // still in progress: a live [▶] run (glyph "▶" and not died).
-    var isLive = detail.glyph === "▶" && !detail.died;
-    var wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);
+    // hamr's ruling 2026-09-28 ("one cap covers drafting + run", 2nd
+    // addendum) — the leading figure reads as a floor ("at least $X") on a
+    // died run OR when the drafting share itself is incomplete (a reader
+    // summing the two must never take the leading number as exact when the
+    // bracket beside it isn't); the drafting bracket reads its own floor
+    // independently. {@link panelMoneyWithDraft} is the one place that
+    // decides all of this — see its own doc.
+    // build item 6 (2026-09-28): a LIVE run (no job-end reached: died is
+    // false and spentUsd is still null) shows the RUNNING floor instead of
+    // "unknown" — the server now derives the same spendFloorUsd/wallFloorMs
+    // for a still-running spine that it already derived for a died one.
+    var isLiveNoEnd = !detail.died && detail.spentUsd === null;
+    var spendText, wallPhrase;
+    if(isLiveNoEnd){
+      spendText = liveSpendText(detail.spendFloorUsd, detail.draftSpentUsd, detail.draftSpendComplete);
+      wallPhrase = liveWallPhrase(detail.wallFloorMs);
+    } else {
+      var draftIncomplete = typeof detail.draftSpentUsd === "number" && detail.draftSpentUsd !== null && detail.draftSpendComplete === false;
+      var spendCoreVal = detail.died ? detail.spendFloorUsd : detail.spentUsd;
+      var spendCoreFloor = detail.died || draftIncomplete;
+      spendText = panelMoneyWithDraft(spendCoreVal, spendCoreFloor, detail.draftSpentUsd, detail.draftSpendComplete);
+      var wallText = detail.died ? (detail.wallFloorMs === null ? "unknown" : "at least " + duration(detail.wallFloorMs)) : duration(detail.wallMs);
+      // item 6 (2026-09-25): "took" for a finished (job-end reached) OR died
+      // run — both are OVER, so the wall figure is a completed duration, never
+      // an in-progress one. "elapsed" is reserved for the one state that IS
+      // still in progress: a live [▶] run (glyph "▶" and not died).
+      var isLive = detail.glyph === "▶" && !detail.died;
+      wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);
+    }
 
     document.getElementById("run-counters").innerHTML =
-      spendText + " of $" + (detail.budgetUsd === null ? "unknown" : Number(detail.budgetUsd).toFixed(2)) +
+      spendText + " of " + panelMoney(detail.budgetUsd) +
       " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
@@ -1546,12 +1885,10 @@
       var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
       var titleText = box.kind === "step" ? ((cardStepNumbers[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
       var resultGlyph = partResultGlyph(part, box);
-      var line1Bits = [
-        (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
-        typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
-        duration(part.wallMs),
-        part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : money(part.spentUsd),
-      ];
+      // build item 4: ONE owner (partLine1Text, shared with the Audit tab's
+      // Grouped headers) for the wall/money bits, so a live run's card never
+      // reads a bare "unknown" a second reader independently failed to float.
+      var line1Bits = [partLine1Text(part, detail)];
       if(resultGlyph !== null) line1Bits.push(resultGlyph);
       var card = document.createElement("div");
       card.className = "step-card part-card" + (box.state === "running" ? " running" : "");
@@ -1590,19 +1927,30 @@
       var row = document.createElement("div");
       row.className = "attempt-row";
       row.setAttribute("data-testid", "audit-attempt-" + partIndex + "-" + a.n);
+      // plain-checks build (2026-09-28): the withdrawn "checks N/M" headline
+      // is replaced by attemptChecksLine's plain words (including the
+      // opening outer-close grade, which is attempt 1 on this SAME list —
+      // src/replay.js's fixLoop.attempts) — "" for a rubric/command close or
+      // a still-running attempt with no stages yet.
+      var checksText = attemptChecksLine(a);
+      var checksList = fullStageList(a).map(stageLineHtml).join("<br>");
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
           'attempt ' + a.n + ' ' + attemptGlyph(a.outcome, boxIsLive) +
+          (checksText ? ' &middot; ' + checksText : '') +
         '</button>' +
+        (checksList ? '<div class="checks-list" data-testid="audit-attempt-checks-' + partIndex + '-' + a.n + '" hidden>' + checksList + '</div>' : '') +
         '<div class="rounds-list" hidden></div>';
       container.appendChild(row);
       var btn = row.querySelector(".attempt-toggle");
       var roundsEl = row.querySelector(".rounds-list");
+      var checksEl = row.querySelector(".checks-list");
       var built = false;
       btn.addEventListener("click", function(){
         var expanded = btn.getAttribute("aria-expanded") === "true";
         btn.setAttribute("aria-expanded", expanded ? "false" : "true");
         roundsEl.hidden = expanded;
+        if(checksEl) checksEl.hidden = expanded;
         if(!expanded && !built){
           built = true;
           loadRounds(roundsEl, partIndex, a, 0);
@@ -1635,7 +1983,7 @@
       '<td>' + auditActionCellHtml(pseudo) + '</td>' +
       '<td>' + auditPathCellHtml(pseudo) + '</td>' +
       '<td>' + auditDecisionCellHtml(pseudo) + '</td>' +
-      '<td>' + escapeXml(pseudo.time || "unknown") + '</td>' +
+      '<td>' + auditTimeCellHtml(pseudo) + '</td>' +
     '</tr>';
   }
   function renderRoundToolRow(tc){
@@ -1645,7 +1993,7 @@
       '<td>' + auditActionCellHtml(tc) + '</td>' +
       '<td>' + auditPathCellHtml(tc) + '</td>' +
       '<td>' + auditDecisionCellHtml(tc) + '</td>' +
-      '<td>' + escapeXml(tc.time || "unknown") + '</td>' +
+      '<td>' + auditTimeCellHtml(tc) + '</td>' +
     '</tr>';
   }
   function renderRoundRows(r, toolLogSaved){
@@ -1713,13 +2061,188 @@
     if(!bt) return false;
     return !!(bt.edit || bt.write);
   }
-  function partLine1Text(part){
-    return [
+  /**
+   * build item 4 (2026-09-28, session mul5fofw's own live run): the wall/money
+   * bits of a part card — ONE owner, used by both the Run tab's cards
+   * ({@link renderRun}) and the Audit tab's Grouped headers
+   * ({@link renderAuditGroups}), which used to compute these independently (a
+   * second wall/spend reader — exactly the class of bug F198 already named).
+   *
+   * A part's `wallMs`/`spentUsd` are `null` while it is genuinely still being
+   * measured (`replay.js`'s own `windowWallMs`/`thisFileSpend`, unresolved
+   * until a later record — or, for the `kind:"run"` synthetic whole-run part,
+   * unresolved until `job-end`). `duration(null)`/`panelMoney(null)` both read
+   * "unknown", which is honest for a DEAD run but wrong for a LIVE one — the
+   * same distinction {@link liveSpendText}/{@link liveWallPhrase} already draw
+   * for the Summary box. Only the run's OWN card (`box.kind === "run"`, the
+   * one shown when no step has started yet) can be substituted this way: its
+   * `wallMs`/`spentUsd` (`replay.js`'s top-level `wallMs`/`thisFileSpend`) ARE
+   * the run's own totals-so-far, so `detail.wallFloorMs`/`spendFloorUsd` (the
+   * server's floor over the SAME spine) is the right number, not a guess. A
+   * step/scout/plan/fix/judge part's own wall/spend has no run-level floor to
+   * borrow, so it is left exactly as before.
+   * @param {any} part @param {any} [detail] the run detail, when available
+   * @returns {string}
+   */
+  function partLine1Text(part, detail){
+    var isLiveRunPart = part && part.kind === "run" && detail && !detail.died && detail.spentUsd === null;
+    var wallText = (isLiveRunPart && part.wallMs === null) ? liveWallPhrase(detail.wallFloorMs) : duration(part.wallMs);
+    var spendText = (isLiveRunPart && part.spentUsd === null)
+      ? liveSpendText(detail.spendFloorUsd, detail.draftSpentUsd, detail.draftSpendComplete)
+      : (part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : panelMoney(part.spentUsd));
+    var bits = [
       (typeof part.rounds === "number" ? part.rounds : 0) + " call" + (part.rounds === 1 ? "" : "s"),
       typeof part.toolCalls === "number" ? (part.toolCalls + " tool" + (part.toolCalls === 1 ? "" : "s")) : "unknown tools",
-      duration(part.wallMs),
-      part.unpricedRounds > 0 ? "unknown (" + part.unpricedRounds + " unpriced round" + (part.unpricedRounds === 1 ? "" : "s") + ")" : money(part.spentUsd),
-    ].join(" &middot; ");
+      wallText,
+      spendText,
+    ];
+    // plain-checks build (2026-09-28): the part's headline check LINE — its
+    // MOST RECENT attempt's own declared-close grading (the opening
+    // outer-close grade counts as attempt 1, same list `buildAttemptsList`
+    // reads), in the withdrawn headline's place.
+    var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
+    var headline = latestAttempt ? attemptChecksLine(latestAttempt) : "";
+    if(headline) bits.push(headline);
+    return bits.join(" &middot; ");
+  }
+  /**
+   * plain-checks build (2026-09-28, hamr's ruling): the "checks N/M" headline
+   * is WITHDRAWN — "confusing, reads like 6 failed when 5 never ran".
+   * Replaced everywhere by this plain-words line:
+   *   - all declared stages passed: "all N checks passed"
+   *   - a stage failed: "check #N <plain question> — <number>", where `#N`
+   *     is the failing stage's 1-based position in the DECLARED close
+   *     ({@link declaredPosition}), the question is `stage.question` (the
+   *     server's one owner, `src/panel/server.js`'s `stageQuestionText` —
+   *     falls back to the stage's own name when the catalogue has no honest
+   *     plain question for it) and the number is {@link stageNumberText}'s
+   *     reworded shape, omitted entirely for a pass/fail stage with no
+   *     number.
+   * "" (never shown) for a rubric/command close or an unresolved attempt
+   * (still running, no stages yet). `attempt.declaredStagesTotal` is the
+   * DECLARED stage count (never `stages.length`, the RAN count — first-red-
+   * wins means a later attempt's own `stages` array can be shorter than the
+   * close it belongs to; hamr's live catch on run mulbz0ny, checks-count fix
+   * 2026-09-28), falling back to `stages.length` only when no spec resolved.
+   * The caller (buildAttemptsList) prefixes "attempt N ✓/✗ · " for the
+   * attempt header, and the Run tab card / Audit Grouped header show this
+   * SAME text bare (hamr: "same text as its attempt header, minus 'attempt
+   * N'").
+   * @param {any} attempt @returns {string}
+   */
+  function attemptChecksLine(attempt){
+    var stages = attempt && attempt.stages;
+    if(!Array.isArray(stages) || stages.length === 0) return "";
+    var total = (typeof attempt.declaredStagesTotal === "number" && attempt.declaredStagesTotal > 0) ? attempt.declaredStagesTotal : stages.length;
+    var failing = null;
+    for(var i = 0; i < stages.length; i++){
+      if(stages[i] && stages[i].verdict !== "satisfied"){ failing = stages[i]; break; }
+    }
+    if(failing === null) return "all " + total + " checks passed";
+    var pos = declaredPosition(attempt, failing.name);
+    if(pos === null) pos = stages.indexOf(failing) + 1;
+    var numberText = stageNumberText(failing);
+    return "check #" + pos + " " + escapeXml(stageQuestionText(failing)) + (numberText ? " — " + numberText : "");
+  }
+  /** a stage's DECLARED 1-based position, from `attempt.declaredStages` (the
+   * server's full declared-order list, {@link enrichPartsWithStageKind} in
+   * src/panel/server.js) — matched by NAME, never by array index (robust to
+   * any reordering between the resolved spec and the stages that actually
+   * ran). `null` when no `declaredStages` travelled (no spec resolvable) or
+   * the name isn't found there; the caller falls back to the stage's
+   * position within whatever ran.
+   * @param {any} attempt @param {string|null|undefined} stageName @returns {number|null} */
+  function declaredPosition(attempt, stageName){
+    if(!Array.isArray(attempt.declaredStages)) return null;
+    var idx = attempt.declaredStages.findIndex(function(ds){ return ds && ds.name === stageName; });
+    return idx === -1 ? null : idx + 1;
+  }
+  /** a stage's plain-English question — `stage.question` (the server's one
+   * owner, `src/panel/server.js`'s `stageQuestionText`) when the catalogue
+   * has an honest one for this stage's kind+params, else the stage's OWN
+   * name (a command-close's hand-written stage name, or a kind/genre shape
+   * the owner has no wording for — never invented here).
+   * @param {any} stage @returns {string} */
+  function stageQuestionText(stage){
+    if(stage && typeof stage.question === "string" && stage.question) return stage.question;
+    return (stage && stage.name) ? stage.name : "unknown";
+  }
+  /**
+   * §3a's closed numeric wording, one owner (checks-wording build spec,
+   * 2026-09-28, reworded by the plain-checks build's own separators): a
+   * numeric stage's own DECLARED `direction`/`baselineKind` (server-sent,
+   * {@link stageKindMetaFromSpec} on the panel server — the signed close
+   * declaration's own per-stage facts, never guessed from the runtime number
+   * alone) picks one of hamr's 3 shapes:
+   *   - lower-is-better toward a DECLARED-ZERO goal (`baselineKind === 0`):
+   *     "N left, need T"
+   *   - higher-is-better (a floor): "N of total"
+   *   - lower-is-better toward a SEED-MEASURED baseline (`baselineKind ===
+   *     "seed"`): "N, limit M"
+   * Only `count-not-worse` ever carries a numeric value/baseline at all
+   * (src/kinds.js — every other kind's StageResult defaults both to null),
+   * so a value-less stage always renders "" here (pass/fail, glyph only).
+   * Every shipped kind fits one of the 3 shapes above; a stage that somehow
+   * carries a number with no resolvable direction/baselineKind (no spec
+   * resolved server-side, or an old archived run) falls back to the spec's
+   * own explicit "N (baseline M)" wording verbatim, never a 4th invented
+   * shape.
+   * @param {any} stage @returns {string}
+   */
+  function stageNumberText(stage){
+    var hasValue = typeof stage.value === "number";
+    var hasBaseline = typeof stage.baseline === "number";
+    if(!hasValue) return "";
+    if(stage.direction === "higher-is-better" && hasBaseline) return stage.value + " of " + stage.baseline;
+    if(stage.direction === "lower-is-better" && stage.baselineKind === 0 && hasBaseline) return stage.value + " left, need " + stage.baseline;
+    if(stage.direction === "lower-is-better" && stage.baselineKind === "seed" && hasBaseline) return stage.value + ", limit " + stage.baseline;
+    return hasBaseline ? (stage.value + " (baseline " + stage.baseline + ")") : String(stage.value);
+  }
+  /**
+   * plain-checks build (2026-09-28): the expanded attempt row's FULL declared
+   * stage list, in declared order, including stages that never ran (first-
+   * red-wins stopped the close early) — hamr's ruling: "one line per DECLARED
+   * stage, in order, including stages that never ran". Zips
+   * `attempt.declaredStages` (the server's full ordered `{name, question}`
+   * list) against `attempt.stages` (the shorter, possibly-partial RAN list)
+   * BY NAME: a declared stage with a matching ran entry renders that entry
+   * (`ran: true`); one with no match renders a synthetic not-run stub
+   * (`ran: false`, `verdict: null`). When no `declaredStages` travelled at
+   * all (no spec resolvable), falls back to whatever ran, unpadded — exactly
+   * today's behaviour for a rubric/command close or an unresolvable spec.
+   * @param {any} attempt @returns {{n: number, ran: boolean, stage: any}[]}
+   */
+  function fullStageList(attempt){
+    var ran = Array.isArray(attempt.stages) ? attempt.stages : [];
+    if(!Array.isArray(attempt.declaredStages) || attempt.declaredStages.length === 0){
+      return ran.map(function(s, i){ return { n: i + 1, ran: true, stage: s }; });
+    }
+    var byName = {};
+    ran.forEach(function(s){ if(s && typeof s.name === "string") byName[s.name] = s; });
+    return attempt.declaredStages.map(function(ds, i){
+      var s = ds && Object.prototype.hasOwnProperty.call(byName, ds.name) ? byName[ds.name] : null;
+      if(s) return { n: i + 1, ran: true, stage: s };
+      return { n: i + 1, ran: false, stage: { name: ds ? ds.name : null, question: ds ? ds.question : null, verdict: null } };
+    });
+  }
+  /**
+   * one stage's expand-view line — "#N <question> <mark> <number>", hamr's
+   * closed illustration:
+   *   #1 did it change any file?                     ✓
+   *   #2 src/checks.js has 0 type errors?            ✗  4 left, need 0
+   *   #3 other files didn't get more type errors?    ·  not run
+   * A never-run declared stage (`entry.ran === false`) always reads "·  not
+   * run", no number. A ran stage with no recorded number (a guard, a
+   * pass/fail command stage) renders the mark alone.
+   * @param {{n: number, ran: boolean, stage: any}} entry @returns {string}
+   */
+  function stageLineHtml(entry){
+    var s = entry.stage;
+    var q = escapeXml(stageQuestionText(s));
+    if(!entry.ran) return "#" + entry.n + " " + q + " &middot; not run";
+    var mark = s.verdict === "satisfied" ? glyphSpan("✓") : (s.verdict ? glyphSpan("✗") : "&ndash;");
+    var numberText = stageNumberText(s);
+    return "#" + entry.n + " " + q + " " + mark + (numberText ? " " + numberText : "");
   }
   var currentAuditFilter = "all";
   function auditPartMatchesFilter(rowWrap, filter){
@@ -1763,7 +2286,7 @@
       headBtn.setAttribute("data-testid", "audit-part-toggle-" + idx);
       var groupResultGlyph = partResultGlyph(part, box);
       headBtn.innerHTML =
-        '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span> ' + titleText + ' &middot; ' + partLine1Text(part) +
+        '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span> ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
         (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
         (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '');
       var body = document.createElement("div");
@@ -1874,7 +2397,7 @@
         "<td>" + auditActionCellHtml(r) + "</td>" +
         "<td>" + pathCell + "</td>" +
         "<td>" + decisionCell + "</td>" +
-        "<td>" + escapeXml(r.time || "unknown") + "</td>";
+        "<td>" + auditTimeCellHtml(r) + "</td>";
       tbody.appendChild(tr);
     });
     document.getElementById("audit-rawlog").textContent = result.raw || "";
@@ -1907,7 +2430,7 @@
   // ---- Job tab ----
   function renderJob(job){
     var empty = document.getElementById("job-empty");
-    var card = document.getElementById("job-card");
+    var card = document.getElementById("job-card-readonly");
     if(!job){ empty.hidden = false; card.hidden = true; return; }
     empty.hidden = true;
     card.hidden = false;
@@ -1925,7 +2448,7 @@
     document.getElementById("details-source").textContent = job.source;
     document.getElementById("details-dest").textContent = job.destination;
     document.getElementById("details-tools").textContent = job.tools;
-    document.getElementById("details-cap-money").textContent = job.budgetUsd === null ? "unknown" : ("$" + Number(job.budgetUsd).toFixed(2));
+    document.getElementById("details-cap-money").textContent = panelMoney(job.budgetUsd);
     document.getElementById("details-cap-time").textContent = job.maxWallMs === null ? "unknown" : duration(job.maxWallMs);
     document.getElementById("job-note").textContent = job.note || "";
     lastJobToolsList = Array.isArray(job.toolsList) ? job.toolsList : null;
@@ -2094,11 +2617,6 @@
     if(pollTimer) return;
     pollTimer = setInterval(pollTick, POLL_MS);
   }
-  function stopPolling(){
-    if(!pollTimer) return;
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
   // Pause while the tab is hidden (cheap, standard); resume — with an
   // immediate catch-up tick, forcing BOTH fetches regardless of the list's
   // 10s throttle — on return, rather than waiting a full 2s (or up to 10s
@@ -2112,11 +2630,15 @@
     lastRunsSig = sig(runs);
     runsFilterBar.setItems(runs);
     if(runs.length && !runs[0].fileMissing){
-      document.getElementById("tab-runs").click();
-      // newest run overall, opened directly — the Workflows view starts
-      // collapsed, but its job row still renders "selected" (build item,
-      // 2026-09-26: a job row shows selected state like a child row) since
-      // `runsFilterBar.refresh()` re-renders AFTER `currentRunid` is set.
+      // build item 5 — the LEFT pane opens on Chat by default; this no
+      // longer force-clicks "tab-runs" (it used to switch the left pane
+      // away from Chat on every load that had a run). The RIGHT pane still
+      // loads the newest run's details so they're ready the moment a
+      // person switches to the Runs tab themselves — the Workflows view
+      // starts collapsed, but its job row still renders "selected" (build
+      // item, 2026-09-26: a job row shows selected state like a child row)
+      // since `runsFilterBar.refresh()` re-renders AFTER `currentRunid` is
+      // set.
       selectRun(runs[0].runid, null, ".hist-row");
       document.getElementById("tab-run").click();
       runsFilterBar.refresh();
@@ -2148,6 +2670,407 @@
       try{ localStorage.setItem("bareloop-panel-theme", next); }catch(e){}
       paint();
     });
+  })();
+
+  // ---- Chat tab: job-card authoring (PANEL-BUILD.md P3) ----
+  (function(){
+    var newBtn = document.getElementById("chat-new-btn");
+    var card = document.getElementById("job-card");
+    var thread = document.getElementById("chat-thread");
+    var msgInput = document.getElementById("chat-msg");
+    var sendBtn = document.getElementById("chat-send-btn");
+    var signBtn = document.getElementById("chat-sign-btn");
+    var reviseBtn = document.getElementById("chat-revise-btn");
+    var startBtn = document.getElementById("chat-start-btn");
+    var checkDepsBtn = document.getElementById("chat-check-deps-btn");
+    var errEl = document.getElementById("chat-card-error");
+    var actionErrEl = document.getElementById("chat-action-error");
+    var hashLine = document.getElementById("chat-hash-line");
+    var moneyCapInput = document.getElementById("jf-cap-money");
+    var modelSelect = document.getElementById("jf-model");
+    var modelStatusEl = document.getElementById("jf-model-status");
+    var progressRow = document.getElementById("chat-progress-row");
+    var progressGlyph = document.getElementById("chat-progress-glyph");
+    var progressLabelEl = document.getElementById("chat-progress-label");
+
+    var sessionId = null;
+    var pollTimer = null;
+    var lastPhase = null;
+    var signClickedOnce = false;
+    // build item 4 — Start disables the moment it's clicked and stays
+    // disabled for the whole life of a non-terminal session (the server's
+    // own one-at-a-time rule, `TERMINAL_PHASES` in
+    // src/panel/authorroutes.js, mirrored here so Start never even offers a
+    // click the server would 409 anyway).
+    var CLIENT_TERMINAL_PHASES = ["refused", "abandoned", "error", "signed", "signing-failed"];
+    var DONE_PHASES = ["prepared", "signed"];
+    var sessionLive = false;
+    // build item 7 — Start also stays disabled while the chosen model's key
+    // isn't usable; updated by refreshModelStatus() below.
+    var keyOk = false;
+
+    newBtn.addEventListener("click", function(){
+      card.hidden = false;
+      newBtn.hidden = true;
+      thread.innerHTML = "";
+      errEl.textContent = "";
+      actionErrEl.textContent = "";
+      sessionId = null;
+      sessionLive = false;
+      signClickedOnce = false;
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+      stopProgressDots();
+      progressRow.hidden = true;
+      checkDepsBtn.hidden = true;
+      refreshStartEnabled();
+    });
+
+    function currentCard(){
+      var moneyCap = Number(document.getElementById("jf-cap-money").value);
+      var timeCapMin = document.getElementById("jf-cap-time").value.trim();
+      return {
+        checkType: document.querySelector('input[name="jf-verdict"]:checked').value === "rubric" ? "rubric" : "deterministic",
+        model: document.getElementById("jf-model").value,
+        jobName: document.getElementById("jf-name").value.trim(),
+        goal: document.getElementById("jf-goal").value.trim(),
+        source: document.getElementById("jf-source").value.trim(),
+        destination: document.getElementById("jf-dest").value.trim(),
+        success: document.getElementById("jf-success").value.trim(),
+        guardrails: document.getElementById("jf-guardrails").value.trim(),
+        judgeExamples: document.getElementById("jf-judge").value.trim(),
+        capUsd: moneyCap,
+        maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
+      };
+    }
+
+    // hamr's ruling 2026-09-28 ("one cap covers drafting + run") — the
+    // separate Drafting cap field is GONE; drafting runs under the same
+    // `Cap $` field every run does. Start stays disabled until Cap $ parses
+    // as a positive number, checked client-side as a UX convenience only;
+    // the server (`validateJobCard`) is the real gate. Also disabled while a
+    // session is already live (build item 4) or the chosen model's key
+    // isn't usable (build item 7).
+    function refreshStartEnabled(){
+      var v = Number(moneyCapInput.value);
+      var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
+      startBtn.disabled = !capOk || sessionLive || !keyOk;
+    }
+    moneyCapInput.addEventListener("input", refreshStartEnabled);
+    document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
+      r.addEventListener("change", function(){
+        var isRubric = document.querySelector('input[name="jf-verdict"]:checked').value === "rubric";
+        document.getElementById("jf-judge").disabled = !isRubric;
+      });
+    });
+
+    // build item 7 / build item 5 (2026-09-28) — key + reachability, $0,
+    // shown right under Model, on load and whenever the selection changes.
+    // Start stays disabled while the key isn't usable; a reachability
+    // failure shows red but never blocks (an endpoint can be flaky).
+    // fix (2026-09-28): a 401/403 from the reachability probe is not
+    // flakiness — it means the key itself was REJECTED by the provider.
+    // Neither blocks Start (unchanged rule); only the WORDING differs.
+    // Every other status (timeout, network error, 5xx, 429,
+    // unsupported-provider) keeps the original "may be flaky" wording.
+    function reachStatusText(status){
+      var rejectedMatch = /^HTTP (401|403)$/.exec(status);
+      return rejectedMatch
+        ? "[✗] key rejected (HTTP " + rejectedMatch[1] + ")"
+        : "[✗] " + status + " — may be flaky, not blocking";
+    }
+    // build item 5 — ONE line, not two: pure decision from the model-check
+    // response (`r`) + the selected model's display id, so the whole
+    // key/reachability read can be unit-tested without any DOM at all.
+    // All good: "[✓] <ENV_KEY> found · <modelId> reachable". Otherwise: one
+    // red line with the FIRST problem — a missing/bad key short-circuits
+    // before reachability is even mentioned (reachability was never
+    // checked in that case anyway — see the server route).
+    // `keyOk` (Start-gating) and `ok` (display color) are DIFFERENT axes: a
+    // reachability failure shows red (`ok:false`) but never blocks Start
+    // (`keyOk` stays true) — an endpoint can be flaky; a missing/bad KEY
+    // blocks Start and always shows red.
+    function modelStatusLine(r, modelId){
+      if(!r || !r.ok) return { keyOk: false, ok: false, text: "[✗] could not check the key" };
+      var keyFound = r.keyStatus === "found";
+      if(!keyFound){
+        var problem = r.keyStatus === "missing" ? " not set" : (" " + r.keyProblem);
+        return { keyOk: false, ok: false, text: "[✗] " + r.envKey + problem };
+      }
+      var reach = r.reachability;
+      if(!reach || !reach.checked) return { keyOk: true, ok: true, text: "[✓] " + r.envKey + " found" };
+      if(reach.reachable){
+        var suffix = reach.modelListed === false ? " (model not listed)" : "";
+        return { keyOk: true, ok: true, text: "[✓] " + r.envKey + " found · " + modelId + " reachable" + suffix };
+      }
+      return { keyOk: true, ok: false, text: reachStatusText(reach.status) };
+    }
+    function refreshModelStatus(){
+      var modelId = modelSelect.value;
+      authorGet("/api/author/model-check?model=" + encodeURIComponent(modelId)).then(function(r){
+        var line = modelStatusLine(r, modelId);
+        keyOk = line.keyOk;
+        modelStatusEl.className = "jf-readiness " + (line.ok ? "ok" : "bad");
+        modelStatusEl.textContent = line.text;
+        refreshStartEnabled();
+      }).catch(function(){
+        keyOk = false;
+        modelStatusEl.className = "jf-readiness bad";
+        modelStatusEl.textContent = "[✗] could not check the key";
+        refreshStartEnabled();
+      });
+    }
+    modelSelect.addEventListener("change", refreshModelStatus);
+    refreshModelStatus();
+
+    // build item 2 — one plain line per event, no "(progress)" jargon
+    // suffix: `onPhase` no longer posts its own bubble (see
+    // src/panel/authorsession.js), so every remaining message is already
+    // something a person needs to read.
+    // build item 4 — a system line (a step notice: "Copying source ($0)",
+    // "Packages found", …) carries no who-label at all — it is not a
+    // message FROM anyone, just a plain step line. Only "you" and the
+    // model's own bot replies get one.
+    function chatWhoLabel(role){
+      if(role === "you") return "you";
+      if(role === "system") return "";
+      return "bareloop";
+    }
+    function renderMessages(state){
+      thread.innerHTML = state.messages.map(function(m){
+        var cls = m.role === "you" ? "you" : (m.role === "system" ? "system" : "bot");
+        var who = chatWhoLabel(m.role);
+        var whoHtml = who ? ('<div class="who">' + escapeXml(who) + '</div>') : "";
+        return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
+      }).join("");
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    // build item 3 — the single live progress line: the LABEL sits first in
+    // the markup, then the animated indicator (never the other way — the
+    // dots must not push the label around as they cycle 1..4).
+    var progressDotTimer = null;
+    var progressDotCount = 1;
+    var reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    function stopProgressDots(){
+      if(progressDotTimer){ clearInterval(progressDotTimer); progressDotTimer = null; }
+    }
+    function startProgressDots(){
+      if(reducedMotion){ progressGlyph.textContent = "[progress....]"; return; }
+      if(progressDotTimer) return;
+      progressDotCount = 1;
+      progressGlyph.textContent = "[progress.]";
+      progressDotTimer = setInterval(function(){
+        progressDotCount = (progressDotCount % 4) + 1;
+        progressGlyph.textContent = "[progress" + new Array(progressDotCount + 1).join(".") + "]";
+      }, 500);
+    }
+    // build item 3 — pure: what the label must say for a given state. A
+    // person waiting on their OWN next action (an ask is pending) must never
+    // see a stale machine step name (observed: "checking prior behaviour"
+    // shown while waiting on hamr; "plan confirmed" shown while the plan was
+    // awaiting his confirm) — a pending ask always wins over progressLabel.
+    function progressLabelFor(state){
+      var pending = state && state.pendingAsk;
+      if(pending && pending.kind === "menu") return "waiting for your OK";
+      if(pending && pending.kind === "install-needed") return "install needed";
+      if(pending) return "waiting for your answer";
+      return (state && state.progressLabel) || "working";
+    }
+    function renderProgress(state){
+      progressRow.hidden = false;
+      if(DONE_PHASES.indexOf(state.phase) !== -1){
+        stopProgressDots();
+        progressGlyph.className = "chat-progress-glyph done";
+        progressGlyph.textContent = "[done]";
+        progressLabelEl.textContent = "";
+      } else if(CLIENT_TERMINAL_PHASES.indexOf(state.phase) !== -1){
+        stopProgressDots();
+        progressGlyph.className = "chat-progress-glyph stopped";
+        progressGlyph.textContent = "[stopped]";
+        progressLabelEl.textContent = state.error || "";
+      } else {
+        progressGlyph.className = "chat-progress-glyph";
+        progressLabelEl.textContent = progressLabelFor(state);
+        startProgressDots();
+      }
+    }
+
+    function renderActions(state){
+      var pending = state.pendingAsk;
+      var atMenu = !!pending && pending.kind === "menu";
+      var atDepsWait = !!pending && pending.kind === "install-needed";
+      sendBtn.disabled = !pending || atMenu || atDepsWait;
+      reviseBtn.disabled = !atMenu || state.revisesLeft <= 0;
+      reviseBtn.textContent = "Revise (" + state.revisesLeft + " left)";
+      checkDepsBtn.hidden = !atDepsWait;
+      checkDepsBtn.disabled = !atDepsWait;
+      if(state.phase === "prepared" && !signClickedOnce){
+        signBtn.disabled = false;
+        signBtn.textContent = "Sign & run";
+      } else if(state.phase === "prepared" && signClickedOnce){
+        signBtn.disabled = false;
+        signBtn.textContent = "Sign " + (state.specHash || "").slice(0, 8) + " & run";
+      } else {
+        signBtn.disabled = !atMenu;
+        signBtn.textContent = "Sign & run";
+      }
+      if(state.specHash){
+        hashLine.hidden = false;
+        hashLine.textContent = "spec hash: " + state.specHash;
+      }
+      if(state.phase === "refused" || state.phase === "error" || state.phase === "abandoned"){
+        errEl.textContent = state.error || ("stopped: " + state.phase);
+      } else {
+        errEl.textContent = "";
+      }
+      renderProgress(state);
+      // build item 4 — re-enable Start only once the session has settled
+      // into a terminal phase (a fresh Start becomes possible again).
+      sessionLive = CLIENT_TERMINAL_PHASES.indexOf(state.phase) === -1;
+      refreshStartEnabled();
+    }
+
+    function poll(){
+      if(!sessionId) return;
+      authorGet("/api/author/" + sessionId).then(function(j){
+        if(!j || !j.state) return;
+        renderMessages(j.state);
+        renderActions(j.state);
+        if(j.state.phase === "signed"){
+          clearInterval(pollTimer);
+          document.getElementById("tab-runs").click();
+        }
+        lastPhase = j.state.phase;
+      }).catch(function(){ /* transient — next poll tries again */ });
+    }
+
+    startBtn.addEventListener("click", function(){
+      errEl.textContent = "";
+      actionErrEl.textContent = "";
+      // build item 4 — disable the moment it's clicked, not just once the
+      // response comes back; re-enabled below only if the start is refused.
+      sessionLive = true;
+      refreshStartEnabled();
+      var body = currentCard();
+      authorPost("/api/author/start", body).then(function(r){
+        if(r.status !== 200 || !r.body.ok){
+          errEl.textContent = (r.body && r.body.error) || "refused";
+          sessionLive = false;
+          refreshStartEnabled();
+          return;
+        }
+        sessionId = r.body.sessionId;
+        signClickedOnce = false;
+        renderMessages(r.body.state);
+        renderActions(r.body.state);
+        if(pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(poll, 2000);
+      });
+    });
+
+    // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
+    // (fed by the every-2s `poll()`) unconditionally overwrites
+    // `#chat-card-error` on every tick (`errEl.textContent = state.error ||
+    // ""`), including the SAME tick the send/revise/sign handlers below
+    // used to call `poll()` in their own `.then` — so a refused/failed POST's
+    // error was wiped before a person could read it (often on the very next
+    // line of the same callback). Compounding it, `send`/`revise` cleared
+    // `msgInput.value` unconditionally, even on failure — so a rejected
+    // answer vanished from the box with no trace at all. Fixed by: (1) a
+    // dedicated `#chat-action-error` element only these handlers touch,
+    // never `poll()`/`renderActions`; (2) only clearing the input on a
+    // confirmed 200+ok response; (3) an explicit `.catch` so a rejected
+    // fetch (network drop, server restart) shows an error too, instead of
+    // silently doing nothing.
+    // build item 1 — the ONE place that decides "did this chat POST
+    // succeed" — pure, no DOM, unit-tested directly
+    // (tests/panel-page.test.js). Before this existed, each handler decided
+    // ad hoc via `r.body && r.body.error && !r.body.ok`, which is true only
+    // when the server bothered to hand back BOTH `ok:false` AND a non-empty
+    // `error` string — a malformed/short-circuited response (e.g. a 403 the
+    // guard returns with `{ok:false, error:'refused — ...'}` reaching a
+    // caller that never checked `r.status`, or any response missing
+    // `.error`) read as neither branch and was silently treated as fine.
+    function chatPostOutcome(r){
+      var ok = !!(r && r.status === 200 && r.body && r.body.ok === true);
+      return { ok: ok, error: ok ? "" : ((r && r.body && r.body.error) || "the request failed — nothing was sent") };
+    }
+    function chatActionFailed(message){
+      actionErrEl.textContent = message || "the request failed — nothing was sent";
+    }
+    function chatActionOk(){
+      actionErrEl.textContent = "";
+    }
+
+    checkDepsBtn.addEventListener("click", function(){
+      if(!sessionId) return;
+      checkDepsBtn.disabled = true;
+      authorPost("/api/author/" + sessionId + "/check-deps", {}).then(function(r){
+        var o = chatPostOutcome(r);
+        if(o.ok) chatActionOk(); else chatActionFailed(o.error);
+        poll();
+      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, nothing was sent"); });
+    });
+
+    sendBtn.addEventListener("click", function(){
+      if(!sessionId) return;
+      var text = msgInput.value;
+      if(!text.trim()) return;
+      authorPost("/api/author/" + sessionId + "/send", {text: text}).then(function(r){
+        var o = chatPostOutcome(r);
+        if(o.ok){
+          chatActionOk();
+          msgInput.value = "";
+        } else {
+          // failure — the text stays in the box so nothing is lost; the
+          // person can just click Send again once the error is fixed.
+          chatActionFailed(o.error);
+        }
+        poll();
+      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
+    });
+
+    reviseBtn.addEventListener("click", function(){
+      if(!sessionId) return;
+      var text = msgInput.value;
+      authorPost("/api/author/" + sessionId + "/revise", {text: text}).then(function(r){
+        var o = chatPostOutcome(r);
+        if(o.ok){
+          chatActionOk();
+          msgInput.value = "";
+        } else {
+          chatActionFailed(o.error);
+        }
+        poll();
+      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
+    });
+
+    signBtn.addEventListener("click", function(){
+      if(!sessionId) return;
+      if(!signClickedOnce){
+        // click 1 — the confirm turn's own "confirm" pick. Never signs.
+        authorPost("/api/author/" + sessionId + "/sign-prepare", {}).then(function(r){
+          var o = chatPostOutcome(r);
+          if(o.ok) chatActionOk(); else chatActionFailed(o.error);
+          signClickedOnce = true;
+          poll();
+        }).catch(function(){ chatActionFailed("network error — could not reach the panel server"); });
+        return;
+      }
+      // click 2 — the ONLY route that signs. Carries the hash shown on the
+      // card; the server re-checks it against signing.json regardless.
+      authorGet("/api/author/" + sessionId).then(function(j){
+        var hash = j.state && j.state.specHash;
+        if(!hash) return;
+        authorPost("/api/author/" + sessionId + "/sign", {specHash: hash}).then(function(r){
+          var o = chatPostOutcome(r);
+          if(o.ok){ chatActionOk(); } else { chatActionFailed(o.error); return; }
+          poll();
+        }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not signed"); });
+      });
+    });
+
+    refreshStartEnabled();
   })();
 
 })();

@@ -3864,7 +3864,41 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       blindCap: capRuns,
       directions: stageDirections,
     });
-    fixTrend.record({ gap: post.gap ?? '' });
+    // F198: feed the STRUCTURED {stage, value} a declared close already produced
+    // (`closeGrade`, src/declaredclose.js) rather than re-parsing `post.gap` through
+    // `readGrade`'s `\bred\b` scan — a declared close's own gap prose never carries
+    // that word, so the text path read every declared grade as an uncomparable
+    // null. `post` IS `lastCloseVerdict` here (this is the opening grade, straight
+    // off `judgeClose()`, before any crash-message substitution can occur), so
+    // `closeGrade(post)` is exact. `readGrade` stays the fallback INSIDE
+    // `trend.record` for a command close, where `closeGrade` returns `{gap}` only.
+    fixTrend.record(closeGrade(post));
+    // F198 item 2 — TRACE: before this, `middle` (below) handed the fix worker
+    // ONLY the current gap (this iteration's raw close output, or the previous
+    // attempt's — planrun.js's `await w.ask([...])` at the end of `middle`) and
+    // never any history of prior grades. Nothing else about the close's own
+    // numbers travelled between tries.
+    //
+    // The fix: a FACTS-ONLY number history, one entry per grade fixTrend has
+    // already read (never advice, never model-generated text — a prompt
+    // register change, `src/promptregisters.js`'s inventory, `src/planrun.js`
+    // already listed there). `checksHistory` is the "N passed of M declared"
+    // count per grade: N counts the satisfied stages on each declared verdict's
+    // own `stages` list (first-red-wins, so that list holds only the stages that
+    // RAN), and M is the DECLARED stage count (`stagedClose.length`, the same
+    // one source `createTrend`'s stageOrder reads) — never the ran count, or a
+    // 7-stage close red at stage 2 would read "1/2" instead of "1/7". Nothing a
+    // command close's verdict carries, so it stays empty there and the line is
+    // simply omitted. The per-stage number history rides on `fixTrend.report()`
+    // already, so nothing new is stored for that half.
+    /** @type {string[]} */
+    const checksHistory = [];
+    const pushChecks = (/** @type {any} */ v) => {
+      if (Array.isArray(v?.stages)) {
+        checksHistory.push(`${v.stages.filter((/** @type {any} */ s) => s.verdict === 'satisfied').length}/${stagedClose.length}`);
+      }
+    };
+    pushChecks(post);
     /** ralph's `ladder` seam, filled by the trend reader instead of the step
      * ladder's repeat/write pair. ONE exhaustion terminal, two triggers (ralph's own
      * rule): the category stays `cap-halt` and the outcome stays `escalated`, so the
@@ -3883,7 +3917,15 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         if (lastCloseVerdict?.verdict === HUMAN_PAUSE) {
           return { governor: 'close-trend', trend: 'unknown', reading: 'the close is waiting on a person — not a grade', iteration: o.iteration, paused: true };
         }
-        return { governor: 'close-trend', ...fixTrend.record({ gap: o.gap }), iteration: o.iteration };
+        // Same structured-first read as the seed above. `lastCloseVerdict` is THIS
+        // iteration's verdict (judge() ran immediately before ralph calls this
+        // record) UNLESS a worker-crash overwrote `gap` with a synthetic message
+        // (src/ralph.js) that no longer matches `lastCloseVerdict.gap` — guarded by
+        // the equality check so a crash still reads through the text fallback on
+        // its own synthetic gap, exactly as before.
+        const graded = lastCloseVerdict && lastCloseVerdict.gap === o.gap ? closeGrade(lastCloseVerdict) : { gap: o.gap };
+        if (lastCloseVerdict && lastCloseVerdict.gap === o.gap) pushChecks(lastCloseVerdict);
+        return { governor: 'close-trend', ...fixTrend.record(graded), iteration: o.iteration };
       },
       struckOut: fixTrend.struckOut,
       report: fixTrend.report,
@@ -3897,9 +3939,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
             : `${rep.strikes}/${rep.limit} strikes — the fix loop stopped making progress against the close's own numbers (${t.reading}). Continue, change approach, or stop?`,
           options: [
             'revise the goal/spec so the work is reachable (a spec edit, so the new hash needs re-approval)',
-            resumable
-              ? 'top up budgetUsd and rerun with --resume, if the trend above says it was still converging'
-              : 'resume is `run-u`-only in v1 — top up budgetUsd and re-fire the bundle from the start, if the trend above says it was still converging',
+            // F197/mul5fofw — this terminal is ONE exhaustion terminal, and ralph.js
+            // hardcodes its outcome as `escalated` (a GRADED RED, src/reuse.js's
+            // `REUSE_GRADED_RED`: the close rendered a verdict and it was red).
+            // `escalated` is a graded red, never a checkpoint (F197) — `--resume`
+            // refuses it, so the sentence states that plainly.
+            'this cannot be resumed — the close already rendered its verdict against the tree; revise the goal/spec and rerun fresh (a new hash needs re-approval)',
             'abandon the task',
           ],
         };
@@ -3996,12 +4041,23 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         })
         : null;
       if (rootInj) emit('root-injected', { phase: 'fix', ...rootInj.event });
+      // F198 item 2 — the facts-only history: JOINED numbers only, no prose the
+      // model didn't already earn by writing the close's own output. `values`
+      // joins with `→` (fixTrend's own vocabulary), stages join with `·`; a
+      // stage this leg has read only once still shows its one number (no arrow),
+      // which is still a fact the worker did not otherwise have.
+      const checksFact = checksHistory.length > 0 ? `checks passed ${checksHistory.join(' → ')}` : null;
+      const stageFacts = fixTrend.report().stages
+        .filter((s) => s.values.length > 0)
+        .map((s) => `${s.stage} ${s.values.join(' → ')}`);
+      const factsLine = [checksFact, ...stageFacts].filter(Boolean).join(' · ');
       await w.ask([
         'The job\'s final verification is failing. Fix the repository so it passes.',
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
         artifacts.length > 0 && `Working context (read-only) — the plan's steps produced:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
         !gap && post.gap && `The verification's output on the tree as it stands (not an attempt of yours):\n${post.gap}`,
         gap && `Previous attempt failed the verification:\n${gap}`,
+        factsLine && `The close's own numbers so far, oldest first (facts only — no advice):\n${factsLine}`,
         rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
     };

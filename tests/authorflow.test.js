@@ -44,7 +44,7 @@ import {
   REVISE_INSTRUCTION, STRUCTURE_INSTRUCTION_TOOL,
   QUESTION_SETS, GREEN_QUESTIONS, SOFTGREEN_QUESTIONS, HITL_QUESTIONS,
   questionsFor, requiredAnswersFor, labelsFor, CLASS_STATEMENTS,
-  WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD, CONFIRM_MENU,
+  LANGUAGE_PICK_FIELD, CONFIRM_MENU,
   PARAM_SCHEMAS, schemaCoverage, declarationSchema, declarationTool,
   catalogueBlock, lawsBlock, instrumentsBlock, authorPrompt, writeScopeBlock, confirmedBlock,
   renderSeedReadBlock, renderRejectBlock, buildReviseTurn, assertReviseTurn,
@@ -269,17 +269,9 @@ test('the retired "worse than before" wording is nowhere in any questionsFor(*) 
   }
 });
 
-// The confirm turn's own person-facing wording (piece 4) — frozen, like
-// SOURCE_FIELD/DESTINATION_FIELD_* above: exact shape, exact text.
-test('WORSE_THAN_BEFORE_FIELD is the old Q5 wording, verbatim, as its own mechanical field', () => {
-  assert.deepEqual(WORSE_THAN_BEFORE_FIELD, {
-    id: 'worseThanBefore',
-    kind: 'mechanical',
-    label: 'Worse than before',
-    prompt: 'What would make you say this came back worse than before?',
-  });
-  assert.ok(Object.isFrozen(WORSE_THAN_BEFORE_FIELD));
-});
+// WORSE_THAN_BEFORE_FIELD itself is RETIRED (hamr's ruling 2026-09-28) along
+// with the ask that used it — see src/authorflow.js's own retirement note.
+// The wording-absence test above stays; the frozen-field test is gone with it.
 
 test('LANGUAGE_PICK_FIELD names no candidates of its own — the caller supplies detectLanguage\'s own list', () => {
   assert.equal(LANGUAGE_PICK_FIELD.id, 'language');

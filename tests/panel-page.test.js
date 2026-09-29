@@ -400,6 +400,90 @@ test('item 7: cacheLine — not recorded when memoryCache is null; real numbers 
   assert.equal(cacheLine({ pointered: 7, bytesWithheld: 4865 }), '7 re-reads answered from memory · 4.8 KB not re-sent');
 });
 
+// ---------------------------------------------------------------------------
+// hamr's ruling 2026-09-28 ("panel money 2-decimals") — panelMoney is the
+// ONE money render every display in the page goes through; RED-PROVEN by
+// breaking the function (dropped the <$0.01 branch, dropped the epsilon
+// guard, swapped floor for round) and confirming each assertion below turns
+// red before restoring — see the build report for the exact breaks used.
+// ---------------------------------------------------------------------------
+
+function loadMoneyFns(html) {
+  return loadFns2(
+    html,
+    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText'],
+    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText'],
+  );
+}
+
+test('panelMoney: exact amounts round half-up to 2 decimals', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  assert.equal(panelMoney(3.71), '$3.71');
+  assert.equal(panelMoney(3.71), '$3.71', 'a 4-decimal-clean value stays exact');
+  assert.equal(panelMoney(0.815), '$0.82', 'exact half-up — 0.815 rounds UP to 0.82, not down (float-representation guarded)');
+  assert.equal(panelMoney(0), '$0.00', 'a real exact zero prints $0.00, never "unknown"');
+});
+
+test('panelMoney: a real positive amount under a cent renders "<$0.01", never "$0.00"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  assert.equal(panelMoney(0.004), '<$0.01');
+  assert.equal(panelMoney(0.0001), '<$0.01');
+  assert.equal(panelMoney(0.01), '$0.01', 'exactly a cent is never "<$0.01"');
+});
+
+test('panelMoney: floor mode rounds DOWN, never overstating a floor as exact-higher', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  assert.equal(panelMoney(0.819, true), '$0.81', 'floor 0.819 -> $0.81, never rounded up to $0.82');
+  assert.equal(panelMoney(0.82, true), '$0.82', 'a floor that lands exactly on a cent stays that cent (float-guarded, not understated)');
+});
+
+test('panelMoney: null/undefined/non-finite keeps the honest "unknown" text, never a fabricated $0', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  assert.equal(panelMoney(null), 'unknown');
+  assert.equal(panelMoney(undefined), 'unknown');
+  assert.equal(panelMoney(NaN), 'unknown');
+});
+
+test('panelMoneyWithDraft: 2-decimal composite, matching src/replay.js\'s moneyWithDraft shape but at 2 decimals', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoneyWithDraft } = loadMoneyFns(html);
+  assert.equal(panelMoneyWithDraft(3.71, false, 0.81, true, 5), '$3.71 ($0.81 drafting) of $5.00');
+  assert.equal(panelMoneyWithDraft(3.68, false, null, null, 5), '$3.68 of $5.00');
+  assert.equal(panelMoneyWithDraft(3.68, false, null, null), '$3.68', 'no drafting share, no cap -> unchanged base render');
+});
+
+test('panelMoneyWithDraft: an INCOMPLETE drafting fold reads "at least" on BOTH the bracket and the leading figure — hamr\'s ruling 2026-09-28 (2nd addendum)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoneyWithDraft } = loadMoneyFns(html);
+  assert.equal(
+    panelMoneyWithDraft(3.71, false, 0.81, false, 5),
+    'at least $3.71 (at least $0.81 drafting) of $5.00',
+  );
+});
+
+test('panelMoneyWithDraft: an already-floor leading figure (e.g. a died run\'s own spend-floor) never doubles the "at least" prefix', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoneyWithDraft } = loadMoneyFns(html);
+  assert.equal(panelMoneyWithDraft(0.018, true, null, null), 'at least $0.02');
+  assert.equal(panelMoneyWithDraft(0.018, true, 0.81, false), 'at least $0.02 (at least $0.81 drafting)');
+});
+
+test('rowSpendText: a died row reads its own spend-floor as "at least $X"; a live row with an incomplete draft reads "at least" on both parts', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { rowSpendText } = loadMoneyFns(html);
+  assert.equal(rowSpendText({ died: true, spendFloorUsd: 0.018, spentUsd: null }), 'at least $0.02');
+  assert.equal(rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: true }), '$3.71 ($0.81 drafting)');
+  assert.equal(
+    rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: false }),
+    'at least $3.71 (at least $0.81 drafting)',
+  );
+  assert.equal(rowSpendText({ died: false, spentUsd: 3.68, draftSpentUsd: null, draftSpendComplete: null }), '$3.68', 'no drafting share -> unchanged from the plain render');
+});
+
 test('item 4: desktop (min-width:900px) bounds #BareloopPanel/.main to the viewport so each pane-body scrolls internally, never the whole page', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const cssBlockMatch = html.match(/<style>[\s\S]*?<\/style>/);
@@ -739,14 +823,14 @@ test('item: Audit table cells are built in Round, Step, Action, Path, Decision, 
   const end = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
   const body = html.slice(start, end);
   const trStart = body.indexOf('tr.innerHTML =');
-  const trEnd = body.indexOf(';', body.indexOf('escapeXml(r.time'));
+  const trEnd = body.indexOf(';', body.indexOf('auditTimeCellHtml(r)'));
   const trBody = body.slice(trStart, trEnd);
   const roundIdx = trBody.indexOf('roundCell');
   const stepIdx = trBody.indexOf('stepCell');
   const actionIdx = trBody.indexOf('auditActionCellHtml(r)');
   const pathIdx = trBody.indexOf('pathCell');
   const decisionIdx = trBody.indexOf('decisionCell');
-  const timeIdx = trBody.indexOf('escapeXml(r.time');
+  const timeIdx = trBody.indexOf('auditTimeCellHtml(r)');
   assert.ok(roundIdx < stepIdx && stepIdx < actionIdx && actionIdx < pathIdx && pathIdx < decisionIdx && decisionIdx < timeIdx,
     `expected Round < Step < Action < Path < Decision < Time in tr.innerHTML build order, got: ${trBody}`);
 });
@@ -828,6 +912,67 @@ test('item 1: the round-header-row is visually distinct (its own CSS rule), and 
   assert.match(html, /tr\.round-header-row td\{[^}]*background:var\(--panel2\)/);
   assert.match(html, /tr\.round-header-row td\{[^}]*font-weight:700/);
   assert.match(html, /\.audit-table-scroll table th\{[^}]*position:sticky/);
+});
+
+// ---------------------------------------------------------------------------
+// fix (2026-09-28): Time cell overflowed the Audit tab sideways at 390px by
+// showing the full ISO timestamp. `auditShortTime`/`auditTimeCellHtml` shows
+// `HH:MM:SS` taken from the ISO string AS-IS (UTC, no local-time conversion),
+// full ISO kept in the cell's `title`; ONE helper shared by the Flat table
+// and both Grouped-view rounds-table row builders.
+// ---------------------------------------------------------------------------
+
+test('fix: auditShortTime extracts HH:MM:SS as-is from an ISO string, no timezone conversion', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function auditShortTime(');
+  const end = html.indexOf('function auditTimeCellHtml(');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected auditShortTime in src/panel/index.html');
+  const fn = new Function('String', html.slice(start, end) + 'return auditShortTime;')(String);
+  assert.strictEqual(fn('2026-09-27T08:20:58.924Z'), '08:20:58');
+  assert.strictEqual(fn(null), null);
+  assert.strictEqual(fn(undefined), null);
+});
+
+test('fix: auditTimeCellHtml renders the short time with the full ISO string in a title tooltip', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  // auditTimeCellHtml calls escapeXml + auditShortTime; load both plus the
+  // real escapeXml implementation so the helper runs for real, not stubbed.
+  const escStart = html.indexOf('function escapeXml(');
+  const escEnd = html.indexOf('function ', escStart + 20);
+  const escSrc = html.slice(escStart, escEnd);
+  const helpersStart = html.indexOf('function auditShortTime(');
+  const helpersEnd = html.indexOf('// item 7: tools/cache summary rows');
+  assert.ok(helpersStart !== -1 && helpersEnd !== -1 && helpersEnd > helpersStart, 'expected auditShortTime/auditTimeCellHtml in src/panel/index.html');
+  const helpersSrc = html.slice(helpersStart, helpersEnd);
+  const fn = new Function('String', escSrc + helpersSrc + 'return auditTimeCellHtml;')(String);
+  const withTime = fn({ time: '2026-09-27T08:20:58.924Z' });
+  assert.match(withTime, /^<span title="2026-09-27T08:20:58\.924Z">08:20:58<\/span>$/);
+  assert.strictEqual(fn({}), 'unknown');
+});
+
+test('fix: all three Audit-tab Time cells (Flat table row, Grouped round-header row, Grouped tool-call row) use the shared auditTimeCellHtml helper, not a duplicate', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  // Flat table (renderAudit)
+  const flatStart = html.indexOf('function renderAudit(result){');
+  const flatEnd = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
+  assert.match(html.slice(flatStart, flatEnd), /auditTimeCellHtml\(r\)/);
+  // Grouped round-header row (the round's own model call)
+  const headStart = html.indexOf('function renderRoundHeaderRow(r){');
+  const headEnd = html.indexOf('function renderRoundToolRow(');
+  assert.match(html.slice(headStart, headEnd), /auditTimeCellHtml\(pseudo\)/);
+  // Grouped tool-call row
+  const toolStart = html.indexOf('function renderRoundToolRow(tc){');
+  const toolEnd = html.indexOf('function renderRoundRows(');
+  assert.match(html.slice(toolStart, toolEnd), /auditTimeCellHtml\(tc\)/);
+  // no leftover raw-ISO rendering at any of the three call sites
+  assert.doesNotMatch(html.slice(flatStart, flatEnd), /escapeXml\(r\.time/);
+  assert.doesNotMatch(html.slice(headStart, headEnd), /escapeXml\(pseudo\.time/);
+  assert.doesNotMatch(html.slice(toolStart, toolEnd), /escapeXml\(tc\.time/);
+});
+
+test('fix: the Raw log view is untouched — result.raw is rendered verbatim, not run through the time helper', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /document\.getElementById\("audit-rawlog"\)\.textContent = result\.raw \|\| "";/);
 });
 
 // ---------------------------------------------------------------------------
@@ -930,18 +1075,23 @@ test('build item B RED-PROOF: partResultGlyph/partHasNoVerdict — scout/plan/re
     assert.deepEqual(box.attempts, [], `${kind}'s synthetic attempt must not reach map/card display`);
     assert.equal(partResultGlyph(part, box), null, `${kind} must render no result glyph at all`);
   });
-  // a real single-attempt step (a genuine green) still shows its glyph.
+  // a real single-attempt step (a genuine green) still shows its glyph —
+  // P3 build (2026-09-27, glyph colour addition): wrapped in a plain inline
+  // colour span (`glyphSpan`), never a bare glyph any more — the part-card
+  // renderer inserts this string via innerHTML, so the span is real markup,
+  // not literal text.
   const stepPart = {
     kind: 'step', label: 'x', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }],
   };
   const [stepBox] = buildOrderedBoxes([stepPart], false);
-  assert.equal(partResultGlyph(stepPart, stepBox), '✓');
-  // a multi-attempt fix loop still joins every attempt's own glyph.
+  assert.equal(partResultGlyph(stepPart, stepBox), '<span class="glyph-green">✓</span>');
+  // a multi-attempt fix loop still joins every attempt's own glyph, each in
+  // its own colour span.
   const fixPart = {
     kind: 'fix', label: 'fix', occurrence: null, outcome: 'green', attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }],
   };
   const [fixBox] = buildOrderedBoxes([fixPart], false);
-  assert.equal(partResultGlyph(fixPart, fixBox), '✗✓');
+  assert.equal(partResultGlyph(fixPart, fixBox), '<span class="glyph-red">✗</span><span class="glyph-green">✓</span>');
 });
 
 // Panel P2 defect 2 (hamr-watched run mujjtrvd, 2026-09-27): `partBoxState`
@@ -1093,10 +1243,10 @@ test('item 5: renderRoundsPage builds "showing A–B of N" text and a load-more 
 // item 6 (2026-09-25): "took" (finished/died) vs "elapsed" (live [▶] only)
 // ---------------------------------------------------------------------------
 
-test('item 6: run-counters reads "took Xs" for a finished or died run, "Xs elapsed" only for a live [▶] run', () => {
+test('item 6: run-counters reads "took Xs" for a finished or died run, "Xs elapsed" only for a live [▶] run (with a job-end reached OR died — the still-running-with-no-end case is build item 6 2026-09-28\'s liveWallPhrase instead)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.ok(html.indexOf('var isLive = detail.glyph === "▶" && !detail.died;') !== -1);
-  assert.ok(html.indexOf('var wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);') !== -1);
+  assert.ok(html.indexOf('wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);') !== -1);
 });
 
 // ---------------------------------------------------------------------------
@@ -1175,7 +1325,7 @@ function loadFns2(html, sourceNames, returnNames, extraSrc) {
 
 test('item 2: groupRunsByJob groups the /api/runs payload by job, newest run per job wins as "last", full per-job run list preserved', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const groupRunsByJob = loadFns(html, ['groupRunsByJob'], 'groupRunsByJob');
+  const groupRunsByJob = loadFns(html, ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'groupRunsByJob'], 'groupRunsByJob');
   const runs = [
     {
       runid: 'a2', job: 'alpha', at: '2026-09-02T00:00:00.000Z', glyph: '✓', checkType: 'deterministic', model: 'deepseek-chat', spend: '$0.60', wall: '2m00s', date: '2026-09-02',
@@ -1200,7 +1350,7 @@ test('item 2: workflow search matches a job if the query matches ANY of its runs
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { groupRunsByJob, filterWorkflows } = loadFns2(
     html,
-    ['matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
     ['groupRunsByJob', 'filterWorkflows'],
   );
   const runs = [
@@ -1228,7 +1378,7 @@ test('item 2: a ✗ result filter keeps a job whose LATEST run is ✓ but an OLD
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { groupRunsByJob, filterWorkflows } = loadFns2(
     html,
-    ['matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
     ['groupRunsByJob', 'filterWorkflows'],
   );
   const runs = [
@@ -1312,6 +1462,12 @@ function makeWorkflowsPage() {
     extractFnSource(html, 'autoExpandJob'),
     extractFnSource(html, 'representedRun'),
     extractFnSource(html, 'activeOlderRun'),
+    // panelMoney/panelMoneyWithDraft/rowSpendText (2026-09-28) — buildRunRowEl
+    // and groupRunsByJob's own `lastSpend` both now render through
+    // rowSpendText, a real dependency, pulled in verbatim rather than faked.
+    extractFnSource(html, 'panelMoney'),
+    extractFnSource(html, 'panelMoneyWithDraft'),
+    extractFnSource(html, 'rowSpendText'),
     extractFnSource(html, 'buildRunRowEl'),
     extractFnSource(html, 'renderWorkflows'),
   ].join('\n');
@@ -1678,9 +1834,9 @@ function threeStepRetryParts() {
   test(`buildStepMapSVG: retry loop stays inside its own box at width=${availWidth} (hasDrop false — a single-row layout wide enough for all 3 boxes)`, () => {
     const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
     const boxes = buildOrderedBoxes(threeStepRetryParts(), false);
-    // force a single row (no snake-drop) by giving the retry box the LAST
-    // slot in its row: swap so the retry-carrying box is index 2, then
-    // widen availWidth enough that perRow === 3 (no row change at all).
+    // force a single row (no snake-drop) by reusing the same fixture and
+    // widening availWidth enough that perRow === 3 (no row change at all,
+    // so the retry-carrying box stays at index 1 with no drop arrow).
     const svg = buildStepMapSVG(boxes, Math.max(availWidth, 1600));
     const rects = boxRects(svg);
     const box = rects[1];
@@ -2025,4 +2181,769 @@ test('pollTick: does nothing while document.hidden is true, and resumes fetching
   await Promise.resolve();
   await Promise.resolve();
   assert.ok(calls >= 1, 'a visible tab does poll');
+});
+
+// PANEL-BUILD.md P3 visual-contract fixes (2026-09-27): the built Chat tab
+// had drifted from design/panel-mockup.html on form-control font/width and
+// on the disabled look of the primary action buttons. These assertions pin
+// the ported rules so a future edit can't silently drop them again.
+
+test('Chat tab CSS: inputs/selects inherit the page monospace font (ported verbatim from the mockup, not left at the browser UA sans default)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(
+    html,
+    /input,select\{font:inherit;padding:6px 8px;border:1px solid var\(--border-strong\);border-radius:0;background:var\(--bg\);color:var\(--text\);\}/,
+    'expected the mockup-verbatim input,select{font:inherit;...} rule'
+  );
+  assert.match(html, /input::placeholder\{color:var\(--text-faint\);\}/, 'expected the mockup-verbatim input::placeholder rule');
+});
+
+test('Chat tab CSS: .field inputs/selects are full width (mockup .field input,.field select{width:100%}), not left at the browser default half-width', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /\.field input,\.field select\{width:100%;\}/);
+});
+
+test('Chat tab CSS: #chat-msg is the ~2x-height, 2px-border text box from the mockup', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /#chat-msg\{min-height:64px;padding:8px 12px;border:2px solid var\(--border-strong\);\}/);
+});
+
+test('Chat tab markup: Sign & run, Send, Revise and Start drafting all start disabled in the served HTML (before any session/phase exists, click 1 must not be clickable)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const startTag = html.match(/<button class="btn primary" type="button" id="chat-start-btn"[^>]*>/)[0];
+  const signTag = html.match(/<button class="btn primary" type="button" id="chat-sign-btn"[^>]*>/)[0];
+  const sendTag = html.match(/<button class="btn" type="button" id="chat-send-btn"[^>]*>/)[0];
+  const reviseTag = html.match(/<button class="btn" type="button" id="chat-revise-btn"[^>]*>/)[0];
+  for (const [name, tag] of [['chat-start-btn', startTag], ['chat-sign-btn', signTag], ['chat-send-btn', sendTag], ['chat-revise-btn', reviseTag]]) {
+    assert.match(tag, /\bdisabled\b/, `expected ${name} to render disabled by default`);
+  }
+});
+
+test('Chat tab CSS: a disabled .btn.primary is visibly different from the enabled primary fill (not just opacity on the same blue), so Sign & run / Start drafting do not look clickable while disabled', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const m = html.match(/\.btn\.primary:disabled\{([^}]*)\}/);
+  assert.ok(m, 'expected a .btn.primary:disabled override rule');
+  assert.ok(!/--primary-bg/.test(m[1]), 'a disabled primary button must not keep the enabled primary-bg background token');
+  assert.match(m[1], /background:var\(--btn-bg\)/);
+  assert.match(m[1], /color:var\(--text-faint\)/);
+});
+
+// fix (2026-09-28, hamr's ruling "one cap covers drafting + run", supersedes
+// the P3 Q2=A drafting-cap-field tests above): the separate Drafting $ cap
+// field is GONE — drafting now runs under the same Cap $ every run does.
+test('Job card cap row: $ cap | Time cap | Token price, matching design/panel-mockup.html field order; Token price is a disabled, unwired "est." placeholder (P4); there is no separate Drafting $ cap field', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const capRowStart = html.indexOf('<div class="cap-row"');
+  const block = html.slice(capRowStart, html.indexOf('<button class="btn primary" type="button" id="chat-start-btn"'));
+  const moneyIdx = block.indexOf('jf-cap-money');
+  const timeIdx = block.indexOf('jf-cap-time');
+  const priceIdx = block.indexOf('jf-price');
+  assert.ok(moneyIdx !== -1 && timeIdx !== -1 && priceIdx !== -1, 'expected all three cap fields present');
+  assert.ok(moneyIdx < timeIdx && timeIdx < priceIdx, 'expected order $ cap, Time cap, Token price');
+  const priceTag = block.match(/<input id="jf-price"[^>]*>/)[0];
+  assert.match(priceTag, /placeholder="est\."/);
+  assert.match(priceTag, /\bdisabled\b/, 'Token price is unwired in P3 — must render disabled');
+  assert.doesNotMatch(html, /jf-cap-draft/, 'the separate Drafting $ cap field is gone (superseded 2026-09-28)');
+});
+
+test('fix (2026-09-28): the three cap-row labels read "Cap $", "Time cap (min)", "Token price $" (label CSS already uppercases); no "Drafting cap $" label exists', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<label for="jf-cap-money">Cap \$<\/label>/);
+  assert.match(html, /<label for="jf-cap-time">Time cap \(min\)<\/label>/);
+  assert.match(html, /<label for="jf-price">Token price \$<\/label>/);
+  assert.doesNotMatch(html, /Drafting cap \$/);
+});
+
+test('build item 5 (2026-09-28): the page opens on the Chat tab by default — tab-chat is aria-selected, panel-chat is active/visible, panel-runs starts hidden', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<button role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="true"/);
+  assert.match(html, /<button role="tab" id="tab-runs" aria-controls="panel-runs" aria-selected="false"/);
+  assert.match(html, /<section id="panel-chat" class="tabpanel active"/);
+  const runsSectionTag = html.match(/<section id="panel-runs"[^>]*>/)[0];
+  assert.match(runsSectionTag, /\bhidden\b/, 'panel-runs must start hidden so Chat is the visible left pane on load');
+});
+
+test('build item 5 RED-PROOF (2026-09-28): the initial /api/runs load no longer force-clicks the LEFT "tab-runs" tab — only the RIGHT "tab-run" details tab', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('getJSON("/api/runs").then(function(result){');
+  const end = html.indexOf('startPolling();', start) + 'startPolling();'.length;
+  assert.ok(start !== -1 && end > start, 'expected the initial /api/runs load block to be present');
+  const block = html.slice(start, end);
+  assert.doesNotMatch(block, /tab-runs"\)\.click\(\)/, 'the left-pane Runs tab must not be auto-clicked on load (build item 5: Chat is the default)');
+  assert.match(block, /tab-run"\)\.click\(\)/, 'the right-pane Run details tab still loads the newest run, ready for when the person switches to Runs themselves');
+});
+
+test('build item 3 (2026-09-28): the single progress-indicator row is in the page, ahead of the chat thread, with a glyph and a label element', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<div class="chat-progress-row" id="chat-progress-row"[^>]*hidden>/);
+  assert.match(html, /id="chat-progress-glyph"/);
+  assert.match(html, /id="chat-progress-label"/);
+  const progressIdx = html.indexOf('id="chat-progress-row"');
+  const threadIdx = html.indexOf('id="chat-thread"');
+  assert.ok(progressIdx !== -1 && threadIdx !== -1 && progressIdx < threadIdx, 'the progress row must render ahead of the chat thread');
+});
+
+test('build item 3 RED-PROOF (2026-09-28): the progress dots reduced-motion fallback renders a STATIC fully-dotted form, never the animated cycle', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function startProgressDots(){');
+  const end = html.indexOf('function progressLabelFor(state){');
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected startProgressDots to be present');
+  const body = html.slice(start, end);
+  assert.match(body, /reducedMotion/);
+  // 4 dots now (build item 3, 2026-09-28 2nd pass) — was 3 dots ("...")
+  // before the dot cycle itself was widened to 1..4 in the same change.
+  assert.match(body, /\[progress\.\.\.\.\]/, 'the static reduced-motion fallback must be the fully-dotted (4-dot) form, not a half-cycled one');
+});
+
+test('build item 2 (2026-09-28): onPhase no longer posts a chat bubble — the progress label is collapsed into state.progressLabel only, never say()\'d', () => {
+  const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
+  const start = src.indexOf('const onPhase = (name, data = {}) => {');
+  const end = src.indexOf('};', start) + 2;
+  assert.ok(start !== -1, 'expected onPhase to be present');
+  const body = src.slice(start, end);
+  // strip `//` comment lines before scanning — this function's own doc
+  // comment mentions `say(` in prose, which must not itself trip the check.
+  const codeOnly = body.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+  assert.doesNotMatch(codeOnly, /say\(/, 'onPhase must never post a chat message of its own (build item 2: it used to double up with the refusal that often followed)');
+  assert.match(body, /state\.progressLabel/);
+});
+
+test('build item 2 (2026-09-28): the rendered "who" label for a system/bot message is plain "bareloop", never the jargon "bareloop (progress)" suffix', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.doesNotMatch(html, /bareloop \(progress\)/, 'the "(progress)" suffix must be gone — progress now lives in the single indicator line, not the chat label');
+});
+
+test('build item 4 (2026-09-28): Start drafting disables immediately on click (before the network response), and is re-enabled only on a terminal phase', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('startBtn.addEventListener("click", function(){');
+  const end = html.indexOf('checkDepsBtn.addEventListener', start);
+  assert.ok(start !== -1 && end !== -1 && end > start, 'expected the Start click handler to be present');
+  const body = html.slice(start, end);
+  const sessionLiveIdx = body.indexOf('sessionLive = true;');
+  const postIdx = body.indexOf('authorPost("/api/author/start"');
+  assert.ok(sessionLiveIdx !== -1 && postIdx !== -1 && sessionLiveIdx < postIdx, 'sessionLive must be set to true BEFORE the start request is sent, not after the response arrives');
+  assert.match(body, /refreshStartEnabled\(\)/);
+});
+
+test('build item 4 RED-PROOF (2026-09-28): CLIENT_TERMINAL_PHASES matches the server\'s own TERMINAL_PHASES set exactly — a drift here would silently re-lock or silently unlock Start', () => {
+  const pageHtml = readFileSync(PAGE_PATH, 'utf8');
+  const clientMatch = pageHtml.match(/var CLIENT_TERMINAL_PHASES = \[([^\]]*)\];/);
+  assert.ok(clientMatch, 'expected CLIENT_TERMINAL_PHASES to be declared');
+  const clientSet = new Set(clientMatch[1].split(',').map((s) => s.trim().replace(/"/g, '')));
+  const routesSrc = readFileSync(new URL('../src/panel/authorroutes.js', import.meta.url), 'utf8');
+  const serverMatch = routesSrc.match(/const TERMINAL_PHASES = new Set\(\[([^\]]*)\]\);/);
+  assert.ok(serverMatch, 'expected TERMINAL_PHASES to be declared in authorroutes.js');
+  const serverSet = new Set(serverMatch[1].split(',').map((s) => s.trim().replace(/'/g, '')));
+  assert.deepEqual([...clientSet].sort(), [...serverSet].sort());
+});
+
+test('build item 5 (2026-09-28): ONE $0 readiness line renders under the Model field (superseding item 7\'s two lines), and Start is gated on the key being usable', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelFieldStart = html.indexOf('<label for="jf-model">Model</label>');
+  const modelFieldEnd = html.indexOf('jf-name', modelFieldStart); // the NEXT field, Job name
+  const modelField = html.slice(modelFieldStart, modelFieldEnd);
+  assert.match(modelField, /id="jf-model-status"/);
+  assert.doesNotMatch(modelField, /id="jf-key-status"/, 'the old two-element split must be gone');
+  assert.doesNotMatch(modelField, /id="jf-reach-status"/);
+  assert.match(html, /var keyOk = false;/);
+  assert.match(html, /startBtn\.disabled = !capOk \|\| sessionLive \|\| !keyOk;/);
+});
+
+// ---------------------------------------------------------------------------
+// build item 5 (2026-09-28, session mul5fofw): collapse the key + reachability
+// read into ONE line. All good: "[✓] OPENAI_API_KEY found · deepseek-flash
+// reachable". Otherwise: one red line with the FIRST problem. Start-gating
+// (`keyOk`) stays on the key alone — a reachability failure shows red but
+// never blocks (an endpoint can be flaky), unchanged from item 7.
+// ---------------------------------------------------------------------------
+
+test('build item 5: modelStatusLine — the all-good line, verbatim shape', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'OPENAI_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: true, reachable: true, modelListed: true, status: 'ok', note: null },
+  };
+  const line = modelStatusLine(r, 'deepseek-flash');
+  assert.equal(line.text, '[✓] OPENAI_API_KEY found · deepseek-flash reachable');
+  assert.equal(line.ok, true);
+  assert.equal(line.keyOk, true);
+});
+
+test('build item 5: modelStatusLine — a missing key is red, keyOk false, reachability never even mentioned', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'ANTHROPIC_API_KEY', keyStatus: 'missing', keyProblem: null,
+    reachability: { checked: false, reachable: null, modelListed: null, status: null, note: 'no usable key' },
+  };
+  const line = modelStatusLine(r, 'claude-sonnet-5');
+  assert.equal(line.text, '[✗] ANTHROPIC_API_KEY not set');
+  assert.equal(line.ok, false);
+  assert.equal(line.keyOk, false);
+});
+
+test('build item 5: modelStatusLine — a rejected key (401) is red', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'OPENAI_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: true, reachable: false, modelListed: null, status: 'HTTP 401', note: null },
+  };
+  const line = modelStatusLine(r, 'deepseek-flash');
+  assert.equal(line.text, '[✗] key rejected (HTTP 401)');
+  assert.equal(line.ok, false);
+  assert.equal(line.keyOk, true, 'the KEY was found — a 401 on the reachability probe is a separate axis');
+});
+
+test('build item 5: modelStatusLine — key found, reachability unreachable (flaky) — RED line, but keyOk stays true (never blocks Start)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'OPENAI_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: true, reachable: false, modelListed: null, status: 'timeout', note: null },
+  };
+  const line = modelStatusLine(r, 'deepseek-flash');
+  assert.equal(line.text, '[✗] timeout — may be flaky, not blocking');
+  assert.equal(line.ok, false);
+  assert.equal(line.keyOk, true);
+});
+
+test('build item 5: modelStatusLine — key found, reachability not yet checked (e.g. key just found, probe in flight state modelled as checked:false) — green, no reachability clause', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'OPENAI_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: false, reachable: null, modelListed: null, status: null, note: null },
+  };
+  const line = modelStatusLine(r, 'deepseek-flash');
+  assert.equal(line.text, '[✓] OPENAI_API_KEY found');
+  assert.equal(line.ok, true);
+  assert.equal(line.keyOk, true);
+});
+
+test('build item 5: modelStatusLine — an unusable model-check response (server error) reads as one red line, keyOk false', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  assert.equal(modelStatusLine(null, 'deepseek-flash').text, '[✗] could not check the key');
+  assert.equal(modelStatusLine({ ok: false }, 'deepseek-flash').text, '[✗] could not check the key');
+  assert.equal(modelStatusLine({ ok: false }, 'deepseek-flash').keyOk, false);
+});
+
+test('build item 5: refreshModelStatus renders through modelStatusLine into ONE element (#jf-model-status), never the retired two-element split', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'refreshModelStatus');
+  assert.match(src, /var line = modelStatusLine\(r, modelId\);/);
+  assert.match(src, /modelStatusEl\.textContent = line\.text;/);
+  assert.match(src, /keyOk = line\.keyOk;/);
+  assert.doesNotMatch(src, /keyStatusEl|reachStatusEl/, 'the old two-element vars must be gone');
+});
+
+test('build item 7 (2026-09-28): refreshModelStatus calls the model-check route with the SELECTED model id, and runs on both load and change', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /\/api\/author\/model-check\?model=" \+ encodeURIComponent\(modelId\)/);
+  assert.match(html, /modelSelect\.addEventListener\("change", refreshModelStatus\)/);
+  const start = html.indexOf('function refreshModelStatus(){');
+  const callIdx = html.indexOf('refreshModelStatus();', start);
+  assert.ok(start !== -1 && callIdx !== -1 && callIdx > start, 'refreshModelStatus must also be called once on load, not just on change');
+});
+
+// fix (2026-09-28): a 401/403 means the key was REJECTED, not flakiness —
+// RED-PROVEN below against the extracted, real page function.
+test('fix (2026-09-28): reachStatusText — a 401/403 reads "key rejected", never "may be flaky"; every other status keeps "may be flaky, not blocking"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const reachStatusText = extractFn(html, 'reachStatusText');
+  assert.equal(reachStatusText('HTTP 401'), '[✗] key rejected (HTTP 401)');
+  assert.equal(reachStatusText('HTTP 403'), '[✗] key rejected (HTTP 403)');
+  for (const status of ['timeout', 'network-error', 'HTTP 500', 'HTTP 429', 'HTTP 503', 'unsupported-provider', 'ECONNRESET']) {
+    assert.equal(reachStatusText(status), `[✗] ${status} — may be flaky, not blocking`, `${status} must keep the original "may be flaky" wording, not read as a key rejection`);
+  }
+});
+
+test('fix (2026-09-28): modelStatusLine renders its reach text through reachStatusText, never a second hand-composed string (build item 5 moved this call from refreshModelStatus into modelStatusLine)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'modelStatusLine');
+  assert.match(src, /return \{ keyOk: true, ok: false, text: reachStatusText\(reach\.status\) \};/);
+  assert.doesNotMatch(src, /may be flaky/, 'the wording must live in ONE place (reachStatusText), not be re-spelled inline here too');
+});
+
+// ---------------------------------------------------------------------------
+// build item 1 (2026-09-28, session mul5fofw): the "lost answer" bug. hamr
+// typed an answer to the worseThanBefore question and clicked Send; the
+// server never received it and no error was ever visible. ROOT CAUSE (found
+// by reading the real handlers, not guessed): (a) `sendBtn`/`reviseBtn`
+// unconditionally cleared `msgInput.value` even when the POST failed, so a
+// rejected answer vanished from the box with zero trace; (b) any error they
+// DID surface went to `#chat-card-error`, the SAME element `renderActions`
+// (driven by the 2s `poll()`, which every one of these handlers also calls
+// in its own `.then`) unconditionally overwrites every tick — so the error
+// was wiped before a person could read it, often within the same callback.
+// Fixed by chatPostOutcome() (the one place that now decides success) plus
+// a dedicated #chat-action-error element poll()/renderActions never touches.
+// ---------------------------------------------------------------------------
+
+test('build item 1: chatPostOutcome — RED-PROOF against the pre-fix decision rule', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const chatPostOutcome = extractFn(html, 'chatPostOutcome');
+  // the real, still-live server shape for a REFUSED request (e.g. a stale
+  // token after a server restart): {ok:false, error:'refused — ...'} at a
+  // non-200 status. The OLD per-handler rule (`r.body && r.body.error &&
+  // !r.body.ok`) happened to catch this ONE shape, but nothing before this
+  // function existed checked `r.status` at all, so a same-shaped 200 (a
+  // route that mistakenly reports ok:false with no distinct status) and a
+  // malformed body both fell through uncaught. chatPostOutcome must refuse
+  // on ALL of them.
+  assert.equal(chatPostOutcome({ status: 403, body: { ok: false, error: 'refused — bad token' } }).ok, false);
+  assert.equal(chatPostOutcome({ status: 403, body: { ok: false, error: 'refused — bad token' } }).error, 'refused — bad token');
+  // a 200 whose body forgot `.error` (or set it to '') must still read as a
+  // failure once `ok` isn't literally `true` — the old `r.body.error &&
+  // !r.body.ok` rule read this as "no branch matches" and quietly did
+  // nothing (no error shown, but the send handler still cleared the input).
+  assert.equal(chatPostOutcome({ status: 200, body: { ok: false, error: '' } }).ok, false);
+  assert.match(chatPostOutcome({ status: 200, body: { ok: false, error: '' } }).error, /the request failed/);
+  // a genuine success only when status is exactly 200 AND ok is exactly true.
+  assert.equal(chatPostOutcome({ status: 200, body: { ok: true } }).ok, true);
+  assert.equal(chatPostOutcome({ status: 200, body: { ok: true } }).error, '');
+  // undefined/null r (what a misbehaving fetch shim could hand back) must
+  // never throw — it's a failure, not a crash.
+  assert.equal(chatPostOutcome(undefined).ok, false);
+  assert.equal(chatPostOutcome(null).ok, false);
+});
+
+test('build item 1: sendBtn/reviseBtn only clear msgInput inside the o.ok branch — a failed POST must never wipe the typed answer', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const sendSrc = html.slice(html.indexOf('sendBtn.addEventListener("click"'), html.indexOf('reviseBtn.addEventListener("click"'));
+  const reviseSrc = html.slice(html.indexOf('reviseBtn.addEventListener("click"'), html.indexOf('signBtn.addEventListener("click"'));
+  for (const [name, src] of [['send', sendSrc], ['revise', reviseSrc]]) {
+    assert.match(src, /if\(o\.ok\)\{\s*chatActionOk\(\);\s*msgInput\.value = "";/, `${name}: msgInput.value = "" must sit inside the o.ok branch`);
+    // the ONLY place msgInput.value is assigned in this handler is that one
+    // success-branch line — never a second unconditional clear elsewhere.
+    const assigns = src.match(/msgInput\.value = /g) || [];
+    assert.equal(assigns.length, 1, `${name}: msgInput.value must be assigned exactly once (inside the success branch), found ${assigns.length}`);
+  }
+});
+
+test('build item 1: every chat POST site (send, revise, sign-prepare, sign, check-deps) has a .catch so a rejected fetch (network drop, server restart) surfaces, never silently no-ops', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const chatBlock = html.slice(html.indexOf('checkDepsBtn.addEventListener("click"'), html.indexOf('refreshStartEnabled();\n  })();'));
+  const catches = chatBlock.match(/\}\)\.catch\(function\(\)\{ chatActionFailed\(/g) || [];
+  assert.equal(catches.length, 5, `expected 5 .catch(...chatActionFailed...) call sites (check-deps, send, revise, sign-prepare, sign), found ${catches.length}`);
+});
+
+test('build item 1: #chat-action-error is never written to inside renderActions/renderProgress/poll — only the chat action handlers own it, so the 2s poll can never wipe an error before it is read', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  for (const fn of ['renderActions', 'renderProgress', 'poll', 'renderMessages']) {
+    const src = extractFnSource(html, fn);
+    assert.doesNotMatch(src, /actionErrEl/, `${fn} must never touch #chat-action-error`);
+  }
+});
+
+test('build item 1: #chat-action-error exists in the markup, distinct from #chat-card-error, and is cleared on New session / Start', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /id="chat-action-error"/);
+  assert.match(html, /var actionErrEl = document\.getElementById\("chat-action-error"\);/);
+  const newStart = html.indexOf('newBtn.addEventListener("click"');
+  const newSrc = html.slice(newStart, html.indexOf('});', newStart) + 3);
+  assert.match(newSrc, /actionErrEl\.textContent = "";/);
+});
+
+// ---------------------------------------------------------------------------
+// build item 3 (2026-09-28, session mul5fofw): the progress line. Observed
+// bugs: "checking prior behaviour" shown while waiting on hamr's own answer,
+// and "plan confirmed" shown while the plan was actually awaiting his
+// confirm — a pending ask must always win over the last machine phase name.
+// Also: the label must sit BEFORE the animated dots in the markup so the
+// cycling indicator never pushes it around.
+// ---------------------------------------------------------------------------
+
+test('build item 3: progressLabelFor — a pending ask always beats the stale progressLabel, with the right wording per kind', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const progressLabelFor = extractFn(html, 'progressLabelFor');
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'menu' }, progressLabel: 'checking prior behaviour' }),
+    'waiting for your OK',
+    'a menu ask must never show a stale machine step name',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'install-needed' }, progressLabel: 'drafting' }),
+    'install needed',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'answer' }, progressLabel: 'drafting' }),
+    'waiting for your answer',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'language' }, progressLabel: 'confirming plan' }),
+    'waiting for your answer',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: { kind: 'fix' }, progressLabel: 'confirming plan' }),
+    'waiting for your answer',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: null, progressLabel: 'drafting' }),
+    'drafting',
+    'no pending ask -> the real machine step label',
+  );
+  assert.equal(
+    progressLabelFor({ pendingAsk: null, progressLabel: null }),
+    'working',
+    'no pending ask and no label yet -> the generic fallback, never blank',
+  );
+});
+
+test('build item 3: the progress row markup shows the LABEL span before the GLYPH span (label first, dots never push it)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const rowStart = html.indexOf('id="chat-progress-row"');
+  const rowEnd = html.indexOf('</div>', rowStart);
+  const row = html.slice(rowStart, rowEnd);
+  const labelIdx = row.indexOf('id="chat-progress-label"');
+  const glyphIdx = row.indexOf('id="chat-progress-glyph"');
+  assert.ok(labelIdx !== -1 && glyphIdx !== -1 && labelIdx < glyphIdx, 'chat-progress-label must come before chat-progress-glyph in the markup');
+});
+
+test('build item 3: the progress dots cycle 1..4 (never 1..3) — [progress.] up to [progress....]', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'startProgressDots');
+  assert.match(src, /progressDotCount % 4/);
+  assert.match(src, /\[progress\.\.\.\.\]/, 'the reduced-motion fallback must show the FULL 4-dot form, never the old 3-dot one');
+});
+
+test('build item 3: renderProgress delegates the label to progressLabelFor — never a second hand-composed "waiting for you" string', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'renderProgress');
+  assert.match(src, /progressLabelEl\.textContent = progressLabelFor\(state\);/);
+  assert.doesNotMatch(src, /waiting for you"/, 'the wording must live only in progressLabelFor, not be re-spelled here too');
+});
+
+// ---------------------------------------------------------------------------
+// build item 4 (2026-09-28, session mul5fofw): chat messages are one short
+// plain line per step, no "bareloop" who-label on SYSTEM lines (they are
+// step notices, not a message from anyone) — only "you" and the model's own
+// bot replies keep a who-label.
+// ---------------------------------------------------------------------------
+
+test('build item 4: chatWhoLabel — "you" and bot keep a label, system carries none', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const chatWhoLabel = extractFn(html, 'chatWhoLabel');
+  assert.equal(chatWhoLabel('you'), 'you');
+  assert.equal(chatWhoLabel('bot'), 'bareloop');
+  assert.equal(chatWhoLabel('system'), '');
+});
+
+test('build item 4: renderMessages source builds html without a .who div when chatWhoLabel returns empty, WITH one otherwise', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = extractFnSource(html, 'renderMessages');
+  assert.match(src, /var who = chatWhoLabel\(m\.role\);/);
+  assert.match(src, /var whoHtml = who \? \('<div class="who">' \+ escapeXml\(who\) \+ '<\/div>'\) : "";/);
+  assert.doesNotMatch(src, /<div class="who">' \+ escapeXml\(who\) \+ '<\/div>' \+ escapeXml\(m\.text\)/, 'must never unconditionally emit the .who div any more');
+});
+
+test('build item 4: the three named step lines are short and plain (Copying source, Packages found, Drafting with <model>)', () => {
+  const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
+  assert.match(src, /say\('system', 'Copying source \(\$0\)'\);/);
+  assert.match(src, /say\('system', 'Packages found'\);/);
+  assert.match(src, /say\('system', `Drafting with \$\{card\.model\}, \$\$\{card\.capUsd\.toFixed\(2\)\} cap`\);/);
+});
+
+// ---------------------------------------------------------------------------
+// build item 6 (2026-09-28, session mul5fofw): the Run tab must show a
+// running floor while a run is live (no job-end), instead of the observed
+// "unknown ($0.73 drafting) of $5.00 · unknown elapsed".
+// ---------------------------------------------------------------------------
+
+test('build item 6: liveSpendText — "$X so far" using panelMoney, plus the drafting bracket, never "at least" for the leading figure', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const liveSpendText = loadFns(html, ['panelMoney', 'liveSpendText'], 'liveSpendText');
+  assert.equal(liveSpendText(0.72, 0.73, true), '$0.72 so far ($0.73 drafting)');
+  assert.equal(liveSpendText(0.72, 0.73, false), '$0.72 so far (at least $0.73 drafting)');
+  assert.equal(liveSpendText(0.72, null, null), '$0.72 so far');
+  assert.equal(liveSpendText(null, 0.73, true), 'unknown');
+});
+
+test('build item 6: liveWallPhrase — "running <duration>", never "unknown" once the spine has a timed record', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const liveWallPhrase = loadFns(html, ['duration', 'liveWallPhrase'], 'liveWallPhrase');
+  assert.equal(liveWallPhrase(4 * 60 * 1000 + 12 * 1000), 'running 4m12s');
+  assert.equal(liveWallPhrase(null), 'elapsed unknown');
+});
+
+test('build item 6: renderRun uses liveSpendText/liveWallPhrase exactly when live with no job-end (spentUsd null, not died), never for a died or finished run', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function renderRun(detail){');
+  const end = html.indexOf('function renderRun(', start + 1) === -1 ? html.indexOf('</script>', start) : html.length;
+  const src = html.slice(start, start + 4000);
+  assert.match(src, /var isLiveNoEnd = !detail\.died && detail\.spentUsd === null;/);
+  assert.match(src, /spendText = liveSpendText\(detail\.spendFloorUsd, detail\.draftSpentUsd, detail\.draftSpendComplete\);/);
+  assert.match(src, /wallPhrase = liveWallPhrase\(detail\.wallFloorMs\);/);
+  void end;
+});
+
+// ---------------------------------------------------------------------------
+// build item 4 (2026-09-28, session mul5fofw): the Run-tab card for a LIVE
+// run's own `kind:"run"` synthetic part (replay.js — shown when no step has
+// started yet: still scouting/planning) still read a bare "unknown" between
+// "N tools" and the $ amount, because `partLine1Text`/the Run-tab's own
+// inline card builder each independently called `duration(part.wallMs)`/
+// `panelMoney(part.spentUsd)` — a SECOND wall/spend reader next to the
+// Summary box's already-fixed `liveSpendText`/`liveWallPhrase` (build item 6,
+// commit 4d31377). Fixed by giving `partLine1Text` ONE owner: it now floats
+// to the run-level floor for exactly the `kind:"run"` part of a still-live
+// run, and is called (with `detail`) from BOTH the Run tab's cards and the
+// Audit tab's Grouped headers.
+// ---------------------------------------------------------------------------
+
+test('build item 4: partLine1Text floats a LIVE run-part\'s "unknown" wall/spend to the same floor liveWallPhrase/liveSpendText already give the Summary box', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'partLine1Text'], 'partLine1Text');
+  const liveDetail = { died: false, spentUsd: null, wallFloorMs: 4 * 60 * 1000 + 12 * 1000, spendFloorUsd: 0.72, draftSpentUsd: null, draftSpendComplete: null };
+  const part = { kind: 'run', rounds: 3, toolCalls: 5, wallMs: null, spentUsd: null, unpricedRounds: 0 };
+  const text = partLine1Text(part, liveDetail);
+  assert.equal(text, '3 calls &middot; 5 tools &middot; running 4m12s &middot; $0.72 so far',
+    `bare "unknown" must never appear between "N tools" and the money figure on a live run's own card: ${text}`);
+  assert.doesNotMatch(text, /unknown/, 'no "unknown" survives once the run-level floor is available');
+});
+
+test('build item 4: partLine1Text leaves a DIED or finished run\'s "unknown" exactly as before — the floor substitution is for the LIVE case only', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'partLine1Text'], 'partLine1Text');
+  const diedDetail = { died: true, spentUsd: null, wallFloorMs: 12000, spendFloorUsd: 0.1, draftSpentUsd: null, draftSpendComplete: null };
+  const part = { kind: 'run', rounds: 1, toolCalls: 2, wallMs: null, spentUsd: null, unpricedRounds: 0 };
+  const text = partLine1Text(part, diedDetail);
+  assert.match(text, /unknown/, 'a died run\'s own card is unaffected — it has no live floor to borrow, only its already-honest "unknown"');
+});
+
+test('build item 4: partLine1Text never floats a non-run part (step/scout/plan/fix/judge) — only the whole-run\'s own kind:"run" card borrows the run-level floor', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'partLine1Text'], 'partLine1Text');
+  const liveDetail = { died: false, spentUsd: null, wallFloorMs: 999999, spendFloorUsd: 9.99, draftSpentUsd: null, draftSpendComplete: null };
+  const stepPart = { kind: 'step', rounds: 2, toolCalls: 1, wallMs: null, spentUsd: null, unpricedRounds: 0 };
+  const text = partLine1Text(stepPart, liveDetail);
+  assert.match(text, /unknown/, 'a step part\'s own null wall/spend has no run-level floor to borrow — untouched');
+  assert.doesNotMatch(text, /999999|9\.99|running 16/i);
+});
+
+test('build item 4: BOTH call sites (Run-tab cards and Audit Grouped headers) now route through the SAME partLine1Text(part, detail) — never a second inline reader', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const runCallIdx = html.indexOf('var line1Bits = [partLine1Text(part, detail)];');
+  assert.ok(runCallIdx > -1, 'the Run tab\'s card builder calls the shared function with detail, not an inline array');
+  const groupCallIdx = html.indexOf("partLine1Text(part, detail) +");
+  assert.ok(groupCallIdx > -1, 'the Audit tab\'s Grouped header calls the same shared function with detail');
+});
+
+// ---------------------------------------------------------------------------
+// plain-checks build (2026-09-28, hamr's ruling): the "checks N/M" headline
+// is WITHDRAWN ("confusing — reads like 6 failed when 5 never ran"), replaced
+// everywhere by plain words. `attemptChecksLine` derives "all N checks
+// passed" / "check #N <question> — <number>" from a declared close's own
+// `stages` list (the SAME shape src/declaredclose.js's runDeclaredStages
+// already attaches to every close-verdict/outer-close record and
+// src/replay.js already carries through to each fix-loop attempt, including
+// the opening outer-close grade as attempt 1) plus the server's own
+// `declaredStages`/`question` fields. A rubric/command close carries no such
+// list — "" (leave as today), per hamr's own ruling.
+// ---------------------------------------------------------------------------
+
+test('plain-checks: attemptChecksLine reads "all N checks passed" on an all-green declared close', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const attemptChecksLine = loadFns(html, ['escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine'], 'attemptChecksLine');
+  const attempt = { stages: [{ name: 'a', verdict: 'satisfied' }, { name: 'b', verdict: 'satisfied' }] };
+  assert.equal(attemptChecksLine(attempt), 'all 2 checks passed');
+});
+
+test('plain-checks: attemptChecksLine returns "" for a rubric/command close (no stages list) or an empty one — "leave as today"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const attemptChecksLine = loadFns(html, ['escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine'], 'attemptChecksLine');
+  assert.equal(attemptChecksLine({ stages: null }), '');
+  assert.equal(attemptChecksLine({ stages: undefined }), '');
+  assert.equal(attemptChecksLine({ stages: [] }), '');
+});
+
+test('checks-count fix (2026-09-28, hamr\'s live catch on run mulbz0ny) stays true under plain words: attemptChecksLine\'s "#N" total comes from `declaredStagesTotal`, never `stages.length`, when an attempt\'s own stages array is shorter than the close it belongs to (first-red-wins stopped it early)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const attemptChecksLine = loadFns(html, ['escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine'], 'attemptChecksLine');
+  // mul5fofw's attempt 2: only 2 of 7 declared stages ran before the close stopped
+  const stages = [
+    { name: 'changed-from-seed', verdict: 'satisfied' },
+    {
+      name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 4, baseline: 0, direction: 'lower-is-better', baselineKind: 0, question: 'src/checks.js has 0 type errors?',
+    },
+  ];
+  const declaredStages = [
+    { name: 'changed-from-seed', question: 'did it change any file?' },
+    { name: 'typecheck-target-zero-errors', question: 'src/checks.js has 0 type errors?' },
+  ];
+  assert.equal(
+    attemptChecksLine({ stages, declaredStagesTotal: 7, declaredStages }),
+    'check #2 src/checks.js has 0 type errors? — 4 left, need 0',
+  );
+  // no declaredStagesTotal/declaredStages (no spec resolvable) -> falls back
+  // to the ran-array's own position/length, unchanged from before this fix
+  assert.equal(
+    attemptChecksLine({ stages }),
+    'check #2 src/checks.js has 0 type errors? — 4 left, need 0',
+  );
+});
+
+test('plain-checks: attemptChecksLine — hamr\'s exact examples, "attempt 2 ✗ · check #2 …" and "attempt 3 ✓ · all 7 checks passed" (minus the "attempt N" prefix, which the caller adds)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const attemptChecksLine = loadFns(html, ['escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine'], 'attemptChecksLine');
+  const declaredStages = ['changed-from-seed', 'typecheck-target-zero-errors', 'typecheck-outside-not-worse', 'tests-kept', 'suite-green', 'suite-zero-failing-tests', 'no-suppressions']
+    .map((name) => ({ name, question: `${name}?` }));
+  const stages = [
+    { name: 'changed-from-seed', verdict: 'satisfied' },
+    { name: 'typecheck-target-zero-errors', verdict: 'satisfied', value: 0, baseline: 0, direction: 'lower-is-better', baselineKind: 0 },
+    {
+      name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed', question: "other files didn't get more type errors?",
+    },
+  ];
+  assert.equal(
+    attemptChecksLine({ stages, declaredStagesTotal: 7, declaredStages }),
+    "check #3 other files didn't get more type errors? — 47, limit 46",
+  );
+  const allPass = [
+    { name: 'changed-from-seed', verdict: 'satisfied' },
+  ];
+  assert.equal(attemptChecksLine({ stages: allPass, declaredStagesTotal: 7 }), 'all 7 checks passed');
+});
+
+test('plain-checks: stageQuestionText falls back to the stage\'s own name when `question` is absent (no honest plain question, or no spec resolved)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const stageQuestionText = loadFns(html, ['stageQuestionText'], 'stageQuestionText');
+  assert.equal(stageQuestionText({ name: 'a-human-stage', question: null }), 'a-human-stage');
+  assert.equal(stageQuestionText({ name: 'no-suppressions', question: 'no casts or silencers added?' }), 'no casts or silencers added?');
+  assert.equal(stageQuestionText({ name: null, question: null }), 'unknown');
+});
+
+test('checks-wording build item 2 (plain-checks reworded separators): stageNumberText — the 3 closed numeric shapes ("left, need" / "of" / ", limit"), and "" for a value-less (pass/fail) stage', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const stageNumberText = loadFns(html, ['stageNumberText'], 'stageNumberText');
+  assert.equal(stageNumberText({
+    value: 12, baseline: 0, direction: 'lower-is-better', baselineKind: 0,
+  }), '12 left, need 0');
+  assert.equal(stageNumberText({
+    value: 40, baseline: 45, direction: 'higher-is-better', baselineKind: 'seed',
+  }), '40 of 45');
+  assert.equal(stageNumberText({
+    value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed',
+  }), '47, limit 46');
+  assert.equal(stageNumberText({ verdict: 'satisfied' }), '', 'no value at all -> pass/fail, no number text');
+  assert.equal(stageNumberText({
+    value: 47, baseline: 46,
+  }), '47 (baseline 46)', 'a numeric stage with no resolvable kind/direction falls back to the spec-verbatim wording, never a guessed shape');
+});
+
+test('plain-checks: partLine1Text appends the LATEST attempt\'s plain checks line for the fix part, never for a part with no attempts/stages', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const partLine1Text = loadFns(html, ['duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'escapeXml', 'declaredPosition', 'stageQuestionText', 'stageNumberText', 'attemptChecksLine', 'partLine1Text'], 'partLine1Text');
+  const fixPart = {
+    kind: 'fix', rounds: 3, toolCalls: 4, wallMs: 1000, spentUsd: 0.1, unpricedRounds: 0,
+    attempts: [
+      { n: 1, stages: [{ name: 'typecheck-target-zero-errors', verdict: 'satisfied' }, { name: 'no-suppressions', verdict: 'needs_revision' }] },
+      { n: 2, stages: [{ name: 'typecheck-target-zero-errors', verdict: 'satisfied' }, { name: 'no-suppressions', verdict: 'satisfied' }] },
+    ],
+  };
+  const text = partLine1Text(fixPart, null);
+  assert.match(text, /all 2 checks passed$/, `the LAST attempt's grading decides the card's headline: ${text}`);
+
+  const noAttemptsPart = { kind: 'step', rounds: 1, toolCalls: 1, wallMs: 100, spentUsd: 0.01, unpricedRounds: 0 };
+  assert.doesNotMatch(partLine1Text(noAttemptsPart, null), /checks passed|check #/, 'no attempts, no stages -> no headline at all');
+});
+
+test('plain-checks: fullStageList/stageLineHtml — a numeric stage with no resolvable kind falls back to the spec\'s "N (baseline M)" wording verbatim; a value-less stage shows the mark alone', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
+  const attempt = { stages: [{ name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46 }] };
+  const lines = fullStageList(attempt).map(stageLineHtml);
+  assert.match(lines[0], /^#1 typecheck-outside-not-worse .*47 \(baseline 46\)$/);
+
+  const passAttempt = { stages: [{ name: 'no-suppressions', verdict: 'satisfied' }] };
+  const passLines = fullStageList(passAttempt).map(stageLineHtml);
+  assert.match(passLines[0], /^#1 no-suppressions /);
+  assert.doesNotMatch(passLines[0], /\(baseline/);
+});
+
+test('plain-checks: fullStageList/stageLineHtml — every declared stage in the expanded attempt row renders the SAME closed §3a wording the headline uses, "#N <question> <mark> <number>"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
+  const attempt = {
+    stages: [
+      {
+        name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, direction: 'lower-is-better', baselineKind: 0, question: 'src/checks.js has 0 type errors?',
+      },
+      {
+        name: 'tests-kept', verdict: 'satisfied', value: 40, baseline: 45, direction: 'higher-is-better', baselineKind: 'seed', question: 'did all the old tests still exist?',
+      },
+      {
+        name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed', question: "other files didn't get more type errors?",
+      },
+    ],
+  };
+  const lines = fullStageList(attempt).map(stageLineHtml);
+  assert.match(lines[0], /^#1 src\/checks\.js has 0 type errors\? .*12 left, need 0$/);
+  assert.match(lines[1], /^#2 did all the old tests still exist\? .*40 of 45$/);
+  assert.match(lines[2], /^#3 other files didn't get more type errors\? .*47, limit 46$/);
+});
+
+test('plain-checks: fullStageList pads a declared stage that never ran (first-red-wins stopped the close early) as a "not run" stub, matched by NAME against the server\'s declaredStages', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
+  const attempt = {
+    stages: [{ name: 'changed-from-seed', verdict: 'satisfied' }],
+    declaredStages: [
+      { name: 'changed-from-seed', question: 'did it change any file?' },
+      { name: 'typecheck-target-zero-errors', question: 'src/checks.js has 0 type errors?' },
+      { name: 'no-suppressions', question: 'no casts or silencers added?' },
+    ],
+  };
+  const entries = fullStageList(attempt);
+  assert.equal(entries.length, 3, 'all 3 DECLARED stages render, not just the 1 that ran');
+  assert.equal(entries[0].ran, true);
+  assert.equal(entries[1].ran, false);
+  assert.equal(entries[2].ran, false);
+  const lines = entries.map(stageLineHtml);
+  assert.equal(lines[1], '#2 src/checks.js has 0 type errors? &middot; not run');
+  assert.equal(lines[2], '#3 no casts or silencers added? &middot; not run');
+});
+
+test('plain-checks: fullStageList falls back to whatever ran, unpadded, when no declaredStages travelled at all (no spec resolvable)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { fullStageList } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
+  const attempt = { stages: [{ name: 'some-stage', verdict: 'needs_revision', value: 5, baseline: 0 }] };
+  const entries = fullStageList(attempt);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].ran, true);
+  assert.equal(entries[0].stage.name, 'some-stage');
+});
+
+test('plain-checks: the Audit Grouped attempt row (buildAttemptsList) wires attemptChecksLine into its button and fullStageList/stageLineHtml into an expandable checks-list, one owner with the Run-tab card', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /var checksText = attemptChecksLine\(a\);/);
+  assert.match(html, /var checksList = fullStageList\(a\)\.map\(stageLineHtml\)\.join\("<br>"\);/);
+  assert.match(html, /checksText \? ' &middot; ' \+ checksText : ''/);
+});
+
+test('bug fix: no duplicate HTML "id" attributes in the panel page — a repeated id makes getElementById(...) silently resolve to the WRONG element (the Job tab bug: the Chat tab\'s draft `#job-card` shadowed the Details tab\'s readonly `#job-card`, leaving the Job tab permanently blank)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+  const seen = new Map();
+  const dupes = [];
+  for (const id of ids) {
+    seen.set(id, (seen.get(id) || 0) + 1);
+  }
+  for (const [id, count] of seen) {
+    if (count > 1) dupes.push(`${id} (${count}x)`);
+  }
+  assert.deepEqual(dupes, [], `duplicate id attribute(s) found: ${dupes.join(', ')}`);
+});
+
+test('bug fix: the Details/Job tabpanel\'s readonly job card has its own unique id, and renderJob() targets that id (not the Chat tab\'s draft job-card, which sits earlier in the DOM and would otherwise win any getElementById lookup)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /<div class="job-card compact" id="job-card" data-testid="job-card" hidden>/);
+  assert.match(html, /<div class="job-card" id="job-card-readonly" hidden data-testid="job-card-readonly">/);
+  const renderJobStart = html.indexOf('function renderJob(job){');
+  const renderJobEnd = html.indexOf('\n  }', renderJobStart);
+  const renderJobBody = html.slice(renderJobStart, renderJobEnd);
+  assert.match(renderJobBody, /getElementById\("job-card-readonly"\)/);
+  assert.doesNotMatch(renderJobBody, /getElementById\("job-card"\)/);
 });

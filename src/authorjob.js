@@ -111,7 +111,7 @@ import {
 } from './authoring.js';
 import {
   QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
-  runConfirmTurn, WORSE_THAN_BEFORE_FIELD, LANGUAGE_PICK_FIELD,
+  runConfirmTurn, LANGUAGE_PICK_FIELD,
 } from './authorflow.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
@@ -498,14 +498,11 @@ export async function authorCloseForJob({
   // paid survey. `ask` ABSENT is the whole confirm turn's off switch — every
   // caller that predates this piece (or a caller that never wires an
   // interactive seam) reaches the genre check below exactly as it always did.
-  let worseThanBefore = '';
+  // RETIRED (hamr's ruling 2026-09-28): the "worse than before" ask is gone —
+  // it was optional and an empty answer already meant "nothing beyond
+  // Guardrails", so `worseThanBefore` always resolves to `''` now, never asked.
+  const worseThanBefore = '';
   if (ask) {
-    if (isRepo) {
-      onPhase('confirm-worse-than-before', {});
-      const wtb = await ask({ kind: 'worseThanBefore', field: WORSE_THAN_BEFORE_FIELD });
-      if (wtb === null) return { ...base, interview, reds: [], stop: 'confirm-abandoned' };
-      worseThanBefore = redactSecrets(String(wtb).trim());
-    }
     if (langResult?.kind === 'ambiguous') {
       onPhase('confirm-language-pick', { candidates: langResult.candidates });
       const pick = await ask({ kind: 'language', field: LANGUAGE_PICK_FIELD, candidates: langResult.candidates });

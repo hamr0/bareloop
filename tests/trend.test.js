@@ -17,7 +17,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createTrend, readGrade, FIX_STRIKE_LIMIT } from '../src/trend.js';
+import { closeGrade } from '../src/declaredclose.js';
 
 /** the stages of the shipped scope-typechecked u-closes, in the order runStages
  * runs them. Six since the F84 stage split (2026-08-05): `typecheck-outside` and
@@ -537,4 +541,66 @@ test('DIRECTION mixed close: one up stage and one down stage are each graded aga
   assert.equal(vRegressed.improved, false, 'a smaller number on an up-stage is a regression, never progress');
   const v = tr.verdict();
   assert.equal(v.trend, 'converging', 'the down-stage alone made net progress, which is enough to headline converging');
+});
+
+// ══ F198 — REPLAY: run mul5fofw's own recorded grades through the FIXED
+// governor (closeGrade's structured {stage, value} instead of readGrade(gap))
+// and report what it would now decide. Real records, copied verbatim from the
+// spine (tests/fixtures/mul5fofw-fix-loop-grades.jsonl) — nothing crafted. ══
+
+const MUL5FOFW_GRADES = readFileSync(
+  join(fileURLToPath(new URL('.', import.meta.url)), 'fixtures', 'mul5fofw-fix-loop-grades.jsonl'), 'utf8',
+).trim().split('\n').map((l) => JSON.parse(l));
+
+test('readGrade is BLIND on every one of mul5fofw\'s real declared grades — the bug, reproduced from the archived spine', () => {
+  for (const rec of MUL5FOFW_GRADES) {
+    assert.equal(readGrade(rec.gap).value, null,
+      `readGrade found a number in a declared "${rec.stage}" gap, which no longer reproduces the bug: ${rec.gap.slice(0, 120)}`);
+  }
+});
+
+test('F198 REPLAY: mul5fofw\'s 4 recorded grades through the fixed governor (closeGrade, structured) — reports the real decision, not the old blind null', () => {
+  // mul5fofw's own declared stage order (from its `stages` list, outer-close record)
+  const stageOrder = ['changed-from-seed', 'typecheck-target-zero-errors', 'typecheck-outside-not-worse',
+    'tests-kept', 'suite-green', 'suite-zero-failing-tests', 'no-suppressions'];
+  const tr = createTrend({ stageOrder, limit: FIX_STRIKE_LIMIT, blindCap: null, directions: {} });
+  const [seed, ...fixIterations] = MUL5FOFW_GRADES;
+  // the seed: the OUTER-CLOSE grade the fix loop opens on (F198's fix in
+  // src/planrun.js feeds this through `closeGrade`, not `{ gap: post.gap }`)
+  tr.record(closeGrade(seed));
+  const decisions = fixIterations.map((rec) => tr.record(closeGrade(rec)));
+
+  // ── the numbers are now VISIBLE — the whole point of the fix ──
+  assert.deepEqual(decisions.map((d) => d.stage),
+    ['typecheck-target-zero-errors', 'no-suppressions', 'typecheck-outside-not-worse']);
+  assert.deepEqual(decisions.map((d) => d.value), [12, null, 47],
+    'exactly the structured trendValue each record carried — 12, null (no-suppressions has no number), 47');
+
+  // ── REPORT what the fixed counter would now decide, replayed over the real
+  // run: it still stops at fix iteration 3 (struckOut on noProgress 2/2) — the
+  // SAME halt point the real (buggy) run hit, because typecheck-outside-not-worse
+  // is graded for the FIRST time at iteration 3, so there is no prior reading of
+  // THAT stage to compare its 47 against; only the stage-position signal decides
+  // here, and that signal was never blind. The fix's effect is not on THIS run's
+  // stop point — it is that a FUTURE run repeating a stage with a real improving
+  // number will now be read correctly (see the synthetic test below), where the
+  // old code could only ever see "uncomparable".
+  assert.deepEqual(decisions.map((d) => d.noProgress), [1, 1, 2]);
+  assert.equal(decisions.at(-1).noProgress >= FIX_STRIKE_LIMIT, true,
+    'REPLAY DECISION: the fixed governor would still strike this run out at fix iteration 3, same as the real run');
+});
+
+test('F198: a SYNTHETIC same-stage improving run (12 -> 5) resets noProgress through the fixed structured feed — the exact case readGrade could never see', () => {
+  const tr = createTrend({ stageOrder: ['typecheck-target-zero-errors'], limit: FIX_STRIKE_LIMIT });
+  // a declared close's real shape: `closeGrade` on a `declared: true` verdict
+  const r1 = tr.record(closeGrade({ declared: true, stage: 'typecheck-target-zero-errors', trendValue: 12, gap: 'close stage "typecheck-target-zero-errors" failed:\nclose: typecheck-target-zero-errors: 12 against a baseline of 0 (lower-is-better) — worse' }));
+  const r2 = tr.record(closeGrade({ declared: true, stage: 'typecheck-target-zero-errors', trendValue: 12, gap: 'close stage "typecheck-target-zero-errors" failed:\nclose: typecheck-target-zero-errors: 12 against a baseline of 0 (lower-is-better) — worse' }));
+  assert.equal(r2.noProgress, 1, 'flat at 12 -> 12: one strike');
+  const r3 = tr.record(closeGrade({ declared: true, stage: 'typecheck-target-zero-errors', trendValue: 5, gap: 'close stage "typecheck-target-zero-errors" failed:\nclose: typecheck-target-zero-errors: 5 against a baseline of 0 (lower-is-better) — worse' }));
+  assert.equal(r3.value, 5);
+  assert.equal(r3.improved, true, '12 -> 5 on the same stage is a real improvement');
+  assert.equal(r3.noProgress, 0, 'the improvement RESETS the strike — none of this is reachable through readGrade, which reads null on every one of these gaps (no "red" word)');
+  // proof readGrade truly cannot see it, on the exact same gap text:
+  assert.equal(readGrade('close stage "typecheck-target-zero-errors" failed:\nclose: typecheck-target-zero-errors: 5 against a baseline of 0 (lower-is-better) — worse').value, null);
+  void r1;
 });

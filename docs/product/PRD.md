@@ -130,6 +130,23 @@ strength of the reading alone.
 - **F183's write-fence wording** — same shape of problem, not safely fixable by wording alone:
   whether tests are covered by the fence depends on where they live relative to it, so a generic
   wording claim would overclaim for some repo shapes (`docs/logs/FINDINGS.md` F183).
+- **Jev (bare-agent's `JevProvider`)** — PARKED candidate for the soft-green judge's DECIDE half
+  only (locate stays an LLM); typed output + a measurable confidence, not money. Blocked by F192,
+  arbiter-signed threshold, same 10/10 calibration floor, new-vendor probe rule; deterministic
+  closes excluded. Build trigger: a live rubric-job failure it would fix (hamr, ruling A,
+  2026-09-28; also relayed to fwdloop as a HITL-triage idea, not bareloop's lane).
+- **Skill injection** (TDD/QA/debrief/branch-review text given to the agent) — PARKED; test after
+  P3 ships with a cheap planner-only ON/OFF probe (drafter drafts the same job with/without the
+  skill text, ~$0.10–0.30): identical plan shapes closes "no", different triggers a pre-registered
+  full-loop contrast. Targets the planner, not the worker — a worker self-review is never a
+  verdict (hamr, ruling A, 2026-09-28).
+- **Read/write fence re-check with the first rubric plain-folder live run** — bareloop already
+  fences the worker with bareguard's own `fs.readScope`/`fs.writeScope`/`fs.deny` (worker on a
+  hidden-git copy, arbiter books denied, destination copied out only on a minted green, never
+  overwritten). Not a sandbox (local-trust ruling stands). The plain-folder rubric path has never
+  had a full live run, so its fence is test-proven only. Trigger: that first live run — verify the
+  fence end-to-end then, and review bareguard 0.13.0 → 0.19.0 (6 minors behind) for newer path
+  primitives before building anything (hamr, 2026-09-28).
 
 ## §9 Risks and their pre-registered handles
 
@@ -873,7 +890,10 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
 
     The code only checks each answer is non-empty and hands it on verbatim
     (`src/authorjob.js:298`), so the re-shape changes wording, not machinery. For a repo
-    source, the confirm turn asks Q5's "what counts as worse than before".
+    source, the confirm turn asks Q5's "what counts as worse than before" — **retired
+    2026-09-28** (hamr's ruling, session mul5fofw): it was optional, and an empty answer
+    already meant "nothing beyond Guardrails", so it never earned its own turn; `worseThanBefore`
+    now always resolves to `''`, byte-identical to what an empty answer always produced.
 
     **The confirm turn (RULED).** After the form, the AI reads the source and answers once:
     "here is what I understood" — the checks it will make, and any questions. The person

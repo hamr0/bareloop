@@ -2448,8 +2448,17 @@ test('cycle UNSOLVABLE: a topped-up leg that makes no per-stage progress strikes
   assert.doesNotMatch(esc.decision, /nothing the instrument can compare/,
     'numbers WERE reported, so "unknown" would be a blind reading of a sighted instrument');
   assert.match(esc.options[0], /revise the goal\/spec/, 'lever one on a flat run: the work, not the wallet');
-  assert.match(esc.options.join(' | '), /if the trend above says it was still converging/,
-    'the top-up is offered CONDITIONALLY — this trend does not say that');
+  // F197/mul5fofw — this leg's terminal is ESCALATED (a GRADED RED,
+  // `REUSE_GRADED_RED`), and `escalated` is deliberately not a member of
+  // `CHECKPOINT_OUTCOMES` — a rendered verdict is not a checkpoint `--resume`
+  // can continue, converging trend or not. Before the fix this sentence named
+  // `--resume` anyway (hedged only by "if the trend... was still converging",
+  // prose the caller can never act on since `--resume` refuses an escalated
+  // run outright); now it says plainly the run cannot be resumed.
+  assert.doesNotMatch(esc.options.join(' | '), /--resume/,
+    'an escalated run can never be resumed (CHECKPOINT_OUTCOMES excludes it) — the options must not name a flag that refuses');
+  assert.match(esc.options.join(' | '), /cannot be resumed/i,
+    'the options say plainly this cannot be resumed, and to revise and rerun fresh instead');
 });
 
 test('cycle F6: a DECLARED floor survives the whole cycle — leg 1\'s unknown rides the fold into leg 2\'s green terminal', async () => {

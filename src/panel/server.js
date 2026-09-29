@@ -37,6 +37,7 @@ import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
+import { createAuthorRoutes, mintToken } from './authorroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -236,20 +237,17 @@ export function formatTimestamp(ts) {
  * @param {string|null} outcome `replayRun`'s own `summary.outcome`
  * @returns {{died: boolean, why: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
  */
-function deriveDeath(spinePath, records, outcome) {
-  const notDied = {
-    died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
-  };
-  if (outcome !== null && outcome !== undefined) return notDied; // a real job-end was reached
-  let mtimeMs;
-  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return notDied; }
-  if (Date.now() - mtimeMs <= DIED_MTIME_MS) return notDied; // still fresh — genuinely `running`, not died
-
-  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
-  const last = withTs.length ? withTs[withTs.length - 1] : null;
-  const when = last ? formatTimestamp(last.ts) : 'an unknown time';
-  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${describeLastRecord(last)} at ${when}.`;
-
+/**
+ * The priced-rounds spend floor + first-record→last-record wall floor,
+ * derived straight off the spine's raw records — the same derivation a
+ * died run's "at least …" figures use, factored out so build item 6
+ * (2026-09-28) can hand a genuinely-still-running spine the identical
+ * floor instead of "unknown" on the Run tab, without a second copy of this
+ * math.
+ * @param {any[]} records raw parsed spine records
+ * @returns {{spendFloorUsd: number|null, wallFloorMs: number|null}}
+ */
+function floorsFromRecords(records) {
   let spendSum = 0;
   let pricedCount = 0;
   for (const r of records) {
@@ -258,12 +256,33 @@ function deriveDeath(spinePath, records, outcome) {
   }
   const spendFloorUsd = pricedCount > 0 ? spendSum : null;
 
+  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
   const firstMs = withTs.length ? Date.parse(withTs[0].ts) : NaN;
   const lastMs = withTs.length ? Date.parse(withTs[withTs.length - 1].ts) : NaN;
   const wallFloorMs = Number.isFinite(firstMs) && Number.isFinite(lastMs) && lastMs >= firstMs ? lastMs - firstMs : null;
+  return { spendFloorUsd, wallFloorMs };
+}
+
+function deriveDeath(spinePath, records, outcome) {
+  const notDied = {
+    died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
+  };
+  if (outcome !== null && outcome !== undefined) return notDied; // a real job-end was reached
+  // no job-end yet — the floor derivation is identical whether this turns
+  // out to be a died run or one that is genuinely still running (build item
+  // 6): computed here, once, before the died/still-running branch below.
+  const floors = floorsFromRecords(records);
+  let mtimeMs;
+  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return { ...notDied, ...floors }; }
+  if (Date.now() - mtimeMs <= DIED_MTIME_MS) return { ...notDied, ...floors }; // still fresh — genuinely `running`, not died
+
+  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
+  const last = withTs.length ? withTs[withTs.length - 1] : null;
+  const when = last ? formatTimestamp(last.ts) : 'an unknown time';
+  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${describeLastRecord(last)} at ${when}.`;
 
   return {
-    died: true, why, spendFloorUsd, wallFloorMs,
+    died: true, why, ...floors,
   };
 }
 
@@ -322,9 +341,24 @@ function summarizeRow(row) {
     model: summary.model,
     // died: never "unknown" when a priced round exists — glyph [?] already
     // carries the word "died", so the row meta text itself never repeats it.
+    // `spend` is the LIBRARY's own 4-decimal string (never changed here —
+    // `--all`'s CLI listing reads the same `summarizeForAllLine`, F: "do not
+    // change the library's CLI output"). The panel page renders its own
+    // 2-decimal text off the numeric fields below instead of this string.
     spend: death.died ? (death.spendFloorUsd !== null ? `at least $${death.spendFloorUsd.toFixed(4)}` : 'unknown') : line.spend,
     wall: death.died ? (death.wallFloorMs !== null ? `at least ${formatDurationMs(death.wallFloorMs)}` : 'unknown') : line.wall,
     date: typeof row.at === 'string' ? row.at.slice(0, 10) : null,
+    // numeric fields for the panel's own 2-decimal render (hamr's ruling
+    // 2026-09-28, "panel money 2-decimals") — `spentUsd`/`spendComplete` are
+    // `null`/`false` on a died row (no job-end, see `spendFloorUsd` instead);
+    // `draftSpentUsd`/`draftSpendComplete` are `null` when this run carried
+    // no drafting fold at all, exactly like `summary.draftSpentUsd` itself.
+    spentUsd: death.died ? null : summary.spentUsd,
+    spendComplete: death.died ? false : summary.spendComplete,
+    spendFloorUsd: death.died ? death.spendFloorUsd : null,
+    draftSpentUsd: summary.draftSpentUsd,
+    draftSpendComplete: summary.draftSpendComplete,
+    budgetUsd: summary.budgetUsd,
   };
 }
 
@@ -375,9 +409,19 @@ export function getRunDetail(runid, opts = {}) {
       runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
     };
   }
-  const summary = replayOne(row.spine);
-  const timelineKind = summary.timelineKind;
+  // build item 7 (2026-09-28): resolve the audit path through the ONE
+  // shared resolver (`resolveAuditPathForRow`, already the sole owner for
+  // `scopedBehaviour`/`getRunAudit`) BEFORE calling `replayOne`, and hand it
+  // the result — otherwise `replayOne`'s own internal resolution only ever
+  // finds the FINISHED-run convention, so a still-LIVE run's part-level
+  // `byTool`/`toolCalls` (summary.parts, read from `replayRun`) read
+  // "unknown" even though the SAME run's Run-tab tools/cache summary and
+  // Audit tab (both driven through `resolveAuditPathForRow` already) can
+  // see the during-run sidecar just fine.
   const rawSpineRecords = parseJsonl(row.spine).records;
+  const auditPath = resolveAuditPathForRow(row, rawSpineRecords);
+  const summary = replayOne(row.spine, { auditPathOverride: auditPath });
+  const timelineKind = summary.timelineKind;
   const death = deriveDeath(row.spine, rawSpineRecords, summary.outcome);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
@@ -509,12 +553,24 @@ export function getRunDetail(runid, opts = {}) {
     died: death.died,
     stopReason: death.died ? death.why : summary.stopReason,
     spentUsd: summary.spentUsd,
-    // died: a spend floor summed from real priced rounds present in the
-    // file — never null/unknown when at least one priced round exists.
-    // `null` on a non-died run (the normal `spentUsd`/`wallMs` fields above
-    // are already the real, complete figures there).
-    spendFloorUsd: death.died ? death.spendFloorUsd : null,
-    wallFloorMs: death.died ? death.wallFloorMs : null,
+    // draftSpentUsd (hamr's ruling 2026-09-28) — the drafting share of this
+    // run's cap, or null when this run carried none. `src/replay.js`'s
+    // `moneyWithDraft` is the one place that decides how to render it.
+    draftSpentUsd: summary.draftSpentUsd,
+    // draftSpendComplete (hamr's ruling 2026-09-28, 2nd addendum) — whether
+    // the drafting share above was EXACT; `null` when there is no drafting
+    // share to qualify at all. Read by the panel's own `panelMoneyWithDraft`.
+    draftSpendComplete: summary.draftSpendComplete,
+    // a spend/wall floor summed from real priced rounds/timestamped records
+    // present in the file — never null/unknown when at least one priced
+    // round exists. `deriveDeath` already returns `null` for both whenever
+    // a real job-end WAS reached (the normal `spentUsd`/`wallMs` fields
+    // above are the real, complete figures there); build item 6
+    // (2026-09-28) widened this from "died runs only" to ALSO cover a
+    // genuinely still-running spine, so the Run tab can show a running
+    // floor instead of "unknown" while a run is live.
+    spendFloorUsd: death.spendFloorUsd,
+    wallFloorMs: death.wallFloorMs,
     spendComplete: summary.spendComplete,
     wallMs: summary.wallMs,
     timelineKind,
@@ -529,9 +585,15 @@ export function getRunDetail(runid, opts = {}) {
     // parts (panel build item B/C, 2026-09-26): the ONE ordered part list
     // (`src/replay.js`'s own field, computed once server-side) — drives the
     // Run tab's map+cards and the Audit tab's grouped rows. Passed through
-    // VERBATIM (never re-derived client-side) so the two tabs can never
-    // disagree about run order, counts, or blocked-call figures.
-    parts: summary.parts,
+    // VERBATIM (never re-derived client-side) EXCEPT each attempt's own
+    // declared-close `stages` array, which gets its per-stage `kind`/
+    // `direction`/`baselineKind` attached here (build item, 2026-09-28: the
+    // gap 764a9ef named — the signed closeDecl is the only place this lives,
+    // and it is not part of `replayOne`'s own spine-derived shape) — see
+    // {@link enrichPartsWithStageKind}. `kindMeta` is `null` (every stage
+    // passes through unchanged) whenever no spec resolves at all, so the two
+    // tabs still never disagree about order/counts/blocked-call figures.
+    parts: enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row))),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -1122,6 +1184,278 @@ function sourceNearSpine(spinePath) {
 }
 
 /**
+ * The resolved SPEC OBJECT for a run — routes (a) bundle `spec.json`, (b)
+ * `jobs/<job>.json`, (c) the run's own `resolved-spec.json` beside the spine
+ * (the three real-spec routes {@link getRunJob}'s `fromSpec` also tries, in
+ * the same order; never route (d), the run's own job-start record, which
+ * carries no `closeDecl` for {@link stageKindMetaFromSpec} to read a
+ * stage's kind from). A specHash mismatch against `jobs/<job>.json` is NOT
+ * checked here — the Job tab's own mismatch note is a display concern of
+ * that endpoint, not a reason to withhold a stage's kind (the declaration a
+ * hash mismatch flags is still the one the close actually ran under until
+ * the run is repeated). `null` when no route resolves or every candidate
+ * fails to parse as an object — never a guessed spec.
+ * @param {{ spine: string, job: string }} row
+ * @returns {any|null}
+ */
+function resolveSpecForRow(row) {
+  if (!existsSync(row.spine)) return null;
+  const bundleDir = bundleDirForSpine(row.spine);
+  const bundleSpecPath = bundleDir ? join(bundleDir, 'spec.json') : null;
+  if (bundleSpecPath && existsSync(bundleSpecPath)) {
+    try {
+      const spec = JSON.parse(readFileSync(bundleSpecPath, 'utf8'));
+      if (spec && typeof spec === 'object') return spec;
+    } catch { /* falls through to the next route */ }
+  }
+  const jobsSpecPath = join(jobsDir(), `${row.job}.json`);
+  if (existsSync(jobsSpecPath)) {
+    try {
+      const spec = JSON.parse(readFileSync(jobsSpecPath, 'utf8'));
+      if (spec && typeof spec === 'object') return spec;
+    } catch { /* falls through to the next route */ }
+  }
+  const near = sourceNearSpine(row.spine);
+  if (near.specPath) {
+    try {
+      const spec = JSON.parse(readFileSync(near.specPath, 'utf8'));
+      if (spec && typeof spec === 'object') return spec;
+    } catch { /* no spec resolvable */ }
+  }
+  return null;
+}
+
+/**
+ * THE PLAIN-QUESTION OWNER (plain-checks build, 2026-09-28, hamr's ruling:
+ * the "checks N/M" headline is WITHDRAWN — "confusing, reads like 6 failed
+ * when 5 never ran"). ONE pure function mapping a declared stage's own
+ * signed `kind`+`params` (plus the close's own `genre`, also a signed field)
+ * to a short plain-English question a person can read without knowing the
+ * catalogue — never a second spelling on the client, and never anything the
+ * model authored (the catalogue's kinds/params are the whole vocabulary this
+ * reads).
+ *
+ * Every branch is traced straight off `src/kinds.js`'s runner semantics and
+ * the TYPES genre template (`src/authoring.js` `TYPES_GENRE_TEMPLATE`,
+ * `classGuards`'s `MECHANICAL_GUARDS`) — never guessed:
+ *   - `files-changed` is always the `changed-from-seed` guard: "did it
+ *     change any file?"
+ *   - `pattern-absent-in-diff` is always the `no-suppressions` guard: "no
+ *     casts or silencers added?"
+ *   - `command-exit` is the genre's `suite-green` stage (the only shipped use
+ *     of this kind): "does the test suite pass?"
+ *   - `count-not-worse` splits three ways on its own declared
+ *     `direction`/`baseline` (never the runtime number — see
+ *     {@link stageKindMetaFromSpec}'s own doc for why the baseline KIND must
+ *     travel separately from the measured figure):
+ *       - `higher-is-better` + `baseline: 'seed'` is the genre's `tests-kept`
+ *         floor: "did all the old tests still exist?"
+ *       - `lower-is-better` + `baseline: 0` is the genre's in-scope
+ *         `typecheck` stage — UNLESS its own `cmd`+`args` is the SAME
+ *         command a `command-exit` stage in the same close already runs
+ *         (`suiteCmdKeys`, below): the TYPES template's `suite-green` is "the
+ *         suite exits clean AND reports zero failing tests — TWO assertions"
+ *         over ONE population (the same `npm test`/`pytest` invocation), so a
+ *         `count-not-worse` stage sharing that exact command is the failing-
+ *         test-count half of that pair, never a typecheck stage: "no failing
+ *         tests?" — derived from the same cmd+args correlation (the stage
+ *         counts the suite's own failing tests), never from the stage's own
+ *         name string. The live check that found this (run mul5fofw's own
+ *         `suite-zero-failing-tests`, cmd `npm test`, same as its sibling
+ *         `suite-green` command-exit stage) would otherwise have read "test/
+ *         has 0 type errors?", which is false: its parser counts FAILING
+ *         TESTS (`^# fail (\d+)$`), not type-checker output. hamr's ruling:
+ *         name this half honestly rather than reusing "type errors" for a
+ *         population it was never about, or falling back to the stage's raw
+ *         name. When the command differs from every sibling `command-exit`
+ *         stage, the declared `scope.includePrefixes` naming exactly ONE path
+ *         is quoted verbatim (a signed param, never invented): "<path> has 0
+ *         type errors?" — otherwise the generic "type errors is 0?", never a
+ *         guessed filename.
+ *       - `lower-is-better` + `baseline: 'seed'` with a non-empty
+ *         `scope.excludePrefixes` is the genre's `typecheck-outside` ceiling:
+ *         "other files didn't get more type errors?"
+ * The "type errors" wording is genre-owned (`GENRE_WHAT`), because TYPES is
+ * the only genre this catalogue admits today (doc-genre kinds are not yet
+ * built) — an unrecognised genre, or a `count-not-worse` shape none of the
+ * three above matches, returns `null` rather than invent a fourth shape.
+ *
+ * `null` means "no honest plain question" — the caller (buildAttemptsList,
+ * partLine1Text's `attemptChecksLine`) falls back to the stage's OWN name,
+ * exactly as it already does for a stage with no resolvable kind at all.
+ * @param {{kind: string|null, params: any, genre: string|null, suiteCmdKeys: Set<string>}} o
+ * @returns {string|null}
+ */
+const GENRE_WHAT = Object.freeze({ TYPES: 'type errors' });
+
+/** `cmd`+`args`, as a comparable key — the one signal (besides `kind`
+ * itself) that two stages measure the SAME command's output, used to tell a
+ * genuine typecheck stage apart from the TYPES genre's other `lower-is-
+ * better`/`baseline: 0` stage (the failing-test-count half of `suite-green`'s
+ * "two assertions"), which shares that stage's own shape but not its
+ * population. `null` for a stage whose `cmd` isn't a non-empty string —
+ * never matches anything, so it never falsely suppresses a real typecheck
+ * question.
+ * @param {any} params @returns {string|null} */
+function cmdKey(params) {
+  if (!params || typeof params.cmd !== 'string' || params.cmd.length === 0) return null;
+  const args = Array.isArray(params.args) ? params.args : [];
+  return JSON.stringify([params.cmd, args]);
+}
+
+function stageQuestionText({
+  kind, params, genre, suiteCmdKeys,
+}) {
+  if (kind === 'files-changed') return 'did it change any file?';
+  if (kind === 'pattern-absent-in-diff') return 'no casts or silencers added?';
+  if (kind === 'command-exit') return 'does the test suite pass?';
+  if (kind !== 'count-not-worse' || !params || typeof params !== 'object') return null;
+  const what = Object.hasOwn(GENRE_WHAT, String(genre)) ? GENRE_WHAT[String(genre)] : null;
+  if (params.direction === 'higher-is-better' && params.baseline === 'seed') {
+    return 'did all the old tests still exist?';
+  }
+  if (!what) return null;
+  const scope = params.scope && typeof params.scope === 'object' ? params.scope : null;
+  if (params.direction === 'lower-is-better' && params.baseline === 0) {
+    const key = cmdKey(params);
+    if (key !== null && suiteCmdKeys instanceof Set && suiteCmdKeys.has(key)) return 'no failing tests?';
+    const include = scope && Array.isArray(scope.includePrefixes) ? scope.includePrefixes : null;
+    if (include && include.length === 1 && typeof include[0] === 'string' && include[0].length > 0) {
+      return `${include[0]} has 0 ${what}?`;
+    }
+    return `${what} is 0?`;
+  }
+  if (params.direction === 'lower-is-better' && params.baseline === 'seed') {
+    const exclude = scope && Array.isArray(scope.excludePrefixes) ? scope.excludePrefixes : null;
+    if (exclude && exclude.length > 0) return `other files didn't get more ${what}?`;
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Per-stage `{kind, direction, baselineKind, question}`, keyed by stage NAME,
+ * off a resolved spec's own signed `closeDecl.stages` — the facts the client
+ * needs to pick §3a's numeric wording (down-to-a-goal / up-out-of-a-total /
+ * not-worse-than-a-baseline / pass-fail-only) AND the plain-checks build's
+ * own question text ({@link stageQuestionText}), never guessed from the
+ * runtime number or the stage's model-authored name alone: a `lower-is-better`
+ * stage whose SEED happened to measure 0 is numerically indistinguishable
+ * from a `baseline: 0` declared goal, so the declared baseline KIND (`'seed'`
+ * vs the literal `0`) has to travel separately from the measured number.
+ * Iteration order is `spec.closeDecl.stages`' own DECLARED order (a `Map`
+ * preserves insertion order) — the plain-checks build's client reads this
+ * same order for a stage's `#N` position and for which declared stages never
+ * ran. `null` when the spec has no `closeDecl.stages` array at all (a
+ * command-close spec, or no spec resolved).
+ * @param {any} spec
+ * @returns {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>|null}
+ */
+function stageKindMetaFromSpec(spec) {
+  if (!spec || typeof spec !== 'object' || !spec.closeDecl || !Array.isArray(spec.closeDecl.stages)) return null;
+  const genre = typeof spec.closeDecl.genre === 'string' ? spec.closeDecl.genre : null;
+  // every command-exit stage's own cmd+args, gathered FIRST (a separate pass)
+  // so stageQuestionText can tell the failing-test-count half of suite-green's
+  // "two assertions" apart from a genuine typecheck stage — see its own doc.
+  /** @type {Set<string>} */
+  const suiteCmdKeys = new Set();
+  for (const s of spec.closeDecl.stages) {
+    if (s && s.kind === 'command-exit') {
+      const key = cmdKey(s.params);
+      if (key !== null) suiteCmdKeys.add(key);
+    }
+  }
+  /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>} */
+  const map = new Map();
+  for (const s of spec.closeDecl.stages) {
+    if (!s || typeof s.name !== 'string' || s.name.length === 0) continue;
+    const kind = typeof s.kind === 'string' ? s.kind : null;
+    const params = s.params && typeof s.params === 'object' ? s.params : null;
+    const direction = params && typeof params.direction === 'string' ? params.direction : null;
+    const baselineKind = params && (params.baseline === 'seed' || params.baseline === 0) ? params.baseline : null;
+    const question = stageQuestionText({
+      kind, params, genre, suiteCmdKeys,
+    });
+    map.set(s.name, {
+      kind, direction, baselineKind, question,
+    });
+  }
+  return map;
+}
+
+/**
+ * Attaches one stage's `{kind, direction, baselineKind, question}` (from
+ * {@link stageKindMetaFromSpec}'s map) onto its already-recorded runtime
+ * shape (`{name, verdict, value?, baseline?, …}`, straight off the spine) —
+ * a shallow copy, never a mutation of the spine-derived object, and only when
+ * BOTH a name and a matching declaration entry exist; otherwise the stage
+ * passes through unchanged (the client's existing name fallback still
+ * renders for it).
+ * @param {any} stage
+ * @param {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>|null} kindMeta
+ * @returns {any}
+ */
+function attachStageKind(stage, kindMeta) {
+  if (!stage || typeof stage !== 'object' || typeof stage.name !== 'string' || !kindMeta) return stage;
+  const meta = kindMeta.get(stage.name);
+  if (!meta) return stage;
+  return {
+    ...stage, kind: meta.kind, direction: meta.direction, baselineKind: meta.baselineKind, question: meta.question,
+  };
+}
+
+/**
+ * `summary.parts` (verbatim except each attempt's `stages` array, which gets
+ * {@link attachStageKind} applied per stage) — a shallow re-map, never a
+ * mutation of `replayOne`'s own returned objects (other endpoints, e.g.
+ * {@link getRunAudit}, call `replayOne` fresh per request, but this stays
+ * defensive rather than relying on that).
+ *
+ * Also stamps each attempt with `declaredStagesTotal` (checks-count fix,
+ * 2026-09-28): `kindMeta.size` — the number of stages the signed
+ * `closeDecl` DECLARED, never `stages.length` (the number that RAN). First-
+ * red-wins means an attempt that stopped early carries a `stages` array
+ * shorter than the declaration; the client reads this field for the total
+ * count so an unrun stage still counts in the total exactly once, computed
+ * here and never re-derived client-side — "checks 1/2" on a 7-stage close
+ * (hamr's live catch) was this exact bug.
+ *
+ * `declaredStages` (plain-checks build, 2026-09-28): every declared stage's
+ * `{name, question}`, in DECLARED order — `Array.from(kindMeta)` walks a
+ * `Map`'s own insertion order, which is `spec.closeDecl.stages`' order. The
+ * client zips this against the attempt's own (shorter, when first-red-wins
+ * stopped it early) `stages` array BY NAME to render every declared stage in
+ * the expanded view, including ones that never ran ("· not run") — never by
+ * POSITION, because a stage's declared index is exactly what `#N` in the
+ * headline/expanded view already means, and a name lookup is robust to any
+ * future reordering between the resolved spec and the executed close.
+ *
+ * Both fields are `null`/omitted whenever `kindMeta` is `null` — no spec
+ * resolved, or the spec carries no `closeDecl.stages` at all — so the client
+ * falls back to `stages.length` and renders only the stages that ran, exactly
+ * as before this build.
+ * @param {any[]|null|undefined} parts
+ * @param {Map<string, any>|null} kindMeta
+ * @returns {any[]|null|undefined}
+ */
+function enrichPartsWithStageKind(parts, kindMeta) {
+  if (!Array.isArray(parts)) return parts;
+  const declaredStagesTotal = kindMeta ? kindMeta.size : null;
+  const declaredStages = kindMeta
+    ? Array.from(kindMeta, ([name, meta]) => ({ name, question: meta.question }))
+    : null;
+  return parts.map((part) => ({
+    ...part,
+    attempts: Array.isArray(part.attempts) ? part.attempts.map((a) => ({
+      ...a,
+      stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages,
+      ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
+      ...(declaredStages ? { declaredStages } : {}),
+    })) : part.attempts,
+  }));
+}
+
+/**
  * The close's stage names, in declared order — `close[].name` (a hand-authored
  * command close) or `closeDecl.stages[].name` (an authored declaration); the
  * two are mutually exclusive (`validateJob`'s own `close-duplicated` red).
@@ -1406,16 +1740,21 @@ function sendText(res, code, text) {
  * separately from {@link createPanelServer} so tests can drive it without a
  * real listening socket where that is simpler (most path-safety/405 tests
  * still go through a real socket, per the build spec).
+ *
+ * PANEL-BUILD.md P3: this file's own GET/HEAD-only rule stands for every
+ * route it owns; `/api/author/*` is the ONE family of routes that may be
+ * POSTed to, and it is handled entirely by {@link createAuthorRoutes}
+ * (`src/panel/authorroutes.js`) — a separate module so this file's own
+ * "read-only, by construction" header comment stays true of everything else
+ * in it. `opts.authorRoutes` is absent on every P1/P2 caller (read-only
+ * tests, and the CLI's own `panelMain` when no author routes are wired) —
+ * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number }} opts
+ * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
   const method = req.method ?? 'GET';
-  if (method !== 'GET' && method !== 'HEAD') {
-    sendText(res, 405, 'method not allowed — this panel is read-only (GET/HEAD only)');
-    return;
-  }
 
   let url;
   try {
@@ -1425,6 +1764,26 @@ export function handleRequest(req, res, opts) {
     return;
   }
   const { pathname } = url;
+
+  if (method !== 'GET' && method !== 'HEAD') {
+    if (opts.authorRoutes && pathname.startsWith('/api/author')) {
+      let raw = '';
+      req.on('data', (c) => { raw += c; });
+      req.on('end', () => {
+        /** @type {any} */
+        let body = null;
+        if (raw.length > 0) { try { body = JSON.parse(raw); } catch { body = null; } }
+        opts.authorRoutes?.handle(req, res, pathname, body);
+      });
+      return;
+    }
+    sendText(res, 405, 'method not allowed — this panel is read-only outside /api/author (GET/HEAD only)');
+    return;
+  }
+  if (opts.authorRoutes && pathname.startsWith('/api/author')) {
+    opts.authorRoutes.handle(req, res, pathname, null);
+    return;
+  }
 
   const send = (code, body) => {
     if (method === 'HEAD') {
@@ -1446,6 +1805,11 @@ export function handleRequest(req, res, opts) {
       return;
     }
     html = html.replace(/__BARELOOP_PANEL_PORT__/g, String(opts.port));
+    // PANEL-BUILD.md P3's human-click guard: a per-server-start token,
+    // templated into the page exactly like the port — absent on every P1/P2
+    // caller (no `opts.token`), which is fine: the page's own JS only reads
+    // it to send on a POST, and there are none to send without P3's routes.
+    html = html.replace(/__BARELOOP_PANEL_TOKEN__/g, String(opts.token ?? ''));
     if (method === 'HEAD') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
       res.end();
@@ -1509,12 +1873,25 @@ export function handleRequest(req, res, opts) {
  * header). Resolves once actually listening; rejects on a bind error
  * (including `EADDRINUSE`) with a `.port` field on the error for the
  * caller's message.
- * @param {{ port?: number, home?: string }} [opts]
- * @returns {Promise<{ server: import('node:http').Server, port: number, close: () => Promise<void> }>}
+ *
+ * PANEL-BUILD.md P3: a fresh {@link mintToken} token and one {@link
+ * createAuthorRoutes} instance are built here, ONCE per server start, and
+ * held for the server's lifetime — `opts.env`/`opts.sessionsRoot`/
+ * `opts.spawnFn`/`opts.bareloopBin` are test seams the author routes take
+ * (a real caller passes none of them and {@link createAuthorRoutes} defaults
+ * each one to the real environment/spawn/binary, this file itself touching
+ * none of them, and the real
+ * `~/.config/bareloop/panel-sessions`, the real `child_process.spawn`, and
+ * this package's own `bin/bareloop.mjs`).
+ * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
+ *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
+ *   fetchImpl?: typeof fetch }} [opts]
+ * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
   const requestedPort = opts.port ?? DEFAULT_PORT;
   const home = opts.home;
+  const token = mintToken();
   return new Promise((resolve, reject) => {
     // Bound port is resolved from the live socket (`server.address().port`)
     // once listening starts, not the requested value — this is what makes
@@ -1522,9 +1899,13 @@ export function createPanelServer(opts = {}) {
     // test suite, while `--port N` / DEFAULT_PORT callers still get back
     // exactly the port they asked for.
     let boundPort = requestedPort;
+    /** @type {ReturnType<typeof createAuthorRoutes>|undefined} */
+    let authorRoutes;
     const server = createServer((req, res) => {
       try {
-        handleRequest(req, res, { home, port: boundPort });
+        handleRequest(req, res, {
+          home, port: boundPort, token, authorRoutes,
+        });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
       }
@@ -1537,9 +1918,19 @@ export function createPanelServer(opts = {}) {
     server.listen(requestedPort, '127.0.0.1', () => {
       const addr = server.address();
       boundPort = typeof addr === 'object' && addr !== null ? addr.port : requestedPort;
+      authorRoutes = createAuthorRoutes({
+        port: boundPort,
+        token,
+        env: opts.env,
+        sessionsRoot: opts.sessionsRoot,
+        spawnFn: opts.spawnFn,
+        bareloopBin: opts.bareloopBin,
+        fetchImpl: opts.fetchImpl,
+      });
       resolve({
         server,
         port: boundPort,
+        token,
         close: () => new Promise((res2) => { server.close(() => res2(undefined)); }),
       });
     });

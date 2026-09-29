@@ -13571,3 +13571,298 @@ name for the sidecar — either rename to `spine-gate-audit.jsonl` at `src/cli.j
 `resolveSiblings` to also check a bare `gate-audit.jsonl` in the same directory. Either way,
 the rename site and the reader should have one shared owner for the sidecar name rather than
 two independent spellings.
+
+## F197 — an ESCALATED run's exhaustion message advertised `--resume`, which `--resume` itself refuses (fixed)
+
+**Context:** found on a live run (mul5fofw), ESCALATED cap-halt at fix-loop strikes 2/2. The
+escalation's decision-ready options told the person: "top up budgetUsd and rerun with
+--resume (resume-to-cap; a spec edit, so the new hash needs re-approval)". Typing that
+`--resume` refuses: `src/userrun.js`'s `RESUMABLE_HALTS = CHECKPOINT_OUTCOMES` (src/reuse.js)
+does not list `escalated` among the resumable terminals — and by design: `escalated` is a
+GRADED RED (`REUSE_GRADED_RED`, src/reuse.js) — the close rendered a verdict on the tree and
+it was red — not a governance checkpoint (money/time/stall/pause) that left an allowance
+unspent. The run advertised a lever that cannot work.
+
+**Root cause:** `src/planrun.js`'s `fixGovernor.terminal()` (the fix-loop exhaustion terminal,
+~line 3930) built its options unconditionally from the `resumable` flag alone, never checking
+whether the outcome this terminal always produces (`escalated`, hardcoded in `ralph.js`'s
+`exhausted()`) is actually on the resumable list. The `resumable` flag only ever chose BETWEEN
+two `--resume`-shaped sentences (`run-u` vs. the exported bundle CLI) — neither branch ever
+considered "not resumable at all".
+
+**Fix:** `src/planrun.js` now imports `CHECKPOINT_OUTCOMES` from `src/reuse.js` (one owner,
+never a second hand-typed list) and checks `CHECKPOINT_OUTCOMES.includes('escalated')` before
+building the resume-shaped sentence. Since `escalated` is deliberately never a member, the
+terminal now names the honest lever instead: "this cannot be resumed — the close already
+rendered its verdict against the tree; revise the goal/spec and rerun fresh (a new hash needs
+re-approval)". Tighten-only: `escalated` still cannot be resumed (the parked "keep going"
+feature stays parked, arbiter territory) — only the ADVICE changed, to match what `--resume`
+already enforces. The panel (`src/panel/server.js`) only ever renders `an escalation
+(<category>)`, never this options text, so it needed no change.
+
+**Test:** `tests/planrun-decl.test.js` — "F197/mul5fofw: an ESCALATED run's exhaustion
+options never advertise --resume — escalated is a graded red, not a checkpoint" — reuses the
+`makeCountPatient`/`countJob` fixture already built for F198 ("the exact shape mul5fofw's fix
+loop graded blind"), drives the same flat/improved/flat/flat strike-out to `escalated`, and
+asserts the escalation's options never match `--resume` and do state plainly that the run
+cannot be resumed. Verified red against the pre-fix `fixGovernor.terminal()` and green after.
+
+**Status: fixed.**
+
+## F198 — the fix-loop stop-counter was blind to a declared close's own numbers: `readGrade`'s `\bred\b` scan never matched a declared count-not-worse gap (fixed)
+
+**Context:** live run mul5fofw. The fix loop's ladder records showed `value:null` on every one
+of its 3 graded iterations despite the close reporting real numbers (12, then a pass/fail
+stage, then "47 against a baseline of 46 (lower-is-better) — worse"). `readGrade` (`src/trend.js`)
+decides red-vs-not by regex-scanning the gap TEXT for `\bred\b`; a declared count-not-worse
+gap's own wording never contains the word "red" anywhere, so every declared grade read as an
+uncomparable `null` — the fix loop's `noProgress`/strike counting was blind to real convergence
+or real stalling on a repeated declared stage, on the exact run that then went on to strike out
+at fix iteration 3 (F197) without ever having graded on real numbers.
+
+**Root cause:** two different call sites in `src/planrun.js`'s fix loop (`fixTrend.record()`)
+fed the RAW gap text through `readGrade`'s text-parsing fallback instead of the STRUCTURED
+`{stage, value}` the close's own verdict already carries — the same structured reader the
+OTHER trend consumer (`runTrend`) already used for the identical data.
+
+**Fix (`2c2285b`):** both `fixTrend.record()` call sites now feed `closeGrade(verdict)` instead
+of re-parsing gap text. The opening (seed) grade always does (no crash-substitution can have
+happened yet); the per-iteration ladder record only when the fed gap still matches the
+verdict's own gap, so a worker-crash's synthetic message still falls through to the
+`readGrade` text path exactly as before. No change to limits, `FIX_STRIKE_LIMIT`, `blindCap`,
+or direction semantics. Replay of mul5fofw's own 4 recorded grades through the fixed reader
+(`tests/trend.test.js`) reports the SAME stop point the real run hit (struck out at fix
+iteration 3) — the typecheck-outside-not-worse stage is graded there for the first time in
+that leg, so only the stage-position signal decided it, never a blind null.
+
+**Follow-up (`584819a`):** the fix worker itself was still handed only the CURRENT gap each
+attempt (the close's original output on the first try, or the previous attempt's raw gap on
+every one after) with no history of prior grades. `middle` (`src/planrun.js`) now appends a
+facts-only line to the worker's prompt — "checks passed N/M → N/M → ..." (first-red-wins,
+read off each declared verdict's own `stages` list) and, per declared stage, its own number
+history via `fixTrend.report()` ("count-stage 12 → 0"). Nothing generated, no advice — the
+close's own recorded numbers and nothing else. Registered in `src/promptregisters.js` as a
+new inline-template entry under `src/planrun.js`.
+
+**NOTE — numbering collision:** both commit messages (`2c2285b`, `584819a`) label this work
+"F195" in their bodies. That is NOT this repo's F195 (`/api/runs` re-replay cost, logged
+above) — it was a numbering slip by the builder session. This entry (F198) is the counter
+fix's real number; code comments/prompt-register labels referencing "F195 item 2" for this
+work are being repointed to F198 in a parallel commit.
+
+**Test:** `tests/trend.test.js` (replay of mul5fofw's real grades) and
+`tests/planrun-decl.test.js` (synthetic count-not-worse fix loop: 5 → 5 → 3 → 3 → 3 reads
+flat/improved/flat/flat and strikes out on the real numbers, never a blind null; a second test
+asserts the worker's prompt carries the growing facts-only history — reverting the diff drops
+the new test's facts-line count from 4 to 0, restored it passes).
+
+**Live proof:** a follow-up live run, mulbz0ny, on the fixed code: the ladder record's `value`
+field reads real numbers (`4` appears 3 times among the recorded grades, never null on a
+declared stage), and the run went GREEN — `~/.config/bareloop/panel-sessions/smul3ar4uzs8j/
+source-seed/pulselog-panel-strict-bareloop/u-mulbz0ny.jsonl` shows `spentUsd: 3.0708012`
+(~\$3.07, including ~\$0.73 drafting), 8 green outcome records.
+
+**Honest limits:** the strike RESET and the worker-history block are proven by test replay
+only — no live run in this session actually exercised a strike reset, and the worker's own
+prompts are not written to the spine, so the facts-line's real effect on a live worker's next
+attempt is unobserved (only that it was correctly constructed and sent).
+
+**Status: fixed.** `src/planrun.js`, `src/promptregisters.js`, `tests/trend.test.js`,
+`tests/planrun-decl.test.js`.
+
+## F199 — a failed/rejected panel chat POST silently lost the typed answer (fixed)
+
+**Context:** live run mul5fofw, ~50 minutes stuck on the `worseThanBefore` confirm-turn ask
+with no "you" message ever recorded in the chat.
+
+**Root cause (`dc7ce8a`):** the panel's send/revise handlers unconditionally cleared
+`msgInput.value` even when the POST failed, and any error they did surface went to
+`#chat-card-error` — the same element `renderActions` (driven by the 2s `poll()`, which every
+one of these handlers also calls in its own `.then`) unconditionally overwrites on every tick,
+wiping the error before it could be read, often within the same callback. A typed answer that
+failed to send looked identical to one that had succeeded — the input was empty and no
+error survived on screen.
+
+**Fix:** `chatPostOutcome()` is now the one place that decides success (status 200 +
+`body.ok===true`, never a loose truthy check); `msgInput` is only cleared on a proven success;
+a dedicated `#chat-action-error` element (never touched by `poll()`/`renderActions`/
+`renderProgress`/`renderMessages`) shows a persistent error; every chat POST site now has a
+`.catch` so a rejected fetch (network drop, server restart) surfaces instead of silently doing
+nothing.
+
+**Status: fixed.** `src/panel/index.html` (dc7ce8a).
+
+## F200 — live-run readouts (Summary box, part-level tool counts, a live run's own part card) read "unknown" instead of a running floor (fixed, 3 commits)
+
+**Context:** live run mul5fofw. Three separate render sites independently derived
+wall/spend/tool-count text for a still-running run and each defaulted to "unknown" instead of
+a running floor, because each one gated on the FINISHED-run shape only.
+
+**F200a — Summary box (`4d31377`):** `"unknown (\$0.73 drafting) of \$5.00 · unknown elapsed"`
+for a run that was demonstrably still live and metered. The server only derived
+`spendFloorUsd`/`wallFloorMs` (priced-rounds sum, first-to-last-record wall span) for a DIED
+spine — a genuinely still-running one (no job-end, fresh mtime) got `null`/`null`, which the
+client renders as "unknown". Fix: `src/panel/server.js` factors the derivation out as
+`floorsFromRecords()` and widens `deriveDeath()` to compute it whenever a `job-end` is absent
+— `died` or still running — so `getRunDetail`'s floor fields pass through unconditionally.
+`src/panel/index.html`'s `liveSpendText()`/`liveWallPhrase()` render "$X so far (Y drafting)
+of \$CAP · running Zm" (never "at least" — this is a still-growing number, not a died run's
+fixed floor).
+
+**F200b — part-level tool counts (`c80058a`):** the Run tab's part cards and the Audit tab's
+Grouped part headers both read "unknown tools" / "unknown (no log saved)" for a still-live
+run, even though the Audit tab's own rows worked fine. Root cause: part-level
+`byTool`/`toolCalls` (`summary.parts`, from `replayRun`) came from `replayOne`'s own internal
+`resolveSiblings()` call, which only ever finds the FINISHED-run sidecar convention
+(`<spine-stem>-gate-audit.jsonl` beside the spine) — while `scopedBehaviour`/`getRunAudit`
+already had the live fallback (`resolveAuditPathForRow`, `<patient>/gate-audit.jsonl`) but
+`replayOne` never saw it. Fix: `src/replayio.js`'s `replayOne()` takes an optional
+`auditPathOverride`; `src/panel/server.js`'s `getRunDetail()` resolves the audit path through
+`resolveAuditPathForRow` first and hands it through — one shared owner, no second copy of the
+live-fallback logic. Verified read-only against archived run mul5fofw (already finished, so
+unaffected) plus a new `panel.test.js` case with a fabricated live spine.
+
+**F200c — a live run's own part card (`d93c46c`):** while a run is live and no step has
+started yet, `replay.js` emits a synthetic `kind:"run"` part whose `wallMs`/`spentUsd` are
+null (unresolved until job-end) — the same shape F200a's Summary box already had, but the
+part-card renderers (the Run tab's inline card builder AND the Audit tab's Grouped header,
+`partLine1Text`) each independently called `duration(part.wallMs)`/`panelMoney(part.spentUsd)`
+on it, a second wall/spend reader F200a's fix never reached. Fix: `partLine1Text` now takes
+`detail` and, only for the live run's own `kind:"run"` part, substitutes
+`liveWallPhrase(detail.wallFloorMs)`/`liveSpendText(...)` — the same server-derived floor the
+Summary box reads. Proven red first (reverting `index.html` reproduces "3 calls · 5 tools ·
+unknown · unknown"); restored, the same assertion reads "running 4m12s · \$0.72 so far".
+`tests/panel-page.test.js` full suite 160/160 pass.
+
+**Status: fixed.** `src/panel/server.js`, `src/panel/index.html`, `src/replayio.js`
+(4d31377, c80058a, d93c46c).
+
+## F201 — the plan part's wall time read 0.0s: measured the call against itself (fixed)
+
+**Context:** live run mul5fofw. "plan · 1 call · 0.0s · \$0.28" — a real \$0.28/20623-token
+paid call cannot take 0.0s.
+
+**Root cause (`d0ed670`):** root-caused against the real archived spine
+(`~/.config/bareloop/panel-sessions/smul3ar4uzs8j/.../u-mul5fofw.jsonl`): the plan part's
+`wallMs` window was `windowWallMs(scoutTsHi, firstTs)`, where `scoutTsHi` is literally
+`planRoundsInitialArr[0].ts` — the plan round's OWN completion timestamp (every round record
+is stamped AFTER the call returns, never before). Using it as plan's own START boundary
+measures the call against itself, leaving only the ~12ms gap to the next logged record (the
+following step-start, `firstTs`) as "the duration" — by construction this could never show
+anything but ~0 regardless of how long the call really took. Measured on the real spine:
+scout's own last round (11:15:00.335Z) to the plan round's own ts (11:16:22.667Z) is
+82332ms — the call's real wall time.
+
+**Fix:** display/replay-side only (`src/replay.js`), scoped to the `wallMs` computation
+alone: the window now runs from scout's own true end (its last round's `ts`, or job-start
+when there was no scout) to plan's own true end (its last round's `ts`) — never the adjacent
+phase's timestamps on either side. The seq-scoped tool-call/behaviour window and the
+`attempts` field were already correctly bounded and are left untouched.
+
+**Test:** verified read-only against the real mul5fofw spine (now reads 82332ms, "1m22s") and
+reproduced with a portable synthetic spine matching its exact shape, so the fix is provable
+without the machine-local fixture too.
+
+**Status: fixed.** `src/replay.js` (d0ed670).
+
+## F202 — the panel's Job tab was permanently blank: duplicate `id="job-card"` (fixed)
+
+**Context:** two elements in `src/panel/index.html` shared `id="job-card"`: the Chat tab's
+compact draft authoring card (line 422) and the Details/Job tabpanel's readonly signed-job
+card (line 599). `document.getElementById` always resolves to the first match in document
+order, so `renderJob()` was toggling `.hidden` on the Chat tab's draft card instead of the
+readonly one — the real Job-tab card stayed hidden forever and the "select a run first" hint
+got hidden by the same call, leaving the pane completely blank for both finished and live runs.
+
+**Fix (`e1954e8`):** renamed the readonly card's id to `job-card-readonly` (matching its
+existing `data-testid`) and repointed `renderJob()` at it.
+
+**Test:** verified live in headless chromium against a scratch panel server serving run
+mul5fofw's real resolved job (server behavior already confirmed correct via curl) —
+screenshots at 1280px and 390px both show the full signed job card. Added a regression test
+banning duplicate `id` attributes anywhere in the page, plus a test pinning `renderJob()` to
+`job-card-readonly`.
+
+**Status: fixed.** `src/panel/index.html` (e1954e8).
+
+## F203 — panel "checks N/M" headline: first counted RAN stages not DECLARED, then WITHDRAWN by hamr as confusing and replaced with plain-question lines (fixed, superseded)
+
+**Context:** panel P3 build added a "checks N/M" headline to close-graded part cards and
+attempt rows (`764a9ef`, `a83336a`, `c0f546d`, `a7ed37b` — sending each declared stage's
+kind/direction/baselineKind to the client, the card/Audit headline showing the first failing
+check's own wording, and expanded attempt rows rendering every check in closed §3a wording).
+
+**Bug caught live (`559a813`):** hamr caught it live on run mulbz0ny — `checksSummary(stages)`
+used `stages.length` as the total, but a fix-loop attempt's own `stages` array only holds the
+stages that RAN before first-red-wins stopped it — an attempt that stopped at stage 2 of a
+7-stage declared close read "checks 1/2" instead of "checks 1/7". Fix: `server.js`'s
+`enrichPartsWithStageKind` stamps each attempt with `declaredStagesTotal` (off the signed
+spec's own `closeDecl.stages`); `checksSummary`/`checksHeadline` in `index.html` take it as an
+optional second param and use it as the total whenever present. Verified live on run
+mul5fofw: attempts now read 6/7, 1/7 (was 1/2), 6/7, 2/7 (was 2/3).
+
+The same ran-vs-declared defect also existed in the fix worker's prompt facts line (`checks passed N/M` in `src/planrun.js`, M = stages that RAN) and is fixed in `382b12a` — M is now the declared stage count (`stagedClose.length`), with a regression assertion in `tests/planrun-decl.test.js`.
+
+**Withdrawn (hamr's ruling, 2026-09-28):** even fixed, the "checks N/M" headline itself was
+ruled confusing — "reads like 6 failed when 5 never ran" (a fix-loop attempt legitimately
+stops early on first-red-wins; showing e.g. "2/7" reads as 5 failures, not 5 never-attempted).
+Replaced entirely by plain-English question lines.
+
+**Replacement — server half (`2a3efb0`):** `stageQuestionText` (the one owner) maps a declared
+stage's signed kind+params+genre to a short plain question, never the model-authored stage
+name — e.g. files-changed → "did it change any file?", pattern-absent-in-diff → "no casts or
+silencers added?", command-exit → "does the test suite pass?", count-not-worse's three
+TYPES-genre shapes. Returns null (caller falls back to the stage's own name) for an
+unrecognised shape. `stageKindMetaFromSpec` carries `question` per stage;
+`enrichPartsWithStageKind` stamps each attempt with `declaredStages` (full declared order,
+`{name, question}`) alongside `declaredStagesTotal`.
+
+**Follow-up fix (`63b9d6b`):** live check on mul5fofw's own scratch server surfaced that
+`suite-zero-failing-tests` (a count-not-worse/lower-is-better/baseline-0 stage, same shape as
+a genuine typecheck stage, but its parser counts FAILING TESTS `^# fail (\d+)$`, not
+type-checker output) was reusing the "type errors" wording and would have rendered "test/ has
+0 type errors?" — false. Fix: `stageKindMetaFromSpec` gathers every command-exit stage's own
+cmd+args first (`suiteCmdKeys`); `stageQuestionText` returns null for a
+lower-is-better/baseline-0 count-not-worse stage whose cmd+args matches one of them, falling
+back to the stage's own name rather than a guessed wording.
+
+**Replacement — client half (`b9c182e`):** `attemptChecksLine` replaces
+`checksHeadline`/`checksSummary`: "all N checks passed" on an all-green close, or "check #N
+<question> — <number>" for the first failing stage, where #N is its 1-based DECLARED position
+(matched by name against the server's `declaredStages`, never by array index).
+`stageNumberText` keeps its 3 closed numeric shapes reworded ("N left, need T" / "N of total"
+/ "N, limit M"). `fullStageList`/`stageLineHtml` render every declared stage in order,
+including ones that never ran ("#N <question> · not run"). `partLine1Text` (the Run tab's fix
+card and the Audit Grouped part header, one shared owner) shows the same line. Verified live
+on mul5fofw: attempt headers read "attempt 2 ✗ · check #2 src/checks.js has 0 type errors? —
+12 left, need 0" and "attempt 4 ✗ · check #3 other files didn't get more type errors? — 47,
+limit 46" — hamr's own examples verbatim; screenshots at 1280/390px show no sideways scroll.
+
+**Status: fixed** (the withdrawn N/M headline is superseded, not present in the shipped
+code). `src/panel/server.js`, `src/panel/index.html` (764a9ef, a83336a, c0f546d, a7ed37b
+superseded by 559a813, 2a3efb0, 63b9d6b, b9c182e).
+
+## F204 — a missing-deps repo copy had no way back: a new session was the only recovery (fixed)
+
+**Context:** P3's first live try. `createSession` used to refuse outright when a copied repo
+source had missing dependencies (F182's original stop-at-\$0 gate, per `bareloop has had 0
+context-overflow events` doctrine that bareloop never installs anything on the person's
+behalf), with no route back into the SAME copy short of starting an entirely new session (and
+a new depless copy).
+
+**Fix (`5410aa3`, item 1):** `createSession` now enters a non-terminal `install-needed` phase,
+names the copy's path and the exact install command, and a "Check again" route/button re-runs
+the SAME `missingDependencies` check on the SAME copy, looping until it passes or the person
+gives up. bareloop still never installs anything itself — this only removes the dead end, not
+the install-gap stop itself. This is the fix for the stash's "install-gap dead end" item.
+
+Landed alongside other P3 live-try findings in the same commit: jargon per-phase chat bubbles
+replaced by one collapsed progress indicator (amber cycling / green done / red stopped);
+"Start drafting" now disables immediately and stays disabled for the life of a non-terminal
+session (`install-needed` included), matching the server's own `TERMINAL_PHASES`; the page
+opens on the Chat tab by default; two \$0 readiness checks (local key-presence/shape,
+GET-only provider reachability probe via `checkProviderReachable`, `src/providers.js`) render
+under the Model field before drafting, never returning key material.
+
+**Status: fixed.** `src/panel/server.js`, `src/panel/index.html`, `src/providers.js`
+(5410aa3).

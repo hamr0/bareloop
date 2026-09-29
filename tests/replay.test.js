@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  replayRun, formatReplay, summarizeForAllLine, formatAllLines, auditWindow,
+  replayRun, formatReplay, summarizeForAllLine, formatAllLines, auditWindow, moneyWithDraft,
 } from '../src/replay.js';
 import { runJob } from '../src/run.js';
 import { jobSpecHash } from '../src/job.js';
@@ -1106,6 +1106,52 @@ test('replayRun: parts on mu2p83go — scout/plan/step/fix in order, each part\'
   assert.equal(s.parts[3].outcome, 'green', 'the fix loop\'s last attempt is green, matching fixLoop.attempts');
 });
 
+// build item 8 (2026-09-28, panel session mul5fofw): "plan · 1 call · 0.0s ·
+// $0.28" — a real $0.28/20623-token paid call cannot take 0.0s. ROOT CAUSE
+// (measured on this exact real spine): the plan part's wallMs window used
+// to be `windowWallMs(scoutTsHi, firstTs)`, where `scoutTsHi` is literally
+// `planRoundsInitialArr[0].ts` — the plan round's OWN completion
+// timestamp — so the window started at the call's own end and measured
+// only the ~12ms gap to the next logged record (the following step-start),
+// never the call's real ~82s duration (scout's own last round 11:15:00.335Z
+// -> the plan round's own ts 11:16:22.667Z). Fixed by anchoring the window
+// to scout's own true end (its last round's ts) and plan's own true end
+// (its last round's ts) instead.
+test('RED->GREEN (build item 8): a minimal synthetic spine reproducing mul5fofw\'s exact shape — one scout round, one plan round, a step-start 12ms later — gives the plan part its real ~82s wall time, never 0', () => {
+  const spine = [
+    { type: 'job-start', job: 'x', ts: '2026-09-28T11:14:00.000Z', seq: 1, verdictType: 'green' },
+    { type: 'worker-round', phase: 'scout', costUsd: 0.1, tokens: 100, seq: 2, ts: '2026-09-28T11:15:00.335Z' },
+    // the plan round's OWN ts is stamped at completion — 82332ms after
+    // scout's last round, itself the REAL duration of this paid call.
+    { type: 'worker-round', phase: 'plan', costUsd: 0.28259700000000004, tokens: 20623, seq: 3, ts: '2026-09-28T11:16:22.667Z' },
+    // the next logged record follows within milliseconds — the OLD bug used
+    // this gap (not the call's own real duration) as "the" plan wall time.
+    { type: 'step-start', step: 'strict-type-checks-js', rounds: 14, tools: [], seq: 4, ts: '2026-09-28T11:16:22.679Z' },
+  ];
+  const s = replayRun(spine, [], { runId: 'synthetic-mul5fofw-shape' });
+  const plan = s.parts.find((p) => p.kind === 'plan');
+  assert.ok(plan, 'expected a plan part');
+  assert.equal(plan.rounds, 1);
+  assert.equal(plan.wallMs, 82332, `expected the real 82332ms call duration, got ${plan.wallMs}`);
+});
+
+const MUL5FOFW_SPINE = '/home/hamr/.config/bareloop/panel-sessions/smul3ar4uzs8j/source-seed/pulselog-panel-strict-bareloop/u-mul5fofw.jsonl';
+test(
+  'replayRun: parts on the real archived run mul5fofw — the plan part\'s wallMs is the real ~82.3s the paid call took, never 0',
+  { skip: !existsSync(MUL5FOFW_SPINE) && 'real fixture not present on this machine' },
+  () => {
+    const spine = parseJsonl(MUL5FOFW_SPINE);
+    const s = replayRun(spine, [], { runId: 'mul5fofw' });
+    const plan = s.parts.find((p) => p.kind === 'plan');
+    assert.ok(plan, 'expected a plan part on this run');
+    assert.equal(plan.rounds, 1, 'precondition: exactly one plan round on this real run');
+    assert.ok(Math.abs(plan.spentUsd - 0.28259700000000004) < 1e-9, 'precondition: the real $0.28 cost');
+    // scout's own last worker-round ts (11:15:00.335Z) -> the plan round's
+    // own ts (11:16:22.667Z) = 82332ms, verified directly against the spine.
+    assert.equal(plan.wallMs, 82332, `expected the real ~82.3s call duration, got ${plan.wallMs}ms`);
+  },
+);
+
 test('replayRun: parts on bareagent-u-bareloop/u-mshcpdg4 — a real replan between two steps gets its own box, and a step id re-running after a replan gets occurrence 2 (numbered separately from occurrence 1)', { skip: !existsSync(join(BAREAGENT_U, 'u-mshcpdg4.jsonl')) && 'real fixture not present on this machine' }, () => {
   const spine = parseJsonl(join(BAREAGENT_U, 'u-mshcpdg4.jsonl'));
   const s = replayRun(spine, [], { runId: 'mshcpdg4' });
@@ -1155,4 +1201,110 @@ test('replayRun: parts — a judge-round with no step/fix/scout/plan window cove
   assert.equal(s.parts[1].id, 'judge');
   assert.equal(s.parts[1].rounds, 1);
   assert.equal(s.parts[1].attempts.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// draftSpentUsd / moneyWithDraft — hamr's ruling 2026-09-28 ("one cap covers
+// drafting + run"): a run's summary carries its drafting share off
+// job-start's own field, and every money display uses the ONE shared
+// formatter rather than each hand-composing "$X ($Y drafting) of $Z".
+// ---------------------------------------------------------------------------
+
+test('replayRun: draftSpentUsd reads off job-start\'s own field, never priorSpentUsd — null when absent', () => {
+  const withDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81 },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(withDraft.draftSpentUsd, 0.81);
+  assert.equal(withDraft.resumed, false, 'a drafting fold is never a resume');
+
+  const withoutDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5 },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(withoutDraft.draftSpentUsd, null, 'a run that never drafted carries no decorative 0');
+});
+
+test('moneyWithDraft: exact display strings — "$3.71 ($0.81 drafting) of $5.00" with a cap, "$3.71 ($0.81 drafting)" without, unchanged with no draft share', () => {
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5), '$3.71 ($0.8100 drafting) of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81), '$3.71 ($0.8100 drafting)');
+  assert.equal(moneyWithDraft('$3.68', null, 5), '$3.68 of $5.00');
+  assert.equal(moneyWithDraft('$3.68', null), '$3.68', 'a run without a drafting share prints exactly what it always did');
+});
+
+// hamr's ruling 2026-09-28 (2nd addendum, "drafting completeness travels
+// with draftSpentUsd") — an incomplete drafting fold reads "at least" on
+// BOTH the bracket and the leading figure (a reader summing the two must
+// never take the leading number as exact when the bracket beside it isn't).
+test('moneyWithDraft: an incomplete draftSpendComplete:false reads "at least" on the bracket AND the leading spendCore', () => {
+  assert.equal(
+    moneyWithDraft('$3.71', 0.81, 5, false),
+    'at least $3.71 (at least $0.8100 drafting) of $5.00',
+  );
+  // a complete fold (true, or the parameter simply omitted) is UNCHANGED —
+  // never a new enum value anywhere else in the string.
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, true), '$3.71 ($0.8100 drafting) of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, undefined), '$3.71 ($0.8100 drafting) of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, null), '$3.71 ($0.8100 drafting) of $5.00');
+});
+
+test('moneyWithDraft: an already-floor spendCore (e.g. a died run\'s "at least $X") never doubles the "at least" prefix when the draft is also incomplete', () => {
+  assert.equal(
+    moneyWithDraft('at least $0.0182', 0.81, 5, false),
+    'at least $0.0182 (at least $0.8100 drafting) of $5.00',
+  );
+  assert.equal(
+    moneyWithDraft('≥$3.71', 0.81, 5, false),
+    '≥$3.71 (at least $0.8100 drafting) of $5.00',
+    'the run\'s own "≥" floor spelling is recognized too, never double-prefixed',
+  );
+});
+
+test('moneyWithDraft: no drafting share at all -> draftSpendComplete is never even consulted, output unchanged', () => {
+  assert.equal(moneyWithDraft('$3.68', null, 5, false), '$3.68 of $5.00');
+});
+
+test('summarizeForAllLine: the spend column carries the drafting share for a run that has one, unchanged for a run that does not', () => {
+  const withDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, shape: 'plan' },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.match(summarizeForAllLine(withDraft).spend, /^\$3\.7100 \(\$0\.8100 drafting\)$/);
+
+  const withoutDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, shape: 'plan' },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.68, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(summarizeForAllLine(withoutDraft).spend, '$3.6800', 'a run without a drafting share prints exactly what it always did');
+});
+
+// hamr's ruling 2026-09-28 (2nd addendum) — replayRun reads draftSpendComplete
+// off job-start's own field, defaulting to true on an archive that predates
+// the companion field (it was exact then, the field just didn't exist yet).
+test('replayRun: draftSpendComplete reads off job-start — null when there is no drafting fold, true on a pre-field archive, false only when the fold explicitly said so', () => {
+  const noDraft = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5 },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(noDraft.draftSpendComplete, null, 'no drafting fold at all -> never paired with a draftSpentUsd of null');
+
+  const preField = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81 },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(preField.draftSpendComplete, true, 'an archive with draftSpentUsd but no companion field defaults to true (it was exact when it was written)');
+
+  const incomplete = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(incomplete.draftSpendComplete, false);
+});
+
+test('summarizeForAllLine: an INCOMPLETE drafting fold reads "at least" on both the leading spend and the bracket, off the CLI\'s own 4-decimal money() — the CLI\'s own --all output is unchanged (never migrated to 2 decimals)', () => {
+  const incomplete = replayRun([
+    { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false, shape: 'plan' },
+    { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
+  ], [], { runId: 'x' });
+  assert.equal(summarizeForAllLine(incomplete).spend, 'at least $3.7100 (at least $0.8100 drafting)');
 });
