@@ -21,9 +21,9 @@ const tmp = (t) => {
 const NOW = () => new Date(2026, 8, 15, 12, 0, 0).getTime();
 const at = (y, m, d) => new Date(y, m, d, 12).toISOString();
 
-function addRun(home, dir, { runid, atIso, provider, baseUrl, usd, complete = true, tokens = 0, noJobEnd = false }) {
+function addRun(home, dir, { runid, atIso, provider, baseUrl, model, usd, complete = true, tokens = 0, noJobEnd = false }) {
   const spine = join(dir, `u-${runid}.jsonl`);
-  const recs = [{ type: 'job-start', job: 'j', ...(provider ? { provider } : {}), ...(baseUrl ? { baseUrl } : {}) }];
+  const recs = [{ type: 'job-start', job: 'j', ...(model ? { model } : {}), ...(provider ? { provider } : {}), ...(baseUrl ? { baseUrl } : {}) }];
   recs.push({ type: 'worker-round', costUsd: usd, usage: { inputTokens: tokens, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 } });
   if (!noJobEnd) recs.push({ type: 'job-end', engagementSpentUsd: usd, spentUsd: usd, spendComplete: complete });
   writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
@@ -178,4 +178,21 @@ test('/api/settings/money carries the wall minutes per provider, and the page re
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
   assert.match(html, /<th>This month min<\/th><th>To date min<\/th>/);
   assert.match(html, /minutesText\(p\.monthWallMs, p\.monthWallAtLeast\)/);
+});
+
+test('spendSummary: tokensByRow — an old spine (model, no provider) counts toward the row whose Name EXACTLY equals it', (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  addRun(home, d, { runid: 'o1', atIso: at(2026, 8, 2), model: 'claude-sonnet-5', usd: 1, tokens: 700 });
+  addRun(home, d, { runid: 'o2', atIso: at(2026, 8, 3), provider: 'anthropic-api', model: 'claude-sonnet-5', usd: 1, tokens: 50 });
+  const row = (envName, name) => ({ envName, name, provider: 'anthropic-api', baseUrl: '' });
+  // exact Name wins; a Name that is a PREFIX of the model does not
+  const s = spendSummary({ home, now: NOW, rows: [row('A_KEY', 'claude-sonnet'), row('B_KEY', 'claude-sonnet-5')] });
+  assert.equal(s.tokensByRow.B_KEY, 750, 'old spine (700) + the provider-recorded spine (50, today\'s matching)');
+  assert.equal(s.tokensByRow.A_KEY ?? 0, 0, 'a prefix Name gets nothing from the old spine');
+  // two rows sharing the Name: the unmatched old spine counts toward neither
+  const s2 = spendSummary({ home, now: NOW, rows: [row('A_KEY', 'claude-sonnet-5'), row('B_KEY', 'claude-sonnet-5')] });
+  assert.equal(s2.tokensByRow.A_KEY, 50);
+  assert.equal(s2.tokensByRow.B_KEY ?? 0, 0);
+  assert.equal(s2.total.usd, 2, 'money untouched');
 });

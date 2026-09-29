@@ -216,7 +216,13 @@ export function spendSummary(opts = {}) {
   /** total tokens of the runs each Providers row served (matched by shape + endpoint + model) @type {Record<string, number>} */
   const tokensByRow = {};
   for (const leg of readLegs({ home: opts.home })) {
-    const served = opts.rows ? findRow(opts.rows, { provider: leg.provider, baseUrl: leg.baseUrl, model: leg.model }) : null;
+    let served = opts.rows ? findRow(opts.rows, { provider: leg.provider, baseUrl: leg.baseUrl, model: leg.model }) : null;
+    // an older spine records a model but no provider: it counts toward the row whose Name EXACTLY
+    // equals that model. Two rows sharing the Name make it ambiguous, so it counts toward neither.
+    if (opts.rows && leg.provider === null && leg.model !== null) {
+      const named = opts.rows.filter((r) => r.name === leg.model);
+      served = named.length === 1 ? named[0] : null;
+    }
     if (served) tokensByRow[served.envName] = (tokensByRow[served.envName] ?? 0) + leg.tokens;
     const inMonth = Number.isNaN(leg.at.getTime()) ? true : sameLocalMonth(leg.at, nowDate);
     const id = rowIdFor(leg.provider, leg.baseUrl);
