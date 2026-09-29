@@ -123,7 +123,9 @@ test('validateJobCard: a taken job name refuses (P3 is new jobs only, Q4=A) — 
   writeFileSync(join(jobsDir, 'already-exists.json'), '{}');
   assert.equal(jobNameTaken('already-exists', { jobsDir }), true);
   assert.equal(jobNameTaken('brand-new-name', { jobsDir }), false);
-  const r = validateJobCard(baseCard({ jobName: 'already-exists', jobsDirOverride: jobsDir }));
+  const r = validateJobCard(baseCard({ jobName: 'already-exists' }), { jobsDir });
+  // the seam is server-side only: a client card's jobsDirOverride is ignored
+  assert.equal(validateJobCard(baseCard({ jobName: 'already-exists', jobsDirOverride: '/nonexistent' }), { jobsDir }).ok, false);
   assert.equal(r.ok, false);
   assert.match(r.error, /already exists/);
 });
@@ -310,6 +312,24 @@ test('POST /api/author/start RED-PROOF: no token refuses (403), right token + ri
   assert.equal(rightGuardBadCard.status, 400, 'the guard passed — this is the CARD refusing, not the guard');
   const body = await rightGuardBadCard.json();
   assert.equal(body.ok, false);
+});
+
+test('POST /api/author/start: a body over 1 MiB is refused with 413 before any route sees it (uncapped-body memory DoS)', async (t) => {
+  const { base, token } = await startAuthorServer(t);
+  const big = 'x'.repeat(1024 * 1024 + 1024);
+  let status = null;
+  try {
+    const res = await fetch(`${base}/api/author/start`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: big,
+    });
+    status = res.status;
+  } catch { status = 'connection-reset'; }
+  assert.ok(status === 413 || status === 'connection-reset', `oversize body must be refused, got ${status}`);
+  // a normal small body still reaches the route (400 = the card refusing, not the cap)
+  const ok = await fetch(`${base}/api/author/start`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: '{}',
+  });
+  assert.equal(ok.status, 400);
 });
 
 test('POST /api/author/start: a missing provider key refuses at $0 (before any session even starts drafting)', async (t) => {

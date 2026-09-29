@@ -150,7 +150,7 @@ export function createAuthorRoutes(opts) {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
       const card = body ?? {};
-      const v = validateJobCard(card);
+      const v = validateJobCard(card, { jobsDir: opts.jobsDir });
       if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
       const session = createSession(card, { env, sessionsRoot: opts.sessionsRoot });
       sessions.set(session.id, session);

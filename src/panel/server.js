@@ -41,6 +41,9 @@ import { createAuthorRoutes, mintToken } from './authorroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/** Largest POST body the panel buffers (job cards are short prose); a bigger one is refused with 413. */
+const MAX_BODY_BYTES = 1024 * 1024;
+
 /**
  * A runid, as it appears in a URL path segment — never a raw filesystem
  * path. `~` is included so a backfill-disambiguated runid (F197:
@@ -1768,8 +1771,23 @@ export function handleRequest(req, res, opts) {
   if (method !== 'GET' && method !== 'HEAD') {
     if (opts.authorRoutes && pathname.startsWith('/api/author')) {
       let raw = '';
-      req.on('data', (c) => { raw += c; });
+      let size = 0;
+      let refused = false;
+      req.on('data', (c) => {
+        if (refused) return;
+        size += c.length;
+        if (size > MAX_BODY_BYTES) {
+          refused = true;
+          raw = '';
+          res.once('finish', () => { req.destroy(); });
+          res.setHeader('connection', 'close');
+          sendText(res, 413, `request body over ${MAX_BODY_BYTES} bytes`);
+          return;
+        }
+        raw += c;
+      });
       req.on('end', () => {
+        if (refused) return;
         /** @type {any} */
         let body = null;
         if (raw.length > 0) { try { body = JSON.parse(raw); } catch { body = null; } }

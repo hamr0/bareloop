@@ -126,13 +126,14 @@ export function jobNameTaken(name, opts = {}) {
  * creates a session or spends anything — never inside the async pipeline,
  * so a bad card refuses synchronously, in the same HTTP response.
  * @param {any} card
+ * @param {{jobsDir?: string}} [opts] server-side test seam — NEVER read off the client card
  * @returns {{ok: true}|{ok: false, error: string}}
  */
-export function validateJobCard(card) {
+export function validateJobCard(card, opts = {}) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
   const { jobName, checkType, model, goal, source, destination, success, guardrails, capUsd } = card;
   if (!isSlug(jobName)) return { ok: false, error: 'Job name must be a kebab-case slug (letters, digits, dashes)' };
-  if (jobNameTaken(jobName, card.jobsDirOverride ? { jobsDir: card.jobsDirOverride } : {})) {
+  if (jobNameTaken(jobName, { jobsDir: opts.jobsDir })) {
     return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)` };
   }
   if (checkType !== 'deterministic' && checkType !== 'rubric') return { ok: false, error: 'Check type must be deterministic or rubric' };
