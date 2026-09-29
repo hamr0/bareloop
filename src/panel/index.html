@@ -398,6 +398,9 @@
   .pv-table td,.pv-table th{white-space:nowrap;vertical-align:top;}
   .pv-table select,.pv-table input{min-height:32px;max-width:190px;box-sizing:border-box;}
   .pv-table .hint{display:block;margin-top:3px;}
+  /* the Test cell keeps ONE width whatever the result says ("testing…", "OK · 312 ms", a long failure note) */
+  .pv-table td.pv-test-cell{width:180px;min-width:180px;max-width:180px;}
+  .pv-table .pv-test-result{white-space:normal;overflow-wrap:anywhere;}
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
   @media (max-width: 899px){
     .money-strip{grid-template-columns:1fr 1fr;}
@@ -2835,7 +2838,7 @@
             + "<td>" + escapeXml(row.url) + "</td>"
             + '<td><select class="pv-key" data-id="' + row.id + '" data-testid="pv-key-' + row.id + '">' + opts + "</select>"
             + '<div class="hint" data-testid="pv-status-' + row.id + '">' + escapeXml(row.keyStatus) + "</div></td>"
-            + "<td>" + (row.canTest
+            + '<td class="pv-test-cell">' + (row.canTest
               ? '<button class="btn small pv-test" type="button" data-id="' + row.id + '" data-testid="test-connection-' + row.id + '">Test</button><div class="hint pv-test-result" data-testid="test-result-' + row.id + '"></div>'
               : '<span class="hint">not available</span>') + "</td>"
             + "<td>" + escapeXml(tokensText(row.tokens)) + "</td>"

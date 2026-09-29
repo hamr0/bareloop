@@ -2947,3 +2947,13 @@ test('bug fix: the Details/Job tabpanel\'s readonly job card has its own unique 
   assert.match(renderJobBody, /getElementById\("job-card-readonly"\)/);
   assert.doesNotMatch(renderJobBody, /getElementById\("job-card"\)/);
 });
+
+test('P4a Providers: the Test cell has a fixed width and its result wraps, so pressing Test never resizes the column', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const rule = /\.pv-table td\.pv-test-cell\{([^}]*)\}/.exec(html);
+  assert.ok(rule, 'a rule pins the Test cell');
+  const w = /(?:^|;)width:(\d+)px/.exec(rule[1])?.[1];
+  assert.ok(w && rule[1].includes(`min-width:${w}px`) && rule[1].includes(`max-width:${w}px`), 'width = min-width = max-width');
+  assert.match(html, /\.pv-table \.pv-test-result\{[^}]*white-space:normal/, 'the result text wraps instead of widening the cell');
+  assert.match(html, /'<td class="pv-test-cell">'/, 'the row builder puts the Test cell in that class');
+});
