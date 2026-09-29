@@ -704,7 +704,7 @@
         <div class="table-wrap">
           <table data-testid="provider-breakdown-table">
             <thead>
-              <tr><th>Provider</th><th>This month $</th><th>To date $</th><th>This month min</th><th>To date min</th></tr>
+              <tr><th>Provider</th><th>$ month / to date</th><th>minutes month / to date</th><th>tokens</th></tr>
             </thead>
             <tbody id="ml-breakdown"></tbody>
           </table>
@@ -2774,12 +2774,14 @@
     var NOTE_DEFAULT = noteEl.textContent;
     // "at least" whenever the figure is a floor — never a clean number for an unknown total
     function moneyText(n, atLeast){ return (atLeast ? "at least " : "") + panelMoney(n); }
-    // wall minutes: "at least" for a floor, "unknown" when no run had a known wall — never a clean 0
-    function minutesText(ms, atLeast){
+    // table cells: an "at least" figure keeps its marker as a "≥" prefix on that number — never dropped
+    function moneyCell(n, atLeast){ return (atLeast ? "≥" : "") + panelMoney(n); }
+    // wall minutes: "unknown" when no run had a known wall (never a clean 0); 1 decimal under 100, else a whole number with a thousands separator
+    function minutesCell(ms, atLeast){
       if(ms === null || ms === undefined) return "unknown";
       var m = ms / 60000;
-      var txt = m >= 10 ? String(Math.round(m)) : m.toFixed(1);
-      return (atLeast ? "at least " : "") + txt + " min";
+      var txt = m < 100 ? m.toFixed(1) : Math.round(m).toLocaleString("en-US");
+      return (atLeast ? "≥" : "") + txt + " min";
     }
     var keepNote = false;
     function loadMoney(){
@@ -2793,12 +2795,12 @@
           limitInput.value = r.monthlyLimitUsd === null ? "" : r.monthlyLimitUsd.toFixed(2);
         }
         var rows = r.byProvider.map(function(p){
-          return "<tr><td>" + escapeXml(p.label) + "</td><td>" + escapeXml(moneyText(p.monthUsd, p.monthAtLeast))
-            + "</td><td>" + escapeXml(moneyText(p.totalUsd, p.totalAtLeast))
-            + "</td><td>" + escapeXml(minutesText(p.monthWallMs, p.monthWallAtLeast))
-            + "</td><td>" + escapeXml(minutesText(p.totalWallMs, p.totalWallAtLeast)) + "</td></tr>";
+          return "<tr><td>" + escapeXml(p.label)
+            + "</td><td>" + escapeXml(moneyCell(p.monthUsd, p.monthAtLeast) + " / " + moneyCell(p.totalUsd, p.totalAtLeast))
+            + "</td><td>" + escapeXml(minutesCell(p.monthWallMs, p.monthWallAtLeast) + " / " + minutesCell(p.totalWallMs, p.totalWallAtLeast))
+            + "</td><td>" + escapeXml(tokensText(p.tokens)) + "</td></tr>";
         }).join("");
-        document.getElementById("ml-breakdown").innerHTML = rows || '<tr><td colspan="5" class="hint">no runs yet</td></tr>';
+        document.getElementById("ml-breakdown").innerHTML = rows || '<tr><td colspan="4" class="hint">no runs yet</td></tr>';
         if(keepNote){ keepNote = false; return; }
         noteEl.textContent = r.configProblem ? r.configProblem : NOTE_DEFAULT;
       }).catch(function(){ noteEl.textContent = "could not read your spend"; });
