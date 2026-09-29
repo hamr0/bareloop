@@ -520,3 +520,118 @@ the current rule.
   least $X" wording distinguishing an exact vs. floor drafting figure specifically in the
   run's own display; a run's OWN spend keeps that distinction via its existing
   `spendComplete` field.
+
+## Addendum 2026-09-29 — P4a Settings (hamr's rulings)
+
+
+Branch: `chore/fix-ledger` (hamr: "keep it, we will add to it"). Builders: sonnet, pinned.
+Source of the shape: PANEL-BUILD.md §P4 + 2026-09-22 stash Settings decisions + the
+2026-09-29 rulings below. Mockup: `design/panel-mockup.html?settings=1`.
+
+### Rulings carried in (2026-09-29, hamr's words)
+
+- R1 **Monthly time limit: DROPPED.** "drop time keep money". Only a monthly $ limit.
+  (Supersedes the 2026-09-22 Money & Limits line's "monthly time limit".)
+- R2 **Monthly $ limit refuses, never warns.** A run whose $ cap is more than what is left
+  this month does not start. Nothing spent.
+- R3 **The note sits under the cap field, where the person types the cap** (not at the top),
+  plain text, no button:
+  `Max $3.50 (monthly limit)`
+- R4 The person fixes it themselves: lower the cap, or raise the monthly limit in Settings.
+  The page never raises anything for them; the chat can never touch the limit.
+- R5 **One settings file, keys apart.** "yes" (hamr, 2026-09-29). ALL settings live in
+  `~/.config/bareloop/config.json` (providers + the key NAME each uses, monthly limit,
+  Anthropic balance note). Key VALUES live only in `~/.config/bareloop/.env`, which the page
+  never reads or writes (CLAUDE.md hard line: secrets load from the environment, never
+  configs). config.json never holds a value that looks like a key — the save path refuses
+  one (reuse the one secret-shape inventory).
+- R6 **Split** "yes, split" (hamr, 2026-09-29): this build is P4a; add/edit/remove providers +
+  Ollama is P4b, its own spec later.
+
+### What exists today (grounded, 2026-09-29 @ 1817eee)
+
+- Keys: panel reads `process.env` only (`src/panel/authorroutes.js:74`,
+  `src/panel/authorsession.js:166`). No `~/.config/bareloop/.env` loader exists yet.
+- Providers: `PROVIDER_TABLE` in `src/providers.js:154` = anthropic-api / openai-api /
+  gemini-api, each with `envKey`. `job.js:162 PROVIDERS` menu adds clipipe-subscription.
+  Panel model menu `src/panel/authorsession.js:60` (deepseek-flash = openai-api + baseUrl).
+- Test button engine exists: `checkProviderReachable` (`src/providers.js:369`), a $0
+  models-list call.
+- Run list: `~/.config/bareloop/runs.jsonl` rows carry `{at, runid, job, spine, patient, via}`
+  — no money. Spend lives in each spine's `job-end` (`spentUsd`, `spendComplete`); a died
+  run has only a spend floor (`src/panel/server.js:251`).
+- Cap input: `#jf-cap-money` in `src/panel/index.html:474`; one cap covers drafting + run
+  (2026-09-28 addendum).
+
+### Build, in order (each item works alone, own commit, own tests)
+
+#### 1. Keys file loader (library, `src/keysfile.js`)
+- Reads `~/.config/bareloop/.env` (home injectable for tests). Plain `NAME=value` lines,
+  `#` comments; no dependency.
+- **Shell env wins** over the file (an explicit `export` beats the file); the file fills
+  names the shell doesn't set.
+- File mode not 600 → a warning line (shown in Settings and on CLI start), not a refusal.
+- Values go ONLY to provider construction. Never to the page, the spine, runs.jsonl, logs.
+  The page gets names + `found` / `not set` only.
+- Callers: panel server start (merged env passed as `opts.env`, the seam that already
+  exists) AND the CLI (`bareloop run-u`, `run`, `author`) — one loader, both doors.
+
+#### 2. Monthly spend + limit (library, `src/monthly.js`)
+- `src/config.js`: the ONE reader/writer of `~/.config/bareloop/config.json` (home injectable).
+  Shape: `{ "monthlyLimitUsd": <number>|absent, "anthropicBalanceNote": <number>|absent,
+  "providers": { "<name>": { "key": "<ENV NAME>" } } }`. Missing file = defaults. Written
+  atomically (tmp + rename), mode 600. Unknown fields kept, never dropped.
+  `monthlyLimitUsd` absent = no limit, no check.
+- `monthSpend({home, now})` = sum over runs.jsonl rows whose `at` is in the current
+  **local** calendar month: the spine's `job-end.spentUsd` (plus drafting spend where folded);
+  a died row counts its spend floor. Any row with incomplete/unknown spend makes the total
+  an **"at least"** figure, shown as such (never rounded down to a clean number).
+- `checkMonthlyRoom({capUsd, home, now})` → `{ ok, leftUsd, limitUsd, atLeast }`.
+- Called at the ONE run-start seam both doors pass through, before any token spends. Refusal
+  text is the same everywhere: `Max $3.50 (monthly limit)`. CLI prints it and exits $0-spent.
+- Panel: the cap field re-checks as the person types (read-only call) and shows the R3 note
+  under the field; Sign & run stays refused server-side regardless of what the page shows
+  (the page is never the arbiter).
+
+#### 3. Settings page — Money & Limits tab
+- Total spent (all time), this month (with "at least" when incomplete), monthly $ limit
+  input + Save on one row, per-provider breakdown (provider from each spine's `job-start`).
+- Save writes config.json **only from a human click** (same per-start token guard as
+  Sign & run); the chat route can never reach it. Tighten or loosen both allowed — it's the
+  person's own limit, set by hand.
+
+#### 4. Settings page — Providers tab (read + test)
+- One row per provider the panel can use today: Anthropic, OpenAI, Gemini, DeepSeek
+  (openai-api + baseUrl). Columns: name, API shape, base URL, key variable, test, tokens used,
+  balance, price.
+- Key variable = dropdown of NAMES read from the keys file (file names only, never the shell
+  env); default is the provider's built-in `envKey`. Choice saved to config.json
+  `providers.<name>.key` (human click only) and used by both doors when resolving the key.
+  Status: `found` / `not set`.
+- Test = `checkProviderReachable` ($0).
+- Tokens used = summed from spines per provider.
+- Balance: DeepSeek fetched server-side from the provider; Anthropic typed by hand (stored in
+  config.json as a note, never used by any check).
+- Price: the rate bareloop charges against; a guessed rate shows **estimated**.
+
+### Split (R6)
+
+**P4b (later, own spec): add / edit / remove providers + Ollama.** Reason: adding a provider
+widens `job.js PROVIDERS` and `PROVIDER_TABLE` (Ollama reads `url`, has no key, and its price
+must show estimated, never $0). That is arbiter-adjacent menu work, bigger than a page.
+P4a = items 1–4 above, with edit/remove buttons absent (not greyed).
+
+### Tests the builder must include
+- Loader: shell-wins, file-fills, comments, bad mode → warning, value never in any output.
+- Monthly: month boundary (local), died row floor, incomplete → atLeast, no limit → ok,
+  cap == left → ok, cap > left → refused with the exact text, $0 spent on refusal (no
+  provider call) — at both doors.
+- Save refused without the human-click token.
+- Each test must fail without its fix (cp-backup proof).
+
+### Exit
+- From the page alone: set a monthly limit, type a cap over it, see `Max $X (monthly limit)`
+  under the cap, Sign & run refused with $0 spent; lower the cap, run starts.
+- Same refusal from the CLI.
+- Providers tab shows the four rows with found / not set and a working Test.
+- Orchestrator's own screenshot at desktop + narrow width.
