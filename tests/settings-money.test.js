@@ -113,9 +113,9 @@ test('chat can never reach Settings: authoring routes have no /api/settings hand
   assert.equal(/updateConfig/.test(session), false, 'the chat session engine never imports the config writer');
 });
 
-test('panel page: Settings button, Money tab, limit input + Save, breakdown table are in the page; money renders "at least" for a floor', () => {
+test('panel page: Settings button, Money tab, limit input, breakdown table are in the page; money renders "at least" for a floor', () => {
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
-  for (const id of ['btn-settings', 'settings-view', 'ml-total', 'ml-month', 'ml-money', 'btn-save-limits', 'ml-breakdown']) {
+  for (const id of ['btn-settings', 'settings-view', 'ml-total', 'ml-month', 'ml-money', 'ml-breakdown']) {
     assert.ok(html.includes(`id="${id}"`), id);
   }
   assert.match(html, /\(atLeast \? "at least " : ""\) \+ panelMoney\(n\)/);
@@ -195,4 +195,22 @@ test('spendSummary: tokensByRow — an old spine (model, no provider) counts tow
   assert.equal(s2.tokensByRow.A_KEY, 50);
   assert.equal(s2.tokensByRow.B_KEY ?? 0, 0);
   assert.equal(s2.total.usd, 2, 'money untouched');
+});
+
+test('monthly limit auto-saves on change: no Save button, the POST sends the raw text (never a NaN that JSON turns into "clear"), the result stays in the note', async (t) => {
+  const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  assert.ok(!html.includes('btn-save-limits'), 'the Save button is gone');
+  assert.match(html, /limitInput\.addEventListener\("change"/);
+  assert.match(html, /monthlyLimitUsd: text === "" \? null : text/, 'raw text goes to the server, which refuses a non-number');
+  assert.match(html, /keepNote = true;\s*loadMoney\(\);\s*noteEl\.textContent = msg;/, 'the refresh does not overwrite the saved/refused note');
+  // the route the change handler posts to: a numeric string saves, junk refuses and changes nothing
+  const home = tmp(t);
+  const { base, token } = await panel(t, home);
+  const post = (v) => fetch(`${base}/api/settings/money`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify({ monthlyLimitUsd: v }) });
+  assert.equal((await post('12.5')).status, 200);
+  assert.equal(readConfig({ home }).config.monthlyLimitUsd, 12.5);
+  assert.equal((await post('abc')).status, 400);
+  assert.equal(readConfig({ home }).config.monthlyLimitUsd, 12.5, 'refusal saves nothing');
+  assert.equal((await post(null)).status, 200);
+  assert.equal(readConfig({ home }).config.monthlyLimitUsd ?? null, null, 'blank = no limit');
 });
