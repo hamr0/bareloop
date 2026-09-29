@@ -13801,6 +13801,8 @@ spec's own `closeDecl.stages`); `checksSummary`/`checksHeadline` in `index.html`
 optional second param and use it as the total whenever present. Verified live on run
 mul5fofw: attempts now read 6/7, 1/7 (was 1/2), 6/7, 2/7 (was 2/3).
 
+The same ran-vs-declared defect also existed in the fix worker's prompt facts line (`checks passed N/M` in `src/planrun.js`, M = stages that RAN) and is fixed in `382b12a` — M is now the declared stage count (`stagedClose.length`), with a regression assertion in `tests/planrun-decl.test.js`.
+
 **Withdrawn (hamr's ruling, 2026-09-28):** even fixed, the "checks N/M" headline itself was
 ruled confusing — "reads like 6 failed when 5 never ran" (a fix-loop attempt legitimately
 stops early on first-red-wins; showing e.g. "2/7" reads as 5 failures, not 5 never-attempted).
