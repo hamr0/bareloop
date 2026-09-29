@@ -289,7 +289,7 @@ test('§3 the STALL readout OFFERS the resume (source tripwire): the run that ca
   assert.ok(end > at, 'and it closes at its own indent');
   const block = src.slice(at, end);
   assert.match(block, /--resume \$\{runid\}/, 'it hands over the actual resume invocation, not the idea of one');
-  assert.match(block, /--approve \$\{specHash\}/, 'with the hash ALREADY signed: no allowance moved, so nothing here needs re-signing');
+  assert.match(block, /--approve \$\{PRINT_APPROVE\}/, 'with the hash ALREADY signed: no allowance moved, so nothing here needs re-signing');
   assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'a readout never changes the run\'s own exit');
 });
 
