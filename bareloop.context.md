@@ -3331,10 +3331,12 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   `resolveAuditPathForRow` (`src/panel/server.js`), the one shared owner the Run tab's tools
   summary and the Audit tab both read through — tried only while the run's own spine has no
   `job-end` yet, so a finished run never risks reading a stale leftover file at that path.
-  `scripts/replay-live.mjs <sourceSpine> <outDir> [--speed N]` is a dev-only, unshipped ($0,
+  `scripts/replay-live.mjs <sourceSpine> <outDir> [--speed N] [--live-audit]` is a dev-only, unshipped ($0,
   no provider call) instrument that paces a real archived spine's records back out under a
   new runid so the panel can be exercised against a "live" run without a paid run — it is not
   a substitute for watching a real run start-to-end, which stays a separately authorized step.
+  `--live-audit` (opt-in) puts the sidecar at a scratch patient dir during the replay so the
+  live-fallback path above is exercised, then moves it to the sibling name at the end.
 
 - **Panel P3 (chat/authoring, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27)** → the ONE
   family of write routes the panel serves, all under `/api/author/*` (`src/panel/

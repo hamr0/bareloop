@@ -31,15 +31,24 @@
 // replay too — its rows are windowed by the server against the (unchanged)
 // spine ts range, never by the sidecar's own internal `run_id` field.
 //
+// `--live-audit` (opt-in; the default replay above is unchanged): instead of
+// the finished-convention sibling, the sidecar is copied to a scratch patient
+// dir `<outDir>/<newStem>-patient/gate-audit.jsonl` and the runlist row's
+// `patient` points at it, so the panel's LIVE gate-audit fallback
+// (`resolveAuditPathForRow`, the during-run path) fires mid-replay. When the
+// last record lands the sidecar is MOVED to the sibling name, the same
+// end-of-run rename `run-u` does (src/userrun.js), so the finished Audit view
+// works too.
+//
 // Never writes into a real `~/.config/bareloop` — always invoke this with
 // a scratch HOME (`appendRun` takes no `home` override here on purpose; it
 // falls through to `runlistHome()`'s own `os.homedir()`, the same
 // convention every other caller in this codebase follows — see
 // src/runlist.js's own header on why there is no separate env var).
 //
-// Usage: node scripts/replay-live.mjs <sourceSpine> <outDir> [--speed N]
+// Usage: node scripts/replay-live.mjs <sourceSpine> <outDir> [--speed N] [--live-audit]
 import {
-  readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, appendFileSync,
+  readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, appendFileSync, renameSync,
 } from 'node:fs';
 import { dirname, basename, join } from 'node:path';
 import { appendRun } from '../src/runlist.js';
@@ -51,22 +60,25 @@ function sleep(ms) {
 function parseArgs(argv) {
   const positional = [];
   let speed = 20;
+  let liveAudit = false;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--speed') {
       speed = Number(argv[i + 1]);
       i += 1;
+    } else if (argv[i] === '--live-audit') {
+      liveAudit = true;
     } else {
       positional.push(argv[i]);
     }
   }
   const [sourceSpine, outDir] = positional;
-  return { sourceSpine, outDir, speed };
+  return { sourceSpine, outDir, speed, liveAudit };
 }
 
 async function main() {
-  const { sourceSpine, outDir, speed } = parseArgs(process.argv.slice(2));
+  const { sourceSpine, outDir, speed, liveAudit } = parseArgs(process.argv.slice(2));
   if (!sourceSpine || !outDir) {
-    console.error('usage: node scripts/replay-live.mjs <sourceSpine> <outDir> [--speed N]');
+    console.error('usage: node scripts/replay-live.mjs <sourceSpine> <outDir> [--speed N] [--live-audit]');
     process.exitCode = 2;
     return;
   }
@@ -113,8 +125,16 @@ async function main() {
   // Sidecar, copied whole and unpaced, before the pacing loop — the Audit
   // tab must work from the first poll, not only once the replay finishes.
   const sourceAuditPath = join(dirname(sourceSpine), `${sourceStem}-gate-audit.jsonl`);
+  const siblingAuditPath = join(outDir, `${newStem}-gate-audit.jsonl`);
+  const patientDir = liveAudit ? join(outDir, `${newStem}-patient`) : null;
+  const liveAuditPath = patientDir ? join(patientDir, 'gate-audit.jsonl') : null;
   if (existsSync(sourceAuditPath)) {
-    copyFileSync(sourceAuditPath, join(outDir, `${newStem}-gate-audit.jsonl`));
+    if (liveAuditPath) {
+      mkdirSync(patientDir, { recursive: true });
+      copyFileSync(sourceAuditPath, liveAuditPath);
+    } else {
+      copyFileSync(sourceAuditPath, siblingAuditPath);
+    }
   }
 
   // Start the output file empty, then append the run-list row BEFORE any
@@ -127,7 +147,7 @@ async function main() {
     runid: newRunId,
     job: `${jobStart.job} · replay`,
     spine: outSpinePath,
-    patient: null,
+    patient: patientDir,
     via: 'backfill',
   });
   console.log(`replay-live: runlist row: ${JSON.stringify(appendResult)}`);
@@ -150,6 +170,7 @@ async function main() {
     appendFileSync(outSpinePath, `${lines[i]}\n`);
   }
 
+  if (liveAuditPath && existsSync(liveAuditPath)) renameSync(liveAuditPath, siblingAuditPath);
   console.log(`replay-live: done — ${lines.length} records written to ${outSpinePath}`);
 }
 
