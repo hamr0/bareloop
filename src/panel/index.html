@@ -390,6 +390,14 @@
   .money-item input{width:100%;height:44px;box-sizing:border-box;}
   .money-item-save{display:flex;}
   .money-item-save .btn{width:100%;height:44px;}
+  .keyfile-strip{position:relative;border:1px solid var(--border-strong);padding:12px 12px 8px;background:var(--panel2);margin:14px 0;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .keyfile-strip::before{content:"┤ KEYS ├";position:absolute;top:-9px;left:10px;background:var(--panel2);padding:0 4px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
+  .keyfile-strip-main{display:flex;flex-direction:column;gap:3px;flex:1;min-width:220px;}
+  .keyfile-strip-actions{display:flex;gap:6px;flex:none;}
+  .keyfile-strip code{background:var(--bg);border:1px solid var(--border-strong);padding:1px 5px;font-size:11px;color:var(--amber);overflow-wrap:anywhere;}
+  .pv-table td,.pv-table th{white-space:nowrap;vertical-align:top;}
+  .pv-table select,.pv-table input{min-height:32px;max-width:190px;box-sizing:border-box;}
+  .pv-table .hint{display:block;margin-top:3px;}
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
   @media (max-width: 899px){
     .money-strip{grid-template-columns:1fr 1fr;}
@@ -648,12 +656,35 @@
     </div>
 
     <div class="tabrow" role="tablist" aria-label="Settings views">
-      <button role="tab" id="tab-money" aria-controls="panel-money" aria-selected="true" data-testid="settings-tab-money">Money &amp; limits</button>
+      <button role="tab" id="tab-providers" aria-controls="panel-providers" aria-selected="true" data-testid="settings-tab-providers">Providers</button>
+      <button role="tab" id="tab-money" aria-controls="panel-money" aria-selected="false" data-testid="settings-tab-money">Money &amp; limits</button>
     </div>
 
     <div class="pane-body">
+      <!-- PROVIDERS TAB (P4a: read + test + key-name pick; add/edit/remove is P4b) -->
+      <section id="panel-providers" class="tabpanel active" role="tabpanel" aria-labelledby="tab-providers">
+        <div class="keyfile-strip" data-testid="keyfile-box">
+          <div class="keyfile-strip-main">
+            <span>Add a line <code>NAME=key</code> to <code id="pv-keyfile-path">~/.config/bareloop/.env</code>, then Reload keys — the name appears in the dropdown. Only names are listed; keys never reach this page.</span>
+            <span class="hint" id="pv-keyfile-note" data-testid="keyfile-warning"></span>
+          </div>
+          <div class="keyfile-strip-actions">
+            <button class="btn small" type="button" id="btn-reload-keys" data-testid="btn-reload-keys">Reload keys</button>
+          </div>
+        </div>
+        <div class="table-wrap" data-testid="provider-table-wrap">
+          <table class="pv-table" data-testid="provider-table">
+            <thead>
+              <tr><th>Name</th><th>API shape</th><th>Base URL</th><th>Key variable</th><th>Test</th><th>Tokens used</th><th>Balance</th><th>Price</th></tr>
+            </thead>
+            <tbody id="pv-rows"></tbody>
+          </table>
+        </div>
+        <div class="hint" id="pv-note" data-testid="pv-note" style="margin-top:6px;">Pick which key name each provider reads. Test asks the provider for its model list — it costs nothing.</div>
+      </section>
+
       <!-- MONEY & LIMITS TAB -->
-      <section id="panel-money" class="tabpanel active" role="tabpanel" aria-labelledby="tab-money">
+      <section id="panel-money" class="tabpanel" role="tabpanel" aria-labelledby="tab-money" hidden>
         <div class="money-strip" data-testid="money-strip">
           <div class="money-item">
             <label>Total spent to date</label>
@@ -2766,6 +2797,7 @@
     document.getElementById("btn-settings").addEventListener("click", function(){
       mainView.hidden = true;
       settingsView.hidden = false;
+      loadProviders();
       loadMoney();
     });
     document.getElementById("settings-back").addEventListener("click", function(){
@@ -2773,6 +2805,78 @@
       mainView.hidden = false;
     });
     document.getElementById("tab-money").addEventListener("click", loadMoney);
+
+    // ---- Providers tab (P4a item 4): read + $0 Test + key-NAME dropdown; no add/edit/remove (P4b) ----
+    var pvRows = document.getElementById("pv-rows");
+    var pvNote = document.getElementById("pv-note");
+    var PV_NOTE_DEFAULT = pvNote.textContent;
+    function tokensText(n){
+      if(!n) return "0";
+      if(n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+      if(n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+      return String(n);
+    }
+    function loadProviders(){
+      authorGet("/api/settings/providers").then(function(r){
+        if(!r || !r.ok){ pvNote.textContent = "could not read providers"; return; }
+        var kf = r.keysFile;
+        document.getElementById("pv-keyfile-path").textContent = kf.path;
+        document.getElementById("pv-keyfile-note").textContent = kf.warning ? ("⚠ " + kf.warning) : (kf.exists ? "" : "no keys file yet");
+        pvRows.innerHTML = r.rows.map(function(row){
+          var opts = row.keyOptions.map(function(n){
+            return '<option value="' + escapeXml(n) + '"' + (n === row.keyName ? " selected" : "") + ">" + escapeXml(n) + (n === row.builtInKey ? " (default)" : "") + "</option>";
+          }).join("");
+          var bal = row.balance.kind === "note"
+            ? '<input type="text" class="pv-balance" data-id="' + row.id + '" placeholder="type by hand" value="' + (row.balance.usd === null ? "" : escapeXml(row.balance.usd.toFixed(2))) + '"><div class="hint">a note, never checked</div>'
+            : (row.balance.kind === "fetch" ? '<span class="pv-balance-fetch" data-id="' + row.id + '">…</span>' : "—");
+          return '<tr data-testid="provider-row-' + row.id + '" data-id="' + row.id + '">'
+            + "<td>" + escapeXml(row.name) + "</td>"
+            + "<td>" + escapeXml(row.shape) + "</td>"
+            + "<td>" + escapeXml(row.url) + "</td>"
+            + '<td><select class="pv-key" data-id="' + row.id + '" data-testid="pv-key-' + row.id + '">' + opts + "</select>"
+            + '<div class="hint" data-testid="pv-status-' + row.id + '">' + escapeXml(row.keyStatus) + "</div></td>"
+            + "<td>" + (row.canTest
+              ? '<button class="btn small pv-test" type="button" data-id="' + row.id + '" data-testid="test-connection-' + row.id + '">Test</button><div class="hint pv-test-result" data-testid="test-result-' + row.id + '"></div>'
+              : '<span class="hint">not available</span>') + "</td>"
+            + "<td>" + escapeXml(tokensText(row.tokens)) + "</td>"
+            + "<td>" + bal + "</td>"
+            + "<td>" + escapeXml(row.price) + "</td></tr>";
+        }).join("");
+        var fetchEl = pvRows.querySelector(".pv-balance-fetch");
+        if(fetchEl){
+          authorGet("/api/settings/providers/balance").then(function(b){
+            fetchEl.textContent = b && b.text ? b.text : ("— " + ((b && b.note) || "unavailable"));
+          }).catch(function(){ fetchEl.textContent = "— unavailable"; });
+        }
+        pvNote.textContent = r.configProblem ? r.configProblem : PV_NOTE_DEFAULT;
+      }).catch(function(){ pvNote.textContent = "could not read providers"; });
+    }
+    pvRows.addEventListener("change", function(e){
+      var t = e.target;
+      if(t.classList.contains("pv-key")){
+        authorPost("/api/settings/providers/key", { id: t.getAttribute("data-id"), key: t.value }).then(function(r){
+          pvNote.textContent = r.body && r.body.ok ? ("Saved — " + t.getAttribute("data-id") + " reads " + r.body.keyName + ".") : ((r.body && r.body.error) || "could not save");
+          loadProviders();
+        }).catch(function(){ pvNote.textContent = "could not save"; });
+      } else if(t.classList.contains("pv-balance")){
+        authorPost("/api/settings/providers/balance-note", { usd: t.value.trim() === "" ? null : t.value.trim() }).then(function(r){
+          pvNote.textContent = r.body && r.body.ok ? "Saved — balance note." : ((r.body && r.body.error) || "could not save");
+        }).catch(function(){ pvNote.textContent = "could not save"; });
+      }
+    });
+    pvRows.addEventListener("click", function(e){
+      var t = e.target;
+      if(!t.classList || !t.classList.contains("pv-test")) return;
+      var out = t.parentNode.querySelector(".pv-test-result");
+      out.textContent = "testing…"; t.disabled = true;
+      authorPost("/api/settings/providers/test", { id: t.getAttribute("data-id") }).then(function(r){
+        var b = r.body || {};
+        out.textContent = b.reachable ? ("OK" + (b.ms !== null && b.ms !== undefined ? " · " + b.ms + " ms" : "")) : ("failed — " + (b.note || b.status || b.error || "no answer"));
+      }).catch(function(){ out.textContent = "failed — no answer"; }).then(function(){ t.disabled = false; });
+    });
+    document.getElementById("btn-reload-keys").addEventListener("click", loadProviders);
+    wireTabs([document.getElementById("tab-providers"), document.getElementById("tab-money")]);
+    document.getElementById("tab-providers").addEventListener("click", loadProviders);
     // Save is a human click only: POST carries the per-start token; the chat has no route here
     document.getElementById("btn-save-limits").addEventListener("click", function(){
       var text = limitInput.value.trim();
