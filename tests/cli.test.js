@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync,
+  mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { jobSpecHash } from '../src/job.js';
 import { mintBridge } from '../src/bridges.js';
 import { main } from '../src/cli.js';
+import { updateConfig } from '../src/config.js';
 import { scriptedProvider } from './helpers.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { ANTHROPIC_TIER_MODELS } from '../src/providers.js';
@@ -239,73 +240,75 @@ test('bareloop export: a red (no bridge at hash) prints the code and writes noth
 // run — the money/arbiter-sensitive ordering
 // ---------------------------------------------------------------------------
 
-test('bareloop run: no key and no injected provider -> questions + hash, exit 0, no worktree', async (t) => {
+test('bareloop run: no key and no injected provider -> the engine refuses (exit 2, names the key), no worktree, no history row; the README is on the unblessed screen', async (t) => {
   const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
   const out = sink(); const err = sink();
-  const rc = await main(['run', bundleDir, '--repo', repo], {
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
     stdout: out, stderr: err, cwd: process.cwd(), env: {}, runlistHome: runlistHome(t),
   });
-  assert.equal(rc, 0);
+  assert.equal(rc, 2);
+  assert.match(err.text(), /ANTHROPIC_API_KEY/);
   assert.match(out.text(), new RegExp(bundleHash));
-  assert.match(out.text(), /ANTHROPIC_API_KEY/);
+  assert.match(out.text(), /first run — this bundle has never been blessed/);
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'no worktree may be created when nothing was spent');
+  assert.equal(existsSync(join(bundleDir, 'history.jsonl')), false, 'a refusal is not a run: no history row');
+  assert.equal(existsSync(join(bundleDir, 'blessing.json')), false);
 });
 
-test('bareloop run: a bundle naming a provider with a DIFFERENT env key refuses at $0, never builds it with the Anthropic key', async (t) => {
-  // PRD item 28: the bundle runner's key contract is ANTHROPIC_API_KEY only.
-  // Constructing an openai-api worker with that key would 401 at the first
-  // call and read as a credential problem rather than the unbuilt seam it is.
-  // The spec names the provider at EXPORT time — editing spec.json afterwards
-  // would trip the manifest-hash guard first, which is its own (correct) test.
-  //
-  // ISOLATION (found by mutation, PRD item 32.2 fallout): with no `judge`
-  // signed, `resolveJudge` defaults the judge to the WORKER's own provider —
-  // so an unsigned judge here would ALSO resolve to openai-api and read
-  // OPENAI_API_KEY, and `src/cli.js`'s judge refusal (buildProviders, the
-  // block below the worker refusal this test means to isolate) would fire
-  // that exact same message even with the worker refusal deleted. Signing an
-  // explicit ANTHROPIC-keyed `judge` here neutralizes THAT refusal, so only
-  // the worker refusal can produce this test's failure.
-  const { bundleDir } = await exportFixture(t, {
+test('bareloop run: a bundle naming a DIFFERENT-keyed provider is accepted (one engine): no key -> exit 2 naming OPENAI_API_KEY, no worktree; an injected provider greens it', async (t) => {
+  // One runner: the bundle door no longer carries its own ANTHROPIC-only key contract; the
+  // engine reads the key the bundle's provider names (the keys file / env). The signed judge
+  // is anthropic-keyed here so the refusal that fires is the WORKER's.
+  const { bundleDir, bundleHash } = await exportFixture(t, {
     provider: 'openai-api',
     judge: { provider: 'anthropic-api', model: ANTHROPIC_TIER_MODELS.sonnet },
   });
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
   const out = sink(); const err = sink();
-  const rc = await main(['run', bundleDir, '--repo', repo], {
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
     stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' }, runlistHome: runlistHome(t),
   });
-  assert.notEqual(rc, 0, 'a provider it cannot key must refuse, never run');
-  const said = err.text() + out.text();
-  assert.match(said, /OPENAI_API_KEY/, 'it must name the key it would have needed');
-  assert.doesNotMatch(said, /judge/i, 'this refusal must be the WORKER\'s, not the judge\'s — the signed judge is anthropic-keyed and must never be what fires here');
+  assert.equal(rc, 2, 'the engine refuses a missing key');
+  assert.match(err.text(), /OPENAI_API_KEY/, 'it names the key the bundle needs');
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
+
+  const now = makeNow(1_700_000_100_000);
+  const worktree = join(repo, '.bareloop', 'wt', (1_700_000_100_000).toString(36));
+  const out2 = sink(); const err2 = sink();
+  const rc2 = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out2, stderr: err2, cwd: process.cwd(), provider: greenScript(worktree), now, runlistHome: runlistHome(t),
+  });
+  assert.equal(rc2, 0, `an openai-api bundle runs through the engine: ${out2.text()}\n${err2.text()}`);
+  assert.match(out2.text(), /outcome   green/);
 });
 
-test('bareloop run: a bundle whose signed JUDGE names a DIFFERENT env key refuses at $0, never builds it with the Anthropic key', async (t) => {
-  // PRD item 32.2: the worker stays anthropic-api (so the WORKER refusal
-  // above cannot be what fires here), but the spec signs a `judge` naming
-  // gemini-api, which reads GEMINI_API_KEY. The bundle runner's key contract
-  // is ANTHROPIC_API_KEY only, so resolveJudge's result must refuse the same
-  // way the worker refusal does, by name, before any worktree/provider work.
-  const { bundleDir } = await exportFixture(t, {
-    provider: 'anthropic-api',
-    judge: { provider: 'gemini-api', model: 'gemini-2.5-pro' },
-  });
+test('bareloop run: the monthly limit applies to a bundle — a cap above what is left refuses (exit 2), nothing spent, NO worktree created', async (t) => {
+  // One engine: the monthly-limit seam is the engine's, so a bundle gets it free.
+  const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
+  const home = runlistHome(t);
+  updateConfig({ monthlyLimitUsd: 0.01 }, { home });
+  const provider = scriptedProvider([{ text: 'never reached' }]);
   const out = sink(); const err = sink();
-  const rc = await main(['run', bundleDir, '--repo', repo], {
-    stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' }, runlistHome: runlistHome(t),
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), env: {}, provider, runlistHome: home,
   });
-  assert.notEqual(rc, 0, 'a judge it cannot key must refuse, never run');
-  const said = err.text() + out.text();
-  assert.match(said, /GEMINI_API_KEY/, 'it must name the key it would have needed');
-  assert.match(said, /judge/i, 'the refusal must say judge, so this cannot pass on the worker refusal\'s text');
-  assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
+  assert.equal(rc, 2);
+  assert.match(err.text(), /monthly limit/i);
+  assert.deepEqual(provider.calls, []);
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'a refusal must leak no worktree');
+  assert.equal(existsSync(join(bundleDir, 'history.jsonl')), false);
+});
+
+test('userrun.main cannot build a bundle run: the bundle seam is reachable only through startRun/resumeRun opts', () => {
+  const src = readFileSync(join(REPO_ROOT, 'src', 'userrun.js'), 'utf8');
+  const at = src.indexOf('export async function main(');
+  assert.ok(at > 0);
+  assert.doesNotMatch(src.slice(at), /bundle/i, 'main (the argv door) never names or builds `bundle` — a local job cannot reach it');
 });
 
 test('bareloop run: a tampered bundle reds bundle-tampered BEFORE any worktree/provider', async (t) => {
@@ -397,6 +400,9 @@ test('bareloop run: first GREEN run blesses the bundle, records history, and lea
   assert.equal(existsSync(join(bundleDir, 'runs', runid, 'spine.jsonl')), true);
   assert.equal(existsSync(join(worktree, 'gate-audit.jsonl')), false);
   assert.equal(existsSync(join(bundleDir, 'runs', runid, 'gate-audit.jsonl')), true);
+  // one engine, but a bundle's bridges are shipped inputs: no bridge file is minted
+  assert.deepEqual(readdirSync(join(bundleDir, 'runs', runid)).filter((n) => n.startsWith('bridge-')), []);
+  assert.equal(existsSync(join(bundleDir, 'runs', runid, 'close')), true);
 });
 
 test('bareloop run: a spine with a malformed/truncated line (process-killed-mid-append shape) does not crash the job-end tail read', async (t) => {

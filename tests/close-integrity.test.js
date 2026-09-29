@@ -363,9 +363,12 @@ test('runPlan: the SAME money-halt with resumable:false (the bundle CLI, F130) n
   assert.match(esc.options[0], /run-u.*only/, 'the honest tail must say resume is run-u-only in v1');
 });
 
-test('src/cli.js: the bundle CLI\'s runJob call passes resumable:false (F130) — a source pin so the wiring cannot silently drift back to the default', () => {
-  const cliSrc = readFileSync(join(REPO_ROOT, 'src', 'cli.js'), 'utf8');
-  assert.match(cliSrc, /resumable:\s*false/, 'src/cli.js must thread resumable:false into its runJob call');
+test('one runner: the bundle CLI has no runJob call of its own (F130\'s resumable:false is retired — bundles resume through the engine)', () => {
+  for (const f of ['cli.js', 'bundlerun.js']) {
+    const src = readFileSync(join(REPO_ROOT, 'src', f), 'utf8');
+    assert.doesNotMatch(src, /\brunJob\(/, `src/${f} must not call runJob — the bundle door hands the run to src/userrun.js`);
+    assert.doesNotMatch(src, /resumable:\s*false/);
+  }
 });
 
 // ===========================================================================
