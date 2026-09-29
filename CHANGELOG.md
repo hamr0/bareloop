@@ -42,6 +42,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **`POST /api/settings/money` no longer clears the limit on a bad body** — an empty or
+  unparseable body, or JSON without the `monthlyLimitUsd` key, is a 400 and leaves `config.json`
+  alone; only an explicit `null` or blank clears the limit.
 - **A bad `monthlyLimitUsd` no longer reads as "no limit"** — a `monthlyLimitUsd` present in
   `config.json` but not a number above 0 (`"50"`, `-5`, `0`, `true`, `{}`) now refuses the run
   start and shows as a config problem on the Money tab, like an unparseable file. Absent or

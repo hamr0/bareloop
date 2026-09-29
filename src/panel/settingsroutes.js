@@ -78,9 +78,15 @@ export function createSettingsRoutes(opts) {
         return true;
       }
       if (req.method === 'POST') {
+        // an empty / unparseable body, or a JSON body without the key, is NOT "clear the limit" — only
+        // an explicit null / blank clears it (that is how the auto-saving field clears it)
+        if (body === null || typeof body !== 'object' || Array.isArray(body) || !Object.hasOwn(body, 'monthlyLimitUsd')) {
+          send(400, { ok: false, error: 'send {"monthlyLimitUsd": <number above 0>} to set the limit, or null to clear it' });
+          return true;
+        }
         // a blank / null limit removes it (no limit); anything else must be a number > 0
-        const raw = body?.monthlyLimitUsd;
-        const limit = raw === null || raw === '' || raw === undefined ? null : Number(raw);
+        const raw = body.monthlyLimitUsd;
+        const limit = raw === null || raw === '' ? null : Number(raw);
         if (limit !== null && !(Number.isFinite(limit) && limit > 0)) {
           send(400, { ok: false, error: 'the monthly limit must be a number above 0 (leave it blank for no limit)' });
           return true;

@@ -130,6 +130,23 @@ test('/api/settings/money: GET month $ is real spend — an in-flight run reserv
   assert.equal(got.monthAtLeast, true);
 });
 
+test('/api/settings/money: POST with no body, unparseable JSON or no monthlyLimitUsd key is a 400 and never clears the limit; explicit null clears, a number saves', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 20 }, { home });
+  const before = readFileSync(configPath(home), 'utf8');
+  const { base, H } = await panel(t, home);
+  const post = (body) => fetch(`${base}/api/settings/money`, { method: 'POST', headers: H, body });
+  for (const bad of [undefined, '', 'not json', '{}', '{"other":1}', '[]', '5']) {
+    const r = await post(bad);
+    assert.equal(r.status, 400, String(bad));
+    assert.equal(readFileSync(configPath(home), 'utf8'), before, `config untouched after ${String(bad)}`);
+  }
+  assert.equal((await post('{"monthlyLimitUsd":25}')).status, 200);
+  assert.equal(readConfig({ home }).config.monthlyLimitUsd, 25);
+  assert.equal((await post('{"monthlyLimitUsd":null}')).status, 200);
+  assert.equal('monthlyLimitUsd' in readConfig({ home }).config, false);
+});
+
 test('chat can never reach Settings: authoring routes have no /api/settings handler, and settings routes no authoring state', async (t) => {
   const { readFileSync: rf } = await import('node:fs');
   const author = rf(new URL('../src/panel/authorroutes.js', import.meta.url), 'utf8');
