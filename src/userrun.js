@@ -75,8 +75,8 @@ import { coldReset, moveStaleGateAudit } from './u-patient.js';
 import { appendRun } from './runlist.js';
 import { keysForDoor } from './keysfile.js';
 import { checkMonthlyRoom, monthlyRefusalText } from './monthly.js';
-import { ConfigError, readConfig } from './config.js';
-import { applyConfiguredKey, keyNameFor } from './providerrows.js';
+import { ConfigError } from './config.js';
+import { applyConfiguredKey, keyNameFor, rowsForHome } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -1363,11 +1363,11 @@ async function execute(ctx) {
     // choice = the built-in, byte-identical to before. Names only — values come from the
     // env / keys file. The judge follows the worker's choice when it is the same provider
     // (the same rule that gives it the worker's baseUrl below).
-    const keyCfg = cfgOn ? readConfig({ home: cfgHome }).config : {};
-    const workerEnv = applyConfiguredKey(env, spec.provider, spec.baseUrl, keyCfg);
-    const judgeEnv = judge.provider === spec.provider ? workerEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg);
+    const keyCfg = cfgOn ? rowsForHome(cfgHome) : [];
+    const workerEnv = applyConfiguredKey(env, spec.provider, spec.baseUrl, keyCfg, spec.model);
+    const judgeEnv = judge.provider === spec.provider ? workerEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model);
     /** the variable NAME this worker's key is read from (the person's pick, else built-in) — for messages only */
-    const workerKeyName = keyNameFor(spec.provider, spec.baseUrl, keyCfg).name;
+    const workerKeyName = keyNameFor(spec.provider, spec.baseUrl, keyCfg, spec.model).name;
     // A green anthropic-api job's behaviour is byte-identical to before: its
     // worker key IS `ANTHROPIC_API_KEY`, demanded as ever.
     workerApiKey = workerEnv[providerEntry.envKey];

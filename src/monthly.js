@@ -16,7 +16,39 @@ import { readConfig, ConfigError } from './config.js';
 import { readRunList } from './runlist.js';
 import { parseJsonl } from './replayio.js';
 import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
-import { PROVIDER_ROWS, rowIdFor } from './providerrows.js';
+import { findRow } from './providerrows.js';
+
+// The Money tab's per-provider breakdown groups a run by the endpoint it ran on and names
+// the groups it knows the vendor of. This is HISTORY labelling for spend already recorded
+// (an archived run keeps its provider whatever Settings holds today) — not the Providers
+// rows, which come from the keys file (src/providerrows.js).
+/** @type {readonly {id: string, name: string}[]} */
+const MONEY_LABELS = Object.freeze([
+  { id: 'anthropic', name: 'Anthropic' }, { id: 'openai', name: 'OpenAI' },
+  { id: 'gemini', name: 'Gemini' }, { id: 'deepseek', name: 'DeepSeek' },
+]);
+
+/**
+ * Which known vendor a run's `(provider, baseUrl)` belongs to. `openai-api` with no override
+ * is OpenAI; with DeepSeek's host it is DeepSeek; with any OTHER override it is none (null —
+ * never silently pooled into OpenAI's figures).
+ * @param {string|null|undefined} provider
+ * @param {string|null|undefined} baseUrl
+ * @returns {string|null} a MONEY_LABELS id, or null
+ */
+function rowIdFor(provider, baseUrl) {
+  if (provider === 'anthropic-api') return 'anthropic';
+  if (provider === 'gemini-api') return 'gemini';
+  if (provider === 'openai-api') {
+    if (!baseUrl) return 'openai';
+    try {
+      const host = new URL(baseUrl).hostname;
+      if (host === 'api.deepseek.com') return 'deepseek';
+    } catch { /* an unparseable override is no known vendor */ }
+    return null;
+  }
+  return null;
+}
 
 /**
  * One run's own spend, off its spine records: this LEG's figure (never the chain fold),
@@ -168,8 +200,8 @@ export function monthSpend(opts = {}) {
  * (rows from `rowIdFor`; a run on no known row lands under its own provider name, never
  * pooled into another row). Any leg with unknown spend makes the figure it belongs to
  * an "at least".
- * @param {{ home?: string, now?: () => number }} [opts]
- * @returns {{ total: {usd: number, atLeast: boolean}, month: {usd: number, atLeast: boolean},
+ * @param {{ home?: string, now?: () => number, rows?: readonly import('./providerrows.js').KeyRow[] }} [opts] `rows` = the Providers rows: when given, `tokensByRow` sums each row's tokens
+ * @returns {{ tokensByRow: Record<string, number>, total: {usd: number, atLeast: boolean}, month: {usd: number, atLeast: boolean},
  *   byProvider: Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number, monthWallMs: number|null, monthWallAtLeast: boolean, totalWallMs: number|null, totalWallAtLeast: boolean}> }}
  */
 export function spendSummary(opts = {}) {
@@ -181,14 +213,18 @@ export function spendSummary(opts = {}) {
   /** runs per provider in each scope, and how many had a known wall — unknown is never 0
    * @type {Record<string, {monthRuns: number, monthKnown: number, totalKnown: number}>} */
   const wallSeen = {};
+  /** total tokens of the runs each Providers row served (matched by shape + endpoint + model) @type {Record<string, number>} */
+  const tokensByRow = {};
   for (const leg of readLegs({ home: opts.home })) {
+    const served = opts.rows ? findRow(opts.rows, { provider: leg.provider, baseUrl: leg.baseUrl, model: leg.model }) : null;
+    if (served) tokensByRow[served.envName] = (tokensByRow[served.envName] ?? 0) + leg.tokens;
     const inMonth = Number.isNaN(leg.at.getTime()) ? true : sameLocalMonth(leg.at, nowDate);
     const id = rowIdFor(leg.provider, leg.baseUrl);
     // an older spine carries a model but no provider: say so honestly, one row per model —
     // never a provider guessed from the model's name
     const notRecorded = id === null && leg.provider === null;
     const key = id ?? (notRecorded ? `not-recorded:${leg.model ?? ''}` : `other:${leg.provider}${leg.baseUrl ? ` @ ${leg.baseUrl}` : ''}`);
-    const label = id ? (PROVIDER_ROWS.find((r) => r.id === id)?.name ?? id)
+    const label = id ? (MONEY_LABELS.find((r) => r.id === id)?.name ?? id)
       : (notRecorded ? (leg.model ? `not recorded (model ${leg.model})` : 'not recorded') : key.slice('other:'.length));
     const p = (byProvider[key] ??= { label, monthUsd: 0, monthAtLeast: false, totalUsd: 0, totalAtLeast: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, monthWallMs: 0, monthWallAtLeast: false, totalWallMs: 0, totalWallAtLeast: false });
     const w = (wallSeen[key] ??= { monthRuns: 0, monthKnown: 0, totalKnown: 0 });
@@ -213,7 +249,7 @@ export function spendSummary(opts = {}) {
     if (w.totalKnown === 0) p.totalWallMs = null;
     if (w.monthRuns > 0 && w.monthKnown === 0) p.monthWallMs = null;
   }
-  return { total, month, byProvider };
+  return { tokensByRow, total, month, byProvider };
 }
 
 /**

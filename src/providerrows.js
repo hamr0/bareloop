@@ -1,94 +1,193 @@
-// PANEL-BUILD.md P4a — the providers the panel can use today, as ROWS (Settings ->
-// Providers, and the Money tab's per-provider breakdown). One row per provider a job
-// can run on now; this is NOT a new provider table: every row names an entry that
-// already exists in `src/providers.js` (`PROVIDER_TABLE`), and DeepSeek is that
-// table's `openai-api` shape pointed at DeepSeek's endpoint — exactly how the panel's
-// Model menu (`MODEL_OPTIONS`) already spells it. Adding/removing rows and Ollama is
-// P4b (its own spec): it widens `job.js PROVIDERS`, which is menu work, not page work.
+// PANEL-BUILD.md P4b — the Providers rows, driven by the keys file. NOTHING here is a
+// hardcoded provider list: one row exists per key in `~/.config/bareloop/.env` that has a
+// value; each row's Name / API shape / Base URL come from config.json `keys.<ENV NAME>`
+// (src/config.js), else the per-name defaults below. This is NOT a new provider table:
+// a row's API shape names an entry that already exists in `src/providers.js`
+// (`PROVIDER_TABLE`), and a row's Base URL is that provider's `baseUrl` option.
 //
-// Also the ONE spelling of "which key variable does this provider read": the
-// provider's built-in `envKey`, unless the person picked another NAME in Settings
-// (config.json `providers.<row>.key`, src/config.js). Key VALUES never pass through
-// here — only names.
+// This module is also THE one owner of "model -> key + shape + URL": Chat's Model menu,
+// the author doors and the run doors all resolve through `findRow` / `keyNameFor` /
+// `applyConfiguredKey` / `modelChoiceFor` below — no second lookup exists. Key VALUES
+// never pass through here — only names.
 import { resolveProvider } from './providers.js';
+import { readConfig } from './config.js';
+import { filledKeyNames } from './keysfile.js';
 
-/** DeepSeek's OpenAI-shaped endpoint (the same string the panel's Model menu uses). */
+/** DeepSeek's OpenAI-shaped endpoint (the same string the panel's Model menu used). */
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1';
 
 /**
- * @typedef {object} ProviderRow
- * @property {string} id stable row id — also the key under config.json `providers`
- * @property {string} name display name
- * @property {string} provider the `src/providers.js` table entry this row runs on
- * @property {string|null} baseUrl the endpoint override this row implies (null = the vendor's own host)
- * @property {string} shape plain-words API shape
- * @property {string} shownUrl the URL the Providers table shows
+ * The API shapes the dropdown offers. `id` is the `src/providers.js` table name;
+ * `defaultUrl` is the host a blank Base URL means ('' = the vendor's own, unshown).
+ * @type {readonly {id: string, label: string, defaultUrl: string}[]}
  */
+export const SHAPES = Object.freeze([
+  Object.freeze({ id: 'anthropic-api', label: 'Anthropic', defaultUrl: 'https://api.anthropic.com/v1' }),
+  Object.freeze({ id: 'openai-api', label: 'OpenAI-compatible', defaultUrl: 'https://api.openai.com/v1' }),
+  Object.freeze({ id: 'gemini-api', label: 'Gemini', defaultUrl: '' }),
+]);
 
-/** @type {readonly ProviderRow[]} */
-export const PROVIDER_ROWS = Object.freeze([
-  { id: 'anthropic', name: 'Anthropic', provider: 'anthropic-api', baseUrl: null, shape: 'Anthropic', shownUrl: 'https://api.anthropic.com/v1' },
-  { id: 'openai', name: 'OpenAI', provider: 'openai-api', baseUrl: null, shape: 'OpenAI-compatible', shownUrl: 'https://api.openai.com/v1' },
-  { id: 'gemini', name: 'Gemini', provider: 'gemini-api', baseUrl: null, shape: 'Gemini', shownUrl: 'Google\'s own host' },
-  { id: 'deepseek', name: 'DeepSeek', provider: 'openai-api', baseUrl: DEEPSEEK_BASE_URL, shape: 'OpenAI-compatible', shownUrl: DEEPSEEK_BASE_URL },
-].map((r) => Object.freeze(r)));
+/** The four empty lines a fresh keys file is created with, in this order. */
+export const PRESET_KEY_NAMES = Object.freeze(['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY']);
 
 /**
- * Which row a run's `(provider, baseUrl)` belongs to. `openai-api` with no override is
- * OpenAI; with DeepSeek's host it is DeepSeek; with any OTHER override it is no row
- * (null — never silently pooled into OpenAI's figures).
- * @param {string|null|undefined} provider
- * @param {string|null|undefined} baseUrl
- * @returns {string|null} a row id, or null
+ * What a key with no saved entry shows. Any name not listed is OpenAI-compatible with a
+ * blank URL and a blank Name.
+ * @param {string} envName
+ * @returns {{ name: string, shape: string, baseUrl: string }}
  */
-export function rowIdFor(provider, baseUrl) {
-  if (provider === 'anthropic-api') return 'anthropic';
-  if (provider === 'gemini-api') return 'gemini';
-  if (provider === 'openai-api') {
-    if (!baseUrl) return 'openai';
-    try {
-      const host = new URL(baseUrl).hostname;
-      if (host === 'api.deepseek.com') return 'deepseek';
-    } catch { /* an unparseable override is no known row */ }
-    return null;
+export function defaultsFor(envName) {
+  switch (envName) {
+    case 'ANTHROPIC_API_KEY': return { name: 'claude-sonnet-5', shape: 'anthropic-api', baseUrl: '' };
+    case 'DEEPSEEK_API_KEY': return { name: 'deepseek-flash', shape: 'openai-api', baseUrl: DEEPSEEK_BASE_URL };
+    case 'GEMINI_API_KEY': return { name: '', shape: 'gemini-api', baseUrl: '' };
+    default: return { name: '', shape: 'openai-api', baseUrl: '' };
   }
-  return null;
 }
 
 /**
- * The key variable NAME a provider row reads: the person's choice from config.json,
- * else the provider's built-in `envKey`.
+ * @typedef {object} KeyRow
+ * @property {string} envName the key variable NAME (read-only label; never a value)
+ * @property {string} name the model id Chat uses ('' = not offered in Chat)
+ * @property {string} provider the `src/providers.js` table entry (the API shape's id)
+ * @property {string} baseUrl the saved Base URL ('' = the shape's default host)
+ */
+
+/**
+ * The rows: one per name in `filled`, saved entry over defaults.
+ * @param {{ filled: readonly string[], config: Record<string, any> }} src
+ * @returns {KeyRow[]}
+ */
+export function keyRows({ filled, config }) {
+  const saved = config?.keys && typeof config.keys === 'object' && !Array.isArray(config.keys) ? config.keys : {};
+  return filled.map((envName) => {
+    const d = defaultsFor(envName);
+    const s = saved[envName] && typeof saved[envName] === 'object' ? saved[envName] : {};
+    return {
+      envName,
+      name: typeof s.name === 'string' ? s.name : d.name,
+      provider: SHAPES.some((x) => x.id === s.shape) ? s.shape : d.shape,
+      baseUrl: typeof s.baseUrl === 'string' ? s.baseUrl : d.baseUrl,
+    };
+  });
+}
+
+/**
+ * The rows for a keys home. `undefined` home (a door that skipped the keys file) = no
+ * rows, so nothing resolves through the file and the provider's built-in variable stands.
+ * @param {string|undefined} home
+ * @returns {KeyRow[]}
+ */
+export function rowsForHome(home) {
+  if (home === undefined) return [];
+  return keyRows({ filled: filledKeyNames(home), config: readConfig({ home }).config });
+}
+
+/**
+ * @param {string} provider
+ * @returns {string} the shape's default host ('' = the vendor's own)
+ */
+export function defaultUrlOf(provider) {
+  return SHAPES.find((s) => s.id === provider)?.defaultUrl ?? '';
+}
+
+/**
+ * An endpoint in comparable form: blank = the shape's default host; scheme + host lower-cased,
+ * trailing slashes dropped.
+ * @param {string} provider
+ * @param {string|null|undefined} baseUrl
+ * @returns {string}
+ */
+export function endpointOf(provider, baseUrl) {
+  const raw = (typeof baseUrl === 'string' && baseUrl.trim() !== '' ? baseUrl : defaultUrlOf(provider)).trim();
+  if (raw === '') return '';
+  try {
+    const u = new URL(raw);
+    return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
+  } catch { return raw.replace(/\/+$/, ''); }
+}
+
+/**
+ * The URL a row talks to, for display ('' = the vendor's own host, which has no URL to show).
+ * @param {KeyRow} row
+ * @returns {string}
+ */
+export function shownUrl(row) {
+  return row.baseUrl.trim() !== '' ? row.baseUrl : defaultUrlOf(row.provider);
+}
+
+/**
+ * Which row a `(provider, baseUrl[, model])` identity belongs to: the rows on that shape and
+ * endpoint; when several share it, the one whose Name is the model, else the first.
+ * @param {readonly KeyRow[]} rows
+ * @param {{ provider?: string|null, baseUrl?: string|null, model?: string|null }} id
+ * @returns {KeyRow|null}
+ */
+export function findRow(rows, { provider, baseUrl, model }) {
+  if (typeof provider !== 'string') return null;
+  const want = endpointOf(provider, baseUrl);
+  const same = rows.filter((r) => r.provider === provider && endpointOf(r.provider, r.baseUrl) === want);
+  if (same.length === 0) return null;
+  return (model ? same.find((r) => r.name === model) : undefined) ?? same[0];
+}
+
+/**
+ * What Chat's Model menu offers and how a pick resolves: the row whose Name is the model
+ * (a blank Name is never offered). `baseUrl` is absent when blank, exactly as a spec omits it.
+ * @param {readonly KeyRow[]} rows
+ * @param {string} model
+ * @returns {{ provider: string, baseUrl?: string, envName: string, name: string }|null}
+ */
+export function modelChoiceFor(rows, model) {
+  const r = model === '' ? undefined : rows.find((x) => x.name === model);
+  if (!r) return null;
+  return { provider: r.provider, ...(r.baseUrl.trim() !== '' ? { baseUrl: r.baseUrl.trim() } : {}), envName: r.envName, name: r.name };
+}
+
+/**
+ * The models Chat offers, in keys-file order.
+ * @param {readonly KeyRow[]} rows
+ * @returns {{ id: string, envName: string, shape: string }[]}
+ */
+export function chatModels(rows) {
+  return rows.filter((r) => r.name !== '').map((r) => ({
+    id: r.name, envName: r.envName, shape: SHAPES.find((s) => s.id === r.provider)?.label ?? r.provider,
+  }));
+}
+
+/**
+ * The key variable NAME a job on `(provider, baseUrl[, model])` reads: the matching row's
+ * variable, else the provider's built-in one (byte-identical to before for anything no row
+ * claims).
  * @param {string|null|undefined} provider
  * @param {string|null|undefined} baseUrl
- * @param {Record<string, any>} config the parsed config.json
+ * @param {readonly KeyRow[]} rows
+ * @param {string|null|undefined} [model]
  * @returns {{ name: string, builtIn: string, chosen: boolean }}
  */
-export function keyNameFor(provider, baseUrl, config) {
+export function keyNameFor(provider, baseUrl, rows, model) {
   const builtIn = resolveProvider(/** @type {string} */ (provider)).envKey;
-  const id = rowIdFor(provider, baseUrl);
-  const picked = id !== null ? config?.providers?.[id]?.key : undefined;
-  return typeof picked === 'string' && picked !== '' && picked !== builtIn
-    ? { name: picked, builtIn, chosen: true }
+  const row = findRow(rows, { provider, baseUrl, model });
+  return row && row.envName !== builtIn
+    ? { name: row.envName, builtIn, chosen: true }
     : { name: builtIn, builtIn, chosen: false };
 }
 
 /**
- * The env a door hands to provider construction, with the person's chosen key variable
- * standing in for the provider's built-in one: `env[builtIn] = env[chosen]`. The chosen
- * variable being unset leaves the built-in name UNSET too (the person picked a variable
- * and it is empty — falling back to the built-in would silently use a key they moved
- * away from). No choice, or the built-in chosen = the env unchanged. A copy — never
- * mutates the input.
+ * The env a door hands to provider construction, with the matching row's key variable
+ * standing in for the provider's built-in one: `env[builtIn] = env[row.envName]`. A copy —
+ * never mutates the input. No matching row = the env unchanged.
  * @param {Record<string,string|undefined>} env
  * @param {string|null|undefined} provider
  * @param {string|null|undefined} baseUrl
- * @param {Record<string, any>} config
+ * @param {readonly KeyRow[]} rows
+ * @param {string|null|undefined} [model]
  * @returns {Record<string,string|undefined>}
  */
-export function applyConfiguredKey(env, provider, baseUrl, config) {
+export function applyConfiguredKey(env, provider, baseUrl, rows, model) {
   if (typeof provider !== 'string') return env;
   let k;
-  try { k = keyNameFor(provider, baseUrl, config); } catch { return env; } // unknown provider: resolveProvider's own named throw fires at its own door
+  try { k = keyNameFor(provider, baseUrl, rows, model); } catch { return env; } // unknown provider: resolveProvider's own named throw fires at its own door
   if (!k.chosen) return env;
   return { ...env, [k.builtIn]: env[k.name] };
 }

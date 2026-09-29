@@ -4,6 +4,9 @@
 // guard (per-server-start token + Origin/Host, `checkHumanGuard`) — GET too, because the
 // pages these serve name key variables and spend.
 //
+// Providers (P4b): the rows are the keys file's filled lines; Name / API shape / Base URL save to
+// config.json `keys.<ENV NAME>` (src/providerrows.js is the one owner of the rows).
+//
 // Every write goes to `~/.config/bareloop/config.json` through `src/config.js` (the one
 // writer); the monthly limit is a person's own number, set by hand — nothing here (and
 // nothing the agent can reach) raises it on their behalf. Key VALUES never appear in any
@@ -11,8 +14,8 @@
 import { checkHumanGuard } from './authorroutes.js';
 import { readConfig, updateConfig, ConfigError } from '../config.js';
 import { spendSummary } from '../monthly.js';
-import { loadKeysEnv, keysFilePath } from '../keysfile.js';
-import { PROVIDER_ROWS, keyNameFor } from '../providerrows.js';
+import { loadKeysEnv, keysFilePath, filledKeyNames, ensureKeysFile } from '../keysfile.js';
+import { SHAPES, PRESET_KEY_NAMES, keyRows, endpointOf, defaultUrlOf } from '../providerrows.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** DeepSeek's own balance endpoint (same host as its models list). */
@@ -29,6 +32,11 @@ export function createSettingsRoutes(opts) {
    * module; values never do.
    * @returns {ReturnType<typeof loadKeysEnv>} */
   const keys = () => loadKeysEnv({ env: opts.env, home: opts.home });
+  /** the Providers rows: keys with a value in the file, over the saved settings
+   * @param {Record<string, any>} config */
+  const currentRows = (config) => keyRows({ filled: filledKeyNames(opts.home), config });
+  /** @param {string} u @returns {string} */
+  const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
   /**
    * @param {import('node:http').IncomingMessage} req
    * @param {import('node:http').ServerResponse} res
@@ -83,58 +91,56 @@ export function createSettingsRoutes(opts) {
       return true;
     }
 
-    // ── Providers (P4a item 4): read + test + key-NAME dropdown. No add/edit/remove (P4b). ──
+    // ── Providers (P4b): one row per key in the keys file that has a value. ──
     if (pathname === '/api/settings/providers' && req.method === 'GET') {
+      // a missing keys file is created with the four empty preset lines (never edited if present)
+      ensureKeysFile(PRESET_KEY_NAMES, opts.home);
       const cfg = readConfig({ home: opts.home });
       const k = keys();
-      const s = spendSummary({ home: opts.home, now: opts.now });
-      const rows = PROVIDER_ROWS.map((r) => {
-        const kn = keyNameFor(r.provider, r.baseUrl, cfg.config);
-        const raw = k.env[kn.name];
-        const problem = raw ? apiKeyProblem(raw) : null;
-        const p = s.byProvider[r.id];
-        const note = cfg.config.anthropicBalanceNote;
-        return {
-          id: r.id, name: r.name, shape: r.shape, url: r.shownUrl,
-          keyName: kn.name, builtInKey: kn.builtIn,
-          keyOptions: [...new Set([kn.builtIn, kn.name, ...k.names])],
-          keyStatus: !raw ? 'not set' : (problem ? `bad shape (${problem})` : 'found'),
-          canTest: r.provider !== 'gemini-api',
-          tokens: p ? p.tokens : 0,
-          balance: r.id === 'anthropic'
-            ? { kind: 'note', usd: typeof note === 'number' && Number.isFinite(note) ? note : null }
-            : (r.id === 'deepseek' ? { kind: 'fetch' } : { kind: 'none' }),
-          // priced by a rate somebody vouched for, or a bareloop guess — never a bare "priced"
-          price: p && p.vouchedRounds > 0 && p.otherRounds === 0 ? 'vouched' : 'estimated',
-        };
-      });
+      const rows = currentRows(cfg.config);
+      const s = spendSummary({ home: opts.home, now: opts.now, rows });
+      const note = cfg.config.anthropicBalanceNote;
       send(200, {
         ok: true,
         keysFile: { path: keysFilePath(opts.home), exists: k.exists, names: k.names, warning: k.warning },
         configProblem: cfg.problem,
-        rows,
+        shapes: SHAPES.map((x) => ({ id: x.id, label: x.label })),
+        rows: rows.map((r) => {
+          const raw = k.env[r.envName];
+          const problem = raw ? apiKeyProblem(raw) : null;
+          const isDeepseek = r.provider === 'openai-api' && hostOf(endpointOf(r.provider, r.baseUrl)) === 'api.deepseek.com';
+          return {
+            envName: r.envName, name: r.name, shape: r.provider, baseUrl: r.baseUrl,
+            placeholder: defaultUrlOf(r.provider),
+            keyStatus: !raw ? 'not set' : (problem ? `bad shape (${problem})` : 'found'),
+            canTest: r.provider !== 'gemini-api',
+            tokens: s.tokensByRow[r.envName] ?? 0,
+            balance: r.provider === 'anthropic-api'
+              ? { kind: 'note', usd: typeof note === 'number' && Number.isFinite(note) ? note : null }
+              : (isDeepseek ? { kind: 'fetch' } : { kind: 'none' }),
+          };
+        }),
       });
       return true;
     }
 
-    if (pathname === '/api/settings/providers/key' && req.method === 'POST') {
-      const row = PROVIDER_ROWS.find((r) => r.id === body?.id);
-      if (!row) { send(400, { ok: false, error: 'unknown provider' }); return true; }
-      const builtIn = keyNameFor(row.provider, row.baseUrl, {}).builtIn;
-      const want = body?.key === null || body?.key === builtIn ? null : String(body?.key ?? '');
-      // only a NAME the keys file actually holds (or the built-in default) can be chosen
-      if (want !== null && !keys().names.includes(want)) {
-        send(400, { ok: false, error: `${want} is not in your keys file — add the line NAME=key to it, reload keys, then pick it` });
-        return true;
-      }
+    if (pathname === '/api/settings/providers/row' && req.method === 'POST') {
+      const row = currentRows(readConfig({ home: opts.home }).config).find((r) => r.envName === body?.envName);
+      if (!row) { send(400, { ok: false, error: 'unknown key — add NAME=key to your keys file and reload keys' }); return true; }
+      // only the three settings a row has; each is optional in the body, the whole triple is stored
+      const patch = {
+        name: typeof body?.name === 'string' ? body.name.trim() : row.name,
+        shape: typeof body?.shape === 'string' ? body.shape : row.provider,
+        baseUrl: typeof body?.baseUrl === 'string' ? body.baseUrl.trim().replace(/\/+$/, '') : row.baseUrl,
+      };
       try {
-        updateConfig({ providers: { [row.id]: { key: want } } }, { home: opts.home });
+        updateConfig({ keys: { [row.envName]: patch } }, { home: opts.home });
       } catch (e) {
         if (!(e instanceof ConfigError)) throw e;
         send(400, { ok: false, error: e.message });
         return true;
       }
-      send(200, { ok: true, id: row.id, keyName: want ?? builtIn });
+      send(200, { ok: true, envName: row.envName, ...patch });
       return true;
     }
 
@@ -155,17 +161,16 @@ export function createSettingsRoutes(opts) {
     }
 
     if (pathname === '/api/settings/providers/test' && req.method === 'POST') {
-      const row = PROVIDER_ROWS.find((r) => r.id === body?.id);
-      if (!row) { send(400, { ok: false, error: 'unknown provider' }); return true; }
-      const kn = keyNameFor(row.provider, row.baseUrl, readConfig({ home: opts.home }).config);
-      const raw = keys().env[kn.name];
-      if (!raw) { send(200, { ok: true, reachable: false, status: 'no key', note: `${kn.name} not set`, ms: null }); return true; }
+      const row = currentRows(readConfig({ home: opts.home }).config).find((r) => r.envName === body?.envName);
+      if (!row) { send(400, { ok: false, error: 'unknown key' }); return true; }
+      const raw = keys().env[row.envName];
+      if (!raw) { send(200, { ok: true, reachable: false, status: 'no key', note: `${row.envName} not set`, ms: null }); return true; }
       const problem = apiKeyProblem(raw);
-      if (problem) { send(200, { ok: true, reachable: false, status: 'bad key', note: `${kn.name} ${problem}`, ms: null }); return true; }
+      if (problem) { send(200, { ok: true, reachable: false, status: 'bad key', note: `${row.envName} ${problem}`, ms: null }); return true; }
       const started = Date.now();
-      // $0: one GET of the provider's models list (never a completion), key only in a header
+      // $0: one GET of the models list with THIS row's shape + URL (never a completion), key only in a header
       checkProviderReachable({
-        providerName: row.provider, apiKey: raw, baseUrl: row.baseUrl ?? undefined, fetchImpl, timeoutMs: 4000,
+        providerName: row.provider, apiKey: raw, baseUrl: row.baseUrl.trim() !== '' ? row.baseUrl : undefined, fetchImpl, timeoutMs: 4000,
       }).then((r) => {
         send(200, { ok: true, reachable: r.reachable, status: r.status, note: r.note, ms: Date.now() - started });
       });
@@ -174,10 +179,10 @@ export function createSettingsRoutes(opts) {
 
     if (pathname === '/api/settings/providers/balance' && req.method === 'GET') {
       // DeepSeek only: fetched server-side from the provider (key in a header, never returned)
-      const row = PROVIDER_ROWS.find((r) => r.id === 'deepseek');
-      if (!row) { send(404, { ok: false, error: 'not found' }); return true; }
-      const kn = keyNameFor(row.provider, row.baseUrl, readConfig({ home: opts.home }).config);
-      const raw = keys().env[kn.name];
+      const q = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
+      const row = currentRows(readConfig({ home: opts.home }).config).find((r) => r.envName === q.get('env'));
+      if (!row || row.provider !== 'openai-api' || hostOf(endpointOf(row.provider, row.baseUrl)) !== 'api.deepseek.com') { send(404, { ok: false, error: 'not found' }); return true; }
+      const raw = keys().env[row.envName];
       if (!raw || apiKeyProblem(raw)) { send(200, { ok: true, text: null, note: 'no usable key' }); return true; }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 4000);

@@ -41,24 +41,31 @@ test('config: missing file = defaults; write is atomic, mode 600, keeps unknown 
   assert.equal(statSync(configPath(home)).mode & 0o777, 0o600);
 });
 
-test('config: providers merge per name; null deletes; bad values are refused and nothing is written', (t) => {
+test('config: keys merge per env name; null deletes; bad values are refused and nothing is written', (t) => {
   const home = tmp(t);
-  updateConfig({ providers: { deepseek: { key: 'DEEPSEEK_API_KEY' } } }, { home });
-  updateConfig({ providers: { openai: { key: 'OPENAI_API_KEY' } }, anthropicBalanceNote: 12.5 }, { home });
-  assert.deepEqual(readConfig({ home }).config.providers, { deepseek: { key: 'DEEPSEEK_API_KEY' }, openai: { key: 'OPENAI_API_KEY' } });
-  updateConfig({ providers: { openai: null }, monthlyLimitUsd: null }, { home });
-  assert.deepEqual(Object.keys(readConfig({ home }).config.providers), ['deepseek']);
+  updateConfig({ keys: { DEEPSEEK_API_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' } } }, { home });
+  updateConfig({ keys: { OPENAI_API_KEY: { name: 'gpt-x' }, DEEPSEEK_API_KEY: { name: 'deepseek-v4' } }, anthropicBalanceNote: 12.5 }, { home });
+  assert.deepEqual(readConfig({ home }).config.keys, {
+    DEEPSEEK_API_KEY: { name: 'deepseek-v4', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' },
+    OPENAI_API_KEY: { name: 'gpt-x' },
+  });
+  updateConfig({ keys: { OPENAI_API_KEY: null }, monthlyLimitUsd: null }, { home });
+  assert.deepEqual(Object.keys(readConfig({ home }).config.keys), ['DEEPSEEK_API_KEY']);
   const before = readFileSync(configPath(home), 'utf8');
-  for (const bad of [{ monthlyLimitUsd: 0 }, { monthlyLimitUsd: -3 }, { monthlyLimitUsd: 'x' }, { anthropicBalanceNote: -1 }, { providers: { 'Bad Name': {} } }]) {
+  for (const bad of [
+    { monthlyLimitUsd: 0 }, { monthlyLimitUsd: -3 }, { monthlyLimitUsd: 'x' }, { anthropicBalanceNote: -1 },
+    { keys: { 'Bad Name': {} } }, { keys: { K: { shape: 'ollama' } } }, { keys: { K: { baseUrl: 'ftp://x' } } },
+    { keys: { K: { name: 'two words' } } }, { keys: 'x' },
+  ]) {
     assert.throws(() => updateConfig(bad, { home }), ConfigError, JSON.stringify(bad));
   }
   assert.equal(readFileSync(configPath(home), 'utf8'), before);
 });
 
-test('config: a key VALUE is refused in the key-name slot and anywhere else in the document (secret-shape sweep)', (t) => {
+test('config: a key VALUE is refused in a name slot and anywhere else in the document (secret-shape sweep)', (t) => {
   const home = tmp(t);
   const secret = `sk-${'a'.repeat(30)}`;
-  assert.throws(() => updateConfig({ providers: { openai: { key: secret } } }, { home }), /never a key value/);
+  assert.throws(() => updateConfig({ keys: { OPENAI_API_KEY: { baseUrl: `https://x.example/${secret}` } } }, { home }), /never holds a key value/);
   assert.throws(() => updateConfig({ note: `oops ${secret}` }, { home }), /never holds a key value/);
   assert.equal(existsSync(configPath(home)), false, 'nothing written on a refusal');
 });

@@ -101,8 +101,7 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import { keysForDoor } from './keysfile.js';
-import { readConfig } from './config.js';
-import { applyConfiguredKey, keyNameFor } from './providerrows.js';
+import { applyConfiguredKey, keyNameFor, rowsForHome } from './providerrows.js';
 import {
   readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync,
 } from 'node:fs';
@@ -508,7 +507,7 @@ export async function main(argv, deps = {}) {
   // world-readable on /proc) and they are never printed.
   // P4a item 4 — the key variable the person picked in Settings (config.json) stands in for
   // the provider's built-in one; none picked = the built-in. Names only.
-  const keyCfg = keys.home !== undefined ? readConfig({ home: keys.home }).config : {};
+  const keyCfg = rowsForHome(keys.home);
   const authorEnv = applyConfiguredKey(env, PROVIDER_NAME, baseUrl, keyCfg);
   const AUTHOR_ENV_KEY = keyNameFor(PROVIDER_NAME, baseUrl, keyCfg).name;
   const apiKey = authorEnv[/** @type {NonNullable<typeof providerEntry>} */ (providerEntry).envKey];

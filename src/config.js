@@ -1,7 +1,7 @@
 // PANEL-BUILD.md P4a item 2 — the ONE reader/writer of `~/.config/bareloop/config.json`.
 //
 // Every panel/CLI setting lives in this one file (R5): the monthly $ limit, the
-// Anthropic balance note, and per-provider choices (the key NAME each provider reads).
+// Anthropic balance note, and the Providers rows' Name / API shape / Base URL, per key variable.
 // Key VALUES never live here — they live in the keys file (`src/keysfile.js`) and the
 // shell env. The write path refuses a document that carries a secret-shaped string
 // (the ONE inventory: `sweepSecretLiterals`, src/validate.js).
@@ -9,7 +9,7 @@
 // Shape (unknown fields are kept, never dropped):
 //   { "monthlyLimitUsd": <number>,          // absent = no limit, no check
 //     "anthropicBalanceNote": <number>,     // a typed note; no check ever reads it
-//     "providers": { "<name>": { "key": "<ENV NAME>" } } }
+//     "keys": { "<ENV NAME>": { "name": "<model id>", "shape": "<api shape>", "baseUrl": "<url or blank>" } } }
 //
 // A missing file = defaults. An UNREADABLE file is reported (`problem`), never
 // papered over — the monthly check REFUSES on it rather than silently running with
@@ -59,15 +59,16 @@ export function readConfig(opts = {}) {
 }
 
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-const PROVIDER_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
+/** the API shapes a keys row may name (the `src/providers.js` table names) */
+const SHAPE_IDS = ['anthropic-api', 'openai-api', 'gemini-api'];
 
 /**
  * Apply a patch and write. `null` deletes a field. Top-level fields shallow-merge;
- * `providers` merges per provider name, then per field. Validated before anything is
+ * `keys` merges per key variable name, then per field. Validated before anything is
  * written; nothing is written on a refusal.
  *
  * Patch fields understood: `monthlyLimitUsd` (finite > 0), `anthropicBalanceNote`
- * (finite >= 0), `providers.<name>.key` (an env-var NAME — never a value). Any other
+ * (finite >= 0), `keys.<ENV NAME>.{name,shape,baseUrl}` (Name = a model id, shape = a provider table name, baseUrl = blank or http(s)). Any other
  * field is passed through untouched (kept), but the whole document is swept for
  * secret-shaped strings first.
  * @param {Record<string, any>} patch
@@ -80,7 +81,7 @@ export function updateConfig(patch, opts = {}) {
   /** @type {Record<string, any>} */
   const next = { ...cur.config };
   for (const [k, v] of Object.entries(patch)) {
-    if (k === 'providers') continue;
+    if (k === 'keys') continue;
     if (v === null) { delete next[k]; continue; }
     if (k === 'monthlyLimitUsd' && !(typeof v === 'number' && Number.isFinite(v) && v > 0)) {
       throw new ConfigError('monthlyLimitUsd must be a number above 0 (remove the limit to have none)');
@@ -90,27 +91,33 @@ export function updateConfig(patch, opts = {}) {
     }
     next[k] = v;
   }
-  if (patch.providers !== undefined) {
-    if (patch.providers === null || typeof patch.providers !== 'object' || Array.isArray(patch.providers)) {
-      throw new ConfigError('providers must be an object of provider names');
+  if (patch.keys !== undefined) {
+    if (patch.keys === null || typeof patch.keys !== 'object' || Array.isArray(patch.keys)) {
+      throw new ConfigError('keys must be an object of key variable names');
     }
     /** @type {Record<string, any>} */
-    const provs = { ...(next.providers && typeof next.providers === 'object' ? next.providers : {}) };
-    for (const [name, fields] of Object.entries(patch.providers)) {
-      if (!PROVIDER_NAME_RE.test(name)) throw new ConfigError(`"${name}" is not a provider name`);
-      if (fields === null) { delete provs[name]; continue; }
-      if (typeof fields !== 'object' || Array.isArray(fields)) throw new ConfigError(`providers.${name} must be an object`);
-      const merged = { ...(provs[name] && typeof provs[name] === 'object' ? provs[name] : {}) };
+    const keys = { ...(next.keys && typeof next.keys === 'object' ? next.keys : {}) };
+    for (const [envName, fields] of Object.entries(patch.keys)) {
+      if (!ENV_NAME_RE.test(envName)) throw new ConfigError(`"${envName}" is not a key variable name`);
+      if (fields === null) { delete keys[envName]; continue; }
+      if (typeof fields !== 'object' || Array.isArray(fields)) throw new ConfigError(`keys.${envName} must be an object`);
+      const merged = { ...(keys[envName] && typeof keys[envName] === 'object' ? keys[envName] : {}) };
       for (const [fk, fv] of Object.entries(/** @type {Record<string, any>} */ (fields))) {
         if (fv === null) { delete merged[fk]; continue; }
-        if (fk === 'key' && !(typeof fv === 'string' && ENV_NAME_RE.test(fv))) {
-          throw new ConfigError(`providers.${name}.key must be the NAME of a key variable (like OPENAI_API_KEY), never a key value`);
+        if (fk === 'name' && !(typeof fv === 'string' && fv.length <= 100 && !/\s/.test(fv))) {
+          throw new ConfigError(`keys.${envName}.name must be a model id (no spaces, up to 100 characters)`);
+        }
+        if (fk === 'shape' && !SHAPE_IDS.includes(fv)) {
+          throw new ConfigError(`keys.${envName}.shape must be one of ${SHAPE_IDS.join(', ')}`);
+        }
+        if (fk === 'baseUrl' && !(typeof fv === 'string' && (fv === '' || /^https?:\/\/\S+$/.test(fv)))) {
+          throw new ConfigError(`keys.${envName}.baseUrl must be blank or an http(s) URL`);
         }
         merged[fk] = fv;
       }
-      provs[name] = merged;
+      keys[envName] = merged;
     }
-    next.providers = provs;
+    next.keys = keys;
   }
   /** @type {string[]} */
   const secretPaths = [];

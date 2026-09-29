@@ -22,12 +22,12 @@ import { spawn as realSpawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { createSession, validateJobCard, MODEL_OPTIONS } from './authorsession.js';
+import { createSession, validateJobCard } from './authorsession.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
-import { ConfigError, readConfig } from '../config.js';
-import { keysForDoor } from '../keysfile.js';
-import { keyNameFor } from '../providerrows.js';
-import { resolveProvider, apiKeyProblem, checkProviderReachable } from '../providers.js';
+import { ConfigError } from '../config.js';
+import { keysForDoor, keysHome } from '../keysfile.js';
+import { keyNameFor, modelChoiceFor, rowsForHome, chatModels } from '../providerrows.js';
+import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
 export function mintToken() {
@@ -118,15 +118,11 @@ export function createAuthorRoutes(opts) {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const q = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
       const modelId = q.get('model') ?? '';
-      const choice = MODEL_OPTIONS[modelId];
+      const rows = rowsForHome(keysHome(opts.home));
+      const choice = modelChoiceFor(rows, modelId);
       if (!choice) { send(400, { ok: false, error: `unknown model "${modelId}"` }); return true; }
-      /** @type {any} */
-      let providerEntry;
-      try { providerEntry = resolveProvider(choice.provider); } catch (e) { send(400, { ok: false, error: /** @type {Error} */ (e).message }); return true; }
-      // the person's chosen key variable (Settings > Providers) stands in for the built-in one
-      let keyCfg = {};
-      try { keyCfg = readConfig({ home: opts.home }).config; } catch (e) { if (!(e instanceof ConfigError)) throw e; }
-      const keyName = keyNameFor(choice.provider, choice.baseUrl, keyCfg).name;
+      // the key of the Settings row this Name belongs to
+      const keyName = keyNameFor(choice.provider, choice.baseUrl, rows, choice.name).name;
       const raw = envNow()[keyName];
       const problem = raw ? apiKeyProblem(raw) : null;
       const keyStatus = !raw ? 'missing' : (problem ? 'bad-shape' : 'found');
@@ -141,7 +137,7 @@ export function createAuthorRoutes(opts) {
       // `checkProviderReachable`'s own doc) — a short timeout so a flaky
       // endpoint never hangs the card.
       checkProviderReachable({
-        providerName: choice.provider, apiKey: /** @type {string} */ (raw), model: providerEntry.tiers.sonnet,
+        providerName: choice.provider, apiKey: /** @type {string} */ (raw), model: choice.name,
         baseUrl: choice.baseUrl, fetchImpl, timeoutMs: 4000,
       }).then((r) => {
         send(200, {
@@ -161,6 +157,13 @@ export function createAuthorRoutes(opts) {
     // library check (`checkMonthlyRoom`, src/monthly.js) the run-start seam and the
     // Sign refusal use, so the note the person sees is never a second opinion. The
     // page is never the arbiter: Sign & run re-checks server-side regardless.
+    // ── P4b: Chat's Model menu IS the Settings rows (a blank Name is not offered). ──
+    if (pathname === '/api/author/models') {
+      if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      send(200, { ok: true, models: chatModels(rowsForHome(keysHome(opts.home))) });
+      return true;
+    }
+
     if (pathname === '/api/author/monthly-check') {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const q = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
@@ -180,9 +183,9 @@ export function createAuthorRoutes(opts) {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
       const card = body ?? {};
-      const v = validateJobCard(card, { jobsDir: opts.jobsDir });
+      const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows: rowsForHome(keysHome(opts.home)) });
       if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
-      const session = createSession(card, { env: envNow(), sessionsRoot: opts.sessionsRoot });
+      const session = createSession(card, { env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}) });
       sessions.set(session.id, session);
       send(200, { ok: true, sessionId: session.id, state: session.state });
       return true;

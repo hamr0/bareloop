@@ -13,7 +13,7 @@
 // Values leave this module in exactly one place: the `env` of `loadKeysEnv`, which
 // goes to provider construction. Everything else it returns (`names`, `warning`) is
 // value-free by construction, and a parse problem never quotes the offending line.
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -61,6 +61,38 @@ export function parseKeysText(text) {
     out[name] = value;
   }
   return out;
+}
+
+/**
+ * The NAMES in the file that carry a non-empty value, in file order — the Providers rows
+ * (an empty preset line is not a row). Names only; a missing/unreadable file = none.
+ * @param {string} [home]
+ * @returns {string[]}
+ */
+export function filledKeyNames(home) {
+  try {
+    return Object.entries(parseKeysText(readFileSync(keysFilePath(home), 'utf8'))).filter(([, v]) => v !== '').map(([n]) => n);
+  } catch { return []; }
+}
+
+/**
+ * Create the keys file with the four empty preset lines when — and only when — it does not
+ * exist (mode 600). An existing file is never touched.
+ * @param {readonly string[]} presetNames the names to seed, in order
+ * @param {string} [home]
+ * @returns {boolean} true if it was created
+ */
+export function ensureKeysFile(presetNames, home) {
+  const file = keysFilePath(home);
+  if (existsSync(file)) return false;
+  mkdirSync(keysHome(home), { recursive: true });
+  try {
+    writeFileSync(file, presetNames.map((n) => `${n}=\n`).join(''), { mode: 0o600, flag: 'wx' });
+  } catch (/** @type {any} */ e) {
+    if (e?.code === 'EEXIST') return false; // lost a race: the file is there, untouched
+    throw e;
+  }
+  return true;
 }
 
 /**

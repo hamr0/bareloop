@@ -460,10 +460,7 @@
             </div>
             <div class="field">
               <label for="jf-model">Model</label>
-              <select id="jf-model">
-                <option value="claude-sonnet-5">claude-sonnet-5 · Anthropic</option>
-                <option value="deepseek-flash">deepseek-flash · DeepSeek</option>
-              </select>
+              <select id="jf-model" data-testid="jf-model"></select>
               <!-- build item 5 (2026-09-28) — ONE line under Model, not two:
                    key + reachability collapsed into a single readiness read. -->
               <div class="jf-readiness unknown" id="jf-model-status" data-testid="jf-model-status"></div>
@@ -506,10 +503,6 @@
               <div class="cap-field">
                 <label for="jf-cap-time">Time cap (min)</label>
                 <input id="jf-cap-time" type="text" placeholder="or blank = no wall">
-              </div>
-              <div class="cap-field">
-                <label for="jf-price">Token price $</label>
-                <input id="jf-price" type="text" placeholder="est." disabled>
               </div>
             </div>
             <button class="btn primary" type="button" id="chat-start-btn" data-testid="chat-start" disabled>Start drafting</button>
@@ -664,11 +657,11 @@
     </div>
 
     <div class="pane-body">
-      <!-- PROVIDERS TAB (P4a: read + test + key-name pick; add/edit/remove is P4b) -->
+      <!-- PROVIDERS TAB (P4b: one row per key in the keys file that has a value) -->
       <section id="panel-providers" class="tabpanel active" role="tabpanel" aria-labelledby="tab-providers">
         <div class="keyfile-strip" data-testid="keyfile-box">
           <div class="keyfile-strip-main">
-            <span>Add a line <code>NAME=key</code> to <code id="pv-keyfile-path">~/.config/bareloop/.env</code>, then Reload keys — the name appears in the dropdown. Only names are listed; keys never reach this page.</span>
+            <span>Put <code>NAME=key</code> lines in <code id="pv-keyfile-path">~/.config/bareloop/.env</code>, then Reload keys — every key that has a value gets a row. Only names are listed; keys never reach this page.</span>
             <span class="hint" id="pv-keyfile-note" data-testid="keyfile-warning"></span>
           </div>
           <div class="keyfile-strip-actions">
@@ -678,12 +671,12 @@
         <div class="table-wrap" data-testid="provider-table-wrap">
           <table class="pv-table" data-testid="provider-table">
             <thead>
-              <tr><th>Name</th><th>API shape</th><th>Base URL</th><th>Key variable</th><th>Test</th><th>Tokens used</th><th>Balance</th><th>Price</th></tr>
+              <tr><th>Key</th><th>Name</th><th>API shape</th><th>Base URL</th><th>Test</th><th>Tokens used</th><th>Balance</th></tr>
             </thead>
             <tbody id="pv-rows"></tbody>
           </table>
         </div>
-        <div class="hint" id="pv-note" data-testid="pv-note" style="margin-top:6px;">Pick which key name each provider reads. Test asks the provider for its model list — it costs nothing.</div>
+        <div class="hint" id="pv-note" data-testid="pv-note" style="margin-top:6px;">Name is the model id Chat uses. Base URL blank = the API shape's own host. Test asks the provider for its model list — it costs nothing.</div>
       </section>
 
       <!-- MONEY & LIMITS TAB -->
@@ -2818,7 +2811,7 @@
     });
     document.getElementById("tab-money").addEventListener("click", loadMoney);
 
-    // ---- Providers tab (P4a item 4): read + $0 Test + key-NAME dropdown; no add/edit/remove (P4b) ----
+    // ---- Providers tab (P4b): one row per key in the keys file that has a value ----
     var pvRows = document.getElementById("pv-rows");
     var pvNote = document.getElementById("pv-note");
     var PV_NOTE_DEFAULT = pvNote.textContent;
@@ -2833,55 +2826,65 @@
         if(!r || !r.ok){ pvNote.textContent = "could not read providers"; return; }
         var kf = r.keysFile;
         document.getElementById("pv-keyfile-path").textContent = kf.path;
-        document.getElementById("pv-keyfile-note").textContent = kf.warning ? ("⚠ " + kf.warning) : (kf.exists ? "" : "no keys file yet");
-        pvRows.innerHTML = r.rows.map(function(row){
-          var opts = row.keyOptions.map(function(n){
-            return '<option value="' + escapeXml(n) + '"' + (n === row.keyName ? " selected" : "") + ">" + escapeXml(n) + (n === row.builtInKey ? " (default)" : "") + "</option>";
+        document.getElementById("pv-keyfile-note").textContent = kf.warning ? ("⚠ " + kf.warning) : "";
+        pvRows.innerHTML = r.rows.length ? r.rows.map(function(row){
+          var e = escapeXml(row.envName);
+          var shapeOpts = r.shapes.map(function(s){
+            return '<option value="' + escapeXml(s.id) + '"' + (s.id === row.shape ? " selected" : "") + ">" + escapeXml(s.label) + "</option>";
           }).join("");
           var bal = row.balance.kind === "note"
-            ? '<input type="text" class="pv-balance" data-id="' + row.id + '" placeholder="type by hand" value="' + (row.balance.usd === null ? "" : escapeXml(row.balance.usd.toFixed(2))) + '"><div class="hint">a note, never checked</div>'
-            : (row.balance.kind === "fetch" ? '<span class="pv-balance-fetch" data-id="' + row.id + '">…</span>' : "—");
-          return '<tr data-testid="provider-row-' + row.id + '" data-id="' + row.id + '">'
-            + "<td>" + escapeXml(row.name) + "</td>"
-            + "<td>" + escapeXml(row.shape) + "</td>"
-            + "<td>" + escapeXml(row.url) + "</td>"
-            + '<td><select class="pv-key" data-id="' + row.id + '" data-testid="pv-key-' + row.id + '">' + opts + "</select>"
-            + '<div class="hint" data-testid="pv-status-' + row.id + '">' + escapeXml(row.keyStatus) + "</div></td>"
+            ? '<input type="text" class="pv-balance" placeholder="type by hand" value="' + (row.balance.usd === null ? "" : escapeXml(row.balance.usd.toFixed(2))) + '"><div class="hint">a note, never checked</div>'
+            : (row.balance.kind === "fetch" ? '<span class="pv-balance-fetch" data-env="' + e + '">…</span>' : "—");
+          return '<tr data-testid="provider-row-' + e + '" data-env="' + e + '">'
+            + "<td><code>" + e + "</code>"
+            + '<div class="hint" data-testid="pv-status-' + e + '">' + escapeXml(row.keyStatus) + "</div></td>"
+            + '<td><input type="text" class="pv-name" data-testid="pv-name-' + e + '" placeholder="model id" value="' + escapeXml(row.name) + '"></td>'
+            + '<td><select class="pv-shape" data-testid="pv-shape-' + e + '">' + shapeOpts + "</select></td>"
+            + '<td><input type="text" class="pv-url" data-testid="pv-url-' + e + '" placeholder="' + escapeXml(row.placeholder || "the shape\'s own host") + '" value="' + escapeXml(row.baseUrl) + '"></td>'
             + '<td class="pv-test-cell">' + (row.canTest
-              ? '<button class="btn small pv-test" type="button" data-id="' + row.id + '" data-testid="test-connection-' + row.id + '">Test</button><div class="hint pv-test-result" data-testid="test-result-' + row.id + '"></div>'
+              ? '<button class="btn small pv-test" type="button" data-testid="test-connection-' + e + '">Test</button><div class="hint pv-test-result" data-testid="test-result-' + e + '"></div>'
               : '<span class="hint">not available</span>') + "</td>"
-            + "<td>" + escapeXml(tokensText(row.tokens)) + "</td>"
-            + "<td>" + bal + "</td>"
-            + "<td>" + escapeXml(row.price) + "</td></tr>";
-        }).join("");
-        var fetchEl = pvRows.querySelector(".pv-balance-fetch");
-        if(fetchEl){
-          authorGet("/api/settings/providers/balance").then(function(b){
+            + '<td data-testid="pv-tokens-' + e + '">' + escapeXml(tokensText(row.tokens)) + "</td>"
+            + "<td>" + bal + "</td></tr>";
+        }).join("") : '<tr><td colspan="7" class="hint" data-testid="pv-empty">no keys with a value yet — add NAME=key to the keys file, then Reload keys</td></tr>';
+        pvRows.querySelectorAll(".pv-balance-fetch").forEach(function(fetchEl){
+          authorGet("/api/settings/providers/balance?env=" + encodeURIComponent(fetchEl.getAttribute("data-env"))).then(function(b){
             fetchEl.textContent = b && b.text ? b.text : ("— " + ((b && b.note) || "unavailable"));
           }).catch(function(){ fetchEl.textContent = "— unavailable"; });
-        }
+        });
         pvNote.textContent = r.configProblem ? r.configProblem : PV_NOTE_DEFAULT;
+        document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
       }).catch(function(){ pvNote.textContent = "could not read providers"; });
     }
     pvRows.addEventListener("change", function(e){
       var t = e.target;
-      if(t.classList.contains("pv-key")){
-        authorPost("/api/settings/providers/key", { id: t.getAttribute("data-id"), key: t.value }).then(function(r){
-          pvNote.textContent = r.body && r.body.ok ? ("Saved — " + t.getAttribute("data-id") + " reads " + r.body.keyName + ".") : ((r.body && r.body.error) || "could not save");
-          loadProviders();
-        }).catch(function(){ pvNote.textContent = "could not save"; });
-      } else if(t.classList.contains("pv-balance")){
+      var tr = t.closest("tr");
+      if(!tr) return;
+      if(t.classList.contains("pv-balance")){
         authorPost("/api/settings/providers/balance-note", { usd: t.value.trim() === "" ? null : t.value.trim() }).then(function(r){
           pvNote.textContent = r.body && r.body.ok ? "Saved — balance note." : ((r.body && r.body.error) || "could not save");
         }).catch(function(){ pvNote.textContent = "could not save"; });
+        return;
       }
+      if(!(t.classList.contains("pv-name") || t.classList.contains("pv-shape") || t.classList.contains("pv-url"))) return;
+      var env = tr.getAttribute("data-env");
+      authorPost("/api/settings/providers/row", {
+        envName: env,
+        name: tr.querySelector(".pv-name").value,
+        shape: tr.querySelector(".pv-shape").value,
+        baseUrl: tr.querySelector(".pv-url").value,
+      }).then(function(r){
+        pvNote.textContent = r.body && r.body.ok ? ("Saved — " + env + ".") : ((r.body && r.body.error) || "could not save");
+        // no re-render: it would steal focus mid-edit; Chat's Model menu just re-reads
+        document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
+      }).catch(function(){ pvNote.textContent = "could not save"; });
     });
     pvRows.addEventListener("click", function(e){
       var t = e.target;
       if(!t.classList || !t.classList.contains("pv-test")) return;
       var out = t.parentNode.querySelector(".pv-test-result");
       out.textContent = "testing…"; t.disabled = true;
-      authorPost("/api/settings/providers/test", { id: t.getAttribute("data-id") }).then(function(r){
+      authorPost("/api/settings/providers/test", { envName: t.closest("tr").getAttribute("data-env") }).then(function(r){
         var b = r.body || {};
         out.textContent = b.reachable ? ("OK" + (b.ms !== null && b.ms !== undefined ? " · " + b.ms + " ms" : "")) : ("failed — " + (b.note || b.status || b.error || "no answer"));
       }).catch(function(){ out.textContent = "failed — no answer"; }).then(function(){ t.disabled = false; });
@@ -3055,6 +3058,13 @@
     }
     function refreshModelStatus(){
       var modelId = modelSelect.value;
+      if(modelId === ""){
+        keyOk = false;
+        modelStatusEl.className = "jf-readiness bad";
+        modelStatusEl.textContent = "[✗] no model — give a key a Name in Settings > Providers";
+        refreshStartEnabled();
+        return;
+      }
       authorGet("/api/author/model-check?model=" + encodeURIComponent(modelId)).then(function(r){
         var line = modelStatusLine(r, modelId);
         keyOk = line.keyOk;
@@ -3069,7 +3079,21 @@
       });
     }
     modelSelect.addEventListener("change", refreshModelStatus);
-    refreshModelStatus();
+    // P4b — the Model menu IS the Settings rows: every Name, in keys-file order (a blank Name
+    // is never offered). Re-read whenever Settings loads or saves, keeping the pick if it survives.
+    function loadModels(){
+      authorGet("/api/author/models").then(function(r){
+        var models = r && r.ok ? r.models : [];
+        var was = modelSelect.value;
+        modelSelect.innerHTML = models.length ? models.map(function(m){
+          return '<option value="' + escapeXml(m.id) + '">' + escapeXml(m.id) + " · " + escapeXml(m.envName) + "</option>";
+        }).join("") : '<option value="">no model — add a Name in Settings</option>';
+        if(models.some(function(m){ return m.id === was; })) modelSelect.value = was;
+        refreshModelStatus();
+      }).catch(function(){ refreshModelStatus(); });
+    }
+    document.addEventListener("bareloop-providers-changed", loadModels);
+    loadModels();
 
     // build item 2 — one plain line per event, no "(progress)" jargon
     // suffix: `onPhase` no longer posts its own bubble (see

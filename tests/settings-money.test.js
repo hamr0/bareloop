@@ -1,5 +1,5 @@
 // PANEL-BUILD.md P4a item 3 — Settings -> Money & limits: spendSummary (src/monthly.js),
-// the provider rows (src/providerrows.js) and `/api/settings/money`. Scratch homes only.
+// the per-provider grouping and `/api/settings/money`. Scratch homes only.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,9 +9,8 @@ import { join } from 'node:path';
 import { spendSummary } from '../src/monthly.js';
 import { appendRun } from '../src/runlist.js';
 import { readConfig, configPath, updateConfig } from '../src/config.js';
-import { rowIdFor, PROVIDER_ROWS, DEEPSEEK_BASE_URL } from '../src/providerrows.js';
+import { DEEPSEEK_BASE_URL } from '../src/providerrows.js';
 import { createPanelServer } from '../src/panel/server.js';
-import { MODEL_OPTIONS } from '../src/panel/authorsession.js';
 
 /** @param {import('node:test').TestContext} t */
 const tmp = (t) => {
@@ -30,18 +29,6 @@ function addRun(home, dir, { runid, atIso, provider, baseUrl, usd, complete = tr
   writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
   appendRun({ at: atIso, runid, job: 'j', spine, patient: null, via: 'run-u' }, { home });
 }
-
-test('rowIdFor: the four rows; openai-api + DeepSeek host = deepseek; an OTHER override is no row (never pooled into OpenAI)', () => {
-  assert.equal(rowIdFor('anthropic-api', null), 'anthropic');
-  assert.equal(rowIdFor('openai-api', null), 'openai');
-  assert.equal(rowIdFor('openai-api', DEEPSEEK_BASE_URL), 'deepseek');
-  assert.equal(rowIdFor('openai-api', 'https://my-gateway.example/v1'), null);
-  assert.equal(rowIdFor('gemini-api', null), 'gemini');
-  assert.equal(rowIdFor('clipipe-subscription', null), null);
-  assert.deepEqual(PROVIDER_ROWS.map((r) => r.id), ['anthropic', 'openai', 'gemini', 'deepseek']);
-  // the panel's Model menu spells DeepSeek with the SAME string the rows use
-  assert.equal(MODEL_OPTIONS['deepseek-flash'].baseUrl, DEEPSEEK_BASE_URL);
-});
 
 test('spendSummary: total vs this month, per provider (DeepSeek apart from OpenAI), tokens, "at least" on an unknown leg', (t) => {
   const home = tmp(t);
