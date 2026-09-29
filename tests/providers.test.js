@@ -516,6 +516,13 @@ test('checkProviderReachable: a network/transport failure reads reachable:false 
   assert.equal(r.note, 'request failed: Error');
 });
 
+test('checkProviderReachable: a fetch TypeError (nothing listening) says what was tried, in plain words', async () => {
+  const fetchImpl = async () => { throw new TypeError('fetch failed'); };
+  const r = await checkProviderReachable({ providerName: 'openai-api', apiKey: 'k', baseUrl: 'http://127.0.0.1:9/v1', fetchImpl });
+  assert.equal(r.reachable, false);
+  assert.equal(r.note, 'nothing answering at http://127.0.0.1:9/v1/models');
+});
+
 test('checkProviderReachable: an abort (timeout) reads status "timeout", not a generic error', async () => {
   const fetchImpl = async (url, init) => new Promise((resolveFn, rejectFn) => {
     init.signal.addEventListener('abort', () => {
