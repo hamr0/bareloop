@@ -377,6 +377,23 @@
   .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
   .actions-row > .btn{flex:1 1 auto;}
 
+  /* Settings view (P4a) — same tokens as the rest of the page; the mockup's settings styles */
+  .settings-view{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;}
+  .settings-header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);}
+  .settings-header h2{margin:0;font-size:15px;display:inline;}
+  .settings-header h2::before{content:"┤ ";color:var(--text-faint);}
+  .settings-header h2::after{content:" ├";color:var(--text-faint);}
+  .money-strip{display:grid;grid-template-columns:repeat(4, 1fr);gap:12px;align-items:end;padding:10px;border:1px solid var(--border-strong);background:var(--panel2);}
+  .money-item{min-width:0;}
+  .money-item label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;}
+  .money-value{font-size:16px;font-weight:700;padding:6px 0;overflow-wrap:anywhere;}
+  .money-item input{width:100%;height:44px;box-sizing:border-box;}
+  .money-item-save{display:flex;}
+  .money-item-save .btn{width:100%;height:44px;}
+  .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
+  @media (max-width: 899px){
+    .money-strip{grid-template-columns:1fr 1fr;}
+  }
   @media (max-width: 899px){
     .main{flex-direction:column;}
     .left-pane{width:100%;border-right:none;border-bottom:1px solid var(--border-strong);}
@@ -402,6 +419,7 @@
     </div>
     <div class="topbar-right">
       <span class="hint" id="host-line"></span>
+      <button class="btn small" type="button" id="btn-settings" data-testid="btn-settings">&#9881; Settings</button>
       <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme">&#9789;</button>
     </div>
   </header>
@@ -620,6 +638,53 @@
     </section>
 
   </div>
+
+  <!-- SETTINGS VIEW (P4a) — reads/writes ~/.config/bareloop/config.json through
+       /api/settings/*; every call carries the per-start token. -->
+  <section class="settings-view" id="settings-view" aria-label="Settings" hidden>
+    <div class="settings-header">
+      <button class="btn small" type="button" id="settings-back" data-testid="settings-back">&larr; Back</button>
+      <h2>Settings</h2>
+    </div>
+
+    <div class="tabrow" role="tablist" aria-label="Settings views">
+      <button role="tab" id="tab-money" aria-controls="panel-money" aria-selected="true" data-testid="settings-tab-money">Money &amp; limits</button>
+    </div>
+
+    <div class="pane-body">
+      <!-- MONEY & LIMITS TAB -->
+      <section id="panel-money" class="tabpanel active" role="tabpanel" aria-labelledby="tab-money">
+        <div class="money-strip" data-testid="money-strip">
+          <div class="money-item">
+            <label>Total spent to date</label>
+            <div class="money-value" id="ml-total" data-testid="ml-total">…</div>
+          </div>
+          <div class="money-item">
+            <label>This month spent</label>
+            <div class="money-value" id="ml-month" data-testid="ml-month">…</div>
+          </div>
+          <div class="money-item">
+            <label for="ml-money">Monthly money limit ($)</label>
+            <input id="ml-money" type="text" placeholder="blank = no limit" data-testid="ml-money">
+          </div>
+          <div class="money-item money-item-save">
+            <button class="btn" type="button" id="btn-save-limits" data-testid="btn-save-limits">Save</button>
+          </div>
+        </div>
+        <div class="hint" id="ml-note" data-testid="ml-note" style="margin-top:6px;">Limits are yours. The agent can never change them. A run whose cap is more than what is left this month does not start.</div>
+
+        <h4 style="margin-top:20px;font-size:13px;">Per-provider breakdown</h4>
+        <div class="table-wrap">
+          <table data-testid="provider-breakdown-table">
+            <thead>
+              <tr><th>Provider</th><th>This month $</th><th>To date $</th></tr>
+            </thead>
+            <tbody id="ml-breakdown"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </section>
 
 </div>
 
@@ -2673,6 +2738,56 @@
     });
   })();
 
+  // ---- Settings view (PANEL-BUILD.md P4a) ----
+  (function(){
+    var mainView = document.getElementById("main-view");
+    var settingsView = document.getElementById("settings-view");
+    var limitInput = document.getElementById("ml-money");
+    var noteEl = document.getElementById("ml-note");
+    var NOTE_DEFAULT = noteEl.textContent;
+    // "at least" whenever the figure is a floor — never a clean number for an unknown total
+    function moneyText(n, atLeast){ return (atLeast ? "at least " : "") + panelMoney(n); }
+    function loadMoney(){
+      authorGet("/api/settings/money").then(function(r){
+        if(!r || !r.ok){ noteEl.textContent = "could not read your spend"; return; }
+        document.getElementById("ml-total").textContent = moneyText(r.totalUsd, r.totalAtLeast);
+        document.getElementById("ml-month").textContent = moneyText(r.monthUsd, r.monthAtLeast);
+        if(document.activeElement !== limitInput){
+          limitInput.value = r.monthlyLimitUsd === null ? "" : r.monthlyLimitUsd.toFixed(2);
+        }
+        var rows = r.byProvider.map(function(p){
+          return "<tr><td>" + escapeXml(p.label) + "</td><td>" + escapeXml(moneyText(p.monthUsd, p.monthAtLeast))
+            + "</td><td>" + escapeXml(moneyText(p.totalUsd, p.totalAtLeast)) + "</td></tr>";
+        }).join("");
+        document.getElementById("ml-breakdown").innerHTML = rows || '<tr><td colspan="3" class="hint">no runs yet</td></tr>';
+        noteEl.textContent = r.configProblem ? r.configProblem : NOTE_DEFAULT;
+      }).catch(function(){ noteEl.textContent = "could not read your spend"; });
+    }
+    document.getElementById("btn-settings").addEventListener("click", function(){
+      mainView.hidden = true;
+      settingsView.hidden = false;
+      loadMoney();
+    });
+    document.getElementById("settings-back").addEventListener("click", function(){
+      settingsView.hidden = true;
+      mainView.hidden = false;
+    });
+    document.getElementById("tab-money").addEventListener("click", loadMoney);
+    // Save is a human click only: POST carries the per-start token; the chat has no route here
+    document.getElementById("btn-save-limits").addEventListener("click", function(){
+      var text = limitInput.value.trim();
+      authorPost("/api/settings/money", { monthlyLimitUsd: text === "" ? null : Number(text) }).then(function(r){
+        noteEl.textContent = r.body && r.body.ok
+          ? (r.body.monthlyLimitUsd === null ? "Saved — no monthly limit." : "Saved — monthly limit " + panelMoney(r.body.monthlyLimitUsd) + ".")
+          : ((r.body && r.body.error) || "could not save");
+        loadMoney();
+        document.dispatchEvent(new CustomEvent("bareloop-limit-changed"));
+      }).catch(function(){ noteEl.textContent = "could not save"; });
+    });
+    // verification convenience, like the mockup: ?settings=1 opens Settings on load
+    if(location.search.indexOf("settings=1") !== -1){ document.getElementById("btn-settings").click(); }
+  })();
+
   // ---- Chat tab: job-card authoring (PANEL-BUILD.md P3) ----
   (function(){
     var newBtn = document.getElementById("chat-new-btn");
@@ -2772,6 +2887,8 @@
       if(capNoteTimer){ clearTimeout(capNoteTimer); }
       capNoteTimer = setTimeout(refreshCapNote, 250);
     });
+    // the limit changed in Settings: re-read the note for whatever cap is typed
+    document.addEventListener("bareloop-limit-changed", refreshCapNote);
     document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
       r.addEventListener("change", function(){
         var isRubric = document.querySelector('input[name="jf-verdict"]:checked').value === "rubric";

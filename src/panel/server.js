@@ -5,8 +5,10 @@
 // `src/cli.js` calls — `src/replayio.js`'s read side and `src/runlist.js`'s
 // run list — never a re-implementation of either.
 //
-// READ-ONLY, BY CONSTRUCTION: GET/HEAD only (anything else -> 405); no
-// endpoint runs a job, spends money, signs, or reads a key/.env. Nothing
+// READ-ONLY, BY CONSTRUCTION: GET/HEAD only (anything else -> 405) EXCEPT the two
+// human-click-guarded route families in their own modules (`/api/author/*`,
+// `/api/settings/*` — P3/P4a); no endpoint here runs a job, spends money, signs, or
+// returns a key/.env value. Nothing
 // here imports `src/providers.js` or touches `process.env` for a secret —
 // grepped before writing this file, and the same discipline is kept here.
 //
@@ -38,6 +40,7 @@ import { SPEND_RECORD_TYPES } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken } from './authorroutes.js';
+import { createSettingsRoutes } from './settingsroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -1754,9 +1757,17 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes> }} opts
+ * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
+  /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
+   * `/api/settings/*` (Settings, P4a): separate modules, each behind the human-click guard.
+   * @param {any} o @param {string} p */
+  function routesFor(o, p) {
+    if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
+    if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
+    return null;
+  }
   const method = req.method ?? 'GET';
 
   let url;
@@ -1769,7 +1780,8 @@ export function handleRequest(req, res, opts) {
   const { pathname } = url;
 
   if (method !== 'GET' && method !== 'HEAD') {
-    if (opts.authorRoutes && pathname.startsWith('/api/author')) {
+    const routes = routesFor(opts, pathname);
+    if (routes) {
       let raw = '';
       let size = 0;
       let refused = false;
@@ -1791,15 +1803,16 @@ export function handleRequest(req, res, opts) {
         /** @type {any} */
         let body = null;
         if (raw.length > 0) { try { body = JSON.parse(raw); } catch { body = null; } }
-        opts.authorRoutes?.handle(req, res, pathname, body);
+        routes.handle(req, res, pathname, body);
       });
       return;
     }
-    sendText(res, 405, 'method not allowed — this panel is read-only outside /api/author (GET/HEAD only)');
+    sendText(res, 405, 'method not allowed — this panel is read-only outside /api/author and /api/settings (GET/HEAD only)');
     return;
   }
-  if (opts.authorRoutes && pathname.startsWith('/api/author')) {
-    opts.authorRoutes.handle(req, res, pathname, null);
+  const getRoutes = routesFor(opts, pathname);
+  if (getRoutes) {
+    getRoutes.handle(req, res, pathname, null);
     return;
   }
 
@@ -1919,10 +1932,12 @@ export function createPanelServer(opts = {}) {
     let boundPort = requestedPort;
     /** @type {ReturnType<typeof createAuthorRoutes>|undefined} */
     let authorRoutes;
+    /** @type {ReturnType<typeof createSettingsRoutes>|undefined} */
+    let settingsRoutes;
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes,
+          home, port: boundPort, token, authorRoutes, settingsRoutes,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
@@ -1945,6 +1960,9 @@ export function createPanelServer(opts = {}) {
         bareloopBin: opts.bareloopBin,
         fetchImpl: opts.fetchImpl,
         home,
+      });
+      settingsRoutes = createSettingsRoutes({
+        port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
       });
       resolve({
         server,

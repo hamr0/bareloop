@@ -20,6 +20,7 @@
 // `src/panel/server.js`'s POST routes). Nothing here changes what a step
 // means or what an answer does — only where the answer comes from.
 
+import { DEEPSEEK_BASE_URL } from '../providerrows.js';
 import {
   mkdirSync, existsSync, writeFileSync, readdirSync,
 } from 'node:fs';
@@ -57,7 +58,7 @@ import { tallyCalls } from '../text.js';
  */
 export const MODEL_OPTIONS = Object.freeze({
   'claude-sonnet-5': Object.freeze({ provider: 'anthropic-api' }),
-  'deepseek-flash': Object.freeze({ provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' }),
+  'deepseek-flash': Object.freeze({ provider: 'openai-api', baseUrl: DEEPSEEK_BASE_URL }),
 });
 
 /**

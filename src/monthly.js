@@ -16,6 +16,7 @@ import { readConfig, ConfigError } from './config.js';
 import { readRunList } from './runlist.js';
 import { parseJsonl } from './replayio.js';
 import { SPEND_RECORD_TYPES } from './ledger.js';
+import { PROVIDER_ROWS, rowIdFor } from './providerrows.js';
 
 /**
  * One run's own spend, off its spine records: this LEG's figure (never the chain fold),
@@ -46,29 +47,124 @@ export function legSpend(records) {
 }
 
 /**
+ * Tokens a spine's rounds processed (input + output + cache read + cache write — all four,
+ * so a cache-heavy run is not under-reported), off the real `usage` field names.
+ * @param {any[]} records
+ * @returns {number}
+ */
+export function legTokens(records) {
+  let n = 0;
+  for (const r of records) {
+    if (!r || !SPEND_RECORD_TYPES.includes(r.type) || !r.usage) continue;
+    for (const k of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheCreationTokens']) {
+      const v = r.usage[k];
+      if (typeof v === 'number' && Number.isFinite(v)) n += v;
+    }
+  }
+  return n;
+}
+
+/**
+ * @typedef {object} Leg
+ * @property {Date} at when the run was listed
+ * @property {string|null} provider job-start's provider (null = an older spine that carried none)
+ * @property {string|null} baseUrl
+ * @property {number} usd this leg's spend (a floor when `!complete`)
+ * @property {boolean} complete every figure behind `usd` is known
+ * @property {number} tokens
+ * @property {boolean} unreadable the spine was missing/unreadable or the listed date was bad (spend unknown)
+ */
+
+/**
+ * Every listed run as one {@link Leg}. The ONE reader the month total, the all-time total
+ * and the per-provider figures share.
+ * @param {{ home?: string }} [opts]
+ * @returns {Leg[]}
+ */
+export function readLegs(opts = {}) {
+  const { rows } = readRunList({ home: opts.home });
+  /** @type {Leg[]} */
+  const legs = [];
+  for (const row of rows) {
+    const at = new Date(row.at);
+    const base = { at, provider: null, baseUrl: null, usd: 0, complete: false, tokens: 0, unreadable: true };
+    if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push(base); continue; }
+    /** @type {any[]} */
+    let records;
+    try { records = parseJsonl(row.spine).records; } catch { legs.push(base); continue; }
+    const start = records.find((r) => r && r.type === 'job-start') ?? null;
+    const leg = legSpend(records);
+    legs.push({
+      at,
+      provider: typeof start?.provider === 'string' ? start.provider : null,
+      baseUrl: typeof start?.baseUrl === 'string' ? start.baseUrl : null,
+      usd: leg.usd,
+      complete: leg.complete,
+      tokens: legTokens(records),
+      unreadable: false,
+    });
+  }
+  return legs;
+}
+
+/**
+ * @param {Date} at
+ * @param {Date} now
+ * @returns {boolean} same LOCAL calendar month
+ */
+const sameLocalMonth = (at, now) => at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth();
+
+/**
  * @param {{ home?: string, now?: () => number }} [opts]
  * @returns {{ usd: number, atLeast: boolean, runs: number }}
  */
 export function monthSpend(opts = {}) {
   const nowDate = new Date((opts.now ?? Date.now)());
-  const { rows } = readRunList({ home: opts.home });
   let usd = 0;
   let atLeast = false;
   let runs = 0;
-  for (const row of rows) {
-    const at = new Date(row.at);
-    if (Number.isNaN(at.getTime())) { atLeast = true; continue; } // an unreadable date could belong to this month — unknown, never dropped
-    if (at.getFullYear() !== nowDate.getFullYear() || at.getMonth() !== nowDate.getMonth()) continue;
+  for (const leg of readLegs({ home: opts.home })) {
+    // an unreadable date could belong to this month — unknown, never dropped
+    if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
+    if (!sameLocalMonth(leg.at, nowDate)) continue;
     runs += 1;
-    if (!existsSync(row.spine)) { atLeast = true; continue; }
-    /** @type {any[]} */
-    let records;
-    try { records = parseJsonl(row.spine).records; } catch { atLeast = true; continue; }
-    const leg = legSpend(records);
+    if (leg.unreadable) { atLeast = true; continue; }
     usd += leg.usd;
     if (!leg.complete) atLeast = true;
   }
   return { usd, atLeast, runs };
+}
+
+/**
+ * The Money tab's figures: all-time and this-month spend, and per-provider breakdown
+ * (rows from `rowIdFor`; a run on no known row lands under its own provider name, never
+ * pooled into another row). Any leg with unknown spend makes the figure it belongs to
+ * an "at least".
+ * @param {{ home?: string, now?: () => number }} [opts]
+ * @returns {{ total: {usd: number, atLeast: boolean}, month: {usd: number, atLeast: boolean},
+ *   byProvider: Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number}> }}
+ */
+export function spendSummary(opts = {}) {
+  const nowDate = new Date((opts.now ?? Date.now)());
+  const total = { usd: 0, atLeast: false };
+  const month = { usd: 0, atLeast: false };
+  /** @type {Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number}>} */
+  const byProvider = {};
+  for (const leg of readLegs({ home: opts.home })) {
+    const inMonth = Number.isNaN(leg.at.getTime()) ? true : sameLocalMonth(leg.at, nowDate);
+    const id = rowIdFor(leg.provider, leg.baseUrl);
+    const key = id ?? `other:${leg.provider ?? 'unknown'}${leg.baseUrl ? ` @ ${leg.baseUrl}` : ''}`;
+    const label = id ? (PROVIDER_ROWS.find((r) => r.id === id)?.name ?? id) : key.slice('other:'.length);
+    const p = (byProvider[key] ??= { label, monthUsd: 0, monthAtLeast: false, totalUsd: 0, totalAtLeast: false, tokens: 0 });
+    const unknown = leg.unreadable || !leg.complete;
+    total.usd += leg.usd; if (unknown) total.atLeast = true;
+    p.totalUsd += leg.usd; p.tokens += leg.tokens; if (unknown) p.totalAtLeast = true;
+    if (inMonth) {
+      month.usd += leg.usd; if (unknown) month.atLeast = true;
+      p.monthUsd += leg.usd; if (unknown) p.monthAtLeast = true;
+    }
+  }
+  return { total, month, byProvider };
 }
 
 /**
