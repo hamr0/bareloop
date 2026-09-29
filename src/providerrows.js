@@ -27,8 +27,29 @@ export const SHAPES = Object.freeze([
   Object.freeze({ id: 'gemini-api', label: 'Gemini', defaultUrl: '' }),
 ]);
 
-/** The four empty lines a fresh keys file is created with, in this order. */
-export const PRESET_KEY_NAMES = Object.freeze(['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY']);
+/** The five empty lines a fresh keys file is created with, in this order. */
+export const PRESET_KEY_NAMES = Object.freeze(['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'LOCAL_API_KEY']);
+
+/** A local server's default endpoint: Ollama's OpenAI-compatible host (LM Studio / llama.cpp: change the URL). */
+export const LOCAL_BASE_URL = 'http://127.0.0.1:11434/v1';
+
+/**
+ * A key line whose value is the word `null` is SET and means "no real key": the row exists and
+ * the provider is handed this harmless stand-in (local servers ignore auth). It is not a
+ * secret and is never shown or logged as a key.
+ */
+export const NO_KEY_PLACEHOLDER = 'no-key-needed';
+
+/**
+ * The key value to hand a provider: the `null` marker becomes the placeholder, anything else
+ * passes through unchanged.
+ * @template {string|undefined} T
+ * @param {T} raw
+ * @returns {T|string}
+ */
+export function usableKey(raw) {
+  return raw === 'null' ? NO_KEY_PLACEHOLDER : raw;
+}
 
 /**
  * What a key with no saved entry shows. Any name not listed is OpenAI-compatible with a
@@ -41,6 +62,7 @@ export function defaultsFor(envName) {
     case 'ANTHROPIC_API_KEY': return { name: 'claude-sonnet-5', shape: 'anthropic-api', baseUrl: '' };
     case 'DEEPSEEK_API_KEY': return { name: 'deepseek-flash', shape: 'openai-api', baseUrl: DEEPSEEK_BASE_URL };
     case 'GEMINI_API_KEY': return { name: '', shape: 'gemini-api', baseUrl: '' };
+    case 'LOCAL_API_KEY': return { name: '', shape: 'openai-api', baseUrl: LOCAL_BASE_URL };
     default: return { name: '', shape: 'openai-api', baseUrl: '' };
   }
 }
@@ -175,8 +197,9 @@ export function keyNameFor(provider, baseUrl, rows, model) {
 
 /**
  * The env a door hands to provider construction, with the matching row's key variable
- * standing in for the provider's built-in one: `env[builtIn] = env[row.envName]`. A copy —
- * never mutates the input. No matching row = the env unchanged.
+ * standing in for the provider's built-in one: `env[builtIn] = env[row.envName]` (the `null`
+ * no-key marker becomes {@link NO_KEY_PLACEHOLDER}). A copy — never mutates the input.
+ * No matching row and no marker = the env unchanged.
  * @param {Record<string,string|undefined>} env
  * @param {string|null|undefined} provider
  * @param {string|null|undefined} baseUrl
@@ -188,6 +211,7 @@ export function applyConfiguredKey(env, provider, baseUrl, rows, model) {
   if (typeof provider !== 'string') return env;
   let k;
   try { k = keyNameFor(provider, baseUrl, rows, model); } catch { return env; } // unknown provider: resolveProvider's own named throw fires at its own door
-  if (!k.chosen) return env;
-  return { ...env, [k.builtIn]: env[k.name] };
+  const value = env[k.name];
+  if (!k.chosen && value !== 'null') return env;
+  return { ...env, [k.builtIn]: usableKey(value) };
 }

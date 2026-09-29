@@ -8,7 +8,10 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync, statSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readConfig, configPath, updateConfig } from '../src/config.js';
-import { applyConfiguredKey, keyNameFor, keyRows, findRow, modelChoiceFor, chatModels, defaultsFor } from '../src/providerrows.js';
+import { applyConfiguredKey, keyNameFor, keyRows, findRow, modelChoiceFor, chatModels, defaultsFor, PRESET_KEY_NAMES, NO_KEY_PLACEHOLDER } from '../src/providerrows.js';
+import { apiKeyProblem } from '../src/providers.js';
+import { Loop } from 'bare-agent';
+import { rateProvenance } from '../src/ledger.js';
 import { ensureKeysFile, filledKeyNames } from '../src/keysfile.js';
 import { createPanelServer } from '../src/panel/server.js';
 import { execFileSync } from 'node:child_process';
@@ -75,11 +78,11 @@ test('rows: defaults, saved entries win, matching is by shape + endpoint (+ mode
   assert.equal(modelChoiceFor(rows, 'nope'), null);
 });
 
-test('keys file: created with the four empty presets (mode 600) only when missing; an existing file is never touched; empty lines are not rows', (t) => {
+test('keys file: created with the five empty presets (mode 600) only when missing; an existing file is never touched; empty lines are not rows', (t) => {
   const home = tmp(t);
-  assert.equal(ensureKeysFile(['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY'], home), true);
+  assert.equal(ensureKeysFile(PRESET_KEY_NAMES, home), true);
   const f = join(home, '.env');
-  assert.equal(readFileSync(f, 'utf8'), 'ANTHROPIC_API_KEY=\nDEEPSEEK_API_KEY=\nOPENAI_API_KEY=\nGEMINI_API_KEY=\n');
+  assert.equal(readFileSync(f, 'utf8'), 'ANTHROPIC_API_KEY=\nDEEPSEEK_API_KEY=\nOPENAI_API_KEY=\nGEMINI_API_KEY=\nLOCAL_API_KEY=\n');
   assert.equal(statSync(f).mode & 0o777, 0o600);
   assert.deepEqual(filledKeyNames(home), [], 'empty preset lines are not rows');
   writeFileSync(f, `MINE=${SECRET_A}\n`);
@@ -93,8 +96,8 @@ test('/api/settings/providers: needs the token; a missing keys file is created; 
   const { base, get } = await panel(t, home, async () => { throw new Error('no network expected'); });
   assert.equal((await fetch(`${base}/api/settings/providers`)).status, 403);
   const empty = await get('/api/settings/providers');
-  assert.equal(readFileSync(join(home, '.env'), 'utf8'), 'ANTHROPIC_API_KEY=\nDEEPSEEK_API_KEY=\nOPENAI_API_KEY=\nGEMINI_API_KEY=\n', 'created on first read');
-  assert.deepEqual(empty.rows, [], 'four empty presets = no rows');
+  assert.equal(readFileSync(join(home, '.env'), 'utf8'), 'ANTHROPIC_API_KEY=\nDEEPSEEK_API_KEY=\nOPENAI_API_KEY=\nGEMINI_API_KEY=\nLOCAL_API_KEY=\n', 'created on first read');
+  assert.deepEqual(empty.rows, [], 'five empty presets = no rows');
   keysFile(home, `ANTHROPIC_API_KEY=\nDEEPSEEK_API_KEY=${SECRET_A}\nMY_OTHER=${SECRET_B}\n`);
   const raw = JSON.stringify(await get('/api/settings/providers'));
   assert.equal(raw.includes(SECRET_A) || raw.includes(SECRET_B), false, 'values never reach the page');
@@ -163,6 +166,46 @@ test('Test button: no key = no network call; with a key = ONE GET of the models 
   assert.equal(calls[1].url, 'https://proxy.example/v9/models');
   assert.equal(calls[1].headers['x-api-key'], SECRET_B);
   assert.equal(calls[1].headers.Authorization, undefined);
+});
+
+test('LOCAL_API_KEY=null: a row is made (null counts as SET), defaults to OpenAI-compatible at the local URL with a blank Name, and the provider gets a placeholder — never the word null, never a real key', async (t) => {
+  const home = tmp(t);
+  keysFile(home, 'LOCAL_API_KEY=null\nEMPTY_ONE=\n');
+  const calls = [];
+  const { get, post } = await panel(t, home, async (url, init) => { calls.push({ url: String(url), h: init.headers }); return new Response(JSON.stringify({ data: [] }), { status: 200 }); });
+  const r = await get('/api/settings/providers');
+  assert.deepEqual(r.rows.map((x) => x.envName), ['LOCAL_API_KEY'], 'null makes a row; an empty value does not');
+  const row = r.rows[0];
+  assert.deepEqual([row.name, row.shape, row.baseUrl, row.keyStatus], ['', 'openai-api', 'http://127.0.0.1:11434/v1', 'no key needed']);
+  assert.equal(apiKeyProblem('null'), null, 'null is accepted as "no key needed"');
+  const ok = await (await post('/api/settings/providers/test', { envName: 'LOCAL_API_KEY' })).json();
+  assert.equal(ok.reachable, true);
+  assert.equal(calls[0].url, 'http://127.0.0.1:11434/v1/models', 'the normal models-list call at the row\'s URL');
+  assert.equal(calls[0].h.Authorization, `Bearer ${NO_KEY_PLACEHOLDER}`);
+  // the door hands the provider the placeholder on the built-in name
+  const rows = keyRows({ filled: ['LOCAL_API_KEY'], config: {} });
+  const env = applyConfiguredKey({ LOCAL_API_KEY: 'null' }, 'openai-api', 'http://127.0.0.1:11434/v1', rows);
+  assert.equal(env.OPENAI_API_KEY, NO_KEY_PLACEHOLDER);
+  assert.equal(applyConfiguredKey({ OPENAI_API_KEY: 'null' }, 'openai-api', undefined, []).OPENAI_API_KEY, NO_KEY_PLACEHOLDER, 'the marker is a placeholder even on the built-in name');
+});
+
+test('MONEY: a local (unknown-model) OpenAI-compatible round is a loud GUESS with a real non-zero cost — never a real $0, and never vouched', async () => {
+  const payloads = [];
+  const provider = { name: 'openai-api', model: 'llama3.2:3b', generate: async () => ({ text: 'ok', toolCalls: [], usage: { inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheCreationTokens: 0 } }) };
+  const loop = new Loop({ provider, system: 's', onLlmResult: (p) => { payloads.push(p); } });
+  loop._warnGuesstimateOnce = () => {}; // the one-time console warning is not under test
+  await loop.run('hi', []);
+  assert.ok(payloads.length >= 1);
+  const p = payloads[0];
+  assert.equal(p.rateSource, 'default', 'nobody supplied a rate for a local model');
+  assert.ok(p.costUsd > 0, `a guess above zero, got ${p.costUsd}`);
+  assert.equal(rateProvenance({ rateSource: p.rateSource }), 'guessed', 'our ledger reads it as a guess (estimated), not vouched');
+  // no usage at all is UNPRICED (null), never $0
+  const bare = { name: 'openai-api', model: 'llama3.2:3b', generate: async () => ({ text: 'ok', toolCalls: [] }) };
+  const seen = [];
+  const l2 = new Loop({ provider: bare, system: 's', onLlmResult: (x) => { seen.push(x); } });
+  await l2.run('hi', []);
+  assert.equal(seen[0].costUsd, null, 'a round with no usage is unpriced, not 0');
 });
 
 test('Test button: a key file line with no value has no row to test; a malformed value is refused before any call', async (t) => {

@@ -26,7 +26,7 @@ import { createSession, validateJobCard } from './authorsession.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
-import { keyNameFor, modelChoiceFor, rowsForHome, chatModels } from '../providerrows.js';
+import { keyNameFor, modelChoiceFor, rowsForHome, chatModels, usableKey } from '../providerrows.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
@@ -137,7 +137,7 @@ export function createAuthorRoutes(opts) {
       // `checkProviderReachable`'s own doc) — a short timeout so a flaky
       // endpoint never hangs the card.
       checkProviderReachable({
-        providerName: choice.provider, apiKey: /** @type {string} */ (raw), model: choice.name,
+        providerName: choice.provider, apiKey: /** @type {string} */ (usableKey(raw)), model: choice.name,
         baseUrl: choice.baseUrl, fetchImpl, timeoutMs: 4000,
       }).then((r) => {
         send(200, {

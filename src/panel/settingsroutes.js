@@ -15,7 +15,7 @@ import { checkHumanGuard } from './authorroutes.js';
 import { readConfig, updateConfig, ConfigError } from '../config.js';
 import { spendSummary } from '../monthly.js';
 import { loadKeysEnv, keysFilePath, filledKeyNames, ensureKeysFile } from '../keysfile.js';
-import { SHAPES, PRESET_KEY_NAMES, keyRows, endpointOf, defaultUrlOf } from '../providerrows.js';
+import { SHAPES, PRESET_KEY_NAMES, keyRows, endpointOf, defaultUrlOf, usableKey } from '../providerrows.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** DeepSeek's own balance endpoint (same host as its models list). */
@@ -112,7 +112,7 @@ export function createSettingsRoutes(opts) {
           return {
             envName: r.envName, name: r.name, shape: r.provider, baseUrl: r.baseUrl,
             placeholder: defaultUrlOf(r.provider),
-            keyStatus: !raw ? 'not set' : (problem ? `bad shape (${problem})` : 'found'),
+            keyStatus: !raw ? 'not set' : (raw === 'null' ? 'no key needed' : (problem ? `bad shape (${problem})` : 'found')),
             canTest: r.provider !== 'gemini-api',
             tokens: s.tokensByRow[r.envName] ?? 0,
             balance: r.provider === 'anthropic-api'
@@ -170,7 +170,7 @@ export function createSettingsRoutes(opts) {
       const started = Date.now();
       // $0: one GET of the models list with THIS row's shape + URL (never a completion), key only in a header
       checkProviderReachable({
-        providerName: row.provider, apiKey: raw, baseUrl: row.baseUrl.trim() !== '' ? row.baseUrl : undefined, fetchImpl, timeoutMs: 4000,
+        providerName: row.provider, apiKey: usableKey(raw), baseUrl: row.baseUrl.trim() !== '' ? row.baseUrl : undefined, fetchImpl, timeoutMs: 4000,
       }).then((r) => {
         send(200, { ok: true, reachable: r.reachable, status: r.status, note: r.note, ms: Date.now() - started });
       });
