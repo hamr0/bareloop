@@ -1944,6 +1944,7 @@ export function createPanelServer(opts = {}) {
         spawnFn: opts.spawnFn,
         bareloopBin: opts.bareloopBin,
         fetchImpl: opts.fetchImpl,
+        home,
       });
       resolve({
         server,

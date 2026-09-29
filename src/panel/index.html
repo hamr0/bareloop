@@ -472,6 +472,7 @@
               <div class="cap-field">
                 <label for="jf-cap-money">Cap $</label>
                 <input id="jf-cap-money" type="text">
+                <div class="hint" id="jf-cap-note" data-testid="cap-note"></div>
               </div>
               <div class="cap-field">
                 <label for="jf-cap-time">Time cap (min)</label>
@@ -2756,6 +2757,21 @@
       startBtn.disabled = !capOk || sessionLive || !keyOk;
     }
     moneyCapInput.addEventListener("input", refreshStartEnabled);
+    // P4a — the monthly-limit note sits right under the cap, as the person types.
+    // Plain text, no button; the wording comes from the server (one library check).
+    var capNoteEl = document.getElementById("jf-cap-note");
+    var capNoteTimer = null;
+    function refreshCapNote(){
+      var v = Number(moneyCapInput.value);
+      if(moneyCapInput.value.trim() === "" || !Number.isFinite(v) || v <= 0){ capNoteEl.textContent = ""; return; }
+      authorGet("/api/author/monthly-check?cap=" + encodeURIComponent(String(v))).then(function(r){
+        capNoteEl.textContent = (r && r.refusal) ? r.refusal : "";
+      }).catch(function(){ capNoteEl.textContent = ""; });
+    }
+    moneyCapInput.addEventListener("input", function(){
+      if(capNoteTimer){ clearTimeout(capNoteTimer); }
+      capNoteTimer = setTimeout(refreshCapNote, 250);
+    });
     document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
       r.addEventListener("change", function(){
         var isRubric = document.querySelector('input[name="jf-verdict"]:checked').value === "rubric";

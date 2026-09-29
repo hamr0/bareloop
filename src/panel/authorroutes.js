@@ -21,7 +21,10 @@ import { randomBytes } from 'node:crypto';
 import { spawn as realSpawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { createSession, validateJobCard, MODEL_OPTIONS } from './authorsession.js';
+import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
+import { ConfigError } from '../config.js';
 import { resolveProvider, apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
@@ -68,7 +71,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * deliberately has none of).
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
- *   jobsDir?: string, fetchImpl?: typeof fetch }} opts
+ *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string }} opts
  */
 export function createAuthorRoutes(opts) {
   const env = opts.env ?? process.env;
@@ -146,6 +149,25 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
+    // ── P4a: the monthly-limit note under the cap field. READ-ONLY, $0 — the same
+    // library check (`checkMonthlyRoom`, src/monthly.js) the run-start seam and the
+    // Sign refusal use, so the note the person sees is never a second opinion. The
+    // page is never the arbiter: Sign & run re-checks server-side regardless.
+    if (pathname === '/api/author/monthly-check') {
+      if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      const q = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
+      const cap = Number(q.get('cap'));
+      if (!Number.isFinite(cap) || cap <= 0) { send(200, { ok: true, refusal: null }); return true; }
+      try {
+        const room = checkMonthlyRoom({ capUsd: cap, home: opts.home });
+        send(200, { ok: true, refusal: monthlyRefusalText(room), leftUsd: room.leftUsd, atLeast: room.atLeast });
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e;
+        send(200, { ok: true, refusal: null, configProblem: e.message });
+      }
+      return true;
+    }
+
     if (pathname === '/api/author/start') {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
@@ -192,7 +214,7 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'sign') {
       const claimedHash = String(body?.specHash ?? '');
-      const r = signRun(session, claimedHash, { env, spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot });
+      const r = signRun(session, claimedHash, { env, spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home });
       send(r.ok ? 200 : 400, r);
       return true;
     }
@@ -234,13 +256,25 @@ function panelMoney2(n) {
  * it to sign"), and this is where it is checked, not trusted.
  * @param {ReturnType<typeof createSession>} session
  * @param {string} claimedHash
- * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string}} o
+ * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string}} o
  * @returns {{ok: boolean, error?: string, job?: string}}
  */
 export function signRun(session, claimedHash, o) {
   if (session.state.phase !== 'prepared') return { ok: false, error: `session is not prepared (phase=${session.state.phase}) — nothing to sign` };
   if (!session.state.specHash || claimedHash !== session.state.specHash) return { ok: false, error: 'spec hash mismatch — refusing to sign' };
   if (!session.state.resolvedSpecPath) return { ok: false, error: 'no resolved spec on disk — refusing to sign' };
+  // P4a — the monthly $ limit REFUSES here too, server-side, before anything is spawned
+  // (the page's note is a courtesy; this is the check). Same library call, same text as
+  // the run-start seam in src/userrun.js. The session stays `prepared`, so the person can
+  // lower nothing (the cap is signed in) but may raise the limit in Settings and sign again.
+  try {
+    const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+    const refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: Number(spec.budgetUsd), home: o.home }));
+    if (refusal !== null) return { ok: false, error: refusal };
+  } catch (e) {
+    if (e instanceof ConfigError) return { ok: false, error: `${e.message} — refusing rather than guess the monthly limit` };
+    return { ok: false, error: 'could not read the signed spec to check the monthly limit — refusing to sign' };
+  }
   const logFile = join(session.state.outDir, 'run.log');
   // array argv, never a shell string — `--approve <hash>` is a literal
   // element, checkable byte-for-byte by a test stubbing `spawnFn`, and there

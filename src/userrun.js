@@ -74,6 +74,8 @@ import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
 import { appendRun } from './runlist.js';
 import { keysForDoor } from './keysfile.js';
+import { checkMonthlyRoom, monthlyRefusalText } from './monthly.js';
+import { ConfigError } from './config.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -1383,6 +1385,33 @@ async function execute(ctx) {
         err(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
         throw new ExitSignal(2);
       }
+    }
+  }
+
+  // THE MONTHLY $ LIMIT (PANEL-BUILD.md P4a, hamr 2026-09-29: "drop time keep money") — the
+  // ONE run-start seam. Every run this door starts (the CLI's `bareloop run-u` and the panel,
+  // which spawns it) passes here after the signature and the key gates and BEFORE the run
+  // list row, the patient reset or any token: a cap larger than what is left this month does
+  // not start, and nothing is spent. This leg's exposure is the whole signed cap on a cold
+  // start (it covers drafting + run) and only the REMAINDER on a resume/door-rerun, whose
+  // earlier spend is already in the month's total. No limit set = no check. An unreadable
+  // config.json refuses too — a broken instrument never silently reads "no limit".
+  {
+    const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
+    const legCapUsd = Math.max(0, spec.budgetUsd - (typeof foldedUsd === 'number' && Number.isFinite(foldedUsd) ? foldedUsd : 0));
+    /** @type {string|null} */
+    let refusal = null;
+    try {
+      refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: legCapUsd, home: deps.runlistHome }));
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      err(`${e.message} — refusing to start rather than guess the monthly limit. Nothing spent.`);
+      throw new ExitSignal(2);
+    }
+    if (refusal !== null) {
+      err(refusal);
+      err('Nothing spent. Lower the cap, or raise the monthly limit in Settings.');
+      throw new ExitSignal(2);
     }
   }
 
