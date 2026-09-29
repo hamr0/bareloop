@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs';
 import { readConfig, ConfigError } from './config.js';
 import { readRunList } from './runlist.js';
 import { parseJsonl } from './replayio.js';
-import { SPEND_RECORD_TYPES, spendProvenance } from './ledger.js';
+import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
 import { PROVIDER_ROWS, rowIdFor } from './providerrows.js';
 
 /**
@@ -47,6 +47,22 @@ export function legSpend(records) {
 }
 
 /**
+ * One run's wall time off its spine: job-start -> job-end when the run ended (exact), else the
+ * first -> last record floor (the SAME floor a died / still-running run's "at least" wall uses,
+ * `floorsFromRecords`). `ms` null = unknown — never 0.
+ * @param {any[]} records
+ * @returns {{ ms: number|null, complete: boolean }}
+ */
+export function legWall(records) {
+  const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
+  const jobEnd = records.findLast((r) => r && r.type === 'job-end') ?? null;
+  const a = Date.parse(jobStart?.ts);
+  const b = Date.parse(jobEnd?.ts);
+  if (jobEnd && Number.isFinite(a) && Number.isFinite(b) && b >= a) return { ms: b - a, complete: true };
+  return { ms: floorsFromRecords(records).wallFloorMs, complete: false };
+}
+
+/**
  * Tokens a spine's rounds processed (input + output + cache read + cache write — all four,
  * so a cache-heavy run is not under-reported), off the real `usage` field names.
  * @param {any[]} records
@@ -73,6 +89,8 @@ export function legTokens(records) {
  * @property {boolean} complete every figure behind `usd` is known
  * @property {number} tokens
  * @property {string|null} model job-start's model (older spines carry a model but no provider)
+ * @property {number|null} wallMs this leg's wall time (null = unknown; a floor when `!wallComplete`)
+ * @property {boolean} wallComplete the wall is the exact job-start -> job-end span
  * @property {number} vouchedRounds rounds priced by a rate somebody vouched for (`provider`/`caller`)
  * @property {number} otherRounds every other round: a built-in guess, unpriced, or no provenance on record
  * @property {boolean} unreadable the spine was missing/unreadable or the listed date was bad (spend unknown)
@@ -90,7 +108,7 @@ export function readLegs(opts = {}) {
   const legs = [];
   for (const row of rows) {
     const at = new Date(row.at);
-    const base = { at, provider: null, baseUrl: null, model: null, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, unreadable: true };
+    const base = { at, provider: null, baseUrl: null, model: null, wallMs: null, wallComplete: false, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, unreadable: true };
     if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push(base); continue; }
     /** @type {any[]} */
     let records;
@@ -98,9 +116,12 @@ export function readLegs(opts = {}) {
     const start = records.find((r) => r && r.type === 'job-start') ?? null;
     const leg = legSpend(records);
     const prov = spendProvenance(records);
+    const wall = legWall(records);
     legs.push({
       at,
       model: typeof start?.model === 'string' ? start.model : null,
+      wallMs: wall.ms,
+      wallComplete: wall.complete,
       provider: typeof start?.provider === 'string' ? start.provider : null,
       baseUrl: typeof start?.baseUrl === 'string' ? start.baseUrl : null,
       usd: leg.usd,
@@ -149,14 +170,17 @@ export function monthSpend(opts = {}) {
  * an "at least".
  * @param {{ home?: string, now?: () => number }} [opts]
  * @returns {{ total: {usd: number, atLeast: boolean}, month: {usd: number, atLeast: boolean},
- *   byProvider: Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number}> }}
+ *   byProvider: Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number, monthWallMs: number|null, monthWallAtLeast: boolean, totalWallMs: number|null, totalWallAtLeast: boolean}> }}
  */
 export function spendSummary(opts = {}) {
   const nowDate = new Date((opts.now ?? Date.now)());
   const total = { usd: 0, atLeast: false };
   const month = { usd: 0, atLeast: false };
-  /** @type {Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number}>} */
+  /** @type {Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number, monthWallMs: number|null, monthWallAtLeast: boolean, totalWallMs: number|null, totalWallAtLeast: boolean}>} */
   const byProvider = {};
+  /** runs per provider in each scope, and how many had a known wall — unknown is never 0
+   * @type {Record<string, {monthRuns: number, monthKnown: number, totalKnown: number}>} */
+  const wallSeen = {};
   for (const leg of readLegs({ home: opts.home })) {
     const inMonth = Number.isNaN(leg.at.getTime()) ? true : sameLocalMonth(leg.at, nowDate);
     const id = rowIdFor(leg.provider, leg.baseUrl);
@@ -166,14 +190,28 @@ export function spendSummary(opts = {}) {
     const key = id ?? (notRecorded ? `not-recorded:${leg.model ?? ''}` : `other:${leg.provider}${leg.baseUrl ? ` @ ${leg.baseUrl}` : ''}`);
     const label = id ? (PROVIDER_ROWS.find((r) => r.id === id)?.name ?? id)
       : (notRecorded ? (leg.model ? `not recorded (model ${leg.model})` : 'not recorded') : key.slice('other:'.length));
-    const p = (byProvider[key] ??= { label, monthUsd: 0, monthAtLeast: false, totalUsd: 0, totalAtLeast: false, tokens: 0, vouchedRounds: 0, otherRounds: 0 });
+    const p = (byProvider[key] ??= { label, monthUsd: 0, monthAtLeast: false, totalUsd: 0, totalAtLeast: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, monthWallMs: 0, monthWallAtLeast: false, totalWallMs: 0, totalWallAtLeast: false });
+    const w = (wallSeen[key] ??= { monthRuns: 0, monthKnown: 0, totalKnown: 0 });
     const unknown = leg.unreadable || !leg.complete;
+    const wallKnown = !leg.unreadable && leg.wallMs !== null;
+    const wallAtLeast = !wallKnown || !leg.wallComplete;
     total.usd += leg.usd; if (unknown) total.atLeast = true;
     p.totalUsd += leg.usd; p.tokens += leg.tokens; p.vouchedRounds += leg.vouchedRounds; p.otherRounds += leg.otherRounds; if (unknown) p.totalAtLeast = true;
+    if (wallKnown) { p.totalWallMs = /** @type {number} */ (p.totalWallMs) + /** @type {number} */ (leg.wallMs); w.totalKnown += 1; }
+    if (wallAtLeast) p.totalWallAtLeast = true;
     if (inMonth) {
       month.usd += leg.usd; if (unknown) month.atLeast = true;
       p.monthUsd += leg.usd; if (unknown) p.monthAtLeast = true;
+      w.monthRuns += 1;
+      if (wallKnown) { p.monthWallMs = /** @type {number} */ (p.monthWallMs) + /** @type {number} */ (leg.wallMs); w.monthKnown += 1; }
+      if (wallAtLeast) p.monthWallAtLeast = true;
     }
+  }
+  // runs in scope but not one with a known wall = unknown (null), never a clean 0
+  for (const [key, p] of Object.entries(byProvider)) {
+    const w = wallSeen[key];
+    if (w.totalKnown === 0) p.totalWallMs = null;
+    if (w.monthRuns > 0 && w.monthKnown === 0) p.monthWallMs = null;
   }
   return { total, month, byProvider };
 }

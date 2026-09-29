@@ -157,3 +157,38 @@ test('spendSummary: an older spine with a model but no provider is labelled "not
   assert.equal(s.total.usd, 3.75);
   assert.ok(!Object.keys(s.byProvider).includes('anthropic'), 'never guessed into a provider row from the model name');
 });
+
+test('spendSummary minutes: job-end wall is exact; a run with no job-end is an "at least" floor; an unknown wall is null, never 0', (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const T = (min) => new Date(Date.UTC(2026, 8, 2, 10, min, 0)).toISOString();
+  const done = [{ type: 'job-start', provider: 'anthropic-api', ts: T(0) }, { type: 'worker-round', costUsd: 1, ts: T(3) }, { type: 'job-end', engagementSpentUsd: 1, spentUsd: 1, spendComplete: true, ts: T(10) }];
+  const died = [{ type: 'job-start', provider: 'openai-api', ts: T(0) }, { type: 'worker-round', costUsd: 1, ts: T(4) }];
+  const blind = [{ type: 'job-start', provider: 'openai-api', baseUrl: DEEPSEEK_BASE_URL }, { type: 'job-end', engagementSpentUsd: 0, spentUsd: 0, spendComplete: true }];
+  addSpine(home, d, 'm1', at(2026, 8, 2), done);
+  addSpine(home, d, 'm2', at(2026, 8, 3), died);
+  addSpine(home, d, 'm3', at(2026, 8, 4), blind);
+  const s = spendSummary({ home, now: NOW });
+  assert.equal(s.byProvider.anthropic.monthWallMs, 10 * 60000);
+  assert.equal(s.byProvider.anthropic.monthWallAtLeast, false);
+  assert.equal(s.byProvider.openai.totalWallMs, 4 * 60000);
+  assert.equal(s.byProvider.openai.totalWallAtLeast, true);
+  assert.equal(s.byProvider.deepseek.totalWallMs, null, 'no timestamps at all = unknown, not 0');
+  assert.equal(s.byProvider.deepseek.monthWallMs, null);
+});
+
+test('/api/settings/money carries the wall minutes per provider, and the page renders them as "at least" / "unknown" / minutes', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const T = (min) => new Date(Date.UTC(2026, 8, 2, 10, min, 0)).toISOString();
+  addSpine(home, d, 'w1', new Date().toISOString(), [{ type: 'job-start', provider: 'anthropic-api', ts: T(0) }, { type: 'job-end', engagementSpentUsd: 1, spentUsd: 1, spendComplete: true, ts: T(6) }]);
+  const { port, token, close } = await createPanelServer({ port: 0, home, env: {}, sessionsRoot: tmp(t) });
+  t.after(() => close());
+  const body = await (await fetch(`http://127.0.0.1:${port}/api/settings/money`, { headers: { 'x-bareloop-token': token } })).json();
+  const row = body.byProvider.find((p) => p.label === 'Anthropic');
+  assert.equal(row.totalWallMs, 6 * 60000);
+  assert.equal(row.monthWallAtLeast, false);
+  const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  assert.match(html, /<th>This month min<\/th><th>To date min<\/th>/);
+  assert.match(html, /minutesText\(p\.monthWallMs, p\.monthWallAtLeast\)/);
+});
