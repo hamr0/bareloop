@@ -519,7 +519,7 @@ if (dead && existsSync(`${spineFile}.watchdog.json`)) {
   console.log(`watchdog  the killed run's own kill record archived → ${archived}${Number.isFinite(killedAt) ? '' : ' (its kill time could not be read — the suffix is the ARCHIVE moment, so a second unreadable report cannot overwrite this one)'}`);
 }
 const watchdog = spawn(process.execPath, [
-  fileURLToPath(new URL('./u-watchdog.mjs', import.meta.url)),
+  fileURLToPath(new URL('../src/u-watchdog.mjs', import.meta.url)),
   '--spine', spineFile,
   '--pid', String(process.pid),
   '--stale-ms', String(worstCloseSilenceMs + 600_000),

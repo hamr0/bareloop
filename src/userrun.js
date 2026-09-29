@@ -1678,9 +1678,9 @@ async function execute(ctx) {
   // containing `%20` that does not exist, and the guard dies at startup on the one run
   // it was meant to protect. Same spelling the sibling scripts use.
   const watchdog = spawn(process.execPath, [
-    // PANEL-BUILD.md P0 — this engine now lives in src/, one directory over
-    // from scripts/u-watchdog.mjs (it used to be a same-directory sibling).
-    fileURLToPath(new URL('../scripts/u-watchdog.mjs', import.meta.url)),
+    // src/u-watchdog.mjs ships in the package (F205: it used to live in scripts/,
+    // which the tarball omits, so an installed run spawned a guard that died at startup).
+    fileURLToPath(new URL('./u-watchdog.mjs', import.meta.url)),
     '--spine', spineFile,
     '--pid', String(process.pid),
     '--stale-ms', String(worstCloseSilenceMs + 600_000),

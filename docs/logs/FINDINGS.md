@@ -13866,3 +13866,18 @@ under the Model field before drafting, never returning key material.
 
 **Status: fixed.** `src/panel/server.js`, `src/panel/index.html`, `src/providers.js`
 (5410aa3).
+
+## F205 — the outside watchdog was not in the published package: an installed run spawned a dead guard (fixed)
+
+**Grounded in:** `package.json` `files` is `src/ bin/ types/ NOTICE ...` (no `scripts/`);
+`src/userrun.js` spawned `../scripts/u-watchdog.mjs`; the v0.32.0 tarball (`npm pack
+--dry-run`) contains no `scripts/`. `spawn` of a missing script succeeds and emits no
+`error` event, so the F67 guard died at startup, silently, on every installed run (exported
+bundles, the panel's installed case).
+
+**Fix:** `scripts/u-watchdog.mjs` moved to `src/u-watchdog.mjs` (a same-directory sibling of
+`userrun.js`, shipped by `files`); `scripts/reuse-exec-probe.mjs`, `scripts/run-reuse.mjs` and
+`tests/watchdog.test.js` repointed. No shim, no copy. Older FINDINGS/CHANGELOG prose citing
+the old path is a closed record and is left as written.
+
+**Status: fixed.**
