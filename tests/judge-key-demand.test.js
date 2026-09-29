@@ -34,7 +34,7 @@ const cmdStage = (name = 'tests') => ({ name, kind: 'cmd-exit-zero', params: { c
 // guard, then reassigned here (never `const`), so this no longer requires
 // the `const` keyword.
 function judgeKeyIdentifier(src) {
-  const m = src.match(/(?:const|let)?\s*(\w+) = env\.JUDGE_API_KEY \?\? env\[judgeEntry\.envKey\];/);
+  const m = src.match(/(?:const|let)?\s*(\w+) = env\.JUDGE_API_KEY \?\? judgeEnv\[judgeEntry\.envKey\];/);
   assert.ok(m, 'the judge key follows the RESOLVED judge provider\'s own env var, with the role-named override in front');
   return m[1];
 }
@@ -91,11 +91,13 @@ test('scripts/run-u.mjs demands the WORKER key unconditionally and the JUDGE key
   // a thin adapter) into src/userrun.js's execute(), where `process.env` ->
   // `env` and `process.exit(2)` -> `throw new ExitSignal(2)` (a library
   // function never calls process.exit itself).
+  // P4a item 4 — `workerEnv`/`judgeEnv` are `env` with the key variable the person picked in Settings
+  // standing in for the built-in one (src/providerrows.js applyConfiguredKey); the demand is unchanged.
   const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
 
   assert.ok(!/const apiKey = (?:process\.)?env\.ANTHROPIC_API_KEY;\nif \(!apiKey\)/.test(src),
     'the unconditional ANTHROPIC_API_KEY exit is gone — that WAS the defect');
-  assert.match(src, /workerApiKey = env\[providerEntry\.envKey\];/,
+  assert.match(src, /workerApiKey = workerEnv\[providerEntry\.envKey\];/,
     'the worker key comes from the provider table\'s own envKey, never a hardcoded variable name');
   assert.match(src, /if \(!workerApiKey\)[\s\S]{0,160}throw new ExitSignal\(2\)/,
     'and it is still ALWAYS required — the worker always runs');
@@ -119,7 +121,7 @@ test('the judge key reads JUDGE_API_KEY first and falls back to the RESOLVED jud
   // the worker key already goes through — never a second hardcoded variable.
   // PANEL-BUILD.md P0 — this call site is in src/userrun.js now.
   const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
-  assert.match(src, /env\.JUDGE_API_KEY \?\? env\[judgeEntry\.envKey\]/,
+  assert.match(src, /env\.JUDGE_API_KEY \?\? judgeEnv\[judgeEntry\.envKey\]/,
     'role-named first, fallback second: the fallback follows the RESOLVED provider, never a hardcoded name');
   assert.ok(!/env\.JUDGE_API_KEY \?\? env\.ANTHROPIC_API_KEY/.test(src),
     'the pre-item-32 hardcoded Anthropic fallback is gone — that spelling assumed the judge could only ever be Claude');

@@ -460,7 +460,7 @@ test('§1 the PAUSE door launches NOTHING and keeps the checkpoint the operator 
   // table's own envKey, and the JUDGE's, demanded only when the close judges), so
   // this anchors on the FIRST of them — the worker key, which every run needs.
   // The claim is unchanged: a pause exits before ANY secret is asked for.
-  const firstKeyDemand = src.indexOf('workerApiKey = env[providerEntry.envKey]');
+  const firstKeyDemand = src.indexOf('workerApiKey = workerEnv[providerEntry.envKey]');
   assert.ok(firstKeyDemand > 0, 'the runner still demands a worker key somewhere below');
   assert.ok(at < firstKeyDemand, 'above the key: nothing about saying "not now" needs a secret');
 });
