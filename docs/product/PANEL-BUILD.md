@@ -635,3 +635,22 @@ P4a = items 1–4 above, with edit/remove buttons absent (not greyed).
 - Same refusal from the CLI.
 - Providers tab shows the four rows with found / not set and a working Test.
 - Orchestrator's own screenshot at desktop + narrow width.
+
+## Addendum 2026-09-29 (later) — what the built P4 changed against the spec above
+
+The P4a spec above is kept as written; where the build followed hamr's later rulings, these
+supersede it:
+
+- **Providers tab is the keys file (P4b), not a fixed list.** One row per `~/.config/bareloop/.env`
+  line that has a value (name, API shape, Base URL in `config.json` `keys.<ENV NAME>`); the
+  "four rows", the key-variable dropdown, `providers.<name>.key` and the Price column are gone.
+  A missing `.env` is created with five empty preset lines; an existing one is never edited;
+  `LOCAL_API_KEY=null` means no key needed. Chat's Model menu is these rows. (Split R6's "P4b later"
+  landed as this, without add/edit/remove buttons.)
+- **The limit field auto-saves; there is no Save button.** Blank clears it. `POST /api/settings/money`
+  without a `monthlyLimitUsd` key is a `400`, never a clear.
+- **An in-flight run reserves its full leg cap** in the refusal check only (the Money tab shows real
+  spend); a died run counts its floor; the spine a resume continues counts its real spend.
+- Also built: POST body cap (1 MiB, `413`), the `jobsDir` seam server-side only, `replay-live --live-audit`.
+- Parked to `.claude/remember/fix-ledger.md`: `bareloop run <bundle>` has no monthly check (a second
+  run-start seam is hamr's call).

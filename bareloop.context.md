@@ -3302,17 +3302,17 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   `baselineKind`/`question`: the plain-English question is derived in `src/panel/server.js`
   (`stageQuestionText`) from the signed stage's kind/params only, `null` when no honest
   wording exists (the client then shows the stage's own name). Every
-  endpoint is GET/HEAD only (anything else — including every write verb — is `405`); a URL
+  P1 endpoint is GET/HEAD only (anything else — including every write verb — is `405`, outside the
+  two human-click-guarded write families `/api/author/*` and `/api/settings/*` below); a URL
   never joins a path segment into a filesystem read — a runid is looked up in the run list
   first (`RUNID_RE`, `src/panel/server.js` — accepts a `~2`-style backfill-disambiguated
   suffix too, and every endpoint echoes back the LISTED runid, never a filename-derived one
   that can silently drop that suffix), and only the path THAT ROW stores is ever read. A
   taken port fails loudly (names the port, exit `1`) — this command never silently tries a
-  different one. No interview, no author, no run trigger, no key/`.env` ever read on this
-  path. One more caller of `src/replayio.js`/`src/runlist.js`, in-process, per the layering
+  different one. This read path runs no interview, no author and no run, and reads no key
+  value (the write families below do, server-side, and never return one). One more caller of `src/replayio.js`/`src/runlist.js`, in-process, per the layering
   law (`docs/product/PANEL-BUILD.md` §2) — the panel's HTTP handler holds no flow logic of
-  its own. Chat/Settings/authoring (P3/P4) are not built yet; the page says so rather than
-  hiding the gap.
+  its own. Chat/authoring (P3) and Settings (P4a/P4b) are built — see below.
 
 - **Panel P2 (live run view, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27)** → the page
   polls, it does not push (no SSE/websocket). One `setInterval` (2s) drives two throttled
@@ -3338,9 +3338,12 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   `--live-audit` (opt-in) puts the sidecar at a scratch patient dir during the replay so the
   live-fallback path above is exercised, then moves it to the sibling name at the end.
 
-- **Panel P3 (chat/authoring, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27)** → the ONE
-  family of write routes the panel serves, all under `/api/author/*` (`src/panel/
-  authorroutes.js`); every other route stays GET/HEAD-only per P1's own rule. Every route
+- **Panel P3 (chat/authoring, `docs/product/PANEL-BUILD.md` Addendum 2026-09-27)** → one of the
+  panel's TWO families of write routes (the other is `/api/settings/*`, see "Settings" below), this
+  one under `/api/author/*` (`src/panel/authorroutes.js`); every other route stays GET/HEAD-only
+  per P1's own rule. A POST body over 1 MiB is refused `413` before it is parsed, and the job
+  card's `jobsDir` (where an existing job name is looked up) is a server-side seam only, never read
+  off the client's card. Every route
   requires the human-click guard: an `x-bareloop-token` header matching a fresh token minted
   once per server start (templated into `index.html` like the port) AND an Origin/Host
   naming this exact `127.0.0.1:<port>` — a request failing either gets `403`, before the
@@ -3370,14 +3373,14 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   [`--draft-spend-incomplete`] when the session's drafting spend is > 0 — one cap covers
   drafting + run) detached (array argv,
   never a shell string), with its own log file inside the session's own dir, and the
-  server's own environment (a key is never read into or sent to the page — a missing one
-  refuses the session at $0, naming only the env var). `src/panel/authorsession.js` takes
+  server's environment with `~/.config/bareloop/.env` merged in per request (a key is never read
+  into or sent to the page — a missing one refuses the session at $0, naming only the env var). `src/panel/authorsession.js` takes
   test-only DI seams (`scout`/`generate`/`confirmGenerate`/`authorFn`/`prepareSigningFn`) so
   a test can drive the real ask()-channel/revise/hash wiring without a live provider call;
   none of them are reachable from `authorroutes.js`'s real construction path. Sessions live
   under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
   `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
-  `~/.config/bareloop/.env` keys-file loader, and Settings are P4 (P4a landed — see "Settings" below).
+  `~/.config/bareloop/.env` keys-file loader, and Settings have landed (P4a/P4b — see "Settings" below).
 
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
@@ -3524,6 +3527,12 @@ far (except the run a resume continues, which counts its real spend), so two run
 Only the refusal reserves the cap (`monthSpend().reservedUsd`); the Money tab's month figure is
 real spend.
 
+**Money & limits tab** (`GET/POST /api/settings/money`): two tiles ($ and tokens, this month / to date, a
+`≥` prefix when a figure is a floor) and a per-provider table ($, minutes, tokens; a run is grouped
+by the provider on its `job-start`, an older spine by its model). The limit field auto-saves on
+change (no Save button); blank clears it. `POST` needs an explicit `monthlyLimitUsd` key (a number
+above 0, or `null`/blank to clear) — an empty or key-less body is a `400`, never "clear the limit".
+
 **Providers tab (P4b, `src/providerrows.js`).** One row per key in `.env` that HAS A VALUE — nothing is
 hardcoded; an empty line is no row, a removed line drops its row on Reload keys. A missing `.env` is
 created (mode 600) on the first Providers read with five empty preset lines (`ANTHROPIC_API_KEY`,
@@ -3549,9 +3558,11 @@ baseUrl[, model])` reads the matching row's variable, else the provider's built-
 (`run-u`, `interview`, `author`, the panel's drafting) use it. Routes (all behind the per-start token
 and Origin check; the chat can never reach them): `GET /api/settings/providers`, `POST .../row`
 (`{envName, name, shape, baseUrl}`), `POST .../balance-note`, `POST .../test` (one
-`checkProviderReachable` models-list GET at the row's shape + URL, $0), `GET .../balance?env=`
+`checkProviderReachable` models-list GET at the row's shape + URL, $0; a refused connection reads
+`nothing answering at <URL>`), `GET .../balance?env=`
 (DeepSeek-hosted row, server-side), and `GET /api/author/models` (Chat's Model menu). The old
-`providers.<row>.key` config field and the key dropdown are gone.
+`providers.<row>.key` config field and the key dropdown are gone. Like the authoring routes, a POST
+body over 1 MiB is refused `413`.
 
 ### The source front door — a plain folder/file/URL, no `--patient` (PRD item 33/M2, `src/source.js`)
 
