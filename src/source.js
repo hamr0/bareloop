@@ -441,11 +441,15 @@ async function fetchOnce(url, timeoutMs) {
  * never hands a repo source's destination to `copyOut` — wiring it into
  * `writeScope` is M3/M4's job, not this one.
  * @param {{source: string, into: string, destination?: string,
- *   fetchTimeoutMs?: number}} args `fetchTimeoutMs` is test-only — production
- *   callers omit it and get `PROVIDER_TIMEOUT_MS`.
+ *   fetchTimeoutMs?: number, afterScan?: () => (void|Promise<void>)}} args
+ *   `fetchTimeoutMs` is test-only — production callers omit it and get
+ *   `PROVIDER_TIMEOUT_MS`. `afterScan` is a test seam too: called exactly once,
+ *   after the secret scan finished and before the freeze loop re-reads any
+ *   file's bytes, so a test can swap a file inside that window
+ *   deterministically. Production never sets it; absent, behaviour is unchanged.
  * @returns {Promise<{stop: null, into: string, tree: string, manifestPath: string, manifest: object}|SourceRefusal>}
  */
-export async function prepareSource({ source, into, destination, fetchTimeoutMs = PROVIDER_TIMEOUT_MS }) {
+export async function prepareSource({ source, into, destination, fetchTimeoutMs = PROVIDER_TIMEOUT_MS, afterScan }) {
   const intoAbs = resolve(into);
   if (existsSync(intoAbs)) {
     return refuse('into-exists', `${intoAbs} already exists — a source door writes a FRESH tree, never reuses one (the export worktree rule)`);
@@ -674,6 +678,7 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   // (verified: 0o755 in, 0o755 out; a plain `writeFile` defaults to 0o644),
   // so the replacement chmod's the destination from a fresh `stat` to keep
   // that behaviour unchanged.
+  if (afterScan) await afterScan();
   for (let i = 0; i < frozen.files.length; i += 1) {
     const f = frozen.files[i];
     const dest = join(treeDir, treeRel(f.rel));
