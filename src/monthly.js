@@ -12,12 +12,15 @@
 // within DIED_MTIME_MS — the panel's own died rule) is counted at its full leg cap, not its
 // spend so far: `checkMonthlyRoom` reserves what the run may still spend, so two runs cannot
 // both start against a limit only one of them fits. A died run (stale spine) counts its floor.
+// The one exception is the spine a RESUME continues (`resumingSpine`): it counts its real spend
+// only, because the resume's own leg cap is the remainder and already covers its unspent cap.
 // Only the refusal check reserves; the Money tab keeps showing real spend (`usd`).
 //
 // Honesty: a run whose spend is not fully known (a died/still-running spine, an unpriced
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
 // number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
 import { existsSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { readConfig, configPath, ConfigError } from './config.js';
 import { readRunList, DIED_MTIME_MS } from './runlist.js';
 import { parseJsonl } from './replayio.js';
@@ -161,12 +164,13 @@ function inFlightCapUsd(records, spinePath, nowMs, usd) {
 /**
  * Every listed run as one {@link Leg}. The ONE reader the month total, the all-time total
  * and the per-provider figures share.
- * @param {{ home?: string, now?: () => number }} [opts] `now` = the clock for the in-flight test
+ * @param {{ home?: string, now?: () => number, resumingSpine?: string|null }} [opts] `now` = the clock for the in-flight test; `resumingSpine` = the spine a resume continues: that leg reserves its spend only, never its unspent cap (the resume's own leg cap is that remainder)
  * @returns {Leg[]}
  */
 export function readLegs(opts = {}) {
   const nowMs = (opts.now ?? Date.now)();
   const { rows } = readRunList({ home: opts.home });
+  const resuming = typeof opts.resumingSpine === 'string' ? resolve(opts.resumingSpine) : null;
   /** @type {Leg[]} */
   const legs = [];
   for (const row of rows) {
@@ -192,7 +196,7 @@ export function readLegs(opts = {}) {
       tokens: legTokens(records),
       vouchedRounds: prov.vouched.rounds,
       otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
-      reservedUsd: inFlightCapUsd(records, row.spine, nowMs, leg.usd),
+      reservedUsd: resuming !== null && resolve(row.spine) === resuming ? leg.usd : inFlightCapUsd(records, row.spine, nowMs, leg.usd),
       unreadable: false,
     });
   }
@@ -207,7 +211,7 @@ export function readLegs(opts = {}) {
 const sameLocalMonth = (at, now) => at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth();
 
 /**
- * @param {{ home?: string, now?: () => number }} [opts]
+ * @param {{ home?: string, now?: () => number, resumingSpine?: string|null }} [opts] `resumingSpine`: see {@link readLegs}
  * @returns {{ usd: number, atLeast: boolean, runs: number, reservedUsd: number }} `usd` = real spend (the Money tab's figure); `reservedUsd` = the same with in-flight runs at their cap (the refusal check's)
  */
 export function monthSpend(opts = {}) {
@@ -216,7 +220,7 @@ export function monthSpend(opts = {}) {
   let reservedUsd = 0;
   let atLeast = false;
   let runs = 0;
-  for (const leg of readLegs({ home: opts.home, now: opts.now })) {
+  for (const leg of readLegs({ home: opts.home, now: opts.now, resumingSpine: opts.resumingSpine })) {
     // an unreadable date could belong to this month — unknown, never dropped
     if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
     if (!sameLocalMonth(leg.at, nowDate)) continue;
@@ -317,21 +321,21 @@ export function monthlyLimitOf(config, home) {
 }
 
 /**
- * Does a run with this $ cap fit in what is left this month (running jobs counted at their full cap)? No limit set (key absent or null) = ok, no check; a limit that is present but not a
+ * Does a run with this $ cap fit in what is left this month (running jobs counted at their full cap, except the spine a resume continues — `resumingSpine` — which counts its real spend)? No limit set (key absent or null) = ok, no check; a limit that is present but not a
  * number above 0 throws `ConfigError`.
  * Compared in whole cents. Also throws `ConfigError` when config.json is unreadable — a gate
  * whose own instrument is broken refuses; it never silently runs with no limit.
- * @param {{ capUsd: number, home?: string, now?: () => number }} args
+ * @param {{ capUsd: number, home?: string, now?: () => number, resumingSpine?: string|null }} args
  * @returns {MonthlyRoom}
  */
-export function checkMonthlyRoom({ capUsd, home, now }) {
+export function checkMonthlyRoom({ capUsd, home, now, resumingSpine }) {
   const cfg = readConfig({ home });
   if (cfg.problem) throw new ConfigError(cfg.problem);
   const limit = monthlyLimitOf(cfg.config, home);
   if (limit === null) {
     return { ok: true, leftUsd: null, limitUsd: null, atLeast: false };
   }
-  const spent = monthSpend({ home, now });
+  const spent = monthSpend({ home, now, resumingSpine });
   const leftCents = Math.max(0, Math.floor((limit - spent.reservedUsd) * 100 + 1e-6));
   const capCents = Math.ceil((Number.isFinite(capUsd) ? capUsd : 0) * 100 - 1e-6);
   return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast };

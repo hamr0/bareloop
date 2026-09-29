@@ -11,7 +11,7 @@ import {
   mkdtempSync, mkdirSync, writeFileSync, utimesSync, readFileSync, rmSync, existsSync, statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { configPath, readConfig, updateConfig, ConfigError } from '../src/config.js';
 import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend } from '../src/monthly.js';
 import { appendRun, readRunList } from '../src/runlist.js';
@@ -170,6 +170,48 @@ test('checkMonthlyRoom: an IN-FLIGHT run (no job-end, fresh spine) counts at its
   age('leg2', 10 * 60 * 1000 + 1000);
   assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 0.55);
   assert.equal(checkMonthlyRoom({ capUsd: 6, home, now: NOW }).ok, true);
+});
+
+test('checkMonthlyRoom: the spine a resume continues counts its real spend, never its unspent cap; every other in-flight run keeps its full reservation', (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const nowMs = NOW();
+  const fresh = (runid) => utimesSync(join(d, `u-${runid}.jsonl`), new Date(nowMs - 3 * 60 * 1000), new Date(nowMs - 3 * 60 * 1000));
+  updateConfig({ monthlyLimitUsd: 12 }, { home });
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 } });
+  fresh('killed');
+  const spine = join(d, 'u-killed.jsonl');
+  // 1. the resume asks for the remainder ($7); $9 truly left
+  const ok = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: spine });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.leftUsd, 9);
+  assert.equal(monthSpend({ home, now: NOW, resumingSpine: spine }).usd, 3, 'real spend still counts in full');
+  // 2. without it, the old leg is reserved at its full cap: refused
+  const refused = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
+  assert.equal(refused.ok, false);
+  assert.equal(monthlyRefusalText(refused), 'Max $2.00 (monthly limit)');
+  // 5. path form: a `./` / relative segment still matches
+  assert.equal(checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: join(d, '.', 'sub', '..', 'u-killed.jsonl') }).ok, true);
+  const rel = relative(process.cwd(), spine);
+  assert.equal(checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: `./${rel}` }).ok, true);
+  // 3. another fresh in-flight run stays reserved at its full cap
+  addRun(home, d, { runid: 'other', at: localIso(2026, 8, 15, 11), rounds: [], jobStart: { budgetUsd: 6 } });
+  fresh('other');
+  const two = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: spine });
+  assert.equal(two.ok, false);
+  assert.equal(two.leftUsd, 3);
+});
+
+test('checkMonthlyRoom: a resume that truly does not fit is still refused', (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 8 }, { home });
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 } });
+  const f = join(d, 'u-killed.jsonl');
+  utimesSync(f, new Date(NOW() - 3 * 60 * 1000), new Date(NOW() - 3 * 60 * 1000));
+  const room = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: f });
+  assert.equal(room.ok, false);
+  assert.equal(monthlyRefusalText(room), 'Max $5.00 (monthly limit)');
 });
 
 test('checkMonthlyRoom: a finished run counts its spend only, never its cap', (t) => {

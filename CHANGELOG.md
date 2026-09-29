@@ -42,6 +42,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **Monthly limit no longer double-counts a resume** — `run-u --resume` on a leg killed within
+  `DIED_MTIME_MS` reserved the old leg at its full cap AND asked for the remainder, so a resume
+  that fit was refused; the resumed leg now counts its real spend only
+  (`checkMonthlyRoom({ resumingSpine })`).
 - **`POST /api/settings/money` no longer clears the limit on a bad body** — an empty or
   unparseable body, or JSON without the `monthlyLimitUsd` key, is a 400 and leaves `config.json`
   alone; only an explicit `null` or blank clears the limit.

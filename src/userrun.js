@@ -1409,7 +1409,8 @@ async function execute(ctx) {
   // list row, the patient reset or any token: a cap larger than what is left this month does
   // not start, and nothing is spent. This leg's exposure is the whole signed cap on a cold
   // start (it covers drafting + run) and only the REMAINDER on a resume/door-rerun, whose
-  // earlier spend is already in the month's total. No limit set = no check. An unreadable
+  // earlier spend is already in the month's total (a resume's killed leg counts its real spend only,
+  // never its unspent cap — `resumingSpine` — since the remainder asked for here covers that). No limit set = no check. An unreadable
   // config.json refuses too — a broken instrument never silently reads "no limit".
   {
     const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
@@ -1417,7 +1418,7 @@ async function execute(ctx) {
     /** @type {string|null} */
     let refusal = null;
     try {
-      if (cfgOn) refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: legCapUsd, home: cfgHome }));
+      if (cfgOn) refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: legCapUsd, home: cfgHome, resumingSpine: deadSpineFile }));
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       err(`${e.message} — refusing to start rather than guess the monthly limit. Nothing spent.`);

@@ -3520,7 +3520,7 @@ same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This 
 calendar month; a died or incomplete-spend run makes the total an "at least" figure. A run still
 IN FLIGHT (`job-start`, no `job-end`, spine file written within `DIED_MTIME_MS`, `src/runlist.js`) is
 counted at its full leg cap (`budgetUsd` less `priorSpentUsd` on its `job-start`), not its spend so
-far, so two runs cannot both start against a limit only one fits; a died run counts its floor.
+far (except the run a resume continues, which counts its real spend), so two runs cannot both start against a limit only one fits; a died run counts its floor.
 Only the refusal reserves the cap (`monthSpend().reservedUsd`); the Money tab's month figure is
 real spend.
 
