@@ -32,6 +32,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - `config.json` `providers.<row>.key` (P4a key-name dropdown) is replaced by
   `keys.<ENV NAME> = { name, shape, baseUrl }`; the hardcoded `PROVIDER_ROWS` and the panel's fixed
   `MODEL_OPTIONS` are gone.
+- **Monthly limit counts running jobs at their full cap** — a run still in flight (no `job-end`,
+  spine written to within the panel's died window) is counted against the limit at its own leg
+  cap, not its spend so far, so two runs cannot both start against a limit only one fits. A died
+  run still counts its floor. The Money tab's "$ month" stays real spend.
+
+### Fixed
+
+- **A bad `monthlyLimitUsd` no longer reads as "no limit"** — a `monthlyLimitUsd` present in
+  `config.json` but not a number above 0 (`"50"`, `-5`, `0`, `true`, `{}`) now refuses the run
+  start and shows as a config problem on the Money tab, like an unparseable file. Absent or
+  `null` still means no limit.
 
 ## [0.31.0] — 2026-09-29
 

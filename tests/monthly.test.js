@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync,
+  mkdtempSync, mkdirSync, writeFileSync, utimesSync, readFileSync, rmSync, existsSync, statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -107,15 +107,15 @@ test('monthSpend: only this LOCAL calendar month counts (both boundaries); a die
   addRun(home, d, { runid: 'b', at: localIso(2026, 7, 31, 23), jobEnd: { engagementSpentUsd: 100, spendComplete: true } }); // Aug — out
   addRun(home, d, { runid: 'c', at: localIso(2026, 9, 1, 0), jobEnd: { engagementSpentUsd: 100, spendComplete: true } }); // Oct — out
   const clean = monthSpend({ home, now: NOW });
-  assert.deepEqual(clean, { usd: 1, atLeast: false, runs: 1 });
+  assert.deepEqual(clean, { usd: 1, atLeast: false, runs: 1, reservedUsd: 1 });
   addRun(home, d, { runid: 'died', at: localIso(2026, 8, 10), rounds: [0.4, 0.3] }); // no job-end
-  assert.deepEqual(monthSpend({ home, now: NOW }), { usd: 1.7, atLeast: true, runs: 2 });
+  assert.deepEqual(monthSpend({ home, now: NOW }), { usd: 1.7, atLeast: true, runs: 2, reservedUsd: 1.7 });
 });
 
 test('monthSpend: a listed run whose spine file is gone reads as unknown ("at least"), never silently $0-and-exact', (t) => {
   const home = tmp(t);
   appendRun({ at: localIso(2026, 8, 3), runid: 'gone', job: 'j', spine: join(home, 'nope.jsonl'), patient: null, via: 'run-u' }, { home });
-  assert.deepEqual(monthSpend({ home, now: NOW }), { usd: 0, atLeast: true, runs: 1 });
+  assert.deepEqual(monthSpend({ home, now: NOW }), { usd: 0, atLeast: true, runs: 1, reservedUsd: 0 });
 });
 
 test('checkMonthlyRoom: no limit = ok, no check; cap == left = ok; cap > left = refused with the exact text; whole-cent compare', (t) => {
@@ -144,6 +144,42 @@ test('checkMonthlyRoom: an incomplete month total travels as atLeast; an unreada
   assert.equal(checkMonthlyRoom({ capUsd: 1, home, now: NOW }).atLeast, true);
   writeFileSync(configPath(home), '{ broken');
   assert.throws(() => checkMonthlyRoom({ capUsd: 1, home, now: NOW }), ConfigError);
+});
+
+test('checkMonthlyRoom: an IN-FLIGHT run (no job-end, fresh spine) counts at its full leg cap; stale (died) counts its floor; finished counts its spend', (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const nowMs = NOW();
+  const age = (runid, ms) => { const f = join(d, `u-${runid}.jsonl`); utimesSync(f, new Date(nowMs - ms), new Date(nowMs - ms)); };
+  addRun(home, d, { runid: 'live', at: localIso(2026, 8, 15, 11), rounds: [0.05], jobStart: { budgetUsd: 6 } });
+  age('live', 60 * 1000);
+  const room = checkMonthlyRoom({ capUsd: 6, home, now: NOW });
+  assert.equal(room.ok, false, 'left is $4 once the running $6 cap is reserved');
+  assert.equal(monthlyRefusalText(room), 'Max $4.00 (monthly limit)');
+  assert.equal(checkMonthlyRoom({ capUsd: 4, home, now: NOW }).ok, true);
+  const sp = monthSpend({ home, now: NOW });
+  assert.equal(sp.usd, 0.05, 'real spend stays the floor');
+  assert.equal(sp.reservedUsd, 6);
+  // a resumed leg reserves only the remainder of the signed cap
+  addRun(home, d, { runid: 'leg2', at: localIso(2026, 8, 15, 11), rounds: [0.5], jobStart: { budgetUsd: 3, priorSpentUsd: 1 } });
+  age('leg2', 60 * 1000);
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 8);
+  // same first spine, stale by the panel's died rule: counts its floor, the $6 run fits
+  age('live', 10 * 60 * 1000 + 1000);
+  age('leg2', 10 * 60 * 1000 + 1000);
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 0.55);
+  assert.equal(checkMonthlyRoom({ capUsd: 6, home, now: NOW }).ok, true);
+});
+
+test('checkMonthlyRoom: a finished run counts its spend only, never its cap', (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  addRun(home, d, { runid: 'done', at: localIso(2026, 8, 15, 11), rounds: [0.05], jobStart: { budgetUsd: 6 }, jobEnd: { engagementSpentUsd: 0.05, spendComplete: true } });
+  utimesSync(join(d, 'u-done.jsonl'), new Date(NOW()), new Date(NOW()));
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 0.05);
+  assert.equal(checkMonthlyRoom({ capUsd: 9.95, home, now: NOW }).ok, true);
 });
 
 test('checkMonthlyRoom: monthlyLimitUsd absent or null = no limit; present but not a number above 0 throws ConfigError naming the value and the file', (t) => {

@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spendSummary } from '../src/monthly.js';
@@ -115,6 +115,19 @@ test('/api/settings/money: GET reports a present-but-bad limit as a configProble
   assert.match(got.configProblem, /monthlyLimitUsd = "50"/);
   writeFileSync(configPath(home), '{}');
   assert.equal((await (await fetch(`${base}/api/settings/money`, { headers: H })).json()).configProblem, null);
+});
+
+test('/api/settings/money: GET month $ is real spend — an in-flight run reserved at its cap for the refusal check does not change the tile', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const spine = join(d, 'u-live.jsonl');
+  writeFileSync(spine, `${[{ type: 'job-start', job: 'j', budgetUsd: 6 }, { type: 'worker-round', costUsd: 0.05 }].map((r) => JSON.stringify(r)).join('\n')}\n`);
+  utimesSync(spine, new Date(), new Date());
+  appendRun({ at: new Date().toISOString(), runid: 'live', job: 'j', spine, patient: null, via: 'run-u' }, { home });
+  const { base, H } = await panel(t, home);
+  const got = await (await fetch(`${base}/api/settings/money`, { headers: H })).json();
+  assert.equal(got.monthUsd, 0.05);
+  assert.equal(got.monthAtLeast, true);
 });
 
 test('chat can never reach Settings: authoring routes have no /api/settings handler, and settings routes no authoring state', async (t) => {

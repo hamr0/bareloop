@@ -30,7 +30,7 @@ import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRunList } from '../runlist.js';
+import { readRunList, DIED_MTIME_MS } from '../runlist.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
@@ -137,17 +137,10 @@ export function checkTypeTitle(verdictType, atIso) {
   return null;
 }
 
-// DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` never shares
-// the failed glyph — [✗] stays reserved for a run whose close/arbiter
-// actually rendered a "no" (a real result). A spine that just stops, with
-// no ending ever recorded, is a DIFFERENT fact (killed, crashed, or the
-// machine slept) and gets its own [?] glyph. The distinguishing signal is
-// the spine FILE's own mtime, never wall-clock "now minus job-start" (a
-// resumed/paused run can legitimately sit quiet for a long time without
-// having died): still fresh (written to within this window) reads as the
-// existing `running` [▶] state; older than this reads as died. Tighten-only,
-// named so a future change is a deliberate, visible edit.
-export const DIED_MTIME_MS = 10 * 60 * 1000;
+// DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` is `died` [?], never [✗], once its
+// spine file's mtime is older than DIED_MTIME_MS — the constant and its full comment live in
+// src/runlist.js (the monthly limit reads the same rule); re-exported here for the panel's callers.
+export { DIED_MTIME_MS };
 
 /**
  * Plain-words description of ONE spine record, for the died "why" sentence's

@@ -3505,7 +3505,8 @@ Two files in `~/.config/bareloop/`, outside any repo:
   real one). The CLI (`run-u`, `interview`, `author`) and the panel both use it.
 - **`config.json` — every setting, never a key value.** `readConfig({ home })` /
   `updateConfig(patch, { home })` (atomic tmp + rename, mode 600, unknown fields kept).
-  Fields: `monthlyLimitUsd` (number above 0; absent = no limit), `anthropicBalanceNote` (a note the
+  Fields: `monthlyLimitUsd` (number above 0; absent or `null` = no limit; any other value present
+  is a `ConfigError`, refused like an unreadable file), `anthropicBalanceNote` (a note the
   person types; no check ever reads it), `keys.<ENV NAME>` = `{ name, shape, baseUrl }` (the Providers rows' settings). A secret-shaped
   string anywhere in the document is refused on save. An unreadable file is a `problem` string and
   a refused run start ($0), never "no limit". There is no monthly TIME limit (dropped).
@@ -3516,7 +3517,12 @@ limit)`. It is called at the run-start seam in `src/userrun.js` `execute` (befor
 spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`signRun` in
 `src/panel/authorroutes.js`, refused server-side whatever the page shows). The page only echoes the
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
-calendar month; a died or incomplete-spend run makes the total an "at least" figure.
+calendar month; a died or incomplete-spend run makes the total an "at least" figure. A run still
+IN FLIGHT (`job-start`, no `job-end`, spine file written within `DIED_MTIME_MS`, `src/runlist.js`) is
+counted at its full leg cap (`budgetUsd` less `priorSpentUsd` on its `job-start`), not its spend so
+far, so two runs cannot both start against a limit only one fits; a died run counts its floor.
+Only the refusal reserves the cap (`monthSpend().reservedUsd`); the Money tab's month figure is
+real spend.
 
 **Providers tab (P4b, `src/providerrows.js`).** One row per key in `.env` that HAS A VALUE — nothing is
 hardcoded; an empty line is no row, a removed line drops its row on Reload keys. A missing `.env` is

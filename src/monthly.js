@@ -8,12 +8,18 @@
 // The limit REFUSES, never warns; the page and the chat can never raise it (a person
 // edits it by hand in Settings — src/config.js).
 //
+// A run still IN FLIGHT (a spine with `job-start`, no `job-end`, and a spine file written to
+// within DIED_MTIME_MS — the panel's own died rule) is counted at its full leg cap, not its
+// spend so far: `checkMonthlyRoom` reserves what the run may still spend, so two runs cannot
+// both start against a limit only one of them fits. A died run (stale spine) counts its floor.
+// Only the refusal check reserves; the Money tab keeps showing real spend (`usd`).
+//
 // Honesty: a run whose spend is not fully known (a died/still-running spine, an unpriced
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
 // number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { readConfig, configPath, ConfigError } from './config.js';
-import { readRunList } from './runlist.js';
+import { readRunList, DIED_MTIME_MS } from './runlist.js';
 import { parseJsonl } from './replayio.js';
 import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
 import { findRow } from './providerrows.js';
@@ -125,22 +131,47 @@ export function legTokens(records) {
  * @property {boolean} wallComplete the wall is the exact job-start -> job-end span
  * @property {number} vouchedRounds rounds priced by a rate somebody vouched for (`provider`/`caller`)
  * @property {number} otherRounds every other round: a built-in guess, unpriced, or no provenance on record
+ * @property {number} reservedUsd what the refusal check counts: `usd`, or the leg's cap when the run is in flight
  * @property {boolean} unreadable the spine was missing/unreadable or the listed date was bad (spend unknown)
  */
 
 /**
+ * What the refusal check counts for one run: its spend, unless it is IN FLIGHT (`job-start`, no
+ * `job-end`, spine written to within DIED_MTIME_MS of `nowMs`), when it is the larger of that
+ * spend and the leg's own cap — the signed `budgetUsd` on the spine's `job-start` less the fold
+ * a resumed leg inherited (`priorSpentUsd`), the same figure the run-start seam computes
+ * (`legCapUsd`, src/userrun.js). A spine that records no `budgetUsd` reserves nothing extra.
+ * @param {any[]} records
+ * @param {string} spinePath
+ * @param {number} nowMs
+ * @param {number} usd the leg's spend so far
+ * @returns {number}
+ */
+function inFlightCapUsd(records, spinePath, nowMs, usd) {
+  if (records.some((r) => r && r.type === 'job-end')) return usd;
+  const start = records.find((r) => r && r.type === 'job-start') ?? null;
+  if (!start || !(typeof start.budgetUsd === 'number' && Number.isFinite(start.budgetUsd))) return usd;
+  let mtimeMs;
+  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return usd; }
+  if (nowMs - mtimeMs > DIED_MTIME_MS) return usd; // stale — died, counts its floor
+  const fold = typeof start.priorSpentUsd === 'number' && Number.isFinite(start.priorSpentUsd) ? start.priorSpentUsd : 0;
+  return Math.max(usd, Math.max(0, start.budgetUsd - fold));
+}
+
+/**
  * Every listed run as one {@link Leg}. The ONE reader the month total, the all-time total
  * and the per-provider figures share.
- * @param {{ home?: string }} [opts]
+ * @param {{ home?: string, now?: () => number }} [opts] `now` = the clock for the in-flight test
  * @returns {Leg[]}
  */
 export function readLegs(opts = {}) {
+  const nowMs = (opts.now ?? Date.now)();
   const { rows } = readRunList({ home: opts.home });
   /** @type {Leg[]} */
   const legs = [];
   for (const row of rows) {
     const at = new Date(row.at);
-    const base = { at, provider: null, baseUrl: null, model: null, wallMs: null, wallComplete: false, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, unreadable: true };
+    const base = { at, provider: null, baseUrl: null, model: null, wallMs: null, wallComplete: false, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, reservedUsd: 0, unreadable: true };
     if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push(base); continue; }
     /** @type {any[]} */
     let records;
@@ -161,6 +192,7 @@ export function readLegs(opts = {}) {
       tokens: legTokens(records),
       vouchedRounds: prov.vouched.rounds,
       otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
+      reservedUsd: inFlightCapUsd(records, row.spine, nowMs, leg.usd),
       unreadable: false,
     });
   }
@@ -176,23 +208,25 @@ const sameLocalMonth = (at, now) => at.getFullYear() === now.getFullYear() && at
 
 /**
  * @param {{ home?: string, now?: () => number }} [opts]
- * @returns {{ usd: number, atLeast: boolean, runs: number }}
+ * @returns {{ usd: number, atLeast: boolean, runs: number, reservedUsd: number }} `usd` = real spend (the Money tab's figure); `reservedUsd` = the same with in-flight runs at their cap (the refusal check's)
  */
 export function monthSpend(opts = {}) {
   const nowDate = new Date((opts.now ?? Date.now)());
   let usd = 0;
+  let reservedUsd = 0;
   let atLeast = false;
   let runs = 0;
-  for (const leg of readLegs({ home: opts.home })) {
+  for (const leg of readLegs({ home: opts.home, now: opts.now })) {
     // an unreadable date could belong to this month — unknown, never dropped
     if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
     if (!sameLocalMonth(leg.at, nowDate)) continue;
     runs += 1;
     if (leg.unreadable) { atLeast = true; continue; }
     usd += leg.usd;
+    reservedUsd += leg.reservedUsd;
     if (!leg.complete) atLeast = true;
   }
-  return { usd, atLeast, runs };
+  return { usd, atLeast, runs, reservedUsd };
 }
 
 /**
@@ -283,7 +317,7 @@ export function monthlyLimitOf(config, home) {
 }
 
 /**
- * Does a run with this $ cap fit in what is left this month? No limit set (key absent or null) = ok, no check; a limit that is present but not a
+ * Does a run with this $ cap fit in what is left this month (running jobs counted at their full cap)? No limit set (key absent or null) = ok, no check; a limit that is present but not a
  * number above 0 throws `ConfigError`.
  * Compared in whole cents. Also throws `ConfigError` when config.json is unreadable — a gate
  * whose own instrument is broken refuses; it never silently runs with no limit.
@@ -298,7 +332,7 @@ export function checkMonthlyRoom({ capUsd, home, now }) {
     return { ok: true, leftUsd: null, limitUsd: null, atLeast: false };
   }
   const spent = monthSpend({ home, now });
-  const leftCents = Math.max(0, Math.floor((limit - spent.usd) * 100 + 1e-6));
+  const leftCents = Math.max(0, Math.floor((limit - spent.reservedUsd) * 100 + 1e-6));
   const capCents = Math.ceil((Number.isFinite(capUsd) ? capUsd : 0) * 100 - 1e-6);
   return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast };
 }
