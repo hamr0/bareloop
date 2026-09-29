@@ -3506,7 +3506,7 @@ Two files in `~/.config/bareloop/`, outside any repo:
 - **`config.json` — every setting, never a key value.** `readConfig({ home })` /
   `updateConfig(patch, { home })` (atomic tmp + rename, mode 600, unknown fields kept).
   Fields: `monthlyLimitUsd` (number above 0; absent = no limit), `anthropicBalanceNote` (a note the
-  person types; no check ever reads it), `providers.<row>.key` (an env-var NAME). A secret-shaped
+  person types; no check ever reads it), `keys.<ENV NAME>` = `{ name, shape, baseUrl }` (the Providers rows' settings). A secret-shaped
   string anywhere in the document is refused on save. An unreadable file is a `problem` string and
   a refused run start ($0), never "no limit". There is no monthly TIME limit (dropped).
 
@@ -3518,15 +3518,34 @@ spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`sig
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
 calendar month; a died or incomplete-spend run makes the total an "at least" figure.
 
-**Providers tab.** Four rows (`PROVIDER_ROWS`): Anthropic, OpenAI, Gemini, DeepSeek (`openai-api` +
-DeepSeek base URL). `keyNameFor` / `applyConfiguredKey` resolve which key VARIABLE a row reads: the
-person's pick from the dropdown (names from the keys file only), else the built-in; a pick whose
-variable is unset leaves the provider keyless rather than falling back. All doors (`run-u`,
-`interview`, `author`, the panel's drafting) use it. Routes (all behind the per-start token and
-Origin check; the chat can never reach them): `GET /api/settings/providers`, `POST .../key`,
-`POST .../balance-note`, `POST .../test` (one `checkProviderReachable` models-list GET, $0),
-`GET .../balance` (DeepSeek, server-side). Adding, editing or removing providers and Ollama are P4b,
-not built.
+**Providers tab (P4b, `src/providerrows.js`).** One row per key in `.env` that HAS A VALUE — nothing is
+hardcoded; an empty line is no row, a removed line drops its row on Reload keys. A missing `.env` is
+created (mode 600) on the first Providers read with five empty preset lines (`ANTHROPIC_API_KEY`,
+`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `LOCAL_API_KEY`); an existing file is never
+edited. A value of `null` counts as SET and means "no real key" (the provider is handed the
+placeholder `no-key-needed`, never the word `null`). Each row: the env NAME (read-only) + found,
+**Name** (the model id Chat uses), **API shape** (Anthropic / OpenAI-compatible / Gemini), **Base
+URL** (blank = the shape's own host), **Test**, **Tokens used** (total, display only), and Balance
+(DeepSeek fetched, Anthropic a typed note). Saves on change to `config.json`
+`keys.<ENV NAME> = { name, shape, baseUrl }`. Defaults for a key with no saved entry:
+`ANTHROPIC_API_KEY` claude-sonnet-5 / Anthropic; `DEEPSEEK_API_KEY` deepseek-flash /
+OpenAI-compatible / `https://api.deepseek.com/v1`; `OPENAI_API_KEY` OpenAI-compatible;
+`GEMINI_API_KEY` Gemini; `LOCAL_API_KEY` OpenAI-compatible / `http://127.0.0.1:11434/v1` (Ollama, LM
+Studio, llama.cpp: change the URL); any other name OpenAI-compatible; Name blank until typed. **No
+price is shown anywhere** (display only — cost recording, the estimated provenance, spend sums, caps
+and the monthly limit are unchanged; a local model has no known rate, so its rounds come out as a
+non-zero loud guess, never a real $0).
+
+`providerrows.js` is the ONE owner of "model → key + shape + URL": `keyRows`, `findRow` (rows on the
+same shape + endpoint; the Name breaks a tie), `modelChoiceFor` / `chatModels` (Chat's Model menu IS
+the rows; a blank Name is not offered), `keyNameFor` / `applyConfiguredKey` (a job on `(provider,
+baseUrl[, model])` reads the matching row's variable, else the provider's built-in one). All doors
+(`run-u`, `interview`, `author`, the panel's drafting) use it. Routes (all behind the per-start token
+and Origin check; the chat can never reach them): `GET /api/settings/providers`, `POST .../row`
+(`{envName, name, shape, baseUrl}`), `POST .../balance-note`, `POST .../test` (one
+`checkProviderReachable` models-list GET at the row's shape + URL, $0), `GET .../balance?env=`
+(DeepSeek-hosted row, server-side), and `GET /api/author/models` (Chat's Model menu). The old
+`providers.<row>.key` config field and the key dropdown are gone.
 
 ### The source front door — a plain folder/file/URL, no `--patient` (PRD item 33/M2, `src/source.js`)
 

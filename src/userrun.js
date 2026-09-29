@@ -1358,9 +1358,9 @@ async function execute(ctx) {
   // the same shape src/cli.js's `doRun` already uses) — a caller that hands in
   // its own provider IS the run, so nothing here needs a real secret.
   if (!deps.provider) {
-    // P4a item 4 — the key VARIABLE the person picked for this provider in Settings
-    // (config.json `providers.<row>.key`) stands in for the provider's built-in one; no
-    // choice = the built-in, byte-identical to before. Names only — values come from the
+    // P4b — the Settings row (keys file line) whose API shape + Base URL match this spec
+    // supplies the key VARIABLE, standing in for the provider's built-in one; no matching
+    // row = the built-in. Names only — values come from the
     // env / keys file. The judge follows the worker's choice when it is the same provider
     // (the same rule that gives it the worker's baseUrl below).
     const keyCfg = cfgOn ? rowsForHome(cfgHome) : [];

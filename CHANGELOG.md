@@ -14,6 +14,24 @@ feature lands, **patch** = docs, fixes, scaffolding.
   note), a monthly $ limit that refuses a run start with `Max $X (monthly limit)` at both the CLI
   and the panel Sign & run, and a Settings view with a Money & limits tab and a Providers tab
   (read, $0 Test, key-name dropdown). Add/edit/remove providers is P4b.
+- **Panel Providers tab is the keys file (P4b)** — one Settings row per key in
+  `~/.config/bareloop/.env` that has a value (the file is created with five empty preset lines,
+  `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `LOCAL_API_KEY`,
+  when missing; an existing file is never edited). Each row has an editable Name (the model id Chat
+  uses), API shape (Anthropic / OpenAI-compatible / Gemini), Base URL, a $0 Test at that shape and
+  URL, and a total Tokens used; changes save to `config.json` `keys.<ENV NAME>`. A key value of
+  `null` counts as set and means "no real key" (local servers). Chat's Model menu is the Settings
+  rows, and one owner (`src/providerrows.js`) resolves model to key + shape + URL for Chat, the
+  author doors and the run doors.
+
+### Changed
+
+- **Panel: no price is displayed** — the Providers table Price column and the Chat job card's
+  Token price field are removed. Display only: cost recording, the `estimated` provenance, spend
+  sums, caps and the monthly limit are unchanged.
+- `config.json` `providers.<row>.key` (P4a key-name dropdown) is replaced by
+  `keys.<ENV NAME> = { name, shape, baseUrl }`; the hardcoded `PROVIDER_ROWS` and the panel's fixed
+  `MODEL_OPTIONS` are gone.
 
 ## [0.31.0] — 2026-09-29
 
