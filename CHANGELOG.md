@@ -5,22 +5,37 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.32.0] — 2026-09-29
 
 ### Added
 
 - **Panel Settings (P4a)** — `~/.config/bareloop/.env` keys-file loader (shell env wins; keys
   never reach the page), `config.json` (monthly $ limit, chosen key variables, Anthropic balance
-  note), a monthly $ limit that refuses a run start with `Max $X (monthly limit)` at both the CLI
-  and the panel Sign & run, and a Settings view with a Money & limits tab and a Providers tab
-  (read, $0 Test, key-name dropdown). Add/edit/remove providers is P4b.
+  note), a monthly $ limit that refuses a run start with `Max $X (monthly limit)` at both
+  `run-u` and the panel Sign & run, and a Settings view with a Money & limits tab and a Providers
+  tab (read, $0 Test, key-name dropdown). Add/edit/remove providers is P4b. There is no monthly
+  time limit. **The monthly limit is checked by `run-u` and the panel only — `bareloop run
+  <bundle>` does not check it.** An unreadable `config.json` refuses a run start; a month whose
+  spend is incomplete reads "at least".
+- **Money & limits tab** — total and this-month spend and tokens as two header tiles ($ and
+  tokens, month first), a monthly $ limit that saves on change, and a per-provider breakdown
+  table ($, wall minutes, tokens; this month and to date). Wall time is job-start to job-end
+  when the run ended, otherwise an "at least" floor; unknown is shown as unknown, never 0. A
+  spine with no recorded provider is labelled "not recorded (model X)", never guessed from the
+  model name.
+- **`replay-live --live-audit`** (`scripts/replay-live.mjs`) — opt-in: a $0 replay keeps its
+  sidecar in a scratch patient dir while it paces, so the panel's live tool-log fallback can be
+  seen on screen. Default replay is unchanged.
 - **Panel Providers tab is the keys file (P4b)** — one Settings row per key in
   `~/.config/bareloop/.env` that has a value (the file is created with five empty preset lines,
   `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `LOCAL_API_KEY`,
   when missing; an existing file is never edited). Each row has an editable Name (the model id Chat
   uses), API shape (Anthropic / OpenAI-compatible / Gemini), Base URL, a $0 Test at that shape and
   URL, and a total Tokens used; changes save to `config.json` `keys.<ENV NAME>`. A key value of
-  `null` counts as set and means "no real key" (local servers). Chat's Model menu is the Settings
+  `null` counts as set and means "no real key" (local servers); the provider gets a placeholder,
+  and local rounds price as an `estimated` guess, never a real $0. Reload keys re-merges the
+  keys file onto the shell environment per request, so edits and removals take effect without a
+  restart. Chat's Model menu is the Settings
   rows, and one owner (`src/providerrows.js`) resolves model to key + shape + URL for Chat, the
   author doors and the run doors.
 - **Providers tab names a shell-only key** — a preset key variable exported only in the shell
@@ -32,6 +47,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **Panel: no price is displayed** — the Providers table Price column and the Chat job card's
   Token price field are removed. Display only: cost recording, the `estimated` provenance, spend
   sums, caps and the monthly limit are unchanged.
+- The Chat cap row is two equal full-width columns (Cap $ | Time cap) at every width.
 - `config.json` `providers.<row>.key` (P4a key-name dropdown) is replaced by
   `keys.<ENV NAME> = { name, shape, baseUrl }`; the hardcoded `PROVIDER_ROWS` and the panel's fixed
   `MODEL_OPTIONS` are gone.
@@ -53,6 +69,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `config.json` but not a number above 0 (`"50"`, `-5`, `0`, `true`, `{}`) now refuses the run
   start and shows as a config problem on the Money tab, like an unparseable file. Absent or
   `null` still means no limit.
+- **Panel author routes: `jobsDir` and body size** — the name-collision check's `jobsDir` test
+  seam is now server-side only (it was readable off the client's job card, so any
+  `/api/author/start` body could repoint it), and POST bodies over 1 MiB get 413 and the request
+  is destroyed (the reader had no cap and ran before the click guard).
+- **Providers Test** — a connection failure now reads "nothing answering at <URL>"; the Test
+  cell keeps a fixed width and wraps its result. **Tokens used** counts older model-only spines
+  toward the row whose Name exactly equals the model.
 
 ## [0.31.0] — 2026-09-29
 
