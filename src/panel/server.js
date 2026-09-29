@@ -1960,7 +1960,9 @@ export function createPanelServer(opts = {}) {
  * Never picks a different port on collision (see file header): prints a
  * loud, named error to stderr and returns 1.
  * @param {string[]} argv
- * @param {{ out: (s: string) => void, err: (s: string) => void, runlistHome?: string }} ctx
+ * @param {{ out: (s: string) => void, err: (s: string) => void, runlistHome?: string, env?: Record<string,string|undefined> }} ctx
+ *   `env` is the door's already-merged env (shell + keys file, `src/keysfile.js`) — passed to
+ *   the author routes as `opts.env`; undefined = the process env.
  * @returns {Promise<number>}
  */
 export async function panelMain(argv, ctx) {
@@ -1974,7 +1976,7 @@ export async function panelMain(argv, ctx) {
     }
   }
   try {
-    const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome });
+    const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome, env: ctx.env });
     ctx.out(`bareloop panel — read-only, http://127.0.0.1:${boundPort} (Ctrl-C to stop)`);
     // never resolves on its own — the process stays up until killed, same
     // shape any other long-running dev server takes.

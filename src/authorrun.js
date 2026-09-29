@@ -100,6 +100,7 @@
 //                  item 34 L17) — `run-interview.mjs` asks for it and writes it
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
+import { keysForDoor } from './keysfile.js';
 import {
   readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync,
 } from 'node:fs';
@@ -141,6 +142,7 @@ class ExitSignal extends Error {
 /**
  * @typedef {object} Deps
  * @property {Record<string,string|undefined>} [env]
+ * @property {string} [keysHome] P4a — test seam: load this home's `.env` keys file even when `env` is injected.
  * @property {NodeJS.ReadStream} [stdin]
  * @property {NodeJS.WritableStream} [stdout]
  * @property {NodeJS.WritableStream} [stderr]
@@ -162,10 +164,13 @@ class ExitSignal extends Error {
  * @returns {Promise<number>} an exit code — never calls process.exit
  */
 export async function main(argv, deps = {}) {
-  const env = deps.env ?? process.env;
+  // P4a item 1 — the keys file fills what the shell leaves unset (shell wins).
+  const keys = keysForDoor(deps);
+  const env = keys.env;
   const stdin = deps.stdin ?? process.stdin;
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
+  if (keys.warning && deps.env === undefined) stderr.write(`WARNING: ${keys.warning}\n`);
   const out = (/** @type {string} */ s = '') => { stdout.write(`${s}\n`); };
   const err = (/** @type {string} */ s) => { stderr.write(`${s}\n`); };
   const invokedAs = deps.invokedAs ?? 'node scripts/run-author.mjs';

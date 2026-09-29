@@ -73,6 +73,7 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
 import { appendRun } from './runlist.js';
+import { keysForDoor } from './keysfile.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -219,6 +220,8 @@ class ExitSignal extends Error {
 /**
  * @typedef {object} Deps
  * @property {Record<string,string|undefined>} [env]
+ * @property {string} [keysHome] P4a — a test seam naming the home whose `.env` keys file is loaded
+ *   even when `env` is injected; production never sets it.
  * @property {(s: string) => void} [out]
  * @property {(s: string) => void} [err]
  * @property {any} [provider] the TEST SEAM: supplying this skips the real-key
@@ -306,9 +309,15 @@ class ExitSignal extends Error {
  */
 async function execute(ctx) {
   const deps = ctx.deps ?? {};
-  const env = deps.env ?? process.env;
   const out = deps.out ?? ((/** @type {string} */ s) => { console.log(s); });
   const err = deps.err ?? ((/** @type {string} */ s) => { console.error(s); });
+  // P4a item 1 — the keys file (`~/.config/bareloop/.env`) fills what the shell leaves
+  // unset; the shell wins. An injected `deps.env` skips the file unless `deps.keysHome`
+  // names a home (a test never reads the real one). Values go only to provider
+  // construction below.
+  const keys = keysForDoor(deps);
+  const env = keys.env;
+  if (keys.warning && deps.env === undefined) err(`WARNING: ${keys.warning}`);
   /** every operator/config stop this engine makes, in one exit code — thrown,
    * never `process.exit()`'d, so this stays a library function (constraint:
    * "never process.exit() inside the library — return an exit code").

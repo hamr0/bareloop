@@ -68,6 +68,7 @@ import { panelMain } from './panel/server.js';
 // (`~/.config/bareloop/runs.jsonl`) and its backfill scan. `bareloop runs`
 // (list) and `bareloop runs backfill <dir>` (reconstruct rows from archived
 // spines already on disk) are this rung's only new commands.
+import { keysForDoor } from './keysfile.js';
 import { appendRun, readRunList, backfillRuns, formatRunRow } from './runlist.js';
 
 // The tier->model tables live in `src/providers.js` now (PRD item 28's
@@ -653,11 +654,15 @@ async function runMenu(deps, ctx) {
  * code, so `bin/bareloop.mjs` can set `process.exitCode` and let node flush
  * queued stdout on its own (F-something: `process.exit()` can discard it).
  * @param {string[]} argv
- * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, runlistHome?: string }} deps
+ * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, runlistHome?: string, keysHome?: string }} deps
  * @returns {Promise<number>}
  */
 export async function main(argv, deps = {}) {
-  const env = deps.env ?? process.env;
+  // P4a item 1 — the keys file (`~/.config/bareloop/.env`) fills what the shell leaves
+  // unset; the shell wins. An injected `deps.env` skips the file (tests never read the
+  // real one) unless `deps.keysHome` names a home.
+  const keys = keysForDoor(deps);
+  const env = keys.env;
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
   const cwd = deps.cwd ?? process.cwd();
@@ -667,6 +672,7 @@ export async function main(argv, deps = {}) {
   const ctx = { out, err, cwd, env, now, deps };
 
   const [cmd, ...rest] = argv;
+  if (keys.warning && cmd && ['run', 'run-u', 'interview', 'author', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
   if (!cmd) return runMenu({ ...deps, stdin: deps.stdin ?? process.stdin, stdout }, ctx);
   if (cmd === 'export') return doExport(rest, ctx);
   if (cmd === 'run') return doRun(rest, ctx);
@@ -709,7 +715,7 @@ export async function main(argv, deps = {}) {
   // Never runs a job, spends money, or reads a key: it serves the run list
   // and spine/gate-audit reads over `127.0.0.1` only. `deps.runlistHome`
   // rides through the same injectable seam `run`/`run-u` already use.
-  if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome });
+  if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome, env });
   err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay, runs, panel`);
   return 1;
 }
