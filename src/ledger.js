@@ -506,3 +506,29 @@ export function spendProvenance(events) {
   }
   return out;
 }
+
+/**
+ * The priced-rounds spend floor + first-record→last-record wall floor,
+ * derived straight off the spine's raw records — the same derivation a
+ * died run's "at least …" figures use, factored out so build item 6
+ * (2026-09-28) can hand a genuinely-still-running spine the identical
+ * floor instead of "unknown" on the Run tab, without a second copy of this
+ * math.
+ * @param {any[]} records raw parsed spine records
+ * @returns {{spendFloorUsd: number|null, wallFloorMs: number|null}}
+ */
+export function floorsFromRecords(records) {
+  let spendSum = 0;
+  let pricedCount = 0;
+  for (const r of records) {
+    if (!r || typeof r !== 'object' || !SPEND_RECORD_TYPES.includes(r.type)) continue; // worker-result echoes excluded by construction — not a spend type
+    if (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd)) { spendSum += r.costUsd; pricedCount += 1; }
+  }
+  const spendFloorUsd = pricedCount > 0 ? spendSum : null;
+
+  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
+  const firstMs = withTs.length ? Date.parse(withTs[0].ts) : NaN;
+  const lastMs = withTs.length ? Date.parse(withTs[withTs.length - 1].ts) : NaN;
+  const wallFloorMs = Number.isFinite(firstMs) && Number.isFinite(lastMs) && lastMs >= firstMs ? lastMs - firstMs : null;
+  return { spendFloorUsd, wallFloorMs };
+}

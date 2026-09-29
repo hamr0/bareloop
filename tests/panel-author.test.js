@@ -27,7 +27,8 @@ import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createPanelServer } from '../src/panel/server.js';
 import { checkHumanGuard, signRun } from '../src/panel/authorroutes.js';
-import { createSession, validateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
+import { createSession, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
+import { keyRows } from '../src/providerrows.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
 
@@ -84,6 +85,18 @@ function makeRepoWithDeps() {
   return dir;
 }
 
+/** a scratch keys/config home whose .env carries ONE filled key (Settings row) — the Anthropic
+ * row by default, whose default Name `claude-sonnet-5` is what baseCard() picks in Chat. */
+function keysHomeWith(text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n') {
+  const d = tmp('panel-author-home-');
+  writeFileSync(join(d, '.env'), text, { mode: 0o600 });
+  return d;
+}
+
+/** the Settings rows a filled ANTHROPIC_API_KEY gives: Chat's Model menu */
+const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: {} });
+const validateJobCard = (card, opts = {}) => rawValidateJobCard(card, { rows: ROWS, ...opts });
+
 const baseCard = (overrides = {}) => ({
   checkType: 'deterministic',
   model: 'claude-sonnet-5',
@@ -118,12 +131,22 @@ test('validateJobCard: RED-PROOF — an empty/zero/non-number Cap $ is refused; 
   assert.equal(validateJobCard(baseCard({ draftingCapUsd: undefined })).ok, true);
 });
 
+test('validateJobCard: the Model must be a Name in Settings — a model no row names, or no rows at all, refuses ($0)', () => {
+  assert.equal(validateJobCard(baseCard({ model: 'not-a-name' })).ok, false);
+  assert.match(validateJobCard(baseCard({ model: 'gpt-x' })).error, /Names in Settings/);
+  assert.equal(rawValidateJobCard(baseCard(), { rows: [] }).ok, false, 'no rows = nothing to pick');
+  const two = keyRows({ filled: ['ANTHROPIC_API_KEY', 'MY_KEY'], config: { keys: { MY_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl: '' } } } });
+  assert.equal(rawValidateJobCard(baseCard({ model: 'gpt-x' }), { rows: two }).ok, true, 'a Name typed in Settings is a valid Model');
+});
+
 test('validateJobCard: a taken job name refuses (P3 is new jobs only, Q4=A) — RED-PROOF against a fabricated jobs/ dir', () => {
   const jobsDir = tmp('panel-author-jobs-');
   writeFileSync(join(jobsDir, 'already-exists.json'), '{}');
   assert.equal(jobNameTaken('already-exists', { jobsDir }), true);
   assert.equal(jobNameTaken('brand-new-name', { jobsDir }), false);
-  const r = validateJobCard(baseCard({ jobName: 'already-exists', jobsDirOverride: jobsDir }));
+  const r = validateJobCard(baseCard({ jobName: 'already-exists' }), { jobsDir });
+  // the seam is server-side only: a client card's jobsDirOverride is ignored
+  assert.equal(validateJobCard(baseCard({ jobName: 'already-exists', jobsDirOverride: '/nonexistent' }), { jobsDir }).ok, false);
   assert.equal(r.ok, false);
   assert.match(r.error, /already exists/);
 });
@@ -285,7 +308,7 @@ test('signRun: a session with no drafting spend (0/undefined) omits --draft-spen
 
 async function startAuthorServer(t, opts = {}) {
   const { server, port, token, close } = await createPanelServer({
-    port: 0, sessionsRoot: opts.sessionsRoot ?? tmp('panel-author-sessions-'), env: opts.env ?? {}, fetchImpl: opts.fetchImpl,
+    port: 0, sessionsRoot: opts.sessionsRoot ?? tmp('panel-author-sessions-'), env: opts.env ?? {}, home: opts.home ?? keysHomeWith(), fetchImpl: opts.fetchImpl,
   });
   t.after(() => close());
   const base = `http://127.0.0.1:${port}`;
@@ -312,9 +335,35 @@ test('POST /api/author/start RED-PROOF: no token refuses (403), right token + ri
   assert.equal(body.ok, false);
 });
 
-test('POST /api/author/start: a missing provider key refuses at $0 (before any session even starts drafting)', async (t) => {
-  const { base, token } = await startAuthorServer(t, { env: {} }); // no ANTHROPIC_API_KEY
+test('POST /api/author/start: a body over 1 MiB is refused with 413 before any route sees it (uncapped-body memory DoS)', async (t) => {
+  const { base, token } = await startAuthorServer(t);
+  const big = 'x'.repeat(1024 * 1024 + 1024);
+  let status = null;
+  try {
+    const res = await fetch(`${base}/api/author/start`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: big,
+    });
+    status = res.status;
+  } catch { status = 'connection-reset'; }
+  assert.ok(status === 413 || status === 'connection-reset', `oversize body must be refused, got ${status}`);
+  // a normal small body still reaches the route (400 = the card refusing, not the cap)
+  const ok = await fetch(`${base}/api/author/start`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: '{}',
+  });
+  assert.equal(ok.status, 400);
+});
+
+test('POST /api/author/start: a Model no Settings row names is refused at $0 (400); a row whose key value is malformed refuses inside the session, at $0', async (t) => {
   const repo = makeRepo();
+  // (a) no row at all -> the card itself is refused
+  const none = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=\n') });
+  const r0 = await fetch(`${none.base}/api/author/start`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': none.token }, body: JSON.stringify(baseCard({ source: repo })),
+  });
+  assert.equal(r0.status, 400);
+  assert.match((await r0.json()).error, /Names in Settings/);
+  // (b) a row exists but its value is malformed (a tab): the session refuses naming the key variable
+  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-a\tb\n') });
   const res = await fetch(`${base}/api/author/start`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-bareloop-token': token },
@@ -323,11 +372,26 @@ test('POST /api/author/start: a missing provider key refuses at $0 (before any s
   assert.equal(res.status, 200, 'start itself is accepted — the refusal is IN the session, at $0');
   const body = await res.json();
   assert.equal(body.ok, true);
-  // poll once — the session refuses inside its own async run(), before any spend
   await new Promise((r) => { setTimeout(r, 50); });
   const state = await (await fetch(`${base}/api/author/${body.sessionId}`, { headers: { 'x-bareloop-token': token } })).json();
   assert.equal(state.state.phase, 'refused');
-  assert.match(state.state.error, /ANTHROPIC_API_KEY/);
+  assert.match(state.state.error, /ANTHROPIC_API_KEY contains a tab/);
+});
+
+test('createSession: the Model Name resolves to ITS row\'s key variable, not the built-in one (Chat reads Settings)', async () => {
+  const repo = makeRepo();
+  const home = keysHomeWith('MY_KEY=sk-a\tb\n');
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { MY_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
+  const session = createSession(baseCard({ source: repo, model: 'gpt-x', jobName: 'panel-author-row-key' }), {
+    env: { MY_KEY: 'sk-a\tb' }, home, sessionsRoot: tmp('panel-author-sess-rowkey-'),
+  });
+  const start = Date.now();
+  while (!['refused', 'error'].includes(session.state.phase) && Date.now() - start < 3000) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+  assert.equal(session.state.phase, 'refused');
+  assert.match(session.state.error, /MY_KEY contains a tab/, 'the row\'s own variable is the one demanded (built-in would be OPENAI_API_KEY)');
 });
 
 test('one-session-at-a-time (build spec): a second Start is refused (409) while the first is still live', async (t) => {
@@ -349,7 +413,7 @@ test('one-session-at-a-time (build spec): a second Start is refused (409) while 
 });
 
 test('no path from chat/send/revise to signing: /send and /revise refuse a "menu" pending ask (only sign-prepare/sign may act on it)', async (t) => {
-  const { base, token } = await startAuthorServer(t, { env: {} });
+  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-a\tb\n') });
   const repo = makeRepo();
   const started = await (await fetch(`${base}/api/author/start`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(baseCard({ source: repo })),
@@ -430,7 +494,7 @@ function fakePrepareSigningFn(hash) {
 test('createSession: RED-PROOF — with NO scout/generate override, the real (network-bound) path is reached and refuses at the language/scout step long before drafting, proving the override actually changes behaviour', async (t) => {
   const repo = makeRepo();
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-redproof-1' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' },
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
     sessionsRoot: tmp('panel-author-sess-redproof-'),
   });
   // give the async pipeline a moment to reach (and fail at) the real scout —
@@ -448,7 +512,7 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
     { goal: 'fix things v2 (revised)', checks: ['tsc clean', 'no new deps'], questions: [], notChecked: [] },
   ];
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-e2e-1' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' },
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
     sessionsRoot: tmp('panel-author-sess-e2e-'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('the author/scout `generate` must never be called in this test — only confirmGenerate should be'); },
@@ -502,7 +566,7 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
   // signRun — proving the two layers actually compose.
   let captured = null;
   const spawnFn = (cmd, args, opts) => { captured = { cmd, args, opts }; return { unref: () => {} }; };
-  const signed = signRun(session, session.state.specHash, { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs' });
+  const signed = signRun(session, session.state.specHash, { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs', home: tmp('panel-author-signhome-') });
   assert.equal(signed.ok, true);
   assert.equal(session.state.phase, 'signed');
   assert.ok(captured.args.includes('--approve'));
@@ -547,7 +611,7 @@ test('bareloop never runs an install itself: authorsession.js spawns/execs nothi
 test('createSession: a repo with a dependency and no node_modules WAITS (install-needed), never refuses outright', async (t) => {
   const repo = makeRepoWithDeps();
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-deps-wait' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' },
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
     sessionsRoot: tmp('panel-author-sess-deps-'),
   });
   const start = Date.now();
@@ -567,7 +631,7 @@ test('createSession: a repo with a dependency and no node_modules WAITS (install
 test('createSession: RED-PROOF — Check again while STILL missing stays waiting, never silently advances', async (t) => {
   const repo = makeRepoWithDeps();
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-deps-still-missing' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' },
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
     sessionsRoot: tmp('panel-author-sess-deps-still-'),
   });
   const start = Date.now();
@@ -590,7 +654,7 @@ test('createSession: Check again AFTER the gap is closed on the SAME copy contin
   const specHash = 'deadinstall00112233';
   const plans = [{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }];
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-deps-resolved' }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' },
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
     sessionsRoot: tmp('panel-author-sess-deps-resolved-'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('generate must not be called in this test'); },
@@ -685,19 +749,14 @@ test('POST /api/author/:id/check-deps over HTTP: guarded the same way, refuses (
 // build item 7 — model readiness (key + $0 reachability) BEFORE drafting.
 // ---------------------------------------------------------------------------
 
-test('GET /api/author/model-check: key missing -> keyStatus "missing", never returns the key, reachability not checked', async (t) => {
-  const { base, token } = await startAuthorServer(t, { env: {} });
+test('GET /api/author/model-check: a Name whose row has left the keys file is unknown (400) — no row, no model; the key value is never returned', async (t) => {
+  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=\n') });
   const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
-  assert.equal(res.status, 200);
-  const body = await res.json();
-  assert.equal(body.ok, true);
-  assert.equal(body.envKey, 'ANTHROPIC_API_KEY');
-  assert.equal(body.keyStatus, 'missing');
-  assert.equal(body.reachability.checked, false);
+  assert.equal(res.status, 400);
 });
 
-test('GET /api/author/model-check: a bad-shape key (F181 class — embedded newline) -> keyStatus "bad-shape", key value never echoed', async (t) => {
-  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'sk-real\nmeta' } });
+test('GET /api/author/model-check: a bad-shape key (F181 class — a control character) -> keyStatus "bad-shape", key value never echoed', async (t) => {
+  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-real\tmeta\n') });
   const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
   const body = await res.json();
   assert.equal(body.keyStatus, 'bad-shape');
@@ -711,7 +770,7 @@ test('GET /api/author/model-check: a found key triggers the $0 reachability GET 
     calls.push({ url: String(url), method: init.method, headers: init.headers });
     return { ok: true, json: async () => ({ data: [{ id: 'claude-sonnet-5' }] }) };
   };
-  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'sk-real-enough' }, fetchImpl });
+  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-real-enough\n'), fetchImpl });
   const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
   assert.equal(res.status, 200);
   const body = await res.json();
@@ -728,7 +787,7 @@ test('GET /api/author/model-check: a found key triggers the $0 reachability GET 
 
 test('GET /api/author/model-check: an unreachable endpoint (stubbed failure) reads reachability.reachable=false with a status, and never blocks the key check', async (t) => {
   const fetchImpl = async () => ({ ok: false, status: 503, json: async () => ({}) });
-  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'sk-real-enough' }, fetchImpl });
+  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-real-enough\n'), fetchImpl });
   const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
   const body = await res.json();
   assert.equal(body.keyStatus, 'found', 'the key IS usable — only the network call failed');

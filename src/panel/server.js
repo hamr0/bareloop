@@ -5,8 +5,10 @@
 // `src/cli.js` calls — `src/replayio.js`'s read side and `src/runlist.js`'s
 // run list — never a re-implementation of either.
 //
-// READ-ONLY, BY CONSTRUCTION: GET/HEAD only (anything else -> 405); no
-// endpoint runs a job, spends money, signs, or reads a key/.env. Nothing
+// READ-ONLY, BY CONSTRUCTION: GET/HEAD only (anything else -> 405) EXCEPT the two
+// human-click-guarded route families in their own modules (`/api/author/*`,
+// `/api/settings/*` — P3/P4a); no endpoint here runs a job, spends money, signs, or
+// returns a key/.env value. Nothing
 // here imports `src/providers.js` or touches `process.env` for a secret —
 // grepped before writing this file, and the same discipline is kept here.
 //
@@ -28,18 +30,22 @@ import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRunList } from '../runlist.js';
+import { readRunList, DIED_MTIME_MS } from '../runlist.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine, auditWindow } from '../replay.js';
 import { runBehaviour } from '../behaviour.js';
-import { SPEND_RECORD_TYPES } from '../ledger.js';
+import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken } from './authorroutes.js';
+import { createSettingsRoutes } from './settingsroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** Largest POST body the panel buffers (job cards are short prose); a bigger one is refused with 413. */
+const MAX_BODY_BYTES = 1024 * 1024;
 
 /**
  * A runid, as it appears in a URL path segment — never a raw filesystem
@@ -131,17 +137,10 @@ export function checkTypeTitle(verdictType, atIso) {
   return null;
 }
 
-// DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` never shares
-// the failed glyph — [✗] stays reserved for a run whose close/arbiter
-// actually rendered a "no" (a real result). A spine that just stops, with
-// no ending ever recorded, is a DIFFERENT fact (killed, crashed, or the
-// machine slept) and gets its own [?] glyph. The distinguishing signal is
-// the spine FILE's own mtime, never wall-clock "now minus job-start" (a
-// resumed/paused run can legitimately sit quiet for a long time without
-// having died): still fresh (written to within this window) reads as the
-// existing `running` [▶] state; older than this reads as died. Tighten-only,
-// named so a future change is a deliberate, visible edit.
-export const DIED_MTIME_MS = 10 * 60 * 1000;
+// DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` is `died` [?], never [✗], once its
+// spine file's mtime is older than DIED_MTIME_MS — the constant and its full comment live in
+// src/runlist.js (the monthly limit reads the same rule); re-exported here for the panel's callers.
+export { DIED_MTIME_MS };
 
 /**
  * Plain-words description of ONE spine record, for the died "why" sentence's
@@ -237,32 +236,6 @@ export function formatTimestamp(ts) {
  * @param {string|null} outcome `replayRun`'s own `summary.outcome`
  * @returns {{died: boolean, why: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
  */
-/**
- * The priced-rounds spend floor + first-record→last-record wall floor,
- * derived straight off the spine's raw records — the same derivation a
- * died run's "at least …" figures use, factored out so build item 6
- * (2026-09-28) can hand a genuinely-still-running spine the identical
- * floor instead of "unknown" on the Run tab, without a second copy of this
- * math.
- * @param {any[]} records raw parsed spine records
- * @returns {{spendFloorUsd: number|null, wallFloorMs: number|null}}
- */
-function floorsFromRecords(records) {
-  let spendSum = 0;
-  let pricedCount = 0;
-  for (const r of records) {
-    if (!r || typeof r !== 'object' || !SPEND_RECORD_TYPES.includes(r.type)) continue; // worker-result echoes excluded by construction — not a spend type
-    if (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd)) { spendSum += r.costUsd; pricedCount += 1; }
-  }
-  const spendFloorUsd = pricedCount > 0 ? spendSum : null;
-
-  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
-  const firstMs = withTs.length ? Date.parse(withTs[0].ts) : NaN;
-  const lastMs = withTs.length ? Date.parse(withTs[withTs.length - 1].ts) : NaN;
-  const wallFloorMs = Number.isFinite(firstMs) && Number.isFinite(lastMs) && lastMs >= firstMs ? lastMs - firstMs : null;
-  return { spendFloorUsd, wallFloorMs };
-}
-
 function deriveDeath(spinePath, records, outcome) {
   const notDied = {
     died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
@@ -1751,9 +1724,17 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes> }} opts
+ * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
+  /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
+   * `/api/settings/*` (Settings, P4a): separate modules, each behind the human-click guard.
+   * @param {any} o @param {string} p */
+  function routesFor(o, p) {
+    if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
+    if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
+    return null;
+  }
   const method = req.method ?? 'GET';
 
   let url;
@@ -1766,22 +1747,39 @@ export function handleRequest(req, res, opts) {
   const { pathname } = url;
 
   if (method !== 'GET' && method !== 'HEAD') {
-    if (opts.authorRoutes && pathname.startsWith('/api/author')) {
+    const routes = routesFor(opts, pathname);
+    if (routes) {
       let raw = '';
-      req.on('data', (c) => { raw += c; });
+      let size = 0;
+      let refused = false;
+      req.on('data', (c) => {
+        if (refused) return;
+        size += c.length;
+        if (size > MAX_BODY_BYTES) {
+          refused = true;
+          raw = '';
+          res.once('finish', () => { req.destroy(); });
+          res.setHeader('connection', 'close');
+          sendText(res, 413, `request body over ${MAX_BODY_BYTES} bytes`);
+          return;
+        }
+        raw += c;
+      });
       req.on('end', () => {
+        if (refused) return;
         /** @type {any} */
         let body = null;
         if (raw.length > 0) { try { body = JSON.parse(raw); } catch { body = null; } }
-        opts.authorRoutes?.handle(req, res, pathname, body);
+        routes.handle(req, res, pathname, body);
       });
       return;
     }
-    sendText(res, 405, 'method not allowed — this panel is read-only outside /api/author (GET/HEAD only)');
+    sendText(res, 405, 'method not allowed — this panel is read-only outside /api/author and /api/settings (GET/HEAD only)');
     return;
   }
-  if (opts.authorRoutes && pathname.startsWith('/api/author')) {
-    opts.authorRoutes.handle(req, res, pathname, null);
+  const getRoutes = routesFor(opts, pathname);
+  if (getRoutes) {
+    getRoutes.handle(req, res, pathname, null);
     return;
   }
 
@@ -1901,10 +1899,12 @@ export function createPanelServer(opts = {}) {
     let boundPort = requestedPort;
     /** @type {ReturnType<typeof createAuthorRoutes>|undefined} */
     let authorRoutes;
+    /** @type {ReturnType<typeof createSettingsRoutes>|undefined} */
+    let settingsRoutes;
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes,
+          home, port: boundPort, token, authorRoutes, settingsRoutes,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
@@ -1926,6 +1926,10 @@ export function createPanelServer(opts = {}) {
         spawnFn: opts.spawnFn,
         bareloopBin: opts.bareloopBin,
         fetchImpl: opts.fetchImpl,
+        home,
+      });
+      settingsRoutes = createSettingsRoutes({
+        port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
       });
       resolve({
         server,
@@ -1942,7 +1946,10 @@ export function createPanelServer(opts = {}) {
  * Never picks a different port on collision (see file header): prints a
  * loud, named error to stderr and returns 1.
  * @param {string[]} argv
- * @param {{ out: (s: string) => void, err: (s: string) => void, runlistHome?: string }} ctx
+ * @param {{ out: (s: string) => void, err: (s: string) => void, runlistHome?: string, env?: Record<string,string|undefined> }} ctx
+ *   `env` is the RAW shell env (never the start-time merge with the keys file) — the routes
+ *   re-merge `~/.config/bareloop/.env` onto it per request so Reload keys is real;
+ *   undefined = the process env.
  * @returns {Promise<number>}
  */
 export async function panelMain(argv, ctx) {
@@ -1956,7 +1963,7 @@ export async function panelMain(argv, ctx) {
     }
   }
   try {
-    const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome });
+    const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome, env: ctx.env });
     ctx.out(`bareloop panel — read-only, http://127.0.0.1:${boundPort} (Ctrl-C to stop)`);
     // never resolves on its own — the process stays up until killed, same
     // shape any other long-running dev server takes.

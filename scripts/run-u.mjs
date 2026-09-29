@@ -16,5 +16,5 @@ process.stdout.on('error', (e) => {
   throw e;
 });
 
-const code = await main(process.argv.slice(2), { env: process.env });
+const code = await main(process.argv.slice(2));
 process.exitCode = code;

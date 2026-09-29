@@ -86,6 +86,8 @@
 // question this used to ask separately is GONE, folded into Destination. A
 // non-repo source gets the form up to here and then an honest named stop:
 // bareloop has no checks for that kind of job yet (ruling 7 → M4).
+import { keysForDoor } from './keysfile.js';
+import { applyConfiguredKey, rowsForHome } from './providerrows.js';
 import {
   writeFileSync, mkdirSync, existsSync, readFileSync, statSync,
 } from 'node:fs';
@@ -123,6 +125,7 @@ class ExitSignal extends Error {
 /**
  * @typedef {object} Deps
  * @property {Record<string,string|undefined>} [env]
+ * @property {string} [keysHome] P4a — test seam: load this home's `.env` keys file even when `env` is injected.
  * @property {NodeJS.ReadStream} [stdin]
  * @property {NodeJS.WritableStream} [stdout]
  * @property {NodeJS.WritableStream} [stderr]
@@ -146,10 +149,13 @@ class ExitSignal extends Error {
  * @returns {Promise<number>} an exit code — never calls process.exit
  */
 export async function main(argv, deps = {}) {
-  const env = deps.env ?? process.env;
+  // P4a item 1 — the keys file fills what the shell leaves unset (shell wins).
+  const keys = keysForDoor(deps);
+  const env = keys.env;
   const stdin = deps.stdin ?? process.stdin;
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
+  if (keys.warning && deps.env === undefined) stderr.write(`WARNING: ${keys.warning}\n`);
   const spawnSyncFn = deps.spawnSync ?? realSpawnSync;
   const invokedAs = deps.invokedAs ?? 'node scripts/run-interview.mjs';
   const out = (/** @type {string} */ s = '') => { stdout.write(`${s}\n`); };
@@ -765,7 +771,9 @@ export async function main(argv, deps = {}) {
   // (a line break/control char/stray whitespace, e.g. a two-line secret-store
   // entry). A malformed key must not count as KEYED: this offer must read the
   // same "will it actually run" question run-author itself asks at its door.
-  const rawKeyValue = providerEnvKey ? env[providerEnvKey] : undefined;
+  // P4a item 4 — the key variable the person picked in Settings stands in for the built-in one
+  const keyEnv = keys.home !== undefined ? applyConfiguredKey(env, PROVIDER, draft.baseUrl, rowsForHome(keys.home)) : env;
+  const rawKeyValue = providerEnvKey ? keyEnv[providerEnvKey] : undefined;
   const keyProblem = rawKeyValue ? apiKeyProblem(rawKeyValue) : null;
   const KEYED = providerEnvKey !== null && Boolean(rawKeyValue) && !keyProblem;
   if (!KEYED) {

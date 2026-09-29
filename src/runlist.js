@@ -128,6 +128,19 @@ function runidForSpine(spinePath) {
   return resolveSiblings(spinePath).runId;
 }
 
+// DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` never shares
+// the failed glyph — [✗] stays reserved for a run whose close/arbiter
+// actually rendered a "no" (a real result). A spine that just stops, with
+// no ending ever recorded, is a DIFFERENT fact (killed, crashed, or the
+// machine slept) and gets its own [?] glyph. The distinguishing signal is
+// the spine FILE's own mtime, never wall-clock "now minus job-start" (a
+// resumed/paused run can legitimately sit quiet for a long time without
+// having died): still fresh (written to within this window) reads as the
+// existing `running` [▶] state; older than this reads as died. Tighten-only,
+// named so a future change is a deliberate, visible edit. Lives here (not in
+// the panel) because the monthly limit reads the same rule (src/monthly.js).
+export const DIED_MTIME_MS = 10 * 60 * 1000;
+
 // A backfill scan of a real patients directory can be arbitrarily deep
 // (person-path runs archive several levels down: `<dir>/<proj>/out/
 // source-<x>/<proj>-bareloop/u-<id>.jsonl`, 4 levels under the dir a person

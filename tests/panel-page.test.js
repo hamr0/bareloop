@@ -2231,26 +2231,28 @@ test('Chat tab CSS: a disabled .btn.primary is visibly different from the enable
 // fix (2026-09-28, hamr's ruling "one cap covers drafting + run", supersedes
 // the P3 Q2=A drafting-cap-field tests above): the separate Drafting $ cap
 // field is GONE — drafting now runs under the same Cap $ every run does.
-test('Job card cap row: $ cap | Time cap | Token price, matching design/panel-mockup.html field order; Token price is a disabled, unwired "est." placeholder (P4); there is no separate Drafting $ cap field', () => {
+test('Job card cap row: $ cap | Time cap only (P4b: no Token price field anywhere); there is no separate Drafting $ cap field', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const capRowStart = html.indexOf('<div class="cap-row"');
   const block = html.slice(capRowStart, html.indexOf('<button class="btn primary" type="button" id="chat-start-btn"'));
   const moneyIdx = block.indexOf('jf-cap-money');
   const timeIdx = block.indexOf('jf-cap-time');
-  const priceIdx = block.indexOf('jf-price');
-  assert.ok(moneyIdx !== -1 && timeIdx !== -1 && priceIdx !== -1, 'expected all three cap fields present');
-  assert.ok(moneyIdx < timeIdx && timeIdx < priceIdx, 'expected order $ cap, Time cap, Token price');
-  const priceTag = block.match(/<input id="jf-price"[^>]*>/)[0];
-  assert.match(priceTag, /placeholder="est\."/);
-  assert.match(priceTag, /\bdisabled\b/, 'Token price is unwired in P3 — must render disabled');
+  assert.ok(moneyIdx !== -1 && timeIdx !== -1, 'expected both cap fields present');
+  assert.ok(moneyIdx < timeIdx, 'expected order $ cap, Time cap');
+  assert.doesNotMatch(html, /jf-price|Token price/, 'the Token price field is gone (P4b: no price anywhere)');
   assert.doesNotMatch(html, /jf-cap-draft/, 'the separate Drafting $ cap field is gone (superseded 2026-09-28)');
 });
 
-test('fix (2026-09-28): the three cap-row labels read "Cap $", "Time cap (min)", "Token price $" (label CSS already uppercases); no "Drafting cap $" label exists', () => {
+test('fix (2026-09-29): the cap-row is two equal full-width columns (Cap $ | Time cap) at every width, no stacking media rule', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /\.cap-row\{display:grid;grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\);/);
+  assert.doesNotMatch(html, /\.cap-row\{grid-template-columns:1fr;\}/);
+});
+
+test('fix (2026-09-28): the cap-row labels read "Cap $" and "Time cap (min)"; no "Drafting cap $" label exists', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /<label for="jf-cap-money">Cap \$<\/label>/);
   assert.match(html, /<label for="jf-cap-time">Time cap \(min\)<\/label>/);
-  assert.match(html, /<label for="jf-price">Token price \$<\/label>/);
   assert.doesNotMatch(html, /Drafting cap \$/);
 });
 
@@ -2946,4 +2948,14 @@ test('bug fix: the Details/Job tabpanel\'s readonly job card has its own unique 
   const renderJobBody = html.slice(renderJobStart, renderJobEnd);
   assert.match(renderJobBody, /getElementById\("job-card-readonly"\)/);
   assert.doesNotMatch(renderJobBody, /getElementById\("job-card"\)/);
+});
+
+test('P4a Providers: the Test cell has a fixed width and its result wraps, so pressing Test never resizes the column', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const rule = /\.pv-table td\.pv-test-cell\{([^}]*)\}/.exec(html);
+  assert.ok(rule, 'a rule pins the Test cell');
+  const w = /(?:^|;)width:(\d+)px/.exec(rule[1])?.[1];
+  assert.ok(w && rule[1].includes(`min-width:${w}px`) && rule[1].includes(`max-width:${w}px`), 'width = min-width = max-width');
+  assert.match(html, /\.pv-table \.pv-test-result\{[^}]*white-space:normal/, 'the result text wraps instead of widening the cell');
+  assert.match(html, /'<td class="pv-test-cell">'/, 'the row builder puts the Test cell in that class');
 });

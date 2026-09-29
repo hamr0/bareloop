@@ -17,6 +17,6 @@ process.stdout.on('error', (e) => {
 });
 
 const code = await main(process.argv.slice(2), {
-  env: process.env, stdin: process.stdin, stdout: process.stdout, stderr: process.stderr,
+  stdin: process.stdin, stdout: process.stdout, stderr: process.stderr,
 });
 process.exitCode = code;

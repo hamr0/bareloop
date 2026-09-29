@@ -396,7 +396,9 @@ export async function checkProviderReachable({
     return { reachable: true, modelListed, status: 'ok', note: null };
   } catch (/** @type {any} */ e) {
     const cls = e?.name === 'AbortError' ? 'timeout' : (e?.code || e?.name || 'network-error');
-    return { reachable: false, modelListed: null, status: String(cls), note: `request failed: ${cls}` };
+    // connection refused surfaces as fetch's bare TypeError ("fetch failed") — say it plainly
+    const refused = e?.name === 'TypeError' || e?.code === 'ECONNREFUSED' || e?.cause?.code === 'ECONNREFUSED';
+    return { reachable: false, modelListed: null, status: String(cls), note: refused ? `nothing answering at ${req.url}` : `request failed: ${cls}` };
   } finally {
     clearTimeout(timer);
   }

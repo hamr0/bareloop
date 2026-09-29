@@ -20,10 +20,11 @@
 // `src/panel/server.js`'s POST routes). Nothing here changes what a step
 // means or what an answer does — only where the answer comes from.
 
+import { applyConfiguredKey, keyNameFor, modelChoiceFor, rowsForHome } from '../providerrows.js';
 import {
   mkdirSync, existsSync, writeFileSync, readdirSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import {
   prepareSource, proveDestination, missingDependencies, looksLikeRepoSource,
 } from '../source.js';
@@ -45,20 +46,6 @@ import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
-
-/**
- * The job card's "Model" select — a fixed, small, source-grounded mapping
- * from a display id to the `{provider, baseUrl?}` pair `src/interviewrun.js`
- * itself documents (that script's own `--provider openai-api --base-url
- * https://api.deepseek.com/v1` usage line for DeepSeek): the panel builds no
- * provider table of its own, this is a UI convenience over the SAME two
- * provider identities the CLI already resolves through `resolveProvider`.
- * @type {Readonly<Record<string, {provider: string, baseUrl?: string}>>}
- */
-export const MODEL_OPTIONS = Object.freeze({
-  'claude-sonnet-5': Object.freeze({ provider: 'anthropic-api' }),
-  'deepseek-flash': Object.freeze({ provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' }),
-});
 
 /**
  * Plain-language labels for the library's own `onPhase(name, …)` calls
@@ -126,17 +113,18 @@ export function jobNameTaken(name, opts = {}) {
  * creates a session or spends anything — never inside the async pipeline,
  * so a bad card refuses synchronously, in the same HTTP response.
  * @param {any} card
+ * @param {{jobsDir?: string, rows?: readonly import('../providerrows.js').KeyRow[]}} [opts] `rows` = the Settings rows (the Model menu); jobsDir is a server-side test seam — NEVER read off the client card
  * @returns {{ok: true}|{ok: false, error: string}}
  */
-export function validateJobCard(card) {
+export function validateJobCard(card, opts = {}) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
   const { jobName, checkType, model, goal, source, destination, success, guardrails, capUsd } = card;
   if (!isSlug(jobName)) return { ok: false, error: 'Job name must be a kebab-case slug (letters, digits, dashes)' };
-  if (jobNameTaken(jobName, card.jobsDirOverride ? { jobsDir: card.jobsDirOverride } : {})) {
+  if (jobNameTaken(jobName, { jobsDir: opts.jobsDir })) {
     return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)` };
   }
   if (checkType !== 'deterministic' && checkType !== 'rubric') return { ok: false, error: 'Check type must be deterministic or rubric' };
-  if (!MODEL_OPTIONS[model]) return { ok: false, error: `Model must be one of: ${Object.keys(MODEL_OPTIONS).join(', ')}` };
+  if (!modelChoiceFor(opts.rows ?? [], model)) return { ok: false, error: 'Model must be one of the Names in Settings > Providers' };
   for (const [field, label] of [[goal, 'Goal'], [source, 'Source'], [destination, 'Destination'], [success, 'Success'], [guardrails, 'Guardrails']]) {
     if (typeof field !== 'string' || field.trim() === '') return { ok: false, error: `${label} is required` };
   }
@@ -155,7 +143,7 @@ export function validateJobCard(card) {
  * is the ONE thing a person answers next; `answer()`/`send()`/`revise()`/
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
- * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, timeoutMs?: number,
+ * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
  *   prepareSigningFn?: Function}} [deps] the last five are TEST SEAMS ONLY — see the note
  *   just above where each is read, below.
@@ -164,6 +152,8 @@ export function validateJobCard(card) {
 export function createSession(card, deps = {}) {
   const env = deps.env ?? process.env;
   const sessionsRoot = deps.sessionsRoot ?? join(process.env.HOME ?? '/tmp', '.config', 'bareloop', 'panel-sessions');
+  // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
+  const configHome = deps.home ?? dirname(sessionsRoot);
   const timeoutMs = deps.timeoutMs ?? 300_000;
   // TEST SEAMS ONLY (never set by `src/panel/authorroutes.js`'s real caller):
   // override the declaration composer and/or `prepareSigning` itself so a
@@ -309,13 +299,19 @@ export function createSession(card, deps = {}) {
 
   async function run() {
     // ── keys, at $0, before anything is prepared ────────────────────────
-    const modelChoice = MODEL_OPTIONS[card.model];
+    const keyRows = rowsForHome(configHome);
+    const modelChoice = modelChoiceFor(keyRows, card.model);
+    if (!modelChoice) { refuse(`Model "${card.model}" is not a Name in Settings > Providers. Stopped — nothing spent.`); return; }
     let providerEntry;
     try { providerEntry = resolveProvider(modelChoice.provider); } catch (e) { refuse(/** @type {Error} */ (e).message); return; }
-    const apiKey = env[providerEntry.envKey];
-    if (!apiKey) { refuse(`${providerEntry.envKey} not set. Stopped — nothing spent.`); return; }
+    // P4a item 4 — the key variable the person picked in Settings stands in for the built-in one
+    const keyCfg = keyRows;
+    const draftEnv = applyConfiguredKey(env, modelChoice.provider, modelChoice.baseUrl, keyCfg, modelChoice.name);
+    const draftKeyName = keyNameFor(modelChoice.provider, modelChoice.baseUrl, keyCfg, modelChoice.name).name;
+    const apiKey = draftEnv[providerEntry.envKey];
+    if (!apiKey) { refuse(`${draftKeyName} not set. Stopped — nothing spent.`); return; }
     const keyProblem = apiKeyProblem(apiKey);
-    if (keyProblem) { refuse(`${providerEntry.envKey} ${keyProblem}. Stopped — nothing spent.`); return; }
+    if (keyProblem) { refuse(`${draftKeyName} ${keyProblem}. Stopped — nothing spent.`); return; }
 
     const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
@@ -389,6 +385,8 @@ export function createSession(card, deps = {}) {
       description: `${card.jobName} — authored through the bareloop panel (${verdictType}, ${LANG})`,
       provider: modelChoice.provider,
       ...(modelChoice.baseUrl ? { baseUrl: modelChoice.baseUrl } : {}),
+      // the Name is the model id: signed into the spec only when it is not the provider's own default
+      ...(modelChoice.name !== providerEntry.tiers.sonnet ? { model: modelChoice.name } : {}),
       cadence: { unit: 'day', every: 1 },
       budgetUsd: card.capUsd,
       ...(typeof card.maxWallMs === 'number' ? { maxWallMs: card.maxWallMs } : {}),
@@ -414,7 +412,7 @@ export function createSession(card, deps = {}) {
     const draftJudge = (() => {
       try { return resolveJobJudge(draft, modelChoice.provider, resolveWorkerModel); } catch { return { provider: modelChoice.provider, model: providerEntry.tiers.sonnet }; }
     })();
-    const MODEL = providerEntry.tiers.sonnet;
+    const MODEL = modelChoice.name;
     const { provider } = buildRunnerProviders({
       providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
       judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
@@ -473,7 +471,7 @@ export function createSession(card, deps = {}) {
     const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
     let judgeProvider = null;
     if (judge) {
-      const judgeKeyValue = env.JUDGE_API_KEY ?? env[resolveProvider(judge.provider).envKey];
+      const judgeKeyValue = env.JUDGE_API_KEY ?? (judge.provider === modelChoice.provider ? draftEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model))[resolveProvider(judge.provider).envKey];
       const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
       if (!judgeKeyValue || judgeKeyProblem) {
         refuse(`the judge key is not usable (${judgeKeyProblem ?? 'not set'}) — refusing before gate 4 spends anything`);
