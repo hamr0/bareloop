@@ -24,7 +24,9 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { createSession, validateJobCard, MODEL_OPTIONS } from './authorsession.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
-import { ConfigError } from '../config.js';
+import { ConfigError, readConfig } from '../config.js';
+import { keysForDoor } from '../keysfile.js';
+import { keyNameFor } from '../providerrows.js';
 import { resolveProvider, apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
@@ -74,7 +76,9 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string }} opts
  */
 export function createAuthorRoutes(opts) {
-  const env = opts.env ?? process.env;
+  // the RAW env with the keys file re-merged on every use, so an edited file takes effect
+  // without a restart (never a start-time snapshot). An injected env with no `home` skips the file.
+  const envNow = () => keysForDoor({ env: opts.env, keysHome: opts.home }).env;
   const spawnFn = opts.spawnFn ?? realSpawn;
   const bareloopBin = opts.bareloopBin ?? new URL('../../bin/bareloop.mjs', import.meta.url).pathname;
   // TEST SEAM ONLY: a test injects a fake `fetch`-shaped function so the
@@ -119,12 +123,16 @@ export function createAuthorRoutes(opts) {
       /** @type {any} */
       let providerEntry;
       try { providerEntry = resolveProvider(choice.provider); } catch (e) { send(400, { ok: false, error: /** @type {Error} */ (e).message }); return true; }
-      const raw = env[providerEntry.envKey];
+      // the person's chosen key variable (Settings > Providers) stands in for the built-in one
+      let keyCfg = {};
+      try { keyCfg = readConfig({ home: opts.home }).config; } catch (e) { if (!(e instanceof ConfigError)) throw e; }
+      const keyName = keyNameFor(choice.provider, choice.baseUrl, keyCfg).name;
+      const raw = envNow()[keyName];
       const problem = raw ? apiKeyProblem(raw) : null;
       const keyStatus = !raw ? 'missing' : (problem ? 'bad-shape' : 'found');
       if (keyStatus !== 'found') {
         send(200, {
-          ok: true, envKey: providerEntry.envKey, keyStatus, keyProblem: problem,
+          ok: true, envKey: keyName, keyStatus, keyProblem: problem,
           reachability: { checked: false, reachable: null, modelListed: null, status: null, note: 'no usable key to check reachability with' },
         });
         return true;
@@ -138,7 +146,7 @@ export function createAuthorRoutes(opts) {
       }).then((r) => {
         send(200, {
           ok: true,
-          envKey: providerEntry.envKey,
+          envKey: keyName,
           keyStatus,
           keyProblem: null,
           reachability: {
@@ -174,7 +182,7 @@ export function createAuthorRoutes(opts) {
       const card = body ?? {};
       const v = validateJobCard(card, { jobsDir: opts.jobsDir });
       if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
-      const session = createSession(card, { env, sessionsRoot: opts.sessionsRoot });
+      const session = createSession(card, { env: envNow(), sessionsRoot: opts.sessionsRoot });
       sessions.set(session.id, session);
       send(200, { ok: true, sessionId: session.id, state: session.state });
       return true;
@@ -214,7 +222,7 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'sign') {
       const claimedHash = String(body?.specHash ?? '');
-      const r = signRun(session, claimedHash, { env, spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home });
+      const r = signRun(session, claimedHash, { env: envNow(), spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home });
       send(r.ok ? 200 : 400, r);
       return true;
     }

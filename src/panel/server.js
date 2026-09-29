@@ -1980,8 +1980,9 @@ export function createPanelServer(opts = {}) {
  * loud, named error to stderr and returns 1.
  * @param {string[]} argv
  * @param {{ out: (s: string) => void, err: (s: string) => void, runlistHome?: string, env?: Record<string,string|undefined> }} ctx
- *   `env` is the door's already-merged env (shell + keys file, `src/keysfile.js`) — passed to
- *   the author routes as `opts.env`; undefined = the process env.
+ *   `env` is the RAW shell env (never the start-time merge with the keys file) — the routes
+ *   re-merge `~/.config/bareloop/.env` onto it per request so Reload keys is real;
+ *   undefined = the process env.
  * @returns {Promise<number>}
  */
 export async function panelMain(argv, ctx) {

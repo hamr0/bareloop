@@ -97,7 +97,7 @@ export function createSettingsRoutes(opts) {
         return {
           id: r.id, name: r.name, shape: r.shape, url: r.shownUrl,
           keyName: kn.name, builtInKey: kn.builtIn,
-          keyOptions: [...new Set([kn.builtIn, ...k.names])],
+          keyOptions: [...new Set([kn.builtIn, kn.name, ...k.names])],
           keyStatus: !raw ? 'not set' : (problem ? `bad shape (${problem})` : 'found'),
           canTest: r.provider !== 'gemini-api',
           tokens: p ? p.tokens : 0,

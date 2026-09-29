@@ -715,7 +715,7 @@ export async function main(argv, deps = {}) {
   // Never runs a job, spends money, or reads a key: it serves the run list
   // and spine/gate-audit reads over `127.0.0.1` only. `deps.runlistHome`
   // rides through the same injectable seam `run`/`run-u` already use.
-  if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome, env });
+  if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome, env: deps.env });
   err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay, runs, panel`);
   return 1;
 }

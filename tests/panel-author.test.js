@@ -287,7 +287,7 @@ test('signRun: a session with no drafting spend (0/undefined) omits --draft-spen
 
 async function startAuthorServer(t, opts = {}) {
   const { server, port, token, close } = await createPanelServer({
-    port: 0, sessionsRoot: opts.sessionsRoot ?? tmp('panel-author-sessions-'), env: opts.env ?? {}, fetchImpl: opts.fetchImpl,
+    port: 0, sessionsRoot: opts.sessionsRoot ?? tmp('panel-author-sessions-'), env: opts.env ?? {}, home: opts.home ?? tmp('panel-author-home-'), fetchImpl: opts.fetchImpl,
   });
   t.after(() => close());
   const base = `http://127.0.0.1:${port}`;
@@ -522,7 +522,7 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
   // signRun — proving the two layers actually compose.
   let captured = null;
   const spawnFn = (cmd, args, opts) => { captured = { cmd, args, opts }; return { unref: () => {} }; };
-  const signed = signRun(session, session.state.specHash, { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs' });
+  const signed = signRun(session, session.state.specHash, { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs', home: tmp('panel-author-signhome-') });
   assert.equal(signed.ok, true);
   assert.equal(session.state.phase, 'signed');
   assert.ok(captured.args.includes('--approve'));
