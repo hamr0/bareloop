@@ -146,6 +146,18 @@ test('checkMonthlyRoom: an incomplete month total travels as atLeast; an unreada
   assert.throws(() => checkMonthlyRoom({ capUsd: 1, home, now: NOW }), ConfigError);
 });
 
+test('checkMonthlyRoom: monthlyLimitUsd absent or null = no limit; present but not a number above 0 throws ConfigError naming the value and the file', (t) => {
+  const home = tmp(t);
+  writeFileSync(configPath(home), '{}');
+  assert.equal(checkMonthlyRoom({ capUsd: 5, home, now: NOW }).limitUsd, null, 'absent');
+  writeFileSync(configPath(home), '{"monthlyLimitUsd":null}');
+  assert.equal(checkMonthlyRoom({ capUsd: 5, home, now: NOW }).limitUsd, null, 'null');
+  for (const [raw, shown] of [['"50"', '"50"'], ['-5', '-5'], ['0', '0'], ['1e400', 'Infinity'], ['true', 'true'], ['{}', '{}'], ['""', '""']]) {
+    writeFileSync(configPath(home), `{"monthlyLimitUsd":${raw}}`);
+    assert.throws(() => checkMonthlyRoom({ capUsd: 5, home, now: NOW }), (e) => e instanceof ConfigError && e.message.includes(configPath(home)) && e.message.includes(`monthlyLimitUsd = ${shown}`), raw);
+  }
+});
+
 // ---- the run-start seam (execute) ---------------------------------------------------------
 
 const git = (/** @type {string} */ cwd, /** @type {string[]} */ args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();

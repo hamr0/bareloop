@@ -12,7 +12,7 @@
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
 // number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
 import { existsSync } from 'node:fs';
-import { readConfig, ConfigError } from './config.js';
+import { readConfig, configPath, ConfigError } from './config.js';
 import { readRunList } from './runlist.js';
 import { parseJsonl } from './replayio.js';
 import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
@@ -267,8 +267,25 @@ export function spendSummary(opts = {}) {
  */
 
 /**
- * Does a run with this $ cap fit in what is left this month? No limit set = ok, no check.
- * Compared in whole cents. Throws `ConfigError` when config.json is unreadable — a gate
+ * The person's monthly limit off a parsed config.json: key absent (or null) = no limit (null);
+ * a number above 0 = the limit; ANY other value present is a broken setting and throws
+ * `ConfigError` — a limit the file names but this code cannot read never reads as "no limit".
+ * @param {Record<string, any>} config
+ * @param {string} [home]
+ * @returns {number|null}
+ */
+export function monthlyLimitOf(config, home) {
+  const limit = config.monthlyLimitUsd;
+  if (limit === undefined || limit === null) return null;
+  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) return limit;
+  const shown = typeof limit === 'number' ? String(limit) : JSON.stringify(limit);
+  throw new ConfigError(`${configPath(home)} has monthlyLimitUsd = ${shown}, which is not a number above 0 — fix it or remove the line`);
+}
+
+/**
+ * Does a run with this $ cap fit in what is left this month? No limit set (key absent or null) = ok, no check; a limit that is present but not a
+ * number above 0 throws `ConfigError`.
+ * Compared in whole cents. Also throws `ConfigError` when config.json is unreadable — a gate
  * whose own instrument is broken refuses; it never silently runs with no limit.
  * @param {{ capUsd: number, home?: string, now?: () => number }} args
  * @returns {MonthlyRoom}
@@ -276,8 +293,8 @@ export function spendSummary(opts = {}) {
 export function checkMonthlyRoom({ capUsd, home, now }) {
   const cfg = readConfig({ home });
   if (cfg.problem) throw new ConfigError(cfg.problem);
-  const limit = cfg.config.monthlyLimitUsd;
-  if (!(typeof limit === 'number' && Number.isFinite(limit) && limit > 0)) {
+  const limit = monthlyLimitOf(cfg.config, home);
+  if (limit === null) {
     return { ok: true, leftUsd: null, limitUsd: null, atLeast: false };
   }
   const spent = monthSpend({ home, now });

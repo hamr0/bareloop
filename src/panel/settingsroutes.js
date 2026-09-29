@@ -13,7 +13,7 @@
 // response: names and found / not set only.
 import { checkHumanGuard } from './authorroutes.js';
 import { readConfig, updateConfig, ConfigError } from '../config.js';
-import { spendSummary } from '../monthly.js';
+import { spendSummary, monthlyLimitOf } from '../monthly.js';
 import { loadKeysEnv, keysFilePath, filledKeyNames, ensureKeysFile } from '../keysfile.js';
 import { SHAPES, PRESET_KEY_NAMES, keyRows, endpointOf, defaultUrlOf, usableKey } from '../providerrows.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
@@ -58,14 +58,21 @@ export function createSettingsRoutes(opts) {
       if (req.method === 'GET') {
         const cfg = readConfig({ home: opts.home });
         const s = spendSummary({ home: opts.home, now: opts.now });
-        const limit = cfg.config.monthlyLimitUsd;
+        /** @type {number|null} */
+        let limit = null;
+        let configProblem = cfg.problem;
+        // a limit the file names but that is not a number above 0 is a problem, never "no limit"
+        try { limit = monthlyLimitOf(cfg.config, opts.home); } catch (e) {
+          if (!(e instanceof ConfigError)) throw e;
+          configProblem = e.message;
+        }
         send(200, {
           ok: true,
-          configProblem: cfg.problem,
+          configProblem,
           totalUsd: s.total.usd, totalAtLeast: s.total.atLeast,
           monthUsd: s.month.usd, monthAtLeast: s.month.atLeast,
           totalTokens: s.total.tokens, monthTokens: s.month.tokens,
-          monthlyLimitUsd: typeof limit === 'number' && Number.isFinite(limit) ? limit : null,
+          monthlyLimitUsd: limit,
           byProvider: Object.values(s.byProvider).sort((a, b) => b.totalUsd - a.totalUsd),
         });
         return true;

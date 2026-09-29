@@ -105,6 +105,18 @@ test('/api/settings/money: Save is refused without the token, with a wrong Origi
   assert.equal(readFileSync(configPath(home), 'utf8'), before);
 });
 
+test('/api/settings/money: GET reports a present-but-bad limit as a configProblem (never as "no limit" alone)', async (t) => {
+  const home = tmp(t);
+  const { base, H } = await panel(t, home);
+  writeFileSync(configPath(home), '{"monthlyLimitUsd":"50"}');
+  const got = await (await fetch(`${base}/api/settings/money`, { headers: H })).json();
+  assert.equal(got.ok, true);
+  assert.equal(got.monthlyLimitUsd, null);
+  assert.match(got.configProblem, /monthlyLimitUsd = "50"/);
+  writeFileSync(configPath(home), '{}');
+  assert.equal((await (await fetch(`${base}/api/settings/money`, { headers: H })).json()).configProblem, null);
+});
+
 test('chat can never reach Settings: authoring routes have no /api/settings handler, and settings routes no authoring state', async (t) => {
   const { readFileSync: rf } = await import('node:fs');
   const author = rf(new URL('../src/panel/authorroutes.js', import.meta.url), 'utf8');
