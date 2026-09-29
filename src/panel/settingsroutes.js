@@ -101,15 +101,21 @@ export function createSettingsRoutes(opts) {
 
     // ── Providers (P4b): one row per key in the keys file that has a value. ──
     if (pathname === '/api/settings/providers' && req.method === 'GET') {
-      // a missing keys file is created with the four empty preset lines (never edited if present)
+      // a missing keys file is created with the five empty preset lines (never edited if present)
       ensureKeysFile(PRESET_KEY_NAMES, opts.home);
       const cfg = readConfig({ home: opts.home });
       const k = keys();
       const rows = currentRows(cfg.config);
       const s = spendSummary({ home: opts.home, now: opts.now, rows });
       const note = cfg.config.anthropicBalanceNote;
+      // a preset key exported only in the shell gets no row (the rows are the keys file): NAMES the
+      // person can act on, read off the RAW shell env — never a value, never a length
+      const shellEnv = opts.env ?? process.env;
+      const filled = new Set(filledKeyNames(opts.home));
+      const shellOnly = PRESET_KEY_NAMES.filter((n) => typeof shellEnv[n] === 'string' && shellEnv[n] !== '' && !filled.has(n));
       send(200, {
         ok: true,
+        shellOnly,
         keysFile: { path: keysFilePath(opts.home), exists: k.exists, names: k.names, warning: k.warning },
         configProblem: cfg.problem,
         shapes: SHAPES.map((x) => ({ id: x.id, label: x.label })),

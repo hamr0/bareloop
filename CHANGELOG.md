@@ -23,6 +23,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `null` counts as set and means "no real key" (local servers). Chat's Model menu is the Settings
   rows, and one owner (`src/providerrows.js`) resolves model to key + shape + URL for Chat, the
   author doors and the run doors.
+- **Providers tab names a shell-only key** — a preset key variable exported only in the shell
+  (not in the keys file) gets no row and no Chat model; the tab now says so under the table, by
+  name only (`GET /api/settings/providers` returns `shellOnly: string[]`, never a value).
 
 ### Changed
 

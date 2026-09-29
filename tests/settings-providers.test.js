@@ -311,3 +311,24 @@ test('CLI door (run-u): the key row whose shape + URL match the spec is the one 
   assert.equal(code, 2);
   assert.match(errs.join('\n'), /MY_KEY contains a tab character/);
 });
+
+test('providers GET: shellOnly names a preset key set only in the shell (name only, never the value); empty when the file has it too', async (t) => {
+  const home = tmp(t);
+  const { port, token, close } = await createPanelServer({ port: 0, home, env: { ANTHROPIC_API_KEY: SECRET_A, DEEPSEEK_API_KEY: SECRET_B, OPENAI_API_KEY: '', MY_OTHER: SECRET_A }, sessionsRoot: tmp(t) });
+  t.after(() => close());
+  const H = { 'x-bareloop-token': token };
+  const read = async () => (await fetch(`http://127.0.0.1:${port}/api/settings/providers`, { headers: H })).text();
+  keysFile(home, 'DEEPSEEK_API_KEY=' + SECRET_B + '\nANTHROPIC_API_KEY=\nOPENAI_API_KEY=\n');
+  const body = await read();
+  assert.deepEqual(JSON.parse(body).shellOnly, ['ANTHROPIC_API_KEY'], 'empty shell value and non-preset names are not listed; a filled file line is not shell-only');
+  assert.equal(body.includes(SECRET_A), false, 'the value never appears in the response');
+  assert.equal(body.includes(SECRET_B), false);
+  keysFile(home, 'DEEPSEEK_API_KEY=' + SECRET_B + '\nANTHROPIC_API_KEY=' + SECRET_A + '\n');
+  assert.deepEqual(JSON.parse(await read()).shellOnly, [], 'also in the file = nothing to say');
+});
+
+test('panel page: the Providers tab prints one shell-only hint per name under the table', () => {
+  const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  assert.ok(html.includes('id="pv-shell"'));
+  assert.ok(html.includes('is set in your shell but not in ~/.config/bareloop/.env — add it there to use it here and in Chat.'));
+});
