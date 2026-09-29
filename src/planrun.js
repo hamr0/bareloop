@@ -3883,8 +3883,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // already read (never advice, never model-generated text — a prompt
     // register change, `src/promptregisters.js`'s inventory, `src/planrun.js`
     // already listed there). `checksHistory` is the "N passed of M declared"
-    // count per grade (first-red-wins: everything before the deciding stage),
-    // read straight off each declared verdict's own `stages` list — nothing a
+    // count per grade: N counts the satisfied stages on each declared verdict's
+    // own `stages` list (first-red-wins, so that list holds only the stages that
+    // RAN), and M is the DECLARED stage count (`stagedClose.length`, the same
+    // one source `createTrend`'s stageOrder reads) — never the ran count, or a
+    // 7-stage close red at stage 2 would read "1/2" instead of "1/7". Nothing a
     // command close's verdict carries, so it stays empty there and the line is
     // simply omitted. The per-stage number history rides on `fixTrend.report()`
     // already, so nothing new is stored for that half.
@@ -3892,7 +3895,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const checksHistory = [];
     const pushChecks = (/** @type {any} */ v) => {
       if (Array.isArray(v?.stages)) {
-        checksHistory.push(`${v.stages.filter((/** @type {any} */ s) => s.verdict === 'satisfied').length}/${v.stages.length}`);
+        checksHistory.push(`${v.stages.filter((/** @type {any} */ s) => s.verdict === 'satisfied').length}/${stagedClose.length}`);
       }
     };
     pushChecks(post);

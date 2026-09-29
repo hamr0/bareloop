@@ -416,6 +416,13 @@ test('F198 item 2: the fix worker\'s prompt carries the close\'s own number hist
   // one facts line per fix ATTEMPT, never on the step's own turn.
   assert.equal(fixCalls.length, 4, 'one facts line per fix attempt');
   assert.match(fixCalls[0], /checks passed \d+\/\d+/, 'the checks-passed count rides the same line');
+  // the close is first-red-wins and reds at the count stage (2nd of the declared
+  // stages), so fewer stages RAN than are declared: M must be the DECLARED count
+  // (mul5fofw shape), never the ran count ("1/2")
+  const declaredN = job.closeDecl.stages.length;
+  assert.ok(declaredN > 2, 'fixture: the close must red before its last declared stage');
+  for (const c of fixCalls) assert.match(c, new RegExp(`checks passed (\\d+/${declaredN} → )*\\d+/${declaredN}(?= ·)`), 'M is the declared stage count');
+  assert.match(fixCalls[0], new RegExp(`checks passed 1/${declaredN} ·`), 'one stage passed of the declared count, not of the ran count');
   assert.match(fixCalls[0], /count-stage 5/, 'fix attempt 1 sees the seed grade (5) already on the record');
   assert.match(fixCalls[1], /count-stage 5 → 5/, 'fix attempt 2 sees BOTH prior grades — the history GROWS, one entry per attempt');
   assert.doesNotMatch(fixCalls[0], /top up|revise|abandon|converging|strike/i, 'facts only — no lever, no advice, no model-generated prose');
