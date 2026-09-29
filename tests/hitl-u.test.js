@@ -434,7 +434,7 @@ test('§5.2 the PAUSE readout shows the package and the doors where the person i
     'and the shared renderer is the one that assembles it, for both screens');
   assert.match(block, /doorLines\(/, 'and the three doors, in the one order that is a rule');
   assert.match(block, /--resume \$\{runid\}/, 'with the actual resume invocation, not the idea of one');
-  assert.match(block, /--approve \$\{specHash\}/, 'and the hash ALREADY signed: a decision moves no allowance, so nothing here needs re-signing');
+  assert.match(block, /--approve \$\{PRINT_APPROVE\}/, 'and the hash ALREADY signed: a decision moves no allowance, so nothing here needs re-signing');
   assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'a readout never changes the run\'s own exit');
 });
 
@@ -476,7 +476,7 @@ test('§1 the pause door is REACHABLE and silent about money: a signed `--decide
 
 test('§1 a pause writes NO bridge: the artifact is minted by a green, and a pause is not one', () => {
   const src = readFileSync(ENGINE_SRC, 'utf8');
-  assert.match(src, /if \(outcome === 'green' && plan && !leaks\.length\)/,
+  assert.match(src, /if \(outcome === 'green' && plan && !leaks\.length && !ctx\.bundle\)/,
     'the bridge gate still reads the GREEN terminal only — a checkpoint that graduated a reusable plan would mint learning credit no close ever rendered');
 });
 
