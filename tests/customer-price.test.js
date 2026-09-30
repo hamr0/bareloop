@@ -102,7 +102,9 @@ function homeWith(t, keyRow) {
 
 /** one run-u start on the DeepSeek-shaped spec; token-only rounds (costUsd null) so bare-agent prices them */
 async function runPriced(t, { home, budgetUsd = 5, preview = false, specOver = {}, registry, workflow }) {
-  const workdir = tmp(t);
+  // the spine lands at `<workdir>/../<spineName>`: nest the patient one level down so that sibling is inside this
+  // test's own mktemp dir (cleaned by its `after`), not a fixed name straight under the system tmpdir
+  const workdir = join(tmp(t), 'patient');
   mkdirSync(join(workdir, 'src'), { recursive: true });
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
   git(workdir, ['init', '-q']);
