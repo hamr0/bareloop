@@ -3,37 +3,32 @@
 // bareloop.mjs` is a ~10-line adapter that supplies the real `deps` and turns
 // the returned exit code into `process.exitCode`.
 //
-// `deps.provider` (and `providerFor`/`judgeProvider`) is the ONE test seam: a
-// caller that supplies it skips the real-key check entirely (a scripted
-// provider IS the run, same as `tests/planrun.test.js`'s pattern). A caller
-// that does NOT supply one goes through the real path M1's frozen spec names:
-// a key from `ANTHROPIC_API_KEY` only, absent means print the operator
-// questions and spend nothing (`bareloop run`, step 3).
+// `bareloop run <bundle>` is a thin door (`src/bundlerun.js`) to the same engine `bareloop
+// run-u` drives (`src/userrun.js`): providers, keys (the keys file / env, any provider the
+// bundle's spec names), judge, monthly limit and readout are that engine's. The test seam is
+// the engine's too: `deps.provider` (and `providerFor`/`judgeProvider`) supplies a scripted
+// provider and skips the real-key check (same as `tests/planrun.test.js`'s pattern).
 //
-// Money/arbiter rules this module must not bend: `--budget`/`--wall` only
-// TIGHTEN a bundle's signed ceilings (`checkEnvelope`, M1); a bundle's
-// `bundleHash` (the human-facing signature) never changes when the runner
-// tightens — the SPEC that actually executes does, and this module mints a
-// FRESH `approvals` record over that tightened, `$BARELOOP_BUNDLE`-resolved
-// spec so `checkApproval` inside `runJob` always sees the spec it is about to
-// run, never the unresolved bundleHash. `history.jsonl` records both hashes
-// side by side (POC fact 2) so the pairing can never drift silently.
+// Money/arbiter rules the bundle door keeps: `--budget`/`--wall` only TIGHTEN a bundle's
+// signed ceilings (`checkEnvelope`, M1); a bundle's `bundleHash` (the human-facing
+// signature) never changes when the runner tightens — the SPEC that actually executes does,
+// and the door hands the engine the hash of that tightened, `$BARELOOP_BUNDLE`-resolved
+// spec. `history.jsonl` records both hashes side by side (POC fact 2) so the pairing can
+// never drift silently.
 
 import { createInterface } from 'node:readline/promises';
-import { hostname } from 'node:os';
-import { execFileSync } from 'node:child_process';
 import {
-  existsSync, mkdirSync, readFileSync, renameSync,
+  existsSync, readFileSync,
 } from 'node:fs';
 import {
   dirname, isAbsolute, join, resolve,
 } from 'node:path';
 
 import {
-  exportBundle, readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
-  runJob, makeSpine, loadRegistry, listingRow, jobSpecHash, resolveWorkerModel, resolveJudge,
+  exportBundle, loadRegistry, listingRow,
 } from './index.js';
-import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
+// One runner: `bareloop run <bundle>` is a thin door to the `run-u` engine (`src/userrun.js`).
+import { bundleMain } from './bundlerun.js';
 // PANEL-BUILD.md P0 task 2/4 — `bareloop run-u` wraps the person-path run
 // flow's own argv-parsing entry (`src/userrun.js`'s `main(argv, deps)`,
 // itself the lift target of P0 task 1). This is the SAME function
@@ -69,86 +64,10 @@ import { panelMain } from './panel/server.js';
 // (list) and `bareloop runs backfill <dir>` (reconstruct rows from archived
 // spines already on disk) are this rung's only new commands.
 import { keysForDoor } from './keysfile.js';
-import { appendRun, readRunList, backfillRuns, formatRunRow } from './runlist.js';
-
-// The tier->model tables live in `src/providers.js` now (PRD item 28's
-// factory) — one seam instead of a copy hardcoded in each runner. A
-// `bareloop run` has no `--model` flag (not in the frozen spec), so
-// `flagModel` is always undefined below and only the spec's own `model`
-// (if signed) or the resolved provider's default tier is ever in play.
+import { readRunList, backfillRuns, formatRunRow } from './runlist.js';
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObj = (v) => typeof v === 'object' && v !== null;
-
-/**
- * Build the real providers from an API key, exactly the way `scripts/run-
- * u.mjs` does (provider/providerFor/judgeProvider from `bare-agent/
- * providers`'s `AnthropicProvider`). `AnthropicProvider` itself lives in
- * `bare-agent` (the one production dependency already budgeted for provider
- * calls); this function only wires it up the same way the u-runner does —
- * it is not arbiter logic (no budget/verdict/merge decision lives here).
- * @param {string} apiKey
- * @param {any} spec the (already `$BARELOOP_BUNDLE`-resolved) bundle spec
- */
-function buildProviders(apiKey, spec) {
-  // `bareloop run`'s frozen key contract (module header above) is
-  // ANTHROPIC_API_KEY only — this `apiKey` is always that key. A bundle
-  // whose spec names a provider that reads a DIFFERENT env key therefore
-  // has no seam into this flow yet, and the one thing this must never do is
-  // construct that provider with the Anthropic key: the run would fail at
-  // the first call with a vendor 401, which reads as a credential problem
-  // rather than as the unbuilt seam it actually is. So it REFUSES here, at
-  // $0, naming the key it would have needed. Widening the contract (a
-  // signed per-provider key story) is PRD item 28 part (2)/(3), the
-  // arbiter's, not this factory rewire's — the runner that actually fires
-  // openai-api jobs today is `scripts/run-u.mjs`, which IS key-aware.
-  const providerName = isObj(spec) && typeof spec.provider === 'string' ? spec.provider : 'anthropic-api';
-  const entry = resolveProvider(providerName);
-  if (entry.envKey !== 'ANTHROPIC_API_KEY') {
-    throw new Error(
-      `bareloop run: this bundle's spec names provider "${providerName}", which reads `
-      + `${entry.envKey}. The bundle runner's key contract is ANTHROPIC_API_KEY only, so it `
-      + 'refuses rather than calling that provider with the wrong key (PRD item 28 part 2 — '
-      + 'a signed per-provider key story is not built). Run this job through scripts/run-u.mjs.',
-    );
-  }
-  const modelResolution = resolveWorkerModel({
-    specModel: isObj(spec) && typeof spec.model === 'string' ? spec.model : undefined,
-    flagModel: undefined,
-    defaultModel: entry.tiers.sonnet,
-  });
-  const MODEL = modelResolution.model;
-  const tierModels = modelResolution.source === 'spec' ? { ...entry.tiers, sonnet: MODEL } : entry.tiers;
-  const baseUrl = isObj(spec) && typeof spec.baseUrl === 'string' ? spec.baseUrl : undefined;
-  // THE JUDGE, RESOLVED RATHER THAN PINNED (PRD item 32.1/32.2). The bundle
-  // runner's key contract is `ANTHROPIC_API_KEY`-only and the refusal above has
-  // already established that the WORKER provider reads that key — so a judge
-  // defaulting to the worker's own identity reads the same key by construction,
-  // and a signed `judge` naming a different provider would need a key this
-  // runner does not have. That case refuses here, at $0, by name — the same
-  // shape and the same reason as the worker refusal above, never a call made
-  // with the wrong vendor's key.
-  const judge = resolveJudge({
-    specJudge: isObj(spec) ? spec.judge : undefined,
-    workerProvider: providerName,
-    workerModel: MODEL,
-  });
-  const judgeEntry = resolveProvider(judge.provider);
-  if (judgeEntry.envKey !== 'ANTHROPIC_API_KEY') {
-    throw new Error(
-      `bareloop run: this bundle's spec names judge provider "${judge.provider}", which reads `
-      + `${judgeEntry.envKey}. The bundle runner's key contract is ANTHROPIC_API_KEY only, so it `
-      + 'refuses rather than calling that provider with the wrong key. Run this job through scripts/run-u.mjs.',
-    );
-  }
-  return {
-    ...buildRunnerProviders({
-      providerName, apiKey, model: MODEL, tierModels, baseUrl,
-      judgeApiKey: apiKey, judgeModel: judge.model, judgeProviderName: judge.provider, judgeBaseUrl: baseUrl,
-    }),
-    judgeModel: judge.model,
-  };
-}
 
 /** @param {string[]} args @returns {{ positional: string[], flags: Record<string, string|true> }} */
 function parseFlags(args) {
@@ -246,255 +165,6 @@ function doExport(args, { out, err, cwd }) {
   for (const f of Object.keys(r.manifest.files).sort()) out(`  ${f}`);
   out("this bundle is unblessed until its first run greens on the importer's machine.");
   return 0;
-}
-
-/**
- * `bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]`
- * — the exact five-step order the frozen spec names; no step may be reordered.
- * @param {string[]} args
- * @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, env: Record<string,string|undefined>, now: () => number, deps: any }} ctx
- */
-async function doRun(args, { out, err, cwd, env, now, deps }) {
-  const { positional, flags } = parseFlags(args);
-  const bundleDirArg = positional[0];
-  const repoArg = typeof flags.repo === 'string' ? flags.repo : undefined;
-  if (!bundleDirArg || !repoArg) {
-    err('usage: bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]');
-    return 1;
-  }
-  const bundleDir = resolve(cwd, bundleDirArg);
-  const repo = resolve(cwd, repoArg);
-
-  // 1. readBundle — N4: this must complete, clean, before anything else
-  // touches the bundle or the repo. Any red (incl. bundle-tampered) stops here.
-  const bundle = readBundle(bundleDir);
-  if (!bundle.ok) { printReds(bundle.reds, err); return 1; }
-
-  // 1b. F128 — the bundle's OWN node_modules must carry `bareloop` before
-  // anything else runs. Left unchecked, the close crashes deep inside
-  // runJob's close-first precheck with a bare ERR_MODULE_NOT_FOUND, reported
-  // as an unhelpful generic close-red with no cure line.
-  const depsCheck = checkBundleDeps(bundleDir);
-  if (!depsCheck.ok) { printReds(depsCheck.reds, err); return 1; }
-
-  // 2. checkEnvelope — tighten-only, wall given in minutes -> ms.
-  /** @type {{ budgetUsd?: number, maxWallMs?: number }} */
-  const envelope = {};
-  if (flags.budget !== undefined) {
-    const n = Number(flags.budget);
-    if (!Number.isFinite(n)) { err(`--budget must be a number, got ${JSON.stringify(flags.budget)}`); return 1; }
-    envelope.budgetUsd = n;
-  }
-  if (flags.wall !== undefined) {
-    const n = Number(flags.wall);
-    if (!Number.isFinite(n)) { err(`--wall must be a number of minutes, got ${JSON.stringify(flags.wall)}`); return 1; }
-    envelope.maxWallMs = n * 60_000;
-  }
-  const envCheck = checkEnvelope(bundle.spec, envelope);
-  if (!envCheck.ok) { printReds(envCheck.reds, err); return 1; }
-
-  // 3. the key — ANTHROPIC_API_KEY only, UNLESS a caller already handed in a
-  // provider (the test seam). Absent and no injected provider: print the
-  // operator questions (the bundle's own README) and the hash, spend nothing.
-  let { provider, providerFor, judgeProvider } = deps;
-  // the judge IDENTITY travels with the judge PROVIDER (PRD item 32.1). A test
-  // injecting `deps.judgeProvider` may name it too; absent, it is resolved
-  // alongside the real providers below, and a judged stage with neither stops as
-  // a wiring gap rather than grading under a name nobody wrote.
-  let judgeModel = /** @type {string|null} */ (deps.judgeModel ?? null);
-  if (!provider) {
-    const apiKey = env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      let readme = null;
-      try { readme = readFileSync(join(bundleDir, 'README.md'), 'utf8'); } catch { /* fall through to the hash alone */ }
-      if (readme) out(readme);
-      out(`bundleHash: ${bundle.manifest.bundleHash}`);
-      return 0;
-    }
-    // F181 — a key that reads as "set" above can still carry a line break/
-    // control char/stray whitespace and crash Node's own header-encode
-    // inside the paid span. Refused here, at the same door, before any
-    // provider is constructed; never echoes the value.
-    const keyProblem = apiKeyProblem(apiKey);
-    if (keyProblem) {
-      err(`ANTHROPIC_API_KEY ${keyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
-      return 1;
-    }
-    try {
-      ({ provider, providerFor, judgeProvider, judgeModel } = buildProviders(apiKey, bundle.spec));
-    } catch (e) {
-      // a refusal from the key contract above: name it and spend nothing
-      err(String(/** @type {any} */ (e)?.message ?? e));
-      return 1;
-    }
-  }
-
-  // 4. blessing.
-  const { manifest } = bundle;
-  if (!bundle.blessing) {
-    // The runid that ACTUALLY minted this bundle's own signed spec — the
-    // bridge VERSION (base or shape fork; both ship into bridges/) whose
-    // recorded specHash equals the resolved bundle spec's jobSpecHash. NOT
-    // the bridge's first history row: a job can be re-exported/rebased many
-    // times, and only the version at THIS exact hash proves anything for
-    // THIS bundle.
-    const { approveHash: mintMatchHash } = resolveBundleSpec(bundle, bundleDir);
-    let mintRunid = null;
-    for (const b of bundle.bridges) {
-      const versions = Array.isArray(b.versions) ? b.versions : [];
-      const v = versions.find((/** @type {any} */ ver) => ver.specHash === mintMatchHash);
-      if (v) { mintRunid = v.runid; break; }
-    }
-    out('first run — this bundle has never been blessed on this machine.');
-    out(mintRunid ? `minting run: ${mintRunid} (spine not bundled in v1)` : 'no version at this hash');
-    out(`bundleHash: ${manifest.bundleHash}`);
-    if (flags.approve !== manifest.bundleHash) {
-      err(`--approve ${manifest.bundleHash} is required for the first run of an unblessed bundle`);
-      return 1;
-    }
-  } else {
-    const vb = verifyBlessing(bundle);
-    if (!vb.ok) { printReds(vb.reds, err); return 1; }
-    if (flags.approve) out('already blessed, --approve ignored');
-  }
-
-  // 5. the worktree — refuse a non-repo, a repo with no commit, or a collision;
-  // ALWAYS fresh, never reused (a reused worktree reads last run's edits as
-  // "already-green" — the negative POC's exact finding).
-  try {
-    execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
-  } catch (e) {
-    err(`--repo ${repoArg} must be a git repository with at least one commit: ${/** @type {Error} */ (e).message}`);
-    return 1;
-  }
-  const runid = now().toString(36);
-  const worktree = join(repo, '.bareloop', 'wt', runid);
-  if (existsSync(worktree)) { err(`worktree already exists: ${worktree}`); return 1; }
-  mkdirSync(dirname(worktree), { recursive: true });
-  try {
-    execFileSync('git', ['-C', repo, 'worktree', 'add', '--detach', worktree, 'HEAD'], { encoding: 'utf8' });
-  } catch (e) {
-    err(`git worktree add failed: ${/** @type {Error} */ (e).message}`);
-    return 1;
-  }
-
-  // 6. resolve (in-memory $BARELOOP_BUNDLE substitution) + tighten + run. The
-  // envelope tightens the ACTUAL spec that runs (budgetUsd/maxWallMs have no
-  // separate runJob override — the library reads them off the spec itself),
-  // so `approveHash` is recomputed AFTER tightening: the runner mints its own
-  // fresh approval over the exact spec it is about to hand to runJob, never
-  // over the untightened one `resolveBundleSpec` first returned. The
-  // bundleHash a human approved never changes; only the executed spec's own
-  // hash does, and that hash is minted here, not signed by a person.
-  const resolved = resolveBundleSpec(bundle, bundleDir);
-  const runSpec = resolved.spec;
-  if (envelope.budgetUsd !== undefined) runSpec.budgetUsd = envelope.budgetUsd;
-  if (envelope.maxWallMs !== undefined) runSpec.maxWallMs = envelope.maxWallMs;
-  const approveHash = jobSpecHash(runSpec);
-
-  const runsDir = join(bundleDir, 'runs', runid);
-  mkdirSync(runsDir, { recursive: true });
-  const spineFile = join(runsDir, 'spine.jsonl');
-  const emit = makeSpine(spineFile);
-  // PRD item 27/M3 Part B — the close's own books directory, inside the run's
-  // own directory so the bundle stays one self-contained unit (hamr,
-  // 2026-09-07: "export holds as one unit of itself"). `runJob` autosets the
-  // close timeout itself (no `closeTimeoutMs` passed — the bundle CLI has
-  // always run on the library default/autoset path, never run-u's operator
-  // knob).
-  const closeDir = join(runsDir, 'close');
-  mkdirSync(closeDir, { recursive: true });
-
-  // PANEL-BUILD.md P1 — one row in the run list, BEFORE the first paid call
-  // (runJob, right below). A list-append failure must never block a real,
-  // already-signed run: caught and named loudly, never rethrown.
-  // `deps.runlistHome` — the SAME test seam shape `deps.provider`/`deps.now`
-  // already are on this ctx (never a new env var, see src/runlist.js's own
-  // header comment): a caller that injects it (every test in
-  // tests/cli.test.js that reaches this line) writes its row under a temp
-  // home instead of the real `~/.config/bareloop`; production never sets it,
-  // so `appendRun` falls through to `runlistHome()`'s own `os.homedir()`.
-  try {
-    appendRun({
-      at: new Date(now()).toISOString(), runid, job: runSpec.job, spine: spineFile, patient: worktree, via: 'bundle',
-    }, { home: deps.runlistHome });
-  } catch (e) {
-    err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${/** @type {Error} */ (e).message}) — the run continues; the panel's list will be missing this row.`);
-  }
-
-  let outcome;
-  try {
-    outcome = await runJob(runSpec, {
-      approvals: [{ specHash: approveHash, signer: 'bundle', ts: new Date(now()).toISOString() }],
-      workdir: worktree,
-      provider,
-      providerFor,
-      judgeProvider,
-      judgeModel,
-      emit,
-      closeDir,
-      shellCapUsd: runSpec.budgetUsd,
-      readShim: 'cap',
-      scout: true,
-      // F130/PRD item 27(c) — the bundle CLI has no `--resume` (v1); the
-      // honest tail says so instead of naming a flag that does not exist.
-      resumable: false,
-    });
-  } catch (e) {
-    err(`runJob crashed: ${/** @type {Error} */ (e).message}`);
-    return 1;
-  }
-
-  // the gate-audit relocation (POC fact 3, run-u.mjs:1293's move)
-  const auditSrc = join(worktree, 'gate-audit.jsonl');
-  if (existsSync(auditSrc)) renameSync(auditSrc, join(runsDir, 'gate-audit.jsonl'));
-
-  // the job-end record off THIS run's own spine — never fabricate a 0 for an
-  // unknown spend (F6/F12's class). PANEL-BUILD.md P0: read via the same
-  // named library reader `doHistory`/`doReplay` already use (`parseJsonl`,
-  // `src/replayio.js`) instead of hand-rolling the parse again here — it
-  // tolerates a malformed/truncated line (a process killed mid-append)
-  // instead of throwing uncaught and crashing this run's exit tail.
-  const { records: events } = parseJsonl(spineFile);
-  const je = events.findLast((/** @type {any} */ e) => e.type === 'job-end');
-  const spentUsd = je?.spentUsd ?? null;
-  const spendComplete = je?.spendComplete ?? null;
-
-  let branch = null;
-  try { branch = execFileSync('git', ['-C', worktree, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* leave null — reported honestly below */ }
-
-  // 7. history + (on a first green) the blessing.
-  appendHistory(bundleDir, {
-    runid,
-    at: new Date(now()).toISOString(),
-    outcome,
-    spentUsd,
-    spendComplete,
-    budgetUsd: runSpec.budgetUsd,
-    maxWallMs: runSpec.maxWallMs ?? null,
-    worktree,
-    branch,
-    bundleHash: manifest.bundleHash,
-    approveHash,
-  });
-  if (outcome === 'green' && !bundle.blessing) {
-    bless(bundleDir, {
-      bundleHash: manifest.bundleHash, blessedAt: new Date(now()).toISOString(), runid, outcome, host: hostname(),
-    });
-  }
-
-  // 8. the tail.
-  out(`outcome   ${outcome}`);
-  out(`spent     ${spentUsd == null ? 'UNKNOWN' : `${spendComplete === false ? '≥' : ''}$${spentUsd.toFixed(4)}`} of $${runSpec.budgetUsd}`);
-  out(`branch    ${branch ?? 'UNKNOWN (could not read the worktree branch)'}`);
-  out(`worktree  ${worktree}`);
-  if (branch) out(`merge     git merge ${branch}   (merge stays human — this CLI never merges)`);
-  out(`the worktree is kept until you remove it: git worktree remove ${worktree}`);
-  // exit 0 ONLY for a real green — every other outcome (close-red, plan-red,
-  // escalated, cap/wall halts, worker-crash, provider-red, …) exits 1 so a
-  // caller scripting `bareloop run` off its exit code cannot mistake a red
-  // for a success. The tail print above is unchanged either way.
-  return outcome === 'green' || outcome === 'already-green' ? 0 : 1;
 }
 
 /**
@@ -609,9 +279,11 @@ function doRuns(args, { out, err, cwd }) {
  * inventing new interactive UX, not wiring, and that judgement stands. This
  * menu is fixed instead: it now says those four commands exist and how to
  * reach them, rather than implying only three commands do at all.
- * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, env: any, now: () => number }} ctx
+ * `keysHome` is the home `main` already resolved (`keysForDoor`), handed on so choice 2 reads the
+ * SAME config.json (monthly limit, price, key row) as `bareloop run <bundle>` — never resolved twice.
+ * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, env: any, now: () => number }} ctx @param {string|undefined} keysHome
  */
-async function runMenu(deps, ctx) {
+async function runMenu(deps, ctx, keysHome) {
   const stdin = deps.stdin;
   const stdout = deps.stdout;
   const rl = createInterface({ input: stdin, output: stdout });
@@ -636,7 +308,7 @@ async function runMenu(deps, ctx) {
       if (budget) args.push('--budget', budget);
       if (wall) args.push('--wall', wall);
       if (approve) args.push('--approve', approve);
-      return await doRun(args, { ...ctx, deps });
+      return await bundleMain(args, { ...ctx, deps, keysHome, parseFlags, printReds });
     }
     if (choice === '3') {
       const bundleDir = (await rl.question('bundle dir: ')).trim();
@@ -673,9 +345,9 @@ export async function main(argv, deps = {}) {
 
   const [cmd, ...rest] = argv;
   if (keys.warning && cmd && ['run', 'run-u', 'interview', 'author', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
-  if (!cmd) return runMenu({ ...deps, stdin: deps.stdin ?? process.stdin, stdout }, ctx);
+  if (!cmd) return runMenu({ ...deps, stdin: deps.stdin ?? process.stdin, stdout }, ctx, keys.home);
   if (cmd === 'export') return doExport(rest, ctx);
-  if (cmd === 'run') return doRun(rest, ctx);
+  if (cmd === 'run') return bundleMain(rest, { ...ctx, keysHome: keys.home, parseFlags, printReds });
   if (cmd === 'history') return doHistory(rest, ctx);
   // `bareloop run-u` — the person-path run flow (PANEL-BUILD.md P0 task
   // 2/4). `rest` is handed straight to `src/userrun.js`'s own `main(argv,
@@ -687,7 +359,7 @@ export async function main(argv, deps = {}) {
   // then `env`/`out`/`err` are overridden to the SAME resolved values every
   // other command here prints through, so `run-u`'s output lands on the
   // `stdout`/`stderr` a caller of `main` actually passed.
-  if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err, keysHome: keys.home });
+  if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err, keysHome: keys.home, invokedAs: 'bareloop run-u' });
   // `bareloop interview` — the close-authoring interview (PANEL-BUILD.md P0
   // task 3/4). This flow reads a TTY (or a piped stdin) directly rather than
   // through the `out`/`err` line-functions every other command here uses, so

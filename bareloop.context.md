@@ -91,8 +91,9 @@ inherited rule carries the green that minted it and the contrast that attributed
   chose. `JUDGE_MODEL` stays exported as the pre-item-32 pin — no grading path reads it.
   The judge's key follows the resolved judge provider's own `envKey`, with `JUDGE_API_KEY`
   as a role-named override in front of it. The bundle runner
-  (`bareloop run`) is `ANTHROPIC_API_KEY`-only and REFUSES at $0, naming the key it would
-  have needed, rather than constructing another provider with the wrong key.
+  (`bareloop run`) is a door to this same engine (`src/bundlerun.js` → `src/userrun.js`), so it
+  reads whatever key the bundle's provider names (keys file or env) and refuses a missing one
+  at $0, exit 2, naming it.
 - **Reuse — where a workflow comes from:** a plain `runJob` always drafts cold. Passing
   `bridge` starts from one standalone bridge file (`src/reuse.js`'s envelope, `## The reuse
   ENVELOPE and runReuse` below). The CLI's `--registry <dir>` / library-level `registryDir`
@@ -1160,7 +1161,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, rates?, judgeRates?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
 
 **`draftSpentUsd` (hamr's ruling 2026-09-28, "one cap covers drafting + run") — money the
 AUTHORING pipeline already spent on this job before it was signed.** Shrinks THIS run's own
@@ -1215,9 +1216,9 @@ readout seed (grades) — the distinction matters and is spelled out there.
 
 `resumable` (default `true`, PRD item 27(c)/F130) says whether THIS runner supports
 `--resume` at all — `run-u.mjs` leaves it at the default (byte-identical to before this
-flag existed); the exported bundle CLI (`src/cli.js`) passes `false` so the run's
-escalation tail says "resume is `run-u`-only in v1" instead of naming a flag it does not
-implement.
+flag existed). The exported bundle CLI is no longer a second `runJob` caller (`bareloop run`
+goes through `src/userrun.js`), so it leaves it at the default too and supports
+`bareloop run <bundle> --resume <runid>`; the F130 `resumable: false` was retired with `doRun`.
 
 The runner — the shell's top layer, and the ONE entry. It composes everything below it and
 interprets nothing itself. Sequence: **approval gate** (human-signs-always — refuses an
@@ -1305,6 +1306,11 @@ knob, not a product default — the spec names no scout, so the signed hash is u
 `scripts/run-u.mjs --scout on|off` (default `on`) is its runner-territory surface, modelled on
 `--read-shim`: an unrecognised value exits 2 at argv, and every re-invocation the runner prints
 carries `--scout off` when set, so a resume never silently drops the arm.
+
+Every re-invocation the runner prints (the preview's approve line, resume, pause and reopen hints)
+names the key variable the run really reads (the job's key row, not the provider shape's default
+name) and carries `--registry <dir> --workflow <name>` whenever they were given, so a pasted command
+never greens with no registry row (F207).
 
 **`bareloop run-u --draft-spend-incomplete`** is a boolean presence-flag (no value) that sets
 `runJob`'s `draftSpendComplete: false`, saying the `--draft-spent-usd` figure is a floor. It
@@ -1843,19 +1849,24 @@ bare-agent's `Loop` takes `rates: {in, out, cacheReadMult?, cacheWriteMult?}` �
 tokens, the two multipliers applying to the input rate for the cache-read and cache-write
 tiers (defaulting to Anthropic's 0.1× / 1.25×). A caller-supplied rate is recorded as
 VOUCHED rather than as a guess, and it silences bare-agent's own guesstimate warning.
-**Named, not papered over:** `runJob`/`runPlan` construct their own `Loop` and do not yet
-accept a `rates` passthrough, so today that option is reachable only by a caller driving
-bare-agent directly — a bareloop-run job is priced by the guesstimate, full stop. The
-passthrough is an open follow-up, and until it lands every paragraph above describes the
-only pricing a `runJob` adopter gets.
+**Where bareloop takes it from:** the CUSTOMER's own price on the key's row in
+`~/.config/bareloop/config.json` (`keys.<ENV NAME>.priceInPerM` / `priceOutPerM`, USD per 1M
+tokens — see "Settings" below). `runJob` / `runPlan` accept `rates` (and `judgeRates`) as data and
+hand them to the one `Loop` that drives worker, scout and planner rounds; the run doors resolve
+them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
+before. bareloop keeps no price list of its own, ever.
 
-**The provenance is on the record, per round (`rateSource`).** The field arrives with
-bare-agent **>= 0.37**; under the pinned `^0.36.0` no provider payload carries it yet, so
-every priced round this library writes today reads UNKNOWN provenance — correctly, and by
-the same rule that governs the archive. (The one exception is the native per-turn
-`worker-turn`, whose `null` is bareloop's OWN statement rather than a forwarded one: that
-surface prices the SESSION, so a turn had no rate to guess.) Once the pin moves, every `worker-round` /
-`worker-turn` the plan flow writes carries bare-agent's own label beside `pricing`:
+**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.43.0`)
+carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
+`src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
+`pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
+(the guess). The exceptions read UNKNOWN provenance, correctly, and by the same rule that governs
+the archive: `judge-round` records carry no `rateSource` (the judge cost payload,
+`src/kinds.js` `onJudgeCost`, does not forward it, so a judge round is never counted as vouched,
+priced by you or not), and so does every round archived before the signal existed. The native
+per-turn `worker-turn` carries `null`, bareloop's OWN statement rather than a forwarded one: that
+surface prices the SESSION, so a turn had no rate to guess. A `worker-round`/`worker-turn`
+carries bare-agent's own label beside `pricing`:
 `'provider'` (the provider reported its own authoritative cost — the native CLI surface)
 and `'caller'` (you passed the rate) are VOUCHED; `'tier'` (a recognized Claude tier,
 where **both** of bareloop's own production models land) and `'default'` (the blind
@@ -2986,7 +2997,8 @@ separate tarball step).
   README.md           the operator questions, in the order `bareloop run` asks them
   blessing.json        absent at export; written by the run that first greens it
   history.jsonl        absent at export; one line appended per `bareloop run` on this machine
-  runs/<runid>/        absent at export; one per run — that run's own spine.jsonl + gate-audit.jsonl
+  runs/<runid>/        absent at export; one per run leg — spine.jsonl, gate-audit.jsonl, close/ (the
+                       close's books) and run.json ({runid, worktree, seed, repo, at, resumedFrom?})
 ```
 
 **`bundleHash`** = sha256 over the sorted `path:contentSha256` lines of exactly `spec.json`
@@ -3001,7 +3013,7 @@ a `package.json` (name/version/`dependencies: {"bareloop": "^…"}`, `private: t
 corrects an earlier, now-stale reading of this section that claimed no `package.json` was
 written; `tests/bundle.test.js` proves both the write and the hash-exclusion directly. The
 `runs/<runid>/` directory (this run's relocated `spine.jsonl`/`gate-audit.jsonl`,
-written by `bareloop run`, step 6 below) is real and live but is not in the frozen spec's
+written by `bareloop run`, step 6 below; `run.json` records where the worktree is, for a resume) is real and live but is not in the frozen spec's
 layout table at all. `history.jsonl`'s row also carries `bundleHash` and `approveHash`
 (the POC-fact correction, below) beyond the fields the original layout table named.
 
@@ -3126,8 +3138,8 @@ script leaves the signed spec's own hash intact. `runJob`'s close-first precheck
 one — a fake green, $0 spent, no work done, reported as success. `readBundle`'s
 `bundle-tampered` red is therefore not a courtesy check: it is the only thing standing
 between a swapped script and a fake green, so `bareloop run` calls it as literal step 1,
-before the envelope check, before the key check, before the worktree, before `runJob` is
-ever reached.
+before the envelope check, before the blessing check, before any key is read, before the
+worktree, before the engine is ever reached.
 
 #### The CLI — `bareloop export | run | history | replay | run-u | interview | author`, `bin/bareloop.mjs`
 
@@ -3138,7 +3150,7 @@ ever reached.
 (`export { main as cliMain } from './cli.js'` — renamed on export so it never collides with
 some other module's own generic `main`). `cliMain(argv, deps)` is the in-process test/
 integration seam: pass `deps.provider` (and optionally `providerFor`/`judgeProvider`) and the
-real `ANTHROPIC_API_KEY` check is skipped entirely — a scripted provider *is* the run, the
+real key check is skipped entirely — a scripted provider *is* the run, the
 same seam `tests/planrun.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
 
@@ -3148,7 +3160,9 @@ below. `run-u`, `interview` and `author` (below) are not on this menu (PANEL-BUI
 tasks 2/4-4/4): each one's own flag grammar is too wide for a line-at-a-time wizard, and the
 menu's job is to ask the SAME questions the sub-command below already answers, never to
 invent a new interview — this is doubly true for `interview`/`author`, which already ARE
-interviews of their own. All three are dispatched by name only: `bareloop run-u <flags…>`,
+interviews of their own. Choice `2 run` is handed the SAME resolved keys home `bareloop run <bundle>` gets, so the
+monthly limit, your price and the key-row choice apply exactly as on the sub-command (before this it
+got none, and a run started from the menu skipped the limit). All three are dispatched by name only: `bareloop run-u <flags…>`,
 `bareloop interview <flags…>`, `bareloop author <flags…>`.
 
 - **`bareloop export <jobs/x.json> --registry <dir> --out <dir>`** → resolves the spec's
@@ -3158,54 +3172,63 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   missing flag, `0` on success.
 
 - **`bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]`**
-  — the exact order below; no step is ever reordered:
+  and **`bareloop run <bundleDir> --resume <runid> [--repo <path>] [...]`** — a thin door
+  (`src/bundlerun.js`) to the same engine `bareloop run-u` drives (`src/userrun.js`): one
+  runner, so providers, keys (any provider the bundle's spec names — the keys file or env), the
+  judge, the monthly $ limit, the outside watchdog and the readout are that engine's. The door
+  does only what is bundle-specific, in this order, no step reordered:
   1. `readBundle(bundleDir)` — the tamper check (N4, above). Any red stops here, exit `1`.
   2. `checkBundleDeps(bundleDir)` (F128) — can the bundle's own `close/` directory resolve
-     `require.resolve('bareloop')`? A bundle installed the WRONG way (as someone else's
-     dependency — see the corrected adopter flow below) has no `node_modules` of its own,
-     which would otherwise crash the close deep inside the precheck with a bare
-     `ERR_MODULE_NOT_FOUND`. A red here (`bundle-deps-missing`) prints the exact cure line
+     `require.resolve('bareloop')`? A red (`bundle-deps-missing`) prints the exact cure line
      (`cd <bundleDir> && npm install`) and stops, exit `1`, before the envelope check, the
-     key, or any worktree.
+     blessing check, any key, or any worktree.
   3. `checkEnvelope(spec, { budgetUsd?, maxWallMs? })` — `--wall` is minutes, converted to ms.
      A red (an invalid number, or a widen) stops here, exit `1`.
-  4. The provider key: `deps.provider` if the caller injected one (the test seam), else
-     `ANTHROPIC_API_KEY` from `env`. Absent and no injected provider: print the bundle's own
-     `README.md` plus `bundleHash:`, spend nothing, **exit `0`** (this is a legitimate,
-     non-error stop, not a red).
-  5. Blessing. No `blessing.json` yet: print the "first run" notice + the minting-run line
-     (F128-corrected — see below), the `bundleHash`, and **require** `--approve <bundleHash>`
-     to match exactly, or exit `1`. A `blessing.json` present: `verifyBlessing` must pass
-     (`blessing-stale` stops here, exit `1`); a `--approve` flag is accepted but ignored with
-     a printed note ("no-resign" — hamr's ruling).
-  6. The worktree: refuse (exit `1`) if `--repo` is not a git repo with ≥1 commit, or if
-     `<repo>/.bareloop/wt/<runid>` already exists; otherwise `git worktree add --detach
-     <repo>/.bareloop/wt/<runid> HEAD` — **always fresh, never reused** (a reused worktree
-     would read a prior run's edits as "already-green" — a negative POC's exact finding).
-  7. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/
-     `maxWallMs` on that resolved spec in memory if `--budget`/`--wall` were given → mint a
-     **fresh** `approveHash = jobSpecHash(that tightened+resolved spec)` (the runner signs
-     the spec it is actually about to run; the human-approved `bundleHash` never changes) →
-     `runJob(runSpec, { approvals: [{ specHash: approveHash, signer: 'bundle', ts }], workdir:
-     worktree, provider, providerFor, judgeProvider, emit, shellCapUsd: runSpec.budgetUsd,
-     readShim: 'cap', scout: true })`, spine written to `<bundleDir>/runs/<runid>/spine.jsonl`.
-     A thrown `runJob` crash is caught and reported, exit `1`.
-  8. The worktree's `gate-audit.jsonl` is moved to `<bundleDir>/runs/<runid>/gate-audit.jsonl`
-     (same relocation `src/userrun.js`, lifted out of `scripts/run-u.mjs`, does for in-repo runs). `spentUsd`/`spendComplete`
-     are read off this run's own `job-end` spine event — never fabricated as `0` when unknown.
-  9. `appendHistory` — one `history.jsonl` line: `{ runid, at, outcome, spentUsd,
-     spendComplete, budgetUsd, maxWallMs, worktree, branch, bundleHash, approveHash }` (the
-     `bundleHash` ↔ `approveHash` pairing, POC fact 2, so the human-signed hash and the
-     hash actually enforced can never drift apart silently). A `green` outcome on a still-
-     unblessed bundle also calls `bless(bundleDir, { bundleHash, runid, outcome, host })`.
-  10. The tail: `outcome`, `spent` (`≥$…` when `spendComplete === false`, `UNKNOWN` when
-      `spentUsd` is `null`), `branch`, `worktree`, a `git merge <branch>` instruction
-      ("merge stays human — this CLI never merges"), and "the worktree is kept until you
-      remove it: `git worktree remove <worktree>`" (F110: never delete it for the user).
-      **Exit `0` ONLY for `green`/`already-green` (F128) — every other outcome (close-red,
-      plan-red, escalated, cap/wall-halted, provider-red, a crashed `runJob`, …) exits `1`,**
-      so a caller scripting off the exit code can never mistake a red run for a green one.
-      The tail's printed lines are unchanged either way.
+  4. Blessing — BEFORE any key is read. No `blessing.json` yet: print the bundle's `README.md`
+     (the operator questions), the "first run" notice + the minting-run line (F128-corrected —
+     see below), the `bundleHash`, and **require** `--approve <bundleHash>` to match exactly, or
+     exit `1`. A `blessing.json` present: `verifyBlessing` must pass (`blessing-stale` stops here,
+     exit `1`); a `--approve` flag is accepted but ignored with a printed note ("no-resign").
+     A resume passes the same checks (an unblessed bundle whose first run halted still needs
+     `--approve`).
+  5. The tree, planned not created: a fresh run refuses (exit `1`) if `--repo` is not a git repo
+     with ≥1 commit or `<repo>/.bareloop/wt/<runid>` already exists; the engine then creates
+     `git worktree add --detach <repo>/.bareloop/wt/<runid> HEAD` only once ITS OWN $0 refusals
+     (missing key, monthly limit, param guards) have passed, so a refusal leaves no worktree —
+     **always fresh, never reused** (a reused worktree would read a prior run's edits as
+     "already-green"). A **resume** (`--resume <runid>`) instead reads `runs/<runid>/run.json`,
+     re-enters that run's own worktree (a missing `run.json`, a vanished worktree, or a `--repo`
+     different from the recorded one is a stop, exit `1`, spending nothing; `--repo` is optional
+     on a resume) and hands the engine `resumeRun` on that run's spine — the engine's own gates
+     (checkpoint age, tree-at-seed, liveness) and spend fold apply, so `--budget` can never widen
+     a resume. The new leg gets its own `runs/<newid>/`. The resume command a halted leg prints carries that leg's own
+     `--budget`/`--wall`, only if you passed them (a tightened ceiling never silently reverts to the signed
+     one). After a MONEY halt the line does NOT repeat the exhausted `--budget` (chain spend is folded, so
+     it would halt again at once); it prints `--budget <more than $<spent so far>, at most $<signed
+     budgetUsd>>` for you to fill in, and is not runnable until you do. A bundle's spec is
+     manifest-hashed, so its halt hint never asks you to edit `budgetUsd`.
+  6. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/`maxWallMs`
+     in memory if `--budget`/`--wall` were given → `approveHash = jobSpecHash(that tightened+
+     resolved spec)`, handed to the engine as the approval it checks against (`signer: 'bundle'`;
+     the human-approved `bundleHash` never changes). The spine, the close's books, the relocated
+     `gate-audit.jsonl` and `run.json` are written under `<bundleDir>/runs/<runid>/`.
+  7. Engine outcomes the door keeps: a missing key is the engine's refusal, **exit `2`**, naming
+     the key (it used to print the README and exit `0`); the close-fix cap is run-u's `CAP_RUNS`
+     (4 — one number for every caller; a bundle used 3 before); the monthly limit applies (exit
+     `2`, nothing spent); a bundle green mints **no bridge file** (a bundle's bridges are shipped
+     inputs); `--door`/`--decide`/`--review-door` are not exposed on `run`.
+  8. `appendHistory` — one `history.jsonl` line off this leg's own `job-end`: `{ runid, at,
+     outcome, spentUsd, spendComplete, budgetUsd, maxWallMs, worktree, branch, bundleHash,
+     approveHash, resumedFrom? }` (the `bundleHash` ↔ `approveHash` pairing, POC fact 2).
+     `spentUsd`/`spendComplete` are never fabricated as `0` when unknown. No `job-end` (a $0
+     refusal, a crash) writes no row. A `green` outcome on a still-unblessed bundle also calls
+     `bless(bundleDir, { bundleHash, runid, outcome, host })`.
+  9. The tail: the engine's readout (`outcome`, `spent` with `≥$…` when incomplete, …), then the
+     door's `branch`, `worktree`, a `git merge <branch>` instruction ("merge stays human — this
+     CLI never merges") and "the worktree is kept until you remove it: `git worktree remove
+     <worktree>`" (F110). **Exit `0` ONLY for `green`/`already-green` — every other outcome
+     exits `1`**, and the engine's `2` (refusal) / `3` (spine leak) are preserved, so a caller
+     scripting off the exit code can never mistake a red run for a green one.
 
   **Adopter flow, corrected (F128, 2026-09-06 — hamr's paid fire found the frozen spec's
   validation step 2 named the wrong install shape):** `npm install <bundle dir>` run from a
@@ -3398,6 +3421,11 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   preview `scripts/run-u.mjs --job <x>` prints with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
   set. `scripts/run-u.mjs` is unchanged in behaviour: it is the pre-existing thin adapter
   over this same `src/userrun.js:main`, not rewired to go through `src/cli.js`.
+  **Printed commands are spelled the way you entered:** every re-invocation these flows print (the approve
+  line, resume, pause, reopen, the interview's run-author line, the author's run-u line) reads `bareloop
+  run-u …` / `bareloop author …` when reached through `bareloop`, and `node scripts/run-u.mjs …` only through
+  the source-tree adapters — the tarball ships no `scripts/`. One owner: `commandFor` (`src/invoke.js`),
+  fed by each flow's `deps.invokedAs`.
 
 - **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring
   interview, at the terminal, one question at a time (D10; `docs/logs/FINDINGS.md`'s
@@ -3510,9 +3538,36 @@ Two files in `~/.config/bareloop/`, outside any repo:
   `updateConfig(patch, { home })` (atomic tmp + rename, mode 600, unknown fields kept).
   Fields: `monthlyLimitUsd` (number above 0; absent or `null` = no limit; any other value present
   is a `ConfigError`, refused like an unreadable file), `anthropicBalanceNote` (a note the
-  person types; no check ever reads it), `keys.<ENV NAME>` = `{ name, shape, baseUrl }` (the Providers rows' settings). A secret-shaped
+  person types; no check ever reads it), `keys.<ENV NAME>` = `{ name, shape, baseUrl, priceInPerM?, priceOutPerM? }` (the Providers rows' settings, plus the customer's own price below). A secret-shaped
   string anywhere in the document is refused on save. An unreadable file is a `problem` string and
   a refused run start ($0), never "no limit". There is no monthly TIME limit (dropped).
+
+**Your own price — `keys.<ENV NAME>.priceInPerM` / `priceOutPerM`.** The customer sets the price of the
+model behind a key, on that key's row, in USD **per 1M tokens** (input and output), for example
+`"keys": { "DEEPSEEK_API_KEY": { "priceInPerM": 0.006, "priceOutPerM": 1.2 } }`. There is no built-in
+price list. Both numbers or neither: each must be a finite number 0 or more, and one alone, a negative,
+a string or `null` refuses the run at $0 (`ConfigError`, exit 2, "Nothing spent.") — a bad price never
+falls back to the guess. A Settings save keeps the two fields (the Settings SCREEN has no price field
+yet; edit `config.json`). `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) is the one
+lookup, on the SAME row `keyNameFor` picks the key from (`findRow`: shape + endpoint + model), returning
+`null` (no price) or `{ rates: {in, out}, inPerM, outPerM, envName }` with `rates` in bare-agent's
+per-1K unit (`perM / 1000`). The run doors resolve it once, at $0, before the monthly claim and any
+worktree or spine (`src/userrun.js`; `src/authorrun.js`; the panel's authoring session): the worker row
+prices worker, scout and planner rounds; the judge is priced at ITS model's own row — for a different
+provider its own row, for the worker's provider the row on the worker's endpoint named for the judge's model
+(`judgeRatesFor`, `src/providerrows.js`), falling back to the worker's price when the model names no row.
+(The judge's KEY still follows the worker's row, so with two rows on one endpoint key and price can differ.) A priced round is stamped `rateSource:'caller'` (VOUCHED, see `spendProvenance`); with
+no price it stays the built-in guess, as before. The run preview and the run tail print
+`price    yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)` when a price is set, and
+nothing when none is. **The price is yours, and it sets what the cap means:** the cap and the halts run
+on the dollars your price produces, so a price set too low weakens the cap (a run can do far more
+than you meant before it halts). When a vendor lists two prices (for example a cache-hit and a
+cache-miss input rate) enter the higher one. bare-agent applies its own cache multipliers (read 0.1×,
+write 1.25× of the input rate) to cache tokens; they are not configurable here, so cache tokens are
+priced from your input price by that rule. A price applies from the next run: **past runs are never
+re-priced** (a spine and the run list keep the dollars they booked). Not covered by a price: a native
+(CLI) session, which reports its own cost, and the reuse engine (`runReuse` / `selectBridge`), which
+resolves no key row.
 
 **Monthly $ limit.** `checkMonthlyRoom({ capUsd, home, now })` → `{ ok, leftUsd, limitUsd,
 atLeast }`; `monthlyRefusalText(room)` is the ONE spelling: `Max $<left, 2 decimals> (monthly
@@ -3520,10 +3575,27 @@ limit)`. It is called at the run-start seam in `src/userrun.js` `execute` (befor
 spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`signRun` in
 `src/panel/authorroutes.js`, refused server-side whatever the page shows). The page only echoes the
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
-calendar month; a died or incomplete-spend run makes the total an "at least" figure. A run still
-IN FLIGHT (`job-start`, no `job-end`, spine file written within `DIED_MTIME_MS`, `src/runlist.js`) is
-counted at its full leg cap (`budgetUsd` less `priorSpentUsd` on its `job-start`), not its spend so
-far (except the run a resume continues, which counts its real spend), so two runs cannot both start against a limit only one fits; a died run counts its floor.
+calendar month; a died or incomplete-spend run makes the total an "at least" figure.
+
+*Hold until done.* A run CLAIMS the limit when it starts and holds it until it is done — no lock file,
+records only. `claimRun` (`src/monthly.js`) writes the run's row FIRST (it carries its `pid` and
+`capUsd`), then reads `runs.jsonl`: earlier claims come first, and only the claims ABOVE its own row count
+(rows below it yield to it). A claim above is held at the larger of its spend so far and its cap while
+its pid is a live bareloop runner (`isLiveRunner`, `src/runlist.js`, also what `--resume` uses to refuse a
+resume against a live run: the process is a node executable with a `bareloop`/`bareloop.mjs`/`run-u.mjs`/
+`u-watchdog.mjs` argument, or is itself named so — a recycled pid running some other program never holds a
+cap, though a recycled node program with such an argument still would), however quiet its spine; a claim whose process is gone is closed by whoever
+finds it, with a note (`{runid, type:'settled', by:<finder>, reason:'process gone', spentUsd:<floor>}`) and
+counts its real spend. If the sum fits, the run goes; if not, it appends `{type:'released',
+reason:'refused'}` and refuses with the exact text, nothing spent. A run whose row is listed (claimed, or with no limit set) that then exits at $0 before its spine has a first record (a refused
+`--resume` patient, a failing tree setup) appends `{type:'released', reason:'not started'}` too, so it leaves no row. A row that cannot be written, or an
+unreadable config, refuses too — never "no limit". When a run ends it appends its own
+`{runid, type:'settled', by:<runid>, spentUsd, spendComplete, at}`. Two runs may close the same dead claim;
+the FIRST note for a runid is authoritative. `readRunList` folds these entries out of the run rows
+(`events`; a `released` claim's row is not listed). Month totals still read real spend off the spines. An
+older row with no `pid` keeps the spine-mtime rule (`DIED_MTIME_MS`: a spine written to within it is in
+flight, at its leg cap). A run refused because an earlier claim was itself later refused is the accepted
+safe-side cost of doing without a lock.
 Only the refusal reserves the cap (`monthSpend().reservedUsd`); the Money tab's month figure is
 real spend.
 
@@ -3798,7 +3870,7 @@ coldReset, the close-first precheck — is untouched: `--spec` only NAMES the jo
 a `--job` row does. `src/authorrun.js`'s (lifted out of `scripts/run-author.mjs` by
 PANEL-BUILD.md P0) "SIGNING PREPARED — NOT SIGNED" screen now
 prints the ready-to-paste `--spec` command (real path, real `--approve <hash>`, the
-provider's real env-key per F187) — a person finishing the interview alone can reach a
+key variable the job's key row really reads (`keyNameFor`, F187/F207)) — a person finishing the interview alone can reach a
 running job with no `jobs/` edit and no JOBS-table row.
 
 ## Architecture
@@ -3836,9 +3908,10 @@ merge.** What an adopter can plug into `runJob` (`src/run.js:205`):
   `emit(type, data)` that appends one JSONL line per event; any function with that
   signature can stand in as a custom sink, but it is write-only — nothing in bareloop reads
   the spine back, so a custom sink cannot feed anything into a run's own decisions.
-- **`rates` is NOT an extension point.** A rates passthrough was designed but never built;
-  pricing is guesstimate-plus-loud-`estimated`-flag by ruling, and rate tables are the
-  customer's own responsibility, not a bareloop seam to wire up.
+- **`rates` is data the run doors hand in, not a behaviour hook.** `runJob` / `runPlan` take
+  `rates` / `judgeRates` (`{in, out}`, USD per 1K) resolved from the customer's own price on a key
+  row (`ratesFor`, `src/providerrows.js`); bareloop keeps no price table and never picks a price
+  itself. A price is the customer's, and sets what the cap means.
 
 Everything else in `runJob`'s options — budgets, caps, the close, the fence, merge/publish
 — is arbiter territory and is never adopter-suppliable as behavior, only as signed,

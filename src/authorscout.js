@@ -342,8 +342,8 @@ export async function defaultSurveyor({ workdir, granted, auditPath = join(workd
 }
 
 /** the default loop seam — one spelling of how this repo drives a model */
-const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider }) =>
-  new Loop({ provider, system, policy, onLlmResult });
+const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider, rates }) =>
+  new Loop({ provider, system, policy, onLlmResult, ...(rates ? { rates } : {}) });
 
 /**
  * Run the authoring scout.
@@ -376,7 +376,8 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider 
  *   rounds?: number, minBytes?: number, blobMax?: number, maxTokens?: number, ctx?: boolean,
  *   attempts?: number, ceilingUsd?: number|null, callTimeoutMs?: number,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
- *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any}) => any,
+ *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any, rates?: {in: number, out: number}}) => any,
+ *   rates?: {in: number, out: number}|null,
  *   createSurveyor?: (o: {workdir: string, granted: readonly string[], ctx: boolean}) => Promise<any>}} o
  * @returns {Promise<Survey & {raw: string, raws: ReturnType<typeof scrubRaw>[],
  *   calls: {label: string, costUsd: number|null, unpricedRounds: number}[],
@@ -398,6 +399,7 @@ export async function runAuthorScout({
   callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS,
   onCall = () => {},
   createLoop = defaultLoop,
+  rates = null,
   createSurveyor = defaultSurveyor,
 }) {
   const callTimeout = Number.isFinite(Number(callTimeoutMs)) && Number(callTimeoutMs) > 0
@@ -406,6 +408,8 @@ export async function runAuthorScout({
   const granted = AUTHOR_SCOUT_VERBS;
   const system = SCOUT_SYSTEM + strategyFor([...granted]);
   const surveyor = await createSurveyor({ workdir, granted, ctx });
+  // the customer's own price for this provider's key row (USD per 1K, `ratesFor`); absent = the built-in guess
+  const priced = rates ? { rates } : {};
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const calls = [];
   /** @type {ReturnType<typeof scrubRaw>[]} */
@@ -519,7 +523,7 @@ export async function runAuthorScout({
           }
           return surveyor.onLlmResult ? surveyor.onLlmResult(arg) : undefined;
         };
-        loop = createLoop({ system, policy: surveyor.policy, onLlmResult: metered, provider });
+        loop = createLoop({ system, policy: surveyor.policy, onLlmResult: metered, provider, ...priced });
 
         const r = await settled(loop.run([{ role: 'user', content: scoutPrompt(workdir) }], surveyor.tools,
           { cacheMessages: true, maxTokens, timeoutMs: callTimeout }));
@@ -558,7 +562,7 @@ export async function runAuthorScout({
         const recoveryHalt = recoveryWanted ? capStop({ ceilingUsd, ...tallyCalls(calls) }) : null;
         if (recoveryHalt) budgetStop = recoveryHalt;
         if (recoveryWanted && !recoveryHalt) {
-          const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
+          const recovery = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider, ...priced });
           // F147 (second instance; sibling fix: src/planrun.js `askFrom`, commit
           // 031ffe1): `r.msgs` is a prior `loop.run()`'s returned transcript,
           // which bare-agent already prepended `system` to (Loop.run, loop.js
@@ -591,7 +595,7 @@ export async function runAuthorScout({
       } else {
         // THE RE-ASK. Toolless by construction, over the survey's own
         // conversation, naming only what failed mechanically.
-        const reask = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider });
+        const reask = createLoop({ system, policy: surveyor.policy, onLlmResult: surveyor.onLlmResult, provider, ...priced });
         // F147 (second instance; sibling fix: src/planrun.js `askFrom`, commit
         // 031ffe1): `lastMsgs` is a prior `loop.run()`'s returned transcript
         // (system already prepended by bare-agent); `reask` is built with the

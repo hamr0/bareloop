@@ -1070,7 +1070,7 @@ test('the confirm turn is wired into the authorCloseForJob call: ask, its OWN co
   // the confirm turn's model boundary must be its OWN — bound to CONFIRM_SYSTEM,
   // never the authoring `generate` (bound to AUTHOR_SYSTEM); reusing `generate`
   // would run the wrong system prompt silently
-  assert.match(SRC, /const confirmGenerate = makeLoopGenerate\(provider, \{ system: CONFIRM_SYSTEM \}\);/);
+  assert.match(SRC, /const confirmGenerate = makeLoopGenerate\(provider, \{ system: CONFIRM_SYSTEM, rates: authorPrice\?\.rates \?\? null \}\);/);
   assert.doesNotMatch(CALL, /confirmGenerate: generate\b/, 'the confirm turn must never reuse the AUTHOR_SYSTEM-bound generate');
 });
 

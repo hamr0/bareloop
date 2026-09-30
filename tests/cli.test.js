@@ -9,14 +9,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync,
+  mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { PassThrough } from 'node:stream';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { jobSpecHash } from '../src/job.js';
 import { mintBridge } from '../src/bridges.js';
 import { main } from '../src/cli.js';
+import { updateConfig } from '../src/config.js';
 import { scriptedProvider } from './helpers.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { ANTHROPIC_TIER_MODELS } from '../src/providers.js';
@@ -34,7 +36,7 @@ const tmp = (t, prefix) => {
   return d;
 };
 
-// F196 — `doRun` (src/cli.js) calls `appendRun` (src/runlist.js), which
+// F196 — the engine (src/userrun.js, behind `bareloop run`) calls `appendRun` (src/runlist.js), which
 // defaults to the REAL `os.homedir()`/`~/.config/bareloop/runs.jsonl` when no
 // `home` override is given. `npm test` is safe (scripts/hermetic.mjs
 // redirects HOME), but this file's tests drive `main(['run', ...])` directly
@@ -239,73 +241,234 @@ test('bareloop export: a red (no bridge at hash) prints the code and writes noth
 // run — the money/arbiter-sensitive ordering
 // ---------------------------------------------------------------------------
 
-test('bareloop run: no key and no injected provider -> questions + hash, exit 0, no worktree', async (t) => {
+test('bareloop run: no key and no injected provider -> the engine refuses (exit 2, names the key), no worktree, no history row; the README is on the unblessed screen', async (t) => {
   const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
   const out = sink(); const err = sink();
-  const rc = await main(['run', bundleDir, '--repo', repo], {
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
     stdout: out, stderr: err, cwd: process.cwd(), env: {}, runlistHome: runlistHome(t),
   });
-  assert.equal(rc, 0);
+  assert.equal(rc, 2);
+  assert.match(err.text(), /ANTHROPIC_API_KEY/);
   assert.match(out.text(), new RegExp(bundleHash));
-  assert.match(out.text(), /ANTHROPIC_API_KEY/);
+  assert.match(out.text(), /first run — this bundle has never been blessed/);
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'no worktree may be created when nothing was spent');
+  assert.equal(existsSync(join(bundleDir, 'history.jsonl')), false, 'a refusal is not a run: no history row');
+  assert.equal(existsSync(join(bundleDir, 'blessing.json')), false);
 });
 
-test('bareloop run: a bundle naming a provider with a DIFFERENT env key refuses at $0, never builds it with the Anthropic key', async (t) => {
-  // PRD item 28: the bundle runner's key contract is ANTHROPIC_API_KEY only.
-  // Constructing an openai-api worker with that key would 401 at the first
-  // call and read as a credential problem rather than the unbuilt seam it is.
-  // The spec names the provider at EXPORT time — editing spec.json afterwards
-  // would trip the manifest-hash guard first, which is its own (correct) test.
-  //
-  // ISOLATION (found by mutation, PRD item 32.2 fallout): with no `judge`
-  // signed, `resolveJudge` defaults the judge to the WORKER's own provider —
-  // so an unsigned judge here would ALSO resolve to openai-api and read
-  // OPENAI_API_KEY, and `src/cli.js`'s judge refusal (buildProviders, the
-  // block below the worker refusal this test means to isolate) would fire
-  // that exact same message even with the worker refusal deleted. Signing an
-  // explicit ANTHROPIC-keyed `judge` here neutralizes THAT refusal, so only
-  // the worker refusal can produce this test's failure.
-  const { bundleDir } = await exportFixture(t, {
+test('bareloop run: a bundle naming a DIFFERENT-keyed provider is accepted (one engine): no key -> exit 2 naming OPENAI_API_KEY, no worktree; an injected provider greens it', async (t) => {
+  // One runner: the bundle door no longer carries its own ANTHROPIC-only key contract; the
+  // engine reads the key the bundle's provider names (the keys file / env). The signed judge
+  // is anthropic-keyed here so the refusal that fires is the WORKER's.
+  const { bundleDir, bundleHash } = await exportFixture(t, {
     provider: 'openai-api',
     judge: { provider: 'anthropic-api', model: ANTHROPIC_TIER_MODELS.sonnet },
   });
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
   const out = sink(); const err = sink();
-  const rc = await main(['run', bundleDir, '--repo', repo], {
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
     stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' }, runlistHome: runlistHome(t),
   });
-  assert.notEqual(rc, 0, 'a provider it cannot key must refuse, never run');
-  const said = err.text() + out.text();
-  assert.match(said, /OPENAI_API_KEY/, 'it must name the key it would have needed');
-  assert.doesNotMatch(said, /judge/i, 'this refusal must be the WORKER\'s, not the judge\'s — the signed judge is anthropic-keyed and must never be what fires here');
+  assert.equal(rc, 2, 'the engine refuses a missing key');
+  assert.match(err.text(), /OPENAI_API_KEY/, 'it names the key the bundle needs');
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
+
+  const now = makeNow(1_700_000_100_000);
+  const worktree = join(repo, '.bareloop', 'wt', (1_700_000_100_000).toString(36));
+  const out2 = sink(); const err2 = sink();
+  const rc2 = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out2, stderr: err2, cwd: process.cwd(), provider: greenScript(worktree), now, runlistHome: runlistHome(t),
+  });
+  assert.equal(rc2, 0, `an openai-api bundle runs through the engine: ${out2.text()}\n${err2.text()}`);
+  assert.match(out2.text(), /outcome   green/);
 });
 
-test('bareloop run: a bundle whose signed JUDGE names a DIFFERENT env key refuses at $0, never builds it with the Anthropic key', async (t) => {
-  // PRD item 32.2: the worker stays anthropic-api (so the WORKER refusal
-  // above cannot be what fires here), but the spec signs a `judge` naming
-  // gemini-api, which reads GEMINI_API_KEY. The bundle runner's key contract
-  // is ANTHROPIC_API_KEY only, so resolveJudge's result must refuse the same
-  // way the worker refusal does, by name, before any worktree/provider work.
-  const { bundleDir } = await exportFixture(t, {
-    provider: 'anthropic-api',
-    judge: { provider: 'gemini-api', model: 'gemini-2.5-pro' },
-  });
+test('bareloop run: the monthly limit applies to a bundle — a cap above what is left refuses (exit 2), nothing spent, NO worktree created', async (t) => {
+  // One engine: the monthly-limit seam is the engine's, so a bundle gets it free.
+  const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
+  const home = runlistHome(t);
+  updateConfig({ monthlyLimitUsd: 0.01 }, { home });
+  const provider = scriptedProvider([{ text: 'never reached' }]);
   const out = sink(); const err = sink();
-  const rc = await main(['run', bundleDir, '--repo', repo], {
-    stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' }, runlistHome: runlistHome(t),
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), env: {}, provider, runlistHome: home,
   });
-  assert.notEqual(rc, 0, 'a judge it cannot key must refuse, never run');
-  const said = err.text() + out.text();
-  assert.match(said, /GEMINI_API_KEY/, 'it must name the key it would have needed');
-  assert.match(said, /judge/i, 'the refusal must say judge, so this cannot pass on the worker refusal\'s text');
-  assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
+  assert.equal(rc, 2);
+  assert.match(err.text(), /monthly limit/i);
+  assert.deepEqual(provider.calls, []);
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'a refusal must leak no worktree');
+  assert.equal(existsSync(join(bundleDir, 'history.jsonl')), false);
+});
+
+test('bareloop (menu) choice 2 run: the SAME monthly-limit refusal as `bareloop run <bundle>` — the menu hands the bundle door the resolved keys home', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  // No injected keysHome/env (as a person at a terminal): the keys home is the default
+  // `$HOME/.config/bareloop`, pointed at a scratch dir for this test only.
+  const fakeHome = tmp(t, 'cli-keyshome-');
+  const home = join(fakeHome, '.config', 'bareloop');
+  mkdirSync(home, { recursive: true });
+  const realHome = process.env.HOME;
+  process.env.HOME = fakeHome;
+  t.after(() => { process.env.HOME = realHome; });
+  updateConfig({ monthlyLimitUsd: 0.01 }, { home });
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const stdin = new PassThrough();
+  const out = sink(); const err = sink();
+  const run = main([], { stdin, stdout: out, stderr: err, cwd: process.cwd(), provider });
+  for (const l of ['2', bundleDir, repo, '', '', bundleHash]) {
+    await new Promise((r) => setTimeout(r, 100));
+    stdin.write(`${l}\n`);
+  }
+  const rc = await run;
+  assert.equal(rc, 2, `${out.text()}\n${err.text()}`);
+  assert.match(err.text(), /monthly limit/i);
+  assert.deepEqual(provider.calls, []);
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'a refusal must leak no worktree');
+});
+
+test('bareloop run: after a MONEY halt the bundle resume line never carries the exhausted --budget; it carries a placeholder the person fills in (spent so far .. signed budgetUsd), keeps --wall, and the levers do not say to edit budgetUsd', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const t1 = 1_700_000_200_000;
+  const worktree = join(repo, '.bareloop', 'wt', t1.toString(36));
+  const out = sink(); const err = sink();
+  await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '0.0005', '--wall', '20'], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: runlistHome(t),
+  });
+  const text = out.text();
+  assert.match(text, /MONEY HALT/, `the fixture must money-halt:\n${text}\n${err.text()}`);
+  const line = text.split('\n').find((l) => /bareloop run .* --resume /.test(l));
+  assert.ok(line, `a halted run prints a resume line:\n${text}\n${err.text()}`);
+  assert.doesNotMatch(line, /--budget 0\.0005/, 'the exhausted tightened budget is never echoed');
+  // spent = the halt readout's own "$<remaining> left of $<budget>": budget - remaining
+  const m = /MONEY HALT — the cap cut the run at \$(-?[\d.]+) left of \$(\d+\.\d+)/.exec(text);
+  assert.ok(m, text);
+  const spent = (Number(m[2]) - Number(m[1])).toFixed(4);
+  assert.ok(line.includes(` --wall 20 --resume `), `the person's --wall still rides: ${line}`);
+  assert.ok(line.includes(`--budget <more than $${spent}, at most $2> --approve ${bundleHash}`), `placeholder with real spent and the SIGNED budget: ${line}`);
+  const block = text.slice(text.indexOf('MONEY HALT'), text.indexOf('BEHAVIOUR'));
+  assert.ok(block.length > 40, block);
+  assert.doesNotMatch(block, /budgetUsd|spec edit|re-approval/, 'a bundle is never told to edit its spec');
+  assert.match(block, /choose a larger --budget/);
+  assert.match(block, /type the --budget number yourself/);
+});
+
+test('bareloop run: after a NON-money halt the bundle resume line keeps the leg\'s tightened --budget/--wall exactly', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const t1 = 1_700_000_200_000;
+  const out = sink(); const err = sink();
+  // every model call throws: a transport failure is a provider-red, a resumable halt that is not a money halt
+  const provider = { calls: [], async generate() { throw new Error('fetch failed'); } };
+  await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '1.5', '--wall', '20'], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now: makeNow(t1), runlistHome: runlistHome(t),
+  });
+  const text = out.text();
+  assert.doesNotMatch(text, /MONEY HALT/, text);
+  const line = text.split('\n').find((l) => /bareloop run .* --resume /.test(l));
+  assert.ok(line, `a provider-red run prints a resume line:\n${text}\n${err.text()}`);
+  assert.match(line, /--budget 1\.5 --wall 20 --resume /);
+  assert.doesNotMatch(line, /<more than/);
+});
+
+test('userrun.main cannot build a bundle run: the bundle seam is reachable only through startRun/resumeRun opts', () => {
+  const src = readFileSync(join(REPO_ROOT, 'src', 'userrun.js'), 'utf8');
+  const at = src.indexOf('export async function main(');
+  assert.ok(at > 0);
+  assert.doesNotMatch(src.slice(at), /bundle/i, 'main (the argv door) never names or builds `bundle` — a local job cannot reach it');
+});
+
+test('bareloop run --resume: a cap-halted bundle run resumes into the SAME worktree, folds prior spend, mints a new runs/<id>, records resumedFrom, and blesses on the eventual green', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  const t1 = 1_700_000_200_000;
+  const id1 = t1.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', id1);
+
+  // leg 1: a near-$0 tightened budget cap-halts it before it can write anything
+  const out1 = sink(); const err1 = sink();
+  const rc1 = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '0.0005'], {
+    stdout: out1, stderr: err1, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: home,
+  });
+  assert.equal(rc1, 1, `leg 1 must halt: ${out1.text()}\n${err1.text()}`);
+  assert.equal(existsSync(join(bundleDir, 'blessing.json')), false, 'a halted first run blesses nothing');
+  const run1 = JSON.parse(readFileSync(join(bundleDir, 'runs', id1, 'run.json'), 'utf8'));
+  assert.equal(run1.worktree, worktree);
+  assert.equal(run1.resumedFrom, undefined);
+  assert.match(out1.text(), /bareloop run .* --resume /, 'the halt readout names the bundle door\'s own resume command');
+
+  // leg 2: resume by run id, no --repo needed
+  const t2 = 1_700_000_300_000;
+  const id2 = t2.toString(36);
+  const out2 = sink(); const err2 = sink();
+  const rc2 = await main(['run', bundleDir, '--resume', id1, '--approve', bundleHash], {
+    // the resumed leg re-enters the accepted plan at its step: no scout, no draft
+    stdout: out2, stderr: err2, cwd: process.cwd(), now: makeNow(t2), runlistHome: home,
+    provider: scriptedProvider([
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(worktree, 'src', 'mod.mjs'), content: 'export const x = 1;\nMARKER_OK\n' })] },
+      { text: 'wrote the marker' },
+    ]),
+  });
+  assert.equal(rc2, 0, `the resume must green: ${out2.text()}\n${err2.text()}`);
+  assert.match(out2.text(), /outcome   green/);
+  const run2 = JSON.parse(readFileSync(join(bundleDir, 'runs', id2, 'run.json'), 'utf8'));
+  assert.equal(run2.worktree, worktree, 'the SAME worktree, not a fresh one');
+  assert.equal(run2.resumedFrom, id1);
+  assert.equal(existsSync(join(repo, '.bareloop', 'wt', id2)), false, 'no second worktree');
+  const spine2 = readFileSync(join(bundleDir, 'runs', id2, 'spine.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const start = spine2.find((e) => e.type === 'job-start');
+  assert.ok(start.priorSpentUsd > 0, `the halted leg's spend is folded in: ${JSON.stringify(start)}`);
+  const rows = readFileSync(join(bundleDir, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1].resumedFrom, id1);
+  assert.equal(rows[1].worktree, worktree);
+  const blessing = JSON.parse(readFileSync(join(bundleDir, 'blessing.json'), 'utf8'));
+  assert.equal(blessing.runid, id2, 'the eventual green blesses');
+});
+
+test('bareloop run --resume: refuses at $0 a run with no run.json, a vanished worktree, a different --repo, and an unblessed bundle without --approve', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const run = async (/** @type {string[]} */ a) => {
+    const out = sink(); const err = sink();
+    const rc = await main(['run', bundleDir, ...a], { stdout: out, stderr: err, cwd: process.cwd(), provider, runlistHome: home });
+    return { rc, said: out.text() + err.text() };
+  };
+  let r = await run(['--resume', 'nosuchid', '--approve', bundleHash]);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /not a run of this bundle/);
+  r = await run(['--resume', '../../etc', '--approve', bundleHash]);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /not a run id/);
+
+  // a recorded run whose worktree is gone, then one asked with a different repo
+  const dir = join(bundleDir, 'runs', 'abc');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'run.json'), JSON.stringify({ runid: 'abc', worktree: join(repo, '.bareloop', 'wt', 'abc'), seed: 'x', repo }));
+  r = await run(['--resume', 'abc', '--approve', bundleHash]);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /is gone/);
+  r = await run(['--resume', 'abc', '--repo', tmp(t, 'cli-other-repo-'), '--approve', bundleHash]);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /not the repo run abc used/);
+  r = await run(['--resume', 'abc']);
+  assert.equal(r.rc, 1);
+  assert.match(r.said, /--approve .* is required/, 'an unblessed bundle needs --approve on a resume too');
+  assert.deepEqual(provider.calls, []);
 });
 
 test('bareloop run: a tampered bundle reds bundle-tampered BEFORE any worktree/provider', async (t) => {
@@ -397,10 +560,13 @@ test('bareloop run: first GREEN run blesses the bundle, records history, and lea
   assert.equal(existsSync(join(bundleDir, 'runs', runid, 'spine.jsonl')), true);
   assert.equal(existsSync(join(worktree, 'gate-audit.jsonl')), false);
   assert.equal(existsSync(join(bundleDir, 'runs', runid, 'gate-audit.jsonl')), true);
+  // one engine, but a bundle's bridges are shipped inputs: no bridge file is minted
+  assert.deepEqual(readdirSync(join(bundleDir, 'runs', runid)).filter((n) => n.startsWith('bridge-')), []);
+  assert.equal(existsSync(join(bundleDir, 'runs', runid, 'close')), true);
 });
 
 test('bareloop run: a spine with a malformed/truncated line (process-killed-mid-append shape) does not crash the job-end tail read', async (t) => {
-  // PANEL-BUILD.md P0 — `doRun`'s own job-end read (src/cli.js) used to
+  // PANEL-BUILD.md P0 — the bundle door's old job-end read (`doRun`, src/cli.js) used to
   // hand-roll `readFileSync(...).split('\n').filter(Boolean).map(JSON.parse)`
   // OUTSIDE any try/catch, the exact parse `parseJsonl` (src/replayio.js)
   // already tolerates elsewhere (`doHistory`/`doReplay`). A spine carrying
@@ -409,7 +575,7 @@ test('bareloop run: a spine with a malformed/truncated line (process-killed-mid-
   // run. `makeSpine` only APPENDS (`appendFileSync`), so we seed one bad,
   // newline-terminated line into the spine file before the run starts; every
   // event the run itself emits (including the job-end record the tail
-  // reads) lands after it, well-formed. `doRun`'s current buggy read maps
+  // reads) lands after it, well-formed. the old strict read maps
   // JSON.parse over EVERY line unconditionally, so a malformed line anywhere
   // in the file reproduces the exact same uncaught throw regardless of
   // position — this is the same defect class, proven without needing to

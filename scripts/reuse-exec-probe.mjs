@@ -263,7 +263,7 @@ if (DRY) {
     if (!ok) failures.push(what);
   };
 
-  const watchdogPath = fileURLToPath(new URL('./u-watchdog.mjs', import.meta.url));
+  const watchdogPath = fileURLToPath(new URL('../src/u-watchdog.mjs', import.meta.url));
   check('u-watchdog.mjs resolves', existsSync(watchdogPath), watchdogPath);
   check('bridge loaded', Array.isArray(bridge.plan?.steps) && bridge.plan.steps.length > 0, `${bridge.plan?.steps?.length} steps, greened ${bridge.greenAt}`);
   check('spec hash computed', typeof specHash === 'string' && specHash.length > 0, specHash);
@@ -413,7 +413,7 @@ console.log(`\n== reuse-exec ${runid} ==  $${spec.budgetUsd} · ${WALL_LABEL} ·
 const closeStages = Array.isArray(spec.close) ? spec.close.length : 1;
 const worstCloseSilenceMs = CLOSE_TIMEOUT_MS * closeStages;
 const watchdog = spawn(process.execPath, [
-  fileURLToPath(new URL('./u-watchdog.mjs', import.meta.url)),
+  fileURLToPath(new URL('../src/u-watchdog.mjs', import.meta.url)),
   '--spine', spineFile,
   '--pid', String(process.pid),
   '--stale-ms', String(worstCloseSilenceMs + 600_000),

@@ -45,6 +45,7 @@ import { SOURCE_FIELD, DESTINATION_FIELD_REPO, labelsFor } from '../src/authorfl
 const CLASS = MENU_CLASSES.reduce((a, b) => (requiredAnswersFor(b).length > requiredAnswersFor(a).length ? b : a));
 
 const SCRIPT = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
+const BIN = new URL('../bin/bareloop.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 task 3/4 — the ORCHESTRATION this file's two source-text
 // tripwires (below) pin moved off scripts/run-interview.mjs (now a thin
 // adapter) into src/interviewrun.js's own `main(argv, deps)`; SCRIPT (above)
@@ -90,7 +91,7 @@ gitFix(repoBase, ['commit', '-q', '-m', 'seed']);
  *   provider?: string|null, baseUrl?: string|null, key?: string, lines: string[]}} o
  */
 const interview = ({
-  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', baseUrl = null, key = '', lines,
+  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', baseUrl = null, key = '', lines, viaCli = false,
 }) => {
   const args = [
     '--verdict', verdict, '--out', out,
@@ -98,7 +99,8 @@ const interview = ({
     ...(provider === null ? [] : ['--provider', provider]),
     ...(baseUrl === null ? [] : ['--base-url', baseUrl]),
   ];
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
+  // viaCli: enter through the shipped `bareloop` bin (`bareloop interview ...`) instead of the script adapter.
+  const r = spawnSync(process.execPath, viaCli ? [BIN, 'interview', ...args] : [SCRIPT, ...args], {
     encoding: 'utf8', timeout: 120_000, input: `${lines.join('\n')}\n`,
     // no key VALUE reaches this script and it must never need one. `key` only
     // ever targets ANTHROPIC_API_KEY (the fixture default provider); the other
@@ -666,6 +668,15 @@ test('the offer\'s key name FOLLOWS the chosen provider, never a hardcoded ANTHR
   assert.match(r.out, new RegExp(`${envKey} is not set in this shell`));
   assert.match(r.out, new RegExp(`${envKey}=\\.\\.\\. node scripts/run-author\\.mjs`));
   assert.doesNotMatch(r.out, /ANTHROPIC_API_KEY/, 'a different provider must never surface the old hardcoded key name');
+});
+
+test('the offer\'s printed run-author command is spelled the way the person entered: `bareloop author` via the CLI, the script via the adapter', () => {
+  const viaCli = interview({ out: outDir(), lines: session(CLASS), viaCli: true });
+  assert.equal(viaCli.code, 0, viaCli.out);
+  assert.match(viaCli.out, /ANTHROPIC_API_KEY=\.\.\. bareloop author --source /);
+  assert.doesNotMatch(viaCli.out, /node scripts\/run-author\.mjs/, 'the tarball ships no scripts/');
+  const viaScript = interview({ out: outDir(), lines: session(CLASS) });
+  assert.match(viaScript.out, /ANTHROPIC_API_KEY=\.\.\. node scripts\/run-author\.mjs --source /);
 });
 
 // ══ --base-url (PRD item 33 close-out: L17 named the provider but never the

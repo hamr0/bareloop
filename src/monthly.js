@@ -8,21 +8,22 @@
 // The limit REFUSES, never warns; the page and the chat can never raise it (a person
 // edits it by hand in Settings — src/config.js).
 //
-// A run still IN FLIGHT (a spine with `job-start`, no `job-end`, and a spine file written to
-// within DIED_MTIME_MS — the panel's own died rule) is counted at its full leg cap, not its
-// spend so far: `checkMonthlyRoom` reserves what the run may still spend, so two runs cannot
-// both start against a limit only one of them fits. A died run (stale spine) counts its floor.
-// The one exception is the spine a RESUME continues (`resumingSpine`): it counts its real spend
-// only, because the resume's own leg cap is the remainder and already covers its unspent cap.
-// Only the refusal check reserves; the Money tab keeps showing real spend (`usd`).
+// HOLD UNTIL DONE (hamr 2026-09-30): a run CLAIMS its whole leg cap when it starts (`claimRun`: append
+// the run's row FIRST, carrying its `pid` and `capUsd`, then read the list — only the claims ABOVE its row
+// count, so whoever runs first holds) and holds it until it is done. While the row's pid is a live bareloop runner the
+// run is counted at max(spend so far, capUsd) however quiet its spine; a run with a `job-end` counts
+// its real spend; a claim whose process is gone counts its floor and is settled — with an attributed
+// `settled` entry — by whichever later run finds it (the first note wins). An older row with no `pid` keeps the spine
+// mtime rule (a fresh spine, written to within DIED_MTIME_MS, is in flight). Only the refusal check
+// reserves; the Money tab keeps showing real spend (`usd`).
 //
 // Honesty: a run whose spend is not fully known (a died/still-running spine, an unpriced
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
 // number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
 import { existsSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { readConfig, configPath, ConfigError } from './config.js';
-import { readRunList, DIED_MTIME_MS } from './runlist.js';
+import { readRunList, appendRun, appendRunEvent, isLiveRunner, DIED_MTIME_MS } from './runlist.js';
+export { isLiveRunner };
 import { parseJsonl } from './replayio.js';
 import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
 import { findRow } from './providerrows.js';
@@ -162,24 +163,43 @@ function inFlightCapUsd(records, spinePath, nowMs, usd) {
 }
 
 /**
+ * The rows listed EARLIER in the run list than `runid`'s own row (file order is claim order). No
+ * `runid`, or a runid not in the list, = every row.
+ * @param {import('./runlist.js').RunRow[]} rows
+ * @param {string} [runid]
+ * @returns {import('./runlist.js').RunRow[]}
+ */
+function rowsAbove(rows, runid) {
+  if (runid === undefined) return rows;
+  const i = rows.findIndex((r) => r.runid === runid);
+  return i < 0 ? rows : rows.slice(0, i);
+}
+
+/**
  * Every listed run as one {@link Leg}. The ONE reader the month total, the all-time total
  * and the per-provider figures share.
- * @param {{ home?: string, now?: () => number, resumingSpine?: string|null }} [opts] `now` = the clock for the in-flight test; `resumingSpine` = the spine a resume continues: that leg reserves its spend only, never its unspent cap (the resume's own leg cap is that remainder)
+ * @param {{ home?: string, now?: () => number, aboveRunid?: string }} [opts] `now` = the clock for the no-pid in-flight test; `aboveRunid` = read only the runs listed EARLIER in the file than that run (a claim yields to the claims above it, never below)
  * @returns {Leg[]}
  */
 export function readLegs(opts = {}) {
   const nowMs = (opts.now ?? Date.now)();
-  const { rows } = readRunList({ home: opts.home });
-  const resuming = typeof opts.resumingSpine === 'string' ? resolve(opts.resumingSpine) : null;
+  const { rows: allRows, events } = readRunList({ home: opts.home });
+  const rows = rowsAbove(allRows, opts.aboveRunid);
+  const settled = new Set(events.filter((e) => e.type === 'settled').map((e) => e.runid));
   /** @type {Leg[]} */
   const legs = [];
   for (const row of rows) {
     const at = new Date(row.at);
     const base = { at, provider: null, baseUrl: null, model: null, wallMs: null, wallComplete: false, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, reservedUsd: 0, unreadable: true };
-    if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push(base); continue; }
+    // Rule 2 (hold-until-done): a row that carries its runner's `pid` is HELD at its cap while that
+    // pid is a live bareloop runner, however quiet its spine — killed = process gone, not silence.
+    // An older row with no `pid` keeps the spine-mtime rule (`inFlightCapUsd`), never guessed alive.
+    const hasPid = Number.isInteger(row.pid);
+    const heldCap = hasPid && !settled.has(row.runid) && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && isLiveRunner(/** @type {number} */ (row.pid)) ? row.capUsd : null;
+    if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
     /** @type {any[]} */
     let records;
-    try { records = parseJsonl(row.spine).records; } catch { legs.push(base); continue; }
+    try { records = parseJsonl(row.spine).records; } catch { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
     const start = records.find((r) => r && r.type === 'job-start') ?? null;
     const leg = legSpend(records);
     const prov = spendProvenance(records);
@@ -196,7 +216,8 @@ export function readLegs(opts = {}) {
       tokens: legTokens(records),
       vouchedRounds: prov.vouched.rounds,
       otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
-      reservedUsd: resuming !== null && resolve(row.spine) === resuming ? leg.usd : inFlightCapUsd(records, row.spine, nowMs, leg.usd),
+      reservedUsd: hasPid ? (records.some((r) => r && r.type === 'job-end') || heldCap === null ? leg.usd : Math.max(leg.usd, heldCap))
+        : inFlightCapUsd(records, row.spine, nowMs, leg.usd),
       unreadable: false,
     });
   }
@@ -211,7 +232,7 @@ export function readLegs(opts = {}) {
 const sameLocalMonth = (at, now) => at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth();
 
 /**
- * @param {{ home?: string, now?: () => number, resumingSpine?: string|null }} [opts] `resumingSpine`: see {@link readLegs}
+ * @param {{ home?: string, now?: () => number, aboveRunid?: string }} [opts] `aboveRunid`: see {@link readLegs}
  * @returns {{ usd: number, atLeast: boolean, runs: number, reservedUsd: number }} `usd` = real spend (the Money tab's figure); `reservedUsd` = the same with in-flight runs at their cap (the refusal check's)
  */
 export function monthSpend(opts = {}) {
@@ -220,12 +241,12 @@ export function monthSpend(opts = {}) {
   let reservedUsd = 0;
   let atLeast = false;
   let runs = 0;
-  for (const leg of readLegs({ home: opts.home, now: opts.now, resumingSpine: opts.resumingSpine })) {
+  for (const leg of readLegs({ home: opts.home, now: opts.now, aboveRunid: opts.aboveRunid })) {
     // an unreadable date could belong to this month — unknown, never dropped
     if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
     if (!sameLocalMonth(leg.at, nowDate)) continue;
     runs += 1;
-    if (leg.unreadable) { atLeast = true; continue; }
+    if (leg.unreadable) { atLeast = true; reservedUsd += leg.reservedUsd; continue; }
     usd += leg.usd;
     reservedUsd += leg.reservedUsd;
     if (!leg.complete) atLeast = true;
@@ -321,21 +342,21 @@ export function monthlyLimitOf(config, home) {
 }
 
 /**
- * Does a run with this $ cap fit in what is left this month (running jobs counted at their full cap, except the spine a resume continues — `resumingSpine` — which counts its real spend)? No limit set (key absent or null) = ok, no check; a limit that is present but not a
+ * Does a run with this $ cap fit in what is left this month (a run still held counts at its full cap)? No limit set (key absent or null) = ok, no check; a limit that is present but not a
  * number above 0 throws `ConfigError`.
  * Compared in whole cents. Also throws `ConfigError` when config.json is unreadable — a gate
  * whose own instrument is broken refuses; it never silently runs with no limit.
- * @param {{ capUsd: number, home?: string, now?: () => number, resumingSpine?: string|null }} args
+ * @param {{ capUsd: number, home?: string, now?: () => number, aboveRunid?: string }} args `aboveRunid`: count only the claims listed above that run (a claim in progress)
  * @returns {MonthlyRoom}
  */
-export function checkMonthlyRoom({ capUsd, home, now, resumingSpine }) {
+export function checkMonthlyRoom({ capUsd, home, now, aboveRunid }) {
   const cfg = readConfig({ home });
   if (cfg.problem) throw new ConfigError(cfg.problem);
   const limit = monthlyLimitOf(cfg.config, home);
   if (limit === null) {
     return { ok: true, leftUsd: null, limitUsd: null, atLeast: false };
   }
-  const spent = monthSpend({ home, now, resumingSpine });
+  const spent = monthSpend({ home, now, aboveRunid });
   const leftCents = Math.max(0, Math.floor((limit - spent.reservedUsd) * 100 + 1e-6));
   const capCents = Math.ceil((Number.isFinite(capUsd) ? capUsd : 0) * 100 - 1e-6);
   return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast };
@@ -349,4 +370,53 @@ export function checkMonthlyRoom({ capUsd, home, now, resumingSpine }) {
 export function monthlyRefusalText(room) {
   if (room.ok || room.leftUsd === null) return null;
   return `Max $${room.leftUsd.toFixed(2)} (monthly limit)`;
+}
+
+/**
+ * Close every claim ABOVE `aboveRunid` (file order) whose process is gone: a pid-bearing run row with no
+ * `settled` entry whose pid is not a live bareloop runner gets `{ type: 'settled', by: <closer>, reason:
+ * 'process gone', spentUsd: <its spine's floor>, spendComplete: false }` appended — so every claim gets a
+ * write-back, attributed. Two runs may both close the same dead claim; readers take the FIRST note.
+ * @param {{ home?: string, by: string, aboveRunid?: string }} args `by` = the run doing the closing
+ * @returns {number} how many notes were appended
+ */
+export function settleDeadClaims({ home, by, aboveRunid }) {
+  const { rows, events } = readRunList({ home });
+  const settled = new Set(events.filter((e) => e.type === 'settled').map((e) => e.runid));
+  let n = 0;
+  for (const row of rowsAbove(rows, aboveRunid)) {
+    if (!Number.isInteger(row.pid) || settled.has(row.runid) || isLiveRunner(/** @type {number} */ (row.pid))) continue;
+    let spentUsd = 0;
+    try { spentUsd = legSpend(parseJsonl(row.spine).records).usd; } catch { /* no spine: nothing was recorded spent */ }
+    appendRunEvent({ runid: row.runid, type: 'settled', by, reason: 'process gone', spentUsd, spendComplete: false, at: new Date().toISOString() }, { home });
+    n += 1;
+  }
+  return n;
+}
+
+/**
+ * The CLAIM (hamr 2026-09-30: whoever runs first claims the limit and holds it; no lock file, records
+ * only): the run APPENDS its row first (`row` carries its `pid` and `capUsd`), then reads the run list.
+ * Only the claims ABOVE its own row count — a live one is held at its cap (a dead one is closed with an
+ * attributed note and counts its real spend); rows below yield to it. If `capUsd` fits, it runs; if not
+ * it appends `{type:'released', reason:'refused'}` and reports the refusal, nothing spent. No limit set =
+ * no claim (`claimed: false`; the caller lists the run as it always did). An unreadable config, or a row
+ * that cannot be written, throws `ConfigError` — the gate refuses, never reads "no limit".
+ * @param {{ row: import('./runlist.js').RunRow, capUsd: number, home?: string, now?: () => number }} args
+ * @returns {{ room: MonthlyRoom, claimed: boolean }}
+ */
+export function claimRun({ row, capUsd, home, now }) {
+  const cfg = readConfig({ home });
+  if (cfg.problem) throw new ConfigError(cfg.problem);
+  if (monthlyLimitOf(cfg.config, home) === null) return { room: { ok: true, leftUsd: null, limitUsd: null, atLeast: false }, claimed: false };
+  try { appendRun(row, { home }); } catch (/** @type {any} */ e) {
+    throw new ConfigError(`cannot write this run's claim to the run list (${e.message})`);
+  }
+  settleDeadClaims({ home, by: row.runid, aboveRunid: row.runid });
+  const room = checkMonthlyRoom({ capUsd, home, now, aboveRunid: row.runid });
+  if (!room.ok) {
+    try { appendRunEvent({ runid: row.runid, type: 'released', by: row.runid, reason: 'refused', at: new Date().toISOString() }, { home }); } catch { /* the refusal stands; a stranded row of a dead process is closed by the next run */ }
+    return { room, claimed: false };
+  }
+  return { room, claimed: true };
 }

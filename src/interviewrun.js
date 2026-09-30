@@ -109,6 +109,7 @@ import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
 import { prepareSource, proveDestination, looksLikeRepoSource, missingDependencies } from './source.js';
 import { parseCeiling, ceilingLine } from './authorreadout.js';
+import { commandFor } from './invoke.js';
 
 /** Thrown to unwind `main` to an exit code without ever calling
  * `process.exit()` (constraint: a library function returns a code / throws,
@@ -157,7 +158,7 @@ export async function main(argv, deps = {}) {
   const stderr = deps.stderr ?? process.stderr;
   if (keys.warning && deps.env === undefined) stderr.write(`WARNING: ${keys.warning}\n`);
   const spawnSyncFn = deps.spawnSync ?? realSpawnSync;
-  const invokedAs = deps.invokedAs ?? 'node scripts/run-interview.mjs';
+  const invokedAs = deps.invokedAs ?? commandFor('interview', undefined);
   const out = (/** @type {string} */ s = '') => { stdout.write(`${s}\n`); };
   const err = (/** @type {string} */ s) => { stderr.write(`${s}\n`); };
   const arg = (/** @type {string} */ n) => { const i = argv.indexOf(`--${n}`); return i === -1 ? null : (argv[i + 1] ?? ''); };
@@ -754,7 +755,7 @@ export async function main(argv, deps = {}) {
   let providerEntry = null;
   try { providerEntry = resolveProvider(PROVIDER); } catch { providerEntry = null; }
   const providerEnvKey = providerEntry?.envKey ?? null;
-  say(`  ${providerEnvKey ?? 'YOUR_PROVIDER_API_KEY'}=... node scripts/run-author.mjs ${childArgs.join(' ')}`);
+  say(`  ${providerEnvKey ?? 'YOUR_PROVIDER_API_KEY'}=... ${commandFor('author', deps.invokedAs)} ${childArgs.join(' ')}`);
   // An `openai-api` + `baseUrl` draft (DeepSeek, today's one secondary, reached
   // this way) still reads its key from `OPENAI_API_KEY` — there is no separate
   // "DeepSeek key" env var, and a person pointed only at the command above could

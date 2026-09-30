@@ -13,7 +13,7 @@
 // caller doesn't know one) — a relative path here would resolve differently
 // depending on who later reads the file. `via` says how the row was minted:
 // `'run-u'` (src/userrun.js, the person-path run), `'bundle'`
-// (src/cli.js:doRun, `bareloop run`), or `'backfill'` (`bareloop runs
+// (src/userrun.js's bundle door, `bareloop run`), or `'backfill'` (`bareloop runs
 // backfill`, reconstructed from an archived spine already on disk).
 //
 // SECRETS: a row carries only paths/ids/names — never a key, a prompt, or any
@@ -29,6 +29,7 @@
 
 import {
   existsSync, mkdirSync, appendFileSync, chmodSync, readdirSync, statSync,
+  readFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import {
@@ -57,7 +58,9 @@ export function runlistPath(home) {
 }
 
 /**
- * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill' }} RunRow
+ * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill', pid?: number, capUsd?: number }} RunRow
+ * `pid`/`capUsd` (optional; older and backfilled rows carry neither): the runner's process id and the
+ * leg's $ cap — what the monthly limit holds while that pid is a live bareloop runner (src/monthly.js).
  */
 
 /**
@@ -87,7 +90,8 @@ export function appendRun(row, opts = {}) {
   mkdirSync(home, { recursive: true, mode: 0o700 });
   if (existsSync(path)) {
     const { records } = parseJsonl(path);
-    if (records.some((r) => r && r.runid === row.runid)) {
+    // only RUN rows count: a settled/released event names the same runid for another purpose
+    if (records.some((r) => r && !r.type && r.runid === row.runid)) {
       return { appended: false, reason: 'duplicate-runid' };
     }
   }
@@ -97,17 +101,85 @@ export function appendRun(row, opts = {}) {
 }
 
 /**
+ * @typedef {{ runid: string, type: 'settled'|'released', by: string, at: string, reason?: string, spentUsd?: number, spendComplete?: boolean }} RunEvent
+ * A claim's write-back, appended (never rewritten) beside the run rows. `settled` = the run's claim on the
+ * monthly limit is over (`spentUsd`/`spendComplete` are its final figure, `by` is WHO wrote it: the run itself
+ * at its `job-end`, or the next run that found its process gone, `reason: 'process gone'`). `released` = the
+ * claim was taken and then given back unspent, its run never started. The month's totals keep reading real
+ * spend off the spines; an event only releases the hold and records who wrote it.
+ */
+
+/**
+ * Append one {@link RunEvent}. Not locked: one short line, one append. THROWS on IO failure.
+ * @param {RunEvent} event
+ * @param {{ home?: string }} [opts]
+ * @returns {void}
+ */
+export function appendRunEvent(event, opts = {}) {
+  const path = runlistPath(opts.home);
+  mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 });
+  appendFileSync(path, `${JSON.stringify(event)}\n`);
+  try { chmodSync(path, 0o600); } catch { /* best-effort perms */ }
+}
+
+/**
  * Tolerant reader — reuses {@link parseJsonl} (never a second hand-rolled
  * parser). An absent file reads as an empty list, not an error: a fresh
- * install has never run `appendRun` yet.
+ * install has never run `appendRun` yet. FOLDS the file: `rows` are the RUNS
+ * only (an event line is never listed as a run, and a run whose claim was
+ * `released` never started, so it is not listed either); `events` are the
+ * write-backs, in file order.
  * @param {{ home?: string }} [opts]
- * @returns {{ rows: RunRow[], skipped: number }}
+ * @returns {{ rows: RunRow[], skipped: number, events: RunEvent[] }}
  */
 export function readRunList(opts = {}) {
   const path = runlistPath(opts.home);
-  if (!existsSync(path)) return { rows: [], skipped: 0 };
+  if (!existsSync(path)) return { rows: [], skipped: 0, events: [] };
   const { records, skipped } = parseJsonl(path);
-  return { rows: records, skipped };
+  // the FIRST settle for a runid is authoritative: two runs may both close the same dead claim, and the
+  // second note is a duplicate (a `released` line likewise); file order decides, later copies are ignored
+  const seen = new Set();
+  /** @type {RunEvent[]} */
+  const events = records.filter((r) => {
+    if (!r || (r.type !== 'settled' && r.type !== 'released')) return false;
+    const key = `${r.type}:${r.runid}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const released = new Set(events.filter((e) => e.type === 'released').map((e) => e.runid));
+  const rows = records.filter((r) => r && !r.type && !released.has(r.runid));
+  return { rows, skipped, events };
+}
+
+/**
+ * Is this pid a live bareloop runner? `process.kill(pid, 0)` says whether the
+ * pid exists (EPERM = it exists, just not ours); `/proc/<pid>/cmdline` says whether it is a
+ * bareloop runner — a recycled pid that now belongs to some other program is NOT. A runner is
+ * a node executable (argv[0] is `node`, `nodejs`, `node22`, ...) with a later argv entry named
+ * `bareloop`, `bareloop.mjs`, `run-u.mjs` or `u-watchdog.mjs` (the basename, so the npm bin
+ * symlink counts), or a process whose argv[0] is itself one of those names. A non-node program
+ * that merely has such a name in its arguments (`nvim /x/bareloop`, `git -C /x/bareloop`) is not
+ * a runner. Residual, accepted: a recycled pid that is a node program with such an argument
+ * still reads as a runner. The wrong direction to err is "not a runner" on a real live run — it
+ * would release that run's cap. Where `/proc` is unreadable (not Linux, or not ours) the
+ * existence test alone decides: alive. The ONE spelling — the monthly limit's holds, and
+ * `--resume`'s old-pid check share it.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+export function isLiveRunner(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); } catch (/** @type {any} */ e) { if (e?.code !== 'EPERM') return false; }
+  /** @type {string|null} */
+  let cmdline = null;
+  try { cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8'); } catch { /* no /proc, or not ours */ }
+  if (cmdline === null) return true;
+  const names = ['bareloop', 'bareloop.mjs', 'run-u.mjs', 'u-watchdog.mjs'];
+  const [argv0 = '', ...rest] = cmdline.split('\0');
+  const first = basename(argv0);
+  if (names.includes(first)) return true;
+  return first.startsWith('node') && rest.some((a) => names.includes(basename(a)));
 }
 
 /**

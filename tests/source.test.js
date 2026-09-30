@@ -98,40 +98,39 @@ test('prepareSource: a plain folder freezes into tree/input, tree/output exists,
 
 test('prepareSource: a folder file swapped on disk AFTER its secret scan is refused, never frozen with bytes the scan never saw (item 34 L1, TOCTOU close)', async () => {
   const source = tmp('bareloop-src-race-');
-  // widen the window between "a.txt is scanned" and "a.txt is frozen": the
-  // scan loop and the freeze loop each walk every file in order, so more
-  // files between them means more real async I/O (mkdir, other reads) the
-  // event loop can interleave a background write into.
   writeFileSync(join(source, 'a.txt'), 'scanned-content');
-  for (let i = 0; i < 24; i += 1) writeFileSync(join(source, `pad-${i}.txt`), `pad ${i}`.repeat(200));
   const into = join(tmp('bareloop-into-parent-'), 'job1');
 
-  let toggling = true;
-  let n = 0;
-  // fires on every macrotask boundary for as long as prepareSource is in
-  // flight — a real race, not a scripted single swap: it keeps flipping
-  // a.txt's content throughout the whole scan/freeze window so the fix is
-  // proven against the actual async interleaving, not a hand-timed guess.
-  const toggle = () => {
-    if (!toggling) return;
-    n += 1;
-    writeFileSync(join(source, 'a.txt'), `swapped-content-${n}`);
-    setImmediate(toggle);
-  };
-  setImmediate(toggle);
+  // the `afterScan` test seam runs exactly once, after the scan and before the
+  // freeze re-reads a.txt — a deterministic swap inside the race window
+  let calls = 0;
+  const r = await prepareSource({
+    source, into,
+    afterScan: () => { calls += 1; writeFileSync(join(source, 'a.txt'), 'swapped-content'); },
+  });
 
-  const r = await prepareSource({ source, into });
-  toggling = false;
-
-  assert.equal(r.code, 'source-changed-after-scan',
-    `expected the race to be CAUGHT; got ${JSON.stringify({ stop: r.stop, code: r.code })} — `
-    + 'this can be a rare, real miss if the toggle never landed inside the freeze window on this '
-    + 'run (n stayed 1 for the whole call); the fix worked if it never silently froze mismatched bytes');
+  assert.equal(calls, 1, 'the seam must fire exactly once');
+  assert.equal(r.code, 'source-changed-after-scan', `expected the swap to be CAUGHT; got ${JSON.stringify({ stop: r.stop, code: r.code })}`);
   assert.match(/** @type {string} */ (r.stop), /a\.txt/);
   // the hard line's own promise, unbroken by this new refusal path either:
   // a refusal never leaves a partial tree the worker could read from.
   assert.ok(!existsSync(join(into, 'tree', 'input', 'a.txt')) || readFileSync(join(into, 'tree', 'input', 'a.txt'), 'utf8') !== 'scanned-content',
     'if a.txt reached the tree at all it must never be the STALE bytes the scan judged');
+  assert.ok(!existsSync(join(into, 'tree', 'input', 'a.txt')) || readFileSync(join(into, 'tree', 'input', 'a.txt'), 'utf8') !== 'swapped-content',
+    'the swapped bytes must never be frozen either');
+});
+
+test('prepareSource: an afterScan hook that leaves the file alone does not trip the TOCTOU check (the detector is not always-on)', async () => {
+  const source = tmp('bareloop-src-race-neg-');
+  writeFileSync(join(source, 'a.txt'), 'scanned-content');
+  const into = join(tmp('bareloop-into-parent-'), 'job1');
+
+  let calls = 0;
+  const r = await prepareSource({ source, into, afterScan: () => { calls += 1; } });
+
+  assert.equal(calls, 1);
+  assert.equal(r.stop, null, r.stop ?? undefined);
+  assert.equal(readFileSync(join(into, 'tree', 'input', 'a.txt'), 'utf8'), 'scanned-content');
 });
 
 test('prepareSource: a folder file\'s executable mode bit survives the freeze (the L1 fix reads bytes with readFile+writeFile, not copyFile — mode must be carried explicitly)', async () => {

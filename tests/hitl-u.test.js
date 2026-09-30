@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS } from '../src/reuse.js';
 import { deathAtOf, evidencePackage, resumeAtLines } from '../src/u-readout.js';
@@ -134,6 +134,23 @@ test('§1.6 E2E: a stale watchdog report beside a PAUSED spine does not bill the
   assert.equal(code, 0, 'a stale report is not a refusal');
   assert.match(out, /spent .*20\.0min before the halt/, 'the fold is the paused leg\'s OWN elapsed — 10:00 to 10:20');
   assert.doesNotMatch(out, /NOTHING LEFT/, 'and the wall is not burnt: 45 days of a person reading is not run time');
+});
+
+test('--resume: a LIVE process named bareloop on the watchdog record refuses the resume (one owner: isLiveRunner); a live non-runner does not', async (t) => {
+  const kids = [];
+  t.after(() => { for (const k of kids) { try { process.kill(/** @type {number} */ (k.pid), 'SIGKILL'); } catch { /* gone */ } } });
+  const runnerKid = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'bareloop.mjs'], { stdio: 'ignore' });
+  const otherKid = spawn('sleep', ['300'], { stdio: 'ignore' });
+  kids.push(runnerKid, otherKid);
+  await new Promise((r) => setTimeout(r, 300));
+  const f = spineFile(pausedSpine());
+  const report = (pid) => writeFileSync(`${f}.watchdog.json`, `${JSON.stringify({ watchdog: 'u-watchdog', reason: 'deadline', killed: true, pid, spine: f, at: new Date().toISOString() })}\n`);
+  report(runnerKid.pid);
+  const refused = preview(['--resume', f]);
+  assert.equal(refused.code, 2);
+  assert.match(refused.out, /is still alive \(a bareloop runner\)/);
+  report(otherKid.pid);
+  assert.equal(preview(['--resume', f]).code, 0, 'a recycled pid running some other program is not a live run');
 });
 
 // ══ §2 THE 60-DAY TTL ══════════════════════════════════════════════════════════
@@ -434,7 +451,7 @@ test('§5.2 the PAUSE readout shows the package and the doors where the person i
     'and the shared renderer is the one that assembles it, for both screens');
   assert.match(block, /doorLines\(/, 'and the three doors, in the one order that is a rule');
   assert.match(block, /--resume \$\{runid\}/, 'with the actual resume invocation, not the idea of one');
-  assert.match(block, /--approve \$\{specHash\}/, 'and the hash ALREADY signed: a decision moves no allowance, so nothing here needs re-signing');
+  assert.match(block, /--approve \$\{PRINT_APPROVE\}/, 'and the hash ALREADY signed: a decision moves no allowance, so nothing here needs re-signing');
   assert.doesNotMatch(block, /\bdie\(|process\.exit/, 'a readout never changes the run\'s own exit');
 });
 
@@ -476,7 +493,7 @@ test('§1 the pause door is REACHABLE and silent about money: a signed `--decide
 
 test('§1 a pause writes NO bridge: the artifact is minted by a green, and a pause is not one', () => {
   const src = readFileSync(ENGINE_SRC, 'utf8');
-  assert.match(src, /if \(outcome === 'green' && plan && !leaks\.length\)/,
+  assert.match(src, /if \(outcome === 'green' && plan && !leaks\.length && !ctx\.bundle\)/,
     'the bridge gate still reads the GREEN terminal only — a checkpoint that graduated a reusable plan would mint learning credit no close ever rendered');
 });
 

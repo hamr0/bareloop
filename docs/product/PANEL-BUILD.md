@@ -60,7 +60,7 @@ earlier table.
 | Flow the panel needs | Where the logic lives today | CLI command today? |
 |---|---|---|
 | Export a job spec to a bundle | `src/bundle.js` (`exportBundle`, exported from `src/index.js`) | Yes — `bareloop export` (`src/cli.js:doExport`) |
-| Run a signed bundle against a repo | `src/run.js` (`runJob`) + `src/bundle.js` (bundle read/bless/envelope) | Yes — `bareloop run` (`src/cli.js:doRun`) |
+| Run a signed bundle against a repo | `src/run.js` (`runJob`) + `src/bundle.js` (bundle read/bless/envelope) | Yes — `bareloop run` (`src/cli.js:doRun`; corrected 2026-09-30: `doRun` is gone — `bareloop run` routes to `bundleMain` in `src/bundlerun.js`, a thin door onto the `src/userrun.js` engine) |
 | List a bundle's history + bridges | `src/index.js` (`loadRegistry`, `listingRow`) + `history.jsonl` | Yes — `bareloop history` (`src/cli.js:doHistory`) |
 | **The interview** — the ENTRY GATE for a new job (source/destination, goal, guardrails, check type, judge examples, confirm turn) | `src/interviewrun.js` (one argv-parsing `main(argv, deps)`, lifted verbatim out of the former `scripts/run-interview.mjs` repo script per P0); `scripts/run-interview.mjs` is now a thin ~22-line adapter over it | **Yes** — `bareloop interview` (`src/cli.js`, routes to `interviewMain`) |
 | **Authoring** — draft/revise/sign a job spec from interview answers | `src/authorrun.js` (one argv-parsing `main(argv, deps)`, lifted verbatim out of the former `scripts/run-author.mjs`); `scripts/run-author.mjs` is now a thin ~22-line adapter over it | **Yes** — `bareloop author` (`src/cli.js`, routes to `authorMain`) |
@@ -205,7 +205,7 @@ both the free-standing spine layout and the bundle layout
 `looksLikeSpine`, never a second parser), and `formatRunRow` (`file missing` when a listed
 spine no longer exists on disk). Wired to append one row at run START, BEFORE the first paid
 call, in exactly two callers: `src/userrun.js` (`run-u`) and `src/cli.js`'s `doRun`
-(`bareloop run`, bundle path) — interview/author sessions are NOT added (deferred to P3, no
+(`bareloop run`, bundle path; corrected 2026-09-30: `doRun` is gone, so the bundle path now appends through the `src/userrun.js` engine that `bundleMain` in `src/bundlerun.js` drives — one caller, not two) — interview/author sessions are NOT added (deferred to P3, no
 run to list yet at that stage). A list-append failure is caught at both call sites and printed
 loudly to stderr; the run itself continues (hamr's rule: a panel list must never block real
 work). New CLI surface: `bareloop runs` (print the list) and `bareloop runs backfill <dir>`
@@ -649,8 +649,10 @@ supersede it:
   landed as this, without add/edit/remove buttons.)
 - **The limit field auto-saves; there is no Save button.** Blank clears it. `POST /api/settings/money`
   without a `monthlyLimitUsd` key is a `400`, never a clear.
-- **An in-flight run reserves its full leg cap** in the refusal check only (the Money tab shows real
-  spend); a died run counts its floor; the spine a resume continues counts its real spend.
+- **A run holds its full leg cap until it is done** (hamr 2026-09-30, "hold until done"): the run's row
+  is appended first with its `pid` and `capUsd`, and only the claims above it count; a live claim is held
+  at its cap in the refusal check only (the Money tab shows real spend); a claim whose process is gone is
+  settled by the next run and counts its floor. Detail: `bareloop.context.md` "Monthly $ limit".
 - Also built: POST body cap (1 MiB, `413`), the `jobsDir` seam server-side only, `replay-live --live-audit`.
-- Parked to `.claude/remember/fix-ledger.md`: `bareloop run <bundle>` has no monthly check (a second
-  run-start seam is hamr's call).
+- `bareloop run <bundle>` is a door to the same engine, so the monthly limit applies to it too (one
+  run-start seam, no second one).

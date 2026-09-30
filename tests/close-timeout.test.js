@@ -446,7 +446,6 @@ for (const [file, fnName, label] of [
   // PANEL-BUILD.md P0 — this call site moved off scripts/run-u.mjs (now a
   // thin adapter) into src/userrun.js's one shared execute() engine.
   ['src/userrun.js', 'runJob', 'run-u.mjs'],
-  ['src/cli.js', 'runJob', 'the bundle CLI'],
 ]) {
   test(`F133 grep-pin: ${label}'s ${fnName} call never passes closeTimeoutMs`, () => {
     const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');

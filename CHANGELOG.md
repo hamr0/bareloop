@@ -5,6 +5,85 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.33.0] — 2026-09-30
+
+### Added
+
+- **Your own price, per key row.** `config.json` `keys.<ENV NAME>.priceInPerM` / `priceOutPerM` (USD per
+  1M tokens, in and out; both or neither, each a finite number 0 or more) set what the model behind a key
+  costs. `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) is the one lookup, on the same
+  row `keyNameFor` picks the key from. The run doors (`run-u` / `run <bundle>` / the panel via
+  `src/userrun.js`, `run-author`, the panel's authoring session) resolve it once at $0 and hand it to every
+  model call as bare-agent's `Loop({ rates })`: worker, scout and planner rounds, the drafter and confirm
+  turn, and the judge (priced at the judge model's own row; falls back to the worker's price when the model
+  names no row on that endpoint — `judgeRatesFor`). Priced rounds read `rateSource:'caller'`. A bad
+  price (one field, negative, non-number) refuses the run at $0 with "Nothing spent." and never falls back
+  to the guess. No price = no `rates` key = the built-in guess, unchanged. The run preview and run tail print
+  `price    yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)` when a price is set. New:
+  `runJob` / `runPlan` options `rates` / `judgeRates`; `runAuthorScout`, `authorCloseForJob`,
+  `makeLoopGenerate` and `defaultJudgeLoop` take an optional `rates`. The Settings screen field is a later
+  UI part; until then edit `config.json`. Past runs are not re-priced. Not covered: native (CLI) sessions
+  (they report their own cost) and the reuse engine (`runReuse`), which resolves no key row.
+
+### Changed
+
+- **Monthly limit: a run claims its cap at start and holds it until it is done.** The run-start seam
+  writes the run's row FIRST (now carrying `pid` and `capUsd`; no lock file — records only), then reads
+  `runs.jsonl`: only the claims above its own row count, so whoever runs first holds. A run whose pid is
+  a live bareloop runner stays held at its full cap however quiet its spine (no more 10-minute silence
+  drop); a dead run's claim is closed by whoever finds it, with an attributed `settled` note
+  (`process gone`, first note wins); a run that does not fit appends a `released` entry and refuses
+  with the exact `Max $X (monthly limit)` text. A finished run appends its own `settled` entry. Old
+  rows without a `pid` keep the spine-mtime rule. The `resumingSpine` special case is gone (a resumed
+  leg's dead process already counts at its floor). `--resume`'s "is the old process alive" check now
+  recognises `bareloop run-u` / `bareloop run` and shares `isLiveRunner`.
+  `isLiveRunner` now needs a node executable (or a runner-named argv[0]) plus a runner-named argument, so a
+  recycled pid running e.g. `nvim` on a bareloop path no longer holds a dead run's cap; a claimed run (or, with no monthly limit, a listed one) that
+  exits at $0 before its spine exists is released (`reason: 'not started'`) instead of leaving a ghost row.
+- **One runner: `bareloop run <bundle>` is now a thin door to the `run-u` engine.** The exported
+  bundle CLI no longer carries its own `runJob` caller (`doRun`) and provider wiring
+  (`buildProviders`); `src/bundlerun.js` keeps only the bundle checks (integrity, deps, envelope,
+  blessing before any key read), the tightened spec, the fresh worktree, the history row, the
+  first-green blessing and the merge hints. Consequences: a bundle can name any provider whose key
+  is in your keys file or env (the ANTHROPIC-only refusal is gone); the **monthly $ limit now
+  applies to a bundle** run (exit 2, nothing spent, no worktree); a missing key is the engine's
+  refusal, **exit 2 naming the key** (it used to print the bundle README and exit 0 — the README now
+  prints on the unblessed first-run screen); the close-fix cap for a bundle is run-u's 4 (was 3 —
+  one number for every caller); the outside watchdog now guards a bundle run; a bundle green mints
+  no bridge file; the engine's job-end tail read tolerates a torn spine line (as the bundle door's
+  already did).
+- **`bareloop run <bundle> --resume <runid> [--repo <path>]`** — a halted bundle run resumes into
+  its own worktree through the engine's resume gates and spend fold. Each run leg writes
+  `runs/<runid>/run.json`; a resume's `history.jsonl` row carries `resumedFrom`. Proven with tests against a real git worktree and a scripted
+  provider; not run live.
+
+### Fixed
+
+- **The outside watchdog now ships in the package (F205).** `scripts/u-watchdog.mjs` moved to
+  `src/u-watchdog.mjs`: `package.json` `files` omits `scripts/`, so an installed run spawned a guard
+  whose script did not exist and it died silently at startup.
+- **The bare `bareloop` menu's "2 run" now honours the monthly limit.** It handed the bundle door no keys
+  home, so the limit, your price and the key-row choice were all off; it now gets the same home
+  `bareloop run <bundle>` does.
+- **A halted bundle run's printed resume command keeps your tightened `--budget` / `--wall`.** It used to drop
+  them, so the next leg silently reverted to the signed ceiling. The money-halt hint for a bundle no longer
+  says to edit `budgetUsd` (a bundle's spec is manifest-hashed and cannot be edited).
+  After a MONEY halt the line does not repeat the exhausted `--budget` (chain spend is folded, so pasting it
+  halted again at once); it prints `--budget <more than $<spent so far>, at most $<signed budgetUsd>>` for the
+  person to fill in, and the lever list says to choose a larger `--budget` up to the signed amount. Nothing is
+  filled in automatically. Other halts keep your tightened `--budget` / `--wall` as before. Printed text only.
+- **Printed commands no longer name scripts the package does not ship.** Entered through `bareloop run-u` /
+  `interview` / `author`, the approve, resume, pause and reopen lines (and the interview's run-author line and
+  the author's run-u line) now read `bareloop run-u …` etc.; `node scripts/*.mjs` is printed only from the
+  source-tree scripts. One owner for the spelling: `commandFor` in `src/invoke.js`.
+- **Printed copy-paste commands name the key variable the run reads and carry `--registry` / `--workflow`.**
+  The approve and resume lines from `run-u` and `run-author` used to leave these out, so a pasted line could
+  read a different key row or drop the run-list registration (F207 b). Printed text only.
+
+### Removed
+
+- `doRun`/`buildProviders` in `src/cli.js` and the `resumable: false` wiring for bundles (F130).
+
 ## [0.32.0] — 2026-09-29
 
 ### Added

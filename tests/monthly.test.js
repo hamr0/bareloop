@@ -6,18 +6,18 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, utimesSync, readFileSync, rmSync, existsSync, statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { configPath, readConfig, updateConfig, ConfigError } from '../src/config.js';
-import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend } from '../src/monthly.js';
-import { appendRun, readRunList } from '../src/runlist.js';
+import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, isLiveRunner, claimRun, settleDeadClaims } from '../src/monthly.js';
+import { appendRun, appendRunEvent, readRunList, runlistPath } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
-import { startRun } from '../src/userrun.js';
+import { startRun, resumeRun } from '../src/userrun.js';
 import { createPanelServer } from '../src/panel/server.js';
 import { signRun } from '../src/panel/authorroutes.js';
 import { scriptedProvider } from './helpers.js';
@@ -81,13 +81,13 @@ test('config: an unreadable file is a reported problem; updateConfig refuses to 
 // ---- monthly.js --------------------------------------------------------------------------
 
 /** a spine on disk + its run-list row */
-function addRun(home, dir, { runid, at, rounds = [], jobEnd, jobStart = {} }) {
+function addRun(home, dir, { runid, at, rounds = [], jobEnd, jobStart = {}, extra = {}, noSpine = false }) {
   const spine = join(dir, `u-${runid}.jsonl`);
   const recs = [{ type: 'job-start', job: 'j', ...jobStart }];
   for (const c of rounds) recs.push({ type: 'worker-round', costUsd: c });
   if (jobEnd) recs.push({ type: 'job-end', ...jobEnd });
-  writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
-  appendRun({ at, runid, job: 'j', spine, patient: null, via: 'run-u' }, { home });
+  if (!noSpine) writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
+  appendRun({ at, runid, job: 'j', spine, patient: null, via: 'run-u', ...extra }, { home });
 }
 const localIso = (y, m, d, h = 12) => new Date(y, m, d, h, 0, 0).toISOString();
 const NOW = () => new Date(2026, 8, 15, 12, 0, 0).getTime(); // 15 Sep 2026 local
@@ -172,44 +172,54 @@ test('checkMonthlyRoom: an IN-FLIGHT run (no job-end, fresh spine) counts at its
   assert.equal(checkMonthlyRoom({ capUsd: 6, home, now: NOW }).ok, true);
 });
 
-test('checkMonthlyRoom: the spine a resume continues counts its real spend, never its unspent cap; every other in-flight run keeps its full reservation', (t) => {
+/** a pid that belonged to a bareloop-looking runner and is now gone */
+async function deadRunnerPid(t) {
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  await killAndWait(pid);
+  return pid;
+}
+
+test('a resume fits: its killed leg (pid gone) counts its real spend, never its unspent cap — $12 limit, $3 of $10 spent, resume 7 -> ok, $9 left', async (t) => {
   const home = tmp(t);
   const d = tmp(t);
-  const nowMs = NOW();
-  const fresh = (runid) => utimesSync(join(d, `u-${runid}.jsonl`), new Date(nowMs - 3 * 60 * 1000), new Date(nowMs - 3 * 60 * 1000));
   updateConfig({ monthlyLimitUsd: 12 }, { home });
-  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 } });
-  fresh('killed');
-  const spine = join(d, 'u-killed.jsonl');
-  // 1. the resume asks for the remainder ($7); $9 truly left
-  const ok = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: spine });
+  const pid = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 }, extra: { pid, capUsd: 10 } });
+  utimesSync(join(d, 'u-killed.jsonl'), new Date(NOW() - 3 * 60 * 1000), new Date(NOW() - 3 * 60 * 1000));
+  const ok = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
   assert.equal(ok.ok, true);
   assert.equal(ok.leftUsd, 9);
-  assert.equal(monthSpend({ home, now: NOW, resumingSpine: spine }).usd, 3, 'real spend still counts in full');
-  // 2. without it, the old leg is reserved at its full cap: refused
-  const refused = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
-  assert.equal(refused.ok, false);
-  assert.equal(monthlyRefusalText(refused), 'Max $2.00 (monthly limit)');
-  // 5. path form: a `./` / relative segment still matches
-  assert.equal(checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: join(d, '.', 'sub', '..', 'u-killed.jsonl') }).ok, true);
-  const rel = relative(process.cwd(), spine);
-  assert.equal(checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: `./${rel}` }).ok, true);
-  // 3. another fresh in-flight run stays reserved at its full cap
-  addRun(home, d, { runid: 'other', at: localIso(2026, 8, 15, 11), rounds: [], jobStart: { budgetUsd: 6 } });
-  fresh('other');
-  const two = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: spine });
+  assert.equal(monthSpend({ home, now: NOW }).usd, 3, 'real spend still counts in full');
+  // another LIVE run stays held at its full cap
+  const live = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'other', at: localIso(2026, 8, 15, 11), rounds: [], jobStart: { budgetUsd: 6 }, extra: { pid: live, capUsd: 6 } });
+  const two = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
   assert.equal(two.ok, false);
   assert.equal(two.leftUsd, 3);
 });
 
-test('checkMonthlyRoom: a resume that truly does not fit is still refused', (t) => {
+test('chained resume: leg1 and leg2 both killed (pids gone) -> leg3 fits ($12 limit, floors 3+1, leg3 cap 6 -> ok, $8 left)', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 12 }, { home });
+  const p1 = await deadRunnerPid(t);
+  const p2 = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'leg1', at: localIso(2026, 8, 15, 10), rounds: [3], jobStart: { budgetUsd: 10 }, extra: { pid: p1, capUsd: 10 } });
+  addRun(home, d, { runid: 'leg2', at: localIso(2026, 8, 15, 11), rounds: [1], jobStart: { budgetUsd: 10, priorSpentUsd: 3 }, extra: { pid: p2, capUsd: 7 } });
+  const room = checkMonthlyRoom({ capUsd: 6, home, now: NOW });
+  assert.equal(room.ok, true);
+  assert.equal(room.leftUsd, 8);
+});
+
+test('a resume that truly does not fit is still refused', async (t) => {
   const home = tmp(t);
   const d = tmp(t);
   updateConfig({ monthlyLimitUsd: 8 }, { home });
-  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 } });
-  const f = join(d, 'u-killed.jsonl');
-  utimesSync(f, new Date(NOW() - 3 * 60 * 1000), new Date(NOW() - 3 * 60 * 1000));
-  const room = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: f });
+  const pid = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 }, extra: { pid, capUsd: 10 } });
+  const room = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
   assert.equal(room.ok, false);
   assert.equal(monthlyRefusalText(room), 'Max $5.00 (monthly limit)');
 });
@@ -273,7 +283,7 @@ async function runU(t, { home, budgetUsd }) {
       deps: { provider: counted, env: {}, out: () => {}, err: (s) => errs.push(s), runlistHome: home },
     });
   } catch { code = 'threw'; }
-  return { code, errs: errs.join('\n'), providerCalls, workdir };
+  return { code, errs: errs.join('\n'), providerCalls, workdir, spec, seed };
 }
 
 test('run-start seam: a cap over what is left this month REFUSES with the exact text, spends nothing (zero provider calls), writes no run-list row', async (t) => {
@@ -300,6 +310,131 @@ test('run-start seam: cap == what is left starts (reaches the provider); no limi
   const home2 = tmp(t);
   const none = await runU(t, { home: home2, budgetUsd: 3.5 });
   assert.doesNotMatch(none.errs, /monthly limit/);
+});
+
+test('run-start seam: a claimed run that exits at $0 before its spine exists (throwing prepareTree) is RELEASED — no ghost row, the month is exact', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const workdir = tmp(t);
+  writeFileSync(join(workdir, 'a.txt'), 'x\n');
+  git(workdir, ['init', '-q']);
+  git(workdir, ['config', 'user.email', 'monthly-test@example.com']);
+  git(workdir, ['config', 'user.name', 'monthly-test']);
+  git(workdir, ['add', '.']);
+  git(workdir, ['commit', '-q', '-m', 'seed']);
+  const seed = git(workdir, ['rev-parse', 'HEAD']);
+  const scripts = tmp(t);
+  const closePath = join(scripts, 'close.mjs');
+  writeFileSync(closePath, CLOSE_SOURCE);
+  const spec = {
+    schema: 'job-v1', job: 'monthly-ghost-fixture', description: 'ghost row fixture.',
+    provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd: 2, maxWallMs: 1_800_000,
+    writeScope: ['src/**'], goal: 'Append MARKER_OK to src/mod.mjs.', verdictType: 'green',
+    close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(CLOSE_SOURCE) }],
+    tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
+  };
+  const bundleDir = tmp(t);
+  const runDir = join(bundleDir, 'runs', 'r-ghost');
+  const bundle = { runid: 'r-ghost', runDir, invoke: 'bareloop run /b', tightened: {}, signedBudgetUsd: 1, printApprove: 'H', prepareTree: () => { throw new Error('worktree add failed'); } };
+  await assert.rejects(startRun(spec, {
+    workdir, seed, spineName: 'unused', approve: jobSpecHash(spec), bundle,
+    deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: () => {}, runlistHome: home },
+  }), /worktree add failed/, 'the original failure is what surfaces');
+  const list = readRunList({ home });
+  assert.equal(list.rows.length, 0, 'the never-started run is folded out of the list');
+  assert.ok(list.events.some((e) => e.type === 'released' && e.runid === 'r-ghost' && e.reason === 'not started'));
+  assert.ok(!existsSync(join(runDir, 'spine.jsonl')));
+  const m = monthSpend({ home });
+  assert.equal(m.atLeast, false);
+  assert.equal(m.runs, 0);
+});
+
+test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is RELEASED too', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  // a fixture patient with a hand-written cap-halted leg-1 spine (the shape hitl-u.test.js also uses), then a
+  // human commit: HEAD moves, so the reconstruction's premise (this tree is where the run left it) is gone
+  const first = await runU(t, { home: tmp(t), budgetUsd: 2 }); // its own scratch home: only the fixture patient is wanted
+  const spineDir = tmp(t);
+  const dead = join(spineDir, 'u-dead1.jsonl');
+  const at = new Date().toISOString();
+  writeFileSync(dead, [
+    { type: 'job-start', job: first.spec.job, specHash: jobSpecHash(first.spec), budgetUsd: 2, shape: 'plan', goal: first.spec.goal, ts: at, seq: 1 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 's1' }] }, ts: at, seq: 2 },
+    { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: at, seq: 3 },
+    { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
+  git(first.workdir, ['add', '.']);
+  git(first.workdir, ['commit', '-q', '-m', 'human']);
+  /** @type {string[]} */ const errs = [];
+  const code = await resumeRun(dead, {
+    spec: first.spec, workdir: first.workdir, seed: first.seed, spineName: 'monthly-seam-fixture-bareloop', approve: jobSpecHash(first.spec),
+    deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: (s) => errs.push(s), runlistHome: home },
+  });
+  assert.equal(code, 2, errs.join('\n'));
+  assert.match(errs.join('\n'), /PATIENT REFUSED/);
+  const list = readRunList({ home });
+  assert.equal(list.rows.length, 0, 'the refused resume is folded out of the list');
+  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started').length, 1);
+});
+
+test('run-start seam, NO monthly limit: a throwing prepareTree leaves no row (the row is appended after it)', async (t) => {
+  const home = tmp(t); // no limit set: the row goes through appendRun, not a claim
+  const workdir = tmp(t);
+  writeFileSync(join(workdir, 'a.txt'), 'x\n');
+  git(workdir, ['init', '-q']);
+  git(workdir, ['config', 'user.email', 'monthly-test@example.com']);
+  git(workdir, ['config', 'user.name', 'monthly-test']);
+  git(workdir, ['add', '.']);
+  git(workdir, ['commit', '-q', '-m', 'seed']);
+  const seed = git(workdir, ['rev-parse', 'HEAD']);
+  const scripts = tmp(t);
+  const closePath = join(scripts, 'close.mjs');
+  writeFileSync(closePath, CLOSE_SOURCE);
+  const spec = {
+    schema: 'job-v1', job: 'monthly-ghost-nolimit', description: 'ghost row fixture.',
+    provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd: 2, maxWallMs: 1_800_000,
+    writeScope: ['src/**'], goal: 'Append MARKER_OK to src/mod.mjs.', verdictType: 'green',
+    close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(CLOSE_SOURCE) }],
+    tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
+  };
+  const runDir = join(tmp(t), 'runs', 'r-ghost2');
+  const bundle = { runid: 'r-ghost2', runDir, invoke: 'bareloop run /b', tightened: {}, signedBudgetUsd: 1, printApprove: 'H', prepareTree: () => { throw new Error('worktree add failed'); } };
+  await assert.rejects(startRun(spec, {
+    workdir, seed, spineName: 'unused', approve: jobSpecHash(spec), bundle,
+    deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: () => {}, runlistHome: home },
+  }), /worktree add failed/);
+  const list = readRunList({ home });
+  assert.equal(list.rows.length, 0, 'no listed row for a run that never started');
+  assert.ok(!existsSync(join(runDir, 'spine.jsonl')));
+});
+
+test('run-start seam, NO monthly limit: a --resume refused at the patient (moved HEAD) RELEASES its listed row', async (t) => {
+  const home = tmp(t); // no limit set
+  const first = await runU(t, { home: tmp(t), budgetUsd: 2 });
+  const spineDir = tmp(t);
+  const dead = join(spineDir, 'u-dead2.jsonl');
+  const at = new Date().toISOString();
+  writeFileSync(dead, [
+    { type: 'job-start', job: first.spec.job, specHash: jobSpecHash(first.spec), budgetUsd: 2, shape: 'plan', goal: first.spec.goal, ts: at, seq: 1 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 's1' }] }, ts: at, seq: 2 },
+    { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: at, seq: 3 },
+    { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
+  git(first.workdir, ['add', '.']);
+  git(first.workdir, ['commit', '-q', '-m', 'human']);
+  /** @type {string[]} */ const errs = [];
+  const code = await resumeRun(dead, {
+    spec: first.spec, workdir: first.workdir, seed: first.seed, spineName: 'monthly-seam-fixture-bareloop', approve: jobSpecHash(first.spec),
+    deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: (s) => errs.push(s), runlistHome: home },
+  });
+  assert.equal(code, 2, errs.join('\n'));
+  assert.match(errs.join('\n'), /PATIENT REFUSED/);
+  const list = readRunList({ home });
+  assert.equal(list.rows.length, 0, 'the refused resume is folded out of the list');
+  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started').length, 1);
 });
 
 test('run-start seam: an unreadable config.json refuses the start ($0) rather than reading as "no limit"', async (t) => {
@@ -356,4 +491,266 @@ test('panel page: the monthly note sits directly under #jf-cap-money (same field
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
   assert.match(html, /<input id="jf-cap-money" type="text">\s*<div class="hint" id="jf-cap-note"/);
   assert.match(html, /\/api\/author\/monthly-check\?cap=/);
+});
+
+// ---- rule 2: hold-until-done — a run is held while its PID is a live bareloop runner ----------
+
+/** a real child that looks like a bareloop runner (its argv names bareloop.mjs); the test kills it by PID */
+function spawnRunner(t, argv0 = 'bareloop.mjs') {
+  const c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', argv0], { stdio: 'ignore' });
+  t.after(() => { try { process.kill(/** @type {number} */ (c.pid), 'SIGKILL'); } catch { /* already gone */ } });
+  return /** @type {number} */ (c.pid);
+}
+/** a real live process that is NOT a bareloop runner (a recycled pid) */
+function spawnOther(t) {
+  const c = spawn('sleep', ['300'], { stdio: 'ignore' });
+  t.after(() => { try { process.kill(/** @type {number} */ (c.pid), 'SIGKILL'); } catch { /* already gone */ } });
+  return /** @type {number} */ (c.pid);
+}
+async function killAndWait(pid) {
+  process.kill(pid, 'SIGKILL');
+  for (let i = 0; i < 100; i++) {
+    try { process.kill(pid, 0); } catch { return; }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+test('isLiveRunner: a bareloop-looking child is live; a plain sleep (recycled pid) and a killed child are not', async (t) => {
+  const runner = spawnRunner(t);
+  const other = spawnOther(t);
+  await new Promise((r) => setTimeout(r, 200)); // let exec settle so /proc/<pid>/cmdline is the child's own
+  assert.equal(isLiveRunner(runner), true);
+  assert.equal(isLiveRunner(other), false);
+  await killAndWait(runner);
+  assert.equal(isLiveRunner(runner), false);
+  assert.equal(isLiveRunner(0), false);
+  assert.equal(isLiveRunner(/** @type {any} */ ('x')), false);
+});
+
+test('isLiveRunner: a runner is a node process naming a runner file; a non-node program with such an argument is not (recycled pid)', async (t) => {
+  const d = tmp(t);
+  const spawned = [];
+  const live = (/** @type {string} */ cmd, /** @type {string[]} */ args) => {
+    const c = spawn(cmd, args, { stdio: 'ignore' });
+    spawned.push(/** @type {number} */ (c.pid));
+    return /** @type {number} */ (c.pid);
+  };
+  t.after(() => { for (const p of spawned) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } } });
+  // real node processes running a file with each real runner basename
+  const nodes = ['bareloop.mjs', 'run-u.mjs', 'u-watchdog.mjs'].map((n) => {
+    const f = join(d, n);
+    writeFileSync(f, 'setInterval(() => {}, 1000);\n');
+    return live(process.execPath, [f]);
+  });
+  // the npm bin shape: a node process whose script path is the extensionless `bareloop` name
+  const bin = join(d, 'bareloop');
+  writeFileSync(bin, 'setInterval(() => {}, 1000);\n');
+  nodes.push(live(process.execPath, [bin]));
+  // real non-node programs carrying a runner name in their arguments
+  const strays = [
+    live('sh', ['-c', 'sleep 300', 'bareloop']),
+    live('tail', ['-f', '/dev/null', join(d, 'bareloop')]),
+    live('tail', ['-f', '/dev/null', join(d, 'run-u.mjs')]),
+  ];
+  await new Promise((r) => setTimeout(r, 300)); // let exec settle so /proc/<pid>/cmdline is the child's own
+  for (const p of nodes) assert.equal(isLiveRunner(p), true, `node runner ${p}`);
+  for (const p of strays) assert.equal(isLiveRunner(p), false, `stray ${p}`);
+});
+
+test('rule 2: a live-pid run silent for 30 minutes is still held at its FULL cap; once the pid is gone it counts its floor', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'quiet', at: localIso(2026, 8, 15, 11), rounds: [0.05], jobStart: { budgetUsd: 6 }, extra: { pid, capUsd: 6 } });
+  const f = join(d, 'u-quiet.jsonl');
+  const nowMs = NOW();
+  utimesSync(f, new Date(nowMs - 30 * 60 * 1000), new Date(nowMs - 30 * 60 * 1000));
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 6, 'the old mtime rule would have called it died');
+  assert.equal(monthSpend({ home, now: NOW }).usd, 0.05, 'the Money tab figure stays REAL spend, never the hold');
+  assert.equal(monthlyRefusalText(checkMonthlyRoom({ capUsd: 5, home, now: NOW })), 'Max $4.00 (monthly limit)');
+  await killAndWait(pid);
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 0.05, 'killed = process gone: floor only');
+  assert.equal(checkMonthlyRoom({ capUsd: 9, home, now: NOW }).ok, true);
+});
+
+test('rule 2: a row written but no spine yet is held at its capUsd; a recycled pid (alive, not bareloop) counts its floor', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = spawnRunner(t);
+  const other = spawnOther(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'nospine', at: localIso(2026, 8, 15, 11), noSpine: true, extra: { pid, capUsd: 7 } });
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 7);
+  assert.equal(monthSpend({ home, now: NOW }).usd, 0);
+  addRun(home, d, { runid: 'recycled', at: localIso(2026, 8, 15, 11), rounds: [0.2], jobStart: { budgetUsd: 3 }, extra: { pid: other, capUsd: 3 } });
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 7.2, 'the recycled-pid run counts its 0.2 floor, not its $3 cap');
+});
+
+test('rule 2: a finished run counts its spend even with a live pid; an old row with NO pid keeps the mtime rule', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'done', at: localIso(2026, 8, 15, 11), jobEnd: { engagementSpentUsd: 1, spendComplete: true }, jobStart: { budgetUsd: 6 }, extra: { pid, capUsd: 6 } });
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 1);
+  addRun(home, d, { runid: 'old', at: localIso(2026, 8, 15, 11), rounds: [0.5], jobStart: { budgetUsd: 4 } });
+  const nowMs = NOW();
+  const f = join(d, 'u-old.jsonl');
+  utimesSync(f, new Date(nowMs - 60 * 1000), new Date(nowMs - 60 * 1000));
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 5, 'fresh pid-less spine: held at cap 4 (+1 done)');
+  utimesSync(f, new Date(nowMs - 11 * 60 * 1000), new Date(nowMs - 11 * 60 * 1000));
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 1.5, 'stale pid-less spine: floor 0.5 (+1 done)');
+});
+
+// ---- the claim: append your row first, then read; only claims ABOVE yours count; settle writes back ---------------------
+
+const claimRow = (runid, pid, capUsd) => ({ at: localIso(2026, 8, 15, 11), runid, job: 'j', spine: join(tmpdir(), `nospine-${runid}.jsonl`), patient: null, via: 'run-u', pid, capUsd });
+
+test('claim: back-to-back claims — the first (nothing above it) runs; the second no longer fits, is refused with the exact text and gets a released entry', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  const a = claimRun({ row: claimRow('a', pid, 6), capUsd: 6, home, now: NOW });
+  assert.equal(a.claimed, true);
+  assert.deepEqual(readRunList({ home }).rows.map((r) => [r.runid, r.pid, r.capUsd]), [['a', pid, 6]]);
+  const b = claimRun({ row: claimRow('b', pid, 5), capUsd: 5, home, now: NOW });
+  assert.equal(b.claimed, false);
+  assert.equal(monthlyRefusalText(b.room), 'Max $4.00 (monthly limit)');
+  const got = readRunList({ home });
+  assert.deepEqual(got.rows.map((r) => r.runid), ['a'], 'the refused run is not listed as a run');
+  assert.equal(got.events.length, 1);
+  assert.deepEqual({ ...got.events[0], at: 'x' }, { runid: 'b', type: 'released', by: 'b', reason: 'refused', at: 'x' });
+  assert.equal(claimRun({ row: claimRow('c', pid, 4), capUsd: 4, home, now: NOW }).claimed, true, 'a refused claim holds nothing: exactly what is left still fits');
+});
+
+test('claim: a row BELOW yours is ignored (later runs yield to earlier ones)', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  appendRun(claimRow('first', pid, 6), { home });
+  appendRun(claimRow('second', pid, 9), { home }); // appended before `first` reads
+  const got = claimRun({ row: claimRow('first', pid, 6), capUsd: 6, home, now: NOW });
+  assert.equal(got.claimed, true, 'the $9 claim below does not count against the one above it');
+  assert.equal(got.room.leftUsd, 10);
+});
+
+test('claim: no limit set takes no claim (the caller lists the run as ever)', (t) => {
+  const home = tmp(t);
+  const got = claimRun({ row: claimRow('a', process.pid, 6), capUsd: 6, home, now: NOW });
+  assert.equal(got.claimed, false);
+  assert.equal(got.room.limitUsd, null);
+  assert.equal(readRunList({ home }).rows.length, 0);
+});
+
+test('claim: three real processes racing for a limit only one fits -> exactly the file-first claimant runs, never both over', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const monthlyUrl = new URL('../src/monthly.js', import.meta.url).href;
+  const code = `
+    import { claimRun } from ${JSON.stringify(monthlyUrl)};
+    const [, home, runid] = process.argv.slice(1);
+    const got = claimRun({ row: { at: new Date().toISOString(), runid, job: 'j', spine: '/nowhere/' + runid, patient: null, via: 'run-u', pid: process.pid, capUsd: 6 }, capUsd: 6, home });
+    console.log(JSON.stringify({ runid, claimed: got.claimed }));
+    setInterval(() => {}, 1000);`;
+  const results = await Promise.all(['r1', 'r2', 'r3'].map((runid) => new Promise((res, rej) => {
+    // argv: [node, -e code, 'bareloop.mjs', home, runid] — the child looks like a bareloop runner
+    const c = spawn(process.execPath, ['--input-type=module', '-e', code, 'bareloop.mjs', home, runid], { stdio: ['ignore', 'pipe', 'inherit'] });
+    t.after(() => { try { process.kill(/** @type {number} */ (c.pid), 'SIGKILL'); } catch { /* gone */ } });
+    let buf = '';
+    c.stdout.on('data', (d) => { buf += d; if (buf.includes('\n')) res(JSON.parse(buf.split('\n')[0])); });
+    c.on('error', rej);
+    c.on('exit', () => rej(new Error(`child ${runid} exited early: ${buf}`)));
+  })));
+  assert.equal(results.filter((r) => r.claimed).length, 1, JSON.stringify(results));
+  assert.equal(readRunList({ home }).rows.length, 1);
+  assert.equal(existsSync(`${runlistPath(home)}.lock`), false, 'no lock file exists or is ever made');
+  const first = readRunList({ home }).rows[0].runid;
+  assert.equal(results.find((r) => r.claimed).runid, first, 'the claimant is the one whose row came first in the file');
+  assert.equal(readRunList({ home }).events.filter((e) => e.type === 'released').length, 2, 'the two that yielded are released');
+});
+
+test('settle: a claim ABOVE you whose process is gone is closed BY THE NEW RUN (attributed, floor, process gone) exactly once, and stops holding', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 10), rounds: [2], jobStart: { budgetUsd: 9 }, extra: { pid, capUsd: 9 } });
+  const nextPid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  const got = claimRun({ row: claimRow('next', nextPid, 7), capUsd: 7, home, now: NOW });
+  assert.equal(got.claimed, true);
+  const ev = readRunList({ home }).events;
+  assert.equal(ev.length, 1);
+  assert.deepEqual({ ...ev[0], at: 'x' }, { runid: 'killed', type: 'settled', by: 'next', reason: 'process gone', spentUsd: 2, spendComplete: false, at: 'x' });
+  assert.equal(settleDeadClaims({ home, by: 'again', aboveRunid: 'next' }), 0, 'already settled: never twice');
+  assert.equal(readRunList({ home }).rows.map((r) => r.runid).join(), 'killed,next', 'events are never listed as runs');
+});
+
+test('settle: a settled claim releases its hold even while its pid is alive; the Money figure stays the spine\'s real spend', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'r', at: localIso(2026, 8, 15, 10), rounds: [1], jobStart: { budgetUsd: 6 }, extra: { pid, capUsd: 6 } });
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 6);
+  appendRunEvent({ runid: 'r', type: 'settled', by: 'r', spentUsd: 99, spendComplete: true, at: 'x' }, { home });
+  const sp = monthSpend({ home, now: NOW });
+  assert.equal(sp.reservedUsd, 1, 'hold released');
+  assert.equal(sp.usd, 1, 'month totals read the spine, not the settle entry (single source of truth)');
+});
+
+test('run list fold: settled/released lines are never runs; a released claim\'s row is not listed; appendRun dedup ignores events', (t) => {
+  const home = tmp(t);
+  appendRun(claimRow('a', 1, 1), { home });
+  appendRun(claimRow('b', 1, 1), { home });
+  appendRunEvent({ runid: 'a', type: 'settled', by: 'a', spentUsd: 0, spendComplete: true, at: 'x' }, { home });
+  appendRunEvent({ runid: 'b', type: 'released', by: 'b', reason: 'test', at: 'x' }, { home });
+  const got = readRunList({ home });
+  assert.deepEqual(got.rows.map((r) => r.runid), ['a']);
+  assert.equal(got.events.length, 2);
+  appendRunEvent({ runid: 'z', type: 'settled', by: 'q', at: 'x' }, { home });
+  assert.equal(appendRun(claimRow('z', 1, 1), { home }).appended, true, 'a settled event is not "already listed"');
+  assert.equal(appendRun(claimRow('a', 1, 1), { home }).appended, false, 'a real duplicate still is');
+});
+
+test('run-start seam: the run claims (row carries pid + capUsd) and, at its job-end, settles its own claim attributed to itself', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const r = await runU(t, { home, budgetUsd: 3 });
+  assert.ok(r.providerCalls > 0, r.errs);
+  const { rows, events } = readRunList({ home });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].pid, process.pid);
+  assert.equal(rows[0].capUsd, 3);
+  assert.equal(events.length, 1, r.errs);
+  assert.equal(events[0].type, 'settled');
+  assert.equal(events[0].runid, rows[0].runid);
+  assert.equal(events[0].by, rows[0].runid);
+  assert.equal(typeof events[0].spentUsd, 'number');
+});
+
+test('settle: two runs closing the same dead claim both append a note; readers take the FIRST and ignore the duplicate', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 10), rounds: [2], jobStart: { budgetUsd: 9 }, extra: { pid, capUsd: 9 } });
+  appendRunEvent({ runid: 'killed', type: 'settled', by: 'first', reason: 'process gone', spentUsd: 2, spendComplete: false, at: 'x' }, { home });
+  appendRunEvent({ runid: 'killed', type: 'settled', by: 'second', reason: 'process gone', spentUsd: 2, spendComplete: false, at: 'y' }, { home });
+  const ev = readRunList({ home }).events;
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].by, 'first');
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 2, 'and the claim is closed either way');
+});
+
+test('claim: a row that cannot be written refuses (ConfigError), it never falls back to "no limit"', (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  mkdirSync(runlistPath(home)); // runs.jsonl is a directory: the append must fail
+  assert.throws(() => claimRun({ row: claimRow('a', process.pid, 1), capUsd: 1, home, now: NOW }), ConfigError);
 });

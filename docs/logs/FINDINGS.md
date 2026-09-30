@@ -13866,3 +13866,128 @@ under the Model field before drafting, never returning key material.
 
 **Status: fixed.** `src/panel/server.js`, `src/panel/index.html`, `src/providers.js`
 (5410aa3).
+
+## F205 — the outside watchdog was not in the published package: an installed run spawned a dead guard (fixed)
+
+**Grounded in:** `package.json` `files` is `src/ bin/ types/ NOTICE ...` (no `scripts/`);
+`src/userrun.js` spawned `../scripts/u-watchdog.mjs`; the v0.32.0 tarball (`npm pack
+--dry-run`) contains no `scripts/`. `spawn` of a missing script succeeds and emits no
+`error` event, so the F67 guard died at startup, silently, on every installed run (exported
+bundles, the panel's installed case).
+
+**Fix:** `scripts/u-watchdog.mjs` moved to `src/u-watchdog.mjs` (a same-directory sibling of
+`userrun.js`, shipped by `files`); `scripts/reuse-exec-probe.mjs`, `scripts/run-reuse.mjs` and
+`tests/watchdog.test.js` repointed. No shim, no copy. Older FINDINGS/CHANGELOG prose citing
+the old path is a closed record and is left as written.
+
+**Status: fixed.**
+
+## F206 — a DeepSeek run was priced at bare-agent's built-in default: booked ~28x the vendor bill, cap-halted mid-fix (fixed: the customer sets the price per key row)
+
+**Grounded in:** run `muny2nmw` (2026-09-30, job `bareguard-u-types-deepseek`, provider
+`openai-api` at `https://api.deepseek.com/v1`, model `deepseek-flash`); its spine
+`bareloop-patients/bareguard-u-deepseek-bareloop/u-muny2nmw.jsonl`. All 93 `worker-round`
+records carry `"rateSource":"default"` (0 `caller`, 0 `provider`): bare-agent's built-in
+sonnet-like guess (0.003 in / 0.015 out per 1K tokens), because bareloop never passed `rates`
+to `Loop` (`src/planrun.js`, `src/authorscout.js`, `src/authorflow.js`, `src/judged.js`). From
+the spine: the rounds sum to `costUsd` $4.2194, tokens 229,633 in + 172,700 out + 3,133,184
+cache-read (cache-creation 0), about 3.54M. `job-end`: `outcome: cap-halt`, `spentUsd`
+4.2193542, `spendComplete: false`, against `budgetUsd` 4. The `money-halt` record reads
+`remainingUsd` -0.2194 at `stage: no-suppressions`, after a `fix-loop` record: the run was cut
+by its own cap in the middle of fixing that close stage.
+
+**Reported figures (hamr's, not in the spine):** the vendor's dashboard billed about $0.15 for
+the same run, so the booked figure was about 28x the bill ($4.2194 / $0.15). Nothing in the
+spine records the vendor's bill.
+
+**Reading:** the cap is exact about the number it holds and the number was a guess for a
+model 28x cheaper than the guess. The guess errs in the safe direction (halts early), and here
+that safe direction ended a run that was making progress at a fraction of its real cost.
+Ruling (hamr, 2026-09-30, final): the customer sets their own price; no built-in price list.
+
+**Resolution:** `config.json` `keys.<ENV NAME>.priceInPerM` / `priceOutPerM` (USD per 1M tokens,
+both or neither, finite and 0 or more; a bad value refuses the run at $0). `ratesFor`
+(`src/providerrows.js`) is the one lookup, on the row the key comes from; the run doors resolve
+it once and hand it to every model call as `Loop({ rates })`; rounds then read
+`rateSource:'caller'`. No price set = the guess, as before. The Settings screen field is a later
+UI part (it should advise entering the higher bracket when a vendor lists two prices). Not
+changed: how a guess is stamped or worded. Two things stay true and are named: a price set too
+low weakens the cap, and bare-agent's cache multipliers (read 0.1x, write 1.25x of the input
+price) are applied to cache tokens, so a vendor with a different cache discount is still
+approximated on those tokens (over-priced writes err on the safe side; a deeper cache-read
+discount than 0.1x also over-prices). Past runs, including this one, are not re-priced.
+
+**Status: fixed** (customer-set price), and proven live on two real runs (2026-09-30,
+`deepseek-flash`, price in $0.006 / out $1.20 per 1M on the `DEEPSEEK_API_KEY` row):
+
+- run `muo0txge` (run-u door, job `bareguard-u-types-deepseek`): green, `job-end` `spentUsd`
+  $0.2208 of the $4 cap, all 139 `worker-round` records `rateSource:"caller"`, spine
+  timestamps 17m46s. Spine `bareloop-patients/bareguard-u-deepseek-bareloop/u-muo0txge.jsonl`.
+- run `muo1jah4` (bundle door, the exported bundle of the same job): green, `spentUsd` $0.1515
+  of $4, all 78 `worker-round` records `rateSource:"caller"`, `blessing.json` written. Spine
+  `bareloop-patients/bundles/bareguard-u-types-deepseek.bareloop/runs/muo1jah4/spine.jsonl`.
+- Same job at the built-in guess earlier that day: `muny2nmw`, $4.2194, cap-halt. Both new runs
+  finished green well under the cap. (Different plans and step counts, so the two figures are
+  not a like-for-like contrast of the price alone.)
+- Both `job-end` records still read `spendComplete:false`, as `muny2nmw` did.
+
+**Still NOT proven live:** the panel's chat-authoring door and a judged (soft-green) close each
+carry the price (`resolve` at the door, the judge's own row), but they are covered at $0 only,
+by tests; no real run has exercised either. The native (CLI) and `runReuse` paths take no price
+by design. The vendor's bill for these two runs was not compared against the booked figure.
+
+## F207 — live findings from the 2026-09-30 DeepSeek runs: the monthly claim held; a wrong key name in the preview; unknown spend in the panel card (a proof, one wording defect, one UI defect)
+
+**Grounded in:** runs `muo0txge` and `muo1jah4` (spines named in F206) for the run facts; the
+monthly-claim facts (a) below are the orchestrator's own observations of the run list on the
+same day, not read by the builder from source or event log, and are labelled as such.
+
+**(a) The monthly limit worked live (orchestrator-observed, not re-verified here).** The row
+was written first; an over-limit start was refused with the exact `Max $X (monthly limit)` text
+and a `released` entry; a dead claim was settled `process gone` by the next claimer (`munvde16`
+by `munwuth1`, `munx2u5i` by `muny2nmw`); a finished run settled its own claim at job end. This
+is the first live proof of the claim, refuse, settle-dead and self-settle paths.
+
+**(b) The run preview named the wrong key, and every printed command dropped `--registry` (fixed in
+`c794232`).** run-u's preview printed `OPENAI_API_KEY=...` in its "To approve and run" line for a job
+whose key really resolves to `DEEPSEEK_API_KEY` (provider `openai-api`, `baseUrl`
+`https://api.deepseek.com/v1`). Orchestrator observation; the job-start spine record carries
+`provider: openai-api` and the DeepSeek base URL. The line used the provider shape's default name
+(`providerEntry.envKey`), not the row the key comes from. The same line, the inhibitor line under it
+and every printed resume/reopen command also dropped `--registry <dir> --workflow <name>` when they
+were given, so pasting one greened with no registry row. Fixed: the key name is `keyNameFor(...)`
+(the run's own resolution; also in run-author's "To run it" line), and one `REGISTRY_TAIL` spelling
+(the door lines' own) is carried by the preview, the resume hints and the pause/reopen lines.
+
+**(c) The panel run card shows no spend for a run that has spend (open, not fixed; for the next UI
+part).** Orchestrator observation: in a bundle run's first seconds the card reads "unknown" for
+type, spend and wall, because its row exists before its spine does; and for a LIVE run the card
+shows no spend or wall while the right pane does.
+
+## F208 — the one-runner branch review: the menu skipped the monthly limit; printed commands named scripts the tarball does not ship; a bundle resume line dropped the tightened ceiling (three defects, fixed in `c74de1d`, `a2ceaf9`, `efaa20c`; one follow-on open)
+
+**Grounded in:** `/branch-review` at `d294d91` (blocker `src/cli.js:309`) and at `8904951`; fail-first
+runs of the changed tests against `git archive d294d91` (all four files red, three on assertions,
+`tests/invoke.test.js` on the missing module); one scratch scripted-provider run of the bundle resume
+line.
+
+**(a) The bare menu's "2 run" passed `keysHome: undefined` (fixed in `c74de1d`).** A bundle run started
+from the menu skipped the monthly limit, your price and the key-row choice, while `bareloop run <bundle>`
+applied all three. The menu now receives the home `main` already resolved; the new `tests/cli.test.js`
+menu test refuses at the same `monthly limit` text and is red against `d294d91` by assertion.
+
+**(b) Printed re-invocations named `node scripts/*.mjs`, which the package does not ship (fixed in
+`a2ceaf9`).** Same class as F205 and F207(b). `commandFor` in `src/invoke.js` is now the one owner of the
+spelling; `src/cli.js` passes `invokedAs` for `run-u`, `interview` and `author`, and the panel's detached
+run reaches `run-u` through `bin/bareloop.mjs`, so it prints `bareloop run-u`. Still open: the never-prepared-source refusal
+in `src/authorrun.js` names `node scripts/prep-source.mjs` (no `bareloop` door exists), and the
+interview's "run the paid step now" offer spawns `scripts/run-author.mjs` (see the fix ledger).
+
+**(c) A halted bundle run's resume line dropped the leg's `--budget`/`--wall` and told the person to edit
+`budgetUsd` (fixed in `efaa20c`).** Follow-on, open: after a MONEY halt the line now repeats the exhausted
+tightened `--budget`; chain spend is folded, so pasting it as printed halted again at once after one paid
+round (scratch run: `$0.0040 of $0.00`, second MONEY HALT). Dropping `--budget` resumes under the signed
+ceiling. The halt block's lever list for a bundle still says "top up budgetUsd", beside the new line that
+says a bundle's spec cannot be edited (`src/planrun.js`).
+**2026-09-30 — follow-on now fixed at the commit that follows `e630265` (one-runner branch):** a bundle's money-halt resume line prints `--budget <more than $<spent>, at most $<signed budgetUsd>>` for the person to fill in (no exhausted value echoed; other halts keep the tightened flags), and the bundle lever list says to choose a larger `--budget` up to the signed amount. Still open, reported not fixed: after a WALL halt the same carried `--wall` leaves no time (the wall is folded across a resume, `src/userrun.js` RESUME_WALL_MS).
+**2026-09-30 (sha, branch review):** the follow-on above landed as `00b2b75`.

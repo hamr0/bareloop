@@ -42,7 +42,7 @@
 // row is evidence or noise (F45/F48).
 //
 // Usage:
-//   node scripts/u-watchdog.mjs --spine <path> --pid <n>
+//   node src/u-watchdog.mjs --spine <path> --pid <n>
 //        [--stale-ms N] [--wall-ms N] [--grace-ms N] [--dead-ms N] [--poll-ms N] [--term-grace-ms N]
 import { statSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 

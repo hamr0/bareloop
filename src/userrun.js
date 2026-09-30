@@ -72,11 +72,13 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
-import { appendRun } from './runlist.js';
+import { appendRun, appendRunEvent, isLiveRunner } from './runlist.js';
 import { keysForDoor } from './keysfile.js';
-import { checkMonthlyRoom, monthlyRefusalText } from './monthly.js';
+import { parseJsonl } from './replayio.js';
+import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
 import { ConfigError } from './config.js';
-import { applyConfiguredKey, keyNameFor, rowsForHome } from './providerrows.js';
+import { commandFor } from './invoke.js';
+import { applyConfiguredKey, judgeRatesFor, keyNameFor, priceReadout, ratesFor, rowsForHome } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -225,6 +227,8 @@ class ExitSignal extends Error {
  * @property {Record<string,string|undefined>} [env]
  * @property {string} [keysHome] P4a — a test seam naming the home whose `.env` keys file is loaded
  *   even when `env` is injected; production never sets it.
+ * @property {string} [invokedAs] the command this run was actually reached through (`src/invoke.js`);
+ *   `src/cli.js` passes `'bareloop run-u'`, `scripts/run-u.mjs` passes none.
  * @property {(s: string) => void} [out]
  * @property {(s: string) => void} [err]
  * @property {any} [provider] the TEST SEAM: supplying this skips the real-key
@@ -235,6 +239,21 @@ class ExitSignal extends Error {
  *   (src/runlist.js) `home` override, the same shape `deps.provider` already
  *   is. Production never sets it; `appendRun` falls through to its own
  *   `os.homedir()`-based default.
+ */
+
+/**
+ * The one-runner door's hand-in (`src/bundlerun.js`, the exported bundle's `bareloop run`):
+ * where a bundle run's books live and how it prints its own re-invocation. Set ONLY by
+ * that caller through `startRun`/`resumeRun` opts, in-process — `main`'s argv never builds
+ * it, so a local job cannot reach it. Absent, every use below is today's expression.
+ * @typedef {object} BundleRun
+ * @property {string} runid the run id (also the `runs/<runid>` directory name)
+ * @property {string} runDir `<bundle>/runs/<runid>`: spine.jsonl, gate-audit.jsonl and close/ live here
+ * @property {string} invoke the bare re-invocation prefix printed in resume hints (`bareloop run <bundle> --repo <path>`), no ceiling flags
+ * @property {{budgetUsd?: number, wallMin?: number}} tightened the ceilings the person tightened on THIS leg; printed after `invoke` on every resume line except a money halt's (which never prints the exhausted `--budget`)
+ * @property {number} signedBudgetUsd the bundle's SIGNED spec budgetUsd (the tightened leg ceiling is `spec.budgetUsd`); printed only, never enforced from here
+ * @property {string} printApprove the hash printed after `--approve` in those hints (the bundle's, not the run spec's)
+ * @property {() => void} prepareTree creates the run's tree (fresh worktree) and its books; the engine calls it once every $0 refusal has passed, so a refusal leaks nothing
  */
 
 /**
@@ -264,6 +283,7 @@ class ExitSignal extends Error {
  * @property {boolean} [reviewDoor] opt in to a green-class run opening a review door
  * @property {string} [selector] how the re-invocation commands this prints should name the job (`--job x` / `--spec <path>`)
  * @property {string} [specDesc] how a "go edit the spec" hint should read
+ * @property {BundleRun} [bundle] set only by the bundle door (see `BundleRun`)
  * @property {Deps} [deps]
  */
 
@@ -289,6 +309,7 @@ class ExitSignal extends Error {
  * @property {string|null} door
  * @property {string|null} decide
  * @property {string|null} text
+ * @property {BundleRun} [bundle]
  * @property {Deps} deps
  */
 
@@ -335,6 +356,12 @@ async function execute(ctx) {
    * @returns {never} */
   const die = (m) => { err(m); throw new ExitSignal(2); };
   let exitCode = 0;
+  // Set once a monthly claim has appended this run's row: {runid, spine}. The catch below is the ONE
+  // owner of "a claimed run that never began" — every exit between the claim and the spine's first
+  // record (a refused resume patient, a throwing prepareTree, a git/reset failure...) passes there.
+  // Set on the no-limit path too, once the row is appended there (the same "listed, no spine yet" state).
+  /** @type {{ runid: string, spine: string, home: string|undefined }|null} */
+  let claimedRow = null;
   try {
   const spec = ctx.spec;
   const specPath = ctx.specPath;
@@ -454,10 +481,20 @@ async function execute(ctx) {
    * dropping the incomplete flag would silently turn a floor into an exact
    * figure on the next leg's own job-start). */
   const DRAFT_TAIL = DRAFT_SPENT_USD > 0 ? ` --draft-spent-usd ${DRAFT_SPENT_USD}${DRAFT_SPEND_INCOMPLETE ? ' --draft-spend-incomplete' : ''}` : '';
+  /** the registry the run was pointed at, as flags — every re-invocation this script PRINTS carries it
+   * (a paste that dropped it would green with no registry row). Empty when no --registry was named. */
+  const REGISTRY_TAIL = (ctx.registry ?? null) !== null ? ` --registry ${(ctx.registry ?? null)} --workflow ${(ctx.workflow ?? null) ?? spec.job}` : '';
 
   const WORKDIR = target.workdir;
   const SEED = target.seed;
   const specHash = jobSpecHash(spec);
+  // the re-invocation commands this engine prints: a bundle names its own door and hash,
+  // every other caller gets today's byte-identical strings.
+  const WALL_FLAG = ctx.bundle?.tightened.wallMin === undefined ? '' : ` --wall ${ctx.bundle.tightened.wallMin}`;
+  const INVOKE = ctx.bundle
+    ? `${ctx.bundle.invoke}${ctx.bundle.tightened.budgetUsd === undefined ? '' : ` --budget ${ctx.bundle.tightened.budgetUsd}`}${WALL_FLAG}`
+    : `${commandFor('run-u', deps.invokedAs)} ${SELECTOR}`;
+  const PRINT_APPROVE = ctx.bundle?.printApprove ?? specHash;
   // MODEL (build-list #3, hamr's GO 2026-08-30): the signed spec's `model`, if
   // present, wins outright; a --model flag naming a DIFFERENT id is refused
   // (never silently overridden) — resolveWorkerModel is the one decision, pure
@@ -610,7 +647,7 @@ async function execute(ctx) {
    * both the RESUME reader below and the live run further down need them. Two spellings of
    * one path is how `--resume` comes to read a different directory than the run writes. */
   const wd = resolve(WORKDIR);
-  const spineDir = join(wd, '..', target.spine);
+  const spineDir = ctx.bundle ? ctx.bundle.runDir : join(wd, '..', target.spine);
   /** `--resume` takes the runid (the conventional `<spine dir>/u-<runid>.jsonl`) or an
    * explicit path — the path form is what makes these gates testable without touching
    * an operator's real spine directory. */
@@ -652,17 +689,11 @@ async function execute(ctx) {
     /** @type {any} */
     let watchdog = null;
     if (existsSync(wdFile)) { try { watchdog = JSON.parse(readFileSync(wdFile, 'utf8')); } catch { /* an unreadable report is not evidence of life */ } }
-    if (Number.isInteger(watchdog?.pid)) {
-      let alive = true;
-      try { process.kill(watchdog.pid, 0); } catch { alive = false; }
-      if (alive) {
-        let cmdline = null;
-        try { cmdline = readFileSync(`/proc/${watchdog.pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim(); } catch { /* no /proc, or not ours */ }
-        if (cmdline === null || cmdline.includes('run-u.mjs') || cmdline.includes('u-watchdog.mjs')) {
-          die(`--resume: pid ${watchdog.pid} from ${deadSpineFile} is still alive${cmdline ? ` (${cmdline.slice(0, 120)})` : ' and this process cannot read its command line'}. Two processes on one patient is unrecoverable — stop it first.`);
-        }
-        err(`--resume: pid ${watchdog.pid} is alive but is NOT this runner (${cmdline.slice(0, 80)}) — the pid was recycled; continuing.`);
-      }
+    // ONE owner of "is that pid a live bareloop runner" (src/runlist.js `isLiveRunner`, shared with the
+    // monthly limit's holds): alive AND a bareloop runner refuses; a recycled pid that now runs some
+    // other program does not. Where /proc is unreadable an existing pid is assumed to be ours.
+    if (Number.isInteger(watchdog?.pid) && isLiveRunner(watchdog.pid)) {
+      die(`--resume: pid ${watchdog.pid} from ${deadSpineFile} is still alive (a bareloop runner). Two processes on one patient is unrecoverable — stop it first.`);
     }
     // WHEN did the dead leg stop? The watchdog's kill record is later, better evidence
     // than the last spine event for a run that was KILLED — and worse evidence for one
@@ -916,8 +947,7 @@ async function execute(ctx) {
     // and the printed commands carry the registry forward, because an accept aimed
     // at no registry is the `no-row-for-run` refusal one hop later.
     const previewHeld = doorRecord?.quarantined === true && heldRowFor((ctx.registry ?? null), (ctx.workflow ?? null) ?? spec.job, DOOR);
-    const previewRegistry = (ctx.registry ?? null) !== null ? ` --registry ${(ctx.registry ?? null)} --workflow ${(ctx.workflow ?? null) ?? spec.job}` : '';
-    const doorInvoke = (/** @type {string} */ tail) => `  node scripts/run-u.mjs ${SELECTOR} --door ${DOOR}${tail}${previewRegistry} --approve ${specHash}`;
+    const doorInvoke = (/** @type {string} */ tail) => `  ${INVOKE} --door ${DOOR}${tail}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`;
     out('');
     if (RULING === null) {
       for (const l of runDoorLines({
@@ -943,12 +973,30 @@ async function execute(ctx) {
     throw new ExitSignal((ctx.approve ?? null) === null ? 0 : 1);
   }
 
+  // THE CUSTOMER'S OWN PRICE (hamr 2026-09-30) — the worker's key row may carry `priceInPerM` /
+  // `priceOutPerM` (USD per 1M tokens); `ratesFor` is the one lookup, on the SAME row `keyNameFor` picks
+  // the key from. Resolved ONCE here, at $0, before the preview, the monthly claim and any worktree or
+  // spine, then handed down as data (`runJob`'s `rates`) — nothing deep in the run re-reads config. A bad
+  // price refuses here; it never falls back to the built-in guess. No price set = `null` = no `rates` key
+  // passed anywhere, byte-identical to before. The judge's own row is resolved below, beside its key.
+  const keyCfg = cfgOn ? rowsForHome(cfgHome) : [];
+  /** @type {ReturnType<typeof ratesFor>} */
+  let workerPrice = null;
+  try {
+    workerPrice = ratesFor(spec.provider, spec.baseUrl, keyCfg, spec.model);
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e;
+    err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
+    throw new ExitSignal(2);
+  }
+
   if ((ctx.approve ?? null) !== specHash) {
     out(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
     out(`  spec     ${SPEC_DESC}  $${spec.budgetUsd}  wall ${WALL_LABEL}  strikeLimit=${STRIKE_LIMIT} (step ladder + close-fix progress rule)`);
     out(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
     out(`  shim     ${READ_SHIM_LABEL}`);
     out(`  scout    ${SCOUT_LABEL}`);
+    if (workerPrice) out(`  price    ${priceReadout(workerPrice)}`);
     out(`  goal     "${spec.goal}"`);
     // F87 — the goal must state everything the close will judge, and nothing derives
     // one from the other or checks them against each other. So the only defence is
@@ -1099,9 +1147,9 @@ async function execute(ctx) {
     // different provider (e.g. openai-api/DeepSeek) printed the WRONG variable
     // name to set: a person pasting it verbatim hit a $0 refusal naming the
     // right key only by accident of the runner's own generic error message,
-    // never from this hint. `providerEntry.envKey` is the same resolved name
-    // the real key check at launch (`:1157-1158` below) reads.
-    const invoke = (/** @type {string} */ tail) => `  ${providerEntry.envKey}=... node scripts/run-u.mjs ${SELECTOR}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${tail} --approve ${specHash}`;
+    // never from this hint. `keyNameFor` is the same resolved name
+    // the real key check at launch reads (the person's row variable, else the provider's built-in one).
+    const invoke = (/** @type {string} */ tail) => `  ${keyNameFor(spec.provider, spec.baseUrl, keyCfg, spec.model).name}=... ${INVOKE}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL}${tail} --approve ${PRINT_APPROVE}`;
     /** the door the operator has already picked, as flags — hoisted out of the else
      * below so the inhibitor line at the bottom can print the WHOLE command rather
      * than a shape the operator has to assemble. Empty on an ordinary run and on the
@@ -1228,7 +1276,7 @@ async function execute(ctx) {
       } else {
         out(`  costs    nothing, in any state — no work, no money, no allowance moved`);
         out(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the door on the record; after that it expires on its own, which is all "cancel" ever meant`);
-        out(`  reopen   node scripts/run-u.mjs ${SELECTOR} --door ${DOOR} --approve ${specHash}`);
+        out(`  reopen   ${INVOKE} --door ${DOOR}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
       }
       throw new ExitSignal(0);
     }
@@ -1266,8 +1314,8 @@ async function execute(ctx) {
     out(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
     out(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
     out('  resume   the SAME runid, whenever you want, with the door you pick then:');
-    out(`           node scripts/run-u.mjs ${SELECTOR} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --decide accept --approve ${specHash}`);
-    out(`           node scripts/run-u.mjs ${SELECTOR} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --decide rerun --text "<what you want done differently>" --approve ${specHash}`);
+    out(`           ${INVOKE} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --decide accept --approve ${PRINT_APPROVE}`);
+    out(`           ${INVOKE} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --decide rerun --text "<what you want done differently>" --approve ${PRINT_APPROVE}`);
     out(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
     throw new ExitSignal(0);
   }
@@ -1348,6 +1396,20 @@ async function execute(ctx) {
   // into runJob below whether this leg constructs a real judge provider or not.
   const judge = resolveJudge({ specJudge: spec.judge, workerProvider: spec.provider, workerModel: MODEL });
   const judgeEntry = resolveProvider(judge.provider);
+  // …and the judge's price, from the judge MODEL's row (`judgeRatesFor`): on the worker's endpoint when the
+  // judge is the same provider (falling back to the worker's price when the model names no row), else the
+  // row for the judge's own provider. Only a judging close ever calls it, so only then can its row refuse the run.
+  /** @type {ReturnType<typeof ratesFor>} */
+  let judgePrice = null;
+  if (JUDGES) {
+    try {
+      judgePrice = judgeRatesFor(judge, spec.provider, spec.baseUrl, workerPrice, keyCfg);
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
+      throw new ExitSignal(2);
+    }
+  }
   // undefined, not null: both come straight off `env[...]` lookups below, which
   // (like process.env) never produce null for a missing key.
   /** @type {string|undefined} */
@@ -1355,7 +1417,7 @@ async function execute(ctx) {
   /** @type {string|undefined} */
   let judgeApiKey;
   // TEST SEAM (constraint: `deps.provider` skips the real-key check entirely,
-  // the same shape src/cli.js's `doRun` already uses) — a caller that hands in
+  // the same shape src/bundlerun.js's door uses) — a caller that hands in
   // its own provider IS the run, so nothing here needs a real secret.
   if (!deps.provider) {
     // P4b — the Settings row (keys file line) whose API shape + Base URL match this spec
@@ -1363,7 +1425,6 @@ async function execute(ctx) {
     // row = the built-in. Names only — values come from the
     // env / keys file. The judge follows the worker's choice when it is the same provider
     // (the same rule that gives it the worker's baseUrl below).
-    const keyCfg = cfgOn ? rowsForHome(cfgHome) : [];
     const workerEnv = applyConfiguredKey(env, spec.provider, spec.baseUrl, keyCfg, spec.model);
     const judgeEnv = judge.provider === spec.provider ? workerEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model);
     /** the variable NAME this worker's key is read from (the person's pick, else built-in) — for messages only */
@@ -1403,22 +1464,37 @@ async function execute(ctx) {
     }
   }
 
-  // THE MONTHLY $ LIMIT (PANEL-BUILD.md P4a, hamr 2026-09-29: "drop time keep money") — the
-  // ONE run-start seam. Every run this door starts (the CLI's `bareloop run-u` and the panel,
-  // which spawns it) passes here after the signature and the key gates and BEFORE the run
-  // list row, the patient reset or any token: a cap larger than what is left this month does
-  // not start, and nothing is spent. This leg's exposure is the whole signed cap on a cold
-  // start (it covers drafting + run) and only the REMAINDER on a resume/door-rerun, whose
-  // earlier spend is already in the month's total (a resume's killed leg counts its real spend only,
-  // never its unspent cap — `resumingSpine` — since the remainder asked for here covers that). No limit set = no check. An unreadable
-  // config.json refuses too — a broken instrument never silently reads "no limit".
+  // THE MONTHLY $ LIMIT (PANEL-BUILD.md P4a; hamr 2026-09-30: "whoever runs first claims the limit and
+  // holds it") — the ONE run-start seam. Every run this door starts (the CLI's `bareloop run-u`, `bareloop
+  // run <bundle>` and the panel, which spawns them) passes here after the signature and the key gates and
+  // BEFORE the patient reset or any token: the run CLAIMS its leg cap — it appends its own run-list row
+  // FIRST (carrying its `pid` and `capUsd`, the hold), then reads the list: only the claims above its row
+  // count. A cap larger than what is left is released (a `released` entry) and does not start; nothing is spent. This leg's exposure
+  // is the whole signed cap on a cold start (it covers drafting + run) and only the REMAINDER on a
+  // resume/door-rerun, whose earlier spend is already in the month's total (the killed leg's claim is
+  // closed at its floor, with a note, once its process is gone). No limit set = no claim (the row is listed as
+  // ever). An unreadable config.json, or a claim row that cannot be written, refuses too — a broken instrument
+  // never silently reads "no limit".
+  const runid = ctx.bundle?.runid ?? Date.now().toString(36);
+  const spineFile = ctx.bundle ? join(spineDir, 'spine.jsonl') : join(spineDir, `u-${runid}.jsonl`);
+  const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
+  const legCapUsd = Math.max(0, spec.budgetUsd - (typeof foldedUsd === 'number' && Number.isFinite(foldedUsd) ? foldedUsd : 0));
+  // every row carries its runner's pid and the leg cap, limit set or not: a limit set LATER still holds it
+  /** @type {import('./runlist.js').RunRow} */
+  const runRow = {
+    at: new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: ctx.bundle ? 'bundle' : 'run-u', pid: process.pid, capUsd: legCapUsd,
+  };
+  let claimed = false;
   {
-    const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
-    const legCapUsd = Math.max(0, spec.budgetUsd - (typeof foldedUsd === 'number' && Number.isFinite(foldedUsd) ? foldedUsd : 0));
     /** @type {string|null} */
     let refusal = null;
     try {
-      if (cfgOn) refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: legCapUsd, home: cfgHome, resumingSpine: deadSpineFile }));
+      if (cfgOn) {
+        const got = claimRun({ row: runRow, capUsd: legCapUsd, home: cfgHome });
+        claimed = got.claimed;
+        if (claimed) claimedRow = { runid, spine: spineFile, home: cfgHome };
+        refusal = monthlyRefusalText(got.room);
+      }
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       err(`${e.message} — refusing to start rather than guess the monthly limit. Nothing spent.`);
@@ -1433,9 +1509,12 @@ async function execute(ctx) {
 
   // `wd`/`spineDir` are derived once, above the resume reader that needs them; only the
   // directory's CREATION belongs here, after the preview/approval gates have exited.
+  // A bundle's tree and books are created HERE and not earlier: every $0 refusal above
+  // (keys, monthly limit, param guards) leaves no worktree behind.
+  ctx.bundle?.prepareTree();
   mkdirSync(spineDir, { recursive: true });
-  const runid = Date.now().toString(36);
-  const spineFile = join(spineDir, `u-${runid}.jsonl`);
+  const closeDir = ctx.bundle ? join(spineDir, 'close') : spineDir;
+  if (ctx.bundle) mkdirSync(closeDir, { recursive: true });
 
   // PANEL-BUILD.md P1 — one row in the run list, BEFORE any paid call (this
   // leg's own `runJob` further down, and BEFORE the provider-key checks that
@@ -1449,10 +1528,14 @@ async function execute(ctx) {
   // carries everything else through (env/out/err/provider/…): a caller that
   // injects it writes this leg's row under a temp home instead of the real
   // `~/.config/bareloop`; production never sets it.
+  // When the monthly claim above already appended this run's row, there is nothing to add.
   try {
-    appendRun({
-      at: new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: 'run-u',
-    }, { home: deps.runlistHome });
+    if (!claimed) {
+      appendRun(runRow, { home: deps.runlistHome });
+      // no limit set: the row is appended here, not by a claim — mark it so the execute catch releases it
+      // the same way if the run exits before its spine has a first record (it lives in `deps.runlistHome`)
+      claimedRow = { runid, spine: spineFile, home: deps.runlistHome };
+    }
   } catch (/** @type {any} */ e) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
   }
@@ -1498,13 +1581,13 @@ async function execute(ctx) {
     if (preFile) out(`gate audit — a stale file was already sitting in the patient tree (not this run's); moved aside to ${preFile}`);
   }
 
-  const approvals = [{ specHash, signer: env.USER ?? 'human', ts: new Date().toISOString() }];
+  const approvals = [{ specHash, signer: ctx.bundle ? 'bundle' : (env.USER ?? 'human'), ts: new Date().toISOString() }];
   // spec.baseUrl (PRD item 28, ruling (d), 2026-09-09: admitted in v1) — an
   // OpenAI-compatible gateway/endpoint. Undefined for anthropic-api jobs and
   // for an openai-api job that names none (bare-agent's OpenAIProvider then
   // defaults to api.openai.com/v1 on its own).
   const baseUrl = typeof spec.baseUrl === 'string' ? spec.baseUrl : undefined;
-  // TEST SEAM — same shape as src/cli.js's `doRun`: a caller that supplies
+  // TEST SEAM — same shape as the bundle door (src/bundlerun.js): a caller that supplies
   // `deps.provider` skips the real-key check above entirely and this
   // construction never runs (a scripted provider IS the run).
   let provider = deps.provider;
@@ -1678,9 +1761,9 @@ async function execute(ctx) {
   // containing `%20` that does not exist, and the guard dies at startup on the one run
   // it was meant to protect. Same spelling the sibling scripts use.
   const watchdog = spawn(process.execPath, [
-    // PANEL-BUILD.md P0 — this engine now lives in src/, one directory over
-    // from scripts/u-watchdog.mjs (it used to be a same-directory sibling).
-    fileURLToPath(new URL('../scripts/u-watchdog.mjs', import.meta.url)),
+    // src/u-watchdog.mjs ships in the package (F205: it used to live in scripts/,
+    // which the tarball omits, so an installed run spawned a guard that died at startup).
+    fileURLToPath(new URL('./u-watchdog.mjs', import.meta.url)),
     '--spine', spineFile,
     '--pid', String(process.pid),
     '--stale-ms', String(worstCloseSilenceMs + 600_000),
@@ -1736,7 +1819,9 @@ async function execute(ctx) {
       // used (never a second `makeSpine(spineFile)` here: two independent
       // emitters against one file would both start their seq counter at 0 and
       // collide the moment either one had already written a record).
-      approvals, workdir: wd, provider, providerFor, judgeProvider, judgeModel: judge.model, emit,
+      approvals, workdir: wd, provider, providerFor, judgeProvider, judgeModel: judge.model,
+      // the customer's own price per key row (USD per 1K), or null = the built-in guess as before
+      rates: workerPrice?.rates ?? null, judgeRates: judgePrice?.rates ?? null, emit,
       // F133 (run mtqwmb9l) — `closeTimeoutMs` is deliberately NOT passed here.
       // `RESOLVED_CLOSE_TIMEOUT_MS` above exists only to size the outside
       // watchdog before it spawns; feeding it back into `runJob` used to make
@@ -1746,7 +1831,7 @@ async function execute(ctx) {
       // and announces the ceiling itself now — the ONE banner/spine record
       // for this run.
       shellCapUsd: spec.budgetUsd, capRuns: CAP_RUNS, strikeLimit: STRIKE_LIMIT,
-      closeDir: spineDir,
+      closeDir,
       readShim: READ_SHIM,
       scout: SCOUT,
       draftSpentUsd: DRAFT_SPENT_USD,
@@ -1824,8 +1909,18 @@ async function execute(ctx) {
   // ── the read. Facts only: what happened, what it cost, and whether the record is
   // honest. No classification into pass/fail buckets — one run classifies nothing.
   const raw = readFileSync(spineFile, 'utf8');
-  const events = raw.trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  // tolerant: a torn/garbled line is skipped, not a crash (the shipped bundle-run fix, now the one engine read)
+  const events = parseJsonl(spineFile).records;
   const je = events.findLast((e) => e.type === 'job-end');
+  // The claim's WRITE-BACK (hamr 2026-09-30): when the run ends it settles its own claim on the monthly
+  // limit — its final spend, attributed to itself. Best-effort: a run that dies before here is settled
+  // (`process gone`) by the next run that reads the list (file order: a claim yields only to the rows above it).
+  if (je) {
+    try {
+      const fin = legSpend(events);
+      appendRunEvent({ runid, type: 'settled', by: runid, spentUsd: fin.usd, spendComplete: fin.complete, at: new Date().toISOString() }, { home: cfgHome });
+    } catch (/** @type {any} */ e) { err(`WARNING: could not settle this run's claim in ~/.config/bareloop/runs.jsonl (${e.message}) — the next run settles it once this process is gone.`); }
+  }
   // the ONE spelling of the text-side scan (src/validate.js) — a hand-rolled copy
   // here would be the ninth, and one that misses a shape leaks on the very output
   // it guards. Only the COUNT is ever read out; the matches themselves stay here.
@@ -1835,7 +1930,7 @@ async function execute(ctx) {
 
   const auditSrc = join(wd, 'gate-audit.jsonl');
   let auditFile = null;
-  if (existsSync(auditSrc)) { auditFile = join(spineDir, `u-${runid}-gate-audit.jsonl`); renameSync(auditSrc, auditFile); }
+  if (existsSync(auditSrc)) { auditFile = ctx.bundle ? join(spineDir, 'gate-audit.jsonl') : join(spineDir, `u-${runid}-gate-audit.jsonl`); renameSync(auditSrc, auditFile); }
   const audit = auditFile ? readFileSync(auditFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
   const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type === 'write' || e.action?.type === 'edit'));
 
@@ -1858,6 +1953,7 @@ async function execute(ctx) {
   // THIS LEG's own tokens, off THIS LEG's own spine — same scope as `rounds` above it,
   // never the folded chain (see `tokensLine`'s doc for why worker-result is excluded).
   out(`tokens    ${tokensLine({ events })}`);
+  if (workerPrice) out(`price     ${priceReadout(workerPrice)}`);
   out(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
   out(`plan      ${plan ? `${plan.steps?.length ?? '?'} ${plan.steps?.length === 1 ? 'step' : 'steps'}` : 'none validated'}`);
   out(`checks    ${events.filter((e) => e.type === 'check-run').length} runs · menu [${events.find((e) => e.type === 'check-menu')?.offered?.join(', ') ?? '-'}]`);
@@ -1883,10 +1979,28 @@ async function execute(ctx) {
   if (mh) {
     out(`\nMONEY HALT — the cap cut the run at $${mh.remainingUsd?.toFixed?.(4) ?? '?'} left of $${mh.budgetUsd}. The verdict already minted STANDS: ${mh.verdict ?? 'unknown'}${mh.stage ? ` at stage "${mh.stage}"` : ''}.`);
     out(`  trend   ${mh.trend} — ${mh.reading}`);
-    out(`  lever   ${mh.lever}`);
-    for (const o of mh.options ?? []) out(`          · ${o}`);
-    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
-    out('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
+    if (ctx.bundle) {
+      // a bundle's spec is manifest-hashed: there is no budgetUsd to edit and no new hash to sign. The room that
+      // is left is the signed ceiling, and the ONLY way to use it is the person typing a larger --budget. The
+      // exhausted --budget is never echoed (pasted as printed it halts again at once: the chain folds prior spend),
+      // and nothing is filled in for them.
+      const signed = ctx.bundle.signedBudgetUsd;
+      const spentUsd = typeof mh.budgetUsd === 'number' && typeof mh.remainingUsd === 'number' ? mh.budgetUsd - mh.remainingUsd : null;
+      const spentTxt = spentUsd === null ? '?' : `${mh.spendComplete === false ? '≥' : ''}$${spentUsd.toFixed(4)}`;
+      const lever = mh.trend === 'converging' ? 'the work was still converging when the money ran out; more money may finish it'
+        : mh.trend === 'flat' ? 'more money is unlikely to help; this bundle\'s goal is signed and cannot be revised here'
+          : 'read the last close output before deciding whether more money is worth it';
+      out(`  lever   ${lever}`);
+      out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; it cannot be raised past that)`);
+      out('          · abandon the task');
+      out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, at most $${signed}> --approve ${PRINT_APPROVE}`);
+      out('          (type the --budget number yourself — nothing here fills it in, so this line does not run as printed; nothing in the run may widen its own budget)');
+    } else {
+      out(`  lever   ${mh.lever}`);
+      for (const o of mh.options ?? []) out(`          · ${o}`);
+      out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
+      out('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
+    }
   }
   // A STALL is a checkpoint too (hamr's go, 2026-08-13). Its own escalation prints one
   // line above and says *"retry the run"*, and until this line the only retry on offer
@@ -1895,7 +2009,7 @@ async function execute(ctx) {
   // the hash already approved is the hash that resumes.
   if (outcome === 'step-stalled') {
     out('\nSTALL HALT — the model stopped producing rounds and reissuing the call did not recover it. The tree, the plan and the steps already finished STAND.');
-    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve ${specHash}`);
+    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
     out('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
     out('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
   }
@@ -1916,7 +2030,7 @@ async function execute(ctx) {
     out(`  died    ${total === null ? 'before a plan was accepted — nothing paid is re-payable'
       : done >= total ? `at the close — all ${total} step(s) finished`
         : `in step ${done + 1} of ${total}`}`);
-    out(`  resume  node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve ${specHash}`);
+    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
     out('          (no spec edit, so the hash is unchanged — this re-enters at the recorded step and re-pays for none of the ones before it)');
     out('          (if the allowance is what actually ran out underneath the transport fault, that preview says so and refuses — it is read there, not asserted here)');
   }
@@ -1937,7 +2051,7 @@ async function execute(ctx) {
     ]);
     out('  clock    STOPPED — the wall does not run while a person is reading (W-2), and this leg\'s elapsed is what folds into the resume');
     out('');
-    const answer = (/** @type {string} */ tail) => `node scripts/run-u.mjs ${SELECTOR} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${tail} --approve ${specHash}`;
+    const answer = (/** @type {string} */ tail) => `${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL}${tail} --approve ${PRINT_APPROVE}`;
     for (const l of doorLines({
       rerun: answer(' --decide rerun --text "<what you want done differently>"'),
       accept: answer(' --decide accept'),
@@ -2059,7 +2173,7 @@ async function execute(ctx) {
     // against has to travel in the printed command — an accept aimed at no registry (or at
     // a different one) is the `no-row-for-run` refusal all over again, one hop later.
     const doorRegistry = REGISTRY_ROW.minted ? ` --registry ${(ctx.registry ?? null)} --workflow ${REGISTRY_ROW.write.name}` : '';
-    const answerDoor = (/** @type {string} */ tail) => `node scripts/run-u.mjs ${SELECTOR} --door ${runid}${tail}${doorRegistry} --approve ${specHash}`;
+    const answerDoor = (/** @type {string} */ tail) => `${INVOKE} --door ${runid}${tail}${doorRegistry} --approve ${PRINT_APPROVE}`;
     // THE PROMISE READS OFF THE ROW, not off the class. `quarantined` on the door record
     // says this run's credit is HELD; whether there is anything to RELEASE is a second
     // question, and the honest answer is "only if a row was minted". Without `--registry`
@@ -2090,7 +2204,7 @@ async function execute(ctx) {
   }
 
   // the BRIDGE: on a green the agent's own plan is kept as the reusable artifact
-  if (outcome === 'green' && plan && !leaks.length) {
+  if (outcome === 'green' && plan && !leaks.length && !ctx.bundle) {
     // one file PER GREEN, never one file per job: two cold runs of this job produced
     // two DIFFERENT plans that both green (run 1: 3 steps, run 3: 2 steps), so a
     // single `bridge-<job>.json` silently destroys the earlier bridge. WHICH bridge
@@ -2152,6 +2266,13 @@ async function execute(ctx) {
 
     return exitCode;
   } catch (/** @type {any} */ e) {
+    // A claimed run that exited before its spine has a first record never started: it spent nothing and
+    // owns no spine, so its row is released (folded out of the list, like a monthly refusal) rather than
+    // left as a ghost that keeps the month reading "at least". Once the spine exists the run is a real,
+    // listed run and ends by its own job-end. A failed release write never masks the original exit.
+    if (claimedRow && !existsSync(claimedRow.spine)) {
+      try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
+    }
     if (e instanceof ExitSignal) return e.code;
     throw e;
   }
@@ -2184,6 +2305,7 @@ function buildCtx(mode, opts) {
     door: mode.door,
     decide: mode.decide,
     text: mode.text,
+    ...(opts.bundle === undefined ? {} : { bundle: opts.bundle }),
     deps: opts.deps ?? {},
   };
 }
@@ -2293,7 +2415,7 @@ export async function main(argv, deps = {}) {
       if (!existsSync(specPath)) {
         die(`--job ${jobArg}: there is no spec at ${specPath}.\n`
           + '  The table row is the runner\'s half of a job (patient, seed, spine); the SPEC is yours — authored through\n'
-          + `  scripts/run-interview.mjs and scripts/run-author.mjs, then signed. Nothing here can stand in for it: a job\n`
+          + `  ${commandFor('interview', deps.invokedAs)} and ${commandFor('author', deps.invokedAs)}, then signed. Nothing here can stand in for it: a job\n`
           + '  with no spec has no goal, no close, no budget and no hash to approve.');
       }
       try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
@@ -2305,7 +2427,7 @@ export async function main(argv, deps = {}) {
       specPath = resolve(/** @type {string} */ (specArg));
       if (!existsSync(specPath)) {
         die(`--spec ${specPath} does not exist — a run needs the resolved-spec.json an authoring session actually wrote `
-          + '(scripts/run-author.mjs\'s own `out/resolved-spec.json`), never a path nobody authored');
+          + `(${commandFor('author', deps.invokedAs)}'s own \`out/resolved-spec.json\`), never a path nobody authored`);
       }
       let raw;
       try { raw = readFileSync(specPath, 'utf8'); } catch (e) {
@@ -2345,8 +2467,8 @@ export async function main(argv, deps = {}) {
       if (candidates.length === 0) {
         die(`--spec ${specPath}: no prepared copy beside it — looked for a source-*/ directory carrying source.json in `
           + `${dirname(specPath)} and found none. A --spec run reads its workdir and seed off the copy the authoring `
-          + 'session prepared; it is never typed or guessed. Prepare one first: node scripts/run-interview.mjs (or '
-          + 'run-author.mjs directly against a --source) before running this spec.');
+          + `session prepared; it is never typed or guessed. Prepare one first: ${commandFor('interview', deps.invokedAs)} (or `
+          + `${commandFor('author', deps.invokedAs)} directly against a --source) before running this spec.`);
       }
       if (candidates.length > 1) {
         die(`--spec ${specPath}: ${candidates.length} prepared copies sit beside it (${candidates.join(', ')}) — `

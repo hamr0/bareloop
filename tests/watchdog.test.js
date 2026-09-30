@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { closeStagesOf } from '../src/plan.js';
 
-const WATCHDOG = new URL('../scripts/u-watchdog.mjs', import.meta.url).pathname;
+const WATCHDOG = new URL('../src/u-watchdog.mjs', import.meta.url).pathname;
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
 /** poll until cond() or deadline — fixed sleeps made these tests fail under full-suite
  * CPU load (parallel tree-sitter indexing starves the poll timers); a bounded wait keeps
@@ -403,9 +403,8 @@ test('run-u sizes the wall grace as stages x close timeout — and passes it', (
   // ordering pin, since a grace computed AFTER the spawn would arm the guard on
   // stale/undefined numbers.
   const resolveIdx = src.indexOf('resolveCloseTimeoutMs({ job: spec');
-  // PANEL-BUILD.md P0 — src/userrun.js sits one directory over from
-  // scripts/u-watchdog.mjs now (it used to be a same-directory sibling).
-  const spawnIdx = src.indexOf("fileURLToPath(new URL('../scripts/u-watchdog.mjs'");
+  // src/u-watchdog.mjs is a same-directory sibling of src/userrun.js (F205).
+  const spawnIdx = src.indexOf("fileURLToPath(new URL('./u-watchdog.mjs'");
   assert.ok(resolveIdx > -1 && spawnIdx > -1 && resolveIdx < spawnIdx, 'the close timeout must be resolved BEFORE the watchdog is spawned');
 
   // AN AUTHORED CLOSE IS THE SAME ARITHMETIC. A `closeDecl` spec carries no
@@ -559,7 +558,7 @@ test('a run that IGNORES SIGTERM is SIGKILLed after the grace — the escalation
   // still passed. The ordering requirement is real (a guard killed mid-stop must
   // already have said why) but it is not observable from outside the guard, so it is
   // pinned at the only place it IS observable: the source. That mutant dies here.
-  const src = readFileSync(new URL('../scripts/u-watchdog.mjs', import.meta.url), 'utf8');
+  const src = readFileSync(new URL('../src/u-watchdog.mjs', import.meta.url), 'utf8');
   const wrote = src.indexOf('renameSync(tmpPath, reportPath)');
   const signalled = src.indexOf("process.kill(pid, 'SIGTERM')");
   assert.ok(wrote > 0 && signalled > 0, 'both sites still exist under these names');

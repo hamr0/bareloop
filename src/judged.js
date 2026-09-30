@@ -791,10 +791,12 @@ function topLevelFunctionNames(artifactText) {
  * A `Loop`, NOT `provider.generate()`: the POC measured that a bare provider
  * result carries no `costUsd` at all, and under F6 an unpriced call is a red,
  * so the priced seam is the only legal one.
- * @param {{provider: any, system: string}} o */
-export const defaultJudgeLoop = ({ provider, system }) => {
+ * `rates` is the customer's own price for the judge's row (USD per 1K, `ratesFor`'s
+ * `rates`); null/absent = bare-agent's built-in guess, exactly as before.
+ * @param {{provider: any, system: string, rates?: {in: number, out: number}|null}} o */
+export const defaultJudgeLoop = ({ provider, system, rates = null }) => {
   const { Loop } = require('bare-agent');
-  return new Loop({ provider, system });
+  return new Loop({ provider, system, ...(rates ? { rates } : {}) });
 };
 
 // ── LOCATE: one attempt ─────────────────────────────────────────────────────

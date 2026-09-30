@@ -25,6 +25,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { createPanelServer } from '../src/panel/server.js';
 import { checkHumanGuard, signRun } from '../src/panel/authorroutes.js';
 import { createSession, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
@@ -811,4 +812,91 @@ test('GET /api/author/model-check: no token still refuses (403) — same human-c
   const { base } = await startAuthorServer(t, { env: {} });
   const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`);
   assert.equal(res.status, 403);
+});
+
+// ---------------------------------------------------------------------------
+// the customer's own price on a chat-authoring session (FINDINGS F206)
+// ---------------------------------------------------------------------------
+//
+// The session builds its own REAL provider (no provider seam), so the price is proven through the one
+// place a test can reach at $0: the `generate` function the session hands to the composer (`authorFn`
+// seam) is the real `makeLoopGenerate(provider, { rates })`, and the provider's endpoint is a loopback
+// HTTP server that answers with fixed token usage. Not reached: the scout and the confirm turn (both are
+// stubbed by their own seams above) — they take the same `draftPrice`, covered at the seam in
+// tests/customer-price.test.js.
+
+const PRICE_USAGE = { prompt_tokens: 1000, completion_tokens: 400 };
+
+/** a loopback OpenAI-shaped endpoint; counts requests, answers every one with PRICE_USAGE */
+async function loopbackProvider(t) {
+  const seen = { requests: 0 };
+  const server = createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      seen.requests += 1;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ model: 'gpt-x', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }], usage: PRICE_USAGE }));
+    });
+  });
+  await new Promise((r) => { server.listen(0, '127.0.0.1', r); });
+  t.after(() => { server.close(); server.closeAllConnections?.(); });
+  const addr = /** @type {import('node:net').AddressInfo} */ (server.address());
+  return { seen, baseUrl: `http://127.0.0.1:${addr.port}/v1` };
+}
+
+/** one session on a scratch home whose config.json carries the row; returns the session and, when the
+ * composer stub ran, what its own `generate` came back with */
+async function priceSession(t, { row, jobName }) {
+  const { seen, baseUrl } = await loopbackProvider(t);
+  const home = keysHomeWith('MY_KEY=sk-fakekey\n');
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { MY_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl, ...row } } }));
+  let generated = null;
+  const session = createSession(baseCard({ source: makeRepo(), model: 'gpt-x', jobName }), {
+    env: { MY_KEY: 'sk-fakekey' }, home, sessionsRoot: tmp('panel-author-sess-price-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }]),
+    authorFn: async ({ generate }) => {
+      generated = await generate([{ role: 'user', content: 'hello' }], []);
+      return { ok: false, stop: 'price-test-done', reds: [], cost: { costUsd: null, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 } };
+    },
+  });
+  const start = Date.now();
+  let accepted = false;
+  while (!['refused', 'error', 'prepared'].includes(session.state.phase) && Date.now() - start < 8000) {
+    // the confirm turn's menu: accept the plan (Sign & run's first click), which lets the composer stub run
+    if (!accepted && session.state.pendingAsk?.kind === 'menu') { session.signPrepare(); accepted = true; }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+  return { session, seen, generated: () => generated };
+}
+
+test('createSession: the drafting rounds are priced at the row\'s own price (tokens x config, not a hardcoded dollar), and differ from the no-price guess', async (t) => {
+  const price = { priceInPerM: 0.006, priceOutPerM: 1.2 };
+  const priced = await priceSession(t, { row: price, jobName: 'panel-author-price-on' });
+  const guessed = await priceSession(t, { row: {}, jobName: 'panel-author-price-off' });
+  const pg = priced.generated();
+  const gg = guessed.generated();
+  assert.ok(pg && gg, `both composer stubs ran: ${priced.session.state.phase} ${JSON.stringify(priced.session.state.messages)}`);
+  assert.equal(pg.error, null);
+  const expected = (PRICE_USAGE.prompt_tokens * price.priceInPerM + PRICE_USAGE.completion_tokens * price.priceOutPerM) / 1e6;
+  assert.ok(Math.abs(pg.cost - expected) < 1e-12, `${pg.cost} vs ${expected}`);
+  assert.equal(pg.metrics.costUsd, pg.cost);
+  assert.notEqual(gg.cost, pg.cost, 'a customer price must change what a drafting round books');
+  assert.ok(gg.cost > pg.cost * 10, 'the guess is far above this customer price');
+  console.log(`# panel drafting round, same tokens (${PRICE_USAGE.prompt_tokens} in / ${PRICE_USAGE.completion_tokens} out): customer price $${pg.cost.toFixed(9)} vs guess $${gg.cost.toFixed(9)}`);
+});
+
+test('createSession: a bad price (one field only, or negative) refuses at $0 with the ConfigError text and makes zero provider calls', async (t) => {
+  for (const [row, why] of [[{ priceInPerM: 0.006 }, 'one field only'], [{ priceInPerM: -1, priceOutPerM: 1.2 }, 'negative']]) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await priceSession(t, { row, jobName: `panel-author-price-bad-${why.replace(' ', '-')}` });
+    assert.equal(r.session.state.phase, 'refused', why);
+    assert.match(r.session.state.error, /MY_KEY/, `${why}: names the row`);
+    assert.match(r.session.state.error, /price/i, why);
+    assert.match(r.session.state.error, /Stopped — nothing spent\./, why);
+    assert.equal(r.seen.requests, 0, `${why}: no provider call`);
+    assert.equal(r.generated(), null, `${why}: the composer never ran`);
+    assert.equal(r.session.state.draftSpentUsd, 0, why);
+  }
 });
