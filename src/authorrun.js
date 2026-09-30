@@ -122,6 +122,7 @@ import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
 import { closeJudges, GATE_AUDIT_FILE } from './kinds.js';
 import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
+import { commandFor } from './invoke.js';
 import { readSourceManifest, missingDependencies } from './source.js';
 import { tallyCalls } from './text.js';
 import {
@@ -175,7 +176,7 @@ export async function main(argv, deps = {}) {
   if (keys.warning && deps.env === undefined) stderr.write(`WARNING: ${keys.warning}\n`);
   const out = (/** @type {string} */ s = '') => { stdout.write(`${s}\n`); };
   const err = (/** @type {string} */ s) => { stderr.write(`${s}\n`); };
-  const invokedAs = deps.invokedAs ?? 'node scripts/run-author.mjs';
+  const invokedAs = deps.invokedAs ?? commandFor('author', undefined);
   let exitCode = 0;
   try {
   /** the close precheck / seed read spawns real toolchains; the slowest stage is a
@@ -1276,7 +1277,7 @@ export async function main(argv, deps = {}) {
               + 'and run-u will enforce the remainder (Cap $ minus this) as ITS ceiling — pass --draft-spent-usd exactly as shown below, never a rounded or re-typed figure.');
           }
           out('\nTo run it (the same signature and gates as any other job — nothing here bypasses them):');
-          out(`  ${keyNameFor(PROVIDER_NAME, baseUrl, keyCfg, spec.model).name}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}${draftIncomplete ? ' --draft-spend-incomplete' : ''}` : ''}`);
+          out(`  ${keyNameFor(PROVIDER_NAME, baseUrl, keyCfg, spec.model).name}=... ${commandFor('run-u', deps.invokedAs)} --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}${draftIncomplete ? ' --draft-spend-incomplete' : ''}` : ''}`);
           emit('author-end', { outcome: 'prepared', specHash: hash });
         }
       }

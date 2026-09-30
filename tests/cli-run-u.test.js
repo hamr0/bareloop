@@ -131,6 +131,26 @@ test('bareloop run-u: a real job with no key prints its preview and exits 0, spe
   assert.match(out.text() + err.text(), /ANTHROPIC_API_KEY/, 'the preview names the key this job\'s provider needs');
 });
 
+test('bareloop run-u: the printed re-invocation names `bareloop run-u`, never a script the package does not ship; the script adapter keeps its own spelling', async () => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run-u', '--job', 'aurora-spawner'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd() });
+  assert.equal(rc, 0, err.text());
+  assert.match(out.text(), /ANTHROPIC_API_KEY=\.\.\. bareloop run-u --job aurora-spawner --approve [0-9a-f]{64}/);
+  assert.doesNotMatch(out.text() + err.text(), /scripts\/run-u\.mjs/);
+
+  const direct = []; // entered as scripts/run-u.mjs does: no invokedAs
+  await userUMain(['--job', 'aurora-spawner'], { env: NO_KEYS, out: (/** @type {string} */ s) => direct.push(s), err: () => {} });
+  assert.match(direct.join('\n'), /node scripts\/run-u\.mjs --job aurora-spawner --approve /);
+});
+
+test('bareloop run-u: a --spec that does not exist points at `bareloop author`, not scripts/run-author.mjs', async () => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run-u', '--spec', '/tmp/no-such-resolved-spec.json'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd() });
+  assert.equal(rc, 2);
+  assert.match(err.text(), /\(bareloop author's own `out\/resolved-spec\.json`\)/);
+  assert.doesNotMatch(err.text(), /scripts\//);
+});
+
 // ---------------------------------------------------------------------------
 // no drift: dispatching through src/cli.js must produce BYTE-IDENTICAL
 // output to calling src/userrun.js's own main() directly with the same argv

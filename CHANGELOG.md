@@ -67,6 +67,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **A halted bundle run's printed resume command keeps your tightened `--budget` / `--wall`.** It used to drop
   them, so the next leg silently reverted to the signed ceiling. The money-halt hint for a bundle no longer
   says to edit `budgetUsd` (a bundle's spec is manifest-hashed and cannot be edited).
+- **Printed commands no longer name scripts the package does not ship.** Entered through `bareloop run-u` /
+  `interview` / `author`, the approve, resume, pause and reopen lines (and the interview's run-author line and
+  the author's run-u line) now read `bareloop run-u …` etc.; `node scripts/*.mjs` is printed only from the
+  source-tree scripts. One owner for the spelling: `commandFor` in `src/invoke.js`.
 
 ### Removed
 

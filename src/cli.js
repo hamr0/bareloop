@@ -359,7 +359,7 @@ export async function main(argv, deps = {}) {
   // then `env`/`out`/`err` are overridden to the SAME resolved values every
   // other command here prints through, so `run-u`'s output lands on the
   // `stdout`/`stderr` a caller of `main` actually passed.
-  if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err, keysHome: keys.home });
+  if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err, keysHome: keys.home, invokedAs: 'bareloop run-u' });
   // `bareloop interview` — the close-authoring interview (PANEL-BUILD.md P0
   // task 3/4). This flow reads a TTY (or a piped stdin) directly rather than
   // through the `out`/`err` line-functions every other command here uses, so

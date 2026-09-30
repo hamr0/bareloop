@@ -3414,6 +3414,11 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
   preview `scripts/run-u.mjs --job <x>` prints with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
   set. `scripts/run-u.mjs` is unchanged in behaviour: it is the pre-existing thin adapter
   over this same `src/userrun.js:main`, not rewired to go through `src/cli.js`.
+  **Printed commands are spelled the way you entered:** every re-invocation these flows print (the approve
+  line, resume, pause, reopen, the interview's run-author line, the author's run-u line) reads `bareloop
+  run-u …` / `bareloop author …` when reached through `bareloop`, and `node scripts/run-u.mjs …` only through
+  the source-tree adapters — the tarball ships no `scripts/`. One owner: `commandFor` (`src/invoke.js`),
+  fed by each flow's `deps.invokedAs`.
 
 - **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring
   interview, at the terminal, one question at a time (D10; `docs/logs/FINDINGS.md`'s

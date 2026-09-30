@@ -77,6 +77,7 @@ import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
 import { ConfigError } from './config.js';
+import { commandFor } from './invoke.js';
 import { applyConfiguredKey, judgeRatesFor, keyNameFor, priceReadout, ratesFor, rowsForHome } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
@@ -226,6 +227,8 @@ class ExitSignal extends Error {
  * @property {Record<string,string|undefined>} [env]
  * @property {string} [keysHome] P4a — a test seam naming the home whose `.env` keys file is loaded
  *   even when `env` is injected; production never sets it.
+ * @property {string} [invokedAs] the command this run was actually reached through (`src/invoke.js`);
+ *   `src/cli.js` passes `'bareloop run-u'`, `scripts/run-u.mjs` passes none.
  * @property {(s: string) => void} [out]
  * @property {(s: string) => void} [err]
  * @property {any} [provider] the TEST SEAM: supplying this skips the real-key
@@ -485,7 +488,7 @@ async function execute(ctx) {
   const specHash = jobSpecHash(spec);
   // the re-invocation commands this engine prints: a bundle names its own door and hash,
   // every other caller gets today's byte-identical strings.
-  const INVOKE = ctx.bundle?.invoke ?? `node scripts/run-u.mjs ${SELECTOR}`;
+  const INVOKE = ctx.bundle?.invoke ?? `${commandFor('run-u', deps.invokedAs)} ${SELECTOR}`;
   const PRINT_APPROVE = ctx.bundle?.printApprove ?? specHash;
   // MODEL (build-list #3, hamr's GO 2026-08-30): the signed spec's `model`, if
   // present, wins outright; a --model flag naming a DIFFERENT id is refused
@@ -2395,7 +2398,7 @@ export async function main(argv, deps = {}) {
       if (!existsSync(specPath)) {
         die(`--job ${jobArg}: there is no spec at ${specPath}.\n`
           + '  The table row is the runner\'s half of a job (patient, seed, spine); the SPEC is yours — authored through\n'
-          + `  scripts/run-interview.mjs and scripts/run-author.mjs, then signed. Nothing here can stand in for it: a job\n`
+          + `  ${commandFor('interview', deps.invokedAs)} and ${commandFor('author', deps.invokedAs)}, then signed. Nothing here can stand in for it: a job\n`
           + '  with no spec has no goal, no close, no budget and no hash to approve.');
       }
       try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
@@ -2407,7 +2410,7 @@ export async function main(argv, deps = {}) {
       specPath = resolve(/** @type {string} */ (specArg));
       if (!existsSync(specPath)) {
         die(`--spec ${specPath} does not exist — a run needs the resolved-spec.json an authoring session actually wrote `
-          + '(scripts/run-author.mjs\'s own `out/resolved-spec.json`), never a path nobody authored');
+          + `(${commandFor('author', deps.invokedAs)}'s own \`out/resolved-spec.json\`), never a path nobody authored`);
       }
       let raw;
       try { raw = readFileSync(specPath, 'utf8'); } catch (e) {
@@ -2447,8 +2450,8 @@ export async function main(argv, deps = {}) {
       if (candidates.length === 0) {
         die(`--spec ${specPath}: no prepared copy beside it — looked for a source-*/ directory carrying source.json in `
           + `${dirname(specPath)} and found none. A --spec run reads its workdir and seed off the copy the authoring `
-          + 'session prepared; it is never typed or guessed. Prepare one first: node scripts/run-interview.mjs (or '
-          + 'run-author.mjs directly against a --source) before running this spec.');
+          + `session prepared; it is never typed or guessed. Prepare one first: ${commandFor('interview', deps.invokedAs)} (or `
+          + `${commandFor('author', deps.invokedAs)} directly against a --source) before running this spec.`);
       }
       if (candidates.length > 1) {
         die(`--spec ${specPath}: ${candidates.length} prepared copies sit beside it (${candidates.join(', ')}) — `
