@@ -3375,7 +3375,8 @@ key you want first (the panel picks the row by the Model menu).
   requires the human-click guard: an `x-bareloop-token` header matching a fresh token minted
   once per server start (templated into `index.html` like the port) AND an Origin/Host
   naming this exact `127.0.0.1:<port>` — a request failing either gets `403`, before the
-  route body ever runs. `POST /api/author/start` (one job-card body; `409` while a prior
+  route body ever runs. The token protects against other browser origins, not against other local users or
+  processes on the same machine (local-trust model). `POST /api/author/start` (one job-card body; `409` while a prior
   session is still non-terminal — one authoring session at a time) creates a session
   (`src/panel/authorsession.js`) that runs `prepareSource`/`detectLanguage`/`validateJob`/
   `authorCloseForJob`/`assembleSpec`/`prepareSigning` in-process, exactly the library calls
