@@ -406,6 +406,30 @@ test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is 
   assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started').length, 1);
 });
 
+test('--resume refuses while the predecessor\'s OWN run-list row names a live runner pid (no watchdog record needed)', async (t) => {
+  const home = tmp(t);
+  const first = await runU(t, { home: tmp(t), budgetUsd: 2 });
+  const spineDir = tmp(t);
+  const dead = join(spineDir, 'u-dead2.jsonl');
+  const at = new Date().toISOString();
+  writeFileSync(dead, [
+    { type: 'job-start', job: first.spec.job, specHash: jobSpecHash(first.spec), budgetUsd: 2, shape: 'plan', goal: first.spec.goal, ts: at, seq: 1 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 's1' }] }, ts: at, seq: 2 },
+    { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: at, seq: 3 },
+    { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  const live = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  appendRun({ at, runid: 'dead2', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: live, capUsd: 2 }, { home });
+  /** @type {string[]} */ const errs = [];
+  const code = await resumeRun(dead, {
+    spec: first.spec, workdir: first.workdir, seed: first.seed, spineName: 'monthly-seam-fixture-bareloop', approve: jobSpecHash(first.spec),
+    deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: (s) => errs.push(s), runlistHome: home },
+  });
+  assert.equal(code, 2, errs.join('\n'));
+  assert.match(errs.join('\n'), new RegExp(`--resume: pid ${live} from .* is still alive \\(a bareloop runner\\)`));
+});
+
 test('run-start seam, NO monthly limit: a throwing prepareTree leaves no row (the row is appended after it)', async (t) => {
   const home = tmp(t); // no limit set: the row goes through appendRun, not a claim
   const workdir = tmp(t);

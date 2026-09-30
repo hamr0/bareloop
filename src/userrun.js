@@ -72,7 +72,7 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
-import { appendRun, appendRunEvent, isLiveRunner } from './runlist.js';
+import { appendRun, appendRunEvent, isLiveRunner, readRunList } from './runlist.js';
 import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
@@ -691,7 +691,7 @@ async function execute(ctx) {
     });
     // is the dead run actually dead? Two processes on one patient is unrecoverable; a
     // false refusal costs one sentence. run-u's own pid is not on its spine, so the
-    // watchdog's report is the pid there is — and its absence is not evidence of life.
+    // watchdog's report or the run-list row is the pid there is — and its absence is not evidence of life.
     const wdFile = `${deadSpineFile}.watchdog.json`;
     /** @type {any} */
     let watchdog = null;
@@ -699,8 +699,14 @@ async function execute(ctx) {
     // ONE owner of "is that pid a live bareloop runner" (src/runlist.js `isLiveRunner`, shared with the
     // monthly limit's holds): alive AND a bareloop runner refuses; a recycled pid that now runs some
     // other program does not. Where /proc is unreadable an existing pid is assumed to be ours.
-    if (Number.isInteger(watchdog?.pid) && isLiveRunner(watchdog.pid)) {
-      die(`--resume: pid ${watchdog.pid} from ${deadSpineFile} is still alive (a bareloop runner). Two processes on one patient is unrecoverable — stop it first.`);
+    // The pid is the watchdog's kill record's, or the predecessor's OWN run-list row's (every row carries
+    // its runner's pid): a run never killed by the watchdog has no record but still has its row.
+    /** @type {number|undefined} */
+    let rowPid;
+    if (cfgOn) { try { rowPid = readRunList({ home: cfgHome }).rows.findLast((r) => r.spine === deadSpineFile)?.pid; } catch { /* an unreadable list is not evidence of life */ } }
+    const alivePid = [watchdog?.pid, rowPid].find((p) => Number.isInteger(p) && isLiveRunner(p));
+    if (alivePid !== undefined) {
+      die(`--resume: pid ${alivePid} from ${deadSpineFile} is still alive (a bareloop runner). Two processes on one patient is unrecoverable — stop it first.`);
     }
     // WHEN did the dead leg stop? The watchdog's kill record is later, better evidence
     // than the last spine event for a run that was KILLED — and worse evidence for one
