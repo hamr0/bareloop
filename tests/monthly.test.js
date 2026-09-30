@@ -13,8 +13,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configPath, readConfig, updateConfig, ConfigError } from '../src/config.js';
-import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, isLiveRunner, claimRun, settleDeadClaims } from '../src/monthly.js';
-import { appendRun, appendRunEvent, readRunList, runlistPath } from '../src/runlist.js';
+import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, claimRun, settleDeadClaims } from '../src/monthly.js';
+import { appendRun, appendRunEvent, readRunList, runlistPath, isLiveRunner } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { startRun, resumeRun } from '../src/userrun.js';

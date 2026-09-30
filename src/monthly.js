@@ -23,7 +23,6 @@
 import { existsSync, statSync } from 'node:fs';
 import { readConfig, configPath, ConfigError } from './config.js';
 import { readRunList, appendRun, appendRunEvent, isLiveRunner, DIED_MTIME_MS } from './runlist.js';
-export { isLiveRunner };
 import { parseJsonl } from './replayio.js';
 import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
 import { findRow } from './providerrows.js';

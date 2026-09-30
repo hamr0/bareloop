@@ -2,8 +2,9 @@
 // `provider` name to the bare-agent constructor it drives, the env var
 // carrying its key, and the per-tier model table — including any
 // provider-specific request-key gating. Before this module existed, both
-// runners constructed `AnthropicProvider` BY NAME (`src/cli.js`'s
-// `buildProviders`, `scripts/run-u.mjs`'s top-level wiring) and any second
+// runners constructed `AnthropicProvider` BY NAME (the old `buildProviders` in
+// `src/cli.js` and `scripts/run-u.mjs`'s top-level wiring, both since replaced
+// by `buildRunnerProviders` below) and any second
 // provider would have meant scattering `if (provider === …)` across both.
 //
 // hamr's ruling (PRD 30.7, 2026-09-09): `deepseek-chat` is THE secondary
@@ -265,8 +266,7 @@ export function makeProvider(providerName, { apiKey, model, baseUrl } = {}) {
 
 /**
  * Build the `{provider, providerFor, judgeProvider}` triple both runners
- * need (`src/cli.js`'s `buildProviders`, `scripts/run-u.mjs`'s top-level
- * wiring) — ONE seam instead of two copies of the same construction and
+ * need (`src/authorrun.js` and `src/panel/authorsession.js` call it) — ONE seam instead of two copies of the same construction and
  * tier-memoization logic. `model`/`tierModels` are already-RESOLVED inputs
  * (the caller runs `resolveWorkerModel` itself, exactly as both runners did
  * before this factory existed — that decision stays where each runner's own
