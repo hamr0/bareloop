@@ -1307,6 +1307,11 @@ knob, not a product default — the spec names no scout, so the signed hash is u
 `--read-shim`: an unrecognised value exits 2 at argv, and every re-invocation the runner prints
 carries `--scout off` when set, so a resume never silently drops the arm.
 
+Every re-invocation the runner prints (the preview's approve line, resume, pause and reopen hints)
+names the key variable the run really reads (the job's key row, not the provider shape's default
+name) and carries `--registry <dir> --workflow <name>` whenever they were given, so a pasted command
+never greens with no registry row (F207).
+
 **`bareloop run-u --draft-spend-incomplete`** is a boolean presence-flag (no value) that sets
 `runJob`'s `draftSpendComplete: false`, saying the `--draft-spent-usd` figure is a floor. It
 has no guard against being passed without `--draft-spent-usd` — alone it is inert (nothing is
@@ -3853,7 +3858,7 @@ coldReset, the close-first precheck — is untouched: `--spec` only NAMES the jo
 a `--job` row does. `src/authorrun.js`'s (lifted out of `scripts/run-author.mjs` by
 PANEL-BUILD.md P0) "SIGNING PREPARED — NOT SIGNED" screen now
 prints the ready-to-paste `--spec` command (real path, real `--approve <hash>`, the
-provider's real env-key per F187) — a person finishing the interview alone can reach a
+key variable the job's key row really reads (`keyNameFor`, F187/F207)) — a person finishing the interview alone can reach a
 running job with no `jobs/` edit and no JOBS-table row.
 
 ## Architecture

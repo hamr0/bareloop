@@ -649,8 +649,10 @@ supersede it:
   landed as this, without add/edit/remove buttons.)
 - **The limit field auto-saves; there is no Save button.** Blank clears it. `POST /api/settings/money`
   without a `monthlyLimitUsd` key is a `400`, never a clear.
-- **An in-flight run reserves its full leg cap** in the refusal check only (the Money tab shows real
-  spend); a died run counts its floor; the spine a resume continues counts its real spend.
+- **A run holds its full leg cap until it is done** (hamr 2026-09-30, "hold until done"): the run's row
+  is appended first with its `pid` and `capUsd`, and only the claims above it count; a live claim is held
+  at its cap in the refusal check only (the Money tab shows real spend); a claim whose process is gone is
+  settled by the next run and counts its floor. Detail: `bareloop.context.md` "Monthly $ limit".
 - Also built: POST body cap (1 MiB, `413`), the `jobsDir` seam server-side only, `replay-live --live-audit`.
-- Parked to `.claude/remember/fix-ledger.md`: `bareloop run <bundle>` has no monthly check (a second
-  run-start seam is hamr's call).
+- `bareloop run <bundle>` is a door to the same engine, so the monthly limit applies to it too (one
+  run-start seam, no second one).
