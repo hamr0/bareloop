@@ -107,15 +107,15 @@ test('monthSpend: only this LOCAL calendar month counts (both boundaries); a die
   addRun(home, d, { runid: 'b', at: localIso(2026, 7, 31, 23), jobEnd: { engagementSpentUsd: 100, spendComplete: true } }); // Aug — out
   addRun(home, d, { runid: 'c', at: localIso(2026, 9, 1, 0), jobEnd: { engagementSpentUsd: 100, spendComplete: true } }); // Oct — out
   const clean = monthSpend({ home, now: NOW });
-  assert.deepEqual(clean, { usd: 1, atLeast: false, runs: 1, reservedUsd: 1 });
+  assert.deepEqual(clean, { usd: 1, atLeast: false, runs: 1, reservedUsd: 1, heldUsd: 0, heldRuns: 0 });
   addRun(home, d, { runid: 'died', at: localIso(2026, 8, 10), rounds: [0.4, 0.3] }); // no job-end
-  assert.deepEqual(monthSpend({ home, now: NOW }), { usd: 1.7, atLeast: true, runs: 2, reservedUsd: 1.7 });
+  assert.deepEqual(monthSpend({ home, now: NOW }), { usd: 1.7, atLeast: true, runs: 2, reservedUsd: 1.7, heldUsd: 0, heldRuns: 0 });
 });
 
 test('monthSpend: a listed run whose spine file is gone reads as unknown ("at least"), never silently $0-and-exact', (t) => {
   const home = tmp(t);
   appendRun({ at: localIso(2026, 8, 3), runid: 'gone', job: 'j', spine: join(home, 'nope.jsonl'), patient: null, via: 'run-u' }, { home });
-  assert.deepEqual(monthSpend({ home, now: NOW }), { usd: 0, atLeast: true, runs: 1, reservedUsd: 0 });
+  assert.deepEqual(monthSpend({ home, now: NOW }), { usd: 0, atLeast: true, runs: 1, reservedUsd: 0, heldUsd: 0, heldRuns: 0 });
 });
 
 test('checkMonthlyRoom: no limit = ok, no check; cap == left = ok; cap > left = refused with the exact text; whole-cent compare', (t) => {
@@ -163,7 +163,7 @@ test('checkMonthlyRoom: an IN-FLIGHT run (no job-end, fresh spine) counts at its
   age('live', 60 * 1000);
   const room = checkMonthlyRoom({ capUsd: 6, home, now: NOW });
   assert.equal(room.ok, false, 'left is $4 once the running $6 cap is reserved');
-  assert.equal(monthlyRefusalText(room), 'Max $4.00 (monthly limit)');
+  assert.equal(monthlyRefusalText(room), 'Max $4.00 (monthly limit, $5.95 held by a run in progress)');
   assert.equal(checkMonthlyRoom({ capUsd: 4, home, now: NOW }).ok, true);
   const sp = monthSpend({ home, now: NOW });
   assert.equal(sp.usd, 0.05, 'real spend stays the floor');
@@ -633,7 +633,7 @@ test('rule 2: a live-pid run silent for 30 minutes is still held at its FULL cap
   utimesSync(f, new Date(nowMs - 30 * 60 * 1000), new Date(nowMs - 30 * 60 * 1000));
   assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 6, 'the old mtime rule would have called it died');
   assert.equal(monthSpend({ home, now: NOW }).usd, 0.05, 'the Money tab figure stays REAL spend, never the hold');
-  assert.equal(monthlyRefusalText(checkMonthlyRoom({ capUsd: 5, home, now: NOW })), 'Max $4.00 (monthly limit)');
+  assert.equal(monthlyRefusalText(checkMonthlyRoom({ capUsd: 5, home, now: NOW })), 'Max $4.00 (monthly limit, $5.95 held by a run in progress)');
   await killAndWait(pid);
   assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 0.05, 'killed = process gone: floor only');
   assert.equal(checkMonthlyRoom({ capUsd: 9, home, now: NOW }).ok, true);
@@ -673,6 +673,23 @@ test('rule 2: a finished run counts its spend even with a live pid; an old row w
 
 const claimRow = (runid, pid, capUsd) => ({ at: localIso(2026, 8, 15, 11), runid, job: 'j', spine: join(tmpdir(), `nospine-${runid}.jsonl`), patient: null, via: 'run-u', pid, capUsd });
 
+test('refusal text: a held run is named on the SAME line ("$5.95 held by a run in progress"); two holders read "runs"; nothing held leaves the text exactly as before', (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const nowMs = NOW();
+  const fresh = (runid) => { const f = join(d, `u-${runid}.jsonl`); utimesSync(f, new Date(nowMs - 60 * 1000), new Date(nowMs - 60 * 1000)); };
+  addRun(home, d, { runid: 'done', at: localIso(2026, 8, 14, 11), jobEnd: { engagementSpentUsd: 6, spendComplete: true } });
+  const none = checkMonthlyRoom({ capUsd: 5, home, now: NOW });
+  assert.equal(monthlyRefusalText(none), 'Max $4.00 (monthly limit)', 'finished spend holds nothing: no suffix');
+  addRun(home, d, { runid: 'h1', at: localIso(2026, 8, 15, 11), rounds: [0.05], jobStart: { budgetUsd: 1.05 } });
+  fresh('h1');
+  assert.equal(monthlyRefusalText(checkMonthlyRoom({ capUsd: 5, home, now: NOW })), 'Max $2.95 (monthly limit, $1.00 held by a run in progress)');
+  addRun(home, d, { runid: 'h2', at: localIso(2026, 8, 15, 12), rounds: [0.05], jobStart: { budgetUsd: 1.05 } });
+  fresh('h2');
+  assert.equal(monthlyRefusalText(checkMonthlyRoom({ capUsd: 5, home, now: NOW })), 'Max $1.90 (monthly limit, $2.00 held by runs in progress)');
+});
+
 test('claim: back-to-back claims — the first (nothing above it) runs; the second no longer fits, is refused with the exact text and gets a released entry', async (t) => {
   const home = tmp(t);
   updateConfig({ monthlyLimitUsd: 10 }, { home });
@@ -683,7 +700,7 @@ test('claim: back-to-back claims — the first (nothing above it) runs; the seco
   assert.deepEqual(readRunList({ home }).rows.map((r) => [r.runid, r.pid, r.capUsd]), [['a', pid, 6]]);
   const b = claimRun({ row: claimRow('b', pid, 5), capUsd: 5, home, now: NOW });
   assert.equal(b.claimed, false);
-  assert.equal(monthlyRefusalText(b.room), 'Max $4.00 (monthly limit)');
+  assert.equal(monthlyRefusalText(b.room), 'Max $4.00 (monthly limit, $6.00 held by a run in progress)');
   const got = readRunList({ home });
   assert.deepEqual(got.rows.map((r) => r.runid), ['a'], 'the refused run is not listed as a run');
   assert.equal(got.events.length, 1);

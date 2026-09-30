@@ -3576,8 +3576,9 @@ re-priced** (a spine and the run list keep the dollars they booked). Not covered
 resolves no key row.
 
 **Monthly $ limit.** `checkMonthlyRoom({ capUsd, home, now })` → `{ ok, leftUsd, limitUsd,
-atLeast }`; `monthlyRefusalText(room)` is the ONE spelling: `Max $<left, 2 decimals> (monthly
-limit)`. It is called at the run-start seam in `src/userrun.js` `execute` (before any token
+atLeast, heldUsd, heldRuns }`; `monthlyRefusalText(room)` is the ONE spelling: `Max $<left, 2 decimals>
+(monthly limit)`, and when run(s) in progress hold money beyond what they have spent, the same line
+reads `Max $4.00 (monthly limit, $5.95 held by a run in progress)` (`runs` when more than one). It is called at the run-start seam in `src/userrun.js` `execute` (before any token
 spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`signRun` in
 `src/panel/authorroutes.js`, refused server-side whatever the page shows). The page only echoes the
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local

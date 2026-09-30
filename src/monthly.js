@@ -232,7 +232,7 @@ const sameLocalMonth = (at, now) => at.getFullYear() === now.getFullYear() && at
 
 /**
  * @param {{ home?: string, now?: () => number, aboveRunid?: string }} [opts] `aboveRunid`: see {@link readLegs}
- * @returns {{ usd: number, atLeast: boolean, runs: number, reservedUsd: number }} `usd` = real spend (the Money tab's figure); `reservedUsd` = the same with in-flight runs at their cap (the refusal check's)
+ * @returns {{ usd: number, atLeast: boolean, runs: number, reservedUsd: number, heldUsd: number, heldRuns: number }} `usd` = real spend (the Money tab's figure); `reservedUsd` = the same with in-flight runs at their cap (the refusal check's); `heldUsd` = what in-progress runs set aside beyond what they have spent (`reservedUsd - usd`), over `heldRuns` runs
  */
 export function monthSpend(opts = {}) {
   const nowDate = new Date((opts.now ?? Date.now)());
@@ -240,17 +240,20 @@ export function monthSpend(opts = {}) {
   let reservedUsd = 0;
   let atLeast = false;
   let runs = 0;
+  let heldUsd = 0;
+  let heldRuns = 0;
   for (const leg of readLegs({ home: opts.home, now: opts.now, aboveRunid: opts.aboveRunid, thisMonthOnly: true })) {
     // an unreadable date could belong to this month — unknown, never dropped
     if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
     if (!sameLocalMonth(leg.at, nowDate)) continue;
     runs += 1;
-    if (leg.unreadable) { atLeast = true; reservedUsd += leg.reservedUsd; continue; }
+    if (leg.unreadable) { atLeast = true; reservedUsd += leg.reservedUsd; if (leg.reservedUsd > 0) { heldUsd += leg.reservedUsd; heldRuns += 1; } continue; }
     usd += leg.usd;
     reservedUsd += leg.reservedUsd;
+    if (leg.reservedUsd > leg.usd) { heldUsd += leg.reservedUsd - leg.usd; heldRuns += 1; }
     if (!leg.complete) atLeast = true;
   }
-  return { usd, atLeast, runs, reservedUsd };
+  return { usd, atLeast, runs, reservedUsd, heldUsd, heldRuns };
 }
 
 /**
@@ -322,6 +325,8 @@ export function spendSummary(opts = {}) {
  * @property {number|null} leftUsd what is left this month (null = no limit set)
  * @property {number|null} limitUsd the person's monthly limit (null = none)
  * @property {boolean} atLeast the month's spend is a floor, so `leftUsd` is a ceiling
+ * @property {number} [heldUsd] what run(s) in progress have set aside beyond their spend so far (present when a limit is set)
+ * @property {number} [heldRuns] how many runs hold it
  */
 
 /**
@@ -358,17 +363,20 @@ export function checkMonthlyRoom({ capUsd, home, now, aboveRunid }) {
   const spent = monthSpend({ home, now, aboveRunid });
   const leftCents = Math.max(0, Math.floor((limit - spent.reservedUsd) * 100 + 1e-6));
   const capCents = Math.ceil(capUsd * 100 - 1e-6); // a non-finite cap never fits (NaN/Infinity compare false) — never read as $0
-  return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast };
+  return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast, heldUsd: spent.heldUsd, heldRuns: spent.heldRuns };
 }
 
 /**
- * The ONE refusal text, everywhere (CLI, panel cap note, panel Sign refusal).
+ * The ONE refusal text, everywhere (CLI, panel cap note, panel Sign refusal). When run(s) in progress hold
+ * part of the limit, the same line says how much.
  * @param {MonthlyRoom} room
  * @returns {string|null} null when the run fits
  */
 export function monthlyRefusalText(room) {
   if (room.ok || room.leftUsd === null) return null;
-  return `Max $${room.leftUsd.toFixed(2)} (monthly limit)`;
+  const max = `Max $${room.leftUsd.toFixed(2)}`;
+  if (!room.heldRuns || !room.heldUsd || room.heldUsd <= 0) return `${max} (monthly limit)`;
+  return `${max} (monthly limit, $${room.heldUsd.toFixed(2)} held by ${room.heldRuns > 1 ? 'runs' : 'a run'} in progress)`;
 }
 
 /**
