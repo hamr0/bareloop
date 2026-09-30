@@ -13963,3 +13963,29 @@ were given, so pasting one greened with no registry row. Fixed: the key name is 
 part).** Orchestrator observation: in a bundle run's first seconds the card reads "unknown" for
 type, spend and wall, because its row exists before its spine does; and for a LIVE run the card
 shows no spend or wall while the right pane does.
+
+## F208 — the one-runner branch review: the menu skipped the monthly limit; printed commands named scripts the tarball does not ship; a bundle resume line dropped the tightened ceiling (three defects, fixed in `c74de1d`, `a2ceaf9`, `efaa20c`; one follow-on open)
+
+**Grounded in:** `/branch-review` at `d294d91` (blocker `src/cli.js:309`) and at `8904951`; fail-first
+runs of the changed tests against `git archive d294d91` (all four files red, three on assertions,
+`tests/invoke.test.js` on the missing module); one scratch scripted-provider run of the bundle resume
+line.
+
+**(a) The bare menu's "2 run" passed `keysHome: undefined` (fixed in `c74de1d`).** A bundle run started
+from the menu skipped the monthly limit, your price and the key-row choice, while `bareloop run <bundle>`
+applied all three. The menu now receives the home `main` already resolved; the new `tests/cli.test.js`
+menu test refuses at the same `monthly limit` text and is red against `d294d91` by assertion.
+
+**(b) Printed re-invocations named `node scripts/*.mjs`, which the package does not ship (fixed in
+`a2ceaf9`).** Same class as F205 and F207(b). `commandFor` in `src/invoke.js` is now the one owner of the
+spelling; `src/cli.js` passes `invokedAs` for `run-u`, `interview` and `author`, and the panel's detached
+run reaches `run-u` through `bin/bareloop.mjs`, so it prints `bareloop run-u`. Still open: the never-prepared-source refusal
+in `src/authorrun.js` names `node scripts/prep-source.mjs` (no `bareloop` door exists), and the
+interview's "run the paid step now" offer spawns `scripts/run-author.mjs` (see the fix ledger).
+
+**(c) A halted bundle run's resume line dropped the leg's `--budget`/`--wall` and told the person to edit
+`budgetUsd` (fixed in `efaa20c`).** Follow-on, open: after a MONEY halt the line now repeats the exhausted
+tightened `--budget`; chain spend is folded, so pasting it as printed halted again at once after one paid
+round (scratch run: `$0.0040 of $0.00`, second MONEY HALT). Dropping `--budget` resumes under the signed
+ceiling. The halt block's lever list for a bundle still says "top up budgetUsd", beside the new line that
+says a bundle's spec cannot be edited (`src/planrun.js`).

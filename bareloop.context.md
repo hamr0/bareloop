@@ -3160,7 +3160,9 @@ below. `run-u`, `interview` and `author` (below) are not on this menu (PANEL-BUI
 tasks 2/4-4/4): each one's own flag grammar is too wide for a line-at-a-time wizard, and the
 menu's job is to ask the SAME questions the sub-command below already answers, never to
 invent a new interview — this is doubly true for `interview`/`author`, which already ARE
-interviews of their own. All three are dispatched by name only: `bareloop run-u <flags…>`,
+interviews of their own. Choice `2 run` is handed the SAME resolved keys home `bareloop run <bundle>` gets, so the
+monthly limit, your price and the key-row choice apply exactly as on the sub-command (before this it
+got none, and a run started from the menu skipped the limit). All three are dispatched by name only: `bareloop run-u <flags…>`,
 `bareloop interview <flags…>`, `bareloop author <flags…>`.
 
 - **`bareloop export <jobs/x.json> --registry <dir> --out <dir>`** → resolves the spec's
@@ -3199,7 +3201,11 @@ interviews of their own. All three are dispatched by name only: `bareloop run-u 
      different from the recorded one is a stop, exit `1`, spending nothing; `--repo` is optional
      on a resume) and hands the engine `resumeRun` on that run's spine — the engine's own gates
      (checkpoint age, tree-at-seed, liveness) and spend fold apply, so `--budget` can never widen
-     a resume. The new leg gets its own `runs/<newid>/`.
+     a resume. The new leg gets its own `runs/<newid>/`. The resume command a halted leg prints carries that leg's own
+     `--budget`/`--wall`, only if you passed them (a tightened ceiling never silently reverts to the signed
+     one); chain spend is folded, so after a MONEY halt the pasted line has no room left and halts again
+     at once — drop `--budget` to resume under the signed ceiling less prior spend. A bundle's spec is
+     manifest-hashed, so its halt hint never asks you to edit `budgetUsd`.
   6. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/`maxWallMs`
      in memory if `--budget`/`--wall` were given → `approveHash = jobSpecHash(that tightened+
      resolved spec)`, handed to the engine as the approval it checks against (`signer: 'bundle'`;
