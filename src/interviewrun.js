@@ -722,7 +722,8 @@ export async function main(argv, deps = {}) {
   }
 
   // ── 6. the paid step, which is a DIFFERENT process under a DIFFERENT ceiling ─
-  const RUN_AUTHOR = fileURLToPath(new URL('../scripts/run-author.mjs', import.meta.url));
+  // the PACKAGED door (`bin/` ships; `scripts/` does not): `bareloop author` takes the same flags as run-author
+  const BARELOOP_BIN = fileURLToPath(new URL('../bin/bareloop.mjs', import.meta.url));
   const childArgs = [
     '--source', TREE, '--answers', answersFile, '--draft', draftFile,
     '--verdict', VERDICT, '--out', OUT,
@@ -832,7 +833,7 @@ export async function main(argv, deps = {}) {
     exitCode = 0;
   } else {
     say('');
-    const child = spawnSyncFn(process.execPath, [RUN_AUTHOR, ...childArgs], { stdio: 'inherit' });
+    const child = spawnSyncFn(process.execPath, [BARELOOP_BIN, 'author', ...childArgs], { stdio: 'inherit' });
     if (child.error) {
       say(`run-author could not be started (${child.error.message}) — the command above still stands.`);
       exitCode = 2;

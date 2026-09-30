@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- The interview's "Run it now?" now starts the packaged door (`bin/bareloop.mjs author`, same flags) instead of `scripts/run-author.mjs`, which the published package does not ship.
 - One "is this run alive" rule (`runIsAlive`, `src/runlist.js`) now drives both the panel's [▶] / [?] glyph and the monthly limit's hold: the run row's pid first (`isLiveRunner`), the spine-mtime rule only for a row with no pid. A run whose pid is alive but whose spine is quiet for 10+ minutes now reads running, not died; a dead pid with a fresh spine reads died. A `job-end` on the spine still wins.
 - `--resume` now also refuses when the predecessor run's own run-list row carries the pid of a live bareloop runner, not only when a watchdog kill record names it (same refusal text).
 - Every panel GET/HEAD route now refuses (`403`) a request whose `Host` is not the panel's own `127.0.0.1:<port>` (one shared `checkHostGuard`, also used by the write routes' guard), so a page on another origin cannot read the run list through a rebound DNS name. No token is needed to read.
