@@ -72,7 +72,7 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
-import { appendRun, appendRunEvent, isLiveRunner, RunlistLockError } from './runlist.js';
+import { appendRun, appendRunEvent, isLiveRunner } from './runlist.js';
 import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
@@ -1420,13 +1420,13 @@ async function execute(ctx) {
   // THE MONTHLY $ LIMIT (PANEL-BUILD.md P4a; hamr 2026-09-30: "whoever runs first claims the limit and
   // holds it") — the ONE run-start seam. Every run this door starts (the CLI's `bareloop run-u`, `bareloop
   // run <bundle>` and the panel, which spawns them) passes here after the signature and the key gates and
-  // BEFORE the patient reset or any token: the run CLAIMS its leg cap — under the run-list lock it reads what
-  // is left and, only if the cap fits, appends its own run-list row carrying its `pid` and `capUsd` (the hold).
-  // A cap larger than what is left appends nothing and does not start; nothing is spent. This leg's exposure
+  // BEFORE the patient reset or any token: the run CLAIMS its leg cap — it appends its own run-list row
+  // FIRST (carrying its `pid` and `capUsd`, the hold), then reads the list: only the claims above its row
+  // count. A cap larger than what is left is released (a `released` entry) and does not start; nothing is spent. This leg's exposure
   // is the whole signed cap on a cold start (it covers drafting + run) and only the REMAINDER on a
   // resume/door-rerun, whose earlier spend is already in the month's total (the killed leg's claim is
-  // settled at its floor once its process is gone). No limit set = no claim (the row is listed as ever). An
-  // unreadable config.json, or a run-list lock that cannot be taken, refuses too — a broken instrument
+  // closed at its floor, with a note, once its process is gone). No limit set = no claim (the row is listed as
+  // ever). An unreadable config.json, or a claim row that cannot be written, refuses too — a broken instrument
   // never silently reads "no limit".
   const runid = ctx.bundle?.runid ?? Date.now().toString(36);
   const spineFile = ctx.bundle ? join(spineDir, 'spine.jsonl') : join(spineDir, `u-${runid}.jsonl`);
@@ -1448,7 +1448,7 @@ async function execute(ctx) {
         refusal = monthlyRefusalText(got.room);
       }
     } catch (e) {
-      if (!(e instanceof ConfigError) && !(e instanceof RunlistLockError)) throw e;
+      if (!(e instanceof ConfigError)) throw e;
       err(`${e.message} — refusing to start rather than guess the monthly limit. Nothing spent.`);
       throw new ExitSignal(2);
     }

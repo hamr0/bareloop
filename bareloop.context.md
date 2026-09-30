@@ -3528,18 +3528,22 @@ spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`sig
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
 calendar month; a died or incomplete-spend run makes the total an "at least" figure.
 
-*Hold until done.* A run CLAIMS the limit when it starts and holds it until it is done: `claimRun`
-(`src/monthly.js`), under a transient `runs.jsonl.lock` beside the run list, settles dead claims, reads
-what is left and, only if the run's leg cap fits, appends the run's row carrying its `pid` and `capUsd`
-(a refused run appends nothing; the lock waits up to 5 s, a lock from a dead process is broken, and a
-lock that cannot be taken refuses like an unreadable config — never "no limit"). While that pid is a live
-bareloop runner (`isLiveRunner`, `src/runlist.js`, also what `--resume` uses to refuse a resume against a
-live run) the run counts at the larger of its spend so far and its cap, however quiet its spine. When the
-run ends it appends `{runid, type:'settled', by:<runid>, spentUsd, spendComplete, at}`; if it was killed,
-the next run that takes the lock settles it (`by:<that run>`, `reason:'process gone'`, its spine's floor).
-`readRunList` folds those entries out of the run rows (`events`; a `released` claim's row is not listed).
-Month totals still read real spend off the spines. An older row with no `pid` keeps the spine-mtime rule
-(`DIED_MTIME_MS`: a spine written to within it is in flight, at its leg cap).
+*Hold until done.* A run CLAIMS the limit when it starts and holds it until it is done — no lock file,
+records only. `claimRun` (`src/monthly.js`) writes the run's row FIRST (it carries its `pid` and
+`capUsd`), then reads `runs.jsonl`: earlier claims come first, and only the claims ABOVE its own row count
+(rows below it yield to it). A claim above is held at the larger of its spend so far and its cap while
+its pid is a live bareloop runner (`isLiveRunner`, `src/runlist.js`, also what `--resume` uses to refuse a
+resume against a live run), however quiet its spine; a claim whose process is gone is closed by whoever
+finds it, with a note (`{runid, type:'settled', by:<finder>, reason:'process gone', spentUsd:<floor>}`) and
+counts its real spend. If the sum fits, the run goes; if not, it appends `{type:'released',
+reason:'refused'}` and refuses with the exact text, nothing spent. A row that cannot be written, or an
+unreadable config, refuses too — never "no limit". When a run ends it appends its own
+`{runid, type:'settled', by:<runid>, spentUsd, spendComplete, at}`. Two runs may close the same dead claim;
+the FIRST note for a runid is authoritative. `readRunList` folds these entries out of the run rows
+(`events`; a `released` claim's row is not listed). Month totals still read real spend off the spines. An
+older row with no `pid` keeps the spine-mtime rule (`DIED_MTIME_MS`: a spine written to within it is in
+flight, at its leg cap). A run refused because an earlier claim was itself later refused is the accepted
+safe-side cost of doing without a lock.
 Only the refusal reserves the cap (`monthSpend().reservedUsd`); the Money tab's month figure is
 real spend.
 

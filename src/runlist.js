@@ -29,7 +29,7 @@
 
 import {
   existsSync, mkdirSync, appendFileSync, chmodSync, readdirSync, statSync,
-  openSync, writeSync, closeSync, readFileSync, unlinkSync,
+  readFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import {
@@ -136,8 +136,17 @@ export function readRunList(opts = {}) {
   const path = runlistPath(opts.home);
   if (!existsSync(path)) return { rows: [], skipped: 0, events: [] };
   const { records, skipped } = parseJsonl(path);
+  // the FIRST settle for a runid is authoritative: two runs may both close the same dead claim, and the
+  // second note is a duplicate (a `released` line likewise); file order decides, later copies are ignored
+  const seen = new Set();
   /** @type {RunEvent[]} */
-  const events = records.filter((r) => r && (r.type === 'settled' || r.type === 'released'));
+  const events = records.filter((r) => {
+    if (!r || (r.type !== 'settled' && r.type !== 'released')) return false;
+    const key = `${r.type}:${r.runid}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const released = new Set(events.filter((e) => e.type === 'released').map((e) => e.runid));
   const rows = records.filter((r) => r && !r.type && !released.has(r.runid));
   return { rows, skipped, events };
@@ -148,7 +157,7 @@ export function readRunList(opts = {}) {
  * pid exists (EPERM = it exists, just not ours); `/proc/<pid>/cmdline` says whether it is a
  * bareloop runner — a recycled pid that now belongs to some other program is NOT. Where `/proc`
  * is unreadable (not Linux, or not ours) the existence test alone decides: alive. The ONE
- * spelling — the monthly limit's holds, the run-list lock and `--resume`'s old-pid check share it.
+ * spelling — the monthly limit's holds, and `--resume`'s old-pid check share it.
  * @param {number} pid
  * @returns {boolean}
  */
@@ -160,50 +169,6 @@ export function isLiveRunner(pid) {
   try { cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8'); } catch { /* no /proc, or not ours */ }
   if (cmdline === null) return true;
   return cmdline.split('\0').some((a) => ['bareloop', 'bareloop.mjs', 'run-u.mjs', 'u-watchdog.mjs'].includes(basename(a)));
-}
-
-/** The run-list lock could not be taken (or its file could not be made): a gate whose own instrument cannot run refuses. */
-export class RunlistLockError extends Error {}
-
-/** How long a claim waits for the run-list lock before it refuses, and how often it looks. */
-export const LOCK_WAIT_MS = 5000;
-const LOCK_POLL_MS = 25;
-// a lock file with no readable holder (a crash between create and write) older than this is stale
-const LOCK_UNREADABLE_STALE_MS = 10000;
-
-/**
- * Run `fn` holding the run-list lock: a transient `runs.jsonl.lock` created exclusively (`wx`),
- * holding `{ pid, runid }`, removed right after `fn`. A lock whose holder is not a live runner is
- * stale and is broken. Waits up to `timeoutMs`, then THROWS {@link RunlistLockError}.
- * @template T
- * @param {() => T} fn
- * @param {{ home?: string, runid?: string, timeoutMs?: number }} [opts]
- * @returns {T}
- */
-export function withRunlistLock(fn, opts = {}) {
-  const lockPath = `${runlistPath(opts.home)}.lock`;
-  try { mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 }); } catch (/** @type {any} */ e) { throw new RunlistLockError(`cannot create ${runlistHome(opts.home)}: ${e.message}`); }
-  const deadline = Date.now() + (opts.timeoutMs ?? LOCK_WAIT_MS);
-  for (;;) {
-    try {
-      const fd = openSync(lockPath, 'wx', 0o600);
-      try { writeSync(fd, JSON.stringify({ pid: process.pid, runid: opts.runid ?? null })); } finally { closeSync(fd); }
-      break;
-    } catch (/** @type {any} */ e) {
-      if (e?.code !== 'EEXIST') throw new RunlistLockError(`cannot take ${lockPath}: ${e.message}`);
-    }
-    let stale = false;
-    try {
-      const holder = JSON.parse(readFileSync(lockPath, 'utf8'));
-      stale = !isLiveRunner(holder?.pid);
-    } catch {
-      try { stale = Date.now() - statSync(lockPath).mtimeMs > LOCK_UNREADABLE_STALE_MS; } catch { stale = false; }
-    }
-    if (stale) { try { unlinkSync(lockPath); } catch { /* another breaker got there first */ } continue; }
-    if (Date.now() >= deadline) throw new RunlistLockError(`${lockPath} is held by another run and did not free within ${opts.timeoutMs ?? LOCK_WAIT_MS} ms`);
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, LOCK_POLL_MS);
-  }
-  try { return fn(); } finally { try { unlinkSync(lockPath); } catch { /* already gone */ } }
 }
 
 /**

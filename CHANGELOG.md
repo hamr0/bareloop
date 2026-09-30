@@ -10,13 +10,15 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Changed
 
 - **Monthly limit: a run claims its cap at start and holds it until it is done.** The run-start seam
-  appends the run's row (now carrying `pid` and `capUsd`) under a transient `runs.jsonl.lock`, and only
-  if the cap fits what is left; a refused run writes nothing. A run whose pid is a live bareloop
-  runner stays held at its full cap however quiet its spine (no more 10-minute silence drop); when it
-  ends it appends an attributed `settled` entry to `runs.jsonl`, and the next run settles a killed one
-  (`process gone`). Old rows without a `pid` keep the spine-mtime rule. The `resumingSpine` special
-  case is gone (a resumed leg's dead process already counts at its floor). `--resume`'s "is the old
-  process alive" check now recognises `bareloop run-u` / `bareloop run` and shares `isLiveRunner`.
+  writes the run's row FIRST (now carrying `pid` and `capUsd`; no lock file — records only), then reads
+  `runs.jsonl`: only the claims above its own row count, so whoever runs first holds. A run whose pid is
+  a live bareloop runner stays held at its full cap however quiet its spine (no more 10-minute silence
+  drop); a dead run's claim is closed by whoever finds it, with an attributed `settled` note
+  (`process gone`, first note wins); a run that does not fit appends a `released` entry and refuses
+  with the exact `Max $X (monthly limit)` text. A finished run appends its own `settled` entry. Old
+  rows without a `pid` keep the spine-mtime rule. The `resumingSpine` special case is gone (a resumed
+  leg's dead process already counts at its floor). `--resume`'s "is the old process alive" check now
+  recognises `bareloop run-u` / `bareloop run` and shares `isLiveRunner`.
 - **One runner: `bareloop run <bundle>` is now a thin door to the `run-u` engine.** The exported
   bundle CLI no longer carries its own `runJob` caller (`doRun`) and provider wiring
   (`buildProviders`); `src/bundlerun.js` keeps only the bundle checks (integrity, deps, envelope,

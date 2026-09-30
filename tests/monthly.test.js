@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configPath, readConfig, updateConfig, ConfigError } from '../src/config.js';
 import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, isLiveRunner, claimRun, settleDeadClaims } from '../src/monthly.js';
-import { appendRun, appendRunEvent, readRunList, withRunlistLock, RunlistLockError, runlistPath } from '../src/runlist.js';
+import { appendRun, appendRunEvent, readRunList, runlistPath } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { startRun } from '../src/userrun.js';
@@ -450,11 +450,11 @@ test('rule 2: a finished run counts its spend even with a live pid; an old row w
   assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 1.5, 'stale pid-less spine: floor 0.5 (+1 done)');
 });
 
-// ---- the claim: read-sum-append under the run-list lock; settle writes back ---------------------
+// ---- the claim: append your row first, then read; only claims ABOVE yours count; settle writes back ---------------------
 
 const claimRow = (runid, pid, capUsd) => ({ at: localIso(2026, 8, 15, 11), runid, job: 'j', spine: join(tmpdir(), `nospine-${runid}.jsonl`), patient: null, via: 'run-u', pid, capUsd });
 
-test('claim: the first run appends its row (pid + capUsd) and holds; a second that no longer fits appends NOTHING and gets the exact text', async (t) => {
+test('claim: back-to-back claims — the first (nothing above it) runs; the second no longer fits, is refused with the exact text and gets a released entry', async (t) => {
   const home = tmp(t);
   updateConfig({ monthlyLimitUsd: 10 }, { home });
   const pid = spawnRunner(t);
@@ -465,12 +465,26 @@ test('claim: the first run appends its row (pid + capUsd) and holds; a second th
   const b = claimRun({ row: claimRow('b', pid, 5), capUsd: 5, home, now: NOW });
   assert.equal(b.claimed, false);
   assert.equal(monthlyRefusalText(b.room), 'Max $4.00 (monthly limit)');
-  assert.equal(readRunList({ home }).rows.length, 1, 'a refused run appends nothing, so it needs no cancelled entry');
-  assert.equal(readRunList({ home }).events.length, 0);
-  assert.equal(claimRun({ row: claimRow('c', pid, 4), capUsd: 4, home, now: NOW }).claimed, true, 'exactly what is left still fits');
+  const got = readRunList({ home });
+  assert.deepEqual(got.rows.map((r) => r.runid), ['a'], 'the refused run is not listed as a run');
+  assert.equal(got.events.length, 1);
+  assert.deepEqual({ ...got.events[0], at: 'x' }, { runid: 'b', type: 'released', by: 'b', reason: 'refused', at: 'x' });
+  assert.equal(claimRun({ row: claimRow('c', pid, 4), capUsd: 4, home, now: NOW }).claimed, true, 'a refused claim holds nothing: exactly what is left still fits');
 });
 
-test('claim: no limit set takes no claim (the caller lists the run as ever) and never touches the lock', (t) => {
+test('claim: a row BELOW yours is ignored (later runs yield to earlier ones)', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  appendRun(claimRow('first', pid, 6), { home });
+  appendRun(claimRow('second', pid, 9), { home }); // appended before `first` reads
+  const got = claimRun({ row: claimRow('first', pid, 6), capUsd: 6, home, now: NOW });
+  assert.equal(got.claimed, true, 'the $9 claim below does not count against the one above it');
+  assert.equal(got.room.leftUsd, 10);
+});
+
+test('claim: no limit set takes no claim (the caller lists the run as ever)', (t) => {
   const home = tmp(t);
   const got = claimRun({ row: claimRow('a', process.pid, 6), capUsd: 6, home, now: NOW });
   assert.equal(got.claimed, false);
@@ -478,7 +492,7 @@ test('claim: no limit set takes no claim (the caller lists the run as ever) and 
   assert.equal(readRunList({ home }).rows.length, 0);
 });
 
-test('claim: two real processes racing for a limit only one fits -> exactly one claims, never both over', async (t) => {
+test('claim: three real processes racing for a limit only one fits -> exactly the file-first claimant runs, never both over', async (t) => {
   const home = tmp(t);
   updateConfig({ monthlyLimitUsd: 10 }, { home });
   const monthlyUrl = new URL('../src/monthly.js', import.meta.url).href;
@@ -499,27 +513,13 @@ test('claim: two real processes racing for a limit only one fits -> exactly one 
   })));
   assert.equal(results.filter((r) => r.claimed).length, 1, JSON.stringify(results));
   assert.equal(readRunList({ home }).rows.length, 1);
-  assert.equal(existsSync(`${runlistPath(home)}.lock`), false, 'the lock is removed right after the append');
+  assert.equal(existsSync(`${runlistPath(home)}.lock`), false, 'no lock file exists or is ever made');
+  const first = readRunList({ home }).rows[0].runid;
+  assert.equal(results.find((r) => r.claimed).runid, first, 'the claimant is the one whose row came first in the file');
+  assert.equal(readRunList({ home }).events.filter((e) => e.type === 'released').length, 2, 'the two that yielded are released');
 });
 
-test('lock: a stale lock (its holder pid is gone) is broken; one held by a LIVE runner past the bound REFUSES and appends nothing', async (t) => {
-  const home = tmp(t);
-  updateConfig({ monthlyLimitUsd: 10 }, { home });
-  const lock = `${runlistPath(home)}.lock`;
-  const dead = await deadRunnerPid(t);
-  writeFileSync(lock, JSON.stringify({ pid: dead, runid: 'gone' }));
-  assert.equal(claimRun({ row: claimRow('a', process.pid, 1), capUsd: 1, home, now: NOW }).claimed, true, 'stale lock broken');
-  assert.equal(existsSync(lock), false);
-  const live = spawnRunner(t);
-  await new Promise((r) => setTimeout(r, 200));
-  writeFileSync(lock, JSON.stringify({ pid: live, runid: 'busy' }));
-  assert.throws(() => claimRun({ row: claimRow('b', process.pid, 1), capUsd: 1, home, now: NOW, lockTimeoutMs: 300 }), RunlistLockError);
-  assert.equal(readRunList({ home }).rows.length, 1, 'the refused claim wrote nothing');
-  assert.equal(existsSync(lock), true, 'and left the live holder\'s lock alone');
-  assert.throws(() => withRunlistLock(() => 1, { home, timeoutMs: 100 }), RunlistLockError);
-});
-
-test('settle: a claim whose process is gone is settled BY THE NEXT RUN (attributed, floor, process gone) exactly once, and stops holding', async (t) => {
+test('settle: a claim ABOVE you whose process is gone is closed BY THE NEW RUN (attributed, floor, process gone) exactly once, and stops holding', async (t) => {
   const home = tmp(t);
   const d = tmp(t);
   updateConfig({ monthlyLimitUsd: 10 }, { home });
@@ -532,7 +532,7 @@ test('settle: a claim whose process is gone is settled BY THE NEXT RUN (attribut
   const ev = readRunList({ home }).events;
   assert.equal(ev.length, 1);
   assert.deepEqual({ ...ev[0], at: 'x' }, { runid: 'killed', type: 'settled', by: 'next', reason: 'process gone', spentUsd: 2, spendComplete: false, at: 'x' });
-  assert.equal(settleDeadClaims({ home, by: 'again' }), 0, 'already settled: never twice');
+  assert.equal(settleDeadClaims({ home, by: 'again', aboveRunid: 'next' }), 0, 'already settled: never twice');
   assert.equal(readRunList({ home }).rows.map((r) => r.runid).join(), 'killed,next', 'events are never listed as runs');
 });
 
@@ -577,4 +577,25 @@ test('run-start seam: the run claims (row carries pid + capUsd) and, at its job-
   assert.equal(events[0].runid, rows[0].runid);
   assert.equal(events[0].by, rows[0].runid);
   assert.equal(typeof events[0].spentUsd, 'number');
+});
+
+test('settle: two runs closing the same dead claim both append a note; readers take the FIRST and ignore the duplicate', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 10), rounds: [2], jobStart: { budgetUsd: 9 }, extra: { pid, capUsd: 9 } });
+  appendRunEvent({ runid: 'killed', type: 'settled', by: 'first', reason: 'process gone', spentUsd: 2, spendComplete: false, at: 'x' }, { home });
+  appendRunEvent({ runid: 'killed', type: 'settled', by: 'second', reason: 'process gone', spentUsd: 2, spendComplete: false, at: 'y' }, { home });
+  const ev = readRunList({ home }).events;
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].by, 'first');
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 2, 'and the claim is closed either way');
+});
+
+test('claim: a row that cannot be written refuses (ConfigError), it never falls back to "no limit"', (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  mkdirSync(runlistPath(home)); // runs.jsonl is a directory: the append must fail
+  assert.throws(() => claimRun({ row: claimRow('a', process.pid, 1), capUsd: 1, home, now: NOW }), ConfigError);
 });
