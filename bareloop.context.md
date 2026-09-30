@@ -1851,13 +1851,17 @@ hand them to the one `Loop` that drives worker, scout and planner rounds; the ru
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
 before. bareloop keeps no price list of its own, ever.
 
-**The provenance is on the record, per round (`rateSource`).** The field arrives with
-bare-agent **>= 0.37**; under the pinned `^0.36.0` no provider payload carries it yet, so
-every priced round this library writes today reads UNKNOWN provenance — correctly, and by
-the same rule that governs the archive. (The one exception is the native per-turn
-`worker-turn`, whose `null` is bareloop's OWN statement rather than a forwarded one: that
-surface prices the SESSION, so a turn had no rate to guess.) Once the pin moves, every `worker-round` /
-`worker-turn` the plan flow writes carries bare-agent's own label beside `pricing`:
+**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.43.0`)
+carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
+`src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
+`pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
+(the guess). The exceptions read UNKNOWN provenance, correctly, and by the same rule that governs
+the archive: `judge-round` records carry no `rateSource` (the judge cost payload,
+`src/kinds.js` `onJudgeCost`, does not forward it, so a judge round is never counted as vouched,
+priced by you or not), and so does every round archived before the signal existed. The native
+per-turn `worker-turn` carries `null`, bareloop's OWN statement rather than a forwarded one: that
+surface prices the SESSION, so a turn had no rate to guess. A `worker-round`/`worker-turn`
+carries bare-agent's own label beside `pricing`:
 `'provider'` (the provider reported its own authoritative cost — the native CLI surface)
 and `'caller'` (you passed the rate) are VOUCHED; `'tier'` (a recognized Claude tier,
 where **both** of bareloop's own production models land) and `'default'` (the blind
