@@ -29,6 +29,7 @@
 
 import {
   existsSync, mkdirSync, appendFileSync, chmodSync, readdirSync, statSync,
+  openSync, writeSync, closeSync, readFileSync, unlinkSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import {
@@ -89,7 +90,8 @@ export function appendRun(row, opts = {}) {
   mkdirSync(home, { recursive: true, mode: 0o700 });
   if (existsSync(path)) {
     const { records } = parseJsonl(path);
-    if (records.some((r) => r && r.runid === row.runid)) {
+    // only RUN rows count: a settled/released event names the same runid for another purpose
+    if (records.some((r) => r && !r.type && r.runid === row.runid)) {
       return { appended: false, reason: 'duplicate-runid' };
     }
   }
@@ -99,17 +101,109 @@ export function appendRun(row, opts = {}) {
 }
 
 /**
+ * @typedef {{ runid: string, type: 'settled'|'released', by: string, at: string, reason?: string, spentUsd?: number, spendComplete?: boolean }} RunEvent
+ * A claim's write-back, appended (never rewritten) beside the run rows. `settled` = the run's claim on the
+ * monthly limit is over (`spentUsd`/`spendComplete` are its final figure, `by` is WHO wrote it: the run itself
+ * at its `job-end`, or the next run that found its process gone, `reason: 'process gone'`). `released` = the
+ * claim was taken and then given back unspent, its run never started. The month's totals keep reading real
+ * spend off the spines; an event only releases the hold and records who wrote it.
+ */
+
+/**
+ * Append one {@link RunEvent}. Not locked: one short line, one append. THROWS on IO failure.
+ * @param {RunEvent} event
+ * @param {{ home?: string }} [opts]
+ * @returns {void}
+ */
+export function appendRunEvent(event, opts = {}) {
+  const path = runlistPath(opts.home);
+  mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 });
+  appendFileSync(path, `${JSON.stringify(event)}\n`);
+  try { chmodSync(path, 0o600); } catch { /* best-effort perms */ }
+}
+
+/**
  * Tolerant reader — reuses {@link parseJsonl} (never a second hand-rolled
  * parser). An absent file reads as an empty list, not an error: a fresh
- * install has never run `appendRun` yet.
+ * install has never run `appendRun` yet. FOLDS the file: `rows` are the RUNS
+ * only (an event line is never listed as a run, and a run whose claim was
+ * `released` never started, so it is not listed either); `events` are the
+ * write-backs, in file order.
  * @param {{ home?: string }} [opts]
- * @returns {{ rows: RunRow[], skipped: number }}
+ * @returns {{ rows: RunRow[], skipped: number, events: RunEvent[] }}
  */
 export function readRunList(opts = {}) {
   const path = runlistPath(opts.home);
-  if (!existsSync(path)) return { rows: [], skipped: 0 };
+  if (!existsSync(path)) return { rows: [], skipped: 0, events: [] };
   const { records, skipped } = parseJsonl(path);
-  return { rows: records, skipped };
+  /** @type {RunEvent[]} */
+  const events = records.filter((r) => r && (r.type === 'settled' || r.type === 'released'));
+  const released = new Set(events.filter((e) => e.type === 'released').map((e) => e.runid));
+  const rows = records.filter((r) => r && !r.type && !released.has(r.runid));
+  return { rows, skipped, events };
+}
+
+/**
+ * Is this pid a live bareloop runner? `process.kill(pid, 0)` says whether the
+ * pid exists (EPERM = it exists, just not ours); `/proc/<pid>/cmdline` says whether it is a
+ * bareloop runner — a recycled pid that now belongs to some other program is NOT. Where `/proc`
+ * is unreadable (not Linux, or not ours) the existence test alone decides: alive. The ONE
+ * spelling — the monthly limit's holds, the run-list lock and `--resume`'s old-pid check share it.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+export function isLiveRunner(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); } catch (/** @type {any} */ e) { if (e?.code !== 'EPERM') return false; }
+  /** @type {string|null} */
+  let cmdline = null;
+  try { cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8'); } catch { /* no /proc, or not ours */ }
+  if (cmdline === null) return true;
+  return cmdline.split('\0').some((a) => ['bareloop', 'bareloop.mjs', 'run-u.mjs', 'u-watchdog.mjs'].includes(basename(a)));
+}
+
+/** The run-list lock could not be taken (or its file could not be made): a gate whose own instrument cannot run refuses. */
+export class RunlistLockError extends Error {}
+
+/** How long a claim waits for the run-list lock before it refuses, and how often it looks. */
+export const LOCK_WAIT_MS = 5000;
+const LOCK_POLL_MS = 25;
+// a lock file with no readable holder (a crash between create and write) older than this is stale
+const LOCK_UNREADABLE_STALE_MS = 10000;
+
+/**
+ * Run `fn` holding the run-list lock: a transient `runs.jsonl.lock` created exclusively (`wx`),
+ * holding `{ pid, runid }`, removed right after `fn`. A lock whose holder is not a live runner is
+ * stale and is broken. Waits up to `timeoutMs`, then THROWS {@link RunlistLockError}.
+ * @template T
+ * @param {() => T} fn
+ * @param {{ home?: string, runid?: string, timeoutMs?: number }} [opts]
+ * @returns {T}
+ */
+export function withRunlistLock(fn, opts = {}) {
+  const lockPath = `${runlistPath(opts.home)}.lock`;
+  try { mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 }); } catch (/** @type {any} */ e) { throw new RunlistLockError(`cannot create ${runlistHome(opts.home)}: ${e.message}`); }
+  const deadline = Date.now() + (opts.timeoutMs ?? LOCK_WAIT_MS);
+  for (;;) {
+    try {
+      const fd = openSync(lockPath, 'wx', 0o600);
+      try { writeSync(fd, JSON.stringify({ pid: process.pid, runid: opts.runid ?? null })); } finally { closeSync(fd); }
+      break;
+    } catch (/** @type {any} */ e) {
+      if (e?.code !== 'EEXIST') throw new RunlistLockError(`cannot take ${lockPath}: ${e.message}`);
+    }
+    let stale = false;
+    try {
+      const holder = JSON.parse(readFileSync(lockPath, 'utf8'));
+      stale = !isLiveRunner(holder?.pid);
+    } catch {
+      try { stale = Date.now() - statSync(lockPath).mtimeMs > LOCK_UNREADABLE_STALE_MS; } catch { stale = false; }
+    }
+    if (stale) { try { unlinkSync(lockPath); } catch { /* another breaker got there first */ } continue; }
+    if (Date.now() >= deadline) throw new RunlistLockError(`${lockPath} is held by another run and did not free within ${opts.timeoutMs ?? LOCK_WAIT_MS} ms`);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, LOCK_POLL_MS);
+  }
+  try { return fn(); } finally { try { unlinkSync(lockPath); } catch { /* already gone */ } }
 }
 
 /**

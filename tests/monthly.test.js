@@ -11,10 +11,10 @@ import {
   mkdtempSync, mkdirSync, writeFileSync, utimesSync, readFileSync, rmSync, existsSync, statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { configPath, readConfig, updateConfig, ConfigError } from '../src/config.js';
-import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, isLiveRunner } from '../src/monthly.js';
-import { appendRun, readRunList } from '../src/runlist.js';
+import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, isLiveRunner, claimRun, settleDeadClaims } from '../src/monthly.js';
+import { appendRun, appendRunEvent, readRunList, withRunlistLock, RunlistLockError, runlistPath } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { startRun } from '../src/userrun.js';
@@ -172,44 +172,54 @@ test('checkMonthlyRoom: an IN-FLIGHT run (no job-end, fresh spine) counts at its
   assert.equal(checkMonthlyRoom({ capUsd: 6, home, now: NOW }).ok, true);
 });
 
-test('checkMonthlyRoom: the spine a resume continues counts its real spend, never its unspent cap; every other in-flight run keeps its full reservation', (t) => {
+/** a pid that belonged to a bareloop-looking runner and is now gone */
+async function deadRunnerPid(t) {
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  await killAndWait(pid);
+  return pid;
+}
+
+test('a resume fits: its killed leg (pid gone) counts its real spend, never its unspent cap — $12 limit, $3 of $10 spent, resume 7 -> ok, $9 left', async (t) => {
   const home = tmp(t);
   const d = tmp(t);
-  const nowMs = NOW();
-  const fresh = (runid) => utimesSync(join(d, `u-${runid}.jsonl`), new Date(nowMs - 3 * 60 * 1000), new Date(nowMs - 3 * 60 * 1000));
   updateConfig({ monthlyLimitUsd: 12 }, { home });
-  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 } });
-  fresh('killed');
-  const spine = join(d, 'u-killed.jsonl');
-  // 1. the resume asks for the remainder ($7); $9 truly left
-  const ok = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: spine });
+  const pid = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 }, extra: { pid, capUsd: 10 } });
+  utimesSync(join(d, 'u-killed.jsonl'), new Date(NOW() - 3 * 60 * 1000), new Date(NOW() - 3 * 60 * 1000));
+  const ok = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
   assert.equal(ok.ok, true);
   assert.equal(ok.leftUsd, 9);
-  assert.equal(monthSpend({ home, now: NOW, resumingSpine: spine }).usd, 3, 'real spend still counts in full');
-  // 2. without it, the old leg is reserved at its full cap: refused
-  const refused = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
-  assert.equal(refused.ok, false);
-  assert.equal(monthlyRefusalText(refused), 'Max $2.00 (monthly limit)');
-  // 5. path form: a `./` / relative segment still matches
-  assert.equal(checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: join(d, '.', 'sub', '..', 'u-killed.jsonl') }).ok, true);
-  const rel = relative(process.cwd(), spine);
-  assert.equal(checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: `./${rel}` }).ok, true);
-  // 3. another fresh in-flight run stays reserved at its full cap
-  addRun(home, d, { runid: 'other', at: localIso(2026, 8, 15, 11), rounds: [], jobStart: { budgetUsd: 6 } });
-  fresh('other');
-  const two = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: spine });
+  assert.equal(monthSpend({ home, now: NOW }).usd, 3, 'real spend still counts in full');
+  // another LIVE run stays held at its full cap
+  const live = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'other', at: localIso(2026, 8, 15, 11), rounds: [], jobStart: { budgetUsd: 6 }, extra: { pid: live, capUsd: 6 } });
+  const two = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
   assert.equal(two.ok, false);
   assert.equal(two.leftUsd, 3);
 });
 
-test('checkMonthlyRoom: a resume that truly does not fit is still refused', (t) => {
+test('chained resume: leg1 and leg2 both killed (pids gone) -> leg3 fits ($12 limit, floors 3+1, leg3 cap 6 -> ok, $8 left)', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 12 }, { home });
+  const p1 = await deadRunnerPid(t);
+  const p2 = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'leg1', at: localIso(2026, 8, 15, 10), rounds: [3], jobStart: { budgetUsd: 10 }, extra: { pid: p1, capUsd: 10 } });
+  addRun(home, d, { runid: 'leg2', at: localIso(2026, 8, 15, 11), rounds: [1], jobStart: { budgetUsd: 10, priorSpentUsd: 3 }, extra: { pid: p2, capUsd: 7 } });
+  const room = checkMonthlyRoom({ capUsd: 6, home, now: NOW });
+  assert.equal(room.ok, true);
+  assert.equal(room.leftUsd, 8);
+});
+
+test('a resume that truly does not fit is still refused', async (t) => {
   const home = tmp(t);
   const d = tmp(t);
   updateConfig({ monthlyLimitUsd: 8 }, { home });
-  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 } });
-  const f = join(d, 'u-killed.jsonl');
-  utimesSync(f, new Date(NOW() - 3 * 60 * 1000), new Date(NOW() - 3 * 60 * 1000));
-  const room = checkMonthlyRoom({ capUsd: 7, home, now: NOW, resumingSpine: f });
+  const pid = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 11), rounds: [3], jobStart: { budgetUsd: 10 }, extra: { pid, capUsd: 10 } });
+  const room = checkMonthlyRoom({ capUsd: 7, home, now: NOW });
   assert.equal(room.ok, false);
   assert.equal(monthlyRefusalText(room), 'Max $5.00 (monthly limit)');
 });
@@ -438,4 +448,133 @@ test('rule 2: a finished run counts its spend even with a live pid; an old row w
   assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 5, 'fresh pid-less spine: held at cap 4 (+1 done)');
   utimesSync(f, new Date(nowMs - 11 * 60 * 1000), new Date(nowMs - 11 * 60 * 1000));
   assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 1.5, 'stale pid-less spine: floor 0.5 (+1 done)');
+});
+
+// ---- the claim: read-sum-append under the run-list lock; settle writes back ---------------------
+
+const claimRow = (runid, pid, capUsd) => ({ at: localIso(2026, 8, 15, 11), runid, job: 'j', spine: join(tmpdir(), `nospine-${runid}.jsonl`), patient: null, via: 'run-u', pid, capUsd });
+
+test('claim: the first run appends its row (pid + capUsd) and holds; a second that no longer fits appends NOTHING and gets the exact text', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  const a = claimRun({ row: claimRow('a', pid, 6), capUsd: 6, home, now: NOW });
+  assert.equal(a.claimed, true);
+  assert.deepEqual(readRunList({ home }).rows.map((r) => [r.runid, r.pid, r.capUsd]), [['a', pid, 6]]);
+  const b = claimRun({ row: claimRow('b', pid, 5), capUsd: 5, home, now: NOW });
+  assert.equal(b.claimed, false);
+  assert.equal(monthlyRefusalText(b.room), 'Max $4.00 (monthly limit)');
+  assert.equal(readRunList({ home }).rows.length, 1, 'a refused run appends nothing, so it needs no cancelled entry');
+  assert.equal(readRunList({ home }).events.length, 0);
+  assert.equal(claimRun({ row: claimRow('c', pid, 4), capUsd: 4, home, now: NOW }).claimed, true, 'exactly what is left still fits');
+});
+
+test('claim: no limit set takes no claim (the caller lists the run as ever) and never touches the lock', (t) => {
+  const home = tmp(t);
+  const got = claimRun({ row: claimRow('a', process.pid, 6), capUsd: 6, home, now: NOW });
+  assert.equal(got.claimed, false);
+  assert.equal(got.room.limitUsd, null);
+  assert.equal(readRunList({ home }).rows.length, 0);
+});
+
+test('claim: two real processes racing for a limit only one fits -> exactly one claims, never both over', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const monthlyUrl = new URL('../src/monthly.js', import.meta.url).href;
+  const code = `
+    import { claimRun } from ${JSON.stringify(monthlyUrl)};
+    const [, home, runid] = process.argv.slice(1);
+    const got = claimRun({ row: { at: new Date().toISOString(), runid, job: 'j', spine: '/nowhere/' + runid, patient: null, via: 'run-u', pid: process.pid, capUsd: 6 }, capUsd: 6, home });
+    console.log(JSON.stringify({ runid, claimed: got.claimed }));
+    setInterval(() => {}, 1000);`;
+  const results = await Promise.all(['r1', 'r2', 'r3'].map((runid) => new Promise((res, rej) => {
+    // argv: [node, -e code, 'bareloop.mjs', home, runid] — the child looks like a bareloop runner
+    const c = spawn(process.execPath, ['--input-type=module', '-e', code, 'bareloop.mjs', home, runid], { stdio: ['ignore', 'pipe', 'inherit'] });
+    t.after(() => { try { process.kill(/** @type {number} */ (c.pid), 'SIGKILL'); } catch { /* gone */ } });
+    let buf = '';
+    c.stdout.on('data', (d) => { buf += d; if (buf.includes('\n')) res(JSON.parse(buf.split('\n')[0])); });
+    c.on('error', rej);
+    c.on('exit', () => rej(new Error(`child ${runid} exited early: ${buf}`)));
+  })));
+  assert.equal(results.filter((r) => r.claimed).length, 1, JSON.stringify(results));
+  assert.equal(readRunList({ home }).rows.length, 1);
+  assert.equal(existsSync(`${runlistPath(home)}.lock`), false, 'the lock is removed right after the append');
+});
+
+test('lock: a stale lock (its holder pid is gone) is broken; one held by a LIVE runner past the bound REFUSES and appends nothing', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const lock = `${runlistPath(home)}.lock`;
+  const dead = await deadRunnerPid(t);
+  writeFileSync(lock, JSON.stringify({ pid: dead, runid: 'gone' }));
+  assert.equal(claimRun({ row: claimRow('a', process.pid, 1), capUsd: 1, home, now: NOW }).claimed, true, 'stale lock broken');
+  assert.equal(existsSync(lock), false);
+  const live = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  writeFileSync(lock, JSON.stringify({ pid: live, runid: 'busy' }));
+  assert.throws(() => claimRun({ row: claimRow('b', process.pid, 1), capUsd: 1, home, now: NOW, lockTimeoutMs: 300 }), RunlistLockError);
+  assert.equal(readRunList({ home }).rows.length, 1, 'the refused claim wrote nothing');
+  assert.equal(existsSync(lock), true, 'and left the live holder\'s lock alone');
+  assert.throws(() => withRunlistLock(() => 1, { home, timeoutMs: 100 }), RunlistLockError);
+});
+
+test('settle: a claim whose process is gone is settled BY THE NEXT RUN (attributed, floor, process gone) exactly once, and stops holding', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = await deadRunnerPid(t);
+  addRun(home, d, { runid: 'killed', at: localIso(2026, 8, 15, 10), rounds: [2], jobStart: { budgetUsd: 9 }, extra: { pid, capUsd: 9 } });
+  const nextPid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  const got = claimRun({ row: claimRow('next', nextPid, 7), capUsd: 7, home, now: NOW });
+  assert.equal(got.claimed, true);
+  const ev = readRunList({ home }).events;
+  assert.equal(ev.length, 1);
+  assert.deepEqual({ ...ev[0], at: 'x' }, { runid: 'killed', type: 'settled', by: 'next', reason: 'process gone', spentUsd: 2, spendComplete: false, at: 'x' });
+  assert.equal(settleDeadClaims({ home, by: 'again' }), 0, 'already settled: never twice');
+  assert.equal(readRunList({ home }).rows.map((r) => r.runid).join(), 'killed,next', 'events are never listed as runs');
+});
+
+test('settle: a settled claim releases its hold even while its pid is alive; the Money figure stays the spine\'s real spend', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'r', at: localIso(2026, 8, 15, 10), rounds: [1], jobStart: { budgetUsd: 6 }, extra: { pid, capUsd: 6 } });
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 6);
+  appendRunEvent({ runid: 'r', type: 'settled', by: 'r', spentUsd: 99, spendComplete: true, at: 'x' }, { home });
+  const sp = monthSpend({ home, now: NOW });
+  assert.equal(sp.reservedUsd, 1, 'hold released');
+  assert.equal(sp.usd, 1, 'month totals read the spine, not the settle entry (single source of truth)');
+});
+
+test('run list fold: settled/released lines are never runs; a released claim\'s row is not listed; appendRun dedup ignores events', (t) => {
+  const home = tmp(t);
+  appendRun(claimRow('a', 1, 1), { home });
+  appendRun(claimRow('b', 1, 1), { home });
+  appendRunEvent({ runid: 'a', type: 'settled', by: 'a', spentUsd: 0, spendComplete: true, at: 'x' }, { home });
+  appendRunEvent({ runid: 'b', type: 'released', by: 'b', reason: 'test', at: 'x' }, { home });
+  const got = readRunList({ home });
+  assert.deepEqual(got.rows.map((r) => r.runid), ['a']);
+  assert.equal(got.events.length, 2);
+  appendRunEvent({ runid: 'z', type: 'settled', by: 'q', at: 'x' }, { home });
+  assert.equal(appendRun(claimRow('z', 1, 1), { home }).appended, true, 'a settled event is not "already listed"');
+  assert.equal(appendRun(claimRow('a', 1, 1), { home }).appended, false, 'a real duplicate still is');
+});
+
+test('run-start seam: the run claims (row carries pid + capUsd) and, at its job-end, settles its own claim attributed to itself', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const r = await runU(t, { home, budgetUsd: 3 });
+  assert.ok(r.providerCalls > 0, r.errs);
+  const { rows, events } = readRunList({ home });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].pid, process.pid);
+  assert.equal(rows[0].capUsd, 3);
+  assert.equal(events.length, 1, r.errs);
+  assert.equal(events[0].type, 'settled');
+  assert.equal(events[0].runid, rows[0].runid);
+  assert.equal(events[0].by, rows[0].runid);
+  assert.equal(typeof events[0].spentUsd, 'number');
 });

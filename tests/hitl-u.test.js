@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS } from '../src/reuse.js';
 import { deathAtOf, evidencePackage, resumeAtLines } from '../src/u-readout.js';
@@ -134,6 +134,23 @@ test('§1.6 E2E: a stale watchdog report beside a PAUSED spine does not bill the
   assert.equal(code, 0, 'a stale report is not a refusal');
   assert.match(out, /spent .*20\.0min before the halt/, 'the fold is the paused leg\'s OWN elapsed — 10:00 to 10:20');
   assert.doesNotMatch(out, /NOTHING LEFT/, 'and the wall is not burnt: 45 days of a person reading is not run time');
+});
+
+test('--resume: a LIVE process named bareloop on the watchdog record refuses the resume (one owner: isLiveRunner); a live non-runner does not', async (t) => {
+  const kids = [];
+  t.after(() => { for (const k of kids) { try { process.kill(/** @type {number} */ (k.pid), 'SIGKILL'); } catch { /* gone */ } } });
+  const runnerKid = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'bareloop.mjs'], { stdio: 'ignore' });
+  const otherKid = spawn('sleep', ['300'], { stdio: 'ignore' });
+  kids.push(runnerKid, otherKid);
+  await new Promise((r) => setTimeout(r, 300));
+  const f = spineFile(pausedSpine());
+  const report = (pid) => writeFileSync(`${f}.watchdog.json`, `${JSON.stringify({ watchdog: 'u-watchdog', reason: 'deadline', killed: true, pid, spine: f, at: new Date().toISOString() })}\n`);
+  report(runnerKid.pid);
+  const refused = preview(['--resume', f]);
+  assert.equal(refused.code, 2);
+  assert.match(refused.out, /is still alive \(a bareloop runner\)/);
+  report(otherKid.pid);
+  assert.equal(preview(['--resume', f]).code, 0, 'a recycled pid running some other program is not a live run');
 });
 
 // ══ §2 THE 60-DAY TTL ══════════════════════════════════════════════════════════

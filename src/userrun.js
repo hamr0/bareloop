@@ -72,10 +72,10 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
-import { appendRun } from './runlist.js';
+import { appendRun, appendRunEvent, isLiveRunner, RunlistLockError } from './runlist.js';
 import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
-import { checkMonthlyRoom, monthlyRefusalText } from './monthly.js';
+import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
 import { ConfigError } from './config.js';
 import { applyConfiguredKey, keyNameFor, rowsForHome } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
@@ -672,17 +672,11 @@ async function execute(ctx) {
     /** @type {any} */
     let watchdog = null;
     if (existsSync(wdFile)) { try { watchdog = JSON.parse(readFileSync(wdFile, 'utf8')); } catch { /* an unreadable report is not evidence of life */ } }
-    if (Number.isInteger(watchdog?.pid)) {
-      let alive = true;
-      try { process.kill(watchdog.pid, 0); } catch { alive = false; }
-      if (alive) {
-        let cmdline = null;
-        try { cmdline = readFileSync(`/proc/${watchdog.pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim(); } catch { /* no /proc, or not ours */ }
-        if (cmdline === null || cmdline.includes('run-u.mjs') || cmdline.includes('u-watchdog.mjs')) {
-          die(`--resume: pid ${watchdog.pid} from ${deadSpineFile} is still alive${cmdline ? ` (${cmdline.slice(0, 120)})` : ' and this process cannot read its command line'}. Two processes on one patient is unrecoverable — stop it first.`);
-        }
-        err(`--resume: pid ${watchdog.pid} is alive but is NOT this runner (${cmdline.slice(0, 80)}) — the pid was recycled; continuing.`);
-      }
+    // ONE owner of "is that pid a live bareloop runner" (src/runlist.js `isLiveRunner`, shared with the
+    // monthly limit's holds): alive AND a bareloop runner refuses; a recycled pid that now runs some
+    // other program does not. Where /proc is unreadable an existing pid is assumed to be ours.
+    if (Number.isInteger(watchdog?.pid) && isLiveRunner(watchdog.pid)) {
+      die(`--resume: pid ${watchdog.pid} from ${deadSpineFile} is still alive (a bareloop runner). Two processes on one patient is unrecoverable — stop it first.`);
     }
     // WHEN did the dead leg stop? The watchdog's kill record is later, better evidence
     // than the last spine event for a run that was KILLED — and worse evidence for one
@@ -1423,24 +1417,38 @@ async function execute(ctx) {
     }
   }
 
-  // THE MONTHLY $ LIMIT (PANEL-BUILD.md P4a, hamr 2026-09-29: "drop time keep money") — the
-  // ONE run-start seam. Every run this door starts (the CLI's `bareloop run-u` and the panel,
-  // which spawns it) passes here after the signature and the key gates and BEFORE the run
-  // list row, the patient reset or any token: a cap larger than what is left this month does
-  // not start, and nothing is spent. This leg's exposure is the whole signed cap on a cold
-  // start (it covers drafting + run) and only the REMAINDER on a resume/door-rerun, whose
-  // earlier spend is already in the month's total (a resume's killed leg counts its real spend only,
-  // never its unspent cap — `resumingSpine` — since the remainder asked for here covers that). No limit set = no check. An unreadable
-  // config.json refuses too — a broken instrument never silently reads "no limit".
+  // THE MONTHLY $ LIMIT (PANEL-BUILD.md P4a; hamr 2026-09-30: "whoever runs first claims the limit and
+  // holds it") — the ONE run-start seam. Every run this door starts (the CLI's `bareloop run-u`, `bareloop
+  // run <bundle>` and the panel, which spawns them) passes here after the signature and the key gates and
+  // BEFORE the patient reset or any token: the run CLAIMS its leg cap — under the run-list lock it reads what
+  // is left and, only if the cap fits, appends its own run-list row carrying its `pid` and `capUsd` (the hold).
+  // A cap larger than what is left appends nothing and does not start; nothing is spent. This leg's exposure
+  // is the whole signed cap on a cold start (it covers drafting + run) and only the REMAINDER on a
+  // resume/door-rerun, whose earlier spend is already in the month's total (the killed leg's claim is
+  // settled at its floor once its process is gone). No limit set = no claim (the row is listed as ever). An
+  // unreadable config.json, or a run-list lock that cannot be taken, refuses too — a broken instrument
+  // never silently reads "no limit".
+  const runid = ctx.bundle?.runid ?? Date.now().toString(36);
+  const spineFile = ctx.bundle ? join(spineDir, 'spine.jsonl') : join(spineDir, `u-${runid}.jsonl`);
+  const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
+  const legCapUsd = Math.max(0, spec.budgetUsd - (typeof foldedUsd === 'number' && Number.isFinite(foldedUsd) ? foldedUsd : 0));
+  // every row carries its runner's pid and the leg cap, limit set or not: a limit set LATER still holds it
+  /** @type {import('./runlist.js').RunRow} */
+  const runRow = {
+    at: new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: ctx.bundle ? 'bundle' : 'run-u', pid: process.pid, capUsd: legCapUsd,
+  };
+  let claimed = false;
   {
-    const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
-    const legCapUsd = Math.max(0, spec.budgetUsd - (typeof foldedUsd === 'number' && Number.isFinite(foldedUsd) ? foldedUsd : 0));
     /** @type {string|null} */
     let refusal = null;
     try {
-      if (cfgOn) refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: legCapUsd, home: cfgHome, resumingSpine: deadSpineFile }));
+      if (cfgOn) {
+        const got = claimRun({ row: runRow, capUsd: legCapUsd, home: cfgHome });
+        claimed = got.claimed;
+        refusal = monthlyRefusalText(got.room);
+      }
     } catch (e) {
-      if (!(e instanceof ConfigError)) throw e;
+      if (!(e instanceof ConfigError) && !(e instanceof RunlistLockError)) throw e;
       err(`${e.message} — refusing to start rather than guess the monthly limit. Nothing spent.`);
       throw new ExitSignal(2);
     }
@@ -1457,8 +1465,6 @@ async function execute(ctx) {
   // (keys, monthly limit, param guards) leaves no worktree behind.
   ctx.bundle?.prepareTree();
   mkdirSync(spineDir, { recursive: true });
-  const runid = ctx.bundle?.runid ?? Date.now().toString(36);
-  const spineFile = ctx.bundle ? join(spineDir, 'spine.jsonl') : join(spineDir, `u-${runid}.jsonl`);
   const closeDir = ctx.bundle ? join(spineDir, 'close') : spineDir;
   if (ctx.bundle) mkdirSync(closeDir, { recursive: true });
 
@@ -1474,10 +1480,9 @@ async function execute(ctx) {
   // carries everything else through (env/out/err/provider/…): a caller that
   // injects it writes this leg's row under a temp home instead of the real
   // `~/.config/bareloop`; production never sets it.
+  // When the monthly claim above already appended this run's row, there is nothing to add.
   try {
-    appendRun({
-      at: new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: ctx.bundle ? 'bundle' : 'run-u',
-    }, { home: deps.runlistHome });
+    if (!claimed) appendRun(runRow, { home: deps.runlistHome });
   } catch (/** @type {any} */ e) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
   }
@@ -1852,6 +1857,15 @@ async function execute(ctx) {
   // tolerant: a torn/garbled line is skipped, not a crash (the shipped bundle-run fix, now the one engine read)
   const events = parseJsonl(spineFile).records;
   const je = events.findLast((e) => e.type === 'job-end');
+  // The claim's WRITE-BACK (hamr 2026-09-30): when the run ends it settles its own claim on the monthly
+  // limit — its final spend, attributed to itself. Best-effort: a run that dies before here is settled
+  // (`process gone`) by the next run that takes the lock.
+  if (je) {
+    try {
+      const fin = legSpend(events);
+      appendRunEvent({ runid, type: 'settled', by: runid, spentUsd: fin.usd, spendComplete: fin.complete, at: new Date().toISOString() }, { home: cfgHome });
+    } catch (/** @type {any} */ e) { err(`WARNING: could not settle this run's claim in ~/.config/bareloop/runs.jsonl (${e.message}) — the next run settles it once this process is gone.`); }
+  }
   // the ONE spelling of the text-side scan (src/validate.js) — a hand-rolled copy
   // here would be the ninth, and one that misses a shape leaks on the very output
   // it guards. Only the COUNT is ever read out; the matches themselves stay here.
