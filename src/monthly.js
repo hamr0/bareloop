@@ -357,7 +357,7 @@ export function checkMonthlyRoom({ capUsd, home, now, aboveRunid }) {
   }
   const spent = monthSpend({ home, now, aboveRunid });
   const leftCents = Math.max(0, Math.floor((limit - spent.reservedUsd) * 100 + 1e-6));
-  const capCents = Math.ceil((Number.isFinite(capUsd) ? capUsd : 0) * 100 - 1e-6);
+  const capCents = Math.ceil(capUsd * 100 - 1e-6); // a non-finite cap never fits (NaN/Infinity compare false) — never read as $0
   return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast };
 }
 

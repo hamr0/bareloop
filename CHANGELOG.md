@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- A spec whose `budgetUsd` is not a finite number (e.g. `1e999`) is refused by `validateJob` at $0, and the monthly-limit check (`checkMonthlyRoom` / `claimRun`) no longer reads a non-finite cap as $0 — it never fits.
+
 ## [0.33.0] — 2026-09-30
 
 ### Added

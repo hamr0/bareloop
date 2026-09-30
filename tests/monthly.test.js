@@ -136,6 +136,13 @@ test('checkMonthlyRoom: no limit = ok, no check; cap == left = ok; cap > left = 
   assert.equal(monthlyRefusalText(checkMonthlyRoom({ capUsd: 1, home, now: NOW })), 'Max $0.00 (monthly limit)');
 });
 
+test('checkMonthlyRoom: a non-finite cap never fits (NaN / Infinity are refused, not read as $0)', (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 5 }, { home });
+  for (const capUsd of [Infinity, NaN]) assert.equal(checkMonthlyRoom({ capUsd, home, now: NOW }).ok, false);
+  assert.equal(checkMonthlyRoom({ capUsd: 5, home, now: NOW }).ok, true);
+});
+
 test('checkMonthlyRoom: an incomplete month total travels as atLeast; an unreadable config.json throws (never reads as "no limit")', (t) => {
   const home = tmp(t);
   const d = tmp(t);
