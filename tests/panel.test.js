@@ -11,6 +11,7 @@ import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, cpSync, utimesSync, readFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -189,6 +190,20 @@ test('createPanelServer: port 0 resolves the OS-assigned real port, never 0, and
   const res = await fetch(`${base}/`);
   const html = await res.text();
   assert.ok(html.includes(String(port)), 'expected the resolved port to reach the served page (not the literal 0 requested)');
+});
+
+test('every GET route refuses a request whose Host is not the panel\'s own address (no token needed on reads)', async (t) => {
+  const { port } = await startServer(t, { home: tmp() });
+  const get = (path, host) => new Promise((resolve, reject) => {
+    const r = httpRequest({ host: '127.0.0.1', port, path, headers: { host } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+    r.on('error', reject); r.end();
+  });
+  for (const path of ['/', '/api/runs', '/api/runs/abc123', '/api/settings/state']) {
+    assert.equal(await get(path, `evil.example:${port}`), 403, `${path} with a foreign Host`);
+    assert.equal(await get(path, '127.0.0.1:1'), 403, `${path} with the wrong port`);
+  }
+  assert.equal(await get('/', `127.0.0.1:${port}`), 200);
+  assert.equal(await get('/api/runs', `127.0.0.1:${port}`), 200);
 });
 
 test('createPanelServer: a taken port rejects loudly (EADDRINUSE), never silently picks another port', async (t) => {

@@ -3328,6 +3328,8 @@ key you want first (the panel picks the row by the Model menu).
   `baselineKind`/`question`: the plain-English question is derived in `src/panel/server.js`
   (`stageQuestionText`) from the signed stage's kind/params only, `null` when no honest
   wording exists (the client then shows the stage's own name). Every
+  GET/HEAD answers only when its `Host` header is the panel's own `127.0.0.1:<port>` (`checkHostGuard`,
+  `src/panel/authorroutes.js`; any other Host is `403`, no token needed to read). Every
   P1 endpoint is GET/HEAD only (anything else — including every write verb — is `405`, outside the
   two human-click-guarded write families `/api/author/*` and `/api/settings/*` below); a URL
   never joins a path segment into a filesystem read — a runid is looked up in the run list

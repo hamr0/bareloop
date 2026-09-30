@@ -39,7 +39,7 @@ import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
-import { createAuthorRoutes, mintToken } from './authorroutes.js';
+import { createAuthorRoutes, mintToken, checkHostGuard } from './authorroutes.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1745,6 +1745,13 @@ export function handleRequest(req, res, opts) {
     return;
   }
   const { pathname } = url;
+
+  // every read names the panel's own address as Host — no token needed to read, but another origin's
+  // page (a rebound DNS name) must not be able to fetch the run list
+  if ((method === 'GET' || method === 'HEAD') && !checkHostGuard(req, { port: opts.port }).ok) {
+    sendText(res, 403, 'wrong Host — this panel answers only at its own 127.0.0.1 address');
+    return;
+  }
 
   if (method !== 'GET' && method !== 'HEAD') {
     const routes = routesFor(opts, pathname);
