@@ -354,7 +354,8 @@ async function execute(ctx) {
   // Set once a monthly claim has appended this run's row: {runid, spine}. The catch below is the ONE
   // owner of "a claimed run that never began" — every exit between the claim and the spine's first
   // record (a refused resume patient, a throwing prepareTree, a git/reset failure...) passes there.
-  /** @type {{ runid: string, spine: string }|null} */
+  // Set on the no-limit path too, once the row is appended there (the same "listed, no spine yet" state).
+  /** @type {{ runid: string, spine: string, home: string|undefined }|null} */
   let claimedRow = null;
   try {
   const spec = ctx.spec;
@@ -1481,7 +1482,7 @@ async function execute(ctx) {
       if (cfgOn) {
         const got = claimRun({ row: runRow, capUsd: legCapUsd, home: cfgHome });
         claimed = got.claimed;
-        if (claimed) claimedRow = { runid, spine: spineFile };
+        if (claimed) claimedRow = { runid, spine: spineFile, home: cfgHome };
         refusal = monthlyRefusalText(got.room);
       }
     } catch (e) {
@@ -1519,7 +1520,12 @@ async function execute(ctx) {
   // `~/.config/bareloop`; production never sets it.
   // When the monthly claim above already appended this run's row, there is nothing to add.
   try {
-    if (!claimed) appendRun(runRow, { home: deps.runlistHome });
+    if (!claimed) {
+      appendRun(runRow, { home: deps.runlistHome });
+      // no limit set: the row is appended here, not by a claim — mark it so the execute catch releases it
+      // the same way if the run exits before its spine has a first record (it lives in `deps.runlistHome`)
+      claimedRow = { runid, spine: spineFile, home: deps.runlistHome };
+    }
   } catch (/** @type {any} */ e) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
   }
@@ -2237,7 +2243,7 @@ async function execute(ctx) {
     // left as a ghost that keeps the month reading "at least". Once the spine exists the run is a real,
     // listed run and ends by its own job-end. A failed release write never masks the original exit.
     if (claimedRow && !existsSync(claimedRow.spine)) {
-      try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: cfgHome }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
+      try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
     }
     if (e instanceof ExitSignal) return e.code;
     throw e;

@@ -3564,7 +3564,7 @@ resume against a live run: the process is a node executable with a `bareloop`/`b
 cap, though a recycled node program with such an argument still would), however quiet its spine; a claim whose process is gone is closed by whoever
 finds it, with a note (`{runid, type:'settled', by:<finder>, reason:'process gone', spentUsd:<floor>}`) and
 counts its real spend. If the sum fits, the run goes; if not, it appends `{type:'released',
-reason:'refused'}` and refuses with the exact text, nothing spent. A claimed run that then exits at $0 before its spine has a first record (a refused
+reason:'refused'}` and refuses with the exact text, nothing spent. A run whose row is listed (claimed, or with no limit set) that then exits at $0 before its spine has a first record (a refused
 `--resume` patient, a failing tree setup) appends `{type:'released', reason:'not started'}` too, so it leaves no row. A row that cannot be written, or an
 unreadable config, refuses too — never "no limit". When a run ends it appends its own
 `{runid, type:'settled', by:<runid>, spentUsd, spendComplete, at}`. Two runs may close the same dead claim;
