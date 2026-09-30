@@ -10,7 +10,7 @@
 // `applyConfiguredKey` / `modelChoiceFor` below — no second lookup exists. Key VALUES
 // never pass through here — only names.
 import { resolveProvider } from './providers.js';
-import { readConfig } from './config.js';
+import { readConfig, ConfigError } from './config.js';
 import { filledKeyNames } from './keysfile.js';
 
 /** DeepSeek's OpenAI-shaped endpoint (the same string the panel's Model menu used). */
@@ -73,6 +73,9 @@ export function defaultsFor(envName) {
  * @property {string} name the model id Chat uses ('' = not offered in Chat)
  * @property {string} provider the `src/providers.js` table entry (the API shape's id)
  * @property {string} baseUrl the saved Base URL ('' = the shape's default host)
+ * @property {unknown} [priceInPerM] the customer's own price, USD per 1M input tokens — carried RAW
+ *   (present only when the config row names it); {@link ratesFor} is the one place that validates it
+ * @property {unknown} [priceOutPerM] the same, for output tokens
  */
 
 /**
@@ -90,6 +93,8 @@ export function keyRows({ filled, config }) {
       name: typeof s.name === 'string' ? s.name : d.name,
       provider: SHAPES.some((x) => x.id === s.shape) ? s.shape : d.shape,
       baseUrl: typeof s.baseUrl === 'string' ? s.baseUrl : d.baseUrl,
+      ...(Object.hasOwn(s, 'priceInPerM') ? { priceInPerM: s.priceInPerM } : {}),
+      ...(Object.hasOwn(s, 'priceOutPerM') ? { priceOutPerM: s.priceOutPerM } : {}),
     };
   });
 }
@@ -214,4 +219,38 @@ export function applyConfiguredKey(env, provider, baseUrl, rows, model) {
   const value = env[k.name];
   if (!k.chosen && value !== 'null') return env;
   return { ...env, [k.builtIn]: usableKey(value) };
+}
+
+/**
+ * The customer's own price for the row a `(provider, baseUrl[, model])` identity belongs to —
+ * the SAME row match {@link keyNameFor} uses (`findRow`), so the price and the key always come
+ * from one row. `null` = no price set (the run keeps bare-agent's built-in guess, byte-identical
+ * to before). Both fields or neither, each a finite number >= 0, USD per 1M tokens; anything
+ * else throws `ConfigError` naming the row and field — a bad price never silently falls back to
+ * the guess. `rates` is bare-agent's `Loop({ rates })` shape (USD per 1K); `inPerM`/`outPerM`
+ * are what a readout prints.
+ * @param {string|null|undefined} provider
+ * @param {string|null|undefined} baseUrl
+ * @param {readonly KeyRow[]} rows
+ * @param {string|null|undefined} [model]
+ * @returns {{ rates: { in: number, out: number }, inPerM: number, outPerM: number, envName: string }|null}
+ */
+export function ratesFor(provider, baseUrl, rows, model) {
+  const row = findRow(rows, { provider, baseUrl, model });
+  if (!row) return null;
+  const hasIn = row.priceInPerM !== undefined;
+  const hasOut = row.priceOutPerM !== undefined;
+  if (!hasIn && !hasOut) return null;
+  if (hasIn !== hasOut) {
+    throw new ConfigError(`keys.${row.envName} sets ${hasIn ? 'priceInPerM' : 'priceOutPerM'} but not ${hasIn ? 'priceOutPerM' : 'priceInPerM'} — set both prices (USD per 1M tokens) or neither`);
+  }
+  for (const field of /** @type {const} */ (['priceInPerM', 'priceOutPerM'])) {
+    const v = row[field];
+    if (!(typeof v === 'number' && Number.isFinite(v) && v >= 0)) {
+      throw new ConfigError(`keys.${row.envName}.${field} must be a number, 0 or more (USD per 1M tokens) — fix it in config.json or remove both price lines`);
+    }
+  }
+  const inPerM = /** @type {number} */ (row.priceInPerM);
+  const outPerM = /** @type {number} */ (row.priceOutPerM);
+  return { rates: { in: inPerM / 1000, out: outPerM / 1000 }, inPerM, outPerM, envName: row.envName };
 }
