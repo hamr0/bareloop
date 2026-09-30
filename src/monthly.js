@@ -14,15 +14,16 @@
 // run is counted at max(spend so far, capUsd) however quiet its spine; a run with a `job-end` counts
 // its real spend; a claim whose process is gone counts its floor and is settled — with an attributed
 // `settled` entry — by whichever later run finds it (the first note wins). An older row with no `pid` keeps the spine
-// mtime rule (a fresh spine, written to within DIED_MTIME_MS, is in flight). Only the refusal check
+// mtime rule (a fresh spine, written to within DIED_MTIME_MS, is in flight) — `runIsAlive`, src/runlist.js, the
+// one "is this run alive" rule the panel's glyph shares. Only the refusal check
 // reserves; the Money tab keeps showing real spend (`usd`).
 //
 // Honesty: a run whose spend is not fully known (a died/still-running spine, an unpriced
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
 // number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
-import { existsSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { readConfig, configPath, ConfigError } from './config.js';
-import { readRunList, appendRun, appendRunEvent, isLiveRunner, DIED_MTIME_MS } from './runlist.js';
+import { readRunList, appendRun, appendRunEvent, isLiveRunner, runIsAlive } from './runlist.js';
 import { parseJsonl } from './replayio.js';
 import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
 import { findRow } from './providerrows.js';
@@ -140,23 +141,21 @@ export function legTokens(records) {
 
 /**
  * What the refusal check counts for one run: its spend, unless it is IN FLIGHT (`job-start`, no
- * `job-end`, spine written to within DIED_MTIME_MS of `nowMs`), when it is the larger of that
+ * `job-end`, `runIsAlive` for a row with no pid — the pid-bearing rows are held by `readLegs`), when it is the larger of that
  * spend and the leg's own cap — the signed `budgetUsd` on the spine's `job-start` less the fold
  * a resumed leg inherited (`priorSpentUsd`), the same figure the run-start seam computes
  * (`legCapUsd`, src/userrun.js). A spine that records no `budgetUsd` reserves nothing extra.
  * @param {any[]} records
- * @param {string} spinePath
+ * @param {import('./runlist.js').RunRow} row
  * @param {number} nowMs
  * @param {number} usd the leg's spend so far
  * @returns {number}
  */
-function inFlightCapUsd(records, spinePath, nowMs, usd) {
+function inFlightCapUsd(records, row, nowMs, usd) {
   if (records.some((r) => r && r.type === 'job-end')) return usd;
   const start = records.find((r) => r && r.type === 'job-start') ?? null;
   if (!start || !(typeof start.budgetUsd === 'number' && Number.isFinite(start.budgetUsd))) return usd;
-  let mtimeMs;
-  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return usd; }
-  if (nowMs - mtimeMs > DIED_MTIME_MS) return usd; // stale — died, counts its floor
+  if (!runIsAlive(row, nowMs)) return usd; // stale — died, counts its floor
   const fold = typeof start.priorSpentUsd === 'number' && Number.isFinite(start.priorSpentUsd) ? start.priorSpentUsd : 0;
   return Math.max(usd, Math.max(0, start.budgetUsd - fold));
 }
@@ -194,7 +193,7 @@ export function readLegs(opts = {}) {
     // pid is a live bareloop runner, however quiet its spine — killed = process gone, not silence.
     // An older row with no `pid` keeps the spine-mtime rule (`inFlightCapUsd`), never guessed alive.
     const hasPid = Number.isInteger(row.pid);
-    const heldCap = hasPid && !settled.has(row.runid) && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && isLiveRunner(/** @type {number} */ (row.pid)) ? row.capUsd : null;
+    const heldCap = hasPid && !settled.has(row.runid) && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && runIsAlive(row, nowMs) ? row.capUsd : null;
     if (opts.thisMonthOnly && heldCap === null && !Number.isNaN(at.getTime()) && !sameLocalMonth(at, new Date(nowMs))) continue;
     if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
     /** @type {any[]} */
@@ -217,7 +216,7 @@ export function readLegs(opts = {}) {
       vouchedRounds: prov.vouched.rounds,
       otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
       reservedUsd: hasPid ? (records.some((r) => r && r.type === 'job-end') || heldCap === null ? leg.usd : Math.max(leg.usd, heldCap))
-        : inFlightCapUsd(records, row.spine, nowMs, leg.usd),
+        : inFlightCapUsd(records, row, nowMs, leg.usd),
       unreadable: false,
     });
   }

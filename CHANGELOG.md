@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- One "is this run alive" rule (`runIsAlive`, `src/runlist.js`) now drives both the panel's [▶] / [?] glyph and the monthly limit's hold: the run row's pid first (`isLiveRunner`), the spine-mtime rule only for a row with no pid. A run whose pid is alive but whose spine is quiet for 10+ minutes now reads running, not died; a dead pid with a fresh spine reads died. A `job-end` on the spine still wins.
 - `--resume` now also refuses when the predecessor run's own run-list row carries the pid of a live bareloop runner, not only when a watchdog kill record names it (same refusal text).
 - Every panel GET/HEAD route now refuses (`403`) a request whose `Host` is not the panel's own `127.0.0.1:<port>` (one shared `checkHostGuard`, also used by the write routes' guard), so a page on another origin cannot read the run list through a rebound DNS name. No token is needed to read.
 - The monthly-limit check (and so every run start) no longer parses the spine of every run ever listed: it reads only runs listed in the current local month, plus any claim still held by a live runner. The Money tab's all-time figures still read everything.
