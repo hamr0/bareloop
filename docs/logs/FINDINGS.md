@@ -13917,5 +13917,44 @@ price) are applied to cache tokens, so a vendor with a different cache discount 
 approximated on those tokens (over-priced writes err on the safe side; a deeper cache-read
 discount than 0.1x also over-prices). Past runs, including this one, are not re-priced.
 
-**Status: fixed** (customer-set price). Live check pending: no real run has yet been priced
-through this path; it is proven at $0 with a scripted provider only.
+**Status: fixed** (customer-set price), and proven live on two real runs (2026-09-30,
+`deepseek-flash`, price in $0.006 / out $1.20 per 1M on the `DEEPSEEK_API_KEY` row):
+
+- run `muo0txge` (run-u door, job `bareguard-u-types-deepseek`): green, `job-end` `spentUsd`
+  $0.2208 of the $4 cap, all 139 `worker-round` records `rateSource:"caller"`, spine
+  timestamps 17m46s. Spine `bareloop-patients/bareguard-u-deepseek-bareloop/u-muo0txge.jsonl`.
+- run `muo1jah4` (bundle door, the exported bundle of the same job): green, `spentUsd` $0.1515
+  of $4, all 78 `worker-round` records `rateSource:"caller"`, `blessing.json` written. Spine
+  `bareloop-patients/bundles/bareguard-u-types-deepseek.bareloop/runs/muo1jah4/spine.jsonl`.
+- Same job at the built-in guess earlier that day: `muny2nmw`, $4.2194, cap-halt. Both new runs
+  finished green well under the cap. (Different plans and step counts, so the two figures are
+  not a like-for-like contrast of the price alone.)
+- Both `job-end` records still read `spendComplete:false`, as `muny2nmw` did.
+
+**Still NOT proven live:** the panel's chat-authoring door and a judged (soft-green) close each
+carry the price (`resolve` at the door, the judge's own row), but they are covered at $0 only,
+by tests; no real run has exercised either. The native (CLI) and `runReuse` paths take no price
+by design. The vendor's bill for these two runs was not compared against the booked figure.
+
+## F207 — live findings from the 2026-09-30 DeepSeek runs: the monthly claim held; a wrong key name in the preview; unknown spend in the panel card (a proof, one wording defect, one UI defect)
+
+**Grounded in:** runs `muo0txge` and `muo1jah4` (spines named in F206) for the run facts; the
+monthly-claim facts (a) below are the orchestrator's own observations of the run list on the
+same day, not read by the builder from source or event log, and are labelled as such.
+
+**(a) The monthly limit worked live (orchestrator-observed, not re-verified here).** The row
+was written first; an over-limit start was refused with the exact `Max $X (monthly limit)` text
+and a `released` entry; a dead claim was settled `process gone` by the next claimer (`munvde16`
+by `munwuth1`, `munx2u5i` by `muny2nmw`); a finished run settled its own claim at job end. This
+is the first live proof of the claim, refuse, settle-dead and self-settle paths.
+
+**(b) The run preview names the wrong key (open, not fixed).** run-u's preview prints
+`OPENAI_API_KEY=...` in its "To approve and run" line for a job whose key really resolves to
+`DEEPSEEK_API_KEY` (provider `openai-api`, `baseUrl` `https://api.deepseek.com/v1`). Orchestrator
+observation; the job-start spine record carries `provider: openai-api` and the DeepSeek base
+URL. The line uses the provider shape's default name, not the row the key comes from.
+
+**(c) The panel run card shows no spend for a run that has spend (open, not fixed; for the next UI
+part).** Orchestrator observation: in a bundle run's first seconds the card reads "unknown" for
+type, spend and wall, because its row exists before its spine does; and for a LIVE run the card
+shows no spend or wall while the right pane does.
