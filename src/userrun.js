@@ -1991,10 +1991,16 @@ async function execute(ctx) {
         : mh.trend === 'flat' ? 'more money is unlikely to help; this bundle\'s goal is signed and cannot be revised here'
           : 'read the last close output before deciding whether more money is worth it';
       out(`  lever   ${lever}`);
-      out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; it cannot be raised past that)`);
-      out('          · abandon the task');
-      out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, at most $${signed}> --approve ${PRINT_APPROVE}`);
-      out('          (type the --budget number yourself — nothing here fills it in, so this line does not run as printed; nothing in the run may widen its own budget)');
+      if (spentUsd !== null && spentUsd >= signed) {
+        // the whole signed ceiling is spent: "more than spent, at most signed" is unsatisfiable, so no resume line is printed
+        out(`          · no room left under the signed ceiling: this run spent all of the signed $${signed}, and a bundle's ceiling cannot be raised`);
+        out('          · abandon the task');
+      } else {
+        out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; it cannot be raised past that)`);
+        out('          · abandon the task');
+        out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, at most $${signed}> --approve ${PRINT_APPROVE}`);
+        out('          (type the --budget number yourself — nothing here fills it in, so this line does not run as printed; nothing in the run may widen its own budget)');
+      }
     } else {
       out(`  lever   ${mh.lever}`);
       for (const o of mh.options ?? []) out(`          · ${o}`);
