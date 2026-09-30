@@ -476,6 +476,9 @@ async function execute(ctx) {
    * dropping the incomplete flag would silently turn a floor into an exact
    * figure on the next leg's own job-start). */
   const DRAFT_TAIL = DRAFT_SPENT_USD > 0 ? ` --draft-spent-usd ${DRAFT_SPENT_USD}${DRAFT_SPEND_INCOMPLETE ? ' --draft-spend-incomplete' : ''}` : '';
+  /** the registry the run was pointed at, as flags — every re-invocation this script PRINTS carries it
+   * (a paste that dropped it would green with no registry row). Empty when no --registry was named. */
+  const REGISTRY_TAIL = (ctx.registry ?? null) !== null ? ` --registry ${(ctx.registry ?? null)} --workflow ${(ctx.workflow ?? null) ?? spec.job}` : '';
 
   const WORKDIR = target.workdir;
   const SEED = target.seed;
@@ -936,8 +939,7 @@ async function execute(ctx) {
     // and the printed commands carry the registry forward, because an accept aimed
     // at no registry is the `no-row-for-run` refusal one hop later.
     const previewHeld = doorRecord?.quarantined === true && heldRowFor((ctx.registry ?? null), (ctx.workflow ?? null) ?? spec.job, DOOR);
-    const previewRegistry = (ctx.registry ?? null) !== null ? ` --registry ${(ctx.registry ?? null)} --workflow ${(ctx.workflow ?? null) ?? spec.job}` : '';
-    const doorInvoke = (/** @type {string} */ tail) => `  ${INVOKE} --door ${DOOR}${tail}${previewRegistry} --approve ${PRINT_APPROVE}`;
+    const doorInvoke = (/** @type {string} */ tail) => `  ${INVOKE} --door ${DOOR}${tail}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`;
     out('');
     if (RULING === null) {
       for (const l of runDoorLines({
@@ -1137,9 +1139,9 @@ async function execute(ctx) {
     // different provider (e.g. openai-api/DeepSeek) printed the WRONG variable
     // name to set: a person pasting it verbatim hit a $0 refusal naming the
     // right key only by accident of the runner's own generic error message,
-    // never from this hint. `providerEntry.envKey` is the same resolved name
-    // the real key check at launch (`:1157-1158` below) reads.
-    const invoke = (/** @type {string} */ tail) => `  ${providerEntry.envKey}=... ${INVOKE}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${tail} --approve ${PRINT_APPROVE}`;
+    // never from this hint. `keyNameFor` is the same resolved name
+    // the real key check at launch reads (the person's row variable, else the provider's built-in one).
+    const invoke = (/** @type {string} */ tail) => `  ${keyNameFor(spec.provider, spec.baseUrl, keyCfg, spec.model).name}=... ${INVOKE}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL}${tail} --approve ${PRINT_APPROVE}`;
     /** the door the operator has already picked, as flags — hoisted out of the else
      * below so the inhibitor line at the bottom can print the WHOLE command rather
      * than a shape the operator has to assemble. Empty on an ordinary run and on the
@@ -1266,7 +1268,7 @@ async function execute(ctx) {
       } else {
         out(`  costs    nothing, in any state — no work, no money, no allowance moved`);
         out(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the door on the record; after that it expires on its own, which is all "cancel" ever meant`);
-        out(`  reopen   ${INVOKE} --door ${DOOR} --approve ${PRINT_APPROVE}`);
+        out(`  reopen   ${INVOKE} --door ${DOOR}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
       }
       throw new ExitSignal(0);
     }
@@ -1304,8 +1306,8 @@ async function execute(ctx) {
     out(`\nPAUSED BY YOU — nothing was run and nothing was spent. The checkpoint stands exactly as it was: the work is on the run's own branch, the plan and the money are where the paused leg left them.`);
     out(`  keeps    ${PAUSE_TTL_MS / 86_400_000} days from the pause on the record — after that the checkpoint expires on its own, and nothing has to be decided today to let that happen`);
     out('  resume   the SAME runid, whenever you want, with the door you pick then:');
-    out(`           ${INVOKE} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --decide accept --approve ${PRINT_APPROVE}`);
-    out(`           ${INVOKE} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --decide rerun --text "<what you want done differently>" --approve ${PRINT_APPROVE}`);
+    out(`           ${INVOKE} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --decide accept --approve ${PRINT_APPROVE}`);
+    out(`           ${INVOKE} --resume ${RESUME}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --decide rerun --text "<what you want done differently>" --approve ${PRINT_APPROVE}`);
     out(`  read     the same command with no --decide re-prints the evidence package you just looked at`);
     throw new ExitSignal(0);
   }
@@ -1971,7 +1973,7 @@ async function execute(ctx) {
     out(`  trend   ${mh.trend} — ${mh.reading}`);
     out(`  lever   ${mh.lever}`);
     for (const o of mh.options ?? []) out(`          · ${o}`);
-    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
+    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
     out('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
   }
   // A STALL is a checkpoint too (hamr's go, 2026-08-13). Its own escalation prints one
@@ -1981,7 +1983,7 @@ async function execute(ctx) {
   // the hash already approved is the hash that resumes.
   if (outcome === 'step-stalled') {
     out('\nSTALL HALT — the model stopped producing rounds and reissuing the call did not recover it. The tree, the plan and the steps already finished STAND.');
-    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve ${PRINT_APPROVE}`);
+    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
     out('          (no spec edit, so the hash is unchanged — this re-enters at the stalled step and re-pays for none of the ones before it)');
     out('          (if the allowance is what actually ran out underneath the stall, that preview says so and refuses — it is read there, not asserted here)');
   }
@@ -2002,7 +2004,7 @@ async function execute(ctx) {
     out(`  died    ${total === null ? 'before a plan was accepted — nothing paid is re-payable'
       : done >= total ? `at the close — all ${total} step(s) finished`
         : `in step ${done + 1} of ${total}`}`);
-    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL} --approve ${PRINT_APPROVE}`);
+    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
     out('          (no spec edit, so the hash is unchanged — this re-enters at the recorded step and re-pays for none of the ones before it)');
     out('          (if the allowance is what actually ran out underneath the transport fault, that preview says so and refuses — it is read there, not asserted here)');
   }
@@ -2023,7 +2025,7 @@ async function execute(ctx) {
     ]);
     out('  clock    STOPPED — the wall does not run while a person is reading (W-2), and this leg\'s elapsed is what folds into the resume');
     out('');
-    const answer = (/** @type {string} */ tail) => `${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${tail} --approve ${PRINT_APPROVE}`;
+    const answer = (/** @type {string} */ tail) => `${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL}${tail} --approve ${PRINT_APPROVE}`;
     for (const l of doorLines({
       rerun: answer(' --decide rerun --text "<what you want done differently>"'),
       accept: answer(' --decide accept'),

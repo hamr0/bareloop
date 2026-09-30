@@ -101,7 +101,7 @@ function homeWith(t, keyRow) {
 }
 
 /** one run-u start on the DeepSeek-shaped spec; token-only rounds (costUsd null) so bare-agent prices them */
-async function runPriced(t, { home, budgetUsd = 5, preview = false }) {
+async function runPriced(t, { home, budgetUsd = 5, preview = false, specOver = {}, registry, workflow }) {
   const workdir = tmp(t);
   mkdirSync(join(workdir, 'src'), { recursive: true });
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
@@ -119,7 +119,9 @@ async function runPriced(t, { home, budgetUsd = 5, preview = false }) {
     writeScope: ['src/**'], goal: 'Append MARKER_OK to src/mod.mjs.', verdictType: 'green',
     close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(CLOSE_SOURCE) }],
     tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
+    ...specOver,
   };
+  if (specOver.baseUrl === null) delete spec.baseUrl;
   const round = (text) => ({ text, costUsd: null, usage: USAGE });
   const provider = scriptedProvider([round('scout: nothing'), round(JSON.stringify(PLAN)), round('done')]);
   let providerCalls = 0;
@@ -130,6 +132,7 @@ async function runPriced(t, { home, budgetUsd = 5, preview = false }) {
   try {
     code = await startRun(spec, {
       workdir, seed, spineName: 'customer-price-fixture-bareloop', ...(preview ? {} : { approve: jobSpecHash(spec) }),
+      ...(registry ? { registry } : {}), ...(workflow ? { workflow } : {}),
       deps: { provider: counted, env: {}, out: (s) => outs.push(s), err: (s) => errs.push(s), runlistHome: home },
     });
   } catch { code = 'threw'; }
@@ -423,4 +426,28 @@ test('judgeRatesFor: same provider, the judge model names a second row on the wo
   // a bad price on the judge's row still throws
   const bad = keyRows({ filled: ['OTHER_KEY'], config: { keys: { OTHER_KEY: { name: 'deepseek-pro', shape: 'openai-api', baseUrl: DS, priceInPerM: 1 } } } });
   assert.throws(() => judgeRatesFor({ provider: 'openai-api', model: 'deepseek-pro' }, 'openai-api', DS, null, bad), ConfigError);
+});
+
+// ── the preview's copy-paste "To approve and run" line (F207 b): the key variable the run will really read,
+// and the registry / workflow flags exactly when they were given ─────────────────────────────────────
+const approveLine = (outs) => outs.split('\n').find((l) => /^\s+\S+=\.\.\. /.test(l)) ?? '';
+
+test('the preview\'s approve line names the key variable the run reads, and carries --registry/--workflow only when given', async (t) => {
+  // a DeepSeek-base-URL job with the DeepSeek row present: DEEPSEEK_API_KEY, not the shape's built-in OPENAI_API_KEY
+  const ds = await runPriced(t, { home: homeWith(t, { priceInPerM: 0.006, priceOutPerM: 1.2 }), preview: true });
+  assert.match(approveLine(ds.outs), /^\s+DEEPSEEK_API_KEY=\.\.\. /);
+  assert.doesNotMatch(approveLine(ds.outs), /--registry|--workflow/);
+  // a plain OpenAI job (no baseUrl, no rows): the built-in OPENAI_API_KEY
+  const plain = await runPriced(t, { home: tmp(t), preview: true, specOver: { baseUrl: null, model: 'gpt-x' } });
+  assert.match(approveLine(plain.outs), /^\s+OPENAI_API_KEY=\.\.\. /);
+  // registry given: the printed approve line AND the inhibitor line carry it; workflow defaults to the job name
+  const reg = mkdtempSync(join(tmpdir(), 'cp-reg-'));
+  t.after(() => rmSync(reg, { recursive: true, force: true }));
+  const withReg = await runPriced(t, { home: homeWith(t, null), preview: true, registry: reg });
+  assert.equal(approveLine(withReg.outs).match(/--registry \S+ --workflow \S+/)?.[0], `--registry ${reg} --workflow customer-price-fixture`);
+  assert.equal(withReg.outs.split('\n').filter((l) => l.includes(`--registry ${reg}`)).length, 2, 'the approve line and the inhibitor line');
+  const named = await runPriced(t, { home: homeWith(t, null), preview: true, registry: reg, workflow: 'my-flow' });
+  assert.match(approveLine(named.outs), new RegExp(`--registry ${reg.replace(/[.\\/]/g, '\\$&')} --workflow my-flow --approve `));
+  console.log(`# approve line (DeepSeek job, registry): ${approveLine(withReg.outs).trim()}`);
+  console.log(`# approve line (plain OpenAI job): ${approveLine(plain.outs).trim()}`);
 });

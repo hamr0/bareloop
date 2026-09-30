@@ -1262,8 +1262,8 @@ export async function main(argv, deps = {}) {
           // <path>` and reads this SAME prepared copy's own source manifest for
           // the workdir and seed — so the command below is the whole of what a
           // person needs to run their own job, nothing left to hand off.
-          // `providerEntry.envKey` (never a hardcoded ANTHROPIC_API_KEY) is the
-          // same F187 rule scripts/run-u.mjs's own hint already follows.
+          // `keyNameFor` (never a hardcoded ANTHROPIC_API_KEY, never the provider's built-in name
+          // when the job's key row names another) is the same F187 rule run-u's own hint follows.
           // hamr's ruling 2026-09-28 (2nd addendum) — `totalCost.costUsd === null`
           // means this pipeline's own metered list carried at least one unpriced
           // call (`tallyCalls`'s `spendComplete: false`), so the drafting fold is
@@ -1276,7 +1276,7 @@ export async function main(argv, deps = {}) {
               + 'and run-u will enforce the remainder (Cap $ minus this) as ITS ceiling — pass --draft-spent-usd exactly as shown below, never a rounded or re-typed figure.');
           }
           out('\nTo run it (the same signature and gates as any other job — nothing here bypasses them):');
-          out(`  ${providerEntry.envKey}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}${draftIncomplete ? ' --draft-spend-incomplete' : ''}` : ''}`);
+          out(`  ${keyNameFor(PROVIDER_NAME, baseUrl, keyCfg, spec.model).name}=... node scripts/run-u.mjs --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}${draftIncomplete ? ' --draft-spend-incomplete' : ''}` : ''}`);
           emit('author-end', { outcome: 'prepared', specHash: hash });
         }
       }
