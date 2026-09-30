@@ -222,6 +222,29 @@ export function applyConfiguredKey(env, provider, baseUrl, rows, model) {
 }
 
 /**
+ * A per-1M price for a readout: two decimals at least ($1.20), more when the number needs them so a
+ * tiny price never rounds to $0.00 or $0.01 ($0.006, $0.0004).
+ * @param {number} n USD per 1M tokens
+ * @returns {string}
+ */
+function perMoney(n) {
+  const shown = String(n);
+  if (!shown.includes('e') && (shown.split('.')[1] ?? '').length >= 2) return `$${shown}`;
+  if (shown.includes('e')) return `$${n.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')}`;
+  return `$${n.toFixed(2)}`;
+}
+
+/**
+ * The one readout line for a resolved customer price, preview and run tail alike:
+ * `yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)`.
+ * @param {{ inPerM: number, outPerM: number, envName: string }} price a {@link ratesFor} result
+ * @returns {string}
+ */
+export function priceReadout(price) {
+  return `yours: in ${perMoney(price.inPerM)} / out ${perMoney(price.outPerM)} per 1M tokens (${price.envName} row)`;
+}
+
+/**
  * The customer's own price for the row a `(provider, baseUrl[, model])` identity belongs to —
  * the SAME row match {@link keyNameFor} uses (`findRow`), so the price and the key always come
  * from one row. `null` = no price set (the run keeps bare-agent's built-in guess, byte-identical

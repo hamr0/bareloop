@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigError, readConfig, updateConfig } from '../src/config.js';
-import { keyRows, keyNameFor, ratesFor } from '../src/providerrows.js';
+import { keyRows, keyNameFor, priceReadout, ratesFor } from '../src/providerrows.js';
 import { createPanelServer } from '../src/panel/server.js';
 
 /** @param {import('node:test').TestContext} t */
@@ -101,7 +101,7 @@ function homeWith(t, keyRow) {
 }
 
 /** one run-u start on the DeepSeek-shaped spec; token-only rounds (costUsd null) so bare-agent prices them */
-async function runPriced(t, { home, budgetUsd = 5 }) {
+async function runPriced(t, { home, budgetUsd = 5, preview = false }) {
   const workdir = tmp(t);
   mkdirSync(join(workdir, 'src'), { recursive: true });
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
@@ -129,7 +129,7 @@ async function runPriced(t, { home, budgetUsd = 5 }) {
   let code = null;
   try {
     code = await startRun(spec, {
-      workdir, seed, spineName: 'customer-price-fixture-bareloop', approve: jobSpecHash(spec),
+      workdir, seed, spineName: 'customer-price-fixture-bareloop', ...(preview ? {} : { approve: jobSpecHash(spec) }),
       deps: { provider: counted, env: {}, out: (s) => outs.push(s), err: (s) => errs.push(s), runlistHome: home },
     });
   } catch { code = 'threw'; }
@@ -158,6 +158,30 @@ test('end to end: with a customer price the worker rounds read rateSource "calle
   // and the run summary the person reads is the customer-priced one
   assert.ok(priced.row);
   console.log(`# two arms, same tokens (${USAGE.inputTokens} in / ${USAGE.outputTokens} out per round): customer price $${pr[0].costUsd.toFixed(9)} (${pr[0].rateSource}) vs guess $${gr[0].costUsd.toFixed(9)} (${gr[0].rateSource})`);
+});
+
+test('the price readout: per 1M, tiny prices never round to $0.00 / $0.01', () => {
+  const line = (inPerM, outPerM) => priceReadout({ inPerM, outPerM, envName: 'K' });
+  assert.equal(line(0.006, 1.2), 'yours: in $0.006 / out $1.20 per 1M tokens (K row)');
+  assert.equal(line(0.0004, 5), 'yours: in $0.0004 / out $5.00 per 1M tokens (K row)');
+  assert.equal(line(0, 0.125), 'yours: in $0.00 / out $0.125 per 1M tokens (K row)');
+  assert.equal(line(1e-7, 3), 'yours: in $0.0000001 / out $3.00 per 1M tokens (K row)');
+});
+
+test('the readout line appears in the run preview and the run tail when a price is set — and nowhere when none is', async (t) => {
+  const line = 'yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)';
+  const home = homeWith(t, { priceInPerM: 0.006, priceOutPerM: 1.2 });
+  const pre = await runPriced(t, { home, preview: true });
+  assert.equal(pre.providerCalls, 0);
+  assert.match(pre.outs, new RegExp(`^  price    ${line.replace(/[()$/.]/g, '\\$&')}$`, 'm'));
+  const run = await runPriced(t, { home });
+  assert.match(run.outs, new RegExp(`^price     ${line.replace(/[()$/.]/g, '\\$&')}$`, 'm'));
+  console.log(`# preview: ${pre.outs.split('\n').find((l) => /^  price /.test(l))}`);
+  console.log(`# tail:    ${run.outs.split('\n').find((l) => /^price /.test(l))}`);
+  const none = await runPriced(t, { home: homeWith(t, null), preview: true });
+  assert.doesNotMatch(none.outs, /^\s*price\s+yours/m);
+  const noneRun = await runPriced(t, { home: homeWith(t, null) });
+  assert.doesNotMatch(noneRun.outs, /^price\s+yours/m);
 });
 
 test('end to end: the cap binds on the customer-priced dollars — a low price does not cap-halt where the guess does, a high price halts sooner', async (t) => {

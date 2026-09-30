@@ -77,7 +77,7 @@ import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
 import { ConfigError } from './config.js';
-import { applyConfiguredKey, keyNameFor, ratesFor, rowsForHome } from './providerrows.js';
+import { applyConfiguredKey, keyNameFor, priceReadout, ratesFor, rowsForHome } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -985,6 +985,7 @@ async function execute(ctx) {
     out(`  patient  ${WORKDIR} @ ${SEED.slice(0, 12)}`);
     out(`  shim     ${READ_SHIM_LABEL}`);
     out(`  scout    ${SCOUT_LABEL}`);
+    if (workerPrice) out(`  price    ${priceReadout(workerPrice)}`);
     out(`  goal     "${spec.goal}"`);
     // F87 — the goal must state everything the close will judge, and nothing derives
     // one from the other or checks them against each other. So the only defence is
@@ -1936,6 +1937,7 @@ async function execute(ctx) {
   // THIS LEG's own tokens, off THIS LEG's own spine — same scope as `rounds` above it,
   // never the folded chain (see `tokensLine`'s doc for why worker-result is excluded).
   out(`tokens    ${tokensLine({ events })}`);
+  if (workerPrice) out(`price     ${priceReadout(workerPrice)}`);
   out(`writes    ${writes.length} allowed (${new Set(writes.map((e) => e.action?.path)).size} distinct files)`);
   out(`plan      ${plan ? `${plan.steps?.length ?? '?'} ${plan.steps?.length === 1 ? 'step' : 'steps'}` : 'none validated'}`);
   out(`checks    ${events.filter((e) => e.type === 'check-run').length} runs · menu [${events.find((e) => e.type === 'check-menu')?.offered?.join(', ') ?? '-'}]`);
