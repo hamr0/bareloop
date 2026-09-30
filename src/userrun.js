@@ -362,6 +362,13 @@ async function execute(ctx) {
   // Set on the no-limit path too, once the row is appended there (the same "listed, no spine yet" state).
   /** @type {{ runid: string, spine: string, home: string|undefined }|null} */
   let claimedRow = null;
+  // Release the claimed row (a `released` entry folds it out of the list, like a monthly refusal): the run
+  // spent nothing and must not stay a ghost that keeps the month reading "at least". A failed release write
+  // never masks the original exit.
+  const releaseClaimedRow = () => {
+    if (!claimedRow) return;
+    try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
+  };
   try {
   const spec = ctx.spec;
   const specPath = ctx.specPath;
@@ -1704,6 +1711,7 @@ async function execute(ctx) {
     emit('destination-refused', { code: sourceManifest.code, detail: sourceManifest.stop });
     emit('run-end', { outcome: 'escalated' });
     err(`SOURCE-MANIFEST-RED — ${sourceManifest.stop}. See ${spineFile}`);
+    releaseClaimedRow(); // a $0 refusal after the spine exists: no ghost row, no "at least" month
     throw new ExitSignal(1);
   }
   /** the front door's per-run instance, or null when there is none (no
@@ -1722,6 +1730,7 @@ async function execute(ctx) {
       emit('destination-refused', { code: dp.code, detail: dp.stop });
       emit('run-end', { outcome: 'escalated' });
       err(`DESTINATION-RED — ${dp.stop}. See ${spineFile}`);
+      releaseClaimedRow(); // a $0 refusal after the spine exists: no ghost row, no "at least" month
       throw new ExitSignal(1);
     }
   }
@@ -1740,6 +1749,7 @@ async function execute(ctx) {
     });
     emit('run-end', { outcome: 'escalated' });
     err(`CLOSE-TIMING-RED — stage(s) never finished the timing preflight: ${names}. See ${spineFile}`);
+    releaseClaimedRow(); // a $0 refusal after the spine exists: no ghost row, no "at least" month
     throw new ExitSignal(1);
   }
   const RESOLVED_CLOSE_TIMEOUT_MS = /** @type {number} */ (closeTimingResolved.closeTimeoutMs);
@@ -2276,9 +2286,7 @@ async function execute(ctx) {
     // owns no spine, so its row is released (folded out of the list, like a monthly refusal) rather than
     // left as a ghost that keeps the month reading "at least". Once the spine exists the run is a real,
     // listed run and ends by its own job-end. A failed release write never masks the original exit.
-    if (claimedRow && !existsSync(claimedRow.spine)) {
-      try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
-    }
+    if (claimedRow && !existsSync(claimedRow.spine)) releaseClaimedRow();
     if (e instanceof ExitSignal) return e.code;
     throw e;
   }

@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- A run that stops at $0 on a SOURCE-MANIFEST-RED, DESTINATION-RED or CLOSE-TIMING-RED now releases its monthly claim (the same `released` entry as a run that never started), so it leaves no ghost row and the month no longer reads "at least".
 - A spec whose `budgetUsd` is not a finite number (e.g. `1e999`) is refused by `validateJob` at $0, and the monthly-limit check (`checkMonthlyRoom` / `claimRun`) no longer reads a non-finite cap as $0 — it never fits.
 
 ## [0.33.0] — 2026-09-30

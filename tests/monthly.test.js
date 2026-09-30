@@ -259,8 +259,11 @@ const git = (/** @type {string} */ cwd, /** @type {string[]} */ args) => execFil
 const CLOSE_SOURCE = "console.log('FIXTURE judged=1');\nprocess.exit(1);\n";
 
 /** run-u start against a scratch home; returns what happened + how many provider calls */
-async function runU(t, { home, budgetUsd }) {
-  const workdir = tmp(t);
+async function runU(t, { home, budgetUsd, manifest }) {
+  // `manifest` (raw text) = a source.json beside the tree, the way the source door leaves one
+  const parent = tmp(t);
+  const workdir = manifest === undefined ? tmp(t) : join(parent, 'tree');
+  if (manifest !== undefined) { mkdirSync(workdir); writeFileSync(join(parent, 'source.json'), manifest); }
   mkdirSync(join(workdir, 'src'), { recursive: true });
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
   git(workdir, ['init', '-q']);
@@ -354,6 +357,23 @@ test('run-start seam: a claimed run that exits at $0 before its spine exists (th
   const m = monthSpend({ home });
   assert.equal(m.atLeast, false);
   assert.equal(m.runs, 0);
+});
+
+test('run-start seam: a $0 refusal AFTER the spine exists (SOURCE-MANIFEST-RED, DESTINATION-RED) RELEASES the claim — no ghost row, the month is exact', async (t) => {
+  for (const [manifest, red] of [['not json{{{', /SOURCE-MANIFEST-RED/], [JSON.stringify({ destination: 'relative/out' }), /DESTINATION-RED/]]) {
+    const home = tmp(t);
+    updateConfig({ monthlyLimitUsd: 10 }, { home });
+    const r = await runU(t, { home, budgetUsd: 2, manifest });
+    assert.equal(r.code, 1);
+    assert.match(r.errs, red);
+    assert.equal(r.providerCalls, 0);
+    const list = readRunList({ home });
+    assert.equal(list.rows.length, 0, `${red}: the refused run is folded out of the list`);
+    assert.equal(list.events.filter((e) => e.type === 'released').length, 1);
+    const m = monthSpend({ home });
+    assert.equal(m.atLeast, false);
+    assert.equal(m.runs, 0);
+  }
 });
 
 test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is RELEASED too', async (t) => {
