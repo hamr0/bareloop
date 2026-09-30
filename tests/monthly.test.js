@@ -17,7 +17,7 @@ import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, isLiveRunne
 import { appendRun, appendRunEvent, readRunList, runlistPath } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
-import { startRun } from '../src/userrun.js';
+import { startRun, resumeRun } from '../src/userrun.js';
 import { createPanelServer } from '../src/panel/server.js';
 import { signRun } from '../src/panel/authorroutes.js';
 import { scriptedProvider } from './helpers.js';
@@ -283,7 +283,7 @@ async function runU(t, { home, budgetUsd }) {
       deps: { provider: counted, env: {}, out: () => {}, err: (s) => errs.push(s), runlistHome: home },
     });
   } catch { code = 'threw'; }
-  return { code, errs: errs.join('\n'), providerCalls, workdir };
+  return { code, errs: errs.join('\n'), providerCalls, workdir, spec, seed };
 }
 
 test('run-start seam: a cap over what is left this month REFUSES with the exact text, spends nothing (zero provider calls), writes no run-list row', async (t) => {
@@ -310,6 +310,73 @@ test('run-start seam: cap == what is left starts (reaches the provider); no limi
   const home2 = tmp(t);
   const none = await runU(t, { home: home2, budgetUsd: 3.5 });
   assert.doesNotMatch(none.errs, /monthly limit/);
+});
+
+test('run-start seam: a claimed run that exits at $0 before its spine exists (throwing prepareTree) is RELEASED — no ghost row, the month is exact', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const workdir = tmp(t);
+  writeFileSync(join(workdir, 'a.txt'), 'x\n');
+  git(workdir, ['init', '-q']);
+  git(workdir, ['config', 'user.email', 'monthly-test@example.com']);
+  git(workdir, ['config', 'user.name', 'monthly-test']);
+  git(workdir, ['add', '.']);
+  git(workdir, ['commit', '-q', '-m', 'seed']);
+  const seed = git(workdir, ['rev-parse', 'HEAD']);
+  const scripts = tmp(t);
+  const closePath = join(scripts, 'close.mjs');
+  writeFileSync(closePath, CLOSE_SOURCE);
+  const spec = {
+    schema: 'job-v1', job: 'monthly-ghost-fixture', description: 'ghost row fixture.',
+    provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd: 2, maxWallMs: 1_800_000,
+    writeScope: ['src/**'], goal: 'Append MARKER_OK to src/mod.mjs.', verdictType: 'green',
+    close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(CLOSE_SOURCE) }],
+    tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
+  };
+  const bundleDir = tmp(t);
+  const runDir = join(bundleDir, 'runs', 'r-ghost');
+  const bundle = { runid: 'r-ghost', runDir, invoke: 'bareloop run /b', printApprove: 'H', prepareTree: () => { throw new Error('worktree add failed'); } };
+  await assert.rejects(startRun(spec, {
+    workdir, seed, spineName: 'unused', approve: jobSpecHash(spec), bundle,
+    deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: () => {}, runlistHome: home },
+  }), /worktree add failed/, 'the original failure is what surfaces');
+  const list = readRunList({ home });
+  assert.equal(list.rows.length, 0, 'the never-started run is folded out of the list');
+  assert.ok(list.events.some((e) => e.type === 'released' && e.runid === 'r-ghost' && e.reason === 'not started'));
+  assert.ok(!existsSync(join(runDir, 'spine.jsonl')));
+  const m = monthSpend({ home });
+  assert.equal(m.atLeast, false);
+  assert.equal(m.runs, 0);
+});
+
+test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is RELEASED too', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  // a fixture patient with a hand-written cap-halted leg-1 spine (the shape hitl-u.test.js also uses), then a
+  // human commit: HEAD moves, so the reconstruction's premise (this tree is where the run left it) is gone
+  const first = await runU(t, { home: tmp(t), budgetUsd: 2 }); // its own scratch home: only the fixture patient is wanted
+  const spineDir = tmp(t);
+  const dead = join(spineDir, 'u-dead1.jsonl');
+  const at = new Date().toISOString();
+  writeFileSync(dead, [
+    { type: 'job-start', job: first.spec.job, specHash: jobSpecHash(first.spec), budgetUsd: 2, shape: 'plan', goal: first.spec.goal, ts: at, seq: 1 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 's1' }] }, ts: at, seq: 2 },
+    { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: at, seq: 3 },
+    { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
+  git(first.workdir, ['add', '.']);
+  git(first.workdir, ['commit', '-q', '-m', 'human']);
+  /** @type {string[]} */ const errs = [];
+  const code = await resumeRun(dead, {
+    spec: first.spec, workdir: first.workdir, seed: first.seed, spineName: 'monthly-seam-fixture-bareloop', approve: jobSpecHash(first.spec),
+    deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: (s) => errs.push(s), runlistHome: home },
+  });
+  assert.equal(code, 2, errs.join('\n'));
+  assert.match(errs.join('\n'), /PATIENT REFUSED/);
+  const list = readRunList({ home });
+  assert.equal(list.rows.length, 0, 'the refused resume is folded out of the list');
+  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started').length, 1);
 });
 
 test('run-start seam: an unreadable config.json refuses the start ($0) rather than reading as "no limit"', async (t) => {

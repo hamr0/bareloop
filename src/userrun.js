@@ -351,6 +351,11 @@ async function execute(ctx) {
    * @returns {never} */
   const die = (m) => { err(m); throw new ExitSignal(2); };
   let exitCode = 0;
+  // Set once a monthly claim has appended this run's row: {runid, spine}. The catch below is the ONE
+  // owner of "a claimed run that never began" — every exit between the claim and the spine's first
+  // record (a refused resume patient, a throwing prepareTree, a git/reset failure...) passes there.
+  /** @type {{ runid: string, spine: string }|null} */
+  let claimedRow = null;
   try {
   const spec = ctx.spec;
   const specPath = ctx.specPath;
@@ -1445,6 +1450,7 @@ async function execute(ctx) {
       if (cfgOn) {
         const got = claimRun({ row: runRow, capUsd: legCapUsd, home: cfgHome });
         claimed = got.claimed;
+        if (claimed) claimedRow = { runid, spine: spineFile };
         refusal = monthlyRefusalText(got.room);
       }
     } catch (e) {
@@ -1859,7 +1865,7 @@ async function execute(ctx) {
   const je = events.findLast((e) => e.type === 'job-end');
   // The claim's WRITE-BACK (hamr 2026-09-30): when the run ends it settles its own claim on the monthly
   // limit — its final spend, attributed to itself. Best-effort: a run that dies before here is settled
-  // (`process gone`) by the next run that takes the lock.
+  // (`process gone`) by the next run that reads the list (file order: a claim yields only to the rows above it).
   if (je) {
     try {
       const fin = legSpend(events);
@@ -2192,6 +2198,13 @@ async function execute(ctx) {
 
     return exitCode;
   } catch (/** @type {any} */ e) {
+    // A claimed run that exited before its spine has a first record never started: it spent nothing and
+    // owns no spine, so its row is released (folded out of the list, like a monthly refusal) rather than
+    // left as a ghost that keeps the month reading "at least". Once the spine exists the run is a real,
+    // listed run and ends by its own job-end. A failed release write never masks the original exit.
+    if (claimedRow && !existsSync(claimedRow.spine)) {
+      try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: cfgHome }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
+    }
     if (e instanceof ExitSignal) return e.code;
     throw e;
   }
