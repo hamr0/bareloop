@@ -3533,10 +3533,13 @@ records only. `claimRun` (`src/monthly.js`) writes the run's row FIRST (it carri
 `capUsd`), then reads `runs.jsonl`: earlier claims come first, and only the claims ABOVE its own row count
 (rows below it yield to it). A claim above is held at the larger of its spend so far and its cap while
 its pid is a live bareloop runner (`isLiveRunner`, `src/runlist.js`, also what `--resume` uses to refuse a
-resume against a live run), however quiet its spine; a claim whose process is gone is closed by whoever
+resume against a live run: the process is a node executable with a `bareloop`/`bareloop.mjs`/`run-u.mjs`/
+`u-watchdog.mjs` argument, or is itself named so — a recycled pid running some other program never holds a
+cap, though a recycled node program with such an argument still would), however quiet its spine; a claim whose process is gone is closed by whoever
 finds it, with a note (`{runid, type:'settled', by:<finder>, reason:'process gone', spentUsd:<floor>}`) and
 counts its real spend. If the sum fits, the run goes; if not, it appends `{type:'released',
-reason:'refused'}` and refuses with the exact text, nothing spent. A row that cannot be written, or an
+reason:'refused'}` and refuses with the exact text, nothing spent. A claimed run that then exits at $0 before its spine has a first record (a refused
+`--resume` patient, a failing tree setup) appends `{type:'released', reason:'not started'}` too, so it leaves no row. A row that cannot be written, or an
 unreadable config, refuses too — never "no limit". When a run ends it appends its own
 `{runid, type:'settled', by:<runid>, spentUsd, spendComplete, at}`. Two runs may close the same dead claim;
 the FIRST note for a runid is authoritative. `readRunList` folds these entries out of the run rows

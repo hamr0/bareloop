@@ -19,6 +19,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
   rows without a `pid` keep the spine-mtime rule. The `resumingSpine` special case is gone (a resumed
   leg's dead process already counts at its floor). `--resume`'s "is the old process alive" check now
   recognises `bareloop run-u` / `bareloop run` and shares `isLiveRunner`.
+  `isLiveRunner` now needs a node executable (or a runner-named argv[0]) plus a runner-named argument, so a
+  recycled pid running e.g. `nvim` on a bareloop path no longer holds a dead run's cap; a claimed run that
+  exits at $0 before its spine exists is released (`reason: 'not started'`) instead of leaving a ghost row.
 - **One runner: `bareloop run <bundle>` is now a thin door to the `run-u` engine.** The exported
   bundle CLI no longer carries its own `runJob` caller (`doRun`) and provider wiring
   (`buildProviders`); `src/bundlerun.js` keeps only the bundle checks (integrity, deps, envelope,
