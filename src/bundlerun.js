@@ -206,7 +206,9 @@ export async function bundleMain(args, {
       bundle: {
         runid,
         runDir,
-        invoke: `bareloop run ${bundleDirArg} --repo ${repo}`,
+        // the leg's OWN tightened ceilings ride the printed command (only those the person passed), so the
+        // next leg never silently reverts to the signed ceiling; printed text only, nothing here widens.
+        invoke: `bareloop run ${bundleDirArg} --repo ${repo}${envelope.budgetUsd === undefined ? '' : ` --budget ${envelope.budgetUsd}`}${flags.wall === undefined ? '' : ` --wall ${Number(flags.wall)}`}`,
         printApprove: manifest.bundleHash,
         prepareTree,
       },

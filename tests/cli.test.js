@@ -333,6 +333,24 @@ test('bareloop (menu) choice 2 run: the SAME monthly-limit refusal as `bareloop 
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'a refusal must leak no worktree');
 });
 
+test('bareloop run: a halted bundle run prints a resume command that carries the leg\'s tightened --budget/--wall, and a hint that does not say to edit budgetUsd', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const t1 = 1_700_000_200_000;
+  const worktree = join(repo, '.bareloop', 'wt', t1.toString(36));
+  const out = sink(); const err = sink();
+  await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '0.0005', '--wall', '20'], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: runlistHome(t),
+  });
+  const text = out.text();
+  const line = text.split('\n').find((l) => /bareloop run .* --resume /.test(l));
+  assert.ok(line, `a halted run prints a resume line:\n${text}\n${err.text()}`);
+  assert.match(line, /--budget 0\.0005 --wall 20 --resume /);
+  assert.doesNotMatch(text, /edit budgetUsd/);
+  assert.match(text, /a bundle's spec cannot be edited/);
+});
+
 test('userrun.main cannot build a bundle run: the bundle seam is reachable only through startRun/resumeRun opts', () => {
   const src = readFileSync(join(REPO_ROOT, 'src', 'userrun.js'), 'utf8');
   const at = src.indexOf('export async function main(');

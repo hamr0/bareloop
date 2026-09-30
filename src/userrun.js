@@ -1973,8 +1973,14 @@ async function execute(ctx) {
     out(`  trend   ${mh.trend} — ${mh.reading}`);
     out(`  lever   ${mh.lever}`);
     for (const o of mh.options ?? []) out(`          · ${o}`);
-    out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
-    out('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
+    if (ctx.bundle) {
+      // a bundle's spec is manifest-hashed: there is no budgetUsd to edit and no new hash to sign.
+      out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
+      out('          (a bundle\'s spec cannot be edited — the ceiling stays as signed or tightened; nothing in the run may widen its own budget)');
+    } else {
+      out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
+      out('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
+    }
   }
   // A STALL is a checkpoint too (hamr's go, 2026-08-13). Its own escalation prints one
   // line above and says *"retry the run"*, and until this line the only retry on offer

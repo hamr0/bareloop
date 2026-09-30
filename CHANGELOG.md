@@ -64,6 +64,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **The bare `bareloop` menu's "2 run" now honours the monthly limit.** It handed the bundle door no keys
   home, so the limit, your price and the key-row choice were all off; it now gets the same home
   `bareloop run <bundle>` does.
+- **A halted bundle run's printed resume command keeps your tightened `--budget` / `--wall`.** It used to drop
+  them, so the next leg silently reverted to the signed ceiling. The money-halt hint for a bundle no longer
+  says to edit `budgetUsd` (a bundle's spec is manifest-hashed and cannot be edited).
 
 ### Removed
 
