@@ -3532,8 +3532,10 @@ lookup, on the SAME row `keyNameFor` picks the key from (`findRow`: shape + endp
 `null` (no price) or `{ rates: {in, out}, inPerM, outPerM, envName }` with `rates` in bare-agent's
 per-1K unit (`perM / 1000`). The run doors resolve it once, at $0, before the monthly claim and any
 worktree or spine (`src/userrun.js`; `src/authorrun.js`; the panel's authoring session): the worker row
-prices worker, scout and planner rounds; the judge's row (the worker's when it is the same provider)
-prices the judge. A priced round is stamped `rateSource:'caller'` (VOUCHED, see `spendProvenance`); with
+prices worker, scout and planner rounds; the judge is priced at ITS model's own row — for a different
+provider its own row, for the worker's provider the row on the worker's endpoint named for the judge's model
+(`judgeRatesFor`, `src/providerrows.js`), falling back to the worker's price when the model names no row.
+(The judge's KEY still follows the worker's row, so with two rows on one endpoint key and price can differ.) A priced round is stamped `rateSource:'caller'` (VOUCHED, see `spendProvenance`); with
 no price it stays the built-in guess, as before. The run preview and the run tail print
 `price    yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)` when a price is set, and
 nothing when none is. **The price is yours, and it sets what the cap means:** the cap and the halts run

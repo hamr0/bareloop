@@ -77,7 +77,7 @@ import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
 import { ConfigError } from './config.js';
-import { applyConfiguredKey, keyNameFor, priceReadout, ratesFor, rowsForHome } from './providerrows.js';
+import { applyConfiguredKey, judgeRatesFor, keyNameFor, priceReadout, ratesFor, rowsForHome } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -1386,14 +1386,14 @@ async function execute(ctx) {
   // into runJob below whether this leg constructs a real judge provider or not.
   const judge = resolveJudge({ specJudge: spec.judge, workerProvider: spec.provider, workerModel: MODEL });
   const judgeEntry = resolveProvider(judge.provider);
-  // …and the judge's price, from the row ITS key comes from: the worker's row when the judge is the same
-  // provider (the rule that gives it the worker's baseUrl and key), else the row for the judge's own
-  // provider. Only a judging close ever calls it, so only then can its row refuse the run.
+  // …and the judge's price, from the judge MODEL's row (`judgeRatesFor`): on the worker's endpoint when the
+  // judge is the same provider (falling back to the worker's price when the model names no row), else the
+  // row for the judge's own provider. Only a judging close ever calls it, so only then can its row refuse the run.
   /** @type {ReturnType<typeof ratesFor>} */
   let judgePrice = null;
   if (JUDGES) {
     try {
-      judgePrice = judge.provider === spec.provider ? workerPrice : ratesFor(judge.provider, undefined, keyCfg, judge.model);
+      judgePrice = judgeRatesFor(judge, spec.provider, spec.baseUrl, workerPrice, keyCfg);
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);

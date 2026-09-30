@@ -101,7 +101,7 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import { keysForDoor } from './keysfile.js';
-import { applyConfiguredKey, keyNameFor, ratesFor, rowsForHome } from './providerrows.js';
+import { applyConfiguredKey, judgeRatesFor, keyNameFor, ratesFor, rowsForHome } from './providerrows.js';
 import { ConfigError } from './config.js';
 import {
   readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync,
@@ -1073,14 +1073,14 @@ export async function main(argv, deps = {}) {
         const judge = judges
           ? resolveJobJudge(spec, PROVIDER_NAME, resolveWorkerModel)
           : null;
-        // the judge's price: the author's row when the judge is the same provider (the rule that gives it
-        // the author's key and baseUrl), else the row for the judge's own provider. A bad one refuses here,
+        // the judge's price: the judge model's own row (`judgeRatesFor`) — on the author's endpoint when the
+        // judge is the same provider, else the row for the judge's own provider. A bad one refuses here,
         // before the calibration gate spends anything — beside the judge-key check, the same door.
         /** @type {ReturnType<typeof ratesFor>} */
         let judgePrice = null;
         if (judge) {
           try {
-            judgePrice = judge.provider === PROVIDER_NAME ? authorPrice : ratesFor(judge.provider, undefined, keyCfg, judge.model);
+            judgePrice = judgeRatesFor(judge, PROVIDER_NAME, baseUrl, authorPrice, keyCfg);
           } catch (e) {
             if (!(e instanceof ConfigError)) throw e;
             err(`${e.message} — refusing before the calibration gate spends anything`);

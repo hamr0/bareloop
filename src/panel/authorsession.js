@@ -20,7 +20,7 @@
 // `src/panel/server.js`'s POST routes). Nothing here changes what a step
 // means or what an answer does — only where the answer comes from.
 
-import { applyConfiguredKey, keyNameFor, modelChoiceFor, ratesFor, rowsForHome } from '../providerrows.js';
+import { applyConfiguredKey, judgeRatesFor, keyNameFor, modelChoiceFor, ratesFor, rowsForHome } from '../providerrows.js';
 import { ConfigError } from '../config.js';
 import {
   mkdirSync, existsSync, writeFileSync, readdirSync,
@@ -485,7 +485,7 @@ export function createSession(card, deps = {}) {
     let judgePrice = null;
     if (judge) {
       try {
-        judgePrice = judge.provider === modelChoice.provider ? draftPrice : ratesFor(judge.provider, undefined, keyCfg, judge.model);
+        judgePrice = judgeRatesFor(judge, modelChoice.provider, modelChoice.baseUrl, draftPrice, keyCfg);
       } catch (e) {
         if (!(e instanceof ConfigError)) throw e;
         refuse(`${e.message} — refusing before gate 4 spends anything`);

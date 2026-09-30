@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigError, readConfig, updateConfig } from '../src/config.js';
-import { keyRows, keyNameFor, priceReadout, ratesFor } from '../src/providerrows.js';
+import { keyRows, keyNameFor, judgeRatesFor, priceReadout, ratesFor } from '../src/providerrows.js';
 import { createPanelServer } from '../src/panel/server.js';
 
 /** @param {import('node:test').TestContext} t */
@@ -345,14 +345,15 @@ async function runJudged(t, { home, judge }) {
 const judgeRounds = (spine) => spine.filter((r) => r.type === 'judge-round');
 
 /** a scratch home with the DeepSeek row (and, when given, the Anthropic row) priced as given */
-function judgeHome(t, { deepseek, anthropic }) {
+function judgeHome(t, { deepseek, anthropic, other }) {
   const home = tmp(t);
   const f = join(home, '.env');
-  writeFileSync(f, 'DEEPSEEK_API_KEY=sk-test-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nANTHROPIC_API_KEY=sk-ant-test-cccccccccccccccccccccccccccccccc\n');
+  writeFileSync(f, 'DEEPSEEK_API_KEY=sk-test-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nANTHROPIC_API_KEY=sk-ant-test-cccccccccccccccccccccccccccccccc\n' + (other ? 'OTHER_KEY=sk-test-dddddddddddddddddddddddddddddddddddd\n' : ''));
   chmodSync(f, 0o600);
   const keys = {};
   if (deepseek) keys.DEEPSEEK_API_KEY = deepseek;
   if (anthropic) keys.ANTHROPIC_API_KEY = anthropic;
+  if (other) keys.OTHER_KEY = other;
   if (Object.keys(keys).length) updateConfig({ keys }, { home });
   return home;
 }
@@ -385,5 +386,41 @@ test('a judged close prices its judge rounds at the worker row when the judge is
     assert.notEqual(r.costUsd, expectA);
     assert.ok(r.costUsd > expectA * 10, `c: the guess ${r.costUsd} is far above the customer price ${expectA}`);
   }
+  // (d) same provider, the signed judge's MODEL names a second priced row on the worker's endpoint:
+  // the judge is booked at that row (B), the worker still at its own (A)
+  const priceB = { priceInPerM: 9, priceOutPerM: 9 };
+  const d = await runJudged(t, {
+    home: judgeHome(t, { deepseek: workerPrice, other: { name: 'deepseek-pro', shape: 'openai-api', baseUrl: DS, ...priceB } }),
+    judge: { provider: 'openai-api', model: 'deepseek-pro' },
+  });
+  assert.ok(judgeRounds(d.spine).length > 0, `d: the judge ran (${d.code}) ${d.errs}`);
+  const expectD = perRound(JUDGE_USAGE, priceB);
+  for (const r of judgeRounds(d.spine)) assert.ok(Math.abs(r.costUsd - expectD) < 1e-12, `d: ${r.costUsd} vs ${expectD}`);
+  for (const r of workerRounds(d.spine)) assert.ok(Math.abs(r.costUsd - expectWorker) < 1e-12, `d worker: ${r.costUsd} vs ${expectWorker}`);
+  assert.notEqual(expectD, expectA);
+
   console.log(`# judge round, same tokens (${JUDGE_USAGE.inputTokens} in / ${JUDGE_USAGE.outputTokens} out): worker-row price $${expectA.toFixed(9)} | judge-row price $${expectB.toFixed(9)} | guess $${judgeRounds(c.spine)[0].costUsd.toFixed(9)}; judge-round rateSource in a/b/c: ${[a, b, c].map((r) => JSON.stringify(judgeRounds(r.spine)[0].rateSource)).join('/')}`);
+});
+
+test('judgeRatesFor: same provider, the judge model names a second row on the worker endpoint -> that row; no model / an unmatched model -> the worker\'s price; another provider unchanged', () => {
+  const rows = keyRows({ filled: ['DEEPSEEK_API_KEY', 'OTHER_KEY'], config: { keys: {
+    DEEPSEEK_API_KEY: { priceInPerM: 1, priceOutPerM: 2 },
+    OTHER_KEY: { name: 'deepseek-pro', shape: 'openai-api', baseUrl: DS, priceInPerM: 9, priceOutPerM: 9 },
+  } } });
+  const workerPrice = ratesFor('openai-api', DS, rows, 'deepseek-flash');
+  assert.equal(workerPrice?.envName, 'DEEPSEEK_API_KEY');
+  const j = (model) => judgeRatesFor({ provider: 'openai-api', model }, 'openai-api', DS, workerPrice, rows);
+  assert.equal(j('deepseek-pro')?.envName, 'OTHER_KEY');
+  assert.deepEqual(j('deepseek-pro')?.rates, { in: 9 / 1000, out: 9 / 1000 });
+  assert.deepEqual(j('deepseek-flash'), workerPrice);
+  assert.equal(j(undefined), workerPrice);
+  assert.equal(j('no-such-model'), workerPrice);
+  // no price on the worker's row: the guess (null) stands for an unmatched model
+  assert.equal(judgeRatesFor({ provider: 'openai-api', model: 'x' }, 'openai-api', DS, null, rows), null);
+  // a different provider resolves on its own row, as before
+  const withAnth = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: { keys: { ANTHROPIC_API_KEY: { priceInPerM: 3, priceOutPerM: 4 } } } });
+  assert.equal(judgeRatesFor({ provider: 'anthropic-api', model: 'claude-x' }, 'openai-api', DS, workerPrice, withAnth)?.envName, 'ANTHROPIC_API_KEY');
+  // a bad price on the judge's row still throws
+  const bad = keyRows({ filled: ['OTHER_KEY'], config: { keys: { OTHER_KEY: { name: 'deepseek-pro', shape: 'openai-api', baseUrl: DS, priceInPerM: 1 } } } });
+  assert.throws(() => judgeRatesFor({ provider: 'openai-api', model: 'deepseek-pro' }, 'openai-api', DS, null, bad), ConfigError);
 });

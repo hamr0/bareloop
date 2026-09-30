@@ -277,3 +277,25 @@ export function ratesFor(provider, baseUrl, rows, model) {
   const outPerM = /** @type {number} */ (row.priceOutPerM);
   return { rates: { in: inPerM / 1000, out: outPerM / 1000 }, inPerM, outPerM, envName: row.envName };
 }
+
+/**
+ * The price a judge's rounds are booked at. A price belongs to the MODEL's row: when the judge is
+ * the worker's own provider it calls the worker's endpoint, so a row on that endpoint NAMED for the
+ * judge's model prices it ({@link ratesFor}); a judge model that is absent or names no row there
+ * keeps the worker's price (the worker's row, or none = the guess). A different provider resolves
+ * on its own default endpoint, as before. A bad price on the resolved row throws like `ratesFor`.
+ * The judge's KEY is chosen elsewhere (`applyConfiguredKey`, by the worker's model), so the two
+ * can come from different rows — same provider + endpoint, judge model naming another row.
+ * @param {{ provider: string, model?: string|null }} judge
+ * @param {string|null|undefined} workerProvider
+ * @param {string|null|undefined} workerBaseUrl
+ * @param {ReturnType<typeof ratesFor>} workerPrice what the worker's own rounds are booked at
+ * @param {readonly KeyRow[]} rows
+ * @returns {ReturnType<typeof ratesFor>}
+ */
+export function judgeRatesFor(judge, workerProvider, workerBaseUrl, workerPrice, rows) {
+  if (judge.provider !== workerProvider) return ratesFor(judge.provider, undefined, rows, judge.model);
+  const want = endpointOf(judge.provider, workerBaseUrl);
+  const named = judge.model ? rows.some((r) => r.provider === judge.provider && endpointOf(r.provider, r.baseUrl) === want && r.name === judge.model) : false;
+  return named ? ratesFor(judge.provider, workerBaseUrl, rows, judge.model) : workerPrice;
+}

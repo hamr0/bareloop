@@ -15,7 +15,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
   row `keyNameFor` picks the key from. The run doors (`run-u` / `run <bundle>` / the panel via
   `src/userrun.js`, `run-author`, the panel's authoring session) resolve it once at $0 and hand it to every
   model call as bare-agent's `Loop({ rates })`: worker, scout and planner rounds, the drafter and confirm
-  turn, and the judge (which uses the judge's own row). Priced rounds read `rateSource:'caller'`. A bad
+  turn, and the judge (priced at the judge model's own row; falls back to the worker's price when the model
+  names no row on that endpoint — `judgeRatesFor`). Priced rounds read `rateSource:'caller'`. A bad
   price (one field, negative, non-number) refuses the run at $0 with "Nothing spent." and never falls back
   to the guess. No price = no `rates` key = the built-in guess, unchanged. The run preview and run tail print
   `price    yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)` when a price is set. New:
