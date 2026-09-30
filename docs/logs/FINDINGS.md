@@ -13948,11 +13948,16 @@ and a `released` entry; a dead claim was settled `process gone` by the next clai
 by `munwuth1`, `munx2u5i` by `muny2nmw`); a finished run settled its own claim at job end. This
 is the first live proof of the claim, refuse, settle-dead and self-settle paths.
 
-**(b) The run preview names the wrong key (open, not fixed).** run-u's preview prints
-`OPENAI_API_KEY=...` in its "To approve and run" line for a job whose key really resolves to
-`DEEPSEEK_API_KEY` (provider `openai-api`, `baseUrl` `https://api.deepseek.com/v1`). Orchestrator
-observation; the job-start spine record carries `provider: openai-api` and the DeepSeek base
-URL. The line uses the provider shape's default name, not the row the key comes from.
+**(b) The run preview named the wrong key, and every printed command dropped `--registry` (fixed in
+`c794232`).** run-u's preview printed `OPENAI_API_KEY=...` in its "To approve and run" line for a job
+whose key really resolves to `DEEPSEEK_API_KEY` (provider `openai-api`, `baseUrl`
+`https://api.deepseek.com/v1`). Orchestrator observation; the job-start spine record carries
+`provider: openai-api` and the DeepSeek base URL. The line used the provider shape's default name
+(`providerEntry.envKey`), not the row the key comes from. The same line, the inhibitor line under it
+and every printed resume/reopen command also dropped `--registry <dir> --workflow <name>` when they
+were given, so pasting one greened with no registry row. Fixed: the key name is `keyNameFor(...)`
+(the run's own resolution; also in run-author's "To run it" line), and one `REGISTRY_TAIL` spelling
+(the door lines' own) is carried by the preview, the resume hints and the pause/reopen lines.
 
 **(c) The panel run card shows no spend for a run that has spend (open, not fixed; for the next UI
 part).** Orchestrator observation: in a bundle run's first seconds the card reads "unknown" for
