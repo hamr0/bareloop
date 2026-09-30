@@ -335,7 +335,7 @@ test('run-start seam: a claimed run that exits at $0 before its spine exists (th
   };
   const bundleDir = tmp(t);
   const runDir = join(bundleDir, 'runs', 'r-ghost');
-  const bundle = { runid: 'r-ghost', runDir, invoke: 'bareloop run /b', printApprove: 'H', prepareTree: () => { throw new Error('worktree add failed'); } };
+  const bundle = { runid: 'r-ghost', runDir, invoke: 'bareloop run /b', tightened: {}, signedBudgetUsd: 1, printApprove: 'H', prepareTree: () => { throw new Error('worktree add failed'); } };
   await assert.rejects(startRun(spec, {
     workdir, seed, spineName: 'unused', approve: jobSpecHash(spec), bundle,
     deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: () => {}, runlistHome: home },
@@ -400,7 +400,7 @@ test('run-start seam, NO monthly limit: a throwing prepareTree leaves no row (th
     tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
   };
   const runDir = join(tmp(t), 'runs', 'r-ghost2');
-  const bundle = { runid: 'r-ghost2', runDir, invoke: 'bareloop run /b', printApprove: 'H', prepareTree: () => { throw new Error('worktree add failed'); } };
+  const bundle = { runid: 'r-ghost2', runDir, invoke: 'bareloop run /b', tightened: {}, signedBudgetUsd: 1, printApprove: 'H', prepareTree: () => { throw new Error('worktree add failed'); } };
   await assert.rejects(startRun(spec, {
     workdir, seed, spineName: 'unused', approve: jobSpecHash(spec), bundle,
     deps: { provider: scriptedProvider([{ text: 'never' }]), env: {}, out: () => {}, err: () => {}, runlistHome: home },

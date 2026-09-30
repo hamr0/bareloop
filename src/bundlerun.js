@@ -206,9 +206,14 @@ export async function bundleMain(args, {
       bundle: {
         runid,
         runDir,
-        // the leg's OWN tightened ceilings ride the printed command (only those the person passed), so the
-        // next leg never silently reverts to the signed ceiling; printed text only, nothing here widens.
-        invoke: `bareloop run ${bundleDirArg} --repo ${repo}${envelope.budgetUsd === undefined ? '' : ` --budget ${envelope.budgetUsd}`}${flags.wall === undefined ? '' : ` --wall ${Number(flags.wall)}`}`,
+        // the bare re-invocation prefix; the leg's OWN tightened ceilings (only those the person passed) ride as
+        // DATA so the engine, which knows the halt kind and the spend, spells the printed line. Text only.
+        invoke: `bareloop run ${bundleDirArg} --repo ${repo}`,
+        tightened: {
+          ...(envelope.budgetUsd === undefined ? {} : { budgetUsd: envelope.budgetUsd }),
+          ...(flags.wall === undefined ? {} : { wallMin: Number(flags.wall) }),
+        },
+        signedBudgetUsd: bundle.spec.budgetUsd,
         printApprove: manifest.bundleHash,
         prepareTree,
       },

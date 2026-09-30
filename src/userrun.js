@@ -249,7 +249,9 @@ class ExitSignal extends Error {
  * @typedef {object} BundleRun
  * @property {string} runid the run id (also the `runs/<runid>` directory name)
  * @property {string} runDir `<bundle>/runs/<runid>`: spine.jsonl, gate-audit.jsonl and close/ live here
- * @property {string} invoke the re-invocation prefix printed in resume hints (`bareloop run <bundle> --repo <path>`)
+ * @property {string} invoke the bare re-invocation prefix printed in resume hints (`bareloop run <bundle> --repo <path>`), no ceiling flags
+ * @property {{budgetUsd?: number, wallMin?: number}} tightened the ceilings the person tightened on THIS leg; printed after `invoke` on every resume line except a money halt's (which never prints the exhausted `--budget`)
+ * @property {number} signedBudgetUsd the bundle's SIGNED spec budgetUsd (the tightened leg ceiling is `spec.budgetUsd`); printed only, never enforced from here
  * @property {string} printApprove the hash printed after `--approve` in those hints (the bundle's, not the run spec's)
  * @property {() => void} prepareTree creates the run's tree (fresh worktree) and its books; the engine calls it once every $0 refusal has passed, so a refusal leaks nothing
  */
@@ -488,7 +490,10 @@ async function execute(ctx) {
   const specHash = jobSpecHash(spec);
   // the re-invocation commands this engine prints: a bundle names its own door and hash,
   // every other caller gets today's byte-identical strings.
-  const INVOKE = ctx.bundle?.invoke ?? `${commandFor('run-u', deps.invokedAs)} ${SELECTOR}`;
+  const WALL_FLAG = ctx.bundle?.tightened.wallMin === undefined ? '' : ` --wall ${ctx.bundle.tightened.wallMin}`;
+  const INVOKE = ctx.bundle
+    ? `${ctx.bundle.invoke}${ctx.bundle.tightened.budgetUsd === undefined ? '' : ` --budget ${ctx.bundle.tightened.budgetUsd}`}${WALL_FLAG}`
+    : `${commandFor('run-u', deps.invokedAs)} ${SELECTOR}`;
   const PRINT_APPROVE = ctx.bundle?.printApprove ?? specHash;
   // MODEL (build-list #3, hamr's GO 2026-08-30): the signed spec's `model`, if
   // present, wins outright; a --model flag naming a DIFFERENT id is refused
@@ -1974,13 +1979,25 @@ async function execute(ctx) {
   if (mh) {
     out(`\nMONEY HALT — the cap cut the run at $${mh.remainingUsd?.toFixed?.(4) ?? '?'} left of $${mh.budgetUsd}. The verdict already minted STANDS: ${mh.verdict ?? 'unknown'}${mh.stage ? ` at stage "${mh.stage}"` : ''}.`);
     out(`  trend   ${mh.trend} — ${mh.reading}`);
-    out(`  lever   ${mh.lever}`);
-    for (const o of mh.options ?? []) out(`          · ${o}`);
     if (ctx.bundle) {
-      // a bundle's spec is manifest-hashed: there is no budgetUsd to edit and no new hash to sign.
-      out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve ${PRINT_APPROVE}`);
-      out('          (a bundle\'s spec cannot be edited — the ceiling stays as signed or tightened; nothing in the run may widen its own budget)');
+      // a bundle's spec is manifest-hashed: there is no budgetUsd to edit and no new hash to sign. The room that
+      // is left is the signed ceiling, and the ONLY way to use it is the person typing a larger --budget. The
+      // exhausted --budget is never echoed (pasted as printed it halts again at once: the chain folds prior spend),
+      // and nothing is filled in for them.
+      const signed = ctx.bundle.signedBudgetUsd;
+      const spentUsd = typeof mh.budgetUsd === 'number' && typeof mh.remainingUsd === 'number' ? mh.budgetUsd - mh.remainingUsd : null;
+      const spentTxt = spentUsd === null ? '?' : `${mh.spendComplete === false ? '≥' : ''}$${spentUsd.toFixed(4)}`;
+      const lever = mh.trend === 'converging' ? 'the work was still converging when the money ran out; more money may finish it'
+        : mh.trend === 'flat' ? 'more money is unlikely to help; this bundle\'s goal is signed and cannot be revised here'
+          : 'read the last close output before deciding whether more money is worth it';
+      out(`  lever   ${lever}`);
+      out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; it cannot be raised past that)`);
+      out('          · abandon the task');
+      out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, at most $${signed}> --approve ${PRINT_APPROVE}`);
+      out('          (type the --budget number yourself — nothing here fills it in, so this line does not run as printed; nothing in the run may widen its own budget)');
     } else {
+      out(`  lever   ${mh.lever}`);
+      for (const o of mh.options ?? []) out(`          · ${o}`);
       out(`  resume  ${INVOKE} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --approve <the NEW hash after you edit budgetUsd>`);
       out('          (the top-up is yours to sign — nothing in the run may widen its own budget)');
     }

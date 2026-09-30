@@ -67,6 +67,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **A halted bundle run's printed resume command keeps your tightened `--budget` / `--wall`.** It used to drop
   them, so the next leg silently reverted to the signed ceiling. The money-halt hint for a bundle no longer
   says to edit `budgetUsd` (a bundle's spec is manifest-hashed and cannot be edited).
+  After a MONEY halt the line does not repeat the exhausted `--budget` (chain spend is folded, so pasting it
+  halted again at once); it prints `--budget <more than $<spent so far>, at most $<signed budgetUsd>>` for the
+  person to fill in, and the lever list says to choose a larger `--budget` up to the signed amount. Nothing is
+  filled in automatically. Other halts keep your tightened `--budget` / `--wall` as before. Printed text only.
 - **Printed commands no longer name scripts the package does not ship.** Entered through `bareloop run-u` /
   `interview` / `author`, the approve, resume, pause and reopen lines (and the interview's run-author line and
   the author's run-u line) now read `bareloop run-u …` etc.; `node scripts/*.mjs` is printed only from the

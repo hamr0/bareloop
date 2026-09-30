@@ -3203,8 +3203,9 @@ got none, and a run started from the menu skipped the limit). All three are disp
      (checkpoint age, tree-at-seed, liveness) and spend fold apply, so `--budget` can never widen
      a resume. The new leg gets its own `runs/<newid>/`. The resume command a halted leg prints carries that leg's own
      `--budget`/`--wall`, only if you passed them (a tightened ceiling never silently reverts to the signed
-     one); chain spend is folded, so after a MONEY halt the pasted line has no room left and halts again
-     at once — drop `--budget` to resume under the signed ceiling less prior spend. A bundle's spec is
+     one). After a MONEY halt the line does NOT repeat the exhausted `--budget` (chain spend is folded, so
+     it would halt again at once); it prints `--budget <more than $<spent so far>, at most $<signed
+     budgetUsd>>` for you to fill in, and is not runnable until you do. A bundle's spec is
      manifest-hashed, so its halt hint never asks you to edit `budgetUsd`.
   6. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/`maxWallMs`
      in memory if `--budget`/`--wall` were given → `approveHash = jobSpecHash(that tightened+

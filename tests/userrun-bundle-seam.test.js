@@ -69,6 +69,8 @@ function fixture(t) {
     runid: 'r1',
     runDir,
     invoke: 'bareloop run /the/bundle --repo /the/repo',
+    tightened: {},
+    signedBudgetUsd: 1,
     printApprove: 'BUNDLEHASH',
     prepareTree: () => { prepared += 1; mkdirSync(runDir, { recursive: true }); },
   };

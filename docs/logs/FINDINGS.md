@@ -13989,3 +13989,4 @@ tightened `--budget`; chain spend is folded, so pasting it as printed halted aga
 round (scratch run: `$0.0040 of $0.00`, second MONEY HALT). Dropping `--budget` resumes under the signed
 ceiling. The halt block's lever list for a bundle still says "top up budgetUsd", beside the new line that
 says a bundle's spec cannot be edited (`src/planrun.js`).
+**2026-09-30 — follow-on now fixed at the commit that follows `e630265` (one-runner branch):** a bundle's money-halt resume line prints `--budget <more than $<spent>, at most $<signed budgetUsd>>` for the person to fill in (no exhausted value echoed; other halts keep the tightened flags), and the bundle lever list says to choose a larger `--budget` up to the signed amount. Still open, reported not fixed: after a WALL halt the same carried `--wall` leaves no time (the wall is folded across a resume, `src/userrun.js` RESUME_WALL_MS).

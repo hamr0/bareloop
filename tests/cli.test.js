@@ -333,7 +333,7 @@ test('bareloop (menu) choice 2 run: the SAME monthly-limit refusal as `bareloop 
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'a refusal must leak no worktree');
 });
 
-test('bareloop run: a halted bundle run prints a resume command that carries the leg\'s tightened --budget/--wall, and a hint that does not say to edit budgetUsd', async (t) => {
+test('bareloop run: after a MONEY halt the bundle resume line never carries the exhausted --budget; it carries a placeholder the person fills in (spent so far .. signed budgetUsd), keeps --wall, and the levers do not say to edit budgetUsd', async (t) => {
   const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
@@ -344,11 +344,40 @@ test('bareloop run: a halted bundle run prints a resume command that carries the
     stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: runlistHome(t),
   });
   const text = out.text();
+  assert.match(text, /MONEY HALT/, `the fixture must money-halt:\n${text}\n${err.text()}`);
   const line = text.split('\n').find((l) => /bareloop run .* --resume /.test(l));
   assert.ok(line, `a halted run prints a resume line:\n${text}\n${err.text()}`);
-  assert.match(line, /--budget 0\.0005 --wall 20 --resume /);
-  assert.doesNotMatch(text, /edit budgetUsd/);
-  assert.match(text, /a bundle's spec cannot be edited/);
+  assert.doesNotMatch(line, /--budget 0\.0005/, 'the exhausted tightened budget is never echoed');
+  // spent = the halt readout's own "$<remaining> left of $<budget>": budget - remaining
+  const m = /MONEY HALT — the cap cut the run at \$(-?[\d.]+) left of \$(\d+\.\d+)/.exec(text);
+  assert.ok(m, text);
+  const spent = (Number(m[2]) - Number(m[1])).toFixed(4);
+  assert.ok(line.includes(` --wall 20 --resume `), `the person's --wall still rides: ${line}`);
+  assert.ok(line.includes(`--budget <more than $${spent}, at most $2> --approve ${bundleHash}`), `placeholder with real spent and the SIGNED budget: ${line}`);
+  const block = text.slice(text.indexOf('MONEY HALT'), text.indexOf('BEHAVIOUR'));
+  assert.ok(block.length > 40, block);
+  assert.doesNotMatch(block, /budgetUsd|spec edit|re-approval/, 'a bundle is never told to edit its spec');
+  assert.match(block, /choose a larger --budget/);
+  assert.match(block, /type the --budget number yourself/);
+});
+
+test('bareloop run: after a NON-money halt the bundle resume line keeps the leg\'s tightened --budget/--wall exactly', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const t1 = 1_700_000_200_000;
+  const out = sink(); const err = sink();
+  // every model call throws: a transport failure is a provider-red, a resumable halt that is not a money halt
+  const provider = { calls: [], async generate() { throw new Error('fetch failed'); } };
+  await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '1.5', '--wall', '20'], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider, now: makeNow(t1), runlistHome: runlistHome(t),
+  });
+  const text = out.text();
+  assert.doesNotMatch(text, /MONEY HALT/, text);
+  const line = text.split('\n').find((l) => /bareloop run .* --resume /.test(l));
+  assert.ok(line, `a provider-red run prints a resume line:\n${text}\n${err.text()}`);
+  assert.match(line, /--budget 1\.5 --wall 20 --resume /);
+  assert.doesNotMatch(line, /<more than/);
 });
 
 test('userrun.main cannot build a bundle run: the bundle seam is reachable only through startRun/resumeRun opts', () => {
