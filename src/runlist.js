@@ -155,9 +155,16 @@ export function readRunList(opts = {}) {
 /**
  * Is this pid a live bareloop runner? `process.kill(pid, 0)` says whether the
  * pid exists (EPERM = it exists, just not ours); `/proc/<pid>/cmdline` says whether it is a
- * bareloop runner — a recycled pid that now belongs to some other program is NOT. Where `/proc`
- * is unreadable (not Linux, or not ours) the existence test alone decides: alive. The ONE
- * spelling — the monthly limit's holds, and `--resume`'s old-pid check share it.
+ * bareloop runner — a recycled pid that now belongs to some other program is NOT. A runner is
+ * a node executable (argv[0] is `node`, `nodejs`, `node22`, ...) with a later argv entry named
+ * `bareloop`, `bareloop.mjs`, `run-u.mjs` or `u-watchdog.mjs` (the basename, so the npm bin
+ * symlink counts), or a process whose argv[0] is itself one of those names. A non-node program
+ * that merely has such a name in its arguments (`nvim /x/bareloop`, `git -C /x/bareloop`) is not
+ * a runner. Residual, accepted: a recycled pid that is a node program with such an argument
+ * still reads as a runner. The wrong direction to err is "not a runner" on a real live run — it
+ * would release that run's cap. Where `/proc` is unreadable (not Linux, or not ours) the
+ * existence test alone decides: alive. The ONE spelling — the monthly limit's holds, and
+ * `--resume`'s old-pid check share it.
  * @param {number} pid
  * @returns {boolean}
  */
@@ -168,7 +175,11 @@ export function isLiveRunner(pid) {
   let cmdline = null;
   try { cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8'); } catch { /* no /proc, or not ours */ }
   if (cmdline === null) return true;
-  return cmdline.split('\0').some((a) => ['bareloop', 'bareloop.mjs', 'run-u.mjs', 'u-watchdog.mjs'].includes(basename(a)));
+  const names = ['bareloop', 'bareloop.mjs', 'run-u.mjs', 'u-watchdog.mjs'];
+  const [argv0 = '', ...rest] = cmdline.split('\0');
+  const first = basename(argv0);
+  if (names.includes(first)) return true;
+  return first.startsWith('node') && rest.some((a) => names.includes(basename(a)));
 }
 
 /**

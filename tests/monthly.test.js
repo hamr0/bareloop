@@ -402,6 +402,36 @@ test('isLiveRunner: a bareloop-looking child is live; a plain sleep (recycled pi
   assert.equal(isLiveRunner(/** @type {any} */ ('x')), false);
 });
 
+test('isLiveRunner: a runner is a node process naming a runner file; a non-node program with such an argument is not (recycled pid)', async (t) => {
+  const d = tmp(t);
+  const spawned = [];
+  const live = (/** @type {string} */ cmd, /** @type {string[]} */ args) => {
+    const c = spawn(cmd, args, { stdio: 'ignore' });
+    spawned.push(/** @type {number} */ (c.pid));
+    return /** @type {number} */ (c.pid);
+  };
+  t.after(() => { for (const p of spawned) { try { process.kill(p, 'SIGKILL'); } catch { /* gone */ } } });
+  // real node processes running a file with each real runner basename
+  const nodes = ['bareloop.mjs', 'run-u.mjs', 'u-watchdog.mjs'].map((n) => {
+    const f = join(d, n);
+    writeFileSync(f, 'setInterval(() => {}, 1000);\n');
+    return live(process.execPath, [f]);
+  });
+  // the npm bin shape: a node process whose script path is the extensionless `bareloop` name
+  const bin = join(d, 'bareloop');
+  writeFileSync(bin, 'setInterval(() => {}, 1000);\n');
+  nodes.push(live(process.execPath, [bin]));
+  // real non-node programs carrying a runner name in their arguments
+  const strays = [
+    live('sh', ['-c', 'sleep 300', 'bareloop']),
+    live('tail', ['-f', '/dev/null', join(d, 'bareloop')]),
+    live('tail', ['-f', '/dev/null', join(d, 'run-u.mjs')]),
+  ];
+  await new Promise((r) => setTimeout(r, 300)); // let exec settle so /proc/<pid>/cmdline is the child's own
+  for (const p of nodes) assert.equal(isLiveRunner(p), true, `node runner ${p}`);
+  for (const p of strays) assert.equal(isLiveRunner(p), false, `stray ${p}`);
+});
+
 test('rule 2: a live-pid run silent for 30 minutes is still held at its FULL cap; once the pid is gone it counts its floor', async (t) => {
   const home = tmp(t);
   const d = tmp(t);
