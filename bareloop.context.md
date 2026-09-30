@@ -3526,10 +3526,20 @@ limit)`. It is called at the run-start seam in `src/userrun.js` `execute` (befor
 spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`signRun` in
 `src/panel/authorroutes.js`, refused server-side whatever the page shows). The page only echoes the
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
-calendar month; a died or incomplete-spend run makes the total an "at least" figure. A run still
-IN FLIGHT (`job-start`, no `job-end`, spine file written within `DIED_MTIME_MS`, `src/runlist.js`) is
-counted at its full leg cap (`budgetUsd` less `priorSpentUsd` on its `job-start`), not its spend so
-far (except the run a resume continues, which counts its real spend), so two runs cannot both start against a limit only one fits; a died run counts its floor.
+calendar month; a died or incomplete-spend run makes the total an "at least" figure.
+
+*Hold until done.* A run CLAIMS the limit when it starts and holds it until it is done: `claimRun`
+(`src/monthly.js`), under a transient `runs.jsonl.lock` beside the run list, settles dead claims, reads
+what is left and, only if the run's leg cap fits, appends the run's row carrying its `pid` and `capUsd`
+(a refused run appends nothing; the lock waits up to 5 s, a lock from a dead process is broken, and a
+lock that cannot be taken refuses like an unreadable config — never "no limit"). While that pid is a live
+bareloop runner (`isLiveRunner`, `src/runlist.js`, also what `--resume` uses to refuse a resume against a
+live run) the run counts at the larger of its spend so far and its cap, however quiet its spine. When the
+run ends it appends `{runid, type:'settled', by:<runid>, spentUsd, spendComplete, at}`; if it was killed,
+the next run that takes the lock settles it (`by:<that run>`, `reason:'process gone'`, its spine's floor).
+`readRunList` folds those entries out of the run rows (`events`; a `released` claim's row is not listed).
+Month totals still read real spend off the spines. An older row with no `pid` keeps the spine-mtime rule
+(`DIED_MTIME_MS`: a spine written to within it is in flight, at its leg cap).
 Only the refusal reserves the cap (`monthSpend().reservedUsd`); the Money tab's month figure is
 real spend.
 
