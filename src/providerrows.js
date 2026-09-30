@@ -236,12 +236,14 @@ function perMoney(n) {
 
 /**
  * The one readout line for a resolved customer price, preview and run tail alike:
- * `yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)`.
+ * `yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)`. A 0 / 0 price is accepted (the price
+ * is the customer's) but the line says so: every round then books $0, so spend and limits read $0.
  * @param {{ inPerM: number, outPerM: number, envName: string }} price a {@link ratesFor} result
  * @returns {string}
  */
 export function priceReadout(price) {
-  return `yours: in ${perMoney(price.inPerM)} / out ${perMoney(price.outPerM)} per 1M tokens (${price.envName} row)`;
+  const zero = price.inPerM === 0 && price.outPerM === 0 ? ' — WARNING: this price is $0, so spend and limits read $0' : '';
+  return `yours: in ${perMoney(price.inPerM)} / out ${perMoney(price.outPerM)} per 1M tokens (${price.envName} row)${zero}`;
 }
 
 /**

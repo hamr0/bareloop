@@ -3559,7 +3559,7 @@ provider its own row, for the worker's provider the row on the worker's endpoint
 (The judge's KEY still follows the worker's row, so with two rows on one endpoint key and price can differ.) A priced round is stamped `rateSource:'caller'` (VOUCHED, see `spendProvenance`); with
 no price it stays the built-in guess, as before. The run preview and the run tail print
 `price    yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)` when a price is set, and
-nothing when none is. **The price is yours, and it sets what the cap means:** the cap and the halts run
+nothing when none is; a 0 / 0 price is accepted but the line then ends `— WARNING: this price is $0, so spend and limits read $0`. **The price is yours, and it sets what the cap means:** the cap and the halts run
 on the dollars your price produces, so a price set too low weakens the cap (a run can do far more
 than you meant before it halts). When a vendor lists two prices (for example a cache-hit and a
 cache-miss input rate) enter the higher one. bare-agent applies its own cache multipliers (read 0.1×,

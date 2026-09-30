@@ -170,6 +170,7 @@ test('the price readout: per 1M, tiny prices never round to $0.00 / $0.01', () =
   assert.equal(line(0.006, 1.2), 'yours: in $0.006 / out $1.20 per 1M tokens (K row)');
   assert.equal(line(0.0004, 5), 'yours: in $0.0004 / out $5.00 per 1M tokens (K row)');
   assert.equal(line(0, 0.125), 'yours: in $0.00 / out $0.125 per 1M tokens (K row)');
+  assert.equal(line(0, 0), 'yours: in $0.00 / out $0.00 per 1M tokens (K row) — WARNING: this price is $0, so spend and limits read $0');
   assert.equal(line(1e-7, 3), 'yours: in $0.0000001 / out $3.00 per 1M tokens (K row)');
 });
 
