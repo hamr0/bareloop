@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { configPath, readConfig, updateConfig, ConfigError } from '../src/config.js';
-import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, claimRun, settleDeadClaims } from '../src/monthly.js';
+import { readLegs, monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, claimRun, settleDeadClaims } from '../src/monthly.js';
 import { appendRun, appendRunEvent, readRunList, runlistPath, isLiveRunner } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
@@ -541,6 +541,19 @@ async function killAndWait(pid) {
     await new Promise((r) => setTimeout(r, 20));
   }
 }
+
+test('readLegs({thisMonthOnly}): the spine of a run listed in another month is never parsed — unless its claim is still held (live pid)', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const live = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'old', at: localIso(2026, 6, 3), jobEnd: { engagementSpentUsd: 1, spendComplete: true } });
+  addRun(home, d, { runid: 'held-old', at: localIso(2026, 6, 4), jobStart: { budgetUsd: 4 }, extra: { pid: live, capUsd: 4 } });
+  addRun(home, d, { runid: 'now', at: localIso(2026, 8, 2), jobEnd: { engagementSpentUsd: 2, spendComplete: true } });
+  assert.equal(readLegs({ home, now: NOW }).length, 3, 'the all-time reader still reads every run');
+  const legs = readLegs({ home, now: NOW, thisMonthOnly: true });
+  assert.deepEqual(legs.map((l) => l.at.getMonth()).sort(), [6, 8], 'the July run is skipped; the held July claim and the September run are read');
+});
 
 test('isLiveRunner: a bareloop-looking child is live; a plain sleep (recycled pid) and a killed child are not', async (t) => {
   const runner = spawnRunner(t);

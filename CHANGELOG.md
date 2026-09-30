@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- The monthly-limit check (and so every run start) no longer parses the spine of every run ever listed: it reads only runs listed in the current local month, plus any claim still held by a live runner. The Money tab's all-time figures still read everything.
 - A key row priced 0 / 0 is still accepted, but the `price    yours:` readout (run preview and run tail) now ends with a warning that the price is $0 so spend and limits read $0.
 - A run that stops at $0 on a SOURCE-MANIFEST-RED, DESTINATION-RED or CLOSE-TIMING-RED now releases its monthly claim (the same `released` entry as a run that never started), so it leaves no ghost row and the month no longer reads "at least".
 - A spec whose `budgetUsd` is not a finite number (e.g. `1e999`) is refused by `validateJob` at $0, and the monthly-limit check (`checkMonthlyRoom` / `claimRun`) no longer reads a non-finite cap as $0 — it never fits.

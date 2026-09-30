@@ -177,7 +177,7 @@ function rowsAbove(rows, runid) {
 /**
  * Every listed run as one {@link Leg}. The ONE reader the month total, the all-time total
  * and the per-provider figures share.
- * @param {{ home?: string, now?: () => number, aboveRunid?: string }} [opts] `now` = the clock for the no-pid in-flight test; `aboveRunid` = read only the runs listed EARLIER in the file than that run (a claim yields to the claims above it, never below)
+ * @param {{ home?: string, now?: () => number, aboveRunid?: string, thisMonthOnly?: boolean }} [opts] `now` = the clock for the no-pid in-flight test; `aboveRunid` = read only the runs listed EARLIER in the file than that run (a claim yields to the claims above it, never below); `thisMonthOnly` = do not parse the spine of a run listed in another local month (the refusal check drops it anyway) unless its claim is still held
  * @returns {Leg[]}
  */
 export function readLegs(opts = {}) {
@@ -195,6 +195,7 @@ export function readLegs(opts = {}) {
     // An older row with no `pid` keeps the spine-mtime rule (`inFlightCapUsd`), never guessed alive.
     const hasPid = Number.isInteger(row.pid);
     const heldCap = hasPid && !settled.has(row.runid) && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && isLiveRunner(/** @type {number} */ (row.pid)) ? row.capUsd : null;
+    if (opts.thisMonthOnly && heldCap === null && !Number.isNaN(at.getTime()) && !sameLocalMonth(at, new Date(nowMs))) continue;
     if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
     /** @type {any[]} */
     let records;
@@ -240,7 +241,7 @@ export function monthSpend(opts = {}) {
   let reservedUsd = 0;
   let atLeast = false;
   let runs = 0;
-  for (const leg of readLegs({ home: opts.home, now: opts.now, aboveRunid: opts.aboveRunid })) {
+  for (const leg of readLegs({ home: opts.home, now: opts.now, aboveRunid: opts.aboveRunid, thisMonthOnly: true })) {
     // an unreadable date could belong to this month — unknown, never dropped
     if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
     if (!sameLocalMonth(leg.at, nowDate)) continue;
