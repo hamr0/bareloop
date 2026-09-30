@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.33.0] — 2026-09-30
 
 ### Added
 
@@ -54,7 +54,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
   already did).
 - **`bareloop run <bundle> --resume <runid> [--repo <path>]`** — a halted bundle run resumes into
   its own worktree through the engine's resume gates and spend fold. Each run leg writes
-  `runs/<runid>/run.json`; a resume's `history.jsonl` row carries `resumedFrom`.
+  `runs/<runid>/run.json`; a resume's `history.jsonl` row carries `resumedFrom`. Proven with tests against a real git worktree and a scripted
+  provider; not run live.
 
 ### Fixed
 
@@ -75,6 +76,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
   `interview` / `author`, the approve, resume, pause and reopen lines (and the interview's run-author line and
   the author's run-u line) now read `bareloop run-u …` etc.; `node scripts/*.mjs` is printed only from the
   source-tree scripts. One owner for the spelling: `commandFor` in `src/invoke.js`.
+- **Printed copy-paste commands name the key variable the run reads and carry `--registry` / `--workflow`.**
+  The approve and resume lines from `run-u` and `run-author` used to leave these out, so a pasted line could
+  read a different key row or drop the run-list registration (F207 b). Printed text only.
 
 ### Removed
 
