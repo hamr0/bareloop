@@ -12,6 +12,7 @@ import {
   mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { PassThrough } from 'node:stream';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { jobSpecHash } from '../src/job.js';
@@ -302,6 +303,34 @@ test('bareloop run: the monthly limit applies to a bundle — a cap above what i
   assert.deepEqual(provider.calls, []);
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'a refusal must leak no worktree');
   assert.equal(existsSync(join(bundleDir, 'history.jsonl')), false);
+});
+
+test('bareloop (menu) choice 2 run: the SAME monthly-limit refusal as `bareloop run <bundle>` — the menu hands the bundle door the resolved keys home', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  // No injected keysHome/env (as a person at a terminal): the keys home is the default
+  // `$HOME/.config/bareloop`, pointed at a scratch dir for this test only.
+  const fakeHome = tmp(t, 'cli-keyshome-');
+  const home = join(fakeHome, '.config', 'bareloop');
+  mkdirSync(home, { recursive: true });
+  const realHome = process.env.HOME;
+  process.env.HOME = fakeHome;
+  t.after(() => { process.env.HOME = realHome; });
+  updateConfig({ monthlyLimitUsd: 0.01 }, { home });
+  const provider = scriptedProvider([{ text: 'never reached' }]);
+  const stdin = new PassThrough();
+  const out = sink(); const err = sink();
+  const run = main([], { stdin, stdout: out, stderr: err, cwd: process.cwd(), provider });
+  for (const l of ['2', bundleDir, repo, '', '', bundleHash]) {
+    await new Promise((r) => setTimeout(r, 100));
+    stdin.write(`${l}\n`);
+  }
+  const rc = await run;
+  assert.equal(rc, 2, `${out.text()}\n${err.text()}`);
+  assert.match(err.text(), /monthly limit/i);
+  assert.deepEqual(provider.calls, []);
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'a refusal must leak no worktree');
 });
 
 test('userrun.main cannot build a bundle run: the bundle seam is reachable only through startRun/resumeRun opts', () => {

@@ -61,6 +61,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **The outside watchdog now ships in the package (F205).** `scripts/u-watchdog.mjs` moved to
   `src/u-watchdog.mjs`: `package.json` `files` omits `scripts/`, so an installed run spawned a guard
   whose script did not exist and it died silently at startup.
+- **The bare `bareloop` menu's "2 run" now honours the monthly limit.** It handed the bundle door no keys
+  home, so the limit, your price and the key-row choice were all off; it now gets the same home
+  `bareloop run <bundle>` does.
 
 ### Removed
 

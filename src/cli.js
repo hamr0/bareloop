@@ -279,9 +279,11 @@ function doRuns(args, { out, err, cwd }) {
  * inventing new interactive UX, not wiring, and that judgement stands. This
  * menu is fixed instead: it now says those four commands exist and how to
  * reach them, rather than implying only three commands do at all.
- * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, env: any, now: () => number }} ctx
+ * `keysHome` is the home `main` already resolved (`keysForDoor`), handed on so choice 2 reads the
+ * SAME config.json (monthly limit, price, key row) as `bareloop run <bundle>` — never resolved twice.
+ * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, env: any, now: () => number }} ctx @param {string|undefined} keysHome
  */
-async function runMenu(deps, ctx) {
+async function runMenu(deps, ctx, keysHome) {
   const stdin = deps.stdin;
   const stdout = deps.stdout;
   const rl = createInterface({ input: stdin, output: stdout });
@@ -306,7 +308,7 @@ async function runMenu(deps, ctx) {
       if (budget) args.push('--budget', budget);
       if (wall) args.push('--wall', wall);
       if (approve) args.push('--approve', approve);
-      return await bundleMain(args, { ...ctx, deps, keysHome: undefined, parseFlags, printReds });
+      return await bundleMain(args, { ...ctx, deps, keysHome, parseFlags, printReds });
     }
     if (choice === '3') {
       const bundleDir = (await rl.question('bundle dir: ')).trim();
@@ -343,7 +345,7 @@ export async function main(argv, deps = {}) {
 
   const [cmd, ...rest] = argv;
   if (keys.warning && cmd && ['run', 'run-u', 'interview', 'author', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
-  if (!cmd) return runMenu({ ...deps, stdin: deps.stdin ?? process.stdin, stdout }, ctx);
+  if (!cmd) return runMenu({ ...deps, stdin: deps.stdin ?? process.stdin, stdout }, ctx, keys.home);
   if (cmd === 'export') return doExport(rest, ctx);
   if (cmd === 'run') return bundleMain(rest, { ...ctx, keysHome: keys.home, parseFlags, printReds });
   if (cmd === 'history') return doHistory(rest, ctx);
