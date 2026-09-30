@@ -19,8 +19,8 @@
 // Honesty: a run whose spend is not fully known (a died/still-running spine, an unpriced
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
 // number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
-import { existsSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, statSync, readFileSync } from 'node:fs';
+import { resolve, basename } from 'node:path';
 import { readConfig, configPath, ConfigError } from './config.js';
 import { readRunList, DIED_MTIME_MS } from './runlist.js';
 import { parseJsonl } from './replayio.js';
@@ -162,6 +162,25 @@ function inFlightCapUsd(records, spinePath, nowMs, usd) {
 }
 
 /**
+ * Is this run's process still a live bareloop runner? `process.kill(pid, 0)` says whether the
+ * pid exists (EPERM = it exists, just not ours); `/proc/<pid>/cmdline` says whether it is a
+ * bareloop runner — a recycled pid that now belongs to some other program is NOT (the same
+ * check the resume code makes on its watchdog pid, src/userrun.js). Where `/proc` is unreadable
+ * (not Linux, or not ours) the existence test alone decides: alive.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+export function isLiveRunner(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); } catch (/** @type {any} */ e) { if (e?.code !== 'EPERM') return false; }
+  /** @type {string|null} */
+  let cmdline = null;
+  try { cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8'); } catch { /* no /proc, or not ours */ }
+  if (cmdline === null) return true;
+  return cmdline.split('\0').some((a) => ['bareloop', 'bareloop.mjs', 'run-u.mjs', 'u-watchdog.mjs'].includes(basename(a)));
+}
+
+/**
  * Every listed run as one {@link Leg}. The ONE reader the month total, the all-time total
  * and the per-provider figures share.
  * @param {{ home?: string, now?: () => number, resumingSpine?: string|null }} [opts] `now` = the clock for the in-flight test; `resumingSpine` = the spine a resume continues: that leg reserves its spend only, never its unspent cap (the resume's own leg cap is that remainder)
@@ -176,10 +195,15 @@ export function readLegs(opts = {}) {
   for (const row of rows) {
     const at = new Date(row.at);
     const base = { at, provider: null, baseUrl: null, model: null, wallMs: null, wallComplete: false, usd: 0, complete: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, reservedUsd: 0, unreadable: true };
-    if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push(base); continue; }
+    // Rule 2 (hold-until-done): a row that carries its runner's `pid` is HELD at its cap while that
+    // pid is a live bareloop runner, however quiet its spine — killed = process gone, not silence.
+    // An older row with no `pid` keeps the spine-mtime rule (`inFlightCapUsd`), never guessed alive.
+    const hasPid = Number.isInteger(row.pid);
+    const heldCap = hasPid && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && isLiveRunner(/** @type {number} */ (row.pid)) ? row.capUsd : null;
+    if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
     /** @type {any[]} */
     let records;
-    try { records = parseJsonl(row.spine).records; } catch { legs.push(base); continue; }
+    try { records = parseJsonl(row.spine).records; } catch { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
     const start = records.find((r) => r && r.type === 'job-start') ?? null;
     const leg = legSpend(records);
     const prov = spendProvenance(records);
@@ -196,7 +220,9 @@ export function readLegs(opts = {}) {
       tokens: legTokens(records),
       vouchedRounds: prov.vouched.rounds,
       otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
-      reservedUsd: resuming !== null && resolve(row.spine) === resuming ? leg.usd : inFlightCapUsd(records, row.spine, nowMs, leg.usd),
+      reservedUsd: resuming !== null && resolve(row.spine) === resuming ? leg.usd
+        : hasPid ? (records.some((r) => r && r.type === 'job-end') || heldCap === null ? leg.usd : Math.max(leg.usd, heldCap))
+          : inFlightCapUsd(records, row.spine, nowMs, leg.usd),
       unreadable: false,
     });
   }
@@ -225,7 +251,7 @@ export function monthSpend(opts = {}) {
     if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
     if (!sameLocalMonth(leg.at, nowDate)) continue;
     runs += 1;
-    if (leg.unreadable) { atLeast = true; continue; }
+    if (leg.unreadable) { atLeast = true; reservedUsd += leg.reservedUsd; continue; }
     usd += leg.usd;
     reservedUsd += leg.reservedUsd;
     if (!leg.complete) atLeast = true;

@@ -57,7 +57,9 @@ export function runlistPath(home) {
 }
 
 /**
- * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill' }} RunRow
+ * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill', pid?: number, capUsd?: number }} RunRow
+ * `pid`/`capUsd` (optional; older and backfilled rows carry neither): the runner's process id and the
+ * leg's $ cap — what the monthly limit holds while that pid is a live bareloop runner (src/monthly.js).
  */
 
 /**

@@ -6,14 +6,14 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, utimesSync, readFileSync, rmSync, existsSync, statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { configPath, readConfig, updateConfig, ConfigError } from '../src/config.js';
-import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend } from '../src/monthly.js';
+import { monthSpend, checkMonthlyRoom, monthlyRefusalText, legSpend, isLiveRunner } from '../src/monthly.js';
 import { appendRun, readRunList } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
@@ -81,13 +81,13 @@ test('config: an unreadable file is a reported problem; updateConfig refuses to 
 // ---- monthly.js --------------------------------------------------------------------------
 
 /** a spine on disk + its run-list row */
-function addRun(home, dir, { runid, at, rounds = [], jobEnd, jobStart = {} }) {
+function addRun(home, dir, { runid, at, rounds = [], jobEnd, jobStart = {}, extra = {}, noSpine = false }) {
   const spine = join(dir, `u-${runid}.jsonl`);
   const recs = [{ type: 'job-start', job: 'j', ...jobStart }];
   for (const c of rounds) recs.push({ type: 'worker-round', costUsd: c });
   if (jobEnd) recs.push({ type: 'job-end', ...jobEnd });
-  writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
-  appendRun({ at, runid, job: 'j', spine, patient: null, via: 'run-u' }, { home });
+  if (!noSpine) writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
+  appendRun({ at, runid, job: 'j', spine, patient: null, via: 'run-u', ...extra }, { home });
 }
 const localIso = (y, m, d, h = 12) => new Date(y, m, d, h, 0, 0).toISOString();
 const NOW = () => new Date(2026, 8, 15, 12, 0, 0).getTime(); // 15 Sep 2026 local
@@ -356,4 +356,86 @@ test('panel page: the monthly note sits directly under #jf-cap-money (same field
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
   assert.match(html, /<input id="jf-cap-money" type="text">\s*<div class="hint" id="jf-cap-note"/);
   assert.match(html, /\/api\/author\/monthly-check\?cap=/);
+});
+
+// ---- rule 2: hold-until-done — a run is held while its PID is a live bareloop runner ----------
+
+/** a real child that looks like a bareloop runner (its argv names bareloop.mjs); the test kills it by PID */
+function spawnRunner(t, argv0 = 'bareloop.mjs') {
+  const c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', argv0], { stdio: 'ignore' });
+  t.after(() => { try { process.kill(/** @type {number} */ (c.pid), 'SIGKILL'); } catch { /* already gone */ } });
+  return /** @type {number} */ (c.pid);
+}
+/** a real live process that is NOT a bareloop runner (a recycled pid) */
+function spawnOther(t) {
+  const c = spawn('sleep', ['300'], { stdio: 'ignore' });
+  t.after(() => { try { process.kill(/** @type {number} */ (c.pid), 'SIGKILL'); } catch { /* already gone */ } });
+  return /** @type {number} */ (c.pid);
+}
+async function killAndWait(pid) {
+  process.kill(pid, 'SIGKILL');
+  for (let i = 0; i < 100; i++) {
+    try { process.kill(pid, 0); } catch { return; }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+test('isLiveRunner: a bareloop-looking child is live; a plain sleep (recycled pid) and a killed child are not', async (t) => {
+  const runner = spawnRunner(t);
+  const other = spawnOther(t);
+  await new Promise((r) => setTimeout(r, 200)); // let exec settle so /proc/<pid>/cmdline is the child's own
+  assert.equal(isLiveRunner(runner), true);
+  assert.equal(isLiveRunner(other), false);
+  await killAndWait(runner);
+  assert.equal(isLiveRunner(runner), false);
+  assert.equal(isLiveRunner(0), false);
+  assert.equal(isLiveRunner(/** @type {any} */ ('x')), false);
+});
+
+test('rule 2: a live-pid run silent for 30 minutes is still held at its FULL cap; once the pid is gone it counts its floor', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'quiet', at: localIso(2026, 8, 15, 11), rounds: [0.05], jobStart: { budgetUsd: 6 }, extra: { pid, capUsd: 6 } });
+  const f = join(d, 'u-quiet.jsonl');
+  const nowMs = NOW();
+  utimesSync(f, new Date(nowMs - 30 * 60 * 1000), new Date(nowMs - 30 * 60 * 1000));
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 6, 'the old mtime rule would have called it died');
+  assert.equal(monthSpend({ home, now: NOW }).usd, 0.05, 'the Money tab figure stays REAL spend, never the hold');
+  assert.equal(monthlyRefusalText(checkMonthlyRoom({ capUsd: 5, home, now: NOW })), 'Max $4.00 (monthly limit)');
+  await killAndWait(pid);
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 0.05, 'killed = process gone: floor only');
+  assert.equal(checkMonthlyRoom({ capUsd: 9, home, now: NOW }).ok, true);
+});
+
+test('rule 2: a row written but no spine yet is held at its capUsd; a recycled pid (alive, not bareloop) counts its floor', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  const pid = spawnRunner(t);
+  const other = spawnOther(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'nospine', at: localIso(2026, 8, 15, 11), noSpine: true, extra: { pid, capUsd: 7 } });
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 7);
+  assert.equal(monthSpend({ home, now: NOW }).usd, 0);
+  addRun(home, d, { runid: 'recycled', at: localIso(2026, 8, 15, 11), rounds: [0.2], jobStart: { budgetUsd: 3 }, extra: { pid: other, capUsd: 3 } });
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 7.2, 'the recycled-pid run counts its 0.2 floor, not its $3 cap');
+});
+
+test('rule 2: a finished run counts its spend even with a live pid; an old row with NO pid keeps the mtime rule', async (t) => {
+  const home = tmp(t);
+  const d = tmp(t);
+  const pid = spawnRunner(t);
+  await new Promise((r) => setTimeout(r, 200));
+  addRun(home, d, { runid: 'done', at: localIso(2026, 8, 15, 11), jobEnd: { engagementSpentUsd: 1, spendComplete: true }, jobStart: { budgetUsd: 6 }, extra: { pid, capUsd: 6 } });
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 1);
+  addRun(home, d, { runid: 'old', at: localIso(2026, 8, 15, 11), rounds: [0.5], jobStart: { budgetUsd: 4 } });
+  const nowMs = NOW();
+  const f = join(d, 'u-old.jsonl');
+  utimesSync(f, new Date(nowMs - 60 * 1000), new Date(nowMs - 60 * 1000));
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 5, 'fresh pid-less spine: held at cap 4 (+1 done)');
+  utimesSync(f, new Date(nowMs - 11 * 60 * 1000), new Date(nowMs - 11 * 60 * 1000));
+  assert.equal(monthSpend({ home, now: NOW }).reservedUsd, 1.5, 'stale pid-less spine: floor 0.5 (+1 done)');
 });
