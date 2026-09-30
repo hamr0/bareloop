@@ -60,7 +60,7 @@ earlier table.
 | Flow the panel needs | Where the logic lives today | CLI command today? |
 |---|---|---|
 | Export a job spec to a bundle | `src/bundle.js` (`exportBundle`, exported from `src/index.js`) | Yes — `bareloop export` (`src/cli.js:doExport`) |
-| Run a signed bundle against a repo | `src/run.js` (`runJob`) + `src/bundle.js` (bundle read/bless/envelope) | Yes — `bareloop run` (`src/cli.js:doRun`) |
+| Run a signed bundle against a repo | `src/run.js` (`runJob`) + `src/bundle.js` (bundle read/bless/envelope) | Yes — `bareloop run` (`src/cli.js:doRun`; corrected 2026-09-30: `doRun` is gone — `bareloop run` routes to `bundleMain` in `src/bundlerun.js`, a thin door onto the `src/userrun.js` engine) |
 | List a bundle's history + bridges | `src/index.js` (`loadRegistry`, `listingRow`) + `history.jsonl` | Yes — `bareloop history` (`src/cli.js:doHistory`) |
 | **The interview** — the ENTRY GATE for a new job (source/destination, goal, guardrails, check type, judge examples, confirm turn) | `src/interviewrun.js` (one argv-parsing `main(argv, deps)`, lifted verbatim out of the former `scripts/run-interview.mjs` repo script per P0); `scripts/run-interview.mjs` is now a thin ~22-line adapter over it | **Yes** — `bareloop interview` (`src/cli.js`, routes to `interviewMain`) |
 | **Authoring** — draft/revise/sign a job spec from interview answers | `src/authorrun.js` (one argv-parsing `main(argv, deps)`, lifted verbatim out of the former `scripts/run-author.mjs`); `scripts/run-author.mjs` is now a thin ~22-line adapter over it | **Yes** — `bareloop author` (`src/cli.js`, routes to `authorMain`) |
@@ -205,7 +205,7 @@ both the free-standing spine layout and the bundle layout
 `looksLikeSpine`, never a second parser), and `formatRunRow` (`file missing` when a listed
 spine no longer exists on disk). Wired to append one row at run START, BEFORE the first paid
 call, in exactly two callers: `src/userrun.js` (`run-u`) and `src/cli.js`'s `doRun`
-(`bareloop run`, bundle path) — interview/author sessions are NOT added (deferred to P3, no
+(`bareloop run`, bundle path; corrected 2026-09-30: `doRun` is gone, so the bundle path now appends through the `src/userrun.js` engine that `bundleMain` in `src/bundlerun.js` drives — one caller, not two) — interview/author sessions are NOT added (deferred to P3, no
 run to list yet at that stage). A list-append failure is caught at both call sites and printed
 loudly to stderr; the run itself continues (hamr's rule: a panel list must never block real
 work). New CLI surface: `bareloop runs` (print the list) and `bareloop runs backfill <dir>`
