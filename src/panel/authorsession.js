@@ -20,7 +20,8 @@
 // `src/panel/server.js`'s POST routes). Nothing here changes what a step
 // means or what an answer does — only where the answer comes from.
 
-import { applyConfiguredKey, keyNameFor, modelChoiceFor, rowsForHome } from '../providerrows.js';
+import { applyConfiguredKey, keyNameFor, modelChoiceFor, ratesFor, rowsForHome } from '../providerrows.js';
+import { ConfigError } from '../config.js';
 import {
   mkdirSync, existsSync, writeFileSync, readdirSync,
 } from 'node:fs';
@@ -310,6 +311,15 @@ export function createSession(card, deps = {}) {
     const draftKeyName = keyNameFor(modelChoice.provider, modelChoice.baseUrl, keyCfg, modelChoice.name).name;
     const apiKey = draftEnv[providerEntry.envKey];
     if (!apiKey) { refuse(`${draftKeyName} not set. Stopped — nothing spent.`); return; }
+    // the customer's own price on this row (USD per 1M in config.json), resolved once here at $0 and
+    // handed to every model call this session makes; a bad price refuses, never falls back to the guess
+    /** @type {ReturnType<typeof ratesFor>} */
+    let draftPrice = null;
+    try { draftPrice = ratesFor(modelChoice.provider, modelChoice.baseUrl, keyCfg, modelChoice.name); } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      refuse(`${e.message}. Stopped — nothing spent.`);
+      return;
+    }
     const keyProblem = apiKeyProblem(apiKey);
     if (keyProblem) { refuse(`${draftKeyName} ${keyProblem}. Stopped — nothing spent.`); return; }
 
@@ -422,8 +432,8 @@ export function createSession(card, deps = {}) {
     // `provider` for the model boundary) and/or `scout` (bypassing the real
     // paid scout) so it can drive the REAL confirm turn/ask()/revise/hash
     // machinery below with a deterministic fake, never a live provider call.
-    const generate = deps.generate ?? makeLoopGenerate(provider);
-    const confirmGenerate = deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
+    const generate = deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null });
+    const confirmGenerate = deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null });
 
     state.phase = 'drafting';
     state.progressLabel = 'drafting';
@@ -437,6 +447,7 @@ export function createSession(card, deps = {}) {
       questions: questionsFor(verdictType),
       writeScope, provider, generate,
       ceilingUsd: card.capUsd,
+      rates: draftPrice?.rates ?? null,
       onPhase, onCall,
       ask, confirmGenerate, isRepo: true, langResult,
       ...(deps.scout ? { scout: deps.scout } : {}),
@@ -470,7 +481,16 @@ export function createSession(card, deps = {}) {
     const judges = closeJudges(spec.closeDecl);
     const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
     let judgeProvider = null;
+    /** @type {ReturnType<typeof ratesFor>} */
+    let judgePrice = null;
     if (judge) {
+      try {
+        judgePrice = judge.provider === modelChoice.provider ? draftPrice : ratesFor(judge.provider, undefined, keyCfg, judge.model);
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e;
+        refuse(`${e.message} — refusing before gate 4 spends anything`);
+        return;
+      }
       const judgeKeyValue = env.JUDGE_API_KEY ?? (judge.provider === modelChoice.provider ? draftEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model))[resolveProvider(judge.provider).envKey];
       const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
       if (!judgeKeyValue || judgeKeyProblem) {
@@ -486,7 +506,7 @@ export function createSession(card, deps = {}) {
     const signing = await prepareSigningFn({
       spec, workdir: prep.tree, seedRef: authored.seedRef, timeoutMs,
       shellCapUsd: spec.budgetUsd, ceilingUsd: card.capUsd, priorCalls: [...metered],
-      judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+      judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null }) : null,
       judgeModel: judge?.model ?? null,
       onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),
     });

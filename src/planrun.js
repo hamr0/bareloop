@@ -762,6 +762,10 @@ ${scoutBlob || '(no scout notes)'}`;
  *   `false` → the drafter has no tools, so a native session would report NO cost — return a
  *   metered claude-json TEXT provider (`--output-format json`, `parse:'claude-json'`) instead,
  *   so its spend is never invisible. The Loop path (`anthropic-api`) never touches this.
+ * @param {{in: number, out: number}|null} [opts.rates] the customer's own price for the worker's key row (USD per
+ *   1K tokens, `ratesFor`) — handed to the one Loop that drives worker, scout and planner rounds, so they read
+ *   `rateSource:'caller'`; null = bare-agent's built-in guess. Not applied to a native (CLI) session, which reports its own cost.
+ * @param {{in: number, out: number}|null} [opts.judgeRates] the same, for the judge's Loop
  * @param {string|null} [opts.judgeModel] softgreen — WHICH model that judge provider drives
  *   (PRD item 32.1). Resolved by the CALLER (`resolveJudge`, src/judged.js: the spec's signed
  *   `judge` override, else the job's own worker model), never pinned in this library. It
@@ -983,7 +987,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1687,7 +1691,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // ride, so `runJob`'s ONE ledger accounts a close's spend exactly as it accounts
       // an attempt's (a budget funds the attempt PLUS its close), and a null cost trips
       // the same F6 pricing halt rather than being laundered into $0.
-      judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+      judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgeRates }) : null,
       // the seam's other half (PRD item 32.1) — WHICH model that loop drives. Passed
       // through untouched: this module resolves no judge, exactly as it constructs no
       // provider. `runJudgedFloor` stops as a wiring gap when it is absent rather than
@@ -2750,7 +2754,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         return onLlmResult(arg);
       };
-      self = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome });
+      self = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome, ...(rates ? { rates } : {}) });
       return self;
     };
     /** @param {string} prompt @param {typeof toolDefs} [defs] */

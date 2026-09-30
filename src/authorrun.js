@@ -101,7 +101,8 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import { keysForDoor } from './keysfile.js';
-import { applyConfiguredKey, keyNameFor, rowsForHome } from './providerrows.js';
+import { applyConfiguredKey, keyNameFor, ratesFor, rowsForHome } from './providerrows.js';
+import { ConfigError } from './config.js';
 import {
   readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync,
 } from 'node:fs';
@@ -519,6 +520,16 @@ export async function main(argv, deps = {}) {
   // echoes the value or the reason's source.
   const AUTHOR_KEY_PROBLEM = apiKeyProblem(apiKey);
   if (AUTHOR_KEY_PROBLEM) { err(`${AUTHOR_ENV_KEY} ${AUTHOR_KEY_PROBLEM} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`); throw new ExitSignal(2); }
+  // The customer's own price on the author's key row (USD per 1M in config.json) — resolved once here at
+  // $0, before any provider is built, and handed to every model call this run makes (scout, declaration
+  // loop, confirm turn, calibration judge). A bad price refuses here; it never falls back to the guess.
+  /** @type {ReturnType<typeof ratesFor>} */
+  let authorPrice = null;
+  try { authorPrice = ratesFor(PROVIDER_NAME, baseUrl, keyCfg); } catch (e) {
+    if (!(e instanceof ConfigError)) throw e;
+    err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
+    throw new ExitSignal(2);
+  }
   /** The judge's key follows the RESOLVED judge provider's own env var, with
    * `JUDGE_API_KEY` as the role-named override in front (PRD item 32.3) — the same
    * contract `scripts/run-u.mjs` keeps, so one story covers both surfaces. When the
@@ -799,7 +810,7 @@ export async function main(argv, deps = {}) {
    * bound to `CONFIRM_SYSTEM`, never the authoring `generate` above (that one
    * is bound to `AUTHOR_SYSTEM`). Same provider instance, a different system
    * prompt: reusing `generate` would run the wrong system prompt silently. */
-  const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM });
+  const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: authorPrice?.rates ?? null });
 
   // ── PLAIN-FOLDER SOURCE: A NAMED $0 STOP, NO MODEL CALL (F191; PRD item 33 M3
   // piece 4, step S6, D5 amended 2026-09-21) ──────────────────────────────────
@@ -868,7 +879,8 @@ export async function main(argv, deps = {}) {
       // malformed field travels as `null` and `authorPrompt` simply states nothing.
       writeScope: Array.isArray(draft.writeScope) ? draft.writeScope : null,
       provider,
-      generate: makeLoopGenerate(provider),
+      generate: makeLoopGenerate(provider, { rates: authorPrice?.rates ?? null }),
+      rates: authorPrice?.rates ?? null,
       // ONE number, both paid seams (the survey's and the declaration loop's) — the
       // advertised ceiling and the enforced ceiling are the same ceiling
       ceilingUsd: CEILING_USD,
@@ -1061,6 +1073,21 @@ export async function main(argv, deps = {}) {
         const judge = judges
           ? resolveJobJudge(spec, PROVIDER_NAME, resolveWorkerModel)
           : null;
+        // the judge's price: the author's row when the judge is the same provider (the rule that gives it
+        // the author's key and baseUrl), else the row for the judge's own provider. A bad one refuses here,
+        // before the calibration gate spends anything — beside the judge-key check, the same door.
+        /** @type {ReturnType<typeof ratesFor>} */
+        let judgePrice = null;
+        if (judge) {
+          try {
+            judgePrice = judge.provider === PROVIDER_NAME ? authorPrice : ratesFor(judge.provider, undefined, keyCfg, judge.model);
+          } catch (e) {
+            if (!(e instanceof ConfigError)) throw e;
+            err(`${e.message} — refusing before the calibration gate spends anything`);
+            archiveGateAudit();
+            throw new ExitSignal(2);
+          }
+        }
         // F181 — the judge key is required exactly when `judges` is true (this
         // script has no presence check on it today; adding one is out of this
         // finding's scope). What this door DOES owe, the same as the worker
@@ -1130,7 +1157,7 @@ export async function main(argv, deps = {}) {
           // number would silently widen it.
           ceilingUsd: CEILING_USD,
           priorCalls: [...metered],
-          judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system }) : null,
+          judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null }) : null,
           // the seam's other half (PRD item 32.1): the graded set is STAMPED with
           // this, and the close later refuses to grade under any other identity.
           judgeModel: judge?.model ?? null,

@@ -1438,12 +1438,14 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
  * an estimate, and it is why tool mode does not cost double what text mode did.
  *
  * `cacheMessages` (F18) and `maxTokens` (F30) are not optional on this stack.
- * @param {any} provider @param {{system?: string, maxTokens?: number}} [o]
+ * `rates` is the customer's own price for this provider's key row (USD per 1K, `ratesFor`);
+ * absent = bare-agent's built-in guess, exactly as before.
+ * @param {any} provider @param {{system?: string, maxTokens?: number, rates?: {in: number, out: number}|null}} [o]
  * @returns {(messages: any[], tools: any[], opts?: any) => Promise<any>}
  */
-export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS } = {}) {
+export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS, rates = null } = {}) {
   return async (/** @type {any[]} */ messages, /** @type {any[]} */ tools, /** @type {any} */ opts = {}) => {
-    const loop = new Loop({ provider, system });
+    const loop = new Loop({ provider, system, ...(rates ? { rates } : {}) });
     const wired = tools.map((t) => ({
       ...t,
       execute: async (/** @type {any} */ a) => { const r = await t.execute(a); loop.stop(); return r; },

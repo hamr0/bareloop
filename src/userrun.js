@@ -77,7 +77,7 @@ import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
 import { ConfigError } from './config.js';
-import { applyConfiguredKey, keyNameFor, rowsForHome } from './providerrows.js';
+import { applyConfiguredKey, keyNameFor, ratesFor, rowsForHome } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -962,6 +962,23 @@ async function execute(ctx) {
     throw new ExitSignal((ctx.approve ?? null) === null ? 0 : 1);
   }
 
+  // THE CUSTOMER'S OWN PRICE (hamr 2026-09-30) — the worker's key row may carry `priceInPerM` /
+  // `priceOutPerM` (USD per 1M tokens); `ratesFor` is the one lookup, on the SAME row `keyNameFor` picks
+  // the key from. Resolved ONCE here, at $0, before the preview, the monthly claim and any worktree or
+  // spine, then handed down as data (`runJob`'s `rates`) — nothing deep in the run re-reads config. A bad
+  // price refuses here; it never falls back to the built-in guess. No price set = `null` = no `rates` key
+  // passed anywhere, byte-identical to before. The judge's own row is resolved below, beside its key.
+  const keyCfg = cfgOn ? rowsForHome(cfgHome) : [];
+  /** @type {ReturnType<typeof ratesFor>} */
+  let workerPrice = null;
+  try {
+    workerPrice = ratesFor(spec.provider, spec.baseUrl, keyCfg, spec.model);
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e;
+    err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
+    throw new ExitSignal(2);
+  }
+
   if ((ctx.approve ?? null) !== specHash) {
     out(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
     out(`  spec     ${SPEC_DESC}  $${spec.budgetUsd}  wall ${WALL_LABEL}  strikeLimit=${STRIKE_LIMIT} (step ladder + close-fix progress rule)`);
@@ -1367,6 +1384,20 @@ async function execute(ctx) {
   // into runJob below whether this leg constructs a real judge provider or not.
   const judge = resolveJudge({ specJudge: spec.judge, workerProvider: spec.provider, workerModel: MODEL });
   const judgeEntry = resolveProvider(judge.provider);
+  // …and the judge's price, from the row ITS key comes from: the worker's row when the judge is the same
+  // provider (the rule that gives it the worker's baseUrl and key), else the row for the judge's own
+  // provider. Only a judging close ever calls it, so only then can its row refuse the run.
+  /** @type {ReturnType<typeof ratesFor>} */
+  let judgePrice = null;
+  if (JUDGES) {
+    try {
+      judgePrice = judge.provider === spec.provider ? workerPrice : ratesFor(judge.provider, undefined, keyCfg, judge.model);
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
+      throw new ExitSignal(2);
+    }
+  }
   // undefined, not null: both come straight off `env[...]` lookups below, which
   // (like process.env) never produce null for a missing key.
   /** @type {string|undefined} */
@@ -1382,7 +1413,6 @@ async function execute(ctx) {
     // row = the built-in. Names only — values come from the
     // env / keys file. The judge follows the worker's choice when it is the same provider
     // (the same rule that gives it the worker's baseUrl below).
-    const keyCfg = cfgOn ? rowsForHome(cfgHome) : [];
     const workerEnv = applyConfiguredKey(env, spec.provider, spec.baseUrl, keyCfg, spec.model);
     const judgeEnv = judge.provider === spec.provider ? workerEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model);
     /** the variable NAME this worker's key is read from (the person's pick, else built-in) — for messages only */
@@ -1772,7 +1802,9 @@ async function execute(ctx) {
       // used (never a second `makeSpine(spineFile)` here: two independent
       // emitters against one file would both start their seq counter at 0 and
       // collide the moment either one had already written a record).
-      approvals, workdir: wd, provider, providerFor, judgeProvider, judgeModel: judge.model, emit,
+      approvals, workdir: wd, provider, providerFor, judgeProvider, judgeModel: judge.model,
+      // the customer's own price per key row (USD per 1K), or null = the built-in guess as before
+      rates: workerPrice?.rates ?? null, judgeRates: judgePrice?.rates ?? null, emit,
       // F133 (run mtqwmb9l) — `closeTimeoutMs` is deliberately NOT passed here.
       // `RESOLVED_CLOSE_TIMEOUT_MS` above exists only to size the outside
       // watchdog before it spawns; feeding it back into `runJob` used to make

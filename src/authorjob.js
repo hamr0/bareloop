@@ -419,6 +419,7 @@ function composerRefusal(reds) {
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
  *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
+ *   rates?: {in: number, out: number}|null,
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
@@ -435,6 +436,7 @@ export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
+  rates = null,
   // Q2 IS GONE from the numbered interview (PRD item 33 M3 piece 3) — the
   // fence it used to describe in prose is now Destination's own proven
   // `writeScope`, and this is what carries it into the composer prompt
@@ -578,7 +580,7 @@ export async function authorCloseForJob({
     // real tree. `attempts` is the ceiling the scout enforces on itself, so the
     // reader knows how many the line could repeat for.
     onPhase('scout', { attempts: SCOUT_ATTEMPTS });
-    survey = await scoutFn({ workdir, provider, ceilingUsd, onCall });
+    survey = await scoutFn({ workdir, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}) });
     // …and the survey's own VERDICT, said the moment it lands. `state` is what
     // every downstream refusal keys on (F59: absent is never "no facts needed"),
     // and the fact count is the one number that says whether the ladder came

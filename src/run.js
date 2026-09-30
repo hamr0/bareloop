@@ -95,6 +95,11 @@ async function primitiveSmoke(workdir) {
  *   metered claude-json text provider for the toolless drafter); ignored on every Loop-driven provider
  * @param {(type: string, data?: object) => object} opts.emit spine emitter
  * @param {(tier: string) => any} [opts.providerFor] P: per-step model-tier provider factory (forwarded to the plan flow)
+ * @param {{in: number, out: number}|null} [opts.rates] the CUSTOMER's own price for the worker's key row
+ *   (`ratesFor`, src/providerrows.js — USD per 1K tokens), resolved once by the door and handed to every
+ *   worker/planner Loop as bare-agent's `rates` (rounds then read `rateSource:'caller'`). Absent = the
+ *   built-in guess, exactly as before. A Loop-driven provider only: a native session reports its own cost.
+ * @param {{in: number, out: number}|null} [opts.judgeRates] the same, for the judge's own key row
  * @param {string|null} [opts.judgeModel] SOFTGREEN — WHICH model the judge provider drives
  *   (PRD item 32.1), resolved by the CALLER (`resolveJudge`, src/judged.js) and passed
  *   through untouched. Travels with `judgeProvider`; absent, a judged stage stops as a
@@ -265,7 +270,7 @@ async function primitiveSmoke(workdir) {
  *   deliberately NOT in the resumable/checkpoint set (`src/reuse.js`) — an
  *   unknown in-flight state is not a known-safe resume point.
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true }) {
   // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
   // before the ledger, before the approval gate, before a byte of the spec is read.
   // An unrecognised spelling throws here at zero cost instead of being coerced by
@@ -532,7 +537,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // accounts it natively (F12) and the job-end money contract is unchanged.
   {
     const outcome = await runPlan(job, {
-      workdir, provider, nativeProvider, providerFor, judgeProvider, judgeModel, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, closeDir, layerRoot, readShim, scout, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd, resumable,
+      workdir, provider, nativeProvider, providerFor, judgeProvider, judgeModel, rates, judgeRates, emit: meter, capRuns, ...(strikeLimit !== undefined ? { strikeLimit } : {}), closeTimeoutMs, closeDir, layerRoot, readShim, scout, bridge, priorWallMs: chainWallMs, resumeSeed, resumeGrades, resumeReplans, resumeBranch, humanRuling, heldRuling, reviewDoor, doorRerun, priorSpentUsd: chainFoldUsd, resumable,
       // hamr's ruling 2026-09-28 — ONE cap covers drafting + run: the run's
       // enforced ceiling is the signed `budgetUsd` (unchanged, still in the
       // spec hash) MINUS whatever drafting already spent on this job before
