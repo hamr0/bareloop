@@ -3165,6 +3165,9 @@ monthly limit, your price and the key-row choice apply exactly as on the sub-com
 got none, and a run started from the menu skipped the limit). All three are dispatched by name only: `bareloop run-u <flags…>`,
 `bareloop interview <flags…>`, `bareloop author <flags…>`.
 
+When two key rows share one provider and endpoint, a CLI run uses the FIRST row in the keys list, so put the
+key you want first (the panel picks the row by the Model menu).
+
 - **`bareloop export <jobs/x.json> --registry <dir> --out <dir>`** → resolves the spec's
   close-script paths against the spec file's own directory (never the process cwd), calls
   `exportBundle`. On success prints `bundleHash:`, the sorted file list, and "this bundle is
