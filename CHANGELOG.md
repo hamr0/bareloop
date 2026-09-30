@@ -7,6 +7,23 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Your own price, per key row.** `config.json` `keys.<ENV NAME>.priceInPerM` / `priceOutPerM` (USD per
+  1M tokens, in and out; both or neither, each a finite number 0 or more) set what the model behind a key
+  costs. `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) is the one lookup, on the same
+  row `keyNameFor` picks the key from. The run doors (`run-u` / `run <bundle>` / the panel via
+  `src/userrun.js`, `run-author`, the panel's authoring session) resolve it once at $0 and hand it to every
+  model call as bare-agent's `Loop({ rates })`: worker, scout and planner rounds, the drafter and confirm
+  turn, and the judge (which uses the judge's own row). Priced rounds read `rateSource:'caller'`. A bad
+  price (one field, negative, non-number) refuses the run at $0 with "Nothing spent." and never falls back
+  to the guess. No price = no `rates` key = the built-in guess, unchanged. The run preview and run tail print
+  `price    yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)` when a price is set. New:
+  `runJob` / `runPlan` options `rates` / `judgeRates`; `runAuthorScout`, `authorCloseForJob`,
+  `makeLoopGenerate` and `defaultJudgeLoop` take an optional `rates`. The Settings screen field is a later
+  UI part; until then edit `config.json`. Past runs are not re-priced. Not covered: native (CLI) sessions
+  (they report their own cost) and the reuse engine (`runReuse`), which resolves no key row.
+
 ### Changed
 
 - **Monthly limit: a run claims its cap at start and holds it until it is done.** The run-start seam

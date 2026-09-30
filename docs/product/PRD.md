@@ -1282,3 +1282,14 @@ every caller; a missing key is the engine's exit-2 refusal; a bundle green mints
 (`bareloop run <bundle> --resume <runid>`). The arbiter rules are unchanged (tighten-only
 `--budget/--wall`, merge stays human, the bundleHash is the human signature). Detail: `CHANGELOG.md`
 Unreleased, `bareloop.context.md` "The CLI".
+
+### Customer-set price per key row (v1.86 — 2026-09-30)
+
+hamr amends the "rates are the customer's responsibility / no passthrough" ruling (v1.80 item 1):
+- The customer sets their own price on the key's row in `config.json`
+  (`keys.<ENV NAME>.priceInPerM` / `priceOutPerM`), always per 1M tokens, in and out; both or neither;
+  a bad value refuses the run at $0. There is still no built-in price list.
+- No price set = the built-in guess, unchanged. A priced round is stamped `caller`.
+- The price sets what the cap means; Settings advises entering the HIGHER bracket when a vendor
+  lists two prices. The Settings field is deferred to the next UI part.
+- Detail: `docs/logs/FINDINGS.md` F206, `CHANGELOG.md` Unreleased, `bareloop.context.md` "Settings".

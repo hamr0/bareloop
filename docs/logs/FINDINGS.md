@@ -13881,3 +13881,41 @@ bundles, the panel's installed case).
 the old path is a closed record and is left as written.
 
 **Status: fixed.**
+
+## F206 — a DeepSeek run was priced at bare-agent's built-in default: booked ~28x the vendor bill, cap-halted mid-fix (fixed: the customer sets the price per key row)
+
+**Grounded in:** run `muny2nmw` (2026-09-30, job `bareguard-u-types-deepseek`, provider
+`openai-api` at `https://api.deepseek.com/v1`, model `deepseek-flash`); its spine
+`bareloop-patients/bareguard-u-deepseek-bareloop/u-muny2nmw.jsonl`. All 93 `worker-round`
+records carry `"rateSource":"default"` (0 `caller`, 0 `provider`): bare-agent's built-in
+sonnet-like guess (0.003 in / 0.015 out per 1K tokens), because bareloop never passed `rates`
+to `Loop` (`src/planrun.js`, `src/authorscout.js`, `src/authorflow.js`, `src/judged.js`). From
+the spine: the rounds sum to `costUsd` $4.2194, tokens 229,633 in + 172,700 out + 3,133,184
+cache-read (cache-creation 0), about 3.54M. `job-end`: `outcome: cap-halt`, `spentUsd`
+4.2193542, `spendComplete: false`, against `budgetUsd` 4. The `money-halt` record reads
+`remainingUsd` -0.2194 at `stage: no-suppressions`, after a `fix-loop` record: the run was cut
+by its own cap in the middle of fixing that close stage.
+
+**Reported figures (hamr's, not in the spine):** the vendor's dashboard billed about $0.15 for
+the same run, so the booked figure was about 28x the bill ($4.2194 / $0.15). Nothing in the
+spine records the vendor's bill.
+
+**Reading:** the cap is exact about the number it holds and the number was a guess for a
+model 28x cheaper than the guess. The guess errs in the safe direction (halts early), and here
+that safe direction ended a run that was making progress at a fraction of its real cost.
+Ruling (hamr, 2026-09-30, final): the customer sets their own price; no built-in price list.
+
+**Resolution:** `config.json` `keys.<ENV NAME>.priceInPerM` / `priceOutPerM` (USD per 1M tokens,
+both or neither, finite and 0 or more; a bad value refuses the run at $0). `ratesFor`
+(`src/providerrows.js`) is the one lookup, on the row the key comes from; the run doors resolve
+it once and hand it to every model call as `Loop({ rates })`; rounds then read
+`rateSource:'caller'`. No price set = the guess, as before. The Settings screen field is a later
+UI part (it should advise entering the higher bracket when a vendor lists two prices). Not
+changed: how a guess is stamped or worded. Two things stay true and are named: a price set too
+low weakens the cap, and bare-agent's cache multipliers (read 0.1x, write 1.25x of the input
+price) are applied to cache tokens, so a vendor with a different cache discount is still
+approximated on those tokens (over-priced writes err on the safe side; a deeper cache-read
+discount than 0.1x also over-prices). Past runs, including this one, are not re-priced.
+
+**Status: fixed** (customer-set price). Live check pending: no real run has yet been priced
+through this path; it is proven at $0 with a scripted provider only.

@@ -1161,7 +1161,7 @@ Reserved spine vocabulary (V7, machinery-free until job #1 surfaces one):
 `coordination-red` — a failure between units (scope contention, step order, store
 races), never to be folded into worker/interpreter reds.
 
-### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
+### `runJob(spec, { approvals, workdir, provider, nativeProvider?, providerFor?, rates?, judgeRates?, emit, capRuns?, strikeLimit?, shellCapUsd?, closeTimeoutMs?, closeDir?, layerRoot?, readShim?, scout?, bridge?, draftSpentUsd?, draftSpendComplete?, priorSpentUsd?, priorSpendComplete?, priorWallMs?, resumeSeed?, resumeGrades?, resumeReplans?, resumeBranch?, humanRuling?, heldRuling?, reviewDoor?, doorRerun?, resumable? })` → outcome — `src/run.js`
 
 **`draftSpentUsd` (hamr's ruling 2026-09-28, "one cap covers drafting + run") — money the
 AUTHORING pipeline already spent on this job before it was signed.** Shrinks THIS run's own
@@ -1844,11 +1844,12 @@ bare-agent's `Loop` takes `rates: {in, out, cacheReadMult?, cacheWriteMult?}` �
 tokens, the two multipliers applying to the input rate for the cache-read and cache-write
 tiers (defaulting to Anthropic's 0.1× / 1.25×). A caller-supplied rate is recorded as
 VOUCHED rather than as a guess, and it silences bare-agent's own guesstimate warning.
-**Named, not papered over:** `runJob`/`runPlan` construct their own `Loop` and do not yet
-accept a `rates` passthrough, so today that option is reachable only by a caller driving
-bare-agent directly — a bareloop-run job is priced by the guesstimate, full stop. The
-passthrough is an open follow-up, and until it lands every paragraph above describes the
-only pricing a `runJob` adopter gets.
+**Where bareloop takes it from:** the CUSTOMER's own price on the key's row in
+`~/.config/bareloop/config.json` (`keys.<ENV NAME>.priceInPerM` / `priceOutPerM`, USD per 1M
+tokens — see "Settings" below). `runJob` / `runPlan` accept `rates` (and `judgeRates`) as data and
+hand them to the one `Loop` that drives worker, scout and planner rounds; the run doors resolve
+them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
+before. bareloop keeps no price list of its own, ever.
 
 **The provenance is on the record, per round (`rateSource`).** The field arrives with
 bare-agent **>= 0.37**; under the pinned `^0.36.0` no provider payload carries it yet, so
@@ -3516,9 +3517,34 @@ Two files in `~/.config/bareloop/`, outside any repo:
   `updateConfig(patch, { home })` (atomic tmp + rename, mode 600, unknown fields kept).
   Fields: `monthlyLimitUsd` (number above 0; absent or `null` = no limit; any other value present
   is a `ConfigError`, refused like an unreadable file), `anthropicBalanceNote` (a note the
-  person types; no check ever reads it), `keys.<ENV NAME>` = `{ name, shape, baseUrl }` (the Providers rows' settings). A secret-shaped
+  person types; no check ever reads it), `keys.<ENV NAME>` = `{ name, shape, baseUrl, priceInPerM?, priceOutPerM? }` (the Providers rows' settings, plus the customer's own price below). A secret-shaped
   string anywhere in the document is refused on save. An unreadable file is a `problem` string and
   a refused run start ($0), never "no limit". There is no monthly TIME limit (dropped).
+
+**Your own price — `keys.<ENV NAME>.priceInPerM` / `priceOutPerM`.** The customer sets the price of the
+model behind a key, on that key's row, in USD **per 1M tokens** (input and output), for example
+`"keys": { "DEEPSEEK_API_KEY": { "priceInPerM": 0.006, "priceOutPerM": 1.2 } }`. There is no built-in
+price list. Both numbers or neither: each must be a finite number 0 or more, and one alone, a negative,
+a string or `null` refuses the run at $0 (`ConfigError`, exit 2, "Nothing spent.") — a bad price never
+falls back to the guess. A Settings save keeps the two fields (the Settings SCREEN has no price field
+yet; edit `config.json`). `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) is the one
+lookup, on the SAME row `keyNameFor` picks the key from (`findRow`: shape + endpoint + model), returning
+`null` (no price) or `{ rates: {in, out}, inPerM, outPerM, envName }` with `rates` in bare-agent's
+per-1K unit (`perM / 1000`). The run doors resolve it once, at $0, before the monthly claim and any
+worktree or spine (`src/userrun.js`; `src/authorrun.js`; the panel's authoring session): the worker row
+prices worker, scout and planner rounds; the judge's row (the worker's when it is the same provider)
+prices the judge. A priced round is stamped `rateSource:'caller'` (VOUCHED, see `spendProvenance`); with
+no price it stays the built-in guess, as before. The run preview and the run tail print
+`price    yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)` when a price is set, and
+nothing when none is. **The price is yours, and it sets what the cap means:** the cap and the halts run
+on the dollars your price produces, so a price set too low weakens the cap (a run can do far more
+than you meant before it halts). When a vendor lists two prices (for example a cache-hit and a
+cache-miss input rate) enter the higher one. bare-agent applies its own cache multipliers (read 0.1×,
+write 1.25× of the input rate) to cache tokens; they are not configurable here, so cache tokens are
+priced from your input price by that rule. A price applies from the next run: **past runs are never
+re-priced** (a spine and the run list keep the dollars they booked). Not covered by a price: a native
+(CLI) session, which reports its own cost, and the reuse engine (`runReuse` / `selectBridge`), which
+resolves no key row.
 
 **Monthly $ limit.** `checkMonthlyRoom({ capUsd, home, now })` → `{ ok, leftUsd, limitUsd,
 atLeast }`; `monthlyRefusalText(room)` is the ONE spelling: `Max $<left, 2 decimals> (monthly
@@ -3859,9 +3885,10 @@ merge.** What an adopter can plug into `runJob` (`src/run.js:205`):
   `emit(type, data)` that appends one JSONL line per event; any function with that
   signature can stand in as a custom sink, but it is write-only — nothing in bareloop reads
   the spine back, so a custom sink cannot feed anything into a run's own decisions.
-- **`rates` is NOT an extension point.** A rates passthrough was designed but never built;
-  pricing is guesstimate-plus-loud-`estimated`-flag by ruling, and rate tables are the
-  customer's own responsibility, not a bareloop seam to wire up.
+- **`rates` is data the run doors hand in, not a behaviour hook.** `runJob` / `runPlan` take
+  `rates` / `judgeRates` (`{in, out}`, USD per 1K) resolved from the customer's own price on a key
+  row (`ratesFor`, `src/providerrows.js`); bareloop keeps no price table and never picks a price
+  itself. A price is the customer's, and sets what the cap means.
 
 Everything else in `runJob`'s options — budgets, caps, the close, the fence, merge/publish
 — is arbiter territory and is never adopter-suppliable as behavior, only as signed,
