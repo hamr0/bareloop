@@ -1860,10 +1860,10 @@ before. bareloop keeps no price list of its own, ever.
 carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
 `src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
 `pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
-(the guess). The exceptions read UNKNOWN provenance, correctly, and by the same rule that governs
-the archive: `judge-round` records carry no `rateSource` (the judge cost payload,
-`src/kinds.js` `onJudgeCost`, does not forward it, so a judge round is never counted as vouched,
-priced by you or not), and so does every round archived before the signal existed. The native
+(the guess). `judge-round` records carry it too (the judge Loop's per-call label, forwarded by
+`src/kinds.js` `onJudgeCost`): `'caller'` under your price on the judge's row, else the guess label. The
+exceptions read UNKNOWN provenance, correctly, and by the same rule that governs the archive: every
+round archived before the signal existed (judge rounds before this change included). The native
 per-turn `worker-turn` carries `null`, bareloop's OWN statement rather than a forwarded one: that
 surface prices the SESSION, so a turn had no rate to guess. A `worker-round`/`worker-turn`
 carries bare-agent's own label beside `pricing`:

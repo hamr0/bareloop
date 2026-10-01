@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- Judge rounds now carry `rateSource` (`'caller'` under your price, else the guess label the worker rounds carry), so a customer-priced judge round counts as vouched, not other, in the provenance readout and the monthly counts. Dollar totals are unchanged. Evidence: live run `mup3h70u` (136 worker rounds `caller`, 14 judge rounds without it).
 - The monthly-limit refusal now names the money a run in progress holds: `Max $4.00 (monthly limit, $5.95 held by a run in progress)` (`runs` when several); with nothing held the text is unchanged. `monthSpend` / `checkMonthlyRoom` also return `heldUsd` and `heldRuns`.
 - The interview's "Run it now?" now starts the packaged door (`bin/bareloop.mjs author`, same flags) instead of `scripts/run-author.mjs`, which the published package does not ship.
 - One "is this run alive" rule (`runIsAlive`, `src/runlist.js`) now drives both the panel's [▶] / [?] glyph and the monthly limit's hold: the run row's pid first (`isLiveRunner`), the spine-mtime rule only for a row with no pid. A run whose pid is alive but whose spine is quiet for 10+ minutes now reads running, not died; a dead pid with a fresh spine reads died. A `job-end` on the spine still wins.
