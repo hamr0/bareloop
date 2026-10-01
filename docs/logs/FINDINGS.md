@@ -13936,6 +13936,8 @@ carry the price (`resolve` at the door, the judge's own row), but they are cover
 by tests; no real run has exercised either. The native (CLI) and `runReuse` paths take no price
 by design. The vendor's bill for these two runs was not compared against the booked figure.
 
+**2026-10-01 addendum — the judged close is now proven live, and it found the judge-round gap.** Paid DeepSeek run `mup3h70u` (soft-green job pulselog-jsdoc, deepseek-flash, customer price on the `DEEPSEEK_API_KEY` row): spine `bareloop-patients/pulselog-softgreen-live-out/source-mu4hdwqs/pulselog-jsdoc-bareloop/u-mup3h70u.jsonl` has 136 `worker-round` records all `rateSource:"caller"` and 14 `judge-round` records with NO `rateSource`, so the readout counted every customer-priced judge round as `otherRounds`, not `vouchedRounds` (dollars were always right). Fixed in the commit titled "fix: judge rounds carry rateSource beside their cost": `defaultJudgeLoop` captures the per-call `rateSource`, `runLocate` reads it into `onCost`, `onJudgeCost` forwards it; only the vouched/other counts move.
+
 ## F207 — live findings from the 2026-09-30 DeepSeek runs: the monthly claim held; a wrong key name in the preview; unknown spend in the panel card (a proof, one wording defect, one UI defect)
 
 **Grounded in:** runs `muo0txge` and `muo1jah4` (spines named in F206) for the run facts; the

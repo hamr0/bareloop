@@ -102,7 +102,9 @@ function homeWith(t, keyRow) {
 
 /** one run-u start on the DeepSeek-shaped spec; token-only rounds (costUsd null) so bare-agent prices them */
 async function runPriced(t, { home, budgetUsd = 5, preview = false, specOver = {}, registry, workflow }) {
-  const workdir = tmp(t);
+  // the spine lands at `<workdir>/../<spineName>`: nest the patient one level down so that sibling is inside this
+  // test's own mktemp dir (cleaned by its `after`), not a fixed name straight under the system tmpdir
+  const workdir = join(tmp(t), 'patient');
   mkdirSync(join(workdir, 'src'), { recursive: true });
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
   git(workdir, ['init', '-q']);
@@ -168,6 +170,7 @@ test('the price readout: per 1M, tiny prices never round to $0.00 / $0.01', () =
   assert.equal(line(0.006, 1.2), 'yours: in $0.006 / out $1.20 per 1M tokens (K row)');
   assert.equal(line(0.0004, 5), 'yours: in $0.0004 / out $5.00 per 1M tokens (K row)');
   assert.equal(line(0, 0.125), 'yours: in $0.00 / out $0.125 per 1M tokens (K row)');
+  assert.equal(line(0, 0), 'yours: in $0.00 / out $0.00 per 1M tokens (K row) — WARNING: this price is $0, so spend and limits read $0');
   assert.equal(line(1e-7, 3), 'yours: in $0.0000001 / out $3.00 per 1M tokens (K row)');
 });
 
@@ -450,4 +453,25 @@ test('the preview\'s approve line names the key variable the run reads, and carr
   assert.match(approveLine(named.outs), new RegExp(`--registry ${reg.replace(/[.\\/]/g, '\\$&')} --workflow my-flow --approve `));
   console.log(`# approve line (DeepSeek job, registry): ${approveLine(withReg.outs).trim()}`);
   console.log(`# approve line (plain OpenAI job): ${approveLine(plain.outs).trim()}`);
+});
+
+test('a judge round carries rateSource beside its cost: \'caller\' under a customer price, the worker rounds\' own guess label without one; the provenance readout counts the priced ones vouched, dollars unchanged (live run mup3h70u)', async (t) => {
+  const price = { priceInPerM: 0.006, priceOutPerM: 1.2 };
+  const priced = await runJudged(t, { home: judgeHome(t, { deepseek: price }), judge: null });
+  const guessed = await runJudged(t, { home: judgeHome(t, {}), judge: null });
+  for (const r of [priced, guessed]) assert.ok(judgeRounds(r.spine).length > 0, `the judge ran (${r.code}) ${r.errs}`);
+  for (const r of judgeRounds(priced.spine)) assert.equal(r.rateSource, 'caller', 'a customer-priced judge round is vouched');
+  const guessLabels = new Set(workerRounds(guessed.spine).map((r) => r.rateSource));
+  assert.equal(guessLabels.size, 1);
+  for (const r of judgeRounds(guessed.spine)) {
+    assert.ok(Object.hasOwn(r, 'rateSource'), 'the guess is stamped too');
+    assert.ok([...guessLabels].includes(r.rateSource), `judge ${r.rateSource} matches the worker rounds' ${[...guessLabels]}`);
+    assert.notEqual(r.rateSource, 'caller');
+  }
+  const { spendProvenance } = await import('../src/ledger.js');
+  const prov = spendProvenance(priced.spine);
+  assert.equal(prov.unknown.rounds, 0, 'no round is left without provenance');
+  assert.equal(prov.vouched.rounds, workerRounds(priced.spine).length + judgeRounds(priced.spine).length);
+  const expect = perRound(JUDGE_USAGE, price);
+  for (const r of judgeRounds(priced.spine)) assert.ok(Math.abs(r.costUsd - expect) < 1e-12, 'dollars unchanged');
 });

@@ -33,6 +33,8 @@ import {
   questionsFor, requiredAnswersFor, VERDICT_CLASSES, LOCKED_CLASSES, UNLISTED_CLASSES, MENU_CLASSES,
   AUTHORED_SPEC_FIELDS,
 } from '../src/authorjob.js';
+import { Readable } from 'node:stream';
+import { main as interviewMain } from '../src/interviewrun.js';
 import { PROVIDERS } from '../src/job.js';
 import { resolveProvider } from '../src/providers.js';
 import { SOURCE_FIELD, DESTINATION_FIELD_REPO, labelsFor } from '../src/authorflow.js';
@@ -840,6 +842,28 @@ test('the paid step is OFFERED, never taken: the default is no, and saying nothi
   assert.match(r.out, /Run it now\? \[y\/N\]/);
   assert.match(r.out, /Not run\./);
   assert.match(r.out, /the two files are already on disk/);
+});
+
+test('a yes at the offer starts the PACKAGED door — bin/bareloop.mjs author with the same flags, never the unshipped scripts/ file', async () => {
+  const out = outDir();
+  /** @type {any[][]} */ const spawned = [];
+  const sink = () => { let t = ''; return { write: (x) => { t += x; return true; }, text: () => t }; };
+  const so = sink(); const se = sink();
+  const code = await interviewMain(
+    ['--verdict', CLASS, '--out', out, '--budget', '2.50', '--provider', 'anthropic-api'],
+    {
+      stdin: Readable.from([`${session(CLASS, { run: 'y' }).join('\n')}\n`]), stdout: so, stderr: se,
+      env: { ...process.env, ANTHROPIC_API_KEY: 'sk-test-not-a-real-key', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
+      spawnSync: (...a) => { spawned.push(a); return { status: 0 }; },
+    },
+  );
+  assert.equal(code, 0, so.text() + se.text());
+  assert.equal(spawned.length, 1, 'the offer was taken once');
+  const argv = spawned[0][1];
+  assert.equal(argv[0], BIN, 'the packaged bin, which ships');
+  assert.equal(argv[1], 'author');
+  assert.ok(argv.includes('--source') && argv.includes('--answers') && argv.includes('--draft') && argv.includes('--out'), 'the same flags run-author takes');
+  assert.ok(!argv.some((x) => String(x).includes('run-author.mjs')), 'never the scripts/ file, which the tarball does not ship');
 });
 
 // ── AN OFFER THAT CAN ONLY BE REFUSED IS NOT PUT ──────────────────────────────

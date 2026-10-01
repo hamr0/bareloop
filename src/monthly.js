@@ -14,16 +14,16 @@
 // run is counted at max(spend so far, capUsd) however quiet its spine; a run with a `job-end` counts
 // its real spend; a claim whose process is gone counts its floor and is settled — with an attributed
 // `settled` entry — by whichever later run finds it (the first note wins). An older row with no `pid` keeps the spine
-// mtime rule (a fresh spine, written to within DIED_MTIME_MS, is in flight). Only the refusal check
+// mtime rule (a fresh spine, written to within DIED_MTIME_MS, is in flight) — `runIsAlive`, src/runlist.js, the
+// one "is this run alive" rule the panel's glyph shares. Only the refusal check
 // reserves; the Money tab keeps showing real spend (`usd`).
 //
 // Honesty: a run whose spend is not fully known (a died/still-running spine, an unpriced
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
 // number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
-import { existsSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { readConfig, configPath, ConfigError } from './config.js';
-import { readRunList, appendRun, appendRunEvent, isLiveRunner, DIED_MTIME_MS } from './runlist.js';
-export { isLiveRunner };
+import { readRunList, appendRun, appendRunEvent, isLiveRunner, runIsAlive } from './runlist.js';
 import { parseJsonl } from './replayio.js';
 import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
 import { findRow } from './providerrows.js';
@@ -141,23 +141,21 @@ export function legTokens(records) {
 
 /**
  * What the refusal check counts for one run: its spend, unless it is IN FLIGHT (`job-start`, no
- * `job-end`, spine written to within DIED_MTIME_MS of `nowMs`), when it is the larger of that
+ * `job-end`, `runIsAlive` for a row with no pid — the pid-bearing rows are held by `readLegs`), when it is the larger of that
  * spend and the leg's own cap — the signed `budgetUsd` on the spine's `job-start` less the fold
  * a resumed leg inherited (`priorSpentUsd`), the same figure the run-start seam computes
  * (`legCapUsd`, src/userrun.js). A spine that records no `budgetUsd` reserves nothing extra.
  * @param {any[]} records
- * @param {string} spinePath
+ * @param {import('./runlist.js').RunRow} row
  * @param {number} nowMs
  * @param {number} usd the leg's spend so far
  * @returns {number}
  */
-function inFlightCapUsd(records, spinePath, nowMs, usd) {
+function inFlightCapUsd(records, row, nowMs, usd) {
   if (records.some((r) => r && r.type === 'job-end')) return usd;
   const start = records.find((r) => r && r.type === 'job-start') ?? null;
   if (!start || !(typeof start.budgetUsd === 'number' && Number.isFinite(start.budgetUsd))) return usd;
-  let mtimeMs;
-  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return usd; }
-  if (nowMs - mtimeMs > DIED_MTIME_MS) return usd; // stale — died, counts its floor
+  if (!runIsAlive(row, nowMs)) return usd; // stale — died, counts its floor
   const fold = typeof start.priorSpentUsd === 'number' && Number.isFinite(start.priorSpentUsd) ? start.priorSpentUsd : 0;
   return Math.max(usd, Math.max(0, start.budgetUsd - fold));
 }
@@ -178,7 +176,7 @@ function rowsAbove(rows, runid) {
 /**
  * Every listed run as one {@link Leg}. The ONE reader the month total, the all-time total
  * and the per-provider figures share.
- * @param {{ home?: string, now?: () => number, aboveRunid?: string }} [opts] `now` = the clock for the no-pid in-flight test; `aboveRunid` = read only the runs listed EARLIER in the file than that run (a claim yields to the claims above it, never below)
+ * @param {{ home?: string, now?: () => number, aboveRunid?: string, thisMonthOnly?: boolean }} [opts] `now` = the clock for the no-pid in-flight test; `aboveRunid` = read only the runs listed EARLIER in the file than that run (a claim yields to the claims above it, never below); `thisMonthOnly` = do not parse the spine of a run listed in another local month (the refusal check drops it anyway) unless its claim is still held
  * @returns {Leg[]}
  */
 export function readLegs(opts = {}) {
@@ -195,7 +193,8 @@ export function readLegs(opts = {}) {
     // pid is a live bareloop runner, however quiet its spine — killed = process gone, not silence.
     // An older row with no `pid` keeps the spine-mtime rule (`inFlightCapUsd`), never guessed alive.
     const hasPid = Number.isInteger(row.pid);
-    const heldCap = hasPid && !settled.has(row.runid) && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && isLiveRunner(/** @type {number} */ (row.pid)) ? row.capUsd : null;
+    const heldCap = hasPid && !settled.has(row.runid) && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && runIsAlive(row, nowMs) ? row.capUsd : null;
+    if (opts.thisMonthOnly && heldCap === null && !Number.isNaN(at.getTime()) && !sameLocalMonth(at, new Date(nowMs))) continue;
     if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
     /** @type {any[]} */
     let records;
@@ -217,7 +216,7 @@ export function readLegs(opts = {}) {
       vouchedRounds: prov.vouched.rounds,
       otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
       reservedUsd: hasPid ? (records.some((r) => r && r.type === 'job-end') || heldCap === null ? leg.usd : Math.max(leg.usd, heldCap))
-        : inFlightCapUsd(records, row.spine, nowMs, leg.usd),
+        : inFlightCapUsd(records, row, nowMs, leg.usd),
       unreadable: false,
     });
   }
@@ -233,7 +232,7 @@ const sameLocalMonth = (at, now) => at.getFullYear() === now.getFullYear() && at
 
 /**
  * @param {{ home?: string, now?: () => number, aboveRunid?: string }} [opts] `aboveRunid`: see {@link readLegs}
- * @returns {{ usd: number, atLeast: boolean, runs: number, reservedUsd: number }} `usd` = real spend (the Money tab's figure); `reservedUsd` = the same with in-flight runs at their cap (the refusal check's)
+ * @returns {{ usd: number, atLeast: boolean, runs: number, reservedUsd: number, heldUsd: number, heldRuns: number }} `usd` = real spend (the Money tab's figure); `reservedUsd` = the same with in-flight runs at their cap (the refusal check's); `heldUsd` = what in-progress runs set aside beyond what they have spent (`reservedUsd - usd`), over `heldRuns` runs
  */
 export function monthSpend(opts = {}) {
   const nowDate = new Date((opts.now ?? Date.now)());
@@ -241,17 +240,20 @@ export function monthSpend(opts = {}) {
   let reservedUsd = 0;
   let atLeast = false;
   let runs = 0;
-  for (const leg of readLegs({ home: opts.home, now: opts.now, aboveRunid: opts.aboveRunid })) {
+  let heldUsd = 0;
+  let heldRuns = 0;
+  for (const leg of readLegs({ home: opts.home, now: opts.now, aboveRunid: opts.aboveRunid, thisMonthOnly: true })) {
     // an unreadable date could belong to this month — unknown, never dropped
     if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
     if (!sameLocalMonth(leg.at, nowDate)) continue;
     runs += 1;
-    if (leg.unreadable) { atLeast = true; reservedUsd += leg.reservedUsd; continue; }
+    if (leg.unreadable) { atLeast = true; reservedUsd += leg.reservedUsd; if (leg.reservedUsd > 0) { heldUsd += leg.reservedUsd; heldRuns += 1; } continue; }
     usd += leg.usd;
     reservedUsd += leg.reservedUsd;
+    if (leg.reservedUsd > leg.usd) { heldUsd += leg.reservedUsd - leg.usd; heldRuns += 1; }
     if (!leg.complete) atLeast = true;
   }
-  return { usd, atLeast, runs, reservedUsd };
+  return { usd, atLeast, runs, reservedUsd, heldUsd, heldRuns };
 }
 
 /**
@@ -323,6 +325,8 @@ export function spendSummary(opts = {}) {
  * @property {number|null} leftUsd what is left this month (null = no limit set)
  * @property {number|null} limitUsd the person's monthly limit (null = none)
  * @property {boolean} atLeast the month's spend is a floor, so `leftUsd` is a ceiling
+ * @property {number} [heldUsd] what run(s) in progress have set aside beyond their spend so far (present when a limit is set)
+ * @property {number} [heldRuns] how many runs hold it
  */
 
 /**
@@ -358,18 +362,21 @@ export function checkMonthlyRoom({ capUsd, home, now, aboveRunid }) {
   }
   const spent = monthSpend({ home, now, aboveRunid });
   const leftCents = Math.max(0, Math.floor((limit - spent.reservedUsd) * 100 + 1e-6));
-  const capCents = Math.ceil((Number.isFinite(capUsd) ? capUsd : 0) * 100 - 1e-6);
-  return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast };
+  const capCents = Math.ceil(capUsd * 100 - 1e-6); // a non-finite cap never fits (NaN/Infinity compare false) — never read as $0
+  return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast, heldUsd: spent.heldUsd, heldRuns: spent.heldRuns };
 }
 
 /**
- * The ONE refusal text, everywhere (CLI, panel cap note, panel Sign refusal).
+ * The ONE refusal text, everywhere (CLI, panel cap note, panel Sign refusal). When run(s) in progress hold
+ * part of the limit, the same line says how much.
  * @param {MonthlyRoom} room
  * @returns {string|null} null when the run fits
  */
 export function monthlyRefusalText(room) {
   if (room.ok || room.leftUsd === null) return null;
-  return `Max $${room.leftUsd.toFixed(2)} (monthly limit)`;
+  const max = `Max $${room.leftUsd.toFixed(2)}`;
+  if (!room.heldRuns || !room.heldUsd || room.heldUsd <= 0) return `${max} (monthly limit)`;
+  return `${max} (monthly limit, $${room.heldUsd.toFixed(2)} held by ${room.heldRuns > 1 ? 'runs' : 'a run'} in progress)`;
 }
 
 /**

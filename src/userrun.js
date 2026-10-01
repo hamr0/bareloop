@@ -72,7 +72,7 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
-import { appendRun, appendRunEvent, isLiveRunner } from './runlist.js';
+import { appendRun, appendRunEvent, isLiveRunner, readRunList } from './runlist.js';
 import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
@@ -362,6 +362,13 @@ async function execute(ctx) {
   // Set on the no-limit path too, once the row is appended there (the same "listed, no spine yet" state).
   /** @type {{ runid: string, spine: string, home: string|undefined }|null} */
   let claimedRow = null;
+  // Release the claimed row (a `released` entry folds it out of the list, like a monthly refusal): the run
+  // spent nothing and must not stay a ghost that keeps the month reading "at least". A failed release write
+  // never masks the original exit.
+  const releaseClaimedRow = () => {
+    if (!claimedRow) return;
+    try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
+  };
   try {
   const spec = ctx.spec;
   const specPath = ctx.specPath;
@@ -684,7 +691,7 @@ async function execute(ctx) {
     });
     // is the dead run actually dead? Two processes on one patient is unrecoverable; a
     // false refusal costs one sentence. run-u's own pid is not on its spine, so the
-    // watchdog's report is the pid there is — and its absence is not evidence of life.
+    // watchdog's report or the run-list row is the pid there is — and its absence is not evidence of life.
     const wdFile = `${deadSpineFile}.watchdog.json`;
     /** @type {any} */
     let watchdog = null;
@@ -692,8 +699,14 @@ async function execute(ctx) {
     // ONE owner of "is that pid a live bareloop runner" (src/runlist.js `isLiveRunner`, shared with the
     // monthly limit's holds): alive AND a bareloop runner refuses; a recycled pid that now runs some
     // other program does not. Where /proc is unreadable an existing pid is assumed to be ours.
-    if (Number.isInteger(watchdog?.pid) && isLiveRunner(watchdog.pid)) {
-      die(`--resume: pid ${watchdog.pid} from ${deadSpineFile} is still alive (a bareloop runner). Two processes on one patient is unrecoverable — stop it first.`);
+    // The pid is the watchdog's kill record's, or the predecessor's OWN run-list row's (every row carries
+    // its runner's pid): a run never killed by the watchdog has no record but still has its row.
+    /** @type {number|undefined} */
+    let rowPid;
+    if (cfgOn) { try { rowPid = readRunList({ home: cfgHome }).rows.findLast((r) => r.spine === deadSpineFile)?.pid; } catch { /* an unreadable list is not evidence of life */ } }
+    const alivePid = [watchdog?.pid, rowPid].find((p) => Number.isInteger(p) && isLiveRunner(p));
+    if (alivePid !== undefined) {
+      die(`--resume: pid ${alivePid} from ${deadSpineFile} is still alive (a bareloop runner). Two processes on one patient is unrecoverable — stop it first.`);
     }
     // WHEN did the dead leg stop? The watchdog's kill record is later, better evidence
     // than the last spine event for a run that was KILLED — and worse evidence for one
@@ -1704,6 +1717,7 @@ async function execute(ctx) {
     emit('destination-refused', { code: sourceManifest.code, detail: sourceManifest.stop });
     emit('run-end', { outcome: 'escalated' });
     err(`SOURCE-MANIFEST-RED — ${sourceManifest.stop}. See ${spineFile}`);
+    releaseClaimedRow(); // a $0 refusal after the spine exists: no ghost row, no "at least" month
     throw new ExitSignal(1);
   }
   /** the front door's per-run instance, or null when there is none (no
@@ -1722,6 +1736,7 @@ async function execute(ctx) {
       emit('destination-refused', { code: dp.code, detail: dp.stop });
       emit('run-end', { outcome: 'escalated' });
       err(`DESTINATION-RED — ${dp.stop}. See ${spineFile}`);
+      releaseClaimedRow(); // a $0 refusal after the spine exists: no ghost row, no "at least" month
       throw new ExitSignal(1);
     }
   }
@@ -1740,6 +1755,7 @@ async function execute(ctx) {
     });
     emit('run-end', { outcome: 'escalated' });
     err(`CLOSE-TIMING-RED — stage(s) never finished the timing preflight: ${names}. See ${spineFile}`);
+    releaseClaimedRow(); // a $0 refusal after the spine exists: no ghost row, no "at least" month
     throw new ExitSignal(1);
   }
   const RESOLVED_CLOSE_TIMEOUT_MS = /** @type {number} */ (closeTimingResolved.closeTimeoutMs);
@@ -1991,10 +2007,16 @@ async function execute(ctx) {
         : mh.trend === 'flat' ? 'more money is unlikely to help; this bundle\'s goal is signed and cannot be revised here'
           : 'read the last close output before deciding whether more money is worth it';
       out(`  lever   ${lever}`);
-      out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; it cannot be raised past that)`);
-      out('          · abandon the task');
-      out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, at most $${signed}> --approve ${PRINT_APPROVE}`);
-      out('          (type the --budget number yourself — nothing here fills it in, so this line does not run as printed; nothing in the run may widen its own budget)');
+      if (spentUsd !== null && spentUsd >= signed) {
+        // the whole signed ceiling is spent: "more than spent, at most signed" is unsatisfiable, so no resume line is printed
+        out(`          · no room left under the signed ceiling: this run spent all of the signed $${signed}, and a bundle's ceiling cannot be raised`);
+        out('          · abandon the task');
+      } else {
+        out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; it cannot be raised past that)`);
+        out('          · abandon the task');
+        out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, at most $${signed}> --approve ${PRINT_APPROVE}`);
+        out('          (type the --budget number yourself — nothing here fills it in, so this line does not run as printed; nothing in the run may widen its own budget)');
+      }
     } else {
       out(`  lever   ${mh.lever}`);
       for (const o of mh.options ?? []) out(`          · ${o}`);
@@ -2270,9 +2292,7 @@ async function execute(ctx) {
     // owns no spine, so its row is released (folded out of the list, like a monthly refusal) rather than
     // left as a ghost that keeps the month reading "at least". Once the spine exists the run is a real,
     // listed run and ends by its own job-end. A failed release write never masks the original exit.
-    if (claimedRow && !existsSync(claimedRow.spine)) {
-      try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
-    }
+    if (claimedRow && !existsSync(claimedRow.spine)) releaseClaimedRow();
     if (e instanceof ExitSignal) return e.code;
     throw e;
   }

@@ -361,6 +361,26 @@ test('bareloop run: after a MONEY halt the bundle resume line never carries the 
   assert.match(block, /type the --budget number yourself/);
 });
 
+test('bareloop run: a MONEY halt that used the WHOLE signed ceiling says no room is left and prints no resume line (the placeholder would be unsatisfiable)', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 0.0005 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const t1 = 1_700_000_300_000;
+  const worktree = join(repo, '.bareloop', 'wt', t1.toString(36));
+  const out = sink(); const err = sink();
+  await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: runlistHome(t),
+  });
+  const text = out.text();
+  assert.match(text, /MONEY HALT/, `the fixture must money-halt:\n${text}\n${err.text()}`);
+  const m = /MONEY HALT — the cap cut the run at \$(-?[\d.]+) left of \$(\d+\.\d+)/.exec(text);
+  assert.ok(m, text);
+  assert.ok(Number(m[2]) - Number(m[1]) >= 0.0005, `the run spent the whole signed ceiling: ${m[0]}`);
+  assert.match(text, /no room left under the signed ceiling/);
+  assert.doesNotMatch(text, /<more than|choose a larger --budget/, 'no unsatisfiable placeholder');
+  assert.equal(text.split('\n').some((l) => /bareloop run .* --resume /.test(l)), false, 'no resume line');
+});
+
 test('bareloop run: after a NON-money halt the bundle resume line keeps the leg\'s tightened --budget/--wall exactly', async (t) => {
   const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');

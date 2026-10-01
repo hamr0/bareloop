@@ -5,6 +5,22 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.34.0] - 2026-10-01
+
+### Fixed
+
+- Judge rounds now carry `rateSource` (`'caller'` under your price, else the guess label the worker rounds carry), so a customer-priced judge round counts as vouched, not other, in the provenance readout and the monthly counts. Dollar totals are unchanged. Evidence: live run `mup3h70u` (136 worker rounds `caller`, 14 judge rounds without it).
+- The monthly-limit refusal now names the money a run in progress holds: `Max $4.00 (monthly limit, $5.95 held by a run in progress)` (`runs` when several); with nothing held the text is unchanged. `monthSpend` / `checkMonthlyRoom` also return `heldUsd` and `heldRuns`.
+- The interview's "Run it now?" now starts the packaged door (`bin/bareloop.mjs author`, same flags) instead of `scripts/run-author.mjs`, which the published package does not ship.
+- One "is this run alive" rule (`runIsAlive`, `src/runlist.js`) now drives both the panel's [▶] / [?] glyph and the monthly limit's hold: the run row's pid first (`isLiveRunner`), the spine-mtime rule only for a row with no pid. A run whose pid is alive but whose spine is quiet for 10+ minutes now reads running, not died; a dead pid with a fresh spine reads died. A `job-end` on the spine still wins.
+- `--resume` now also refuses when the predecessor run's own run-list row carries the pid of a live bareloop runner, not only when a watchdog kill record names it (same refusal text).
+- Every panel GET/HEAD route now refuses (`403`) a request whose `Host` is not the panel's own `127.0.0.1:<port>` (one shared `checkHostGuard`, also used by the write routes' guard), so a page on another origin cannot read the run list through a rebound DNS name. No token is needed to read.
+- The monthly-limit check (and so every run start) no longer parses the spine of every run ever listed: it reads only runs listed in the current local month, plus any claim still held by a live runner. The Money tab's all-time figures still read everything.
+- A key row priced 0 / 0 is still accepted, but the `price    yours:` readout (run preview and run tail) now ends with a warning that the price is $0 so spend and limits read $0.
+- A run that stops at $0 on a SOURCE-MANIFEST-RED, DESTINATION-RED or CLOSE-TIMING-RED now releases its monthly claim (the same `released` entry as a run that never started), so it leaves no ghost row and the month no longer reads "at least".
+- A spec whose `budgetUsd` is not a finite number (e.g. `1e999`) is refused by `validateJob` at $0, and the monthly-limit check (`checkMonthlyRoom` / `claimRun`) no longer reads a non-finite cap as $0 — it never fits.
+- A bundle money halt that used the whole signed ceiling now says no room is left under the signed ceiling (and prints no resume line) instead of a `--budget <more than X, at most X>` placeholder nothing can satisfy.
+
 ## [0.33.0] — 2026-09-30
 
 ### Added

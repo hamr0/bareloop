@@ -793,10 +793,28 @@ function topLevelFunctionNames(artifactText) {
  * so the priced seam is the only legal one.
  * `rates` is the customer's own price for the judge's row (USD per 1K, `ratesFor`'s
  * `rates`); null/absent = bare-agent's built-in guess, exactly as before.
- * @param {{provider: any, system: string, rates?: {in: number, out: number}|null}} o */
+ * @param {{provider: any, system: string, rates?: {in: number, out: number}|null}} o
+ * @returns {{run: (msgs: any[], tools: any[], opts?: any) => Promise<any>}} */
 export const defaultJudgeLoop = ({ provider, system, rates = null }) => {
   const { Loop } = require('bare-agent');
-  return new Loop({ provider, system, ...(rates ? { rates } : {}) });
+  // BA-21: the Loop's run RESULT carries no `rateSource` — only the per-call metering event
+  // does (`onLlmResult`). Capture it there and ride it on the result, so `runLocate` can
+  // forward it to the judge-round record beside `costUsd`. Absent (no round metered) = no key.
+  /** @type {{rateSource: string|null}|null} */
+  let seen = null;
+  const loop = new Loop({
+    provider, system, ...(rates ? { rates } : {}),
+    onLlmResult: (/** @type {{rateSource?: string|null}} */ m) => {
+      if (m && typeof m === 'object' && 'rateSource' in m) seen = { rateSource: m.rateSource ?? null };
+    },
+  });
+  return {
+    run: async (/** @type {any[]} */ msgs, /** @type {any[]} */ tools, /** @type {any} */ opts) => {
+      seen = null;
+      const res = await loop.run(msgs, tools, opts);
+      return res && typeof res === 'object' && seen ? { ...res, rateSource: /** @type {any} */ (seen).rateSource } : res;
+    },
+  };
 };
 
 // ── LOCATE: one attempt ─────────────────────────────────────────────────────
@@ -821,7 +839,7 @@ export const defaultJudgeLoop = ({ provider, system, rates = null }) => {
  * On every route out, red or clean, `onCost` fires exactly once with the honest
  * read: a paid call that leaves no meter record is F12 wearing a judge's coat.
  * @param {{artifactText: string, card: any, loopFactory: (o: {provider?: any, system: string}) => any,
- *   maxTokens?: number, attempt?: number, onCost?: (c: {costUsd: number|null, unpricedRounds: number}) => void,
+ *   maxTokens?: number, attempt?: number, onCost?: (c: {costUsd: number|null, unpricedRounds: number, rateSource?: string|null}) => void,
  *   callBounds?: {timeoutMs?: number, deadlineMs?: number}}} o
  * @returns {Promise<{ok: boolean, facts: any|null, red: {axis: string, detail: string}|null,
  *   costUsd: number|null, unpricedRounds: number, truncated: boolean, parseError: boolean,
@@ -852,7 +870,9 @@ export async function runLocate({
   /** @param {{axis: string, detail: string}|null} red @param {any} facts @param {any} r @param {boolean} truncated @param {boolean} parseError */
   const out = (red, facts, r, truncated, parseError) => {
     const { costUsd, unpricedRounds } = r === null ? { costUsd: null, unpricedRounds: 0 } : priceOf(r);
-    onCost({ costUsd, unpricedRounds });
+    // BA-21: the round's provenance rides beside the cost when the loop carried it (see
+    // `defaultJudgeLoop`); a loop that never metered a rate adds no key.
+    onCost({ costUsd, unpricedRounds, ...(r && typeof r === 'object' && 'rateSource' in r ? { rateSource: r.rateSource } : {}) });
     return {
       ok: red === null, facts, red, costUsd, unpricedRounds, truncated, parseError,
       raw: scrubRaw({

@@ -213,6 +213,21 @@ function runidForSpine(spinePath) {
 // the panel) because the monthly limit reads the same rule (src/monthly.js).
 export const DIED_MTIME_MS = 10 * 60 * 1000;
 
+/**
+ * The ONE "is this run alive" rule, for the panel's glyph ([▶] vs [?]) and the monthly limit's hold. A
+ * row that carries its runner's `pid` is alive exactly while that pid is a live bareloop runner
+ * ({@link isLiveRunner}) however quiet its spine; only a row with NO pid (an older row) falls back to
+ * the spine-mtime rule above. A run that has ENDED (a `job-end` on its spine) is a different fact the
+ * callers read off the spine itself — this answers "is a process still running it", nothing more.
+ * @param {{ pid?: number, spine: string }} row
+ * @param {number} [nowMs] the clock for the mtime fallback
+ * @returns {boolean}
+ */
+export function runIsAlive(row, nowMs = Date.now()) {
+  if (Number.isInteger(row.pid)) return isLiveRunner(/** @type {number} */ (row.pid));
+  try { return nowMs - statSync(row.spine).mtimeMs <= DIED_MTIME_MS; } catch { return false; }
+}
+
 // A backfill scan of a real patients directory can be arbitrarily deep
 // (person-path runs archive several levels down: `<dir>/<proj>/out/
 // source-<x>/<proj>-bareloop/u-<id>.jsonl`, 4 levels under the dir a person

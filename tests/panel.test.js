@@ -11,6 +11,8 @@ import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, cpSync, utimesSync, readFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { request as httpRequest } from 'node:http';
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -191,6 +193,20 @@ test('createPanelServer: port 0 resolves the OS-assigned real port, never 0, and
   assert.ok(html.includes(String(port)), 'expected the resolved port to reach the served page (not the literal 0 requested)');
 });
 
+test('every GET route refuses a request whose Host is not the panel\'s own address (no token needed on reads)', async (t) => {
+  const { port } = await startServer(t, { home: tmp() });
+  const get = (path, host) => new Promise((resolve, reject) => {
+    const r = httpRequest({ host: '127.0.0.1', port, path, headers: { host } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+    r.on('error', reject); r.end();
+  });
+  for (const path of ['/', '/api/runs', '/api/runs/abc123', '/api/settings/state']) {
+    assert.equal(await get(path, `evil.example:${port}`), 403, `${path} with a foreign Host`);
+    assert.equal(await get(path, '127.0.0.1:1'), 403, `${path} with the wrong port`);
+  }
+  assert.equal(await get('/', `127.0.0.1:${port}`), 200);
+  assert.equal(await get('/api/runs', `127.0.0.1:${port}`), 200);
+});
+
 test('createPanelServer: a taken port rejects loudly (EADDRINUSE), never silently picks another port', async (t) => {
   const home = tmp();
   const port = await reserveTakenPort(t);
@@ -367,6 +383,33 @@ test(
     // /api/runs row shape — no second server endpoint to test here anymore.
   },
 );
+
+test('alive is the row\'s pid first, the spine mtime only for a row with no pid (glyph [▶] vs [?])', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  const kill = (c) => { try { process.kill(c.pid, 'SIGKILL'); } catch { /* gone */ } };
+  const runner = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'bareloop.mjs'], { stdio: 'ignore' }); // looks like a bareloop runner
+  const other = spawn('sleep', ['300'], { stdio: 'ignore' }); // a live pid that is NOT a runner (a recycled pid)
+  t.after(() => { kill(runner); kill(other); });
+  await new Promise((r) => setTimeout(r, 200));
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  const mk = (runid, pid, aged) => {
+    const spine = join(dir, `u-${runid}.jsonl`);
+    writeSpine(spine, [{ type: 'job-start', job: 'alive-rule', ts: new Date().toISOString(), seq: 1, verdictType: 'green' }]);
+    if (aged) utimesSync(spine, old, old);
+    appendRun({ at: new Date().toISOString(), runid, job: 'alive-rule', spine, patient: null, via: 'run-u', ...(pid ? { pid } : {}) }, { home });
+  };
+  mk('pidlive', runner.pid, true); // pid alive + OLD mtime -> running
+  mk('piddead', other.pid, false); // pid not a live runner + FRESH mtime -> died
+  mk('nopidold', null, true); // no pid: the mtime rule -> died
+  mk('nopidfresh', null, false); // no pid: the mtime rule -> running
+  const { base } = await startServer(t, { home });
+  const died = async (id) => (await (await fetch(`${base}/api/runs/${id}`)).json()).died;
+  assert.equal(await died('pidlive'), false);
+  assert.equal(await died('piddead'), true);
+  assert.equal(await died('nopidold'), true);
+  assert.equal(await died('nopidfresh'), false);
+});
 
 test('a FRESH spine (no job-end, mtime just written) is still just "running" [▶] — never misread as died', async (t) => {
   const home = tmp();

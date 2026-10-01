@@ -35,6 +35,17 @@ export function mintToken() {
 }
 
 /**
+ * The ONE Host check: the request names this panel's own bind address. A page on another
+ * origin reaching the panel through a rebound DNS name sends that name as Host, so it fails here.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {{port: number}} o
+ * @returns {{ok: true}|{ok: false, reason: string}}
+ */
+export function checkHostGuard(req, { port }) {
+  return req.headers.host === `127.0.0.1:${port}` ? { ok: true } : { ok: false, reason: 'wrong Host' };
+}
+
+/**
  * `true` when a request may reach ANY route in this file — the token header
  * plus an Origin/Host that names this exact bind address. `req.headers`
  * lower-cases header names (node's own `http` behaviour), so this reads
@@ -48,10 +59,9 @@ export function checkHumanGuard(req, { token, port }) {
   if (got !== token) return { ok: false, reason: 'missing or wrong token' };
   const want = `127.0.0.1:${port}`;
   const origin = req.headers.origin;
-  const host = req.headers.host;
   if (typeof origin === 'string' && origin.length > 0) {
     if (origin !== `http://${want}` && origin !== `https://${want}`) return { ok: false, reason: 'wrong Origin' };
-  } else if (host !== want) {
+  } else if (!checkHostGuard(req, { port }).ok) {
     return { ok: false, reason: 'wrong Host (and no Origin header)' };
   }
   return { ok: true };

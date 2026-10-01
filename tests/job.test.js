@@ -212,6 +212,15 @@ test('an env REFERENCE in a close cmd does not red the secret sweep — only lit
   assert.deepEqual(r.reds, []);
 });
 
+test('a non-finite budget is refused even under an unbounded shell cap (1e999 parses to Infinity)', () => {
+  for (const b of [Infinity, NaN]) {
+    const r = validateJob(mut((j) => { j.budgetUsd = b; }), { shellCapUsd: Infinity });
+    assert.equal(r.ok, false);
+    assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'bounds:budgetUsd');
+  }
+  assert.equal(validateJob(JSON.stringify({ ...JOB1, budgetUsd: 1 }).replace('"budgetUsd":1', '"budgetUsd":1e999'), { shellCapUsd: Infinity }).ok, false);
+});
+
 test('the shell cap is the ceiling the shell sets (job 1.5 passes under 2, reds under 1)', () => {
   assert.equal(validateJob(JOB1, { shellCapUsd: 2 }).ok, true);
   const r = validateJob(JOB1, { shellCapUsd: 1 });

@@ -289,8 +289,8 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   }
 
   if (spec.budgetUsd === undefined) red('missing-required', 'budgetUsd');
-  else if (!(typeof spec.budgetUsd === 'number' && spec.budgetUsd > 0 && spec.budgetUsd <= shellCapUsd)) {
-    red('bounds', 'budgetUsd', `0 < budget <= shell cap ${shellCapUsd} (cap-not-estimate; no self-adjusted budgets, ever)`);
+  else if (!(typeof spec.budgetUsd === 'number' && Number.isFinite(spec.budgetUsd) && spec.budgetUsd > 0 && spec.budgetUsd <= shellCapUsd)) {
+    red('bounds', 'budgetUsd', `a finite 0 < budget <= shell cap ${shellCapUsd} (cap-not-estimate; no self-adjusted budgets, ever)`);
   }
 
   // T (PRD v1.27/v1.29) — TIME, with exactly budgetUsd's status: operator input,

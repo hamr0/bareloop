@@ -1871,6 +1871,7 @@ async function runJudgedFloor(stage, ctx) {
           ctx.onJudgeCost({
             stage: stage?.name ?? null, kind: stage?.kind ?? null, path: rel, attempt,
             label: LOCATE_LABEL, model: judgeModel, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
+            ...('rateSource' in c ? { rateSource: c.rateSource } : {}),
           });
         },
       });

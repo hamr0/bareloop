@@ -25,12 +25,12 @@
 // for every cap/threshold: a shell never widens what it was asked to do).
 
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRunList, DIED_MTIME_MS } from '../runlist.js';
+import { readRunList, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
@@ -39,7 +39,7 @@ import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
-import { createAuthorRoutes, mintToken } from './authorroutes.js';
+import { createAuthorRoutes, mintToken, checkHostGuard } from './authorroutes.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -137,9 +137,9 @@ export function checkTypeTitle(verdictType, atIso) {
   return null;
 }
 
-// DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` is `died` [?], never [✗], once its
-// spine file's mtime is older than DIED_MTIME_MS — the constant and its full comment live in
-// src/runlist.js (the monthly limit reads the same rule); re-exported here for the panel's callers.
+// DIED (hamr's ruling B, 2026-09-25): a run with no `job-end` is `died` [?], never [✗], once nothing is
+// running it — `runIsAlive` (src/runlist.js: the row's pid first, the spine-mtime rule DIED_MTIME_MS only
+// for a row with no pid; the monthly limit reads the same rule); the constant is re-exported here for the panel's callers.
 export { DIED_MTIME_MS };
 
 /**
@@ -231,12 +231,12 @@ export function formatTimestamp(ts) {
  * fields, which assume a `job-end` exists) — the ONE owner of this
  * derivation, used by every caller below (`/api/runs`, `/api/runs/:id`) so
  * the two never drift apart.
- * @param {string} spinePath
+ * @param {import('../runlist.js').RunRow} row the run's listed row (its pid, else its spine's mtime, says whether it is still running)
  * @param {any[]} records raw parsed spine records (already read once by the caller)
  * @param {string|null} outcome `replayRun`'s own `summary.outcome`
  * @returns {{died: boolean, why: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
  */
-function deriveDeath(spinePath, records, outcome) {
+function deriveDeath(row, records, outcome) {
   const notDied = {
     died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
   };
@@ -245,9 +245,7 @@ function deriveDeath(spinePath, records, outcome) {
   // out to be a died run or one that is genuinely still running (build item
   // 6): computed here, once, before the died/still-running branch below.
   const floors = floorsFromRecords(records);
-  let mtimeMs;
-  try { mtimeMs = statSync(spinePath).mtimeMs; } catch { return { ...notDied, ...floors }; }
-  if (Date.now() - mtimeMs <= DIED_MTIME_MS) return { ...notDied, ...floors }; // still fresh — genuinely `running`, not died
+  if (runIsAlive(row)) return { ...notDied, ...floors }; // something is still running it — genuinely `running`, not died
 
   const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
   const last = withTs.length ? withTs[withTs.length - 1] : null;
@@ -300,7 +298,7 @@ function summarizeRow(row) {
     };
   }
   const line = summarizeForAllLine(summary);
-  const death = deriveDeath(row.spine, rawRecords, summary.outcome);
+  const death = deriveDeath(row, rawRecords, summary.outcome);
   return {
     runid: row.runid,
     job: row.job,
@@ -395,7 +393,7 @@ export function getRunDetail(runid, opts = {}) {
   const auditPath = resolveAuditPathForRow(row, rawSpineRecords);
   const summary = replayOne(row.spine, { auditPathOverride: auditPath });
   const timelineKind = summary.timelineKind;
-  const death = deriveDeath(row.spine, rawSpineRecords, summary.outcome);
+  const death = deriveDeath(row, rawSpineRecords, summary.outcome);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
   // close's own paid judge seam, distinct from the worker `model` above.
@@ -1745,6 +1743,13 @@ export function handleRequest(req, res, opts) {
     return;
   }
   const { pathname } = url;
+
+  // every read names the panel's own address as Host — no token needed to read, but another origin's
+  // page (a rebound DNS name) must not be able to fetch the run list
+  if ((method === 'GET' || method === 'HEAD') && !checkHostGuard(req, { port: opts.port }).ok) {
+    sendText(res, 403, 'wrong Host — this panel answers only at its own 127.0.0.1 address');
+    return;
+  }
 
   if (method !== 'GET' && method !== 'HEAD') {
     const routes = routesFor(opts, pathname);
