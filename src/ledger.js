@@ -408,7 +408,7 @@ export function updateLedger({ ledgerFile, spineFiles }) {
 // ── BA-21 pricing provenance: the READ side (REPORTING ONLY) ─────────────────
 // bare-agent >=0.37 rides `rateSource` beside `pricing` on every metering payload,
 // and the plan flow forwards it verbatim onto `worker-round`/`judge-round`/`worker-turn`
-// (`rateSourceFields`, src/planrun.js — the write side).
+// (`rateSourceFields`, src/text.js — the write side).
 //
 // `judge-round`'s payload (src/kinds.js's `onJudgeCost({...})`) forwards `rateSource` from the
 // judge Loop's per-call metering (`defaultJudgeLoop`, src/judged.js); a judge round whose loop

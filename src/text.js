@@ -308,3 +308,23 @@ export function stampRaw(raw, { cause = null, reason = null }) {
   raw.reason = reason === null || reason === undefined ? null : redactSecrets(reason);
   return raw;
 }
+
+/**
+ * BA-21 — the WRITE side of the pricing-provenance signal (read side: `rateProvenance` /
+ * `spendProvenance` in src/ledger.js). bare-agent >=0.37 rides `rateSource` beside
+ * `pricing` on every metering payload; both metering callbacks below forward it onto the
+ * spine through THIS one helper, because two sites spelling one rule are two instruments
+ * (the ripgrep fix that landed in ci.yml but not publish.yml).
+ *
+ * Forwarded VERBATIM — the write side reports what upstream said, and src/ledger.js is
+ * the one place that decides what counts as a guess. And an ABSENT provenance stays
+ * absent: a payload carrying no `rateSource` (bare-agent <0.37, and every round already
+ * in the archive) emits no field at all, so a reader sees UNKNOWN rather than a label we
+ * invented. Never defaulted to `null` here — `null` is upstream saying "nothing was
+ * priced", which is a different fact from "nobody told us".
+ * @param {any} arg an `onLlmResult` / `onTurn` payload
+ * @returns {{rateSource?: string|null}} the field to spread into the spine record
+ */
+export function rateSourceFields(arg) {
+  return arg && typeof arg === 'object' && 'rateSource' in arg ? { rateSource: arg.rateSource } : {};
+}
