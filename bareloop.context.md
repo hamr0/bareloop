@@ -158,7 +158,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `provider` | `anthropic-api` \| `openai-api` \| `gemini-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-flash` today (F171: swapped from the retired `deepseek-chat`) — see "Worker surface" above for its `baseUrl` field and per-model gating; `gemini-api` (PRD item 31.3) reads `GEMINI_API_KEY` and is ADMITTED-PENDING-PROBE — zero runs, and every launch says so (`PROBE_STATUS`/`probeWarningLines`); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
-| `budgetUsd` | `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
+| `budgetUsd` | finite `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
 | `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage, un-autoset-default number, so a spec with many stages OR a raised/autoset `closeTimeoutMs` can validate while its overshoot dwarfs its cap: `runPlan` adds a RUN-START check (PRD item 27/M3) that refuses `wall-under-close-timeout` at $0 once the EFFECTIVE per-stage ceiling is known (autoset or signed), rather than a silent clamp. Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `closeTimeoutMs` | optional integer ms `>= CLOSE_TIMEOUT_FLOOR_MS` (120,000 — hamr's arbiter floor, 2026-09-07) | PRD item 27/M3's SIGNED override for the close's own per-stage wall-clock cap. Absent (the normal case): the run autosets it from a $0 seed timing pass — `max(FLOOR, K × slowest measured stage)`, `K = 5` (hamr, 2026-09-07: "2 and 5 are fine"). Present: the operator's own number wins outright and may legally sit ABOVE *or below* the autoset estimate (the rates-passthrough shape, F113 — never tighten-only). Arbiter territory exactly like `budgetUsd`/`maxWallMs`/`close[].sha256`: the authoring pipeline's `assembleSpec` refuses a draft carrying it |
 | `model` | optional non-empty string, exact provider model id (e.g. `"claude-sonnet-5"`) | the WORKER's model, build-list #3. Absent means today's runner default; present it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the JUDGE's model comes from the `judge` row below, which DEFAULTS to this same worker model |
@@ -3208,7 +3208,8 @@ key you want first (the panel picks the row by the Model menu).
      `--budget`/`--wall`, only if you passed them (a tightened ceiling never silently reverts to the signed
      one). After a MONEY halt the line does NOT repeat the exhausted `--budget` (chain spend is folded, so
      it would halt again at once); it prints `--budget <more than $<spent so far>, at most $<signed
-     budgetUsd>>` for you to fill in, and is not runnable until you do. A bundle's spec is
+     budgetUsd>>` for you to fill in, and is not runnable until you do. When the run spent the WHOLE signed
+     ceiling, that range is empty, so no resume line is printed: the block says no room is left under the signed ceiling. A bundle's spec is
      manifest-hashed, so its halt hint never asks you to edit `budgetUsd`.
   6. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/`maxWallMs`
      in memory if `--budget`/`--wall` were given → `approveHash = jobSpecHash(that tightened+
@@ -3446,7 +3447,7 @@ key you want first (the panel picks the row by the Model menu).
   mechanically, $0, via `prepareSource`/`proveDestination`), then the picked class's frozen
   question set (`questionsFor`/`requiredAnswersFor`, `src/authorjob.js`), then the operator's
   own job name/budget/wall. On success it writes `answers.json`/`specdraft.json` under `--out`
-  and either offers to spawn `scripts/run-author.mjs` (only when a clean key is present and no
+  and either offers to spawn the packaged `bin/bareloop.mjs author` (same flags as `scripts/run-author.mjs`, which the package does not ship; only when a clean key is present and no
   install gap remains — default answer is no) or prints the exact command to run it later.
   Because this module reads a real TTY/piped stdin, `src/cli.js` hands it `stdin`/`stdout`/
   `stderr` (the raw streams, not the wrapped `out`/`err` line-functions every other command
@@ -3591,17 +3592,17 @@ records only. `claimRun` (`src/monthly.js`) writes the run's row FIRST (it carri
 its pid is a live bareloop runner (`isLiveRunner`, `src/runlist.js`, also what `--resume` uses to refuse a
 resume against a live run: the process is a node executable with a `bareloop`/`bareloop.mjs`/`run-u.mjs`/
 `u-watchdog.mjs` argument, or is itself named so — a recycled pid running some other program never holds a
-cap, though a recycled node program with such an argument still would), however quiet its spine; a claim whose process is gone is closed by whoever
+cap, though a recycled node program with such an argument still would), however quiet its spine (`runIsAlive`, `src/runlist.js`, is the one "is this run alive" rule: the panel's [▶] / [?] glyph reads it too; `--resume` also refuses on the pid in the predecessor's own run-list row, not only the watchdog's record); a claim whose process is gone is closed by whoever
 finds it, with a note (`{runid, type:'settled', by:<finder>, reason:'process gone', spentUsd:<floor>}`) and
 counts its real spend. If the sum fits, the run goes; if not, it appends `{type:'released',
 reason:'refused'}` and refuses with the exact text, nothing spent. A run whose row is listed (claimed, or with no limit set) that then exits at $0 before its spine has a first record (a refused
-`--resume` patient, a failing tree setup) appends `{type:'released', reason:'not started'}` too, so it leaves no row. A row that cannot be written, or an
+`--resume` patient, a failing tree setup) appends `{type:'released', reason:'not started'}` too, so it leaves no row; so does a $0 refusal after the spine exists (`SOURCE-MANIFEST-RED`, `DESTINATION-RED`, `CLOSE-TIMING-RED`). A row that cannot be written, or an
 unreadable config, refuses too — never "no limit". When a run ends it appends its own
 `{runid, type:'settled', by:<runid>, spentUsd, spendComplete, at}`. Two runs may close the same dead claim;
 the FIRST note for a runid is authoritative. `readRunList` folds these entries out of the run rows
 (`events`; a `released` claim's row is not listed). Month totals still read real spend off the spines. An
 older row with no `pid` keeps the spine-mtime rule (`DIED_MTIME_MS`: a spine written to within it is in
-flight, at its leg cap). A run refused because an earlier claim was itself later refused is the accepted
+flight, at its leg cap). The refusal check parses only the spines of runs listed in the current local month (plus any claim still held by a live runner); the all-time readers still read every run. A run refused because an earlier claim was itself later refused is the accepted
 safe-side cost of doing without a lock.
 Only the refusal reserves the cap (`monthSpend().reservedUsd`); the Money tab's month figure is
 real spend.
