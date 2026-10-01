@@ -20,7 +20,8 @@
 //
 // Honesty: a run whose spend is not fully known (a died/still-running spine, an unpriced
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
-// number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
+// number. The refusal text leads with `Max $X (monthly limit`; when runs hold money it adds
+// `, $Y held by a run in progress` before the closing paren (`monthlyRefusalText`). `atLeast` travels beside it.
 import { existsSync } from 'node:fs';
 import { readConfig, configPath, ConfigError } from './config.js';
 import { readRunList, appendRun, appendRunEvent, isLiveRunner, runIsAlive } from './runlist.js';
