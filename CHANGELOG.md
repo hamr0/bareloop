@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.34.0] - 2026-10-01
 
 ### Fixed
 
@@ -19,6 +19,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - A key row priced 0 / 0 is still accepted, but the `price    yours:` readout (run preview and run tail) now ends with a warning that the price is $0 so spend and limits read $0.
 - A run that stops at $0 on a SOURCE-MANIFEST-RED, DESTINATION-RED or CLOSE-TIMING-RED now releases its monthly claim (the same `released` entry as a run that never started), so it leaves no ghost row and the month no longer reads "at least".
 - A spec whose `budgetUsd` is not a finite number (e.g. `1e999`) is refused by `validateJob` at $0, and the monthly-limit check (`checkMonthlyRoom` / `claimRun`) no longer reads a non-finite cap as $0 — it never fits.
+- A bundle money halt that used the whole signed ceiling now says no room is left under the signed ceiling (and prints no resume line) instead of a `--budget <more than X, at most X>` placeholder nothing can satisfy.
 
 ## [0.33.0] — 2026-09-30
 
