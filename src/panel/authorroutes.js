@@ -35,6 +35,12 @@ export function mintToken() {
 }
 
 /**
+ * The ONE spelling of this panel's own bind address (`host:port`), shared by the Host and Origin checks.
+ * @param {number} port
+ */
+const bindAddress = (port) => `127.0.0.1:${port}`;
+
+/**
  * The ONE Host check: the request names this panel's own bind address. A page on another
  * origin reaching the panel through a rebound DNS name sends that name as Host, so it fails here.
  * @param {import('node:http').IncomingMessage} req
@@ -42,7 +48,7 @@ export function mintToken() {
  * @returns {{ok: true}|{ok: false, reason: string}}
  */
 export function checkHostGuard(req, { port }) {
-  return req.headers.host === `127.0.0.1:${port}` ? { ok: true } : { ok: false, reason: 'wrong Host' };
+  return req.headers.host === bindAddress(port) ? { ok: true } : { ok: false, reason: 'wrong Host' };
 }
 
 /**
@@ -57,7 +63,7 @@ export function checkHostGuard(req, { port }) {
 export function checkHumanGuard(req, { token, port }) {
   const got = req.headers['x-bareloop-token'];
   if (got !== token) return { ok: false, reason: 'missing or wrong token' };
-  const want = `127.0.0.1:${port}`;
+  const want = bindAddress(port);
   const origin = req.headers.origin;
   if (typeof origin === 'string' && origin.length > 0) {
     if (origin !== `http://${want}` && origin !== `https://${want}`) return { ok: false, reason: 'wrong Origin' };
