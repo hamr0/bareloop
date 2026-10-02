@@ -41,12 +41,15 @@ export const BUNDLE_JOB = {
 /**
  * Export the fixture bundle into `outDir` (must not exist or be empty).
  * @param {string} outDir
+ * @param {{job?: string}} [opts] `job` renames the exported job (a different slug is a different spec hash)
  * @returns {{dir: string, bundleHash: string, manifest: any}}
  */
-export function exportFixtureBundle(outDir) {
-  const specHash = jobSpecHash(BUNDLE_JOB);
+export function exportFixtureBundle(outDir, opts = {}) {
+  const job = opts.job ?? BUNDLE_JOB.job;
+  const spec = { ...BUNDLE_JOB, job };
+  const specHash = jobSpecHash(spec);
   const minted = mintBridge(
-    { name: BUNDLE_JOB.job, goal: BUNDLE_JOB.goal, specHash, closeStageNames: ['changed-from-seed', 'suite-green'], toolsUsed: ['read', 'grep', 'edit'] },
+    { name: job, goal: spec.goal, specHash, closeStageNames: ['changed-from-seed', 'suite-green'], toolsUsed: ['read', 'grep', 'edit'] },
     { runid: 'r1', patient: 'p1', at: '2026-09-05T00:00:00.000Z', plan: { schema: 'plan-v1', steps: [] }, costUsd: 2, spendComplete: true, wallMs: 60_000, rounds: 10, specHash },
   );
   if (!minted.ok) throw new Error(`bundle fixture bridge did not mint: ${JSON.stringify(minted.reds)}`);
@@ -54,8 +57,8 @@ export function exportFixtureBundle(outDir) {
   if (!red.ok) throw new Error(`bundle fixture red did not append: ${JSON.stringify(red.reds)}`);
   const registryDir = mkdtempSync(join(tmpdir(), 'bundle-fixture-registry-'));
   try {
-    writeFileSync(join(registryDir, `${BUNDLE_JOB.job}.json`), `${JSON.stringify(red.bridge, null, 2)}\n`);
-    const r = exportBundle({ spec: BUNDLE_JOB, closeScripts: { [CLOSE_SCRIPT_PATH]: CLOSE_SCRIPT_SOURCE }, registryDir, outDir, bareloopVersion: '0.99.0' });
+    writeFileSync(join(registryDir, `${job}.json`), `${JSON.stringify(red.bridge, null, 2)}\n`);
+    const r = exportBundle({ spec, closeScripts: { [CLOSE_SCRIPT_PATH]: CLOSE_SCRIPT_SOURCE }, registryDir, outDir, bareloopVersion: '0.99.0' });
     if (!r.ok) throw new Error(`bundle fixture did not export: ${JSON.stringify(r.reds)}`);
     return { dir: outDir, bundleHash: /** @type {string} */ (r.bundleHash), manifest: r.manifest };
   } finally { rmSync(registryDir, { recursive: true, force: true }); }

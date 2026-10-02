@@ -3553,8 +3553,8 @@ key you want first (the panel picks the row by the Model menu).
   listing is never listed and never followed; names only, never file contents; at most 500 names (`truncated`);
   non-dot folders sort first. **Status, re-read on every list/view:** `ok`, `changed` ("changed since import",
   red: a different/tampered/unreadable bundle) or `missing` ("folder not found"). The view carries goal,
-  `checkType`, `success` (the close stage names), `guardrails`, `budgetUsd`/`maxWallMs`, `model`, the exported
-  history (`history:{greens,reds,total,recent}` read from the bridges' history rows the bundle shipped) and
+  `checkType`, `success` (the close stage names), `guardrails`, `budgetUsd`/`maxWallMs`, `model`, the history
+  the bundle shipped (`history:{greens,reds,total,recent}`, read from the bridges' history rows) and
   `approved`/`approvedText` — approval on THIS machine is `verifyBlessing` (the first green run here writes
   `blessing.json`): approved / not approved yet / stale. The row reads `imported · view only`; the view's only
   button is Start from this, which prefills from the bundle's own `spec.json` via
