@@ -1473,6 +1473,8 @@ function makeWorkflowsPage() {
     extractFnSource(html, 'rowIsLive'),
     extractFnSource(html, 'rowWallText'),
     extractFnSource(html, 'rowSpendText'),
+    // P5-R: both row builders paint the "resumed ×N" tag through this one helper
+    extractFnSource(html, 'resumedTagHtml'),
     extractFnSource(html, 'buildRunRowEl'),
     extractFnSource(html, 'renderWorkflows'),
   ].join('\n');
