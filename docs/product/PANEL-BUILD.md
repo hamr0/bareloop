@@ -656,3 +656,140 @@ supersede it:
 - Also built: POST body cap (1 MiB, `413`), the `jobsDir` seam server-side only, `replay-live --live-audit`.
 - `bareloop run <bundle>` is a door to the same engine, so the monthly limit applies to it too (one
   run-start seam, no second one).
+
+## Addendum 2026-10-02 — P5 — Ended, Resume, Start from this, Import (read only), Stop, run-card fixes (signed by hamr 2026-10-02)
+
+Rulings: memory `ui-part-p5-rulings` + this session (1A reuse-by-record, 2 card saved, 3 Stop = "stopped" resumable, A track record from runs).
+
+Build order = item order. One sonnet builder, sequential, one commit per item, fail-first test per item.
+
+---
+
+### 1. Ended block
+
+**Screen.** Audit tab, first block, every run (green too):
+```
+ENDED   Money cap reached ($8.00 of $8.00).
+NEXT    Raise the cap, then Resume.            [Resume]
+```
+Run card: one short line under the job name, e.g. `money cap — resume`.
+
+**Owner.** One code-owned function `endedFor(summary, death)` in `src/panel/server.js` (fixed sentences, never model text — ui-verdict-words). Feeds BOTH `getRunDetail` (field `ended: {reason, next, actions:[...]}`) and `summarizeRow` (field `endedLine`). Today the card has only a glyph and the detail only a `stopReason` string.
+
+**Table (outcome → reason / next / button):**
+
+| outcome | reason | next | button |
+|---|---|---|---|
+| green, already-green | Goal met. | Nothing to do. | Start from this |
+| green + destination-refused | Goal met, but the output could not be delivered (detail). | Fix the destination, then Start from this. | Start from this |
+| cap-halt | Money cap reached ($X of $Y). | Raise the cap, then Resume. | Resume |
+| wall-halt | Time cap reached. | Raise the time, then Resume. | Resume |
+| provider-red | The model provider failed (detail). | Resume. | Resume |
+| step-stalled | A step stopped making progress. | Resume, or Start from this and change the job. | Resume, Start from this |
+| stopped (new, item 5) | You stopped it. | Resume. | Resume |
+| plan-red, check-red, step-red, escalated | Goal not met — the checks said no (last gap). | Start from this and change the job. | Start from this |
+| close-red | The check itself broke (instrument fault), not your goal. | Start from this; check the success rule. | Start from this |
+| pricing-red, unapproved-spec, job-red, branch-red, interpreter-red, recipe-stale, close-unsupported, smoke-red, runner-drained | Stopped before or outside the work (outcome + detail). | Start from this. | Start from this |
+| died (no job-end, runner gone) | Stopped with no ending recorded (last thing it did). | Resume, or Start from this. | Resume, Start from this |
+| live | — (no Ended block while running) | | Stop |
+
+Resume button shows only when the engine would accept it (same gates as item 2) — never a button that refuses on click by design.
+
+---
+
+### 2. Resume
+
+**Screen.** Resume button (Ended block + action bar). Click opens a small confirm:
+```
+Resume run mup3h70u
+  money cap  [ 8.00 ]   spent so far $8.00
+  time cap   [ 60   ] min
+                                  [Sign & resume]
+```
+Caps prefilled with the signed ones. Raising one changes the job hash → the click is the signature (human click only, like Sign & run). The engine already allows a resume under a re-signed hash (prints a NOTE, `src/userrun.js` ~1132); prior spend stays folded, so the ceiling never silently widens.
+
+**Caller.** New `POST /api/runs/:runid/resume` in a new `src/panel/runroutes.js` (same `checkHumanGuard` as `/api/author/*`). Spec from `resolveSpecForRow` (server.js:1172). If caps changed: write `resolved-spec-r<k>.json` beside the original (never overwrite the signed one). Re-check monthly room. Spawn exactly like `signRun` (authorroutes.js:325) plus `--resume <runid> --approve <hash>`. A refusal from the engine shows its own text in the panel.
+
+---
+
+### 3. Start from this
+
+**Screen.** Button on every run and every imported job. Opens the Chat tab's New job card, every box filled:
+```
+Start from: fix-types (run mup3h70u)
+  Same job — 4 green · 1 not green · about $3.10 a run
+  [card boxes, all editable]
+                        [Sign & run]  (no drafting: same job)
+```
+Edit any box except Source → line turns to `Changed — new job, starts clean` and the button becomes the normal `Start drafting`.
+
+**Rules (code-owned):**
+- Only Source changed (or nothing) → SAME job: copy the origin's signed spec into the new session, skip drafting ($0 draft), same hash, Sign & run.
+- Anything else changed (goal, success, guardrails, judge examples, model, caps, destination — destination is the write fence, so it is in the hash) → normal drafting, new hash.
+- "Same job" track record: every listed run whose `job-start.specHash` equals this hash — greens, not-greens, average spend of finished runs. Read from the runs the panel already lists; no reuse store, no registry (ruling A). Plan handover stays parked.
+
+**Card text saved from now on.** `src/panel/authorsession.js` writes `card.json` (the form text, verbatim) beside `resolved-spec.json` at sign-prepare. Prefill order: `card.json` → for older runs, fields recoverable from the spec (`getRunJob`, server.js:1545) with a note "filled from the signed job — success/guardrails/judge examples were not saved for this run" → for an imported bundle, its `spec.json`. "Changed" is judged against what was prefilled.
+
+---
+
+### 4. Import (read only)
+
+**Screen.** Runs tab, Workflows view toolbar: `[Import]`. Opens:
+```
+Import a job folder
+  path [ /home/hamr/jobs/fix-types.bareloop      ]  [Open]
+  /home/hamr/jobs/
+    ▸ fix-types.bareloop      (bundle)
+    ▸ other-folder
+                                       [Import]
+```
+Folder browser lists folders only (names, plus a "bundle" tag where `manifest.json` exists), starts at your home folder; paste box works too.
+
+Imported row: `fix-types  imported · view only` (mockup's own tag). Right pane: goal, success checks, guardrails, caps, model, its exported history (greens/reds), approved-or-not on this machine. Only button: **Start from this**. No Run.
+
+**Caller.** New `GET /api/fs/list?path=` and `POST /api/imports` in `src/panel/runroutes.js`, both behind `checkHumanGuard` (token + own address) — a folder listing is new disk exposure, so it gets the strict guard, not just the Host guard. `readBundle` (bundle.js:511) on import and again on every view (a changed folder shows `changed since import` red). Imported list: `~/.config/bareloop/imports.jsonl` `{at, dir, job, bundleHash}`.
+
+---
+
+### 5. Stop
+
+**Screen.** Action bar while a run is live: `[Stop]`. After click: `stopping after this step…` until the run ends. Ended block then reads "You stopped it. → Resume."
+
+**Engine.** Today there is no clean stop (no signal handler in the run engine; a kill leaves no job-end → shows died). New:
+- Stop request = a file `<spine>.stop` written by `POST /api/runs/:runid/stop` (`checkHumanGuard`; refuses if the run is not live).
+- The run checks for it at the SAME point it checks the money cap between rounds, emits `stop-requested`, then ends with job-end outcome **`stopped`**.
+- `stopped` joins `CHECKPOINT_OUTCOMES` (`src/reuse.js:142`) → resumable; Resume continues at the next step exactly like after a cap-halt. **Arbiter-adjacent: hamr ruled it 2026-10-02.**
+- Engine half is library code, so CLI gets it too (`bareloop run-u` / `bareloop run` runs honour the file); no new CLI command.
+
+---
+
+### 6. Run-card fixes
+
+- **starting…** — `summarizeRow`/`getRunDetail` (server.js:285, :381): spine missing AND `runIsAlive(row)` → `starting:true`; card and right pane say `starting…`, not `file missing` / `unknown`.
+- **Live money/time on the card** — `summarizeRow` uses the same `deriveDeath` floors the right pane uses (server.js:248, `floorsFromRecords`), so card and pane show the same numbers while live.
+
+---
+
+### Mockup diff (design/panel-mockup.html)
+
+| Mockup control | This part |
+|---|---|
+| `#btn-rerun` Rerun | becomes **Start from this** |
+| `#btn-pause` Pause | becomes **Stop** (clean stop, resumable) |
+| `#wf-import` Import + `imported · view only` row | **built** (read only) |
+| Resume | **added** (not in mockup) |
+| Ended block | **added** (ruled 2026-09-30) |
+| `#btn-accept` Accept (review door) | **not in this part** |
+| `#btn-replay` / row "Replay $0" | **not in this part** |
+| per-row Edit | covered by Start from this |
+| per-row Export | stays CLI (`bareloop export`) |
+
+### Proof
+
+- Every item: a test that fails without it (fail-first), real seams, scratch home.
+- Orchestrator screenshots of every new screen (desktop + phone width) before "done".
+- One paid run at the end, **DeepSeek**, on hamr's word only: Stop mid-run → Resume → green; then Start from this (source only) → same job, no drafting. A $0 archive read first: the track-record numbers against archived runs.
+
+### Docs
+
+`PANEL-BUILD.md` dated P5 addendum; one PRD tick line; `bareloop.context.md` (new routes, `stopped` outcome, `card.json`, `imports.jsonl`); CHANGELOG at release.

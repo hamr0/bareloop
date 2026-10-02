@@ -1294,3 +1294,13 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - The price sets what the cap means; Settings advises entering the HIGHER bracket when a vendor
   lists two prices. The Settings field is deferred to the next UI part.
 - Detail: `docs/logs/FINDINGS.md` F206, `CHANGELOG.md` Unreleased, `bareloop.context.md` "Settings".
+
+### Panel P5: one way to start a run (v1.87 — 2026-10-02)
+
+- Import is read only: a folder or bundle is viewed, never run in place; its one action is Start from this.
+- Start from this replaces rerun: same job = only the source changed, no drafting, same hash; anything else is a new job.
+- The "same job" track record comes from the runs the panel already lists; plan handover stays parked.
+- One Stop ends a run as the resumable outcome `stopped` (arbiter-adjacent, ruled by hamr 2026-10-02).
+- Resume is in the panel; a raised cap is a re-signed hash, prior spend stays folded.
+- Every run shows an Ended block: a code-owned reason, the next step, and only the buttons the engine would accept.
+- Detail: `docs/product/PANEL-BUILD.md` addendum P5.
