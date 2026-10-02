@@ -18,6 +18,7 @@ import { appendRun, appendRunEvent, readRunList, runlistPath, isLiveRunner } fro
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { startRun, resumeRun } from '../src/userrun.js';
+import { TIMING_PREFLIGHT_CEILING_MS as TIMING_CEILING_MS } from '../src/closetimeout.js';
 import { createPanelServer } from '../src/panel/server.js';
 import { signRun } from '../src/panel/authorroutes.js';
 import { scriptedProvider } from './helpers.js';
@@ -259,7 +260,7 @@ const git = (/** @type {string} */ cwd, /** @type {string[]} */ args) => execFil
 const CLOSE_SOURCE = "console.log('FIXTURE judged=1');\nprocess.exit(1);\n";
 
 /** run-u start against a scratch home; returns what happened + how many provider calls */
-async function runU(t, { home, budgetUsd, manifest }) {
+async function runU(t, { home, budgetUsd, manifest, closeSource = CLOSE_SOURCE }) {
   // `manifest` (raw text) = a source.json beside the tree, the way the source door leaves one
   const parent = tmp(t);
   const workdir = manifest === undefined ? tmp(t) : join(parent, 'tree');
@@ -274,12 +275,12 @@ async function runU(t, { home, budgetUsd, manifest }) {
   const seed = git(workdir, ['rev-parse', 'HEAD']);
   const scripts = tmp(t);
   const closePath = join(scripts, 'close.mjs');
-  writeFileSync(closePath, CLOSE_SOURCE);
+  writeFileSync(closePath, closeSource);
   const spec = {
     schema: 'job-v1', job: 'monthly-seam-fixture', description: 'P4a item 2 seam fixture.',
     provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd, maxWallMs: 1_800_000,
     writeScope: ['src/**'], goal: 'Append MARKER_OK to src/mod.mjs.', verdictType: 'green',
-    close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(CLOSE_SOURCE) }],
+    close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(closeSource) }],
     tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
   };
   const provider = scriptedProvider([{ text: 'scout: nothing' }, { text: JSON.stringify({ schema: 'plan-v1', steps: [] }) }, { text: 'x' }]);
@@ -374,6 +375,31 @@ test('run-start seam: a $0 refusal AFTER the spine exists (SOURCE-MANIFEST-RED, 
     assert.equal(m.atLeast, false);
     assert.equal(m.runs, 0);
   }
+});
+
+test('run-start seam: a CLOSE-TIMING-RED refusal (a close stage that never finishes the timing preflight) RELEASES the claim — no ghost row, the month is exact', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  // The production preflight ceiling is 600s and has no seam on this path, so the REAL timer is advanced:
+  // only setTimeout is mocked, the stage is a genuinely hung child, and runClose's own deadline fires it.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let settled = false;
+  const p = runU(t, { home, budgetUsd: 2, closeSource: 'setInterval(() => {}, 1000);\n' }).finally(() => { settled = true; });
+  while (!settled) {
+    t.mock.timers.tick(TIMING_CEILING_MS + 1);
+    await new Promise((r) => setImmediate(r));
+  }
+  const r = await p;
+  t.mock.timers.reset();
+  assert.equal(r.code, 1, r.errs);
+  assert.match(r.errs, /CLOSE-TIMING-RED/);
+  assert.equal(r.providerCalls, 0);
+  const list = readRunList({ home });
+  assert.equal(list.rows.length, 0, 'the refused run is folded out of the list');
+  assert.equal(list.events.filter((e) => e.type === 'released').length, 1);
+  const m = monthSpend({ home });
+  assert.equal(m.atLeast, false);
+  assert.equal(m.runs, 0);
 });
 
 test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is RELEASED too', async (t) => {
