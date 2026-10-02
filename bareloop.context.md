@@ -3428,7 +3428,7 @@ key you want first (the panel picks the row by the Model menu).
   category `cap-halt` with `spend.strikes` is the STRIKE governor, read "The fix loop stopped improving
   (S of L tries, no check got better)." (card line `stopped improving`), and is the money cap ONLY when
   the spine has a `money-halt` record or the job-end outcome is `cap-halt` itself; every other terminal → "Stopped before or outside the work
-  (outcome — detail)."; a run with no `job-end` whose process is gone (glyph `?`, never `✗`) →
+  (code: <outcome>)." (never the raw engine detail — it can name retired surfaces; raw detail appears only as the quoted check gap on "goal not met" and the provider error, both capped at 120 characters; a destination-refused green reads "…could not be delivered." with no detail); a run with no `job-end` whose process is gone (glyph `?`, never `✗`) →
   "Stopped with no ending recorded (last thing it did: …)." `actions` holds `resume` ONLY when
   the engine would accept a resume (`resumePlanFor`: the same `readResume`/`CHECKPOINT_OUTCOMES`/
   `checkpointAgeGate` readers the engine refuses with, plus a signed `resolved-spec.json` /

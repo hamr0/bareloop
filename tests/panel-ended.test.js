@@ -102,7 +102,7 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   assert.equal(live(null), null, 'no Ended block while a run is live');
   assert.deepEqual(live('green'), { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: [] });
   assert.equal(live('already-green').reason, 'Goal met.');
-  assert.match(live('green', { o: { destinationRefused: 'folder is read only' } }).reason, /^Goal met, but the output could not be delivered \(folder is read only\)\.$/);
+  assert.equal(live('green', { o: { destinationRefused: 'folder is read only' } }).reason, 'Goal met, but the output could not be delivered.');
 
   const cap = live('cap-halt', { o: { resume: ok } });
   assert.equal(cap.reason, 'Money cap reached ($8.00 of $8.00).');
@@ -127,7 +127,7 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   }
   assert.match(live('close-red').reason, /^The check itself broke \(instrument fault\), not your goal\.$/);
   for (const o of ['pricing-red', 'unapproved-spec', 'job-red', 'branch-red', 'interpreter-red', 'recipe-stale', 'close-unsupported', 'smoke-red', 'runner-drained']) {
-    assert.match(live(o).reason, new RegExp(`^Stopped before or outside the work \\(${o}`), o);
+    assert.equal(live(o, { stopReason: 'human-confirms stage raw engine detail' }).reason, `Stopped before or outside the work (code: ${o}).`, o);
   }
 
   const died = endedFor({ outcome: null, stopReason: null, spentUsd: null, budgetUsd: 8 }, { died: true, lastThing: 'a scout model call at 2026-10-01 10:02' }, { resume: ok });
@@ -183,6 +183,14 @@ test('ITEM 2: a terminal outcome never says "Resume is not available" or leaks e
   assert.match(getRunDetail('cap2', { home }).ended.next, /^Resume is not available for this run \(no signed job file beside this run matches the hash it ran under\)\.$/);
 });
 
+test('ITEM 3: "stopped before or outside the work" shows the code only — raw engine detail (e.g. a retired hitl stage) never reaches the page', () => {
+  const home = tmp();
+  makeRun(home, { runid: 'hitl1', outcome: 'hitl-decision-red', extra: [{ type: 'escalation', category: 'hitl-decision-red', detail: 'no human-confirms stage in this close', ts: '2026-10-01T10:04:00.000Z', seq: 70 }] });
+  const d = getRunDetail('hitl1', { home });
+  assert.equal(d.ended.reason, 'Stopped before or outside the work (code: hitl-decision-red).');
+  assert.doesNotMatch(JSON.stringify(d.ended), /human-confirms/);
+});
+
 test('getRunDetail + listRuns: a cap-halt run carries the Ended block, the Resume action and the card line', () => {
   const home = tmp();
   makeRun(home, { runid: 'cap1' });
@@ -216,7 +224,7 @@ test('getRunDetail: a green run reads "Goal met." with no Resume; a died run rea
 test('getRunDetail: a destination-refused record on a green names the delivery failure', () => {
   const home = tmp();
   makeRun(home, { runid: 'dst1', outcome: 'green', extra: [{ type: 'destination-refused', code: 'D1', detail: 'folder is read only', ts: '2026-10-01T10:04:00.000Z', seq: 50 }] });
-  assert.equal(getRunDetail('dst1', { home }).ended.reason, 'Goal met, but the output could not be delivered (folder is read only).');
+  assert.equal(getRunDetail('dst1', { home }).ended.reason, 'Goal met, but the output could not be delivered.');
 });
 
 test('getRunDetail: a run with a job-end the engine would refuse to resume (plan-red) shows no Resume, and a missing signed spec hides it', () => {

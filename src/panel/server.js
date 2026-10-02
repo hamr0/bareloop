@@ -360,7 +360,7 @@ export function endedFor(summary, death, o = {}) {
   const RESUME = [{ id: 'resume', label: 'Resume' }];
   const detailOf = (/** @type {string|null} */ s) => {
     if (typeof s !== 'string' || s.length === 0) return '';
-    return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+    return s.length > 120 ? `${s.slice(0, 120)}…` : s;
   };
   /** a resumable ending whose Resume the engine would refuse: say so, never offer the button */
   const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}.`);
@@ -415,7 +415,7 @@ export function endedFor(summary, death, o = {}) {
   if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
     if (o.destinationRefused) {
       return {
-        reason: `Goal met, but the output could not be delivered (${detailOf(o.destinationRefused)}).`,
+        reason: 'Goal met, but the output could not be delivered.',
         next: 'Fix the destination, then Start from this.',
         line: 'goal met — not delivered',
         actions: [],
@@ -475,9 +475,9 @@ export function endedFor(summary, death, o = {}) {
       actions: [],
     };
   }
-  const d = detailOf(summary.stopReason);
+  // the raw engine detail is never shown here (it can name retired surfaces); the code is enough
   return {
-    reason: `Stopped before or outside the work (${outcome}${d && d !== outcome ? ` — ${d}` : ''}).`,
+    reason: `Stopped before or outside the work (code: ${outcome}).`,
     next: 'Start from this.',
     line: 'stopped before the work',
     actions: [],
