@@ -173,6 +173,16 @@ test('ITEM 1: "Money cap reached" needs a money-halt record (escalated) or the j
   assert.equal(getRunDetail('mh2', { home }).ended.reason, 'Money cap reached ($1.50 of $1.50).');
 });
 
+test('ITEM 2: a terminal outcome never says "Resume is not available" or leaks engine prose; only resumable classes may', () => {
+  const home = tmp();
+  makeRun(home, { runid: 'esc2', outcome: 'escalated', extra: [MUP3H70U_ESCALATION] });
+  const d = getRunDetail('esc2', { home });
+  assert.doesNotMatch(d.ended.next, /Resume is not available|answer, not a stop/);
+  // a resumable class with no signed spec says so in plain words
+  makeRun(home, { runid: 'cap2', hashOverride: 'nope' });
+  assert.match(getRunDetail('cap2', { home }).ended.next, /^Resume is not available for this run \(no signed job file beside this run matches the hash it ran under\)\.$/);
+});
+
 test('getRunDetail + listRuns: a cap-halt run carries the Ended block, the Resume action and the card line', () => {
   const home = tmp();
   makeRun(home, { runid: 'cap1' });
@@ -242,7 +252,7 @@ test('resume route: unknown run is 404; a run that cannot be resumed is 409 with
   assert.equal((await post('/api/runs/nope/resume', {})).status, 404);
   const r = await post('/api/runs/red2/resume', {});
   assert.equal(r.status, 409);
-  assert.match((await r.json()).error, /Resume is not available for this run \(it ended as plan-red/);
+  assert.match((await r.json()).error, /Resume is not available for this run \(it ended with an answer, not a stop/);
   assert.equal(spawnFn.calls.length, 0);
 });
 

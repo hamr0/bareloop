@@ -302,7 +302,7 @@ export function resumePlanFor(row, records) {
   const dead = readResume(records, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
   if (!dead.started) return { ok: false, why: 'its log has no start record' };
   if (dead.greened) return { ok: false, why: 'it already met its goal' };
-  if (dead.ended) return { ok: false, why: `it ended as ${dead.endOutcome}, which is an answer, not a stop` };
+  if (dead.ended) return { ok: false, why: 'it ended with an answer, not a stop' };
   if (!dead.restart) return { ok: false, why: 'it never opened an attempt to continue' };
   const age = checkpointAgeGate(records);
   if (!age.ok) return { ok: false, why: String(age.detail ?? 'its checkpoint has expired') };
