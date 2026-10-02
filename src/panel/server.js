@@ -338,8 +338,6 @@ export function resumePlanFor(row, records) {
 
 /** outcomes whose ending is "the checks said no" (a graded answer from a working close) */
 const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated']);
-/** the escalation categories a bare `escalated` outcome is re-read as */
-const GOVERNANCE_CATEGORIES = new Set(['cap-halt', 'wall-halt', 'provider-red', 'step-stalled']);
 
 /**
  * P5 item 1 — the ENDED block: why a run ended, what to do next, and which buttons the
@@ -353,7 +351,7 @@ const GOVERNANCE_CATEGORIES = new Set(['cap-halt', 'wall-halt', 'provider-red', 
  * from this" is a later part (item 3) and is not offered here.
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
- * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null}} [o]
+ * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean}} [o]
  * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
@@ -377,8 +375,42 @@ export function endedFor(summary, death, o = {}) {
   }
   const raw = summary.outcome;
   if (raw === null || raw === undefined) return null;
-  const cat = raw === 'escalated' && typeof summary.lastEscalation?.category === 'string' ? summary.lastEscalation.category : null;
-  const outcome = cat !== null && GOVERNANCE_CATEGORIES.has(cat) ? cat : raw;
+  const outcome = raw;
+  const esc = summary.lastEscalation;
+  const cat = typeof esc?.category === 'string' ? esc.category : null;
+
+  // `escalated` is a TERMINAL: its sentence may name the real governor, but it is never
+  // resumable. Two governors, never mixed (F198): the STRIKE ladder (the fix loop stopped
+  // improving) also files category `cap-halt` — it is the MONEY cap only when the spine
+  // says so (a `money-halt` record, or the job-end outcome `cap-halt` itself).
+  if (outcome === 'escalated') {
+    const strikes = esc?.spend?.strikes;
+    const limit = esc?.spend?.strikeLimit;
+    if (cat === 'cap-halt' && o.moneyHalt) {
+      const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
+        ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
+      return {
+        reason: `Money cap reached${money}.`, next: 'Start from this and change the job.', line: 'money cap', actions: [],
+      };
+    }
+    if (cat === 'cap-halt' && typeof strikes === 'number' && typeof limit === 'number') {
+      return {
+        reason: `The fix loop stopped improving (${strikes} of ${limit} tries, no check got better).`,
+        next: 'Start from this and change the job.',
+        line: 'stopped improving',
+        actions: [],
+      };
+    }
+    if (cat === 'wall-halt') {
+      return { reason: 'Time cap reached.', next: 'Start from this and change the job.', line: 'time cap', actions: [] };
+    }
+    if (cat === 'provider-red') {
+      const d = detailOf(summary.stopReason);
+      return {
+        reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: 'Start from this and change the job.', line: 'provider failed', actions: [],
+      };
+    }
+  }
 
   if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
     if (o.destinationRefused) {
@@ -469,6 +501,7 @@ function endedForRow(row, records, summary, death) {
   const refused = [...records].reverse().find((r) => r && r.type === 'destination-refused') ?? null;
   const ended = endedFor(summary, death, {
     resume,
+    moneyHalt: records.some((r) => r && r.type === 'money-halt'),
     destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
   });
   return { ended, resume };

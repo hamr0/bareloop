@@ -3417,14 +3417,17 @@ key you want first (the panel picks the row by the Model menu).
   FINISHED run (green too; `null` while the run is live), and `GET /api/runs` carries `endedLine`
   (the card's one short line under the job name, e.g. `money cap — resume`). Both come from ONE
   code-owned function, `endedFor` (`src/panel/server.js`): fixed sentences keyed by the run's
-  outcome (a bare `escalated` is re-read through its last escalation's category), with only
+  outcome, with only
   numbers and the engine's own recorded detail slotted in — never model text. The table:
   green/already-green → "Goal met." (a `destination-refused` record turns it into "…the output
   could not be delivered (detail)."); cap-halt → "Money cap reached ($X of $Y)." / "Raise the cap,
   then Resume."; wall-halt → "Time cap reached."; provider-red → "The model provider failed
   (detail)."; step-stalled → "A step stopped making progress."; plan-red/check-red/step-red/escalated
   → "Goal not met — the checks said no (last gap)."; close-red → "The check itself broke
-  (instrument fault), not your goal."; every other terminal → "Stopped before or outside the work
+  (instrument fault), not your goal."; `escalated` is a terminal and never resumable — its escalation of
+  category `cap-halt` with `spend.strikes` is the STRIKE governor, read "The fix loop stopped improving
+  (S of L tries, no check got better)." (card line `stopped improving`), and is the money cap ONLY when
+  the spine has a `money-halt` record or the job-end outcome is `cap-halt` itself; every other terminal → "Stopped before or outside the work
   (outcome — detail)."; a run with no `job-end` whose process is gone (glyph `?`, never `✗`) →
   "Stopped with no ending recorded (last thing it did: …)." `actions` holds `resume` ONLY when
   the engine would accept a resume (`resumePlanFor`: the same `readResume`/`CHECKPOINT_OUTCOMES`/

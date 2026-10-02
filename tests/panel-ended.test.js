@@ -129,8 +129,6 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   for (const o of ['pricing-red', 'unapproved-spec', 'job-red', 'branch-red', 'interpreter-red', 'recipe-stale', 'close-unsupported', 'smoke-red', 'runner-drained']) {
     assert.match(live(o).reason, new RegExp(`^Stopped before or outside the work \\(${o}`), o);
   }
-  // a bare `escalated` is re-read through its recorded category
-  assert.equal(live('escalated', { lastEscalation: { category: 'cap-halt' }, o: { resume: ok } }).reason, 'Money cap reached ($8.00 of $8.00).');
 
   const died = endedFor({ outcome: null, stopReason: null, spentUsd: null, budgetUsd: 8 }, { died: true, lastThing: 'a scout model call at 2026-10-01 10:02' }, { resume: ok });
   assert.match(died.reason, /^Stopped with no ending recorded \(last thing it did: a scout model call at 2026-10-01 10:02\)\.$/);
@@ -140,6 +138,39 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   const refused = live('cap-halt', { o: { resume: no } });
   assert.deepEqual(refused.actions, []);
   assert.match(refused.next, /^Resume is not available for this run \(it is still running\)\.$/);
+});
+
+// the REAL escalation record of run mup3h70u (the strike governor filed under category cap-halt),
+// copied verbatim from its spine — the money cap never fired on that run ($0.28 of $1.50)
+const MUP3H70U_ESCALATION = {
+  type: 'escalation',
+  category: 'cap-halt',
+  decisionReady: true,
+  verdicts: ['needs_revision', 'worker-crash', 'worker-crash', 'worker-crash'],
+  spend: { runs: 4, strikes: 2, strikeLimit: 2 },
+  decision: "2/2 strikes — the fix loop stopped making progress against the close's own numbers (no stage improved — (unstaged) 2 → 2 → 2). Continue, change approach, or stop?",
+  options: ['revise the goal/spec so the work is reachable (a spec edit, so the new hash needs re-approval)', 'this cannot be resumed — the close already rendered its verdict against the tree; revise the goal/spec and rerun fresh (a new hash needs re-approval)', 'abandon the task'],
+  seq: 236,
+  ts: '2026-10-01T05:50:31.666Z',
+};
+
+test('ITEM 1: an escalated run whose escalation is the STRIKE governor (category cap-halt, spend.strikes) is "stopped improving", never the money cap, and never resumable', () => {
+  const home = tmp();
+  makeRun(home, { runid: 'strike1', outcome: 'escalated', spent: 0.28, spec: { ...SPEC, budgetUsd: 1.5 }, extra: [MUP3H70U_ESCALATION] });
+  const d = getRunDetail('strike1', { home });
+  assert.equal(d.ended.reason, 'The fix loop stopped improving (2 of 2 tries, no check got better).');
+  assert.equal(d.ended.next, 'Start from this and change the job.');
+  assert.deepEqual(d.ended.actions, []);
+  assert.doesNotMatch(d.ended.reason, /Money cap/);
+  assert.equal(listRuns({ home }).find((r) => r.runid === 'strike1').endedLine, 'stopped improving');
+});
+
+test('ITEM 1: "Money cap reached" needs a money-halt record (escalated) or the job-end outcome cap-halt itself', () => {
+  const home = tmp();
+  makeRun(home, { runid: 'mh1', outcome: 'escalated', spent: 1.5, spec: { ...SPEC, budgetUsd: 1.5 }, extra: [MUP3H70U_ESCALATION, { type: 'money-halt', budgetUsd: 1.5, remainingUsd: 0, ts: '2026-10-01T10:04:00.000Z', seq: 60 }] });
+  assert.equal(getRunDetail('mh1', { home }).ended.reason, 'Money cap reached ($1.50 of $1.50).');
+  makeRun(home, { runid: 'mh2', outcome: 'cap-halt', spent: 1.5, spec: { ...SPEC, budgetUsd: 1.5 } });
+  assert.equal(getRunDetail('mh2', { home }).ended.reason, 'Money cap reached ($1.50 of $1.50).');
 });
 
 test('getRunDetail + listRuns: a cap-halt run carries the Ended block, the Resume action and the card line', () => {
