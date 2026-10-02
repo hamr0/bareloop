@@ -150,3 +150,31 @@ test('page: a starting row reads "starting…", and the card/pane have a startin
   assert.match(fnSrc('renderRun'), /if\(detail\.starting\)\{/);
   assert.match(fnSrc('renderRun'), /starting… the run has not written its log yet/);
 });
+
+test('page: a LIVE run\'s summary headline reads "running <duration>", never the literal "undefined" (wallText was unset on the live branch)', () => {
+  const els = {};
+  const mk = (id) => ({
+    id, hidden: false, className: '', innerHTML: '', textContent: '', style: {}, classList: { add() {}, remove() {} },
+    setAttribute() {}, removeAttribute() {}, addEventListener() {}, appendChild() {}, querySelector() { return mk('q'); }, querySelectorAll() { return []; },
+  });
+  const document = { getElementById(id) { return els[id] ?? (els[id] = mk(id)); }, createElement() { return mk('c'); } };
+  // everything renderRun CALLS but this test is not about is a no-op stub; the functions that
+  // build the strings under test (money, duration, live phrases, escapeXml) are the page's own
+  const stubs = ['buildOrderedBoxes', 'stepNumberIndices'].map((n) => `function ${n}(){return [];}`)
+    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter']
+      .map((n) => `function ${n}(){return "";}`)).join('\n');
+  // eslint-disable-next-line no-new-func
+  const render = new Function('document', `
+    var lastEndedSig = null; var lastJobToolsList = null;
+    ${stubs}
+    ${['escapeXml', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
+    return renderRun;
+  `)(document);
+  render({
+    runid: 'r', job: 'j', glyph: '▶', died: false, checkType: 'deterministic', date: '2026-10-02', spentUsd: null, spendFloorUsd: 0.75, wallFloorMs: 450_000, budgetUsd: 8, draftSpentUsd: null, steps: [], parts: [], ended: null, model: null,
+  });
+  const headline = els['run-summary'].innerHTML.match(/<div class="summary-headline">.*?<\/div>/)[0];
+  assert.doesNotMatch(headline, /undefined/);
+  assert.match(headline, /\$0\.75 so far/);
+  assert.match(headline, /running 7m30s/);
+});

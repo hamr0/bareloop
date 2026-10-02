@@ -2015,10 +2015,11 @@
     // "unknown" — the server now derives the same spendFloorUsd/wallFloorMs
     // for a still-running spine that it already derived for a died one.
     var isLiveNoEnd = !detail.died && detail.spentUsd === null;
-    var spendText, wallPhrase;
+    var spendText, wallPhrase, wallText;
     if(isLiveNoEnd){
       spendText = liveSpendText(detail.spendFloorUsd, detail.draftSpentUsd, detail.draftSpendComplete);
       wallPhrase = liveWallPhrase(detail.wallFloorMs);
+      wallText = wallPhrase; // the summary headline reads wallText in BOTH branches
     } else {
       var draftIncomplete = typeof detail.draftSpentUsd === "number" && detail.draftSpentUsd !== null && detail.draftSpendComplete === false;
       var spendCoreVal = detail.died ? detail.spendFloorUsd : detail.spentUsd;
