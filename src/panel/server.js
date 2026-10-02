@@ -40,6 +40,7 @@ import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
+import { createRunRoutes } from './runroutes.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
@@ -533,6 +534,21 @@ function summarizeRow(row) {
     draftSpendComplete: summary.draftSpendComplete,
     budgetUsd: summary.budgetUsd,
   };
+}
+
+/**
+ * The Resume route's reader (P5 item 2): the listed row plus the resume plan, from the
+ * ONE {@link resumePlanFor} the Ended block asks. `null` when the runid is not listed
+ * or its spine is gone.
+ * @param {string} runid
+ * @param {{ home?: string }} [opts]
+ * @returns {{row: any, plan: any}|null}
+ */
+export function getResumeContext(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row || !existsSync(row.spine)) return null;
+  return { row, plan: resumePlanFor(row, parseJsonl(row.spine).records) };
 }
 
 /**
@@ -1933,7 +1949,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes> }} opts
+ * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -1942,6 +1958,7 @@ export function handleRequest(req, res, opts) {
   function routesFor(o, p) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
+    if (o.runRoutes && /^\/api\/runs\/[^/]+\/resume$/.test(p)) return o.runRoutes;
     return null;
   }
   const method = req.method ?? 'GET';
@@ -2099,7 +2116,7 @@ export function handleRequest(req, res, opts) {
  * this package's own `bin/bareloop.mjs`).
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
- *   fetchImpl?: typeof fetch }} [opts]
+ *   fetchImpl?: typeof fetch, settleMs?: number }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
@@ -2117,10 +2134,12 @@ export function createPanelServer(opts = {}) {
     let authorRoutes;
     /** @type {ReturnType<typeof createSettingsRoutes>|undefined} */
     let settingsRoutes;
+    /** @type {ReturnType<typeof createRunRoutes>|undefined} */
+    let runRoutes;
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes, settingsRoutes,
+          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
@@ -2146,6 +2165,16 @@ export function createPanelServer(opts = {}) {
       });
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
+      });
+      runRoutes = createRunRoutes({
+        port: boundPort,
+        token,
+        home,
+        env: opts.env,
+        spawnFn: opts.spawnFn,
+        bareloopBin: opts.bareloopBin,
+        settleMs: opts.settleMs,
+        getResumeContext: (runid) => getResumeContext(runid, { home }),
       });
       resolve({
         server,

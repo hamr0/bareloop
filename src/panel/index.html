@@ -245,6 +245,11 @@
   .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
   .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
+  .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+  .resume-form{border-top:1px dashed var(--border-strong);margin-top:10px;padding-top:10px;display:grid;gap:8px;}
+  .resume-form label{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .resume-form input{width:7em;max-width:100%;min-height:36px;background:var(--panel);color:var(--text);border:1px solid var(--border-strong);padding:4px 8px;font:inherit;}
+  .resume-err{color:var(--red);white-space:pre-wrap;overflow-wrap:anywhere;}
   .summary-box.red{border-color:var(--red);}
   .summary-box.amber{border-color:var(--amber);}
   .summary-box.magenta{border-color:var(--magenta);}
@@ -1884,10 +1889,46 @@
     lastEndedSig = sig2;
     box.hidden = false;
     box.className = "ended-block " + (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"));
+    var hasResume = (e.actions || []).some(function(a){ return a.id === "resume"; });
     box.innerHTML =
       '<div class="ended-row"><span class="ended-label">ENDED</span><span class="ended-text" data-testid="ended-reason">' + escapeXml(e.reason) + '</span></div>' +
       '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + escapeXml(e.next) + '</span></div>' +
-      '';
+      (hasResume ? '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-resume">Resume</button></div>' : '') +
+      '<div id="resume-form" class="resume-form" data-testid="resume-form" hidden></div>';
+    if(hasResume){
+      box.querySelector('[data-testid="btn-resume"]').addEventListener("click", function(){ openResumeForm(detail); });
+    }
+  }
+  function openResumeForm(detail){
+    var form = document.getElementById("resume-form");
+    var r = detail.resume || {};
+    var spent = (r.spentUsd === null || r.spentUsd === undefined) ? "unknown" : ((r.spendComplete ? "" : "at least ") + panelMoney(r.spentUsd));
+    form.hidden = false;
+    form.innerHTML =
+      '<div>Resume run ' + escapeXml(detail.runid) + '</div>' +
+      '<label>money cap $ <input type="number" min="0" step="0.01" id="resume-budget" data-testid="resume-budget" value="' + escapeXml(r.budgetUsd === null || r.budgetUsd === undefined ? "" : String(r.budgetUsd)) + '"> <span class="hint">spent so far ' + escapeXml(spent) + '</span></label>' +
+      (typeof r.maxWallMin === "number" ? '<label>time cap <input type="number" min="1" step="1" id="resume-wall" data-testid="resume-wall" value="' + escapeXml(String(r.maxWallMin)) + '"> min</label>' : '') +
+      '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-sign-resume">Sign &amp; resume</button></div>' +
+      '<div class="resume-err" id="resume-err" data-testid="resume-err" hidden></div>';
+    form.querySelector('[data-testid="btn-sign-resume"]').addEventListener("click", function(){
+      var btn = form.querySelector('[data-testid="btn-sign-resume"]');
+      var err = document.getElementById("resume-err");
+      err.hidden = true;
+      btn.disabled = true;
+      var body = {budgetUsd: document.getElementById("resume-budget").value};
+      var wall = document.getElementById("resume-wall");
+      if(wall){ body.maxWallMin = wall.value; }
+      authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/resume", body).then(function(res){
+        if(res.body && res.body.ok){
+          form.innerHTML = '<div data-testid="resume-started">Resumed. The new run is starting; it appears in the list in a moment.</div>';
+          setTimeout(function(){ refreshRunsList(true); }, 1500);
+        } else {
+          btn.disabled = false;
+          err.textContent = (res.body && res.body.error) || ("refused (" + res.status + ")");
+          err.hidden = false;
+        }
+      }).catch(function(x){ btn.disabled = false; err.textContent = "could not reach the panel: " + x.message; err.hidden = false; });
+    });
   }
 
   function renderRun(detail){

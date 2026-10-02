@@ -9,12 +9,13 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync,
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, utimesSync, appendFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { endedFor, getRunDetail, listRuns } from '../src/panel/server.js';
+import { createPanelServer, endedFor, getRunDetail, listRuns } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 
@@ -62,6 +63,32 @@ function makeRun(home, {
     at: '2026-10-01T10:00:00.000Z', runid, job: spec.job, spine, patient: null, via: 'run-u',
   }, { home });
   return { out, spine, specHash };
+}
+
+/** a spawn stub: records every call; `behave(child)` may write the log and emit exit */
+function makeSpawn(behave = () => {}) {
+  const calls = [];
+  const fn = (cmd, args, opts) => {
+    const child = new EventEmitter();
+    child.unref = () => {};
+    calls.push({ cmd, args, opts });
+    setImmediate(() => behave(child));
+    return child;
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+async function startServer(t, opts = {}) {
+  const { close, port, token } = await createPanelServer({ port: 0, env: {}, settleMs: 40, ...opts });
+  t.after(() => close());
+  const base = `http://127.0.0.1:${port}`;
+  const post = (path, body, { withToken = true } = {}) => fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(withToken ? { 'x-bareloop-token': token } : {}) },
+    body: JSON.stringify(body ?? {}),
+  });
+  return { base, post, token };
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +190,131 @@ test('getRunDetail: a run with a job-end the engine would refuse to resume (plan
 });
 
 // ---------------------------------------------------------------------------
+// item 2 — POST /api/runs/:runid/resume
+// ---------------------------------------------------------------------------
+
+test('resume route: refused without the human-click token', async (t) => {
+  const home = tmp();
+  makeRun(home, { runid: 'tok1' });
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  const res = await post('/api/runs/tok1/resume', {}, { withToken: false });
+  assert.equal(res.status, 403);
+  assert.equal(spawnFn.calls.length, 0, 'nothing spawned');
+});
+
+test('resume route: unknown run is 404; a run that cannot be resumed is 409 with the reason and spawns nothing', async (t) => {
+  const home = tmp();
+  makeRun(home, { runid: 'red2', outcome: 'plan-red' });
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  assert.equal((await post('/api/runs/nope/resume', {})).status, 404);
+  const r = await post('/api/runs/red2/resume', {});
+  assert.equal(r.status, 409);
+  assert.match((await r.json()).error, /Resume is not available for this run \(it ended as plan-red/);
+  assert.equal(spawnFn.calls.length, 0);
+});
+
+test('resume route: unchanged caps spawn run-u with the SAME signed spec, --resume <runid> and --approve <its hash>; nothing is written', async (t) => {
+  const home = tmp();
+  const { out, specHash } = makeRun(home, { runid: 'same1', draft: 0.5 });
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn, bareloopBin: '/x/bareloop.mjs' });
+  const res = await post('/api/runs/same1/resume', { budgetUsd: 8, maxWallMin: 60 });
+  assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+  const body = await res.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.capsChanged, false);
+  assert.equal(spawnFn.calls.length, 1);
+  const { cmd, args, opts } = spawnFn.calls[0];
+  assert.equal(cmd, 'setsid');
+  assert.equal(opts.detached, true);
+  const i = args.indexOf('run-u');
+  assert.deepEqual(args.slice(i, i + 7), ['run-u', '--spec', join(out, 'resolved-spec.json'), '--resume', 'same1', '--approve', specHash]);
+  assert.ok(args.includes('systemd-inhibit'), 'held under the inhibitor, like Sign & run');
+  assert.deepEqual(args.slice(args.indexOf('--draft-spent-usd'), args.indexOf('--draft-spent-usd') + 2), ['--draft-spent-usd', '0.5'], 'the drafting fold rides every leg');
+  assert.deepEqual(readdirSync(out).filter((n) => !n.startsWith('resume-')).sort(), ['resolved-spec.json', 'source-x'], 'no revision file when the caps did not change');
+});
+
+test('resume route: raised caps write resolved-spec-r1.json beside the original (never over it) and approve the NEW hash', async (t) => {
+  const home = tmp();
+  const { out, specHash } = makeRun(home, { runid: 'raise1' });
+  const original = readFileSync(join(out, 'resolved-spec.json'), 'utf8');
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  const res = await post('/api/runs/raise1/resume', { budgetUsd: 12, maxWallMin: 90 });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).capsChanged, true);
+  assert.equal(readFileSync(join(out, 'resolved-spec.json'), 'utf8'), original, 'the signed spec is untouched');
+  const revised = JSON.parse(readFileSync(join(out, 'resolved-spec-r1.json'), 'utf8'));
+  assert.equal(revised.budgetUsd, 12);
+  assert.equal(revised.maxWallMs, 90 * 60000);
+  assert.equal(revised.goal, SPEC.goal, 'only the caps moved');
+  const newHash = jobSpecHash(revised);
+  assert.notEqual(newHash, specHash, 'a raised cap is a different signature');
+  const { args } = spawnFn.calls[0];
+  assert.equal(args[args.indexOf('--approve') + 1], newHash);
+  assert.equal(args[args.indexOf('--spec') + 1], join(out, 'resolved-spec-r1.json'));
+  // a second resume under another raise takes r2, never overwriting r1
+  const before = readFileSync(join(out, 'resolved-spec-r1.json'), 'utf8');
+  const res2 = await post('/api/runs/raise1/resume', { budgetUsd: 15 });
+  assert.equal(res2.status, 200);
+  assert.equal(readFileSync(join(out, 'resolved-spec-r1.json'), 'utf8'), before);
+  assert.equal(JSON.parse(readFileSync(join(out, 'resolved-spec-r2.json'), 'utf8')).budgetUsd, 15);
+});
+
+test('resume route: a resumed run (signed under r1) is resumed again under ITS caps, not the original', async (t) => {
+  const home = tmp();
+  const spec1 = { ...SPEC, budgetUsd: 12 };
+  // lay the run out by hand: its spine says it ran under the r1 hash
+  const r = makeRun(home, { runid: 'chain1', spec: spec1 });
+  // the original file is the 8-dollar spec; the spine's hash is spec1's — so only r1 matches
+  writeFileSync(join(r.out, 'resolved-spec.json'), JSON.stringify(SPEC));
+  writeFileSync(join(r.out, 'resolved-spec-r1.json'), JSON.stringify(spec1));
+  const d = getRunDetail('chain1', { home });
+  assert.equal(d.resume.budgetUsd, 12, 'the form prefills the caps the run actually ran under');
+});
+
+test('resume route: bad caps are 400 and spawn nothing', async (t) => {
+  const home = tmp();
+  makeRun(home, { runid: 'bad1' });
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  assert.equal((await post('/api/runs/bad1/resume', { budgetUsd: -3 })).status, 400);
+  assert.equal((await post('/api/runs/bad1/resume', { budgetUsd: 'abc' })).status, 400);
+  assert.equal((await post('/api/runs/bad1/resume', { budgetUsd: 8, maxWallMin: 0 })).status, 400);
+  assert.equal(spawnFn.calls.length, 0);
+});
+
+test("resume route: the engine's own refusal text reaches the page", async (t) => {
+  const home = tmp();
+  const { out } = makeRun(home, { runid: 'eng1' });
+  const refusal = '--resume: that run reached its own terminal (step-red) — only a governance halt leaves work to continue.';
+  // the child's stdout/stderr is the run's log file: the stub writes where a real engine would
+  const spawnFn = makeSpawn((child) => {
+    const log = readdirSync(out).find((n) => n.startsWith('resume-eng1-'));
+    appendFileSync(join(out, log), `${refusal}\n`);
+    child.emit('exit', 2);
+  });
+  const { post } = await startServer(t, { home, spawnFn });
+  const res = await post('/api/runs/eng1/resume', {});
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).error, refusal);
+});
+
+test('resume route: the monthly $ limit refuses before anything is spawned', async (t) => {
+  const home = tmp();
+  makeRun(home, { runid: 'mon1' });
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ monthlyLimitUsd: 1 }));
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  const res = await post('/api/runs/mon1/resume', { budgetUsd: 8 });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /monthly/i);
+  assert.equal(spawnFn.calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
 // the PAGE: the Ended block and the Resume confirm, extracted verbatim from
 // src/panel/index.html and driven against a tiny hand-rolled fake DOM (no jsdom).
 // ---------------------------------------------------------------------------
@@ -192,16 +344,23 @@ function makePage() {
     return el;
   };
   const document = { getElementById(id) { if (!els[id]) els[id] = mk(id); return els[id]; } };
+  const posts = [];
+  let postResult = { status: 200, body: { ok: true } };
+  const authorPost = (path, body) => { posts.push({ path, body }); return Promise.resolve(postResult); };
+  const refreshed = [];
   // eslint-disable-next-line no-new-func
-  const factory = new Function('document', `
+  const factory = new Function('document', 'authorPost', 'refreshRunsList', 'setTimeout', `
     ${fnSrc('escapeXml')}
     ${fnSrc('panelMoney')}
     var lastEndedSig = null;
     ${fnSrc('renderEnded')}
+    ${fnSrc('openResumeForm')}
     return { renderEnded: renderEnded };
   `);
-  const page = factory(document);
-  return { ...page, document, els };
+  const page = factory(document, authorPost, (f) => refreshed.push(f), (fn) => { fn(); });
+  return {
+    ...page, document, posts, refreshed, els, setPostResult(r) { postResult = r; },
+  };
 }
 
 const DETAIL = {
@@ -216,7 +375,7 @@ const DETAIL = {
   },
 };
 
-test('page: renderEnded paints ENDED and NEXT from the server\'s fixed sentences, and hides the block while the run is live', () => {
+test('page: renderEnded paints ENDED and NEXT, a Resume button only when the server offers one, and hides the block while live', () => {
   const pg = makePage();
   pg.renderEnded(DETAIL);
   const box = pg.document.getElementById('ended-block');
@@ -224,9 +383,36 @@ test('page: renderEnded paints ENDED and NEXT from the server\'s fixed sentences
   assert.match(box.innerHTML, /ENDED/);
   assert.match(box.innerHTML, /Money cap reached \(\$8\.00 of \$8\.00\)\./);
   assert.match(box.innerHTML, /NEXT/);
-  assert.match(box.innerHTML, /Raise the cap, then Resume\./);
-  pg.renderEnded({ ...DETAIL, ended: null });
-  assert.equal(pg.document.getElementById('ended-block').hidden, true, 'no Ended block while a run is live');
+  assert.match(box.innerHTML, /data-testid="btn-resume"/);
+
+  const pg2 = makePage();
+  pg2.renderEnded({ ...DETAIL, ended: { ...DETAIL.ended, actions: [] }, resume: null });
+  assert.doesNotMatch(pg2.document.getElementById('ended-block').innerHTML, /btn-resume/, 'no button the engine would refuse');
+
+  pg2.renderEnded({ ...DETAIL, ended: null });
+  assert.equal(pg2.document.getElementById('ended-block').hidden, true, 'no Ended block while a run is live');
+});
+
+test('page: Sign & resume posts the typed caps to /api/runs/:runid/resume and shows the engine\'s refusal text', async () => {
+  const pg = makePage();
+  pg.renderEnded(DETAIL);
+  pg.document.getElementById('ended-block').querySelector('[data-testid="btn-resume"]').handlers.click();
+  const form = pg.document.getElementById('resume-form');
+  assert.equal(form.hidden, false);
+  assert.match(form.innerHTML, /Resume run run1/);
+  assert.match(form.innerHTML, /value="8"/, 'prefilled with the signed money cap');
+  assert.match(form.innerHTML, /value="60"/, 'prefilled with the signed time cap');
+  assert.match(form.innerHTML, /spent so far \$8\.00/);
+
+  pg.document.getElementById('resume-budget').value = '12';
+  pg.document.getElementById('resume-wall').value = '90';
+  pg.setPostResult({ status: 409, body: { ok: false, error: '--resume: that run reached its own terminal' } });
+  await form.querySelector('[data-testid="btn-sign-resume"]').handlers.click();
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(pg.posts, [{ path: '/api/runs/run1/resume', body: { budgetUsd: '12', maxWallMin: '90' } }]);
+  const err = pg.document.getElementById('resume-err');
+  assert.equal(err.textContent, '--resume: that run reached its own terminal');
+  assert.equal(err.hidden, false);
 });
 
 test('page: renderRun calls renderEnded (an engine with a caller), and the run card carries the endedLine under the job name', () => {

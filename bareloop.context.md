@@ -3433,6 +3433,21 @@ key you want first (the panel picks the row by the Model menu).
   otherwise `next` says why Resume is not available. `resume` on the detail is
   `{budgetUsd, maxWallMin, spentUsd, spendComplete}` (the confirm box's prefill) or `null`. The
   result glyphs are unchanged. "Start from this" is a later P5 part; no such button exists yet.
+  **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
+  `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?}`
+  (blank = the signed caps). `404` unknown run; `409` when `resumePlanFor` says the engine would
+  refuse (`Resume is not available for this run (why).`); `400` for a bad cap or the monthly $
+  limit (same library check and text as Sign & run). If a cap changed, the new spec is written as
+  `resolved-spec-r<k>.json` beside the original and its hash is approved; the signed spec the run
+  started under is never overwritten, and a run resumed under `r<k>` is resumed again under the
+  spec whose hash its `job-start` carries. The spawn is `setsid --wait systemd-inhibit node
+  bin/bareloop.mjs run-u --spec <spec> --resume <runid> --approve <hash>` (array argv, detached,
+  log `resume-<runid>-<ms>.log` beside the spec; `--draft-spent-usd`/`--draft-spend-incomplete`
+  ride along from the run's `job-start`, so the one cap still covers drafting). `--wait` hands back
+  the engine's own exit code: an exit inside the settle window (6s) is the engine's own refusal and
+  the log tail is returned as `error` verbatim; otherwise `{ok:true, runid, specHash, capsChanged,
+  log}`. The new run appears in the list under its own runid. The page's Resume button opens the
+  caps form (prefilled, "spent so far") and `Sign & resume` is the human click.
 
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
