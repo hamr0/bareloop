@@ -43,6 +43,7 @@ import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
+import { createImportRoutes, readImports, bundleStatus } from './importroutes.js';
 import { CARD_FIELDS, isSameJob } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -2279,6 +2280,70 @@ export function startFromCheck(runid, card, opts = {}) {
   return { ok: true, same, line: startFromLine(same, same ? pre.trackRecord : null), specHash: same ? pre.specHash : null };
 }
 
+/**
+ * P5 item 4 — the facts of a spec for an IMPORTED job's view, read by the SAME readers the Job tab uses for a run
+ * (so an imported job and a run read alike): check type, goal, success checks, guardrails, model, caps.
+ * @param {any} spec
+ * @returns {{checkType: string, goal: string, success: string, guardrails: string, model: string, budgetUsd: number|null, maxWallMs: number|null}}
+ */
+function describeSpec(spec) {
+  const nr = (/** @type {string|null} */ v) => (typeof v === 'string' && v.length > 0 ? v : 'not recorded');
+  return {
+    checkType: checkTypeLabel(typeof spec.verdictType === 'string' ? spec.verdictType : null, null),
+    goal: nr(typeof spec.goal === 'string' ? spec.goal : null),
+    success: nr(successFromSpec(spec)),
+    guardrails: nr(guardrailsFromSpec(spec)),
+    model: nr(typeof spec.model === 'string' ? spec.model : null),
+    budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+    maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : null,
+  };
+}
+
+/**
+ * Start from this, for an IMPORTED job: the prefill comes from the bundle's own `spec.json` (read again now).
+ * success/guardrails/judge examples are not in a bundle, so those boxes are blank with the note, and the Source is
+ * blank too (a bundle carries none). `sameJobAvailable` is always false: a bundle's close commands are bound to
+ * its own folder (`$BARELOOP_BUNDLE`) and its hash is the runner's to sign, so the panel never copies it as a
+ * signed spec — the card drafts a new job from this prefill. `null` when no such imported job.
+ * @param {string} id
+ * @param {{ home?: string }} [opts]
+ * @returns {{ok: true, origin: {runid: null, job: string, importId: string}, card: Record<string, any>, from: 'bundle spec.json', note: string,
+ *   sameJobAvailable: false, specHash: null, spec: null, specPath: null, trackRecord: null, line: string}|{ok: false, error: string}|null}
+ */
+export function getStartFromImport(id, opts = {}) {
+  const row = readImports(opts.home).find((r) => r.id === id);
+  if (!row) return null;
+  const st = bundleStatus(row);
+  const spec = st.bundle.spec;
+  if (!spec || typeof spec !== 'object') return { ok: false, error: 'this imported folder can no longer be read — nothing to start from' };
+  const writeScope = Array.isArray(spec.writeScope) ? spec.writeScope.filter((/** @type {any} */ x) => typeof x === 'string') : [];
+  return {
+    ok: true,
+    origin: { runid: null, job: row.job, importId: id },
+    card: {
+      jobName: typeof spec.job === 'string' ? spec.job : row.job,
+      checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
+      model: typeof spec.model === 'string' ? spec.model : '',
+      goal: typeof spec.goal === 'string' ? spec.goal : '',
+      source: '',
+      destination: writeScope.join(', '),
+      success: '',
+      guardrails: '',
+      judgeExamples: '',
+      capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+      maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
+    },
+    from: 'bundle spec.json',
+    note: "filled from the imported job's spec.json — source, success, guardrails and judge examples are not in an exported job",
+    sameJobAvailable: false,
+    specHash: null,
+    spec: null,
+    specPath: null,
+    trackRecord: null,
+    line: startFromLine(false, null),
+  };
+}
+
 /** @param {any} res @param {number} code @param {any} body */
 function sendJson(res, code, body) {
   const text = JSON.stringify(body);
@@ -2308,7 +2373,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes> }} opts
+ * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -2318,6 +2383,7 @@ export function handleRequest(req, res, opts) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
     if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop)$/.test(p)) return o.runRoutes;
+    if (o.importRoutes && (p === '/api/fs/list' || p === '/api/imports' || p.startsWith('/api/imports/'))) return o.importRoutes;
     return null;
   }
   const method = req.method ?? 'GET';
@@ -2475,7 +2541,7 @@ export function handleRequest(req, res, opts) {
  * this package's own `bin/bareloop.mjs`).
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
- *   fetchImpl?: typeof fetch, settleMs?: number }} [opts]
+ *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
@@ -2495,10 +2561,12 @@ export function createPanelServer(opts = {}) {
     let settingsRoutes;
     /** @type {ReturnType<typeof createRunRoutes>|undefined} */
     let runRoutes;
+    /** @type {ReturnType<typeof createImportRoutes>|undefined} */
+    let importRoutes;
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes,
+          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
@@ -2521,7 +2589,11 @@ export function createPanelServer(opts = {}) {
         bareloopBin: opts.bareloopBin,
         fetchImpl: opts.fetchImpl,
         home,
-        startFrom: { get: (runid) => getStartFrom(runid, { home }), check: (runid, card) => startFromCheck(runid, card, { home }) },
+        startFrom: {
+          get: (runid) => getStartFrom(runid, { home }),
+          check: (runid, card) => startFromCheck(runid, card, { home }),
+          getImport: (id) => getStartFromImport(id, { home }),
+        },
       });
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
@@ -2536,6 +2608,9 @@ export function createPanelServer(opts = {}) {
         settleMs: opts.settleMs,
         getResumeContext: (runid) => getResumeContext(runid, { home }),
         getStopContext: (runid) => getStopContext(runid, { home }),
+      });
+      importRoutes = createImportRoutes({
+        port: boundPort, token, home, userHome: opts.userHome, describeSpec,
       });
       resolve({
         server,

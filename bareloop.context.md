@@ -3537,6 +3537,30 @@ key you want first (the panel picks the row by the Model menu).
   final outcome; a live run is neither), average chain spend of the finished ones; no registry, no plan
   handover. The card button reads `Sign & run` for a same-job start (one click: the page signs the prepared
   hash as soon as the session reports `prepared`; the server re-checks it) and `Start drafting` otherwise.
+  **Import, read only (item 4)** — `src/panel/importroutes.js`. The Workflows toolbar's `[Import]` opens a folder
+  browser plus a paste box; an imported job is an exported bundle folder the person can LOOK at: nothing runs,
+  nothing is signed, the folder is never written. Routes, all behind `checkHumanGuard` (token + own address —
+  new disk exposure, so the strict guard, not the Host guard the plain GETs use): `GET /api/fs/list?path=`
+  → `{ok, requested, path, parent, bundle, entries:[{name, bundle}], truncated}` (FOLDERS only, names plus a
+  `bundle` tag where a regular file `manifest.json` sits; starts at the home folder when `path` is blank);
+  `POST /api/imports {path}` → `{ok, id, job, dir}` (`readBundle` must come back clean — a plain or tampered
+  folder is `400` and records nothing); `GET /api/imports` (the list, every bundle RE-READ now) and
+  `GET /api/imports/:id` (one view). Imported list: `<home>/imports.jsonl`, one `{at, dir, job, bundleHash}` line
+  per import (latest line per folder wins; mode 0600 in the 0700 config home); `id` = the first 12 hex of
+  sha256(real path). **Path safety:** the path is expanded (`~`, `~/…` only), refused if it holds a NUL byte, is
+  over 4096 bytes or is not absolute, then `resolve`d and `realpath`ed — the REAL folder is listed and recorded
+  and the response says which it chose (`path` beside `requested`); a non-directory is refused; a SYMLINK inside a
+  listing is never listed and never followed; names only, never file contents; at most 500 names (`truncated`);
+  non-dot folders sort first. **Status, re-read on every list/view:** `ok`, `changed` ("changed since import",
+  red: a different/tampered/unreadable bundle) or `missing` ("folder not found"). The view carries goal,
+  `checkType`, `success` (the close stage names), `guardrails`, `budgetUsd`/`maxWallMs`, `model`, the exported
+  history (`history:{greens,reds,total,recent}` read from the bridges' history rows the bundle shipped) and
+  `approved`/`approvedText` — approval on THIS machine is `verifyBlessing` (the first green run here writes
+  `blessing.json`): approved / not approved yet / stale. The row reads `imported · view only`; the view's only
+  button is Start from this, which prefills from the bundle's own `spec.json` via
+  `GET /api/author/start-from?import=<id>` (source, success, guardrails and judge examples are not in an
+  exported job, so those boxes are blank with a note) and is NEVER a same-job start: a bundle's closes are
+  bound to its own folder (`$BARELOOP_BUNDLE`) and its hash is the runner's to sign, so the card drafts a new job.
   **Run-card fixes (item 6)** → a listed run whose runner is alive but whose spine is not written
   yet reads `starting: true` (list AND detail; glyph `▶`, every figure null, `fileMissing:false`) —
   never `file missing`; a row whose runner is gone and whose spine is absent stays `fileMissing`.

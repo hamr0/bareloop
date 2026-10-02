@@ -90,7 +90,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
- *   startFrom?: {get: (runid: string) => any, check: (runid: string, card: any) => any} }} opts
+ *   startFrom?: {get: (runid: string) => any, check: (runid: string, card: any) => any, getImport: (id: string) => any} }} opts
  */
 export function createAuthorRoutes(opts) {
   // the RAW env with the keys file re-merged on every use, so an edited file takes effect
@@ -203,8 +203,10 @@ export function createAuthorRoutes(opts) {
       if (!opts.startFrom) { send(404, { ok: false, error: 'not found' }); return true; }
       if (pathname === '/api/author/start-from') {
         if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
-        const runid = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams.get('runid') ?? '';
-        const pre = opts.startFrom.get(runid);
+        const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
+        const runid = sp.get('runid') ?? '';
+        // P5 item 4: `?import=<id>` prefills from an IMPORTED job's spec.json (never a same-job start)
+        const pre = sp.has('import') ? opts.startFrom.getImport(sp.get('import') ?? '') : opts.startFrom.get(runid);
         if (pre === null) { send(404, { ok: false, error: 'no such run' }); return true; }
         if (!pre.ok) { send(409, pre); return true; }
         send(200, {

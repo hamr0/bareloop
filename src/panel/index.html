@@ -246,6 +246,21 @@
   .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
   .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+  /* P5 item 4: Import (read only) — the folder browser, the imported rows, the view */
+  .import-box{border:1px dashed var(--border-strong);padding:10px;margin-bottom:10px;display:grid;gap:8px;}
+  .import-pathrow{display:flex;gap:8px;flex-wrap:wrap;}
+  .import-pathrow input{flex:1 1 180px;min-width:0;min-height:36px;background:var(--panel);color:var(--text);border:1px solid var(--border-strong);padding:4px 8px;font:inherit;}
+  .import-entries{display:grid;gap:2px;max-height:240px;overflow-y:auto;overflow-x:hidden;}
+  .import-entry{display:flex;gap:8px;align-items:baseline;text-align:left;background:none;border:none;color:var(--text);padding:4px 2px;min-height:32px;cursor:pointer;font:inherit;overflow-wrap:anywhere;}
+  .import-entry:hover{background:var(--panel);}
+  .import-entry .tag{color:var(--accent);font-size:11px;}
+  .import-view[hidden]{display:none;}
+  .imp-bad{color:var(--red);font-size:12px;font-weight:700;overflow-wrap:anywhere;}
+  .wf-imported{color:var(--accent);}
+  .import-view{display:grid;gap:10px;font-size:13px;}
+  .import-view .imp-row{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;}
+  .import-view .imp-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:84px;}
+  .import-view .imp-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
   .startfrom-line{margin:2px 0 8px;font-size:12px;color:var(--accent);overflow-wrap:anywhere;}
   .startfrom-line.changed{color:var(--amber);}
   .startfrom-origin{font-size:12px;color:var(--text-dim);margin:0 0 4px;overflow-wrap:anywhere;}
@@ -568,8 +583,24 @@
           <div class="chips" role="group" aria-label="Runs view" style="margin-bottom:8px;">
             <button class="chip" type="button" aria-pressed="true" data-runs-view="workflows" data-testid="runs-view-workflows">Workflows</button>
             <button class="chip" type="button" aria-pressed="false" data-runs-view="history" data-testid="runs-view-history">History</button>
+            <button class="chip" type="button" id="wf-import" data-testid="wf-import" title="look at an exported job folder (read only)">Import</button>
+          </div>
+          <div class="import-box" id="import-box" data-testid="import-box" hidden>
+            <label for="import-path">Import a job folder</label>
+            <div class="import-pathrow">
+              <input id="import-path" data-testid="import-path" type="text" placeholder="/path/to/job.bareloop — or pick below" autocomplete="off">
+              <button class="btn small" type="button" id="import-open" data-testid="import-open">Open</button>
+            </div>
+            <div class="hint" id="import-resolved" data-testid="import-resolved"></div>
+            <div class="import-entries" id="import-entries" data-testid="import-entries"></div>
+            <div class="resume-err" id="import-err" data-testid="import-err" hidden></div>
+            <div class="ended-actions">
+              <button class="btn primary" type="button" id="import-go" data-testid="import-go">Import</button>
+              <button class="btn small" type="button" id="import-cancel" data-testid="import-cancel">Cancel</button>
+            </div>
           </div>
           <div id="runs-filterbar-anchor"></div>
+          <div id="import-list" data-testid="import-list"></div>
           <div id="wf-list" data-testid="wf-list"></div>
           <div id="history-list" data-testid="history-list" hidden></div>
         </section>
@@ -593,6 +624,8 @@
         <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-testid="right-tab-audit">Audit / logs</button>
         <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Job</button>
       </div>
+
+      <div class="pane-body import-view" id="import-view" data-testid="import-view" hidden></div>
 
       <div class="pane-body" id="right-pane-body">
 
@@ -1652,6 +1685,10 @@
     });
     document.getElementById("wf-list").hidden = runsViewMode !== "workflows";
     document.getElementById("history-list").hidden = runsViewMode !== "history";
+    // P5 item 4: Import lives on the Workflows view only
+    document.getElementById("wf-import").hidden = runsViewMode !== "workflows";
+    document.getElementById("import-list").hidden = runsViewMode !== "workflows";
+    if(runsViewMode !== "workflows") document.getElementById("import-box").hidden = true;
   }
   document.querySelectorAll('.chip[data-runs-view]').forEach(function(chip){
     chip.addEventListener("click", function(){
@@ -1688,6 +1725,152 @@
   function clearSelection(selector){
     document.querySelectorAll(".wf-row, .hist-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
   }
+
+  // ---- P5 item 4: IMPORT (read only) — the folder browser, the imported rows, the view ----
+  // The folder listing, the import and every re-read are SERVER routes behind the human guard
+  // (src/panel/importroutes.js): the page only asks and paints. An imported job has ONE button: Start from this.
+  var currentImportId = null;
+  var importBox = document.getElementById("import-box");
+  var importPathEl = document.getElementById("import-path");
+  var importErrEl = document.getElementById("import-err");
+  function importShowErr(msg){ importErrEl.textContent = msg; importErrEl.hidden = !msg; }
+  // one directory: its folders (names + a "bundle" tag), a way up, and which folder the server actually chose
+  function importLoadDir(path){
+    importShowErr("");
+    return authorGet("/api/fs/list?path=" + encodeURIComponent(path || "")).then(function(r){
+      if(!r || !r.ok){ importShowErr((r && r.error) || "could not open that folder"); return; }
+      importPathEl.value = r.path;
+      document.getElementById("import-resolved").textContent = "showing " + r.path + (r.requested !== r.path ? " (you asked for " + r.requested + ")" : "") + (r.bundle ? " — this folder is an exported job" : "") + (r.truncated ? " — list cut short" : "");
+      var el = document.getElementById("import-entries");
+      el.innerHTML = "";
+      if(r.parent){
+        var up = document.createElement("button");
+        up.type = "button"; up.className = "import-entry"; up.setAttribute("data-testid", "import-up");
+        up.textContent = "▲ ..";
+        up.addEventListener("click", function(){ importLoadDir(r.parent); });
+        el.appendChild(up);
+      }
+      r.entries.forEach(function(e){
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "import-entry"; b.setAttribute("data-testid", "import-entry-" + e.name);
+        b.innerHTML = "▸ " + escapeXml(e.name) + (e.bundle ? ' <span class="tag">(bundle)</span>' : "");
+        b.addEventListener("click", function(){ importLoadDir(r.path.replace(/\/+$/, "") + "/" + e.name); });
+        el.appendChild(b);
+      });
+      if(!r.entries.length && !r.parent){ el.innerHTML = '<div class="hint">no folders here</div>'; }
+    }).catch(function(x){ importShowErr("could not reach the panel: " + x.message); });
+  }
+  document.getElementById("wf-import").addEventListener("click", function(){
+    importBox.hidden = !importBox.hidden;
+    if(!importBox.hidden) importLoadDir(importPathEl.value || "");
+  });
+  document.getElementById("import-open").addEventListener("click", function(){ importLoadDir(importPathEl.value); });
+  importPathEl.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); importLoadDir(importPathEl.value); } });
+  document.getElementById("import-cancel").addEventListener("click", function(){ importBox.hidden = true; importShowErr(""); });
+  document.getElementById("import-go").addEventListener("click", function(){
+    importShowErr("");
+    authorPost("/api/imports", {path: importPathEl.value}).then(function(res){
+      if(!res.body || !res.body.ok){ importShowErr((res.body && res.body.error) || ("refused (" + res.status + ")")); return; }
+      importBox.hidden = true;
+      return loadImports().then(function(){ selectImport(res.body.id); });
+    }).catch(function(x){ importShowErr("could not reach the panel: " + x.message); });
+  });
+
+  // the imported rows (Workflows view): every bundle is re-read by the server each time this list is fetched
+  function loadImports(){
+    return authorGet("/api/imports").then(function(r){ renderImports((r && r.imports) || []); }).catch(function(){ /* keep what is shown */ });
+  }
+  function renderImports(list){
+    var el = document.getElementById("import-list");
+    el.innerHTML = "";
+    list.forEach(function(imp){
+      var row = document.createElement("div");
+      row.className = "wf-row" + (imp.id === currentImportId ? " selected" : "");
+      row.setAttribute("data-testid", "import-row-" + imp.id);
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-pressed", imp.id === currentImportId ? "true" : "false");
+      row.innerHTML =
+        '<span class="wf-line1"><span class="wf-caret"></span><span class="dot grey"></span>' +
+        '<span class="wf-name" title="' + escapeXml(imp.dir) + '">' + escapeXml(imp.job) + '</span></span>' +
+        '<span class="wf-meta-line"><span class="wf-meta wf-imported" data-testid="import-tag-' + escapeXml(imp.id) + '">imported · view only</span></span>' +
+        (imp.status !== "ok" ? '<span class="imp-bad" data-testid="import-changed-' + escapeXml(imp.id) + '">' + escapeXml(imp.statusText || "changed since import") + '</span>' : "");
+      row.addEventListener("click", function(){ selectImport(imp.id); scrollRunIntoViewMobile(); });
+      row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
+      el.appendChild(row);
+    });
+  }
+  function hideImportView(){
+    currentImportId = null;
+    document.getElementById("import-view").hidden = true;
+    document.querySelector(".rp-tabrow").hidden = false;
+    document.getElementById("right-pane-body").hidden = false;
+    document.querySelectorAll("#import-list .wf-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed", "false"); });
+  }
+  function selectImport(id){
+    clearSelection();
+    currentRunid = null;
+    runIsLive = false;
+    currentImportId = id;
+    document.querySelectorAll("#import-list .wf-row").forEach(function(r){
+      var on = r.getAttribute("data-testid") === "import-row-" + id;
+      r.classList.toggle("selected", on); r.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    return authorGet("/api/imports/" + encodeURIComponent(id)).then(function(v){
+      if(currentImportId !== id) return;
+      renderImportView(v);
+    }).catch(function(x){ if(currentImportId === id) renderImportView({ok: false, error: x.message}); });
+  }
+  function renderImportView(v){
+    document.querySelector(".rp-tabrow").hidden = true;
+    document.getElementById("right-pane-body").hidden = true;
+    var el = document.getElementById("import-view");
+    el.hidden = false;
+    var name = document.getElementById("active-wf-name");
+    var dot = document.getElementById("active-wf-dot");
+    var verdict = document.getElementById("active-wf-verdict");
+    var date = document.getElementById("active-wf-date");
+    if(!v || !v.ok){
+      name.textContent = "imported job"; dot.className = "dot grey"; verdict.textContent = "imported · view only"; date.textContent = "";
+      el.innerHTML = '<div class="imp-bad">' + escapeXml((v && v.error) || "could not read this imported job") + '</div>';
+      return;
+    }
+    name.textContent = v.job;
+    dot.className = "dot grey";
+    verdict.textContent = "imported · view only";
+    date.textContent = (v.importedAt || "").slice(0, 10) || "unknown";
+    var h = v.history || {greens: 0, reds: 0, total: 0, recent: []};
+    var money = function(n){ return (typeof n === "number") ? panelMoney(n) : "unknown"; };
+    var caps = money(v.budgetUsd) + " money" + (typeof v.maxWallMs === "number" ? " · " + Math.round(v.maxWallMs / 60000) + " min" : " · no time cap");
+    var recent = (h.recent || []).map(function(r){
+      return '<div class="hint">' + escapeXml((r.at || "").slice(0, 10) || "—") + " · " + escapeXml(r.outcome || "?") + (typeof r.costUsd === "number" ? " · " + escapeXml(panelMoney(r.costUsd)) : "") + '</div>';
+    }).join("");
+    var row = function(label, text, testid, cls){
+      return '<div class="imp-row"><span class="imp-label">' + label + '</span><span class="imp-text' + (cls ? " " + cls : "") + '" data-testid="' + testid + '">' + escapeXml(text) + '</span></div>';
+    };
+    el.innerHTML =
+      (v.status !== "ok" ? '<div class="imp-bad" data-testid="import-view-changed">' + escapeXml(v.statusText || "changed since import") + '</div>' : "") +
+      row("GOAL", v.goal || "not recorded", "import-goal") +
+      row("CHECKS", (v.checkType ? v.checkType + " — " : "") + (v.success || "not recorded"), "import-checks") +
+      row("GUARDRAILS", v.guardrails || "not recorded", "import-guardrails") +
+      row("CAPS", caps, "import-caps") +
+      row("MODEL", v.model || "not recorded", "import-model") +
+      row("EXPORTED", h.greens + " green · " + h.reds + " not green", "import-history") +
+      recent +
+      row("THIS MACHINE", v.approvedText || "unknown", "import-approved") +
+      '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-start-from-import">Start from this</button></div>';
+    el.querySelector('[data-testid="btn-start-from-import"]').addEventListener("click", function(){ startFromImportThis(v.id); });
+  }
+  // Start from this, on an IMPORTED job: the prefill is the bundle's own spec.json (the server reads it again now).
+  function startFromImportThis(id){
+    authorGet("/api/author/start-from?import=" + encodeURIComponent(id)).then(function(r){
+      if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-start-from", {detail: {runid: null, importId: id, prefill: r}}));
+    }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
+  }
+  loadImports();
+  document.getElementById("tab-runs").addEventListener("click", function(){ loadImports(); });
 
   // ---- Run tab ----
   // panelMoney — hamr's ruling 2026-09-28 ("panel money 2-decimals"): every
@@ -2846,6 +3029,7 @@
   // uses for `isLive` — never re-derived a second way).
   var runIsLive = false;
   function selectRun(runid, rowEl, siblingSelector){
+    hideImportView();
     clearSelection();
     document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
     if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
@@ -3585,7 +3769,8 @@
       var c = pre.card || {};
       clearStartFrom();
       openNewCard();
-      startFrom = {runid: d.runid};
+      // a run can be the SAME job (the server judges every edit against the prefill); an imported job never is
+      startFrom = d.runid ? {runid: d.runid} : null;
       var radios = document.querySelectorAll('input[name="jf-verdict"]');
       radios.forEach(function(r){ r.checked = (r.value === (c.checkType === "rubric" ? "rubric" : "deterministic")); });
       document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
@@ -3595,7 +3780,7 @@
       setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
       sfOrigin.hidden = false;
-      sfOrigin.textContent = "Start from: " + ((pre.origin && pre.origin.job) || "job") + " (run " + d.runid + ")";
+      sfOrigin.textContent = "Start from: " + ((pre.origin && pre.origin.job) || "job") + (d.runid ? " (run " + d.runid + ")" : " (imported)");
       sfLine.hidden = false;
       sfLine.textContent = pre.line || "";
       sfLine.className = "startfrom-line" + (pre.sameJobAvailable ? "" : " changed");
