@@ -11,6 +11,7 @@ import {
 } from '../src/panel/server.js';
 import { appendRun, appendLegStart, readRunList } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
+import { replayRun } from '../src/replay.js';
 
 /** @type {string[]} */
 const tmpDirs = [];
@@ -50,6 +51,7 @@ function makeTwoLeg(home, { leg2 = 'died', runid = 'run1', livePatient = false }
     { type: 'plan-accepted', plan, ts: at(14, 1), seq: 7 },
     { type: 'step-start', step: 'fix-types', ts: at(14, 2), seq: 7.5 },
     { type: 'worker-round', kind: 'turn', costUsd: 2, phase: 'step:fix-types', ts: at(14, 5), seq: 8 },
+    ...(leg2 === 'green' ? [{ type: 'step-end', step: 'fix-types', outcome: 'green', ts: at(14, 8), seq: 8.5 }] : []),
     ...(leg2 === 'died' ? [{ type: 'worker-round', kind: 'turn', costUsd: 0, ts: at(14, 10), seq: 9 }] : []),
     ...(leg2 === 'green' ? [{ type: 'job-end', outcome: 'green', spentUsd: 5, engagementSpentUsd: 2, spendComplete: true, ts: at(14, 10), seq: 9 }] : []),
     ...(leg2 === 'cap-halt' ? [{ type: 'job-end', outcome: 'cap-halt', spentUsd: 5, engagementSpentUsd: 2, spendComplete: true, ts: at(14, 10), seq: 9 }] : []),
@@ -178,4 +180,40 @@ test('P5-R legDividersFor: the "after" words are fixed sentences; a leg that has
   assert.equal(text('died'), 'stopped: no ending was recorded');
   assert.equal(text('weird-outcome'), 'stopped: weird-outcome');
   assert.equal(legDividersFor(rec('cap-halt'), [{ leg: 1 }])[0].beforePart, 1, 'no part in the new leg yet: the divider closes the list');
+});
+
+test('P5-R panel: a part cannot be longer than its own leg — the idle gap is never part time; a part its leg\'s halt cut off is STOPPED with its reason, and the step that continues it is the same step', () => {
+  const home = tmp();
+  makeTwoLeg(home, { leg2: 'green' });
+  const d = getRunDetail('run1', { home });
+  const [cut, cont] = d.parts.filter((p) => p.kind === 'step');
+  assert.ok(cut.wallMs <= 20 * MIN, `leg 1's step is at most leg 1's window (20min), got ${cut.wallMs}`);
+  assert.equal(cut.wallMs, 17 * MIN, 'from its own start (10:03) to where its leg ended (10:20)');
+  assert.equal(cut.stopReason, 'money cap');
+  assert.equal(cut.outcome, null, 'it never ended itself: no green');
+  assert.equal(cut.attempts[0].outcome, 'stopped');
+  assert.equal(cut.spentUsd, 3, 'its own leg\'s rounds only');
+  assert.equal(cont.continued, true, 'the same step continuing, not a retry');
+  assert.equal(cont.tryNumber, 1);
+  assert.equal(cont.outcome, 'green', 'it keeps its own verdict');
+  assert.equal(cont.wallMs, 6 * MIN, 'and its own time (14:02 -> 14:08)');
+  assert.equal(cont.stopReason, null);
+  assert.equal(cont.spentUsd, 2);
+  assert.equal(cut.resumedNext, true, 'the dotted connector stays between the stopped box and the continued box');
+});
+
+test('P5-R panel: a real in-leg retry stays "try N"; only a cross-leg re-entry is "continued"', () => {
+  const rec = (arr) => arr.map((r, i) => ({ seq: i + 1, ...r }));
+  const spine = rec([
+    { type: 'job-start', ts: at(10, 0) },
+    { type: 'step-start', step: 'a', ts: at(10, 1) }, { type: 'step-end', step: 'a', outcome: 'red', ts: at(10, 2) },
+    { type: 'step-start', step: 'a', ts: at(10, 3) },
+    { type: 'job-end', outcome: 'cap-halt', spentUsd: 1, spendComplete: true, ts: at(10, 5) },
+    { type: 'leg-resume', leg: 2, after: 'cap-halt', ts: at(12, 0) },
+    { type: 'job-start', ts: at(12, 0), priorSpentUsd: 1 },
+    { type: 'step-start', step: 'a', ts: at(12, 1) }, { type: 'step-end', step: 'a', outcome: 'green', ts: at(12, 2) },
+    { type: 'job-end', outcome: 'green', spentUsd: 1, spendComplete: true, ts: at(12, 3) },
+  ]);
+  const parts = replayRun(spine, []).parts.filter((p) => p.kind === 'step');
+  assert.deepEqual(parts.map((p) => [p.tryNumber, p.continued, p.stopReason]), [[1, false, null], [2, false, 'money cap'], [2, true, null]]);
 });

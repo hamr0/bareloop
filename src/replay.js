@@ -713,18 +713,38 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
 
   const usedEndSeqs = new Set();
   const idOccurrence = new Map();
+  /** @type {Map<string, {stopReason: string|null, legIdx: number, tryNumber: number}>} */
+  const prevOccurrence = new Map();
 
   const steps = stepStarts.map((ss) => {
     const id = ss.step;
     const startSeq = typeof ss.seq === 'number' ? ss.seq : -Infinity;
     const startTs = parseTs(ss.ts);
 
+    // P5-R: a step belongs to ONE leg. Its `step-end` is the first one inside ITS OWN leg (never a later leg's
+    // `step-end` for the same id), and a step its leg's halt cut off ends where that leg ends — otherwise its
+    // window runs across the idle gap to the next leg and counts the gap as its time.
+    const myLegIdx = legs.length > 1 ? legs.reduce((acc, l, i) => (typeof l.start?.seq === 'number' && startSeq >= l.start.seq ? i : acc), 0) : 0;
+    const myLeg = legs.length > 1 ? legs[myLegIdx] : null;
+    const legEndSeq = legs.length > 1 && myLegIdx < legs.length - 1 && typeof legs[myLegIdx + 1].start?.seq === 'number' ? legs[myLegIdx + 1].start.seq : Infinity;
     const end = stepEnds
-      .filter((se) => se.step === id && typeof se.seq === 'number' && se.seq >= startSeq && !usedEndSeqs.has(se.seq))
+      .filter((se) => se.step === id && typeof se.seq === 'number' && se.seq >= startSeq && se.seq < legEndSeq && !usedEndSeqs.has(se.seq))
       .sort((a, b) => a.seq - b.seq)[0] ?? null;
     if (end) usedEndSeqs.add(end.seq);
-    const endSeq = end && typeof end.seq === 'number' ? end.seq : Infinity;
-    const endTs = end ? parseTs(end.ts) : null;
+    const cutByLeg = !end && myLeg !== null && Number.isFinite(legEndSeq);
+    const endSeq = end && typeof end.seq === 'number' ? end.seq : (cutByLeg ? legEndSeq : Infinity);
+    const endTs = end ? parseTs(end.ts) : (cutByLeg ? parseTs(myLeg?.end?.ts) : null);
+    // why this leg stopped the step (code-owned words); null for a step that ended itself or is still running
+    /** @type {string|null} */
+    let stopReason = null;
+    if (!end && myLeg !== null) {
+      const o = myLeg.outcome;
+      const isLastLeg = myLegIdx === legs.length - 1;
+      if (cutByLeg || (isLastLeg && o !== null && o !== 'green' && o !== 'already-green')) {
+        stopReason = o === 'cap-halt' ? 'money cap' : o === 'wall-halt' ? 'time cap' : o === 'provider-red' ? 'provider failed'
+          : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
+      }
+    }
 
     const phaseTag = `step:${id}`;
     // `judge-round` (a close's paid seam) carries no `.phase` at all
@@ -802,10 +822,17 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     }
 
     idOccurrence.set(id, (idOccurrence.get(id) ?? 0) + 1);
+    // the SAME step continuing across a leg boundary (the previous occurrence of this id was cut off by its leg's
+    // halt, and this one starts in a later leg) is "continued", never a retry; `tryNumber` counts real retries only
+    const prevOcc = prevOccurrence.get(id) ?? null;
+    const continued = myLeg !== null && prevOcc !== null && prevOcc.stopReason !== null && prevOcc.legIdx < myLegIdx;
+    const tryNumber = prevOcc === null ? 1 : (continued ? prevOcc.tryNumber : prevOcc.tryNumber + 1);
+    prevOccurrence.set(id, { stopReason, legIdx: myLegIdx, tryNumber });
 
     return {
       id,
       occurrence: idOccurrence.get(id),
+      ...(myLeg === null ? {} : { stopReason, continued, tryNumber }),
       outcome: end ? (end.outcome ?? null) : null,
       ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
       checks: { passed, failed },
@@ -1290,7 +1317,10 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         spentUsd: step.spentUsd,
         unpricedRounds: step.unpricedRounds,
         outcome: step.outcome,
-        attempts: stepAttempts,
+        // P5-R (resumed runs only): why its leg's halt cut this step off, whether it is the same step continuing
+        // from the leg before, and its retry count not counting continuations
+        ...(step.stopReason === undefined ? {} : { stopReason: step.stopReason, continued: step.continued, tryNumber: step.tryNumber }),
+        attempts: step.stopReason ? stepAttempts.map((a) => (a.outcome === null || a.outcome === undefined ? { ...a, outcome: 'stopped' } : a)) : stepAttempts,
       });
     }
 
