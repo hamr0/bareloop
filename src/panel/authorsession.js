@@ -109,6 +109,52 @@ export function jobNameTaken(name, opts = {}) {
   } catch { return false; }
 }
 
+/** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
+export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'model', 'goal', 'source', 'destination', 'success', 'guardrails', 'judgeExamples', 'capUsd', 'maxWallMs']);
+
+/**
+ * Only the form's own fields, nothing else a request body might carry (`startFrom`, stray keys).
+ * @param {any} card
+ * @returns {Record<string, any>}
+ */
+export function cardFields(card) {
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const f of CARD_FIELDS) if (card?.[f] !== undefined) out[f] = card[f];
+  return out;
+}
+
+/**
+ * The same-job rule's one spelling (code-owned, never the page's): only `source` may differ (or nothing). Every
+ * other field is in the signed hash or is the write fence (destination), so a change there is a NEW job that
+ * drafts from clean. "Changed" is judged against what was PREFILLED.
+ * @param {Record<string, any>} card the form as it stands now
+ * @param {Record<string, any>} prefilled the form as it was prefilled
+ * @returns {boolean}
+ */
+export function isSameJob(card, prefilled) {
+  const norm = (/** @type {any} */ v) => (v === undefined || v === null ? '' : (typeof v === 'string' ? v.trim() : v));
+  return CARD_FIELDS.filter((f) => f !== 'source').every((f) => norm(card?.[f]) === norm(prefilled?.[f]));
+}
+
+/**
+ * `$0` validation for a SAME-JOB start: the signed job carries the goal, checks, guardrails and fence, so those
+ * boxes are not required here (an older run's success/guardrails were never saved) — only what the new session
+ * itself needs: a Source, a Model that is a Settings Name, and the cap.
+ * @param {any} card
+ * @param {{rows?: readonly import('../providerrows.js').KeyRow[]}} [opts]
+ * @returns {{ok: true}|{ok: false, error: string}}
+ */
+export function validateSameJobCard(card, opts = {}) {
+  if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
+  if (!modelChoiceFor(opts.rows ?? [], card.model)) return { ok: false, error: 'Model must be one of the Names in Settings > Providers' };
+  if (typeof card.source !== 'string' || card.source.trim() === '') return { ok: false, error: 'Source is required' };
+  if (typeof card.capUsd !== 'number' || !Number.isFinite(card.capUsd) || card.capUsd <= 0) {
+    return { ok: false, error: '$ cap is required and must be a positive number' };
+  }
+  return { ok: true };
+}
+
 /**
  * `$0` validation of the job card fields the server must check BEFORE it
  * creates a session or spends anything — never inside the async pipeline,
@@ -146,8 +192,9 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function}} [deps] the last five are TEST SEAMS ONLY — see the note
- *   just above where each is read, below.
+ *   prepareSigningFn?: Function, sameJob?: {spec: any, specHash: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   TEST SEAMS ONLY — see the note just above where each is read, below. `sameJob` (P5 item 3) is NOT a seam: the
+ *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
  */
 export function createSession(card, deps = {}) {
@@ -384,6 +431,95 @@ export function createSession(card, deps = {}) {
       return;
     }
 
+    /**
+     * The signing half — shared by the drafted path and the same-job path: write the resolved spec, check it,
+     * run signing gates 1–3 (gate 4 only for a rubric), and land in `prepared`. `seedRef` null = the gates resolve
+     * the seed themselves.
+     * @param {any} spec @param {string|null} seedRef
+     */
+    const finish = async (spec, seedRef) => {
+      const specFile = join(outDir, 'resolved-spec.json');
+      writeFileSync(specFile, `${JSON.stringify(spec, null, 2)}\n`);
+      state.resolvedSpecPath = specFile;
+
+      const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+      if (!jv.ok) {
+        state.phase = 'refused';
+        state.error = `spec-invalid: ${jv.reds.map((r) => r.code).join(', ')}`;
+        say('system', state.error);
+        return;
+      }
+
+      state.phase = 'signing-gates';
+      state.progressLabel = 'checking';
+      say('system', 'Checking (gates 1–3, $0; gate 4 only if rubric)…');
+      const judges = closeJudges(spec.closeDecl);
+      const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
+      let judgeProvider = null;
+      /** @type {ReturnType<typeof ratesFor>} */
+      let judgePrice = null;
+      if (judge) {
+        try {
+          judgePrice = judgeRatesFor(judge, modelChoice.provider, modelChoice.baseUrl, draftPrice, keyCfg);
+        } catch (e) {
+          if (!(e instanceof ConfigError)) throw e;
+          refuse(`${e.message} — refusing before gate 4 spends anything`);
+          return;
+        }
+        const judgeKeyValue = env.JUDGE_API_KEY ?? (judge.provider === modelChoice.provider ? draftEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model))[resolveProvider(judge.provider).envKey];
+        const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
+        if (!judgeKeyValue || judgeKeyProblem) {
+          refuse(`the judge key is not usable (${judgeKeyProblem ?? 'not set'}) — refusing before gate 4 spends anything`);
+          return;
+        }
+        judgeProvider = buildRunnerProviders({
+          providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
+          judgeApiKey: judgeKeyValue, judgeModel: judge.model, judgeProviderName: judge.provider,
+          judgeBaseUrl: judge.provider === modelChoice.provider ? modelChoice.baseUrl : undefined,
+        }).judgeProvider;
+      }
+      const signing = await prepareSigningFn({
+        spec, workdir: prep.tree, seedRef: seedRef, timeoutMs,
+        shellCapUsd: spec.budgetUsd, ceilingUsd: card.capUsd, priorCalls: [...metered],
+        judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null }) : null,
+        judgeModel: judge?.model ?? null,
+        onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),
+      });
+      const signingFile = join(outDir, 'signing.json');
+      writeFileSync(signingFile, `${JSON.stringify(signing, null, 2)}\n`);
+
+      if (!signing.ok) {
+        state.phase = 'refused';
+        state.error = `signing gates failed — ${signing.reds.map((r) => r.code).join(', ') || 'no work red at seed'}`;
+        say('system', state.error);
+        return;
+      }
+      state.specHash = signing.specHash;
+      // P5 item 3 — the form text, VERBATIM, beside the resolved spec: what "Start from this" prefills from.
+      // Written at sign-prepare (the session reached `prepared`), only by sessions created from now on.
+      writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
+      state.phase = 'prepared';
+      say('bot', `SIGNING PREPARED — spec hash ${signing.specHash}`);
+    };
+    // P5 item 3 — SAME JOB: the server's code-owned rule (only Source changed, or nothing) hands the origin's
+    // signed spec in. No scout, no draft, no confirm turn: $0 of drafting. The signing gates still run against
+    // THIS session's fresh copy of the source (gates 1-3 are $0; a rubric's gate 4 is the only spend), and the
+    // hash they land on must be the origin's — a spec that drifted is refused, never silently re-signed.
+    const MODEL = modelChoice.name;
+    if (deps.sameJob) {
+      state.phase = 'drafting';
+      state.progressLabel = 'checking';
+      say('system', 'Same job — the signed job is reused as it is; drafting skipped ($0)');
+      const reused = JSON.parse(JSON.stringify(deps.sameJob.spec));
+      await finish(reused, null);
+      if (state.phase === 'prepared' && state.specHash !== deps.sameJob.specHash) {
+        state.phase = 'refused';
+        state.error = 'the same-job check ended on a different hash than the signed job — refusing to sign';
+        say('system', state.error);
+      }
+      return;
+    }
+
     const writeScope = card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     /** @type {any} the confirm turn (below) fills `goal` in once accepted —
      * declared loosely rather than typed field-by-field, since this object's
@@ -422,7 +558,6 @@ export function createSession(card, deps = {}) {
     const draftJudge = (() => {
       try { return resolveJobJudge(draft, modelChoice.provider, resolveWorkerModel); } catch { return { provider: modelChoice.provider, model: providerEntry.tiers.sonnet }; }
     })();
-    const MODEL = modelChoice.name;
     const { provider } = buildRunnerProviders({
       providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
       judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
@@ -463,65 +598,7 @@ export function createSession(card, deps = {}) {
 
     if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
     const spec = assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) });
-    const specFile = join(outDir, 'resolved-spec.json');
-    writeFileSync(specFile, `${JSON.stringify(spec, null, 2)}\n`);
-    state.resolvedSpecPath = specFile;
-
-    const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-    if (!jv.ok) {
-      state.phase = 'refused';
-      state.error = `spec-invalid: ${jv.reds.map((r) => r.code).join(', ')}`;
-      say('system', state.error);
-      return;
-    }
-
-    state.phase = 'signing-gates';
-    state.progressLabel = 'checking';
-    say('system', 'Checking (gates 1–3, $0; gate 4 only if rubric)…');
-    const judges = closeJudges(spec.closeDecl);
-    const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
-    let judgeProvider = null;
-    /** @type {ReturnType<typeof ratesFor>} */
-    let judgePrice = null;
-    if (judge) {
-      try {
-        judgePrice = judgeRatesFor(judge, modelChoice.provider, modelChoice.baseUrl, draftPrice, keyCfg);
-      } catch (e) {
-        if (!(e instanceof ConfigError)) throw e;
-        refuse(`${e.message} — refusing before gate 4 spends anything`);
-        return;
-      }
-      const judgeKeyValue = env.JUDGE_API_KEY ?? (judge.provider === modelChoice.provider ? draftEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model))[resolveProvider(judge.provider).envKey];
-      const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
-      if (!judgeKeyValue || judgeKeyProblem) {
-        refuse(`the judge key is not usable (${judgeKeyProblem ?? 'not set'}) — refusing before gate 4 spends anything`);
-        return;
-      }
-      judgeProvider = buildRunnerProviders({
-        providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
-        judgeApiKey: judgeKeyValue, judgeModel: judge.model, judgeProviderName: judge.provider,
-        judgeBaseUrl: judge.provider === modelChoice.provider ? modelChoice.baseUrl : undefined,
-      }).judgeProvider;
-    }
-    const signing = await prepareSigningFn({
-      spec, workdir: prep.tree, seedRef: authored.seedRef, timeoutMs,
-      shellCapUsd: spec.budgetUsd, ceilingUsd: card.capUsd, priorCalls: [...metered],
-      judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null }) : null,
-      judgeModel: judge?.model ?? null,
-      onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),
-    });
-    const signingFile = join(outDir, 'signing.json');
-    writeFileSync(signingFile, `${JSON.stringify(signing, null, 2)}\n`);
-
-    if (!signing.ok) {
-      state.phase = 'refused';
-      state.error = `signing gates failed — ${signing.reds.map((r) => r.code).join(', ') || 'no work red at seed'}`;
-      say('system', state.error);
-      return;
-    }
-    state.specHash = signing.specHash;
-    state.phase = 'prepared';
-    say('bot', `SIGNING PREPARED — spec hash ${signing.specHash}`);
+    await finish(spec, authored.seedRef);
   }
 
   // fire-and-forget — the caller (src/panel/server.js) never awaits this; it

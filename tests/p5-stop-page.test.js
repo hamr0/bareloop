@@ -43,9 +43,10 @@ test('page: the run card carries [Resume] only when the engine would accept it; 
   const ended = { reason: 'You stopped it.', next: 'Resume.', actions: [{ id: 'resume', label: 'Resume' }] };
   render({ runid: 'r2', live: false, died: false, ended, resume: { budgetUsd: 4 } });
   assert.match(bar.innerHTML, /data-testid="btn-resume-run">Resume</);
+  assert.match(bar.innerHTML, /btn-start-from">Start from this</);
   render({ runid: 'r3', live: false, died: false, ended: { reason: 'Goal met.', next: 'Nothing to do.', actions: [] }, resume: null });
-  assert.equal(bar.innerHTML, '');
-  assert.equal(bar.hidden, true);
+  assert.doesNotMatch(bar.innerHTML, /btn-resume-run|btn-stop"/, 'no Resume and no Stop on a green run');
+  assert.match(bar.innerHTML, /btn-start-from">Start from this</, 'Start from this is on EVERY run');
 });
 
 test('page: Stop is wired to the stop route and Resume to the Job-tab resume mode', () => {

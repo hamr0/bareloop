@@ -100,7 +100,7 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   const no = { ok: false, why: 'it is still running' };
   const live = (outcome, extra = {}) => endedFor({ outcome, stopReason: null, spentUsd: 8, budgetUsd: 8, ...extra }, { died: false, lastThing: null }, extra.o ?? {});
   assert.equal(live(null), null, 'no Ended block while a run is live');
-  assert.deepEqual(live('green'), { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: [] });
+  assert.deepEqual(live('green'), { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: [{ id: 'start-from', label: 'Start from this' }] });
   assert.equal(live('already-green').reason, 'Goal met.');
   assert.equal(live('green', { o: { destinationRefused: 'folder is read only' } }).reason, 'Goal met, but the output could not be delivered.');
 
@@ -123,7 +123,7 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   for (const o of ['plan-red', 'check-red', 'step-red', 'escalated']) {
     const r = live(o, { stopReason: 'tests failing' });
     assert.match(r.reason, /^Goal not met — the checks said no \(tests failing\)\.$/, o);
-    assert.deepEqual(r.actions, [], `${o} offers no Resume`);
+    assert.deepEqual(r.actions, [{ id: 'start-from', label: 'Start from this' }], `${o} offers no Resume, only Start from this`);
   }
   assert.match(live('close-red').reason, /^The check itself broke \(instrument fault\), not your goal\.$/);
   for (const o of ['pricing-red', 'unapproved-spec', 'job-red', 'branch-red', 'interpreter-red', 'recipe-stale', 'close-unsupported', 'smoke-red', 'runner-drained']) {
@@ -132,7 +132,7 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
 
   const died = endedFor({ outcome: null, stopReason: null, spentUsd: null, budgetUsd: 8 }, { died: true, lastThing: 'a scout model call at 2026-10-01 10:02' }, { resume: ok });
   assert.match(died.reason, /^Stopped with no ending recorded \(last thing it did: a scout model call at 2026-10-01 10:02\)\.$/);
-  assert.deepEqual(died.actions, [{ id: 'resume', label: 'Resume' }]);
+  assert.deepEqual(died.actions, [{ id: 'resume', label: 'Resume' }, { id: 'start-from', label: 'Start from this' }], 'died: Resume, or Start from this');
 
   // never a button the engine would refuse
   const refused = live('cap-halt', { o: { resume: no } });
@@ -160,7 +160,7 @@ test('ITEM 1: an escalated run whose escalation is the STRIKE governor (category
   const d = getRunDetail('strike1', { home });
   assert.equal(d.ended.reason, 'The fix loop stopped improving (2 of 2 tries, no check got better).');
   assert.equal(d.ended.next, 'Start from this and change the job.');
-  assert.deepEqual(d.ended.actions, []);
+  assert.deepEqual(d.ended.actions, [{ id: 'start-from', label: 'Start from this' }]);
   assert.doesNotMatch(d.ended.reason, /Money cap/);
   assert.equal(listRuns({ home }).find((r) => r.runid === 'strike1').endedLine, 'stopped improving');
 });
@@ -212,14 +212,14 @@ test('getRunDetail: a green run reads "Goal met." with no Resume; a died run rea
   const g = getRunDetail('grn1', { home });
   assert.equal(g.ended.reason, 'Goal met.');
   assert.equal(g.ended.next, 'Nothing to do.');
-  assert.deepEqual(g.ended.actions, []);
+  assert.deepEqual(g.ended.actions, [{ id: 'start-from', label: 'Start from this' }]);
   assert.equal(g.resume, null);
 
   makeRun(home, { runid: 'died1', jobEnd: false });
   const d = getRunDetail('died1', { home });
   assert.equal(d.glyph, '?', 'died is never [✗]');
   assert.match(d.ended.reason, /^Stopped with no ending recorded \(last thing it did: .+\)\.$/);
-  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }]);
+  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }, { id: 'start-from', label: 'Start from this' }]);
 });
 
 test('getRunDetail: a destination-refused record on a green names the delivery failure', () => {
@@ -231,11 +231,11 @@ test('getRunDetail: a destination-refused record on a green names the delivery f
 test('getRunDetail: a run with a job-end the engine would refuse to resume (plan-red) shows no Resume, and a missing signed spec hides it', () => {
   const home = tmp();
   makeRun(home, { runid: 'red1', outcome: 'plan-red' });
-  assert.deepEqual(getRunDetail('red1', { home }).ended.actions, []);
+  assert.deepEqual(getRunDetail('red1', { home }).ended.actions, [{ id: 'start-from', label: 'Start from this' }]);
   // cap-halt but the spec beside it is not the one the run was signed under
   makeRun(home, { runid: 'stale1', hashOverride: 'not-the-hash' });
   const s = getRunDetail('stale1', { home });
-  assert.deepEqual(s.ended.actions, []);
+  assert.deepEqual(s.ended.actions, [], 'cap-halt with no usable signed spec: Resume is hidden, and Start from this is not on the cap-halt row');
   assert.match(s.ended.next, /no signed job file beside this run matches the hash/);
 });
 

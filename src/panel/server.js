@@ -43,6 +43,7 @@ import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
+import { CARD_FIELDS, isSameJob } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
@@ -397,7 +398,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  *
  * The table (outcome → reason / next / buttons) is PANEL-BUILD.md P5 item 1. The
  * Resume button appears only when `o.resume` says the engine would accept it; "Start
- * from this" is a later part (item 3) and is not offered here.
+ * from this" (item 3) is offered where the table says so — always possible, it starts a NEW run.
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
  * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean}} [o]
@@ -407,6 +408,8 @@ export function endedFor(summary, death, o = {}) {
   const resumeOk = !!(o.resume && o.resume.ok);
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
+  /** P5 item 3 — Start from this: a NEW run from this job (never a rerun), offered where the table says so */
+  const START_FROM = [{ id: 'start-from', label: 'Start from this' }];
   const detailOf = (/** @type {string|null} */ s) => {
     if (typeof s !== 'string' || s.length === 0) return '';
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
@@ -419,7 +422,7 @@ export function endedFor(summary, death, o = {}) {
       reason: `Stopped with no ending recorded${death.lastThing ? ` (last thing it did: ${death.lastThing})` : ''}.`,
       next: resumeOr('Resume, or Start from this.'),
       line: resumeOk ? 'died — resume' : 'died',
-      actions: resumeOk ? RESUME : [],
+      actions: [...(resumeOk ? RESUME : []), ...START_FROM],
     };
   }
   const raw = summary.outcome;
@@ -439,7 +442,7 @@ export function endedFor(summary, death, o = {}) {
       const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
         ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
       return {
-        reason: `Money cap reached${money}.`, next: 'Start from this and change the job.', line: 'money cap', actions: [],
+        reason: `Money cap reached${money}.`, next: 'Start from this and change the job.', line: 'money cap', actions: START_FROM,
       };
     }
     if (cat === 'cap-halt' && typeof strikes === 'number' && typeof limit === 'number') {
@@ -447,16 +450,16 @@ export function endedFor(summary, death, o = {}) {
         reason: `The fix loop stopped improving (${strikes} of ${limit} tries, no check got better).`,
         next: 'Start from this and change the job.',
         line: 'stopped improving',
-        actions: [],
+        actions: START_FROM,
       };
     }
     if (cat === 'wall-halt') {
-      return { reason: 'Time cap reached.', next: 'Start from this and change the job.', line: 'time cap', actions: [] };
+      return { reason: 'Time cap reached.', next: 'Start from this and change the job.', line: 'time cap', actions: START_FROM };
     }
     if (cat === 'provider-red') {
       const d = detailOf(summary.stopReason);
       return {
-        reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: 'Start from this and change the job.', line: 'provider failed', actions: [],
+        reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: 'Start from this and change the job.', line: 'provider failed', actions: START_FROM,
       };
     }
   }
@@ -467,10 +470,10 @@ export function endedFor(summary, death, o = {}) {
         reason: 'Goal met, but the output could not be delivered.',
         next: 'Fix the destination, then Start from this.',
         line: 'goal met — not delivered',
-        actions: [],
+        actions: START_FROM,
       };
     }
-    return { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: [] };
+    return { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: START_FROM };
   }
   if (outcome === 'cap-halt') {
     const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
@@ -513,7 +516,7 @@ export function endedFor(summary, death, o = {}) {
       reason: 'A step stopped making progress.',
       next: resumeOr('Resume, or Start from this and change the job.'),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
-      actions: resumeOk ? RESUME : [],
+      actions: [...(resumeOk ? RESUME : []), ...START_FROM],
     };
   }
   if (GOAL_NOT_MET.has(outcome)) {
@@ -522,7 +525,7 @@ export function endedFor(summary, death, o = {}) {
       reason: `Goal not met — the checks said no${d ? ` (${d})` : ''}.`,
       next: 'Start from this and change the job.',
       line: 'checks said no',
-      actions: [],
+      actions: START_FROM,
     };
   }
   if (outcome === 'close-red') {
@@ -530,7 +533,7 @@ export function endedFor(summary, death, o = {}) {
       reason: 'The check itself broke (instrument fault), not your goal.',
       next: 'Start from this; check the success rule.',
       line: 'check broke',
-      actions: [],
+      actions: START_FROM,
     };
   }
   // the raw engine detail is never shown here (it can name retired surfaces); the code is enough
@@ -538,7 +541,7 @@ export function endedFor(summary, death, o = {}) {
     reason: `Stopped before or outside the work (code: ${outcome}).`,
     next: 'Start from this.',
     line: 'stopped before the work',
-    actions: [],
+    actions: START_FROM,
   };
 }
 
@@ -2108,6 +2111,174 @@ export function getRunJob(runid, opts = {}) {
   return none();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// P5 item 3 — START FROM THIS. A button on every run opens the Chat tab's New job card with every box filled.
+// This section is the ONE owner of (a) the prefill, (b) the same-job RULE, (c) the track record. The page asks;
+// it never decides. Start from this is a NEW run (a new runid) by design.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The signed spec a run's LATEST leg ran under — the `resolved-spec*.json` beside the run whose hash is the one its
+ * latest `job-start` carries (the same lookup `resumePlanFor` does). `null` = no such file.
+ * @param {{ spine: string }} row
+ * @param {any[]} records
+ * @returns {{spec: any, specPath: string, specHash: string}|null}
+ */
+function signedSpecForRun(row, records) {
+  const jobStart = (legsOf(records).findLast((l) => l.jobStart !== null) ?? null)?.jobStart ?? null;
+  if (!jobStart || typeof jobStart.specHash !== 'string') return null;
+  const near = sourceNearSpine(row.spine);
+  if (!near.specPath) return null;
+  const dir = dirname(near.specPath);
+  /** @type {string[]} */
+  let names = [];
+  try { names = readdirSync(dir).filter((n) => n === 'resolved-spec.json' || /^resolved-spec-r\d+\.json$/.test(n)); } catch { names = []; }
+  for (const n of names) {
+    let spec;
+    try { spec = JSON.parse(readFileSync(join(dir, n), 'utf8')); } catch { continue; }
+    if (!spec || typeof spec !== 'object') continue;
+    if (jobSpecHash(spec) === jobStart.specHash) return { spec, specPath: join(dir, n), specHash: jobStart.specHash };
+  }
+  return null;
+}
+
+/**
+ * The track record of a signed job: every LISTED run whose latest `job-start.specHash` equals `specHash`. One run =
+ * ONE entry (a resumed run is one run, its FINAL outcome — `legsOf`), and a run that is still live is neither green
+ * nor not-green yet. `avgSpendUsd` is the average chain spend of the finished runs, `null` when none finished.
+ * Read from the runs the panel already lists: no registry, no plan handover (hamr ruling A).
+ * @param {string} specHash
+ * @param {{ home?: string }} [opts]
+ * @returns {{runs: number, green: number, notGreen: number, live: number, avgSpendUsd: number|null}}
+ */
+export function trackRecordFor(specHash, opts = {}) {
+  const { rows } = readRunList(opts);
+  let green = 0;
+  let notGreen = 0;
+  let live = 0;
+  let spendSum = 0;
+  let spendN = 0;
+  for (const row of rows) {
+    if (!row || !existsSync(row.spine)) continue;
+    let records;
+    try { records = parseJsonl(row.spine).records; } catch { continue; }
+    const legs = legsOf(records);
+    const start = (legs.findLast((l) => l.jobStart !== null) ?? null)?.jobStart ?? null;
+    if (!start || start.specHash !== specHash) continue;
+    const outcome = legs.at(-1)?.outcome ?? null;
+    if (outcome === null && runIsAlive(row)) { live += 1; continue; }
+    if (outcome === 'green') green += 1; else notGreen += 1;
+    const sp = chainSpend(records);
+    if (sp.usd > 0 || outcome !== null) { spendSum += sp.usd; spendN += 1; }
+  }
+  return { runs: green + notGreen + live, green, notGreen, live, avgSpendUsd: spendN > 0 ? spendSum / spendN : null };
+}
+
+/**
+ * The line above the card (code-owned fixed text): the same-job track record, or the changed-job notice.
+ * @param {boolean} same
+ * @param {{green: number, notGreen: number, avgSpendUsd: number|null}|null} record
+ * @returns {string}
+ */
+export function startFromLine(same, record) {
+  if (!same) return 'Changed — new job, starts clean';
+  if (!record) return 'Same job';
+  const cost = record.avgSpendUsd === null ? 'no finished run to price yet' : `about ${panelMoney2(record.avgSpendUsd)} a run`;
+  return `Same job — ${record.green} green · ${record.notGreen} not green · ${cost}`;
+}
+
+/**
+ * `start-from` for one listed run: the prefilled card, where it came from, the signed spec (when one is on disk),
+ * and the track record. Prefill order (PANEL-BUILD.md P5 item 3): `card.json` beside the run's `resolved-spec.json`
+ * (the form text, verbatim, written at sign-prepare) → the fields recoverable from the signed job, with the note
+ * that success/guardrails/judge examples were not saved. `null` when the runid is not listed.
+ * @param {string} runid
+ * @param {{ home?: string }} [opts]
+ * @returns {{ok: true, origin: {runid: string, job: string}, card: Record<string, any>, from: 'card.json'|'signed job', note: string|null,
+ *   sameJobAvailable: boolean, specHash: string|null, spec: any|null, specPath: string|null,
+ *   trackRecord: ReturnType<typeof trackRecordFor>|null, line: string}|{ok: false, error: string}|null}
+ */
+export function getStartFrom(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  if (!existsSync(row.spine)) return { ok: false, error: 'this run has no log on disk — nothing to start from' };
+  const records = parseJsonl(row.spine).records;
+  const signed = signedSpecForRun(row, records);
+  const near = sourceNearSpine(row.spine);
+  const spec = signed?.spec ?? resolveSpecForRow(row);
+  /** @type {Record<string, any>|null} */
+  let card = null;
+  /** @type {'card.json'|'signed job'} */
+  let from = 'signed job';
+  let note = null;
+  if (near.specPath) {
+    try {
+      const raw = JSON.parse(readFileSync(join(dirname(near.specPath), 'card.json'), 'utf8'));
+      if (raw && typeof raw === 'object') {
+        card = {};
+        for (const f of CARD_FIELDS) if (raw[f] !== undefined) card[f] = raw[f];
+        from = 'card.json';
+      }
+    } catch { card = null; }
+  }
+  if (!card && !spec) return { ok: false, error: 'this run recorded no signed job and no job card — nothing to start from' };
+  if (!card) {
+    let manifest = null;
+    if (near.sourceJsonPath) { try { manifest = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { manifest = null; } }
+    const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
+    const writeScope = Array.isArray(spec.writeScope) ? spec.writeScope.filter((x) => typeof x === 'string') : [];
+    card = {
+      jobName: typeof spec.job === 'string' ? spec.job : row.job,
+      checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
+      model: typeof spec.model === 'string' && spec.model ? spec.model : (typeof jobStart?.model === 'string' ? jobStart.model : ''),
+      goal: typeof spec.goal === 'string' ? spec.goal : '',
+      source: typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : ''),
+      destination: typeof manifest?.destination === 'string' ? manifest.destination : writeScope.join(', '),
+      success: '',
+      guardrails: '',
+      judgeExamples: '',
+      capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+      maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
+    };
+    note = 'filled from the signed job — success/guardrails/judge examples were not saved for this run';
+  } else if (signed) {
+    // a run resumed under RAISED caps carries the re-signed caps: the signed job's caps are the truth for "same job"
+    if (typeof signed.spec.budgetUsd === 'number') card.capUsd = signed.spec.budgetUsd;
+    if (typeof signed.spec.maxWallMs === 'number') card.maxWallMs = signed.spec.maxWallMs; else delete card.maxWallMs;
+  }
+  const trackRecord = signed ? trackRecordFor(signed.specHash, opts) : null;
+  return {
+    ok: true,
+    origin: { runid, job: row.job },
+    card,
+    from,
+    note,
+    sameJobAvailable: signed !== null,
+    specHash: signed?.specHash ?? null,
+    spec: signed?.spec ?? null,
+    specPath: signed?.specPath ?? null,
+    trackRecord,
+    line: startFromLine(signed !== null, trackRecord),
+  };
+}
+
+/**
+ * The page's read of the rule while the person edits: is the card as it stands the SAME job as the one prefilled
+ * from `runid`, and what does the line above the card say. `null` = no such run.
+ * @param {string} runid
+ * @param {Record<string, any>} card
+ * @param {{ home?: string }} [opts]
+ * @returns {{ok: true, same: boolean, line: string, specHash: string|null}|{ok: false, error: string}|null}
+ */
+export function startFromCheck(runid, card, opts = {}) {
+  const pre = getStartFrom(runid, opts);
+  if (pre === null) return null;
+  if (!pre.ok) return pre;
+  const same = pre.sameJobAvailable && isSameJob(card, pre.card);
+  return { ok: true, same, line: startFromLine(same, same ? pre.trackRecord : null), specHash: same ? pre.specHash : null };
+}
+
 /** @param {any} res @param {number} code @param {any} body */
 function sendJson(res, code, body) {
   const text = JSON.stringify(body);
@@ -2350,6 +2521,7 @@ export function createPanelServer(opts = {}) {
         bareloopBin: opts.bareloopBin,
         fetchImpl: opts.fetchImpl,
         home,
+        startFrom: { get: (runid) => getStartFrom(runid, { home }), check: (runid, card) => startFromCheck(runid, card, { home }) },
       });
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,

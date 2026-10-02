@@ -3513,6 +3513,30 @@ key you want first (the panel picks the row by the Model menu).
   `stopped — resume`, Audit divider `stopped: you stopped it · resumed <when>`. The page shows `[Stop]`
   in the Run tab's action area while live, "stopping after this step…" after the click, and the same
   `[Resume]` there once the engine would accept one.
+  **Start from this (item 3)** — a button on EVERY run (the Run tab's action area; the Ended block where the
+  table offers it: green, goal-not-met, close-red, stopped-before-the-work, step-stalled, died; `ended.actions`
+  now carries `{id:'start-from'}` beside `resume`) that opens the Chat tab's New job card with every box filled.
+  It is a NEW run (new runid) by design, never a rerun. Routes, all behind `checkHumanGuard`:
+  `GET /api/author/start-from?runid=` → `{ok, origin:{runid,job}, card, from:'card.json'|'signed job', note,
+  sameJobAvailable, specHash, trackRecord:{runs,green,notGreen,live,avgSpendUsd}, line}` (`404` unknown run,
+  `409` no log/no record); `POST /api/author/start-from-check {runid, card}` → `{ok, same, line, specHash}`;
+  `POST /api/author/start` accepts `startFrom: <runid>` beside the card. **Prefill order:** `card.json` (the
+  form text VERBATIM — `CARD_FIELDS` only, written beside `resolved-spec.json` when a session reaches
+  `prepared`, new sessions only) → the fields recoverable from the run's signed job with the note "filled from
+  the signed job — success/guardrails/judge examples were not saved for this run" (those three boxes blank,
+  never invented); for a run resumed under raised caps the signed job's caps win. **The same-job rule is
+  code-owned** (`isSameJob`, `src/panel/authorsession.js`; the page never decides it): only `source` changed,
+  or nothing, = SAME job — the origin's signed spec (the `resolved-spec*.json` whose hash the run's latest
+  `job-start` carries) is copied into the new session, no scout/draft/confirm turn (`deps.sameJob`), the signing
+  gates (1-3, $0; a rubric's gate 4 is the only spend) run on a fresh copy of the new Source, and the hash they
+  land on must be the origin's (else `refused`, never re-signed). ANY other field changed (goal, success,
+  guardrails, judge examples, model, caps, destination — the write fence — check type, job name), judged
+  against what was PREFILLED, is a new job: the normal drafting path. `line` above the card: "Same job — G
+  green · N not green · about $X a run" or "Changed — new job, starts clean" — the track record is every
+  LISTED run whose latest `job-start.specHash` equals the signed hash, one run = one entry via `legsOf` (its
+  final outcome; a live run is neither), average chain spend of the finished ones; no registry, no plan
+  handover. The card button reads `Sign & run` for a same-job start (one click: the page signs the prepared
+  hash as soon as the session reports `prepared`; the server re-checks it) and `Start drafting` otherwise.
   **Run-card fixes (item 6)** → a listed run whose runner is alive but whose spine is not written
   yet reads `starting: true` (list AND detail; glyph `▶`, every figure null, `fileMissing:false`) —
   never `file missing`; a row whose runner is gone and whose spine is absent stays `fileMissing`.

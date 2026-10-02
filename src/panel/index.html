@@ -246,6 +246,9 @@
   .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
   .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+  .startfrom-line{margin:2px 0 8px;font-size:12px;color:var(--accent);overflow-wrap:anywhere;}
+  .startfrom-line.changed{color:var(--amber);}
+  .startfrom-origin{font-size:12px;color:var(--text-dim);margin:0 0 4px;overflow-wrap:anywhere;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
@@ -466,6 +469,9 @@
 
           <div class="job-card compact" id="job-card" data-testid="job-card" hidden>
             <h4 id="job-card-title">Job card — draft</h4>
+            <div class="startfrom-origin" id="chat-startfrom-origin" data-testid="startfrom-origin" hidden></div>
+            <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
+            <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
 
             <div class="field">
               <label id="jf-verdict-label">Check type</label>
@@ -1951,19 +1957,36 @@
     lastEndedSig = sig2;
     box.hidden = false;
     box.className = "ended-block " + (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"));
-    var hasResume = (e.actions || []).some(function(a){ return a.id === "resume"; });
+    var actions = e.actions || [];
+    var hasResume = actions.some(function(a){ return a.id === "resume"; });
+    var hasStartFrom = actions.some(function(a){ return a.id === "start-from"; });
     box.innerHTML =
       '<div class="ended-row"><span class="ended-label">ENDED</span><span class="ended-text" data-testid="ended-reason">' + escapeXml(e.reason) + '</span></div>' +
       '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + escapeXml(e.next) + '</span></div>' +
-      (hasResume ? '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-resume">Resume</button></div>' : '');
+      ((hasResume || hasStartFrom) ? '<div class="ended-actions">' +
+        (hasResume ? '<button class="btn primary" type="button" data-testid="btn-resume">Resume</button>' : '') +
+        (hasStartFrom ? '<button class="btn' + (hasResume ? '' : ' primary') + '" type="button" data-testid="btn-start-from-ended">Start from this</button>' : '') +
+        '</div>' : '');
     if(hasResume){
       box.querySelector('[data-testid="btn-resume"]').addEventListener("click", function(){ openResumeOnJobTab(detail); });
+    }
+    if(hasStartFrom){
+      box.querySelector('[data-testid="btn-start-from-ended"]').addEventListener("click", function(){ startFromThis(detail.runid); });
     }
   }
   // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
   // it ended in a way the engine would accept (the SAME button as the Ended block's, same Job-tab resume mode).
   // The Ended block's own Resume stays; this is the second place the button is missing from (P5-R note).
   var stopAsked = {};
+  // P5 item 3 — ask the server for the prefill (card.json -> the signed job), then hand it to the Chat tab's
+  // New job card. The page never decides same-job-vs-changed: the server does (it owns the rule and the record).
+  function startFromThis(runid){
+    authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid)).then(function(r){
+      if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-start-from", {detail: {runid: runid, prefill: r}}));
+    }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
+  }
   function renderRunActions(detail){
     var bar = document.getElementById("run-actions");
     var html = "";
@@ -1979,8 +2002,12 @@
       var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
       if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
     }
+    // P5 item 3: Start from this is on EVERY run (a new run from this job — never a rerun of this one)
+    html += '<button class="btn" type="button" data-testid="btn-start-from">Start from this</button>';
     bar.innerHTML = html;
-    bar.hidden = html === "";
+    bar.hidden = false;
+    var startFromBtn = bar.querySelector('[data-testid="btn-start-from"]');
+    if(startFromBtn) startFromBtn.addEventListener("click", function(){ startFromThis(detail.runid); });
     var stopBtn = bar.querySelector('[data-testid="btn-stop"]');
     if(stopBtn){
       stopBtn.addEventListener("click", function(){
@@ -3213,7 +3240,20 @@
     // isn't usable; updated by refreshModelStatus() below.
     var keyOk = false;
 
-    newBtn.addEventListener("click", function(){
+    // P5 item 3 — set when the card was opened by "Start from this": the run it came from, what was prefilled
+    // (the SERVER's same-job rule judges every edit against that), and whether this session is a same-job start.
+    var startFrom = null;
+    var sameJobSession = false;
+    var autoSigned = false;
+    var sfOrigin = document.getElementById("chat-startfrom-origin");
+    var sfLine = document.getElementById("chat-startfrom-line");
+    var sfNote = document.getElementById("chat-startfrom-note");
+    function clearStartFrom(){
+      startFrom = null; sameJobSession = false; autoSigned = false;
+      sfOrigin.hidden = true; sfLine.hidden = true; sfNote.hidden = true;
+      startBtn.textContent = "Start drafting";
+    }
+    function openNewCard(){
       card.hidden = false;
       newBtn.hidden = true;
       thread.innerHTML = "";
@@ -3222,12 +3262,15 @@
       sessionId = null;
       sessionLive = false;
       signClickedOnce = false;
+      sameJobSession = false;
+      autoSigned = false;
       if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
       stopProgressDots();
       progressRow.hidden = true;
       checkDepsBtn.hidden = true;
       refreshStartEnabled();
-    });
+    }
+    newBtn.addEventListener("click", function(){ clearStartFrom(); openNewCard(); });
 
     function currentCard(){
       var moneyCap = Number(document.getElementById("jf-cap-money").value);
@@ -3478,6 +3521,14 @@
         if(!j || !j.state) return;
         renderMessages(j.state);
         renderActions(j.state);
+        if(sameJobSession && !autoSigned && j.state.phase === "prepared" && j.state.specHash){
+          autoSigned = true;
+          authorPost("/api/author/" + sessionId + "/sign", {specHash: j.state.specHash}).then(function(r){
+            var o = chatPostOutcome(r);
+            if(o.ok){ chatActionOk(); } else { autoSigned = false; chatActionFailed(o.error); }
+            poll();
+          }).catch(function(){ autoSigned = false; chatActionFailed("network error — could not reach the panel server, not signed"); });
+        }
         if(j.state.phase === "signed"){
           clearInterval(pollTimer);
           document.getElementById("tab-runs").click();
@@ -3494,6 +3545,7 @@
       sessionLive = true;
       refreshStartEnabled();
       var body = currentCard();
+      if(startFrom) body.startFrom = startFrom.runid;
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
           errEl.textContent = (r.body && r.body.error) || "refused";
@@ -3502,13 +3554,64 @@
           return;
         }
         sessionId = r.body.sessionId;
-        signClickedOnce = false;
+        // a same-job session has no confirm turn: it goes straight to `prepared`, and THIS click (Sign & run) is the
+        // signature — the page signs the hash the server prepared as soon as it is ready (the server re-checks it)
+        sameJobSession = r.body.sameJob === true;
+        autoSigned = false;
+        signClickedOnce = sameJobSession;
         renderMessages(r.body.state);
         renderActions(r.body.state);
         if(pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(poll, 2000);
       });
     });
+
+    // ---- P5 item 3: Start from this — prefill every box, then let the SERVER say same job or changed ----
+    function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
+    var sfTimer = null;
+    function sfRefreshLine(){
+      if(!startFrom) return;
+      authorPost("/api/author/start-from-check", {runid: startFrom.runid, card: currentCard()}).then(function(r){
+        if(!startFrom || !r.body || !r.body.ok) return;
+        sfLine.hidden = false;
+        sfLine.textContent = r.body.line;
+        sfLine.className = "startfrom-line" + (r.body.same ? "" : " changed");
+        if(!sessionLive) startBtn.textContent = r.body.same ? "Sign & run" : "Start drafting";
+      }).catch(function(){ /* the line stays as it was */ });
+    }
+    document.addEventListener("bareloop-start-from", function(e){
+      var d = e.detail || {};
+      var pre = d.prefill || {};
+      var c = pre.card || {};
+      clearStartFrom();
+      openNewCard();
+      startFrom = {runid: d.runid};
+      var radios = document.querySelectorAll('input[name="jf-verdict"]');
+      radios.forEach(function(r){ r.checked = (r.value === (c.checkType === "rubric" ? "rubric" : "deterministic")); });
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      if(c.model){ modelSelect.value = c.model; }
+      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
+      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
+      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
+      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      sfOrigin.hidden = false;
+      sfOrigin.textContent = "Start from: " + ((pre.origin && pre.origin.job) || "job") + " (run " + d.runid + ")";
+      sfLine.hidden = false;
+      sfLine.textContent = pre.line || "";
+      sfLine.className = "startfrom-line" + (pre.sameJobAvailable ? "" : " changed");
+      sfNote.hidden = !pre.note;
+      sfNote.textContent = pre.note || "";
+      startBtn.textContent = pre.sameJobAvailable ? "Sign & run" : "Start drafting";
+      refreshModelStatus();
+      refreshCapNote();
+      refreshStartEnabled();
+    });
+    // any edit re-asks the server (debounced): the rule is judged against what was PREFILLED, never here
+    ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time", "jf-model"].forEach(function(id){
+      document.getElementById(id).addEventListener("input", function(){ if(sfTimer) clearTimeout(sfTimer); sfTimer = setTimeout(sfRefreshLine, 250); });
+    });
+    modelSelect.addEventListener("change", function(){ if(sfTimer) clearTimeout(sfTimer); sfTimer = setTimeout(sfRefreshLine, 250); });
+    document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.addEventListener("change", function(){ if(sfTimer) clearTimeout(sfTimer); sfTimer = setTimeout(sfRefreshLine, 250); }); });
 
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
     // (fed by the every-2s `poll()`) unconditionally overwrites

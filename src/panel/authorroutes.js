@@ -22,7 +22,7 @@ import { spawn as realSpawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { createSession, validateJobCard } from './authorsession.js';
+import { createSession, validateJobCard, validateSameJobCard, isSameJob, cardFields } from './authorsession.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
@@ -89,7 +89,8 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * deliberately has none of).
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
- *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string }} opts
+ *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
+ *   startFrom?: {get: (runid: string) => any, check: (runid: string, card: any) => any} }} opts
  */
 export function createAuthorRoutes(opts) {
   // the RAW env with the keys file re-merged on every use, so an edited file takes effect
@@ -195,15 +196,54 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
+    // ── P5 item 3: START FROM THIS. `GET /api/author/start-from?runid=` — the prefill (card.json → the signed
+    // job), where it came from, the track record. `POST /api/author/start-from-check {runid, card}` — the
+    // CODE-OWNED same-job rule over the card as it stands (the page never decides it). Both $0, read-only.
+    if (pathname === '/api/author/start-from' || pathname === '/api/author/start-from-check') {
+      if (!opts.startFrom) { send(404, { ok: false, error: 'not found' }); return true; }
+      if (pathname === '/api/author/start-from') {
+        if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+        const runid = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams.get('runid') ?? '';
+        const pre = opts.startFrom.get(runid);
+        if (pre === null) { send(404, { ok: false, error: 'no such run' }); return true; }
+        if (!pre.ok) { send(409, pre); return true; }
+        send(200, {
+          ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
+          sameJobAvailable: pre.sameJobAvailable, specHash: pre.specHash, trackRecord: pre.trackRecord,
+          line: pre.line,
+        });
+        return true;
+      }
+      if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
+      const r = opts.startFrom.check(String(body?.runid ?? ''), body?.card ?? {});
+      if (r === null) { send(404, { ok: false, error: 'no such run' }); return true; }
+      send(r.ok ? 200 : 409, r);
+      return true;
+    }
+
     if (pathname === '/api/author/start') {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
       const card = body ?? {};
-      const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows: rowsForHome(keysHome(opts.home)) });
+      const rows = rowsForHome(keysHome(opts.home));
+      // P5 item 3 — started from a run: the SERVER decides same-job vs changed (only Source changed, or nothing,
+      // is the same job: the signed spec is reused and nothing is drafted). Anything else drafts as a new job.
+      /** @type {{spec: any, specHash: string}|null} */
+      let sameJob = null;
+      const fromRunid = typeof card.startFrom === 'string' ? card.startFrom : (typeof card.startFrom?.runid === 'string' ? card.startFrom.runid : null);
+      if (fromRunid !== null) {
+        const pre = opts.startFrom ? opts.startFrom.get(fromRunid) : null;
+        if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to start from' }); return true; }
+        if (!pre.ok) { send(409, pre); return true; }
+        if (pre.sameJobAvailable && pre.spec && pre.specHash && isSameJob(card, pre.card)) sameJob = { spec: pre.spec, specHash: pre.specHash };
+      }
+      const v = sameJob ? validateSameJobCard(card, { rows }) : validateJobCard(card, { jobsDir: opts.jobsDir, rows });
       if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
-      const session = createSession(card, { env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}) });
+      const session = createSession(cardFields(card), {
+        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(sameJob ? { sameJob } : {}),
+      });
       sessions.set(session.id, session);
-      send(200, { ok: true, sessionId: session.id, state: session.state });
+      send(200, { ok: true, sessionId: session.id, sameJob: sameJob !== null, state: session.state });
       return true;
     }
 
