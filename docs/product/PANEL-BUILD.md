@@ -793,3 +793,54 @@ Imported row: `fix-types  imported · view only` (mockup's own tag). Right pane:
 ### Docs
 
 `PANEL-BUILD.md` dated P5 addendum; one PRD tick line; `bareloop.context.md` (new routes, `stopped` outcome, `card.json`, `imports.jsonl`); CHANGELOG at release.
+
+---
+
+## P5-R — one run, one id, one file (resume continues the SAME run; ruled by hamr 2026-10-02)
+
+Comes before P5 phase 2. Supersedes items 2 (Resume) wording where it says a resume starts a new run.
+
+Ruled by hamr 2026-10-02 (go given). Branch `feat/panel-import-run`. Comes BEFORE P5 phase 2.
+
+hamr's words: "one run, one id, one file ... shows on map card, on audit, it's the same, never two."
+"same run for stopped, cap/time halt, no new card, no new job, dotted line at map, clear audit mention resume."
+Decisions: torn tail = 1A (keep the bytes, start on a fresh line; never edit the record). Time between legs = 2A (not counted; only working time charges the wall).
+
+Grounding: the $0 reader inventory (2026-10-02) — 14 reader groups NEED CHANGE, precedent for append + startSeq in `scripts/run-reuse.mjs` (lines ~458-470, 549) and `makeSpine(file, {startSeq})` in `src/spine.js`.
+
+### Step 1 — engine
+
+1. **Writer.** `--resume <runid>` (run-u and `bareloop run <bundle> --resume`) keeps the SAME runid and appends to the SAME spine file (`u-<runid>.jsonl`, or `<bundleDir>/runs/<runid>/spine.jsonl`).
+   - If the file does not end with `\n`, write one `\n` first (the torn bytes stay, isolated on their own line).
+   - `startSeq` = max `seq` over parseable lines.
+   - First record of the leg: `leg-resume {leg: N, after: <previous leg's outcome or "died">, at}` — emitted BEFORE the watchdog is spawned (the watchdog reads mtime; a cold file would be killed as stale).
+   - Then the leg's own `job-start` (keeping today's declared fold fields — the budget ceiling still folds prior spend).
+2. **One owner: `legsOf(events)`** (new, in the spine-reading layer, e.g. `src/legs.js`), returning ordered legs `{leg, start, end, records, outcome, after}`. Tolerates exactly one corrupt line immediately before a `leg-resume` marker (and the existing last-two-lines tail rule). Every reader below uses it — no reader re-derives legs on its own.
+3. **Money:** run total = sum over legs of that leg's own rounds (`SPEND_RECORD_TYPES` / `ACCOUNTED_ROUND_TYPES` as today — echoes excluded). Exactly one basis per reader; never rounds + declared prior.
+   **Time:** run wall = sum of each leg's own start→end (gap excluded).
+   **Outcome:** the LAST leg's. A run is live iff its last leg has no `job-end` and its runner is alive.
+4. **Readers to change (inventory list):** userrun resume reader + torn tolerance (~userrun.js:676-723, door reader ~807); `readResume` (reuse.js:817 — window at the last leg, use its declared fold; grade/decision window readers checked, reuse.js:570-715); userrun end-of-run readout (~1927-2080: this leg only, last leg's halts only, watchdog note per leg); `replayRun` (replay.js:425-620 — `resumed`, spend, wall, auditWindow, resumeSeed); panel `summarizeRow`/`getRunDetail`/`deriveDeath`/`resumePlanFor` (resume #2 offered under the LATEST signed caps)/audit window + sidecar (server.js); `monthly.js` `legSpend`/`legWall`/`readLegs`/`claimRun`/`settleDeadClaims`; `runlist.js` `appendRun`/`readRunList`/`runIsAlive`; `ledger.js` `floorsFromRecords` wall; `u-watchdog.mjs` ordering; `deathAtOf` (u-readout.js:337); `bundlerun.js` history row/`run.json` (one row per leg, `leg: N`, no self-`resumedFrom`).
+5. **Run list:** ONE row per run. Each resume appends `{type:'leg-start', runid, leg, pid, capUsd, at}`. `readRunList` folds it: the row's live pid/cap = latest leg's. `settled`/`released` are per leg; a later leg's `released` never removes the run. The monthly hold is taken per leg.
+6. **Side files:** gate audit — leg 2+ appends to the run's existing `u-<runid>-gate-audit.jsonl` (never rename-overwrite). Watchdog note — per leg (`<spine>.leg<N>.watchdog.json`, or a leg stamp that readers check). `.lag.jsonl` accumulates (fine).
+7. **Refusals stay:** resume of a run whose last leg is live → refused (pid from the latest `leg-start`); of a green run → refused; of a non-resumable terminal → refused. Double-resume is gone by construction (one run, one latest leg).
+8. **Old split runs** (already on disk) are not rewritten and keep reading as today.
+9. **Start from this** is a NEW run by design (new job). The review-door `rerun` keeps minting a new runid (not covered by this ruling; named, unchanged).
+
+### Step 2 — panel
+
+1. **One card** per run: latest leg's glyph/status, total money/time, `resumed ×N` small tag.
+2. **Audit:** legs in order with a divider line between them:
+   `── stopped: money cap reached ($8.00) · resumed 2026-10-03 14:10 ──` (code-owned text; `after` = stopped / money cap / time cap / provider failed / step stalled / died).
+3. **Map:** a dotted connector from the step where a leg ended to the step the next leg picked up.
+4. **Resume UX (hamr 2026-10-02):** the Resume button (run card + Ended block) opens the run's own page on its **Job** tab. There, ONLY the money cap and the time cap are editable; every other job field is shown read-only. Button `[Sign & resume]` (human click = the signature when a cap changed). This replaces phase 1's small confirm form. Refusals from item 5 of phase 1 (cap ≤ spent, time ≤ used) stay.
+5. Remove phase 1's "a resume is a new run" copy (index.html ~1944 "The new run is starting; it appears in the list").
+
+### Proof
+
+- Fail-first tests per step; real seams; a real killed child process mid-append for the torn-tail case; a two-leg spine fixture through every changed reader (money once, time without gap).
+- `npm test` + typecheck + build:types green; orchestrator screenshots (card, Audit divider, dotted line, Job-tab resume).
+- Live: one paid DeepSeek run on hamr's word only, after P5 phase 2 (Stop exists): start → Stop → Resume → green; hamr clicks through.
+
+### Docs
+
+PANEL-BUILD.md P5 addendum gets this as "P5-R"; PRD v1.87 gets one tick ("a resumed run is the same run: one id, one file"); `bareloop.context.md` (spine leg marker, `legsOf`, run-list `leg-start`, resume keeps the runid); FINDINGS entry: the split-run shape was inherited from the reuse-path resume, never ruled, found only by rendering it.

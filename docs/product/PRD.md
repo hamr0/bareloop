@@ -1303,4 +1303,5 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - One Stop ends a run as the resumable outcome `stopped` (arbiter-adjacent, ruled by hamr 2026-10-02).
 - Resume is in the panel; a raised cap is a re-signed hash, prior spend stays folded.
 - Every run shows an Ended block: a code-owned reason, the next step, and only the buttons the engine would accept.
-- Detail: `docs/product/PANEL-BUILD.md` addendum P5.
+- A resumed run is the same run: one id, one file (P5-R).
+- Detail: `docs/product/PANEL-BUILD.md` addendum P5 and P5-R.
