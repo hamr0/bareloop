@@ -52,6 +52,7 @@ import { closeStagesOf } from './plan.js';
 import { MIN_WALL_MS, jobSpecHash } from './job.js';
 import { isObj, isNonEmptyString } from './validate.js';
 import { readGrade } from './trend.js';
+import { legsOf } from './legs.js';
 
 /** the paused-run TERMINAL and its spine record share one name (`runPlan` returns
  * it and `runJob` writes it onto `job-end`), spelled once in `declaredclose.js`
@@ -815,7 +816,16 @@ function readGradeSeed(seen) {
  *   spentUsd, spendComplete, carrySpentUsd, carrySpendComplete }`
  */
 export function readResume(events, { deathAt = null, direct = false, resumableOutcomes = [] } = {}) {
-  const list = Array.isArray(events) ? events.filter(isObj) : [];
+  let list = Array.isArray(events) ? events.filter(isObj) : [];
+  // P5-R: a DIRECT spine may be a resumed run's one file of several legs (src/legs.js). The checkpoint a resume
+  // continues from is the latest leg that reached a `job-start`, and that leg's own `job-start` DECLARES the fold
+  // it inherited (`priorSpentUsd`/`priorWallMs`/…) — so reading that one window and adding its rounds is the whole
+  // chain exactly once, never the earlier legs' rounds on top of a fold that already carries them. A spine with
+  // no marker is one leg and reads as it always did.
+  if (direct) {
+    const legs = legsOf(list);
+    if (legs.length > 1) list = (legs.findLast((l) => l.jobStart !== null) ?? legs[legs.length - 1]).records;
+  }
   /** which landed terminals are a CHECKPOINT rather than a graded row */
   const resumableHalt = new Set(Array.isArray(resumableOutcomes) ? resumableOutcomes : []);
   // the FIRST reuse-start is the envelope this spine was opened under. A resumed spine
@@ -1228,7 +1238,9 @@ export const PAUSE_TTL_MS = 60 * 24 * 60 * 60_000;
  * @returns {{ok: boolean, applies: boolean, ageMs: number|null, ttlMs: number, pausedAt: string|null, detail: string|null}}
  */
 export function checkpointAgeGate(events, { now = Date.now, ttlMs = PAUSE_TTL_MS } = {}) {
-  const list = Array.isArray(events) ? events.filter(isObj) : [];
+  const all = Array.isArray(events) ? events.filter(isObj) : [];
+  // P5-R: only the run's LATEST leg can be the one waiting — an earlier leg's pause was answered by the leg after it
+  const list = legsOf(all).at(-1)?.records ?? all;
   const end = list.filter((e) => e.type === 'job-end').at(-1) ?? null;
   const base = { applies: false, ageMs: null, ttlMs, pausedAt: null, detail: null };
   if (end?.outcome !== HITL_PAUSE) return { ...base, ok: true };
