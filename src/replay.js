@@ -103,7 +103,8 @@
 
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
-import { SPEND_RECORD_TYPES } from './ledger.js';
+import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
+import { legsOf } from './legs.js';
 
 /**
  * @param {unknown} e
@@ -422,8 +423,14 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     else skipped += 1;
   }
 
+  // P5-R: a resumed run is ONE spine of several legs (src/legs.js `legsOf`, the one owner of the boundaries).
+  // `jobStart` is the run's FIRST (its start, its drafting fold); `latestStart` the latest leg's (the caps it ran
+  // under now); `jobEnd` the run's terminal — the LAST leg's, never an earlier leg's. A spine with no marker is
+  // one leg and every figure below reads exactly as it always did.
+  const legs = legsOf(spine);
   const jobStart = spine.find((e) => e.type === 'job-start') ?? null;
-  const jobEnd = spine.findLast((e) => e.type === 'job-end') ?? null;
+  const latestStart = legs.at(-1)?.jobStart ?? jobStart;
+  const jobEnd = legs.at(-1)?.jobEnd ?? null;
 
   // F195 fix: a gate-audit sidecar CAN be shared across several runs whose
   // spines happen to reuse the same filename (measured on a real archived
@@ -441,10 +448,14 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // (`src/panel/server.js`) calls this same {@link auditWindow} rather than
   // keeping its own copy.
   {
-    const { startTs, endTs } = auditWindow(jobStart, jobEnd);
+    // one window PER LEG (P5-R): the quiet time between two legs is nobody's, so a row another run wrote into a
+    // shared sidecar during it is not this run's. A leg that recorded no terminal ends where the next leg begins.
+    const windows = legs.length > 1
+      ? legs.map((l, i) => auditWindow(l.jobStart ?? l.start, l.jobEnd ?? (legs[i + 1]?.start ? { ts: legs[i + 1].start.ts } : null)))
+      : [auditWindow(jobStart, jobEnd)];
     audit = audit.filter((a) => {
       const t = parseTs(a.ts);
-      return t !== null && t >= startTs && t <= endTs;
+      return t !== null && windows.some((w) => t >= w.startTs && t <= w.endTs);
     });
   }
 
@@ -460,8 +471,12 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // and the wall-halt sites (src/planrun.js:2990,3208-3209).
   const stopReason = isGreen ? null : buildStopReason(lastEscalation, outcome);
 
-  const spentUsd = jobEnd && typeof jobEnd.spentUsd === 'number' && Number.isFinite(jobEnd.spentUsd) ? jobEnd.spentUsd : null;
-  const spendComplete = jobEnd ? jobEnd.spendComplete === true && spentUsd !== null : false;
+  // MONEY, one basis (P5-R): a one-leg spine reads its terminal's own total as it always did; a resumed run's
+  // legs are summed by each leg's own spend (`chainSpend`), never the last terminal's chain total on top of them
+  const chain = legs.length > 1 && jobEnd ? chainSpend(spine) : null;
+  const spentUsd = chain ? chain.usd
+    : (jobEnd && typeof jobEnd.spentUsd === 'number' && Number.isFinite(jobEnd.spentUsd) ? jobEnd.spentUsd : null);
+  const spendComplete = chain ? chain.complete : (jobEnd ? jobEnd.spendComplete === true && spentUsd !== null : false);
 
   // draftSpentUsd (hamr's ruling 2026-09-28, "one cap covers drafting +
   // run") — the AUTHORING pipeline's own spend on this job before it was
@@ -480,9 +495,28 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // exact then, the field simply didn't exist yet to say so.
   const draftSpendComplete = draftSpentUsd === null ? null
     : (jobStart.draftSpendComplete !== false);
-  const floorReasonList = floorReasons(spine, jobStart, spendComplete);
+  const floorReasonList = floorReasons(spine, legs.map((l) => l.jobStart).find((j) => j?.priorSpendComplete === false) ?? jobStart, spendComplete);
 
-  const wallMs = windowWallMs(parseTs(jobStart?.ts), parseTs(jobEnd?.ts));
+  // WALL: the sum of each leg's own working window, the gap between legs excluded (hamr 2026-10-02, 2A). A
+  // leg that died has no terminal, so its window ends at its last record (a floor); the LATEST leg without a
+  // terminal is unknown, as a one-leg run without one always was.
+  /** @param {import('./legs.js').Leg} l @param {boolean} isLast */
+  const legWallMs = (l, isLast) => {
+    const a = parseTs((l.jobStart ?? l.start)?.ts);
+    const b = l.jobEnd ? parseTs(l.jobEnd.ts) : (isLast ? null : parseTs(l.end?.ts));
+    return windowWallMs(a, b);
+  };
+  const wallMs = legs.length > 1
+    ? (() => {
+      let sum = 0;
+      for (let i = 0; i < legs.length; i += 1) {
+        const w = legWallMs(legs[i], i === legs.length - 1);
+        if (w === null) return null;
+        sum += w;
+      }
+      return sum;
+    })()
+    : windowWallMs(parseTs(jobStart?.ts), parseTs(jobEnd?.ts));
 
   // chainClock: the SIGNED wall, read off the run's own clock record —
   // src/planrun.js:1203 (`wall-clock`) or `emitWallHalt` (src/planrun.js:1269)
@@ -556,7 +590,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // record at all (resumed before any plan reload was needed); keying
   // "resumed" on resume-seed alone would have printed `resumed: no` on
   // genuinely resumed runs and mis-explained their spend.
-  const resumed = !!jobStart && 'priorSpentUsd' in jobStart;
+  const resumed = legs.length > 1 || (!!jobStart && 'priorSpentUsd' in jobStart);
 
   // resumeSeed: the DETAIL fields (phase/completed/skipping/divergence) —
   // present only on the narrower resume-seed record; `resumed` above stays
@@ -582,7 +616,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   const totalRoundsInFile = spendRecords.length;
   const unpricedRoundsInFile = spendRecords.filter((r) => !(typeof r.costUsd === 'number' && Number.isFinite(r.costUsd))).length;
   const summedRounds = spendRecords.reduce((acc, r) => (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? acc + r.costUsd : acc), 0);
-  const hasEngagementField = jobEnd && typeof jobEnd.engagementSpentUsd === 'number' && Number.isFinite(jobEnd.engagementSpentUsd);
+  // (a resumed run's terminal carries only its LATEST leg's engagement — its file's figure is the sum of the rounds)
+  const hasEngagementField = legs.length <= 1 && jobEnd && typeof jobEnd.engagementSpentUsd === 'number' && Number.isFinite(jobEnd.engagementSpentUsd);
   const thisFileSpend = {
     value: unpricedRoundsInFile > 0 ? null : (hasEngagementField ? jobEnd.engagementSpentUsd : summedRounds),
     source: /** @type {'engagementSpentUsd'|'summed rounds'} */ (hasEngagementField ? 'engagementSpentUsd' : 'summed rounds'),
@@ -1359,8 +1394,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // escalation happen at all"). `summarizeForAllLine`'s `reason` column
     // needs the latter question answered unconditionally.
     lastEscalation,
-    budgetUsd: jobStart && typeof jobStart.budgetUsd === 'number' && Number.isFinite(jobStart.budgetUsd) ? jobStart.budgetUsd : null,
-    specHash: typeof jobStart?.specHash === 'string' ? jobStart.specHash : null,
+    // the caps and the spec the run's LATEST leg ran under (a resume may run under a re-signed hash)
+    budgetUsd: latestStart && typeof latestStart.budgetUsd === 'number' && Number.isFinite(latestStart.budgetUsd) ? latestStart.budgetUsd : null,
+    specHash: typeof latestStart?.specHash === 'string' ? latestStart.specHash : null,
     branch,
     outcome,
     stopReason,
@@ -1375,6 +1411,17 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     chainClock,
     resumed,
     resumeSeed,
+    // P5-R — the run's legs in order (always at least one for a spine with records): the panel's Audit divider and
+    // map connector read these, never re-derive a boundary. `startSeq`/`endSeq` bound the leg on the one `seq` series.
+    legs: legs.map((l) => ({
+      leg: l.leg,
+      after: l.after,
+      outcome: l.outcome,
+      startTs: typeof l.start?.ts === 'string' ? l.start.ts : null,
+      endTs: typeof l.end?.ts === 'string' ? l.end.ts : null,
+      startSeq: typeof l.start?.seq === 'number' ? l.start.seq : null,
+      endSeq: typeof l.end?.seq === 'number' ? l.end.seq : null,
+    })),
     thisFileSpend,
     // spendMismatch: a NON-resumed run's own `job-end.spentUsd` IS this
     // file's whole spend (no fold to explain a gap) — so on a cold run,
@@ -1684,7 +1731,10 @@ export function formatReplay(summary) {
     ? `this file unknown (${tf.unpricedRounds} of ${tf.totalRounds} rounds unpriced; ${tf.source})`
     : `this file ${money(tf.value)} (${tf.totalRounds} round${tf.totalRounds === 1 ? '' : 's'}, all priced; ${tf.source})`;
   let spentLine;
-  if (summary.resumed) {
+  if (summary.legs.length > 1) {
+    // one run, several legs on ONE file: one figure (each leg's own spend, summed), never two bases side by side
+    spentLine = `spent:   ${money(summary.spentUsd)}${summary.spentUsd !== null && !summary.spendComplete ? ' (floor, not exact)' : ''} over ${summary.legs.length} legs of one run · of ${money2(summary.budgetUsd)} signed`;
+  } else if (summary.resumed) {
     spentLine = `spent:   ${money(summary.spentUsd)} chain total (job-end; prior legs folded) · ${thisFileText} · of ${money2(summary.budgetUsd)} signed`;
   } else {
     spentLine = `spent:   ${money(summary.spentUsd)}${summary.spentUsd !== null && !summary.spendComplete ? ' (floor, not exact)' : ''} of ${money2(summary.budgetUsd)} signed`;
@@ -1705,7 +1755,7 @@ export function formatReplay(summary) {
       ? ` · floor because: ${summary.floorReasons.join(', ')}`
       : ' · floor (reason not in spine)';
   }
-  spentLine += ` · wall ${duration(summary.wallMs)} (this file)`;
+  spentLine += ` · wall ${duration(summary.wallMs)} (${summary.legs.length > 1 ? 'working time, gaps between legs excluded' : 'this file'})`;
   if (summary.chainClock) {
     const { elapsedMs, requestedMs, source } = summary.chainClock;
     const signed = typeof requestedMs === 'number' ? `${duration(requestedMs)} signed` : 'no wall signed';
