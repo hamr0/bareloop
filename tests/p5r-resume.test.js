@@ -63,11 +63,12 @@ function fixture(t, { tornTail = false } = {}) {
 /** the resumed leg, in-process, scratch home */
 async function resume(f, home) {
   /** @type {string[]} */ const errs = [];
+  /** @type {string[]} */ const outs = [];
   const code = await resumeRun(f.dead, {
     spec: f.spec, workdir: f.workdir, seed: f.seed, spineName: 'p5r-fixture-bareloop', approve: jobSpecHash(f.spec),
-    deps: { provider: scriptedProvider([{ text: 'x' }, { text: 'x' }, { text: 'x' }]), env: {}, out: () => {}, err: (s) => errs.push(s), runlistHome: home },
+    deps: { provider: scriptedProvider([{ text: 'x' }, { text: 'x' }, { text: 'x' }]), env: {}, out: (s) => outs.push(s), err: (s) => errs.push(s), runlistHome: home },
   });
-  return { code, errs: errs.join('\n') };
+  return { code, errs: errs.join('\n'), out: outs.join('\n') };
 }
 
 test('P5-R a resume is the SAME run: same file, no second spine, leg-resume FIRST, seq continues, the declared fold rides the leg\'s own job-start', async (t) => {
@@ -164,4 +165,16 @@ test('P5-R tripwire: the marker is emitted BEFORE the outside watchdog is spawne
   const spawnAt = src.indexOf('const watchdog = spawn(');
   assert.ok(marker > 0 && spawnAt > 0 && marker < spawnAt, 'leg-resume is written before spawn(watchdog)');
   assert.ok(src.indexOf('makeSpine(spineFile, { startSeq })') > 0, 'the emitter continues the file\'s own seq');
+});
+
+test('P5-R the end-of-run readout is about THIS leg: its own rounds, and an earlier leg\'s money-halt is not printed again', async (t) => {
+  const home = tmp(t);
+  const f = fixture(t);
+  // leg 1 ended on a MONEY HALT with a priced round on the file; the leg that resumes it must not re-read either
+  const lines = readFileSync(f.dead, 'utf8').trimEnd().split('\n');
+  lines.splice(3, 0, JSON.stringify({ type: 'money-halt', remainingUsd: 0, budgetUsd: 2, verdict: 'needs_revision', trend: 'flat', reading: 'x', ts: f.at, seq: 3.5 }));
+  writeFileSync(f.dead, `${lines.join('\n')}\n`);
+  const r = await resume(f, home);
+  assert.match(r.out, /\nrounds    0\b/, 'this leg bought no round — the earlier leg\'s one round is not this leg\'s');
+  assert.doesNotMatch(r.out, /MONEY HALT/, 'the halt readout is the LATEST leg\'s only');
 });
