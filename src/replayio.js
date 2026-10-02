@@ -96,7 +96,7 @@ export function resolveSiblings(spinePath) {
  * hand both to {@link replayRun}. Read-only, $0, mints no verdict.
  * @param {string} spinePath absolute or cwd-relative path to a `.jsonl` spine
  * @param {{preParsedSpine?: {records: any[], skipped: number}, skipAudit?: boolean,
- *   auditPathOverride?: string|null}} [opts]
+ *   auditPathOverride?: string|string[]|null}} [opts]
  *   `preParsedSpine`: avoids a second parse of the same file when the caller
  *   ({@link listSpines}) already read it once to run {@link looksLikeSpine}.
  *   `skipAudit` (PR #23 review item 5, 2026-08-26, carried over): a
@@ -120,13 +120,17 @@ export function replayOne(spinePath, opts = {}) {
   const { runId, auditPath: resolvedAuditPath } = resolveSiblings(spinePath);
   const auditPath = auditPathOverride !== undefined ? auditPathOverride : resolvedAuditPath;
   const spine = preParsedSpine ?? parseJsonl(spinePath);
-  const audit = (!skipAudit && auditPath) ? parseJsonl(auditPath) : { records: [], skipped: 0 };
+  // P5-R: a RESUMED run still being written has TWO homes for its tool log — the finished legs' file and the
+  // live leg's file in the patient tree — so a caller may hand every path the run's log is in
+  const auditPaths = Array.isArray(auditPath) ? auditPath : (auditPath ? [auditPath] : []);
+  const audit = { records: /** @type {any[]} */ ([]), skipped: 0 };
+  if (!skipAudit) for (const ap of auditPaths) { const part = parseJsonl(ap); audit.records.push(...part.records); audit.skipped += part.skipped; }
   // `auditAvailable`: true only when a sidecar was actually FOUND AND READ.
   // `skipAudit` (a deliberate cheap directory listing) and "no sidecar on
   // disk" both mean this call never learned the real tool-call count, so
   // both report unknown, never a coincidental 0 (doctrine: unknown reported
   // as unknown, never rendered as zero — see `replayRun`'s own doc).
-  const auditAvailable = !skipAudit && auditPath !== null;
+  const auditAvailable = !skipAudit && auditPaths.length > 0;
   const summary = replayRun(spine.records, audit.records, { runId, auditAvailable });
   summary.skipped += spine.skipped + audit.skipped;
   return summary;

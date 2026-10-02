@@ -34,7 +34,8 @@ import { readRunList, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
-import { summarizeForAllLine, auditWindow } from '../replay.js';
+import { summarizeForAllLine, auditWindowsOf } from '../replay.js';
+import { legsOf } from '../legs.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
@@ -297,7 +298,11 @@ function formatDurationMs(ms) {
  */
 export function resumePlanFor(row, records) {
   if (runIsAlive(row)) return { ok: false, why: 'it is still running' };
-  const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
+  // P5-R: a resumed run is one file of several legs. What may be resumed again is the LATEST leg, under the spec
+  // THAT leg ran with (its `job-start.specHash` — a leg resumed under raised caps carries the re-signed hash), so
+  // resume #2 is offered under the latest signed caps, never the first leg's.
+  const legs = legsOf(records);
+  const jobStart = (legs.findLast((l) => l.jobStart !== null) ?? null)?.jobStart ?? null;
   if (!jobStart) return { ok: false, why: 'its log has no start record' };
   const dead = readResume(records, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
   if (!dead.started) return { ok: false, why: 'its log has no start record' };
@@ -584,6 +589,8 @@ function summarizeRow(row) {
     fileMissing: false,
     died: death.died,
     endedLine: ended ? ended.line : null,
+    // P5-R: one card per run — how many times it was resumed (a resumed run is the same run, never a second card)
+    resumedCount: Math.max(0, summary.legs.length - 1),
     glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
     checkType: checkTypeLabel(summary.verdictType, row.at),
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
@@ -679,17 +686,17 @@ export function getRunDetail(runid, opts = {}) {
     };
   }
   // build item 7 (2026-09-28): resolve the audit path through the ONE
-  // shared resolver (`resolveAuditPathForRow`, already the sole owner for
+  // shared resolver (`resolveAuditPathsForRow`, already the sole owner for
   // `scopedBehaviour`/`getRunAudit`) BEFORE calling `replayOne`, and hand it
   // the result — otherwise `replayOne`'s own internal resolution only ever
   // finds the FINISHED-run convention, so a still-LIVE run's part-level
   // `byTool`/`toolCalls` (summary.parts, read from `replayRun`) read
   // "unknown" even though the SAME run's Run-tab tools/cache summary and
-  // Audit tab (both driven through `resolveAuditPathForRow` already) can
+  // Audit tab (both driven through `resolveAuditPathsForRow` already) can
   // see the during-run sidecar just fine.
   const rawSpineRecords = parseJsonl(row.spine).records;
-  const auditPath = resolveAuditPathForRow(row, rawSpineRecords);
-  const summary = replayOne(row.spine, { auditPathOverride: auditPath });
+  const auditPaths = resolveAuditPathsForRow(row, rawSpineRecords);
+  const summary = replayOne(row.spine, { auditPathOverride: auditPaths.length > 0 ? auditPaths : null });
   const timelineKind = summary.timelineKind;
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
   const { ended, resume } = endedForRow(row, rawSpineRecords, summary, death);
@@ -827,6 +834,10 @@ export function getRunDetail(runid, opts = {}) {
     // numbers the Resume confirm box prefills (the signed caps, spent so far); `null`
     // whenever Resume is not offered.
     ended,
+    // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
+    // dividers and the map's connectors read these; never a second derivation of where a leg starts
+    legs: summary.legs,
+    resumedCount: Math.max(0, summary.legs.length - 1),
     resume: resume && resume.ok ? {
       budgetUsd: resume.budgetUsd, maxWallMin: resume.maxWallMin, spentUsd: resume.spentUsd, spendComplete: resume.spendComplete,
     } : null,
@@ -884,7 +895,7 @@ export function getRunDetail(runid, opts = {}) {
     // gate-audit rows the Audit tab now shows (this run's own job-start..
     // job-end ts window, item 2's fix for a real measured defect: a
     // gate-audit sidecar CAN carry other runs' rows when several spines
-    // share one filename — see {@link runAuditWindow}'s doc) — never
+    // share one filename — see {@link runAuditWindows}'s doc) — never
     // `replayRun`'s own top-level `summary.behaviour`, which reads the
     // WHOLE sidecar file unscoped and is contaminated on a real archived run
     // (measured: pulselog-person-live-2's mu2p83go reads 142 unscoped tool
@@ -916,12 +927,16 @@ export function getRunDetail(runid, opts = {}) {
  * about which rows belong to a run) — kept here only to find `job-start`/
  * `job-end` off the raw `spineRecords` array the panel already has in hand.
  * @param {any[]} spineRecords
- * @returns {{startTs: number, endTs: number}}
+ * @returns {{startTs: number, endTs: number}[]} one window per leg of the run (P5-R); one for a run nobody resumed
  */
-function runAuditWindow(spineRecords) {
-  const jobStart = spineRecords.find((r) => r && r.type === 'job-start') ?? null;
-  const jobEnd = [...spineRecords].reverse().find((r) => r && r.type === 'job-end') ?? null;
-  return auditWindow(jobStart, jobEnd);
+function runAuditWindows(spineRecords) {
+  return auditWindowsOf(spineRecords);
+}
+
+/** @param {string} ts @param {{startTs: number, endTs: number}[]} windows */
+function inAnyWindow(ts, windows) {
+  const ms = Date.parse(ts);
+  return Number.isFinite(ms) && windows.some((w) => ms >= w.startTs && ms <= w.endTs);
 }
 
 /**
@@ -996,7 +1011,7 @@ function makeRoundLookup(spineRecords) {
  *      `backfill` row (never a live run) and on some pre-cutoff `run-u` rows
  *      — both correctly fall through to `null` here.
  * Callers still scope the rows they read from this file by this run's own
- * job-start..job-end ts window ({@link runAuditWindow}) — a shared tree/
+ * job-start..job-end ts window ({@link runAuditWindows}) — a shared tree/
  * worktree gate-audit file can carry another run's rows too (this file's own
  * header comment on `runAuditWindow`), live or finished.
  *
@@ -1010,42 +1025,44 @@ function makeRoundLookup(spineRecords) {
  * rename target, not a panel-server read-path bug).
  * @param {{spine: string, patient: string|null}} row
  * @param {any[]} spineRecords
- * @returns {string|null}
+ * @returns {string[]} every file the run's tool log is in, earliest leg first (empty: none was ever written)
  */
-function resolveAuditPathForRow(row, spineRecords) {
+function resolveAuditPathsForRow(row, spineRecords) {
+  /** @type {string[]} */
+  const paths = [];
   const { auditPath } = resolveSiblings(row.spine);
-  if (auditPath) return auditPath;
-  const hasJobEnd = spineRecords.some((r) => r && r.type === 'job-end');
-  if (hasJobEnd) return null;
-  if (typeof row.patient !== 'string' || row.patient.length === 0) return null;
+  if (auditPath && existsSync(auditPath)) paths.push(auditPath);
+  // P5-R: a resumed run's LIVE leg writes its tool log in the patient tree while the earlier legs' rows already sit in
+  // the run's own file — both are the run's, in that order. "Live" = the LATEST leg has no job-end yet.
+  const last = legsOf(spineRecords).at(-1);
+  const hasJobEnd = last ? last.jobEnd !== null : spineRecords.some((r) => r && r.type === 'job-end');
+  if (hasJobEnd) return paths;
+  if (paths.length > 0 && legsOf(spineRecords).length <= 1) return paths; // a never-resumed run's sibling is the whole log
+  if (typeof row.patient !== 'string' || row.patient.length === 0) return paths;
   const live = join(row.patient, 'gate-audit.jsonl');
-  return existsSync(live) ? live : null;
+  if (existsSync(live) && !paths.includes(live)) paths.push(live);
+  return paths;
 }
 
 /**
  * `runBehaviour`, fed only the gate-audit rows inside this run's own ts
- * window (see {@link runAuditWindow}) — the panel-side fix for the same
+ * window (see {@link runAuditWindows}) — the panel-side fix for the same
  * contamination `getRunAudit` fixes for the Audit tab, kept as ONE shared
  * scoping function so the Audit tab and the Run tab's tools/cache summary
  * can never disagree with each other about which rows belong to this run.
  * `null` when no gate-audit sidecar exists at all (never a fake all-zero
  * object — same rule `replayRun`'s own `auditAvailable` already follows).
  * `auditPath` resolution (finished sibling, or the live during-run fallback)
- * is {@link resolveAuditPathForRow} — the one shared owner.
+ * is {@link resolveAuditPathsForRow} — the one shared owner.
  * @param {{spine: string, patient: string|null}} row
  * @param {any[]} spineRecords
  * @returns {ReturnType<typeof runBehaviour>|null}
  */
 function scopedBehaviour(row, spineRecords) {
-  const auditPath = resolveAuditPathForRow(row, spineRecords);
-  if (!auditPath || !existsSync(auditPath)) return null;
-  const { records } = parseJsonl(auditPath);
-  const { startTs, endTs } = runAuditWindow(spineRecords);
-  const windowed = records.filter((r) => {
-    if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
-    const ms = Date.parse(r.ts);
-    return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
-  });
+  const auditPaths = resolveAuditPathsForRow(row, spineRecords);
+  if (auditPaths.length === 0) return null;
+  const windows = runAuditWindows(spineRecords);
+  const windowed = auditPaths.flatMap((ap) => parseJsonl(ap).records).filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
   return runBehaviour(windowed);
 }
 
@@ -1195,18 +1212,18 @@ export function getRunAudit(runid, opts = {}) {
     };
   }
   const { records: spineRecords, skipped: spineSkipped } = parseJsonl(row.spine);
-  // {@link resolveAuditPathForRow} needs `spineRecords` (to know whether this
+  // {@link resolveAuditPathsForRow} needs `spineRecords` (to know whether this
   // run has reached `job-end` yet) before it can decide whether the LIVE
   // during-run fallback is even worth trying — so the spine is parsed once,
   // here, before the sidecar path is resolved (moved up from right after the
   // old `resolveSiblings`-only check this replaces).
-  const auditPath = resolveAuditPathForRow(row, spineRecords);
-  if (!auditPath || !existsSync(auditPath)) {
+  const auditPaths = resolveAuditPathsForRow(row, spineRecords);
+  if (auditPaths.length === 0) {
     return {
       runid, rows: [], raw: '', empty: true, reason: 'no-sidecar',
     };
   }
-  const { startTs, endTs } = runAuditWindow(spineRecords);
+  const windows = runAuditWindows(spineRecords);
   const roundOf = makeRoundLookup(spineRecords);
   const roundRecords = sortedRoundRecords(spineRecords);
   // `preParsedSpine` avoids a second parse of the same spine file just read
@@ -1219,30 +1236,25 @@ export function getRunAudit(runid, opts = {}) {
   });
   const partOf = makePartLookup(summary);
 
-  const { records } = parseJsonl(auditPath);
-  const windowed = records.filter((r) => {
-    if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
-    const ms = Date.parse(r.ts);
-    return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
-  });
+  const { records } = { records: auditPaths.flatMap((ap) => parseJsonl(ap).records) };
+  const windowed = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
   // item 1 (build item, 2026-09-26): "Raw log" must show only THIS run's own
   // window, same rule as `windowed` above (a sidecar can carry other runs'
-  // rows — see {@link runAuditWindow}'s doc). Filtered at the LINE level
+  // rows — see {@link runAuditWindows}'s doc). Filtered at the LINE level
   // (never the parsed-record level) so a matched line stays byte-for-byte —
   // "raw" means raw, not a re-serialized JSON.stringify of the parsed
   // object. A line whose `ts` can't be parsed (malformed JSON, or a
   // well-formed row missing/mistyping `ts`) is dropped rather than guessed
   // into the window, matching the same honesty rule `windowed` already
   // follows for its own rows.
-  const rawText = readFileSync(auditPath, 'utf8')
+  const rawText = auditPaths.map((ap) => readFileSync(ap, 'utf8'))
+    .join('\n')
     .split('\n')
     .filter((line) => line.trim() !== '')
     .filter((line) => {
       let r;
       try { r = JSON.parse(line); } catch { return false; }
-      if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
-      const ms = Date.parse(r.ts);
-      return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
+      return !!r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows);
     })
     .join('\n');
   // item 2 (2026-09-26 build spec): every row's path shortened relative to

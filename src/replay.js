@@ -169,6 +169,24 @@ export function auditWindow(jobStart, jobEnd) {
 }
 
 /**
+ * One window PER LEG of a (possibly resumed) run (P5-R) — the ONE owner the panel and {@link replayRun} share. A
+ * run with no `leg-resume` marker is one leg and this is `[auditWindow(jobStart, jobEnd)]`, exactly as before. A
+ * resumed run's quiet time between two legs is nobody's, so a row another run wrote into a shared sidecar during it
+ * is outside every window; a leg that recorded no terminal (it died) ends where the next leg begins.
+ * @param {any[]} spineRecords
+ * @returns {{startTs: number, endTs: number}[]}
+ */
+export function auditWindowsOf(spineRecords) {
+  const legs = legsOf(spineRecords);
+  if (legs.length <= 1) {
+    const jobStart = spineRecords.find((e) => e && e.type === 'job-start') ?? null;
+    const jobEnd = legs.at(-1)?.jobEnd ?? null;
+    return [auditWindow(jobStart, jobEnd)];
+  }
+  return legs.map((l, i) => auditWindow(l.jobStart ?? l.start, l.jobEnd ?? (legs[i + 1]?.start ? { ts: legs[i + 1].start.ts } : null)));
+}
+
+/**
  * Trim a string to `max` chars with an explicit `…[+N chars]` marker —
  * NEVER a silent truncation, and never a trailing ellipsis alone
  * (indistinguishable from a detail that just happened to end there). Used
@@ -448,11 +466,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // (`src/panel/server.js`) calls this same {@link auditWindow} rather than
   // keeping its own copy.
   {
-    // one window PER LEG (P5-R): the quiet time between two legs is nobody's, so a row another run wrote into a
-    // shared sidecar during it is not this run's. A leg that recorded no terminal ends where the next leg begins.
-    const windows = legs.length > 1
-      ? legs.map((l, i) => auditWindow(l.jobStart ?? l.start, l.jobEnd ?? (legs[i + 1]?.start ? { ts: legs[i + 1].start.ts } : null)))
-      : [auditWindow(jobStart, jobEnd)];
+    const windows = auditWindowsOf(spine);
     audit = audit.filter((a) => {
       const t = parseTs(a.ts);
       return t !== null && windows.some((w) => t >= w.startTs && t <= w.endTs);
