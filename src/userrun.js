@@ -1324,10 +1324,10 @@ async function execute(ctx) {
   // ── THE PAUSE DOOR (2026-08-17) — answered HERE, and it launches nothing.
   //
   // hamr's ruling replaced cancel with a pause that can resume, and the honest way to
-  // keep a checkpoint is to leave it alone. This runner writes one spine file per LEG,
+  // keep a checkpoint is to leave it alone. This runner appends one LEG per resume to the run's one spine file,
   // and a leg that returns before drafting emits no `plan-accepted` and no `step-end` —
   // which is exactly what `readStepCheckpoint` reads. So launching a run to say "not
-  // now" would mint a NEW runid whose own checkpoint is empty, and an operator who
+  // now" would add a LEG whose own checkpoint is empty, and an operator who
   // later resumed that runid would re-draft and re-pay for every step the paused leg
   // already finished. The checkpoint that matters is the one already on disk.
   //
@@ -1561,11 +1561,10 @@ async function execute(ctx) {
 
   // PANEL-BUILD.md P1 — one row in the run list, BEFORE any paid call (this
   // leg's own `runJob` further down, and BEFORE the provider-key checks that
-  // preceded this point already gated on). `runid` is fresh for THIS leg
-  // (cold start or resumed leg both mint one here), so `appendRun`'s own
-  // runid-dedup never fires on the ordinary path — it exists for a caller
-  // that legitimately re-enters with the same runid (e.g. a retried
-  // in-process test). A list-append failure must never block a real,
+  // preceded this point already gated on). `runid` is fresh on a cold start
+  // and the HALTED run's own on a resume (P5-R: a resume is the same run), so on a resume
+  // `appendRun`'s runid-dedup is what keeps it ONE row and the leg's claim is the
+  // `leg-start` beside it; on a cold start it never fires (a retried in-process test). A list-append failure must never block a real,
   // already-signed run: caught and named loudly, never rethrown.
   // `deps.runlistHome` — the same injectable test seam `ctx.deps` already
   // carries everything else through (env/out/err/provider/…): a caller that

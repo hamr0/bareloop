@@ -36,6 +36,7 @@ import {
 } from '../replayio.js';
 import { summarizeForAllLine, auditWindowsOf } from '../replay.js';
 import { legsOf } from '../legs.js';
+import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
@@ -340,6 +341,48 @@ export function resumePlanFor(row, records) {
     };
   }
   return { ok: false, why: 'no signed job file beside this run matches the hash it ran under' };
+}
+
+/**
+ * P5-R — the Audit tab's LEG DIVIDERS (hamr 2026-10-02: "clear audit mention resume"). One per resume, CODE-OWNED
+ * fixed sentences (ui-verdict-words: never model text) built from how the previous leg ended (`after`) and what the
+ * run had spent when it stopped:
+ * `── stopped: money cap reached ($8.00) · resumed 2026-10-03 14:10 ──`.
+ * `beforePart` is the index of the first part of the leg that picked up (the parts list length when that leg has not
+ * started a part yet). Money is the chain's own spend at that leg's end on the ONE basis ({@link chainSpend}).
+ * @param {any[]} spineRecords the run's raw records
+ * @param {any[]} parts `summary.parts` (each carries `leg` on a resumed run)
+ * @returns {{leg: number, beforePart: number, after: string|null, at: string|null, text: string}[]}
+ */
+export function legDividersFor(spineRecords, parts) {
+  const legs = legsOf(spineRecords);
+  /** @type {{leg: number, beforePart: number, after: string|null, at: string|null, text: string}[]} */
+  const out = [];
+  for (let k = 1; k < legs.length; k += 1) {
+    const l = legs[k];
+    const first = parts.findIndex((p) => typeof p.leg === 'number' && p.leg >= l.leg);
+    const spent = chainSpend(legs.slice(0, k).flatMap((x) => x.records));
+    const money = `${spent.complete ? '' : 'at least '}${panelMoney2(spent.usd)}`;
+    const a = l.after;
+    let stopped;
+    if (a === 'cap-halt') stopped = `money cap reached (${money})`;
+    else if (a === 'wall-halt') stopped = 'time cap reached';
+    else if (a === 'provider-red') stopped = 'the model provider failed';
+    else if (a === 'step-stalled') stopped = 'a step stopped making progress';
+    else if (a === 'stopped') stopped = 'you stopped it';
+    else if (a === 'hitl-pause') stopped = 'paused for a decision';
+    else if (a === 'died' || a === null) stopped = 'no ending was recorded';
+    else stopped = String(a);
+    const at = typeof l.start?.at === 'string' ? l.start.at : (typeof l.start?.ts === 'string' ? l.start.ts : null);
+    out.push({
+      leg: l.leg,
+      beforePart: first === -1 ? parts.length : first,
+      after: a,
+      at,
+      text: `stopped: ${stopped} · resumed ${at ? formatTimestamp(at) : 'at an unknown time'}`,
+    });
+  }
+  return out;
 }
 
 /** outcomes whose ending is "the checks said no" (a graded answer from a working close) */
@@ -837,6 +880,7 @@ export function getRunDetail(runid, opts = {}) {
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,
+    legDividers: legDividersFor(rawSpineRecords, summary.parts),
     resumedCount: Math.max(0, summary.legs.length - 1),
     resume: resume && resume.ok ? {
       budgetUsd: resume.budgetUsd, maxWallMin: resume.maxWallMin, spentUsd: resume.spentUsd, spendComplete: resume.spendComplete,

@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  getRunDetail, listRuns, getRunAudit, resumePlanFor,
+  getRunDetail, listRuns, getRunAudit, resumePlanFor, legDividersFor, formatTimestamp,
 } from '../src/panel/server.js';
 import { appendRun, appendLegStart, readRunList } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
@@ -40,14 +40,16 @@ function makeTwoLeg(home, { leg2 = 'died', runid = 'run1', livePatient = false }
   const records = [
     { type: 'job-start', job: SPEC1.job, specHash: jobSpecHash(SPEC1), budgetUsd: 8, shape: 'plan', goal: SPEC1.goal, ts: at(10, 0), seq: 1 },
     { type: 'plan-accepted', plan, ts: at(10, 1), seq: 2 },
-    { type: 'worker-round', kind: 'turn', costUsd: 3, ts: at(10, 5), seq: 3 },
+    { type: 'step-start', step: 'fix-types', ts: at(10, 3), seq: 2.5 },
+    { type: 'worker-round', kind: 'turn', costUsd: 3, phase: 'step:fix-types', ts: at(10, 5), seq: 3 },
     { type: 'job-end', outcome: 'cap-halt', spentUsd: 3, engagementSpentUsd: 3, spendComplete: true, ts: at(10, 20), seq: 4 },
     { type: 'leg-resume', leg: 2, after: 'cap-halt', at: at(14, 0), ts: at(14, 0), seq: 5 },
     {
       type: 'job-start', job: SPEC1.job, specHash: jobSpecHash(SPEC2), budgetUsd: 12, shape: 'plan', goal: SPEC1.goal, priorSpentUsd: 3, priorSpendComplete: true, priorWallMs: 20 * MIN, ts: at(14, 0), seq: 6,
     },
     { type: 'plan-accepted', plan, ts: at(14, 1), seq: 7 },
-    { type: 'worker-round', kind: 'turn', costUsd: 2, ts: at(14, 5), seq: 8 },
+    { type: 'step-start', step: 'fix-types', ts: at(14, 2), seq: 7.5 },
+    { type: 'worker-round', kind: 'turn', costUsd: 2, phase: 'step:fix-types', ts: at(14, 5), seq: 8 },
     ...(leg2 === 'died' ? [{ type: 'worker-round', kind: 'turn', costUsd: 0, ts: at(14, 10), seq: 9 }] : []),
     ...(leg2 === 'green' ? [{ type: 'job-end', outcome: 'green', spentUsd: 5, engagementSpentUsd: 2, spendComplete: true, ts: at(14, 10), seq: 9 }] : []),
     ...(leg2 === 'cap-halt' ? [{ type: 'job-end', outcome: 'cap-halt', spentUsd: 5, engagementSpentUsd: 2, spendComplete: true, ts: at(14, 10), seq: 9 }] : []),
@@ -119,4 +121,61 @@ test('P5-R panel Audit: the tool log is scoped per leg across BOTH homes (the fi
   assert.equal(a.empty, false);
   assert.deepEqual(a.rows.map((r) => r.path), ['/a', '/b'], 'both legs\' rows, the gap row gone');
   assert.equal(a.raw.split('\n').length, 2);
+});
+
+test('P5-R panel: parts say which leg they belong to, and the part a leg ENDED at is marked so the map draws a dotted connector to where the next leg picked up', () => {
+  const home = tmp();
+  makeTwoLeg(home, { leg2: 'green' });
+  const d = getRunDetail('run1', { home });
+  const steps = d.parts.filter((p) => p.kind === 'step');
+  assert.deepEqual(steps.map((p) => p.leg), [1, 2], 'try 1 ran in leg 1, try 2 in leg 2');
+  assert.equal(steps[0].resumedNext, true, 'the step leg 1 ended at links to the step leg 2 picked up');
+  assert.equal(steps[1].resumedNext, undefined);
+  const single = getRunDetail('run1', { home: (() => { const h = tmp(); makeOneLeg(h); return h; })() });
+  assert.equal(single.parts.some((p) => p.leg !== undefined || p.resumedNext !== undefined), false, 'a run nobody resumed carries no leg fields');
+});
+
+function makeOneLeg(home) {
+  const out = tmp();
+  const into = join(out, 'source-x');
+  const dir = join(into, `${SPEC1.job}-bareloop`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(into, 'source.json'), JSON.stringify({ source: '/x', destination: '/y' }));
+  writeFileSync(join(out, 'resolved-spec.json'), JSON.stringify(SPEC1));
+  const records = [
+    { type: 'job-start', job: SPEC1.job, specHash: jobSpecHash(SPEC1), budgetUsd: 8, shape: 'plan', goal: SPEC1.goal, ts: at(10, 0), seq: 1 },
+    { type: 'step-start', step: 'fix-types', ts: at(10, 3), seq: 2 },
+    { type: 'job-end', outcome: 'cap-halt', spentUsd: 3, engagementSpentUsd: 3, spendComplete: true, ts: at(10, 20), seq: 4 },
+  ];
+  const spine = join(dir, 'u-solo.jsonl');
+  writeFileSync(spine, `${records.map((r) => JSON.stringify(r)).join('\n')}\n`);
+  appendRun({ at: at(10, 0), runid: 'run1', job: SPEC1.job, spine, patient: null, via: 'run-u', pid: 999999, capUsd: 8 }, { home });
+}
+
+test('P5-R panel Audit: a divider between the legs, code-owned text — how the earlier leg ended, the money at that point, when it resumed', () => {
+  const home = tmp();
+  makeTwoLeg(home, { leg2: 'green' });
+  const d = getRunDetail('run1', { home });
+  assert.equal(d.legDividers.length, 1);
+  const dv = d.legDividers[0];
+  assert.equal(dv.leg, 2);
+  assert.equal(dv.text, `stopped: money cap reached ($3.00) · resumed ${formatTimestamp(at(14, 0))}`);
+  const stepIdx = d.parts.findIndex((p) => p.kind === 'step' && p.leg === 2);
+  assert.equal(dv.beforePart, stepIdx, 'the divider sits before the first part of the leg that picked up');
+});
+
+test('P5-R legDividersFor: the "after" words are fixed sentences; a leg that has no part yet puts its divider at the end; an unknown ending is shown plainly, never hidden', () => {
+  const rec = (after) => [
+    { type: 'job-start', ts: at(10, 0), seq: 1 },
+    { type: 'job-end', outcome: after === 'died' ? undefined : after, spentUsd: 1, spendComplete: true, ts: at(10, 5), seq: 2 },
+    { type: 'leg-resume', leg: 2, after, at: at(12, 0), ts: at(12, 0), seq: 3 },
+  ].filter((r) => !(r.type === 'job-end' && after === 'died'));
+  const text = (a) => legDividersFor(rec(a), [])[0].text.replace(/ · resumed .*$/, '');
+  assert.equal(text('wall-halt'), 'stopped: time cap reached');
+  assert.equal(text('provider-red'), 'stopped: the model provider failed');
+  assert.equal(text('step-stalled'), 'stopped: a step stopped making progress');
+  assert.equal(text('stopped'), 'stopped: you stopped it');
+  assert.equal(text('died'), 'stopped: no ending was recorded');
+  assert.equal(text('weird-outcome'), 'stopped: weird-outcome');
+  assert.equal(legDividersFor(rec('cap-halt'), [{ leg: 1 }])[0].beforePart, 1, 'no part in the new leg yet: the divider closes the list');
 });

@@ -1370,6 +1370,32 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     }
   }
 
+  // P5-R: which LEG each part belongs to, and where a resume picked up — only for a resumed run (a spine with
+  // no marker keeps its parts byte-for-byte). A step part is dated by its own step-start; a replan by its
+  // marker; every other part by the end of its last attempt (its own window's far edge), falling back to the
+  // near edge, then to leg 1. `resumedNext` marks the part a leg ENDED at: the next part is the leg after.
+  if (legs.length > 1) {
+    /** @param {number|null|undefined} seq */
+    const legOfSeq = (seq) => {
+      let n = 1;
+      if (typeof seq !== 'number' || !Number.isFinite(seq)) return n;
+      for (const l of legs) if (typeof l.start?.seq === 'number' && seq >= l.start.seq) n = l.leg;
+      return n;
+    };
+    for (const p of parts) {
+      const atts = Array.isArray(p.attempts) ? p.attempts : [];
+      const finiteEnds = atts.map((a) => a.endSeq).filter((v) => typeof v === 'number' && Number.isFinite(v));
+      const firstStart = atts.length ? atts[0].startSeq : null;
+      if (p.kind === 'step') p.leg = legOfSeq(firstStart);
+      else if (p.kind === 'replan' && typeof p.markerSeq === 'number') p.leg = legOfSeq(p.markerSeq);
+      else if (finiteEnds.length) p.leg = legOfSeq(Math.max(...finiteEnds));
+      else p.leg = legOfSeq(firstStart);
+    }
+    // legs never go backwards along the part list (a part is dated by file order)
+    for (let i = 1; i < parts.length; i += 1) if (parts[i].leg < parts[i - 1].leg) parts[i].leg = parts[i - 1].leg;
+    for (let i = 0; i < parts.length - 1; i += 1) if (parts[i + 1].leg > parts[i].leg) parts[i].resumedNext = true;
+  }
+
   return {
     runId,
     job: jobStart?.job ?? null,
