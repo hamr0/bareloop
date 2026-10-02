@@ -145,3 +145,15 @@ export function parseSpineText(raw) {
   });
   return { records, tolerated, corrupt };
 }
+
+/**
+ * Where leg `leg`'s watchdog kill note lives. Leg 1 keeps the name every run has always had
+ * (`<spine>.watchdog.json`); a resumed leg's note sits beside it (`<spine>.leg<N>.watchdog.json`) so one
+ * leg never overwrites another's evidence of how it died.
+ * @param {string} spineFile
+ * @param {number} leg 1-based
+ * @returns {string}
+ */
+export function watchdogNotePath(spineFile, leg) {
+  return leg <= 1 ? `${spineFile}.watchdog.json` : `${spineFile}.leg${leg}.watchdog.json`;
+}

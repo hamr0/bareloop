@@ -24,11 +24,11 @@
 // green ONE job end to end. That green GRADUATES the bridge: the plan the agent
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, rmSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, rmSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
 import { jobSpecHash, resolveWorkerModel, validateJob } from './job.js';
@@ -72,10 +72,13 @@ import { answerReviewDoor, doorRecordOf, doorAgeGate } from './reviewdoor.js';
 // the cold reset, shared with the battery drivers so "cold" has one spelling
 import { coldReset, moveStaleGateAudit } from './u-patient.js';
 // PANEL-BUILD.md P1 — the one run list (`~/.config/bareloop/runs.jsonl`).
-import { appendRun, appendRunEvent, isLiveRunner, readRunList } from './runlist.js';
+import { appendRun, appendLegStart, appendRunEvent, isLiveRunner, readRunList } from './runlist.js';
+// P5-R — a resumed run is the SAME run: one id, one spine file, a `leg-resume` marker inside. `legsOf` is the
+// one owner of where a leg starts and ends; every reader below asks it.
+import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath } from './legs.js';
 import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
-import { claimRun, monthlyRefusalText, legSpend } from './monthly.js';
+import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
 import { ConfigError } from './config.js';
 import { commandFor } from './invoke.js';
 import { applyConfiguredKey, judgeRatesFor, keyNameFor, priceReadout, ratesFor, rowsForHome } from './providerrows.js';
@@ -360,14 +363,17 @@ async function execute(ctx) {
   // owner of "a claimed run that never began" — every exit between the claim and the spine's first
   // record (a refused resume patient, a throwing prepareTree, a git/reset failure...) passes there.
   // Set on the no-limit path too, once the row is appended there (the same "listed, no spine yet" state).
-  /** @type {{ runid: string, spine: string, home: string|undefined }|null} */
+  /** @type {{ runid: string, spine: string, home: string|undefined, leg: number }|null} */
   let claimedRow = null;
+  // P5-R: has this leg written its first record (the `leg-resume` marker on a resume)? A resumed leg's spine
+  // file already exists, so "the file exists" no longer says the leg began.
+  let legBegun = false;
   // Release the claimed row (a `released` entry folds it out of the list, like a monthly refusal): the run
   // spent nothing and must not stay a ghost that keeps the month reading "at least". A failed release write
   // never masks the original exit.
   const releaseClaimedRow = () => {
     if (!claimedRow) return;
-    try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
+    try { appendRunEvent({ runid: claimedRow.runid, type: 'released', by: claimedRow.runid, reason: 'not started', at: new Date().toISOString(), ...(claimedRow.leg > 1 ? { leg: claimedRow.leg } : {}) }, { home: claimedRow.home }); } catch { /* the exit stands; a stranded row of a dead process is closed by the next run */ }
   };
   try {
   const spec = ctx.spec;
@@ -662,6 +668,13 @@ async function execute(ctx) {
     : (RESUME.includes('/') || RESUME.endsWith('.jsonl') ? resolve(RESUME) : join(spineDir, `u-${RESUME}.jsonl`));
   /** @type {any} */
   let dead = null;
+  /** P5-R — the legs the halted run's file already holds, the leg a resume continues from, and how that leg ended @type {import('./legs.js').Leg[]} */
+  let deadLegs = [];
+  /** every record of the halted run's one file (all its legs) @type {any[]} */
+  let deadAllEvents = [];
+  let deadFromLegNo = 1;
+  /** @type {string} */
+  let deadAfter = 'died';
   /** F102 — the decision this checkpoint HOLDS: an answer the person already gave, on
    * a leg that stopped before a single round was bought for it. Null on every ordinary
    * resume. It is applied directly and the ask is never re-rendered — the whole of the
@@ -676,23 +689,34 @@ async function execute(ctx) {
     if (!existsSync(deadSpineFile)) die(`--resume: no spine at ${deadSpineFile} — a resume continues a run that happened, and this one left no log`);
     let raw = '';
     try { raw = readFileSync(deadSpineFile, 'utf8'); } catch (e) { die(`--resume: cannot read ${deadSpineFile}: ${e.message}`); }
-    /** @type {any[]} */
-    const deadEvents = [];
-    const lines = raw.split('\n');
-    lines.forEach((line, i) => {
-      if (!line.trim()) return;
-      try { deadEvents.push(JSON.parse(line)); } catch (e) {
-        // a kill can land mid-append, so a broken LAST line is the failure being modelled
-        // and is tolerated (named, never silently dropped). A broken line anywhere else is
-        // a corrupt log, and reconstructing from one would invent a history.
-        if (i >= lines.length - 2) err(`--resume: ignoring a truncated final line in ${deadSpineFile} (a kill mid-append — the expected shape)`);
-        else die(`--resume: ${deadSpineFile} is corrupt at line ${i + 1} (${e.message}) — a reconstruction from a damaged log would invent a history`);
-      }
-    });
+    // ONE parser for the spine's text (src/legs.js `parseSpineText`): a kill can land mid-append, so a broken
+    // LAST line is the failure being modelled; and a resumed run's own file carries exactly one torn line
+    // directly before each `leg-resume` marker (the resume never edits the torn bytes, it starts a fresh
+    // line). Both are tolerated and NAMED. A broken line anywhere else is a corrupt log, and reconstructing
+    // from one would invent a history.
+    const parsedDead = parseSpineText(raw);
+    for (const t of parsedDead.tolerated) {
+      err(t.why === 'tail'
+        ? `--resume: ignoring a truncated final line in ${deadSpineFile} (a kill mid-append — the expected shape)`
+        : `--resume: ignoring a truncated line ${t.line} in ${deadSpineFile} (a kill mid-append, left isolated by the next leg's marker)`);
+    }
+    if (parsedDead.corrupt) die(`--resume: ${deadSpineFile} is corrupt at line ${parsedDead.corrupt.line} (${parsedDead.corrupt.message}) — a reconstruction from a damaged log would invent a history`);
+    /** every record of the run's one file (all legs) */
+    deadAllEvents = parsedDead.records;
+    const allDeadEvents = deadAllEvents;
+    /** the legs already on the file, and the leg THIS resume will be (P5-R) */
+    deadLegs = legsOf(allDeadEvents);
+    // the leg a resume continues FROM is the latest leg that got as far as a `job-start`: a leg that died or
+    // was refused before runJob wrote one (a $0 stop) left no checkpoint, and the one behind it still stands
+    const fromLeg = deadLegs.findLast((l) => l.jobStart !== null) ?? deadLegs.at(-1);
+    /** the records `readResume` and every gate below read: that leg's own window, which carries its own declared fold */
+    const deadEvents = fromLeg ? fromLeg.records : allDeadEvents;
+    deadFromLegNo = fromLeg ? fromLeg.leg : 1;
     // is the dead run actually dead? Two processes on one patient is unrecoverable; a
     // false refusal costs one sentence. run-u's own pid is not on its spine, so the
     // watchdog's report or the run-list row is the pid there is — and its absence is not evidence of life.
-    const wdFile = `${deadSpineFile}.watchdog.json`;
+    // the watchdog's note for the leg being continued from (a resumed leg has its own note file)
+    const wdFile = watchdogNotePath(deadSpineFile, deadFromLegNo);
     /** @type {any} */
     let watchdog = null;
     if (existsSync(wdFile)) { try { watchdog = JSON.parse(readFileSync(wdFile, 'utf8')); } catch { /* an unreadable report is not evidence of life */ } }
@@ -704,6 +728,7 @@ async function execute(ctx) {
     /** @type {number|undefined} */
     let rowPid;
     if (cfgOn) { try { rowPid = readRunList({ home: cfgHome }).rows.findLast((r) => r.spine === deadSpineFile)?.pid; } catch { /* an unreadable list is not evidence of life */ } }
+    // a run's row carries its LATEST leg's pid (the run list folds `leg-start`); any earlier leg's note pid is checked too
     const alivePid = [watchdog?.pid, rowPid].find((p) => Number.isInteger(p) && isLiveRunner(p));
     if (alivePid !== undefined) {
       die(`--resume: pid ${alivePid} from ${deadSpineFile} is still alive (a bareloop runner). Two processes on one patient is unrecoverable — stop it first.`);
@@ -715,6 +740,8 @@ async function execute(ctx) {
     // closes was measured, not imagined (a report dated after a pause bills the human's
     // deciding time to the run's wall and can zero the remainder outright).
     const deathAt = deathAtOf({ watchdogAt: watchdog?.at, events: deadEvents });
+    // how the leg being continued from ended, for the marker the new leg opens with (`'died'`: no terminal recorded)
+    deadAfter = fromLeg?.outcome ?? 'died';
     dead = readResume(deadEvents, {
       direct: true,
       resumableOutcomes: RESUMABLE_HALTS,
@@ -792,13 +819,10 @@ async function execute(ctx) {
     if (!existsSync(doorSpineFile)) die(`--door: no spine at ${doorSpineFile} — a door belongs to a run that happened, and this one left no log`);
     let raw = '';
     try { raw = readFileSync(doorSpineFile, 'utf8'); } catch (e) { die(`--door: cannot read ${doorSpineFile}: ${e.message}`); }
-    doorEvents = [];
-    raw.split('\n').forEach((line, i) => {
-      if (!line.trim()) return;
-      try { /** @type {any[]} */ (doorEvents).push(JSON.parse(line)); } catch (e) {
-        die(`--door: ${doorSpineFile} is corrupt at line ${i + 1} (${e.message}) — a decision made on a damaged record is a decision about a run nobody can read`);
-      }
-    });
+    // the same parser as the resume reader: a resumed run's file carries one torn line before each marker
+    const parsedDoor = parseSpineText(raw);
+    if (parsedDoor.corrupt) die(`--door: ${doorSpineFile} is corrupt at line ${parsedDoor.corrupt.line} (${parsedDoor.corrupt.message}) — a decision made on a damaged record is a decision about a run nobody can read`);
+    doorEvents = parsedDoor.records;
     const start = doorEvents.find((/** @type {any} */ e) => e?.type === 'job-start');
     if (!start) die(`--door: ${doorSpineFile} carries no job-start — that is not a bareloop run's spine`);
     if (start.job !== spec.job) die(`--door: that spine is job "${start.job}", not "${spec.job}" — a door is answered against the spec that was signed for it`);
@@ -820,14 +844,11 @@ async function execute(ctx) {
       err(`  - or revise the goal/spec in ${SPEC_DESC} — a spec edit, so the hash changes and you sign the new one.`);
       throw new ExitSignal(2);
     }
-    const je = doorEvents.findLast((/** @type {any} */ e) => e?.type === 'job-end');
-    const spentKnown = typeof je?.spentUsd === 'number' && Number.isFinite(je.spentUsd);
-    doorPrior = {
-      spentUsd: spentKnown ? je.spentUsd : 0,
-      // a FLOOR stays a floor across the door (F6): an absent FIGURE is never "complete
-      // at $0" — completeness is only trusted when the number it completes is known
-      spendComplete: spentKnown && je?.spendComplete !== false,
-    };
+    // the chain's spend, on ONE basis per shape (`chainSpend`, src/monthly.js): a resumed run's several legs are
+    // summed by their own spend, never a later terminal's chain total on top of the earlier legs. A FLOOR stays a
+    // floor across the door (F6): an absent figure is never "complete at $0".
+    const chain = chainSpend(doorEvents);
+    doorPrior = { spentUsd: chain.usd, spendComplete: chain.complete };
   }
 
   /** is this resume the one a PERSON has to answer? Read off the recorded terminal,
@@ -1488,14 +1509,23 @@ async function execute(ctx) {
   // closed at its floor, with a note, once its process is gone). No limit set = no claim (the row is listed as
   // ever). An unreadable config.json, or a claim row that cannot be written, refuses too — a broken instrument
   // never silently reads "no limit".
-  const runid = ctx.bundle?.runid ?? Date.now().toString(36);
-  const spineFile = ctx.bundle ? join(spineDir, 'spine.jsonl') : join(spineDir, `u-${runid}.jsonl`);
+  // P5-R (hamr 2026-10-02: "one run, one id, one file"): a RESUME is the same run — the runid and the spine file
+  // are the halted run's own, and the new leg appends to it. Never a new id, never a second file.
+  const resuming = dead !== null && deadSpineFile !== null;
+  const runid = resuming
+    ? (ctx.bundle?.runid ?? basename(/** @type {string} */ (deadSpineFile)).replace(/\.jsonl$/, '').replace(/^u-/, ''))
+    : (ctx.bundle?.runid ?? Date.now().toString(36));
+  const spineFile = resuming ? /** @type {string} */ (deadSpineFile)
+    : (ctx.bundle ? join(spineDir, 'spine.jsonl') : join(spineDir, `u-${runid}.jsonl`));
+  /** which leg of the run this process is (1 = a fresh run) */
+  const LEG = resuming ? deadLegs.length + 1 : 1;
   const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
   const legCapUsd = Math.max(0, spec.budgetUsd - (typeof foldedUsd === 'number' && Number.isFinite(foldedUsd) ? foldedUsd : 0));
   // every row carries its runner's pid and the leg cap, limit set or not: a limit set LATER still holds it
   /** @type {import('./runlist.js').RunRow} */
   const runRow = {
-    at: new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: ctx.bundle ? 'bundle' : 'run-u', pid: process.pid, capUsd: legCapUsd,
+    // a RESUMED run keeps its own start stamp (the row is listed only if the list has none; it is the run's, not the leg's)
+    at: resuming ? (deadLegs[0]?.start?.ts ?? new Date().toISOString()) : new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: ctx.bundle ? 'bundle' : 'run-u', pid: process.pid, capUsd: legCapUsd,
   };
   let claimed = false;
   {
@@ -1503,9 +1533,9 @@ async function execute(ctx) {
     let refusal = null;
     try {
       if (cfgOn) {
-        const got = claimRun({ row: runRow, capUsd: legCapUsd, home: cfgHome });
+        const got = claimRun({ row: runRow, capUsd: legCapUsd, home: cfgHome, leg: LEG });
         claimed = got.claimed;
-        if (claimed) claimedRow = { runid, spine: spineFile, home: cfgHome };
+        if (claimed) claimedRow = { runid, spine: spineFile, home: cfgHome, leg: LEG };
         refusal = monthlyRefusalText(got.room);
       }
     } catch (e) {
@@ -1544,10 +1574,13 @@ async function execute(ctx) {
   // When the monthly claim above already appended this run's row, there is nothing to add.
   try {
     if (!claimed) {
+      // a RESUMED run is already listed: its row stays ONE row and this leg's claim is a `leg-start` beside it
+      // (the row is added only when the list has none)
       appendRun(runRow, { home: deps.runlistHome });
+      if (LEG > 1) appendLegStart({ type: 'leg-start', runid, leg: LEG, pid: process.pid, capUsd: legCapUsd, at: new Date().toISOString() }, { home: deps.runlistHome });
       // no limit set: the row is appended here, not by a claim — mark it so the execute catch releases it
       // the same way if the run exits before its spine has a first record (it lives in `deps.runlistHome`)
-      claimedRow = { runid, spine: spineFile, home: deps.runlistHome };
+      claimedRow = { runid, spine: spineFile, home: deps.runlistHome, leg: LEG };
     }
   } catch (/** @type {any} */ e) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
@@ -1702,7 +1735,30 @@ async function execute(ctx) {
   // here (not inline at the `runJob` call below) so this pre-run reading lands
   // on the run's own spine in the SAME seq order everything else does, rather
   // than a second, disconnected spine writer.
-  const emit = makeSpine(spineFile);
+  // P5-R: a RESUME continues the halted run's own file. `seq` is monotonic per SPINE, so the emitter starts
+  // from the highest `seq` already in it; a kill can have left a torn line with no trailing newline, so ONE
+  // `\n` is written first and the torn bytes stay exactly as they are, alone on their own line (the spine is
+  // append-only forever: nothing here edits or truncates an existing byte).
+  let startSeq = 0;
+  if (resuming) {
+    for (const e of deadAllEvents) if (typeof e?.seq === 'number' && Number.isFinite(e.seq) && e.seq > startSeq) startSeq = e.seq;
+    const fd = openSync(spineFile, 'r');
+    try {
+      const size = fstatSync(fd).size;
+      if (size > 0) {
+        const last = Buffer.alloc(1);
+        readSync(fd, last, 0, 1, size - 1);
+        if (last[0] !== 0x0a) appendFileSync(spineFile, '\n');
+      }
+    } finally { closeSync(fd); }
+  }
+  const emit = makeSpine(spineFile, { startSeq });
+  // …and the leg's FIRST record is its marker, written BEFORE the outside watchdog is spawned: the watchdog
+  // judges a run dead by its spine file going quiet, and a file untouched since the last leg would read as stale.
+  if (resuming) {
+    emit(LEG_RESUME, { leg: LEG, after: deadAfter, at: new Date().toISOString() });
+    legBegun = true;
+  }
 
   // PRD item 33/M2, call site 3(a) — a source-door manifest, when this patient
   // was PREPARED through `prepareSource` (`scripts/prep-source.mjs`), sits
@@ -1792,6 +1848,8 @@ async function execute(ctx) {
     // time on exactly the run it is watching (F70's shape).
     ...(RESUME_WALL_MS === null ? [] : ['--wall-ms', String(RESUME_WALL_MS)]),
     '--grace-ms', String(worstCloseSilenceMs),
+    // this leg's own note file (leg 1 keeps the name every run has always had)
+    '--report', watchdogNotePath(spineFile, LEG),
   ], { stdio: ['ignore', 'ignore', 'inherit'] });
   // A spawn failure arrives as an EVENT, and an unhandled 'error' on a ChildProcess is
   // an uncaught exception — i.e. a guard that could not start would END the paid run it
@@ -1926,7 +1984,11 @@ async function execute(ctx) {
   // honest. No classification into pass/fail buckets — one run classifies nothing.
   const raw = readFileSync(spineFile, 'utf8');
   // tolerant: a torn/garbled line is skipped, not a crash (the shipped bundle-run fix, now the one engine read)
-  const events = parseJsonl(spineFile).records;
+  const allEvents = parseJsonl(spineFile).records;
+  // P5-R: the readout below is about THIS leg — its own rounds, its own halts, its own terminal. A resumed run's
+  // earlier legs are on the same file, and reading them here would count their rounds, tokens and halts again
+  // (the run's chain-wide figures are the folded ones the lines below already print).
+  const events = legsOf(allEvents).at(-1)?.records ?? allEvents;
   const je = events.findLast((e) => e.type === 'job-end');
   // The claim's WRITE-BACK (hamr 2026-09-30): when the run ends it settles its own claim on the monthly
   // limit — its final spend, attributed to itself. Best-effort: a run that dies before here is settled
@@ -1934,7 +1996,7 @@ async function execute(ctx) {
   if (je) {
     try {
       const fin = legSpend(events);
-      appendRunEvent({ runid, type: 'settled', by: runid, spentUsd: fin.usd, spendComplete: fin.complete, at: new Date().toISOString() }, { home: cfgHome });
+      appendRunEvent({ runid, type: 'settled', by: runid, spentUsd: fin.usd, spendComplete: fin.complete, at: new Date().toISOString(), ...(LEG > 1 ? { leg: LEG } : {}) }, { home: cfgHome });
     } catch (/** @type {any} */ e) { err(`WARNING: could not settle this run's claim in ~/.config/bareloop/runs.jsonl (${e.message}) — the next run settles it once this process is gone.`); }
   }
   // the ONE spelling of the text-side scan (src/validate.js) — a hand-rolled copy
@@ -1946,8 +2008,21 @@ async function execute(ctx) {
 
   const auditSrc = join(wd, 'gate-audit.jsonl');
   let auditFile = null;
-  if (existsSync(auditSrc)) { auditFile = ctx.bundle ? join(spineDir, 'gate-audit.jsonl') : join(spineDir, `u-${runid}-gate-audit.jsonl`); renameSync(auditSrc, auditFile); }
-  const audit = auditFile ? readFileSync(auditFile, 'utf8').trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+  // THIS leg's own audit rows — the readout's `writes` and BEHAVIOUR lines are about this leg, read from the
+  // leg's own tree file before it is filed
+  /** @type {any[]} */
+  let audit = [];
+  if (existsSync(auditSrc)) {
+    const legAuditText = readFileSync(auditSrc, 'utf8');
+    audit = legAuditText.trimEnd().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    auditFile = ctx.bundle ? join(spineDir, 'gate-audit.jsonl') : join(spineDir, `u-${runid}-gate-audit.jsonl`);
+    // P5-R: a resumed leg ADDS to the run's one audit file (a rename would overwrite the earlier legs' rows)
+    if (LEG > 1 && existsSync(auditFile)) {
+      const prior = readFileSync(auditFile, 'utf8');
+      appendFileSync(auditFile, `${prior.length > 0 && !prior.endsWith('\n') ? '\n' : ''}${legAuditText}`);
+      unlinkSync(auditSrc);
+    } else renameSync(auditSrc, auditFile);
+  }
   const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type === 'write' || e.action?.type === 'edit'));
 
   out(`\noutcome   ${outcome}`);
@@ -2150,9 +2225,8 @@ async function execute(ctx) {
         // FOLDED across a resume, like every other money and time number this readout
         // prints: the row records what the RUN cost, never what this leg cost
         wallMs: legMs + (dead ? dead.restart.priorWallMs : 0),
-        // the ROUND count CANNOT fold — a resume leg writes a fresh spine and the halted
-        // leg's restart record declares money and wall but never rounds — so on a resume
-        // this is a FLOOR, and it says so the way the money above does (F6: a floor that
+        // the ROUND count is not part of the declared fold — a resumed leg's `job-start` declares
+        // money and wall but never rounds — so on a resume this is THIS LEG's count, a FLOOR, and it says so the way the money above does (F6: a floor that
         // reads as exact is dishonest; report the floor WITH its completeness)
         rounds: legRounds,
         roundsComplete: !dead,
@@ -2292,7 +2366,7 @@ async function execute(ctx) {
     // owns no spine, so its row is released (folded out of the list, like a monthly refusal) rather than
     // left as a ghost that keeps the month reading "at least". Once the spine exists the run is a real,
     // listed run and ends by its own job-end. A failed release write never masks the original exit.
-    if (claimedRow && !existsSync(claimedRow.spine)) releaseClaimedRow();
+    if (claimedRow && (claimedRow.leg > 1 ? !legBegun : !existsSync(claimedRow.spine))) releaseClaimedRow();
     if (e instanceof ExitSignal) return e.code;
     throw e;
   }

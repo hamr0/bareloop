@@ -417,6 +417,8 @@ test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is 
     { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: at, seq: 3 },
     { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
   ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  // the halted run was listed when it began (a resume continues a listed run)
+  appendRun({ at, runid: 'dead1', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: 999999, capUsd: 2 }, { home });
   writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
   git(first.workdir, ['add', '.']);
   git(first.workdir, ['commit', '-q', '-m', 'human']);
@@ -427,9 +429,12 @@ test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is 
   });
   assert.equal(code, 2, errs.join('\n'));
   assert.match(errs.join('\n'), /PATIENT REFUSED/);
+  // P5-R (rewritten): a resume is the SAME run, so a refused resume gives back THAT LEG's claim and the run
+  // stays listed — one row, never removed by a later leg's release (it used to fold a whole second row out)
   const list = readRunList({ home });
-  assert.equal(list.rows.length, 0, 'the refused resume is folded out of the list');
-  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started').length, 1);
+  assert.equal(list.rows.length, 1, 'the run stays listed: only the refused leg\'s claim is given back');
+  assert.equal(list.rows[0].leg, undefined, 'the refused leg-2 claim is void — the row is not on a leg that never began');
+  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started' && e.leg === 2).length, 1);
 });
 
 test('--resume refuses while the predecessor\'s OWN run-list row names a live runner pid (no watchdog record needed)', async (t) => {
@@ -499,6 +504,8 @@ test('run-start seam, NO monthly limit: a --resume refused at the patient (moved
     { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: at, seq: 3 },
     { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
   ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  // the halted run was listed when it began (a resume continues a listed run)
+  appendRun({ at, runid: 'dead2', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: 999999, capUsd: 2 }, { home });
   writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
   git(first.workdir, ['add', '.']);
   git(first.workdir, ['commit', '-q', '-m', 'human']);
@@ -509,9 +516,12 @@ test('run-start seam, NO monthly limit: a --resume refused at the patient (moved
   });
   assert.equal(code, 2, errs.join('\n'));
   assert.match(errs.join('\n'), /PATIENT REFUSED/);
+  // P5-R (rewritten): a resume is the SAME run, so a refused resume gives back THAT LEG's claim and the run
+  // stays listed — one row, never removed by a later leg's release (it used to fold a whole second row out)
   const list = readRunList({ home });
-  assert.equal(list.rows.length, 0, 'the refused resume is folded out of the list');
-  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started').length, 1);
+  assert.equal(list.rows.length, 1, 'the run stays listed: only the refused leg\'s claim is given back');
+  assert.equal(list.rows[0].leg, undefined, 'the refused leg-2 claim is void — the row is not on a leg that never began');
+  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started' && e.leg === 2).length, 1);
 });
 
 test('run-start seam: an unreadable config.json refuses the start ($0) rather than reading as "no limit"', async (t) => {

@@ -23,6 +23,7 @@ import {
 } from './bundle.js';
 import { jobSpecHash } from './job.js';
 import { parseJsonl } from './replayio.js';
+import { legsOf } from './legs.js';
 import { startRun, resumeRun } from './userrun.js';
 
 /**
@@ -117,7 +118,9 @@ export async function bundleMain(args, {
   // after its own $0 refusals, so a refusal leaves no worktree behind. A RESUME is the one
   // exception: it re-enters the SAME worktree its halted run left (recorded in that run's
   // `run.json`), and a gone tree is a stop, never a silent fresh start.
-  const runid = now().toString(36);
+  // P5-R (hamr 2026-10-02: one run, one id, one file): a RESUME is the same run — same runid, same run dir, same
+  // spine; the engine appends the new leg to it. Only a fresh run mints an id.
+  const runid = resumeArg !== undefined ? resumeArg : now().toString(36);
   /** @type {string} */
   let repo;
   /** @type {string} */
@@ -126,6 +129,8 @@ export async function bundleMain(args, {
   let worktree;
   /** @type {string|null} */
   let deadSpine = null;
+  /** the run's own first-leg stamp, kept when a later leg rewrites `run.json` (it is the run's start, not the leg's) @type {string|null} */
+  let firstAt = null;
   if (resumeArg !== undefined) {
     if (!/^[a-z0-9]+$/.test(resumeArg)) { err(`--resume ${JSON.stringify(resumeArg)} is not a run id of this bundle`); return 1; }
     const deadRunJson = join(bundleDir, 'runs', resumeArg, 'run.json');
@@ -150,6 +155,7 @@ export async function bundleMain(args, {
     repo = rec.repo;
     seed = rec.seed;
     worktree = rec.worktree;
+    if (typeof rec.at === 'string') firstAt = rec.at;
     deadSpine = join(bundleDir, 'runs', resumeArg, 'spine.jsonl');
   } else {
     repo = resolve(cwd, /** @type {string} */ (repoArg));
@@ -189,7 +195,7 @@ export async function bundleMain(args, {
     }
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, 'run.json'), `${JSON.stringify({
-      runid, worktree, seed, repo, at: new Date(now()).toISOString(), ...(resumeArg === undefined ? {} : { resumedFrom: resumeArg }),
+      runid, worktree, seed, repo, at: firstAt ?? new Date(now()).toISOString(),
     }, null, 2)}\n`);
   };
 
@@ -227,7 +233,9 @@ export async function bundleMain(args, {
   // 7. history + (on a first green) the blessing — off THIS run's own spine, tolerant of
   // a torn line. No job-end (a $0 refusal, a crash) means no history row, as ever.
   const events = existsSync(spineFile) ? parseJsonl(spineFile).records : [];
-  const je = events.findLast((/** @type {any} */ e) => e.type === 'job-end');
+  // the LATEST leg's terminal: an earlier leg's job-end on the same file is a row already written for it
+  const legs = legsOf(events);
+  const je = legs.at(-1)?.jobEnd ?? null;
   if (!je) return engineCode;
   const outcome = je.outcome;
   const spentUsd = je.spentUsd ?? null;
@@ -246,7 +254,8 @@ export async function bundleMain(args, {
     branch,
     bundleHash: manifest.bundleHash,
     approveHash,
-    ...(resumeArg === undefined ? {} : { resumedFrom: resumeArg }),
+    // one row per LEG of the one run; the first leg's row keeps the shape it always had
+    ...(legs.length > 1 ? { leg: legs.length } : {}),
   });
   if (outcome === 'green' && !bundle.blessing) {
     bless(bundleDir, {
