@@ -2320,6 +2320,47 @@ watchdog `--wall-ms 0`, which it defaulted to `null` and armed no deadline at al
 still advertising one. The refusal names the lever: raise `maxWallMs`, which moves the spec hash
 and is re-signed.
 
+**A resume is the SAME run — one runid, one spine file, a `leg-resume` marker inside (P5-R, hamr
+2026-10-02: "one run, one id, one file").** `bareloop run-u --resume <runid|path>` and `bareloop run
+<bundle> --resume <runid>` never mint a new id and never open a second file: the new leg APPENDS to the
+halted run's own spine (`u-<runid>.jsonl`, or `<bundleDir>/runs/<runid>/spine.jsonl`).
+- **The leg's first record is `leg-resume {leg: N, after, at}`** — `after` is how the previous leg ended
+  (its `job-end` outcome, `'died'` when it recorded none) — written BEFORE the outside watchdog spawns (the
+  watchdog judges a run dead by its file going quiet). `seq` continues from the file's own highest
+  (`makeSpine(file, {startSeq})`). Then the leg's own `job-start`, which keeps the declared fold
+  (`priorSpentUsd`/`priorWallMs`/…): the budget ceiling still folds prior spend.
+- **A torn tail is never edited.** If the file does not end in `\n` (a kill mid-append), the resume writes
+  ONE `\n` and starts a fresh line: the torn bytes stay exactly as they were, alone on their own line
+  directly before the marker. The spine is append-only forever.
+- **`legsOf(events)` (`src/legs.js`, internal — not exported from the package root) is the ONE owner of where
+  a leg starts and ends**, returning `{leg, start, end, records, jobStart, jobEnd, outcome, after, startMs,
+  endMs}`; a spine with no marker (every run written before P5-R, and every run nobody resumed) is ONE leg.
+  `parseSpineText` tolerates exactly one torn line directly before a marker (and the file's own last two
+  lines); any other unparseable line is a corrupt log. Every reader goes through it: the resume reader
+  (`readResume` windows a direct spine at the latest leg that reached a `job-start`; `checkpointAgeGate` and
+  `deathAtOf` look only at the latest leg's terminal), `replayRun`, the monthly limit, the run list, the
+  panel, the end-of-run readout (this leg only), `bundlerun`'s history.
+- **Money has ONE basis per reader: the sum of each leg's own rounds** (`SPEND_RECORD_TYPES`, echoes
+  excluded; `legSpend`/`runSpend`/`chainSpend` in `src/ledger.js`) — never the rounds plus a declared prior,
+  so leg 1 is counted once. **Time is the sum of each leg's own window, the gap between legs excluded**
+  (only working time charges the wall). **The outcome is the LAST leg's.** A run is live iff its last leg has
+  no `job-end` and its runner is alive. An unknown figure reads as unknown / "at least", never as less.
+- **Side files are per leg.** The gate audit: leg 2+ APPENDS to `u-<runid>-gate-audit.jsonl` (never a
+  rename-overwrite). The watchdog's kill note: `<spine>.leg<N>.watchdog.json` for N ≥ 2 (`u-watchdog.mjs
+  --report <path>`; leg 1 keeps `<spine>.watchdog.json`). `.lag.jsonl` accumulates.
+- **The run list keeps ONE row per run.** A resume appends `{type:'leg-start', runid, leg, pid, capUsd, at}`;
+  `readRunList` folds it: the row's live `pid`/`capUsd` are the latest leg's, and it carries `leg`. `settled`
+  and `released` entries carry an optional `leg` (absent = leg 1): a later leg's `released` gives back THAT
+  leg's claim and never removes the run, and the monthly hold is taken per leg (`claimRun({leg})`; a
+  resumed leg's own earlier legs count as spent money, never as a hold).
+- **Refusals stay**: a run whose last leg is live (pid from the latest `leg-start`), a green run, or a
+  non-resumable terminal is refused. `bareloop run`'s `history.jsonl` writes one row per LEG
+  (`leg: N` from leg 2, no `resumedFrom`) and `run.json` is rewritten unchanged (same worktree, the run's
+  own start).
+- **Not covered by this ruling, and unchanged:** the review-door `rerun` (`--door <runid> --decide rerun`)
+  is a NEW run with a new runid (its door reader folds the answered run's chain spend); Start from this in
+  the panel is a new job.
+
 **A pause checkpoint is answered on the same command line** (N4, 2026-08-12 §5.2 — the
 terminal is the v1 surface; the panel is N6's). The reference runner takes
 `--decide accept|rerun|pause` with `--text` for the rerun door, gated on the SAME
@@ -2997,8 +3038,8 @@ separate tarball step).
   README.md           the operator questions, in the order `bareloop run` asks them
   blessing.json        absent at export; written by the run that first greens it
   history.jsonl        absent at export; one line appended per `bareloop run` on this machine
-  runs/<runid>/        absent at export; one per run leg — spine.jsonl, gate-audit.jsonl, close/ (the
-                       close's books) and run.json ({runid, worktree, seed, repo, at, resumedFrom?})
+  runs/<runid>/        absent at export; one per RUN (a resume continues it) — spine.jsonl, gate-audit.jsonl,
+                       close/ (the close's books) and run.json ({runid, worktree, seed, repo, at})
 ```
 
 **`bundleHash`** = sha256 over the sorted `path:contentSha256` lines of exactly `spec.json`
@@ -3204,7 +3245,8 @@ key you want first (the panel picks the row by the Model menu).
      different from the recorded one is a stop, exit `1`, spending nothing; `--repo` is optional
      on a resume) and hands the engine `resumeRun` on that run's spine — the engine's own gates
      (checkpoint age, tree-at-seed, liveness) and spend fold apply, so `--budget` can never widen
-     a resume. The new leg gets its own `runs/<newid>/`. The resume command a halted leg prints carries that leg's own
+     a resume. The new leg appends to the SAME `runs/<runid>/spine.jsonl` behind a `leg-resume` marker
+     (P5-R): no new id, run dir or worktree. The resume command a halted leg prints carries that leg's own
      `--budget`/`--wall`, only if you passed them (a tightened ceiling never silently reverts to the signed
      one). After a MONEY halt the line does NOT repeat the exhausted `--budget` (chain spend is folded, so
      it would halt again at once); it prints `--budget <more than $<spent so far>, at most $<signed
@@ -3223,7 +3265,8 @@ key you want first (the panel picks the row by the Model menu).
      inputs); `--door`/`--decide`/`--review-door` are not exposed on `run`.
   8. `appendHistory` — one `history.jsonl` line off this leg's own `job-end`: `{ runid, at,
      outcome, spentUsd, spendComplete, budgetUsd, maxWallMs, worktree, branch, bundleHash,
-     approveHash, resumedFrom? }` (the `bundleHash` ↔ `approveHash` pairing, POC fact 2).
+     approveHash, leg? }` (the `bundleHash` ↔ `approveHash` pairing, POC fact 2; one row per LEG of the
+     one run — `leg: N` from the second leg, no `resumedFrom`).
      `spentUsd`/`spendComplete` are never fabricated as `0` when unknown. No `job-end` (a $0
      refusal, a crash) writes no row. A `green` outcome on a still-unblessed bundle also calls
      `bless(bundleDir, { bundleHash, runid, outcome, host })`.
@@ -3295,7 +3338,7 @@ key you want first (the panel picks the row by the Model menu).
   $0: no interview, no author, no run trigger, no key ever read. A row is `{ at, runid, job,
   spine, patient, via }` — `spine`/`patient` are always absolute paths (`patient: null` when
   not known, e.g. every `via:"backfill"` row: no spine record carries a run's workdir);
-  `via` is `'run-u'`, `'bundle'`, or `'backfill'`. `bareloop run-u` and `bareloop run` (the
+  `via` is `'run-u'`, `'bundle'`, or `'backfill'`. A RESUMED run is still one row: `readRunList` folds its `leg-start` entries into it (`leg`, and the latest leg's `pid`/`capUsd`; P5-R). `bareloop run-u` and `bareloop run` (the
   bundle path) each append their own row at run START, before the first paid call — a
   list-append failure is caught at both call sites and printed loudly to stderr
   (`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (…)`); the run itself
@@ -3556,7 +3599,8 @@ and leaves the worktree in place until the human removes it.
 
 **`history.jsonl` row shape** — one JSON object per line, one line per `bareloop run` on this
 machine: `{ runid, at, outcome, spentUsd, spendComplete, budgetUsd, maxWallMs, worktree,
-branch, bundleHash, approveHash }`. `bundleHash` is the bundle's own signed manifest hash
+branch, bundleHash, approveHash, leg? }` (`leg` only from a resumed run's second leg: the same `runid`,
+one row per leg). `bundleHash` is the bundle's own signed manifest hash
 (unchanged across tightened runs); `approveHash` is the hash of the actual, possibly-
 tightened, `$BARELOOP_BUNDLE`-resolved spec that run executed — the two are recorded side
 by side so a tightened run's real approval can never be confused with the bundle's headline
