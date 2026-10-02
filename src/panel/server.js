@@ -884,6 +884,7 @@ export function getRunDetail(runid, opts = {}) {
     resumedCount: Math.max(0, summary.legs.length - 1),
     resume: resume && resume.ok ? {
       budgetUsd: resume.budgetUsd, maxWallMin: resume.maxWallMin, spentUsd: resume.spentUsd, spendComplete: resume.spendComplete,
+      wallUsedMs: resume.wallUsedMs,
     } : null,
     spentUsd: summary.spentUsd,
     // draftSpentUsd (hamr's ruling 2026-09-28) — the drafting share of this

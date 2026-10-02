@@ -200,6 +200,7 @@ test('getRunDetail + listRuns: a cap-halt run carries the Ended block, the Resum
   assert.equal(d.resume.budgetUsd, 8);
   assert.equal(d.resume.maxWallMin, 60);
   assert.equal(d.resume.spentUsd, 8);
+  assert.equal(typeof d.resume.wallUsedMs, 'number', 'the time used so far rides with the resume plan — the route\'s time refusal reads the same figure');
   const row = listRuns({ home }).find((r) => r.runid === 'cap1');
   assert.equal(row.endedLine, 'money cap — resume');
   assert.equal(row.glyph, '✗', 'result glyphs unchanged');
@@ -451,7 +452,7 @@ const DETAIL = {
     reason: 'Money cap reached ($8.00 of $8.00).', next: 'Raise the cap, then Resume.', line: 'money cap — resume', actions: [{ id: 'resume', label: 'Resume' }],
   },
   resume: {
-    budgetUsd: 8, maxWallMin: 60, spentUsd: 8, spendComplete: true,
+    budgetUsd: 8, maxWallMin: 60, spentUsd: 8, spendComplete: true, wallUsedMs: 61 * 60_000 - 5_000,
   },
 };
 
@@ -489,7 +490,7 @@ test('page: Resume opens the run\'s own Job tab — ONLY the money cap and the t
   assert.match(box.innerHTML, /Resume run run1/);
   assert.match(box.innerHTML, /the same run, not a new one/);
   assert.match(box.innerHTML, /Only the money cap and the time cap can change/);
-  assert.match(box.innerHTML, /spent so far \$8\.00/);
+  assert.match(box.innerHTML, /spent so far \$8\.00 &middot; time used so far 61 min/, 'the time already used, rounded UP like the route\'s own refusal text');
   assert.match(box.innerHTML, /Sign &amp; resume/);
   // nothing else on the Job tab was turned into an input: the page only ever touches the two cap cells and the Sign box
   for (const id of ['details-goal', 'details-success', 'details-guardrails', 'details-source', 'details-dest', 'details-tools', 'details-model']) {

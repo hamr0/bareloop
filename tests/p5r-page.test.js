@@ -37,7 +37,7 @@ function loadMap() {
   const end = PAGE.indexOf('function stepMapLegendHTML');
   assert.ok(start !== -1 && end > start);
   // eslint-disable-next-line no-new-func
-  return new Function(`${PAGE.slice(start, end)}\nreturn { buildStepMapSVG: buildStepMapSVG, buildOrderedBoxes: buildOrderedBoxes };`)();
+  return new Function(`${PAGE.slice(start, end)}\nreturn { buildStepMapSVG: buildStepMapSVG, buildOrderedBoxes: buildOrderedBoxes, stepNumberIndices: stepNumberIndices, stepTitleText: stepTitleText };`)();
 }
 const stepPart = (n, extra = {}) => ({
   kind: 'step', id: `s${n}`, label: `s${n}`, occurrence: 1, outcome: 'green', blocked: 0, attempts: [{ n: 1, outcome: 'green' }], ...extra,
@@ -107,4 +107,32 @@ test('page Audit (flat): a divider row is placed by time — before the first ca
   assert.match(src, /dividerAtMs\(pendingDividers\[0\]\) <= Date\.parse\(r\.time\)/);
   assert.match(src, /tr:not\(\.audit-leg-divider-row\)/, 'the Writes/Blocked chips never hide a divider');
   assert.match(src, /pendingDividers\.forEach\(function\(dv\)\{ tbody\.appendChild\(flatDividerRow\(dv\)\); \}\);/, 'any divider after the last call closes the table');
+});
+
+test('page map: a part its leg\'s halt cut off reads STOPPED (the existing state, a red box, no done/check); the step that continues it is "(continued)" and keeps its number; real retries stay "(try N)"', () => {
+  const { buildOrderedBoxes, stepNumberIndices, stepTitleText } = loadMap();
+  const parts = [
+    stepPart(1),
+    stepPart(2, { outcome: null, stopReason: 'money cap', attempts: [{ n: 1, outcome: 'stopped' }], resumedNext: true, leg: 1, tryNumber: 1, continued: false }),
+    stepPart(2, { occurrence: 2, continued: true, tryNumber: 1, leg: 2 }),
+    stepPart(3, { occurrence: 1 }),
+    stepPart(3, { occurrence: 2, tryNumber: 2, continued: false }),
+  ];
+  const boxes = buildOrderedBoxes(parts, false);
+  assert.deepEqual(boxes.map((b) => b.state), ['done', 'stopped', 'done', 'done', 'done']);
+  assert.equal(boxes[1].attempts[0].outcome, 'stopped');
+  const num = stepNumberIndices(boxes);
+  assert.deepEqual(num.map((n) => n + 1), [1, 2, 2, 3, 4], 'the continued box repeats its number; the next step carries on from it');
+  assert.equal(boxes[2].title, 's2 (continued)');
+  assert.equal(boxes[4].title, 's3 (try 2)', 'a retry within a leg is still a try');
+  assert.equal(boxes[1].title, 's2');
+  assert.doesNotMatch(stepTitleText(num[1], boxes[1]), /✓/);
+});
+
+test('page card: the stopped part says why, in words, beside its figures', () => {
+  // eslint-disable-next-line no-new-func
+  const f = new Function('liveWallPhrase', 'duration', 'liveSpendText', 'panelMoney', 'attemptChecksLine', 'escapeXml', `${fnSrc('partLine1Text')}\nreturn partLine1Text;`)(
+    () => '', (ms) => `${ms}ms`, () => '', (n) => `$${n}`, () => '', (x) => x);
+  assert.match(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'money cap' }, {}), /stopped &mdash; money cap/);
+  assert.doesNotMatch(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [] }, {}), /stopped/);
 });

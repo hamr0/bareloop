@@ -852,6 +852,8 @@
     var n = 0;
     return steps.map(function(s){
       if(s.noNumber) return -1;
+      // P5-R: a step continuing from the leg before is the SAME step — it keeps its number
+      if(s.continued && n > 0) return n - 1;
       n++;
       return n - 1;
     });
@@ -867,6 +869,8 @@
   function partBoxState(part, isLastLivePart){
     if(part.outcome === "green" || part.outcome === "satisfied" || part.outcome === "already-green") return "done";
     if(typeof part.outcome === "string") return "stopped";
+    // P5-R: its leg's halt cut this part off — the map's existing "stopped" state, never "done"
+    if(part.stopReason) return "stopped";
     if(isLastLivePart) return "running";
     return "done"; // scout/plan/replan/judge: no per-part verdict, but the part itself already happened
   }
@@ -895,7 +899,9 @@
     var list = Array.isArray(parts) ? parts : [];
     return list.map(function(part, idx){
       var isLastLivePart = !!isLive && idx === list.length - 1;
-      var occSuffix = part.kind === "step" && part.occurrence > 1 ? " (try " + part.occurrence + ")" : "";
+      // "(try N)" is for real in-leg retries only; a step re-entered across a leg boundary is the same step continuing
+      var tryN = typeof part.tryNumber === "number" ? part.tryNumber : part.occurrence;
+      var occSuffix = part.kind === "step" && part.continued ? " (continued)" : (part.kind === "step" && tryN > 1 ? " (try " + tryN + ")" : "");
       return {
         kind: part.kind,
         partIndex: idx,
@@ -910,6 +916,7 @@
         blocked: typeof part.blocked === "number" ? part.blocked : 0,
         // P5-R: the leg that ran this part ENDED here and the next part is where the next leg picked up
         resumedNext: part.resumedNext === true,
+        continued: part.continued === true,
         part: part,
       };
     });
@@ -1953,6 +1960,7 @@
     var r = detail.resume || {};
     resumeMode = {
       runid: detail.runid, spentUsd: r.spentUsd, spendComplete: r.spendComplete,
+      wallUsedMs: r.wallUsedMs,
       budget: (r.budgetUsd === null || r.budgetUsd === undefined) ? "" : String(r.budgetUsd),
       wall: typeof r.maxWallMin === "number" ? String(r.maxWallMin) : null,
       painted: false,
@@ -1982,7 +1990,8 @@
     var spent = (m.spentUsd === null || m.spentUsd === undefined) ? "unknown" : ((m.spendComplete ? "" : "at least ") + panelMoney(m.spentUsd));
     box.innerHTML =
       '<div data-testid="resume-intro">Resume run ' + escapeXml(m.runid) + ' &mdash; the same run, not a new one. Only the money cap and the time cap can change; everything else is the signed job.</div>' +
-      '<div class="hint" data-testid="resume-spent">spent so far ' + escapeXml(spent) + '</div>' +
+      '<div class="hint" data-testid="resume-spent">spent so far ' + escapeXml(spent) +
+        (typeof m.wallUsedMs === "number" && isFinite(m.wallUsedMs) ? ' &middot; time used so far ' + Math.ceil(m.wallUsedMs / 60000) + ' min' : '') + '</div>' +
       '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-sign-resume">Sign &amp; resume</button> ' +
       '<button class="btn small" type="button" data-testid="btn-resume-cancel">Cancel</button></div>' +
       '<div class="resume-err" id="resume-err" data-testid="resume-err" hidden></div>';
@@ -2376,6 +2385,8 @@
     var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
     var headline = latestAttempt ? attemptChecksLine(latestAttempt) : "";
     if(headline) bits.push(headline);
+    // P5-R: a part its leg's halt cut off says why, in words
+    if(part && part.stopReason) bits.push("stopped &mdash; " + escapeXml(part.stopReason));
     return bits.join(" &middot; ");
   }
   /**
