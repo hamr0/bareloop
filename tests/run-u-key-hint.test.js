@@ -13,12 +13,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { cleanEnv } from './helpers.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 
 const preview = (job) => {
   const r = spawnSync(process.execPath, [RUNNER, '--job', job], {
-    encoding: 'utf8', timeout: 60_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' },
+    encoding: 'utf8', timeout: 60_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) throw new Error(`run-u.mjs never exited (${r.error?.code ?? r.signal ?? 'no error'}):\n${out.slice(0, 400)}`);

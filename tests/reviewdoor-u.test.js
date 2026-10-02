@@ -19,6 +19,7 @@ import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS, writeGreenRow } from '../src/reuse.js';
 import { makeRegistry } from '../src/bridges.js';
 import { reviewDoorPackage, runDoorLines } from '../src/u-readout.js';
+import { cleanEnv } from './helpers.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 — the orchestration this file's SOURCE-TEXT tripwires
@@ -75,7 +76,7 @@ function spineFile(events) {
 /** the preview: no --approve, so nothing reads a key and nothing touches a patient */
 const preview = (args, job = 'bareagent-types') => {
   const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
-    encoding: 'utf8', timeout: 240_000, env: { ...process.env, ANTHROPIC_API_KEY: '' },
+    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) throw new Error(`run-u.mjs never exited (${r.error?.code ?? r.signal ?? 'no error'}):\n${out.slice(0, 400)}`);

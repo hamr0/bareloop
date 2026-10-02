@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { capStop } from '../src/text.js';
 import { prepareSource } from '../src/source.js';
+import { cleanEnv } from './helpers.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -770,7 +771,7 @@ const runAuthor = (draft) => {
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', PREPARED_TREE, '--answers', answersFile, '--draft', draftFile,
     '--verdict', 'green', '--out', out,
-  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
   return { code: r.status, text: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 };
 
@@ -804,7 +805,7 @@ test('--patient is refused, loud — --source replaced it', () => {
   const r = spawnSync(process.execPath, [
     SCRIPT, '--patient', PREPARED_TREE, '--answers', answersFile, '--draft', draftFile,
     '--verdict', 'green', '--out', out,
-  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' } });
   assert.equal(r.status, 2);
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.match(text, /--patient is no longer a flag/);
@@ -824,7 +825,7 @@ test('--source that was never prepared through the source front door dies loud, 
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', unprepared, '--answers', answersFile, '--draft', draftFile,
     '--verdict', 'green', '--out', out,
-  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' } });
   assert.equal(r.status, 2);
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.match(text, /was never prepared through the source front door/);
@@ -860,7 +861,7 @@ test('a --source prepared from a NON-repo (a plain folder), with a valid provide
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
     '--verdict', 'green', '--out', out,
-  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.equal(r.status, 2, text);
   assert.match(text, /ANTHROPIC_API_KEY not set/);
@@ -894,7 +895,7 @@ test('a key with an embedded newline refuses at $0 — before any spine record e
     encoding: 'utf8',
     timeout: 30_000,
     env: {
-      ...process.env, ANTHROPIC_API_KEY: 'sk-test\nmeta', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-test\nmeta', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -928,7 +929,7 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
     encoding: 'utf8',
     timeout: 30_000,
     env: {
-      ...process.env, ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -977,7 +978,7 @@ test('F191: a real throw inside the plain-folder branch (authored.json pre-exist
     encoding: 'utf8',
     timeout: 30_000,
     env: {
-      ...process.env, ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -1157,7 +1158,7 @@ test('a --source prepared from a repo whose package.json lists dependencies with
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
     '--verdict', 'green', '--out', out,
-  ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.equal(r.status, 1, text);
   assert.match(text, /REFUSED \(request-red\)  verb=source-deps-missing/);
@@ -1193,7 +1194,7 @@ test('a --source prepared from a repo whose deps ARE already installed never ref
     return spawnSync(process.execPath, [
       SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
       '--verdict', 'green', '--out', out,
-    ], { encoding: 'utf8', timeout: 30_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+    ], { encoding: 'utf8', timeout: 30_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
   })();
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.doesNotMatch(text, /source-deps-missing/);

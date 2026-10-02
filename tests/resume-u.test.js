@@ -92,7 +92,7 @@ const haltedSpine = ({ outcome = 'cap-halt', job = SPEC.job, rounds = [BUDGET * 
  */
 const preview = (args, job = 'bareagent-types') => {
   const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
-    encoding: 'utf8', timeout: 240_000, env: { ...process.env, ANTHROPIC_API_KEY: '' },
+    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) {
@@ -640,6 +640,7 @@ test('§F97 banner E2E: the REAL preview prints it for F97\'s own spine shape, a
 // attempt-level ECHO of round sums (house rule: enumerate every round type that
 // spends, and never fold an echo record into the sum).
 import { tokensLine, fmtTokens } from '../src/u-readout.js';
+import { cleanEnv } from './helpers.js';
 
 test('§tokens: sums usage across BOTH worker-round and judge-round', () => {
   const events = [

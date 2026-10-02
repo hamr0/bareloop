@@ -18,6 +18,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS } from '../src/reuse.js';
 import { deathAtOf, evidencePackage, resumeAtLines } from '../src/u-readout.js';
+import { cleanEnv } from './helpers.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 — the ORCHESTRATION this file's source-text tripwires
@@ -72,7 +73,7 @@ const pausedSpine = ({ at = '2026-08-04T10:20:00.000Z', job = SPEC.job, changed 
 /** the preview: no --approve, so nothing reads a key and nothing touches a patient */
 const preview = (args, job = 'bareagent-types') => {
   const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
-    encoding: 'utf8', timeout: 240_000, env: { ...process.env, ANTHROPIC_API_KEY: '' },
+    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) {
