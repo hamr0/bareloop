@@ -1160,7 +1160,15 @@
     row.setAttribute("role", "button");
     row.setAttribute("aria-pressed", selected ? "true" : "false");
     var histFullName = r.job + ' (' + r.runid + ')';
-    if(r.fileMissing){
+    if(r.starting){
+      row.innerHTML =
+        '<span class="wf-line1"><span class="dot amber"></span>' +
+        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
+        '<span class="wf-meta-line">' +
+        '<span class="wf-meta" data-testid="hist-starting-' + escapeXml(r.runid) + '">starting…</span>' +
+        '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
+        '</span>';
+    } else if(r.fileMissing){
       row.innerHTML =
         '<span class="wf-line1"><span class="dot grey"></span>' +
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
@@ -1176,7 +1184,7 @@
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(rowSpendText(r)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(r.wall) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(rowWallText(r)) + '</span>' +
         '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
         '</span>';
     }
@@ -1224,7 +1232,7 @@
         lastCheckType: last.checkType || "unknown",
         lastModel: last.model || null,
         lastSpend: rowSpendText(last),
-        lastWall: last.wall || "unknown",
+        lastWall: rowWallText(last) || "unknown",
         lastDate: last.date,
       };
     });
@@ -1696,6 +1704,17 @@
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
     return core + draftPart + capPart;
   }
+  // P5 item 6: a LIVE row (no job-end yet, runner alive) reads the same running floors the
+  // right pane reads — `liveSpendText`/`liveWallPhrase` are the one spelling — and a row whose
+  // spine is not written yet reads "starting…", never "file missing" or "unknown".
+  function rowIsLive(r){
+    return r.glyph === "▶" && !r.died && !r.starting && (r.spentUsd === null || r.spentUsd === undefined);
+  }
+  function rowWallText(r){
+    if(r.starting) return "just started";
+    if(rowIsLive(r)) return liveWallPhrase(r.wallFloorMs);
+    return r.wall;
+  }
   /**
    * The Runs list row / Workflows grouping's own spend text — off the
    * numeric fields `/api/runs`' row now carries (never `r.spend`, which is
@@ -1707,6 +1726,8 @@
    * @param {any} r a `/api/runs` row (or a Workflows group's `last` row)
    */
   function rowSpendText(r){
+    if(r.starting) return "starting…";
+    if(rowIsLive(r)) return liveSpendText(r.spendFloorUsd, r.draftSpentUsd, r.draftSpendComplete);
     var draftIncomplete = typeof r.draftSpentUsd === "number" && r.draftSpentUsd !== null && r.draftSpendComplete === false;
     var coreVal = r.died ? r.spendFloorUsd : r.spentUsd;
     var coreFloor = !!r.died || draftIncomplete;
@@ -1946,10 +1967,25 @@
       document.getElementById("run-empty").textContent = "spine file no longer on disk";
       document.getElementById("run-content").hidden = true;
       document.getElementById("audit-select-empty").hidden = false;
+      document.getElementById("audit-select-empty").textContent = "select a run first";
       document.getElementById("audit-body").hidden = true;
       return;
     }
 
+    if(detail.starting){
+      name.textContent = detail.job + " (" + detail.runid + ")";
+      dot.className = "dot amber";
+      verdict.textContent = "starting…";
+      verdict.removeAttribute("title");
+      date.textContent = detail.date || "unknown";
+      document.getElementById("run-empty").hidden = false;
+      document.getElementById("run-empty").textContent = "starting… the run has not written its log yet";
+      document.getElementById("run-content").hidden = true;
+      document.getElementById("audit-select-empty").hidden = false;
+      document.getElementById("audit-select-empty").textContent = "starting… the run has not written its log yet";
+      document.getElementById("audit-body").hidden = true;
+      return;
+    }
     document.getElementById("audit-select-empty").hidden = true;
     document.getElementById("audit-body").hidden = false;
     renderEnded(detail);

@@ -3448,6 +3448,12 @@ key you want first (the panel picks the row by the Model menu).
   the log tail is returned as `error` verbatim; otherwise `{ok:true, runid, specHash, capsChanged,
   log}`. The new run appears in the list under its own runid. The page's Resume button opens the
   caps form (prefilled, "spent so far") and `Sign & resume` is the human click.
+  **Run-card fixes (item 6)** → a listed run whose runner is alive but whose spine is not written
+  yet reads `starting: true` (list AND detail; glyph `▶`, every figure null, `fileMissing:false`) —
+  never `file missing`; a row whose runner is gone and whose spine is absent stays `fileMissing`.
+  `GET /api/runs` rows now carry `spendFloorUsd`/`wallFloorMs` for a LIVE spine too (previously died
+  only; both `null` once a `job-end` exists), the same `deriveDeath` floors the detail carries, so a
+  live card reads "$X so far · running Ym" exactly like the right pane.
 
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s

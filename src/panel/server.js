@@ -475,6 +475,46 @@ function endedForRow(row, records, summary, death) {
 }
 
 /**
+ * P5 item 6 — a run whose row is listed (its runner is alive) but whose spine does not
+ * exist YET: the runner appends the row first, then opens the spine. It is `starting`,
+ * never `file missing`. Carries the same field names a normal row/detail does so every
+ * client reader (filters, groups) sees a live `▶` run, with every figure honestly null.
+ * @param {{ runid: string, job: string, at: string, via: string }} row
+ * @returns {any}
+ */
+function startingStub(row) {
+  return {
+    runid: row.runid,
+    job: row.job,
+    at: row.at,
+    via: row.via,
+    fileMissing: false,
+    starting: true,
+    died: false,
+    glyph: '▶',
+    outcome: null,
+    endedLine: null,
+    ended: null,
+    resume: null,
+    checkType: 'unknown',
+    checkTypeTitle: null,
+    model: null,
+    spend: 'unknown',
+    wall: 'unknown',
+    date: typeof row.at === 'string' ? row.at.slice(0, 10) : null,
+    spentUsd: null,
+    spendComplete: false,
+    spendFloorUsd: null,
+    wallFloorMs: null,
+    draftSpentUsd: null,
+    draftSpendComplete: null,
+    budgetUsd: null,
+    steps: [],
+    parts: [],
+  };
+}
+
+/**
  * One `/api/runs` row, or `{ ...row, fileMissing: true }` when the row's
  * spine no longer exists on disk — never silently listed as if it were
  * still there (the same rule {@link import('../runlist.js').formatRunRow}
@@ -484,6 +524,7 @@ function endedForRow(row, records, summary, death) {
  */
 function summarizeRow(row) {
   if (!existsSync(row.spine)) {
+    if (runIsAlive(row)) return startingStub(row);
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
     };
@@ -529,7 +570,11 @@ function summarizeRow(row) {
     // no drafting fold at all, exactly like `summary.draftSpentUsd` itself.
     spentUsd: death.died ? null : summary.spentUsd,
     spendComplete: death.died ? false : summary.spendComplete,
-    spendFloorUsd: death.died ? death.spendFloorUsd : null,
+    // P5 item 6: the SAME floors the right pane reads (`deriveDeath`), for a died OR a
+    // still-running spine — so a live card and its pane show the same numbers. Both
+    // null once a job-end exists (the real figures above are complete then).
+    spendFloorUsd: death.spendFloorUsd,
+    wallFloorMs: death.wallFloorMs,
     draftSpentUsd: summary.draftSpentUsd,
     draftSpendComplete: summary.draftSpendComplete,
     budgetUsd: summary.budgetUsd,
@@ -594,6 +639,7 @@ export function getRunDetail(runid, opts = {}) {
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
   if (!existsSync(row.spine)) {
+    if (runIsAlive(row)) return startingStub(row);
     return {
       runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
     };
