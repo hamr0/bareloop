@@ -293,7 +293,7 @@ function formatDurationMs(ms) {
  * @param {any[]} records the run's raw spine records
  * @returns {{ok: true, specPath: string, spec: any, specHash: string, budgetUsd: number|null,
  *   maxWallMin: number|null, spentUsd: number|null, spendComplete: boolean,
- *   draftSpentUsd: number|null, draftSpendComplete: boolean|null}|{ok: false, why: string}}
+ *   draftSpentUsd: number|null, draftSpendComplete: boolean|null, wallUsedMs: number|null}|{ok: false, why: string}}
  */
 export function resumePlanFor(row, records) {
   if (runIsAlive(row)) return { ok: false, why: 'it is still running' };
@@ -331,6 +331,7 @@ export function resumePlanFor(row, records) {
       spendComplete: spentKnown && dead.spendComplete !== false && (draft === null || jobStart.draftSpendComplete !== false),
       draftSpentUsd: draft,
       draftSpendComplete: draft === null ? null : jobStart.draftSpendComplete !== false,
+      wallUsedMs: typeof dead.restart.priorWallMs === 'number' && Number.isFinite(dead.restart.priorWallMs) ? dead.restart.priorWallMs : null,
     };
   }
   return { ok: false, why: 'no signed job file beside this run matches the hash it ran under' };

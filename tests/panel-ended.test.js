@@ -266,7 +266,7 @@ test('resume route: unknown run is 404; a run that cannot be resumed is 409 with
 
 test('resume route: unchanged caps spawn run-u with the SAME signed spec, --resume <runid> and --approve <its hash>; nothing is written', async (t) => {
   const home = tmp();
-  const { out, specHash } = makeRun(home, { runid: 'same1', draft: 0.5 });
+  const { out, specHash } = makeRun(home, { runid: 'same1', spent: 5, draft: 0.5 });
   const spawnFn = makeSpawn();
   const { post } = await startServer(t, { home, spawnFn, bareloopBin: '/x/bareloop.mjs' });
   const res = await post('/api/runs/same1/resume', { budgetUsd: 8, maxWallMin: 60 });
@@ -335,9 +335,28 @@ test('resume route: bad caps are 400 and spawn nothing', async (t) => {
   assert.equal(spawnFn.calls.length, 0);
 });
 
+test('ITEM 5: a money cap at or below what is already spent, or a time cap at or below the time used, is refused at $0 — nothing written, nothing spawned', async (t) => {
+  const home = tmp();
+  const { out } = makeRun(home, { runid: 'low1' }); // spent 8 of 8, ~5 min used
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  for (const cap of [8, 7.5, 1]) {
+    const r = await post('/api/runs/low1/resume', { budgetUsd: cap });
+    assert.equal(r.status, 400, `cap ${cap}`);
+    assert.match((await r.json()).error, /^The money cap must be above what is already spent \(\$8\.00\) — raise it, then Resume\.$/);
+  }
+  const w = await post('/api/runs/low1/resume', { budgetUsd: 12, maxWallMin: 5 });
+  assert.equal(w.status, 400);
+  assert.match((await w.json()).error, /^The time cap must be above the time already used \(5 min\)/);
+  assert.equal(spawnFn.calls.length, 0);
+  assert.deepEqual(readdirSync(out).filter((n) => n !== 'source-x'), ['resolved-spec.json'], 'no revision file, no log');
+  // just above is accepted
+  assert.equal((await post('/api/runs/low1/resume', { budgetUsd: 8.01 })).status, 200);
+});
+
 test("resume route: the engine's own refusal text reaches the page", async (t) => {
   const home = tmp();
-  const { out } = makeRun(home, { runid: 'eng1' });
+  const { out } = makeRun(home, { runid: 'eng1', spent: 5 });
   const refusal = '--resume: that run reached its own terminal (step-red) — only a governance halt leaves work to continue.';
   // the child's stdout/stderr is the run's log file: the stub writes where a real engine would
   const spawnFn = makeSpawn((child) => {
@@ -353,7 +372,7 @@ test("resume route: the engine's own refusal text reaches the page", async (t) =
 
 test('resume route: the monthly $ limit refuses before anything is spawned', async (t) => {
   const home = tmp();
-  makeRun(home, { runid: 'mon1' });
+  makeRun(home, { runid: 'mon1', spent: 5 });
   writeFileSync(join(home, 'config.json'), JSON.stringify({ monthlyLimitUsd: 1 }));
   const spawnFn = makeSpawn();
   const { post } = await startServer(t, { home, spawnFn });

@@ -3439,7 +3439,8 @@ key you want first (the panel picks the row by the Model menu).
   **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
   `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?}`
   (blank = the signed caps). `404` unknown run; `409` when `resumePlanFor` says the engine would
-  refuse (`Resume is not available for this run (why).`); `400` for a bad cap or the monthly $
+  refuse (`Resume is not available for this run (why).`); `400` for a bad cap, a money cap at or below what is already spent (or a time cap at or below the time
+  used) — refused at $0 before any write or spawn — or the monthly $
   limit (same library check and text as Sign & run). If a cap changed, the new spec is written as
   `resolved-spec-r<k>.json` beside the original and its hash is approved; the signed spec the run
   started under is never overwritten, and a run resumed under `r<k>` is resumed again under the

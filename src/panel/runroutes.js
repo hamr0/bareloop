@@ -106,6 +106,16 @@ export function createRunRoutes(opts) {
       if (!Number.isFinite(wantMin) || wantMin <= 0) { send(400, { ok: false, error: 'the time cap must be a number of minutes above 0' }); return true; }
       spec.maxWallMs = Math.round(wantMin * 60000);
     }
+    // tighten-only: a cap at or below what the run has ALREADY used buys an immediate re-halt
+    // (the engine only warns), so it is refused here at $0, before anything is written or spawned
+    if (typeof plan.spentUsd === 'number' && spec.budgetUsd <= plan.spentUsd) {
+      send(400, { ok: false, error: `The money cap must be above what is already spent (${plan.spendComplete ? '' : 'at least '}$${plan.spentUsd.toFixed(2)}) — raise it, then Resume.` });
+      return true;
+    }
+    if (typeof plan.wallUsedMs === 'number' && typeof spec.maxWallMs === 'number' && spec.maxWallMs <= plan.wallUsedMs) {
+      send(400, { ok: false, error: `The time cap must be above the time already used (${Math.ceil(plan.wallUsedMs / 60000)} min) — raise it, then Resume.` });
+      return true;
+    }
     const changed = spec.budgetUsd !== plan.spec.budgetUsd || spec.maxWallMs !== plan.spec.maxWallMs;
 
     // the monthly $ limit refuses here too, before anything is spawned — same library call
