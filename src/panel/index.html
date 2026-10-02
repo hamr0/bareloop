@@ -246,6 +246,9 @@
   .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
   .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+  .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
+  .run-actions[hidden]{display:none;}
+  .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   .resume-err{color:var(--red);white-space:pre-wrap;overflow-wrap:anywhere;}
   /* P5-R: a resumed run is ONE card; its legs are told apart by a divider line, a dotted map connector, a small tag */
   .wf-resumed{color:var(--amber);}
@@ -590,6 +593,7 @@
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
           <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
           <div id="run-content" hidden>
+            <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
             <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div></div>
@@ -1956,6 +1960,40 @@
       box.querySelector('[data-testid="btn-resume"]').addEventListener("click", function(){ openResumeOnJobTab(detail); });
     }
   }
+  // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
+  // it ended in a way the engine would accept (the SAME button as the Ended block's, same Job-tab resume mode).
+  // The Ended block's own Resume stays; this is the second place the button is missing from (P5-R note).
+  var stopAsked = {};
+  function renderRunActions(detail){
+    var bar = document.getElementById("run-actions");
+    var html = "";
+    var live = !!detail.live && !detail.died && !detail.ended;
+    if(live){
+      if(detail.stopping || stopAsked[detail.runid]){
+        html = '<span class="stopping" data-testid="stopping-note">stopping after this step…</span>';
+      } else {
+        html = '<button class="btn" type="button" data-testid="btn-stop">Stop</button>';
+      }
+    } else {
+      delete stopAsked[detail.runid];
+      var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
+      if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
+    }
+    bar.innerHTML = html;
+    bar.hidden = html === "";
+    var stopBtn = bar.querySelector('[data-testid="btn-stop"]');
+    if(stopBtn){
+      stopBtn.addEventListener("click", function(){
+        stopBtn.disabled = true;
+        authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/stop", {}).then(function(res){
+          if(res.body && res.body.ok){ stopAsked[detail.runid] = true; renderRunActions(detail); }
+          else { stopBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="stop-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>'); }
+        }).catch(function(x){ stopBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="stop-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
+      });
+    }
+    var resBtn = bar.querySelector('[data-testid="btn-resume-run"]');
+    if(resBtn) resBtn.addEventListener("click", function(){ openResumeOnJobTab(detail); });
+  }
   function openResumeOnJobTab(detail){
     var r = detail.resume || {};
     resumeMode = {
@@ -2082,6 +2120,7 @@
 
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = false;
+    renderRunActions(detail);
 
     // died: the two REAL figures the panel has (spentUsd/wallMs, both null —
     // no job-end means no final totals were ever recorded) are replaced with

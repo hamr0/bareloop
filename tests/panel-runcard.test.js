@@ -161,7 +161,7 @@ test('page: a LIVE run\'s summary headline reads "running <duration>", never the
   // everything renderRun CALLS but this test is not about is a no-op stub; the functions that
   // build the strings under test (money, duration, live phrases, escapeXml) are the page's own
   const stubs = ['buildOrderedBoxes', 'stepNumberIndices'].map((n) => `function ${n}(){return [];}`)
-    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter']
+    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions']
       .map((n) => `function ${n}(){return "";}`)).join('\n');
   // eslint-disable-next-line no-new-func
   const render = new Function('document', `

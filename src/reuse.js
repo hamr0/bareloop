@@ -118,6 +118,11 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  * allowances the loop's remaining tries are meant to spend against, and the human
  * ones are the stop no further try can change (see `hardStop`).
  *
+ * `stopped` (PANEL-BUILD.md P5 item 5, hamr 2026-10-02): the PERSON ended the leg at a between-steps
+ * boundary (a `<spine>.stop` request). Nothing was judged and nothing failed — finished steps stand on
+ * disk, the allowance is unspent, so it is a checkpoint exactly like a cap-halt. Arbiter-adjacent (it
+ * widens what resume may re-enter); ruled by hamr, not chosen by a builder.
+ *
  * `provider-red` folded in 2026-08-25 (PRD v1.80 TODO #4, F115 "Ruled: one transport
  * retry"; hamr's ruling verbatim: *"joins resume anyways and you decide but you are
  * given an honest readout and with 1 retry"*). It is a MACHINE halt, not a human one
@@ -140,7 +145,7 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  * does not end up with two lists that can drift, which is the exact failure this
  * constant exists to end (see the paragraph above).
  */
-export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'provider-red', ...HUMAN_CHECKPOINTS]);
+export const CHECKPOINT_OUTCOMES = Object.freeze(['cap-halt', 'wall-halt', 'step-stalled', 'provider-red', 'stopped', ...HUMAN_CHECKPOINTS]);
 
 /**
  * v1's definition of "the same KIND of recipe" — and it is the LOAD GATE's own: the

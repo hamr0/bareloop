@@ -157,3 +157,15 @@ export function parseSpineText(raw) {
 export function watchdogNotePath(spineFile, leg) {
   return leg <= 1 ? `${spineFile}.watchdog.json` : `${spineFile}.leg${leg}.watchdog.json`;
 }
+
+/**
+ * P5 item 5 (Stop) — where a run's STOP REQUEST lives: a file beside its spine. The panel's stop route writes it;
+ * the engine reads it at the between-steps seam (src/planrun.js) and consumes it. One spelling, here, so the route
+ * and the engine can never name two files. A request belongs to ONE leg: the engine deletes it when it honours it,
+ * when the leg ends, and again at the start of the next leg (src/userrun.js).
+ * @param {string} spineFile
+ * @returns {string}
+ */
+export function stopFilePath(spineFile) {
+  return `${spineFile}.stop`;
+}

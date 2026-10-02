@@ -21,6 +21,7 @@ import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor } from '../keysfile.js';
 import { jobSpecHash } from '../job.js';
+import { stopFilePath } from '../legs.js';
 
 /** the tail of an engine log shown to the person when the engine refuses at start (bytes) */
 const LOG_TAIL_BYTES = 4000;
@@ -60,13 +61,42 @@ function readLogTail(file) {
  * `null` = no such run, else `{row, plan}`.
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>, home?: string,
  *   spawnFn?: typeof realSpawn, bareloopBin?: string, settleMs?: number,
- *   getResumeContext: (runid: string) => ({row: any, plan: any}|null) }} opts
+ *   getResumeContext: (runid: string) => ({row: any, plan: any}|null),
+ *   getStopContext?: (runid: string) => ({row: any, live: boolean, spineExists: boolean}|null) }} opts
  */
 export function createRunRoutes(opts) {
   const envNow = () => keysForDoor({ env: opts.env, keysHome: opts.home }).env;
   const spawnFn = opts.spawnFn ?? realSpawn;
   const bareloopBin = opts.bareloopBin ?? new URL('../../bin/bareloop.mjs', import.meta.url).pathname;
   const settleMs = opts.settleMs ?? DEFAULT_SETTLE_MS;
+
+  /**
+   * P5 item 5 — `POST /api/runs/:runid/stop`. The click writes the run's STOP REQUEST file (`<spine>.stop`,
+   * `stopFilePath`); the ENGINE reads it at its between-steps seam and ends the leg `stopped` (resumable). The
+   * route never signals or kills anything. Refused (409) unless the run's LATEST leg is live — a stop request for
+   * a run that is not running would sit on disk and could be misread by a later leg (the engine also clears a
+   * stale one at leg start, but a button that cannot do anything is not offered or accepted).
+   * @param {import('node:http').IncomingMessage} req
+   * @param {(code: number, obj: any) => void} send
+   * @param {string} runid
+   * @returns {boolean}
+   */
+  function handleStop(req, send, runid) {
+    const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });
+    if (!guard.ok) { send(403, { ok: false, error: `refused — ${guard.reason}` }); return true; }
+    if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
+    const ctx = opts.getStopContext ? opts.getStopContext(runid) : null;
+    if (!ctx) { send(404, { ok: false, error: 'no such run' }); return true; }
+    if (!ctx.live) { send(409, { ok: false, error: 'This run is not running, so there is nothing to stop.' }); return true; }
+    if (!ctx.spineExists) { send(409, { ok: false, error: 'The run is still starting — it has not written its log yet. Try again in a moment.' }); return true; }
+    const file = stopFilePath(ctx.row.spine);
+    try { writeFileSync(file, `${new Date().toISOString()}\n`); } catch (e) {
+      send(500, { ok: false, error: `could not write the stop request: ${/** @type {Error} */ (e).message}` });
+      return true;
+    }
+    send(200, { ok: true, runid, stopping: true });
+    return true;
+  }
 
   /**
    * @param {import('node:http').IncomingMessage} req
@@ -76,13 +106,16 @@ export function createRunRoutes(opts) {
    * @returns {boolean}
    */
   function handle(req, res, pathname, body) {
+    const stopM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/stop$/.exec(pathname);
     const m = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/resume$/.exec(pathname);
-    if (!m) return false;
+    if (!m && !stopM) return false;
     const send = (/** @type {number} */ code, /** @type {any} */ obj) => {
       const text = JSON.stringify(obj);
       res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text) });
       res.end(text);
     };
+    if (stopM) return handleStop(req, send, stopM[1]);
+    if (!m) return false;
     const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });
     if (!guard.ok) { send(403, { ok: false, error: `refused — ${guard.reason}` }); return true; }
     if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }

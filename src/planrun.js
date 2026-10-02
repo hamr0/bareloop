@@ -21,7 +21,7 @@
 // which putting either in fs.deny would silently contradict.
 
 import { createRequire } from 'node:module';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
@@ -963,12 +963,18 @@ ${scoutBlob || '(no scout notes)'}`;
  *   passes `false` so the three `--resume`-naming readouts below (`MONEY_OPTIONS`,
  *   the resume-plan-red option, the fix-loop terminal) say "resume is `run-u`-only
  *   in v1" instead of naming a flag that would fail if typed.
+ * @param {string|null} [opts.stopFile=null] P5 item 5 — the run's STOP REQUEST file
+ *   (`stopFilePath(spine)`, src/legs.js). Read at ONE seam, the between-steps one (where the
+ *   wall deadline is read): present after a green step with steps still to run = emit
+ *   `stop-requested`, consume the file, end the leg `stopped` (a checkpoint outcome). Never
+ *   read mid-step or after the last step, so a stop never cuts work in flight and never
+ *   overrides a verdict the close is about to render. `null` = no stop surface (the default).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
- *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
+ *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -3430,6 +3436,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // it cannot fund, which is the same class as the money cap binding mid-attempt
       // (F45). Resume-to-cap applies exactly as it does to money — the stop IS the
       // checkpoint, so the completed steps are not wasted.
+      // P5 item 5 — the person's STOP, read at this same between-steps seam, with nothing in flight. The
+      // request is a file (`stopFile`); honouring it consumes it, so the next leg is never stopped by it.
+      // Money/time are not the reason, so no wall/money record is written: `stop-requested` is the record,
+      // and the terminal is the checkpoint `stopped` (resumable like a cap-halt, src/reuse.js).
+      if (stopFile !== null && idx < plan.steps.length && existsSync(stopFile)) {
+        try { unlinkSync(stopFile); } catch { /* already consumed */ }
+        emit('stop-requested', { phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length, meaning: 'the person asked to stop; the leg ends after the step in flight' });
+        planExecuted();
+        return 'stopped';
+      }
       if (clock.expired() && idx < plan.steps.length) {
         emitWallHalt({ stepsDone: idx, stepsPlanned: plan.steps.length });
         emit('escalation', {

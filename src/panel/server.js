@@ -35,7 +35,7 @@ import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine, auditWindowsOf } from '../replay.js';
-import { legsOf } from '../legs.js';
+import { legsOf, stopFilePath } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
@@ -490,6 +490,15 @@ export function endedFor(summary, death, o = {}) {
       actions: resumeOk ? RESUME : [],
     };
   }
+  if (outcome === 'stopped') {
+    // P5 item 5: the PERSON ended the leg (Stop). Nothing failed; the finished steps stand.
+    return {
+      reason: 'You stopped it.',
+      next: resumeOr('Resume.'),
+      line: resumeOk ? 'stopped — resume' : 'stopped',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
   if (outcome === 'provider-red') {
     const d = detailOf(summary.stopReason);
     return {
@@ -678,6 +687,21 @@ export function getResumeContext(runid, opts = {}) {
   const row = rows.find((r) => r && r.runid === runid);
   if (!row || !existsSync(row.spine)) return null;
   return { row, plan: resumePlanFor(row, parseJsonl(row.spine).records) };
+}
+
+/**
+ * The Stop route's reader (P5 item 5): the listed row, whether its LATEST leg is live (`runIsAlive`: the row's pid
+ * is the latest leg's, folded from the run list's `leg-start`), and whether its spine exists yet. `null` when the
+ * runid is not listed.
+ * @param {string} runid
+ * @param {{ home?: string }} [opts]
+ * @returns {{row: any, live: boolean, spineExists: boolean}|null}
+ */
+export function getStopContext(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  return { row, live: runIsAlive(row), spineExists: existsSync(row.spine) };
 }
 
 /**
@@ -900,6 +924,10 @@ export function getRunDetail(runid, opts = {}) {
     // numbers the Resume confirm box prefills (the signed caps, spent so far); `null`
     // whenever Resume is not offered.
     ended,
+    // P5 item 5: is the run's LATEST leg live (the page offers Stop only then), and has a stop been asked for
+    // (the request file exists beside the spine) — the page reads "stopping after this step…" until the leg ends
+    live: runIsAlive(row),
+    stopping: runIsAlive(row) && existsSync(stopFilePath(row.spine)),
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,
@@ -2118,7 +2146,7 @@ export function handleRequest(req, res, opts) {
   function routesFor(o, p) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
-    if (o.runRoutes && /^\/api\/runs\/[^/]+\/resume$/.test(p)) return o.runRoutes;
+    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop)$/.test(p)) return o.runRoutes;
     return null;
   }
   const method = req.method ?? 'GET';
@@ -2335,6 +2363,7 @@ export function createPanelServer(opts = {}) {
         bareloopBin: opts.bareloopBin,
         settleMs: opts.settleMs,
         getResumeContext: (runid) => getResumeContext(runid, { home }),
+        getStopContext: (runid) => getStopContext(runid, { home }),
       });
       resolve({
         server,

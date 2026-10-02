@@ -75,7 +75,7 @@ import { coldReset, moveStaleGateAudit } from './u-patient.js';
 import { appendRun, appendLegStart, appendRunEvent, isLiveRunner, readRunList } from './runlist.js';
 // P5-R — a resumed run is the SAME run: one id, one spine file, a `leg-resume` marker inside. `legsOf` is the
 // one owner of where a leg starts and ends; every reader below asks it.
-import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath } from './legs.js';
+import { legsOf, parseSpineText, LEG_RESUME, watchdogNotePath, stopFilePath } from './legs.js';
 import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
@@ -1885,9 +1885,16 @@ async function execute(ctx) {
     lagDue = now + LAG_POLL_MS;
   }, LAG_POLL_MS);
 
+  // P5 item 5 — the STOP request file (`<spine>.stop`, src/legs.js). A request belongs to ONE leg: one left on
+  // disk by an earlier leg (a click that raced that leg's end) is cleared HERE, before this leg's first step, so
+  // a resume is never stopped at once by a request it did not receive. The engine also consumes the file when it
+  // honours it, and the `finally` below clears whatever is left when the leg ends.
+  const stopFile = stopFilePath(spineFile);
+  try { rmSync(stopFile, { force: true }); } catch { /* best-effort — a stop surface must never kill the run */ }
   let outcome;
   try {
     outcome = await runJob(spec, {
+      stopFile,
       // PRD item 27/M3 — the SAME `emit` the pre-run close-timing reading above
       // used (never a second `makeSpine(spineFile)` here: two independent
       // emitters against one file would both start their seq counter at 0 and
@@ -1976,6 +1983,7 @@ async function execute(ctx) {
     // the guard outlives the run only by accident, never by design
     try { watchdog.kill('SIGKILL'); } catch { /* already gone */ }
     clearInterval(lagTimer);
+    try { rmSync(stopFile, { force: true }); } catch { /* best-effort */ }
   }
   const legMs = Date.now() - started;
 

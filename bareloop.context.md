@@ -1229,7 +1229,7 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
 plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red | pricing-red |
-provider-red | interpreter-red | cap-halt | wall-halt | step-stalled |
+provider-red | interpreter-red | cap-halt | wall-halt | stopped | step-stalled |
 step-red:<id> | runner-drained`.
 
 **`runner-drained` (F140/PRD item 28(c))** is a distinct class from every outcome above: it is
@@ -3495,6 +3495,24 @@ key you want first (the panel picks the row by the Model menu).
   the log tail is returned as `error` verbatim; otherwise `{ok:true, runid, specHash, capsChanged,
   log}`. The new run appears in the list under its own runid. The page's Resume button opens the
   caps form (prefilled, "spent so far") and `Sign & resume` is the human click.
+  **Stop (item 5)** → `POST /api/runs/:runid/stop` (`src/panel/runroutes.js`, `checkHumanGuard`, no body).
+  It writes the run's STOP REQUEST, a file `<spine>.stop` (`stopFilePath(spine)`, `src/legs.js` — the one
+  spelling), and signals nothing. `404` unknown run; `409` when the run's LATEST leg is not live
+  (`runIsAlive`) or its spine does not exist yet (still starting). The ENGINE half is library code, so
+  CLI runs honour the file too (no new CLI command): `runJob`/`runPlan` take `stopFile`, and `run-u`/the
+  panel's spawn pass `<spine>.stop`. The seam is the between-steps one, where the wall deadline is read
+  (`src/planrun.js`, after a green step with steps still to run): file present = emit `stop-requested
+  {phase, stepsDone, stepsPlanned}`, delete the file, end the leg with job-end outcome `stopped`
+  (`spendComplete` exact — nothing in flight). A stop is never read mid-step or after the last step, so
+  it never cuts work and never overrides a verdict (a one-step run therefore cannot be stopped; the
+  request is cleared when the leg ends). The request file is cleared three times: when honoured, when the
+  leg ends (`finally`), and at the start of the next leg (a click that raced a leg's end never stops a
+  resume). `stopped` is in `CHECKPOINT_OUTCOMES`: resumable like a `cap-halt`, the same run continues as a
+  new leg at the next step. `GET /api/runs/:runid` carries `live` and `stopping` (a stop request is on
+  disk and the leg is live); Ended row `stopped` = "You stopped it." / "Resume." / `[Resume]`, card line
+  `stopped — resume`, Audit divider `stopped: you stopped it · resumed <when>`. The page shows `[Stop]`
+  in the Run tab's action area while live, "stopping after this step…" after the click, and the same
+  `[Resume]` there once the engine would accept one.
   **Run-card fixes (item 6)** → a listed run whose runner is alive but whose spine is not written
   yet reads `starting: true` (list AND detail; glyph `▶`, every figure null, `fileMissing:false`) —
   never `file missing`; a row whose runner is gone and whose spine is absent stays `fileMissing`.
