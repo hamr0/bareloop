@@ -132,9 +132,13 @@ function makeFixtureElements() {
   const histViewChip = makeEl({ classes: ['chip'], attrs: { 'data-runs-view': 'history', 'aria-pressed': 'false' } });
   const wfList = makeEl({ tag: 'div', attrs: { id: 'wf-list' } });
   const historyList = makeEl({ tag: 'div', attrs: { id: 'history-list' } });
+  // P5 item 4: the view toggle also shows/hides the Import button, its list and its box (Workflows view only)
+  const importBtn = makeEl({ tag: 'button', attrs: { id: 'wf-import' } });
+  const importList = makeEl({ tag: 'div', attrs: { id: 'import-list' } });
+  const importBox = makeEl({ tag: 'div', attrs: { id: 'import-box' } });
   const elements = [
     detChip, allTimeChip, clearBtn, auditAll, auditWrites, countEl,
-    wfViewChip, histViewChip, wfList, historyList,
+    wfViewChip, histViewChip, wfList, historyList, importBtn, importList, importBox,
   ];
   return {
     elements, detChip, clearBtn, auditAll, wfViewChip, histViewChip,
