@@ -3412,6 +3412,28 @@ key you want first (the panel picks the row by the Model menu).
   `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
   `~/.config/bareloop/.env` keys-file loader, and Settings have landed (P4a/P4b — see "Settings" below).
 
+- **Panel P5 — the Ended block (`docs/product/PANEL-BUILD.md` Addendum 2026-10-02, item 1)** →
+  `GET /api/runs/:runid` carries `ended` = `{reason, next, line, actions:[{id,label}]}` for every
+  FINISHED run (green too; `null` while the run is live), and `GET /api/runs` carries `endedLine`
+  (the card's one short line under the job name, e.g. `money cap — resume`). Both come from ONE
+  code-owned function, `endedFor` (`src/panel/server.js`): fixed sentences keyed by the run's
+  outcome (a bare `escalated` is re-read through its last escalation's category), with only
+  numbers and the engine's own recorded detail slotted in — never model text. The table:
+  green/already-green → "Goal met." (a `destination-refused` record turns it into "…the output
+  could not be delivered (detail)."); cap-halt → "Money cap reached ($X of $Y)." / "Raise the cap,
+  then Resume."; wall-halt → "Time cap reached."; provider-red → "The model provider failed
+  (detail)."; step-stalled → "A step stopped making progress."; plan-red/check-red/step-red/escalated
+  → "Goal not met — the checks said no (last gap)."; close-red → "The check itself broke
+  (instrument fault), not your goal."; every other terminal → "Stopped before or outside the work
+  (outcome — detail)."; a run with no `job-end` whose process is gone (glyph `?`, never `✗`) →
+  "Stopped with no ending recorded (last thing it did: …)." `actions` holds `resume` ONLY when
+  the engine would accept a resume (`resumePlanFor`: the same `readResume`/`CHECKPOINT_OUTCOMES`/
+  `checkpointAgeGate` readers the engine refuses with, plus a signed `resolved-spec.json` /
+  `resolved-spec-r<k>.json` beside the run whose hash is the one the run's `job-start` carries);
+  otherwise `next` says why Resume is not available. `resume` on the detail is
+  `{budgetUsd, maxWallMin, spentUsd, spendComplete}` (the confirm box's prefill) or `null`. The
+  result glyphs are unchanged. "Start from this" is a later P5 part; no such button exists yet.
+
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
   U-mode). `src/cli.js`'s `run-u` dispatch hands `rest` straight to

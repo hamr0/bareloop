@@ -207,6 +207,7 @@
      than wrapping onto a 3rd/4th line. */
   .wf-meta-line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
   .wf-meta{font-size:12px;color:var(--text-dim);}
+  .wf-ended{display:block;font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
   .wf-meta + .wf-meta::before{content:" · ";color:var(--text-faint);}
   .wf-row.selected,.hist-row.selected{border:2px solid var(--accent);border-radius:4px;}
   /* item 2 (2026-09-26 merge): a Workflows-view job row expands inline to
@@ -237,6 +238,13 @@
   .counters b,.counters span{color:var(--accent);}
 
   .summary-box{position:relative;border:1px solid var(--border-strong);padding:16px 12px 12px;margin-top:16px;background:var(--panel2);font-size:12px;}
+  .ended-block{position:relative;border:1px solid var(--border-strong);padding:14px 12px 12px;margin-bottom:14px;background:var(--panel2);font-size:13px;}
+  .ended-block.magenta{border-color:var(--magenta);}
+  .ended-block.red{border-color:var(--red);}
+  .ended-block.green{border-color:var(--green);}
+  .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
+  .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
+  .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
   .summary-box.red{border-color:var(--red);}
   .summary-box.amber{border-color:var(--amber);}
   .summary-box.magenta{border-color:var(--magenta);}
@@ -582,6 +590,7 @@
         <section id="panel-audit" class="tabpanel" role="tabpanel" aria-labelledby="tab-audit" hidden>
           <div id="audit-select-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
           <div id="audit-body" hidden>
+            <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
             <div class="audit-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
               <div class="chips" role="group" aria-label="Filter audit rows" style="margin-bottom:0;">
                 <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
@@ -1158,6 +1167,7 @@
       row.innerHTML =
         '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
+        (r.endedLine ? '<span class="wf-ended" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + escapeXml(r.endedLine) + '</span>' : '') +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(rowSpendText(r)) + '</span>' +
@@ -1205,6 +1215,7 @@
         lastRunid: last.runid,
         lastAt: last.at,
         lastGlyph: last.glyph || "▶",
+        lastEndedLine: last.endedLine || null,
         lastCheckType: last.checkType || "unknown",
         lastModel: last.model || null,
         lastSpend: rowSpendText(last),
@@ -1337,6 +1348,7 @@
       row.innerHTML =
         '<span class="wf-line1"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
+        (g.lastEndedLine ? '<span class="wf-ended" data-testid="wf-ended-' + escapeXml(g.job) + '">' + escapeXml(g.lastEndedLine) + '</span>' : '') +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastSpend) + '</span>' +
@@ -1858,6 +1870,26 @@
     else { row.hidden = true; val.textContent = ""; }
   }
 
+  // ---- P5: the ENDED block (Audit tab, first block, every finished run) and Resume ----
+  // The sentences are CODE-OWNED on the server (`endedFor`, src/panel/server.js) — this only
+  // paints them. `detail.ended` is null while a run is live (no block while running).
+  var lastEndedSig = null;
+  function renderEnded(detail){
+    var box = document.getElementById("ended-block");
+    var e = detail.ended;
+    if(!e){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
+    // rebuilt only when what it shows changed — an open Resume form (typed caps) survives a re-render
+    var sig2 = detail.runid + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume);
+    if(sig2 === lastEndedSig) return;
+    lastEndedSig = sig2;
+    box.hidden = false;
+    box.className = "ended-block " + (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"));
+    box.innerHTML =
+      '<div class="ended-row"><span class="ended-label">ENDED</span><span class="ended-text" data-testid="ended-reason">' + escapeXml(e.reason) + '</span></div>' +
+      '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + escapeXml(e.next) + '</span></div>' +
+      '';
+  }
+
   function renderRun(detail){
     var name = document.getElementById("active-wf-name");
     var dot = document.getElementById("active-wf-dot");
@@ -1879,6 +1911,7 @@
 
     document.getElementById("audit-select-empty").hidden = true;
     document.getElementById("audit-body").hidden = false;
+    renderEnded(detail);
 
     name.textContent = detail.job + " (" + detail.runid + ")";
     dot.className = "dot " + glyphClass(detail.glyph);

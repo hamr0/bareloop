@@ -264,7 +264,7 @@ export function createAuthorRoutes(opts) {
  * @param {number} n a non-negative dollar amount
  * @returns {string}
  */
-function panelMoney2(n) {
+export function panelMoney2(n) {
   if (n > 0 && n < 0.01) return '<$0.01';
   // two-step rounding (matching index.html's own panelMoney): clean to
   // 6-decimal precision first (the same precision src/text.js's tallyCalls

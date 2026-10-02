@@ -25,7 +25,7 @@
 // for every cap/threshold: a shell never widens what it was asked to do).
 
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
@@ -39,7 +39,8 @@ import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
-import { createAuthorRoutes, mintToken, checkHostGuard } from './authorroutes.js';
+import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
+import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -234,11 +235,11 @@ export function formatTimestamp(ts) {
  * @param {import('../runlist.js').RunRow} row the run's listed row (its pid, else its spine's mtime, says whether it is still running)
  * @param {any[]} records raw parsed spine records (already read once by the caller)
  * @param {string|null} outcome `replayRun`'s own `summary.outcome`
- * @returns {{died: boolean, why: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
+ * @returns {{died: boolean, why: string|null, lastThing: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
  */
 function deriveDeath(row, records, outcome) {
   const notDied = {
-    died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
+    died: false, why: null, lastThing: null, spendFloorUsd: null, wallFloorMs: null,
   };
   if (outcome !== null && outcome !== undefined) return notDied; // a real job-end was reached
   // no job-end yet — the floor derivation is identical whether this turns
@@ -250,10 +251,11 @@ function deriveDeath(row, records, outcome) {
   const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
   const last = withTs.length ? withTs[withTs.length - 1] : null;
   const when = last ? formatTimestamp(last.ts) : 'an unknown time';
-  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${describeLastRecord(last)} at ${when}.`;
+  const lastThing = `${describeLastRecord(last)} at ${when}`;
+  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${lastThing}.`;
 
   return {
-    died: true, why, ...floors,
+    died: true, why, lastThing, ...floors,
   };
 }
 
@@ -271,6 +273,204 @@ function formatDurationMs(ms) {
   let rem = Math.round(s - m * 60);
   if (rem === 60) { m += 1; rem = 0; }
   return `${m}m${String(rem).padStart(2, '0')}s`;
+}
+
+/**
+ * P5 item 2 — may this run be resumed, and under which spec file? The ONE owner of
+ * "would the engine accept `--resume` for this run" on the panel side: it asks the SAME
+ * library readers the engine's own refusals come from (`readResume` with
+ * `CHECKPOINT_OUTCOMES`, `checkpointAgeGate`), plus the two facts the panel needs to
+ * spawn it (a signed spec file beside the run, whose hash is the one the run was signed
+ * under). `ok:false` means the panel declines to offer a button the engine would refuse
+ * by design; it carries a plain `why`.
+ *
+ * The spec file is the run's own `resolved-spec.json` or one of its
+ * `resolved-spec-r<k>.json` siblings (a resume under raised caps writes one), picked by
+ * HASH against the run's `job-start.specHash` — a run resumed under raised caps must be
+ * resumed again under ITS caps, never the original's. No match = no resume offered.
+ * @param {{ spine: string, job: string, pid?: number }} row
+ * @param {any[]} records the run's raw spine records
+ * @returns {{ok: true, specPath: string, spec: any, specHash: string, budgetUsd: number|null,
+ *   maxWallMin: number|null, spentUsd: number|null, spendComplete: boolean,
+ *   draftSpentUsd: number|null, draftSpendComplete: boolean|null}|{ok: false, why: string}}
+ */
+export function resumePlanFor(row, records) {
+  if (runIsAlive(row)) return { ok: false, why: 'it is still running' };
+  const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
+  if (!jobStart) return { ok: false, why: 'its log has no start record' };
+  const dead = readResume(records, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
+  if (!dead.started) return { ok: false, why: 'its log has no start record' };
+  if (dead.greened) return { ok: false, why: 'it already met its goal' };
+  if (dead.ended) return { ok: false, why: `it ended as ${dead.endOutcome}, which is an answer, not a stop` };
+  if (!dead.restart) return { ok: false, why: 'it never opened an attempt to continue' };
+  const age = checkpointAgeGate(records);
+  if (!age.ok) return { ok: false, why: String(age.detail ?? 'its checkpoint has expired') };
+  const near = sourceNearSpine(row.spine);
+  if (!near.specPath) return { ok: false, why: 'the signed job file is not beside this run' };
+  const dir = dirname(near.specPath);
+  /** @type {string[]} */
+  let names = [];
+  try { names = readdirSync(dir).filter((n) => n === 'resolved-spec.json' || /^resolved-spec-r\d+\.json$/.test(n)); } catch { names = []; }
+  for (const n of names) {
+    let spec;
+    try { spec = JSON.parse(readFileSync(join(dir, n), 'utf8')); } catch { continue; }
+    if (!spec || typeof spec !== 'object') continue;
+    const specHash = jobSpecHash(spec);
+    if (specHash !== jobStart.specHash || spec.job !== dead.job) continue;
+    const draft = typeof jobStart.draftSpentUsd === 'number' && jobStart.draftSpentUsd > 0 ? jobStart.draftSpentUsd : null;
+    const spentKnown = typeof dead.spentUsd === 'number' && Number.isFinite(dead.spentUsd);
+    return {
+      ok: true,
+      specPath: join(dir, n),
+      spec,
+      specHash,
+      budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+      maxWallMin: typeof spec.maxWallMs === 'number' ? spec.maxWallMs / 60000 : null,
+      spentUsd: spentKnown ? dead.spentUsd + (draft ?? 0) : null,
+      spendComplete: spentKnown && dead.spendComplete !== false && (draft === null || jobStart.draftSpendComplete !== false),
+      draftSpentUsd: draft,
+      draftSpendComplete: draft === null ? null : jobStart.draftSpendComplete !== false,
+    };
+  }
+  return { ok: false, why: 'no signed job file beside this run matches the hash it ran under' };
+}
+
+/** outcomes whose ending is "the checks said no" (a graded answer from a working close) */
+const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated']);
+/** the escalation categories a bare `escalated` outcome is re-read as */
+const GOVERNANCE_CATEGORIES = new Set(['cap-halt', 'wall-halt', 'provider-red', 'step-stalled']);
+
+/**
+ * P5 item 1 — the ENDED block: why a run ended, what to do next, and which buttons the
+ * engine would accept. CODE-OWNED FIXED SENTENCES (ui-verdict-words: never model text);
+ * the only slot-fills are numbers and the engine's own recorded detail. ONE owner,
+ * feeding both `getRunDetail` (`ended`) and `summarizeRow` (`endedLine`). `null` while
+ * a run is live (no Ended block while running).
+ *
+ * The table (outcome → reason / next / buttons) is PANEL-BUILD.md P5 item 1. The
+ * Resume button appears only when `o.resume` says the engine would accept it; "Start
+ * from this" is a later part (item 3) and is not offered here.
+ * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
+ * @param {{died: boolean, lastThing: string|null}} death
+ * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null}} [o]
+ * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
+ */
+export function endedFor(summary, death, o = {}) {
+  const resumeOk = !!(o.resume && o.resume.ok);
+  /** @type {{id: string, label: string}[]} */
+  const RESUME = [{ id: 'resume', label: 'Resume' }];
+  const detailOf = (/** @type {string|null} */ s) => {
+    if (typeof s !== 'string' || s.length === 0) return '';
+    return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+  };
+  /** a resumable ending whose Resume the engine would refuse: say so, never offer the button */
+  const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}.`);
+
+  if (death.died) {
+    return {
+      reason: `Stopped with no ending recorded${death.lastThing ? ` (last thing it did: ${death.lastThing})` : ''}.`,
+      next: resumeOr('Resume, or Start from this.'),
+      line: resumeOk ? 'died — resume' : 'died',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  const raw = summary.outcome;
+  if (raw === null || raw === undefined) return null;
+  const cat = raw === 'escalated' && typeof summary.lastEscalation?.category === 'string' ? summary.lastEscalation.category : null;
+  const outcome = cat !== null && GOVERNANCE_CATEGORIES.has(cat) ? cat : raw;
+
+  if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
+    if (o.destinationRefused) {
+      return {
+        reason: `Goal met, but the output could not be delivered (${detailOf(o.destinationRefused)}).`,
+        next: 'Fix the destination, then Start from this.',
+        line: 'goal met — not delivered',
+        actions: [],
+      };
+    }
+    return { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: [] };
+  }
+  if (outcome === 'cap-halt') {
+    const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
+      ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
+    return {
+      reason: `Money cap reached${money}.`,
+      next: resumeOr('Raise the cap, then Resume.'),
+      line: resumeOk ? 'money cap — resume' : 'money cap',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'wall-halt') {
+    return {
+      reason: 'Time cap reached.',
+      next: resumeOr('Raise the time, then Resume.'),
+      line: resumeOk ? 'time cap — resume' : 'time cap',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'provider-red') {
+    const d = detailOf(summary.stopReason);
+    return {
+      reason: `The model provider failed${d ? ` (${d})` : ''}.`,
+      next: resumeOr('Resume.'),
+      line: resumeOk ? 'provider failed — resume' : 'provider failed',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'step-stalled') {
+    return {
+      reason: 'A step stopped making progress.',
+      next: resumeOr('Resume, or Start from this and change the job.'),
+      line: resumeOk ? 'step stalled — resume' : 'step stalled',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (GOAL_NOT_MET.has(outcome)) {
+    const d = detailOf(summary.stopReason);
+    return {
+      reason: `Goal not met — the checks said no${d ? ` (${d})` : ''}.`,
+      next: 'Start from this and change the job.',
+      line: 'checks said no',
+      actions: [],
+    };
+  }
+  if (outcome === 'close-red') {
+    return {
+      reason: 'The check itself broke (instrument fault), not your goal.',
+      next: 'Start from this; check the success rule.',
+      line: 'check broke',
+      actions: [],
+    };
+  }
+  const d = detailOf(summary.stopReason);
+  return {
+    reason: `Stopped before or outside the work (${outcome}${d && d !== outcome ? ` — ${d}` : ''}).`,
+    next: 'Start from this.',
+    line: 'stopped before the work',
+    actions: [],
+  };
+}
+
+/**
+ * The Ended block for one listed run (P5 item 1): asks {@link resumePlanFor} only when
+ * the run's ending is one a resume could ever apply to, so a finished green never reads
+ * its spec files. Returns the block, the resume plan (for the confirm box's numbers) and
+ * nothing else — the sentences all live in {@link endedFor}.
+ * @param {{ spine: string, job: string, pid?: number }} row
+ * @param {any[]} records
+ * @param {any} summary `replayOne`'s summary
+ * @param {{died: boolean, lastThing: string|null}} death
+ */
+function endedForRow(row, records, summary, death) {
+  const out = summary.outcome;
+  const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
+  const resume = maybeResumable ? resumePlanFor(row, records) : null;
+  const refused = [...records].reverse().find((r) => r && r.type === 'destination-refused') ?? null;
+  const ended = endedFor(summary, death, {
+    resume,
+    destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
+  });
+  return { ended, resume };
 }
 
 /**
@@ -299,6 +499,7 @@ function summarizeRow(row) {
   }
   const line = summarizeForAllLine(summary);
   const death = deriveDeath(row, rawRecords, summary.outcome);
+  const { ended } = endedForRow(row, rawRecords, summary, death);
   return {
     runid: row.runid,
     job: row.job,
@@ -306,6 +507,7 @@ function summarizeRow(row) {
     via: row.via,
     fileMissing: false,
     died: death.died,
+    endedLine: ended ? ended.line : null,
     glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
     checkType: checkTypeLabel(summary.verdictType, row.at),
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
@@ -394,6 +596,7 @@ export function getRunDetail(runid, opts = {}) {
   const summary = replayOne(row.spine, { auditPathOverride: auditPath });
   const timelineKind = summary.timelineKind;
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
+  const { ended, resume } = endedForRow(row, rawSpineRecords, summary, death);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
   // close's own paid judge seam, distinct from the worker `model` above.
@@ -523,6 +726,14 @@ export function getRunDetail(runid, opts = {}) {
     outcome: summary.outcome,
     died: death.died,
     stopReason: death.died ? death.why : summary.stopReason,
+    // P5 item 1: the Ended block — `{reason, next, line, actions}` (code-owned fixed
+    // sentences, {@link endedFor}), `null` while the run is live. `resume` carries the
+    // numbers the Resume confirm box prefills (the signed caps, spent so far); `null`
+    // whenever Resume is not offered.
+    ended,
+    resume: resume && resume.ok ? {
+      budgetUsd: resume.budgetUsd, maxWallMin: resume.maxWallMin, spentUsd: resume.spentUsd, spendComplete: resume.spendComplete,
+    } : null,
     spentUsd: summary.spentUsd,
     // draftSpentUsd (hamr's ruling 2026-09-28) — the drafting share of this
     // run's cap, or null when this run carried none. `src/replay.js`'s
