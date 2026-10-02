@@ -217,3 +217,20 @@ test('P5-R panel: a real in-leg retry stays "try N"; only a cross-leg re-entry i
   const parts = replayRun(spine, []).parts.filter((p) => p.kind === 'step');
   assert.deepEqual(parts.map((p) => [p.tryNumber, p.continued, p.stopReason]), [[1, false, null], [2, false, 'money cap'], [2, true, null]]);
 });
+
+test('P5-R panel summary counts STEPS, not parts: a step cut off by its leg and continued is ONE step, done iff its continuation is (3 of 3 on a green run)', () => {
+  const home = tmp();
+  makeTwoLeg(home, { leg2: 'green' });
+  const d = getRunDetail('run1', { home });
+  assert.equal(d.parts.filter((p) => p.kind === 'step').length, 2, 'two PARTS (the stopped one and its continuation)');
+  assert.equal(d.steps.length, 1, 'but ONE step');
+  assert.equal(d.steps[0].state, 'done');
+  assert.equal(d.steps[0].outcome, 'green');
+  assert.equal(d.steps[0].spentUsd, 5, 'both parts\' spend added up ($3 + $2)');
+  assert.equal(d.steps[0].wallMs, 17 * MIN + 6 * MIN);
+  // a stopped step that nobody continued stays one stopped step, not done
+  const h2 = tmp();
+  makeTwoLeg(h2, { leg2: 'died' });
+  const d2 = getRunDetail('run1', { home: h2 });
+  assert.equal(d2.steps.filter((s) => s.state === 'done').length, 0);
+});

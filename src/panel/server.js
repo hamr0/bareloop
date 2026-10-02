@@ -810,7 +810,7 @@ export function getRunDetail(runid, opts = {}) {
         id: u.id,
         occurrence: u.occurrence,
         outcome: u.outcome ?? null,
-        state: stateFor(u.outcome, isLast),
+        state: u.stopReason ? 'stopped' : stateFor(u.outcome, isLast),
         rounds: u.rounds,
         toolCalls: u.toolCalls,
         wallMs: u.wallMs,
@@ -822,6 +822,29 @@ export function getRunDetail(runid, opts = {}) {
         attempts: u.attempts,
       };
     });
+    // P5-R: a step cut off by its leg's halt and CONTINUED by the next leg is ONE step — the summary counts steps, not
+    // parts. The continued part replaces the stopped one in this list (so it is done iff its continuation is), and the
+    // two parts' rounds/time/spend/attempts are added up (an unknown figure stays unknown).
+    /** @type {any[]} */
+    const merged = [];
+    summary.steps.forEach((u, idx) => {
+      const cur = steps[idx];
+      const prev = merged[merged.length - 1];
+      if (u.continued === true && prev && prev.id === cur.id) {
+        const add = (/** @type {number|null} */ a, /** @type {number|null} */ b) => (typeof a === 'number' && typeof b === 'number' ? a + b : null);
+        merged[merged.length - 1] = {
+          ...cur,
+          occurrence: prev.occurrence,
+          rounds: add(prev.rounds, cur.rounds),
+          toolCalls: add(prev.toolCalls, cur.toolCalls),
+          wallMs: add(prev.wallMs, cur.wallMs),
+          spentUsd: add(prev.spentUsd, cur.spentUsd),
+          unpricedRounds: (prev.unpricedRounds ?? 0) + (cur.unpricedRounds ?? 0),
+          attempts: [...(prev.attempts ?? []), ...(cur.attempts ?? [])].map((a, n) => ({ ...a, n: n + 1 })),
+        };
+      } else merged.push(cur);
+    });
+    steps = merged;
   }
   // died before any step/iteration ever started (steps empty — the run was
   // still in scout/planning) — one placeholder box, never an empty map. Its
