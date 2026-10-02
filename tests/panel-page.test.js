@@ -411,8 +411,8 @@ test('item 7: cacheLine — not recorded when memoryCache is null; real numbers 
 function loadMoneyFns(html) {
   return loadFns2(
     html,
-    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText'],
-    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText'],
+    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText'],
+    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText'],
   );
 }
 
@@ -1325,7 +1325,7 @@ function loadFns2(html, sourceNames, returnNames, extraSrc) {
 
 test('item 2: groupRunsByJob groups the /api/runs payload by job, newest run per job wins as "last", full per-job run list preserved', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const groupRunsByJob = loadFns(html, ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'groupRunsByJob'], 'groupRunsByJob');
+  const groupRunsByJob = loadFns(html, ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'groupRunsByJob'], 'groupRunsByJob');
   const runs = [
     {
       runid: 'a2', job: 'alpha', at: '2026-09-02T00:00:00.000Z', glyph: '✓', checkType: 'deterministic', model: 'deepseek-chat', spend: '$0.60', wall: '2m00s', date: '2026-09-02',
@@ -1350,7 +1350,7 @@ test('item 2: workflow search matches a job if the query matches ANY of its runs
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { groupRunsByJob, filterWorkflows } = loadFns2(
     html,
-    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
     ['groupRunsByJob', 'filterWorkflows'],
   );
   const runs = [
@@ -1378,7 +1378,7 @@ test('item 2: a ✗ result filter keeps a job whose LATEST run is ✓ but an OLD
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { groupRunsByJob, filterWorkflows } = loadFns2(
     html,
-    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
     ['groupRunsByJob', 'filterWorkflows'],
   );
   const runs = [
@@ -1467,6 +1467,11 @@ function makeWorkflowsPage() {
     // rowSpendText, a real dependency, pulled in verbatim rather than faked.
     extractFnSource(html, 'panelMoney'),
     extractFnSource(html, 'panelMoneyWithDraft'),
+    extractFnSource(html, 'liveSpendText'),
+    extractFnSource(html, 'liveWallPhrase'),
+    extractFnSource(html, 'duration'),
+    extractFnSource(html, 'rowIsLive'),
+    extractFnSource(html, 'rowWallText'),
     extractFnSource(html, 'rowSpendText'),
     extractFnSource(html, 'buildRunRowEl'),
     extractFnSource(html, 'renderWorkflows'),
