@@ -684,8 +684,8 @@
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
             <div class="field-row">
-              <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
-              <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
+              <div class="field"><label id="details-cap-money-label">$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
+              <div class="field"><label id="details-cap-time-label">Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
             </div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>Goal</label><div class="ro-value scroll" id="details-goal">—</div></div>
@@ -2236,13 +2236,22 @@
   // called again after every Job re-render so a re-render never drops the typed numbers.
   function paintResumeMode(){
     var box = document.getElementById("resume-job");
-    if(!resumeMode || resumeMode.runid !== currentRunid){ box.hidden = true; box.innerHTML = ""; return; }
+    var moneyLabel = document.getElementById("details-cap-money-label");
+    var timeLabel = document.getElementById("details-cap-time-label");
+    if(!resumeMode || resumeMode.runid !== currentRunid){
+      box.hidden = true; box.innerHTML = "";
+      moneyLabel.textContent = "$ cap"; timeLabel.textContent = "Time cap";
+      return;
+    }
     var m = resumeMode;
+    // the unit lives in the caption, never as loose text around the input
+    moneyLabel.textContent = "Money cap ($)";
+    timeLabel.textContent = "Time cap (min)";
     document.getElementById("details-cap-money").innerHTML =
-      '<span class="resume-cap">$ <input type="number" min="0" step="0.01" id="resume-budget" data-testid="resume-budget" value="' + escapeXml(m.budget) + '"></span>';
+      '<span class="resume-cap"><input type="number" min="0" step="0.01" id="resume-budget" data-testid="resume-budget" value="' + escapeXml(m.budget) + '"></span>';
     if(m.wall !== null){
       document.getElementById("details-cap-time").innerHTML =
-        '<span class="resume-cap"><input type="number" min="1" step="1" id="resume-wall" data-testid="resume-wall" value="' + escapeXml(m.wall) + '"> min</span>';
+        '<span class="resume-cap"><input type="number" min="1" step="1" id="resume-wall" data-testid="resume-wall" value="' + escapeXml(m.wall) + '"></span>';
     }
     var budgetEl = document.getElementById("resume-budget");
     budgetEl.addEventListener("input", function(){ m.budget = budgetEl.value; });

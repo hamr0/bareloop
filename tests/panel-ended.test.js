@@ -485,6 +485,11 @@ test('page: Resume opens the run\'s own Job tab — ONLY the money cap and the t
   assert.match(money.innerHTML, /value="8"/, 'prefilled with the signed money cap');
   assert.match(time.innerHTML, /id="resume-wall"/);
   assert.match(time.innerHTML, /value="60"/, 'prefilled with the signed time cap');
+  // the unit is in the caption, never loose text above/below the input
+  assert.equal(pg.document.getElementById('details-cap-money-label').textContent, 'Money cap ($)');
+  assert.equal(pg.document.getElementById('details-cap-time-label').textContent, 'Time cap (min)');
+  assert.doesNotMatch(money.innerHTML, /\$ <input|>\s*\$/, 'no loose "$" beside the money input');
+  assert.doesNotMatch(time.innerHTML, /> min</, 'no loose "min" beside the time input');
   const box = pg.document.getElementById('resume-job');
   assert.equal(box.hidden, false);
   assert.match(box.innerHTML, /Resume run run1/);
@@ -534,6 +539,10 @@ test('page: Cancel leaves resume mode and repaints the Job tab read-only', () =>
   pg.document.getElementById('resume-job').querySelector('[data-testid="btn-resume-cancel"]').handlers.click();
   assert.equal(pg.resumeMode(), null);
   assert.equal(pg.rendered.length, 1);
+  // the stub's renderJob does not repaint; the captions return to normal when the Job tab paints without resume mode
+  pg.paintResumeMode();
+  assert.equal(pg.document.getElementById('details-cap-money-label').textContent, '$ cap');
+  assert.equal(pg.document.getElementById('details-cap-time-label').textContent, 'Time cap');
 });
 
 test('page: resume mode belongs to ONE run — painting it while another run is open hides it', () => {
