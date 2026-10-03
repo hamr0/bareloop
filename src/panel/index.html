@@ -1728,7 +1728,7 @@
 
   // ---- P5 item 4: IMPORT (read only) — the folder browser, the imported rows, the view ----
   // The folder listing, the import and every re-read are SERVER routes behind the human guard
-  // (src/panel/importroutes.js): the page only asks and paints. An imported job has ONE button: Start from this.
+  // (src/panel/importroutes.js): the page only asks and paints. An imported job has ONE button: Reuse workflow.
   var currentImportId = null;
   var importBox = document.getElementById("import-box");
   var importPathEl = document.getElementById("import-path");
@@ -1823,8 +1823,8 @@
     }).catch(function(x){ if(currentImportId === id) renderImportView({ok: false, error: x.message}); });
   }
   // An imported job reads like any other card: the SAME Run / Audit / Job tabs. It has never run on this machine, so
-  // Run and Audit say so in plain words; the Job tab carries its spec; the Run tab keeps the exported history, the
-  // approved-or-not line and the one button (Start from this).
+  // Run and Audit say so in plain words; the Job tab carries its spec; the Run tab keeps the exported history and the
+  // approved-or-not line, with [Reuse workflow] in the top action row — the same button a green run has.
   function renderImportView(v){
     var el = document.getElementById("import-view");
     el.hidden = false;
@@ -1833,7 +1833,7 @@
     document.getElementById("audit-body").hidden = true;
     var auditEmpty = document.getElementById("audit-select-empty");
     auditEmpty.hidden = false;
-    auditEmpty.textContent = "no runs yet — this job was imported, so nothing has run here and there is no audit log";
+    auditEmpty.textContent = "no log — this job ran on another machine";
     var name = document.getElementById("active-wf-name");
     var dot = document.getElementById("active-wf-dot");
     var verdict = document.getElementById("active-wf-verdict");
@@ -1856,13 +1856,14 @@
       return '<div class="imp-row"><span class="imp-label">' + label + '</span><span class="imp-text' + (cls ? " " + cls : "") + '" data-testid="' + testid + '">' + escapeXml(text) + '</span></div>';
     };
     el.innerHTML =
+      '<div class="run-actions" data-testid="run-actions-import"><button class="btn" type="button" data-testid="btn-reuse-import">Reuse workflow</button></div>' +
       (v.status !== "ok" ? '<div class="imp-bad" data-testid="import-view-changed">' + escapeXml(v.statusText || "changed since import") + '</div>' : "") +
       row("RUNS", "no runs yet — this job was imported (view only); nothing has run here", "import-no-runs") +
       row("EXPORTED", h.greens + " green · " + h.reds + " not green", "import-history") +
       recent +
       row("THIS MACHINE", v.approvedText || "unknown", "import-approved") +
-      '<div class="run-actions"><button class="btn primary" type="button" data-testid="btn-start-from-import">Start from this</button></div>';
-    el.querySelector('[data-testid="btn-start-from-import"]').addEventListener("click", function(){ reuseImportedWorkflow(v.id); });
+      "";
+    el.querySelector('[data-testid="btn-reuse-import"]').addEventListener("click", function(){ reuseImportedWorkflow(v.id); });
     var nr = "not recorded";
     renderJob({
       job: v.job, resolved: false, checkType: v.checkType || nr, model: v.model || nr,

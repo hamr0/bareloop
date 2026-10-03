@@ -43,7 +43,7 @@ test('page: the imported row carries "imported · view only"; a changed folder s
   assert.match(PAGE, /\.imp-bad\{color:var\(--red\)/, 'red');
 });
 
-test('page: an imported job opens in the SAME Run / Audit / Job tabs — Run says no runs yet and keeps history + approved + ONE Start from this, Audit says no runs, Job carries the spec', () => {
+test('page: an imported job opens in the SAME Run / Audit / Job tabs — Run says no runs yet and keeps history + approved + ONE [Reuse workflow] in the top action row, Audit says "no log — this job ran on another machine", Job carries the spec', () => {
   const els = {};
   const get = (id) => els[id] ?? (els[id] = el());
   const doc = { getElementById: get };
@@ -65,11 +65,14 @@ test('page: an imported job opens in the SAME Run / Audit / Job tabs — Run say
   assert.equal(els['run-content'].hidden, true);
   assert.equal(els['audit-body'].hidden, true);
   assert.equal(els['audit-select-empty'].hidden, false);
-  assert.match(els['audit-select-empty'].textContent, /no runs yet/);
+  assert.equal(els['audit-select-empty'].textContent, 'no log — this job ran on another machine');
   assert.equal(els['active-wf-verdict'].textContent, 'imported · view only');
   assert.deepEqual(clicks, ['tab-run']);
   assert.equal((html.match(/<button/g) ?? []).length, 1, 'exactly one button');
-  assert.match(html, /btn-start-from-import">Start from this</);
+  assert.match(html, /btn-reuse-import">Reuse workflow</);
+  assert.ok(html.indexOf('btn-reuse-import') < html.indexOf('import-no-runs'), 'the button is in the TOP action row, above the run facts');
+  assert.match(html, /^<div class="run-actions" data-testid="run-actions-import">/);
+  assert.doesNotMatch(html, /Start from this/);
   assert.doesNotMatch(html, />Run</);
   assert.doesNotMatch(html, /import-view-changed/);
   // the Job tab is the same renderJob every run uses, fed the exported spec
