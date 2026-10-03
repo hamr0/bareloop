@@ -492,6 +492,9 @@ test('page: Resume opens the run\'s own Job tab — ONLY the money cap and the t
   assert.doesNotMatch(time.innerHTML, /> min</, 'no loose "min" beside the time input');
   const box = pg.document.getElementById('resume-job');
   assert.equal(box.hidden, false);
+  // [Sign & resume] and [Cancel] are the same button class (same height) — Cancel is no longer a .small one
+  assert.match(box.innerHTML, /<button class="btn primary" type="button" data-testid="btn-sign-resume">/);
+  assert.match(box.innerHTML, /<button class="btn" type="button" data-testid="btn-resume-cancel">/);
   assert.match(box.innerHTML, /Resume run run1/);
   assert.match(box.innerHTML, /the same run, not a new one/);
   assert.match(box.innerHTML, /Only the money cap and the time cap can change/);

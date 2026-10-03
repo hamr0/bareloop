@@ -2266,7 +2266,7 @@
       '<div class="hint" data-testid="resume-spent">spent so far ' + escapeXml(spent) +
         (typeof m.wallUsedMs === "number" && isFinite(m.wallUsedMs) ? ' &middot; time used so far ' + Math.ceil(m.wallUsedMs / 60000) + ' min' : '') + '</div>' +
       '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-sign-resume">Sign &amp; resume</button> ' +
-      '<button class="btn small" type="button" data-testid="btn-resume-cancel">Cancel</button></div>' +
+      '<button class="btn" type="button" data-testid="btn-resume-cancel">Cancel</button></div>' +
       '<div class="resume-err" id="resume-err" data-testid="resume-err" hidden></div>';
     var resumeSignBtn = box.querySelector('[data-testid="btn-sign-resume"]');
     box.querySelector('[data-testid="btn-resume-cancel"]').addEventListener("click", function(){
