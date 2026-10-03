@@ -18,7 +18,7 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 
-test('page: Start from this asks the server for the prefill, opens the Chat tab and hands the card over as an event — it decides nothing itself', async () => {
+test('page: Start from this asks the server for the prefill, opens inside the Run tab and hands the card over as an event — it decides nothing itself', async () => {
   const events = [];
   const clicks = [];
   const urls = [];
@@ -33,7 +33,7 @@ test('page: Start from this asks the server for the prefill, opens the Chat tab 
   startFromThis('run 1');
   await new Promise((r) => { setTimeout(r, 10); });
   assert.deepEqual(urls, ['/api/author/start-from?runid=run%201']);
-  assert.deepEqual(clicks, ['tab-chat']);
+  assert.deepEqual(clicks, ['tab-run'], 'the card opens in the Run tab of the same view, never the Chat tab');
   assert.equal(events[0].type, 'bareloop-start-from');
   assert.deepEqual(events[0].detail, { runid: 'run 1', prefill });
 });
@@ -52,11 +52,27 @@ test('page: the card opens prefilled, shows the SERVER\'s line, re-asks the serv
   assert.match(PAGE, /if\(startFrom\) body\.startFrom = startFrom\.runid;/, 'the start request names the run; the server judges same-vs-changed');
   assert.match(PAGE, /data-testid="startfrom-line"/);
   // + New clears the start-from state, so a plain New job card never carries a stale origin
-  assert.match(PAGE, /newBtn\.addEventListener\("click", function\(\)\{ clearStartFrom\(\); openNewCard\(\); \}\);/);
+  assert.match(PAGE, /newBtn\.addEventListener\("click", function\(\)\{ placeSession\(false\); clearStartFrom\(\); openNewCard\(\); \}\);/);
 });
 
 test('page: a same-job session signs the hash the server prepared as soon as it is ready — one click (Sign & run), the server re-checks the hash', () => {
   assert.match(PAGE, /if\(sameJobSession && !autoSigned && j\.state\.phase === "prepared" && j\.state\.specHash\)/);
   assert.match(PAGE, /"\/sign", \{specHash: j\.state\.specHash\}/);
   assert.match(PAGE, /signClickedOnce = sameJobSession;/, 'a same-job session has no confirm turn, so the sign-prepare click is skipped');
+});
+
+test('page: Start from this opens INSIDE the Run tab — the one chat session moves into the Run tab host, and + New moves it back to the Chat tab', () => {
+  // the host is the first thing in the Run tab; the session wrapper holds the card, thread and sign buttons
+  assert.match(PAGE, /<section id="panel-run"[^>]*>\s*(<!--[^>]*-->\s*)?<div id="startfrom-host" data-testid="startfrom-host"><\/div>/);
+  const session = PAGE.slice(PAGE.indexOf('<div id="chat-session"'), PAGE.indexOf('<section id="panel-runs"'));
+  for (const id of ['job-card', 'chat-thread', 'chat-sign-btn', 'chat-start-btn', 'chat-msg']) assert.ok(session.includes(`id="${id}"`), `${id} travels with the session`);
+  assert.ok(!session.includes('id="chat-new-btn"'), '+ New stays in the Chat tab');
+  // the event handler moves it in (and keeps + New reachable); + New moves it home
+  const handler = PAGE.slice(PAGE.indexOf('document.addEventListener("bareloop-start-from"'));
+  assert.match(handler.slice(0, handler.indexOf('startBtn.textContent')), /placeSession\(true\);\s*openNewCard\(\);\s*newBtn\.hidden = false;/);
+  assert.match(fnSrc('placeSession'), /sfHost\.appendChild\(sessionBox\)/);
+  assert.match(fnSrc('placeSession'), /newBtn\.parentNode\.insertBefore\(sessionBox, newBtn\.nextSibling\)/);
+  // neither Start from this entry point touches the Chat tab any more
+  assert.doesNotMatch(fnSrc('startFromThis'), /tab-chat/);
+  assert.doesNotMatch(fnSrc('startFromImportThis'), /tab-chat/);
 });
