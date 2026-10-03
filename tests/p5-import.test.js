@@ -200,15 +200,3 @@ test('the view: goal, checks, guardrails, caps, model, the exported history (gre
   assert.equal(readImports(home).length, 1);
 });
 
-test('Reuse an imported job: GET /api/author/start-from?import= — interim refusal until item 5 builds the copy-and-verify (never a draft)', async (t) => {
-  const home = tmp('p5-import-cfg-');
-  const userHome = tmp('p5-import-user-');
-  const bundleDir = join(userHome, 'fix.bareloop');
-  exportFixtureBundle(bundleDir);
-  const { get, post } = await start(t, { home, userHome });
-  const id = (await (await post('/api/imports', { path: bundleDir })).json()).id;
-  const r = await get(`/api/author/start-from?import=${id}`);
-  assert.equal(r.status, 409);
-  assert.match((await r.json()).error, /not available yet/);
-  assert.equal((await get('/api/author/start-from?import=aaaaaaaaaaaa')).status, 404);
-});

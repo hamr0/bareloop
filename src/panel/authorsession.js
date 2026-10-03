@@ -37,6 +37,7 @@ import {
   authorCloseForJob, assembleSpec, AUTHORED_SPEC_FIELDS, CONFIRM_AUTHORED_FIELDS, PLAIN_FOLDER_DEFERRED_FIELDS,
 } from '../authorjob.js';
 import { prepareSigning } from '../authorjob.js';
+import { checkCloseByteSignature } from '../close-integrity.js';
 import {
   questionsFor, requiredAnswersFor, makeLoopGenerate, CONFIRM_SYSTEM,
 } from '../authorflow.js';
@@ -480,6 +481,27 @@ export function createSession(card, deps = {}) {
         state.phase = 'refused';
         state.error = `spec-invalid: ${jv.reds.map((r) => r.code).join(', ')}`;
         say('system', state.error);
+        return;
+      }
+
+      // An operator-written COMMAND close (an imported job's) has no declaration to ground: `prepareSigning` refuses it
+      // by design ("its stages are signed as written"). Its gate here is the byte signature of every close script —
+      // checked now, and again by the engine at run start and before every close run — and the hash the person signs
+      // is the spec's own, exactly as `bareloop run <bundle>` signs the bundle's. Nothing about the close is judged.
+      if (!spec.closeDecl) {
+        const bytes = checkCloseByteSignature(spec, outDir);
+        if (!bytes.ok) {
+          refuse(`a close script does not match its signed bytes (${bytes.reds.map((r) => r.stage).join(', ')}) — refusing to sign`);
+          return;
+        }
+        const hash = jobSpecHash(spec);
+        writeFileSync(join(outDir, 'signing.json'), `${JSON.stringify({
+          ok: true, specHash: hash, note: 'command close — signed as written; close script bytes verified', gates: { closeBytes: { ok: true } },
+        }, null, 2)}\n`);
+        state.specHash = hash;
+        writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
+        state.phase = 'prepared';
+        say('bot', `SIGNING PREPARED — spec hash ${hash}`);
         return;
       }
 

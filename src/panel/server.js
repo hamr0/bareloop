@@ -44,6 +44,10 @@ import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
 import { createImportRoutes, readImports, bundleStatus } from './importroutes.js';
+import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
+import { checkCloseByteSignature } from '../close-integrity.js';
+import { keysHome } from '../keysfile.js';
+import { rowsForHome, findRow } from '../providerrows.js';
 import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -2248,7 +2252,9 @@ export function getStartFrom(runid, opts = {}) {
   if (near.sourceJsonPath) { try { manifest = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { manifest = null; } }
   const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
   const card = reuseCardFromSpec(spec, {
-    model: typeof saved.model === 'string' && saved.model ? saved.model : (typeof jobStart?.model === 'string' ? jobStart.model : ''),
+    model: typeof saved.model === 'string' && saved.model ? saved.model
+      : (findRow(rowsForHome(keysHome(opts.home)), { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name
+        ?? (typeof jobStart?.model === 'string' ? jobStart.model : '')),
     source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
     judgeExamples: typeof saved.judgeExamples === 'string' ? saved.judgeExamples : '',
     jobName: row.job,
@@ -2316,17 +2322,51 @@ function describeSpec(spec) {
 }
 
 /**
- * Reuse workflow, for an IMPORTED job — a bundle's close commands are bound to its own folder (`$BARELOOP_BUNDLE`),
- * so reusing one means copying its spec with the close paths resolved and re-verifying the close bytes first. That
- * is built in its own item; until then the answer is an honest refusal, never a draft.
+ * Reuse workflow, for an IMPORTED job: the bundle is read AGAIN now and must be clean (`readBundle` — its own hash
+ * covers every close script, so a swapped script is `bundle-tampered` here), must resolve its own `bareloop`
+ * dependency (`checkBundleDeps`), and every close stage's signed sha256 must match the script's bytes on disk
+ * (`checkCloseByteSignature`, over the spec with `$BARELOOP_BUNDLE` resolved to this folder — the same in-memory
+ * substitution `bareloop run <bundle>` makes). The reuse spec is that resolved spec; the close scripts stay where
+ * they were just verified (the engine re-verifies their bytes at run start and before every close run). The person
+ * signs it on this machine at [Sign & run]. Same card, same locked/open boxes as a run's reuse. `null` when no such
+ * imported job.
  * @param {string} id
  * @param {{ home?: string }} [opts]
- * @returns {{ok: false, error: string}|null} `null` when no such imported job
+ * @returns {{ok: true, origin: {runid: null, job: string, importId: string}, card: Record<string, any>, from: 'imported job',
+ *   locked: readonly string[], open: readonly string[], note: string|null, specHash: string, workflowKey: string, spec: any,
+ *   specPath: null, trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFromImport(id, opts = {}) {
   const row = readImports(opts.home).find((r) => r.id === id);
   if (!row) return null;
-  return { ok: false, error: 'reusing an imported job is not available yet' };
+  const st = bundleStatus(row);
+  if (st.status !== 'ok') return { ok: false, error: `${st.statusText ?? 'this imported job cannot be read'} — re-import it before reusing it` };
+  const deps = checkBundleDeps(row.dir);
+  if (!deps.ok) return { ok: false, error: deps.reds[0]?.detail ?? 'the imported job cannot resolve its own dependency' };
+  const { spec } = resolveBundleSpec(st.bundle, row.dir);
+  const bytes = checkCloseByteSignature(spec, row.dir);
+  if (!bytes.ok) return { ok: false, error: `a close script of this imported job does not match its signed bytes (${bytes.reds.map((r) => r.stage).join(', ')}) — refusing to reuse it` };
+  const rows = rowsForHome(keysHome(opts.home));
+  const named = findRow(rows, { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name ?? '';
+  if (named === '') return { ok: false, error: `no row in Settings > Providers matches this job's provider (${spec.provider}) — add one, then reuse it` };
+  const card = reuseCardFromSpec(spec, { model: named, source: '', judgeExamples: '', jobName: row.job });
+  const key = workflowKey(spec);
+  const trackRecord = trackRecordFor(key, opts);
+  return {
+    ok: true,
+    origin: { runid: null, job: row.job, importId: id },
+    card,
+    from: 'imported job',
+    locked: REUSE_LOCKED_FIELDS,
+    open: REUSE_OPEN_FIELDS,
+    note: 'a Source is needed — an exported job carries none; it is checked and signed on this machine',
+    specHash: jobSpecHash(spec),
+    workflowKey: key,
+    spec,
+    specPath: null,
+    trackRecord,
+    line: reuseLine(trackRecord),
+  };
 }
 
 /** @param {any} res @param {number} code @param {any} body */

@@ -69,7 +69,7 @@ async function until(fn, ms = 5000) { const t0 = Date.now(); while (Date.now() -
 async function draftedSession(card) {
   const calls = { n: 0 };
   const session = createSession(card, {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), keysRoot: tmp('p5-sf-sess-'),
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('p5-sf-sess-'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { throw new Error('generate must not be called'); },
     confirmGenerate: confirmGen(calls),
@@ -258,7 +258,7 @@ test('REUSE session: the signed spec is copied with only the open fields set, NO
   const calls = { n: 0 };
   const repo2 = makeRepo();
   const reuse = createSession(baseCard({ source: repo2, jobName: originSpec.job, destination: 'lib/', capUsd: 4, maxWallMs: 300000 }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), keysRoot: tmp('p5-sf-sess-'),
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('p5-sf-sess-'),
     reuse: { spec: reuseSpec, workflowKey: key },
     scout: { state: 'PRESENT', facts: { sourcePaths: [], testPaths: [] }, calls: [], raws: [] },
     generate: async () => { calls.n += 1; throw new Error('a reuse must never call the model'); },
@@ -280,7 +280,7 @@ test('REUSE session: the signed spec is copied with only the open fields set, NO
 
   // a spec that differs from the workflow beyond the open fields is refused, never signed
   const drift = createSession(baseCard({ source: repo2, jobName: originSpec.job }), {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), keysRoot: tmp('p5-sf-sess-'),
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('p5-sf-sess-'),
     reuse: { spec: { ...reuseSpec, goal: 'smuggled goal' }, workflowKey: key },
     prepareSigningFn: async () => { throw new Error('signing must not be reached'); },
   });
@@ -303,7 +303,7 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
   const home = keysHomeWith('ANTHROPIC_API_KEY=bad key'); // a malformed key: every session refuses at $0, nothing is reached
   const { out } = makeRun(home, { runid: 'origin1', spec, card: baseCard({ jobName: spec.job, source: '/the/original/source' }) });
   void out;
-  const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, keysRoot: tmp('p5-sf-sess-') });
+  const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, sessionsRoot: tmp('p5-sf-sess-') });
   t.after(() => close());
   const base = `http://127.0.0.1:${port}`;
   const get = (p, withToken = true) => fetch(`${base}${p}`, { headers: withToken ? { 'x-bareloop-token': token } : {} });
