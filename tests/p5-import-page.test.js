@@ -43,13 +43,15 @@ test('page: the imported row carries "imported · view only"; a changed folder s
   assert.match(PAGE, /\.imp-bad\{color:var\(--red\)/, 'red');
 });
 
-test('page: the import view shows goal, checks, guardrails, caps, model, the exported history, approved-or-not — and its ONLY button is Start from this (no Run)', () => {
+test('page: an imported job opens in the SAME Run / Audit / Job tabs — Run says no runs yet and keeps history + approved + ONE Start from this, Audit says no runs, Job carries the spec', () => {
   const els = {};
   const get = (id) => els[id] ?? (els[id] = el());
-  const bar = { hidden: false };
-  const doc = { getElementById: get, querySelector: () => bar };
+  const doc = { getElementById: get };
+  const jobs = [];
+  const clicks = [];
+  get('tab-run').click = () => clicks.push('tab-run');
   // eslint-disable-next-line no-new-func
-  const render = new Function('document', 'startFromImportThis', `${['escapeXml', 'panelMoney'].map(fnSrc).join('\n')}\n${fnSrc('renderImportView')}\nreturn renderImportView;`)(doc, () => {});
+  const render = new Function('document', 'startFromImportThis', 'renderJob', `${['escapeXml', 'panelMoney'].map(fnSrc).join('\n')}\n${fnSrc('renderImportView')}\nreturn renderImportView;`)(doc, () => {}, (j) => jobs.push(j));
   render({
     ok: true, id: 'aaaaaaaaaaaa', job: 'fix-types', status: 'ok', statusText: null, importedAt: '2026-10-02T10:00:00.000Z',
     goal: 'Make types clean', checkType: 'deterministic', success: 'a · b', guardrails: 'write fence — src/**', model: 'deepseek-flash',
@@ -57,15 +59,37 @@ test('page: the import view shows goal, checks, guardrails, caps, model, the exp
     approved: false, approvedText: 'not approved on this machine yet — it has never run green here',
   });
   const html = els['import-view'].innerHTML;
-  for (const need of ['Make types clean', 'deterministic — a · b', 'write fence — src/**', '$1.50 money · 30 min', 'deepseek-flash', '3 green · 1 not green', 'not approved on this machine yet']) assert.ok(html.includes(need), `view shows: ${need}`);
+  for (const need of ['no runs yet', '3 green · 1 not green', 'not approved on this machine yet']) assert.ok(html.includes(need), `Run tab shows: ${need}`);
+  assert.equal(els['import-view'].hidden, false);
+  assert.equal(els['run-empty'].hidden, true);
+  assert.equal(els['run-content'].hidden, true);
+  assert.equal(els['audit-body'].hidden, true);
+  assert.equal(els['audit-select-empty'].hidden, false);
+  assert.match(els['audit-select-empty'].textContent, /no runs yet/);
   assert.equal(els['active-wf-verdict'].textContent, 'imported · view only');
-  assert.equal(bar.hidden, true, 'the run tabs are hidden for an imported job');
+  assert.deepEqual(clicks, ['tab-run']);
   assert.equal((html.match(/<button/g) ?? []).length, 1, 'exactly one button');
   assert.match(html, /btn-start-from-import">Start from this</);
   assert.doesNotMatch(html, />Run</);
   assert.doesNotMatch(html, /import-view-changed/);
+  // the Job tab is the same renderJob every run uses, fed the exported spec
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].goal, 'Make types clean');
+  assert.equal(jobs[0].checkType, 'deterministic');
+  assert.equal(jobs[0].success, 'a · b');
+  assert.equal(jobs[0].guardrails, 'write fence — src/**');
+  assert.equal(jobs[0].model, 'deepseek-flash');
+  assert.equal(jobs[0].budgetUsd, 1.5);
+  assert.equal(jobs[0].maxWallMs, 1_800_000);
   render({ ok: true, id: 'a', job: 'j', status: 'changed', statusText: 'changed since import', history: { greens: 0, reds: 0, recent: [] } });
   assert.match(els['import-view'].innerHTML, /imp-bad" data-testid="import-view-changed">changed since import</);
+  // an unreadable import says so and empties the Job tab
+  render({ ok: false, error: 'folder not found' });
+  assert.match(els['import-view'].innerHTML, /folder not found/);
+  assert.equal(jobs.at(-1), null);
+  // the page no longer hides the tab row or the tab body for an import
+  assert.doesNotMatch(fnSrc('renderImportView'), /rp-tabrow|right-pane-body/);
+  assert.match(PAGE, /<section id="panel-run"[^>]*>\s*<div class="import-view" id="import-view"/, 'the import summary lives inside the Run tab');
 });
 
 test('page: the Import button lives on the Workflows toolbar, opens the folder browser + paste box, and Import posts the path to the guarded route', () => {

@@ -625,11 +625,10 @@
         <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Job</button>
       </div>
 
-      <div class="pane-body import-view" id="import-view" data-testid="import-view" hidden></div>
-
       <div class="pane-body" id="right-pane-body">
 
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
+          <div class="import-view" id="import-view" data-testid="import-view" hidden></div>
           <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
           <div id="run-content" hidden>
             <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
@@ -1803,14 +1802,15 @@
   function hideImportView(){
     currentImportId = null;
     document.getElementById("import-view").hidden = true;
-    document.querySelector(".rp-tabrow").hidden = false;
-    document.getElementById("right-pane-body").hidden = false;
+    document.getElementById("run-empty").textContent = "select a run from Workflows or History";
+    document.getElementById("audit-select-empty").textContent = "select a run first";
     document.querySelectorAll("#import-list .wf-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed", "false"); });
   }
   function selectImport(id){
     clearSelection();
     currentRunid = null;
     runIsLive = false;
+    resumeMode = null;
     currentImportId = id;
     document.querySelectorAll("#import-list .wf-row").forEach(function(r){
       var on = r.getAttribute("data-testid") === "import-row-" + id;
@@ -1821,11 +1821,18 @@
       renderImportView(v);
     }).catch(function(x){ if(currentImportId === id) renderImportView({ok: false, error: x.message}); });
   }
+  // An imported job reads like any other card: the SAME Run / Audit / Job tabs. It has never run on this machine, so
+  // Run and Audit say so in plain words; the Job tab carries its spec; the Run tab keeps the exported history, the
+  // approved-or-not line and the one button (Start from this).
   function renderImportView(v){
-    document.querySelector(".rp-tabrow").hidden = true;
-    document.getElementById("right-pane-body").hidden = true;
     var el = document.getElementById("import-view");
     el.hidden = false;
+    document.getElementById("run-empty").hidden = true;
+    document.getElementById("run-content").hidden = true;
+    document.getElementById("audit-body").hidden = true;
+    var auditEmpty = document.getElementById("audit-select-empty");
+    auditEmpty.hidden = false;
+    auditEmpty.textContent = "no runs yet — this job was imported, so nothing has run here and there is no audit log";
     var name = document.getElementById("active-wf-name");
     var dot = document.getElementById("active-wf-dot");
     var verdict = document.getElementById("active-wf-verdict");
@@ -1833,6 +1840,7 @@
     if(!v || !v.ok){
       name.textContent = "imported job"; dot.className = "dot grey"; verdict.textContent = "imported · view only"; date.textContent = "";
       el.innerHTML = '<div class="imp-bad">' + escapeXml((v && v.error) || "could not read this imported job") + '</div>';
+      renderJob(null);
       return;
     }
     name.textContent = v.job;
@@ -1840,8 +1848,6 @@
     verdict.textContent = "imported · view only";
     date.textContent = (v.importedAt || "").slice(0, 10) || "unknown";
     var h = v.history || {greens: 0, reds: 0, total: 0, recent: []};
-    var money = function(n){ return (typeof n === "number") ? panelMoney(n) : "unknown"; };
-    var caps = money(v.budgetUsd) + " money" + (typeof v.maxWallMs === "number" ? " · " + Math.round(v.maxWallMs / 60000) + " min" : " · no time cap");
     var recent = (h.recent || []).map(function(r){
       return '<div class="hint">' + escapeXml((r.at || "").slice(0, 10) || "—") + " · " + escapeXml(r.outcome || "?") + (typeof r.costUsd === "number" ? " · " + escapeXml(panelMoney(r.costUsd)) : "") + '</div>';
     }).join("");
@@ -1850,16 +1856,22 @@
     };
     el.innerHTML =
       (v.status !== "ok" ? '<div class="imp-bad" data-testid="import-view-changed">' + escapeXml(v.statusText || "changed since import") + '</div>' : "") +
-      row("GOAL", v.goal || "not recorded", "import-goal") +
-      row("CHECKS", (v.checkType ? v.checkType + " — " : "") + (v.success || "not recorded"), "import-checks") +
-      row("GUARDRAILS", v.guardrails || "not recorded", "import-guardrails") +
-      row("CAPS", caps, "import-caps") +
-      row("MODEL", v.model || "not recorded", "import-model") +
+      row("RUNS", "no runs yet — this job was imported (view only); nothing has run here", "import-no-runs") +
       row("EXPORTED", h.greens + " green · " + h.reds + " not green", "import-history") +
       recent +
       row("THIS MACHINE", v.approvedText || "unknown", "import-approved") +
-      '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-start-from-import">Start from this</button></div>';
+      '<div class="run-actions"><button class="btn primary" type="button" data-testid="btn-start-from-import">Start from this</button></div>';
     el.querySelector('[data-testid="btn-start-from-import"]').addEventListener("click", function(){ startFromImportThis(v.id); });
+    var nr = "not recorded";
+    renderJob({
+      job: v.job, resolved: false, checkType: v.checkType || nr, model: v.model || nr,
+      goal: v.goal || nr, success: v.success || nr, guardrails: v.guardrails || nr,
+      source: nr, destination: nr, tools: nr,
+      budgetUsd: (typeof v.budgetUsd === "number") ? v.budgetUsd : null,
+      maxWallMs: (typeof v.maxWallMs === "number") ? v.maxWallMs : null,
+      note: "imported · view only — the exported job's own spec",
+    });
+    document.getElementById("tab-run").click();
   }
   // Start from this, on an IMPORTED job: the prefill is the bundle's own spec.json (the server reads it again now).
   function startFromImportThis(id){
