@@ -35,7 +35,7 @@ import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine, auditWindowsOf } from '../replay.js';
-import { legsOf, stopFilePath } from '../legs.js';
+import { legsOf, legsWallMs, stopFilePath } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
@@ -2150,19 +2150,23 @@ function signedSpecForRun(row, records) {
  * The track record of a WORKFLOW: every LISTED run whose signed spec (the one its latest leg ran under) has this
  * `workflowKey` — the same goal, checks, guardrails, model and close, whatever source, destination or caps. One run =
  * ONE entry (a resumed run is one run, its FINAL outcome — `legsOf`), and a run that is still live is neither green
- * nor not-green yet. `avgSpendUsd` is the average chain spend of the finished runs, `null` when none finished.
+ * nor not-green yet. `avgSpendUsd` / `avgWallMs` average the FINISHED runs (a recorded terminal) whose figure is exact
+ * (chain spend priced; working time from readable stamps, resume gaps excluded) — `null` when no run qualifies, never 0.
  * Read from the runs the panel already lists: no registry, no plan handover (hamr ruling A).
  * @param {string} key a {@link workflowKey}
  * @param {{ home?: string }} [opts]
- * @returns {{runs: number, green: number, notGreen: number, live: number, avgSpendUsd: number|null}}
+ * @returns {{runs: number, green: number, notGreen: number, live: number, finished: number, avgSpendUsd: number|null, avgWallMs: number|null}}
  */
 export function trackRecordFor(key, opts = {}) {
   const { rows } = readRunList(opts);
   let green = 0;
   let notGreen = 0;
   let live = 0;
+  let finished = 0;
   let spendSum = 0;
   let spendN = 0;
+  let wallSum = 0;
+  let wallN = 0;
   for (const row of rows) {
     if (!row || !existsSync(row.spine)) continue;
     let records;
@@ -2173,21 +2177,40 @@ export function trackRecordFor(key, opts = {}) {
     const outcome = legs.at(-1)?.outcome ?? null;
     if (outcome === null && runIsAlive(row)) { live += 1; continue; }
     if (outcome === 'green') green += 1; else notGreen += 1;
+    // the averages read FINISHED runs only (a recorded terminal), and only figures that are exact: an unpriced run
+    // or one with unreadable stamps is left out, never counted as $0 or 0 min (unknown is never zero)
+    if (outcome === null) continue;
+    finished += 1;
     const sp = chainSpend(records);
-    if (sp.usd > 0 || outcome !== null) { spendSum += sp.usd; spendN += 1; }
+    if (sp.complete) { spendSum += sp.usd; spendN += 1; }
+    const wall = legsWallMs(legs);
+    if (wall.ms !== null && wall.complete) { wallSum += wall.ms; wallN += 1; }
   }
-  return { runs: green + notGreen + live, green, notGreen, live, avgSpendUsd: spendN > 0 ? spendSum / spendN : null };
+  return {
+    runs: green + notGreen + live, green, notGreen, live, finished,
+    avgSpendUsd: spendN > 0 ? spendSum / spendN : null,
+    avgWallMs: wallN > 0 ? wallSum / wallN : null,
+  };
 }
 
 /**
- * The line above a reuse card (code-owned fixed text): the workflow's track record.
- * @param {{green: number, notGreen: number, avgSpendUsd: number|null}|null} record
+ * The estimate line above a reuse card (code-owned fixed text): `Same job — G green · N not green · about $X and
+ * M min a run`, from the workflow's own listed runs. What is unknown is said, never rendered as $0 or 0 min.
+ * @param {{green: number, notGreen: number, finished?: number, avgSpendUsd: number|null, avgWallMs?: number|null}|null} record
  * @returns {string}
  */
 export function reuseLine(record) {
   if (!record) return 'Same job';
-  const cost = record.avgSpendUsd === null ? 'no finished run to price yet' : `about ${panelMoney2(record.avgSpendUsd)} a run`;
-  return `Same job — ${record.green} green · ${record.notGreen} not green · ${cost}`;
+  const head = `Same job — ${record.green} green · ${record.notGreen} not green`;
+  const wallMs = record.avgWallMs ?? null;
+  const cost = record.avgSpendUsd === null ? null : panelMoney2(record.avgSpendUsd);
+  const mins = wallMs === null ? null : (wallMs < 60_000 ? '<1' : String(Math.round(wallMs / 60_000)));
+  if (cost !== null && mins !== null) return `${head} · about ${cost} and ${mins} min a run`;
+  if (cost !== null) return `${head} · about ${cost} a run, time not recorded`;
+  if (mins !== null) return `${head} · about ${mins} min a run, cost not recorded`;
+  return (record.finished ?? record.green + record.notGreen) === 0
+    ? `${head} · no finished run yet to price or time`
+    : `${head} · cost and time not recorded`;
 }
 
 /**

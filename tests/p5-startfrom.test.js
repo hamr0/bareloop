@@ -227,7 +227,27 @@ test('track record is by WORKFLOW KEY: one run = ONE entry (a two-leg run counts
   const rec = trackRecordFor(workflowKey(spec), { home });
   assert.deepEqual({ green: rec.green, notGreen: rec.notGreen, live: rec.live }, { green: 2, notGreen: 1, live: 1 }, 'the run with other caps and another fence is the SAME workflow');
   assert.ok(Math.abs(rec.avgSpendUsd - (1 + 1 + 0.4) / 3) < 1e-9, `average over the 3 FINISHED runs, got ${rec.avgSpendUsd}`);
-  assert.equal(reuseLine(rec), 'Same job — 2 green · 1 not green · about $0.80 a run');
+  assert.ok(Math.abs(rec.avgWallMs - (5 + 4 + 5) / 3 * 60000) < 1, `working time averaged over the 3 finished runs (a two-leg run counts its legs, not the gap), got ${rec.avgWallMs}`);
+  assert.equal(rec.finished, 3);
+  assert.equal(reuseLine(rec), 'Same job — 2 green · 1 not green · about $0.80 and 5 min a run');
+});
+
+test('reuseLine: what is unknown is SAID — never $0 or 0 min; a died run counts as not green but is left out of the averages', async () => {
+  const spec = await realSpec();
+  const home = tmp('p5-sf-h-');
+  assert.equal(reuseLine({ green: 0, notGreen: 0, finished: 0, avgSpendUsd: null, avgWallMs: null }), 'Same job — 0 green · 0 not green · no finished run yet to price or time');
+  assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: null, avgWallMs: null }), 'Same job — 1 green · 0 not green · cost and time not recorded');
+  assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: 1.234, avgWallMs: null }), 'Same job — 1 green · 0 not green · about $1.23 a run, time not recorded');
+  assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: null, avgWallMs: 19 * 60000 }), 'Same job — 1 green · 0 not green · about 19 min a run, cost not recorded');
+  assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: 0.004, avgWallMs: 20000 }), 'Same job — 1 green · 0 not green · about <$0.01 and <1 min a run');
+  assert.equal(reuseLine(null), 'Same job');
+  // no run of this workflow yet
+  assert.deepEqual(trackRecordFor(workflowKey(spec), { home }), { runs: 0, green: 0, notGreen: 0, live: 0, finished: 0, avgSpendUsd: null, avgWallMs: null });
+  // a died run (no terminal) is not green, but no spend/time is invented for it
+  makeRun(home, { runid: 'died', spec, outcome: null, spent: 0.5 });
+  const rec = trackRecordFor(workflowKey(spec), { home });
+  assert.deepEqual({ green: rec.green, notGreen: rec.notGreen, finished: rec.finished, avgSpendUsd: rec.avgSpendUsd, avgWallMs: rec.avgWallMs }, { green: 0, notGreen: 1, finished: 0, avgSpendUsd: null, avgWallMs: null });
+  assert.equal(reuseLine(rec), 'Same job — 0 green · 1 not green · no finished run yet to price or time');
 });
 
 test('REUSE session: the signed spec is copied with only the open fields set, NOTHING is drafted ($0), the hash is NEW and the workflowKey is the origin\'s; a drifted spec is refused', async () => {
@@ -296,7 +316,7 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
   assert.deepEqual(pre.open, ['source', 'destination', 'capUsd', 'maxWallMs']);
   assert.ok(pre.locked.includes('goal') && pre.locked.includes('success') && !pre.locked.includes('capUsd'));
   assert.equal(pre.workflowKey, workflowKey(spec));
-  assert.match(pre.line, /^Same job — 1 green · 0 not green · about \$1\.00 a run$/);
+  assert.match(pre.line, /^Same job — 1 green · 0 not green · about \$1\.00 and 5 min a run$/);
   assert.equal('sameJobAvailable' in pre, false);
 
   assert.equal((await post('/api/author/start-from-check', { runid: 'origin1', card: pre.card })).status, 404, 'the "changed — new job" check is gone');
