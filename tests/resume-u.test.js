@@ -41,6 +41,10 @@ const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', i
 // pinning: the scenarios below are "overspent by exactly $0.13" and "burnt past the
 // wall", at ANY allowance. Every expected number is therefore DERIVED from SPEC, and
 // every fixture is sized as a fraction of it, so a spec edit moves both together.
+// Every fixture time is RELATIVE to today: a literal date aged past the 60-day pause TTL (and every other age gate)
+// on the day the calendar crossed it. `D0` is the calendar day ten days ago (UTC); the fixed clock times that
+// follow it keep their old offsets from one another, so every sum and difference the tests read is unchanged.
+const D0 = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10);
 const BUDGET = SPEC.budgetUsd;
 /** minutes, spelled the way the runner spells them (`${WALL_MS / 60000}min`) */
 const WALL_MIN = SPEC.maxWallMs / 60_000;
@@ -68,12 +72,12 @@ const sum = (/** @type {number[]} */ xs) => xs.reduce((a, b) => a + b, 0);
  * dollar figure: the stock fixture must stay "a halt with allowance left" whatever
  * the operator has signed. */
 const haltedSpine = ({ outcome = 'cap-halt', job = SPEC.job, rounds = [BUDGET * 0.15, BUDGET * 0.10], steps = ['fix-types'] } = {}) => [
-  { type: 'job-start', job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: '2026-08-04T10:00:00.000Z', seq: 1 },
-  { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: steps.map((id) => ({ id })) }, ts: '2026-08-04T10:02:00.000Z', seq: 2 },
-  ...rounds.map((c, i) => ({ type: 'worker-round', kind: 'turn', costUsd: c, ts: '2026-08-04T10:05:00.000Z', seq: 3 + i })),
-  ...steps.map((id, i) => ({ type: 'step-end', step: id, outcome: 'green', ts: '2026-08-04T10:10:00.000Z', seq: 20 + i })),
-  { type: 'outer-close', verdict: 'needs_revision', stage: 'no-suppressions', ts: '2026-08-04T10:12:00.000Z', seq: 40 },
-  { type: 'job-end', outcome, spentUsd: rounds.reduce((a, b) => a + b, 0), spendComplete: true, ts: '2026-08-04T10:20:00.000Z', seq: 41 },
+  { type: 'job-start', job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: `${D0}T10:00:00.000Z`, seq: 1 },
+  { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: steps.map((id) => ({ id })) }, ts: `${D0}T10:02:00.000Z`, seq: 2 },
+  ...rounds.map((c, i) => ({ type: 'worker-round', kind: 'turn', costUsd: c, ts: `${D0}T10:05:00.000Z`, seq: 3 + i })),
+  ...steps.map((id, i) => ({ type: 'step-end', step: id, outcome: 'green', ts: `${D0}T10:10:00.000Z`, seq: 20 + i })),
+  { type: 'outer-close', verdict: 'needs_revision', stage: 'no-suppressions', ts: `${D0}T10:12:00.000Z`, seq: 40 },
+  { type: 'job-end', outcome, spentUsd: rounds.reduce((a, b) => a + b, 0), spendComplete: true, ts: `${D0}T10:20:00.000Z`, seq: 41 },
 ];
 
 /**
@@ -123,8 +127,8 @@ test('§3 the resume PREVIEW names the TREND baselines it inherits — a readout
   const ev = haltedSpine();
   const withGrades = ev.flatMap((e) => (e.type !== 'outer-close' ? [e] : [
     { ...e, gap: 'close stage "no-suppressions" failed:\nBAREAGENT red: 12 suppression(s) added' },
-    { type: 'fix-loop', gapBytes: 80, ts: '2026-08-04T10:13:00.000Z', seq: 40.1 },
-    { type: 'ladder', governor: 'close-trend', stage: 'no-suppressions', value: 5, iteration: 1, ts: '2026-08-04T10:15:00.000Z', seq: 40.2 },
+    { type: 'fix-loop', gapBytes: 80, ts: `${D0}T10:13:00.000Z`, seq: 40.1 },
+    { type: 'ladder', governor: 'close-trend', stage: 'no-suppressions', value: 5, iteration: 1, ts: `${D0}T10:15:00.000Z`, seq: 40.2 },
   ]));
   const { code, out } = preview(['--resume', spineFile(withGrades)]);
   assert.equal(code, 0);
@@ -169,8 +173,8 @@ test('§3 the resume PREVIEW names the replan ceiling it inherits — the operat
   const ev = haltedSpine();
   const withReplans = ev.flatMap((e) => (e.type !== 'plan-accepted' ? [e] : [
     e,
-    { type: 'replan', step: 'fix-types', trigger: 'cap-halt', replan: 1, ts: '2026-08-04T10:03:00.000Z', seq: 2.1 },
-    { type: 'replan', step: 'fix-types', trigger: 'step-variance', replan: 2, granted: 'converging', ts: '2026-08-04T10:04:00.000Z', seq: 2.2 },
+    { type: 'replan', step: 'fix-types', trigger: 'cap-halt', replan: 1, ts: `${D0}T10:03:00.000Z`, seq: 2.1 },
+    { type: 'replan', step: 'fix-types', trigger: 'step-variance', replan: 2, granted: 'converging', ts: `${D0}T10:04:00.000Z`, seq: 2.2 },
   ]));
   const { code, out } = preview(['--resume', spineFile(withReplans)]);
   assert.equal(code, 0);
@@ -420,7 +424,7 @@ test('§3 a resume whose allowance is ALREADY SPENT says so plainly — the comm
  * Its one round costs an eighth of the SIGNED budget: the wall arm has to fire with the
  * money arm silent, and "cheap" is only cheap relative to the allowance in force. */
 const longSpine = (minutes) => {
-  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const t = (/** @type {number} */ m) => new Date(Date.parse(`${D0}T10:00:00.000Z`) + m * 60_000).toISOString();
   const cost = BUDGET / 8;
   return [
     { type: 'job-start', job: SPEC.job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: t(0), seq: 1 },
