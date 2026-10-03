@@ -653,6 +653,9 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
           ['raise maxWallMs and rerun (resume-to-cap; a spec edit, so the new hash needs re-approval)',
             'revise the goal/spec so the work fits the time (same re-approval)',
             'abandon the task']],
+        // P5 item 5 — the PERSON asked to stop at a round boundary: nothing failed, nothing is discarded.
+        'stopped': ['You stopped the run. Nothing is discarded: the work on disk stands, and a resume re-enters this step.',
+          ['resume (the same run continues)', 'abandon the task']],
         // F66 — the STALL WATCHDOG gave up: no round completed for the stall window,
         // three times over, and reissuing the call did not recover it. It borrows both
         // siblings' rules. Like `step-variance`, the caller reads this category and

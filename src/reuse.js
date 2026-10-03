@@ -118,7 +118,7 @@ export const REUSE_GRADED_RED = Object.freeze(['escalated']);
  * allowances the loop's remaining tries are meant to spend against, and the human
  * ones are the stop no further try can change (see `hardStop`).
  *
- * `stopped` (PANEL-BUILD.md P5 item 5, hamr 2026-10-02): the PERSON ended the leg at a between-steps
+ * `stopped` (PANEL-BUILD.md P5 item 5, hamr 2026-10-02): the PERSON ended the leg at a round
  * boundary (a `<spine>.stop` request). Nothing was judged and nothing failed — finished steps stand on
  * disk, the allowance is unspent, so it is a checkpoint exactly like a cap-halt. Arbiter-adjacent (it
  * widens what resume may re-enter); ruled by hamr, not chosen by a builder.

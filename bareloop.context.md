@@ -3500,18 +3500,18 @@ key you want first (the panel picks the row by the Model menu).
   spelling), and signals nothing. `404` unknown run; `409` when the run's LATEST leg is not live
   (`runIsAlive`) or its spine does not exist yet (still starting). The ENGINE half is library code, so
   CLI runs honour the file too (no new CLI command): `runJob`/`runPlan` take `stopFile`, and `run-u`/the
-  panel's spawn pass `<spine>.stop`. The seam is the between-steps one, where the wall deadline is read
-  (`src/planrun.js`, after a green step with steps still to run): file present = emit `stop-requested
-  {phase, stepsDone, stepsPlanned}`, delete the file, end the leg with job-end outcome `stopped`
-  (`spendComplete` exact — nothing in flight). A stop is never read mid-step or after the last step, so
-  it never cuts work and never overrides a verdict (a one-step run therefore cannot be stopped; the
-  request is cleared when the leg ends). The request file is cleared three times: when honoured, when the
+  panel's spawn pass `<spine>.stop`. The seam is the ROUND BOUNDARY of a step worker — where the money cap binds
+  (`src/planrun.js`, the `metered` round callback): file present = delete it, emit `stop-requested
+  {phase, step, iteration, round}`, end the Loop after that round; `ask` then throws category `stopped`
+  and the step loop files it as job-end outcome `stopped` the way a mid-step cap-halt is filed
+  (`spendComplete` exact — nothing is in flight at a round boundary). One owner, one check: a one-step run
+  and a long step both stop within one turn. Resume re-enters that step. The request file is cleared three times: when honoured, when the
   leg ends (`finally`), and at the start of the next leg (a click that raced a leg's end never stops a
   resume). `stopped` is in `CHECKPOINT_OUTCOMES`: resumable like a `cap-halt`, the same run continues as a
   new leg at the next step. `GET /api/runs/:runid` carries `live` and `stopping` (a stop request is on
   disk and the leg is live); Ended row `stopped` = "You stopped it." / "Resume." / `[Resume]`, card line
   `stopped — resume`, Audit divider `stopped: you stopped it · resumed <when>`. The page shows `[Stop]`
-  in the Run tab's action area while live, "stopping after this step…" after the click, and the same
+  in the Run tab's action area while live, "stopping after this turn…" after the click, and the same
   `[Resume]` there once the engine would accept one.
   **Start from this (item 3)** — a button on EVERY run (the Run tab's action area; the Ended block where the
   table offers it: green, goal-not-met, close-red, stopped-before-the-work, step-stalled, died; `ended.actions`

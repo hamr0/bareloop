@@ -72,7 +72,7 @@ export function createRunRoutes(opts) {
 
   /**
    * P5 item 5 — `POST /api/runs/:runid/stop`. The click writes the run's STOP REQUEST file (`<spine>.stop`,
-   * `stopFilePath`); the ENGINE reads it at its between-steps seam and ends the leg `stopped` (resumable). The
+   * `stopFilePath`); the ENGINE reads it at its round boundary (the seam where the money cap binds) and ends the leg `stopped` (resumable). The
    * route never signals or kills anything. Refused (409) unless the run's LATEST leg is live — a stop request for
    * a run that is not running would sit on disk and could be misread by a later leg (the engine also clears a
    * stale one at leg start, but a button that cannot do anything is not offered or accepted).

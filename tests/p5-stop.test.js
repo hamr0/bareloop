@@ -1,5 +1,5 @@
 // PANEL-BUILD.md P5 item 5 — STOP, the engine half. A stop request is a FILE `<spine>.stop`; the engine reads it at
-// the between-steps seam (where the wall deadline is read), emits `stop-requested`, and ends the leg `stopped`
+// the round-boundary seam (where the money cap binds), emits `stop-requested`, and ends the leg `stopped`
 // (a checkpoint outcome: resumable, the SAME run continues as a new leg). Driven through the real engine
 // (`startRun` / `resumeRun`, in-process) with a scripted provider and a scratch home — never the real one.
 
@@ -36,7 +36,7 @@ const PLAN = {
 };
 
 /** a patient repo + a signed three-step spec whose close greens once src/c.mjs exists */
-function fixture(t) {
+function fixture(t, closeFile = 'c.mjs') {
   const workdir = join(tmp(t), 'patient');
   mkdirSync(join(workdir, 'src'), { recursive: true });
   writeFileSync(join(workdir, 'src', 'mod.mjs'), 'export const x = 1;\n');
@@ -46,7 +46,7 @@ function fixture(t) {
   git(workdir, ['add', '.']);
   git(workdir, ['commit', '-q', '-m', 'seed']);
   const seed = git(workdir, ['rev-parse', 'HEAD']);
-  const closeSource = `import { existsSync } from 'node:fs';\nconst ok = existsSync(${JSON.stringify(join(workdir, 'src', 'c.mjs'))});\nconsole.log(ok ? 'ok' : 'FAILED: src/c.mjs is missing');\nprocess.exit(ok ? 0 : 1);\n`;
+  const closeSource = `import { existsSync } from 'node:fs';\nconst ok = existsSync(${JSON.stringify(join(workdir, 'src', closeFile))});\nconsole.log(ok ? 'ok' : 'FAILED: src/${closeFile} is missing');\nprocess.exit(ok ? 0 : 1);\n`;
   const closePath = join(tmp(t), 'close.mjs');
   writeFileSync(closePath, closeSource);
   const spec = {
@@ -83,7 +83,7 @@ async function leg1(f, provider, home) {
   return { code, out: outs.join('\n') };
 }
 
-test('item 5: a stop request ends the leg `stopped` BETWEEN steps; the stop file is consumed; the SAME run resumes at the next step as leg 2', async (t) => {
+test('item 5: a stop request during step 1 of 3 ends the leg `stopped` at the round boundary; the stop file is consumed; the SAME run resumes (re-entering that step) as leg 2', async (t) => {
   const home = tmp(t);
   const f = fixture(t);
   /** @type {string|null} */ let spine = null;
@@ -109,7 +109,7 @@ test('item 5: a stop request ends the leg `stopped` BETWEEN steps; the stop file
   assert.ok(types.includes('stop-requested'), `the stop is recorded — ${types.join(',')}`);
   const end = recs1.findLast((r) => r.type === 'job-end');
   assert.equal(end.outcome, 'stopped');
-  assert.equal(end.spendComplete, true, 'read between steps with nothing in flight: the spend is exact');
+  assert.equal(end.spendComplete, true, 'cut at a round boundary with nothing in flight: the spend is exact');
   assert.ok(types.indexOf('stop-requested') < types.lastIndexOf('job-end'));
   assert.equal(recs1.filter((r) => r.type === 'step-start').length, 1, 'step two was never started');
   assert.notEqual(first.code, undefined);
@@ -121,8 +121,10 @@ test('item 5: a stop request ends the leg `stopped` BETWEEN steps; the stop file
   writeFileSync(stopFilePath(spine), '');
 
   // leg 2: the SAME run, the next step
-  // (the stale file planted above would stop it after step two — if it were not cleared at leg start)
+  // (the stale file planted above would stop it at its first round — if it were not cleared at leg start)
   const queue2 = [
+    { toolCalls: [tcall('w1b', 'shell_write', { path: join(f.workdir, 'src', 'a.mjs'), content: 'export const a = 1;\n' })] },
+    { text: 'step one done' },
     { toolCalls: [tcall('w2', 'shell_write', { path: join(f.workdir, 'src', 'b.mjs'), content: 'export const b = 2;\n' })] },
     { text: 'step two done' },
     { toolCalls: [tcall('w3', 'shell_write', { path: join(f.workdir, 'src', 'c.mjs'), content: 'export const c = 3;\n' })] },
@@ -138,8 +140,52 @@ test('item 5: a stop request ends the leg `stopped` BETWEEN steps; the stop file
   assert.equal(legs.length, 2, `one run, two legs — ${outs.join('\n').slice(-600)}`);
   assert.equal(legs[0].outcome, 'stopped');
   assert.equal(legs[1].after, 'stopped', 'the marker says how the previous leg ended');
-  assert.deepEqual(legs[1].records.filter((r) => r.type === 'step-start').map((r) => r.step), ['two', 'three'], 'it picks up at the NEXT step, never re-pays step one');
+  assert.deepEqual(legs[1].records.filter((r) => r.type === 'step-start').map((r) => r.step), ['one', 'two', 'three'], 'a mid-step stop re-enters the step it cut (like a cap-halt), then goes on');
   assert.equal(legs[1].outcome, 'green', `code ${code2}`);
   assert.equal(readRunList({ home }).rows.length, 1, 'one run row');
   assert.deepEqual(readdirSync(join(spine, '..')).filter((n) => /^u-.*\.jsonl$/.test(n) && !n.includes('gate-audit') && !n.includes('lag')).length, 1, 'one spine file');
+});
+
+const PLAN_ONE = {
+  schema: 'plan-v1',
+  steps: [{ id: 'only', action: 'Write src/a.mjs and src/a2.mjs.', tools: ['write'], rounds: 6, target: 'src/a2.mjs', exit: [{ type: 'tree-changed', scope: 'src/**' }] }],
+};
+
+test('item 5 (the money-cap seam): a ONE-step run is stopped MID-STEP between rounds — `stopped`, exact spend — and resume re-enters the SAME step on the SAME run and greens', async (t) => {
+  const home = tmp(t);
+  const f = fixture(t, 'a2.mjs');
+  /** @type {string|null} */ let spine = null;
+  const w = (id, name) => ({ toolCalls: [tcall(id, 'shell_write', { path: join(f.workdir, 'src', name), content: `export const v = '${id}';\n` })] });
+  const provider = queueProvider({
+    queue: [{ text: 'scout: nothing' }, { text: JSON.stringify(PLAN_ONE) }, w('w1', 'a.mjs'), w('w2', 'a2.mjs'), { text: 'never reached' }],
+    // Stop is clicked while the model is working on round 1 of the only step
+    onCall: (n) => { if (n === 3) { spine = readRunList({ home }).rows[0].spine; writeFileSync(stopFilePath(spine), ''); } },
+  });
+  let calls = 0;
+  const counted = { ...provider, async generate(...a) { calls += 1; return provider.generate(...a); } };
+  await leg1(f, counted, home);
+  assert.ok(spine);
+  const recs = parseSpineText(readFileSync(spine, 'utf8')).records;
+  const end = recs.findLast((r) => r.type === 'job-end');
+  assert.equal(end.outcome, 'stopped', 'a one-step run CAN be stopped');
+  assert.equal(end.spendComplete, true, 'cut between rounds with nothing in flight: exact');
+  const sr = recs.find((r) => r.type === 'stop-requested');
+  assert.ok(sr, 'stop-requested is recorded');
+  assert.equal(sr.step, 'only');
+  assert.equal(typeof sr.round, 'number');
+  assert.equal(calls, 3, 'scout, plan, ONE worker round — no second round was bought after the request');
+  assert.equal(recs.filter((r) => r.type === 'step-end' && r.outcome === 'green').length, 0, 'the step did not finish');
+  assert.equal(existsSync(stopFilePath(spine)), false, 'consumed');
+
+  const queue2 = [w('w3', 'a.mjs'), w('w4', 'a2.mjs'), { text: 'done' }];
+  await resumeRun(spine, {
+    spec: f.spec, workdir: f.workdir, seed: f.seed, spineName: 'p5-stop-fixture-bareloop', approve: jobSpecHash(f.spec),
+    deps: { provider: queueProvider({ queue: queue2 }), env: {}, out: () => {}, err: () => {}, runlistHome: home },
+  });
+  const legs = legsOf(parseSpineText(readFileSync(spine, 'utf8')).records);
+  assert.equal(legs.length, 2, 'one run, two legs');
+  assert.equal(legs[0].outcome, 'stopped');
+  assert.deepEqual(legs[1].records.filter((r) => r.type === 'step-start').map((r) => r.step), ['only'], 'resume re-enters the SAME step');
+  assert.equal(legs[1].outcome, 'green');
+  assert.equal(readRunList({ home }).rows.length, 1);
 });

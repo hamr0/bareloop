@@ -2176,7 +2176,7 @@
     var live = !!detail.live && !detail.died && !detail.ended;
     if(live){
       if(detail.stopping || stopAsked[detail.runid]){
-        html = '<span class="stopping" data-testid="stopping-note">stopping after this step…</span>';
+        html = '<span class="stopping" data-testid="stopping-note">stopping after this turn…</span>';
       } else {
         html = '<button class="btn" type="button" data-testid="btn-stop">Stop</button>';
       }

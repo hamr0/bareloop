@@ -964,11 +964,11 @@ ${scoutBlob || '(no scout notes)'}`;
  *   the resume-plan-red option, the fix-loop terminal) say "resume is `run-u`-only
  *   in v1" instead of naming a flag that would fail if typed.
  * @param {string|null} [opts.stopFile=null] P5 item 5 — the run's STOP REQUEST file
- *   (`stopFilePath(spine)`, src/legs.js). Read at ONE seam, the between-steps one (where the
- *   wall deadline is read): present after a green step with steps still to run = emit
- *   `stop-requested`, consume the file, end the leg `stopped` (a checkpoint outcome). Never
- *   read mid-step or after the last step, so a stop never cuts work in flight and never
- *   overrides a verdict the close is about to render. `null` = no stop surface (the default).
+ *   (`stopFilePath(spine)`, src/legs.js). Read at ONE seam, the round boundary of a step worker
+ *   (the `metered` callback, where the money cap binds): present = emit `stop-requested`, consume
+ *   the file, end the Loop after that round, and end the leg `stopped` (a checkpoint outcome, filed
+ *   the way a mid-step cap-halt is; resume re-enters that step). Nothing is in flight at that
+ *   point, so the spend is exact. `null` = no stop surface (the default).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
@@ -2645,6 +2645,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // completes no round and returns from no step, which are the only two places
     // `clock.expired()` is otherwise consulted). Same clock object as every other
     // reader — never a second time source.
+    /** P5 item 5 — set by the round seam when the person's stop request was honoured on this worker */
+    let stopHit = false;
+    const throwIfStopped = () => {
+      if (!stopHit) return;
+      const err = /** @type {CategorizedError} */ (new Error('stopped at the person\'s request (a stop request was honoured at a round boundary)'));
+      err.category = 'stopped';
+      throw err;
+    };
     const stallWatch = createStallWatch({
       onStall: (n) => emit('stall', { phase, iteration: roundIteration, stall: n, stallMs: STALL_MS, maxStalls: MAX_STALLS }),
       expired: () => clock.expired(),
@@ -2727,7 +2735,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           // step loop after a step returns (between steps), the head of a step's attempt
           // (a step that would BEGIN past the deadline is never funded), and the head of
           // a close-fix iteration (W-2 — the run stops on the verdict already minted).
-          if (clock.expired()) {
+          // P5 item 5 — the person's STOP, read at THIS seam: the round boundary, where the money cap binds
+          // (nothing in flight, the round just metered). It is the ONE owner of the stop request. The file is
+          // consumed here; `self.stop()` ends the Loop after this round exactly as a bound does; `ask`/`askFrom`
+          // then throw category `stopped`, which the step loop files as the checkpoint outcome `stopped` the way a
+          // mid-step cap-halt is filed. Step workers only (scout/plan/fix never read it).
+          if (stopFile !== null && !stopHit && phase.startsWith('step:') && existsSync(stopFile)) {
+            try { unlinkSync(stopFile); } catch { /* already consumed */ }
+            stopHit = true;
+            emit('stop-requested', { phase, step: phase.slice('step:'.length), iteration: roundIteration, round: roundsThisAttempt, meaning: 'the person asked to stop; the leg ends after this round and a resume re-enters this step' });
+            self.stop();
+          } else if (clock.expired()) {
             attemptBounded = { iteration: roundIteration, cause: 'wall', reason: null };
             emit('wall-bounded', { phase, iteration: roundIteration, ...clock.report(closeTimeoutForReport) });
             self.stop();
@@ -2764,7 +2782,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // bare-agent's own Loop.chat() (loop.js ~1321) strips a leading system
         // message before re-running for exactly this reason; do the same here.
         const rest = msgs[0]?.role === 'system' ? msgs.slice(1) : msgs;
-        return await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        const r = await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        throwIfStopped();
+        return r;
       } catch (e) {
         throw categorize(e).err;
       }
@@ -2773,6 +2793,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       let r;
       try {
         r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        throwIfStopped();
       } catch (e) {
         throw categorize(e).err;
       }
@@ -3436,16 +3457,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // it cannot fund, which is the same class as the money cap binding mid-attempt
       // (F45). Resume-to-cap applies exactly as it does to money — the stop IS the
       // checkpoint, so the completed steps are not wasted.
-      // P5 item 5 — the person's STOP, read at this same between-steps seam, with nothing in flight. The
-      // request is a file (`stopFile`); honouring it consumes it, so the next leg is never stopped by it.
-      // Money/time are not the reason, so no wall/money record is written: `stop-requested` is the record,
-      // and the terminal is the checkpoint `stopped` (resumable like a cap-halt, src/reuse.js).
-      if (stopFile !== null && idx < plan.steps.length && existsSync(stopFile)) {
-        try { unlinkSync(stopFile); } catch { /* already consumed */ }
-        emit('stop-requested', { phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length, meaning: 'the person asked to stop; the leg ends after the step in flight' });
-        planExecuted();
-        return 'stopped';
-      }
       if (clock.expired() && idx < plan.steps.length) {
         emitWallHalt({ stepsDone: idx, stepsPlanned: plan.steps.length });
         emit('escalation', {
@@ -3687,6 +3698,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // (attempts used, steps done); its absence means the deadline landed inside a call
     // instead, which is F64's cutMidCall stop — and run.js keys the job-end money floor
     // on exactly that field, so conflating the two would report an unknown as exact.
+    // P5 item 5 — the person stopped the leg at a round boundary inside this step: a checkpoint, not a verdict
+    if (cat === 'stopped') {
+      planExecuted();
+      return 'stopped';
+    }
     if (cat === 'wall-halt') {
       emitWallHalt(stepWallStop ?? { cutMidCall: true, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
       planExecuted();

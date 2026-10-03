@@ -929,7 +929,7 @@ export function getRunDetail(runid, opts = {}) {
     // whenever Resume is not offered.
     ended,
     // P5 item 5: is the run's LATEST leg live (the page offers Stop only then), and has a stop been asked for
-    // (the request file exists beside the spine) — the page reads "stopping after this step…" until the leg ends
+    // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
     live: runIsAlive(row),
     stopping: runIsAlive(row) && existsSync(stopFilePath(row.spine)),
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's

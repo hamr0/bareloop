@@ -68,6 +68,7 @@ const QUOTED_VERB_RE = /"([a-z0-9-]+)"/;
 const EXCLUDED_ESCALATIONS = new Set([
   'cap-halt',           // a budget story, not a lib bug
   'wall-halt',          // the TIME budget's version of the same story (T, PRD v1.27)
+  'stopped',            // the PERSON's stop (P5 item 5) — a checkpoint, never a lib bug
   // A stall is the ABSENCE of beats, not an observed provider failure: nothing
   // saw the transport fail, so the typed-lib route rendered a live ask reading
   // "bare-agent: the provider path failed — worker stalled…" and aimed a bug at

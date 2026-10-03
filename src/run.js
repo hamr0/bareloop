@@ -258,7 +258,7 @@ async function primitiveSmoke(workdir) {
  *   verbatim to the plan flow, which owns the three `--resume`-naming readouts.
  * @param {string|null} [opts.stopFile=null] P5 item 5 — the run's STOP REQUEST file
  *   (`stopFilePath(spine)`, src/legs.js), forwarded verbatim to the plan flow, which reads it at the
- *   between-steps seam and ends the leg `stopped`. `null` = no stop surface.
+ *   round-boundary seam (where the money cap binds) and ends the leg `stopped`. `null` = no stop surface.
  * @returns {Promise<string>} outcome: 'green' | 'already-green' | 'escalated' |
  *   'unapproved-spec' | 'job-red' | 'smoke-red' | 'plan-red' | 'check-red' |
  *   'close-red' | 'close-unsupported' | 'recipe-stale' | 'branch-red' | 'pricing-red' | 'provider-red' |

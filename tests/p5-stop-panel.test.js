@@ -90,7 +90,7 @@ test('POST /api/runs/:runid/stop: human guard, 404, 409 when not live, 409 while
   assert.equal(existsSync(stopFilePath(live)), true, 'the request is a file beside the spine');
   assert.ok(readFileSync(stopFilePath(live), 'utf8').length > 0);
 
-  // the detail now says live + stopping, so the page shows "stopping after this step…" until the leg ends
+  // the detail now says live + stopping, so the page shows "stopping after this turn…" until the leg ends
   const d = getRunDetail('live1', { home });
   assert.equal(d.live, true);
   assert.equal(d.stopping, true);

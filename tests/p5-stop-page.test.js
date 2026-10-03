@@ -28,13 +28,13 @@ function load() {
   return { render: f, bar, opened };
 }
 
-test('page: a LIVE run shows [Stop]; once asked (or the server says stopping) it reads "stopping after this step…" and no button', () => {
+test('page: a LIVE run shows [Stop]; once asked (or the server says stopping) it reads "stopping after this turn…" and no button', () => {
   const { render, bar } = load();
   render({ runid: 'r1', live: true, died: false, ended: null, resume: null });
   assert.match(bar.innerHTML, /data-testid="btn-stop">Stop</);
   assert.equal(bar.hidden, false);
   render({ runid: 'r1', live: true, stopping: true, died: false, ended: null, resume: null });
-  assert.match(bar.innerHTML, /stopping after this step…/);
+  assert.match(bar.innerHTML, /stopping after this turn…/);
   assert.doesNotMatch(bar.innerHTML, /btn-stop/);
 });
 
