@@ -54,3 +54,14 @@ test('page: Stop is wired to the stop route and Resume to the Job-tab resume mod
   assert.match(fnSrc('renderRunActions'), /openResumeOnJobTab\(detail\)/);
   assert.match(fnSrc('renderRun'), /renderRunActions\(detail\)/, 'renderRun paints the action area on every render');
 });
+
+test('page: [Stop] sits in the Run tab\'s action row beside [Start from this] — one row, the same plain .btn style, Stop only while live', () => {
+  const { render, bar } = load();
+  render({ runid: 'r1', live: true, died: false, ended: null, resume: null });
+  assert.match(bar.innerHTML, /^<button class="btn" type="button" data-testid="btn-stop">Stop<\/button><button class="btn" type="button" data-testid="btn-start-from">Start from this<\/button>$/);
+  const runTab = PAGE.slice(PAGE.indexOf('<section id="panel-run"'), PAGE.indexOf('<section id="panel-audit"'));
+  assert.ok(runTab.includes('id="run-actions"'), 'the action row is inside the Run tab');
+  assert.equal(PAGE.split('btn-stop').length - 1, fnSrc('renderRunActions').split('btn-stop').length - 1, 'Stop is built nowhere but the action row');
+  render({ runid: 'r1', live: false, died: false, ended: null, resume: null });
+  assert.doesNotMatch(bar.innerHTML, /btn-stop/, 'not live: no Stop');
+});
