@@ -722,7 +722,7 @@
       <section id="panel-providers" class="tabpanel active" role="tabpanel" aria-labelledby="tab-providers">
         <div class="keyfile-strip" data-testid="keyfile-box">
           <div class="keyfile-strip-main">
-            <span>Put <code>NAME=key</code> lines in <code id="pv-keyfile-path">~/.config/bareloop/.env</code>, then Reload keys — every key that has a value gets a row. Only names are listed; keys never reach this page.</span>
+            <span>Put <code>NAME=key</code> lines in <code id="pv-keyfile-path" data-testid="keyfile-path">the keys file (path loading…)</code>, then Reload keys — every key that has a value gets a row. Only names are listed; keys never reach this page.</span>
             <span class="hint" id="pv-keyfile-note" data-testid="keyfile-warning"></span>
           </div>
           <div class="keyfile-strip-actions">
@@ -3322,7 +3322,7 @@
     }
     function loadProviders(){
       authorGet("/api/settings/providers").then(function(r){
-        if(!r || !r.ok){ pvNote.textContent = "could not read providers"; return; }
+        if(!r || !r.ok){ pvNote.textContent = "could not read providers"; document.getElementById("pv-keyfile-path").textContent = "the keys file (path unknown — could not read providers)"; return; }
         var kf = r.keysFile;
         document.getElementById("pv-keyfile-path").textContent = kf.path;
         document.getElementById("pv-keyfile-note").textContent = kf.warning ? ("⚠ " + kf.warning) : "";
