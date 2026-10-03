@@ -885,6 +885,35 @@ export function jobSpecHash(job) {
 }
 
 /**
+ * The fields a "Reuse workflow" run may change: where the work lands (the write fence, `writeScope`, and a
+ * `destination`/`source` where a spec ever carries them) and the two ceilings. Everything else in a signed spec is
+ * the WORKFLOW — goal, checks, guardrails, model, close. ONE list, shared by {@link workflowKey} and by the panel's
+ * reuse (so what the key ignores is exactly what the person may edit, never two spellings).
+ */
+export const REUSE_OPEN_SPEC_FIELDS = Object.freeze(['source', 'destination', 'writeScope', 'budgetUsd', 'maxWallMs']);
+
+/**
+ * The identity of a WORKFLOW (Reuse workflow, hamr 2026-10-03): sha256 over the signed spec WITHOUT the fields a
+ * reuse may change ({@link REUSE_OPEN_SPEC_FIELDS}). Two runs share a workflow key iff they ran the same goal,
+ * checks, guardrails, model and close — whatever source they ran on, wherever they wrote, whatever caps they had.
+ * It is NOT a signature: {@link jobSpecHash} (which covers the caps and the fence) stays what the person signs, and
+ * a reuse lands on a NEW jobSpecHash with the SAME workflowKey. Same never-throws contract as `jobSpecHash`, and
+ * the same resolved-`tools` form, so an omitted-`tools` spec and its spelled-out menu share a key.
+ * @param {object} job
+ * @returns {string} sha256 hex
+ */
+export function workflowKey(job) {
+  let c;
+  try {
+    /** @type {any} */
+    const rest = isObj(job) ? { ...job } : job;
+    if (isObj(rest)) for (const f of REUSE_OPEN_SPEC_FIELDS) delete rest[f];
+    c = canon(resolveSpec(rest));
+  } catch { c = '\u0000unhashable'; }
+  return createHash('sha256').update(`workflow-key-v1\n${c}`).digest('hex');
+}
+
+/**
  * Does an approval record cover this exact spec version? Pure predicate — the
  * N2 runner refuses to run without it; nothing here writes or prompts. The
  * approval record lives OUTSIDE the document it signs (a spec never contains

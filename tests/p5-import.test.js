@@ -200,24 +200,15 @@ test('the view: goal, checks, guardrails, caps, model, the exported history (gre
   assert.equal(readImports(home).length, 1);
 });
 
-test('Start from an imported job: GET /api/author/start-from?import= prefills from the bundle\'s spec.json, never offers same-job, never needs a run', async (t) => {
+test('Reuse an imported job: GET /api/author/start-from?import= — interim refusal until item 5 builds the copy-and-verify (never a draft)', async (t) => {
   const home = tmp('p5-import-cfg-');
   const userHome = tmp('p5-import-user-');
   const bundleDir = join(userHome, 'fix.bareloop');
   exportFixtureBundle(bundleDir);
   const { get, post } = await start(t, { home, userHome });
   const id = (await (await post('/api/imports', { path: bundleDir })).json()).id;
-  const pre = await (await get(`/api/author/start-from?import=${id}`)).json();
-  assert.equal(pre.ok, true);
-  assert.equal(pre.from, 'bundle spec.json');
-  assert.equal(pre.card.jobName, 'fixture-export-job');
-  assert.equal(pre.card.goal, 'Make the fixture pass its own close.');
-  assert.equal(pre.card.destination, 'src/**');
-  assert.equal(pre.card.capUsd, 1.5);
-  assert.equal(pre.card.maxWallMs, 1_800_000);
-  assert.deepEqual([pre.card.source, pre.card.success, pre.card.guardrails, pre.card.judgeExamples], ['', '', '', '']);
-  assert.match(pre.note, /not in an exported job/);
-  assert.equal(pre.sameJobAvailable, false);
-  assert.equal(pre.line, 'Changed — new job, starts clean');
+  const r = await get(`/api/author/start-from?import=${id}`);
+  assert.equal(r.status, 409);
+  assert.match((await r.json()).error, /not available yet/);
   assert.equal((await get('/api/author/start-from?import=aaaaaaaaaaaa')).status, 404);
 });

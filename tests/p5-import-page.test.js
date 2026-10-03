@@ -51,7 +51,7 @@ test('page: an imported job opens in the SAME Run / Audit / Job tabs — Run say
   const clicks = [];
   get('tab-run').click = () => clicks.push('tab-run');
   // eslint-disable-next-line no-new-func
-  const render = new Function('document', 'startFromImportThis', 'renderJob', `${['escapeXml', 'panelMoney'].map(fnSrc).join('\n')}\n${fnSrc('renderImportView')}\nreturn renderImportView;`)(doc, () => {}, (j) => jobs.push(j));
+  const render = new Function('document', 'reuseImportedWorkflow', 'renderJob', `${['escapeXml', 'panelMoney'].map(fnSrc).join('\n')}\n${fnSrc('renderImportView')}\nreturn renderImportView;`)(doc, () => {}, (j) => jobs.push(j));
   render({
     ok: true, id: 'aaaaaaaaaaaa', job: 'fix-types', status: 'ok', statusText: null, importedAt: '2026-10-02T10:00:00.000Z',
     goal: 'Make types clean', checkType: 'deterministic', success: 'a · b', guardrails: 'write fence — src/**', model: 'deepseek-flash',
@@ -102,13 +102,13 @@ test('page: the Import button lives on the Workflows toolbar, opens the folder b
   assert.match(PAGE, /\.import-entries\{[^}]*overflow-x:hidden/, 'no horizontal scroll in the folder list');
 });
 
-test('page: Start from this on an imported job asks for the import prefill and hands it to the card without a run id (never a same-job start)', async () => {
+test('page: Reuse workflow on an imported job asks for the import prefill and hands it to the card with the import id, no run id', async () => {
   const events = [];
   const urls = [];
   // eslint-disable-next-line no-new-func
-  const f = new Function('document', 'authorGet', 'CustomEvent', 'window', `${fnSrc('startFromImportThis')}\nreturn startFromImportThis;`)(
+  const f = new Function('document', 'authorGet', 'CustomEvent', 'window', `${fnSrc('reuseImportedWorkflow')}\nreturn reuseImportedWorkflow;`)(
     { getElementById: () => ({ click() {} }), dispatchEvent: (e) => events.push(e) },
-    (u) => { urls.push(u); return Promise.resolve({ ok: true, card: {}, line: 'Changed — new job, starts clean' }); },
+    (u) => { urls.push(u); return Promise.resolve({ ok: true, card: {}, line: 'Same job' }); },
     class { constructor(type, init) { this.type = type; this.detail = init.detail; } },
     { alert() {} },
   );
@@ -116,5 +116,7 @@ test('page: Start from this on an imported job asks for the import prefill and h
   await new Promise((r) => { setTimeout(r, 10); });
   assert.deepEqual(urls, ['/api/author/start-from?import=aaaaaaaaaaaa']);
   assert.equal(events[0].detail.runid, null);
-  assert.match(PAGE, /startFrom = d\.runid \? \{runid: d\.runid\} : null;/);
+  assert.equal(events[0].type, 'bareloop-reuse');
+  assert.equal(events[0].detail.importId, 'aaaaaaaaaaaa');
+  assert.match(PAGE, /startFrom = d\.importId \? \{importId: d\.importId\} : \{runid: d\.runid\};/);
 });

@@ -262,7 +262,8 @@
   .import-view .imp-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:84px;}
   .import-view .imp-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
   .startfrom-line{margin:2px 0 8px;font-size:12px;color:var(--accent);overflow-wrap:anywhere;}
-  .startfrom-line.changed{color:var(--amber);}
+  .job-card .locked{opacity:.55;cursor:not-allowed;}
+  .job-card.reuse .radio-row label{opacity:.55;cursor:not-allowed;}
   .startfrom-origin{font-size:12px;color:var(--text-dim);margin:0 0 4px;overflow-wrap:anywhere;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
@@ -1861,7 +1862,7 @@
       recent +
       row("THIS MACHINE", v.approvedText || "unknown", "import-approved") +
       '<div class="run-actions"><button class="btn primary" type="button" data-testid="btn-start-from-import">Start from this</button></div>';
-    el.querySelector('[data-testid="btn-start-from-import"]').addEventListener("click", function(){ startFromImportThis(v.id); });
+    el.querySelector('[data-testid="btn-start-from-import"]').addEventListener("click", function(){ reuseImportedWorkflow(v.id); });
     var nr = "not recorded";
     renderJob({
       job: v.job, resolved: false, checkType: v.checkType || nr, model: v.model || nr,
@@ -1873,12 +1874,12 @@
     });
     document.getElementById("tab-run").click();
   }
-  // Start from this, on an IMPORTED job: the prefill is the bundle's own spec.json (the server reads it again now).
-  function startFromImportThis(id){
+  // Reuse workflow, on an IMPORTED job: the server reads the bundle again now and prefills from its signed spec.
+  function reuseImportedWorkflow(id){
     authorGet("/api/author/start-from?import=" + encodeURIComponent(id)).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
       document.getElementById("tab-chat").click();
-      document.dispatchEvent(new CustomEvent("bareloop-start-from", {detail: {runid: null, importId: id, prefill: r}}));
+      document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: null, importId: id, prefill: r}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
   }
   loadImports();
@@ -2179,7 +2180,7 @@
     authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid)).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
       document.getElementById("tab-chat").click();
-      document.dispatchEvent(new CustomEvent("bareloop-start-from", {detail: {runid: runid, prefill: r}}));
+      document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
   }
   function renderRunActions(detail){
@@ -3447,17 +3448,35 @@
     // isn't usable; updated by refreshModelStatus() below.
     var keyOk = false;
 
-    // P5 item 3 — set when the card was opened by "Start from this": the run it came from, what was prefilled
-    // (the SERVER's same-job rule judges every edit against that), and whether this session is a same-job start.
+    // Reuse workflow — set when the card was opened by [Reuse workflow]: the run (or imported job) it came from.
+    // Only Source, Destination and the two caps are open on that card; the SERVER refuses any other change.
     var startFrom = null;
-    var sameJobSession = false;
+    var reuseSession = false;
     var autoSigned = false;
     var sfOrigin = document.getElementById("chat-startfrom-origin");
     var sfLine = document.getElementById("chat-startfrom-line");
     var sfNote = document.getElementById("chat-startfrom-note");
+    // the locked boxes of a reuse card: the signed workflow, greyed and not editable (the server refuses a change anyway)
+    var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];
+    function setReuseLocked(on){
+      LOCKED_IDS.forEach(function(id){
+        var el = document.getElementById(id);
+        el.readOnly = on; el.classList.toggle("locked", on);
+      });
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = on; });
+      modelSelect.disabled = on; modelSelect.classList.toggle("locked", on);
+      document.getElementById("job-card").classList.toggle("reuse", on);
+      if(!on){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
+    }
     function clearStartFrom(){
-      startFrom = null; sameJobSession = false; autoSigned = false;
+      // + New after a reuse starts a genuinely new job: the reused values do not linger in the boxes
+      if(startFrom){
+        ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
+        document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
+      }
+      startFrom = null; reuseSession = false; autoSigned = false;
       sfOrigin.hidden = true; sfLine.hidden = true; sfNote.hidden = true;
+      setReuseLocked(false);
       startBtn.textContent = "Start drafting";
     }
     function openNewCard(){
@@ -3469,7 +3488,7 @@
       sessionId = null;
       sessionLive = false;
       signClickedOnce = false;
-      sameJobSession = false;
+      reuseSession = false;
       autoSigned = false;
       if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
       stopProgressDots();
@@ -3728,7 +3747,7 @@
         if(!j || !j.state) return;
         renderMessages(j.state);
         renderActions(j.state);
-        if(sameJobSession && !autoSigned && j.state.phase === "prepared" && j.state.specHash){
+        if(reuseSession && !autoSigned && j.state.phase === "prepared" && j.state.specHash){
           autoSigned = true;
           authorPost("/api/author/" + sessionId + "/sign", {specHash: j.state.specHash}).then(function(r){
             var o = chatPostOutcome(r);
@@ -3752,7 +3771,7 @@
       sessionLive = true;
       refreshStartEnabled();
       var body = currentCard();
-      if(startFrom) body.startFrom = startFrom.runid;
+      if(startFrom) body.startFrom = startFrom.importId ? {importId: startFrom.importId} : startFrom.runid;
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
           errEl.textContent = (r.body && r.body.error) || "refused";
@@ -3763,9 +3782,9 @@
         sessionId = r.body.sessionId;
         // a same-job session has no confirm turn: it goes straight to `prepared`, and THIS click (Sign & run) is the
         // signature — the page signs the hash the server prepared as soon as it is ready (the server re-checks it)
-        sameJobSession = r.body.sameJob === true;
+        reuseSession = r.body.reuse === true;
         autoSigned = false;
-        signClickedOnce = sameJobSession;
+        signClickedOnce = reuseSession;
         renderMessages(r.body.state);
         renderActions(r.body.state);
         if(pollTimer) clearInterval(pollTimer);
@@ -3773,53 +3792,36 @@
       });
     });
 
-    // ---- P5 item 3: Start from this — prefill every box, then let the SERVER say same job or changed ----
+    // ---- Reuse workflow — the card opens filled from the SIGNED job: four open boxes, the rest greyed ----
     function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
-    var sfTimer = null;
-    function sfRefreshLine(){
-      if(!startFrom) return;
-      authorPost("/api/author/start-from-check", {runid: startFrom.runid, card: currentCard()}).then(function(r){
-        if(!startFrom || !r.body || !r.body.ok) return;
-        sfLine.hidden = false;
-        sfLine.textContent = r.body.line;
-        sfLine.className = "startfrom-line" + (r.body.same ? "" : " changed");
-        if(!sessionLive) startBtn.textContent = r.body.same ? "Sign & run" : "Start drafting";
-      }).catch(function(){ /* the line stays as it was */ });
-    }
-    document.addEventListener("bareloop-start-from", function(e){
+    document.addEventListener("bareloop-reuse", function(e){
       var d = e.detail || {};
       var pre = d.prefill || {};
       var c = pre.card || {};
       clearStartFrom();
       openNewCard();
-      // a run can be the SAME job (the server judges every edit against the prefill); an imported job never is
-      startFrom = d.runid ? {runid: d.runid} : null;
+      startFrom = d.importId ? {importId: d.importId} : {runid: d.runid};
       var radios = document.querySelectorAll('input[name="jf-verdict"]');
       radios.forEach(function(r){ r.checked = (r.value === (c.checkType === "rubric" ? "rubric" : "deterministic")); });
-      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
       if(c.model){ modelSelect.value = c.model; }
       setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
       setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
       setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      setReuseLocked(true);
       sfOrigin.hidden = false;
-      sfOrigin.textContent = "Start from: " + ((pre.origin && pre.origin.job) || "job") + (d.runid ? " (run " + d.runid + ")" : " (imported)");
+      sfOrigin.textContent = "Reuse: " + ((pre.origin && pre.origin.job) || "job") + (d.runid ? " (run " + d.runid + ")" : " (imported)");
       sfLine.hidden = false;
       sfLine.textContent = pre.line || "";
-      sfLine.className = "startfrom-line" + (pre.sameJobAvailable ? "" : " changed");
+      sfLine.className = "startfrom-line";
       sfNote.hidden = !pre.note;
       sfNote.textContent = pre.note || "";
-      startBtn.textContent = pre.sameJobAvailable ? "Sign & run" : "Start drafting";
+      startBtn.textContent = "Sign & run";
       refreshModelStatus();
       refreshCapNote();
       refreshStartEnabled();
     });
-    // any edit re-asks the server (debounced): the rule is judged against what was PREFILLED, never here
-    ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time", "jf-model"].forEach(function(id){
-      document.getElementById(id).addEventListener("input", function(){ if(sfTimer) clearTimeout(sfTimer); sfTimer = setTimeout(sfRefreshLine, 250); });
-    });
-    modelSelect.addEventListener("change", function(){ if(sfTimer) clearTimeout(sfTimer); sfTimer = setTimeout(sfRefreshLine, 250); });
-    document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.addEventListener("change", function(){ if(sfTimer) clearTimeout(sfTimer); sfTimer = setTimeout(sfRefreshLine, 250); }); });
 
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
     // (fed by the every-2s `poll()`) unconditionally overwrites

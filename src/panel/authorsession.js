@@ -31,7 +31,7 @@ import {
 } from '../source.js';
 import { detectLanguage } from '../detectlang.js';
 import {
-  validateJob, jobSpecHash, resolveWorkerModel,
+  validateJob, jobSpecHash, workflowKey, resolveWorkerModel,
 } from '../job.js';
 import {
   authorCloseForJob, assembleSpec, AUTHORED_SPEC_FIELDS, CONFIRM_AUTHORED_FIELDS, PLAIN_FOLDER_DEFERRED_FIELDS,
@@ -125,30 +125,63 @@ export function cardFields(card) {
 }
 
 /**
- * The same-job rule's one spelling (code-owned, never the page's): only `source` may differ (or nothing). Every
- * other field is in the signed hash or is the write fence (destination), so a change there is a NEW job that
- * drafts from clean. "Changed" is judged against what was PREFILLED.
- * @param {Record<string, any>} card the form as it stands now
- * @param {Record<string, any>} prefilled the form as it was prefilled
- * @returns {boolean}
+ * REUSE WORKFLOW (hamr 2026-10-03, replaces P5 item 3's same-job rule): a reuse card has exactly FOUR open boxes —
+ * Source, Destination, $ cap, Time cap — and every other box is the signed workflow, shown greyed and never
+ * editable. The page greys them; THIS is what refuses (the server never trusts the page). Changing any locked box
+ * is a different job: `+ New`, which drafts.
  */
-export function isSameJob(card, prefilled) {
-  const norm = (/** @type {any} */ v) => (v === undefined || v === null ? '' : (typeof v === 'string' ? v.trim() : v));
-  return CARD_FIELDS.filter((f) => f !== 'source').every((f) => norm(card?.[f]) === norm(prefilled?.[f]));
+export const REUSE_OPEN_FIELDS = Object.freeze(['source', 'destination', 'capUsd', 'maxWallMs']);
+/** every card field that is NOT open on a reuse card, in card order */
+export const REUSE_LOCKED_FIELDS = Object.freeze(CARD_FIELDS.filter((f) => !REUSE_OPEN_FIELDS.includes(f)));
+const REUSE_LABELS = Object.freeze(/** @type {Record<string, string>} */ ({
+  jobName: 'Job name', checkType: 'Check type', model: 'Model', goal: 'Goal', success: 'Success', guardrails: 'Guardrails', judgeExamples: 'Judge examples',
+}));
+
+/**
+ * The first LOCKED box on `card` that differs from what the signed workflow prefilled (`origin`), or `null` when
+ * every locked box is untouched. Blank and absent read alike; whitespace is not compared.
+ * @param {Record<string, any>} card the form as it was submitted
+ * @param {Record<string, any>} origin the form as the server prefilled it
+ * @returns {string|null} the offending field's label
+ */
+export function lockedFieldChanged(card, origin) {
+  // whitespace is ignored: a one-line <input> drops a goal's newlines, and the signed copy never takes text from the card anyway
+  const norm = (/** @type {any} */ v) => (v === undefined || v === null ? '' : (typeof v === 'string' ? v.replace(/\s+/g, '') : v));
+  const bad = REUSE_LOCKED_FIELDS.find((f) => norm(card?.[f]) !== norm(origin?.[f]));
+  return bad === undefined ? null : (REUSE_LABELS[bad] ?? bad);
 }
 
 /**
- * `$0` validation for a SAME-JOB start: the signed job carries the goal, checks, guardrails and fence, so those
- * boxes are not required here (an older run's success/guardrails were never saved) — only what the new session
- * itself needs: a Source, a Model that is a Settings Name, and the cap.
+ * The spec a reuse signs: a COPY of the origin's signed spec with ONLY the open fields set from the card —
+ * `writeScope` from Destination, `budgetUsd` from the $ cap, `maxWallMs` from the Time cap (absent when blank).
+ * Source is not in a spec (it lives beside the run). The copy hashes to a NEW `jobSpecHash` and the SAME
+ * `workflowKey` — the caller checks the second after building.
+ * @param {any} originSpec
+ * @param {Record<string, any>} card
+ * @returns {any}
+ */
+export function buildReuseSpec(originSpec, card) {
+  const spec = JSON.parse(JSON.stringify(originSpec));
+  spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  spec.budgetUsd = card.capUsd;
+  if (typeof card.maxWallMs === 'number' && Number.isFinite(card.maxWallMs) && card.maxWallMs > 0) spec.maxWallMs = card.maxWallMs;
+  else delete spec.maxWallMs;
+  return spec;
+}
+
+/**
+ * `$0` validation for a REUSE start: the signed job carries the goal, checks and guardrails, so those boxes are not
+ * required here — only what the new session itself needs: a Source, a Destination, a Model that is a Settings Name,
+ * and the cap. (The spec built from the open boxes is validated by the route with `validateJob`.)
  * @param {any} card
  * @param {{rows?: readonly import('../providerrows.js').KeyRow[]}} [opts]
  * @returns {{ok: true}|{ok: false, error: string}}
  */
-export function validateSameJobCard(card, opts = {}) {
+export function validateReuseCard(card, opts = {}) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
   if (!modelChoiceFor(opts.rows ?? [], card.model)) return { ok: false, error: 'Model must be one of the Names in Settings > Providers' };
   if (typeof card.source !== 'string' || card.source.trim() === '') return { ok: false, error: 'Source is required' };
+  if (typeof card.destination !== 'string' || card.destination.trim() === '') return { ok: false, error: 'Destination is required' };
   if (typeof card.capUsd !== 'number' || !Number.isFinite(card.capUsd) || card.capUsd <= 0) {
     return { ok: false, error: '$ cap is required and must be a positive number' };
   }
@@ -192,8 +225,8 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, sameJob?: {spec: any, specHash: string}}} [deps] `scout`..`prepareSigningFn` are
- *   TEST SEAMS ONLY — see the note just above where each is read, below. `sameJob` (P5 item 3) is NOT a seam: the
+ *   prepareSigningFn?: Function, reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
  */
@@ -501,22 +534,22 @@ export function createSession(card, deps = {}) {
       state.phase = 'prepared';
       say('bot', `SIGNING PREPARED — spec hash ${signing.specHash}`);
     };
-    // P5 item 3 — SAME JOB: the server's code-owned rule (only Source changed, or nothing) hands the origin's
-    // signed spec in. No scout, no draft, no confirm turn: $0 of drafting. The signing gates still run against
-    // THIS session's fresh copy of the source (gates 1-3 are $0; a rubric's gate 4 is the only spend), and the
-    // hash they land on must be the origin's — a spec that drifted is refused, never silently re-signed.
+    // REUSE WORKFLOW: the route hands in a COPY of the origin's signed spec with only the four open boxes set (see
+    // `buildReuseSpec`). No scout, no draft, no confirm turn: $0 of drafting. The signing gates still run against THIS
+    // session's fresh copy of the source (gates 1-3 are $0; a rubric's gate 4 is the only spend). The jobSpecHash is
+    // NEW (the caps and fence are in it); the workflowKey must be the origin's — a spec that drifted past the open
+    // fields is refused, never signed. The person's click on Sign & run is the signature, as for any job.
     const MODEL = modelChoice.name;
-    if (deps.sameJob) {
+    if (deps.reuse) {
       state.phase = 'drafting';
       state.progressLabel = 'checking';
-      say('system', 'Same job — the signed job is reused as it is; drafting skipped ($0)');
-      const reused = JSON.parse(JSON.stringify(deps.sameJob.spec));
-      await finish(reused, null);
-      if (state.phase === 'prepared' && state.specHash !== deps.sameJob.specHash) {
-        state.phase = 'refused';
-        state.error = 'the same-job check ended on a different hash than the signed job — refusing to sign';
-        say('system', state.error);
+      say('system', 'Reusing the signed workflow as it is; drafting skipped ($0)');
+      const reused = JSON.parse(JSON.stringify(deps.reuse.spec));
+      if (workflowKey(reused) !== deps.reuse.workflowKey) {
+        refuse('the reused spec is not the signed workflow (more than Source, Destination and the caps differ) — refusing');
+        return;
       }
+      await finish(reused, null);
       return;
     }
 

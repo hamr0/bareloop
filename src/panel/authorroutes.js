@@ -22,7 +22,8 @@ import { spawn as realSpawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { createSession, validateJobCard, validateSameJobCard, isSameJob, cardFields } from './authorsession.js';
+import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields } from './authorsession.js';
+import { validateJob } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
@@ -90,7 +91,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
- *   startFrom?: {get: (runid: string) => any, check: (runid: string, card: any) => any, getImport: (id: string) => any} }} opts
+ *   startFrom?: {get: (runid: string) => any, getImport: (id: string) => any} }} opts
  */
 export function createAuthorRoutes(opts) {
   // the RAW env with the keys file re-merged on every use, so an edited file takes effect
@@ -196,30 +197,21 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
-    // ── P5 item 3: START FROM THIS. `GET /api/author/start-from?runid=` — the prefill (card.json → the signed
-    // job), where it came from, the track record. `POST /api/author/start-from-check {runid, card}` — the
-    // CODE-OWNED same-job rule over the card as it stands (the page never decides it). Both $0, read-only.
-    if (pathname === '/api/author/start-from' || pathname === '/api/author/start-from-check') {
+    // ── REUSE WORKFLOW (replaces P5 item 3's Start from this). `GET /api/author/start-from?runid=` (or `?import=`) —
+    // the prefill from the SIGNED job, which boxes are locked, the track record. $0, read-only. The route keeps its name.
+    if (pathname === '/api/author/start-from') {
       if (!opts.startFrom) { send(404, { ok: false, error: 'not found' }); return true; }
-      if (pathname === '/api/author/start-from') {
-        if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
-        const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
-        const runid = sp.get('runid') ?? '';
-        // P5 item 4: `?import=<id>` prefills from an IMPORTED job's spec.json (never a same-job start)
-        const pre = sp.has('import') ? opts.startFrom.getImport(sp.get('import') ?? '') : opts.startFrom.get(runid);
-        if (pre === null) { send(404, { ok: false, error: 'no such run' }); return true; }
-        if (!pre.ok) { send(409, pre); return true; }
-        send(200, {
-          ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
-          sameJobAvailable: pre.sameJobAvailable, specHash: pre.specHash, trackRecord: pre.trackRecord,
-          line: pre.line,
-        });
-        return true;
-      }
-      if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
-      const r = opts.startFrom.check(String(body?.runid ?? ''), body?.card ?? {});
-      if (r === null) { send(404, { ok: false, error: 'no such run' }); return true; }
-      send(r.ok ? 200 : 409, r);
+      if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
+      const runid = sp.get('runid') ?? '';
+      const pre = sp.has('import') ? opts.startFrom.getImport(sp.get('import') ?? '') : opts.startFrom.get(runid);
+      if (pre === null) { send(404, { ok: false, error: 'no such run' }); return true; }
+      if (!pre.ok) { send(409, pre); return true; }
+      send(200, {
+        ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
+        locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
+        line: pre.line,
+      });
       return true;
     }
 
@@ -228,24 +220,36 @@ export function createAuthorRoutes(opts) {
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
       const card = body ?? {};
       const rows = rowsForHome(keysHome(opts.home));
-      // P5 item 3 — started from a run: the SERVER decides same-job vs changed (only Source changed, or nothing,
-      // is the same job: the signed spec is reused and nothing is drafted). Anything else drafts as a new job.
-      /** @type {{spec: any, specHash: string}|null} */
-      let sameJob = null;
-      const fromRunid = typeof card.startFrom === 'string' ? card.startFrom : (typeof card.startFrom?.runid === 'string' ? card.startFrom.runid : null);
-      if (fromRunid !== null) {
-        const pre = opts.startFrom ? opts.startFrom.get(fromRunid) : null;
-        if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to start from' }); return true; }
+      // Reuse workflow — started from a green run or an imported job: only Source, Destination and the two caps may
+      // differ from the signed workflow. The SERVER refuses any other change (the page greys those boxes, but is
+      // never trusted); the spec it signs is a copy of the origin's with just those four set. Nothing is drafted.
+      /** @type {{spec: any, workflowKey: string}|null} */
+      let reuse = null;
+      const from = card.startFrom;
+      const fromRunid = typeof from === 'string' ? from : (typeof from?.runid === 'string' ? from.runid : null);
+      const fromImport = typeof from?.importId === 'string' ? from.importId : null;
+      if (fromRunid !== null || fromImport !== null) {
+        const pre = opts.startFrom ? (fromImport !== null ? opts.startFrom.getImport(fromImport) : opts.startFrom.get(fromRunid)) : null;
+        if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to reuse' }); return true; }
         if (!pre.ok) { send(409, pre); return true; }
-        if (pre.sameJobAvailable && pre.spec && pre.specHash && isSameJob(card, pre.card)) sameJob = { spec: pre.spec, specHash: pre.specHash };
+        const locked = lockedFieldChanged(card, pre.card);
+        if (locked !== null) { send(400, { ok: false, error: `${locked} is locked on a reused workflow — use + New to change it` }); return true; }
+        const rv = validateReuseCard(card, { rows });
+        if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
+        const spec = buildReuseSpec(pre.spec, card);
+        const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+        if (!jv.ok) { send(400, { ok: false, error: `the spec this reuse would sign is not valid (${jv.reds.map((r) => `${r.code} at ${r.path}`).join('; ')})` }); return true; }
+        reuse = { spec, workflowKey: pre.workflowKey };
       }
-      const v = sameJob ? validateSameJobCard(card, { rows }) : validateJobCard(card, { jobsDir: opts.jobsDir, rows });
-      if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
+      if (reuse === null) {
+        const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows });
+        if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
+      }
       const session = createSession(cardFields(card), {
-        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(sameJob ? { sameJob } : {}),
+        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}),
       });
       sessions.set(session.id, session);
-      send(200, { ok: true, sessionId: session.id, sameJob: sameJob !== null, state: session.state });
+      send(200, { ok: true, sessionId: session.id, reuse: reuse !== null, state: session.state });
       return true;
     }
 

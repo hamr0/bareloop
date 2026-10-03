@@ -1,6 +1,7 @@
-// PANEL-BUILD.md P5 item 3 — START FROM THIS. The prefill (card.json -> the signed job), the CODE-OWNED same-job
-// rule (only Source changed = same job: the signed spec is reused, nothing drafted), the track record (one run =
-// one entry, a two-leg run counts ONCE), and card.json written at sign-prepare. Real readers, real sessions with
+// REUSE WORKFLOW (replaces PANEL-BUILD.md P5 item 3, hamr 2026-10-03). The prefill from the SIGNED job (locked boxes
+// read by the Job tab's own readers), the four open boxes, the SERVER's refusal of a changed locked box, the reuse
+// session (the signed spec copied with only the open fields set: NEW jobSpecHash, SAME workflowKey, nothing drafted),
+// the track record by workflowKey (one run = one entry, a two-leg run counts ONCE), and card.json at sign-prepare. Real readers, real sessions with
 // the model boundary stubbed (no network), scratch homes only.
 
 import { test } from 'node:test';
@@ -11,14 +12,14 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
-import { createPanelServer, getStartFrom, startFromCheck, trackRecordFor, startFromLine } from '../src/panel/server.js';
+import { createPanelServer, getStartFrom, trackRecordFor, reuseLine } from '../src/panel/server.js';
 import {
-  createSession, isSameJob, cardFields, CARD_FIELDS, validateSameJobCard,
+  createSession, cardFields, CARD_FIELDS, validateReuseCard, lockedFieldChanged, buildReuseSpec, REUSE_OPEN_FIELDS, REUSE_LOCKED_FIELDS,
 } from '../src/panel/authorsession.js';
 import { classGuards } from '../src/authoring.js';
 import { keyRows } from '../src/providerrows.js';
 import { appendRun } from '../src/runlist.js';
-import { jobSpecHash } from '../src/job.js';
+import { jobSpecHash, workflowKey } from '../src/job.js';
 
 /** @type {string[]} */ const dirs = [];
 /** @type {import('node:child_process').ChildProcess[]} */ const kids = [];
@@ -139,123 +140,148 @@ function sleepingRunner() {
   return c;
 }
 
-test('prefill order: card.json first (verbatim); an older run with no card.json is filled from the signed job with the "not saved" note', () => {
+/** a REAL, valid signed spec (the panel's own drafting path, model boundary stubbed) — cached: every test reuses it */
+let realSpecP = null;
+function realSpec() {
+  realSpecP ??= draftedSession(baseCard({ source: makeRepo(), jobName: 'p5-sf-real', maxWallMs: 600000 })).then(({ session }) => JSON.parse(readFileSync(join(session.state.outDir, 'resolved-spec.json'), 'utf8')));
+  return realSpecP;
+}
+
+test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own readers; the open four start at what the run had; card.json only supplies model/source/judge examples', async () => {
+  const spec = await realSpec();
   const home = tmp('p5-sf-h-');
-  const card = baseCard({ jobName: SPEC.job, source: '/the/original/source', maxWallMs: 600000 });
-  makeRun(home, { runid: 'withcard', spec: SPEC, card });
-  makeRun(home, { runid: 'nocard', spec: SPEC });
+  const card = baseCard({ jobName: spec.job, source: '/typed/source', maxWallMs: 600000, model: 'claude-sonnet-5' });
+  makeRun(home, { runid: 'withcard', spec, card });
   const a = getStartFrom('withcard', { home });
-  assert.equal(a.ok, true);
-  assert.equal(a.from, 'card.json');
-  assert.equal(a.note, null);
-  assert.deepEqual(a.card, cardFields(card), 'every box exactly as the person typed it');
-  const b = getStartFrom('nocard', { home });
-  assert.equal(b.from, 'signed job');
-  assert.equal(b.note, 'filled from the signed job — success/guardrails/judge examples were not saved for this run');
-  assert.equal(b.card.goal, SPEC.goal);
-  assert.equal(b.card.jobName, SPEC.job);
-  assert.equal(b.card.source, '/the/original/source');
-  assert.equal(b.card.destination, 'src/');
-  assert.equal(b.card.capUsd, 2);
-  assert.equal(b.card.checkType, 'deterministic');
-  assert.deepEqual([b.card.success, b.card.guardrails, b.card.judgeExamples], ['', '', ''], 'not recoverable: blank, never invented');
+  assert.equal(a.ok, true, JSON.stringify(a));
+  assert.equal(a.from, 'signed job');
+  assert.deepEqual([...a.locked], [...REUSE_LOCKED_FIELDS]);
+  assert.deepEqual([...a.open], ['source', 'destination', 'capUsd', 'maxWallMs']);
+  assert.equal(a.card.goal, spec.goal, 'the signed goal, not the typed one');
+  assert.equal(a.card.jobName, spec.job);
+  assert.equal(a.card.checkType, 'deterministic');
+  assert.equal(a.card.model, 'claude-sonnet-5');
+  assert.notEqual(a.card.success, '', 'success comes from the spec\'s own stages');
+  assert.ok(spec.closeDecl.stages.every((st) => a.card.success.includes(st.name)));
+  assert.match(a.card.guardrails, /write fence|may only change/i);
+  assert.equal(a.card.source, '/typed/source');
+  assert.equal(a.card.destination, spec.writeScope.join(', '));
+  assert.equal(a.card.capUsd, spec.budgetUsd);
+  assert.equal(a.card.maxWallMs, spec.maxWallMs);
+  assert.equal(a.workflowKey, workflowKey(spec));
+  assert.equal(a.specHash, jobSpecHash(spec));
+  // no card.json: source falls back to the run's own source.json
+  makeRun(home, { runid: 'nocard', spec });
+  assert.equal(getStartFrom('nocard', { home }).card.source, '/the/original/source');
   assert.equal(getStartFrom('nope', { home }), null);
 });
 
-test('the same-job RULE (code-owned): only Source changed (or nothing) is the same job; EVERY other field is a new job', () => {
-  const prefilled = baseCard({ jobName: 'j', maxWallMs: 600000 });
-  assert.equal(isSameJob(prefilled, prefilled), true, 'nothing changed');
-  assert.equal(isSameJob({ ...prefilled, source: '/another/folder' }, prefilled), true, 'only Source changed');
-  for (const [field, value] of [
-    ['goal', 'a different goal'], ['success', 'something else'], ['guardrails', 'none'], ['judgeExamples', 'an example'],
-    ['model', 'deepseek-flash'], ['capUsd', 9], ['maxWallMs', 1], ['destination', 'lib/'], ['checkType', 'rubric'], ['jobName', 'other'],
-  ]) {
-    assert.equal(isSameJob({ ...prefilled, [field]: value }, prefilled), false, `${field} changed -> a new job`);
-  }
-  assert.equal(isSameJob({ ...prefilled, goal: `  ${prefilled.goal} ` }, prefilled), true, 'whitespace around a string is not a change');
-  assert.equal(isSameJob({ ...prefilled, maxWallMs: undefined }, { ...prefilled, maxWallMs: undefined }), true);
+test('prefill: a run whose signed job is not on disk is refused in words — nothing is drafted in its place', async () => {
+  const spec = await realSpec();
+  const home = tmp('p5-sf-h-');
+  makeRun(home, { runid: 'stale', spec, hash: 'not-the-hash-it-ran-under' });
+  const r = getStartFrom('stale', { home });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /signed job is not on disk .* \+ New/);
 });
 
-test('track record: one run = ONE entry (a two-leg run counts once, its FINAL outcome); a live run and a different job are excluded; the line is code-owned text', async () => {
+test('lockedFieldChanged: only the four open boxes may differ; every other box is refused BY NAME', () => {
+  const origin = baseCard({ jobName: 'j', maxWallMs: 600000, judgeExamples: '' });
+  assert.deepEqual([...REUSE_OPEN_FIELDS].sort(), ['capUsd', 'destination', 'maxWallMs', 'source']);
+  assert.equal(lockedFieldChanged(origin, origin), null, 'nothing changed');
+  assert.equal(lockedFieldChanged({ ...origin, source: '/other', destination: 'lib/', capUsd: 9, maxWallMs: 1 }, origin), null, 'the four open boxes may all change');
+  for (const [field, value, label] of [
+    ['goal', 'another goal', 'Goal'], ['success', 'something else', 'Success'], ['guardrails', 'none', 'Guardrails'],
+    ['judgeExamples', 'an example', 'Judge examples'], ['model', 'deepseek-flash', 'Model'], ['checkType', 'rubric', 'Check type'], ['jobName', 'other', 'Job name'],
+  ]) {
+    assert.equal(lockedFieldChanged({ ...origin, [field]: value }, origin), label, `${field} is locked`);
+  }
+  assert.equal(lockedFieldChanged({ ...origin, goal: ` ${origin.goal.slice(0, 3)}\n${origin.goal.slice(3)} ` }, origin), null, 'whitespace is not a change (a one-line input drops a goal\'s newlines)');
+});
+
+test('buildReuseSpec: a COPY of the signed spec with ONLY writeScope / budgetUsd / maxWallMs set — new jobSpecHash, SAME workflowKey', async () => {
+  const spec = await realSpec();
+  const before = JSON.stringify(spec);
+  const got = buildReuseSpec(spec, { destination: 'lib/, docs/', capUsd: 7.5, maxWallMs: 123000 });
+  assert.equal(JSON.stringify(spec), before, 'the origin is never mutated');
+  assert.deepEqual(got.writeScope, ['lib/', 'docs/']);
+  assert.equal(got.budgetUsd, 7.5);
+  assert.equal(got.maxWallMs, 123000);
+  assert.notEqual(jobSpecHash(got), jobSpecHash(spec), 'the caps and the fence are in the signed hash: a NEW hash to sign');
+  assert.equal(workflowKey(got), workflowKey(spec), 'the workflow is the same');
+  const { writeScope, budgetUsd, maxWallMs, ...restGot } = got;
+  const { writeScope: w0, budgetUsd: b0, maxWallMs: m0, ...restSpec } = spec;
+  assert.deepEqual(restGot, restSpec, 'every other field is byte-for-byte the origin\'s');
+  assert.equal('maxWallMs' in buildReuseSpec(spec, { destination: 'src/', capUsd: 1 }), false, 'a blank Time cap is no wall, never a default');
+});
+
+test('track record is by WORKFLOW KEY: one run = ONE entry (a two-leg run counts once); caps and destination do not split it; a different goal and a live run are excluded; the line is code-owned', async () => {
+  const spec = await realSpec();
   const home = tmp('p5-sf-h-');
   const kid = sleepingRunner();
-  makeRun(home, { runid: 'g1', spec: SPEC, outcome: 'green', spent: 1 });
-  makeRun(home, { runid: 'g2two', spec: SPEC, outcome: 'green', spent: 1, twoLegs: true });
-  makeRun(home, { runid: 'r1', spec: SPEC, outcome: 'step-red', spent: 0.4 });
-  makeRun(home, { runid: 'live1', spec: SPEC, outcome: null, spent: 0.1, pid: kid.pid });
-  makeRun(home, { runid: 'other', spec: { ...SPEC, goal: 'a different job' }, outcome: 'green', spent: 9 });
-  const rec = trackRecordFor(jobSpecHash(SPEC), { home });
-  assert.deepEqual({ green: rec.green, notGreen: rec.notGreen, live: rec.live }, { green: 2, notGreen: 1, live: 1 }, 'the two-leg run is one green, not two entries');
+  makeRun(home, { runid: 'g1', spec, outcome: 'green', spent: 1 });
+  makeRun(home, { runid: 'g2two', spec, outcome: 'green', spent: 1, twoLegs: true });
+  makeRun(home, { runid: 'r1', spec: { ...spec, budgetUsd: 9, writeScope: ['lib/'], maxWallMs: 1000 }, outcome: 'step-red', spent: 0.4 });
+  makeRun(home, { runid: 'live1', spec, outcome: null, spent: 0.1, pid: kid.pid });
+  makeRun(home, { runid: 'other', spec: { ...spec, goal: 'a different job' }, outcome: 'green', spent: 9 });
+  const rec = trackRecordFor(workflowKey(spec), { home });
+  assert.deepEqual({ green: rec.green, notGreen: rec.notGreen, live: rec.live }, { green: 2, notGreen: 1, live: 1 }, 'the run with other caps and another fence is the SAME workflow');
   assert.ok(Math.abs(rec.avgSpendUsd - (1 + 1 + 0.4) / 3) < 1e-9, `average over the 3 FINISHED runs, got ${rec.avgSpendUsd}`);
-  assert.equal(startFromLine(true, rec), 'Same job — 2 green · 1 not green · about $0.80 a run');
-  assert.equal(startFromLine(false, rec), 'Changed — new job, starts clean');
-  // the check, end to end through the real reader
-  const card = baseCard({ jobName: SPEC.job, maxWallMs: 600000, source: '/the/original/source' });
-  writeFileSync(join(makeRun(home, { runid: 'c1', spec: SPEC }).out, 'card.json'), JSON.stringify(cardFields(card)));
-  const same = startFromCheck('c1', { ...card, source: '/elsewhere' }, { home });
-  assert.equal(same.same, true);
-  assert.match(same.line, /^Same job — 3 green · 1 not green · about \$/, 'the c1 run itself is now one more green on the same hash');
-  const changed = startFromCheck('c1', { ...card, goal: 'something new' }, { home });
-  assert.equal(changed.same, false);
-  assert.equal(changed.line, 'Changed — new job, starts clean');
+  assert.equal(reuseLine(rec), 'Same job — 2 green · 1 not green · about $0.80 a run');
 });
 
-test('SAME job: the origin\'s signed spec is reused, NOTHING is drafted ($0), the hash is the origin\'s; a CHANGED job drafts', async () => {
-  const repo = makeRepo();
-  const { session: origin } = await draftedSession(baseCard({ source: repo, jobName: 'p5-sf-same-1' }));
-  const originSpec = JSON.parse(readFileSync(join(origin.state.outDir, 'resolved-spec.json'), 'utf8'));
-  const originHash = jobSpecHash(originSpec);
-
-  // the same job: any model/draft call throws, the signing stub returns the origin's hash
+test('REUSE session: the signed spec is copied with only the open fields set, NOTHING is drafted ($0), the hash is NEW and the workflowKey is the origin\'s; a drifted spec is refused', async () => {
+  const originSpec = await realSpec();
+  const reuseSpec = buildReuseSpec(originSpec, { destination: 'lib/', capUsd: 4, maxWallMs: 300000 });
+  const key = workflowKey(originSpec);
   let signingCalls = 0;
   const calls = { n: 0 };
-  const repo2 = makeRepo(); // a DIFFERENT source — the one thing a same-job start may change
-  const same = createSession(baseCard({ source: repo2, jobName: 'p5-sf-same-1' }), {
+  const repo2 = makeRepo();
+  const reuse = createSession(baseCard({ source: repo2, jobName: originSpec.job, destination: 'lib/', capUsd: 4, maxWallMs: 300000 }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), keysRoot: tmp('p5-sf-sess-'),
-    sameJob: { spec: originSpec, specHash: originHash },
+    reuse: { spec: reuseSpec, workflowKey: key },
     scout: { state: 'PRESENT', facts: { sourcePaths: [], testPaths: [] }, calls: [], raws: [] },
-    generate: async () => { calls.n += 1; throw new Error('a same-job start must never call the model'); },
-    confirmGenerate: async () => { calls.n += 1; throw new Error('a same-job start must never call the model'); },
-    authorFn: async () => { calls.n += 1; throw new Error('a same-job start must never author'); },
+    generate: async () => { calls.n += 1; throw new Error('a reuse must never call the model'); },
+    confirmGenerate: async () => { calls.n += 1; throw new Error('a reuse must never call the model'); },
+    authorFn: async () => { calls.n += 1; throw new Error('a reuse must never author'); },
     prepareSigningFn: async (o) => { signingCalls += 1; return fakePrepareSigningFn(jobSpecHash(o.spec))(); },
   });
-  assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(same.state.phase)));
-  assert.equal(same.state.phase, 'prepared', String(same.state.error));
+  assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(reuse.state.phase)));
+  assert.equal(reuse.state.phase, 'prepared', String(reuse.state.error));
   assert.equal(calls.n, 0, 'zero model calls: drafting spent $0');
   assert.equal(signingCalls, 1, 'the signing gates still run on the fresh copy');
-  assert.equal(same.state.specHash, originHash, 'same hash');
-  assert.deepEqual(JSON.parse(readFileSync(join(same.state.outDir, 'resolved-spec.json'), 'utf8')), originSpec, 'the signed spec is copied as it is');
-  assert.equal(same.state.draftSpentUsd, 0);
-  assert.ok(existsSync(join(same.state.outDir, 'card.json')), 'card.json is written for this session too');
-  assert.equal(same.state.pendingAsk, null, 'no confirm turn: nothing to answer');
+  assert.equal(reuse.state.specHash, jobSpecHash(reuseSpec), 'the hash the person signs is the reuse spec\'s own');
+  assert.notEqual(reuse.state.specHash, jobSpecHash(originSpec));
+  const written = JSON.parse(readFileSync(join(reuse.state.outDir, 'resolved-spec.json'), 'utf8'));
+  assert.deepEqual(written, reuseSpec);
+  assert.equal(workflowKey(written), key);
+  assert.equal(reuse.state.draftSpentUsd, 0);
+  assert.equal(reuse.state.pendingAsk, null, 'no confirm turn: nothing to answer');
 
-  // a hash that drifted from the signed job is refused, never signed
-  const drift = createSession(baseCard({ source: repo2, jobName: 'p5-sf-same-1' }), {
+  // a spec that differs from the workflow beyond the open fields is refused, never signed
+  const drift = createSession(baseCard({ source: repo2, jobName: originSpec.job }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), keysRoot: tmp('p5-sf-sess-'),
-    sameJob: { spec: originSpec, specHash: originHash },
-    prepareSigningFn: fakePrepareSigningFn('0000000000000000'),
+    reuse: { spec: { ...reuseSpec, goal: 'smuggled goal' }, workflowKey: key },
+    prepareSigningFn: async () => { throw new Error('signing must not be reached'); },
   });
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(drift.state.phase)));
   assert.equal(drift.state.phase, 'refused');
-  assert.match(drift.state.error, /different hash/);
-
-  // a CHANGED job (no sameJob handed in) drafts: the confirm-turn model IS called
-  const changed = await draftedSession(baseCard({ source: repo2, jobName: 'p5-sf-changed-1', goal: 'a new goal' }));
-  assert.ok(changed.calls.n >= 1, 'a changed job drafts from clean');
+  assert.match(drift.state.error, /not the signed workflow/);
 });
 
-test('validateSameJobCard: success/guardrails/judge boxes are NOT required (the signed job carries them); Source, Model and Cap are', () => {
-  assert.deepEqual(validateSameJobCard(baseCard({ success: '', guardrails: '', goal: '' }), { rows: ROWS }), { ok: true });
-  assert.equal(validateSameJobCard(baseCard({ source: ' ' }), { rows: ROWS }).ok, false);
-  assert.equal(validateSameJobCard(baseCard({ model: 'nope' }), { rows: ROWS }).ok, false);
-  assert.equal(validateSameJobCard(baseCard({ capUsd: 0 }), { rows: ROWS }).ok, false);
+test('validateReuseCard: goal/success/guardrails/judge boxes are NOT required (the signed job carries them); Source, Destination, Model and Cap are', () => {
+  assert.deepEqual(validateReuseCard(baseCard({ success: '', guardrails: '', goal: '' }), { rows: ROWS }), { ok: true });
+  assert.equal(validateReuseCard(baseCard({ source: ' ' }), { rows: ROWS }).ok, false);
+  assert.equal(validateReuseCard(baseCard({ destination: ' ' }), { rows: ROWS }).ok, false);
+  assert.equal(validateReuseCard(baseCard({ model: 'nope' }), { rows: ROWS }).ok, false);
+  assert.equal(validateReuseCard(baseCard({ capUsd: 0 }), { rows: ROWS }).ok, false);
 });
 
 // ── over a real socket: the routes ───────────────────────────────────────────────────────────────────────────
-test('routes: GET /api/author/start-from (guarded) prefills; POST start-from-check decides; POST start decides same vs changed on the SERVER', async (t) => {
-  const home = keysHomeWith('ANTHROPIC_API_KEY=bad\tkey\n'); // a malformed key: every session refuses at $0, nothing is reached
-  const card = baseCard({ jobName: SPEC.job, source: '/the/original/source', maxWallMs: 600000 });
-  const { out } = makeRun(home, { runid: 'origin1', spec: SPEC, card });
+test('routes: GET start-from (guarded) prefills with locked/open; POST start REFUSES a changed locked box by name and accepts the four open ones; start-from-check is gone', async (t) => {
+  const spec = await realSpec();
+  const home = keysHomeWith('ANTHROPIC_API_KEY=bad key'); // a malformed key: every session refuses at $0, nothing is reached
+  const { out } = makeRun(home, { runid: 'origin1', spec, card: baseCard({ jobName: spec.job, source: '/the/original/source' }) });
   void out;
   const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, keysRoot: tmp('p5-sf-sess-') });
   t.after(() => close());
@@ -267,23 +293,37 @@ test('routes: GET /api/author/start-from (guarded) prefills; POST start-from-che
   assert.equal((await get('/api/author/start-from?runid=nope')).status, 404);
   const pre = await (await get('/api/author/start-from?runid=origin1')).json();
   assert.equal(pre.ok, true);
-  assert.equal(pre.from, 'card.json');
-  assert.deepEqual(pre.card, cardFields(card));
-  assert.equal(pre.sameJobAvailable, true);
+  assert.deepEqual(pre.open, ['source', 'destination', 'capUsd', 'maxWallMs']);
+  assert.ok(pre.locked.includes('goal') && pre.locked.includes('success') && !pre.locked.includes('capUsd'));
+  assert.equal(pre.workflowKey, workflowKey(spec));
   assert.match(pre.line, /^Same job — 1 green · 0 not green · about \$1\.00 a run$/);
+  assert.equal('sameJobAvailable' in pre, false);
 
-  const chk = await (await post('/api/author/start-from-check', { runid: 'origin1', card: { ...card, goal: 'x' } })).json();
-  assert.deepEqual({ same: chk.same, line: chk.line }, { same: false, line: 'Changed — new job, starts clean' });
+  assert.equal((await post('/api/author/start-from-check', { runid: 'origin1', card: pre.card })).status, 404, 'the "changed — new job" check is gone');
 
-  const sameStart = await (await post('/api/author/start', { ...card, source: '/some/other/source', startFrom: 'origin1' })).json();
-  assert.equal(sameStart.ok, true);
-  assert.equal(sameStart.sameJob, true, 'only Source changed: the server says same job');
+  // every locked box refused by name — the server never trusts the page
+  for (const [field, value, label] of [['goal', 'smuggled', 'Goal'], ['success', 'nothing', 'Success'], ['guardrails', 'none', 'Guardrails'], ['model', 'deepseek-flash', 'Model'], ['checkType', 'rubric', 'Check type'], ['jobName', 'other-name', 'Job name']]) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await post('/api/author/start', { ...pre.card, [field]: value, startFrom: 'origin1' });
+    // eslint-disable-next-line no-await-in-loop
+    const j = await r.json();
+    assert.equal(r.status, 400, field);
+    assert.equal(j.error, `${label} is locked on a reused workflow — use + New to change it`, field);
+  }
+
+  const ok = await (await post('/api/author/start', { ...pre.card, source: '/some/other/source', destination: 'lib/', capUsd: 3, maxWallMs: 120000, startFrom: 'origin1' })).json();
+  assert.equal(ok.ok, true);
+  assert.equal(ok.reuse, true, 'the four open boxes may change: a reuse session starts');
   let phase = null;
   for (let i = 0; i < 100 && phase !== 'refused'; i += 1) {
     // eslint-disable-next-line no-await-in-loop
-    phase = (await (await get(`/api/author/${sameStart.sessionId}`)).json()).state.phase;
+    phase = (await (await get(`/api/author/${ok.sessionId}`)).json()).state.phase;
     // eslint-disable-next-line no-await-in-loop
     if (phase !== 'refused') await new Promise((r) => { setTimeout(r, 20); });
   }
   assert.equal(phase, 'refused', 'the malformed key refuses at $0 — nothing was spent');
+
+  // a destination the fence validator rejects is a 400 at $0, before any session exists
+  const badFence = await post('/api/author/start', { ...pre.card, destination: '../outside', startFrom: 'origin1' });
+  assert.equal(badFence.status, 400);
 });

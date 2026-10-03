@@ -39,12 +39,12 @@ import { legsOf, stopFilePath } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
-import { jobSpecHash } from '../job.js';
+import { jobSpecHash, workflowKey } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
 import { createImportRoutes, readImports, bundleStatus } from './importroutes.js';
-import { CARD_FIELDS, isSameJob } from './authorsession.js';
+import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
@@ -2115,9 +2115,10 @@ export function getRunJob(runid, opts = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// P5 item 3 — START FROM THIS. A button on every run opens the Chat tab's New job card with every box filled.
-// This section is the ONE owner of (a) the prefill, (b) the same-job RULE, (c) the track record. The page asks;
-// it never decides. Start from this is a NEW run (a new runid) by design.
+// REUSE WORKFLOW (hamr 2026-10-03; replaces P5 item 3's "Start from this"). A GREEN run — or an imported job — can be
+// run again as the SAME signed workflow on a new source. This section is the ONE owner of (a) the prefill, (b) which
+// boxes are locked, (c) the track record. The page asks; it never decides. A reuse is a NEW run (a new runid).
+// Nothing here drafts: changing the goal, checks, guardrails, judge examples or model is `+ New`.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -2146,15 +2147,16 @@ function signedSpecForRun(row, records) {
 }
 
 /**
- * The track record of a signed job: every LISTED run whose latest `job-start.specHash` equals `specHash`. One run =
+ * The track record of a WORKFLOW: every LISTED run whose signed spec (the one its latest leg ran under) has this
+ * `workflowKey` — the same goal, checks, guardrails, model and close, whatever source, destination or caps. One run =
  * ONE entry (a resumed run is one run, its FINAL outcome — `legsOf`), and a run that is still live is neither green
  * nor not-green yet. `avgSpendUsd` is the average chain spend of the finished runs, `null` when none finished.
  * Read from the runs the panel already lists: no registry, no plan handover (hamr ruling A).
- * @param {string} specHash
+ * @param {string} key a {@link workflowKey}
  * @param {{ home?: string }} [opts]
  * @returns {{runs: number, green: number, notGreen: number, live: number, avgSpendUsd: number|null}}
  */
-export function trackRecordFor(specHash, opts = {}) {
+export function trackRecordFor(key, opts = {}) {
   const { rows } = readRunList(opts);
   let green = 0;
   let notGreen = 0;
@@ -2166,8 +2168,8 @@ export function trackRecordFor(specHash, opts = {}) {
     let records;
     try { records = parseJsonl(row.spine).records; } catch { continue; }
     const legs = legsOf(records);
-    const start = (legs.findLast((l) => l.jobStart !== null) ?? null)?.jobStart ?? null;
-    if (!start || start.specHash !== specHash) continue;
+    const signed = signedSpecForRun(row, records);
+    if (!signed || workflowKey(signed.spec) !== key) continue;
     const outcome = legs.at(-1)?.outcome ?? null;
     if (outcome === null && runIsAlive(row)) { live += 1; continue; }
     if (outcome === 'green') green += 1; else notGreen += 1;
@@ -2178,108 +2180,97 @@ export function trackRecordFor(specHash, opts = {}) {
 }
 
 /**
- * The line above the card (code-owned fixed text): the same-job track record, or the changed-job notice.
- * @param {boolean} same
+ * The line above a reuse card (code-owned fixed text): the workflow's track record.
  * @param {{green: number, notGreen: number, avgSpendUsd: number|null}|null} record
  * @returns {string}
  */
-export function startFromLine(same, record) {
-  if (!same) return 'Changed — new job, starts clean';
+export function reuseLine(record) {
   if (!record) return 'Same job';
   const cost = record.avgSpendUsd === null ? 'no finished run to price yet' : `about ${panelMoney2(record.avgSpendUsd)} a run`;
   return `Same job — ${record.green} green · ${record.notGreen} not green · ${cost}`;
 }
 
 /**
- * `start-from` for one listed run: the prefilled card, where it came from, the signed spec (when one is on disk),
- * and the track record. Prefill order (PANEL-BUILD.md P5 item 3): `card.json` beside the run's `resolved-spec.json`
- * (the form text, verbatim, written at sign-prepare) → the fields recoverable from the signed job, with the note
- * that success/guardrails/judge examples were not saved. `null` when the runid is not listed.
+ * `start-from` (the route keeps its name) for one listed run: the card prefilled from the run's SIGNED job, which
+ * boxes are locked and which are open, and the track record. Locked boxes carry the signed values, read by the
+ * SAME readers the Job tab uses (`successFromSpec`/`guardrailsFromSpec`); the open four — Source, Destination, the
+ * $ cap and the Time cap — start at what the run had. `ok:false` when the run's signed job is not on disk (nothing
+ * to copy: change the job with + New). `null` when the runid is not listed.
  * @param {string} runid
  * @param {{ home?: string }} [opts]
- * @returns {{ok: true, origin: {runid: string, job: string}, card: Record<string, any>, from: 'card.json'|'signed job', note: string|null,
- *   sameJobAvailable: boolean, specHash: string|null, spec: any|null, specPath: string|null,
- *   trackRecord: ReturnType<typeof trackRecordFor>|null, line: string}|{ok: false, error: string}|null}
+ * @returns {{ok: true, origin: {runid: string, job: string}, card: Record<string, any>, from: 'signed job',
+ *   locked: readonly string[], open: readonly string[], note: string|null,
+ *   specHash: string, workflowKey: string, spec: any, specPath: string,
+ *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFrom(runid, opts = {}) {
   const { rows } = readRunList(opts);
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
-  if (!existsSync(row.spine)) return { ok: false, error: 'this run has no log on disk — nothing to start from' };
+  if (!existsSync(row.spine)) return { ok: false, error: 'this run has no log on disk — nothing to reuse' };
   const records = parseJsonl(row.spine).records;
   const signed = signedSpecForRun(row, records);
+  if (!signed) return { ok: false, error: "this run's signed job is not on disk — nothing to reuse (change the job with + New)" };
   const near = sourceNearSpine(row.spine);
-  const spec = signed?.spec ?? resolveSpecForRow(row);
-  /** @type {Record<string, any>|null} */
-  let card = null;
-  /** @type {'card.json'|'signed job'} */
-  let from = 'signed job';
-  let note = null;
+  const spec = signed.spec;
+  /** @type {Record<string, any>} */
+  let saved = {};
   if (near.specPath) {
     try {
       const raw = JSON.parse(readFileSync(join(dirname(near.specPath), 'card.json'), 'utf8'));
-      if (raw && typeof raw === 'object') {
-        card = {};
-        for (const f of CARD_FIELDS) if (raw[f] !== undefined) card[f] = raw[f];
-        from = 'card.json';
-      }
-    } catch { card = null; }
+      if (raw && typeof raw === 'object') saved = raw;
+    } catch { saved = {}; }
   }
-  if (!card && !spec) return { ok: false, error: 'this run recorded no signed job and no job card — nothing to start from' };
-  if (!card) {
-    let manifest = null;
-    if (near.sourceJsonPath) { try { manifest = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { manifest = null; } }
-    const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
-    const writeScope = Array.isArray(spec.writeScope) ? spec.writeScope.filter((x) => typeof x === 'string') : [];
-    card = {
-      jobName: typeof spec.job === 'string' ? spec.job : row.job,
-      checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
-      model: typeof spec.model === 'string' && spec.model ? spec.model : (typeof jobStart?.model === 'string' ? jobStart.model : ''),
-      goal: typeof spec.goal === 'string' ? spec.goal : '',
-      source: typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : ''),
-      destination: typeof manifest?.destination === 'string' ? manifest.destination : writeScope.join(', '),
-      success: '',
-      guardrails: '',
-      judgeExamples: '',
-      capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
-      maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
-    };
-    note = 'filled from the signed job — success/guardrails/judge examples were not saved for this run';
-  } else if (signed) {
-    // a run resumed under RAISED caps carries the re-signed caps: the signed job's caps are the truth for "same job"
-    if (typeof signed.spec.budgetUsd === 'number') card.capUsd = signed.spec.budgetUsd;
-    if (typeof signed.spec.maxWallMs === 'number') card.maxWallMs = signed.spec.maxWallMs; else delete card.maxWallMs;
-  }
-  const trackRecord = signed ? trackRecordFor(signed.specHash, opts) : null;
+  let manifest = null;
+  if (near.sourceJsonPath) { try { manifest = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { manifest = null; } }
+  const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
+  const card = reuseCardFromSpec(spec, {
+    model: typeof saved.model === 'string' && saved.model ? saved.model : (typeof jobStart?.model === 'string' ? jobStart.model : ''),
+    source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
+    judgeExamples: typeof saved.judgeExamples === 'string' ? saved.judgeExamples : '',
+    jobName: row.job,
+  });
+  const key = workflowKey(spec);
+  const trackRecord = trackRecordFor(key, opts);
   return {
     ok: true,
     origin: { runid, job: row.job },
     card,
-    from,
-    note,
-    sameJobAvailable: signed !== null,
-    specHash: signed?.specHash ?? null,
-    spec: signed?.spec ?? null,
-    specPath: signed?.specPath ?? null,
+    from: 'signed job',
+    locked: REUSE_LOCKED_FIELDS,
+    open: REUSE_OPEN_FIELDS,
+    note: card.checkType === 'rubric' && card.judgeExamples === '' ? 'judge examples were not saved for this run' : null,
+    specHash: signed.specHash,
+    workflowKey: key,
+    spec,
+    specPath: signed.specPath,
     trackRecord,
-    line: startFromLine(signed !== null, trackRecord),
+    line: reuseLine(trackRecord),
   };
 }
 
 /**
- * The page's read of the rule while the person edits: is the card as it stands the SAME job as the one prefilled
- * from `runid`, and what does the line above the card say. `null` = no such run.
- * @param {string} runid
- * @param {Record<string, any>} card
- * @param {{ home?: string }} [opts]
- * @returns {{ok: true, same: boolean, line: string, specHash: string|null}|{ok: false, error: string}|null}
+ * The reuse card for a signed spec: locked boxes from the spec through the Job tab's own readers, open boxes from
+ * the spec's own fence and caps (Source and the saved text from the caller — a spec carries neither).
+ * @param {any} spec
+ * @param {{model: string, source: string, judgeExamples: string, jobName: string}} extra
+ * @returns {Record<string, any>}
  */
-export function startFromCheck(runid, card, opts = {}) {
-  const pre = getStartFrom(runid, opts);
-  if (pre === null) return null;
-  if (!pre.ok) return pre;
-  const same = pre.sameJobAvailable && isSameJob(card, pre.card);
-  return { ok: true, same, line: startFromLine(same, same ? pre.trackRecord : null), specHash: same ? pre.specHash : null };
+function reuseCardFromSpec(spec, extra) {
+  const writeScope = Array.isArray(spec.writeScope) ? spec.writeScope.filter((/** @type {any} */ x) => typeof x === 'string') : [];
+  return {
+    jobName: typeof spec.job === 'string' && spec.job ? spec.job : extra.jobName,
+    checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
+    model: typeof spec.model === 'string' && spec.model && !extra.model ? spec.model : extra.model,
+    goal: typeof spec.goal === 'string' ? spec.goal : '',
+    source: extra.source,
+    destination: writeScope.join(', '),
+    success: successFromSpec(spec) ?? '',
+    guardrails: guardrailsFromSpec(spec) ?? '',
+    judgeExamples: extra.judgeExamples,
+    capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+    maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
+  };
 }
 
 /**
@@ -2302,48 +2293,17 @@ function describeSpec(spec) {
 }
 
 /**
- * Start from this, for an IMPORTED job: the prefill comes from the bundle's own `spec.json` (read again now).
- * success/guardrails/judge examples are not in a bundle, so those boxes are blank with the note, and the Source is
- * blank too (a bundle carries none). `sameJobAvailable` is always false: a bundle's close commands are bound to
- * its own folder (`$BARELOOP_BUNDLE`) and its hash is the runner's to sign, so the panel never copies it as a
- * signed spec — the card drafts a new job from this prefill. `null` when no such imported job.
+ * Reuse workflow, for an IMPORTED job — a bundle's close commands are bound to its own folder (`$BARELOOP_BUNDLE`),
+ * so reusing one means copying its spec with the close paths resolved and re-verifying the close bytes first. That
+ * is built in its own item; until then the answer is an honest refusal, never a draft.
  * @param {string} id
  * @param {{ home?: string }} [opts]
- * @returns {{ok: true, origin: {runid: null, job: string, importId: string}, card: Record<string, any>, from: 'bundle spec.json', note: string,
- *   sameJobAvailable: false, specHash: null, spec: null, specPath: null, trackRecord: null, line: string}|{ok: false, error: string}|null}
+ * @returns {{ok: false, error: string}|null} `null` when no such imported job
  */
 export function getStartFromImport(id, opts = {}) {
   const row = readImports(opts.home).find((r) => r.id === id);
   if (!row) return null;
-  const st = bundleStatus(row);
-  const spec = st.bundle.spec;
-  if (!spec || typeof spec !== 'object') return { ok: false, error: 'this imported folder can no longer be read — nothing to start from' };
-  const writeScope = Array.isArray(spec.writeScope) ? spec.writeScope.filter((/** @type {any} */ x) => typeof x === 'string') : [];
-  return {
-    ok: true,
-    origin: { runid: null, job: row.job, importId: id },
-    card: {
-      jobName: typeof spec.job === 'string' ? spec.job : row.job,
-      checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
-      model: typeof spec.model === 'string' ? spec.model : '',
-      goal: typeof spec.goal === 'string' ? spec.goal : '',
-      source: '',
-      destination: writeScope.join(', '),
-      success: '',
-      guardrails: '',
-      judgeExamples: '',
-      capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
-      maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
-    },
-    from: 'bundle spec.json',
-    note: "filled from the imported job's spec.json — source, success, guardrails and judge examples are not in an exported job",
-    sameJobAvailable: false,
-    specHash: null,
-    spec: null,
-    specPath: null,
-    trackRecord: null,
-    line: startFromLine(false, null),
-  };
+  return { ok: false, error: 'reusing an imported job is not available yet' };
 }
 
 /** @param {any} res @param {number} code @param {any} body */
@@ -2593,7 +2553,6 @@ export function createPanelServer(opts = {}) {
         home,
         startFrom: {
           get: (runid) => getStartFrom(runid, { home }),
-          check: (runid, card) => startFromCheck(runid, card, { home }),
           getImport: (id) => getStartFromImport(id, { home }),
         },
       });

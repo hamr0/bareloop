@@ -34,7 +34,7 @@ test('page: Reuse workflow asks the server for the prefill, opens the Chat tab (
   await new Promise((r) => { setTimeout(r, 10); });
   assert.deepEqual(urls, ['/api/author/start-from?runid=run%201']);
   assert.deepEqual(clicks, ['tab-chat']);
-  assert.equal(events[0].type, 'bareloop-start-from');
+  assert.equal(events[0].type, 'bareloop-reuse');
   assert.deepEqual(events[0].detail, { runid: 'run 1', prefill });
 });
 
@@ -47,18 +47,51 @@ test('page: Reuse workflow is in the action row and the Ended block only where t
   assert.doesNotMatch(fnSrc('renderRunActions') + fnSrc('renderEnded'), /start-from|Start from this/);
 });
 
-test('page: the card opens prefilled, shows the SERVER\'s line, re-asks the server on every edit, and labels the button by its answer', () => {
-  assert.match(PAGE, /document\.addEventListener\("bareloop-start-from"/);
-  assert.match(PAGE, /"\/api\/author\/start-from-check", \{runid: startFrom\.runid, card: currentCard\(\)\}/);
-  assert.match(PAGE, /startBtn\.textContent = r\.body\.same \? "Sign & run" : "Start drafting"/);
-  assert.match(PAGE, /if\(startFrom\) body\.startFrom = startFrom\.runid;/, 'the start request names the run; the server judges same-vs-changed');
+test('page: the reuse card opens filled from the server\'s prefill, shows the server\'s estimate line, locks every box but the four open ones, and Start is "Sign & run"', () => {
+  assert.match(PAGE, /document\.addEventListener\("bareloop-reuse"/);
+  assert.doesNotMatch(PAGE, /start-from-check|sfRefreshLine|startfrom-line" \+ \(/, 'no "changed — new job" re-check: the locked boxes make it unreachable');
+  assert.match(PAGE, /startBtn\.textContent = "Sign & run";/);
+  assert.match(PAGE, /sfLine\.textContent = pre\.line \|\| "";/, 'the line is the server\'s text, never built on the page');
+  assert.match(PAGE, /if\(startFrom\) body\.startFrom = startFrom\.importId \? \{importId: startFrom\.importId\} : startFrom\.runid;/, 'the start request names the origin; the server refuses a changed locked box');
   assert.match(PAGE, /data-testid="startfrom-line"/);
-  // + New clears the start-from state, so a plain New job card never carries a stale origin
+  // + New clears the reuse state (and unlocks), so a plain New job card never carries a stale origin or greyed boxes
   assert.match(PAGE, /newBtn\.addEventListener\("click", function\(\)\{ clearStartFrom\(\); openNewCard\(\); \}\);/);
+  assert.match(fnSrc('clearStartFrom'), /setReuseLocked\(false\)/);
 });
 
-test('page: a same-job session signs the hash the server prepared as soon as it is ready — one click (Sign & run), the server re-checks the hash', () => {
-  assert.match(PAGE, /if\(sameJobSession && !autoSigned && j\.state\.phase === "prepared" && j\.state\.specHash\)/);
+test('page: setReuseLocked greys Name, Goal, Success, Guardrails, Judge examples, Check type and Model — and never Source, Destination or the caps', () => {
+  const els = {};
+  const mk = (id) => { els[id] = { id, readOnly: false, disabled: false, classes: new Set(), classList: { toggle(c, on) { if (on) els[id].classes.add(c); else els[id].classes.delete(c); } } }; return els[id]; };
+  for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time', 'job-card']) mk(id);
+  const radios = [{ value: 'deterministic', disabled: false, checked: true }, { value: 'rubric', disabled: false, checked: false }];
+  const doc = {
+    getElementById: (id) => els[id],
+    querySelectorAll: () => ({ forEach: (fn) => radios.forEach(fn) }),
+    querySelector: () => radios.find((r) => r.checked) ?? null,
+  };
+  const modelSelect = mk('model');
+  // eslint-disable-next-line no-new-func
+  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
+  f(true);
+  for (const id of ['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails', 'jf-judge']) {
+    assert.equal(els[id].readOnly, true, `${id} is read only`);
+    assert.ok(els[id].classes.has('locked'), `${id} is greyed`);
+  }
+  for (const id of ['jf-source', 'jf-dest', 'jf-cap-money', 'jf-cap-time']) {
+    assert.equal(els[id].readOnly, false, `${id} stays editable`);
+    assert.equal(els[id].classes.has('locked'), false);
+  }
+  assert.ok(radios.every((r) => r.disabled), 'Check type is locked');
+  assert.equal(modelSelect.disabled, true, 'Model is locked');
+  f(false);
+  assert.ok(['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails'].every((id) => !els[id].readOnly), 'unlocked again for + New');
+  assert.ok(radios.every((r) => !r.disabled) && !modelSelect.disabled);
+  assert.equal(els['jf-judge'].disabled, true, 'deterministic: the rubric-only box is disabled as before');
+});
+
+test('page: a reuse session signs the hash the server prepared as soon as it is ready — one click (Sign & run), the server re-checks the hash', () => {
+  assert.match(PAGE, /if\(reuseSession && !autoSigned && j\.state\.phase === "prepared" && j\.state\.specHash\)/);
   assert.match(PAGE, /"\/sign", \{specHash: j\.state\.specHash\}/);
-  assert.match(PAGE, /signClickedOnce = sameJobSession;/, 'a same-job session has no confirm turn, so the sign-prepare click is skipped');
+  assert.match(PAGE, /signClickedOnce = reuseSession;/, 'a reuse session has no confirm turn, so the sign-prepare click is skipped');
+  assert.match(PAGE, /reuseSession = r\.body\.reuse === true;/);
 });
