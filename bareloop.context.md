@@ -2358,8 +2358,8 @@ halted run's own spine (`u-<runid>.jsonl`, or `<bundleDir>/runs/<runid>/spine.js
   (`leg: N` from leg 2, no `resumedFrom`) and `run.json` is rewritten unchanged (same worktree, the run's
   own start).
 - **Not covered by this ruling, and unchanged:** the review-door `rerun` (`--door <runid> --decide rerun`)
-  is a NEW run with a new runid (its door reader folds the answered run's chain spend); Start from this in
-  the panel is a new job.
+  is a NEW run with a new runid (its door reader folds the answered run's chain spend); Reuse workflow in
+  the panel is a new run.
 
 **A pause checkpoint is answered on the same command line** (N4, 2026-08-12 §5.2 — the
 terminal is the v1 surface; the panel is N6's). The reference runner takes
@@ -3478,7 +3478,7 @@ key you want first (the panel picks the row by the Model menu).
   `resolved-spec-r<k>.json` beside the run whose hash is the one the run's `job-start` carries);
   otherwise `next` says why Resume is not available. `resume` on the detail is
   `{budgetUsd, maxWallMin, spentUsd, spendComplete}` (the confirm box's prefill) or `null`. The
-  result glyphs are unchanged. "Start from this" is a later P5 part; no such button exists yet.
+  result glyphs are unchanged. The reuse button is described under Reuse workflow, below.
   **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
   `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?}`
   (blank = the signed caps). `404` unknown run; `409` when `resumePlanFor` says the engine would
@@ -3513,30 +3513,40 @@ key you want first (the panel picks the row by the Model menu).
   `stopped — resume`, Audit divider `stopped: you stopped it · resumed <when>`. The page shows `[Stop]`
   in the Run tab's action area while live, "stopping after this turn…" after the click, and the same
   `[Resume]` there once the engine would accept one.
-  **Start from this (item 3)** — a button on EVERY run (the Run tab's action area; the Ended block where the
-  table offers it: green, goal-not-met, close-red, stopped-before-the-work, step-stalled, died; `ended.actions`
-  now carries `{id:'start-from'}` beside `resume`) that opens the Chat tab's New job card with every box filled.
-  It is a NEW run (new runid) by design, never a rerun. Routes, all behind `checkHumanGuard`:
-  `GET /api/author/start-from?runid=` → `{ok, origin:{runid,job}, card, from:'card.json'|'signed job', note,
-  sameJobAvailable, specHash, trackRecord:{runs,green,notGreen,live,avgSpendUsd}, line}` (`404` unknown run,
-  `409` no log/no record); `POST /api/author/start-from-check {runid, card}` → `{ok, same, line, specHash}`;
-  `POST /api/author/start` accepts `startFrom: <runid>` beside the card. **Prefill order:** `card.json` (the
-  form text VERBATIM — `CARD_FIELDS` only, written beside `resolved-spec.json` when a session reaches
-  `prepared`, new sessions only) → the fields recoverable from the run's signed job with the note "filled from
-  the signed job — success/guardrails/judge examples were not saved for this run" (those three boxes blank,
-  never invented); for a run resumed under raised caps the signed job's caps win. **The same-job rule is
-  code-owned** (`isSameJob`, `src/panel/authorsession.js`; the page never decides it): only `source` changed,
-  or nothing, = SAME job — the origin's signed spec (the `resolved-spec*.json` whose hash the run's latest
-  `job-start` carries) is copied into the new session, no scout/draft/confirm turn (`deps.sameJob`), the signing
-  gates (1-3, $0; a rubric's gate 4 is the only spend) run on a fresh copy of the new Source, and the hash they
-  land on must be the origin's (else `refused`, never re-signed). ANY other field changed (goal, success,
-  guardrails, judge examples, model, caps, destination — the write fence — check type, job name), judged
-  against what was PREFILLED, is a new job: the normal drafting path. `line` above the card: "Same job — G
-  green · N not green · about $X a run" or "Changed — new job, starts clean" — the track record is every
-  LISTED run whose latest `job-start.specHash` equals the signed hash, one run = one entry via `legsOf` (its
-  final outcome; a live run is neither), average chain spend of the finished ones; no registry, no plan
-  handover. The card button reads `Sign & run` for a same-job start (one click: the page signs the prepared
-  hash as soon as the session reports `prepared`; the server re-checks it) and `Start drafting` otherwise.
+  **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on GREEN runs only (the Run tab's
+  action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on green and
+  green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: + New.", and
+  stopped/capped/died rows offer `resume` only) and on every imported job. It opens the Chat tab's New job card
+  filled from the SIGNED job: a NEW run (new runid), never a rerun, nothing drafted ($0). **Only four boxes are
+  open — Source, Destination, $ cap, Time cap**; every other box (check type, model, job name, goal, success,
+  guardrails, judge examples) is the signed workflow, greyed, and the SERVER refuses a start that changed one
+  (`400 "<Field> is locked on a reused workflow — use + New to change it"`; the page is never trusted).
+  Changing a locked box is `+ New`, which drafts. Routes, behind `checkHumanGuard`:
+  `GET /api/author/start-from?runid=<id>` or `?import=<id>` → `{ok, origin, card, from:'signed job'|'imported job',
+  note, locked:[…], open:['source','destination','capUsd','maxWallMs'], specHash, workflowKey, trackRecord:{runs,
+  green, notGreen, live, finished, avgSpendUsd, avgWallMs}, line}` (`404` unknown, `409` with an `error` when
+  there is nothing to copy: no log, the run's signed job is not on disk, or an imported job that changed, lost its
+  dependency or no longer matches its signed bytes); `POST /api/author/start` accepts `startFrom: <runid>` or
+  `startFrom: {importId}` beside the card and answers `{ok, sessionId, reuse, state}`. The old
+  `POST /api/author/start-from-check` and the "Changed — new job" mode are gone. **Identity, two keys:** the
+  signature hash `jobSpecHash` is unchanged (it covers the caps and the write fence — what the person signs);
+  `workflowKey(spec)` (`src/job.js`, not exported from the package root) is a sha256 over the signed spec WITHOUT
+  `source`, `destination`, `writeScope`, `budgetUsd` and `maxWallMs` (`REUSE_OPEN_SPEC_FIELDS`). A reuse copies the
+  origin's signed spec, sets only `writeScope` (from Destination), `budgetUsd` and `maxWallMs`, and signs under a
+  NEW `jobSpecHash` with the SAME `workflowKey` (the session refuses a spec whose key moved). Locked boxes carry the
+  signed values read by the Job tab's own readers. **Estimate line** above the card: "Same job — G green · N not
+  green · about $X and M min a run", from every LISTED run whose signed spec has the same `workflowKey` (one run =
+  one entry via `legsOf`; the averages read FINISHED runs with exact figures — spend from `chainSpend`, working time
+  from `legsWallMs`, resume gaps excluded); unknown is said ("no finished run yet to price or time", "cost not
+  recorded", "time not recorded"), never $0 or 0 min; no registry, no plan handover. **An imported job** is
+  re-verified at the moment of reuse — `readBundle` (the bundle hash covers every close script), `checkBundleDeps`,
+  and every close stage's signed sha256 against the bytes on disk over the spec with `$BARELOOP_BUNDLE` resolved to
+  the folder — then reused the same way; the close scripts stay in the verified folder (the engine re-verifies
+  their bytes at run start and before every close run). An operator-written command close has no declaration for
+  `prepareSigning` to ground (it refuses one by design), so that session's gate is the byte check, and the hash the
+  person signs at `[Sign & run]` is the spec's own. The card button is `Sign & run` (one click: the page signs the
+  prepared hash as soon as the session reports `prepared`; the server re-checks it). `card.json` (the form text)
+  is still written beside `resolved-spec.json` when a session reaches `prepared`.
   **Import, read only (item 4)** — `src/panel/importroutes.js`. The Workflows toolbar's `[Import]` opens a folder
   browser plus a paste box; an imported job is an exported bundle folder the person can LOOK at: nothing runs,
   nothing is signed, the folder is never written. Routes, all behind `checkHumanGuard` (token + own address —
@@ -3556,11 +3566,9 @@ key you want first (the panel picks the row by the Model menu).
   `checkType`, `success` (the close stage names), `guardrails`, `budgetUsd`/`maxWallMs`, `model`, the history
   the bundle shipped (`history:{greens,reds,total,recent}`, read from the bridges' history rows) and
   `approved`/`approvedText` — approval on THIS machine is `verifyBlessing` (the first green run here writes
-  `blessing.json`): approved / not approved yet / stale. The row reads `imported · view only`; the view's only
-  button is Start from this, which prefills from the bundle's own `spec.json` via
-  `GET /api/author/start-from?import=<id>` (source, success, guardrails and judge examples are not in an
-  exported job, so those boxes are blank with a note) and is NEVER a same-job start: a bundle's closes are
-  bound to its own folder (`$BARELOOP_BUNDLE`) and its hash is the runner's to sign, so the card drafts a new job.
+  `blessing.json`): approved / not approved yet / stale. The row reads `imported · view only`; the view opens in
+  the same Run / Audit / Job tabs as any run (Audit: "no log — this job ran on another machine"), and its one
+  button, `[Reuse workflow]` in the Run tab's top action row, reuses the bundle's signed job as described above.
   **Run-card fixes (item 6)** → a listed run whose runner is alive but whose spine is not written
   yet reads `starting: true` (list AND detail; glyph `▶`, every figure null, `fileMissing:false`) —
   never `file missing`; a row whose runner is gone and whose spine is absent stays `fileMissing`.

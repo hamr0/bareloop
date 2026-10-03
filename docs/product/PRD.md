@@ -1305,3 +1305,9 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Every run shows an Ended block: a code-owned reason, the next step, and only the buttons the engine would accept.
 - A resumed run is the same run: one id, one file (P5-R).
 - Detail: `docs/product/PANEL-BUILD.md` addendum P5 and P5-R.
+
+### Panel: Reuse workflow replaces "Start from this" (v1.88 — 2026-10-03)
+
+- Reuse workflow is the same signed job on a new source: green runs and imported jobs only, four open boxes (Source, Destination, $ cap, Time cap), the rest locked and refused by the server, never drafted.
+- Same-job identity is `workflowKey` (the signed spec without source, fence and caps); the signature hash is unchanged and the person signs the new one.
+- Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-03.

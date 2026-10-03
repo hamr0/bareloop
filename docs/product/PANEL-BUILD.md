@@ -844,3 +844,22 @@ Grounding: the $0 reader inventory (2026-10-02) — 14 reader groups NEED CHANGE
 ### Docs
 
 PANEL-BUILD.md P5 addendum gets this as "P5-R"; PRD v1.87 gets one tick ("a resumed run is the same run: one id, one file"); `bareloop.context.md` (spine leg marker, `legsOf`, run-list `leg-start`, resume keeps the runid); FINDINGS entry: the split-run shape was inherited from the reuse-path resume, never ruled, found only by rendering it.
+
+## Addendum 2026-10-03 — Reuse workflow replaces P5 item 3 "Start from this" (signed by hamr 2026-10-03)
+
+Supersedes P5 item 3 above (its prose is left as written). hamr's click-through of "Start from this" showed it opening inside the Run tab and able to re-draft a changed job; the ruling is that a reuse is the SAME signed job on a new source, never a draft.
+
+**Rulings.**
+- The button is **Reuse workflow**, replacing "Start from this" everywhere on the page. It shows on **green runs only** (green, softgreen, green + destination refused) and on every **imported** job. Never on red, stopped, capped or died rows; a red row's Ended block says "Change the job: + New." Stopped/capped/died rows offer `[Resume]` only.
+- The Run tab's action row: `[Stop]` if live · `[Resume]` if resumable · `[Reuse workflow]` if green. An imported job has the same row with `[Reuse workflow]`.
+- Click opens the **Chat tab** (left), the New job card, filled from the signed job. **Only four boxes are editable: Source, Destination, $ cap, Time cap.** Every other box (check type, model, job name, goal, success, guardrails, judge examples) is shown greyed. No drafting, $0, `[Sign & run]`. To change any locked box: `+ New` (drafts). The server refuses a reuse start whose locked boxes differ from the origin's, by name.
+- Destination is open on **both** folder and repo jobs (hamr, Q-A: b). An imported reuse is re-signed locally by hamr at `[Sign & run]` (Q-B: yes).
+- The step plan is made fresh each run (no plan copying: parked, F55/F73/F88). Nothing about the job is rendered inside the Run tab; the job lives in the Job tab.
+
+**Identity, two keys.** `jobSpecHash` is unchanged (it covers the caps and the write fence: what gets signed). New `workflowKey(spec)` (`src/job.js`) hashes the signed spec WITHOUT source, destination/writeScope, budgetUsd and maxWallMs. A reuse copies the origin's signed spec, sets those fields, and signs under a new `jobSpecHash` with the same `workflowKey`. `isSameJob` and the "Changed - new job" mode are removed (the locked boxes make it unreachable).
+
+**Estimate line** above the card: `Same job — G green · N not green · about $X and M min a run`, from every listed run with the same `workflowKey` (finished runs for the averages; working time excludes resume gaps). Unknown is said, never `$0` or `0 min`. No registry (ruling A stands).
+
+**Imported jobs.** Reuse re-reads the bundle at that moment: `readBundle` (the bundle hash covers every close script), `checkBundleDeps`, and each close stage's signed sha256 against the bytes on disk over the spec with `$BARELOOP_BUNDLE` resolved. The close scripts stay in the verified folder (the engine re-verifies them at run start and before every close run). A command close has no declaration for `prepareSigning` (it refuses one by design: signed as written), so that session's gate is the byte check and the person signs the spec's own hash. The imported job opens in the same Run / Audit / Job tabs (460cc39 kept); Audit says "no log — this job ran on another machine"; `[Reuse workflow]` is in the top action row.
+
+**Not changed:** the session-in-the-Run-tab move (`aa4092d`) is reverted; the Stop, Resume and Ended rules of P5 items 1, 2, 5 stand except where the table above narrows which rows offer a button.
