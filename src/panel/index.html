@@ -482,7 +482,6 @@
         <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
           <button class="btn" type="button" id="chat-new-btn" data-testid="chat-new">+ New</button>
 
-          <div id="chat-session" data-testid="chat-session">
           <div class="job-card compact" id="job-card" data-testid="job-card" hidden>
             <h4 id="job-card-title">Job card — draft</h4>
             <div class="startfrom-origin" id="chat-startfrom-origin" data-testid="startfrom-origin" hidden></div>
@@ -578,7 +577,6 @@
             <button class="btn" type="button" id="chat-revise-btn" data-testid="btn-revise" disabled>Revise (2 left)</button>
           </div>
           <div class="hint">Only your click signs. The chat can't.</div>
-          </div>
         </section>
 
         <section id="panel-runs" class="tabpanel" role="tabpanel" aria-labelledby="tab-runs" hidden>
@@ -630,8 +628,6 @@
       <div class="pane-body" id="right-pane-body">
 
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
-          <!-- Start from this opens HERE (the Run tab): the one New job card / chat session moves in, and back to the Chat tab on + New -->
-          <div id="startfrom-host" data-testid="startfrom-host"></div>
           <div class="import-view" id="import-view" data-testid="import-view" hidden></div>
           <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
           <div id="run-content" hidden>
@@ -1881,7 +1877,7 @@
   function startFromImportThis(id){
     authorGet("/api/author/start-from?import=" + encodeURIComponent(id)).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
-      document.getElementById("tab-run").click();
+      document.getElementById("tab-chat").click();
       document.dispatchEvent(new CustomEvent("bareloop-start-from", {detail: {runid: null, importId: id, prefill: r}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
   }
@@ -2182,7 +2178,7 @@
   function startFromThis(runid){
     authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid)).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
-      document.getElementById("tab-run").click();
+      document.getElementById("tab-chat").click();
       document.dispatchEvent(new CustomEvent("bareloop-start-from", {detail: {runid: runid, prefill: r}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
   }
@@ -3479,15 +3475,7 @@
       checkDepsBtn.hidden = true;
       refreshStartEnabled();
     }
-    // The ONE chat session (card, thread, sign buttons) lives in the Chat tab; Start from this moves it into the Run
-    // tab's host, and + New moves it home. Moving the node keeps every id, listener and typed value.
-    var sessionBox = document.getElementById("chat-session");
-    var sfHost = document.getElementById("startfrom-host");
-    function placeSession(inRunTab){
-      if(inRunTab){ sfHost.appendChild(sessionBox); }
-      else { newBtn.parentNode.insertBefore(sessionBox, newBtn.nextSibling); }
-    }
-    newBtn.addEventListener("click", function(){ placeSession(false); clearStartFrom(); openNewCard(); });
+    newBtn.addEventListener("click", function(){ clearStartFrom(); openNewCard(); });
 
     function currentCard(){
       var moneyCap = Number(document.getElementById("jf-cap-money").value);
@@ -3801,9 +3789,7 @@
       var pre = d.prefill || {};
       var c = pre.card || {};
       clearStartFrom();
-      placeSession(true);
       openNewCard();
-      newBtn.hidden = false; // the Chat tab keeps its + New (it brings the card back to the Chat tab)
       // a run can be the SAME job (the server judges every edit against the prefill); an imported job never is
       startFrom = d.runid ? {runid: d.runid} : null;
       var radios = document.querySelectorAll('input[name="jf-verdict"]');
@@ -3825,7 +3811,6 @@
       refreshModelStatus();
       refreshCapNote();
       refreshStartEnabled();
-      if(sfHost.scrollIntoView) sfHost.scrollIntoView({block: "start"});
     });
     // any edit re-asks the server (debounced): the rule is judged against what was PREFILLED, never here
     ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time", "jf-model"].forEach(function(id){

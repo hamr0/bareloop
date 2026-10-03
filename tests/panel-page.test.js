@@ -2552,7 +2552,7 @@ test('build item 1: #chat-action-error exists in the markup, distinct from #chat
   assert.match(html, /id="chat-action-error"/);
   assert.match(html, /var actionErrEl = document\.getElementById\("chat-action-error"\);/);
   // P5 item 3: the + New handler now calls openNewCard() (shared with Start from this); the clear lives there
-  assert.match(html, /newBtn\.addEventListener\("click", function\(\)\{ placeSession\(false\); clearStartFrom\(\); openNewCard\(\); \}\);/);
+  assert.match(html, /newBtn\.addEventListener\("click", function\(\)\{ clearStartFrom\(\); openNewCard\(\); \}\);/);
   const newSrc = extractFnSource(html, 'openNewCard');
   assert.match(newSrc, /actionErrEl\.textContent = "";/);
 });

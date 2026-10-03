@@ -89,8 +89,7 @@ test('page: an imported job opens in the SAME Run / Audit / Job tabs — Run say
   assert.equal(jobs.at(-1), null);
   // the page no longer hides the tab row or the tab body for an import
   assert.doesNotMatch(fnSrc('renderImportView'), /rp-tabrow|right-pane-body/);
-  const runTab = PAGE.slice(PAGE.indexOf('<section id="panel-run"'), PAGE.indexOf('<section id="panel-audit"'));
-  assert.ok(runTab.includes('id="import-view"'), 'the import summary lives inside the Run tab');
+  assert.match(PAGE, /<section id="panel-run"[^>]*>\s*<div class="import-view" id="import-view"/, 'the import summary lives inside the Run tab');
 });
 
 test('page: the Import button lives on the Workflows toolbar, opens the folder browser + paste box, and Import posts the path to the guarded route', () => {
