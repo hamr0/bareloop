@@ -2154,28 +2154,28 @@
     box.className = "ended-block " + (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"));
     var actions = e.actions || [];
     var hasResume = actions.some(function(a){ return a.id === "resume"; });
-    var hasStartFrom = actions.some(function(a){ return a.id === "start-from"; });
+    var hasReuse = actions.some(function(a){ return a.id === "reuse"; });
     box.innerHTML =
       '<div class="ended-row"><span class="ended-label">ENDED</span><span class="ended-text" data-testid="ended-reason">' + escapeXml(e.reason) + '</span></div>' +
       '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + escapeXml(e.next) + '</span></div>' +
-      ((hasResume || hasStartFrom) ? '<div class="ended-actions">' +
+      ((hasResume || hasReuse) ? '<div class="ended-actions">' +
         (hasResume ? '<button class="btn primary" type="button" data-testid="btn-resume">Resume</button>' : '') +
-        (hasStartFrom ? '<button class="btn' + (hasResume ? '' : ' primary') + '" type="button" data-testid="btn-start-from-ended">Start from this</button>' : '') +
+        (hasReuse ? '<button class="btn' + (hasResume ? '' : ' primary') + '" type="button" data-testid="btn-reuse-ended">Reuse workflow</button>' : '') +
         '</div>' : '');
     if(hasResume){
       box.querySelector('[data-testid="btn-resume"]').addEventListener("click", function(){ openResumeOnJobTab(detail); });
     }
-    if(hasStartFrom){
-      box.querySelector('[data-testid="btn-start-from-ended"]').addEventListener("click", function(){ startFromThis(detail.runid); });
+    if(hasReuse){
+      box.querySelector('[data-testid="btn-reuse-ended"]').addEventListener("click", function(){ reuseWorkflow(detail.runid); });
     }
   }
   // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
   // it ended in a way the engine would accept (the SAME button as the Ended block's, same Job-tab resume mode).
   // The Ended block's own Resume stays; this is the second place the button is missing from (P5-R note).
   var stopAsked = {};
-  // P5 item 3 — ask the server for the prefill (card.json -> the signed job), then hand it to the Chat tab's
-  // New job card. The page never decides same-job-vs-changed: the server does (it owns the rule and the record).
-  function startFromThis(runid){
+  // Reuse workflow (replaces P5 item 3's Start from this) — ask the server for the prefill (the signed job), then
+  // hand it to the Chat tab's New job card. The page decides nothing: the server owns what is locked and what is open.
+  function reuseWorkflow(runid){
     authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid)).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
       document.getElementById("tab-chat").click();
@@ -2197,12 +2197,14 @@
       var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
       if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
     }
-    // P5 item 3: Start from this is on EVERY run (a new run from this job — never a rerun of this one)
-    html += '<button class="btn" type="button" data-testid="btn-start-from">Start from this</button>';
+    // Reuse workflow: on a GREEN run only (the server's Ended block says so) — a new run of the same signed job
+    if(!live && !detail.died && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
+      html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
+    }
     bar.innerHTML = html;
-    bar.hidden = false;
-    var startFromBtn = bar.querySelector('[data-testid="btn-start-from"]');
-    if(startFromBtn) startFromBtn.addEventListener("click", function(){ startFromThis(detail.runid); });
+    bar.hidden = html === "";
+    var reuseBtn = bar.querySelector('[data-testid="btn-reuse"]');
+    if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid); });
     var stopBtn = bar.querySelector('[data-testid="btn-stop"]');
     if(stopBtn){
       stopBtn.addEventListener("click", function(){

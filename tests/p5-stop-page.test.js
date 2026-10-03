@@ -43,10 +43,15 @@ test('page: the run card carries [Resume] only when the engine would accept it; 
   const ended = { reason: 'You stopped it.', next: 'Resume.', actions: [{ id: 'resume', label: 'Resume' }] };
   render({ runid: 'r2', live: false, died: false, ended, resume: { budgetUsd: 4 } });
   assert.match(bar.innerHTML, /data-testid="btn-resume-run">Resume</);
-  assert.match(bar.innerHTML, /btn-start-from">Start from this</);
-  render({ runid: 'r3', live: false, died: false, ended: { reason: 'Goal met.', next: 'Nothing to do.', actions: [] }, resume: null });
+  assert.doesNotMatch(bar.innerHTML, /btn-reuse/, 'a stopped (not green) run has no Reuse workflow');
+  render({ runid: 'r3', live: false, died: false, ended: { reason: 'Goal met.', next: 'Nothing to do.', actions: [{ id: 'reuse', label: 'Reuse workflow' }] }, resume: null });
   assert.doesNotMatch(bar.innerHTML, /btn-resume-run|btn-stop"/, 'no Resume and no Stop on a green run');
-  assert.match(bar.innerHTML, /btn-start-from">Start from this</, 'Start from this is on EVERY run');
+  assert.match(bar.innerHTML, /btn-reuse">Reuse workflow</, 'a green run has Reuse workflow');
+  render({ runid: 'r4', live: false, died: false, ended: { reason: 'Goal not met', next: 'Change the job: + New.', actions: [] }, resume: null });
+  assert.doesNotMatch(bar.innerHTML, /btn-reuse|Start from this/, 'a red run has no button at all');
+  assert.equal(bar.hidden, true, 'an empty action row is not shown');
+  render({ runid: 'r5', live: true, died: false, ended: null, resume: null });
+  assert.doesNotMatch(bar.innerHTML, /btn-reuse/, 'a live run has Stop, not Reuse workflow');
 });
 
 test('page: Stop is wired to the stop route and Resume to the Job-tab resume mode', () => {
@@ -55,10 +60,12 @@ test('page: Stop is wired to the stop route and Resume to the Job-tab resume mod
   assert.match(fnSrc('renderRun'), /renderRunActions\(detail\)/, 'renderRun paints the action area on every render');
 });
 
-test('page: [Stop] sits in the Run tab\'s action row beside [Start from this] — one row, the same plain .btn style, Stop only while live', () => {
+test('page: [Stop] sits in the Run tab\'s action row, Reuse workflow beside it for a green run — one row, the same plain .btn style, Stop only while live', () => {
   const { render, bar } = load();
   render({ runid: 'r1', live: true, died: false, ended: null, resume: null });
-  assert.match(bar.innerHTML, /^<button class="btn" type="button" data-testid="btn-stop">Stop<\/button><button class="btn" type="button" data-testid="btn-start-from">Start from this<\/button>$/);
+  assert.equal(bar.innerHTML, '<button class="btn" type="button" data-testid="btn-stop">Stop</button>');
+  render({ runid: 'r1', live: false, died: false, ended: { actions: [{ id: 'reuse' }] }, resume: null });
+  assert.equal(bar.innerHTML, '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>');
   const runTab = PAGE.slice(PAGE.indexOf('<section id="panel-run"'), PAGE.indexOf('<section id="panel-audit"'));
   assert.ok(runTab.includes('id="run-actions"'), 'the action row is inside the Run tab');
   assert.equal(PAGE.split('btn-stop').length - 1, fnSrc('renderRunActions').split('btn-stop').length - 1, 'Stop is built nowhere but the action row');

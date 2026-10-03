@@ -398,8 +398,8 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * a run is live (no Ended block while running).
  *
  * The table (outcome → reason / next / buttons) is PANEL-BUILD.md P5 item 1. The
- * Resume button appears only when `o.resume` says the engine would accept it; "Start
- * from this" (item 3) is offered where the table says so — always possible, it starts a NEW run.
+ * Resume button appears only when `o.resume` says the engine would accept it; "Reuse workflow"
+ * (replaces P5 item 3, 2026-10-03) is offered on green rows only, and starts a NEW run.
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
  * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean}} [o]
@@ -409,8 +409,10 @@ export function endedFor(summary, death, o = {}) {
   const resumeOk = !!(o.resume && o.resume.ok);
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
-  /** P5 item 3 — Start from this: a NEW run from this job (never a rerun), offered where the table says so */
-  const START_FROM = [{ id: 'start-from', label: 'Start from this' }];
+  /** Reuse workflow (replaces P5 item 3's Start from this, hamr 2026-10-03): the same signed job on a new source — a NEW
+   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: + New" instead. */
+  const REUSE = [{ id: 'reuse', label: 'Reuse workflow' }];
+  const CHANGE = 'Change the job: + New.';
   const detailOf = (/** @type {string|null} */ s) => {
     if (typeof s !== 'string' || s.length === 0) return '';
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
@@ -421,9 +423,9 @@ export function endedFor(summary, death, o = {}) {
   if (death.died) {
     return {
       reason: `Stopped with no ending recorded${death.lastThing ? ` (last thing it did: ${death.lastThing})` : ''}.`,
-      next: resumeOr('Resume, or Start from this.'),
+      next: resumeOr('Resume.'),
       line: resumeOk ? 'died — resume' : 'died',
-      actions: [...(resumeOk ? RESUME : []), ...START_FROM],
+      actions: resumeOk ? RESUME : [],
     };
   }
   const raw = summary.outcome;
@@ -443,24 +445,24 @@ export function endedFor(summary, death, o = {}) {
       const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
         ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
       return {
-        reason: `Money cap reached${money}.`, next: 'Start from this and change the job.', line: 'money cap', actions: START_FROM,
+        reason: `Money cap reached${money}.`, next: CHANGE, line: 'money cap', actions: [],
       };
     }
     if (cat === 'cap-halt' && typeof strikes === 'number' && typeof limit === 'number') {
       return {
         reason: `The fix loop stopped improving (${strikes} of ${limit} tries, no check got better).`,
-        next: 'Start from this and change the job.',
+        next: CHANGE,
         line: 'stopped improving',
-        actions: START_FROM,
+        actions: [],
       };
     }
     if (cat === 'wall-halt') {
-      return { reason: 'Time cap reached.', next: 'Start from this and change the job.', line: 'time cap', actions: START_FROM };
+      return { reason: 'Time cap reached.', next: CHANGE, line: 'time cap', actions: [] };
     }
     if (cat === 'provider-red') {
       const d = detailOf(summary.stopReason);
       return {
-        reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: 'Start from this and change the job.', line: 'provider failed', actions: START_FROM,
+        reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: CHANGE, line: 'provider failed', actions: [],
       };
     }
   }
@@ -469,12 +471,12 @@ export function endedFor(summary, death, o = {}) {
     if (o.destinationRefused) {
       return {
         reason: 'Goal met, but the output could not be delivered.',
-        next: 'Fix the destination, then Start from this.',
+        next: 'Fix the destination, then Reuse workflow.',
         line: 'goal met — not delivered',
-        actions: START_FROM,
+        actions: REUSE,
       };
     }
-    return { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: START_FROM };
+    return { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: REUSE };
   }
   if (outcome === 'cap-halt') {
     const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
@@ -515,34 +517,34 @@ export function endedFor(summary, death, o = {}) {
   if (outcome === 'step-stalled') {
     return {
       reason: 'A step stopped making progress.',
-      next: resumeOr('Resume, or Start from this and change the job.'),
+      next: resumeOr('Resume, or change the job: + New.'),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
-      actions: [...(resumeOk ? RESUME : []), ...START_FROM],
+      actions: resumeOk ? RESUME : [],
     };
   }
   if (GOAL_NOT_MET.has(outcome)) {
     const d = detailOf(summary.stopReason);
     return {
       reason: `Goal not met — the checks said no${d ? ` (${d})` : ''}.`,
-      next: 'Start from this and change the job.',
+      next: CHANGE,
       line: 'checks said no',
-      actions: START_FROM,
+      actions: [],
     };
   }
   if (outcome === 'close-red') {
     return {
       reason: 'The check itself broke (instrument fault), not your goal.',
-      next: 'Start from this; check the success rule.',
+      next: CHANGE,
       line: 'check broke',
-      actions: START_FROM,
+      actions: [],
     };
   }
   // the raw engine detail is never shown here (it can name retired surfaces); the code is enough
   return {
     reason: `Stopped before or outside the work (code: ${outcome}).`,
-    next: 'Start from this.',
+    next: CHANGE,
     line: 'stopped before the work',
-    actions: START_FROM,
+    actions: [],
   };
 }
 

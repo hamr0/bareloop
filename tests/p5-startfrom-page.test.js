@@ -18,13 +18,13 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 
-test('page: Start from this asks the server for the prefill, opens the Chat tab and hands the card over as an event — it decides nothing itself', async () => {
+test('page: Reuse workflow asks the server for the prefill, opens the Chat tab (left) and hands the card over as an event — it decides nothing itself', async () => {
   const events = [];
   const clicks = [];
   const urls = [];
   const prefill = { ok: true, card: { goal: 'g' }, line: 'Same job — 1 green · 0 not green · about $1.00 a run' };
   // eslint-disable-next-line no-new-func
-  const startFromThis = new Function('document', 'authorGet', 'CustomEvent', 'window', `${fnSrc('startFromThis')}\nreturn startFromThis;`)(
+  const startFromThis = new Function('document', 'authorGet', 'CustomEvent', 'window', `${fnSrc('reuseWorkflow')}\nreturn reuseWorkflow;`)(
     { getElementById: (id) => ({ click: () => clicks.push(id) }), dispatchEvent: (e) => events.push(e) },
     (u) => { urls.push(u); return Promise.resolve(prefill); },
     class { constructor(type, init) { this.type = type; this.detail = init.detail; } },
@@ -38,11 +38,13 @@ test('page: Start from this asks the server for the prefill, opens the Chat tab 
   assert.deepEqual(events[0].detail, { runid: 'run 1', prefill });
 });
 
-test('page: Start from this is on every run (action area) and on the Ended block where the table offers it', () => {
-  assert.match(fnSrc('renderRunActions'), /data-testid="btn-start-from">Start from this</);
-  assert.match(fnSrc('renderRunActions'), /startFromThis\(detail\.runid\)/);
-  assert.match(fnSrc('renderEnded'), /btn-start-from-ended">Start from this</);
-  assert.match(fnSrc('renderEnded'), /a\.id === "start-from"/);
+test('page: Reuse workflow is in the action row and the Ended block only where the server offers it (green rows) — "Start from this" is gone from the page', () => {
+  assert.match(fnSrc('renderRunActions'), /data-testid="btn-reuse">Reuse workflow</);
+  assert.match(fnSrc('renderRunActions'), /a\.id === "reuse"/);
+  assert.match(fnSrc('renderRunActions'), /reuseWorkflow\(detail\.runid\)/);
+  assert.match(fnSrc('renderEnded'), /btn-reuse-ended">Reuse workflow</);
+  assert.match(fnSrc('renderEnded'), /a\.id === "reuse"/);
+  assert.doesNotMatch(fnSrc('renderRunActions') + fnSrc('renderEnded'), /start-from|Start from this/);
 });
 
 test('page: the card opens prefilled, shows the SERVER\'s line, re-asks the server on every edit, and labels the button by its answer', () => {
