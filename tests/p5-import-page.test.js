@@ -19,7 +19,7 @@ function fnSrc(name) {
 }
 const el = () => ({
   innerHTML: '', hidden: false, textContent: '', className: '', children: [], listeners: {}, attrs: {},
-  appendChild(c) { this.children.push(c); }, setAttribute(k, v) { this.attrs[k] = v; },
+  appendChild(c) { this.children.push(c); }, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; },
   addEventListener(t, f) { this.listeners[t] = f; }, classList: { toggle() {}, remove() {}, add() {} },
   querySelector() { return { addEventListener() {} }; },
 });
@@ -43,57 +43,137 @@ test('page: the imported row carries "imported · view only"; a changed folder s
   assert.match(PAGE, /\.imp-bad\{color:var\(--red\)/, 'red');
 });
 
-test('page: an imported job opens in the SAME Run / Audit / Job tabs — Run says no runs yet and keeps history + approved + ONE [Reuse workflow] in the top action row, Audit says "no log — this job ran on another machine", Job carries the spec', () => {
+// the page's import-view functions against the fake DOM; `renderRun` / `getJSON` / `renderAudit` are the page's own
+// run renderers, replaced by recorders (the real renderRun is exercised by the panel-page tests and the live panel)
+function importHarness({ currentImportId = 'aaaaaaaaaaaa', getJSON = () => Promise.reject(new Error('no fetch')) } = {}) {
   const els = {};
   const get = (id) => els[id] ?? (els[id] = el());
   const doc = { getElementById: get };
-  const jobs = [];
-  const clicks = [];
-  get('tab-run').click = () => clicks.push('tab-run');
+  const calls = { jobs: [], clicks: [], runs: [], audits: [], fetched: [] };
+  get('tab-run').click = () => calls.clicks.push('tab-run');
+  const names = ['escapeXml', 'panelMoney', 'importedHeader', 'importedNoLog', 'paintImportedRun', 'paintImportedRunPlain', 'renderImportView'];
   // eslint-disable-next-line no-new-func
-  const render = new Function('document', 'reuseImportedWorkflow', 'renderJob', `${['escapeXml', 'panelMoney'].map(fnSrc).join('\n')}\n${fnSrc('renderImportView')}\nreturn renderImportView;`)(doc, () => {}, (j) => jobs.push(j));
-  render({
-    ok: true, id: 'aaaaaaaaaaaa', job: 'fix-types', status: 'ok', statusText: null, importedAt: '2026-10-02T10:00:00.000Z',
-    goal: 'Make types clean', checkType: 'deterministic', success: 'a · b', guardrails: 'write fence — src/**', model: 'deepseek-flash',
-    budgetUsd: 1.5, maxWallMs: 1_800_000, history: { greens: 3, reds: 1, total: 4, recent: [{ at: '2026-09-05T00:00:00Z', outcome: 'green', costUsd: 2 }] },
-    approved: false, approvedText: 'not approved on this machine yet — it has never run green here',
-  });
-  const html = els['import-view'].innerHTML;
-  for (const need of ['no runs yet', '3 green · 1 not green', 'not approved on this machine yet']) assert.ok(html.includes(need), `Run tab shows: ${need}`);
-  assert.equal(els['import-view'].hidden, false);
-  assert.equal(els['run-empty'].hidden, true);
-  assert.equal(els['run-content'].hidden, true);
-  assert.equal(els['audit-body'].hidden, true);
-  assert.equal(els['audit-select-empty'].hidden, false);
-  assert.equal(els['audit-select-empty'].textContent, 'no log — this job ran on another machine');
-  assert.equal(els['active-wf-verdict'].textContent, 'imported · view only');
-  assert.deepEqual(clicks, ['tab-run']);
+  const api = new Function('document', 'reuseImportedWorkflow', 'renderJob', 'renderRun', 'renderAudit', 'getJSON', 'currentImportId',
+    `var currentRunid = null;\n${names.map(fnSrc).join('\n')}\nreturn {render: renderImportView, rid: function(){ return currentRunid; }};`)(
+    doc, () => {}, (j) => calls.jobs.push(j), (d) => calls.runs.push(d), (r) => calls.audits.push(r),
+    (u) => { calls.fetched.push(u); return getJSON(u); }, currentImportId);
+  return { els, calls, ...api };
+}
+const BASE_VIEW = {
+  ok: true, id: 'aaaaaaaaaaaa', job: 'fix-types', status: 'ok', statusText: null, importedAt: '2026-10-02T10:00:00.000Z',
+  goal: 'Make types clean', checkType: 'deterministic', success: 'a · b', guardrails: 'write fence — src/**', model: 'deepseek-flash',
+  budgetUsd: 1.5, maxWallMs: 1_800_000, history: { greens: 3, reds: 1, total: 4, recent: [{ at: '2026-09-05T00:00:00Z', outcome: 'green', costUsd: 2 }] },
+  approved: false, approvedText: 'not approved on this machine yet — it has never run green here', runsHere: 0, run: { kind: 'none' },
+};
+
+test('page: an imported job opens in the SAME Run / Audit / Job tabs — ONE [Reuse workflow] in the top action row, then the IMPORTED box (runs here, exported with its recent runs, this machine), then the run below; the Job tab carries the spec', () => {
+  const h = importHarness();
+  h.render(BASE_VIEW);
+  const html = h.els['import-view'].innerHTML;
+  assert.match(html, /^<div class="run-actions" data-testid="run-actions-import"><button class="btn" type="button" data-testid="btn-reuse-import">Reuse workflow<\/button><\/div><div class="summary-box imported-box"/);
+  for (const need of ['runs here:', 'none yet', 'exported:', '3 green · 1 not green', '2026-09-05 · green · $2.00', 'this machine:', 'not approved on this machine yet']) assert.ok(html.includes(need), `IMPORTED box shows: ${need}`);
+  assert.ok(html.indexOf('exported:') < html.indexOf('2026-09-05 · green') && html.indexOf('2026-09-05 · green') < html.indexOf('this machine:'), 'the recent runs sit under "exported:"');
   assert.equal((html.match(/<button/g) ?? []).length, 1, 'exactly one button');
-  assert.match(html, /btn-reuse-import">Reuse workflow</);
-  assert.ok(html.indexOf('btn-reuse-import') < html.indexOf('import-no-runs'), 'the button is in the TOP action row, above the run facts');
-  assert.match(html, /^<div class="run-actions" data-testid="run-actions-import">/);
-  assert.doesNotMatch(html, /Start from this/);
-  assert.doesNotMatch(html, />Run</);
+  assert.doesNotMatch(html, /Start from this|>Run</);
   assert.doesNotMatch(html, /import-view-changed/);
+  assert.equal(h.els['import-view'].hidden, false);
+  assert.equal(h.els['run-empty'].hidden, true);
+  assert.deepEqual(h.calls.clicks, ['tab-run']);
+  assert.equal(h.els['active-wf-verdict'].textContent, 'imported · view only');
   // the Job tab is the same renderJob every run uses, fed the exported spec
-  assert.equal(jobs.length, 1);
-  assert.equal(jobs[0].goal, 'Make types clean');
-  assert.equal(jobs[0].checkType, 'deterministic');
-  assert.equal(jobs[0].success, 'a · b');
-  assert.equal(jobs[0].guardrails, 'write fence — src/**');
-  assert.equal(jobs[0].model, 'deepseek-flash');
-  assert.equal(jobs[0].budgetUsd, 1.5);
-  assert.equal(jobs[0].maxWallMs, 1_800_000);
-  const LINE = 'files changed since you imported it \u2014 Reuse is off. Import it again if the change was yours.';
-  render({ ok: true, id: 'a', job: 'j', status: 'changed', statusText: 'changed since import', changedLine: LINE, history: { greens: 0, reds: 0, recent: [] } });
-  assert.match(els['import-view'].innerHTML, /imp-bad" data-testid="import-view-changed">files changed since you imported it \u2014 Reuse is off\. Import it again if the change was yours\.</);
-  // an unreadable import says so and empties the Job tab
-  render({ ok: false, error: 'folder not found' });
-  assert.match(els['import-view'].innerHTML, /folder not found/);
-  assert.equal(jobs.at(-1), null);
-  // the page no longer hides the tab row or the tab body for an import
+  assert.equal(h.calls.jobs.length, 1);
+  const j = h.calls.jobs[0];
+  assert.deepEqual([j.goal, j.checkType, j.success, j.guardrails, j.model, j.budgetUsd, j.maxWallMs], ['Make types clean', 'deterministic', 'a · b', 'write fence — src/**', 'deepseek-flash', 1.5, 1_800_000]);
+  // never job details in the Run tab
+  assert.doesNotMatch(html, /Make types clean|write fence/);
+});
+
+test('page: a changed folder puts the one code-owned line INSIDE the IMPORTED box; an unreadable import says so and empties the Job tab', () => {
+  const LINE = 'files changed since you imported it — Reuse is off. Import it again if the change was yours.';
+  const h = importHarness();
+  h.render({ ...BASE_VIEW, status: 'changed', statusText: 'changed since import', changedLine: LINE, history: { greens: 0, reds: 0, recent: [] } });
+  const html = h.els['import-view'].innerHTML;
+  assert.match(html, /imp-bad" data-testid="import-view-changed">files changed since you imported it — Reuse is off\. Import it again if the change was yours\.</);
+  assert.ok(html.indexOf('imported-box') < html.indexOf('import-view-changed'), 'inside the box, not above it');
+  h.render({ ok: false, error: 'folder not found' });
+  assert.match(h.els['import-view'].innerHTML, /folder not found/);
+  assert.equal(h.calls.jobs.at(-1), null);
   assert.doesNotMatch(fnSrc('renderImportView'), /rp-tabrow|right-pane-body/);
   assert.match(PAGE, /<section id="panel-run"[^>]*>\s*<div class="import-view" id="import-view"/, 'the import summary lives inside the Run tab');
+});
+
+test('page: no green run → SUMMARY says so plainly, no counters, no map, no cards, no log', () => {
+  const h = importHarness();
+  h.render(BASE_VIEW);
+  assert.match(h.els['run-summary'].innerHTML, /data-testid="import-no-green">no green run in this bundle</);
+  assert.equal(h.els['run-content'].hidden, false);
+  assert.equal(h.els['run-counters'].hidden, true);
+  assert.equal(h.els['map-box'].hidden, true);
+  assert.equal(h.els['step-list'].innerHTML, '');
+  assert.equal(h.els['audit-body'].hidden, true);
+  assert.equal(h.els['audit-select-empty'].textContent, 'no log — this job ran on another machine');
+  assert.deepEqual(h.calls.runs, [], 'no run renderer call');
+  assert.match(h.els['import-view'].innerHTML, /shown below:.*no green run/);
+});
+
+test('page: bridge only → the bridge detail goes through the SAME renderRun; the Audit says no log; zero steps reads "no steps recorded"; no step cards', () => {
+  const h = importHarness();
+  const detail = { fromBridge: true, runid: 'r1', parts: [{ label: 'a' }], steps: [], spentUsd: 2 };
+  h.render({ ...BASE_VIEW, run: { kind: 'bridge', runid: 'r1', at: '2026-09-05T00:00:00.000Z', detail } });
+  assert.deepEqual(h.calls.runs, [detail]);
+  assert.equal(h.els['audit-body'].hidden, true);
+  assert.equal(h.els['audit-select-empty'].textContent, 'no log — this job ran on another machine');
+  assert.equal(h.els['step-list'].innerHTML, '', 'no per-step cards: the bridge carries no per-step figures');
+  assert.equal(h.els['run-content'].hidden, false);
+  assert.equal(h.els['run-actions'].hidden, true, 'no Stop/Resume/Reuse bar from the run renderer');
+  assert.equal(h.els['run-counters'].hidden, true, 'the SUMMARY headline already says it');
+  assert.match(h.els['import-view'].innerHTML, /shown below:.*the exported green run r1, 2026-09-05/);
+  const h2 = importHarness();
+  h2.render({ ...BASE_VIEW, run: { kind: 'bridge', runid: 'r1', at: '2026-09-05T00:00:00.000Z', detail: { ...detail, parts: [] } } });
+  assert.equal(h2.els['map-box'].hidden, false);
+  assert.match(h2.els['map-mount'].innerHTML, /data-testid="import-no-steps">no steps recorded</);
+});
+
+test('page: spine present → the run is fetched through the ordinary /api/runs routes, painted by renderRun without an Ended block or actions, its Audit by renderAudit; the Audit tab reads the same run id', async () => {
+  const detail = { runid: 'aaaaaaaaaaaa~muo1jah4', glyph: '✓', ended: { reason: 'x', actions: [{ id: 'reuse' }] }, resume: { a: 1 }, live: true, parts: [{}] };
+  const audit = { rows: [{}], reason: null };
+  const h = importHarness({ getJSON: (u) => Promise.resolve(u.endsWith('/audit') ? audit : detail) });
+  h.render({ ...BASE_VIEW, runsHere: 1, run: { kind: 'spine', id: 'aaaaaaaaaaaa~muo1jah4', runid: 'muo1jah4', at: '2026-09-30T11:48:05.358Z' } });
+  await new Promise((r) => { setTimeout(r, 10); });
+  assert.deepEqual(h.calls.fetched.sort(), ['/api/runs/aaaaaaaaaaaa~muo1jah4', '/api/runs/aaaaaaaaaaaa~muo1jah4/audit']);
+  assert.equal(h.rid(), 'aaaaaaaaaaaa~muo1jah4');
+  assert.equal(h.calls.runs.length, 1);
+  assert.equal(h.calls.runs[0].ended, null, 'an imported run offers no Ended block (no Resume, no second Reuse button)');
+  assert.equal(h.calls.runs[0].live, false);
+  assert.deepEqual(h.calls.audits, [audit]);
+  assert.equal(h.els['run-actions'].hidden, true);
+  assert.equal(h.els['run-counters'].hidden, true);
+  assert.equal(h.els['run-content'].hidden, false);
+  assert.equal(h.els['active-wf-name'].textContent, 'fix-types', 'the header keeps the job name, not the long run id');
+  assert.match(h.els['import-view'].innerHTML, /1 run</);
+  assert.match(h.els['import-view'].innerHTML, /shown below:.*latest green run here, muo1jah4/);
+});
+
+test('page: a spine that cannot be read says so in the SUMMARY box (no crash); a view for another import is ignored', async () => {
+  const h = importHarness({ getJSON: () => Promise.reject(new Error('HTTP 404')) });
+  h.render({ ...BASE_VIEW, run: { kind: 'spine', id: 'aaaaaaaaaaaa~x', runid: 'x', at: null } });
+  await new Promise((r) => { setTimeout(r, 10); });
+  assert.match(h.els['run-summary'].innerHTML, /could not read this run: HTTP 404/);
+  const h2 = importHarness({ currentImportId: 'bbbbbbbbbbbb', getJSON: () => Promise.resolve({ glyph: '✓' }) });
+  h2.render({ ...BASE_VIEW, run: { kind: 'spine', id: 'aaaaaaaaaaaa~x', runid: 'x', at: null } });
+  await new Promise((r) => { setTimeout(r, 10); });
+  assert.deepEqual(h2.calls.runs, [], 'the person moved on: a late answer paints nothing');
+});
+
+test('page: renderRun reads "not recorded" — never 0 or a live floor — for the numbers a bridge-only detail lacks', () => {
+  const src = fnSrc('renderRun');
+  assert.match(src, /var isLiveNoEnd = !detail\.died && detail\.spentUsd === null && detail\.fromBridge !== true;/);
+  assert.match(src, /typeof detail\.budgetUsd !== "number"\) \? "" : \(" of "/, 'no "of <cap>" when the bridge carries no cap');
+  assert.match(src, /"time not recorded"/);
+  assert.match(src, /detail\.fromBridge === true \? "not recorded" : "none started"/);
+  assert.match(src, /bridgeToolsLine\(detail\.toolsUsed\)/);
+  assert.match(PAGE, /\.summary-box\.imported-box::before\{content:"┤ IMPORTED ├";\}/);
+  assert.match(fnSrc('hideImportView'), /run-counters"\)\.hidden = false/, 'a normal run brings the counters back');
 });
 
 test('page: the Import button lives on the Workflows toolbar, opens the folder browser + paste box, and Import posts the path to the guarded route', () => {

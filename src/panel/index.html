@@ -286,6 +286,10 @@
   .sum-label{flex:none;width:66px;color:var(--text-faint);}
   .sum-val{color:var(--text);}
   .summary-box .num{color:var(--accent);font-weight:700;}
+  .summary-box.imported-box::before{content:"┤ IMPORTED ├";}
+  .imported-box .sum-label{width:104px;}
+  .imported-box .summary-row{flex-wrap:wrap;}
+  .imported-box .sum-val{flex:1 1 180px;min-width:0;overflow-wrap:anywhere;}
 
   .map-box{border:1px solid var(--border-strong);padding:10px;overflow-x:auto;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
   .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
@@ -1803,6 +1807,7 @@
   function hideImportView(){
     currentImportId = null;
     document.getElementById("import-view").hidden = true;
+    document.getElementById("run-counters").hidden = false;
     document.getElementById("run-empty").textContent = "select a run from Workflows or History";
     document.getElementById("audit-select-empty").textContent = "select a run first";
     document.querySelectorAll("#import-list .wf-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed", "false"); });
@@ -1822,47 +1827,115 @@
       renderImportView(v);
     }).catch(function(x){ if(currentImportId === id) renderImportView({ok: false, error: x.message}); });
   }
-  // An imported job reads like any other card: the SAME Run / Audit / Job tabs. It has never run on this machine, so
-  // Run and Audit say so in plain words; the Job tab carries its spec; the Run tab keeps the exported history and the
-  // approved-or-not line, with [Reuse workflow] in the top action row — the same button a green run has.
+  // An imported job reads like a normal run page: the SAME Run / Audit / Job tabs. [Reuse workflow] sits in the top
+  // action row, then the IMPORTED box (what the folder says about itself), then the latest GREEN run in the bundle
+  // painted by the very same renderRun a run uses — its SUMMARY and MAP, and its Audit when the bundle carries the
+  // run's log; a bundle with only a bridge paints the bridge's numbers through that same renderer ("not recorded"
+  // where the bridge is silent); a bundle with no green says so. The Job tab carries the spec. Nothing here writes.
+  function importedHeader(v){
+    document.getElementById("active-wf-name").textContent = v.job;
+    document.getElementById("active-wf-dot").className = "dot grey";
+    var verdict = document.getElementById("active-wf-verdict");
+    verdict.textContent = "imported · view only";
+    verdict.removeAttribute("title");
+    document.getElementById("active-wf-date").textContent = (v.importedAt || "").slice(0, 10) || "unknown";
+  }
+  function importedNoLog(){
+    document.getElementById("audit-body").hidden = true;
+    var auditEmpty = document.getElementById("audit-select-empty");
+    auditEmpty.hidden = false;
+    auditEmpty.textContent = "no log — this job ran on another machine";
+  }
+  // the green run below the IMPORTED box: spine (read through the ordinary run routes), bridge, or nothing
+  function paintImportedRun(v){
+    var run = v.run || {kind: "none"};
+    var content = document.getElementById("run-content");
+    var guard = function(){ return currentImportId === v.id; };
+    document.getElementById("step-list").innerHTML = "";
+    if(run.kind === "spine"){
+      currentRunid = run.id;
+      getJSON("/api/runs/" + encodeURIComponent(run.id)).then(function(d){
+        if(!guard()) return;
+        d.ended = null; d.resume = null; d.live = false; d.stopping = false;
+        renderRun(d);
+        importedHeader(v);
+        document.getElementById("run-actions").hidden = true;
+        document.getElementById("run-counters").hidden = true; // the SUMMARY headline already says it
+        content.hidden = false;
+      }).catch(function(e){ if(guard()) paintImportedRunPlain(v, "could not read this run: " + e.message); });
+      getJSON("/api/runs/" + encodeURIComponent(run.id) + "/audit").then(function(result){
+        if(guard()) renderAudit(result);
+      }).catch(function(){ if(guard()) renderAudit(null); });
+      return;
+    }
+    importedNoLog();
+    if(run.kind === "bridge" && run.detail){
+      renderRun(run.detail);
+      importedHeader(v);
+      importedNoLog();
+      document.getElementById("run-actions").hidden = true;
+      document.getElementById("run-counters").hidden = true;
+      document.getElementById("step-list").innerHTML = "";
+      if(!run.detail.parts || run.detail.parts.length === 0){
+        document.getElementById("map-box").hidden = false;
+        document.getElementById("map-mount").innerHTML = '<div class="hint" data-testid="import-no-steps">no steps recorded</div>';
+      }
+      content.hidden = false;
+      return;
+    }
+    paintImportedRunPlain(v, "no green run in this bundle");
+  }
+  // a plain sentence in the SUMMARY box and nothing else (no counters, no map, no cards)
+  function paintImportedRunPlain(v, text){
+    var box = document.getElementById("run-summary");
+    box.className = "summary-box";
+    box.innerHTML = '<div class="summary-row"><span class="sum-val" data-testid="import-no-green">' + escapeXml(text) + '</span></div>';
+    document.getElementById("run-counters").hidden = true;
+    document.getElementById("map-box").hidden = true;
+    document.getElementById("step-list").innerHTML = "";
+    document.getElementById("run-actions").hidden = true;
+    importedNoLog();
+    document.getElementById("run-content").hidden = false;
+  }
   function renderImportView(v){
     var el = document.getElementById("import-view");
     el.hidden = false;
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = true;
-    document.getElementById("audit-body").hidden = true;
-    var auditEmpty = document.getElementById("audit-select-empty");
-    auditEmpty.hidden = false;
-    auditEmpty.textContent = "no log — this job ran on another machine";
-    var name = document.getElementById("active-wf-name");
-    var dot = document.getElementById("active-wf-dot");
-    var verdict = document.getElementById("active-wf-verdict");
-    var date = document.getElementById("active-wf-date");
+    importedNoLog();
     if(!v || !v.ok){
-      name.textContent = "imported job"; dot.className = "dot grey"; verdict.textContent = "imported · view only"; date.textContent = "";
+      var name = document.getElementById("active-wf-name");
+      var dot = document.getElementById("active-wf-dot");
+      var verdict = document.getElementById("active-wf-verdict");
+      name.textContent = "imported job"; dot.className = "dot grey"; verdict.textContent = "imported · view only"; document.getElementById("active-wf-date").textContent = "";
       el.innerHTML = '<div class="imp-bad">' + escapeXml((v && v.error) || "could not read this imported job") + '</div>';
       renderJob(null);
       return;
     }
-    name.textContent = v.job;
-    dot.className = "dot grey";
-    verdict.textContent = "imported · view only";
-    date.textContent = (v.importedAt || "").slice(0, 10) || "unknown";
+    importedHeader(v);
     var h = v.history || {greens: 0, reds: 0, total: 0, recent: []};
-    var recent = (h.recent || []).map(function(r){
-      return '<div class="hint">' + escapeXml((r.at || "").slice(0, 10) || "—") + " · " + escapeXml(r.outcome || "?") + (typeof r.costUsd === "number" ? " · " + escapeXml(panelMoney(r.costUsd)) : "") + '</div>';
-    }).join("");
-    var row = function(label, text, testid, cls){
-      return '<div class="imp-row"><span class="imp-label">' + label + '</span><span class="imp-text' + (cls ? " " + cls : "") + '" data-testid="' + testid + '">' + escapeXml(text) + '</span></div>';
+    var row = function(label, text, testid){
+      return '<div class="summary-row"><span class="sum-label">' + label + '</span><span class="sum-val" data-testid="' + testid + '">' + escapeXml(text) + '</span></div>';
     };
+    var recent = (h.recent || []).map(function(r){
+      var line = (r.at || "").slice(0, 10) || "—";
+      line += " · " + (r.outcome || "?") + (typeof r.costUsd === "number" ? " · " + panelMoney(r.costUsd) : "");
+      return '<div class="summary-row"><span class="sum-label"></span><span class="sum-val">' + escapeXml(line) + '</span></div>';
+    }).join("");
+    var run = v.run || {kind: "none"};
+    var runsHere = typeof v.runsHere === "number" ? v.runsHere : 0;
+    var shown = run.kind === "spine" ? ("latest green run here, " + (run.runid || "")) :
+      (run.kind === "bridge" ? ("the exported green run" + (run.runid ? " " + run.runid : "") + (run.at ? ", " + run.at.slice(0, 10) : "")) : "no green run");
     el.innerHTML =
       '<div class="run-actions" data-testid="run-actions-import"><button class="btn" type="button" data-testid="btn-reuse-import">Reuse workflow</button></div>' +
-      (v.status !== "ok" ? '<div class="imp-bad" data-testid="import-view-changed">' + escapeXml(v.changedLine || v.statusText || "changed since import") + '</div>' : "") +
-      row("RUNS", "no runs yet — this job was imported (view only); nothing has run here", "import-no-runs") +
-      row("EXPORTED", h.greens + " green · " + h.reds + " not green", "import-history") +
-      recent +
-      row("THIS MACHINE", v.approvedText || "unknown", "import-approved") +
-      "";
+      '<div class="summary-box imported-box" data-testid="import-box">' +
+        (v.status !== "ok" ? '<div class="imp-bad" data-testid="import-view-changed">' + escapeXml(v.changedLine || v.statusText || "changed since import") + '</div>' : "") +
+        row("runs here:", runsHere === 0 ? "none yet" : (runsHere + (runsHere === 1 ? " run" : " runs")), "import-no-runs") +
+        row("exported:", h.greens + " green · " + h.reds + " not green", "import-history") +
+        recent +
+        row("this machine:", v.approvedText || "unknown", "import-approved") +
+        row("shown below:", shown, "import-shown") +
+      '</div>';
     el.querySelector('[data-testid="btn-reuse-import"]').addEventListener("click", function(){ reuseImportedWorkflow(v.id); });
     var nr = "not recorded";
     renderJob({
@@ -1873,6 +1946,7 @@
       maxWallMs: (typeof v.maxWallMs === "number") ? v.maxWallMs : null,
       note: "imported · view only — the exported job's own spec",
     });
+    paintImportedRun(v);
     document.getElementById("tab-run").click();
   }
   // Reuse workflow, on an IMPORTED job: the server reads the bundle again now and prefills from its signed spec.
@@ -2083,6 +2157,11 @@
   function modelLine(detail){
     if(!detail.model) return "not recorded";
     return detail.provider ? (detail.model + " (" + detail.provider + ")") : detail.model;
+  }
+  // an imported job's bridge names the tools its green run used, with no counts
+  function bridgeToolsLine(list){
+    if(!Array.isArray(list) || list.length === 0) return "not recorded";
+    return list.map(function(k){ return toolDisplayLabel(k); }).join(" \u00b7 ");
   }
   function toolsLine(behaviour){
     if(!behaviour) return "unknown (no log saved)";
@@ -2372,7 +2451,7 @@
     // false and spentUsd is still null) shows the RUNNING floor instead of
     // "unknown" — the server now derives the same spendFloorUsd/wallFloorMs
     // for a still-running spine that it already derived for a died one.
-    var isLiveNoEnd = !detail.died && detail.spentUsd === null;
+    var isLiveNoEnd = !detail.died && detail.spentUsd === null && detail.fromBridge !== true;
     var spendText, wallPhrase, wallText;
     if(isLiveNoEnd){
       spendText = liveSpendText(detail.spendFloorUsd, detail.draftSpentUsd, detail.draftSpendComplete);
@@ -2390,10 +2469,16 @@
       // still in progress: a live [▶] run (glyph "▶" and not died).
       var isLive = detail.glyph === "▶" && !detail.died;
       wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);
+      // an imported job's green run read from its bridge: only what the bridge carries; the rest says so
+      if(detail.fromBridge === true){
+        spendText = typeof detail.spentUsd === "number" ? ((detail.spendComplete === false ? "at least " : "") + panelMoney(detail.spentUsd)) : "not recorded";
+        wallText = typeof detail.wallMs === "number" ? duration(detail.wallMs) : "not recorded";
+        wallPhrase = typeof detail.wallMs === "number" ? ("took " + wallText) : "time not recorded";
+      }
     }
 
     document.getElementById("run-counters").innerHTML =
-      spendText + " of " + panelMoney(detail.budgetUsd) +
+      spendText + ((detail.fromBridge === true && typeof detail.budgetUsd !== "number") ? "" : (" of " + panelMoney(detail.budgetUsd))) +
       " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
@@ -2404,7 +2489,7 @@
     // "0 of 1 done".
     var rSteps = realSteps(detail.steps);
     var stepsDone = rSteps.filter(function(s){ return s.state === "done"; }).length;
-    var stepsText = rSteps.length === 0 ? "none started" : ('<span class="num">' + stepsDone + '</span> of <span class="num">' + rSteps.length + '</span> done');
+    var stepsText = rSteps.length === 0 ? (detail.fromBridge === true ? "not recorded" : "none started") : ('<span class="num">' + stepsDone + '</span> of <span class="num">' + rSteps.length + '</span> done');
     box.innerHTML =
       '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span><b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
         '<span class="num">' + spendText + '</span> &middot; <span class="num">' + wallText + '</span></div>' +
@@ -2414,7 +2499,7 @@
         (detail.replans ? ' &middot; ' + detail.replans + ' replan' + (detail.replans === 1 ? '' : 's') : '') + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">close:</span><span class="sum-val">' + escapeXml(detail.close && detail.close.verdict ? detail.close.verdict : "none — the run ended before any close ran") + '</span></div>' +
-      '<div class="summary-row" data-testid="summary-tools"><span class="sum-label">tools:</span><span class="sum-val">' + escapeXml(toolsLine(detail.behaviour)) + '</span></div>' +
+      '<div class="summary-row" data-testid="summary-tools"><span class="sum-label">tools:</span><span class="sum-val">' + escapeXml(detail.fromBridge === true ? bridgeToolsLine(detail.toolsUsed) : toolsLine(detail.behaviour)) + '</span></div>' +
       '<div class="summary-row" data-testid="summary-offered" id="summary-offered-row" hidden><span class="sum-label">offered:</span><span class="sum-val" id="summary-offered-val"></span></div>' +
       '<div class="summary-row" data-testid="summary-cache"><span class="sum-label">cache:</span><span class="sum-val">' + escapeXml(cacheLine(detail.memoryCache)) + '</span></div>';
 
