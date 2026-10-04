@@ -253,3 +253,13 @@ test('page: the list shows job bundles with their relative path, a click selects
 test('page: each exported-history line in the IMPORTED box names its run, so a price there is never read as the SUMMARY run\'s', () => {
   assert.match(PAGE, /" · run " \+ r\.runid/);
 });
+
+test('page: a selected bundle row draws its border INSIDE the scrolling list (first, middle and last row all show top and bottom)', () => {
+  // cause: the old selected mark was `outline` (drawn outside the box); the list clips overflow, so the last row's bottom edge was cut
+  const entry = PAGE.match(/\.import-entry\{[^}]*\}/)[0];
+  const sel = PAGE.match(/\.import-entry\.selected\{[^}]*\}/)[0];
+  assert.match(entry, /border:1px solid transparent/, 'every row owns a border box, so selecting never shifts layout');
+  assert.match(sel, /border-color:var\(--accent\)/);
+  assert.doesNotMatch(sel, /outline/, 'an outline sits outside the box and is clipped by the list');
+  assert.match(PAGE.match(/\.import-entries\{[^}]*\}/)[0], /padding:2px/, 'room so no row touches the clip edge');
+});

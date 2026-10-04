@@ -250,11 +250,11 @@
   .import-box{border:1px dashed var(--border-strong);padding:10px;margin-bottom:10px;display:grid;gap:8px;}
   .import-pathrow{display:flex;gap:8px;flex-wrap:wrap;}
   .import-pathrow input{flex:1 1 180px;min-width:0;min-height:36px;background:var(--panel);color:var(--text);border:1px solid var(--border-strong);padding:4px 8px;font:inherit;}
-  .import-entries{display:grid;gap:2px;max-height:240px;overflow-y:auto;overflow-x:hidden;}
-  .import-entry{display:flex;gap:8px;align-items:baseline;text-align:left;background:none;border:none;color:var(--text);padding:4px 2px;min-height:32px;cursor:pointer;font:inherit;overflow-wrap:anywhere;}
+  .import-entries{display:grid;gap:2px;max-height:240px;overflow-y:auto;overflow-x:hidden;padding:2px;}
+  .import-entry{display:flex;gap:8px;align-items:baseline;text-align:left;background:none;border:1px solid transparent;color:var(--text);padding:3px 2px;min-height:32px;cursor:pointer;font:inherit;overflow-wrap:anywhere;}
   .import-entry:hover{background:var(--panel);}
   .import-up{font-weight:700;}
-  .import-entry.selected{background:var(--panel);outline:1px solid var(--accent);}
+  .import-entry.selected{background:var(--panel);border-color:var(--accent);}
   .import-entry .tag{color:var(--accent);font-size:11px;}
   .import-view[hidden]{display:none;}
   .imp-bad{color:var(--red);font-size:12px;font-weight:700;overflow-wrap:anywhere;}
