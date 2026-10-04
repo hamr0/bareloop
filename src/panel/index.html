@@ -2568,7 +2568,6 @@
     listEl.innerHTML = "";
     orderedBoxes.forEach(function(box, idx){
       var part = box.part;
-      var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
       var titleText = box.kind === "step" ? ((cardStepNumbers[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
       var resultGlyph = partResultGlyph(part, box);
       // build item 4: ONE owner (partLine1Text, shared with the Audit tab's
@@ -2583,7 +2582,7 @@
       card.setAttribute("role", "button");
       card.innerHTML =
         '<div class="step-head"><h4>' + titleText + '</h4>' +
-          '<span class="step-state" data-testid="part-state-' + idx + '"><span class="dot ' + badgeClass + '"></span><b class="st-word">' + escapeXml(box.state) + '</b></span>' +
+          stepStateHTML(box, 'part-state-' + idx) +
           (box.blocked > 0 ? '<span class="badge red" data-testid="part-blocked-badge">' + box.blocked + ' blocked</span>' : '') +
         '</div>' +
         '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +
@@ -2606,6 +2605,11 @@
     renderAuditGroups(detail);
   }
 
+  // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
+  function stepStateHTML(box, testid){
+    var cls = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(box.state) + '</b></span>';
+  }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
   function buildAttemptsList(container, partIndex, attempts, boxIsLive){
@@ -2964,7 +2968,6 @@
       dividers.forEach(function(dv){ if(dv.beforePart === idx) container.appendChild(legDividerEl(dv)); });
       var part = box.part;
       var titleText = box.kind === "step" ? ((numberMap[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
-      var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
       var rowWrap = document.createElement("div");
       rowWrap.className = "audit-part";
       rowWrap.setAttribute("data-testid", "audit-part-" + idx);
@@ -2978,7 +2981,7 @@
       headBtn.setAttribute("data-testid", "audit-part-toggle-" + idx);
       var groupResultGlyph = partResultGlyph(part, box);
       headBtn.innerHTML =
-        '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span> ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
+        stepStateHTML(box, 'audit-part-state-' + idx) + ' ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
         (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
         (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '');
       var body = document.createElement("div");

@@ -180,8 +180,8 @@ test('C8: an imported header wears the word of its shown green + the imported ta
 
 test('C9: MAP has no sign legend; each step card carries its own sign + the existing step-state word, bold', () => {
   assert.doesNotMatch(PAGE, /stepMapLegendHTML|map-legend/); // the line-style key is covered in panel-page.test.js
-  const src = fnSrc('renderRun');
-  assert.match(src, /class="step-state"[^]*?<span class="dot ' \+ badgeClass \+ '"><\/span><b class="st-word">' \+ escapeXml\(box\.state\)/);
+  assert.match(fnSrc('renderRun'), /stepStateHTML\(box, 'part-state-' \+ idx\)/);
+  assert.match(fnSrc('stepStateHTML'), /class="step-state"[^]*?<span class="dot ' \+ cls \+ '"><\/span><b class="st-word">' \+ escapeXml\(box\.state\)/);
 });
 
 import { createPanelServer } from '../src/panel/server.js';
@@ -207,4 +207,15 @@ test('C7/C8: an imported job (list row and view) carries the sign + word of the 
 
 test('C8: the header name carries no ┤ ├ frame (it would read "┤ name ├ │ word" beside the │ separator)', () => {
   assert.doesNotMatch(PAGE, /\.rp-header h2::/);
+});
+
+test('item 3: the Audit tab\'s grouped rows wear the SAME sign + bold word as the Run tab step cards (one stepStateHTML), no bracket badge', () => {
+  // eslint-disable-next-line no-new-func
+  const f = new Function(`${['escapeXml', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
+  assert.equal(f({ state: 'done' }, 't'), '<span class="step-state" data-testid="t"><span class="dot green"></span><b class="st-word">done</b></span>');
+  assert.match(f({ state: 'stopped' }, 't'), /dot red"><\/span><b class="st-word">stopped</);
+  assert.match(f({ state: 'died' }, 't'), /dot magenta/);
+  assert.match(fnSrc('renderAuditGroups'), /stepStateHTML\(box, 'audit-part-state-' \+ idx\)/);
+  assert.doesNotMatch(fnSrc('renderAuditGroups'), /class="badge ' \+ badgeClass/);
+  assert.match(fnSrc('renderRun'), /stepStateHTML\(box, 'part-state-' \+ idx\)/);
 });
