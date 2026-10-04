@@ -1740,6 +1740,15 @@
   var importPathEl = document.getElementById("import-path");
   var importErrEl = document.getElementById("import-err");
   function importShowErr(msg){ importErrEl.textContent = msg; importErrEl.hidden = !msg; }
+  // the last folder the browser showed — per-viewer convenience only (try/catch, the browser works without it)
+  var IMPORT_DIR_KEY = "bareloop.importDir";
+  function rememberImportDir(path){
+    try{ localStorage.setItem(IMPORT_DIR_KEY, path); }catch(e){ /* best-effort only */ }
+  }
+  function recallImportDir(){
+    try{ var v = localStorage.getItem(IMPORT_DIR_KEY); if(typeof v === "string") return v; }catch(e){ /* per-viewer convenience only */ }
+    return "";
+  }
   // one directory: its folders (names + a "bundle" tag), a way up, and which folder the server actually chose
   function importLoadDir(path){
     importShowErr("");
@@ -1749,8 +1758,9 @@
         document.getElementById("import-resolved").textContent = "";
         document.getElementById("import-entries").innerHTML = "";
         importShowErr((r && r.error) || "could not open that folder");
-        return;
+        return false;
       }
+      rememberImportDir(r.path);
       importPathEl.value = r.path;
       document.getElementById("import-resolved").textContent = "showing " + r.path + (r.requested !== r.path ? " (you asked for " + r.requested + ")" : "") + (r.bundle ? " — this folder is an exported job" : "");
       var el = document.getElementById("import-entries");
@@ -1778,11 +1788,14 @@
       if(!r.entries.length) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-empty">no job bundles here (searched ' + r.depth + ' folders deep)</div>');
       if(r.stopped) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-capped">stopped after ' + r.visited + ' folders \u2014 go into a narrower folder</div>');
       else if(r.truncated) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-capped">stopped after ' + r.entries.length + ' job bundles \u2014 go into a narrower folder</div>');
+      return true;
     }).catch(function(x){ importShowErr("could not reach the panel: " + x.message); });
   }
   document.getElementById("wf-import").addEventListener("click", function(){
     importBox.hidden = !importBox.hidden;
-    if(!importBox.hidden) importLoadDir(importPathEl.value || "");
+    if(importBox.hidden) return;
+    var want = importPathEl.value || recallImportDir();
+    importLoadDir(want).then(function(ok){ if(ok === false && want && !importPathEl.value) { importShowErr(""); return importLoadDir(""); } });
   });
   document.getElementById("import-open").addEventListener("click", function(){ importLoadDir(importPathEl.value); });
   importPathEl.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); importLoadDir(importPathEl.value); } });

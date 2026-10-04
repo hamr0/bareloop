@@ -126,3 +126,42 @@ test('A3: after [Import] the job just imported is opened AND scrolled into view 
   assert.match(body, /selectImport\(res\.body\.id\)/);
   assert.match(body, /revealImportRow\(res\.body\.id\)/, 'the import button reveals the row it just opened');
 });
+
+// ── A4: remember the last folder ─────────────────────────────────────────────────────────────────────────────
+function storeHarness(storage) {
+  // eslint-disable-next-line no-new-func
+  return new Function('localStorage', `var IMPORT_DIR_KEY = ${PAGE.match(/var IMPORT_DIR_KEY = ("[^"]+");/)[1]};\n${fnSrc('rememberImportDir')}\n${fnSrc('recallImportDir')}\nreturn {rememberImportDir, recallImportDir};`)(storage);
+}
+
+test('A4: the last folder is remembered in localStorage and recalled; with no value it falls back to "" (home)', () => {
+  const data = {};
+  const h = storeHarness({ getItem: (k) => (k in data ? data[k] : null), setItem: (k, v) => { data[k] = String(v); } });
+  assert.equal(h.recallImportDir(), '');
+  h.rememberImportDir('/h/jobs');
+  assert.equal(h.recallImportDir(), '/h/jobs');
+});
+
+test('A4: a throwing / missing localStorage never breaks the browser (every read and write is in try/catch)', () => {
+  const boom = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+  const h = storeHarness(boom);
+  assert.doesNotThrow(() => h.rememberImportDir('/x'));
+  assert.equal(h.recallImportDir(), '');
+});
+
+test('A4: a good listing remembers its folder, and opening the box uses the remembered folder, falling back to home when it is gone', async () => {
+  const seen = [];
+  const h = browseHarness([GOOD]);
+  // the remembered-folder write happens in importLoadDir
+  const els = h.els;
+  let remembered = null;
+  const doc = { getElementById: (id) => els[id] ?? (els[id] = el()), createElement: () => el() };
+  // eslint-disable-next-line no-new-func
+  const load = new Function('document', 'authorGet', 'importPathEl', 'importShowErr', 'escapeXml', 'rememberImportDir',
+    `${fnSrc('importLoadDir')}\nreturn importLoadDir;`)(doc, (u) => { seen.push(u); return Promise.resolve(GOOD); }, doc.getElementById('import-path'), () => {}, (x) => x, (p) => { remembered = p; });
+  assert.equal(await load('/h/jobs'), true);
+  assert.equal(remembered, '/h/jobs');
+  const open = PAGE.slice(PAGE.indexOf('document.getElementById("wf-import").addEventListener'));
+  const body = open.slice(0, open.indexOf('\n  });'));
+  assert.match(body, /importPathEl\.value \|\| recallImportDir\(\)/);
+  assert.match(body, /importLoadDir\(""\)/, 'a remembered folder that is gone falls back to home');
+});
