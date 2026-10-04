@@ -220,11 +220,14 @@ test('page: Import and Cancel are the same .btn height (Cancel is not .small)', 
   assert.doesNotMatch(tag('import-go'), /small/);
 });
 
-test('page: the folder browser uses words — "up one folder", plain folder names with the bundle tag, no arrow glyphs', () => {
+// hamr's click-through 2026-10-04, item 1: the way up is a bold `..`, never a row that reads like a folder to import.
+test('page: the way up is a bold ".." (still clickable, aria-labelled), not a folder-looking row; no arrow glyphs', () => {
   const src = fnSrc('importLoadDir');
-  assert.match(src, /up one folder/);
+  assert.match(src, /up\.textContent = "\.\."/);
+  assert.doesNotMatch(src, /textContent = "up one folder"/);
   assert.doesNotMatch(src, /▲|▸/);
-  assert.match(src, /\(bundle\)/);
+  assert.match(PAGE, /\.import-up\{font-weight:700;\}/);
+  assert.match(src, /importLoadDir\(r\.parent\)/);
 });
 
 // hamr's click-through 2026-10-04, item 2: the button is [Go].
