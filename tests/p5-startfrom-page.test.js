@@ -58,7 +58,7 @@ test('page: the reuse card opens filled from the server\'s prefill, shows the se
   assert.match(fnSrc('clearStartFrom'), /setReuseLocked\(false\)/);
 });
 
-test('page: setReuseLocked greys Name, Goal, Success, Guardrails, Judge examples, Check type and Model — and never Source, Destination or the caps', () => {
+test('page: setReuseLocked greys Name, Goal, Success, Guardrails, Judge examples and Check type — and never Source, Destination, Model or the caps', () => {
   const els = {};
   const mk = (id) => { els[id] = { id, readOnly: false, disabled: false, classes: new Set(), classList: { toggle(c, on) { if (on) els[id].classes.add(c); else els[id].classes.delete(c); } } }; return els[id]; };
   for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time', 'job-card']) mk(id);
@@ -81,7 +81,8 @@ test('page: setReuseLocked greys Name, Goal, Success, Guardrails, Judge examples
     assert.equal(els[id].classes.has('locked'), false);
   }
   assert.ok(radios.every((r) => r.disabled), 'Check type is locked');
-  assert.equal(modelSelect.disabled, true, 'Model is locked');
+  assert.equal(modelSelect.disabled, false, 'Model is open on a reuse (hamr 2026-10-04)');
+  assert.equal(modelSelect.classes.has('locked'), false);
   f(false);
   assert.ok(['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails'].every((id) => !els[id].readOnly), 'unlocked again for + New');
   assert.ok(radios.every((r) => !r.disabled) && !modelSelect.disabled);
