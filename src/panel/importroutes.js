@@ -22,7 +22,7 @@
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import {
-  appendFileSync, mkdirSync, readFileSync, existsSync, readdirSync, statSync, lstatSync, realpathSync,
+  writeFileSync, renameSync, mkdirSync, readFileSync, existsSync, readdirSync, statSync, lstatSync, realpathSync,
 } from 'node:fs';
 import { dirname, join, isAbsolute, resolve } from 'node:path';
 import { checkHumanGuard } from './authorroutes.js';
@@ -117,6 +117,36 @@ export function importsPath(home) { return join(runlistHome(home), 'imports.json
 /** the stable id of an imported folder (its real path, hashed — never the path itself in a URL) */
 export function importId(/** @type {string} */ dir) { return createHash('sha256').update(dir).digest('hex').slice(0, 12); }
 
+/** a folder's realpath, or the text itself when it cannot be resolved (a moved/deleted folder still lists) */
+function realDir(/** @type {string} */ dir) { try { return realpathSync(dir); } catch { return dir; } }
+
+/**
+ * Record one import: ONE row per real folder. Any earlier row for the same folder is dropped and the new one is
+ * written, so re-importing updates the entry instead of adding a second. The rewrite goes through a temp file + rename.
+ * @param {string} [home]
+ * @param {{at: string, dir: string, job: string, bundleHash: string}} row
+ */
+export function recordImport(home, row) {
+  const file = importsPath(home);
+  const key = realDir(row.dir);
+  /** @type {string[]} */
+  const keep = [];
+  let text = '';
+  try { text = readFileSync(file, 'utf8'); } catch { text = ''; }
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let o;
+    try { o = JSON.parse(line); } catch { keep.push(line); continue; } // never drop what we cannot read
+    if (o && typeof o.dir === 'string' && realDir(o.dir) === key) continue;
+    keep.push(line);
+  }
+  keep.push(JSON.stringify(row));
+  mkdirSync(runlistHome(home), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${keep.join('\n')}\n`, { mode: 0o600 });
+  renameSync(tmp, file);
+}
+
 /**
  * The imported list: the LATEST row per folder (a re-import supersedes), newest first. A malformed line is skipped.
  * @param {string} [home]
@@ -131,7 +161,12 @@ export function readImports(home) {
     if (!line.trim()) continue;
     let r;
     try { r = JSON.parse(line); } catch { continue; }
-    if (r && typeof r.dir === 'string' && typeof r.job === 'string' && typeof r.bundleHash === 'string') byDir.set(r.dir, { ...r, id: importId(r.dir) });
+    if (r && typeof r.dir === 'string' && typeof r.job === 'string' && typeof r.bundleHash === 'string') {
+      // one row per REAL folder: a later line (or a symlinked spelling of the same folder) replaces the earlier one
+      const key = realDir(r.dir);
+      const prev = byDir.get(key);
+      if (!prev || String(r.at) >= String(prev.at)) byDir.set(key, { ...r, id: importId(r.dir) });
+    }
   }
   return [...byDir.values()].sort((a, b) => String(b.at).localeCompare(String(a.at)));
 }
@@ -303,8 +338,7 @@ export function createImportRoutes(opts) {
     }
     const row = { at: new Date().toISOString(), dir: r.path, job: bundle.manifest.job, bundleHash: bundle.manifest.bundleHash };
     try {
-      mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 });
-      appendFileSync(importsPath(opts.home), `${JSON.stringify(row)}\n`, { mode: 0o600 });
+      recordImport(opts.home, row);
     } catch (/** @type {any} */ e) {
       send(500, { ok: false, error: `could not record the import: ${e?.message ?? e}` });
       return true;

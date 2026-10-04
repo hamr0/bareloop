@@ -1792,9 +1792,15 @@
     authorPost("/api/imports", {path: importPathEl.value}).then(function(res){
       if(!res.body || !res.body.ok){ importShowErr((res.body && res.body.error) || ("refused (" + res.status + ")")); return; }
       importBox.hidden = true;
-      return loadImports().then(function(){ selectImport(res.body.id); });
+      return loadImports().then(function(){ return selectImport(res.body.id); }).then(function(){ revealImportRow(res.body.id); scrollRunIntoViewMobile(); });
     }).catch(function(x){ importShowErr("could not reach the panel: " + x.message); });
   });
+
+  // after [Import] the box above the list closes and the left pane shrinks: bring the job just opened into view
+  function revealImportRow(id){
+    var row = document.querySelector('[data-testid="import-row-' + id + '"]');
+    if(row && row.scrollIntoView) row.scrollIntoView({block: "nearest"});
+  }
 
   // the imported rows (Workflows view): every bundle is re-read by the server each time this list is fetched
   function loadImports(){

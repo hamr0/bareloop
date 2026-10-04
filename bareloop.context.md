@@ -3559,7 +3559,7 @@ key you want first (the panel picks the row by the Model menu).
   `POST /api/imports {path}` → `{ok, id, job, dir}` (`readBundle` must come back clean — a plain or tampered
   folder is `400` and records nothing); `GET /api/imports` (the list, every bundle RE-READ now) and
   `GET /api/imports/:id` (one view). Imported list: `<home>/imports.jsonl`, one `{at, dir, job, bundleHash}` line
-  per import (latest line per folder wins; mode 0600 in the 0700 config home); `id` = the first 12 hex of
+  per FOLDER (a re-import replaces that folder's line; a file already holding duplicates lists once per real path, newest wins; mode 0600 in the 0700 config home); `id` = the first 12 hex of
   sha256(real path). **Path safety:** the path is expanded (`~`, `~/…` only), refused if it holds a NUL byte, is
   over 4096 bytes or is not absolute, then `resolve`d and `realpath`ed — the REAL folder is listed and recorded
   and the response says which it chose (`path` beside `requested`); a non-directory is refused; a SYMLINK inside the

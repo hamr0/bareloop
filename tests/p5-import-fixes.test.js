@@ -1,6 +1,6 @@
 // hamr's click-through 2026-10-04, items A1-A4 (Import browser). Page functions extracted from src/panel/index.html
 // against a tiny fake DOM (same posture as p5-import-page.test.js); server pieces against a scratch home.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -59,4 +59,70 @@ test('A2: the path textbox uses the theme\'s normal input background token (edit
   const bg = (s) => s.match(/background:([^;}]+)/)[1];
   assert.equal(bg(rule), bg(base), 'same token as every other input');
   assert.doesNotMatch(rule, /var\(--panel\)/);
+});
+
+// ── A3: one row per folder ───────────────────────────────────────────────────────────────────────────────────
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createPanelServer } from '../src/panel/server.js';
+import { readImports, importsPath, importId } from '../src/panel/importroutes.js';
+import { exportFixtureBundle } from './bundle-fixture.js';
+
+/** @type {string[]} */ const tmps = [];
+after(() => { for (const d of tmps) rmSync(d, { recursive: true, force: true }); });
+const tmp = (p) => { const d = mkdtempSync(join(tmpdir(), p)); tmps.push(d); return d; };
+
+test('A3: re-importing an already-imported folder UPDATES its row (one line in imports.jsonl, one row listed), and the POST names the folder just imported', async (t) => {
+  const home = tmp('a3-cfg-');
+  const userHome = tmp('a3-user-');
+  const bundleDir = join(userHome, 'jobs', 'fix.bareloop');
+  mkdirSync(join(userHome, 'jobs'), { recursive: true });
+  exportFixtureBundle(bundleDir);
+  const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, userHome });
+  t.after(() => close());
+  const call = (m, p, body) => fetch(`http://127.0.0.1:${port}${p}`, {
+    method: m, headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: body ? JSON.stringify(body) : undefined,
+  }).then((r) => r.json());
+  const first = await call('POST', '/api/imports', { path: bundleDir });
+  await new Promise((r) => { setTimeout(r, 15); });
+  const second = await call('POST', '/api/imports', { path: bundleDir });
+  assert.equal(second.id, first.id);
+  assert.equal(second.id, importId(bundleDir));
+  const lines = readFileSync(importsPath(home), 'utf8').trim().split('\n');
+  assert.equal(lines.length, 1, 'one row per folder in the file');
+  const list = await call('GET', '/api/imports');
+  assert.equal(list.imports.length, 1);
+  assert.equal(list.imports[0].id, second.id);
+});
+
+test('A3: existing duplicate rows (same folder, even through a symlink) list ONCE, newest wins; another folder keeps its own row', () => {
+  const home = tmp('a3-cfg2-');
+  const real = tmp('a3-real-');
+  const other = tmp('a3-other-');
+  const link = join(tmp('a3-links-'), 'ln');
+  symlinkSync(real, link);
+  const row = (dir, at, job) => JSON.stringify({ at, dir, job, bundleHash: 'h' });
+  const file = importsPath(home);
+  mkdirSync(join(file, '..'), { recursive: true });
+  writeFileSync(file, [row(real, '2026-10-04T10:00:00.000Z', 'old'), row(other, '2026-10-04T11:00:00.000Z', 'o'),
+    row(link, '2026-10-04T12:00:00.000Z', 'new'), row(real, '2026-10-04T09:00:00.000Z', 'older')].join('\n') + '\n');
+  const list = readImports(home);
+  assert.equal(list.length, 2);
+  assert.deepEqual(list.map((r) => r.job), ['new', 'o']);
+});
+
+test('A3: after [Import] the job just imported is opened AND scrolled into view (the closing import box must not leave the pane parked on the list\'s end)', () => {
+  const calls = [];
+  const row = { scrollIntoView: (o) => calls.push(o) };
+  // eslint-disable-next-line no-new-func
+  const reveal = new Function('document', `${fnSrc('revealImportRow')}\nreturn revealImportRow;`)(
+    { querySelector: (q) => { calls.push(q); return row; } });
+  reveal('abc123abc123');
+  assert.equal(calls[0], '[data-testid="import-row-abc123abc123"]');
+  assert.deepEqual(calls[1], { block: 'nearest' });
+  const go = PAGE.slice(PAGE.indexOf('document.getElementById("import-go").addEventListener'));
+  const body = go.slice(0, go.indexOf('\n  });'));
+  assert.match(body, /selectImport\(res\.body\.id\)/);
+  assert.match(body, /revealImportRow\(res\.body\.id\)/, 'the import button reveals the row it just opened');
 });
