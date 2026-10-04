@@ -302,6 +302,7 @@
   .map-box{border:1px solid var(--border-strong);padding:10px;overflow-x:auto;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
   .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
   .map-box svg{display:block;max-width:100%;height:auto;}
+  .map-key{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px;flex-wrap:wrap;}
 
   .step-card{position:relative;border:1px solid var(--border);padding:10px;margin-bottom:8px;background:var(--panel2);}
   .step-card.running{border:1px double var(--amber);}
@@ -1139,6 +1140,14 @@
     });
     return '<svg width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" role="img" aria-label="step map">' + body + '</svg>';
   }
+  // the line-style key under the MAP (hamr 2026-10-04): only the two line styles, never a sign legend
+  function stepMapKeyHTML(steps){
+    var resumed = (steps || []).some(function(b){ return b.resumedNext; });
+    return '<div class="map-key" data-testid="map-key">' +
+      '<span>⤾ dashed = retry</span>' +
+      (resumed ? '<span>&middot;&middot;&middot; dotted = resumed</span>' : '') +
+      '</div>';
+  }
   var lastSteps = null;
   var lastWidth = null;
   function mapAvailWidth(wrapper){
@@ -1159,7 +1168,7 @@
     wrapper.hidden = false;
     var w = mapAvailWidth(wrapper);
     lastWidth = w;
-    mount.innerHTML = buildStepMapSVG(steps, w);
+    mount.innerHTML = buildStepMapSVG(steps, w) + stepMapKeyHTML(steps);
     // build item B: a map box click jumps to the Audit tab, that same part
     // expanded and scrolled into view — same click-through as the card list,
     // sharing partIndex so the two can never disagree about which row a box
@@ -1179,7 +1188,7 @@
     var w = mapAvailWidth(wrapper);
     if(w === null || w === lastWidth) return;
     lastWidth = w;
-    document.getElementById("map-mount").innerHTML = buildStepMapSVG(lastSteps, w);
+    document.getElementById("map-mount").innerHTML = buildStepMapSVG(lastSteps, w) + stepMapKeyHTML(lastSteps);
   }
   if(typeof ResizeObserver !== "undefined"){
     var ro = new ResizeObserver(function(){ reflowMap(); });

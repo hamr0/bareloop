@@ -178,8 +178,8 @@ test('C8: an imported header wears the word of its shown green + the imported ta
   assert.match(els['active-wf-verdict'].innerHTML, /imported · view only$/);
 });
 
-test('C9: MAP has no legend line; each step card carries its own sign + the existing step-state word, bold', () => {
-  assert.doesNotMatch(PAGE, /stepMapLegendHTML|map-legend/);
+test('C9: MAP has no sign legend; each step card carries its own sign + the existing step-state word, bold', () => {
+  assert.doesNotMatch(PAGE, /stepMapLegendHTML|map-legend/); // the line-style key is covered in panel-page.test.js
   const src = fnSrc('renderRun');
   assert.match(src, /class="step-state"[^]*?<span class="dot ' \+ badgeClass \+ '"><\/span><b class="st-word">' \+ escapeXml\(box\.state\)/);
 });

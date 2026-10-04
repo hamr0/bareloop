@@ -1872,10 +1872,19 @@ test('buildStepMapSVG: a single-attempt step and a no-verdict part (e.g. plan) r
   assert.doesNotMatch(svg, /stroke-dasharray="3,3"/, 'no box here has >1 attempts, so no retry loop should render');
 });
 
-test('MAP: the legend line is gone (hamr 2026-10-04) — each step card carries its own sign + word instead', () => {
+test('MAP: no sign legend (hamr 2026-10-04); one small line-style key `⤾ dashed = retry · dotted = resumed` sits under the MAP; each step card carries its own sign + word', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.doesNotMatch(html, /stepMapLegendHTML|map-legend|dashed = retry/);
+  assert.doesNotMatch(html, /stepMapLegendHTML|map-legend/);
+  assert.doesNotMatch(html, /dot green"><\/span>done|dot magenta"><\/span>died/);
   assert.match(html, /class="step-state"[^]*?class="st-word"/);
+  const src = html.slice(html.indexOf('function stepMapKeyHTML('), html.indexOf('var lastSteps = null;'));
+  // eslint-disable-next-line no-new-func
+  const key = new Function(src + '\nreturn stepMapKeyHTML;')();
+  assert.match(key([{}]), /⤾ dashed = retry<\/span><\/div>$/);
+  assert.doesNotMatch(key([{}]), /dotted/);
+  assert.match(key([{}, { resumedNext: true }]), /dashed = retry<\/span><span>&middot;&middot;&middot; dotted = resumed<\/span>/);
+  assert.match(html, /buildStepMapSVG\(steps, w\) \+ stepMapKeyHTML\(steps\)/);
+  assert.match(html, /buildStepMapSVG\(lastSteps, w\) \+ stepMapKeyHTML\(lastSteps\)/);
 });
 
 // ---------------------------------------------------------------------------
