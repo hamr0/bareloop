@@ -411,8 +411,15 @@ export function createSession(card, deps = {}) {
     state.phase = 'preparing-source';
     state.progressLabel = 'copying source';
     say('system', 'Copying source ($0)');
+    // ONE rule for Destination (the same for a fresh card and a reuse card): for a REPO source it is the write fence
+    // (writeScope globs, relative to the repo — set into the spec below, never proven as a directory); for a FOLDER source
+    // it is an absolute output directory, proven by `prepareSource` -> `proveDestination`. The door routes on a peek at
+    // the source; a source that does not peek as a repo (missing path, typo, a linked worktree) would otherwise have its
+    // fence read as a directory and refused as "not absolute" — hiding the real problem with the Source. A scope-shaped
+    // (relative) Destination is therefore handed to the door only when the source is repo-like.
+    const destIsDir = /^(\/|[a-zA-Z]:[\\/])/.test(card.destination);
     const prep = await prepareSource({
-      source: card.source, into, destination: isRepoLike ? card.destination : card.destination,
+      source: card.source, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
     });
     if (prep.stop !== null) { refuse(prep.stop); return; }
 
