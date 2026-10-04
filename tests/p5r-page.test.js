@@ -66,8 +66,9 @@ test('page map: the dotted connector survives the snake layout (a drop to the ne
   assert.equal(lines.length, 5);
 });
 
-test('page: the legend is gone; the dotted connector still names itself "resumed" inside the map', () => {
-  assert.doesNotMatch(PAGE, /dotted = resumed|stepMapLegendHTML/);
+test('page: the sign legend is gone (the line-style key returned 2026-10-04); the dotted connector still names itself "resumed" inside the map', () => {
+  assert.doesNotMatch(PAGE, /stepMapLegendHTML|map-legend/);
+  assert.match(PAGE, /dotted = resumed/);
   assert.match(PAGE, />resumed<\/text>|\+ '" font-size="9" fill="var\(--text-faint\)">resumed<\/text>/);
 });
 
