@@ -3556,6 +3556,12 @@ key you want first (the panel picks the row by the Model menu).
   person signs at `[Sign & run]` is the spec's own. The card button is `Sign & run` (one click: the page signs the
   prepared hash as soon as the session reports `prepared`; the server re-checks it). `card.json` (the form text)
   is still written beside `resolved-spec.json` when a session reaches `prepared`.
+  **The progress list (2026-10-04)** — `GET /api/author/:id` state carries `steps: [{id, label, status:
+  'running'|'done'|'failed', detail}]`, one entry per pipeline step in first-seen order, updated in place (ids/labels:
+  `STEP_LABELS`, `src/panel/authorsession.js`); `progressLabel` is the running step's label. A refusal sets
+  `state.error` and fails exactly one step with the same text as its `detail`; pipeline text is never a chat message
+  (`messages` holds person/model turns only). Destination follows the Source: for a repo source it is the write
+  fence (relative `writeScope` globs, never proven as a directory); for a folder source an absolute directory.
   **Import, read only (item 4)** — `src/panel/importroutes.js`. The Workflows toolbar's `[Import]` opens a folder
   browser plus a paste box; an imported job is an exported bundle folder the person can LOOK at: nothing runs,
   nothing is signed, the folder is never written. Routes, all behind `checkHumanGuard` (token + own address —

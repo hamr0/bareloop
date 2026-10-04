@@ -395,15 +395,21 @@
   .btn.primary:disabled{background:var(--btn-bg);color:var(--text-faint);border-color:var(--border);}
   .btn.primary:disabled::before,.btn.primary:disabled::after{color:var(--text-faint);opacity:0.4;}
 
-  /* P3 build item 3 — the single live progress line: an amber cycling
-     [progress.]/[progress..]/[progress...] glyph while a phase is running,
-     [done] in green once it finishes, [stopped] in red on a refusal. A
-     static [progress...] under prefers-reduced-motion (no animation). */
-  .chat-progress-row{display:flex;align-items:center;gap:8px;margin:2px 0 10px;font-size:12px;}
-  .chat-progress-glyph{font-weight:700;color:var(--amber);}
-  .chat-progress-glyph.done{color:var(--green);}
-  .chat-progress-glyph.stopped{color:var(--red);}
-  .chat-progress-label{color:var(--text-faint);}
+  /* the ONE progress list: a step per line — label, then dots while running / check / cross, then its reason */
+  .chat-steps{list-style:none;margin:2px 0 10px;padding:0;font-size:12px;}
+  .chat-steps .step{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;padding:1px 0;}
+  .chat-steps .step-label{color:var(--text);min-width:11em;}
+  .chat-steps .step-sign{font-weight:700;}
+  .chat-steps .step.run .step-sign{color:var(--amber);}
+  .chat-steps .step.ok .step-sign{color:var(--green);}
+  .chat-steps .step.bad .step-sign{color:var(--red);}
+  .chat-steps .step-detail{flex:1 1 14em;min-width:0;color:var(--text-faint);word-break:break-word;white-space:pre-wrap;}
+  .chat-steps .step.bad .step-detail{color:var(--red);}
+  .chat-steps .step.run .step-sign::after{content:"\2026";}
+  @keyframes step-dots{0%{content:"";}25%{content:".";}50%{content:"..";}75%{content:"...";}}
+  @media (prefers-reduced-motion: no-preference){
+    .chat-steps .step.run .step-sign::after{content:"";animation:step-dots 1.2s steps(1,end) infinite;}
+  }
   /* build item 7 — the two $0 readiness lines under the Model field. */
   .jf-readiness{font-size:11px;margin-top:2px;}
   .jf-readiness.ok{color:var(--green);}
@@ -560,13 +566,9 @@
             <div class="hint" id="chat-hash-line" data-testid="chat-hash-line" hidden></div>
           </div>
 
-          <!-- build item 3 — the label comes FIRST, then the animated
-               indicator, so the cycling dots ([progress.] .. [progress....])
-               never push the label around. -->
-          <div class="chat-progress-row" id="chat-progress-row" data-testid="chat-progress-row" hidden>
-            <span class="chat-progress-label" id="chat-progress-label" data-testid="chat-progress-label"></span>
-            <span class="chat-progress-glyph" id="chat-progress-glyph" data-testid="chat-progress-glyph"></span>
-          </div>
+          <!-- ONE progress list (hamr 2026-10-04): every pipeline step is one line that updates in place, running with
+               animated dots, then a check or a cross with its code-owned reason; chat turns stay in the thread below. -->
+          <ol class="chat-steps" id="chat-progress-row" data-testid="chat-steps" aria-live="polite" hidden></ol>
 
           <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
 
@@ -3564,8 +3566,6 @@
     var modelSelect = document.getElementById("jf-model");
     var modelStatusEl = document.getElementById("jf-model-status");
     var progressRow = document.getElementById("chat-progress-row");
-    var progressGlyph = document.getElementById("chat-progress-glyph");
-    var progressLabelEl = document.getElementById("chat-progress-label");
 
     var sessionId = null;
     var pollTimer = null;
@@ -3577,7 +3577,6 @@
     // src/panel/authorroutes.js, mirrored here so Start never even offers a
     // click the server would 409 anyway).
     var CLIENT_TERMINAL_PHASES = ["refused", "abandoned", "error", "signed", "signing-failed"];
-    var DONE_PHASES = ["prepared", "signed"];
     var sessionLive = false;
     // build item 7 — Start also stays disabled while the chosen model's key
     // isn't usable; updated by refreshModelStatus() below.
@@ -3626,8 +3625,8 @@
       reuseSession = false;
       autoSigned = false;
       if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
-      stopProgressDots();
       progressRow.hidden = true;
+      progressRow.innerHTML = "";
       checkDepsBtn.hidden = true;
       refreshStartEnabled();
     }
@@ -3791,25 +3790,6 @@
       thread.scrollTop = thread.scrollHeight;
     }
 
-    // build item 3 — the single live progress line: the LABEL sits first in
-    // the markup, then the animated indicator (never the other way — the
-    // dots must not push the label around as they cycle 1..4).
-    var progressDotTimer = null;
-    var progressDotCount = 1;
-    var reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-    function stopProgressDots(){
-      if(progressDotTimer){ clearInterval(progressDotTimer); progressDotTimer = null; }
-    }
-    function startProgressDots(){
-      if(reducedMotion){ progressGlyph.textContent = "[progress....]"; return; }
-      if(progressDotTimer) return;
-      progressDotCount = 1;
-      progressGlyph.textContent = "[progress.]";
-      progressDotTimer = setInterval(function(){
-        progressDotCount = (progressDotCount % 4) + 1;
-        progressGlyph.textContent = "[progress" + new Array(progressDotCount + 1).join(".") + "]";
-      }, 500);
-    }
     // build item 3 — pure: what the label must say for a given state. A
     // person waiting on their OWN next action (an ask is pending) must never
     // see a stale machine step name (observed: "checking prior behaviour"
@@ -3822,23 +3802,22 @@
       if(pending) return "waiting for your answer";
       return (state && state.progressLabel) || "working";
     }
+    // the ONE progress list: a step per line, in the server's order (STEP_LABELS in src/panel/authorsession.js owns
+    // the ids and words). While a step runs its dots are CSS (still under prefers-reduced-motion); it ends as a check
+    // or a cross, a cross carrying the code-owned reason on the same line. A pending ask for the person replaces the
+    // running step's label with what is being waited on, never an animation.
     function renderProgress(state){
-      progressRow.hidden = false;
-      if(DONE_PHASES.indexOf(state.phase) !== -1){
-        stopProgressDots();
-        progressGlyph.className = "chat-progress-glyph done";
-        progressGlyph.textContent = "[done]";
-        progressLabelEl.textContent = "";
-      } else if(CLIENT_TERMINAL_PHASES.indexOf(state.phase) !== -1){
-        stopProgressDots();
-        progressGlyph.className = "chat-progress-glyph stopped";
-        progressGlyph.textContent = "[stopped]";
-        progressLabelEl.textContent = state.error || "";
-      } else {
-        progressGlyph.className = "chat-progress-glyph";
-        progressLabelEl.textContent = progressLabelFor(state);
-        startProgressDots();
-      }
+      var steps = (state && state.steps) || [];
+      progressRow.hidden = steps.length === 0;
+      progressRow.innerHTML = steps.map(function(st, i){
+        var waiting = st.status === "running" && i === steps.length - 1 && state.pendingAsk;
+        var cls = st.status === "running" && !waiting ? "run" : (st.status === "failed" ? "bad" : "ok");
+        var sign = cls === "ok" ? "\u2713" : (cls === "bad" ? "\u2717" : "");
+        var label = waiting ? progressLabelFor(state) : st.label;
+        return '<li class="step ' + cls + '" data-step="' + escapeXml(st.id) + '"><span class="step-label">' + escapeXml(label) + '</span>' +
+          '<span class="step-sign">' + sign + '</span>' +
+          (st.detail ? '<span class="step-detail">' + escapeXml(st.detail) + '</span>' : "") + '</li>';
+      }).join("");
     }
 
     function renderActions(state){

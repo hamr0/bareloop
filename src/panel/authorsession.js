@@ -50,34 +50,58 @@ import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 
 /**
- * Plain-language labels for the library's own `onPhase(name, …)` calls
- * (`src/authorjob.js`/`src/authorflow.js`) — build item 3's progress
- * indicator shows one of these next to its animated glyph instead of a new
- * chat bubble per phase. A phase with no entry here leaves the label as it
- * was (never blanks it — a missing mapping should not flicker the line).
+ * THE PROGRESS LIST's one table (hamr 2026-10-04, "one place showing all"): every pipeline step the left Chat panel
+ * lists, in the order they first appear, each with a stable id and a plain code-owned label. A step is one line that
+ * updates in place (running -> done or failed with its reason); the thread carries only chat turns.
  * @type {Readonly<Record<string, string>>}
  */
-const PROGRESS_LABELS = Object.freeze({
-  'confirm-language-pick': 'confirming language',
-  'confirm-round': 'confirming plan',
-  'confirm-done': 'plan confirmed',
-  'author-call': 'drafting',
-  'author-fallback': 'drafting',
-  'seed-read': 'reading repo',
-  'seed-read-done': 'reading repo',
-  stage: 'checking',
-  seed: 'reading repo',
+export const STEP_LABELS = Object.freeze({
+  setup: 'checking setup',
+  copy: 'copying source',
+  check: 'checking source',
+  install: 'waiting on install',
+  reuse: 'reusing signed workflow',
+  read: 'reading repo',
   scout: 'scouting repo',
-  'scout-done': 'scouting repo',
-  confirm: 'confirming plan',
-  'confirm-turn-done': 'plan confirmed',
   listing: 'listing files',
-  'listing-done': 'listing files',
-  author: 'drafting',
-  rubric: 'calibrating',
-  'rubric-done': 'calibrating',
-  'rubric-scrubbed': 'calibrating',
+  confirm: 'confirming plan',
+  draft: 'drafting',
+  calibrate: 'calibrating',
+  gates: 'checking signing gates',
 });
+
+/**
+ * The library's own `onPhase(name, ...)` calls (`src/authorjob.js`/`src/authorflow.js`) -> the step each one advances.
+ * A phase with no entry leaves the current step as it was.
+ * @type {Readonly<Record<string, keyof typeof STEP_LABELS>>}
+ */
+const PHASE_STEP = Object.freeze({
+  'confirm-language-pick': 'confirm',
+  'confirm-round': 'confirm',
+  'confirm-done': 'confirm',
+  'author-call': 'draft',
+  'author-fallback': 'draft',
+  'seed-read': 'read',
+  'seed-read-done': 'read',
+  stage: 'gates',
+  seed: 'read',
+  scout: 'scout',
+  'scout-done': 'scout',
+  confirm: 'confirm',
+  'confirm-turn-done': 'confirm',
+  listing: 'listing',
+  'listing-done': 'listing',
+  author: 'draft',
+  rubric: 'calibrate',
+  'rubric-done': 'calibrate',
+  'rubric-scrubbed': 'calibrate',
+});
+
+/** source-door refusals that come from CHECKING the copied source (the scan/freeze), not from reaching it */
+const SOURCE_CHECK_CODES = new Set([
+  'source-carries-secret', 'source-env-file', 'source-symlink', 'source-nested-repo', 'source-not-text',
+  'source-file-oversize', 'source-changed-after-scan', 'source-untracked-in-repo',
+]);
 
 /** the confirm turn's own fixed round cap (`src/authorflow.js`'s
  * `runConfirmTurn`: `for (let round = 1; round <= 2; round += 1)`) — named
@@ -283,6 +307,31 @@ export function createSession(card, deps = {}) {
     // (build item 2: onPhase used to post one, and it read as jargon/
     // duplicate of the refusal that often followed it in the same breath).
     progressLabel: /** @type {string|null} */ (null),
+    // the progress list (STEP_LABELS): one entry per pipeline step, updated in place — see stepStart/stepEnd below
+    steps: /** @type {{id: string, label: string, status: 'running'|'done'|'failed', detail: string}[]} */ ([]),
+  };
+
+  /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
+  const stepStart = (id, detail) => {
+    for (const x of state.steps) if (x.status === 'running' && x.id !== id) x.status = 'done';
+    const label = STEP_LABELS[id] ?? id;
+    const cur = state.steps.find((/** @type {any} */ x) => x.id === id);
+    if (cur) { cur.status = 'running'; if (detail !== undefined) cur.detail = detail; } else state.steps.push({ id, label, status: 'running', detail: detail ?? '' });
+    state.progressLabel = label;
+  };
+  /** @param {string} id @param {string} detail set a step's detail without changing its status */
+  const stepDetail = (id, detail) => { const x = state.steps.find((/** @type {any} */ y) => y.id === id); if (x) x.detail = detail; };
+  /** finish the running step as done (or every running step, when `id` is omitted) */
+  const stepDone = (id) => { for (const x of state.steps) if (x.status === 'running' && (id === undefined || x.id === id)) x.status = 'done'; };
+  /** @param {string} reason the running step (else the last one) fails with the code-owned reason on its own line */
+  const stepFail = (reason) => {
+    let x = state.steps.find((/** @type {any} */ y) => y.status === 'running');
+    if (!x) {
+      x = state.steps.at(-1);
+      if (!x || x.status === 'failed') { x = { id: 'stopped', label: 'stopped', status: 'running', detail: '' }; state.steps.push(x); }
+    }
+    x.status = 'failed';
+    x.detail = reason;
   };
 
   /** @param {'bot'|'you'|'system'} role @param {string} text */
@@ -355,7 +404,7 @@ export function createSession(card, deps = {}) {
     // `confirm-turn-done` in the very next line (build item 2's "the
     // refusal line appears twice"). The thread now carries only what a
     // person needs to read; the step-by-step detail lives in one line.
-    state.progressLabel = PROGRESS_LABELS[name] ?? state.progressLabel;
+    if (PHASE_STEP[name]) stepStart(PHASE_STEP[name]);
   };
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const metered = [];
@@ -379,10 +428,12 @@ export function createSession(card, deps = {}) {
   const refuse = (message, phase = 'refused') => {
     state.phase = phase;
     state.error = message;
+    stepFail(message);
   };
 
   async function run() {
     // ── keys, at $0, before anything is prepared ────────────────────────
+    stepStart('setup');
     const keyRows = rowsForHome(configHome);
     const modelChoice = modelChoiceFor(keyRows, card.model);
     if (!modelChoice) { refuse(`Model "${card.model}" is not a Name in Settings > Providers. Stopped — nothing spent.`); return; }
@@ -411,8 +462,7 @@ export function createSession(card, deps = {}) {
     const isRepoLike = looksLikeRepoSource(card.source);
 
     state.phase = 'preparing-source';
-    state.progressLabel = 'copying source';
-    say('system', 'Copying source ($0)');
+    stepStart('copy');
     // ONE rule for Destination (the same for a fresh card and a reuse card): for a REPO source it is the write fence
     // (writeScope globs, relative to the repo — set into the spec below, never proven as a directory); for a FOLDER source
     // it is an absolute output directory, proven by `prepareSource` -> `proveDestination`. The door routes on a peek at
@@ -423,7 +473,13 @@ export function createSession(card, deps = {}) {
     const prep = await prepareSource({
       source: card.source, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
     });
-    if (prep.stop !== null) { refuse(prep.stop); return; }
+    if (prep.stop !== null) {
+      // reaching the source and checking it are two lines: a scan/freeze refusal means the copy itself worked
+      if (SOURCE_CHECK_CODES.has(/** @type {any} */ (prep).code)) stepStart('check');
+      refuse(prep.stop);
+      return;
+    }
+    stepStart('check');
 
     const IS_REPO_SOURCE = prep.manifest.kind === 'repo';
     let LANG = 'none-detected';
@@ -452,8 +508,7 @@ export function createSession(card, deps = {}) {
       let depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
       if (depsGap) {
         state.phase = 'install-needed';
-        state.progressLabel = 'waiting on install';
-        say('system', `Packages missing in the copy. Run:\ncd ${prep.tree} && ${depsGap.command}`);
+        stepStart('install', `Packages missing in the copy. Run: cd ${prep.tree} && ${depsGap.command}`);
         for (;;) {
           state.pendingAsk = { kind: 'install-needed', tree: prep.tree, command: depsGap.command, reason: depsGap.reason };
           // eslint-disable-next-line no-await-in-loop
@@ -461,9 +516,10 @@ export function createSession(card, deps = {}) {
           state.pendingAsk = null;
           depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
           if (!depsGap) break;
-          say('system', `Still missing (${depsGap.reason}). Install, then Check again.`);
+          stepDetail('install', `Still missing (${depsGap.reason}). Install, then Check again. Run: cd ${prep.tree} && ${depsGap.command}`);
         }
-        say('system', 'Packages found');
+        stepDone('install');
+        stepStart('check');
         state.phase = 'drafting';
       }
     }
@@ -506,13 +562,13 @@ export function createSession(card, deps = {}) {
         state.specHash = hash;
         writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
         state.phase = 'prepared';
+        stepDone();
         say('bot', `SIGNING PREPARED — spec hash ${hash}`);
         return;
       }
 
       state.phase = 'signing-gates';
-      state.progressLabel = 'checking';
-      say('system', 'Checking (gates 1–3, $0; gate 4 only if rubric)…');
+      stepStart('gates', 'gates 1–3 cost $0; gate 4 only for a rubric');
       const judges = closeJudges(spec.closeDecl);
       const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
       let judgeProvider = null;
@@ -557,6 +613,7 @@ export function createSession(card, deps = {}) {
       // Written at sign-prepare (the session reached `prepared`), only by sessions created from now on.
       writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
       state.phase = 'prepared';
+      stepDone();
       say('bot', `SIGNING PREPARED — spec hash ${signing.specHash}`);
     };
     // REUSE WORKFLOW: the route hands in a COPY of the origin's signed spec with only the four open boxes set (see
@@ -567,8 +624,7 @@ export function createSession(card, deps = {}) {
     const MODEL = modelChoice.name;
     if (deps.reuse) {
       state.phase = 'drafting';
-      state.progressLabel = 'checking';
-      say('system', 'Reusing the signed workflow as it is; drafting skipped ($0)');
+      stepStart('reuse', 'drafting skipped ($0)');
       const reused = JSON.parse(JSON.stringify(deps.reuse.spec));
       if (workflowKey(reused) !== deps.reuse.workflowKey) {
         refuse('the reused spec is not the signed workflow (more than Source, Destination and the caps differ) — refusing');
@@ -629,11 +685,10 @@ export function createSession(card, deps = {}) {
     const confirmGenerate = deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null });
 
     state.phase = 'drafting';
-    state.progressLabel = 'drafting';
+    stepStart('draft', `${card.model}, $${card.capUsd.toFixed(2)} cap`);
     // build item 4 — the DISPLAY id (card.model, e.g. "deepseek-flash"), not
     // the internal resolved tier model string (MODEL) or the raw provider
     // name — the same id the Model field's own dropdown showed.
-    say('system', `Drafting with ${card.model}, $${card.capUsd.toFixed(2)} cap`);
     const authored = await authorCloseForJob({
       judgeModel: draftJudge.model,
       answers, verdictType, repoPath: prep.tree, lang: LANG,

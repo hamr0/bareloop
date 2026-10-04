@@ -647,7 +647,7 @@ test('createSession: RED-PROOF — Check again while STILL missing stays waiting
   // RED-PROOF: nothing was installed — the session must still be waiting,
   // not silently continue as if the gap had closed.
   assert.equal(session.state.phase, 'install-needed', 'a check-again with nothing installed must stay waiting');
-  assert.ok(session.state.messages.some((m) => /[Ss]till missing/.test(m.text)));
+  assert.ok(session.state.steps.some((x) => x.id === 'install' && /[Ss]till missing/.test(x.detail)), 'the install step says it is still missing, on its own line');
 });
 
 test('createSession: Check again AFTER the gap is closed on the SAME copy continues the pipeline through to prepared', async (t) => {

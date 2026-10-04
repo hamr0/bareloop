@@ -2290,39 +2290,30 @@ test('build item 5 RED-PROOF (2026-09-28): the initial /api/runs load no longer 
   assert.match(block, /tab-run"\)\.click\(\)/, 'the right-pane Run details tab still loads the newest run, ready for when the person switches to Runs themselves');
 });
 
-test('build item 3 (2026-09-28): the single progress-indicator row is in the page, ahead of the chat thread, with a glyph and a label element', () => {
+test('progress list (2026-10-04): ONE list element sits ahead of the chat thread, hidden until a session has steps', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /<div class="chat-progress-row" id="chat-progress-row"[^>]*hidden>/);
-  assert.match(html, /id="chat-progress-glyph"/);
-  assert.match(html, /id="chat-progress-label"/);
-  const progressIdx = html.indexOf('id="chat-progress-row"');
-  const threadIdx = html.indexOf('id="chat-thread"');
-  assert.ok(progressIdx !== -1 && threadIdx !== -1 && progressIdx < threadIdx, 'the progress row must render ahead of the chat thread');
+  assert.match(html, /<ol class="chat-steps" id="chat-progress-row"[^>]*hidden><\/ol>/);
+  assert.ok(html.indexOf('id="chat-progress-row"') < html.indexOf('id="chat-thread"'), 'the progress list must render ahead of the chat thread');
+  assert.doesNotMatch(html, /chat-progress-glyph|chat-progress-label|\[progress\./, 'the old glyph+label row is gone');
 });
 
-test('build item 3 RED-PROOF (2026-09-28): the progress dots reduced-motion fallback renders a STATIC fully-dotted form, never the animated cycle', () => {
+test('progress list: the running dots are CSS and stop under prefers-reduced-motion (a static ellipsis)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function startProgressDots(){');
-  const end = html.indexOf('function progressLabelFor(state){');
-  assert.ok(start !== -1 && end !== -1 && end > start, 'expected startProgressDots to be present');
-  const body = html.slice(start, end);
-  assert.match(body, /reducedMotion/);
-  // 4 dots now (build item 3, 2026-09-28 2nd pass) — was 3 dots ("...")
-  // before the dot cycle itself was widened to 1..4 in the same change.
-  assert.match(body, /\[progress\.\.\.\.\]/, 'the static reduced-motion fallback must be the fully-dotted (4-dot) form, not a half-cycled one');
+  assert.match(html, /@keyframes step-dots/);
+  assert.match(html, /@media \(prefers-reduced-motion: no-preference\)\{\s*\.chat-steps \.step\.run \.step-sign::after\{[^}]*animation:step-dots/);
+  assert.match(html, /\.chat-steps \.step\.run \.step-sign::after\{content:"\\2026";\}/, 'the default (reduced-motion) form is the static ellipsis');
+  assert.doesNotMatch(html, /progressDotCount/, 'no JS dot timer any more');
 });
 
-test('build item 2 (2026-09-28): onPhase no longer posts a chat bubble — the progress label is collapsed into state.progressLabel only, never say()\'d', () => {
+test('build item 2 (2026-09-28): onPhase no longer posts a chat bubble — it only advances the progress list, never say()\'d', () => {
   const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
   const start = src.indexOf('const onPhase = (name, data = {}) => {');
-  const end = src.indexOf('};', start) + 2;
+  const end = src.indexOf('\n  };', start) + 5;
   assert.ok(start !== -1, 'expected onPhase to be present');
   const body = src.slice(start, end);
-  // strip `//` comment lines before scanning — this function's own doc
-  // comment mentions `say(` in prose, which must not itself trip the check.
   const codeOnly = body.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
-  assert.doesNotMatch(codeOnly, /say\(/, 'onPhase must never post a chat message of its own (build item 2: it used to double up with the refusal that often followed)');
-  assert.match(body, /state\.progressLabel/);
+  assert.doesNotMatch(codeOnly, /say\(/, 'onPhase must never post a chat message of its own');
+  assert.match(body, /stepStart\(PHASE_STEP\[name\]\)/);
 });
 
 test('build item 2 (2026-09-28): the rendered "who" label for a system/bot message is plain "bareloop", never the jargon "bareloop (progress)" suffix', () => {
@@ -2610,28 +2601,28 @@ test('build item 3: progressLabelFor — a pending ask always beats the stale pr
   );
 });
 
-test('build item 3: the progress row markup shows the LABEL span before the GLYPH span (label first, dots never push it)', () => {
+test('progress list: renderProgress draws one line per step (running = dots, done = check, failed = cross + its reason once); a pending ask replaces the running label', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const rowStart = html.indexOf('id="chat-progress-row"');
-  const rowEnd = html.indexOf('</div>', rowStart);
-  const row = html.slice(rowStart, rowEnd);
-  const labelIdx = row.indexOf('id="chat-progress-label"');
-  const glyphIdx = row.indexOf('id="chat-progress-glyph"');
-  assert.ok(labelIdx !== -1 && glyphIdx !== -1 && labelIdx < glyphIdx, 'chat-progress-label must come before chat-progress-glyph in the markup');
-});
-
-test('build item 3: the progress dots cycle 1..4 (never 1..3) — [progress.] up to [progress....]', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const src = extractFnSource(html, 'startProgressDots');
-  assert.match(src, /progressDotCount % 4/);
-  assert.match(src, /\[progress\.\.\.\.\]/, 'the reduced-motion fallback must show the FULL 4-dot form, never the old 3-dot one');
-});
-
-test('build item 3: renderProgress delegates the label to progressLabelFor — never a second hand-composed "waiting for you" string', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const src = extractFnSource(html, 'renderProgress');
-  assert.match(src, /progressLabelEl\.textContent = progressLabelFor\(state\);/);
-  assert.doesNotMatch(src, /waiting for you"/, 'the wording must live only in progressLabelFor, not be re-spelled here too');
+  const row = { hidden: true, innerHTML: '' };
+  const src = ['renderProgress', 'progressLabelFor', 'escapeXml'].map((n) => extractFnSource(html, n)).join('\n');
+  // eslint-disable-next-line no-new-func
+  const bound = new Function('progressRow', `${src}\nreturn renderProgress;`)(row);
+  bound({ steps: [] });
+  assert.equal(row.hidden, true);
+  bound({ steps: [
+    { id: 'copy', label: 'copying source', status: 'done', detail: '' },
+    { id: 'check', label: 'checking source', status: 'failed', detail: '3 files look like secrets: a.js, b.js' },
+  ] });
+  assert.equal(row.hidden, false);
+  assert.equal((row.innerHTML.match(/<li /g) || []).length, 2);
+  assert.match(row.innerHTML, /step ok" data-step="copy"[^]*\u2713/);
+  assert.match(row.innerHTML, /step bad" data-step="check"[^]*\u2717[^]*3 files look like secrets: a\.js, b\.js/);
+  assert.equal((row.innerHTML.match(/3 files look like secrets/g) || []).length, 1, 'the reason appears once');
+  bound({ steps: [{ id: 'copy', label: 'copying source', status: 'running', detail: '' }] });
+  assert.match(row.innerHTML, /step run"/);
+  bound({ steps: [{ id: 'confirm', label: 'confirming plan', status: 'running', detail: '' }], pendingAsk: { kind: 'menu' } });
+  assert.match(row.innerHTML, /waiting for your OK/);
+  assert.doesNotMatch(row.innerHTML, /step run"/, 'waiting on the person is not an animation');
 });
 
 // ---------------------------------------------------------------------------
@@ -2657,11 +2648,10 @@ test('build item 4: renderMessages source builds html without a .who div when ch
   assert.doesNotMatch(src, /<div class="who">' \+ escapeXml\(who\) \+ '<\/div>' \+ escapeXml\(m\.text\)/, 'must never unconditionally emit the .who div any more');
 });
 
-test('build item 4: the three named step lines are short and plain (Copying source, Packages found, Drafting with <model>)', () => {
+test('progress list: no pipeline step is a chat bubble any more — the thread carries chat turns only', () => {
   const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
-  assert.match(src, /say\('system', 'Copying source \(\$0\)'\);/);
-  assert.match(src, /say\('system', 'Packages found'\);/);
-  assert.match(src, /say\('system', `Drafting with \$\{card\.model\}, \$\$\{card\.capUsd\.toFixed\(2\)\} cap`\);/);
+  const code = src.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  assert.doesNotMatch(code, /say\('system'/);
 });
 
 // ---------------------------------------------------------------------------
