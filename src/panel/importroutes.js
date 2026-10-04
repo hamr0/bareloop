@@ -109,6 +109,9 @@ export function readImports(home) {
   return [...byDir.values()].sort((a, b) => String(b.at).localeCompare(String(a.at)));
 }
 
+/** The ONE spelling of the plain-words line for a changed import (Run tab, reuse refusal). The list tag stays the short statusText. */
+export const IMPORT_CHANGED_LINE = 'files changed since you imported it \u2014 Reuse is off. Import it again if the change was yours.';
+
 /**
  * Re-read one imported folder NOW and say how it stands against the import: `ok`, `changed` (the bundle's own
  * hash, a tampered file or an unreadable part differ from what was imported — shown red as "changed since
@@ -169,7 +172,7 @@ export function createImportRoutes(opts) {
     const spec = st.bundle.spec;
     return {
       id: row.id, job: row.job, dir: row.dir, importedAt: row.at, bundleHash: row.bundleHash,
-      status: st.status, statusText: st.statusText, reds: st.reds,
+      status: st.status, statusText: st.statusText, changedLine: st.status === 'changed' ? IMPORT_CHANGED_LINE : null, reds: st.reds,
       ...(spec && typeof spec === 'object' ? opts.describeSpec(spec) : {}),
       ...bundleHistoryAndApproval(st.bundle),
     };

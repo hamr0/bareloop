@@ -84,8 +84,9 @@ test('page: an imported job opens in the SAME Run / Audit / Job tabs — Run say
   assert.equal(jobs[0].model, 'deepseek-flash');
   assert.equal(jobs[0].budgetUsd, 1.5);
   assert.equal(jobs[0].maxWallMs, 1_800_000);
-  render({ ok: true, id: 'a', job: 'j', status: 'changed', statusText: 'changed since import', history: { greens: 0, reds: 0, recent: [] } });
-  assert.match(els['import-view'].innerHTML, /imp-bad" data-testid="import-view-changed">changed since import</);
+  const LINE = 'files changed since you imported it \u2014 Reuse is off. Import it again if the change was yours.';
+  render({ ok: true, id: 'a', job: 'j', status: 'changed', statusText: 'changed since import', changedLine: LINE, history: { greens: 0, reds: 0, recent: [] } });
+  assert.match(els['import-view'].innerHTML, /imp-bad" data-testid="import-view-changed">files changed since you imported it \u2014 Reuse is off\. Import it again if the change was yours\.</);
   // an unreadable import says so and empties the Job tab
   render({ ok: false, error: 'folder not found' });
   assert.match(els['import-view'].innerHTML, /folder not found/);

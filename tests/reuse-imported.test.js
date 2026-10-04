@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createPanelServer, getStartFromImport } from '../src/panel/server.js';
-import { importsPath, importId } from '../src/panel/importroutes.js';
+import { importsPath, importId, IMPORT_CHANGED_LINE } from '../src/panel/importroutes.js';
 import { createSession, buildReuseSpec } from '../src/panel/authorsession.js';
 import { resolveBundleSpec, readBundle } from '../src/bundle.js';
 import { jobSpecHash, workflowKey } from '../src/job.js';
@@ -79,7 +79,8 @@ test('an imported job is refused in words — never reused — when it changed, 
   appendFileSync(join(a.bundleDir, 'close', 'fixture-close.mjs'), '\n// swapped\n');
   const t = getStartFromImport(a.id, { home: a.home });
   assert.equal(t.ok, false);
-  assert.match(t.error, /changed since import/);
+  assert.equal(t.error, 'files changed since you imported it \u2014 Reuse is off. Import it again if the change was yours.');
+  assert.equal(t.error, IMPORT_CHANGED_LINE, 'one spelling');
   // folder gone
   const g = setup();
   rmSync(g.bundleDir, { recursive: true, force: true });

@@ -1857,7 +1857,7 @@
     };
     el.innerHTML =
       '<div class="run-actions" data-testid="run-actions-import"><button class="btn" type="button" data-testid="btn-reuse-import">Reuse workflow</button></div>' +
-      (v.status !== "ok" ? '<div class="imp-bad" data-testid="import-view-changed">' + escapeXml(v.statusText || "changed since import") + '</div>' : "") +
+      (v.status !== "ok" ? '<div class="imp-bad" data-testid="import-view-changed">' + escapeXml(v.changedLine || v.statusText || "changed since import") + '</div>' : "") +
       row("RUNS", "no runs yet — this job was imported (view only); nothing has run here", "import-no-runs") +
       row("EXPORTED", h.greens + " green · " + h.reds + " not green", "import-history") +
       recent +

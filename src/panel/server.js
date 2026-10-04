@@ -43,7 +43,7 @@ import { jobSpecHash, workflowKey } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
-import { createImportRoutes, readImports, bundleStatus } from './importroutes.js';
+import { createImportRoutes, readImports, bundleStatus, IMPORT_CHANGED_LINE } from './importroutes.js';
 import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import { keysHome } from '../keysfile.js';
@@ -2340,6 +2340,7 @@ export function getStartFromImport(id, opts = {}) {
   const row = readImports(opts.home).find((r) => r.id === id);
   if (!row) return null;
   const st = bundleStatus(row);
+  if (st.status === 'changed') return { ok: false, error: IMPORT_CHANGED_LINE };
   if (st.status !== 'ok') return { ok: false, error: `${st.statusText ?? 'this imported job cannot be read'} — re-import it before reusing it` };
   const deps = checkBundleDeps(row.dir);
   if (!deps.ok) return { ok: false, error: deps.reds[0]?.detail ?? 'the imported job cannot resolve its own dependency' };
