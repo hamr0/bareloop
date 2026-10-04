@@ -3571,6 +3571,15 @@ key you want first (the panel picks the row by the Model menu).
   `blessing.json`): approved / not approved yet / stale. The row reads `imported · view only`; the view opens in
   the same Run / Audit / Job tabs as any run (Audit: "no log — this job ran on another machine"), and its one
   button, `[Reuse workflow]` in the Run tab's top action row, reuses the bundle's signed job as described above.
+  `GET /api/imports/:id` also carries `runsHere` (how many `runs/<runid>/` folders in the bundle hold a readable
+  `spine.jsonl`) and `run`, what the Run tab shows below the imported facts: `{kind:'spine', id, runid, at}` (the
+  newest run in the bundle's own `runs/` that ended green; `id` is `<importId>~<runid>`), else `{kind:'bridge', runid,
+  at, detail}` (the bridge's green version rendered as a run detail, fields the bridge does not carry left `null`),
+  else `{kind:'none'}`; never throws. **An imported bundle's run is served read only** through the ordinary run routes
+  under that composite id: `GET /api/runs/<importId>~<runid>` (detail), `…/audit` and `…/rounds` (and `…/job`) read
+  the spine inside the bundle (`importrun.js` `safeSpinePath`: a checked name, `lstat`ed, a link never followed); an
+  unknown import or run is `404`. Such a run is never in `GET /api/runs`, never live (`live`/`stopping` are false,
+  no pid), never resumable or stoppable from the panel.
   **Run-card fixes (item 6)** → a listed run whose runner is alive but whose spine is not written
   yet reads `starting: true` (list AND detail; glyph `▶`, every figure null, `fileMissing:false`) —
   never `file missing`; a row whose runner is gone and whose spine is absent stays `fileMissing`.
