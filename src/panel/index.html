@@ -1744,7 +1744,13 @@
   function importLoadDir(path){
     importShowErr("");
     return authorGet("/api/fs/list?path=" + encodeURIComponent(path || "")).then(function(r){
-      if(!r || !r.ok){ importShowErr((r && r.error) || "could not open that folder"); return; }
+      if(!r || !r.ok){
+        // a refused path leaves ONLY the error: no stale "showing <folder>" line, no stale list
+        document.getElementById("import-resolved").textContent = "";
+        document.getElementById("import-entries").innerHTML = "";
+        importShowErr((r && r.error) || "could not open that folder");
+        return;
+      }
       importPathEl.value = r.path;
       document.getElementById("import-resolved").textContent = "showing " + r.path + (r.requested !== r.path ? " (you asked for " + r.requested + ")" : "") + (r.bundle ? " — this folder is an exported job" : "");
       var el = document.getElementById("import-entries");
