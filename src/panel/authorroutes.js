@@ -91,7 +91,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
- *   startFrom?: {get: (runid: string) => any, getImport: (id: string) => any} }} opts
+ *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any} }} opts
  */
 export function createAuthorRoutes(opts) {
   // the RAW env with the keys file re-merged on every use, so an edited file takes effect
@@ -204,7 +204,9 @@ export function createAuthorRoutes(opts) {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
       const runid = sp.get('runid') ?? '';
-      const pre = sp.has('import') ? opts.startFrom.getImport(sp.get('import') ?? '') : opts.startFrom.get(runid);
+      // `model` = the card's Model box right now: the estimate line counts only runs on that worker
+      const asModel = sp.has('model') ? { model: sp.get('model') ?? '' } : {};
+      const pre = sp.has('import') ? opts.startFrom.getImport(sp.get('import') ?? '', asModel) : opts.startFrom.get(runid, asModel);
       if (pre === null) { send(404, { ok: false, error: 'no such run' }); return true; }
       if (!pre.ok) { send(409, pre); return true; }
       send(200, {
@@ -236,7 +238,7 @@ export function createAuthorRoutes(opts) {
         if (locked !== null) { send(400, { ok: false, error: `${locked} is locked on a reused workflow — use + New to change it` }); return true; }
         const rv = validateReuseCard(card, { rows });
         if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
-        const spec = buildReuseSpec(pre.spec, card);
+        const spec = buildReuseSpec(pre.spec, card, rows);
         const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
         if (!jv.ok) { send(400, { ok: false, error: `the spec this reuse would sign is not valid (${jv.reds.map((r) => `${r.code} at ${r.path}`).join('; ')})` }); return true; }
         reuse = { spec, workflowKey: pre.workflowKey };

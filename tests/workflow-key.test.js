@@ -3,7 +3,7 @@
 // else; the signature hash `jobSpecHash` is untouched (it still covers caps and the fence — what the person signs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { workflowKey, jobSpecHash, REUSE_OPEN_SPEC_FIELDS, TOOL_MENU } from '../src/job.js';
+import { workflowKey, jobSpecHash, REUSE_OPEN_SPEC_FIELDS, WORKFLOW_KEY_IDENTITY_FIELDS, TOOL_MENU } from '../src/job.js';
 
 const SPEC = {
   schema: 'job-v1', job: 'wk-job', description: 'd', provider: 'anthropic-api', cadence: { unit: 'day', every: 1 },
@@ -23,10 +23,10 @@ test('workflowKey ignores exactly the open fields: source, destination, writeSco
   assert.equal(workflowKey(noWall), k, 'a missing Time cap is still the same workflow');
 });
 
-test('workflowKey changes with everything else — goal, checks, model, provider, job name, escalation', () => {
+test('workflowKey changes with everything else — goal, checks, job name, escalation, close', () => {
   const k = workflowKey(SPEC);
   for (const change of [
-    { goal: 'another' }, { model: 'claude-haiku-4.5' }, { provider: 'deepseek' }, { job: 'other' }, { verdictType: 'soft-green' },
+    { goal: 'another' }, { job: 'other' }, { verdictType: 'soft-green' },
     { closeDecl: { ...SPEC.closeDecl, lang: 'py' } }, { closeDecl: { lang: 'js', stages: [{ name: 'other', kind: 'command-exit', params: { cmd: 'node' } }] } },
     { escalation: { mode: 'other' } }, { description: 'x' },
   ]) {
@@ -51,4 +51,14 @@ test('workflowKey shares jobSpecHash\'s resolved-tools form and never throws', (
   const cyc = { ...SPEC }; cyc.self = cyc;
   assert.match(workflowKey(cyc), /^[0-9a-f]{64}$/);
   for (const bad of [null, undefined, 5, 'x', []]) assert.match(workflowKey(bad), /^[0-9a-f]{64}$/);
+});
+
+test('workflowKey ALSO ignores the worker identity — provider, baseUrl, model (Model is open on a reuse) — while jobSpecHash still covers all three', () => {
+  assert.deepEqual([...WORKFLOW_KEY_IDENTITY_FIELDS].sort(), ['baseUrl', 'model', 'provider']);
+  const k = workflowKey(SPEC);
+  const h = jobSpecHash(SPEC);
+  for (const change of [{ model: 'claude-haiku-4.5' }, { provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash' }, { baseUrl: 'https://x.example/v1' }]) {
+    assert.equal(workflowKey({ ...SPEC, ...change }), k, `${Object.keys(change).join('+')} is worker identity: same workflow`);
+    assert.notEqual(jobSpecHash({ ...SPEC, ...change }), h, 'the signature still covers it');
+  }
 });

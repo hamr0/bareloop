@@ -3598,7 +3598,6 @@
         el.readOnly = on; el.classList.toggle("locked", on);
       });
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = on; });
-      modelSelect.disabled = on; modelSelect.classList.toggle("locked", on);
       document.getElementById("job-card").classList.toggle("reuse", on);
       if(!on){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
     }
@@ -3751,6 +3750,16 @@
       });
     }
     modelSelect.addEventListener("change", refreshModelStatus);
+    // Model is open on a reuse card: the estimate line counts only runs on the worker the box names right now
+    function refreshReuseLine(){
+      if(!startFrom) return;
+      var q = (startFrom.importId ? "import=" + encodeURIComponent(startFrom.importId) : "runid=" + encodeURIComponent(startFrom.runid)) +
+        "&model=" + encodeURIComponent(modelSelect.value);
+      authorGet("/api/author/start-from?" + q).then(function(r){
+        if(startFrom && r && r.ok){ sfLine.textContent = r.line || ""; }
+      }).catch(function(){ /* the line keeps what it had */ });
+    }
+    modelSelect.addEventListener("change", refreshReuseLine);
     // P4b — the Model menu IS the Settings rows: every Name, in keys-file order (a blank Name
     // is never offered). Re-read whenever Settings loads or saves, keeping the pick if it survives.
     function loadModels(){
@@ -3931,6 +3940,7 @@
       sfNote.textContent = pre.note || "";
       startBtn.textContent = "Sign & run";
       refreshModelStatus();
+      refreshReuseLine();
       refreshCapNote();
       refreshStartEnabled();
     });

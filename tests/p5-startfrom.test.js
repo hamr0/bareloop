@@ -156,7 +156,7 @@ test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own re
   assert.equal(a.ok, true, JSON.stringify(a));
   assert.equal(a.from, 'signed job');
   assert.deepEqual([...a.locked], [...REUSE_LOCKED_FIELDS]);
-  assert.deepEqual([...a.open], ['source', 'destination', 'capUsd', 'maxWallMs']);
+  assert.deepEqual([...a.open], ['source', 'destination', 'model', 'capUsd', 'maxWallMs']);
   assert.equal(a.card.goal, spec.goal, 'the signed goal, not the typed one');
   assert.equal(a.card.jobName, spec.job);
   assert.equal(a.card.checkType, 'deterministic');
@@ -187,12 +187,12 @@ test('prefill: a run whose signed job is not on disk is refused in words — not
 
 test('lockedFieldChanged: only the four open boxes may differ; every other box is refused BY NAME', () => {
   const origin = baseCard({ jobName: 'j', maxWallMs: 600000, judgeExamples: '' });
-  assert.deepEqual([...REUSE_OPEN_FIELDS].sort(), ['capUsd', 'destination', 'maxWallMs', 'source']);
+  assert.deepEqual([...REUSE_OPEN_FIELDS].sort(), ['capUsd', 'destination', 'maxWallMs', 'model', 'source']);
   assert.equal(lockedFieldChanged(origin, origin), null, 'nothing changed');
-  assert.equal(lockedFieldChanged({ ...origin, source: '/other', destination: 'lib/', capUsd: 9, maxWallMs: 1 }, origin), null, 'the four open boxes may all change');
+  assert.equal(lockedFieldChanged({ ...origin, source: '/other', destination: 'lib/', capUsd: 9, maxWallMs: 1, model: 'deepseek-flash' }, origin), null, 'the five open boxes may all change');
   for (const [field, value, label] of [
     ['goal', 'another goal', 'Goal'], ['success', 'something else', 'Success'], ['guardrails', 'none', 'Guardrails'],
-    ['judgeExamples', 'an example', 'Judge examples'], ['model', 'deepseek-flash', 'Model'], ['checkType', 'rubric', 'Check type'], ['jobName', 'other', 'Job name'],
+    ['judgeExamples', 'an example', 'Judge examples'], ['checkType', 'rubric', 'Check type'], ['jobName', 'other', 'Job name'],
   ]) {
     assert.equal(lockedFieldChanged({ ...origin, [field]: value }, origin), label, `${field} is locked`);
   }
@@ -313,7 +313,7 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
   assert.equal((await get('/api/author/start-from?runid=nope')).status, 404);
   const pre = await (await get('/api/author/start-from?runid=origin1')).json();
   assert.equal(pre.ok, true);
-  assert.deepEqual(pre.open, ['source', 'destination', 'capUsd', 'maxWallMs']);
+  assert.deepEqual(pre.open, ['source', 'destination', 'model', 'capUsd', 'maxWallMs']);
   assert.ok(pre.locked.includes('goal') && pre.locked.includes('success') && !pre.locked.includes('capUsd'));
   assert.equal(pre.workflowKey, workflowKey(spec));
   assert.match(pre.line, /^Same job — 1 green · 0 not green · about \$1\.00 and 5 min a run$/);
@@ -322,7 +322,7 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
   assert.equal((await post('/api/author/start-from-check', { runid: 'origin1', card: pre.card })).status, 404, 'the "changed — new job" check is gone');
 
   // every locked box refused by name — the server never trusts the page
-  for (const [field, value, label] of [['goal', 'smuggled', 'Goal'], ['success', 'nothing', 'Success'], ['guardrails', 'none', 'Guardrails'], ['model', 'deepseek-flash', 'Model'], ['checkType', 'rubric', 'Check type'], ['jobName', 'other-name', 'Job name']]) {
+  for (const [field, value, label] of [['goal', 'smuggled', 'Goal'], ['success', 'nothing', 'Success'], ['guardrails', 'none', 'Guardrails'], ['checkType', 'rubric', 'Check type'], ['jobName', 'other-name', 'Job name']]) {
     // eslint-disable-next-line no-await-in-loop
     const r = await post('/api/author/start', { ...pre.card, [field]: value, startFrom: 'origin1' });
     // eslint-disable-next-line no-await-in-loop
@@ -346,4 +346,97 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
   // a destination the fence validator rejects is a 400 at $0, before any session exists
   const badFence = await post('/api/author/start', { ...pre.card, destination: '../outside', startFrom: 'origin1' });
   assert.equal(badFence.status, 400);
+});
+
+// ── Model is the fifth open box (hamr 2026-10-04): the Name chosen in Settings carries provider + baseUrl with it ──
+const homeWithTwoRows = () => {
+  const d = tmp('p5-sf-two-');
+  writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\nDEEPSEEK_API_KEY=fake-not-a-real-key\nGW_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(d, 'config.json'), JSON.stringify({ keys: TWO_ROWS }));
+  return d;
+};
+const TWO_ROWS = {
+  DEEPSEEK_API_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' },
+  GW_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl: 'https://gw.example/v1' },
+};
+const ROWS2 = keyRows({ filled: ['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'GW_KEY'], config: { keys: TWO_ROWS } });
+
+test('Model open: buildReuseSpec sets provider/baseUrl/model from the chosen Settings row the way authoring spells them — same workflowKey, NEW signature', async () => {
+  const origin = await realSpec();
+  const ds = buildReuseSpec(origin, { destination: 'src/', capUsd: 2, maxWallMs: 600000, model: 'gpt-x' }, ROWS2);
+  assert.equal(ds.provider, 'openai-api');
+  assert.equal(ds.baseUrl, 'https://gw.example/v1');
+  assert.equal(ds.model, 'gpt-x', 'a Name that is not the provider default tier is signed in');
+  const dflt = buildReuseSpec(origin, { destination: 'src/', capUsd: 2, model: 'deepseek-flash' }, ROWS2);
+  assert.equal(dflt.baseUrl, 'https://api.deepseek.com/v1');
+  assert.equal('model' in dflt, false, 'the provider\'s own default tier is left unsaid, as authoring does');
+  assert.equal(workflowKey(ds), workflowKey(origin), 'the model is not the workflow');
+  assert.notEqual(jobSpecHash(ds), jobSpecHash(origin), 'the signature covers the model');
+  // back to the provider's own default tier: no model, no baseUrl, exactly as authoring spells a default
+  const back = buildReuseSpec(ds, { destination: 'src/', capUsd: 2, model: 'claude-sonnet-5' }, ROWS2);
+  assert.equal(back.provider, 'anthropic-api');
+  assert.equal('baseUrl' in back, false);
+  assert.equal('model' in back, false);
+  // no rows / no model: the worker is left as signed
+  const same = buildReuseSpec(origin, { destination: 'src/', capUsd: 2 }, ROWS2);
+  assert.equal(same.provider, origin.provider);
+});
+
+test('Model open, RUBRIC: the judge does not follow the worker — an unset judge is pinned to the ORIGIN\'s resolved judge before the swap; an explicit judge is kept; a deterministic job gets none', async () => {
+  const { resolveJobJudge } = await import('../src/judged.js');
+  const { resolveWorkerModel } = await import('../src/job.js');
+  const det = await realSpec();
+  const rubric = { ...det, verdictType: 'soft-green' };
+  const originJudge = resolveJobJudge(rubric, rubric.provider, resolveWorkerModel);
+  const sw = buildReuseSpec(rubric, { destination: 'src/', capUsd: 2, model: 'deepseek-flash' }, ROWS2);
+  assert.deepEqual(sw.judge, originJudge, 'the judge is the origin worker\'s resolved identity, written down');
+  assert.equal(sw.provider, 'openai-api');
+  assert.deepEqual(resolveJobJudge(sw, 'openai-api', resolveWorkerModel), originJudge, 'resolving the NEW spec still yields the origin judge');
+  const explicit = buildReuseSpec({ ...rubric, judge: { provider: 'anthropic-api', model: 'claude-haiku-4-5-20251001' } }, { destination: 'src/', capUsd: 2, model: 'deepseek-flash' }, ROWS2);
+  assert.deepEqual(explicit.judge, { provider: 'anthropic-api', model: 'claude-haiku-4-5-20251001' });
+  assert.equal('judge' in buildReuseSpec(det, { destination: 'src/', capUsd: 2, model: 'deepseek-flash' }, ROWS2), false, 'deterministic: no judge change');
+});
+
+test('Model open, estimate: only runs with the same workflowKey AND the same worker count; recomputed per Model; none = "no runs yet on this model"', async () => {
+  const origin = await realSpec();
+  const onDeepseek = buildReuseSpec(origin, { destination: 'src/', capUsd: 2, maxWallMs: 600000, model: 'deepseek-flash' }, ROWS2);
+  const home = homeWithTwoRows();
+  makeRun(home, { runid: 'a1', spec: origin, outcome: 'green', spent: 1 });
+  makeRun(home, { runid: 'a2', spec: origin, outcome: 'step-red', spent: 1 });
+  makeRun(home, { runid: 'd1', spec: onDeepseek, outcome: 'green', spent: 0.2 });
+  const key = workflowKey(origin);
+  assert.deepEqual([trackRecordFor(key, { home }).runs, trackRecordFor(key, { home, worker: { provider: 'anthropic-api', model: 'claude-sonnet-5' } }).runs,
+    trackRecordFor(key, { home, worker: { provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash' } }).runs,
+    trackRecordFor(key, { home, worker: { provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1', model: 'other' } }).runs,
+    trackRecordFor(key, { home, worker: null }).runs], [3, 2, 1, 0, 0]);
+  const a = getStartFrom('a1', { home });
+  assert.equal(a.card.model, 'claude-sonnet-5');
+  assert.match(a.line, /^Same job — 1 green · 1 not green/, 'the card\'s own model: its two runs, not the deepseek one');
+  const d = getStartFrom('a1', { home, model: 'deepseek-flash' });
+  assert.match(d.line, /^Same job — 1 green · 0 not green/);
+  assert.equal(getStartFrom('a1', { home, model: 'no-such-name' }).line, 'Same job — no runs yet on this model');
+  assert.equal(reuseLine({ runs: 0, green: 0, notGreen: 0, finished: 0, avgSpendUsd: null, avgWallMs: null }), 'Same job — no runs yet on this model');
+});
+
+test('Model open, routes: the Model box is accepted on a reuse start (any other locked box still refused); ?model= recomputes the estimate line', async (t) => {
+  const origin = await realSpec();
+  const home = homeWithTwoRows();
+  makeRun(home, { runid: 'o1', spec: origin, outcome: 'green', spent: 1 });
+  const { createPanelServer: mk } = await import('../src/panel/server.js');
+  const { close, port, token } = await mk({ port: 0, env: {}, home, sessionsRoot: tmp('p5-sf-sess-') });
+  t.after(() => close());
+  const base = `http://127.0.0.1:${port}`;
+  const get = (p) => fetch(`${base}${p}`, { headers: { 'x-bareloop-token': token } }).then((r) => r.json());
+  const post = (p, body) => fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
+  const pre = await get('/api/author/start-from?runid=o1');
+  assert.match(pre.line, /^Same job — 1 green · 0 not green/);
+  assert.equal((await get('/api/author/start-from?runid=o1&model=deepseek-flash')).line, 'Same job — no runs yet on this model');
+  const smuggled = await post('/api/author/start', { ...pre.card, source: '/x', goal: 'smuggled', startFrom: 'o1' });
+  assert.equal(smuggled.status, 400);
+  const bad = await post('/api/author/start', { ...pre.card, model: 'not-a-row', source: '/x', startFrom: 'o1' });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).error, /Model must be one of the Names/);
+  const ok = await (await post('/api/author/start', { ...pre.card, model: 'deepseek-flash', source: makeRepo(), startFrom: 'o1' })).json();
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  assert.equal(ok.reuse, true);
 });

@@ -3526,13 +3526,13 @@ key you want first (the panel picks the row by the Model menu).
   action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on green and
   green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: + New.", and
   stopped/capped/died rows offer `resume` only) and on every imported job. It opens the Chat tab's New job card
-  filled from the SIGNED job: a NEW run (new runid), never a rerun, nothing drafted ($0). **Only four boxes are
-  open — Source, Destination, $ cap, Time cap**; every other box (check type, model, job name, goal, success,
+  filled from the SIGNED job: a NEW run (new runid), never a rerun, nothing drafted ($0). **Only five boxes are
+  open — Source, Destination, Model, $ cap, Time cap**; every other box (check type, model, job name, goal, success,
   guardrails, judge examples) is the signed workflow, greyed, and the SERVER refuses a start that changed one
   (`400 "<Field> is locked on a reused workflow — use + New to change it"`; the page is never trusted).
   Changing a locked box is `+ New`, which drafts. Routes, behind `checkHumanGuard`:
   `GET /api/author/start-from?runid=<id>` or `?import=<id>` → `{ok, origin, card, from:'signed job'|'imported job',
-  note, locked:[…], open:['source','destination','capUsd','maxWallMs'], specHash, workflowKey, trackRecord:{runs,
+  note, locked:[…], open:['source','destination','model','capUsd','maxWallMs'], specHash, workflowKey, trackRecord:{runs,
   green, notGreen, live, finished, avgSpendUsd, avgWallMs}, line}` (`404` unknown, `409` with an `error` when
   there is nothing to copy: no log, the run's signed job is not on disk, or an imported job that changed, lost its
   dependency or no longer matches its signed bytes); `POST /api/author/start` accepts `startFrom: <runid>` or
@@ -3540,14 +3540,19 @@ key you want first (the panel picks the row by the Model menu).
   `POST /api/author/start-from-check` and the "Changed — new job" mode are gone. **Identity, two keys:** the
   signature hash `jobSpecHash` is unchanged (it covers the caps and the write fence — what the person signs);
   `workflowKey(spec)` (`src/job.js`, not exported from the package root) is a sha256 over the signed spec WITHOUT
-  `source`, `destination`, `writeScope`, `budgetUsd` and `maxWallMs` (`REUSE_OPEN_SPEC_FIELDS`). A reuse copies the
-  origin's signed spec, sets only `writeScope` (from Destination), `budgetUsd` and `maxWallMs`, and signs under a
+  `source`, `destination`, `writeScope`, `budgetUsd` and `maxWallMs` (`REUSE_OPEN_SPEC_FIELDS`) AND without `provider`,
+  `baseUrl` and `model` (`WORKFLOW_KEY_IDENTITY_FIELDS`; `jobSpecHash` still covers all of them). A reuse copies the
+  origin's signed spec, sets only `writeScope` (from Destination), `budgetUsd`, `maxWallMs` and the worker from the
+  chosen Model Name (`buildReuseSpec(origin, card, rows)`: `provider`; `baseUrl` when the row has one; `model` only
+  when the Name is not the provider's default tier — spelled as authoring spells it; a RUBRIC origin with no `judge`
+  first gets `judge` = its own resolved judge identity so the judge never follows the worker; an explicit judge is
+  kept; deterministic jobs get none), and signs under a
   NEW `jobSpecHash` with the SAME `workflowKey` (the session refuses a spec whose key moved). Locked boxes carry the
   signed values read by the Job tab's own readers. **Estimate line** above the card: "Same job — G green · N not
-  green · about $X and M min a run", from every LISTED run whose signed spec has the same `workflowKey` (one run =
+  green · about $X and M min a run", from every LISTED run whose signed spec has the same `workflowKey` AND ran the same worker (provider + baseUrl + model) as the Model box now names — `GET /api/author/start-from?…&model=<Name>` recomputes it when the box changes; none = "Same job — no runs yet on this model" (one run =
   one entry via `legsOf`; the averages read FINISHED runs with exact figures — spend from `chainSpend`, working time
   from `legsWallMs`, resume gaps excluded); unknown is said ("no finished run yet to price or time", "cost not
-  recorded", "time not recorded"), never $0 or 0 min; no registry, no plan handover. **An imported job** is
+  recorded", "time not recorded"), never $0 or 0 min; no registry, no plan handover. **An imported job** (its provider is not forced: the chosen Settings row is the worker; a card with no matching row opens with no Name picked) is
   re-verified at the moment of reuse — `readBundle` (the bundle hash covers every close script), `checkBundleDeps`,
   and every close stage's signed sha256 against the bytes on disk over the spec with `$BARELOOP_BUNDLE` resolved to
   the folder — then reused the same way; the close scripts stay in the verified folder (the engine re-verifies

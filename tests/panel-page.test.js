@@ -2965,3 +2965,13 @@ test('P4a Providers: the Test cell has a fixed width and its result wraps, so pr
   assert.match(html, /\.pv-table \.pv-test-result\{[^}]*white-space:normal/, 'the result text wraps instead of widening the cell');
   assert.match(html, /'<td class="pv-test-cell">'/, 'the row builder puts the Test cell in that class');
 });
+
+test('Model is the fifth open box on a reuse card: setReuseLocked no longer locks the Model menu, and a Model change refetches the estimate line for that worker', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const lock = extractFnSource(html, 'setReuseLocked');
+  assert.doesNotMatch(lock, /modelSelect/, 'the Model menu stays editable on a reuse card');
+  const fn = extractFnSource(html, 'refreshReuseLine');
+  assert.match(fn, /&model=" \+ encodeURIComponent\(modelSelect\.value\)/);
+  assert.match(fn, /sfLine\.textContent = r\.line/);
+  assert.match(html, /modelSelect\.addEventListener\("change", refreshReuseLine\)/);
+});

@@ -70,10 +70,10 @@ test('prefill from an imported job: the bundle\'s spec with $BARELOOP_BUNDLE res
   assert.ok(pre.card.model !== '', 'the Settings Name of the job\'s provider');
   assert.ok(pre.spec.close.every((s) => s.cmd.includes(`${bundleDir}/close/`) && !s.cmd.includes('$BARELOOP_BUNDLE')), 'close paths point at the verified folder');
   assert.equal(pre.workflowKey, workflowKey(resolveBundleSpec(readBundle(bundleDir), bundleDir).spec));
-  assert.match(pre.line, /^Same job — 0 green · 0 not green · no finished run yet to price or time$/);
+  assert.equal(pre.line, 'Same job — no runs yet on this model');
 });
 
-test('an imported job is refused in words — never reused — when it changed, lost its dependency, has a tampered script, or has no Settings row', () => {
+test('an imported job is refused in words — never reused — when it changed, lost its dependency, has a tampered script, or (no longer) has no Settings row', () => {
   // swapped close script: the bundle's own hash no longer matches what was imported
   const a = setup();
   appendFileSync(join(a.bundleDir, 'close', 'fixture-close.mjs'), '\n// swapped\n');
@@ -90,13 +90,11 @@ test('an imported job is refused in words — never reused — when it changed, 
   const r = getStartFromImport(d.id, { home: d.home });
   assert.equal(r.ok, false);
   assert.match(r.error, /npm install/);
-  // no Settings row for the job's provider
+  // no Settings row for the job's provider: no longer a refusal — Model is open, the person's chosen row is the worker
   const n = setup({ env: '' });
   const nr = getStartFromImport(n.id, { home: n.home });
-  assert.equal(nr.ok, false);
-  assert.match(nr.error, /Settings > Providers/);
-  assert.match(nr.error, /\(api\.anthropic\.com[,)]/, 'the provider in plain words, not the shape name');
-  assert.doesNotMatch(nr.error, /anthropic-api|openai-api|\/|HTTP|\b[45]\d\d\b/);
+  assert.equal(nr.ok, true, JSON.stringify(nr));
+  assert.equal(nr.card.model, '', 'the card opens with no Name picked');
   assert.equal(getStartFromImport('aaaaaaaaaaaa', { home: a.home }), null);
 });
 
@@ -109,7 +107,7 @@ test('routes: the imported reuse refuses a changed locked box by name and accept
   const post = (p, body) => fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
   const pre = await (await get(`/api/author/start-from?import=${id}`)).json();
   assert.equal(pre.ok, true, JSON.stringify(pre));
-  assert.deepEqual(pre.open, ['source', 'destination', 'capUsd', 'maxWallMs']);
+  assert.deepEqual(pre.open, ['source', 'destination', 'model', 'capUsd', 'maxWallMs']);
   assert.equal((await get('/api/author/start-from?import=aaaaaaaaaaaa')).status, 404);
 
   const bad = await post('/api/author/start', { ...pre.card, source: '/x', goal: 'smuggled', startFrom: { importId: id } });
@@ -161,4 +159,28 @@ test('providerInWords: the host of the spec baseUrl plus the model; else the sha
   assert.equal(providerInWords({ provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }), 'api.deepseek.com, deepseek-chat');
   assert.equal(providerInWords({ provider: 'openai-api' }), 'api.openai.com');
   assert.equal(providerInWords({ provider: 'gemini-api' }), 'Gemini');
+});
+
+test('session: an imported reuse takes the CHOSEN Settings row as the worker (the bundle\'s provider is not forced); close bytes are still verified; same workflowKey, new signature', async () => {
+  const { home, id } = setup({ env: 'DEEPSEEK_API_KEY=fake-not-a-real-key\n' });
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DEEPSEEK_API_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' } } }));
+  const { rowsForHome } = await import('../src/providerrows.js');
+  const pre = getStartFromImport(id, { home });
+  assert.equal(pre.ok, true, JSON.stringify(pre));
+  const card = { ...pre.card, model: 'deepseek-flash', source: makeRepo(), destination: 'lib/', capUsd: 1, maxWallMs: 600000 };
+  const spec = buildReuseSpec(pre.spec, card, rowsForHome(home));
+  assert.equal(spec.provider, 'openai-api');
+  assert.equal(spec.baseUrl, 'https://api.deepseek.com/v1');
+  assert.equal(workflowKey(spec), pre.workflowKey);
+  assert.notEqual(jobSpecHash(spec), jobSpecHash(pre.spec));
+  const s = createSession(card, {
+    env: { DEEPSEEK_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: tmp('reuse-imp-sess-'),
+    reuse: { spec, workflowKey: pre.workflowKey },
+    generate: async () => { throw new Error('no model'); }, confirmGenerate: async () => { throw new Error('no model'); },
+    prepareSigningFn: async () => { throw new Error('command close'); },
+  });
+  assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(s.state.phase)));
+  assert.equal(s.state.phase, 'prepared', String(s.state.error));
+  assert.equal(JSON.parse(readFileSync(join(s.state.outDir, 'signing.json'), 'utf8')).gates.closeBytes.ok, true);
+  assert.equal(JSON.parse(readFileSync(join(s.state.outDir, 'resolved-spec.json'), 'utf8')).provider, 'openai-api');
 });

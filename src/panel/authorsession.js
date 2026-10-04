@@ -150,16 +150,16 @@ export function cardFields(card) {
 }
 
 /**
- * REUSE WORKFLOW (hamr 2026-10-03, replaces P5 item 3's same-job rule): a reuse card has exactly FOUR open boxes —
- * Source, Destination, $ cap, Time cap — and every other box is the signed workflow, shown greyed and never
+ * REUSE WORKFLOW (hamr 2026-10-03, replaces P5 item 3's same-job rule; Model opened 2026-10-04): a reuse card has exactly
+ * FIVE open boxes — Source, Destination, Model, $ cap, Time cap — and every other box is the signed workflow, shown greyed and never
  * editable. The page greys them; THIS is what refuses (the server never trusts the page). Changing any locked box
  * is a different job: `+ New`, which drafts.
  */
-export const REUSE_OPEN_FIELDS = Object.freeze(['source', 'destination', 'capUsd', 'maxWallMs']);
+export const REUSE_OPEN_FIELDS = Object.freeze(['source', 'destination', 'model', 'capUsd', 'maxWallMs']);
 /** every card field that is NOT open on a reuse card, in card order */
 export const REUSE_LOCKED_FIELDS = Object.freeze(CARD_FIELDS.filter((f) => !REUSE_OPEN_FIELDS.includes(f)));
 const REUSE_LABELS = Object.freeze(/** @type {Record<string, string>} */ ({
-  jobName: 'Job name', checkType: 'Check type', model: 'Model', goal: 'Goal', success: 'Success', guardrails: 'Guardrails', judgeExamples: 'Judge examples',
+  jobName: 'Job name', checkType: 'Check type', goal: 'Goal', success: 'Success', guardrails: 'Guardrails', judgeExamples: 'Judge examples',
 }));
 
 /**
@@ -178,19 +178,32 @@ export function lockedFieldChanged(card, origin) {
 
 /**
  * The spec a reuse signs: a COPY of the origin's signed spec with ONLY the open fields set from the card —
- * `writeScope` from Destination, `budgetUsd` from the $ cap, `maxWallMs` from the Time cap (absent when blank).
- * Source is not in a spec (it lives beside the run). The copy hashes to a NEW `jobSpecHash` and the SAME
- * `workflowKey` — the caller checks the second after building.
+ * `writeScope` from Destination, `budgetUsd` from the $ cap, `maxWallMs` from the Time cap (absent when blank), and the
+ * worker (`provider`/`baseUrl`/`model`) from the Model Name chosen in Settings > Providers, spelled exactly as normal
+ * authoring spells it (`baseUrl` only when the row has one; `model` only when the Name is not the provider's default
+ * tier). A RUBRIC (soft-green) origin with no explicit `judge` first has its judge pinned to the ORIGIN's resolved judge
+ * identity — the judge must not change because the worker did (`resolveJobJudge`, the one spelling); an explicit
+ * `judge` is kept; a deterministic job has no judge to move. Source is not in a spec (it lives beside the run). The copy
+ * hashes to a NEW `jobSpecHash` and the SAME `workflowKey` — the caller checks the second after building.
  * @param {any} originSpec
  * @param {Record<string, any>} card
+ * @param {readonly import('../providerrows.js').KeyRow[]} [rows] the Settings rows; without them (or without `card.model`) the worker is left as signed
  * @returns {any}
  */
-export function buildReuseSpec(originSpec, card) {
+export function buildReuseSpec(originSpec, card, rows) {
   const spec = JSON.parse(JSON.stringify(originSpec));
   spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
   spec.budgetUsd = card.capUsd;
   if (typeof card.maxWallMs === 'number' && Number.isFinite(card.maxWallMs) && card.maxWallMs > 0) spec.maxWallMs = card.maxWallMs;
   else delete spec.maxWallMs;
+  const choice = rows && typeof card.model === 'string' ? modelChoiceFor(rows, card.model) : null;
+  if (choice) {
+    if (spec.verdictType === 'soft-green' && !spec.judge) spec.judge = resolveJobJudge(originSpec, originSpec.provider ?? choice.provider, resolveWorkerModel);
+    const entry = resolveProvider(choice.provider);
+    spec.provider = choice.provider;
+    if (choice.baseUrl) spec.baseUrl = choice.baseUrl; else delete spec.baseUrl;
+    if (choice.name !== entry.tiers.sonnet) spec.model = choice.name; else delete spec.model;
+  }
   return spec;
 }
 

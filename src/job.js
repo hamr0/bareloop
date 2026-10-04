@@ -887,15 +887,23 @@ export function jobSpecHash(job) {
 /**
  * The fields a "Reuse workflow" run may change: where the work lands (the write fence, `writeScope`, and a
  * `destination`/`source` where a spec ever carries them) and the two ceilings. Everything else in a signed spec is
- * the WORKFLOW — goal, checks, guardrails, model, close. ONE list, shared by {@link workflowKey} and by the panel's
+ * the WORKFLOW — goal, checks, guardrails, close (the worker model is the third kind, {@link WORKFLOW_KEY_IDENTITY_FIELDS}). ONE list, shared by {@link workflowKey} and by the panel's
  * reuse (so what the key ignores is exactly what the person may edit, never two spellings).
  */
 export const REUSE_OPEN_SPEC_FIELDS = Object.freeze(['source', 'destination', 'writeScope', 'budgetUsd', 'maxWallMs']);
 
 /**
+ * The worker-identity fields {@link workflowKey} ALSO ignores (hamr 2026-10-04: Model is open on a reuse; the Name
+ * chosen in Settings carries its provider and baseUrl with it). They stay inside {@link jobSpecHash}, so what the person
+ * signs still covers the model the run will use. Kept apart from {@link REUSE_OPEN_SPEC_FIELDS} on purpose: those are the
+ * fields the page's boxes edit directly; these three change together, as one Settings row.
+ */
+export const WORKFLOW_KEY_IDENTITY_FIELDS = Object.freeze(['provider', 'baseUrl', 'model']);
+
+/**
  * The identity of a WORKFLOW (Reuse workflow, hamr 2026-10-03): sha256 over the signed spec WITHOUT the fields a
- * reuse may change ({@link REUSE_OPEN_SPEC_FIELDS}). Two runs share a workflow key iff they ran the same goal,
- * checks, guardrails, model and close — whatever source they ran on, wherever they wrote, whatever caps they had.
+ * reuse may change ({@link REUSE_OPEN_SPEC_FIELDS}) and the worker identity ({@link WORKFLOW_KEY_IDENTITY_FIELDS}). Two runs
+ * share a workflow key iff they ran the same goal, checks, guardrails and close — whatever source they ran on, wherever they wrote, whatever caps they had.
  * It is NOT a signature: {@link jobSpecHash} (which covers the caps and the fence) stays what the person signs, and
  * a reuse lands on a NEW jobSpecHash with the SAME workflowKey. Same never-throws contract as `jobSpecHash`, and
  * the same resolved-`tools` form, so an omitted-`tools` spec and its spelled-out menu share a key.
@@ -907,7 +915,7 @@ export function workflowKey(job) {
   try {
     /** @type {any} */
     const rest = isObj(job) ? { ...job } : job;
-    if (isObj(rest)) for (const f of REUSE_OPEN_SPEC_FIELDS) delete rest[f];
+    if (isObj(rest)) for (const f of [...REUSE_OPEN_SPEC_FIELDS, ...WORKFLOW_KEY_IDENTITY_FIELDS]) delete rest[f];
     c = canon(resolveSpec(rest));
   } catch { c = '\u0000unhashable'; }
   return createHash('sha256').update(`workflow-key-v1\n${c}`).digest('hex');
