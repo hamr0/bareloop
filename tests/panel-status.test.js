@@ -219,3 +219,11 @@ test('item 3: the Audit tab\'s grouped rows wear the SAME sign + bold word as th
   assert.doesNotMatch(fnSrc('renderAuditGroups'), /class="badge ' \+ badgeClass/);
   assert.match(fnSrc('renderRun'), /stepStateHTML\(box, 'part-state-' \+ idx\)/);
 });
+
+test('item 4: step cards and Audit group headers render step names as written — no uppercase styling or JS on them; frame titles keep theirs', () => {
+  assert.match(PAGE, /\.step-card h4\{[^}]*text-transform:none;/);
+  assert.doesNotMatch(PAGE, /toUpperCase/);
+  assert.doesNotMatch(PAGE, /\.audit-part[^{]*\{[^}]*text-transform:uppercase/);
+  assert.doesNotMatch(PAGE, /\.part-card[^{]*\{[^}]*text-transform:uppercase/);
+  assert.match(PAGE, /\.map-box::before\{content:"┤ MAP ├"/);
+});
