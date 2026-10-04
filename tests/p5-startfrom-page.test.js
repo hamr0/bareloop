@@ -38,12 +38,11 @@ test('page: Reuse workflow asks the server for the prefill, opens the Chat tab (
   assert.deepEqual(events[0].detail, { runid: 'run 1', prefill });
 });
 
-test('page: Reuse workflow is in the action row and the Ended block only where the server offers it (green rows) — "Start from this" is gone from the page', () => {
+test('page: Reuse workflow is in the action row only, where the server offers it (green rows) — never in the Ended block — "Start from this" is gone from the page', () => {
   assert.match(fnSrc('renderRunActions'), /data-testid="btn-reuse">Reuse workflow</);
   assert.match(fnSrc('renderRunActions'), /a\.id === "reuse"/);
   assert.match(fnSrc('renderRunActions'), /reuseWorkflow\(detail\.runid\)/);
-  assert.match(fnSrc('renderEnded'), /btn-reuse-ended">Reuse workflow</);
-  assert.match(fnSrc('renderEnded'), /a\.id === "reuse"/);
+  assert.doesNotMatch(fnSrc('renderEnded'), /<button|data-testid="btn-/, 'B5: the Ended block carries no buttons');
   assert.doesNotMatch(fnSrc('renderRunActions') + fnSrc('renderEnded'), /start-from|Start from this/);
 });
 

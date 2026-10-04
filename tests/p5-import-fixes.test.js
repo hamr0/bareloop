@@ -165,3 +165,19 @@ test('A4: a good listing remembers its folder, and opening the box uses the reme
   assert.match(body, /importPathEl\.value \|\| recallImportDir\(\)/);
   assert.match(body, /importLoadDir\(""\)/, 'a remembered folder that is gone falls back to home');
 });
+
+// ── B5: buttons only in the Run tab's top action row ─────────────────────────────────────────────────────────
+test('B5: the page builds [Stop] / [Resume] / [Reuse workflow] in renderRunActions (and the imported action row) and nowhere else', () => {
+  const buttons = [...PAGE.matchAll(/data-testid="(btn-stop|btn-resume-run|btn-resume|btn-reuse-ended|btn-reuse|btn-reuse-import)"/g)];
+  const where = (idx) => {
+    const before = PAGE.slice(0, idx);
+    const m = [...before.matchAll(/\n  function (\w+)\(/g)].pop();
+    return m ? m[1] : null;
+  };
+  for (const m of buttons) {
+    if (!/^<button|'<button/.test(PAGE.slice(PAGE.lastIndexOf('<button', m.index) - 1, PAGE.lastIndexOf('<button', m.index) + 7))) continue;
+    assert.ok(['renderRunActions', 'renderImportView'].includes(where(m.index)), `${m[1]} is built in ${where(m.index)}`);
+  }
+  assert.doesNotMatch(fnSrc('renderEnded'), /<button/);
+  assert.doesNotMatch(PAGE, /btn-reuse-ended/);
+});

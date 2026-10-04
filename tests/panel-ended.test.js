@@ -448,11 +448,14 @@ function makePage({ currentRunid = 'run1' } = {}) {
     var lastEndedSig = null;
     var resumeMode = null;
     var lastJobShown = null;
+    var stopAsked = {};
+    function reuseWorkflow() {}
     ${fnSrc('renderEnded')}
+    ${fnSrc('renderRunActions')}
     ${fnSrc('openResumeOnJobTab')}
     ${fnSrc('paintResumeMode')}
     ${fnSrc('afterResumeRefresh')}
-    return { renderEnded: renderEnded, setCurrent: function(v){ currentRunid = v; }, paintResumeMode: paintResumeMode, resumeMode: function(){ return resumeMode; }, setLastJob: function(j){ lastJobShown = j; } };
+    return { renderEnded: renderEnded, renderRunActions: renderRunActions, setCurrent: function(v){ currentRunid = v; }, paintResumeMode: paintResumeMode, resumeMode: function(){ return resumeMode; }, setLastJob: function(j){ lastJobShown = j; } };
   `);
   const page = factory(document, authorPost, (f) => refreshed.push(f), (fn, ms) => { timers.push(ms); fn(); }, (j) => rendered.push(j), (...a) => selected.push(a),
     () => Promise.resolve(detailAfter), currentRunid);
@@ -473,7 +476,7 @@ const DETAIL = {
   },
 };
 
-test('page: renderEnded paints ENDED and NEXT, a Resume button only when the server offers one, and hides the block while live', () => {
+test('page: renderEnded paints ENDED and NEXT as text only (Resume lives in the action row, only when the server offers one), and hides the block while live', () => {
   const pg = makePage();
   pg.renderEnded(DETAIL);
   const box = pg.document.getElementById('ended-block');
@@ -481,11 +484,14 @@ test('page: renderEnded paints ENDED and NEXT, a Resume button only when the ser
   assert.match(box.innerHTML, /ENDED/);
   assert.match(box.innerHTML, /Money cap reached \(\$8\.00 of \$8\.00\)\./);
   assert.match(box.innerHTML, /NEXT/);
-  assert.match(box.innerHTML, /data-testid="btn-resume"/);
+  assert.doesNotMatch(box.innerHTML, /<button|btn-resume|btn-reuse/, 'B5: the Ended block is text only — buttons live in the Run tab\'s action row');
+  pg.renderRunActions(DETAIL);
+  assert.match(pg.document.getElementById('run-actions').innerHTML, /data-testid="btn-resume-run"/);
 
   const pg2 = makePage();
   pg2.renderEnded({ ...DETAIL, ended: { ...DETAIL.ended, actions: [] }, resume: null });
-  assert.doesNotMatch(pg2.document.getElementById('ended-block').innerHTML, /btn-resume/, 'no button the engine would refuse');
+  pg2.renderRunActions({ ...DETAIL, ended: { ...DETAIL.ended, actions: [] }, resume: null });
+  assert.doesNotMatch(pg2.document.getElementById('run-actions').innerHTML, /btn-resume/, 'no button the engine would refuse');
 
   pg2.renderEnded({ ...DETAIL, ended: null });
   assert.equal(pg2.document.getElementById('ended-block').hidden, true, 'no Ended block while a run is live');
@@ -493,8 +499,8 @@ test('page: renderEnded paints ENDED and NEXT, a Resume button only when the ser
 
 test('page: Resume opens the run\'s own Job tab — ONLY the money cap and the time cap become inputs, and [Sign & resume] posts them', async () => {
   const pg = makePage();
-  pg.renderEnded(DETAIL);
-  pg.document.getElementById('ended-block').querySelector('[data-testid="btn-resume"]').handlers.click();
+  pg.renderRunActions(DETAIL);
+  pg.document.getElementById('run-actions').querySelector('[data-testid="btn-resume-run"]').handlers.click();
   assert.deepEqual(pg.clicks, ['tab-details'], 'it opens the Job tab (the run\'s own page), not an inline form on the Ended block');
   const money = pg.document.getElementById('details-cap-money');
   const time = pg.document.getElementById('details-cap-time');
@@ -537,8 +543,8 @@ test('page: Resume opens the run\'s own Job tab — ONLY the money cap and the t
 
 test('page: a successful resume says nothing about a NEW run — the same run goes back to its Run tab and follows the engine until it reads live', async () => {
   const pg = makePage();
-  pg.renderEnded(DETAIL);
-  pg.document.getElementById('ended-block').querySelector('[data-testid="btn-resume"]').handlers.click();
+  pg.renderRunActions(DETAIL);
+  pg.document.getElementById('run-actions').querySelector('[data-testid="btn-resume-run"]').handlers.click();
   pg.setPostResult({ status: 200, body: { ok: true, runid: 'run1' } });
   pg.setDetailAfter({ glyph: '▶', died: false });
   await pg.document.getElementById('resume-job').querySelector('[data-testid="btn-sign-resume"]').handlers.click();
@@ -554,8 +560,8 @@ test('page: a successful resume says nothing about a NEW run — the same run go
 
 test('page: Cancel leaves resume mode and repaints the Job tab read-only', () => {
   const pg = makePage();
-  pg.renderEnded(DETAIL);
-  pg.document.getElementById('ended-block').querySelector('[data-testid="btn-resume"]').handlers.click();
+  pg.renderRunActions(DETAIL);
+  pg.document.getElementById('run-actions').querySelector('[data-testid="btn-resume-run"]').handlers.click();
   pg.document.getElementById('resume-job').querySelector('[data-testid="btn-resume-cancel"]').handlers.click();
   assert.equal(pg.resumeMode(), null);
   assert.equal(pg.rendered.length, 1);
@@ -567,8 +573,8 @@ test('page: Cancel leaves resume mode and repaints the Job tab read-only', () =>
 
 test('page: resume mode belongs to ONE run — painting it while another run is open hides it', () => {
   const pg = makePage();
-  pg.renderEnded(DETAIL);
-  pg.document.getElementById('ended-block').querySelector('[data-testid="btn-resume"]').handlers.click();
+  pg.renderRunActions(DETAIL);
+  pg.document.getElementById('run-actions').querySelector('[data-testid="btn-resume-run"]').handlers.click();
   pg.setCurrent('other');
   pg.paintResumeMode();
   assert.equal(pg.document.getElementById('resume-job').hidden, true);
