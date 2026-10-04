@@ -178,3 +178,28 @@ test('page: a LIVE run\'s summary headline reads "running <duration>", never the
   assert.match(headline, /\$0\.75 so far/);
   assert.match(headline, /running 7m30s/);
 });
+
+test('page: the SUMMARY headline wears the status word from the status table right after the sign: `[sign] **failed** · deterministic · $ · wall`', () => {
+  const els = {};
+  const mk = (id) => ({
+    id, hidden: false, className: '', innerHTML: '', textContent: '', style: {}, classList: { add() {}, remove() {} },
+    setAttribute() {}, removeAttribute() {}, addEventListener() {}, appendChild() {}, querySelector() { return mk('q'); }, querySelectorAll() { return []; },
+  });
+  const document = { getElementById(id) { return els[id] ?? (els[id] = mk(id)); }, createElement() { return mk('c'); } };
+  const stubs = ['buildOrderedBoxes', 'stepNumberIndices'].map((n) => `function ${n}(){return [];}`)
+    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions']
+      .map((n) => `function ${n}(){return "";}`)).join('\n');
+  // eslint-disable-next-line no-new-func
+  const render = new Function('document', `
+    var lastEndedSig = null; var lastJobToolsList = null;
+    ${stubs}
+    ${['escapeXml', 'glyphClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
+    return renderRun;
+  `)(document);
+  render({
+    runid: 'r', job: 'j', glyph: '✗', died: false, status: { key: 'failed', sign: '✗', word: 'failed' }, checkType: 'deterministic', date: '2026-10-02',
+    spentUsd: 3.5, spendComplete: true, budgetUsd: 8, wall: '10m00s', wallMs: 600000, steps: [], parts: [], ended: null, model: null,
+  });
+  const headline = els['run-summary'].innerHTML.match(/<div class="summary-headline">.*?<\/div>/)[0];
+  assert.match(headline, /^<div class="summary-headline"><span class="dot red"><\/span><b class="st-word" data-testid="summary-status">failed<\/b> &middot; <b>deterministic<\/b> &middot; /);
+});

@@ -2528,7 +2528,7 @@
     var stepsDone = rSteps.filter(function(s){ return s.state === "done"; }).length;
     var stepsText = rSteps.length === 0 ? (detail.fromBridge === true ? "not recorded" : "none started") : ('<span class="num">' + stepsDone + '</span> of <span class="num">' + rSteps.length + '</span> done');
     box.innerHTML =
-      '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span><b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
+      '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span>' + (detail.status && detail.status.word ? '<b class="st-word" data-testid="summary-status">' + escapeXml(detail.status.word) + '</b> &middot; ' : '') + '<b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
         '<span class="num">' + spendText + '</span> &middot; <span class="num">' + wallText + '</span></div>' +
       '<div class="summary-row" data-testid="summary-model"><span class="sum-label">model:</span><span class="sum-val">' + escapeXml(modelLine(detail)) + '</span></div>' +
       (detail.judgeModel ? '<div class="summary-row" data-testid="summary-judge"><span class="sum-label">judge:</span><span class="sum-val">' + escapeXml(detail.judgeModel) + '</span></div>' : '') +
