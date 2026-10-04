@@ -123,3 +123,25 @@ test('page: Reuse workflow on an imported job asks for the import prefill and ha
   assert.equal(events[0].detail.importId, 'aaaaaaaaaaaa');
   assert.match(PAGE, /startFrom = d\.importId \? \{importId: d\.importId\} : \{runid: d\.runid\};/);
 });
+
+// hamr's click-through 2026-10-04 (demo panel 4712), item 1.
+test('page: [Open] on a refused path SHOWS why — the error sits right under the path row, above the (scrolling) folder list, never below it', () => {
+  const at = (id) => PAGE.indexOf(`id="${id}"`);
+  assert.ok(at('import-err') !== -1 && at('import-entries') !== -1);
+  assert.ok(at('import-path') < at('import-err'), 'error is after the path box');
+  assert.ok(at('import-err') < at('import-resolved'), 'error is above "showing …" and the list: below a 240px list it is off screen and [Open] reads as doing nothing');
+  assert.ok(at('import-err') < at('import-entries'));
+});
+
+test('page: Import and Cancel are the same .btn height (Cancel is not .small)', () => {
+  const tag = (id) => PAGE.slice(PAGE.lastIndexOf('<button', PAGE.indexOf(`id="${id}"`)), PAGE.indexOf('>', PAGE.indexOf(`id="${id}"`)));
+  assert.doesNotMatch(tag('import-cancel'), /small/);
+  assert.doesNotMatch(tag('import-go'), /small/);
+});
+
+test('page: the folder browser uses words — "up one folder", plain folder names with the bundle tag, no arrow glyphs', () => {
+  const src = fnSrc('importLoadDir');
+  assert.match(src, /up one folder/);
+  assert.doesNotMatch(src, /▲|▸/);
+  assert.match(src, /\(bundle\)/);
+});

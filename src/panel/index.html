@@ -592,12 +592,12 @@
               <input id="import-path" data-testid="import-path" type="text" placeholder="/path/to/job.bareloop — or pick below" autocomplete="off">
               <button class="btn small" type="button" id="import-open" data-testid="import-open">Open</button>
             </div>
+            <div class="resume-err" id="import-err" data-testid="import-err" hidden></div>
             <div class="hint" id="import-resolved" data-testid="import-resolved"></div>
             <div class="import-entries" id="import-entries" data-testid="import-entries"></div>
-            <div class="resume-err" id="import-err" data-testid="import-err" hidden></div>
             <div class="ended-actions">
               <button class="btn primary" type="button" id="import-go" data-testid="import-go">Import</button>
-              <button class="btn small" type="button" id="import-cancel" data-testid="import-cancel">Cancel</button>
+              <button class="btn" type="button" id="import-cancel" data-testid="import-cancel">Cancel</button>
             </div>
           </div>
           <div id="runs-filterbar-anchor"></div>
@@ -1746,14 +1746,14 @@
       if(r.parent){
         var up = document.createElement("button");
         up.type = "button"; up.className = "import-entry"; up.setAttribute("data-testid", "import-up");
-        up.textContent = "▲ ..";
+        up.textContent = "up one folder";
         up.addEventListener("click", function(){ importLoadDir(r.parent); });
         el.appendChild(up);
       }
       r.entries.forEach(function(e){
         var b = document.createElement("button");
         b.type = "button"; b.className = "import-entry"; b.setAttribute("data-testid", "import-entry-" + e.name);
-        b.innerHTML = "▸ " + escapeXml(e.name) + (e.bundle ? ' <span class="tag">(bundle)</span>' : "");
+        b.innerHTML = escapeXml(e.name) + (e.bundle ? ' <span class="tag">(bundle)</span>' : "");
         b.addEventListener("click", function(){ importLoadDir(r.path.replace(/\/+$/, "") + "/" + e.name); });
         el.appendChild(b);
       });
