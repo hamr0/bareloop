@@ -582,6 +582,6 @@ test('page: resume mode belongs to ONE run — painting it while another run is 
 
 test('page: renderRun calls renderEnded (an engine with a caller), and the run card carries the endedLine under the job name', () => {
   assert.match(fnSrc('renderRun'), /renderEnded\(detail\);/);
-  assert.match(PAGE, /r\.endedLine \? '<span class="wf-ended"/);
-  assert.match(PAGE, /g\.lastEndedLine \? '<span class="wf-ended"/);
+  assert.match(PAGE, /r\.status \? '<span class="wf-ended"[^]*?statusWordHtml\(r\.status, r\.endedLine\)/);
+  assert.match(PAGE, /g\.lastStatus \? '<span class="wf-ended"[^]*?statusWordHtml\(g\.lastStatus, g\.lastEndedLine\)/);
 });

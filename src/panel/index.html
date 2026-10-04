@@ -171,6 +171,14 @@
      glyph and its own color (magenta), never red or amber. */
   .dot.magenta::before{content:"[?]";color:var(--magenta);}
 
+  .rp-header-title h2{text-transform:none;letter-spacing:0;}
+  .rp-status{font-size:13px;color:var(--text-dim);min-width:0;overflow-wrap:anywhere;}
+  .rp-sep{color:var(--text-faint);margin-right:6px;}
+  .st-word{font-weight:700;color:var(--text);}
+  .wf-ended-inline{flex:1 1 auto;white-space:normal;}
+  .wf-compact{flex-wrap:wrap;}
+  .wf-rowmeta{margin-left:auto;}
+  .step-state{display:inline-flex;align-items:center;gap:2px;font-size:12px;}
   .badge{display:inline-block;font-size:11px;padding:1px 4px;color:var(--text-dim);background:none;font-weight:700;}
   .badge::before{content:"[";color:var(--text-faint);}
   .badge::after{content:"]";color:var(--text-faint);}
@@ -296,7 +304,6 @@
   .map-box{border:1px solid var(--border-strong);padding:10px;overflow-x:auto;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
   .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
   .map-box svg{display:block;max-width:100%;height:auto;}
-  .map-legend{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px;flex-wrap:wrap;}
 
   .step-card{position:relative;border:1px solid var(--border);padding:10px;margin-bottom:8px;background:var(--panel2);}
   .step-card.running{border:1px double var(--amber);}
@@ -621,8 +628,7 @@
         <div class="rp-header-title">
           <span class="dot grey" id="active-wf-dot"></span>
           <h2 id="active-wf-name">(none selected)</h2>
-          <span class="badge" id="active-wf-verdict">—</span>
-          <span class="badge" id="active-wf-date">—</span>
+          <span class="rp-status" id="active-wf-verdict" data-testid="active-wf-verdict"></span>
         </div>
       </div>
 
@@ -1135,18 +1141,6 @@
     });
     return '<svg width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" role="img" aria-label="step map">' + body + '</svg>';
   }
-  function stepMapLegendHTML(steps){
-    var resumed = (steps || []).some(function(b){ return b.resumedNext; });
-    return '<div class="map-legend">' +
-      '<span><span class="dot green"></span>done</span>' +
-      '<span><span class="dot amber"></span>running</span>' +
-      '<span><span class="dot red"></span>stopped</span>' +
-      '<span><span class="dot grey"></span>waiting</span>' +
-      '<span><span class="dot magenta"></span>died</span>' +
-      '<span>⤾ dashed = retry</span>' +
-      (resumed ? '<span>&middot;&middot;&middot; dotted = resumed</span>' : '') +
-      '</div>';
-  }
   var lastSteps = null;
   var lastWidth = null;
   function mapAvailWidth(wrapper){
@@ -1167,7 +1161,7 @@
     wrapper.hidden = false;
     var w = mapAvailWidth(wrapper);
     lastWidth = w;
-    mount.innerHTML = buildStepMapSVG(steps, w) + stepMapLegendHTML(steps);
+    mount.innerHTML = buildStepMapSVG(steps, w);
     // build item B: a map box click jumps to the Audit tab, that same part
     // expanded and scrolled into view — same click-through as the card list,
     // sharing partIndex so the two can never disagree about which row a box
@@ -1187,7 +1181,7 @@
     var w = mapAvailWidth(wrapper);
     if(w === null || w === lastWidth) return;
     lastWidth = w;
-    document.getElementById("map-mount").innerHTML = buildStepMapSVG(lastSteps, w) + stepMapLegendHTML(lastSteps);
+    document.getElementById("map-mount").innerHTML = buildStepMapSVG(lastSteps, w);
   }
   if(typeof ResizeObserver !== "undefined"){
     var ro = new ResizeObserver(function(){ reflowMap(); });
@@ -1212,6 +1206,40 @@
     if(g === "?") return "magenta";
     return "grey";
   }
+  // ONE spelling of "**word** — reason": the sign and the word come from the server's status table
+  // (src/panel/status.js) — the page never maps an outcome to a word itself. No status = nothing to say.
+  function statusWordHtml(status, reason){
+    if(!status || !status.word) return "";
+    return '<b class="st-word">' + escapeXml(status.word) + '</b>' + (reason ? " \u2014 " + escapeXml(reason) : "");
+  }
+  // local date + time as the header shows it: "10/4/2026, 6:01 PM" ("unknown" when the spine carried no time)
+  function fmtLocalDateTime(iso){
+    var d = iso ? new Date(iso) : null;
+    if(!d || isNaN(d.getTime())) return "unknown";
+    return d.toLocaleString("en-US", {year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit"});
+  }
+  // the right-side header: `[sign] job (runid) │ **word** — reason · ended 10/4/2026, 6:01 PM` (no capitals: the job
+  // name is shown as written). `bodyHtml` is already escaped.
+  function setRunHeader(sign, nameText, bodyHtml){
+    document.getElementById("active-wf-name").textContent = nameText;
+    document.getElementById("active-wf-dot").className = "dot " + glyphClass(sign);
+    var st = document.getElementById("active-wf-verdict");
+    st.innerHTML = bodyHtml ? '<span class="rp-sep">\u2502</span>' + bodyHtml : "";
+    st.removeAttribute("title");
+  }
+  // "step 2 of 3" for a live run: the step it is on (first one not yet done) of the real steps
+  function liveStepText(detail){
+    var rs = realSteps(detail.steps || []);
+    if(rs.length === 0) return "";
+    var done = rs.filter(function(s){ return s.state === "done"; }).length;
+    return "step " + Math.min(done + 1, rs.length) + " of " + rs.length;
+  }
+  function runHeaderBody(detail){
+    var live = detail.status && detail.status.word === "running";
+    var reason = detail.ended ? detail.ended.line : (live ? liveStepText(detail) : "");
+    var when = detail.endedAt ? ("ended " + fmtLocalDateTime(detail.endedAt)) : ("started " + fmtLocalDateTime(detail.startedAt || detail.at));
+    return statusWordHtml(detail.status, reason) + " \u00B7 " + escapeXml(when);
+  }
 
   // P5-R: a resumed run is the SAME run — one card, never two. This is only a small tag on it.
   function resumedTagHtml(count, testid){
@@ -1222,7 +1250,7 @@
   // ---- Runs tab: ONE run-row builder shared by History (flat) and the
   // Workflows view's per-job expansion (item 2, 2026-09-26 merge) — the two
   // never drift on how a run row reads.
-  function buildRunRowEl(r){
+  function buildRunRowEl(r, compact){
     var row = document.createElement("div");
     // build item (2026-09-26 fix): compute selected state here, off the
     // module's own `currentRunid`, so a row freshly built by a RE-RENDER
@@ -1254,11 +1282,19 @@
         '<span class="wf-meta">file missing</span>' +
         '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
         '</span>';
+    } else if(compact){
+      // an EXPANDED per-run row under a workflow: `[sign] **word** — reason   runid · $ · date`
+      row.innerHTML =
+        '<span class="wf-line1 wf-compact"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
+        '<span class="wf-ended wf-ended-inline" title="' + escapeXml(histFullName) + '" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' +
+        '<span class="wf-meta wf-rowmeta">' + escapeXml(r.runid) + ' \u00B7 ' + escapeXml(rowSpendText(r)) + ' \u00B7 ' + escapeXml(r.date || "unknown") + '</span>' +
+        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) + '</span>';
     } else {
+      // History card: line 1 sign + job (runid); line 2 **word** — reason; line 3 the facts
       row.innerHTML =
         '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-        (r.endedLine ? '<span class="wf-ended" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + escapeXml(r.endedLine) + '</span>' : '') +
+        (r.status ? '<span class="wf-ended" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' : '') +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(rowSpendText(r)) + '</span>' +
@@ -1307,6 +1343,7 @@
         lastRunid: last.runid,
         lastAt: last.at,
         lastGlyph: last.glyph || "▶",
+        lastStatus: last.status || null,
         lastEndedLine: last.endedLine || null,
         lastResumedCount: last.resumedCount || 0,
         lastCheckType: last.checkType || "unknown",
@@ -1441,7 +1478,7 @@
       row.innerHTML =
         '<span class="wf-line1"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
-        (g.lastEndedLine ? '<span class="wf-ended" data-testid="wf-ended-' + escapeXml(g.job) + '">' + escapeXml(g.lastEndedLine) + '</span>' : '') +
+        (g.lastStatus ? '<span class="wf-ended" data-testid="wf-ended-' + escapeXml(g.job) + '">' + statusWordHtml(g.lastStatus, g.lastEndedLine) + '</span>' : '') +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastSpend) + '</span>' +
@@ -1474,7 +1511,7 @@
       if(expanded){
         var runsWrap = document.createElement("div");
         runsWrap.className = "wf-runs";
-        childRuns.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r)); });
+        childRuns.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r, true)); });
         wrap.appendChild(runsWrap);
       }
       el.appendChild(wrap);
@@ -1830,8 +1867,9 @@
       row.setAttribute("role", "button");
       row.setAttribute("aria-pressed", imp.id === currentImportId ? "true" : "false");
       row.innerHTML =
-        '<span class="wf-line1"><span class="wf-caret"></span><span class="dot grey"></span>' +
+        '<span class="wf-line1"><span class="wf-caret"></span><span class="dot ' + (imp.runStatus ? glyphClass(imp.runStatus.sign) : "grey") + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(imp.dir) + '">' + escapeXml(imp.job) + '</span></span>' +
+        (imp.runStatus ? '<span class="wf-ended" data-testid="import-ended-' + escapeXml(imp.id) + '">' + statusWordHtml(imp.runStatus, imp.runReason) + '</span>' : '') +
         '<span class="wf-meta-line"><span class="wf-meta wf-imported" data-testid="import-tag-' + escapeXml(imp.id) + '">imported · view only</span></span>' +
         (imp.status !== "ok" ? '<span class="imp-bad" data-testid="import-changed-' + escapeXml(imp.id) + '">' + escapeXml(imp.statusText || "changed since import") + '</span>' : "");
       row.addEventListener("click", function(){ selectImport(imp.id); scrollRunIntoViewMobile(); });
@@ -1868,12 +1906,9 @@
   // run's log; a bundle with only a bridge paints the bridge's numbers through that same renderer ("not recorded"
   // where the bridge is silent); a bundle with no green says so. The Job tab carries the spec. Nothing here writes.
   function importedHeader(v){
-    document.getElementById("active-wf-name").textContent = v.job;
-    document.getElementById("active-wf-dot").className = "dot grey";
-    var verdict = document.getElementById("active-wf-verdict");
-    verdict.textContent = "imported · view only";
-    verdict.removeAttribute("title");
-    document.getElementById("active-wf-date").textContent = (v.importedAt || "").slice(0, 10) || "unknown";
+    var tag = "imported \u00B7 view only";
+    if(v.runStatus) setRunHeader(v.runStatus.sign, v.job, statusWordHtml(v.runStatus, v.runReason) + " \u00B7 " + tag);
+    else setRunHeader("\u00B7", v.job, tag);
   }
   function importedNoLog(){
     document.getElementById("audit-body").hidden = true;
@@ -1939,10 +1974,7 @@
     document.getElementById("run-content").hidden = true;
     importedNoLog();
     if(!v || !v.ok){
-      var name = document.getElementById("active-wf-name");
-      var dot = document.getElementById("active-wf-dot");
-      var verdict = document.getElementById("active-wf-verdict");
-      name.textContent = "imported job"; dot.className = "dot grey"; verdict.textContent = "imported · view only"; document.getElementById("active-wf-date").textContent = "";
+      setRunHeader("\u00B7", "imported job", "imported \u00B7 view only");
       el.innerHTML = '<div class="imp-bad">' + escapeXml((v && v.error) || "could not read this imported job") + '</div>';
       renderJob(null);
       return;
@@ -2412,16 +2444,8 @@
   }
 
   function renderRun(detail){
-    var name = document.getElementById("active-wf-name");
-    var dot = document.getElementById("active-wf-dot");
-    var verdict = document.getElementById("active-wf-verdict");
-    var date = document.getElementById("active-wf-date");
-
     if(detail.fileMissing){
-      name.textContent = detail.job + " (" + detail.runid + ")";
-      dot.className = "dot grey";
-      verdict.textContent = "unknown";
-      date.textContent = "file missing";
+      setRunHeader("\u00B7", detail.job + " (" + detail.runid + ")", "file missing");
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "spine file no longer on disk";
       document.getElementById("run-content").hidden = true;
@@ -2432,11 +2456,7 @@
     }
 
     if(detail.starting){
-      name.textContent = detail.job + " (" + detail.runid + ")";
-      dot.className = "dot amber";
-      verdict.textContent = "starting…";
-      verdict.removeAttribute("title");
-      date.textContent = detail.date || "unknown";
+      setRunHeader("\u25B6", detail.job + " (" + detail.runid + ")", statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "starting… the run has not written its log yet";
       document.getElementById("run-content").hidden = true;
@@ -2449,11 +2469,7 @@
     document.getElementById("audit-body").hidden = false;
     renderEnded(detail);
 
-    name.textContent = detail.job + " (" + detail.runid + ")";
-    dot.className = "dot " + glyphClass(detail.glyph);
-    verdict.textContent = detail.checkType;
-    if(detail.checkTypeTitle){ verdict.title = detail.checkTypeTitle; } else { verdict.removeAttribute("title"); }
-    date.textContent = detail.date || "unknown";
+    setRunHeader(detail.glyph, detail.job + " (" + detail.runid + ")", runHeaderBody(detail));
 
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = false;
@@ -2560,7 +2576,7 @@
       card.setAttribute("role", "button");
       card.innerHTML =
         '<div class="step-head"><h4>' + titleText + '</h4>' +
-          '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span>' +
+          '<span class="step-state" data-testid="part-state-' + idx + '"><span class="dot ' + badgeClass + '"></span><b class="st-word">' + escapeXml(box.state) + '</b></span>' +
           (box.blocked > 0 ? '<span class="badge red" data-testid="part-blocked-badge">' + box.blocked + ' blocked</span>' : '') +
         '</div>' +
         '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +

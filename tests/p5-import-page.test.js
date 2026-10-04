@@ -51,7 +51,7 @@ function importHarness({ currentImportId = 'aaaaaaaaaaaa', getJSON = () => Promi
   const doc = { getElementById: get };
   const calls = { jobs: [], clicks: [], runs: [], audits: [], fetched: [] };
   get('tab-run').click = () => calls.clicks.push('tab-run');
-  const names = ['escapeXml', 'panelMoney', 'importedHeader', 'importedNoLog', 'paintImportedRun', 'paintImportedRunPlain', 'renderImportView'];
+  const names = ['escapeXml', 'panelMoney', 'glyphClass', 'statusWordHtml', 'setRunHeader', 'importedHeader', 'importedNoLog', 'paintImportedRun', 'paintImportedRunPlain', 'renderImportView'];
   // eslint-disable-next-line no-new-func
   const api = new Function('document', 'reuseImportedWorkflow', 'renderJob', 'renderRun', 'renderAudit', 'getJSON', 'currentImportId',
     `var currentRunid = null;\n${names.map(fnSrc).join('\n')}\nreturn {render: renderImportView, rid: function(){ return currentRunid; }};`)(
@@ -79,7 +79,7 @@ test('page: an imported job opens in the SAME Run / Audit / Job tabs — ONE [Re
   assert.equal(h.els['import-view'].hidden, false);
   assert.equal(h.els['run-empty'].hidden, true);
   assert.deepEqual(h.calls.clicks, ['tab-run']);
-  assert.equal(h.els['active-wf-verdict'].textContent, 'imported · view only');
+  assert.match(h.els['active-wf-verdict'].innerHTML, /imported · view only$/);
   // the Job tab is the same renderJob every run uses, fed the exported spec
   assert.equal(h.calls.jobs.length, 1);
   const j = h.calls.jobs[0];

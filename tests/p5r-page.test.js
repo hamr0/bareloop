@@ -34,7 +34,7 @@ test('page: a resumed run is ONE card with a small "resumed ×N" tag — on the 
 // ---------------------------------------------------------------- the map
 function loadMap() {
   const start = PAGE.indexOf('function stepMapColors');
-  const end = PAGE.indexOf('function stepMapLegendHTML');
+  const end = PAGE.indexOf('var lastSteps = null;');
   assert.ok(start !== -1 && end > start);
   // eslint-disable-next-line no-new-func
   return new Function(`${PAGE.slice(start, end)}\nreturn { buildStepMapSVG: buildStepMapSVG, buildOrderedBoxes: buildOrderedBoxes, stepNumberIndices: stepNumberIndices, stepTitleText: stepTitleText };`)();
@@ -66,12 +66,9 @@ test('page map: the dotted connector survives the snake layout (a drop to the ne
   assert.equal(lines.length, 5);
 });
 
-test('page: the legend names the dotted line only when the map has one', () => {
-  // eslint-disable-next-line no-new-func
-  const legend = new Function(`${fnSrc('stepMapLegendHTML')}\nreturn stepMapLegendHTML;`)();
-  assert.doesNotMatch(legend([{ resumedNext: false }]), /dotted = resumed/);
-  assert.match(legend([{ resumedNext: false }, { resumedNext: true }]), /dotted = resumed/);
-  assert.match(legend([]), /dashed = retry/, 'the retry entry is unchanged');
+test('page: the legend is gone; the dotted connector still names itself "resumed" inside the map', () => {
+  assert.doesNotMatch(PAGE, /dotted = resumed|stepMapLegendHTML/);
+  assert.match(PAGE, />resumed<\/text>|\+ '" font-size="9" fill="var\(--text-faint\)">resumed<\/text>/);
 });
 
 // ---------------------------------------------------------------- the Audit divider

@@ -28,6 +28,7 @@ import { dirname, join, isAbsolute, resolve } from 'node:path';
 import { checkHumanGuard } from './authorroutes.js';
 import { readBundle, verifyBlessing } from '../bundle.js';
 import { runlistHome } from '../runlist.js';
+import { statusFor, GOAL_MET_LINE } from './status.js';
 import { bundleRuns, latestGreenRun, latestBridgeGreen, bridgeRunDetail, importedRunId } from './importrun.js';
 
 /** the longest path the routes will look at (bytes) */
@@ -123,7 +124,7 @@ function realDir(/** @type {string} */ dir) { try { return realpathSync(dir); } 
 /**
  * Record one import: ONE row per real folder. Any earlier row for the same folder is dropped and the new one is
  * written, so re-importing updates the entry instead of adding a second. The rewrite goes through a temp file + rename.
- * @param {string} [home]
+ * @param {string|undefined} home
  * @param {{at: string, dir: string, job: string, bundleHash: string}} row
  */
 export function recordImport(home, row) {
@@ -232,12 +233,14 @@ export function createImportRoutes(opts) {
   const viewOf = (/** @type {{id: string, at: string, dir: string, job: string, bundleHash: string}} */ row) => {
     const st = bundleStatus(row);
     const spec = st.bundle.spec;
+    const iv = importedRunView(row, st.bundle);
     return {
       id: row.id, job: row.job, dir: row.dir, importedAt: row.at, bundleHash: row.bundleHash,
       status: st.status, statusText: st.statusText, changedLine: st.status === 'changed' ? IMPORT_CHANGED_LINE : null, reds: st.reds,
       ...(spec && typeof spec === 'object' ? opts.describeSpec(spec) : {}),
       ...bundleHistoryAndApproval(st.bundle),
-      ...importedRunView(row, st.bundle),
+      ...iv,
+      runStatus: iv.run.kind !== 'none' ? statusFor({ outcome: 'green' }) : null, runReason: iv.run.kind !== 'none' ? GOAL_MET_LINE : null,
     };
   };
 
@@ -322,7 +325,12 @@ export function createImportRoutes(opts) {
         ok: true,
         imports: readImports(opts.home).map((r) => {
           const st = bundleStatus(r);
-          return { id: r.id, job: r.job, dir: r.dir, importedAt: r.at, bundleHash: r.bundleHash, status: st.status, statusText: st.statusText };
+          // the sign + word of the green run the view will SHOW (null when the bundle holds none — nothing to wear a word)
+          const shown = importedRunView(r, st.bundle).run.kind !== 'none';
+          return {
+            id: r.id, job: r.job, dir: r.dir, importedAt: r.at, bundleHash: r.bundleHash, status: st.status, statusText: st.statusText,
+            runStatus: shown ? statusFor({ outcome: 'green' }) : null, runReason: shown ? GOAL_MET_LINE : null,
+          };
         }),
       });
       return true;

@@ -51,6 +51,7 @@ import { keysHome } from '../keysfile.js';
 import { rowsForHome, findRow, providerInWords } from '../providerrows.js';
 import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
+import { statusFor, GOAL_MET_LINE } from './status.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -82,9 +83,7 @@ export const DEFAULT_PORT = 4700;
  * @returns {'✓'|'✗'|'▶'}
  */
 export function glyphForOutcome(outcome) {
-  if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') return '✓';
-  if (outcome === null || outcome === undefined) return '▶';
-  return '✗';
+  return /** @type {'✓'|'✗'|'▶'} */ (statusFor({ outcome }).sign);
 }
 
 /**
@@ -429,7 +428,7 @@ export function endedFor(summary, death, o = {}) {
     return {
       reason: `Stopped with no ending recorded${death.lastThing ? ` (last thing it did: ${death.lastThing})` : ''}.`,
       next: resumeOr('Resume.'),
-      line: resumeOk ? 'died — resume' : 'died',
+      line: resumeOk ? 'no ending recorded — resume' : 'no ending recorded',
       actions: resumeOk ? RESUME : [],
     };
   }
@@ -477,11 +476,11 @@ export function endedFor(summary, death, o = {}) {
       return {
         reason: 'Goal met, but the output could not be delivered.',
         next: 'Fix the destination, then Reuse workflow.',
-        line: 'goal met — not delivered',
+        line: `${GOAL_MET_LINE} — not delivered`,
         actions: REUSE,
       };
     }
-    return { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: REUSE };
+    return { reason: 'Goal met.', next: 'Nothing to do.', line: GOAL_MET_LINE, actions: REUSE };
   }
   if (outcome === 'cap-halt') {
     const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
@@ -506,7 +505,7 @@ export function endedFor(summary, death, o = {}) {
     return {
       reason: 'You stopped it.',
       next: resumeOr('Resume.'),
-      line: resumeOk ? 'stopped — resume' : 'stopped',
+      line: resumeOk ? 'you pressed Stop — resume' : 'you pressed Stop',
       actions: resumeOk ? RESUME : [],
     };
   }
@@ -563,6 +562,15 @@ export function endedFor(summary, death, o = {}) {
  * @param {any} summary `replayOne`'s summary
  * @param {{died: boolean, lastThing: string|null}} death
  */
+/** the timestamp of the spine's LAST `job-end` record, or null (live, died, or no timestamp) */
+function lastJobEndTs(/** @type {any[]} */ records) {
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    const r = records[i];
+    if (r && r.type === 'job-end') return typeof r.ts === 'string' ? r.ts : null;
+  }
+  return null;
+}
+
 function endedForRow(row, records, summary, death) {
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
@@ -573,7 +581,12 @@ function endedForRow(row, records, summary, death) {
     moneyHalt: records.some((r) => r && r.type === 'money-halt'),
     destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
   });
-  return { ended, resume };
+  const esc = summary.lastEscalation;
+  const status = statusFor({
+    outcome: out, died: death.died, category: typeof esc?.category === 'string' ? esc.category : null,
+    moneyHalt: records.some((r) => r && r.type === 'money-halt'),
+  });
+  return { ended, resume, status };
 }
 
 /**
@@ -594,6 +607,7 @@ function startingStub(row) {
     starting: true,
     died: false,
     glyph: '▶',
+    status: statusFor({ outcome: null }),
     outcome: null,
     endedLine: null,
     ended: null,
@@ -643,7 +657,7 @@ function summarizeRow(row) {
   }
   const line = summarizeForAllLine(summary);
   const death = deriveDeath(row, rawRecords, summary.outcome);
-  const { ended } = endedForRow(row, rawRecords, summary, death);
+  const { ended, status } = endedForRow(row, rawRecords, summary, death);
   return {
     runid: row.runid,
     job: row.job,
@@ -654,7 +668,8 @@ function summarizeRow(row) {
     endedLine: ended ? ended.line : null,
     // P5-R: one card per run — how many times it was resumed (a resumed run is the same run, never a second card)
     resumedCount: Math.max(0, summary.legs.length - 1),
-    glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
+    glyph: status.sign,
+    status,
     checkType: checkTypeLabel(summary.verdictType, row.at),
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
     model: summary.model,
@@ -795,7 +810,7 @@ export function getRunDetail(runid, opts = {}) {
   const summary = replayOne(row.spine, { auditPathOverride: auditPaths.length > 0 ? auditPaths : null });
   const timelineKind = summary.timelineKind;
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
-  const { ended, resume } = endedForRow(row, rawSpineRecords, summary, death);
+  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
   // close's own paid judge seam, distinct from the worker `model` above.
@@ -944,7 +959,11 @@ export function getRunDetail(runid, opts = {}) {
     provider: summary.provider,
     judgeModel,
     budgetUsd: summary.budgetUsd,
-    glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
+    glyph: status.sign,
+    status,
+    // the header's times: when the run started (its list row) and when its last job-end was written (null while live / died)
+    startedAt: typeof row.at === 'string' ? row.at : null,
+    endedAt: lastJobEndTs(rawSpineRecords),
     outcome: summary.outcome,
     died: death.died,
     stopReason: death.died ? death.why : summary.stopReason,

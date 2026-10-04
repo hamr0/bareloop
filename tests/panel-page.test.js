@@ -29,7 +29,7 @@ const PAGE_PATH = join(HERE, '..', 'src', 'panel', 'index.html');
 function loadStepMapGeometry() {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function stepMapColors');
-  const end = html.indexOf('function stepMapLegendHTML');
+  const end = html.indexOf('var lastSteps = null;');
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected to find the step-map geometry block in src/panel/index.html');
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
@@ -1457,6 +1457,7 @@ function makeWorkflowsPage() {
   const src = [
     extractFnSource(html, 'escapeXml'),
     extractFnSource(html, 'glyphClass'),
+    extractFnSource(html, 'statusWordHtml'),
     extractFnSource(html, 'groupRunsByJob'),
     extractFnSource(html, 'filtersActive'),
     extractFnSource(html, 'autoExpandJob'),
@@ -1871,12 +1872,10 @@ test('buildStepMapSVG: a single-attempt step and a no-verdict part (e.g. plan) r
   assert.doesNotMatch(svg, /stroke-dasharray="3,3"/, 'no box here has >1 attempts, so no retry loop should render');
 });
 
-test('stepMapLegendHTML: includes the retry legend entry', () => {
+test('MAP: the legend line is gone (hamr 2026-10-04) — each step card carries its own sign + word instead', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function stepMapLegendHTML');
-  const end = html.indexOf('function mapAvailWidth');
-  const body = html.slice(start, end);
-  assert.match(body, /dashed = retry/);
+  assert.doesNotMatch(html, /stepMapLegendHTML|map-legend|dashed = retry/);
+  assert.match(html, /class="step-state"[^]*?class="st-word"/);
 });
 
 // ---------------------------------------------------------------------------

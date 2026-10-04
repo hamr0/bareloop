@@ -11,6 +11,7 @@
 import { lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { replayOne, parseJsonl } from '../replayio.js';
+import { statusFor } from './status.js';
 
 /** the most run folders one bundle is searched through (newest first) */
 export const MAX_RUN_DIRS = 40;
@@ -162,6 +163,7 @@ export function bridgeRunDetail(g, facts) {
     judgeModel: null,
     budgetUsd: facts.budgetUsd,
     glyph: '✓',
+    status: statusFor({ outcome: 'green' }),
     outcome: 'green',
     died: false,
     stopReason: 'not recorded',

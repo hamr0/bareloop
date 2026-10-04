@@ -3479,6 +3479,15 @@ key you want first (the panel picks the row by the Model menu).
   otherwise `next` says why Resume is not available. `resume` on the detail is
   `{budgetUsd, maxWallMin, spentUsd, spendComplete}` (the confirm box's prefill) or `null`. The
   result glyphs are unchanged. The reuse button is described under Reuse workflow, below.
+  **Status words (click-through 2026-10-04)** → every run row, run detail and imported row carries `status`
+  `{key, sign, word}` from ONE table (`src/panel/status.js`): `[▶] running · [·] waiting · [✓] passed · [✗] failed ·
+  [✗] capped · [✗] stopped · [?] died`; `glyph` is that sign. Mapping: green/already-green/satisfied → passed; no
+  job-end + runner alive → running, gone → died; cap-halt, wall-halt, and an escalation that is a money-halt or wall-halt
+  → capped; `stopped` → stopped; every other outcome (plan-red, check-red, step-red, close-red, provider-red,
+  step-stalled, other escalations, refusals) → failed. The detail also carries `startedAt` and `endedAt` (the last
+  `job-end` timestamp, null while live or died). `GET /api/imports` rows and `GET /api/imports/:id` carry `runStatus`
+  (passed, or null when the bundle shows no green) and `runReason` (`goal met`). The Ended block's lines for died and
+  stopped runs are `no ending recorded` and `you pressed Stop` (each `— resume` when Resume is offered).
   **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
   `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?}`
   (blank = the signed caps). `404` unknown run; `409` when `resumePlanFor` says the engine would

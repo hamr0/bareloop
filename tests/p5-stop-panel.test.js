@@ -54,11 +54,11 @@ async function startServerHome(t, home) {
   return { base, post };
 }
 
-test('endedFor: a `stopped` run reads "You stopped it." / "Resume." with a Resume button, card line "stopped — resume"', () => {
+test('endedFor: a `stopped` run reads "You stopped it." / "Resume." with a Resume button, card line "you pressed Stop — resume"', () => {
   const e = endedFor({ outcome: 'stopped', stopReason: null, spentUsd: 1, budgetUsd: 4 }, { died: false, lastThing: null }, { resume: { ok: true } });
   assert.equal(e?.reason, 'You stopped it.');
   assert.equal(e?.next, 'Resume.');
-  assert.equal(e?.line, 'stopped — resume');
+  assert.equal(e?.line, 'you pressed Stop — resume');
   assert.deepEqual(e?.actions, [{ id: 'resume', label: 'Resume' }]);
   const no = endedFor({ outcome: 'stopped', stopReason: null, spentUsd: 1, budgetUsd: 4 }, { died: false, lastThing: null }, { resume: { ok: false, why: 'it is still running' } });
   assert.deepEqual(no?.actions, [], 'never a button the engine would refuse');
@@ -122,5 +122,5 @@ test('a stopped-and-resumable run (job-end `stopped`) carries the Ended block, t
   const d = getRunDetail('st1', { home });
   assert.equal(d.ended.reason, 'You stopped it.');
   assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }], `resume offered (${JSON.stringify(d.resume)})`);
-  assert.equal(listRuns({ home }).find((r) => r.runid === 'st1').endedLine, 'stopped — resume');
+  assert.equal(listRuns({ home }).find((r) => r.runid === 'st1').endedLine, 'you pressed Stop — resume');
 });
