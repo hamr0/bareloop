@@ -52,3 +52,11 @@ test('A1: a refused path after a good one clears the list and the "showing" line
   assert.equal(h.els['import-err'].hidden, true);
   assert.match(h.els['import-resolved'].textContent, /^showing \/h\/jobs/);
 });
+
+test('A2: the path textbox uses the theme\'s normal input background token (editable look), not the grey panel fill', () => {
+  const rule = PAGE.match(/\.import-pathrow input\{[^}]*\}/)[0];
+  const base = PAGE.match(/\n  input,select\{[^}]*\}/)[0];
+  const bg = (s) => s.match(/background:([^;}]+)/)[1];
+  assert.equal(bg(rule), bg(base), 'same token as every other input');
+  assert.doesNotMatch(rule, /var\(--panel\)/);
+});
