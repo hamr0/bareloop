@@ -206,7 +206,7 @@ test('page: Reuse workflow on an imported job asks for the import prefill and ha
 });
 
 // hamr's click-through 2026-10-04 (demo panel 4712), item 1.
-test('page: [Open] on a refused path SHOWS why — the error sits right under the path row, above the (scrolling) folder list, never below it', () => {
+test('page: [Go] on a refused path SHOWS why — the error sits right under the path row, above the (scrolling) folder list, never below it', () => {
   const at = (id) => PAGE.indexOf(`id="${id}"`);
   assert.ok(at('import-err') !== -1 && at('import-entries') !== -1);
   assert.ok(at('import-path') < at('import-err'), 'error is after the path box');
@@ -225,4 +225,12 @@ test('page: the folder browser uses words — "up one folder", plain folder name
   assert.match(src, /up one folder/);
   assert.doesNotMatch(src, /▲|▸/);
   assert.match(src, /\(bundle\)/);
+});
+
+// hamr's click-through 2026-10-04, item 2: the button is [Go].
+test('page: the path-row button reads Go (not Open)', () => {
+  const i = PAGE.indexOf('id="import-open"');
+  const tag = PAGE.slice(PAGE.lastIndexOf('<button', i), PAGE.indexOf('</button>', i));
+  assert.match(tag, />Go$/);
+  assert.doesNotMatch(tag, /Open/);
 });
