@@ -95,6 +95,8 @@ test('an imported job is refused in words — never reused — when it changed, 
   const nr = getStartFromImport(n.id, { home: n.home });
   assert.equal(nr.ok, false);
   assert.match(nr.error, /Settings > Providers/);
+  assert.match(nr.error, /\(api\.anthropic\.com[,)]/, 'the provider in plain words, not the shape name');
+  assert.doesNotMatch(nr.error, /anthropic-api|openai-api|\/|HTTP|\b[45]\d\d\b/);
   assert.equal(getStartFromImport('aaaaaaaaaaaa', { home: a.home }), null);
 });
 
@@ -151,4 +153,12 @@ test('session: an imported reuse re-verifies the close bytes, signs the spec as 
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(s2.state.phase)));
   assert.equal(s2.state.phase, 'refused');
   assert.match(s2.state.error, /does not match its signed bytes/);
+});
+
+test('providerInWords: the host of the spec baseUrl plus the model; else the shape default host; never the shape name', async () => {
+  const { providerInWords } = await import('../src/providerrows.js');
+  assert.equal(providerInWords({ provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' }), 'api.deepseek.com');
+  assert.equal(providerInWords({ provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }), 'api.deepseek.com, deepseek-chat');
+  assert.equal(providerInWords({ provider: 'openai-api' }), 'api.openai.com');
+  assert.equal(providerInWords({ provider: 'gemini-api' }), 'Gemini');
 });

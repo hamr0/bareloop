@@ -135,6 +135,23 @@ export function endpointOf(provider, baseUrl) {
 }
 
 /**
+ * A job's provider in plain words for a refusal line: the host its Base URL points at (else the
+ * shape's own default host, else the shape's label), plus the model when the spec names one.
+ * Never a key, a path or a status code.
+ * @param {{provider?: string, baseUrl?: string|null, model?: string|null}} spec
+ * @returns {string}
+ */
+export function providerInWords(spec) {
+  const provider = String(spec?.provider ?? '');
+  const url = endpointOf(provider, spec?.baseUrl ?? null);
+  let host = '';
+  try { host = new URL(url).host; } catch { host = ''; }
+  if (host === '') host = SHAPES.find((s) => s.id === provider)?.label ?? provider;
+  const model = typeof spec?.model === 'string' ? spec.model.trim() : '';
+  return model !== '' ? `${host}, ${model}` : host;
+}
+
+/**
  * The URL a row talks to, for display ('' = the vendor's own host, which has no URL to show).
  * @param {KeyRow} row
  * @returns {string}

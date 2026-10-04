@@ -48,7 +48,7 @@ import { parseImportedRunId, safeSpinePath, spineStartedAt } from './importrun.j
 import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import { keysHome } from '../keysfile.js';
-import { rowsForHome, findRow } from '../providerrows.js';
+import { rowsForHome, findRow, providerInWords } from '../providerrows.js';
 import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -2365,7 +2365,7 @@ export function getStartFromImport(id, opts = {}) {
   if (!bytes.ok) return { ok: false, error: `a close script of this imported job does not match its signed bytes (${bytes.reds.map((r) => r.stage).join(', ')}) — refusing to reuse it` };
   const rows = rowsForHome(keysHome(opts.home));
   const named = findRow(rows, { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name ?? '';
-  if (named === '') return { ok: false, error: `no row in Settings > Providers matches this job's provider (${spec.provider}) — add one, then reuse it` };
+  if (named === '') return { ok: false, error: `no row in Settings > Providers for this job's provider (${providerInWords(spec)}) — add one with that address, then reuse it` };
   const card = reuseCardFromSpec(spec, { model: named, source: '', judgeExamples: '', jobName: row.job });
   const key = workflowKey(spec);
   const trackRecord = trackRecordFor(key, opts);
