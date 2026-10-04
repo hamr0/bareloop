@@ -204,3 +204,7 @@ test('C7/C8: an imported job (list row and view) carries the sign + word of the 
   const view = await call('GET', `/api/imports/${imp.id}`);
   assert.equal(view.runStatus.word, 'passed');
 });
+
+test('C8: the header name carries no ┤ ├ frame (it would read "┤ name ├ │ word" beside the │ separator)', () => {
+  assert.doesNotMatch(PAGE, /\.rp-header h2::/);
+});
