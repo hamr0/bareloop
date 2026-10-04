@@ -3551,17 +3551,19 @@ key you want first (the panel picks the row by the Model menu).
   browser plus a paste box; an imported job is an exported bundle folder the person can LOOK at: nothing runs,
   nothing is signed, the folder is never written. Routes, all behind `checkHumanGuard` (token + own address —
   new disk exposure, so the strict guard, not the Host guard the plain GETs use): `GET /api/fs/list?path=`
-  → `{ok, requested, path, parent, bundle, entries:[{name, bundle}], truncated}` (FOLDERS only, names plus a
-  `bundle` tag where a regular file `manifest.json` sits; starts at the home folder when `path` is blank);
+  → `{ok, requested, path, parent, bundle, entries:[{name, path, bundle:true}], truncated, stopped, visited, depth}`
+  (job BUNDLES only — a folder holding a regular file `manifest.json` — found by searching DOWN from `path` at most
+  `depth` = 3 folders; `name` is the path relative to `path`, `path` the absolute one; symlinks never followed,
+  `node_modules`/`.git`/dot-folders skipped, a bundle is never descended into, unreadable folders skipped silently;
+  capped at 5000 folders visited (`stopped`) and 200 bundles (`truncated`); starts at the home folder when `path` is blank);
   `POST /api/imports {path}` → `{ok, id, job, dir}` (`readBundle` must come back clean — a plain or tampered
   folder is `400` and records nothing); `GET /api/imports` (the list, every bundle RE-READ now) and
   `GET /api/imports/:id` (one view). Imported list: `<home>/imports.jsonl`, one `{at, dir, job, bundleHash}` line
   per import (latest line per folder wins; mode 0600 in the 0700 config home); `id` = the first 12 hex of
   sha256(real path). **Path safety:** the path is expanded (`~`, `~/…` only), refused if it holds a NUL byte, is
   over 4096 bytes or is not absolute, then `resolve`d and `realpath`ed — the REAL folder is listed and recorded
-  and the response says which it chose (`path` beside `requested`); a non-directory is refused; a SYMLINK inside a
-  listing is never listed and never followed; names only, never file contents; at most 500 names (`truncated`);
-  non-dot folders sort first. **Status, re-read on every list/view:** `ok`, `changed` ("changed since import",
+  and the response says which it chose (`path` beside `requested`); a non-directory is refused; a SYMLINK inside the
+  search is never listed and never followed; names only, never file contents. **Status, re-read on every list/view:** `ok`, `changed` ("changed since import",
   red: a different/tampered/unreadable bundle) or `missing` ("folder not found"). The view carries goal,
   `checkType`, `success` (the close stage names), `guardrails`, `budgetUsd`/`maxWallMs`, `model`, the history
   the bundle shipped (`history:{greens,reds,total,recent}`, read from the bridges' history rows) and

@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createPanelServer } from '../src/panel/server.js';
 import {
-  resolveFsPath, listFolders, readImports, importId, MAX_ENTRIES, importsPath,
+  resolveFsPath, findBundles, readImports, importId, importsPath, SEARCH_DEPTH, MAX_VISITED, MAX_RESULTS,
 } from '../src/panel/importroutes.js';
 import { bless } from '../src/bundle.js';
 import { exportFixtureBundle } from './bundle-fixture.js';
@@ -58,28 +58,50 @@ test('resolveFsPath: ~ and ~/x expand to the injected home; blank = home; relati
   assert.equal(viaLink.path, outside, 'the response says which folder it chose: the real one, not the link');
 });
 
-test('listFolders: folders only (no files), a symlink is never listed or followed, the bundle tag needs a REAL manifest.json file, dot-folders sort last, the count is bounded', () => {
+// hamr's click-through 2026-10-04, item 3: the list is job bundles only, found by searching DOWN.
+test('findBundles: only bundles (real manifest.json FILE), relative paths, depth <= 3, no symlink followed, node_modules/.git/dot-folders skipped, never descends into a bundle', () => {
   const d = tmp();
-  mkdirSync(join(d, 'zeta'));
-  mkdirSync(join(d, 'alpha'));
-  mkdirSync(join(d, '.hidden'));
-  mkdirSync(join(d, 'abundle'));
-  writeFileSync(join(d, 'abundle', 'manifest.json'), '{}');
+  const bundle = (...p) => { mkdirSync(join(d, ...p), { recursive: true }); writeFileSync(join(d, ...p, 'manifest.json'), '{}'); };
+  bundle('abundle');
+  bundle('x', 'y', 'deep3');            // depth 3: found
+  bundle('x', 'y', 'z', 'deep4');       // depth 4: not found
+  bundle('node_modules', 'pkg');        // skipped
+  bundle('.git', 'inner');              // skipped
+  bundle('.hidden', 'inner');           // skipped
+  bundle('outer');
+  bundle('outer', 'nested');            // inside a bundle: not descended into
+  mkdirSync(join(d, 'plain', 'folder'), { recursive: true });
   mkdirSync(join(d, 'linked-manifest'));
-  writeFileSync(join(d, 'real-manifest-elsewhere.json'), '{}');
-  symlinkSync(join(d, 'real-manifest-elsewhere.json'), join(d, 'linked-manifest', 'manifest.json'));
+  writeFileSync(join(d, 'real.json'), '{}');
+  symlinkSync(join(d, 'real.json'), join(d, 'linked-manifest', 'manifest.json'));
+  const away = tmp('p5-import-target-');
+  writeFileSync(join(away, 'manifest.json'), '{}');
+  symlinkSync(away, join(d, 'a-link-to-a-bundle'));
   writeFileSync(join(d, 'a-file.txt'), 'secret contents');
-  symlinkSync(tmp('p5-import-target-'), join(d, 'a-link-to-a-folder'));
-  const { entries, truncated } = listFolders(d);
-  assert.deepEqual(entries.map((e) => e.name), ['abundle', 'alpha', 'linked-manifest', 'zeta', '.hidden']);
-  assert.equal(truncated, false);
-  assert.deepEqual(entries.filter((e) => e.bundle).map((e) => e.name), ['abundle'], 'a symlinked manifest.json is not a bundle tag');
-  for (const e of entries) assert.deepEqual(Object.keys(e).sort(), ['bundle', 'name'], 'names and the tag only — never contents');
+  const r = findBundles(d);
+  assert.deepEqual(r.entries.map((e) => e.name), ['abundle', 'outer', 'x/y/deep3']);
+  assert.deepEqual(r.entries.map((e) => e.path), [join(d, 'abundle'), join(d, 'outer'), join(d, 'x', 'y', 'deep3')]);
+  for (const e of r.entries) assert.deepEqual(Object.keys(e).sort(), ['bundle', 'name', 'path'], 'names, path and the tag only — never contents');
+  assert.equal(SEARCH_DEPTH, 3);
+  assert.equal(r.stopped, false);
+  assert.equal(r.truncated, false);
+  assert.deepEqual(findBundles(tmp()).entries, [], 'nothing below: empty, no error');
+  assert.deepEqual(findBundles(join(d, 'does-not-exist')).entries, [], 'an unreadable folder is skipped silently');
+});
+
+test('findBundles: the caps are plain — MAX_VISITED folders stops the walk (stopped), MAX_RESULTS bundles truncates', () => {
+  assert.equal(MAX_VISITED, 5000);
+  assert.equal(MAX_RESULTS, 200);
   const many = tmp();
-  for (let i = 0; i < MAX_ENTRIES + 3; i += 1) mkdirSync(join(many, `d${String(i).padStart(4, '0')}`));
-  const big = listFolders(many);
-  assert.equal(big.entries.length, MAX_ENTRIES);
-  assert.equal(big.truncated, true);
+  for (let i = 0; i < MAX_RESULTS + 3; i += 1) { const p = join(many, `b${String(i).padStart(4, '0')}`); mkdirSync(p); writeFileSync(join(p, 'manifest.json'), '{}'); }
+  const t1 = findBundles(many);
+  assert.equal(t1.entries.length, MAX_RESULTS);
+  assert.equal(t1.truncated, true);
+  const wide = tmp();
+  for (let i = 0; i < MAX_VISITED + 5; i += 1) mkdirSync(join(wide, `d${String(i).padStart(5, '0')}`));
+  const t2 = findBundles(wide);
+  assert.equal(t2.stopped, true);
+  assert.equal(t2.visited, MAX_VISITED);
 });
 
 // ── the routes ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -96,9 +118,11 @@ test('routes: fs/list and imports are behind the human guard (token + own addres
   const top = await (await get('/api/fs/list')).json();
   assert.equal(top.ok, true);
   assert.equal(top.path, userHome, 'starts at the home folder');
-  assert.deepEqual(top.entries.map((e) => e.name), ['jobs', 'other']);
+  assert.deepEqual(top.entries, [{ name: 'jobs/a.bareloop', path: join(userHome, 'jobs', 'a.bareloop'), bundle: true }], 'bundles only, relative to the folder asked for');
+  assert.equal(top.depth, 3);
+  assert.equal(top.stopped, false);
   const jobs = await (await get(`/api/fs/list?path=${encodeURIComponent(join(userHome, 'jobs'))}`)).json();
-  assert.deepEqual(jobs.entries, [{ name: 'a.bareloop', bundle: true }]);
+  assert.deepEqual(jobs.entries, [{ name: 'a.bareloop', path: join(userHome, 'jobs', 'a.bareloop'), bundle: true }]);
   assert.equal(jobs.parent, userHome);
   // refusals
   const rel = await get('/api/fs/list?path=relative');
@@ -110,7 +134,7 @@ test('routes: fs/list and imports are behind the human guard (token + own addres
   mkdirSync(join(outside, 'secret-folder'));
   symlinkSync(outside, join(userHome, 'sneaky'));
   const after1 = await (await get('/api/fs/list')).json();
-  assert.ok(!after1.entries.some((e) => e.name === 'sneaky'), 'the symlinked folder is not listed');
+  assert.ok(!after1.entries.some((e) => e.name.includes('sneaky') || e.name.includes('secret-folder')), 'the symlinked folder is not searched');
   const asked = await (await get(`/api/fs/list?path=${encodeURIComponent(join(userHome, 'sneaky'))}`)).json();
   assert.equal(asked.requested, join(userHome, 'sneaky'));
   assert.equal(asked.path, outside, 'it names the real folder it chose');

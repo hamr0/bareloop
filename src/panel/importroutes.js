@@ -5,7 +5,7 @@
 //
 // Two routes carry NEW DISK EXPOSURE, so both sit behind `checkHumanGuard` (token + own address), the strict
 // guard `/api/author/*` has — not just the Host guard the read-only GETs use:
-//   GET  /api/fs/list?path=   folders only: names plus a `bundle` tag where a manifest.json file sits
+//   GET  /api/fs/list?path=   the job bundles (a manifest.json file sits there) found up to 3 folders below path
 //   POST /api/imports {path}  import one folder (readBundle must be clean)
 // plus the guarded reads `GET /api/imports` (the list, every bundle re-read) and `GET /api/imports/:id` (one view).
 //
@@ -14,8 +14,9 @@
 //     then `resolve`d (`.`/`..` collapsed) and `realpath`ed — the REAL folder is what is listed and what is
 //     recorded, and the response says which it chose (`path` beside `requested`);
 //   * a path that is not a directory is refused; names are listed, file CONTENTS are never read here;
-//   * a SYMLINK inside the listing is never listed and never followed (Dirent.isDirectory() is false for a link,
-//     which is what `readdir` withFileTypes reports — it types by lstat);
+//   * a SYMLINK inside the search is never listed and never followed (Dirent.isDirectory() is false for a link,
+//     which is what `readdir` withFileTypes reports — it types by lstat); `node_modules`, `.git` and dot-folders are
+//     skipped, a bundle is never descended into, and the search is capped (folders visited, bundles returned);
 //   * the `bundle` tag is a regular FILE named manifest.json (lstat), never a link to one.
 
 import { createHash } from 'node:crypto';
@@ -31,8 +32,6 @@ import { bundleRuns, latestGreenRun, latestBridgeGreen, bridgeRunDetail, importe
 
 /** the longest path the routes will look at (bytes) */
 export const MAX_PATH_LEN = 4096;
-/** the most folder names one listing returns; past it `truncated: true` */
-export const MAX_ENTRIES = 500;
 
 /**
  * Expand, normalise and `realpath` a requested folder. Never throws.
@@ -63,26 +62,53 @@ export function resolveFsPath(input, userHome) {
   return { ok: true, requested, path: real };
 }
 
+/** how many levels below the current folder the bundle search looks */
+export const SEARCH_DEPTH = 3;
+/** the most folders one search visits; past it `stopped: true` */
+export const MAX_VISITED = 5000;
+/** the most bundles one search returns; past it `truncated: true` */
+export const MAX_RESULTS = 200;
+
+/** a bundle is a folder holding a regular FILE named manifest.json (lstat — never a link to one) */
+function isBundleDir(/** @type {string} */ dir) {
+  try { return lstatSync(join(dir, 'manifest.json')).isFile(); } catch { return false; }
+}
+
 /**
- * The folders directly inside `dir` (a `realpath` already): names and a `bundle` tag, nothing else. Symlinks are
- * never listed. Non-dot names first, then dot-names, each alphabetical.
+ * The exported job bundles below `dir` (a `realpath` already), searched DOWN at most SEARCH_DEPTH levels. Symlinks are
+ * never followed, `node_modules`, `.git` and every dot-folder are skipped, a bundle is never descended into, an
+ * unreadable folder is skipped silently, and the search is capped (folders visited, results). Only names are read.
  * @param {string} dir
- * @returns {{entries: {name: string, bundle: boolean}[], truncated: boolean}}
+ * @returns {{entries: {name: string, path: string, bundle: true}[], visited: number, stopped: boolean, truncated: boolean}}
  */
-export function listFolders(dir) {
-  const names = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
-  names.sort((a, b) => {
-    const da = a.startsWith('.');
-    const db = b.startsWith('.');
-    if (da !== db) return da ? 1 : -1;
-    return a.localeCompare(b);
-  });
-  const entries = names.slice(0, MAX_ENTRIES).map((name) => {
-    let bundle = false;
-    try { bundle = lstatSync(join(dir, name, 'manifest.json')).isFile(); } catch { bundle = false; }
-    return { name, bundle };
-  });
-  return { entries, truncated: names.length > MAX_ENTRIES };
+export function findBundles(dir) {
+  /** @type {{name: string, path: string, bundle: true}[]} */
+  const entries = [];
+  let visited = 0;
+  let stopped = false;
+  let truncated = false;
+  /** @param {string} cur @param {string} rel @param {number} depth */
+  const walk = (cur, rel, depth) => {
+    if (depth > SEARCH_DEPTH || stopped || truncated) return;
+    /** @type {string[]} */
+    let names;
+    try { names = readdirSync(cur, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { return; }
+    names.sort((a, b) => a.localeCompare(b));
+    for (const name of names) {
+      if (name === 'node_modules' || name.startsWith('.')) continue;
+      if (visited >= MAX_VISITED) { stopped = true; return; }
+      visited += 1;
+      const path = join(cur, name);
+      const r = rel ? `${rel}/${name}` : name;
+      if (isBundleDir(path)) {
+        if (entries.length >= MAX_RESULTS) { truncated = true; return; }
+        entries.push({ name: r, path, bundle: true });
+      } else walk(path, r, depth + 1);
+      if (stopped || truncated) return;
+    }
+  };
+  walk(dir, '', 1);
+  return { entries, visited, stopped, truncated };
 }
 
 /** @param {string} [home] @returns {string} `<home>/imports.jsonl` */
@@ -234,12 +260,12 @@ export function createImportRoutes(opts) {
       const r = resolveFsPath(q, userHome);
       if (!r.ok) { send(400, r); return true; }
       try {
-        const l = listFolders(r.path);
+        const l = findBundles(r.path);
         const parent = dirname(r.path);
         send(200, {
           ok: true, requested: r.requested, path: r.path, parent: parent === r.path ? null : parent,
           bundle: (() => { try { return lstatSync(join(r.path, 'manifest.json')).isFile(); } catch { return false; } })(),
-          entries: l.entries, truncated: l.truncated,
+          entries: l.entries, truncated: l.truncated, stopped: l.stopped, visited: l.visited, depth: SEARCH_DEPTH,
         });
       } catch (/** @type {any} */ e) {
         send(400, { ok: false, error: `could not read ${r.path} (${e?.code ?? 'error'})` });

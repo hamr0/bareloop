@@ -254,6 +254,7 @@
   .import-entry{display:flex;gap:8px;align-items:baseline;text-align:left;background:none;border:none;color:var(--text);padding:4px 2px;min-height:32px;cursor:pointer;font:inherit;overflow-wrap:anywhere;}
   .import-entry:hover{background:var(--panel);}
   .import-up{font-weight:700;}
+  .import-entry.selected{background:var(--panel);outline:1px solid var(--accent);}
   .import-entry .tag{color:var(--accent);font-size:11px;}
   .import-view[hidden]{display:none;}
   .imp-bad{color:var(--red);font-size:12px;font-weight:700;overflow-wrap:anywhere;}
@@ -1745,7 +1746,7 @@
     return authorGet("/api/fs/list?path=" + encodeURIComponent(path || "")).then(function(r){
       if(!r || !r.ok){ importShowErr((r && r.error) || "could not open that folder"); return; }
       importPathEl.value = r.path;
-      document.getElementById("import-resolved").textContent = "showing " + r.path + (r.requested !== r.path ? " (you asked for " + r.requested + ")" : "") + (r.bundle ? " — this folder is an exported job" : "") + (r.truncated ? " — list cut short" : "");
+      document.getElementById("import-resolved").textContent = "showing " + r.path + (r.requested !== r.path ? " (you asked for " + r.requested + ")" : "") + (r.bundle ? " — this folder is an exported job" : "");
       var el = document.getElementById("import-entries");
       el.innerHTML = "";
       if(r.parent){
@@ -1759,11 +1760,18 @@
       r.entries.forEach(function(e){
         var b = document.createElement("button");
         b.type = "button"; b.className = "import-entry"; b.setAttribute("data-testid", "import-entry-" + e.name);
-        b.innerHTML = escapeXml(e.name) + (e.bundle ? ' <span class="tag">(bundle)</span>' : "");
-        b.addEventListener("click", function(){ importLoadDir(r.path.replace(/\/+$/, "") + "/" + e.name); });
+        b.setAttribute("aria-pressed", "false");
+        b.innerHTML = escapeXml(e.name) + ' <span class="tag">(bundle)</span>';
+        b.addEventListener("click", function(){
+          el.querySelectorAll(".import-entry").forEach(function(x){ x.classList.remove("selected"); x.setAttribute("aria-pressed", "false"); });
+          b.classList.add("selected"); b.setAttribute("aria-pressed", "true");
+          importPathEl.value = e.path; importShowErr("");
+        });
         el.appendChild(b);
       });
-      if(!r.entries.length && !r.parent){ el.innerHTML = '<div class="hint">no folders here</div>'; }
+      if(!r.entries.length) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-empty">no job bundles here (searched ' + r.depth + ' folders deep)</div>');
+      if(r.stopped) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-capped">stopped after ' + r.visited + ' folders \u2014 go into a narrower folder</div>');
+      else if(r.truncated) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-capped">stopped after ' + r.entries.length + ' job bundles \u2014 go into a narrower folder</div>');
     }).catch(function(x){ importShowErr("could not reach the panel: " + x.message); });
   }
   document.getElementById("wf-import").addEventListener("click", function(){

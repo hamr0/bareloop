@@ -237,3 +237,13 @@ test('page: the path-row button reads Go (not Open)', () => {
   assert.match(tag, />Go$/);
   assert.doesNotMatch(tag, /Open/);
 });
+
+// hamr's click-through 2026-10-04, item 3: the list is bundles only; a click selects one for [Import]; the empty and capped lines are plain.
+test('page: the list shows job bundles with their relative path, a click selects one into the path box, and the empty/capped lines are plain words', () => {
+  const src = fnSrc('importLoadDir');
+  assert.match(src, /importPathEl\.value = e\.path/);
+  assert.match(src, /no job bundles here \(searched ' \+ r\.depth \+ ' folders deep\)/);
+  assert.match(src, /stopped after ' \+ r\.visited \+ ' folders .{0,8}go into a narrower folder/);
+  assert.doesNotMatch(src, /importLoadDir\(r\.path\.replace/, 'a bundle row no longer navigates into a folder');
+  assert.doesNotMatch(src, /no folders here/);
+});
