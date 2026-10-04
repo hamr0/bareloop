@@ -247,3 +247,9 @@ test('page: the list shows job bundles with their relative path, a click selects
   assert.doesNotMatch(src, /importLoadDir\(r\.path\.replace/, 'a bundle row no longer navigates into a folder');
   assert.doesNotMatch(src, /no folders here/);
 });
+
+// hamr's click-through 2026-10-04, item 4: IMPORTED showed "$0.22" (the exported bridge's green, run muo0txge) while the
+// SUMMARY showed "$0.15" (the bundle's spine run muo1jah4) — two different runs, neither line said which.
+test('page: each exported-history line in the IMPORTED box names its run, so a price there is never read as the SUMMARY run\'s', () => {
+  assert.match(PAGE, /" · run " \+ r\.runid/);
+});

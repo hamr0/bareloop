@@ -1929,7 +1929,7 @@
     };
     var recent = (h.recent || []).map(function(r){
       var line = (r.at || "").slice(0, 10) || "—";
-      line += " · " + (r.outcome || "?") + (typeof r.costUsd === "number" ? " · " + panelMoney(r.costUsd) : "");
+      line += " · " + (r.outcome || "?") + (typeof r.costUsd === "number" ? " · " + panelMoney(r.costUsd) : "") + (r.runid ? " · run " + r.runid : "");
       return '<div class="summary-row"><span class="sum-label"></span><span class="sum-val">' + escapeXml(line) + '</span></div>';
     }).join("");
     var run = v.run || {kind: "none"};
