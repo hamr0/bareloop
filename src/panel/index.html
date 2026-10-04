@@ -3864,11 +3864,9 @@
         hashLine.hidden = false;
         hashLine.textContent = "spec hash: " + state.specHash;
       }
-      if(state.phase === "refused" || state.phase === "error" || state.phase === "abandoned"){
-        errEl.textContent = state.error || ("stopped: " + state.phase);
-      } else {
-        errEl.textContent = "";
-      }
+      // a session's stop is shown ONCE, in the progress line below (renderProgress); #chat-card-error carries only a
+      // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
+      errEl.textContent = "";
       renderProgress(state);
       // build item 4 — re-enable Start only once the session has settled
       // into a terminal phase (a fresh Start becomes possible again).

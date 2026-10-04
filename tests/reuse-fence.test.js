@@ -42,10 +42,10 @@ function setup() {
   return { home, id: importId(bundleDir) };
 }
 async function until(fn, ms = 8000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => { setTimeout(r, 10); }); } return false; }
-function start(source, home, pre) {
+function start(source, home, pre, key = 'fake-not-a-real-key') {
   const card = { ...pre.card, source, destination: 'src/**', capUsd: 1 };
   return createSession(card, {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: tmp('fence-sess-'),
+    env: { ANTHROPIC_API_KEY: key }, home, sessionsRoot: tmp('fence-sess-'),
     reuse: { spec: buildReuseSpec(pre.spec, card), workflowKey: pre.workflowKey },
     generate: async () => { throw new Error('no model'); }, confirmGenerate: async () => { throw new Error('no model'); },
     prepareSigningFn: async () => { throw new Error('command close'); },
@@ -85,4 +85,18 @@ test('a FOLDER source keeps the absolute-directory proof: a relative Destination
   const r = await prepareSource({ source: folder, into: join(tmp('fence-into-'), 'x'), destination: 'src/**' });
   assert.match(r.stop, /not absolute/);
   void pre;
+});
+
+test('a refusal appears exactly once: state.error is set, no chat bubble repeats it, and the page does not echo it into #chat-card-error', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { home, id } = setup();
+  const pre = getStartFromImport(id, { home });
+  const s = start(makeRepo(), home, pre, 'bad\tkey'); // malformed key: refuses at $0
+  assert.ok(await until(() => settled(s)));
+  assert.equal(s.state.phase, 'refused');
+  const copies = s.state.messages.filter((m) => m.text.includes(s.state.error));
+  assert.equal(copies.length, 0, 'the refusal lives on state.error only; the thread carries chat turns');
+  const html = readFileSync(join(REPO_ROOT, 'src', 'panel', 'index.html'), 'utf8');
+  const fn = html.slice(html.indexOf('function renderActions(state){'), html.indexOf('function poll(){'));
+  assert.doesNotMatch(fn, /errEl\.textContent = state\.error/, 'renderActions must not write the session error into #chat-card-error');
 });

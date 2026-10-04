@@ -373,10 +373,12 @@ export function createSession(card, deps = {}) {
     state.draftSpendComplete = t.spendComplete;
   };
 
-  const refuse = (message) => {
-    state.phase = 'refused';
+  // A terminal stop is recorded ONCE, on `state` (phase + error) — never also as a chat bubble: the page shows it in the
+  // one progress line, so a thread copy was the same refusal a second and third time (hamr's live reuse test 2026-10-04).
+  /** @param {string} message @param {string} [phase] */
+  const refuse = (message, phase = 'refused') => {
+    state.phase = phase;
     state.error = message;
-    say('system', message);
   };
 
   async function run() {
@@ -466,9 +468,7 @@ export function createSession(card, deps = {}) {
       }
     }
     if (!IS_REPO_SOURCE) {
-      state.phase = 'refused';
-      state.error = 'non-code-source';
-      say('system', "Plain folder, not a code project — bareloop can't check this kind of job yet. Nothing spent.");
+      refuse("Plain folder, not a code project — bareloop can't check this kind of job yet. Nothing spent.");
       return;
     }
 
@@ -485,9 +485,7 @@ export function createSession(card, deps = {}) {
 
       const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
       if (!jv.ok) {
-        state.phase = 'refused';
-        state.error = `spec-invalid: ${jv.reds.map((r) => r.code).join(', ')}`;
-        say('system', state.error);
+        refuse(`spec-invalid: ${jv.reds.map((r) => r.code).join(', ')}`);
         return;
       }
 
@@ -551,9 +549,7 @@ export function createSession(card, deps = {}) {
       writeFileSync(signingFile, `${JSON.stringify(signing, null, 2)}\n`);
 
       if (!signing.ok) {
-        state.phase = 'refused';
-        state.error = `signing gates failed — ${signing.reds.map((r) => r.code).join(', ') || 'no work red at seed'}`;
-        say('system', state.error);
+        refuse(`signing gates failed — ${signing.reds.map((r) => r.code).join(', ') || 'no work red at seed'}`);
         return;
       }
       state.specHash = signing.specHash;
@@ -652,9 +648,7 @@ export function createSession(card, deps = {}) {
     });
 
     if (!authored.ok) {
-      state.phase = authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused';
-      state.error = authored.stop ?? 'authoring-failed';
-      say('system', `Stopped: ${state.error}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`);
+      refuse(`Stopped: ${authored.stop ?? 'authoring-failed'}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`, authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
       return;
     }
 
@@ -667,9 +661,7 @@ export function createSession(card, deps = {}) {
   // polls `state` instead. A crash anywhere in `run()` is caught here so it
   // can never take the panel server process down with it.
   run().catch((e) => {
-    state.phase = 'error';
-    state.error = /** @type {Error} */ (e)?.message ?? String(e);
-    say('system', `internal error: ${state.error}`);
+    refuse(`internal error: ${/** @type {Error} */ (e)?.message ?? String(e)}`, 'error');
   });
 
   return {
