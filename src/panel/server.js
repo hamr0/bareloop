@@ -44,6 +44,7 @@ import { confirmProtections } from '../authorflow.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
 import { createImportRoutes, readImports, bundleStatus, IMPORT_CHANGED_LINE } from './importroutes.js';
+import { parseImportedRunId, safeSpinePath, spineStartedAt } from './importrun.js';
 import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import { keysHome } from '../keysfile.js';
@@ -743,6 +744,25 @@ export function listRuns(opts = {}) {
 }
 
 /**
+ * The run-list row of a run, for the readers below. An IMPORTED run (`<importId>~<runid>`, see importrun.js) is not in
+ * the run list: its row is built from the imports file and a checked path inside that bundle's own `runs/` folder
+ * (read only, no pid — never live, never resumable from here). `undefined` when no such run.
+ * @param {string} runid
+ * @param {{ home?: string }} opts
+ * @returns {any}
+ */
+function findRunRow(runid, opts) {
+  const imp = parseImportedRunId(runid);
+  if (imp) {
+    const bundle = readImports(opts.home).find((x) => x.id === imp.importId);
+    const spine = bundle ? safeSpinePath(bundle.dir, imp.runid) : null;
+    if (!bundle || !spine) return undefined;
+    return { runid, job: bundle.job, at: spineStartedAt(spine), via: 'import', spine, patient: null };
+  }
+  return readRunList(opts).rows.find((r) => r && r.runid === runid);
+}
+
+/**
  * `GET /api/runs/:runid` — the full replay for the Run tab: steps (or
  * iterations), counters, summary-box fields. Looks `runid` up in the run
  * list FIRST and reads only the path stored there (path safety — see file
@@ -753,8 +773,7 @@ export function listRuns(opts = {}) {
  * @returns {any|null}
  */
 export function getRunDetail(runid, opts = {}) {
-  const { rows } = readRunList(opts);
-  const row = rows.find((r) => r && r.runid === runid);
+  const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
     if (runIsAlive(row)) return startingStub(row);
@@ -936,8 +955,8 @@ export function getRunDetail(runid, opts = {}) {
     ended,
     // P5 item 5: is the run's LATEST leg live (the page offers Stop only then), and has a stop been asked for
     // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
-    live: runIsAlive(row),
-    stopping: runIsAlive(row) && existsSync(stopFilePath(row.spine)),
+    live: row.via !== 'import' && runIsAlive(row),
+    stopping: row.via !== 'import' && runIsAlive(row) && existsSync(stopFilePath(row.spine)),
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,
@@ -1309,8 +1328,7 @@ function shortenPath(path, root) {
  * @returns {{runid: string, rows: any[], raw: string, empty: boolean, reason: 'no-sidecar'|'sidecar-empty'|null}|null}
  */
 export function getRunAudit(runid, opts = {}) {
-  const { rows } = readRunList(opts);
-  const row = rows.find((r) => r && r.runid === runid);
+  const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
     return {
@@ -1439,8 +1457,7 @@ export const ROUNDS_PAGE_MAX = 200;
  * @returns {any|null}
  */
 export function getRunRounds(runid, query = {}, opts = {}) {
-  const { rows } = readRunList(opts);
-  const row = rows.find((r) => r && r.runid === runid);
+  const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) return null;
 
@@ -1968,8 +1985,7 @@ function jobsDir() {
  * @returns {any|null}
  */
 export function getRunJob(runid, opts = {}) {
-  const { rows } = readRunList(opts);
-  const row = rows.find((r) => r && r.runid === runid);
+  const row = findRunRow(runid, opts);
   if (!row) return null;
 
   const near = existsSync(row.spine) ? sourceNearSpine(row.spine) : { specPath: null, sourceJsonPath: null };

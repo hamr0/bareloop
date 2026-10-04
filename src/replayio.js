@@ -87,7 +87,10 @@ export function resolveSiblings(spinePath) {
   const base = basename(spinePath);
   const stem = base.replace(/\.jsonl$/, '');
   const runId = stem.startsWith('u-') ? stem.slice(2) : stem;
-  const auditPath = join(dir, `${stem}-gate-audit.jsonl`);
+  let auditPath = join(dir, `${stem}-gate-audit.jsonl`);
+  // a bundle run (`<bundle>/runs/<runid>/spine.jsonl`) keeps its tool log beside the spine as plain `gate-audit.jsonl`
+  const bundleAudit = join(dir, 'gate-audit.jsonl');
+  if (base === 'spine.jsonl' && !existsSync(auditPath) && existsSync(bundleAudit)) auditPath = bundleAudit;
   return { runId, auditPath: existsSync(auditPath) ? auditPath : null };
 }
 

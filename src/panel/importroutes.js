@@ -27,6 +27,7 @@ import { dirname, join, isAbsolute, resolve } from 'node:path';
 import { checkHumanGuard } from './authorroutes.js';
 import { readBundle, verifyBlessing } from '../bundle.js';
 import { runlistHome } from '../runlist.js';
+import { bundleRuns, latestGreenRun, latestBridgeGreen, bridgeRunDetail, importedRunId } from './importrun.js';
 
 /** the longest path the routes will look at (bytes) */
 export const MAX_PATH_LEN = 4096;
@@ -175,7 +176,38 @@ export function createImportRoutes(opts) {
       status: st.status, statusText: st.statusText, changedLine: st.status === 'changed' ? IMPORT_CHANGED_LINE : null, reds: st.reds,
       ...(spec && typeof spec === 'object' ? opts.describeSpec(spec) : {}),
       ...bundleHistoryAndApproval(st.bundle),
+      ...importedRunView(row, st.bundle),
     };
+  };
+
+  /**
+   * What the Run tab shows below the IMPORTED facts (see importrun.js): `runsHere` (run folders with a readable spine),
+   * and `run` — `{kind:'spine', id, runid, at}` (the newest green run in the bundle's `runs/`, read through
+   * `/api/runs/<id>`), `{kind:'bridge', runid, at, detail}` (the bridge's green version as a run detail) or
+   * `{kind:'none'}`. Never throws: a bundle that cannot be read is `none`.
+   * @param {{id: string, dir: string, job: string}} row
+   * @param {ReturnType<typeof readBundle>} bundle
+   */
+  const importedRunView = (row, bundle) => {
+    try {
+      const runsHere = bundleRuns(row.dir).length;
+      const g = latestGreenRun(row.dir);
+      if (g) return { runsHere, run: { kind: 'spine', id: importedRunId(row.id, g.runid), runid: g.runid, at: g.at } };
+      const b = latestBridgeGreen(bundle.bridges);
+      if (b) {
+        const spec = bundle.spec && typeof bundle.spec === 'object' ? bundle.spec : {};
+        const facts = opts.describeSpec(spec);
+        const detail = bridgeRunDetail(b, {
+          job: row.job, checkType: facts.checkType, checkTypeTitle: null,
+          model: typeof spec.model === 'string' && spec.model.length > 0 ? spec.model : null,
+          budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+        });
+        return { runsHere, run: { kind: 'bridge', runid: detail.runid, at: b.version.greenAt, detail } };
+      }
+      return { runsHere, run: { kind: 'none' } };
+    } catch {
+      return { runsHere: 0, run: { kind: 'none' } };
+    }
   };
 
   /**
