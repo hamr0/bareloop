@@ -3565,7 +3565,7 @@ key you want first (the panel picks the row by the Model menu).
   'running'|'done'|'failed', detail}]`, one entry per pipeline step in first-seen order, updated in place (ids/labels:
   `STEP_LABELS`, `src/panel/authorsession.js`); `progressLabel` is the running step's label. A refusal sets
   `state.error` and fails exactly one step with the same text as its `detail`; pipeline text is never a chat message
-  (`messages` holds person/model turns only). Destination follows the Source: for a repo source it is the write
+  (`messages` holds person/model turns only). Two last steps, `hash` ("generating hash", detail `spec hash <full hash>`, done at sign-prepare) and `signed` ("signed hash", pushed by `signRun` when the sign is accepted); the old "SIGNING PREPARED" / "signed — … run starting detached" thread bubbles are gone. The page draws each step's `detail` on its own `> ` line under the step. Destination follows the Source: for a repo source it is the write
   fence (relative `writeScope` globs, never proven as a directory); for a folder source an absolute directory.
   **Import, read only (item 4)** — `src/panel/importroutes.js`. The Workflows toolbar's `[Import]` opens a folder
   browser plus a paste box; an imported job is an exported bundle folder the person can LOOK at: nothing runs,
