@@ -420,7 +420,6 @@ export function createSession(card, deps = {}) {
     // person needs to read; the step-by-step detail lives in one line.
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name]);
   };
-  /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   // ABANDON (hamr's ruling 2026-10-05): once abandoned the phase is frozen at 'abandoned' — whatever the in-flight
   // run() does afterwards (a late refuse, a phase write) never overwrites it, so the one-at-a-time lock stays released.
   let abandoned = false;
@@ -430,6 +429,7 @@ export function createSession(card, deps = {}) {
     get: () => phaseValue,
     set: (v) => { if (!abandoned) phaseValue = v; },
   });
+  /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
   const metered = [];
   const onCall = (call) => {
     metered.push({ label: call.label, costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0 });
