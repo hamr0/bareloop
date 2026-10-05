@@ -58,9 +58,12 @@ export function runlistPath(home) {
 }
 
 /**
- * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill', pid?: number, capUsd?: number }} RunRow
+ * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill', pid?: number, capUsd?: number, leg?: number }} RunRow
  * `pid`/`capUsd` (optional; older and backfilled rows carry neither): the runner's process id and the
  * leg's $ cap — what the monthly limit holds while that pid is a live bareloop runner (src/monthly.js).
+ * `leg` (P5-R; only on a row {@link readRunList} FOLDED from `leg-start` entries, i.e. a RESUMED run):
+ * the number of the run's latest leg — a resumed run is the same run, one row, and its `pid`/`capUsd`
+ * are that latest leg's.
  */
 
 /**
@@ -101,7 +104,10 @@ export function appendRun(row, opts = {}) {
 }
 
 /**
- * @typedef {{ runid: string, type: 'settled'|'released', by: string, at: string, reason?: string, spentUsd?: number, spendComplete?: boolean }} RunEvent
+ * @typedef {{ runid: string, type: 'settled'|'released', by: string, at: string, reason?: string, spentUsd?: number, spendComplete?: boolean, leg?: number }} RunEvent
+ * `leg` (P5-R): which leg of the run the write-back is about; absent = leg 1 (every entry written before P5-R).
+ * A resumed run is ONE row, so `settled`/`released` are per leg: a later leg's `released` gives back THAT leg's
+ * claim and never removes the run.
  * A claim's write-back, appended (never rewritten) beside the run rows. `settled` = the run's claim on the
  * monthly limit is over (`spentUsd`/`spendComplete` are its final figure, `by` is WHO wrote it: the run itself
  * at its `job-end`, or the next run that found its process gone, `reason: 'process gone'`). `released` = the
@@ -123,6 +129,43 @@ export function appendRunEvent(event, opts = {}) {
 }
 
 /**
+ * @typedef {{ type: 'leg-start', runid: string, leg: number, pid?: number, capUsd?: number, at: string }} LegStart
+ * A resumed run's NEW claim (P5-R, hamr 2026-10-02: one run, one id, one row): appended beside the run's row
+ * instead of a second row. {@link readRunList} folds it into the row.
+ */
+
+/**
+ * Append one {@link LegStart}: a resumed run's leg claim. Not locked: one short line, one append. THROWS on IO failure.
+ * @param {LegStart} entry
+ * @param {{ home?: string }} [opts]
+ * @returns {void}
+ */
+export function appendLegStart(entry, opts = {}) {
+  const path = runlistPath(opts.home);
+  mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 });
+  appendFileSync(path, `${JSON.stringify({ ...entry, type: 'leg-start' })}\n`);
+  try { chmodSync(path, 0o600); } catch { /* best-effort perms */ }
+}
+
+/**
+ * The leg a write-back names (absent = 1).
+ * @param {{ leg?: number }} e
+ * @returns {number}
+ */
+const legOf = (e) => (Number.isInteger(e.leg) && /** @type {number} */ (e.leg) >= 1 ? /** @type {number} */ (e.leg) : 1);
+
+/**
+ * Has this row's LATEST leg been settled? The ONE spelling (the monthly limit and the settle writer share it).
+ * @param {RunEvent[]} events {@link readRunList}'s `events`
+ * @param {{ runid: string, leg?: number }} row
+ * @returns {boolean}
+ */
+export function isSettled(events, row) {
+  const leg = legOf(row);
+  return events.some((e) => e.type === 'settled' && e.runid === row.runid && legOf(e) === leg);
+}
+
+/**
  * Tolerant reader — reuses {@link parseJsonl} (never a second hand-rolled
  * parser). An absent file reads as an empty list, not an error: a fresh
  * install has never run `appendRun` yet. FOLDS the file: `rows` are the RUNS
@@ -136,20 +179,45 @@ export function readRunList(opts = {}) {
   const path = runlistPath(opts.home);
   if (!existsSync(path)) return { rows: [], skipped: 0, events: [] };
   const { records, skipped } = parseJsonl(path);
-  // the FIRST settle for a runid is authoritative: two runs may both close the same dead claim, and the
+  // the FIRST settle for a (runid, leg) is authoritative: two runs may both close the same dead claim, and the
   // second note is a duplicate (a `released` line likewise); file order decides, later copies are ignored
   const seen = new Set();
   /** @type {RunEvent[]} */
   const events = records.filter((r) => {
     if (!r || (r.type !== 'settled' && r.type !== 'released')) return false;
-    const key = `${r.type}:${r.runid}`;
+    const key = `${r.type}:${r.runid}:${legOf(r)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-  const released = new Set(events.filter((e) => e.type === 'released').map((e) => e.runid));
-  const rows = records.filter((r) => r && !r.type && !released.has(r.runid));
-  return { rows, skipped, events };
+  // a leg-1 `released` = the run never started: not listed. A LATER leg's `released` only gives that leg's claim back.
+  const released = new Set(events.filter((e) => e.type === 'released' && legOf(e) === 1).map((e) => e.runid));
+  const voided = new Set(events.filter((e) => e.type === 'released' && legOf(e) > 1).map((e) => `${e.runid}:${legOf(e)}`));
+  /** @type {Map<string, RunRow & {claimAt: number}>} */
+  const byRunid = new Map();
+  /** @type {(RunRow & {claimAt: number})[]} */
+  const rows = [];
+  records.forEach((r, i) => {
+    if (!r) return;
+    if (!r.type) {
+      if (released.has(r.runid)) return;
+      const row = { ...r, claimAt: i };
+      rows.push(row);
+      if (!byRunid.has(r.runid)) byRunid.set(r.runid, row);
+    } else if (r.type === 'leg-start') {
+      const row = byRunid.get(r.runid);
+      if (!row || !Number.isInteger(r.leg) || r.leg < 2 || voided.has(`${r.runid}:${r.leg}`) || r.leg <= legOf(row)) return;
+      // the run's pid/cap are its LATEST leg's; the claim's place in the file (the monthly limit's "who is above
+      // whom") is that leg-start line's, since that is where the leg claimed
+      row.leg = r.leg;
+      row.pid = r.pid;
+      row.capUsd = r.capUsd;
+      row.claimAt = i;
+    }
+  });
+  // file order = claim order: a resumed run's latest claim sits where its latest leg-start line is
+  const ordered = rows.some((r) => r.leg !== undefined) ? [...rows].sort((a, b) => a.claimAt - b.claimAt) : rows;
+  return { rows: ordered.map(({ claimAt: _c, ...row }) => row), skipped, events };
 }
 
 /**

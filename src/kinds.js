@@ -67,6 +67,7 @@ import { join, sep } from 'node:path';
 import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
 import { runLocate, decide, validateCard, LOCATE_AXES, LOCATE_LABEL } from './judged.js';
+import { rateSourceFields } from './text.js';
 
 /** the close's two judgment exits — a stage's verdict, in the shape the
  * hand-written closes already spoke (exit code is truth) */
@@ -1871,7 +1872,7 @@ async function runJudgedFloor(stage, ctx) {
           ctx.onJudgeCost({
             stage: stage?.name ?? null, kind: stage?.kind ?? null, path: rel, attempt,
             label: LOCATE_LABEL, model: judgeModel, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
-            ...('rateSource' in c ? { rateSource: c.rateSource } : {}),
+            ...rateSourceFields(c),
           });
         },
       });

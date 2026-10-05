@@ -7,7 +7,8 @@
 // undefined/null is the unpriced case (F6) and must never be laundered into
 // the priced default.
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -255,3 +256,22 @@ export const currentBranch = (dir) => execFileSync('git', ['rev-parse', '--abbre
 export const localBranches = (dir) => execFileSync('git', ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], { cwd: dir, encoding: 'utf8' })
   .split('\n').map((s) => s.trim()).filter(Boolean).sort();
 
+
+/**
+ * The environment a test hands to a REAL child process (a spawned runner, the CLI, a script): safe BY CONSTRUCTION.
+ * `HOME` (and the XDG/profile spellings) point at a fresh empty scratch dir, so a child can never read the real
+ * `~/.config/bareloop` (keys file, config, run list) or write to it, whatever launched the test — `node --test`
+ * directly, `npm test`, or CI. Every provider key variable is blanked; a test that wants a key passes it AFTER the
+ * spread. `over` wins over everything here.
+ * @param {Record<string, string|undefined>} [over]
+ * @returns {Record<string, string|undefined>}
+ */
+export function cleanEnv(over = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'bareloop-test-home-'));
+  return {
+    ...process.env,
+    HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, '.config'),
+    ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '', DEEPSEEK_API_KEY: '', GOOGLE_API_KEY: '',
+    ...over,
+  };
+}

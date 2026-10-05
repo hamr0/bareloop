@@ -34,7 +34,7 @@ import { FIX_STRIKE_LIMIT, readGrade } from '../src/trend.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { makeRegistry, saveBridge, loadBridge } from '../src/bridges.js';
 import { makeSpine } from '../src/spine.js';
-import { readSpine, scriptedProvider, initPatientRepo, mockWallClock } from './helpers.js';
+import { readSpine, scriptedProvider, initPatientRepo, mockWallClock, cleanEnv } from './helpers.js';
 import { signCloseScripts } from '../src/close-integrity.js';
 
 const base = mkdtempSync(join(tmpdir(), 'resume-test-'));
@@ -864,7 +864,7 @@ test('resume tree gate: a DIRTY tree is legitimate mid-run progress, and a moved
 
 /** the reference runner, spawned, with the API key stripped @param {string[]} args */
 const runner = (args, env = {}) => {
-  const { ANTHROPIC_API_KEY: _drop, ...clean } = process.env;
+  const clean = cleanEnv();
   return spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/run-reuse.mjs', import.meta.url)), ...args], {
     encoding: 'utf8', env: { ...clean, ...env },
   });

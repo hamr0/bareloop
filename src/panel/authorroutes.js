@@ -22,7 +22,8 @@ import { spawn as realSpawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { createSession, validateJobCard } from './authorsession.js';
+import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, STEP_LABELS } from './authorsession.js';
+import { validateJob } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
@@ -35,6 +36,12 @@ export function mintToken() {
 }
 
 /**
+ * The ONE spelling of this panel's own bind address (`host:port`), shared by the Host and Origin checks.
+ * @param {number} port
+ */
+const bindAddress = (port) => `127.0.0.1:${port}`;
+
+/**
  * The ONE Host check: the request names this panel's own bind address. A page on another
  * origin reaching the panel through a rebound DNS name sends that name as Host, so it fails here.
  * @param {import('node:http').IncomingMessage} req
@@ -42,7 +49,7 @@ export function mintToken() {
  * @returns {{ok: true}|{ok: false, reason: string}}
  */
 export function checkHostGuard(req, { port }) {
-  return req.headers.host === `127.0.0.1:${port}` ? { ok: true } : { ok: false, reason: 'wrong Host' };
+  return req.headers.host === bindAddress(port) ? { ok: true } : { ok: false, reason: 'wrong Host' };
 }
 
 /**
@@ -57,7 +64,7 @@ export function checkHostGuard(req, { port }) {
 export function checkHumanGuard(req, { token, port }) {
   const got = req.headers['x-bareloop-token'];
   if (got !== token) return { ok: false, reason: 'missing or wrong token' };
-  const want = `127.0.0.1:${port}`;
+  const want = bindAddress(port);
   const origin = req.headers.origin;
   if (typeof origin === 'string' && origin.length > 0) {
     if (origin !== `http://${want}` && origin !== `https://${want}`) return { ok: false, reason: 'wrong Origin' };
@@ -83,7 +90,8 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * deliberately has none of).
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
- *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string }} opts
+ *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
+ *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any} }} opts
  */
 export function createAuthorRoutes(opts) {
   // the RAW env with the keys file re-merged on every use, so an edited file takes effect
@@ -180,7 +188,7 @@ export function createAuthorRoutes(opts) {
       const cap = Number(q.get('cap'));
       if (!Number.isFinite(cap) || cap <= 0) { send(200, { ok: true, refusal: null }); return true; }
       try {
-        const room = checkMonthlyRoom({ capUsd: cap, home: opts.home });
+        const room = checkMonthlyRoom({ capUsd: cap, home: opts.home, sessionsRoot: opts.sessionsRoot });
         send(200, { ok: true, refusal: monthlyRefusalText(room), leftUsd: room.leftUsd, atLeast: room.atLeast });
       } catch (e) {
         if (!(e instanceof ConfigError)) throw e;
@@ -189,19 +197,74 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
+    // ── REUSE WORKFLOW (replaces P5 item 3's Start from this). `GET /api/author/start-from?runid=` (or `?import=`) —
+    // the prefill from the SIGNED job, which boxes are locked, the track record. $0, read-only. The route keeps its name.
+    if (pathname === '/api/author/start-from') {
+      if (!opts.startFrom) { send(404, { ok: false, error: 'not found' }); return true; }
+      if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
+      const runid = sp.get('runid') ?? '';
+      // `model` = the card's Model box right now: the estimate line counts only runs on that worker
+      const asModel = sp.has('model') ? { model: sp.get('model') ?? '' } : {};
+      const pre = sp.has('import') ? opts.startFrom.getImport(sp.get('import') ?? '', asModel) : opts.startFrom.get(runid, asModel);
+      if (pre === null) { send(404, { ok: false, error: 'no such run' }); return true; }
+      if (!pre.ok) { send(409, pre); return true; }
+      send(200, {
+        ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
+        locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
+        line: pre.line,
+      });
+      return true;
+    }
+
+    // A refreshed page re-attaches to the one live (non-terminal) session: its id and state (card, messages, steps),
+    // or `null`. The server's session map is the only truth; nothing is stored page-side.
+    if (pathname === '/api/author/live') {
+      if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      const live = [...sessions.values()].find((s) => !TERMINAL_PHASES.has(s.state.phase));
+      send(200, { ok: true, sessionId: live ? live.state.id : null, state: live ? live.state : null });
+      return true;
+    }
+
     if (pathname === '/api/author/start') {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
       const card = body ?? {};
-      const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows: rowsForHome(keysHome(opts.home)) });
-      if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
-      const session = createSession(card, { env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}) });
+      const rows = rowsForHome(keysHome(opts.home));
+      // Reuse workflow — started from a green run or an imported job: only Source, Destination and the two caps may
+      // differ from the signed workflow. The SERVER refuses any other change (the page greys those boxes, but is
+      // never trusted); the spec it signs is a copy of the origin's with just those four set. Nothing is drafted.
+      /** @type {{spec: any, workflowKey: string}|null} */
+      let reuse = null;
+      const from = card.startFrom;
+      const fromRunid = typeof from === 'string' ? from : (typeof from?.runid === 'string' ? from.runid : null);
+      const fromImport = typeof from?.importId === 'string' ? from.importId : null;
+      if (fromRunid !== null || fromImport !== null) {
+        const pre = opts.startFrom ? (fromImport !== null ? opts.startFrom.getImport(fromImport) : opts.startFrom.get(fromRunid)) : null;
+        if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to reuse' }); return true; }
+        if (!pre.ok) { send(409, pre); return true; }
+        const locked = lockedFieldChanged(card, pre.card);
+        if (locked !== null) { send(400, { ok: false, error: `${locked} is locked on a reused workflow — Clear the card to change it` }); return true; }
+        const rv = validateReuseCard(card, { rows });
+        if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
+        const spec = buildReuseSpec(pre.spec, card, rows);
+        const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+        if (!jv.ok) { send(400, { ok: false, error: `the spec this reuse would sign is not valid (${jv.reds.map((r) => `${r.code} at ${r.path}`).join('; ')})` }); return true; }
+        reuse = { spec, workflowKey: pre.workflowKey };
+      }
+      if (reuse === null) {
+        const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows });
+        if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
+      }
+      const session = createSession(cardFields(card), {
+        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}),
+      });
       sessions.set(session.id, session);
-      send(200, { ok: true, sessionId: session.id, state: session.state });
+      send(200, { ok: true, sessionId: session.id, reuse: reuse !== null, state: session.state });
       return true;
     }
 
-    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|revise|sign-prepare|sign|check-deps))?$/.exec(pathname);
+    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|revise|sign-prepare|sign|check-deps|abandon))?$/.exec(pathname);
     if (!m) { send(404, { ok: false, error: 'not found' }); return true; }
     const session = sessions.get(m[1]);
     if (!session) { send(404, { ok: false, error: 'no such session' }); return true; }
@@ -221,6 +284,11 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'revise') {
       session.revise(String(body?.text ?? '')).then((r) => send(r.ok ? 200 : 400, { ...r, state: session.state }));
+      return true;
+    }
+    if (sub === 'abandon') {
+      const r = session.abandon();
+      send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
     }
     if (sub === 'check-deps') {
@@ -258,7 +326,7 @@ export function createAuthorRoutes(opts) {
  * @param {number} n a non-negative dollar amount
  * @returns {string}
  */
-function panelMoney2(n) {
+export function panelMoney2(n) {
   if (n > 0 && n < 0.01) return '<$0.01';
   // two-step rounding (matching index.html's own panelMoney): clean to
   // 6-decimal precision first (the same precision src/text.js's tallyCalls
@@ -290,7 +358,7 @@ export function signRun(session, claimedHash, o) {
   // lower nothing (the cap is signed in) but may raise the limit in Settings and sign again.
   try {
     const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-    const refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: Number(spec.budgetUsd), home: o.home }));
+    const refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: Number(spec.budgetUsd), home: o.home, sessionsRoot: o.sessionsRoot }));
     if (refusal !== null) return { ok: false, error: refusal };
   } catch (e) {
     if (e instanceof ConfigError) return { ok: false, error: `${e.message} — refusing rather than guess the monthly limit` };
@@ -330,9 +398,11 @@ export function signRun(session, claimedHash, o) {
   });
   if (typeof child?.unref === 'function') child.unref();
   session.state.phase = 'signed';
+  // hamr 2026-10-05: the sign shows as the last step of the one progress list, never as a thread bubble
+  // hamr 2026-10-05 (option A): the drafting-spend line is that step's detail — nothing when there was no drafting spend (a Reuse)
   const draftLine = draftSpentUsd !== null
-    ? ` — drafting spent ${draftIncomplete ? 'at least ' : ''}${panelMoney2(draftSpentUsd)} (folds out of the run's own cap)`
+    ? `drafting spent ${draftIncomplete ? 'at least ' : ''}${panelMoney2(draftSpentUsd)} (folds out of the run's own cap)`
     : '';
-  session.state.messages.push({ role: 'system', text: `signed — spec hash ${session.state.specHash}${draftLine} — run starting detached, own log at ${logFile}` });
+  if (Array.isArray(session.state.steps)) session.state.steps.push({ id: 'signed', label: STEP_LABELS.signed, status: 'done', detail: draftLine });
   return { ok: true, job: session.state.resolvedSpecPath };
 }

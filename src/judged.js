@@ -64,7 +64,7 @@
 // redacts at its emission boundary, the same split `src/kinds.js` documents.
 
 import { createRequire } from 'node:module';
-import { extractArtifact, priceOf, scrubRaw } from './text.js';
+import { extractArtifact, priceOf, scrubRaw, rateSourceFields } from './text.js';
 import { resolveProvider } from './providers.js';
 
 const require = createRequire(import.meta.url);
@@ -872,7 +872,7 @@ export async function runLocate({
     const { costUsd, unpricedRounds } = r === null ? { costUsd: null, unpricedRounds: 0 } : priceOf(r);
     // BA-21: the round's provenance rides beside the cost when the loop carried it (see
     // `defaultJudgeLoop`); a loop that never metered a rate adds no key.
-    onCost({ costUsd, unpricedRounds, ...(r && typeof r === 'object' && 'rateSource' in r ? { rateSource: r.rateSource } : {}) });
+    onCost({ costUsd, unpricedRounds, ...rateSourceFields(r) });
     return {
       ok: red === null, facts, red, costUsd, unpricedRounds, truncated, parseError,
       raw: scrubRaw({

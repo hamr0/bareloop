@@ -29,7 +29,7 @@ const PAGE_PATH = join(HERE, '..', 'src', 'panel', 'index.html');
 function loadStepMapGeometry() {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function stepMapColors');
-  const end = html.indexOf('function stepMapLegendHTML');
+  const end = html.indexOf('var lastSteps = null;');
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected to find the step-map geometry block in src/panel/index.html');
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
@@ -411,8 +411,8 @@ test('item 7: cacheLine — not recorded when memoryCache is null; real numbers 
 function loadMoneyFns(html) {
   return loadFns2(
     html,
-    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText'],
-    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText'],
+    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText'],
+    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText'],
   );
 }
 
@@ -1325,7 +1325,7 @@ function loadFns2(html, sourceNames, returnNames, extraSrc) {
 
 test('item 2: groupRunsByJob groups the /api/runs payload by job, newest run per job wins as "last", full per-job run list preserved', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const groupRunsByJob = loadFns(html, ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'groupRunsByJob'], 'groupRunsByJob');
+  const groupRunsByJob = loadFns(html, ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'groupRunsByJob'], 'groupRunsByJob');
   const runs = [
     {
       runid: 'a2', job: 'alpha', at: '2026-09-02T00:00:00.000Z', glyph: '✓', checkType: 'deterministic', model: 'deepseek-chat', spend: '$0.60', wall: '2m00s', date: '2026-09-02',
@@ -1350,7 +1350,7 @@ test('item 2: workflow search matches a job if the query matches ANY of its runs
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { groupRunsByJob, filterWorkflows } = loadFns2(
     html,
-    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
     ['groupRunsByJob', 'filterWorkflows'],
   );
   const runs = [
@@ -1378,7 +1378,7 @@ test('item 2: a ✗ result filter keeps a job whose LATEST run is ✓ but an OLD
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { groupRunsByJob, filterWorkflows } = loadFns2(
     html,
-    ['panelMoney', 'panelMoneyWithDraft', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
+    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
     ['groupRunsByJob', 'filterWorkflows'],
   );
   const runs = [
@@ -1457,6 +1457,7 @@ function makeWorkflowsPage() {
   const src = [
     extractFnSource(html, 'escapeXml'),
     extractFnSource(html, 'glyphClass'),
+    extractFnSource(html, 'statusWordHtml'),
     extractFnSource(html, 'groupRunsByJob'),
     extractFnSource(html, 'filtersActive'),
     extractFnSource(html, 'autoExpandJob'),
@@ -1467,7 +1468,14 @@ function makeWorkflowsPage() {
     // rowSpendText, a real dependency, pulled in verbatim rather than faked.
     extractFnSource(html, 'panelMoney'),
     extractFnSource(html, 'panelMoneyWithDraft'),
+    extractFnSource(html, 'liveSpendText'),
+    extractFnSource(html, 'liveWallPhrase'),
+    extractFnSource(html, 'duration'),
+    extractFnSource(html, 'rowIsLive'),
+    extractFnSource(html, 'rowWallText'),
     extractFnSource(html, 'rowSpendText'),
+    // P5-R: both row builders paint the "resumed ×N" tag through this one helper
+    extractFnSource(html, 'resumedTagHtml'),
     extractFnSource(html, 'buildRunRowEl'),
     extractFnSource(html, 'renderWorkflows'),
   ].join('\n');
@@ -1864,12 +1872,19 @@ test('buildStepMapSVG: a single-attempt step and a no-verdict part (e.g. plan) r
   assert.doesNotMatch(svg, /stroke-dasharray="3,3"/, 'no box here has >1 attempts, so no retry loop should render');
 });
 
-test('stepMapLegendHTML: includes the retry legend entry', () => {
+test('MAP: no sign legend (hamr 2026-10-04); one small line-style key `⤾ dashed = retry · dotted = resumed` sits under the MAP; each step card carries its own sign + word', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function stepMapLegendHTML');
-  const end = html.indexOf('function mapAvailWidth');
-  const body = html.slice(start, end);
-  assert.match(body, /dashed = retry/);
+  assert.doesNotMatch(html, /stepMapLegendHTML|map-legend/);
+  assert.doesNotMatch(html, /dot green"><\/span>done|dot magenta"><\/span>died/);
+  assert.match(html, /class="step-state"[^]*?class="st-word"/);
+  const src = html.slice(html.indexOf('function stepMapKeyHTML('), html.indexOf('var lastSteps = null;'));
+  // eslint-disable-next-line no-new-func
+  const key = new Function(src + '\nreturn stepMapKeyHTML;')();
+  assert.match(key([{}]), /⤾ dashed = retry<\/span><\/div>$/);
+  assert.doesNotMatch(key([{}]), /dotted/);
+  assert.match(key([{}, { resumedNext: true }]), /dashed = retry<\/span><span>&middot;&middot;&middot; dotted = resumed<\/span>/);
+  assert.match(html, /buildStepMapSVG\(steps, w\) \+ stepMapKeyHTML\(steps\)/);
+  assert.match(html, /buildStepMapSVG\(lastSteps, w\) \+ stepMapKeyHTML\(lastSteps\)/);
 });
 
 // ---------------------------------------------------------------------------
@@ -2205,18 +2220,13 @@ test('Chat tab CSS: .field inputs/selects are full width (mockup .field input,.f
 
 test('Chat tab CSS: #chat-msg is the ~2x-height, 2px-border text box from the mockup', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /#chat-msg\{min-height:64px;padding:8px 12px;border:2px solid var\(--border-strong\);\}/);
+  assert.match(html, /#chat-msg\{min-height:64px;padding:8px 12px;border:2px solid var\(--field-border\);background:var\(--field-bg\);\}/);
 });
 
-test('Chat tab markup: Sign & run, Send, Revise and Start drafting all start disabled in the served HTML (before any session/phase exists, click 1 must not be clickable)', () => {
+test('Chat tab markup: the ONE main button starts disabled in the served HTML (before any session/phase exists, it must not be clickable)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const startTag = html.match(/<button class="btn primary" type="button" id="chat-start-btn"[^>]*>/)[0];
-  const signTag = html.match(/<button class="btn primary" type="button" id="chat-sign-btn"[^>]*>/)[0];
-  const sendTag = html.match(/<button class="btn" type="button" id="chat-send-btn"[^>]*>/)[0];
-  const reviseTag = html.match(/<button class="btn" type="button" id="chat-revise-btn"[^>]*>/)[0];
-  for (const [name, tag] of [['chat-start-btn', startTag], ['chat-sign-btn', signTag], ['chat-send-btn', sendTag], ['chat-revise-btn', reviseTag]]) {
-    assert.match(tag, /\bdisabled\b/, `expected ${name} to render disabled by default`);
-  }
+  const mainTag = html.match(/<button class="btn primary wide" type="button" id="chat-main-btn"[^>]*>/)[0];
+  assert.match(mainTag, /\bdisabled\b/, 'expected chat-main-btn to render disabled by default');
 });
 
 test('Chat tab CSS: a disabled .btn.primary is visibly different from the enabled primary fill (not just opacity on the same blue), so Sign & run / Start drafting do not look clickable while disabled', () => {
@@ -2234,7 +2244,7 @@ test('Chat tab CSS: a disabled .btn.primary is visibly different from the enable
 test('Job card cap row: $ cap | Time cap only (P4b: no Token price field anywhere); there is no separate Drafting $ cap field', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const capRowStart = html.indexOf('<div class="cap-row"');
-  const block = html.slice(capRowStart, html.indexOf('<button class="btn primary" type="button" id="chat-start-btn"'));
+  const block = html.slice(capRowStart, html.indexOf('<div class="hint" id="chat-card-error"'));
   const moneyIdx = block.indexOf('jf-cap-money');
   const timeIdx = block.indexOf('jf-cap-time');
   assert.ok(moneyIdx !== -1 && timeIdx !== -1, 'expected both cap fields present');
@@ -2275,39 +2285,55 @@ test('build item 5 RED-PROOF (2026-09-28): the initial /api/runs load no longer 
   assert.match(block, /tab-run"\)\.click\(\)/, 'the right-pane Run details tab still loads the newest run, ready for when the person switches to Runs themselves');
 });
 
-test('build item 3 (2026-09-28): the single progress-indicator row is in the page, ahead of the chat thread, with a glyph and a label element', () => {
+test('progress list (2026-10-05 placement): ONE list element sits under the chat thread, directly above the ask box, hidden until a session has steps', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /<div class="chat-progress-row" id="chat-progress-row"[^>]*hidden>/);
-  assert.match(html, /id="chat-progress-glyph"/);
-  assert.match(html, /id="chat-progress-label"/);
-  const progressIdx = html.indexOf('id="chat-progress-row"');
-  const threadIdx = html.indexOf('id="chat-thread"');
-  assert.ok(progressIdx !== -1 && threadIdx !== -1 && progressIdx < threadIdx, 'the progress row must render ahead of the chat thread');
+  assert.match(html, /<ol class="chat-steps" id="chat-progress-row"[^>]*hidden><\/ol>/);
+  const at = (id) => html.indexOf(`id="${id}"`);
+  assert.ok(at('job-card') < at('chat-thread') && at('chat-thread') < at('chat-progress-row'), 'job card, then thread, then the progress list');
+  assert.ok(at('chat-progress-row') < at('chat-action-error') && at('chat-action-error') < html.indexOf('<textarea id="chat-msg"') && html.indexOf('<textarea id="chat-msg"') < at('chat-main-btn'), 'progress list, action error, ask box, main button');
+  assert.doesNotMatch(html, /chat-progress-glyph|chat-progress-label|\[progress\./, 'the old glyph+label row is gone');
 });
 
-test('build item 3 RED-PROOF (2026-09-28): the progress dots reduced-motion fallback renders a STATIC fully-dotted form, never the animated cycle', () => {
+test('progress list (2026-10-05): renderProgress reports a change only when the content changed; renderActions scrolls the newest line into view only then, only while live, and never focuses', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function startProgressDots(){');
-  const end = html.indexOf('function progressLabelFor(state){');
-  assert.ok(start !== -1 && end !== -1 && end > start, 'expected startProgressDots to be present');
-  const body = html.slice(start, end);
-  assert.match(body, /reducedMotion/);
-  // 4 dots now (build item 3, 2026-09-28 2nd pass) — was 3 dots ("...")
-  // before the dot cycle itself was widened to 1..4 in the same change.
-  assert.match(body, /\[progress\.\.\.\.\]/, 'the static reduced-motion fallback must be the fully-dotted (4-dot) form, not a half-cycled one');
+  const row = { hidden: true, innerHTML: '', lastElementChild: null };
+  const rp = ['renderProgress', 'progressLabelFor', 'escapeXml'].map((n) => extractFnSource(html, n)).join('\n');
+  const ra = extractFnSource(html, 'renderActions');
+  let scrolls = 0; let lastArg = null;
+  const li = { scrollIntoView: (o) => { scrolls += 1; lastArg = o; } };
+  // eslint-disable-next-line no-new-func
+  const renderActions = new Function('progressRow', 'errEl', 'CLIENT_TERMINAL_PHASES', 'refreshStartEnabled', `var lastState, sessionLive;\n${rp}\n${ra}\nreturn renderActions;`)(
+    row, { textContent: '' }, ['refused', 'abandoned', 'error', 'signed', 'signing-failed'], () => {});
+  const a = { phase: 'drafting', steps: [{ id: 'copy', label: 'copying source', status: 'running', detail: '' }] };
+  row.lastElementChild = li;
+  renderActions(a); assert.equal(scrolls, 1, 'a new line scrolls');
+  renderActions(JSON.parse(JSON.stringify(a))); assert.equal(scrolls, 1, 'an identical poll tick does not scroll');
+  renderActions({ phase: 'drafting', steps: [{ id: 'copy', label: 'copying source', status: 'done', detail: '' }, { id: 'draft', label: 'drafting', status: 'running', detail: '' }] });
+  assert.equal(scrolls, 2, 'a new/changed line scrolls');
+  assert.deepEqual(lastArg, { block: 'nearest' });
+  renderActions({ phase: 'signed', steps: [{ id: 'signed', label: 'signed hash', status: 'done', detail: '' }] });
+  assert.equal(scrolls, 2, 'a terminal phase never scrolls');
+  const progressPath = rp + ra;
+  assert.doesNotMatch(progressPath, /\.focus\(/, 'the progress render path never moves keyboard focus');
 });
 
-test('build item 2 (2026-09-28): onPhase no longer posts a chat bubble — the progress label is collapsed into state.progressLabel only, never say()\'d', () => {
+test('progress list: the running dots are CSS and stop under prefers-reduced-motion (a static ellipsis)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(html, /@keyframes step-dots/);
+  assert.match(html, /@media \(prefers-reduced-motion: no-preference\)\{\s*\.chat-steps \.step\.run \.step-sign::after\{[^}]*animation:step-dots/);
+  assert.match(html, /\.chat-steps \.step\.run \.step-sign::after\{content:"\\2026";\}/, 'the default (reduced-motion) form is the static ellipsis');
+  assert.doesNotMatch(html, /progressDotCount/, 'no JS dot timer any more');
+});
+
+test('build item 2 (2026-09-28): onPhase no longer posts a chat bubble — it only advances the progress list, never say()\'d', () => {
   const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
   const start = src.indexOf('const onPhase = (name, data = {}) => {');
-  const end = src.indexOf('};', start) + 2;
+  const end = src.indexOf('\n  };', start) + 5;
   assert.ok(start !== -1, 'expected onPhase to be present');
   const body = src.slice(start, end);
-  // strip `//` comment lines before scanning — this function's own doc
-  // comment mentions `say(` in prose, which must not itself trip the check.
   const codeOnly = body.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
-  assert.doesNotMatch(codeOnly, /say\(/, 'onPhase must never post a chat message of its own (build item 2: it used to double up with the refusal that often followed)');
-  assert.match(body, /state\.progressLabel/);
+  assert.doesNotMatch(codeOnly, /say\(/, 'onPhase must never post a chat message of its own');
+  assert.match(body, /stepStart\(PHASE_STEP\[name\]/);
 });
 
 test('build item 2 (2026-09-28): the rendered "who" label for a system/bot message is plain "bareloop", never the jargon "bareloop (progress)" suffix', () => {
@@ -2317,8 +2343,8 @@ test('build item 2 (2026-09-28): the rendered "who" label for a system/bot messa
 
 test('build item 4 (2026-09-28): Start drafting disables immediately on click (before the network response), and is re-enabled only on a terminal phase', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('startBtn.addEventListener("click", function(){');
-  const end = html.indexOf('checkDepsBtn.addEventListener', start);
+  const start = html.indexOf('function doStart(){');
+  const end = html.indexOf('function doCheckDeps', start);
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected the Start click handler to be present');
   const body = html.slice(start, end);
   const sessionLiveIdx = body.indexOf('sessionLive = true;');
@@ -2348,7 +2374,7 @@ test('build item 5 (2026-09-28): ONE $0 readiness line renders under the Model f
   assert.doesNotMatch(modelField, /id="jf-key-status"/, 'the old two-element split must be gone');
   assert.doesNotMatch(modelField, /id="jf-reach-status"/);
   assert.match(html, /var keyOk = false;/);
-  assert.match(html, /startBtn\.disabled = !capOk \|\| sessionLive \|\| !keyOk;/);
+  assert.match(html, /startOk = capOk && !sessionLive && keyOk;/);
 });
 
 // ---------------------------------------------------------------------------
@@ -2514,8 +2540,8 @@ test('build item 1: chatPostOutcome — RED-PROOF against the pre-fix decision r
 
 test('build item 1: sendBtn/reviseBtn only clear msgInput inside the o.ok branch — a failed POST must never wipe the typed answer', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const sendSrc = html.slice(html.indexOf('sendBtn.addEventListener("click"'), html.indexOf('reviseBtn.addEventListener("click"'));
-  const reviseSrc = html.slice(html.indexOf('reviseBtn.addEventListener("click"'), html.indexOf('signBtn.addEventListener("click"'));
+  const sendSrc = html.slice(html.indexOf('function doSend('), html.indexOf('function doRevise('));
+  const reviseSrc = html.slice(html.indexOf('function doRevise('), html.indexOf('function doSign('));
   for (const [name, src] of [['send', sendSrc], ['revise', reviseSrc]]) {
     assert.match(src, /if\(o\.ok\)\{\s*chatActionOk\(\);\s*msgInput\.value = "";/, `${name}: msgInput.value = "" must sit inside the o.ok branch`);
     // the ONLY place msgInput.value is assigned in this handler is that one
@@ -2527,7 +2553,7 @@ test('build item 1: sendBtn/reviseBtn only clear msgInput inside the o.ok branch
 
 test('build item 1: every chat POST site (send, revise, sign-prepare, sign, check-deps) has a .catch so a rejected fetch (network drop, server restart) surfaces, never silently no-ops', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const chatBlock = html.slice(html.indexOf('checkDepsBtn.addEventListener("click"'), html.indexOf('refreshStartEnabled();\n  })();'));
+  const chatBlock = html.slice(html.indexOf('function doCheckDeps('), html.indexOf('refreshStartEnabled();\n  })();'));
   const catches = chatBlock.match(/\}\)\.catch\(function\(\)\{ chatActionFailed\(/g) || [];
   assert.equal(catches.length, 5, `expected 5 .catch(...chatActionFailed...) call sites (check-deps, send, revise, sign-prepare, sign), found ${catches.length}`);
 });
@@ -2544,8 +2570,9 @@ test('build item 1: #chat-action-error exists in the markup, distinct from #chat
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /id="chat-action-error"/);
   assert.match(html, /var actionErrEl = document\.getElementById\("chat-action-error"\);/);
-  const newStart = html.indexOf('newBtn.addEventListener("click"');
-  const newSrc = html.slice(newStart, html.indexOf('});', newStart) + 3);
+  // 2026-10-05: + New is gone; Clear/Abandon (resetCard) and Reuse both go through openNewCard(), where the clear lives
+  assert.match(extractFnSource(html, 'resetCard'), /clearStartFrom\(\);\s*openNewCard\(\);/);
+  const newSrc = extractFnSource(html, 'openNewCard');
   assert.match(newSrc, /actionErrEl\.textContent = "";/);
 });
 
@@ -2594,28 +2621,71 @@ test('build item 3: progressLabelFor — a pending ask always beats the stale pr
   );
 });
 
-test('build item 3: the progress row markup shows the LABEL span before the GLYPH span (label first, dots never push it)', () => {
+test('progress list: renderProgress draws one line per step (running = dots, done = check, failed = cross + its reason once); a pending ask replaces the running label', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const rowStart = html.indexOf('id="chat-progress-row"');
-  const rowEnd = html.indexOf('</div>', rowStart);
-  const row = html.slice(rowStart, rowEnd);
-  const labelIdx = row.indexOf('id="chat-progress-label"');
-  const glyphIdx = row.indexOf('id="chat-progress-glyph"');
-  assert.ok(labelIdx !== -1 && glyphIdx !== -1 && labelIdx < glyphIdx, 'chat-progress-label must come before chat-progress-glyph in the markup');
+  const row = { hidden: true, innerHTML: '' };
+  const src = ['renderProgress', 'progressLabelFor', 'escapeXml'].map((n) => extractFnSource(html, n)).join('\n');
+  // eslint-disable-next-line no-new-func
+  const bound = new Function('progressRow', `${src}\nreturn renderProgress;`)(row);
+  bound({ steps: [] });
+  assert.equal(row.hidden, true);
+  bound({ steps: [
+    { id: 'copy', label: 'copying source', status: 'done', detail: '' },
+    { id: 'check', label: 'checking source', status: 'failed', detail: '3 files look like secrets: a.js, b.js' },
+  ] });
+  assert.equal(row.hidden, false);
+  assert.equal((row.innerHTML.match(/<li /g) || []).length, 2);
+  assert.match(row.innerHTML, /step ok" data-step="copy"[^]*\u2713/);
+  assert.match(row.innerHTML, /step bad" data-step="check"[^]*\u2717[^]*3 files look like secrets: a\.js, b\.js/);
+  assert.equal((row.innerHTML.match(/3 files look like secrets/g) || []).length, 1, 'the reason appears once');
+  bound({ steps: [{ id: 'copy', label: 'copying source', status: 'running', detail: '' }] });
+  assert.match(row.innerHTML, /step run"/);
+  bound({ steps: [{ id: 'confirm', label: 'confirming plan', status: 'running', detail: '' }], pendingAsk: { kind: 'menu' } });
+  assert.match(row.innerHTML, /waiting for your OK/);
+  assert.doesNotMatch(row.innerHTML, /step run"/, 'waiting on the person is not an animation');
+  for (const kind of ['menu', 'install-needed', 'other']) {
+    bound({ steps: [
+      { id: 'copy', label: 'copying source', status: 'done', detail: '' },
+      { id: 'deps', label: 'checking packages', status: 'running', detail: 'Packages missing in the copy. Run: npm ci' },
+    ], pendingAsk: { kind } });
+    const waitLi = row.innerHTML.match(/<li class="step wait"[^]*?<\/li>/);
+    assert.ok(waitLi, `${kind}: a waiting step has its own class`);
+    assert.doesNotMatch(waitLi[0], /\u2713|\u2717/, `${kind}: a waiting step carries no check and no cross`);
+    assert.match(waitLi[0], /Packages missing in the copy/, `${kind}: its detail stays`);
+    assert.doesNotMatch(row.innerHTML, /step run"/, `${kind}: no animation`);
+    assert.match(row.innerHTML, /step ok" data-step="copy"[^]*\u2713/, 'a done step still shows the check');
+  }
 });
 
-test('build item 3: the progress dots cycle 1..4 (never 1..3) — [progress.] up to [progress....]', () => {
+test('progress list (hamr 2026-10-05): a step\'s detail is its OWN line under the step, prefixed "> "; a failed step keeps the cross and its reason on that line', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const src = extractFnSource(html, 'startProgressDots');
-  assert.match(src, /progressDotCount % 4/);
-  assert.match(src, /\[progress\.\.\.\.\]/, 'the reduced-motion fallback must show the FULL 4-dot form, never the old 3-dot one');
+  const row = { hidden: true, innerHTML: '' };
+  const src = ['renderProgress', 'progressLabelFor', 'escapeXml'].map((n) => extractFnSource(html, n)).join('\n');
+  // eslint-disable-next-line no-new-func
+  const bound = new Function('progressRow', `${src}\nreturn renderProgress;`)(row);
+  bound({ steps: [
+    { id: 'reuse', label: 'reusing signed workflow', status: 'done', detail: 'drafting skipped ($0)' },
+    { id: 'check', label: 'checking source', status: 'failed', detail: '3 files look like secrets' },
+  ] });
+  const lis = row.innerHTML.match(/<li [^]*?<\/li>/g);
+  assert.equal(lis.length, 2);
+  assert.match(lis[0], /<(div|span) class="step-detail">&gt; drafting skipped \(\$0\)<\/(div|span)>/, 'detail carries the "> " prefix');
+  assert.ok(lis[0].indexOf('step-sign') < lis[0].indexOf('step-detail'), 'sign is on the step line, detail after it');
+  assert.match(lis[0], /step-line/, 'the step has its own line element separate from the detail');
+  assert.match(lis[1], /\u2717[^]*&gt; 3 files look like secrets/);
+  const css = html.match(/\.chat-steps \.step-detail\{[^}]*\}/)[0];
+  assert.match(css, /flex-basis:100%|flex:1 1 100%|display:block/, 'the detail takes a full line of its own');
 });
 
-test('build item 3: renderProgress delegates the label to progressLabelFor — never a second hand-composed "waiting for you" string', () => {
+test('Check again is the ONE main button\'s wording while waiting on an install (hamr 2026-10-05, supersedes option A)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const src = extractFnSource(html, 'renderProgress');
-  assert.match(src, /progressLabelEl\.textContent = progressLabelFor\(state\);/);
-  assert.doesNotMatch(src, /waiting for you"/, 'the wording must live only in progressLabelFor, not be re-spelled here too');
+  assert.match(html, /text: "Check again", action: "check-deps"/);
+  assert.doesNotMatch(html, /id="chat-check-deps-btn"/);
+});
+
+test('Runs list order (hamr 2026-10-05): the runs/workflows list comes first, imported jobs below it', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.ok(html.indexOf('id="wf-list"') < html.indexOf('id="import-list"'), 'wf-list is before import-list');
 });
 
 // ---------------------------------------------------------------------------
@@ -2641,11 +2711,10 @@ test('build item 4: renderMessages source builds html without a .who div when ch
   assert.doesNotMatch(src, /<div class="who">' \+ escapeXml\(who\) \+ '<\/div>' \+ escapeXml\(m\.text\)/, 'must never unconditionally emit the .who div any more');
 });
 
-test('build item 4: the three named step lines are short and plain (Copying source, Packages found, Drafting with <model>)', () => {
+test('progress list: no pipeline step is a chat bubble any more — the thread carries chat turns only', () => {
   const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
-  assert.match(src, /say\('system', 'Copying source \(\$0\)'\);/);
-  assert.match(src, /say\('system', 'Packages found'\);/);
-  assert.match(src, /say\('system', `Drafting with \$\{card\.model\}, \$\$\{card\.capUsd\.toFixed\(2\)\} cap`\);/);
+  const code = src.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  assert.doesNotMatch(code, /say\('system'/);
 });
 
 // ---------------------------------------------------------------------------
@@ -2675,7 +2744,7 @@ test('build item 6: renderRun uses liveSpendText/liveWallPhrase exactly when liv
   const start = html.indexOf('function renderRun(detail){');
   const end = html.indexOf('function renderRun(', start + 1) === -1 ? html.indexOf('</script>', start) : html.length;
   const src = html.slice(start, start + 4000);
-  assert.match(src, /var isLiveNoEnd = !detail\.died && detail\.spentUsd === null;/);
+  assert.match(src, /var isLiveNoEnd = !detail\.died && detail\.spentUsd === null && detail\.fromBridge !== true;/);
   assert.match(src, /spendText = liveSpendText\(detail\.spendFloorUsd, detail\.draftSpentUsd, detail\.draftSpendComplete\);/);
   assert.match(src, /wallPhrase = liveWallPhrase\(detail\.wallFloorMs\);/);
   void end;
@@ -2941,7 +3010,7 @@ test('bug fix: no duplicate HTML "id" attributes in the panel page — a repeate
 
 test('bug fix: the Details/Job tabpanel\'s readonly job card has its own unique id, and renderJob() targets that id (not the Chat tab\'s draft job-card, which sits earlier in the DOM and would otherwise win any getElementById lookup)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /<div class="job-card compact" id="job-card" data-testid="job-card" hidden>/);
+  assert.match(html, /<div class="job-card compact" id="job-card" data-testid="job-card">/);
   assert.match(html, /<div class="job-card" id="job-card-readonly" hidden data-testid="job-card-readonly">/);
   const renderJobStart = html.indexOf('function renderJob(job){');
   const renderJobEnd = html.indexOf('\n  }', renderJobStart);
@@ -2958,4 +3027,29 @@ test('P4a Providers: the Test cell has a fixed width and its result wraps, so pr
   assert.ok(w && rule[1].includes(`min-width:${w}px`) && rule[1].includes(`max-width:${w}px`), 'width = min-width = max-width');
   assert.match(html, /\.pv-table \.pv-test-result\{[^}]*white-space:normal/, 'the result text wraps instead of widening the cell');
   assert.match(html, /'<td class="pv-test-cell">'/, 'the row builder puts the Test cell in that class');
+});
+
+test('Model is the fifth open box on a reuse card: setReuseLocked no longer locks the Model menu, and a Model change refetches the estimate line for that worker', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const lock = extractFnSource(html, 'setReuseLocked');
+  assert.doesNotMatch(lock, /modelSelect/, 'the Model menu stays editable on a reuse card');
+  const fn = extractFnSource(html, 'refreshReuseLine');
+  assert.match(fn, /&model=" \+ encodeURIComponent\(modelSelect\.value\)/);
+  assert.match(fn, /sfLine\.textContent = r\.line/);
+  assert.match(html, /modelSelect\.addEventListener\("change", refreshReuseLine\)/);
+});
+
+test('progress list: a signed session ends "signed hash" with a check and its "> drafting spent" detail (hamr 2026-10-05)', () => {
+  const html = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
+  const src = ['renderProgress', 'progressLabelFor', 'escapeXml'].map((n) => extractFnSource(html, n)).join('\n');
+  const row = { hidden: true, innerHTML: '' };
+  const render = new Function('progressRow', `${src}\nreturn renderProgress;`)(row);
+  render({ phase: 'signed', pendingAsk: null, steps: [
+    { id: 'hash', label: 'generating hash', status: 'done', detail: 'spec hash abc' },
+    { id: 'signed', label: 'signed hash', status: 'done', detail: "drafting spent $0.12 (folds out of the run's own cap)" },
+  ] });
+  const last = row.innerHTML.slice(row.innerHTML.lastIndexOf('<li'));
+  assert.match(last, /class="step ok"[^>]*data-step="signed"/);
+  assert.match(last, /<span class="step-label">signed hash<\/span><span class="step-sign">✓<\/span>/);
+  assert.match(last, /&gt; drafting spent \$0\.12/);
 });

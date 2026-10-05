@@ -23,6 +23,7 @@ import { readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import { HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
+import { legsOf } from './legs.js';
 
 /** severity order, worst-first (the fold's display order; frequency ranks within) */
 export const LEDGER_CLASSES = Object.freeze([
@@ -67,6 +68,7 @@ const QUOTED_VERB_RE = /"([a-z0-9-]+)"/;
 const EXCLUDED_ESCALATIONS = new Set([
   'cap-halt',           // a budget story, not a lib bug
   'wall-halt',          // the TIME budget's version of the same story (T, PRD v1.27)
+  'stopped',            // the PERSON's stop (P5 item 5) — a checkpoint, never a lib bug
   // A stall is the ABSENCE of beats, not an observed provider failure: nothing
   // saw the transport fail, so the typed-lib route rendered a live ask reading
   // "bare-agent: the provider path failed — worker stalled…" and aimed a bug at
@@ -408,7 +410,7 @@ export function updateLedger({ ledgerFile, spineFiles }) {
 // ── BA-21 pricing provenance: the READ side (REPORTING ONLY) ─────────────────
 // bare-agent >=0.37 rides `rateSource` beside `pricing` on every metering payload,
 // and the plan flow forwards it verbatim onto `worker-round`/`judge-round`/`worker-turn`
-// (`rateSourceFields`, src/planrun.js — the write side).
+// (`rateSourceFields`, src/text.js — the write side).
 //
 // `judge-round`'s payload (src/kinds.js's `onJudgeCost({...})`) forwards `rateSource` from the
 // judge Loop's per-call metering (`defaultJudgeLoop`, src/judged.js); a judge round whose loop
@@ -525,9 +527,103 @@ export function floorsFromRecords(records) {
   }
   const spendFloorUsd = pricedCount > 0 ? spendSum : null;
 
-  const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
-  const firstMs = withTs.length ? Date.parse(withTs[0].ts) : NaN;
-  const lastMs = withTs.length ? Date.parse(withTs[withTs.length - 1].ts) : NaN;
-  const wallFloorMs = Number.isFinite(firstMs) && Number.isFinite(lastMs) && lastMs >= firstMs ? lastMs - firstMs : null;
+  // P5-R: a resumed run is one spine of several legs — the wall floor is the sum of each leg's own
+  // first -> last window, the quiet time between legs excluded (hamr 2026-10-02, 2A). One leg (every spine
+  // before P5-R) reads exactly as it always did.
+  const legs = legsOf(records.filter((r) => r && typeof r === 'object'));
+  let wallFloorMs = null;
+  let sum = 0;
+  let known = 0;
+  for (const l of legs) {
+    const withTs = l.records.filter((r) => typeof r.ts === 'string');
+    const firstMs = withTs.length ? Date.parse(withTs[0].ts) : NaN;
+    const lastMs = withTs.length ? Date.parse(withTs[withTs.length - 1].ts) : NaN;
+    if (Number.isFinite(firstMs) && Number.isFinite(lastMs) && lastMs >= firstMs) { sum += lastMs - firstMs; known += 1; }
+  }
+  if (known > 0) wallFloorMs = sum;
   return { spendFloorUsd, wallFloorMs };
 }
+
+/**
+ * One run's own spend, off its spine records: this LEG's figure (never the chain fold),
+ * plus the drafting spend the run was signed with (counted once — on the first leg only).
+ * @param {any[]} records ONE leg's records
+ * @param {{ withDraft?: boolean }} [o] `withDraft: false` leaves the drafting spend out (a caller folding the CHAIN's own spend, which never held it)
+ * @returns {{ usd: number, complete: boolean }}
+ */
+export function legSpend(records, { withDraft = true } = {}) {
+  const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
+  const jobEnd = records.findLast((r) => r && r.type === 'job-end') ?? null;
+  const rounds = records.filter((r) => r && SPEND_RECORD_TYPES.includes(r.type));
+  const pricedSum = rounds.reduce((a, r) => (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? a + r.costUsd : a), 0);
+  const unpriced = rounds.filter((r) => !(typeof r.costUsd === 'number' && Number.isFinite(r.costUsd))).length;
+  let usd = pricedSum;
+  let complete = false;
+  if (jobEnd) {
+    const eng = jobEnd.engagementSpentUsd;
+    usd = typeof eng === 'number' && Number.isFinite(eng) ? eng : pricedSum;
+    complete = jobEnd.spendComplete === true && unpriced === 0;
+  }
+  // drafting spend: a RESUMED / door-rerun leg carries the flag again but the first leg already counted it
+  const resumed = !!jobStart && 'priorSpentUsd' in jobStart;
+  if (withDraft && jobStart && !resumed && typeof jobStart.draftSpentUsd === 'number' && Number.isFinite(jobStart.draftSpentUsd) && jobStart.draftSpentUsd > 0) {
+    usd += jobStart.draftSpentUsd;
+    if (jobStart.draftSpendComplete === false) complete = false;
+  }
+  return { usd, complete };
+}
+
+/**
+ * A WHOLE RUN's own spend (P5-R: a resumed run is one spine of several legs): the sum of each leg's own
+ * figure ({@link legSpend}), never the declared chain fold. ONE basis — every leg's own rounds — so a leg is
+ * counted once: the last leg's `job-end.spentUsd` also carries the earlier legs, and adding it to the
+ * earlier legs' own figures would count them twice. A leg with no terminal (it died) is a floor, so the run
+ * is `complete: false`. A spine with no marker is one leg and reads exactly as {@link legSpend} always did.
+ * @param {any[]} records one spine's records
+ * @param {{ withDraft?: boolean }} [o]
+ * @returns {{ usd: number, complete: boolean, lastLegUsd: number }} `lastLegUsd`: the latest leg's own share (what a claim still held for it is measured against)
+ */
+export function runSpend(records, o = {}) {
+  const legs = legsOf(records);
+  if (legs.length === 0) return { usd: 0, complete: false, lastLegUsd: 0 };
+  let usd = 0;
+  let complete = true;
+  let lastLegUsd = 0;
+  for (const l of legs) {
+    const s = legSpend(l.records, o);
+    usd += s.usd;
+    if (!s.complete) complete = false;
+    lastLegUsd = s.usd;
+  }
+  return { usd, complete, lastLegUsd };
+}
+
+/**
+ * What a FINISHED run's whole chain spent, for a caller that folds it forward (the review door's rerun opens a
+ * new run under the same signed ceiling). One basis per shape: a spine of ONE leg is read by its terminal's own
+ * chain total (`job-end.spentUsd`, which already carries whatever fold that leg inherited — what every door has
+ * always read); a resumed run's several legs are the first leg's own inherited fold (spend the file does not
+ * hold) plus each leg's OWN spend, so a later leg's terminal total — which also carries the earlier legs — is
+ * never added on top of them. Not finite / no terminal = `usd: 0, complete: false` (never an exact-looking 0).
+ * @param {any[]} records one spine's records
+ * @returns {{ usd: number, complete: boolean }}
+ */
+export function chainSpend(records) {
+  const legs = legsOf(records);
+  const num = (/** @type {unknown} */ v) => typeof v === 'number' && Number.isFinite(v);
+  if (legs.length <= 1) {
+    const je = legs[0]?.jobEnd ?? null;
+    const known = num(je?.spentUsd);
+    return { usd: known ? je.spentUsd : 0, complete: known && je?.spendComplete !== false };
+  }
+  const head = legs[0].jobStart;
+  let usd = num(head?.priorSpentUsd) && head.priorSpentUsd > 0 ? head.priorSpentUsd : 0;
+  let complete = head?.priorSpendComplete !== false;
+  for (const l of legs) {
+    const s = legSpend(l.records, { withDraft: false });
+    usd += s.usd;
+    if (!s.complete) complete = false;
+  }
+  return { usd, complete };
+}
+

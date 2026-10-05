@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
+import { cleanEnv } from './helpers.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 const REAL_SPEC = JSON.parse(readFileSync(new URL('../jobs/pulselog-u-types.json', import.meta.url), 'utf8'));
@@ -72,7 +73,7 @@ function buildFixture(opts = {}) {
 
 const preview = (args) => {
   const r = spawnSync(process.execPath, [RUNNER, ...args], {
-    encoding: 'utf8', timeout: 60_000, env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' },
+    encoding: 'utf8', timeout: 60_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) throw new Error(`run-u.mjs never exited (${r.error?.code ?? r.signal ?? 'no error'}):\n${out.slice(0, 400)}`);

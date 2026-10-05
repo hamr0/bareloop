@@ -1112,7 +1112,9 @@ from ralph's shipped `runClose` because one runs a DECLARATION and the other an 
 
 The shell's own fixed code for the closed exit menu — nothing here executes
 agent-authored text. `snapshotScope` hashes every file under a scope prefix (the
-"before" side of `tree-changed`; a missing dir snapshots empty). `evalExits` is AND-only
+"before" side of `tree-changed`; a missing dir snapshots empty; a scope whose prefix names a single
+regular FILE — a file-valued `writeScope` becomes `src/x.js/**` — snapshots that one file, keyed by the
+prefix, F212: a readdir on a file used to read as an empty tree forever). `evalExits` is AND-only
 and never short-circuits — the result names EVERY failing wall (`{ pass, results }`,
 each result `{ type, pass, detail?, fault? }`). `tree-changed` reads OUTCOME (bytes vs
 the snapshot): an identical re-write is NOT a change (F43) and git status is never
@@ -1229,7 +1231,7 @@ known-answer round-trip before tokens: `smoke-red` — a silent degradation thro
 
 Outcomes: `green | already-green | escalated | unapproved-spec | job-red | smoke-red |
 plan-red | check-red | close-red | close-unsupported | recipe-stale | branch-red | pricing-red |
-provider-red | interpreter-red | cap-halt | wall-halt | step-stalled |
+provider-red | interpreter-red | cap-halt | wall-halt | stopped | step-stalled |
 step-red:<id> | runner-drained`.
 
 **`runner-drained` (F140/PRD item 28(c))** is a distinct class from every outcome above: it is
@@ -1380,9 +1382,13 @@ ambiguity, not a merge. `resolveHumanRuling(fresh, held)` is the exported seam t
 `branch-red` is the WORK BRANCH refusing (below): the patient is not a git checkout, its
 branch namespace has no free name, or a resume's recorded branch is gone. Zero tokens, and
 never a fallback to working on the branch the run was handed. `provider-red` is a
-transport throw or a worker round the API cut off mid-generation (`truncated:max_tokens`,
-BA-6 — before which it laundered into a clean finish, F25): no verdict exists and the failed
-round's spend is only partly known (F6). `cap-halt` is the wallet; `wall-halt` is the clock
+transport throw, or a scout/drafter/replan round the API cut off mid-generation
+(`truncated:max_tokens`, BA-6 — before which it laundered into a clean finish, F25): no
+verdict exists and the failed round's spend is only partly known (F6). A STEP or FIX-loop
+worker round cut at `max_tokens` is NOT provider-red (F122 "2A" half b, hamr 2026-10-05, fix
+phase added by ruling A): it is a failed attempt — the round is booked, its output discarded,
+an `attempt-bounded` record carries the reason `output cut at the token limit (max_tokens)`,
+and the step's strike ladder (or the fix governor) applies as for any failed attempt. `cap-halt` is the wallet; `wall-halt` is the clock
 (F64 — a timeout derived from the run's own deadline is a governance stop, never a transport
 casualty). **`cap-halt` reaches you from the close-fix loop too, not only from a step:** the
 shell spells exhaustion (strikes on a step, and — since v1.46 — strikes in the fix loop as
@@ -2320,6 +2326,47 @@ watchdog `--wall-ms 0`, which it defaulted to `null` and armed no deadline at al
 still advertising one. The refusal names the lever: raise `maxWallMs`, which moves the spec hash
 and is re-signed.
 
+**A resume is the SAME run — one runid, one spine file, a `leg-resume` marker inside (P5-R, hamr
+2026-10-02: "one run, one id, one file").** `bareloop run-u --resume <runid|path>` and `bareloop run
+<bundle> --resume <runid>` never mint a new id and never open a second file: the new leg APPENDS to the
+halted run's own spine (`u-<runid>.jsonl`, or `<bundleDir>/runs/<runid>/spine.jsonl`).
+- **The leg's first record is `leg-resume {leg: N, after, at}`** — `after` is how the previous leg ended
+  (its `job-end` outcome, `'died'` when it recorded none) — written BEFORE the outside watchdog spawns (the
+  watchdog judges a run dead by its file going quiet). `seq` continues from the file's own highest
+  (`makeSpine(file, {startSeq})`). Then the leg's own `job-start`, which keeps the declared fold
+  (`priorSpentUsd`/`priorWallMs`/…): the budget ceiling still folds prior spend.
+- **A torn tail is never edited.** If the file does not end in `\n` (a kill mid-append), the resume writes
+  ONE `\n` and starts a fresh line: the torn bytes stay exactly as they were, alone on their own line
+  directly before the marker. The spine is append-only forever.
+- **`legsOf(events)` (`src/legs.js`, internal — not exported from the package root) is the ONE owner of where
+  a leg starts and ends**, returning `{leg, start, end, records, jobStart, jobEnd, outcome, after, startMs,
+  endMs}`; a spine with no marker (every run written before P5-R, and every run nobody resumed) is ONE leg.
+  `parseSpineText` tolerates exactly one torn line directly before a marker (and the file's own last two
+  lines); any other unparseable line is a corrupt log. Every reader goes through it: the resume reader
+  (`readResume` windows a direct spine at the latest leg that reached a `job-start`; `checkpointAgeGate` and
+  `deathAtOf` look only at the latest leg's terminal), `replayRun`, the monthly limit, the run list, the
+  panel, the end-of-run readout (this leg only), `bundlerun`'s history.
+- **Money has ONE basis per reader: the sum of each leg's own rounds** (`SPEND_RECORD_TYPES`, echoes
+  excluded; `legSpend`/`runSpend`/`chainSpend` in `src/ledger.js`) — never the rounds plus a declared prior,
+  so leg 1 is counted once. **Time is the sum of each leg's own window, the gap between legs excluded**
+  (only working time charges the wall). **The outcome is the LAST leg's.** A run is live iff its last leg has
+  no `job-end` and its runner is alive. An unknown figure reads as unknown / "at least", never as less.
+- **Side files are per leg.** The gate audit: leg 2+ APPENDS to `u-<runid>-gate-audit.jsonl` (never a
+  rename-overwrite). The watchdog's kill note: `<spine>.leg<N>.watchdog.json` for N ≥ 2 (`u-watchdog.mjs
+  --report <path>`; leg 1 keeps `<spine>.watchdog.json`). `.lag.jsonl` accumulates.
+- **The run list keeps ONE row per run.** A resume appends `{type:'leg-start', runid, leg, pid, capUsd, at}`;
+  `readRunList` folds it: the row's live `pid`/`capUsd` are the latest leg's, and it carries `leg`. `settled`
+  and `released` entries carry an optional `leg` (absent = leg 1): a later leg's `released` gives back THAT
+  leg's claim and never removes the run, and the monthly hold is taken per leg (`claimRun({leg})`; a
+  resumed leg's own earlier legs count as spent money, never as a hold).
+- **Refusals stay**: a run whose last leg is live (pid from the latest `leg-start`), a green run, or a
+  non-resumable terminal is refused. `bareloop run`'s `history.jsonl` writes one row per LEG
+  (`leg: N` from leg 2, no `resumedFrom`) and `run.json` is rewritten unchanged (same worktree, the run's
+  own start).
+- **Not covered by this ruling, and unchanged:** the review-door `rerun` (`--door <runid> --decide rerun`)
+  is a NEW run with a new runid (its door reader folds the answered run's chain spend); Reuse workflow in
+  the panel is a new run.
+
 **A pause checkpoint is answered on the same command line** (N4, 2026-08-12 §5.2 — the
 terminal is the v1 surface; the panel is N6's). The reference runner takes
 `--decide accept|rerun|pause` with `--text` for the rerun door, gated on the SAME
@@ -2997,8 +3044,8 @@ separate tarball step).
   README.md           the operator questions, in the order `bareloop run` asks them
   blessing.json        absent at export; written by the run that first greens it
   history.jsonl        absent at export; one line appended per `bareloop run` on this machine
-  runs/<runid>/        absent at export; one per run leg — spine.jsonl, gate-audit.jsonl, close/ (the
-                       close's books) and run.json ({runid, worktree, seed, repo, at, resumedFrom?})
+  runs/<runid>/        absent at export; one per RUN (a resume continues it) — spine.jsonl, gate-audit.jsonl,
+                       close/ (the close's books) and run.json ({runid, worktree, seed, repo, at})
 ```
 
 **`bundleHash`** = sha256 over the sorted `path:contentSha256` lines of exactly `spec.json`
@@ -3204,7 +3251,8 @@ key you want first (the panel picks the row by the Model menu).
      different from the recorded one is a stop, exit `1`, spending nothing; `--repo` is optional
      on a resume) and hands the engine `resumeRun` on that run's spine — the engine's own gates
      (checkpoint age, tree-at-seed, liveness) and spend fold apply, so `--budget` can never widen
-     a resume. The new leg gets its own `runs/<newid>/`. The resume command a halted leg prints carries that leg's own
+     a resume. The new leg appends to the SAME `runs/<runid>/spine.jsonl` behind a `leg-resume` marker
+     (P5-R): no new id, run dir or worktree. The resume command a halted leg prints carries that leg's own
      `--budget`/`--wall`, only if you passed them (a tightened ceiling never silently reverts to the signed
      one). After a MONEY halt the line does NOT repeat the exhausted `--budget` (chain spend is folded, so
      it would halt again at once); it prints `--budget <more than $<spent so far>, at most $<signed
@@ -3223,7 +3271,8 @@ key you want first (the panel picks the row by the Model menu).
      inputs); `--door`/`--decide`/`--review-door` are not exposed on `run`.
   8. `appendHistory` — one `history.jsonl` line off this leg's own `job-end`: `{ runid, at,
      outcome, spentUsd, spendComplete, budgetUsd, maxWallMs, worktree, branch, bundleHash,
-     approveHash, resumedFrom? }` (the `bundleHash` ↔ `approveHash` pairing, POC fact 2).
+     approveHash, leg? }` (the `bundleHash` ↔ `approveHash` pairing, POC fact 2; one row per LEG of the
+     one run — `leg: N` from the second leg, no `resumedFrom`).
      `spentUsd`/`spendComplete` are never fabricated as `0` when unknown. No `job-end` (a $0
      refusal, a crash) writes no row. A `green` outcome on a still-unblessed bundle also calls
      `bless(bundleDir, { bundleHash, runid, outcome, host })`.
@@ -3295,7 +3344,7 @@ key you want first (the panel picks the row by the Model menu).
   $0: no interview, no author, no run trigger, no key ever read. A row is `{ at, runid, job,
   spine, patient, via }` — `spine`/`patient` are always absolute paths (`patient: null` when
   not known, e.g. every `via:"backfill"` row: no spine record carries a run's workdir);
-  `via` is `'run-u'`, `'bundle'`, or `'backfill'`. `bareloop run-u` and `bareloop run` (the
+  `via` is `'run-u'`, `'bundle'`, or `'backfill'`. A RESUMED run is still one row: `readRunList` folds its `leg-start` entries into it (`leg`, and the latest leg's `pid`/`capUsd`; P5-R). `bareloop run-u` and `bareloop run` (the
   bundle path) each append their own row at run START, before the first paid call — a
   list-append failure is caught at both call sites and printed loudly to stderr
   (`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (…)`); the run itself
@@ -3385,9 +3434,17 @@ key you want first (the panel picks the row by the Model menu).
   never a reimplementation of any gate. `GET /api/author/model-check?model=<id>` is the $0 readiness probe the job card runs
   before Start (`checkProviderReachable`, `src/providers.js` — a models-list GET only, never a
   completion; the page sees the key's NAME and a status word, never the value). `POST
-  /api/author/:id/check-deps` is the install-gap's "Check again" (`phase:'install-needed'`:
+  /api/author/:id/check-deps` is the install-gap's "Check again" (the main button's wording while waiting on an install) (`phase:'install-needed'`:
   the session waits on the person's own install, then re-runs `missingDependencies` on the
-  same copy — bareloop never installs). `GET /api/author/:id` polls the session's state
+  same copy — bareloop never installs). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
+  LIVE, unsigned session: phase becomes the terminal `abandoned` (releasing the one-at-a-time lock), money already booked
+  stays booked (`draftSpentUsd` is never zeroed; a call in flight still books its usage), no NEW model call starts;
+  `400` on a session that is not live, `404` unknown id, same guard as the other author routes. After `signed` the card's
+  button reads **Clear** and only empties the card (a run is stopped from the Run tab). `GET /api/author/live` →
+  `{ok, sessionId, state}` of the ONE live (non-terminal) session, or `{sessionId:null, state:null}`: a refreshed page
+  re-attaches to it from the server's session map (nothing is stored page-side). A panel restart mints a new token and
+  loses the in-memory sessions: the page then shows one "reload this page" line and stops the Chat poll (no auto-reload;
+  drafting money already spent stays booked via `draft-spend.json`, below). `GET /api/author/:id` polls the session's state
   (phase, chat messages, cost, `revisesLeft`, `specHash` once prepared). `POST /api/author/
   :id/send {text}` answers whatever the confirm turn is currently asking (the `language` pick or a plan's
   own follow-up question — the old `worseThanBefore` ask is retired, 2026-09-28) — refused outright when the pending ask is the
@@ -3411,6 +3468,167 @@ key you want first (the panel picks the row by the Model menu).
   under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
   `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
   `~/.config/bareloop/.env` keys-file loader, and Settings have landed (P4a/P4b — see "Settings" below).
+
+- **Panel P5 — the Ended block (`docs/product/PANEL-BUILD.md` Addendum 2026-10-02, item 1)** →
+  `GET /api/runs/:runid` carries `ended` = `{reason, next, line, actions:[{id,label}]}` for every
+  FINISHED run (green too; `null` while the run is live), and `GET /api/runs` carries `endedLine`
+  (the card's one short line under the job name, e.g. `money cap — resume`). Both come from ONE
+  code-owned function, `endedFor` (`src/panel/server.js`): fixed sentences keyed by the run's
+  outcome, with only
+  numbers and the engine's own recorded detail slotted in — never model text. The table:
+  green/already-green → "Goal met." (a `destination-refused` record turns it into "…the output
+  could not be delivered (detail)."); cap-halt → "Money cap reached ($X of $Y)." / "Raise the cap,
+  then Resume."; wall-halt → "Time cap reached."; provider-red → "The model provider failed
+  (detail)."; step-stalled → "A step stopped making progress."; plan-red/check-red/step-red/escalated
+  → "Goal not met — the checks said no (last gap)."; close-red → "The check itself broke
+  (instrument fault), not your goal."; `escalated` is a terminal and never resumable — its escalation of
+  category `cap-halt` with `spend.strikes` is the STRIKE governor, read "The fix loop stopped improving
+  (S of L tries, no check got better)." (card line `stopped improving`), and is the money cap ONLY when
+  the spine has a `money-halt` record or the job-end outcome is `cap-halt` itself; every other terminal → "Stopped before or outside the work
+  (code: <outcome>)." (never the raw engine detail — it can name retired surfaces; raw detail appears only as the quoted check gap on "goal not met" and the provider error, both capped at 120 characters; a destination-refused green reads "…could not be delivered." with no detail); a run with no `job-end` whose process is gone (glyph `?`, never `✗`) →
+  "Stopped with no ending recorded (last thing it did: …)." `actions` holds `resume` ONLY when
+  the engine would accept a resume (`resumePlanFor`: the same `readResume`/`CHECKPOINT_OUTCOMES`/
+  `checkpointAgeGate` readers the engine refuses with, plus a signed `resolved-spec.json` /
+  `resolved-spec-r<k>.json` beside the run whose hash is the one the run's `job-start` carries);
+  otherwise `next` says why Resume is not available. `resume` on the detail is
+  `{budgetUsd, maxWallMin, spentUsd, spendComplete}` (the confirm box's prefill) or `null`. The
+  result glyphs are unchanged. The reuse button is described under Reuse workflow, below.
+  **Status words (click-through 2026-10-04)** → every run row, run detail and imported row carries `status`
+  `{key, sign, word}` from ONE table (`src/panel/status.js`): `[▶] running · [·] waiting · [✓] passed · [✗] failed ·
+  [✗] capped · [✗] stopped · [?] died`; `glyph` is that sign. Mapping: green/already-green/satisfied → passed; no
+  job-end + runner alive → running, gone → died; cap-halt, wall-halt, and an escalation that is a money-halt or wall-halt
+  → capped; `stopped` → stopped; every other outcome (plan-red, check-red, step-red, close-red, provider-red,
+  step-stalled, other escalations, refusals) → failed. The detail also carries `startedAt` and `endedAt` (the last
+  `job-end` timestamp, null while live or died). `GET /api/imports` rows and `GET /api/imports/:id` carry `runStatus`
+  (passed, or null when the bundle shows no green) and `runReason` (`goal met`). The Ended block's lines for died and
+  stopped runs are `no ending recorded` and `you pressed Stop` (each `— resume` when Resume is offered).
+  **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
+  `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?}`
+  (blank = the signed caps). `404` unknown run; `409` when `resumePlanFor` says the engine would
+  refuse (`Resume is not available for this run (why).`); `400` for a bad cap, a money cap at or below what is already spent (or a time cap at or below the time
+  used) — refused at $0 before any write or spawn — or the monthly $
+  limit (same library check and text as Sign & run). If a cap changed, the new spec is written as
+  `resolved-spec-r<k>.json` beside the original and its hash is approved; the signed spec the run
+  started under is never overwritten, and a run resumed under `r<k>` is resumed again under the
+  spec whose hash its `job-start` carries. The spawn is `setsid --wait systemd-inhibit node
+  bin/bareloop.mjs run-u --spec <spec> --resume <runid> --approve <hash>` (array argv, detached,
+  log `resume-<runid>-<ms>.log` beside the spec; `--draft-spent-usd`/`--draft-spend-incomplete`
+  ride along from the run's `job-start`, so the one cap still covers drafting). `--wait` hands back
+  the engine's own exit code: an exit inside the settle window (6s) is the engine's own refusal and
+  the log tail is returned as `error` verbatim; otherwise `{ok:true, runid, specHash, capsChanged,
+  log}`. The run keeps its runid and its one list row: the resumed leg appends to the same spine (P5-R,
+  `leg-start` in the run list), it never appears as a new run. The page's Resume button opens the
+  caps form (prefilled, "spent so far") and `Sign & resume` is the human click.
+  **Stop (item 5)** → `POST /api/runs/:runid/stop` (`src/panel/runroutes.js`, `checkHumanGuard`, no body).
+  It writes the run's STOP REQUEST, a file `<spine>.stop` (`stopFilePath(spine)`, `src/legs.js` — the one
+  spelling), and signals nothing. `404` unknown run; `409` when the run's LATEST leg is not live
+  (`runIsAlive`) or its spine does not exist yet (still starting). The ENGINE half is library code, so
+  CLI runs honour the file too (no new CLI command): `runJob`/`runPlan` take `stopFile`, and `run-u`/the
+  panel's spawn pass `<spine>.stop`. The seam is the ROUND BOUNDARY of a step worker — where the money cap binds
+  (`src/planrun.js`, the `metered` round callback): file present = delete it, emit `stop-requested
+  {phase, step, iteration, round}`, end the Loop after that round; `ask` then throws category `stopped`
+  and the step loop files it as job-end outcome `stopped` the way a mid-step cap-halt is filed
+  (`spendComplete` exact — nothing is in flight at a round boundary). One owner, one check: a one-step run
+  and a long step both stop within one turn. Resume re-enters that step. The request file is cleared three times: when honoured, when the
+  leg ends (`finally`), and at the start of the next leg (a click that raced a leg's end never stops a
+  resume). `stopped` is in `CHECKPOINT_OUTCOMES`: resumable like a `cap-halt`, the same run continues as a
+  new leg at the next step. `GET /api/runs/:runid` carries `live` and `stopping` (a stop request is on
+  disk and the leg is live); Ended row `stopped` = "You stopped it." / "Resume." / `[Resume]`, card line
+  `stopped — resume`, Audit divider `stopped: you stopped it · resumed <when>`. The page shows `[Stop]`
+  in the Run tab's action area while live, "stopping after this turn…" after the click, and the same
+  `[Resume]` there once the engine would accept one. The seam reads the file in STEP workers only
+  (`phase` `step:<id>`): the scout, plan and close-fix rounds never read it, so a Stop clicked while the run
+  is in one of those phases is not honoured until a step round runs again, and is otherwise cleared when
+  the leg ends — the money and time caps still bind throughout.
+  **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on GREEN runs only (the Run tab's
+  action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on green and
+  green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: Clear the card and draft a new one.", and
+  stopped/capped/died rows offer `resume` only) and on every imported job. It opens the Chat tab's New job card
+  filled from the SIGNED job: a NEW run (new runid), never a rerun, nothing drafted ($0). **Only five boxes are
+  open — Source, Destination, Model, $ cap, Time cap**; every other box (check type, model, job name, goal, success,
+  guardrails, judge examples) is the signed workflow, greyed, and the SERVER refuses a start that changed one
+  (`400 "<Field> is locked on a reused workflow — Clear the card to change it"`; the page is never trusted).
+  Changing a locked box is Clear (the Chat card's top-right button), which drafts. Routes, behind `checkHumanGuard`:
+  `GET /api/author/start-from?runid=<id>` or `?import=<id>` → `{ok, origin, card, from:'signed job'|'imported job',
+  note, locked:[…], open:['source','destination','model','capUsd','maxWallMs'], specHash, workflowKey, trackRecord:{runs,
+  green, notGreen, live, finished, avgSpendUsd, avgWallMs}, line}` (`404` unknown, `409` with an `error` when
+  there is nothing to copy: no log, the run's signed job is not on disk, or an imported job that changed, lost its
+  dependency or no longer matches its signed bytes); `POST /api/author/start` accepts `startFrom: <runid>` or
+  `startFrom: {importId}` beside the card and answers `{ok, sessionId, reuse, state}`. The old
+  `POST /api/author/start-from-check` and the "Changed — new job" mode are gone. **Identity, two keys:** the
+  signature hash `jobSpecHash` is unchanged (it covers the caps and the write fence — what the person signs);
+  `workflowKey(spec)` (`src/job.js`, not exported from the package root) is a sha256 over the signed spec WITHOUT
+  `source`, `destination`, `writeScope`, `budgetUsd` and `maxWallMs` (`REUSE_OPEN_SPEC_FIELDS`) AND without `provider`,
+  `baseUrl` and `model` (`WORKFLOW_KEY_IDENTITY_FIELDS`; `jobSpecHash` still covers all of them). A reuse copies the
+  origin's signed spec, sets only `writeScope` (from Destination), `budgetUsd`, `maxWallMs` and the worker from the
+  chosen Model Name (`buildReuseSpec(origin, card, rows)`: `provider`; `baseUrl` when the row has one; `model` only
+  when the Name is not the provider's default tier — spelled as authoring spells it; a RUBRIC origin with no `judge`
+  first gets `judge` = its own resolved judge identity so the judge never follows the worker; an explicit judge is
+  kept; deterministic jobs get none), and signs under a
+  NEW `jobSpecHash` with the SAME `workflowKey` (the session refuses a spec whose key moved). Locked boxes carry the
+  signed values read by the Job tab's own readers. **Estimate line** above the card: "Same job — G green · N not
+  green · about $X and M min a run", from every LISTED run whose signed spec has the same `workflowKey` AND ran the same worker (provider + baseUrl + model) as the Model box now names — `GET /api/author/start-from?…&model=<Name>` recomputes it when the box changes; none = "Same job — no runs yet on this model" (one run =
+  one entry via `legsOf`; the averages read FINISHED runs with exact figures — spend from `chainSpend`, working time
+  from `legsWallMs`, resume gaps excluded); unknown is said ("no finished run yet to price or time", "cost not
+  recorded", "time not recorded"), never $0 or 0 min; no registry, no plan handover. **An imported job** (its provider is not forced: the chosen Settings row is the worker; a card with no matching row opens with no Name picked) is
+  re-verified at the moment of reuse — `readBundle` (the bundle hash covers every close script), `checkBundleDeps`,
+  and every close stage's signed sha256 against the bytes on disk over the spec with `$BARELOOP_BUNDLE` resolved to
+  the folder — then reused the same way; the close scripts stay in the verified folder (the engine re-verifies
+  their bytes at run start and before every close run). An operator-written command close has no declaration for
+  `prepareSigning` to ground (it refuses one by design), so that session's gate is the byte check, and the hash the
+  person signs at `[Sign & run]` is the spec's own. The ONE wide card button (below the message box; wording from `mainButtonFor`: Start drafting / Sign & run / Check again / Send / disabled) reads `Sign & run` on a Reuse card (one click: the page signs the
+  prepared hash as soon as the session reports `prepared`; the server re-checks it). `card.json` (the form text)
+  is still written beside `resolved-spec.json` when a session reaches `prepared`.
+  **The progress list (2026-10-04)** — `GET /api/author/:id` state carries `steps: [{id, label, status:
+  'running'|'done'|'failed', detail}]`, one entry per pipeline step in first-seen order, updated in place (ids/labels:
+  `STEP_LABELS`, `src/panel/authorsession.js`); `progressLabel` is the running step's label. A refusal sets
+  `state.error` and fails exactly one step with the same text as its `detail`; pipeline text is never a chat message
+  (`messages` holds person/model turns only). Two last steps, `hash` ("generating hash", detail `spec hash <full hash>`, done at sign-prepare) and `signed` ("signed hash", pushed by `signRun` when the sign is accepted); the old "SIGNING PREPARED" / "signed — … run starting detached" thread bubbles are gone. The page draws each step's `detail` on its own `> ` line under the step. Destination follows the Source: for a repo source it is the write
+  fence (relative `writeScope` globs, never proven as a directory); for a folder source an absolute directory. Both
+  are refused at $0, before any model call (the same rule on a fresh and a Reuse card): an ABSOLUTE
+  Destination on a repo source → `Destination must be a path inside the repo, like src/digest.js` (before the
+  copy); a source that is not a git repo → a plain refusal worded by the kind the source door recorded (a single
+  file: "Source must be the repo folder — put the file in Destination"; a plain folder or a URL: "not a code
+  project (no git repo found)").
+  **Import, read only (item 4)** — `src/panel/importroutes.js`. The Workflows toolbar's `[Import]` opens a folder
+  browser plus a paste box; an imported job is an exported bundle folder the person can LOOK at: nothing runs,
+  nothing is signed, the folder is never written. Routes, all behind `checkHumanGuard` (token + own address —
+  new disk exposure, so the strict guard, not the Host guard the plain GETs use): `GET /api/fs/list?path=`
+  → `{ok, requested, path, parent, bundle, entries:[{name, path, bundle:true}], truncated, stopped, visited, depth}`
+  (job BUNDLES only — a folder holding a regular file `manifest.json` — found by searching DOWN from `path` at most
+  `depth` = 3 folders; `name` is the path relative to `path`, `path` the absolute one; symlinks never followed,
+  `node_modules`/`.git`/dot-folders skipped, a bundle is never descended into, unreadable folders skipped silently;
+  capped at 5000 folders visited (`stopped`) and 200 bundles (`truncated`); starts at the home folder when `path` is blank);
+  `POST /api/imports {path}` → `{ok, id, job, dir}` (`readBundle` must come back clean — a plain or tampered
+  folder is `400` and records nothing); `GET /api/imports` (the list, every bundle RE-READ now) and
+  `GET /api/imports/:id` (one view). Imported list: `<home>/imports.jsonl`, one `{at, dir, job, bundleHash}` line
+  per FOLDER (a re-import replaces that folder's line; a file already holding duplicates lists once per real path, newest wins; mode 0600 in the 0700 config home); `id` = the first 12 hex of
+  sha256(real path). **Path safety:** the path is expanded (`~`, `~/…` only), refused if it holds a NUL byte, is
+  over 4096 bytes or is not absolute, then `resolve`d and `realpath`ed — the REAL folder is listed and recorded
+  and the response says which it chose (`path` beside `requested`); a non-directory is refused; a SYMLINK inside the
+  search is never listed and never followed; names only, never file contents. **Status, re-read on every list/view:** `ok`, `changed` ("changed since import",
+  red: a different/tampered/unreadable bundle) or `missing` ("folder not found"). The view carries goal,
+  `checkType`, `success` (the close stage names), `guardrails`, `budgetUsd`/`maxWallMs`, `model`, the history
+  the bundle shipped (`history:{greens,reds,total,recent}`, read from the bridges' history rows) and
+  `approved`/`approvedText` — approval on THIS machine is `verifyBlessing` (the first green run here writes
+  `blessing.json`): approved / not approved yet / stale. The row reads `imported · view only`; the view opens in
+  the same Run / Audit / Job tabs as any run (Audit: "no log — this job ran on another machine"), and its one
+  button, `[Reuse workflow]` in the Run tab's top action row, reuses the bundle's signed job as described above.
+  `GET /api/imports/:id` also carries `runsHere` (how many `runs/<runid>/` folders in the bundle hold a readable
+  `spine.jsonl`) and `run`, what the Run tab shows below the imported facts: `{kind:'spine', id, runid, at}` (the
+  newest run in the bundle's own `runs/` that ended green; `id` is `<importId>~<runid>`), else `{kind:'bridge', runid,
+  at, detail}` (the bridge's green version rendered as a run detail, fields the bridge does not carry left `null`),
+  else `{kind:'none'}`; never throws. **An imported bundle's run is served read only** through the ordinary run routes
+  under that composite id: `GET /api/runs/<importId>~<runid>` (detail), `…/audit` and `…/rounds` (and `…/job`) read
+  the spine inside the bundle (`importrun.js` `safeSpinePath`: a checked name, `lstat`ed, a link never followed); an
+  unknown import or run is `404`. Such a run is never in `GET /api/runs`, never live (`live`/`stopping` are false,
+  no pid), never resumable or stoppable from the panel.
+  **Run-card fixes (item 6)** → a listed run whose runner is alive but whose spine is not written
+  yet reads `starting: true` (list AND detail; glyph `▶`, every figure null, `fileMissing:false`) —
+  never `file missing`; a row whose runner is gone and whose spine is absent stays `fileMissing`.
+  `GET /api/runs` rows now carry `spendFloorUsd`/`wallFloorMs` for a LIVE spine too (previously died
+  only; both `null` once a `job-end` exists), the same `deriveDeath` floors the detail carries, so a
+  live card reads "$X so far · running Ym" exactly like the right pane.
 
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
   (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
@@ -3509,7 +3727,8 @@ and leaves the worktree in place until the human removes it.
 
 **`history.jsonl` row shape** — one JSON object per line, one line per `bareloop run` on this
 machine: `{ runid, at, outcome, spentUsd, spendComplete, budgetUsd, maxWallMs, worktree,
-branch, bundleHash, approveHash }`. `bundleHash` is the bundle's own signed manifest hash
+branch, bundleHash, approveHash, leg? }` (`leg` only from a resumed run's second leg: the same `runid`,
+one row per leg). `bundleHash` is the bundle's own signed manifest hash
 (unchanged across tightened runs); `approveHash` is the hash of the actual, possibly-
 tightened, `$BARELOOP_BUNDLE`-resolved spec that run executed — the two are recorded side
 by side so a tightened run's real approval can never be confused with the bundle's headline
@@ -3584,6 +3803,15 @@ spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`sig
 `src/panel/authorroutes.js`, refused server-side whatever the page shows). The page only echoes the
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
 calendar month; a died or incomplete-spend run makes the total an "at least" figure.
+
+*Drafting spend that never became a run* (2026-10-05, F213). A panel authoring session writes
+`<session dir>/draft-spend.json` (`{ sessionId, spentUsd, spendComplete, provider, baseUrl, model,
+startedAt, updatedAt }`, atomic) after every metered call, so an abandoned, refused or restarted session's
+drafting money is not lost. `readLegs` (hence `monthSpend`, `spendSummary`, `checkMonthlyRoom` and the Money
+tab) adds every `<home>/panel-sessions/<id>/` that has one and whose folder holds no listed run's `spine` or
+`patient` (a signed run already carries its drafting spend via `--draft-spent-usd`; no double count). It lands in
+the month of `startedAt` (the first call), under the provider row it was drafted on; `spendComplete: false` or an
+unreadable file makes the figure an "at least". It is not a run: no wall, not in the `runs` count.
 
 *Hold until done.* A run CLAIMS the limit when it starts and holds it until it is done — no lock file,
 records only. `claimRun` (`src/monthly.js`) writes the run's row FIRST (it carries its `pid` and

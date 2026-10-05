@@ -300,3 +300,43 @@ test('check-passes fault path also carries the whole bounded gap (the forbidden-
   assert.equal(results[0].fault, 'crashed', 'the forbidden-zone verdict still rides through by name (F32 routing input)');
   assert.ok(results[0].detail.length > 1000, 'a crashed check carries its full bounded gap, not a 400 clamp');
 });
+
+// ─── file-valued scope (F212: a single-file writeScope became `src/x.js/**`, readdir threw ENOTDIR, tree-changed read 0 forever) ───
+
+/** @param {import('node:test').TestContext} t */
+function fileScopeDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'exits-file-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'src'));
+  writeFileSync(join(dir, 'src/x.js'), 'one\n');
+  return dir;
+}
+
+test('tree-changed on a FILE scope: editing the file passes with "1 file(s) changed"', async (t) => {
+  const dir = fileScopeDir(t);
+  const snap = await snapshotScope(dir, 'src/x.js/**');
+  assert.deepEqual([...snap.keys()], ['src/x.js']);
+  writeFileSync(join(dir, 'src/x.js'), 'two\n');
+  const r = await evalExits([{ type: 'tree-changed', scope: 'src/x.js/**' }], { dir, snapshot: snap });
+  assert.equal(r.pass, true);
+  assert.match(r.results[0].detail ?? '', /1 file\(s\) changed/);
+});
+
+test('tree-changed on a FILE scope: an identical re-write still fails (outcome, not intent)', async (t) => {
+  const dir = fileScopeDir(t);
+  const snap = await snapshotScope(dir, 'src/x.js/**');
+  writeFileSync(join(dir, 'src/x.js'), 'one\n');
+  const r = await evalExits([{ type: 'tree-changed', scope: 'src/x.js/**' }], { dir, snapshot: snap });
+  assert.equal(r.pass, false);
+  assert.match(r.results[0].detail ?? '', /0 files changed/);
+});
+
+test('tree-changed on a FILE scope: deleting the file counts as a change; a missing file snapshots empty', async (t) => {
+  const dir = fileScopeDir(t);
+  const snap = await snapshotScope(dir, 'src/x.js/**');
+  rmSync(join(dir, 'src/x.js'));
+  const r = await evalExits([{ type: 'tree-changed', scope: 'src/x.js/**' }], { dir, snapshot: snap });
+  assert.equal(r.pass, true);
+  assert.match(r.results[0].detail ?? '', /1 file\(s\) changed/);
+  assert.equal((await snapshotScope(dir, 'src/gone.js/**')).size, 0);
+});

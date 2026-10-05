@@ -1294,3 +1294,20 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - The price sets what the cap means; Settings advises entering the HIGHER bracket when a vendor
   lists two prices. The Settings field is deferred to the next UI part.
 - Detail: `docs/logs/FINDINGS.md` F206, `CHANGELOG.md` Unreleased, `bareloop.context.md` "Settings".
+
+### Panel P5: one way to start a run (v1.87 — 2026-10-02)
+
+- Import is read only: a folder or bundle is viewed, never run in place; its one action is Start from this.
+- Start from this replaces rerun: same job = only the source changed, no drafting, same hash; anything else is a new job.
+- The "same job" track record comes from the runs the panel already lists; plan handover stays parked.
+- One Stop ends a run as the resumable outcome `stopped` (arbiter-adjacent, ruled by hamr 2026-10-02).
+- Resume is in the panel; a raised cap is a re-signed hash, prior spend stays folded.
+- Every run shows an Ended block: a code-owned reason, the next step, and only the buttons the engine would accept.
+- A resumed run is the same run: one id, one file (P5-R).
+- Detail: `docs/product/PANEL-BUILD.md` addendum P5 and P5-R.
+
+### Panel: Reuse workflow replaces "Start from this" (v1.88 — 2026-10-03)
+
+- Reuse workflow is the same signed job on a new source: green runs and imported jobs only, five open boxes (Source, Destination, Model, $ cap, Time cap — Model opened 2026-10-04), the rest locked and refused by the server, never drafted.
+- Same-job identity is `workflowKey` (the signed spec without source, fence, caps and the worker's provider/baseUrl/model); the signature hash is unchanged (it still covers all of them) and the person signs the new one.
+- Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-03 and the 2026-10-04 Model ruling.

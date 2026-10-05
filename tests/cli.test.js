@@ -407,7 +407,9 @@ test('userrun.main cannot build a bundle run: the bundle seam is reachable only 
   assert.doesNotMatch(src.slice(at), /bundle/i, 'main (the argv door) never names or builds `bundle` — a local job cannot reach it');
 });
 
-test('bareloop run --resume: a cap-halted bundle run resumes into the SAME worktree, folds prior spend, mints a new runs/<id>, records resumedFrom, and blesses on the eventual green', async (t) => {
+test('bareloop run --resume: a cap-halted bundle run resumes as the SAME run — same runid, same runs/<id>, same worktree, one spine with a leg-resume marker — folds prior spend, and blesses on the eventual green', async (t) => {
+  // REWRITTEN for P5-R (hamr 2026-10-02: one run, one id, one file). It used to assert the opposite: a resume
+  // minted a new runs/<id2> with `resumedFrom`, and the blessing named the new id.
   const { bundleDir, bundleHash } = await exportFixture(t);
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
@@ -442,19 +444,28 @@ test('bareloop run --resume: a cap-halted bundle run resumes into the SAME workt
   });
   assert.equal(rc2, 0, `the resume must green: ${out2.text()}\n${err2.text()}`);
   assert.match(out2.text(), /outcome   green/);
-  const run2 = JSON.parse(readFileSync(join(bundleDir, 'runs', id2, 'run.json'), 'utf8'));
-  assert.equal(run2.worktree, worktree, 'the SAME worktree, not a fresh one');
-  assert.equal(run2.resumedFrom, id1);
+  assert.equal(existsSync(join(bundleDir, 'runs', id2)), false, 'NO second runs/<id>: the resume is the same run');
+  const run1b = JSON.parse(readFileSync(join(bundleDir, 'runs', id1, 'run.json'), 'utf8'));
+  assert.equal(run1b.worktree, worktree, 'the SAME worktree, not a fresh one');
+  assert.equal(run1b.resumedFrom, undefined, 'a run is never "resumed from" itself');
+  assert.equal(run1b.at, run1.at, 'run.json keeps the run\'s own start');
   assert.equal(existsSync(join(repo, '.bareloop', 'wt', id2)), false, 'no second worktree');
-  const spine2 = readFileSync(join(bundleDir, 'runs', id2, 'spine.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  const start = spine2.find((e) => e.type === 'job-start');
-  assert.ok(start.priorSpentUsd > 0, `the halted leg's spend is folded in: ${JSON.stringify(start)}`);
+  const spine = readFileSync(join(bundleDir, 'runs', id1, 'spine.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const markers = spine.filter((e) => e.type === 'leg-resume');
+  assert.equal(markers.length, 1, 'one marker: the second leg of the one spine');
+  assert.equal(markers[0].leg, 2);
+  assert.equal(spine.filter((e) => e.type === 'job-start').length, 2, 'each leg has its own job-start');
+  const starts = spine.filter((e) => e.type === 'job-start');
+  assert.ok(starts[1].priorSpentUsd > 0, `the halted leg\'s spend is folded in: ${JSON.stringify(starts[1])}`);
   const rows = readFileSync(join(bundleDir, 'history.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  assert.equal(rows.length, 2);
-  assert.equal(rows[1].resumedFrom, id1);
+  assert.equal(rows.length, 2, 'one history row per LEG');
+  assert.equal(rows[0].leg, undefined, 'the first leg\'s row keeps its shape');
+  assert.equal(rows[1].leg, 2);
+  assert.equal(rows[1].runid, id1, 'both rows are the one run');
+  assert.equal(rows[1].resumedFrom, undefined, 'no self-resumedFrom');
   assert.equal(rows[1].worktree, worktree);
   const blessing = JSON.parse(readFileSync(join(bundleDir, 'blessing.json'), 'utf8'));
-  assert.equal(blessing.runid, id2, 'the eventual green blesses');
+  assert.equal(blessing.runid, id1, 'the eventual green blesses — under the run\'s one id');
 });
 
 test('bareloop run --resume: refuses at $0 a run with no run.json, a vanished worktree, a different --repo, and an unblessed bundle without --approve', async (t) => {

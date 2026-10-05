@@ -25,7 +25,7 @@
 // for every cap/threshold: a shell never widens what it was asked to do).
 
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
@@ -34,12 +34,25 @@ import { readRunList, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
-import { summarizeForAllLine, auditWindow } from '../replay.js';
+import { summarizeForAllLine, auditWindowsOf } from '../replay.js';
+import { legsOf, legsWallMs, stopFilePath } from '../legs.js';
+import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
-import { jobSpecHash } from '../job.js';
+import { jobSpecHash, workflowKey } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
-import { createAuthorRoutes, mintToken, checkHostGuard } from './authorroutes.js';
+import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
+import { createRunRoutes } from './runroutes.js';
+import { createImportRoutes, readImports, bundleStatus, IMPORT_CHANGED_LINE } from './importroutes.js';
+import { parseImportedRunId, safeSpinePath, spineStartedAt } from './importrun.js';
+import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
+import { checkCloseByteSignature } from '../close-integrity.js';
+import { keysHome } from '../keysfile.js';
+import { rowsForHome, findRow, modelChoiceFor } from '../providerrows.js';
+import { resolveProvider } from '../providers.js';
+import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
+import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
+import { statusFor, GOAL_MET_LINE } from './status.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -71,9 +84,7 @@ export const DEFAULT_PORT = 4700;
  * @returns {'✓'|'✗'|'▶'}
  */
 export function glyphForOutcome(outcome) {
-  if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') return '✓';
-  if (outcome === null || outcome === undefined) return '▶';
-  return '✗';
+  return /** @type {'✓'|'✗'|'▶'} */ (statusFor({ outcome }).sign);
 }
 
 /**
@@ -234,11 +245,11 @@ export function formatTimestamp(ts) {
  * @param {import('../runlist.js').RunRow} row the run's listed row (its pid, else its spine's mtime, says whether it is still running)
  * @param {any[]} records raw parsed spine records (already read once by the caller)
  * @param {string|null} outcome `replayRun`'s own `summary.outcome`
- * @returns {{died: boolean, why: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
+ * @returns {{died: boolean, why: string|null, lastThing: string|null, spendFloorUsd: number|null, wallFloorMs: number|null}}
  */
 function deriveDeath(row, records, outcome) {
   const notDied = {
-    died: false, why: null, spendFloorUsd: null, wallFloorMs: null,
+    died: false, why: null, lastThing: null, spendFloorUsd: null, wallFloorMs: null,
   };
   if (outcome !== null && outcome !== undefined) return notDied; // a real job-end was reached
   // no job-end yet — the floor derivation is identical whether this turns
@@ -250,10 +261,11 @@ function deriveDeath(row, records, outcome) {
   const withTs = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string');
   const last = withTs.length ? withTs[withTs.length - 1] : null;
   const when = last ? formatTimestamp(last.ts) : 'an unknown time';
-  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${describeLastRecord(last)} at ${when}.`;
+  const lastThing = `${describeLastRecord(last)} at ${when}`;
+  const why = `died — no ending was recorded (killed, crashed, or the machine slept). Last thing it did: ${lastThing}.`;
 
   return {
-    died: true, why, ...floors,
+    died: true, why, lastThing, ...floors,
   };
 }
 
@@ -274,6 +286,352 @@ function formatDurationMs(ms) {
 }
 
 /**
+ * P5 item 2 — may this run be resumed, and under which spec file? The ONE owner of
+ * "would the engine accept `--resume` for this run" on the panel side: it asks the SAME
+ * library readers the engine's own refusals come from (`readResume` with
+ * `CHECKPOINT_OUTCOMES`, `checkpointAgeGate`), plus the two facts the panel needs to
+ * spawn it (a signed spec file beside the run, whose hash is the one the run was signed
+ * under). `ok:false` means the panel declines to offer a button the engine would refuse
+ * by design; it carries a plain `why`.
+ *
+ * The spec file is the run's own `resolved-spec.json` or one of its
+ * `resolved-spec-r<k>.json` siblings (a resume under raised caps writes one), picked by
+ * HASH against the run's `job-start.specHash` — a run resumed under raised caps must be
+ * resumed again under ITS caps, never the original's. No match = no resume offered.
+ * @param {{ spine: string, job: string, pid?: number }} row
+ * @param {any[]} records the run's raw spine records
+ * @returns {{ok: true, specPath: string, spec: any, specHash: string, budgetUsd: number|null,
+ *   maxWallMin: number|null, spentUsd: number|null, spendComplete: boolean,
+ *   draftSpentUsd: number|null, draftSpendComplete: boolean|null, wallUsedMs: number|null}|{ok: false, why: string}}
+ */
+export function resumePlanFor(row, records) {
+  if (runIsAlive(row)) return { ok: false, why: 'it is still running' };
+  // P5-R: a resumed run is one file of several legs. What may be resumed again is the LATEST leg, under the spec
+  // THAT leg ran with (its `job-start.specHash` — a leg resumed under raised caps carries the re-signed hash), so
+  // resume #2 is offered under the latest signed caps, never the first leg's.
+  const legs = legsOf(records);
+  const jobStart = (legs.findLast((l) => l.jobStart !== null) ?? null)?.jobStart ?? null;
+  if (!jobStart) return { ok: false, why: 'its log has no start record' };
+  const dead = readResume(records, { direct: true, resumableOutcomes: CHECKPOINT_OUTCOMES });
+  if (!dead.started) return { ok: false, why: 'its log has no start record' };
+  if (dead.greened) return { ok: false, why: 'it already met its goal' };
+  if (dead.ended) return { ok: false, why: 'it ended with an answer, not a stop' };
+  if (!dead.restart) return { ok: false, why: 'it never opened an attempt to continue' };
+  const age = checkpointAgeGate(records);
+  if (!age.ok) return { ok: false, why: String(age.detail ?? 'its checkpoint has expired') };
+  const near = sourceNearSpine(row.spine);
+  if (!near.specPath) return { ok: false, why: 'the signed job file is not beside this run' };
+  const dir = dirname(near.specPath);
+  /** @type {string[]} */
+  let names = [];
+  try { names = readdirSync(dir).filter((n) => n === 'resolved-spec.json' || /^resolved-spec-r\d+\.json$/.test(n)); } catch { names = []; }
+  for (const n of names) {
+    let spec;
+    try { spec = JSON.parse(readFileSync(join(dir, n), 'utf8')); } catch { continue; }
+    if (!spec || typeof spec !== 'object') continue;
+    const specHash = jobSpecHash(spec);
+    if (specHash !== jobStart.specHash || spec.job !== dead.job) continue;
+    const draft = typeof jobStart.draftSpentUsd === 'number' && jobStart.draftSpentUsd > 0 ? jobStart.draftSpentUsd : null;
+    const spentKnown = typeof dead.spentUsd === 'number' && Number.isFinite(dead.spentUsd);
+    return {
+      ok: true,
+      specPath: join(dir, n),
+      spec,
+      specHash,
+      budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+      maxWallMin: typeof spec.maxWallMs === 'number' ? spec.maxWallMs / 60000 : null,
+      spentUsd: spentKnown ? dead.spentUsd + (draft ?? 0) : null,
+      spendComplete: spentKnown && dead.spendComplete !== false && (draft === null || jobStart.draftSpendComplete !== false),
+      draftSpentUsd: draft,
+      draftSpendComplete: draft === null ? null : jobStart.draftSpendComplete !== false,
+      wallUsedMs: typeof dead.restart.priorWallMs === 'number' && Number.isFinite(dead.restart.priorWallMs) ? dead.restart.priorWallMs : null,
+    };
+  }
+  return { ok: false, why: 'no signed job file beside this run matches the hash it ran under' };
+}
+
+/**
+ * P5-R — the Audit tab's LEG DIVIDERS (hamr 2026-10-02: "clear audit mention resume"). One per resume, CODE-OWNED
+ * fixed sentences (ui-verdict-words: never model text) built from how the previous leg ended (`after`) and what the
+ * run had spent when it stopped:
+ * `── stopped: money cap reached ($8.00) · resumed 2026-10-03 14:10 ──`.
+ * `beforePart` is the index of the first part of the leg that picked up (the parts list length when that leg has not
+ * started a part yet). Money is the chain's own spend at that leg's end on the ONE basis ({@link chainSpend}).
+ * @param {any[]} spineRecords the run's raw records
+ * @param {any[]} parts `summary.parts` (each carries `leg` on a resumed run)
+ * @returns {{leg: number, beforePart: number, after: string|null, at: string|null, text: string}[]}
+ */
+export function legDividersFor(spineRecords, parts) {
+  const legs = legsOf(spineRecords);
+  /** @type {{leg: number, beforePart: number, after: string|null, at: string|null, text: string}[]} */
+  const out = [];
+  for (let k = 1; k < legs.length; k += 1) {
+    const l = legs[k];
+    const first = parts.findIndex((p) => typeof p.leg === 'number' && p.leg >= l.leg);
+    const spent = chainSpend(legs.slice(0, k).flatMap((x) => x.records));
+    const money = `${spent.complete ? '' : 'at least '}${panelMoney2(spent.usd)}`;
+    const a = l.after;
+    let stopped;
+    if (a === 'cap-halt') stopped = `money cap reached (${money})`;
+    else if (a === 'wall-halt') stopped = 'time cap reached';
+    else if (a === 'provider-red') stopped = 'the model provider failed';
+    else if (a === 'step-stalled') stopped = 'a step stopped making progress';
+    else if (a === 'stopped') stopped = 'you stopped it';
+    else if (a === 'hitl-pause') stopped = 'paused for a decision';
+    else if (a === 'died' || a === null) stopped = 'no ending was recorded';
+    else stopped = String(a);
+    const at = typeof l.start?.at === 'string' ? l.start.at : (typeof l.start?.ts === 'string' ? l.start.ts : null);
+    out.push({
+      leg: l.leg,
+      beforePart: first === -1 ? parts.length : first,
+      after: a,
+      at,
+      text: `stopped: ${stopped} · resumed ${at ? formatTimestamp(at) : 'at an unknown time'}`,
+    });
+  }
+  return out;
+}
+
+/** outcomes whose ending is "the checks said no" (a graded answer from a working close) */
+const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated']);
+
+/**
+ * P5 item 1 — the ENDED block: why a run ended, what to do next, and which buttons the
+ * engine would accept. CODE-OWNED FIXED SENTENCES (ui-verdict-words: never model text);
+ * the only slot-fills are numbers and the engine's own recorded detail. ONE owner,
+ * feeding both `getRunDetail` (`ended`) and `summarizeRow` (`endedLine`). `null` while
+ * a run is live (no Ended block while running).
+ *
+ * The table (outcome → reason / next / buttons) is PANEL-BUILD.md P5 item 1. The
+ * Resume button appears only when `o.resume` says the engine would accept it; "Reuse workflow"
+ * (replaces P5 item 3, 2026-10-03) is offered on green rows only, and starts a NEW run.
+ * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
+ * @param {{died: boolean, lastThing: string|null}} death
+ * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean}} [o]
+ * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
+ */
+export function endedFor(summary, death, o = {}) {
+  const resumeOk = !!(o.resume && o.resume.ok);
+  /** @type {{id: string, label: string}[]} */
+  const RESUME = [{ id: 'resume', label: 'Resume' }];
+  /** Reuse workflow (replaces P5 item 3's Start from this, hamr 2026-10-03): the same signed job on a new source — a NEW
+   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: Clear the card and draft a new one" instead. */
+  const REUSE = [{ id: 'reuse', label: 'Reuse workflow' }];
+  const CHANGE = 'Change the job: Clear the card and draft a new one.';
+  const detailOf = (/** @type {string|null} */ s) => {
+    if (typeof s !== 'string' || s.length === 0) return '';
+    return s.length > 120 ? `${s.slice(0, 120)}…` : s;
+  };
+  /** a resumable ending whose Resume the engine would refuse: say so, never offer the button */
+  const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}.`);
+
+  if (death.died) {
+    return {
+      reason: `Stopped with no ending recorded${death.lastThing ? ` (last thing it did: ${death.lastThing})` : ''}.`,
+      next: resumeOr('Resume.'),
+      line: resumeOk ? 'no ending recorded — resume' : 'no ending recorded',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  const raw = summary.outcome;
+  if (raw === null || raw === undefined) return null;
+  const outcome = raw;
+  const esc = summary.lastEscalation;
+  const cat = typeof esc?.category === 'string' ? esc.category : null;
+
+  // `escalated` is a TERMINAL: its sentence may name the real governor, but it is never
+  // resumable. Two governors, never mixed (F198): the STRIKE ladder (the fix loop stopped
+  // improving) also files category `cap-halt` — it is the MONEY cap only when the spine
+  // says so (a `money-halt` record, or the job-end outcome `cap-halt` itself).
+  if (outcome === 'escalated') {
+    const strikes = esc?.spend?.strikes;
+    const limit = esc?.spend?.strikeLimit;
+    if (cat === 'cap-halt' && o.moneyHalt) {
+      const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
+        ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
+      return {
+        reason: `Money cap reached${money}.`, next: CHANGE, line: 'money cap', actions: [],
+      };
+    }
+    if (cat === 'cap-halt' && typeof strikes === 'number' && typeof limit === 'number') {
+      return {
+        reason: `The fix loop stopped improving (${strikes} of ${limit} tries, no check got better).`,
+        next: CHANGE,
+        line: 'stopped improving',
+        actions: [],
+      };
+    }
+    if (cat === 'wall-halt') {
+      return { reason: 'Time cap reached.', next: CHANGE, line: 'time cap', actions: [] };
+    }
+    if (cat === 'provider-red') {
+      const d = detailOf(summary.stopReason);
+      return {
+        reason: `The model provider failed${d ? ` (${d})` : ''}.`, next: CHANGE, line: 'provider failed', actions: [],
+      };
+    }
+  }
+
+  if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
+    if (o.destinationRefused) {
+      return {
+        reason: 'Goal met, but the output could not be delivered.',
+        next: 'Fix the destination, then Reuse workflow.',
+        line: `${GOAL_MET_LINE} — not delivered`,
+        actions: REUSE,
+      };
+    }
+    return { reason: 'Goal met.', next: 'Nothing to do.', line: GOAL_MET_LINE, actions: REUSE };
+  }
+  if (outcome === 'cap-halt') {
+    const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
+      ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
+    return {
+      reason: `Money cap reached${money}.`,
+      next: resumeOr('Raise the cap, then Resume.'),
+      line: resumeOk ? 'money cap — resume' : 'money cap',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'wall-halt') {
+    return {
+      reason: 'Time cap reached.',
+      next: resumeOr('Raise the time, then Resume.'),
+      line: resumeOk ? 'time cap — resume' : 'time cap',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'stopped') {
+    // P5 item 5: the PERSON ended the leg (Stop). Nothing failed; the finished steps stand.
+    return {
+      reason: 'You stopped it.',
+      next: resumeOr('Resume.'),
+      line: resumeOk ? 'you pressed Stop — resume' : 'you pressed Stop',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'provider-red') {
+    const d = detailOf(summary.stopReason);
+    return {
+      reason: `The model provider failed${d ? ` (${d})` : ''}.`,
+      next: resumeOr('Resume.'),
+      line: resumeOk ? 'provider failed — resume' : 'provider failed',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (outcome === 'step-stalled') {
+    return {
+      reason: 'A step stopped making progress.',
+      next: resumeOr('Resume, or change the job: Clear the card and draft a new one.'),
+      line: resumeOk ? 'step stalled — resume' : 'step stalled',
+      actions: resumeOk ? RESUME : [],
+    };
+  }
+  if (GOAL_NOT_MET.has(outcome)) {
+    const d = detailOf(summary.stopReason);
+    return {
+      reason: `Goal not met — the checks said no${d ? ` (${d})` : ''}.`,
+      next: CHANGE,
+      line: 'checks said no',
+      actions: [],
+    };
+  }
+  if (outcome === 'close-red') {
+    return {
+      reason: 'The check itself broke (instrument fault), not your goal.',
+      next: CHANGE,
+      line: 'check broke',
+      actions: [],
+    };
+  }
+  // the raw engine detail is never shown here (it can name retired surfaces); the code is enough
+  return {
+    reason: `Stopped before or outside the work (code: ${outcome}).`,
+    next: CHANGE,
+    line: 'stopped before the work',
+    actions: [],
+  };
+}
+
+/**
+ * The Ended block for one listed run (P5 item 1): asks {@link resumePlanFor} only when
+ * the run's ending is one a resume could ever apply to, so a finished green never reads
+ * its spec files. Returns the block, the resume plan (for the confirm box's numbers) and
+ * nothing else — the sentences all live in {@link endedFor}.
+ * @param {{ spine: string, job: string, pid?: number }} row
+ * @param {any[]} records
+ * @param {any} summary `replayOne`'s summary
+ * @param {{died: boolean, lastThing: string|null}} death
+ */
+/** the timestamp of the spine's LAST `job-end` record, or null (live, died, or no timestamp) */
+function lastJobEndTs(/** @type {any[]} */ records) {
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    const r = records[i];
+    if (r && r.type === 'job-end') return typeof r.ts === 'string' ? r.ts : null;
+  }
+  return null;
+}
+
+function endedForRow(row, records, summary, death) {
+  const out = summary.outcome;
+  const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
+  const resume = maybeResumable ? resumePlanFor(row, records) : null;
+  const refused = [...records].reverse().find((r) => r && r.type === 'destination-refused') ?? null;
+  const ended = endedFor(summary, death, {
+    resume,
+    moneyHalt: records.some((r) => r && r.type === 'money-halt'),
+    destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
+  });
+  const esc = summary.lastEscalation;
+  const status = statusFor({
+    outcome: out, died: death.died, category: typeof esc?.category === 'string' ? esc.category : null,
+    moneyHalt: records.some((r) => r && r.type === 'money-halt'),
+  });
+  return { ended, resume, status };
+}
+
+/**
+ * P5 item 6 — a run whose row is listed (its runner is alive) but whose spine does not
+ * exist YET: the runner appends the row first, then opens the spine. It is `starting`,
+ * never `file missing`. Carries the same field names a normal row/detail does so every
+ * client reader (filters, groups) sees a live `▶` run, with every figure honestly null.
+ * @param {{ runid: string, job: string, at: string, via: string }} row
+ * @returns {any}
+ */
+function startingStub(row) {
+  return {
+    runid: row.runid,
+    job: row.job,
+    at: row.at,
+    via: row.via,
+    fileMissing: false,
+    starting: true,
+    died: false,
+    glyph: '▶',
+    status: statusFor({ outcome: null }),
+    outcome: null,
+    endedLine: null,
+    ended: null,
+    resume: null,
+    checkType: 'unknown',
+    checkTypeTitle: null,
+    model: null,
+    spend: 'unknown',
+    wall: 'unknown',
+    date: typeof row.at === 'string' ? row.at.slice(0, 10) : null,
+    spentUsd: null,
+    spendComplete: false,
+    spendFloorUsd: null,
+    wallFloorMs: null,
+    draftSpentUsd: null,
+    draftSpendComplete: null,
+    budgetUsd: null,
+    steps: [],
+    parts: [],
+  };
+}
+
+/**
  * One `/api/runs` row, or `{ ...row, fileMissing: true }` when the row's
  * spine no longer exists on disk — never silently listed as if it were
  * still there (the same rule {@link import('../runlist.js').formatRunRow}
@@ -283,6 +641,7 @@ function formatDurationMs(ms) {
  */
 function summarizeRow(row) {
   if (!existsSync(row.spine)) {
+    if (runIsAlive(row)) return startingStub(row);
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
     };
@@ -299,6 +658,7 @@ function summarizeRow(row) {
   }
   const line = summarizeForAllLine(summary);
   const death = deriveDeath(row, rawRecords, summary.outcome);
+  const { ended, status } = endedForRow(row, rawRecords, summary, death);
   return {
     runid: row.runid,
     job: row.job,
@@ -306,7 +666,11 @@ function summarizeRow(row) {
     via: row.via,
     fileMissing: false,
     died: death.died,
-    glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
+    endedLine: ended ? ended.line : null,
+    // P5-R: one card per run — how many times it was resumed (a resumed run is the same run, never a second card)
+    resumedCount: Math.max(0, summary.legs.length - 1),
+    glyph: status.sign,
+    status,
     checkType: checkTypeLabel(summary.verdictType, row.at),
     checkTypeTitle: checkTypeTitle(summary.verdictType, row.at),
     model: summary.model,
@@ -326,11 +690,45 @@ function summarizeRow(row) {
     // no drafting fold at all, exactly like `summary.draftSpentUsd` itself.
     spentUsd: death.died ? null : summary.spentUsd,
     spendComplete: death.died ? false : summary.spendComplete,
-    spendFloorUsd: death.died ? death.spendFloorUsd : null,
+    // P5 item 6: the SAME floors the right pane reads (`deriveDeath`), for a died OR a
+    // still-running spine — so a live card and its pane show the same numbers. Both
+    // null once a job-end exists (the real figures above are complete then).
+    spendFloorUsd: death.spendFloorUsd,
+    wallFloorMs: death.wallFloorMs,
     draftSpentUsd: summary.draftSpentUsd,
     draftSpendComplete: summary.draftSpendComplete,
     budgetUsd: summary.budgetUsd,
   };
+}
+
+/**
+ * The Resume route's reader (P5 item 2): the listed row plus the resume plan, from the
+ * ONE {@link resumePlanFor} the Ended block asks. `null` when the runid is not listed
+ * or its spine is gone.
+ * @param {string} runid
+ * @param {{ home?: string }} [opts]
+ * @returns {{row: any, plan: any}|null}
+ */
+export function getResumeContext(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row || !existsSync(row.spine)) return null;
+  return { row, plan: resumePlanFor(row, parseJsonl(row.spine).records) };
+}
+
+/**
+ * The Stop route's reader (P5 item 5): the listed row, whether its LATEST leg is live (`runIsAlive`: the row's pid
+ * is the latest leg's, folded from the run list's `leg-start`), and whether its spine exists yet. `null` when the
+ * runid is not listed.
+ * @param {string} runid
+ * @param {{ home?: string }} [opts]
+ * @returns {{row: any, live: boolean, spineExists: boolean}|null}
+ */
+export function getStopContext(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  return { row, live: runIsAlive(row), spineExists: existsSync(row.spine) };
 }
 
 /**
@@ -362,6 +760,25 @@ export function listRuns(opts = {}) {
 }
 
 /**
+ * The run-list row of a run, for the readers below. An IMPORTED run (`<importId>~<runid>`, see importrun.js) is not in
+ * the run list: its row is built from the imports file and a checked path inside that bundle's own `runs/` folder
+ * (read only, no pid — never live, never resumable from here). `undefined` when no such run.
+ * @param {string} runid
+ * @param {{ home?: string }} opts
+ * @returns {any}
+ */
+function findRunRow(runid, opts) {
+  const imp = parseImportedRunId(runid);
+  if (imp) {
+    const bundle = readImports(opts.home).find((x) => x.id === imp.importId);
+    const spine = bundle ? safeSpinePath(bundle.dir, imp.runid) : null;
+    if (!bundle || !spine) return undefined;
+    return { runid, job: bundle.job, at: spineStartedAt(spine), via: 'import', spine, patient: null };
+  }
+  return readRunList(opts).rows.find((r) => r && r.runid === runid);
+}
+
+/**
  * `GET /api/runs/:runid` — the full replay for the Run tab: steps (or
  * iterations), counters, summary-box fields. Looks `runid` up in the run
  * list FIRST and reads only the path stored there (path safety — see file
@@ -372,28 +789,29 @@ export function listRuns(opts = {}) {
  * @returns {any|null}
  */
 export function getRunDetail(runid, opts = {}) {
-  const { rows } = readRunList(opts);
-  const row = rows.find((r) => r && r.runid === runid);
+  const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
+    if (runIsAlive(row)) return startingStub(row);
     return {
       runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
     };
   }
   // build item 7 (2026-09-28): resolve the audit path through the ONE
-  // shared resolver (`resolveAuditPathForRow`, already the sole owner for
+  // shared resolver (`resolveAuditPathsForRow`, already the sole owner for
   // `scopedBehaviour`/`getRunAudit`) BEFORE calling `replayOne`, and hand it
   // the result — otherwise `replayOne`'s own internal resolution only ever
   // finds the FINISHED-run convention, so a still-LIVE run's part-level
   // `byTool`/`toolCalls` (summary.parts, read from `replayRun`) read
   // "unknown" even though the SAME run's Run-tab tools/cache summary and
-  // Audit tab (both driven through `resolveAuditPathForRow` already) can
+  // Audit tab (both driven through `resolveAuditPathsForRow` already) can
   // see the during-run sidecar just fine.
   const rawSpineRecords = parseJsonl(row.spine).records;
-  const auditPath = resolveAuditPathForRow(row, rawSpineRecords);
-  const summary = replayOne(row.spine, { auditPathOverride: auditPath });
+  const auditPaths = resolveAuditPathsForRow(row, rawSpineRecords);
+  const summary = replayOne(row.spine, { auditPathOverride: auditPaths.length > 0 ? auditPaths : null });
   const timelineKind = summary.timelineKind;
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
+  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
   // close's own paid judge seam, distinct from the worker `model` above.
@@ -461,7 +879,7 @@ export function getRunDetail(runid, opts = {}) {
         id: u.id,
         occurrence: u.occurrence,
         outcome: u.outcome ?? null,
-        state: stateFor(u.outcome, isLast),
+        state: u.stopReason ? 'stopped' : stateFor(u.outcome, isLast),
         rounds: u.rounds,
         toolCalls: u.toolCalls,
         wallMs: u.wallMs,
@@ -473,6 +891,29 @@ export function getRunDetail(runid, opts = {}) {
         attempts: u.attempts,
       };
     });
+    // P5-R: a step cut off by its leg's halt and CONTINUED by the next leg is ONE step — the summary counts steps, not
+    // parts. The continued part replaces the stopped one in this list (so it is done iff its continuation is), and the
+    // two parts' rounds/time/spend/attempts are added up (an unknown figure stays unknown).
+    /** @type {any[]} */
+    const merged = [];
+    summary.steps.forEach((u, idx) => {
+      const cur = steps[idx];
+      const prev = merged[merged.length - 1];
+      if (u.continued === true && prev && prev.id === cur.id) {
+        const add = (/** @type {number|null} */ a, /** @type {number|null} */ b) => (typeof a === 'number' && typeof b === 'number' ? a + b : null);
+        merged[merged.length - 1] = {
+          ...cur,
+          occurrence: prev.occurrence,
+          rounds: add(prev.rounds, cur.rounds),
+          toolCalls: add(prev.toolCalls, cur.toolCalls),
+          wallMs: add(prev.wallMs, cur.wallMs),
+          spentUsd: add(prev.spentUsd, cur.spentUsd),
+          unpricedRounds: (prev.unpricedRounds ?? 0) + (cur.unpricedRounds ?? 0),
+          attempts: [...(prev.attempts ?? []), ...(cur.attempts ?? [])].map((a, n) => ({ ...a, n: n + 1 })),
+        };
+      } else merged.push(cur);
+    });
+    steps = merged;
   }
   // died before any step/iteration ever started (steps empty — the run was
   // still in scout/planning) — one placeholder box, never an empty map. Its
@@ -519,10 +960,32 @@ export function getRunDetail(runid, opts = {}) {
     provider: summary.provider,
     judgeModel,
     budgetUsd: summary.budgetUsd,
-    glyph: death.died ? '?' : glyphForOutcome(summary.outcome),
+    glyph: status.sign,
+    status,
+    // the header's times: when the run started (its list row) and when its last job-end was written (null while live / died)
+    startedAt: typeof row.at === 'string' ? row.at : null,
+    endedAt: lastJobEndTs(rawSpineRecords),
     outcome: summary.outcome,
     died: death.died,
     stopReason: death.died ? death.why : summary.stopReason,
+    // P5 item 1: the Ended block — `{reason, next, line, actions}` (code-owned fixed
+    // sentences, {@link endedFor}), `null` while the run is live. `resume` carries the
+    // numbers the Resume confirm box prefills (the signed caps, spent so far); `null`
+    // whenever Resume is not offered.
+    ended,
+    // P5 item 5: is the run's LATEST leg live (the page offers Stop only then), and has a stop been asked for
+    // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
+    live: row.via !== 'import' && runIsAlive(row),
+    stopping: row.via !== 'import' && runIsAlive(row) && existsSync(stopFilePath(row.spine)),
+    // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
+    // dividers and the map's connectors read these; never a second derivation of where a leg starts
+    legs: summary.legs,
+    legDividers: legDividersFor(rawSpineRecords, summary.parts),
+    resumedCount: Math.max(0, summary.legs.length - 1),
+    resume: resume && resume.ok ? {
+      budgetUsd: resume.budgetUsd, maxWallMin: resume.maxWallMin, spentUsd: resume.spentUsd, spendComplete: resume.spendComplete,
+      wallUsedMs: resume.wallUsedMs,
+    } : null,
     spentUsd: summary.spentUsd,
     // draftSpentUsd (hamr's ruling 2026-09-28) — the drafting share of this
     // run's cap, or null when this run carried none. `src/replay.js`'s
@@ -577,7 +1040,7 @@ export function getRunDetail(runid, opts = {}) {
     // gate-audit rows the Audit tab now shows (this run's own job-start..
     // job-end ts window, item 2's fix for a real measured defect: a
     // gate-audit sidecar CAN carry other runs' rows when several spines
-    // share one filename — see {@link runAuditWindow}'s doc) — never
+    // share one filename — see {@link runAuditWindows}'s doc) — never
     // `replayRun`'s own top-level `summary.behaviour`, which reads the
     // WHOLE sidecar file unscoped and is contaminated on a real archived run
     // (measured: pulselog-person-live-2's mu2p83go reads 142 unscoped tool
@@ -609,12 +1072,16 @@ export function getRunDetail(runid, opts = {}) {
  * about which rows belong to a run) — kept here only to find `job-start`/
  * `job-end` off the raw `spineRecords` array the panel already has in hand.
  * @param {any[]} spineRecords
- * @returns {{startTs: number, endTs: number}}
+ * @returns {{startTs: number, endTs: number}[]} one window per leg of the run (P5-R); one for a run nobody resumed
  */
-function runAuditWindow(spineRecords) {
-  const jobStart = spineRecords.find((r) => r && r.type === 'job-start') ?? null;
-  const jobEnd = [...spineRecords].reverse().find((r) => r && r.type === 'job-end') ?? null;
-  return auditWindow(jobStart, jobEnd);
+function runAuditWindows(spineRecords) {
+  return auditWindowsOf(spineRecords);
+}
+
+/** @param {string} ts @param {{startTs: number, endTs: number}[]} windows */
+function inAnyWindow(ts, windows) {
+  const ms = Date.parse(ts);
+  return Number.isFinite(ms) && windows.some((w) => ms >= w.startTs && ms <= w.endTs);
 }
 
 /**
@@ -689,7 +1156,7 @@ function makeRoundLookup(spineRecords) {
  *      `backfill` row (never a live run) and on some pre-cutoff `run-u` rows
  *      — both correctly fall through to `null` here.
  * Callers still scope the rows they read from this file by this run's own
- * job-start..job-end ts window ({@link runAuditWindow}) — a shared tree/
+ * job-start..job-end ts window ({@link runAuditWindows}) — a shared tree/
  * worktree gate-audit file can carry another run's rows too (this file's own
  * header comment on `runAuditWindow`), live or finished.
  *
@@ -703,42 +1170,44 @@ function makeRoundLookup(spineRecords) {
  * rename target, not a panel-server read-path bug).
  * @param {{spine: string, patient: string|null}} row
  * @param {any[]} spineRecords
- * @returns {string|null}
+ * @returns {string[]} every file the run's tool log is in, earliest leg first (empty: none was ever written)
  */
-function resolveAuditPathForRow(row, spineRecords) {
+function resolveAuditPathsForRow(row, spineRecords) {
+  /** @type {string[]} */
+  const paths = [];
   const { auditPath } = resolveSiblings(row.spine);
-  if (auditPath) return auditPath;
-  const hasJobEnd = spineRecords.some((r) => r && r.type === 'job-end');
-  if (hasJobEnd) return null;
-  if (typeof row.patient !== 'string' || row.patient.length === 0) return null;
+  if (auditPath && existsSync(auditPath)) paths.push(auditPath);
+  // P5-R: a resumed run's LIVE leg writes its tool log in the patient tree while the earlier legs' rows already sit in
+  // the run's own file — both are the run's, in that order. "Live" = the LATEST leg has no job-end yet.
+  const last = legsOf(spineRecords).at(-1);
+  const hasJobEnd = last ? last.jobEnd !== null : spineRecords.some((r) => r && r.type === 'job-end');
+  if (hasJobEnd) return paths;
+  if (paths.length > 0 && legsOf(spineRecords).length <= 1) return paths; // a never-resumed run's sibling is the whole log
+  if (typeof row.patient !== 'string' || row.patient.length === 0) return paths;
   const live = join(row.patient, 'gate-audit.jsonl');
-  return existsSync(live) ? live : null;
+  if (existsSync(live) && !paths.includes(live)) paths.push(live);
+  return paths;
 }
 
 /**
  * `runBehaviour`, fed only the gate-audit rows inside this run's own ts
- * window (see {@link runAuditWindow}) — the panel-side fix for the same
+ * window (see {@link runAuditWindows}) — the panel-side fix for the same
  * contamination `getRunAudit` fixes for the Audit tab, kept as ONE shared
  * scoping function so the Audit tab and the Run tab's tools/cache summary
  * can never disagree with each other about which rows belong to this run.
  * `null` when no gate-audit sidecar exists at all (never a fake all-zero
  * object — same rule `replayRun`'s own `auditAvailable` already follows).
  * `auditPath` resolution (finished sibling, or the live during-run fallback)
- * is {@link resolveAuditPathForRow} — the one shared owner.
+ * is {@link resolveAuditPathsForRow} — the one shared owner.
  * @param {{spine: string, patient: string|null}} row
  * @param {any[]} spineRecords
  * @returns {ReturnType<typeof runBehaviour>|null}
  */
 function scopedBehaviour(row, spineRecords) {
-  const auditPath = resolveAuditPathForRow(row, spineRecords);
-  if (!auditPath || !existsSync(auditPath)) return null;
-  const { records } = parseJsonl(auditPath);
-  const { startTs, endTs } = runAuditWindow(spineRecords);
-  const windowed = records.filter((r) => {
-    if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
-    const ms = Date.parse(r.ts);
-    return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
-  });
+  const auditPaths = resolveAuditPathsForRow(row, spineRecords);
+  if (auditPaths.length === 0) return null;
+  const windows = runAuditWindows(spineRecords);
+  const windowed = auditPaths.flatMap((ap) => parseJsonl(ap).records).filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
   return runBehaviour(windowed);
 }
 
@@ -879,8 +1348,7 @@ function shortenPath(path, root) {
  * @returns {{runid: string, rows: any[], raw: string, empty: boolean, reason: 'no-sidecar'|'sidecar-empty'|null}|null}
  */
 export function getRunAudit(runid, opts = {}) {
-  const { rows } = readRunList(opts);
-  const row = rows.find((r) => r && r.runid === runid);
+  const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
     return {
@@ -888,18 +1356,18 @@ export function getRunAudit(runid, opts = {}) {
     };
   }
   const { records: spineRecords, skipped: spineSkipped } = parseJsonl(row.spine);
-  // {@link resolveAuditPathForRow} needs `spineRecords` (to know whether this
+  // {@link resolveAuditPathsForRow} needs `spineRecords` (to know whether this
   // run has reached `job-end` yet) before it can decide whether the LIVE
   // during-run fallback is even worth trying — so the spine is parsed once,
   // here, before the sidecar path is resolved (moved up from right after the
   // old `resolveSiblings`-only check this replaces).
-  const auditPath = resolveAuditPathForRow(row, spineRecords);
-  if (!auditPath || !existsSync(auditPath)) {
+  const auditPaths = resolveAuditPathsForRow(row, spineRecords);
+  if (auditPaths.length === 0) {
     return {
       runid, rows: [], raw: '', empty: true, reason: 'no-sidecar',
     };
   }
-  const { startTs, endTs } = runAuditWindow(spineRecords);
+  const windows = runAuditWindows(spineRecords);
   const roundOf = makeRoundLookup(spineRecords);
   const roundRecords = sortedRoundRecords(spineRecords);
   // `preParsedSpine` avoids a second parse of the same spine file just read
@@ -912,30 +1380,25 @@ export function getRunAudit(runid, opts = {}) {
   });
   const partOf = makePartLookup(summary);
 
-  const { records } = parseJsonl(auditPath);
-  const windowed = records.filter((r) => {
-    if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
-    const ms = Date.parse(r.ts);
-    return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
-  });
+  const { records } = { records: auditPaths.flatMap((ap) => parseJsonl(ap).records) };
+  const windowed = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
   // item 1 (build item, 2026-09-26): "Raw log" must show only THIS run's own
   // window, same rule as `windowed` above (a sidecar can carry other runs'
-  // rows — see {@link runAuditWindow}'s doc). Filtered at the LINE level
+  // rows — see {@link runAuditWindows}'s doc). Filtered at the LINE level
   // (never the parsed-record level) so a matched line stays byte-for-byte —
   // "raw" means raw, not a re-serialized JSON.stringify of the parsed
   // object. A line whose `ts` can't be parsed (malformed JSON, or a
   // well-formed row missing/mistyping `ts`) is dropped rather than guessed
   // into the window, matching the same honesty rule `windowed` already
   // follows for its own rows.
-  const rawText = readFileSync(auditPath, 'utf8')
+  const rawText = auditPaths.map((ap) => readFileSync(ap, 'utf8'))
+    .join('\n')
     .split('\n')
     .filter((line) => line.trim() !== '')
     .filter((line) => {
       let r;
       try { r = JSON.parse(line); } catch { return false; }
-      if (!r || typeof r !== 'object' || typeof r.ts !== 'string') return false;
-      const ms = Date.parse(r.ts);
-      return Number.isFinite(ms) && ms >= startTs && ms <= endTs;
+      return !!r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows);
     })
     .join('\n');
   // item 2 (2026-09-26 build spec): every row's path shortened relative to
@@ -1014,8 +1477,7 @@ export const ROUNDS_PAGE_MAX = 200;
  * @returns {any|null}
  */
 export function getRunRounds(runid, query = {}, opts = {}) {
-  const { rows } = readRunList(opts);
-  const row = rows.find((r) => r && r.runid === runid);
+  const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) return null;
 
@@ -1543,8 +2005,7 @@ function jobsDir() {
  * @returns {any|null}
  */
 export function getRunJob(runid, opts = {}) {
-  const { rows } = readRunList(opts);
-  const row = rows.find((r) => r && r.runid === runid);
+  const row = findRunRow(runid, opts);
   if (!row) return null;
 
   const near = existsSync(row.spine) ? sourceNearSpine(row.spine) : { specPath: null, sourceJsonPath: null };
@@ -1693,6 +2154,290 @@ export function getRunJob(runid, opts = {}) {
   return none();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// REUSE WORKFLOW (hamr 2026-10-03; replaces P5 item 3's "Start from this"). A GREEN run — or an imported job — can be
+// run again as the SAME signed workflow on a new source. This section is the ONE owner of (a) the prefill, (b) which
+// boxes are locked, (c) the track record. The page asks; it never decides. A reuse is a NEW run (a new runid).
+// Nothing here drafts: changing the goal, checks, guardrails, judge examples or model is Clear (then draft).
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The signed spec a run's LATEST leg ran under — the `resolved-spec*.json` beside the run whose hash is the one its
+ * latest `job-start` carries (the same lookup `resumePlanFor` does). `null` = no such file.
+ * @param {{ spine: string }} row
+ * @param {any[]} records
+ * @returns {{spec: any, specPath: string, specHash: string}|null}
+ */
+function signedSpecForRun(row, records) {
+  const jobStart = (legsOf(records).findLast((l) => l.jobStart !== null) ?? null)?.jobStart ?? null;
+  if (!jobStart || typeof jobStart.specHash !== 'string') return null;
+  const near = sourceNearSpine(row.spine);
+  if (!near.specPath) return null;
+  const dir = dirname(near.specPath);
+  /** @type {string[]} */
+  let names = [];
+  try { names = readdirSync(dir).filter((n) => n === 'resolved-spec.json' || /^resolved-spec-r\d+\.json$/.test(n)); } catch { names = []; }
+  for (const n of names) {
+    let spec;
+    try { spec = JSON.parse(readFileSync(join(dir, n), 'utf8')); } catch { continue; }
+    if (!spec || typeof spec !== 'object') continue;
+    if (jobSpecHash(spec) === jobStart.specHash) return { spec, specPath: join(dir, n), specHash: jobStart.specHash };
+  }
+  return null;
+}
+
+/**
+ * The worker a signed spec ran: provider, baseUrl and model, the model falling back to the provider's default tier
+ * when the spec names none (the same fallback `resolveWorkerModel` makes at run time).
+ * @param {any} spec
+ * @returns {{provider: string, baseUrl?: string, model: string}}
+ */
+function workerOfSpec(spec) {
+  const provider = typeof spec?.provider === 'string' ? spec.provider : '';
+  let model = typeof spec?.model === 'string' ? spec.model : '';
+  if (!model) { try { model = resolveProvider(provider).tiers.sonnet; } catch { model = ''; } }
+  return { provider, ...(typeof spec?.baseUrl === 'string' && spec.baseUrl ? { baseUrl: spec.baseUrl } : {}), model };
+}
+/** @param {{provider: string, baseUrl?: string, model: string}} w @returns {string} one spelling of "the same worker" */
+const workerId = (w) => `${w.provider}\u0000${w.baseUrl ?? ''}\u0000${w.model}`;
+/**
+ * The worker the reuse card's CURRENT Model box names: the Settings row's provider, baseUrl and Name. `null` when the
+ * box is blank or names no row.
+ * @param {string} model a Settings Name
+ * @param {{ home?: string }} opts
+ * @returns {{provider: string, baseUrl?: string, model: string}|null}
+ */
+function workerOfChoice(model, opts) {
+  const c = modelChoiceFor(rowsForHome(keysHome(opts.home)), model);
+  return c ? { provider: c.provider, ...(c.baseUrl ? { baseUrl: c.baseUrl } : {}), model: c.name } : null;
+}
+
+/**
+ * The track record of a WORKFLOW: every LISTED run whose signed spec (the one its latest leg ran under) has this
+ * `workflowKey` — the same goal, checks, guardrails, model and close, whatever source, destination or caps. One run =
+ * ONE entry (a resumed run is one run, its FINAL outcome — `legsOf`), and a run that is still live is neither green
+ * nor not-green yet. `avgSpendUsd` / `avgWallMs` average the FINISHED runs (a recorded terminal) whose figure is exact
+ * (chain spend priced; working time from readable stamps, resume gaps excluded) — `null` when no run qualifies, never 0.
+ * Read from the runs the panel already lists: no registry, no plan handover (hamr ruling A).
+ * `opts.worker` narrows the record to runs on the same WORKER (provider + baseUrl + model — Model is open on a reuse, so
+ * the key no longer separates models): `undefined` = every model, a worker = only runs whose signed spec ran that one,
+ * `null` = no model chosen, so no run matches.
+ * @param {string} key a {@link workflowKey}
+ * @param {{ home?: string, worker?: {provider: string, baseUrl?: string, model: string}|null }} [opts]
+ * @returns {{runs: number, green: number, notGreen: number, live: number, finished: number, avgSpendUsd: number|null, avgWallMs: number|null}}
+ */
+export function trackRecordFor(key, opts = {}) {
+  const { rows } = readRunList(opts);
+  let green = 0;
+  let notGreen = 0;
+  let live = 0;
+  let finished = 0;
+  let spendSum = 0;
+  let spendN = 0;
+  let wallSum = 0;
+  let wallN = 0;
+  for (const row of rows) {
+    if (!row || !existsSync(row.spine)) continue;
+    let records;
+    try { records = parseJsonl(row.spine).records; } catch { continue; }
+    const legs = legsOf(records);
+    const signed = signedSpecForRun(row, records);
+    if (!signed || workflowKey(signed.spec) !== key) continue;
+    if (opts.worker !== undefined && (opts.worker === null || workerId(workerOfSpec(signed.spec)) !== workerId(opts.worker))) continue;
+    const outcome = legs.at(-1)?.outcome ?? null;
+    if (outcome === null && runIsAlive(row)) { live += 1; continue; }
+    if (outcome === 'green') green += 1; else notGreen += 1;
+    // the averages read FINISHED runs only (a recorded terminal), and only figures that are exact: an unpriced run
+    // or one with unreadable stamps is left out, never counted as $0 or 0 min (unknown is never zero)
+    if (outcome === null) continue;
+    finished += 1;
+    const sp = chainSpend(records);
+    if (sp.complete) { spendSum += sp.usd; spendN += 1; }
+    const wall = legsWallMs(legs);
+    if (wall.ms !== null && wall.complete) { wallSum += wall.ms; wallN += 1; }
+  }
+  return {
+    runs: green + notGreen + live, green, notGreen, live, finished,
+    avgSpendUsd: spendN > 0 ? spendSum / spendN : null,
+    avgWallMs: wallN > 0 ? wallSum / wallN : null,
+  };
+}
+
+/**
+ * The estimate line above a reuse card (code-owned fixed text): `Same job — G green · N not green · about $X and
+ * M min a run`, from the workflow's own listed runs. What is unknown is said, never rendered as $0 or 0 min.
+ * @param {{runs?: number, green: number, notGreen: number, finished?: number, avgSpendUsd: number|null, avgWallMs?: number|null}|null} record
+ * @returns {string}
+ */
+export function reuseLine(record) {
+  if (!record) return 'Same job';
+  if ('runs' in record && record.runs === 0) return 'Same job — no runs yet on this model';
+  const head = `Same job — ${record.green} green · ${record.notGreen} not green`;
+  const wallMs = record.avgWallMs ?? null;
+  const cost = record.avgSpendUsd === null ? null : panelMoney2(record.avgSpendUsd);
+  const mins = wallMs === null ? null : (wallMs < 60_000 ? '<1' : String(Math.round(wallMs / 60_000)));
+  if (cost !== null && mins !== null) return `${head} · about ${cost} and ${mins} min a run`;
+  if (cost !== null) return `${head} · about ${cost} a run, time not recorded`;
+  if (mins !== null) return `${head} · about ${mins} min a run, cost not recorded`;
+  return (record.finished ?? record.green + record.notGreen) === 0
+    ? `${head} · no finished run yet to price or time`
+    : `${head} · cost and time not recorded`;
+}
+
+/**
+ * `start-from` (the route keeps its name) for one listed run: the card prefilled from the run's SIGNED job, which
+ * boxes are locked and which are open, and the track record. Locked boxes carry the signed values, read by the
+ * SAME readers the Job tab uses (`successFromSpec`/`guardrailsFromSpec`); the open four — Source, Destination, the
+ * $ cap and the Time cap — start at what the run had. `ok:false` when the run's signed job is not on disk (nothing
+ * to copy: change the job: Clear the card). `null` when the runid is not listed.
+ * @param {string} runid
+ * @param {{ home?: string, model?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
+ * @returns {{ok: true, origin: {runid: string, job: string}, card: Record<string, any>, from: 'signed job',
+ *   locked: readonly string[], open: readonly string[], note: string|null,
+ *   specHash: string, workflowKey: string, spec: any, specPath: string,
+ *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
+ */
+export function getStartFrom(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  if (!existsSync(row.spine)) return { ok: false, error: 'this run has no log on disk — nothing to reuse' };
+  const records = parseJsonl(row.spine).records;
+  const signed = signedSpecForRun(row, records);
+  if (!signed) return { ok: false, error: "this run's signed job is not on disk — nothing to reuse (change the job: Clear the card and draft a new one)" };
+  const near = sourceNearSpine(row.spine);
+  const spec = signed.spec;
+  /** @type {Record<string, any>} */
+  let saved = {};
+  if (near.specPath) {
+    try {
+      const raw = JSON.parse(readFileSync(join(dirname(near.specPath), 'card.json'), 'utf8'));
+      if (raw && typeof raw === 'object') saved = raw;
+    } catch { saved = {}; }
+  }
+  let manifest = null;
+  if (near.sourceJsonPath) { try { manifest = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { manifest = null; } }
+  const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
+  const card = reuseCardFromSpec(spec, {
+    model: typeof saved.model === 'string' && saved.model ? saved.model
+      : (findRow(rowsForHome(keysHome(opts.home)), { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name
+        ?? (typeof jobStart?.model === 'string' ? jobStart.model : '')),
+    source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
+    judgeExamples: typeof saved.judgeExamples === 'string' ? saved.judgeExamples : '',
+    jobName: row.job,
+  });
+  const key = workflowKey(spec);
+  const trackRecord = trackRecordFor(key, { ...opts, worker: workerOfChoice(opts.model ?? card.model, opts) });
+  return {
+    ok: true,
+    origin: { runid, job: row.job },
+    card,
+    from: 'signed job',
+    locked: REUSE_LOCKED_FIELDS,
+    open: REUSE_OPEN_FIELDS,
+    note: card.checkType === 'rubric' && card.judgeExamples === '' ? 'judge examples were not saved for this run' : null,
+    specHash: signed.specHash,
+    workflowKey: key,
+    spec,
+    specPath: signed.specPath,
+    trackRecord,
+    line: reuseLine(trackRecord),
+  };
+}
+
+/**
+ * The reuse card for a signed spec: locked boxes from the spec through the Job tab's own readers, open boxes from
+ * the spec's own fence and caps (Source and the saved text from the caller — a spec carries neither).
+ * @param {any} spec
+ * @param {{model: string, source: string, judgeExamples: string, jobName: string}} extra
+ * @returns {Record<string, any>}
+ */
+function reuseCardFromSpec(spec, extra) {
+  const writeScope = Array.isArray(spec.writeScope) ? spec.writeScope.filter((/** @type {any} */ x) => typeof x === 'string') : [];
+  return {
+    jobName: typeof spec.job === 'string' && spec.job ? spec.job : extra.jobName,
+    checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
+    model: typeof spec.model === 'string' && spec.model && !extra.model ? spec.model : extra.model,
+    goal: typeof spec.goal === 'string' ? spec.goal : '',
+    source: extra.source,
+    destination: writeScope.join(', '),
+    success: successFromSpec(spec) ?? '',
+    guardrails: guardrailsFromSpec(spec) ?? '',
+    judgeExamples: extra.judgeExamples,
+    capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+    maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
+  };
+}
+
+/**
+ * P5 item 4 — the facts of a spec for an IMPORTED job's view, read by the SAME readers the Job tab uses for a run
+ * (so an imported job and a run read alike): check type, goal, success checks, guardrails, model, caps.
+ * @param {any} spec
+ * @returns {{checkType: string, goal: string, success: string, guardrails: string, model: string, budgetUsd: number|null, maxWallMs: number|null}}
+ */
+function describeSpec(spec) {
+  const nr = (/** @type {string|null} */ v) => (typeof v === 'string' && v.length > 0 ? v : 'not recorded');
+  return {
+    checkType: checkTypeLabel(typeof spec.verdictType === 'string' ? spec.verdictType : null, null),
+    goal: nr(typeof spec.goal === 'string' ? spec.goal : null),
+    success: nr(successFromSpec(spec)),
+    guardrails: nr(guardrailsFromSpec(spec)),
+    model: nr(typeof spec.model === 'string' ? spec.model : null),
+    budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
+    maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : null,
+  };
+}
+
+/**
+ * Reuse workflow, for an IMPORTED job: the bundle is read AGAIN now and must be clean (`readBundle` — its own hash
+ * covers every close script, so a swapped script is `bundle-tampered` here), must resolve its own `bareloop`
+ * dependency (`checkBundleDeps`), and every close stage's signed sha256 must match the script's bytes on disk
+ * (`checkCloseByteSignature`, over the spec with `$BARELOOP_BUNDLE` resolved to this folder — the same in-memory
+ * substitution `bareloop run <bundle>` makes). The reuse spec is that resolved spec; the close scripts stay where
+ * they were just verified (the engine re-verifies their bytes at run start and before every close run). The person
+ * signs it on this machine at [Sign & run]. Same card, same locked/open boxes as a run's reuse. `null` when no such
+ * imported job.
+ * @param {string} id
+ * @param {{ home?: string, model?: string }} [opts] `model` as for {@link getStartFrom}
+ * @returns {{ok: true, origin: {runid: null, job: string, importId: string}, card: Record<string, any>, from: 'imported job',
+ *   locked: readonly string[], open: readonly string[], note: string|null, specHash: string, workflowKey: string, spec: any,
+ *   specPath: null, trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
+ */
+export function getStartFromImport(id, opts = {}) {
+  const row = readImports(opts.home).find((r) => r.id === id);
+  if (!row) return null;
+  const st = bundleStatus(row);
+  if (st.status === 'changed') return { ok: false, error: IMPORT_CHANGED_LINE };
+  if (st.status !== 'ok') return { ok: false, error: `${st.statusText ?? 'this imported job cannot be read'} — re-import it before reusing it` };
+  const deps = checkBundleDeps(row.dir);
+  if (!deps.ok) return { ok: false, error: deps.reds[0]?.detail ?? 'the imported job cannot resolve its own dependency' };
+  const { spec } = resolveBundleSpec(st.bundle, row.dir);
+  const bytes = checkCloseByteSignature(spec, row.dir);
+  if (!bytes.ok) return { ok: false, error: `a close script of this imported job does not match its signed bytes (${bytes.reds.map((r) => r.stage).join(', ')}) — refusing to reuse it` };
+  // the bundle's provider is no longer forced: Model is open on a reuse, so the person's chosen Settings row is the worker.
+  // The card opens on the row matching the bundle's own provider when there is one, else blank (the page's menu picks).
+  const rows = rowsForHome(keysHome(opts.home));
+  const named = findRow(rows, { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name ?? '';
+  const card = reuseCardFromSpec(spec, { model: named, source: '', judgeExamples: '', jobName: row.job });
+  const key = workflowKey(spec);
+  const trackRecord = trackRecordFor(key, { ...opts, worker: workerOfChoice(opts.model ?? card.model, opts) });
+  return {
+    ok: true,
+    origin: { runid: null, job: row.job, importId: id },
+    card,
+    from: 'imported job',
+    locked: REUSE_LOCKED_FIELDS,
+    open: REUSE_OPEN_FIELDS,
+    note: 'a Source is needed — an exported job carries none; it is checked and signed on this machine',
+    specHash: jobSpecHash(spec),
+    workflowKey: key,
+    spec,
+    specPath: null,
+    trackRecord,
+    line: reuseLine(trackRecord),
+  };
+}
+
 /** @param {any} res @param {number} code @param {any} body */
 function sendJson(res, code, body) {
   const text = JSON.stringify(body);
@@ -1722,7 +2467,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes> }} opts
+ * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -1731,6 +2476,8 @@ export function handleRequest(req, res, opts) {
   function routesFor(o, p) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
+    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop)$/.test(p)) return o.runRoutes;
+    if (o.importRoutes && (p === '/api/fs/list' || p === '/api/imports' || p.startsWith('/api/imports/'))) return o.importRoutes;
     return null;
   }
   const method = req.method ?? 'GET';
@@ -1888,7 +2635,7 @@ export function handleRequest(req, res, opts) {
  * this package's own `bin/bareloop.mjs`).
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
- *   fetchImpl?: typeof fetch }} [opts]
+ *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
@@ -1906,10 +2653,14 @@ export function createPanelServer(opts = {}) {
     let authorRoutes;
     /** @type {ReturnType<typeof createSettingsRoutes>|undefined} */
     let settingsRoutes;
+    /** @type {ReturnType<typeof createRunRoutes>|undefined} */
+    let runRoutes;
+    /** @type {ReturnType<typeof createImportRoutes>|undefined} */
+    let importRoutes;
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes, settingsRoutes,
+          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
@@ -1932,9 +2683,27 @@ export function createPanelServer(opts = {}) {
         bareloopBin: opts.bareloopBin,
         fetchImpl: opts.fetchImpl,
         home,
+        startFrom: {
+          get: (runid, o = {}) => getStartFrom(runid, { home, ...o }),
+          getImport: (id, o = {}) => getStartFromImport(id, { home, ...o }),
+        },
       });
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
+      });
+      runRoutes = createRunRoutes({
+        port: boundPort,
+        token,
+        home,
+        env: opts.env,
+        spawnFn: opts.spawnFn,
+        bareloopBin: opts.bareloopBin,
+        settleMs: opts.settleMs,
+        getResumeContext: (runid) => getResumeContext(runid, { home }),
+        getStopContext: (runid) => getStopContext(runid, { home }),
+      });
+      importRoutes = createImportRoutes({
+        port: boundPort, token, home, userHome: opts.userHome, describeSpec,
       });
       resolve({
         server,

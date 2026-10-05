@@ -43,7 +43,7 @@
 //
 // Usage:
 //   node src/u-watchdog.mjs --spine <path> --pid <n>
-//        [--stale-ms N] [--wall-ms N] [--grace-ms N] [--dead-ms N] [--poll-ms N] [--term-grace-ms N]
+//        [--stale-ms N] [--wall-ms N] [--grace-ms N] [--dead-ms N] [--poll-ms N] [--term-grace-ms N] [--report <path>]
 import { statSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 
 const arg = (/** @type {string} */ n, /** @type {string|null} */ dflt = null) => {
@@ -215,7 +215,9 @@ function stop(/** @type {string} */ reason, /** @type {string} */ judgement, /**
   // not a guard (F70: the instrument carrying the failure mode it exists to catch). The
   // kill below runs whether or not this succeeded; a failure is named on stderr so a
   // missing marker is never read as "the guard never fired".
-  const reportPath = `${spine}.watchdog.json`;
+  // a RESUMED leg writes its own note beside the run's one spine (P5-R: `<spine>.leg<N>.watchdog.json`), so a
+  // later leg never overwrites the earlier leg's evidence; the default is the file every run has always had
+  const reportPath = arg('report') ?? `${spine}.watchdog.json`;
   const tmpPath = `${reportPath}.tmp`;
   try {
     writeFileSync(tmpPath, `${JSON.stringify(record, null, 2)}\n`);

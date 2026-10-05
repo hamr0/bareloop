@@ -18,6 +18,7 @@ import { appendRun, appendRunEvent, readRunList, runlistPath, isLiveRunner } fro
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { startRun, resumeRun } from '../src/userrun.js';
+import { TIMING_PREFLIGHT_CEILING_MS as TIMING_CEILING_MS } from '../src/closetimeout.js';
 import { createPanelServer } from '../src/panel/server.js';
 import { signRun } from '../src/panel/authorroutes.js';
 import { scriptedProvider } from './helpers.js';
@@ -259,7 +260,7 @@ const git = (/** @type {string} */ cwd, /** @type {string[]} */ args) => execFil
 const CLOSE_SOURCE = "console.log('FIXTURE judged=1');\nprocess.exit(1);\n";
 
 /** run-u start against a scratch home; returns what happened + how many provider calls */
-async function runU(t, { home, budgetUsd, manifest }) {
+async function runU(t, { home, budgetUsd, manifest, closeSource = CLOSE_SOURCE }) {
   // `manifest` (raw text) = a source.json beside the tree, the way the source door leaves one
   const parent = tmp(t);
   const workdir = manifest === undefined ? tmp(t) : join(parent, 'tree');
@@ -274,12 +275,12 @@ async function runU(t, { home, budgetUsd, manifest }) {
   const seed = git(workdir, ['rev-parse', 'HEAD']);
   const scripts = tmp(t);
   const closePath = join(scripts, 'close.mjs');
-  writeFileSync(closePath, CLOSE_SOURCE);
+  writeFileSync(closePath, closeSource);
   const spec = {
     schema: 'job-v1', job: 'monthly-seam-fixture', description: 'P4a item 2 seam fixture.',
     provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd, maxWallMs: 1_800_000,
     writeScope: ['src/**'], goal: 'Append MARKER_OK to src/mod.mjs.', verdictType: 'green',
-    close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(CLOSE_SOURCE) }],
+    close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(closeSource) }],
     tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
   };
   const provider = scriptedProvider([{ text: 'scout: nothing' }, { text: JSON.stringify({ schema: 'plan-v1', steps: [] }) }, { text: 'x' }]);
@@ -376,6 +377,31 @@ test('run-start seam: a $0 refusal AFTER the spine exists (SOURCE-MANIFEST-RED, 
   }
 });
 
+test('run-start seam: a CLOSE-TIMING-RED refusal (a close stage that never finishes the timing preflight) RELEASES the claim — no ghost row, the month is exact', async (t) => {
+  const home = tmp(t);
+  updateConfig({ monthlyLimitUsd: 10 }, { home });
+  // The production preflight ceiling is 600s and has no seam on this path, so the REAL timer is advanced:
+  // only setTimeout is mocked, the stage is a genuinely hung child, and runClose's own deadline fires it.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let settled = false;
+  const p = runU(t, { home, budgetUsd: 2, closeSource: 'setInterval(() => {}, 1000);\n' }).finally(() => { settled = true; });
+  while (!settled) {
+    t.mock.timers.tick(TIMING_CEILING_MS + 1);
+    await new Promise((r) => setImmediate(r));
+  }
+  const r = await p;
+  t.mock.timers.reset();
+  assert.equal(r.code, 1, r.errs);
+  assert.match(r.errs, /CLOSE-TIMING-RED/);
+  assert.equal(r.providerCalls, 0);
+  const list = readRunList({ home });
+  assert.equal(list.rows.length, 0, 'the refused run is folded out of the list');
+  assert.equal(list.events.filter((e) => e.type === 'released').length, 1);
+  const m = monthSpend({ home });
+  assert.equal(m.atLeast, false);
+  assert.equal(m.runs, 0);
+});
+
 test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is RELEASED too', async (t) => {
   const home = tmp(t);
   updateConfig({ monthlyLimitUsd: 10 }, { home });
@@ -391,6 +417,8 @@ test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is 
     { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: at, seq: 3 },
     { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
   ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  // the halted run was listed when it began (a resume continues a listed run)
+  appendRun({ at, runid: 'dead1', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: 999999, capUsd: 2 }, { home });
   writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
   git(first.workdir, ['add', '.']);
   git(first.workdir, ['commit', '-q', '-m', 'human']);
@@ -401,9 +429,12 @@ test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is 
   });
   assert.equal(code, 2, errs.join('\n'));
   assert.match(errs.join('\n'), /PATIENT REFUSED/);
+  // P5-R (rewritten): a resume is the SAME run, so a refused resume gives back THAT LEG's claim and the run
+  // stays listed — one row, never removed by a later leg's release (it used to fold a whole second row out)
   const list = readRunList({ home });
-  assert.equal(list.rows.length, 0, 'the refused resume is folded out of the list');
-  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started').length, 1);
+  assert.equal(list.rows.length, 1, 'the run stays listed: only the refused leg\'s claim is given back');
+  assert.equal(list.rows[0].leg, undefined, 'the refused leg-2 claim is void — the row is not on a leg that never began');
+  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started' && e.leg === 2).length, 1);
 });
 
 test('--resume refuses while the predecessor\'s OWN run-list row names a live runner pid (no watchdog record needed)', async (t) => {
@@ -473,6 +504,8 @@ test('run-start seam, NO monthly limit: a --resume refused at the patient (moved
     { type: 'worker-round', kind: 'turn', costUsd: 0.5, ts: at, seq: 3 },
     { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
   ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  // the halted run was listed when it began (a resume continues a listed run)
+  appendRun({ at, runid: 'dead2', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: 999999, capUsd: 2 }, { home });
   writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
   git(first.workdir, ['add', '.']);
   git(first.workdir, ['commit', '-q', '-m', 'human']);
@@ -483,9 +516,12 @@ test('run-start seam, NO monthly limit: a --resume refused at the patient (moved
   });
   assert.equal(code, 2, errs.join('\n'));
   assert.match(errs.join('\n'), /PATIENT REFUSED/);
+  // P5-R (rewritten): a resume is the SAME run, so a refused resume gives back THAT LEG's claim and the run
+  // stays listed — one row, never removed by a later leg's release (it used to fold a whole second row out)
   const list = readRunList({ home });
-  assert.equal(list.rows.length, 0, 'the refused resume is folded out of the list');
-  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started').length, 1);
+  assert.equal(list.rows.length, 1, 'the run stays listed: only the refused leg\'s claim is given back');
+  assert.equal(list.rows[0].leg, undefined, 'the refused leg-2 claim is void — the row is not on a leg that never began');
+  assert.equal(list.events.filter((e) => e.type === 'released' && e.reason === 'not started' && e.leg === 2).length, 1);
 });
 
 test('run-start seam: an unreadable config.json refuses the start ($0) rather than reading as "no limit"', async (t) => {

@@ -20,13 +20,18 @@
 //
 // Honesty: a run whose spend is not fully known (a died/still-running spine, an unpriced
 // round, a missing spine file) makes the month total an "at least" figure — never a clean
-// number. The refusal text stays exactly `Max $X (monthly limit)`; `atLeast` travels beside it.
+// number. The refusal text leads with `Max $X (monthly limit`; when runs hold money it adds
+// `, $Y held by a run in progress` before the closing paren (`monthlyRefusalText`). `atLeast` travels beside it.
 import { existsSync } from 'node:fs';
 import { readConfig, configPath, ConfigError } from './config.js';
-import { readRunList, appendRun, appendRunEvent, isLiveRunner, runIsAlive } from './runlist.js';
+import { readRunList, appendRun, appendLegStart, appendRunEvent, isLiveRunner, runIsAlive, isSettled } from './runlist.js';
+import { legsOf } from './legs.js';
 import { parseJsonl } from './replayio.js';
-import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords } from './ledger.js';
+import { SPEND_RECORD_TYPES, spendProvenance, floorsFromRecords, legSpend, runSpend, chainSpend } from './ledger.js';
 import { findRow } from './providerrows.js';
+import { readOrphanDraftSpends } from './draftspend.js';
+// the per-leg / per-run spend readers live with the ledger (one home, no import cycle through the replay reader)
+export { legSpend, runSpend, chainSpend };
 
 // The Money tab's per-provider breakdown groups a run by the endpoint it ran on and names
 // the groups it knows the vendor of. This is HISTORY labelling for spend already recorded
@@ -61,41 +66,35 @@ function rowIdFor(provider, baseUrl) {
 }
 
 /**
- * One run's own spend, off its spine records: this LEG's figure (never the chain fold),
- * plus the drafting spend the run was signed with (counted once — on the first leg only).
- * @param {any[]} records
- * @returns {{ usd: number, complete: boolean }}
- */
-export function legSpend(records) {
-  const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
-  const jobEnd = records.findLast((r) => r && r.type === 'job-end') ?? null;
-  const rounds = records.filter((r) => r && SPEND_RECORD_TYPES.includes(r.type));
-  const pricedSum = rounds.reduce((a, r) => (typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? a + r.costUsd : a), 0);
-  const unpriced = rounds.filter((r) => !(typeof r.costUsd === 'number' && Number.isFinite(r.costUsd))).length;
-  let usd = pricedSum;
-  let complete = false;
-  if (jobEnd) {
-    const eng = jobEnd.engagementSpentUsd;
-    usd = typeof eng === 'number' && Number.isFinite(eng) ? eng : pricedSum;
-    complete = jobEnd.spendComplete === true && unpriced === 0;
-  }
-  // drafting spend: a RESUMED / door-rerun leg carries the flag again but the first leg already counted it
-  const resumed = !!jobStart && 'priorSpentUsd' in jobStart;
-  if (jobStart && !resumed && typeof jobStart.draftSpentUsd === 'number' && Number.isFinite(jobStart.draftSpentUsd) && jobStart.draftSpentUsd > 0) {
-    usd += jobStart.draftSpentUsd;
-    if (jobStart.draftSpendComplete === false) complete = false;
-  }
-  return { usd, complete };
-}
-
-/**
  * One run's wall time off its spine: job-start -> job-end when the run ended (exact), else the
  * first -> last record floor (the SAME floor a died / still-running run's "at least" wall uses,
  * `floorsFromRecords`). `ms` null = unknown — never 0.
- * @param {any[]} records
+ * @param {any[]} records one spine's records (one leg or several)
  * @returns {{ ms: number|null, complete: boolean }}
  */
 export function legWall(records) {
+  const legs = legsOf(records);
+  if (legs.length > 1) {
+    // P5-R: the sum of each leg's own working window, the gap between legs excluded (hamr 2026-10-02, 2A)
+    let ms = 0;
+    let complete = true;
+    for (const l of legs) {
+      const w = legWallOne(l.records);
+      if (w.ms === null) { complete = false; continue; }
+      ms += w.ms;
+      if (!w.complete) complete = false;
+    }
+    return { ms: legs.every((l) => legWallOne(l.records).ms === null) ? null : ms, complete };
+  }
+  return legWallOne(records);
+}
+
+/**
+ * One LEG's wall (the single-leg rule {@link legWall} sums).
+ * @param {any[]} records
+ * @returns {{ ms: number|null, complete: boolean }}
+ */
+function legWallOne(records) {
   const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
   const jobEnd = records.findLast((r) => r && r.type === 'job-end') ?? null;
   const a = Date.parse(jobStart?.ts);
@@ -137,6 +136,7 @@ export function legTokens(records) {
  * @property {number} otherRounds every other round: a built-in guess, unpriced, or no provenance on record
  * @property {number} reservedUsd what the refusal check counts: `usd`, or the leg's cap when the run is in flight
  * @property {boolean} unreadable the spine was missing/unreadable or the listed date was bad (spend unknown)
+ * @property {boolean} [draft] drafting spend of a panel session that never became a run (src/draftspend.js) — not a run: no wall, not counted in `runs`
  */
 
 /**
@@ -145,7 +145,7 @@ export function legTokens(records) {
  * spend and the leg's own cap — the signed `budgetUsd` on the spine's `job-start` less the fold
  * a resumed leg inherited (`priorSpentUsd`), the same figure the run-start seam computes
  * (`legCapUsd`, src/userrun.js). A spine that records no `budgetUsd` reserves nothing extra.
- * @param {any[]} records
+ * @param {any[]} records the LATEST leg's records
  * @param {import('./runlist.js').RunRow} row
  * @param {number} nowMs
  * @param {number} usd the leg's spend so far
@@ -170,20 +170,22 @@ function inFlightCapUsd(records, row, nowMs, usd) {
 function rowsAbove(rows, runid) {
   if (runid === undefined) return rows;
   const i = rows.findIndex((r) => r.runid === runid);
-  return i < 0 ? rows : rows.slice(0, i);
+  if (i < 0) return rows;
+  // a RESUMED run's earlier legs are already spent money in this month: its own row stays in (its spend
+  // counts, its claim does not — `readLegs`' `ownClaim`). A first-leg claim has no earlier legs to count.
+  return rows[i].leg !== undefined && rows[i].leg > 1 ? rows.slice(0, i + 1) : rows.slice(0, i);
 }
 
 /**
  * Every listed run as one {@link Leg}. The ONE reader the month total, the all-time total
  * and the per-provider figures share.
- * @param {{ home?: string, now?: () => number, aboveRunid?: string, thisMonthOnly?: boolean }} [opts] `now` = the clock for the no-pid in-flight test; `aboveRunid` = read only the runs listed EARLIER in the file than that run (a claim yields to the claims above it, never below); `thisMonthOnly` = do not parse the spine of a run listed in another local month (the refusal check drops it anyway) unless its claim is still held
+ * @param {{ home?: string, sessionsRoot?: string, now?: () => number, aboveRunid?: string, thisMonthOnly?: boolean }} [opts] `sessionsRoot` = where the panel's sessions live (default `<home>/panel-sessions`); `now` = the clock for the no-pid in-flight test; `aboveRunid` = read only the runs listed EARLIER in the file than that run (a claim yields to the claims above it, never below); `thisMonthOnly` = do not parse the spine of a run listed in another local month (the refusal check drops it anyway) unless its claim is still held
  * @returns {Leg[]}
  */
 export function readLegs(opts = {}) {
   const nowMs = (opts.now ?? Date.now)();
   const { rows: allRows, events } = readRunList({ home: opts.home });
   const rows = rowsAbove(allRows, opts.aboveRunid);
-  const settled = new Set(events.filter((e) => e.type === 'settled').map((e) => e.runid));
   /** @type {Leg[]} */
   const legs = [];
   for (const row of rows) {
@@ -193,31 +195,60 @@ export function readLegs(opts = {}) {
     // pid is a live bareloop runner, however quiet its spine — killed = process gone, not silence.
     // An older row with no `pid` keeps the spine-mtime rule (`inFlightCapUsd`), never guessed alive.
     const hasPid = Number.isInteger(row.pid);
-    const heldCap = hasPid && !settled.has(row.runid) && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && runIsAlive(row, nowMs) ? row.capUsd : null;
-    if (opts.thisMonthOnly && heldCap === null && !Number.isNaN(at.getTime()) && !sameLocalMonth(at, new Date(nowMs))) continue;
+    // a resume's OWN claim never holds against itself: its earlier legs' spend counts, its cap is what is being checked
+    const ownClaim = opts.aboveRunid !== undefined && row.runid === opts.aboveRunid;
+    const heldCap = !ownClaim && hasPid && !isSettled(events, row) && typeof row.capUsd === 'number' && Number.isFinite(row.capUsd) && runIsAlive(row, nowMs) ? row.capUsd : null;
+    // a RESUMED run (`row.leg`) may hold a leg of this month under a start date of another: read its spine
+    if (opts.thisMonthOnly && heldCap === null && row.leg === undefined && !Number.isNaN(at.getTime()) && !sameLocalMonth(at, new Date(nowMs))) continue;
     if (Number.isNaN(at.getTime()) || !existsSync(row.spine)) { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
     /** @type {any[]} */
     let records;
     try { records = parseJsonl(row.spine).records; } catch { legs.push({ ...base, reservedUsd: heldCap ?? 0 }); continue; }
-    const start = records.find((r) => r && r.type === 'job-start') ?? null;
-    const leg = legSpend(records);
-    const prov = spendProvenance(records);
-    const wall = legWall(records);
+    // P5-R: a resumed run is ONE spine of several legs and ONE listed row. The month and the Money tab still
+    // count each leg on its own date with its own spend (the figures they always read), so a leg resumed in a
+    // later month is that month's, never silently folded back into the month the run began in. The claim (the
+    // hold) belongs to the LATEST leg only.
+    const found = legsOf(records);
+    const spineLegs = found.length > 0 ? found : [{ leg: 1, records, start: null, jobStart: null }];
+    const lastLegNo = spineLegs.length;
+    const first = records.find((r) => r && r.type === 'job-start') ?? null;
+    for (const sl of spineLegs) {
+      const lstart = sl.jobStart ?? first;
+      const leg = legSpend(sl.records);
+      const prov = spendProvenance(sl.records);
+      const wall = legWall(sl.records);
+      const isLast = sl.leg === lastLegNo;
+      const legAt = sl.leg === 1 ? at : new Date(sl.start?.ts ?? sl.start?.at ?? row.at);
+      const ended = sl.records.some((r) => r && r.type === 'job-end');
+      legs.push({
+        at: Number.isNaN(legAt.getTime()) ? at : legAt,
+        model: typeof lstart?.model === 'string' ? lstart.model : null,
+        wallMs: wall.ms,
+        wallComplete: wall.complete,
+        provider: typeof lstart?.provider === 'string' ? lstart.provider : null,
+        baseUrl: typeof lstart?.baseUrl === 'string' ? lstart.baseUrl : null,
+        usd: leg.usd,
+        complete: leg.complete,
+        tokens: legTokens(sl.records),
+        vouchedRounds: prov.vouched.rounds,
+        otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
+        reservedUsd: !isLast || ownClaim ? leg.usd
+          : hasPid ? (ended || heldCap === null ? leg.usd : Math.max(leg.usd, heldCap))
+            : inFlightCapUsd(sl.records, row, nowMs, leg.usd),
+        unreadable: false,
+      });
+    }
+    // a leg that CLAIMED (its `leg-start` is on the list) but has not yet written its marker: its claim still
+    // holds, exactly as a first leg's row does before its spine exists
+    if (row.leg !== undefined && row.leg > lastLegNo && heldCap !== null) legs.push({ ...base, reservedUsd: heldCap });
+  }
+  // drafting spend of panel sessions that never became a run (abandoned / refused / panel restarted): money
+  // already spent, counted by the SAME readers as a run's leg (src/draftspend.js — a signed run carries its own)
+  for (const d of readOrphanDraftSpends({ home: opts.home, sessionsRoot: opts.sessionsRoot })) {
     legs.push({
-      at,
-      model: typeof start?.model === 'string' ? start.model : null,
-      wallMs: wall.ms,
-      wallComplete: wall.complete,
-      provider: typeof start?.provider === 'string' ? start.provider : null,
-      baseUrl: typeof start?.baseUrl === 'string' ? start.baseUrl : null,
-      usd: leg.usd,
-      complete: leg.complete,
-      tokens: legTokens(records),
-      vouchedRounds: prov.vouched.rounds,
-      otherRounds: prov.guessed.rounds + prov.unpriced.rounds + prov.unknown.rounds,
-      reservedUsd: hasPid ? (records.some((r) => r && r.type === 'job-end') || heldCap === null ? leg.usd : Math.max(leg.usd, heldCap))
-        : inFlightCapUsd(records, row, nowMs, leg.usd),
-      unreadable: false,
+      at: new Date(d.startedAt), provider: d.provider, baseUrl: d.baseUrl, model: d.model, wallMs: null, wallComplete: false,
+      usd: d.spentUsd, complete: d.spendComplete, tokens: 0, vouchedRounds: 0, otherRounds: 0, reservedUsd: d.spentUsd,
+      unreadable: false, draft: true,
     });
   }
   return legs;
@@ -231,7 +262,7 @@ export function readLegs(opts = {}) {
 const sameLocalMonth = (at, now) => at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth();
 
 /**
- * @param {{ home?: string, now?: () => number, aboveRunid?: string }} [opts] `aboveRunid`: see {@link readLegs}
+ * @param {{ home?: string, sessionsRoot?: string, now?: () => number, aboveRunid?: string }} [opts] `aboveRunid`, `sessionsRoot`: see {@link readLegs}
  * @returns {{ usd: number, atLeast: boolean, runs: number, reservedUsd: number, heldUsd: number, heldRuns: number }} `usd` = real spend (the Money tab's figure); `reservedUsd` = the same with in-flight runs at their cap (the refusal check's); `heldUsd` = what in-progress runs set aside beyond what they have spent (`reservedUsd - usd`), over `heldRuns` runs
  */
 export function monthSpend(opts = {}) {
@@ -242,11 +273,11 @@ export function monthSpend(opts = {}) {
   let runs = 0;
   let heldUsd = 0;
   let heldRuns = 0;
-  for (const leg of readLegs({ home: opts.home, now: opts.now, aboveRunid: opts.aboveRunid, thisMonthOnly: true })) {
+  for (const leg of readLegs({ home: opts.home, sessionsRoot: opts.sessionsRoot, now: opts.now, aboveRunid: opts.aboveRunid, thisMonthOnly: true })) {
     // an unreadable date could belong to this month — unknown, never dropped
     if (Number.isNaN(leg.at.getTime())) { atLeast = true; continue; }
     if (!sameLocalMonth(leg.at, nowDate)) continue;
-    runs += 1;
+    if (!leg.draft) runs += 1;
     if (leg.unreadable) { atLeast = true; reservedUsd += leg.reservedUsd; if (leg.reservedUsd > 0) { heldUsd += leg.reservedUsd; heldRuns += 1; } continue; }
     usd += leg.usd;
     reservedUsd += leg.reservedUsd;
@@ -261,7 +292,7 @@ export function monthSpend(opts = {}) {
  * (rows from `rowIdFor`; a run on no known row lands under its own provider name, never
  * pooled into another row). Any leg with unknown spend makes the figure it belongs to
  * an "at least".
- * @param {{ home?: string, now?: () => number, rows?: readonly import('./providerrows.js').KeyRow[] }} [opts] `rows` = the Providers rows: when given, `tokensByRow` sums each row's tokens
+ * @param {{ home?: string, sessionsRoot?: string, now?: () => number, rows?: readonly import('./providerrows.js').KeyRow[] }} [opts] `rows` = the Providers rows: when given, `tokensByRow` sums each row's tokens
  * @returns {{ tokensByRow: Record<string, number>, total: {usd: number, atLeast: boolean, tokens: number}, month: {usd: number, atLeast: boolean, tokens: number},
  *   byProvider: Record<string, {label: string, monthUsd: number, monthAtLeast: boolean, totalUsd: number, totalAtLeast: boolean, tokens: number, vouchedRounds: number, otherRounds: number, monthWallMs: number|null, monthWallAtLeast: boolean, totalWallMs: number|null, totalWallAtLeast: boolean}> }}
  */
@@ -276,7 +307,7 @@ export function spendSummary(opts = {}) {
   const wallSeen = {};
   /** total tokens of the runs each Providers row served (matched by shape + endpoint + model) @type {Record<string, number>} */
   const tokensByRow = {};
-  for (const leg of readLegs({ home: opts.home })) {
+  for (const leg of readLegs({ home: opts.home, sessionsRoot: opts.sessionsRoot })) {
     let served = opts.rows ? findRow(opts.rows, { provider: leg.provider, baseUrl: leg.baseUrl, model: leg.model }) : null;
     // an older spine records a model but no provider: it counts toward the row whose Name EXACTLY
     // equals that model. Two rows sharing the Name make it ambiguous, so it counts toward neither.
@@ -295,9 +326,11 @@ export function spendSummary(opts = {}) {
       : (notRecorded ? (leg.model ? `not recorded (model ${leg.model})` : 'not recorded') : key.slice('other:'.length));
     const p = (byProvider[key] ??= { label, monthUsd: 0, monthAtLeast: false, totalUsd: 0, totalAtLeast: false, tokens: 0, vouchedRounds: 0, otherRounds: 0, monthWallMs: 0, monthWallAtLeast: false, totalWallMs: 0, totalWallAtLeast: false });
     const w = (wallSeen[key] ??= { monthRuns: 0, monthKnown: 0, totalKnown: 0 });
+    // drafting spend has no wall (it is not a run): it never turns a provider's wall into an "at least" or an unknown
+    const noWall = leg.draft === true;
     const unknown = leg.unreadable || !leg.complete;
     const wallKnown = !leg.unreadable && leg.wallMs !== null;
-    const wallAtLeast = !wallKnown || !leg.wallComplete;
+    const wallAtLeast = !noWall && (!wallKnown || !leg.wallComplete);
     total.usd += leg.usd; total.tokens += leg.tokens; if (unknown) total.atLeast = true;
     p.totalUsd += leg.usd; p.tokens += leg.tokens; p.vouchedRounds += leg.vouchedRounds; p.otherRounds += leg.otherRounds; if (unknown) p.totalAtLeast = true;
     if (wallKnown) { p.totalWallMs = /** @type {number} */ (p.totalWallMs) + /** @type {number} */ (leg.wallMs); w.totalKnown += 1; }
@@ -305,7 +338,7 @@ export function spendSummary(opts = {}) {
     if (inMonth) {
       month.usd += leg.usd; month.tokens += leg.tokens; if (unknown) month.atLeast = true;
       p.monthUsd += leg.usd; if (unknown) p.monthAtLeast = true;
-      w.monthRuns += 1;
+      if (!noWall) w.monthRuns += 1;
       if (wallKnown) { p.monthWallMs = /** @type {number} */ (p.monthWallMs) + /** @type {number} */ (leg.wallMs); w.monthKnown += 1; }
       if (wallAtLeast) p.monthWallAtLeast = true;
     }
@@ -350,17 +383,17 @@ export function monthlyLimitOf(config, home) {
  * number above 0 throws `ConfigError`.
  * Compared in whole cents. Also throws `ConfigError` when config.json is unreadable — a gate
  * whose own instrument is broken refuses; it never silently runs with no limit.
- * @param {{ capUsd: number, home?: string, now?: () => number, aboveRunid?: string }} args `aboveRunid`: count only the claims listed above that run (a claim in progress)
+ * @param {{ capUsd: number, home?: string, sessionsRoot?: string, now?: () => number, aboveRunid?: string }} args `aboveRunid`: count only the claims listed above that run (a claim in progress)
  * @returns {MonthlyRoom}
  */
-export function checkMonthlyRoom({ capUsd, home, now, aboveRunid }) {
+export function checkMonthlyRoom({ capUsd, home, now, aboveRunid, sessionsRoot }) {
   const cfg = readConfig({ home });
   if (cfg.problem) throw new ConfigError(cfg.problem);
   const limit = monthlyLimitOf(cfg.config, home);
   if (limit === null) {
     return { ok: true, leftUsd: null, limitUsd: null, atLeast: false };
   }
-  const spent = monthSpend({ home, now, aboveRunid });
+  const spent = monthSpend({ home, sessionsRoot, now, aboveRunid });
   const leftCents = Math.max(0, Math.floor((limit - spent.reservedUsd) * 100 + 1e-6));
   const capCents = Math.ceil(capUsd * 100 - 1e-6); // a non-finite cap never fits (NaN/Infinity compare false) — never read as $0
   return { ok: capCents <= leftCents, leftUsd: leftCents / 100, limitUsd: limit, atLeast: spent.atLeast, heldUsd: spent.heldUsd, heldRuns: spent.heldRuns };
@@ -389,13 +422,14 @@ export function monthlyRefusalText(room) {
  */
 export function settleDeadClaims({ home, by, aboveRunid }) {
   const { rows, events } = readRunList({ home });
-  const settled = new Set(events.filter((e) => e.type === 'settled').map((e) => e.runid));
   let n = 0;
   for (const row of rowsAbove(rows, aboveRunid)) {
-    if (!Number.isInteger(row.pid) || settled.has(row.runid) || isLiveRunner(/** @type {number} */ (row.pid))) continue;
+    // the run's own claim is never closed by itself (a resume's own row stays in `rowsAbove` for its SPEND)
+    if (aboveRunid !== undefined && row.runid === aboveRunid) continue;
+    if (!Number.isInteger(row.pid) || isSettled(events, row) || isLiveRunner(/** @type {number} */ (row.pid))) continue;
     let spentUsd = 0;
-    try { spentUsd = legSpend(parseJsonl(row.spine).records).usd; } catch { /* no spine: nothing was recorded spent */ }
-    appendRunEvent({ runid: row.runid, type: 'settled', by, reason: 'process gone', spentUsd, spendComplete: false, at: new Date().toISOString() }, { home });
+    try { spentUsd = legSpend(legsOf(parseJsonl(row.spine).records).at(-1)?.records ?? []).usd; } catch { /* no spine: nothing was recorded spent */ }
+    appendRunEvent({ runid: row.runid, type: 'settled', by, reason: 'process gone', spentUsd, spendComplete: false, at: new Date().toISOString(), ...(row.leg === undefined ? {} : { leg: row.leg }) }, { home });
     n += 1;
   }
   return n;
@@ -409,20 +443,25 @@ export function settleDeadClaims({ home, by, aboveRunid }) {
  * it appends `{type:'released', reason:'refused'}` and reports the refusal, nothing spent. No limit set =
  * no claim (`claimed: false`; the caller lists the run as it always did). An unreadable config, or a row
  * that cannot be written, throws `ConfigError` — the gate refuses, never reads "no limit".
- * @param {{ row: import('./runlist.js').RunRow, capUsd: number, home?: string, now?: () => number }} args
+ * A RESUMED leg (`leg` 2+, P5-R) claims the same way but appends a `leg-start` beside the run's one row
+ * (the row itself is added only when the list has none), and a refusal gives back THAT leg's claim.
+ * @param {{ row: import('./runlist.js').RunRow, capUsd: number, home?: string, now?: () => number, leg?: number }} args
  * @returns {{ room: MonthlyRoom, claimed: boolean }}
  */
-export function claimRun({ row, capUsd, home, now }) {
+export function claimRun({ row, capUsd, home, now, leg = 1 }) {
   const cfg = readConfig({ home });
   if (cfg.problem) throw new ConfigError(cfg.problem);
   if (monthlyLimitOf(cfg.config, home) === null) return { room: { ok: true, leftUsd: null, limitUsd: null, atLeast: false }, claimed: false };
-  try { appendRun(row, { home }); } catch (/** @type {any} */ e) {
+  try {
+    appendRun(row, { home });
+    if (leg > 1) appendLegStart({ type: 'leg-start', runid: row.runid, leg, pid: row.pid, capUsd: row.capUsd, at: new Date().toISOString() }, { home });
+  } catch (/** @type {any} */ e) {
     throw new ConfigError(`cannot write this run's claim to the run list (${e.message})`);
   }
   settleDeadClaims({ home, by: row.runid, aboveRunid: row.runid });
   const room = checkMonthlyRoom({ capUsd, home, now, aboveRunid: row.runid });
   if (!room.ok) {
-    try { appendRunEvent({ runid: row.runid, type: 'released', by: row.runid, reason: 'refused', at: new Date().toISOString() }, { home }); } catch { /* the refusal stands; a stranded row of a dead process is closed by the next run */ }
+    try { appendRunEvent({ runid: row.runid, type: 'released', by: row.runid, reason: 'refused', at: new Date().toISOString(), ...(leg > 1 ? { leg } : {}) }, { home }); } catch { /* the refusal stands; a stranded row of a dead process is closed by the next run */ }
     return { room, claimed: false };
   }
   return { room, claimed: true };

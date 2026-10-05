@@ -21,7 +21,7 @@
 // which putting either in fs.deny would silently contradict.
 
 import { createRequire } from 'node:module';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
@@ -39,8 +39,9 @@ import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, str
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
-import { extractArtifact } from './text.js';
+import { extractArtifact, rateSourceFields } from './text.js';
 import { defaultJudgeLoop } from './judged.js';
+export { rateSourceFields };
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
 import {
@@ -536,25 +537,8 @@ export const FORBIDDEN_WRITE_SEGMENT_PATTERN = /"path":"(?:(?:[^"\\]|\\.)*\/)?(?
  */
 export const BOUND_REASON_MAX = 200;
 
-/**
- * BA-21 — the WRITE side of the pricing-provenance signal (read side: `rateProvenance` /
- * `spendProvenance` in src/ledger.js). bare-agent >=0.37 rides `rateSource` beside
- * `pricing` on every metering payload; both metering callbacks below forward it onto the
- * spine through THIS one helper, because two sites spelling one rule are two instruments
- * (the ripgrep fix that landed in ci.yml but not publish.yml).
- *
- * Forwarded VERBATIM — the write side reports what upstream said, and src/ledger.js is
- * the one place that decides what counts as a guess. And an ABSENT provenance stays
- * absent: a payload carrying no `rateSource` (bare-agent <0.37, and every round already
- * in the archive) emits no field at all, so a reader sees UNKNOWN rather than a label we
- * invented. Never defaulted to `null` here — `null` is upstream saying "nothing was
- * priced", which is a different fact from "nobody told us".
- * @param {any} arg an `onLlmResult` / `onTurn` payload
- * @returns {{rateSource?: string|null}} the field to spread into the spine record
- */
-export function rateSourceFields(arg) {
-  return arg && typeof arg === 'object' && 'rateSource' in arg ? { rateSource: arg.rateSource } : {};
-}
+/** the recorded reason for a step attempt whose round was cut at the output cap (F122 2A b) */
+export const TRUNCATED_REASON = 'output cut at the token limit (max_tokens)';
 
 /**
  * What the NEXT attempt is told about the bound that cut the previous one.
@@ -589,6 +573,9 @@ export function rateSourceFields(arg) {
  */
 export function boundedNote(bounded, rounds) {
   if (!bounded) return null;
+  if (bounded.cause === 'truncated') {
+    return `Your previous attempt was CUT OFF: ${TRUNCATED_REASON}. That response was discarded.`;
+  }
   if (bounded.cause !== 'denied') {
     return `Your previous attempt was CUT OFF after ${rounds} tool rounds. `
       + 'Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.';
@@ -982,12 +969,18 @@ ${scoutBlob || '(no scout notes)'}`;
  *   passes `false` so the three `--resume`-naming readouts below (`MONEY_OPTIONS`,
  *   the resume-plan-red option, the fix-loop terminal) say "resume is `run-u`-only
  *   in v1" instead of naming a flag that would fail if typed.
+ * @param {string|null} [opts.stopFile=null] P5 item 5 — the run's STOP REQUEST file
+ *   (`stopFilePath(spine)`, src/legs.js). Read at ONE seam, the round boundary of a step worker
+ *   (the `metered` callback, where the money cap binds): present = emit `stop-requested`, consume
+ *   the file, end the Loop after that round, and end the leg `stopped` (a checkpoint outcome, filed
+ *   the way a mid-step cap-halt is; resume re-enters that step). Nothing is in flight at that
+ *   point, so the spend is exact. `null` = no stop surface (the default).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
- *   'branch-red' | 'cap-halt' | 'wall-halt' | 'provider-red' | 'interpreter-red' |
+ *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -2434,7 +2427,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      * `iteration` mirrors `roundIteration` exactly, undefined included: the bound
      * cannot know a label the run never set, and inventing one here would be the
      * only place in this file that claims to.
-     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied', reason: string|null}|undefined}
+     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied'|'truncated', reason: string|null}|undefined}
      */
     let attemptBounded;
     /**
@@ -2658,6 +2651,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // completes no round and returns from no step, which are the only two places
     // `clock.expired()` is otherwise consulted). Same clock object as every other
     // reader — never a second time source.
+    /** P5 item 5 — set by the round seam when the person's stop request was honoured on this worker */
+    let stopHit = false;
+    const throwIfStopped = () => {
+      if (!stopHit) return;
+      const err = /** @type {CategorizedError} */ (new Error('stopped at the person\'s request (a stop request was honoured at a round boundary)'));
+      err.category = 'stopped';
+      throw err;
+    };
     const stallWatch = createStallWatch({
       onStall: (n) => emit('stall', { phase, iteration: roundIteration, stall: n, stallMs: STALL_MS, maxStalls: MAX_STALLS }),
       expired: () => clock.expired(),
@@ -2740,7 +2741,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           // step loop after a step returns (between steps), the head of a step's attempt
           // (a step that would BEGIN past the deadline is never funded), and the head of
           // a close-fix iteration (W-2 — the run stops on the verdict already minted).
-          if (clock.expired()) {
+          // P5 item 5 — the person's STOP, read at THIS seam: the round boundary, where the money cap binds
+          // (nothing in flight, the round just metered). It is the ONE owner of the stop request. The file is
+          // consumed here; `self.stop()` ends the Loop after this round exactly as a bound does; `ask`/`askFrom`
+          // then throw category `stopped`, which the step loop files as the checkpoint outcome `stopped` the way a
+          // mid-step cap-halt is filed. Step workers only (scout/plan/fix never read it).
+          if (stopFile !== null && !stopHit && phase.startsWith('step:') && existsSync(stopFile)) {
+            try { unlinkSync(stopFile); } catch { /* already consumed */ }
+            stopHit = true;
+            emit('stop-requested', { phase, step: phase.slice('step:'.length), iteration: roundIteration, round: roundsThisAttempt, meaning: 'the person asked to stop; the leg ends after this round and a resume re-enters this step' });
+            self.stop();
+          } else if (clock.expired()) {
             attemptBounded = { iteration: roundIteration, cause: 'wall', reason: null };
             emit('wall-bounded', { phase, iteration: roundIteration, ...clock.report(closeTimeoutForReport) });
             self.stop();
@@ -2777,7 +2788,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // bare-agent's own Loop.chat() (loop.js ~1321) strips a leading system
         // message before re-running for exactly this reason; do the same here.
         const rest = msgs[0]?.role === 'system' ? msgs.slice(1) : msgs;
-        return await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        const r = await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        throwIfStopped();
+        return r;
       } catch (e) {
         throw categorize(e).err;
       }
@@ -2786,6 +2799,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       let r;
       try {
         r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        throwIfStopped();
       } catch (e) {
         throw categorize(e).err;
       }
@@ -2801,6 +2815,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         const reason = scrub(r.error);
         attemptBounded = { iteration: roundIteration, cause: 'denied', reason };
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason });
+        return r;
+      }
+      // F122 "2A" half (b), hamr 2026-10-05: a STEP or FIX worker round cut at max_tokens
+      // is a FAILED WORKER ATTEMPT, not transport. Same lane as the deny streak above: the
+      // cut round's output is discarded (bare-agent already dropped it), its spend is booked
+      // by the per-round meter, the tree is judged as it stands, and the step's strike
+      // ladder (or the fix governor) applies unchanged (hamr ruling A extended it to `fix`
+      // after run muux1x96). Scout, drafter, replan keep the transport route below.
+      if (r.error && r.error.startsWith('truncated:') && (phase.startsWith('step:') || phase === 'fix')) {
+        attemptBounded = { iteration: roundIteration, cause: 'truncated', reason: TRUNCATED_REASON };
+        emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason: TRUNCATED_REASON, stopReason: r.stopReason ?? null });
         return r;
       }
       // the remaining error-return taxonomy (one map, same doctrine as native's):
@@ -3690,6 +3715,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // (attempts used, steps done); its absence means the deadline landed inside a call
     // instead, which is F64's cutMidCall stop — and run.js keys the job-end money floor
     // on exactly that field, so conflating the two would report an unknown as exact.
+    // P5 item 5 — the person stopped the leg at a round boundary inside this step: a checkpoint, not a verdict
+    if (cat === 'stopped') {
+      planExecuted();
+      return 'stopped';
+    }
     if (cat === 'wall-halt') {
       emitWallHalt(stepWallStop ?? { cutMidCall: true, phase: `step:${step.id}`, stepsDone: idx, stepsPlanned: plan.steps.length });
       planExecuted();
@@ -4053,6 +4083,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         .filter((s) => s.values.length > 0)
         .map((s) => `${s.stage} ${s.values.join(' → ')}`);
       const factsLine = [checksFact, ...stageFacts].filter(Boolean).join(' · ');
+      // same iteration numbering as the step loop: `w.setIteration(iteration)` above
+      // stamps the bound, so "the attempt just before this one" is `iteration - 1`
+      const bound = w.wasBounded();
       await w.ask([
         'The job\'s final verification is failing. Fix the repository so it passes.',
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
@@ -4060,6 +4093,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         !gap && post.gap && `The verification's output on the tree as it stands (not an attempt of yours):\n${post.gap}`,
         gap && `Previous attempt failed the verification:\n${gap}`,
         factsLine && `The close's own numbers so far, oldest first (facts only — no advice):\n${factsLine}`,
+        bound?.iteration === iteration - 1 && boundedNote(bound, maxStepRounds),
         rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
     };

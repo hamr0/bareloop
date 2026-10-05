@@ -743,7 +743,7 @@ export async function main(argv, deps = {}) {
     say(`It runs under the AUTHORING ceiling (${CEILING_USD === null ? 'UNBOUNDED — you gave no --budget' : `$${CEILING_USD}`}), which is not the job's $${draft.budgetUsd}.`);
     say('It stops at prepareSigning: it never signs, and it never runs the job.');
   } else {
-    say('NEXT — running run-author.mjs on this source stops right away, at $0: no scout, no confirm turn, no model call.');
+    say('NEXT — running bareloop author on this source stops right away, at $0: no scout, no confirm turn, no model call.');
     say('It never signs and never runs the job — bareloop has no checks for this kind of job yet.');
   }
   say('');
@@ -781,11 +781,11 @@ export async function main(argv, deps = {}) {
   if (!KEYED) {
     say('');
     if (providerEnvKey && keyProblem) {
-      say(`  (${providerEnvKey} is set but ${keyProblem} — run-author refuses without a clean key; secrets are never trimmed or repaired, only reported)`);
+      say(`  (${providerEnvKey} is set but ${keyProblem} — bareloop author refuses without a clean key; secrets are never trimmed or repaired, only reported)`);
     } else {
       say(providerEnvKey
-        ? `  (${providerEnvKey} is not set in this shell — run-author refuses without it; secrets load from the environment, never the tree)`
-        : `  (provider "${PROVIDER}" is not in the runnable table — run-author will refuse it loud; this is not a key problem)`);
+        ? `  (${providerEnvKey} is not set in this shell — bareloop author refuses without it; secrets load from the environment, never the tree)`
+        : `  (provider "${PROVIDER}" is not in the runnable table — bareloop author will refuse it loud; this is not a key problem)`);
     }
     // The repair, in plain words and WITHOUT a command: which secret store a person
     // keeps their key in is theirs, and printing one specific incantation would be
@@ -802,9 +802,9 @@ export async function main(argv, deps = {}) {
     : null;
   if (depsGapAtHandoff) {
     say('');
-    say(`  The copy still has no installed packages (${depsGapAtHandoff.reason}) — run-author would only instrument-stop on it.`);
+    say(`  The copy still has no installed packages (${depsGapAtHandoff.reason}) — bareloop author would only instrument-stop on it.`);
     say(`    cd ${prep.tree} && ${depsGapAtHandoff.command}`);
-    say('  then run run-author.mjs yourself with the command above.');
+    say('  then run bareloop author yourself with the command above.');
   }
   say('');
   // The default is NO, and it is the same lean the pause's doors take: the answer that
@@ -835,7 +835,7 @@ export async function main(argv, deps = {}) {
     say('');
     const child = spawnSyncFn(process.execPath, [BARELOOP_BIN, 'author', ...childArgs], { stdio: 'inherit' });
     if (child.error) {
-      say(`run-author could not be started (${child.error.message}) — the command above still stands.`);
+      say(`bareloop author could not be started (${child.error.message}) — the command above still stands.`);
       exitCode = 2;
     } else {
       // the child's own exit is the answer: a refusal there is a RESULT, and flattening

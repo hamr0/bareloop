@@ -18,6 +18,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { jobSpecHash } from '../src/job.js';
 import { PAUSE_TTL_MS } from '../src/reuse.js';
 import { deathAtOf, evidencePackage, resumeAtLines } from '../src/u-readout.js';
+import { cleanEnv } from './helpers.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 — the ORCHESTRATION this file's source-text tripwires
@@ -27,6 +28,11 @@ const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 const ENGINE_SRC = new URL('../src/userrun.js', import.meta.url).pathname;
 const SPEC = JSON.parse(readFileSync(new URL('../jobs/bareagent-u-types.json', import.meta.url), 'utf8'));
 const DAY = 86_400_000;
+// Every fixture time is RELATIVE to today: a literal date aged past the 60-day pause TTL (and every other age gate)
+// on the day the calendar crossed it. `D0` is the calendar day ten days ago (UTC); the fixed clock times that
+// follow it keep their old offsets from one another, so every sum and difference the tests read is unchanged.
+const D0 = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10);
+
 
 const base = mkdtempSync(join(tmpdir(), 'hitl-u-'));
 process.on('exit', () => rmSync(base, { recursive: true, force: true }));
@@ -43,11 +49,11 @@ function spineFile(events) {
  * copied from what `src/planrun.js`'s `emitHitlPause` actually writes (pinned by
  * tests/hitl-run.test.js against the real machinery), so this fixture cannot drift
  * into describing a record the library does not emit. */
-const pausedSpine = ({ at = '2026-08-04T10:20:00.000Z', job = SPEC.job, changed = { paths: ['src/fix.js'] } } = {}) => [
-  { type: 'job-start', job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: '2026-08-04T10:00:00.000Z', seq: 1 },
-  { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'fix-types' }] }, ts: '2026-08-04T10:02:00.000Z', seq: 2 },
-  { type: 'worker-round', kind: 'turn', costUsd: SPEC.budgetUsd * 0.25, ts: '2026-08-04T10:05:00.000Z', seq: 3 },
-  { type: 'step-end', step: 'fix-types', outcome: 'green', ts: '2026-08-04T10:10:00.000Z', seq: 20 },
+const pausedSpine = ({ at = `${D0}T10:20:00.000Z`, job = SPEC.job, changed = { paths: ['src/fix.js'] } } = {}) => [
+  { type: 'job-start', job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: `${D0}T10:00:00.000Z`, seq: 1 },
+  { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'fix-types' }] }, ts: `${D0}T10:02:00.000Z`, seq: 2 },
+  { type: 'worker-round', kind: 'turn', costUsd: SPEC.budgetUsd * 0.25, ts: `${D0}T10:05:00.000Z`, seq: 3 },
+  { type: 'step-end', step: 'fix-types', outcome: 'green', ts: `${D0}T10:10:00.000Z`, seq: 20 },
   {
     type: 'hitl-pause',
     stage: 'signer-reviews',
@@ -72,7 +78,7 @@ const pausedSpine = ({ at = '2026-08-04T10:20:00.000Z', job = SPEC.job, changed 
 /** the preview: no --approve, so nothing reads a key and nothing touches a patient */
 const preview = (args, job = 'bareagent-types') => {
   const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
-    encoding: 'utf8', timeout: 240_000, env: { ...process.env, ANTHROPIC_API_KEY: '' },
+    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) {
@@ -92,7 +98,7 @@ const preview = (args, job = 'bareagent-types') => {
 
 test('§1.6 deathAt: a run that landed its OWN terminal dated its own stop — the watchdog record is not preferred over it', () => {
   const ev = pausedSpine();
-  const pausedAt = Date.parse('2026-08-04T10:20:00.000Z');
+  const pausedAt = Date.parse(`${D0}T10:20:00.000Z`);
   assert.equal(deathAtOf({ watchdogAt: new Date(pausedAt + 45 * DAY).toISOString(), events: ev }), null,
     'null hands readResume back its own default — the last event, which IS the pause');
   assert.equal(deathAtOf({ watchdogAt: undefined, events: ev }), null);
@@ -102,7 +108,7 @@ test('§1.6 deathAt CONTROL: a run that left NO terminal really was killed, and 
   // the case the preference order was written for and must keep: a SIGKILL mid-round
   // leaves the last spine event minutes (or hours) before the process actually stopped
   const killed = pausedSpine().filter((e) => e.type !== 'job-end' && e.type !== 'hitl-pause');
-  const at = '2026-08-04T11:30:00.000Z';
+  const at = `${D0}T11:30:00.000Z`;
   assert.equal(deathAtOf({ watchdogAt: at, events: killed }), Date.parse(at),
     'no job-end means nothing on the spine knows when it stopped — the kill record is the only witness there is');
 });
@@ -116,8 +122,8 @@ test('§1.6 deathAt: an unreadable or absent watchdog stamp is never invented in
 });
 
 test('§1.6 deathAt: garbage in the events list is read as "no terminal", not as a crash', () => {
-  assert.equal(deathAtOf({ watchdogAt: '2026-08-04T11:30:00.000Z', events: /** @type {any} */ (null) }), Date.parse('2026-08-04T11:30:00.000Z'));
-  assert.equal(deathAtOf({ watchdogAt: '2026-08-04T11:30:00.000Z', events: [null, 7, 'x'] }), Date.parse('2026-08-04T11:30:00.000Z'));
+  assert.equal(deathAtOf({ watchdogAt: `${D0}T11:30:00.000Z`, events: /** @type {any} */ (null) }), Date.parse(`${D0}T11:30:00.000Z`));
+  assert.equal(deathAtOf({ watchdogAt: `${D0}T11:30:00.000Z`, events: [null, 7, 'x'] }), Date.parse(`${D0}T11:30:00.000Z`));
 });
 
 test('§1.6 E2E: a stale watchdog report beside a PAUSED spine does not bill the deciding time to the wall', () => {
@@ -128,7 +134,7 @@ test('§1.6 E2E: a stale watchdog report beside a PAUSED spine does not bill the
   const f = spineFile(pausedSpine());
   writeFileSync(`${f}.watchdog.json`, `${JSON.stringify({
     watchdog: 'u-watchdog', reason: 'deadline', killed: true, pid: 0x7ffffffe, spine: f,
-    at: new Date(Date.parse('2026-08-04T10:20:00.000Z') + 45 * DAY).toISOString(),
+    at: new Date(Date.parse(`${D0}T10:20:00.000Z`) + 45 * DAY).toISOString(),
   })}\n`);
   const { code, out } = preview(['--resume', f]);
   assert.equal(code, 0, 'a stale report is not a refusal');
@@ -504,7 +510,7 @@ test('§1/W-2 a paused run whose WALL is gone refuses, and NAMES that the decisi
   // buys no worker round. The wall is governance and the runner does not get to rule
   // that some decisions are free of it; the lever is a signed spec edit.
   const wallMin = SPEC.maxWallMs / 60_000;
-  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const t = (/** @type {number} */ m) => new Date(Date.parse(`${D0}T10:00:00.000Z`) + m * 60_000).toISOString();
   const burnt = pausedSpine({ at: t(wallMin + 5) });
   const { code, out } = preview(['--resume', spineFile(burnt), '--decide', 'accept', '--approve', jobSpecHash(SPEC)]);
   assert.equal(code, 2);
@@ -523,12 +529,12 @@ test('§1/W-2 a paused run whose WALL is gone refuses, and NAMES that the decisi
 /** a leg that RECEIVED a decision and died holding it — the F102 shape, and the
  * shape a watchdog/harness kill actually leaves. The `human-decision` record is what
  * `src/planrun.js` emits (pinned against the real machinery in decision-carry). */
-const heldSpine = ({ at = '2026-08-04T10:20:00.000Z', decision = 'rerun', text = 'the d.ts leans on `any` everywhere', outcome = 'wall-halt' } = {}) => [
-  { type: 'job-start', job: SPEC.job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: '2026-08-04T10:00:00.000Z', seq: 1 },
-  { type: 'human-decision', decision, text, source: 'operator', meaning: 'answered on this invocation', ts: '2026-08-04T10:01:00.000Z', seq: 2 },
-  { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'fix-types' }] }, ts: '2026-08-04T10:02:00.000Z', seq: 3 },
-  { type: 'worker-round', kind: 'turn', costUsd: SPEC.budgetUsd * 0.25, ts: '2026-08-04T10:05:00.000Z', seq: 4 },
-  { type: 'step-end', step: 'fix-types', outcome: 'green', ts: '2026-08-04T10:10:00.000Z', seq: 5 },
+const heldSpine = ({ at = `${D0}T10:20:00.000Z`, decision = 'rerun', text = 'the d.ts leans on `any` everywhere', outcome = 'wall-halt' } = {}) => [
+  { type: 'job-start', job: SPEC.job, specHash: 'old-hash-0000', budgetUsd: SPEC.budgetUsd, shape: 'plan', goal: SPEC.goal, ts: `${D0}T10:00:00.000Z`, seq: 1 },
+  { type: 'human-decision', decision, text, source: 'operator', meaning: 'answered on this invocation', ts: `${D0}T10:01:00.000Z`, seq: 2 },
+  { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 'fix-types' }] }, ts: `${D0}T10:02:00.000Z`, seq: 3 },
+  { type: 'worker-round', kind: 'turn', costUsd: SPEC.budgetUsd * 0.25, ts: `${D0}T10:05:00.000Z`, seq: 4 },
+  { type: 'step-end', step: 'fix-types', outcome: 'green', ts: `${D0}T10:10:00.000Z`, seq: 5 },
   { type: 'job-end', outcome, spentUsd: SPEC.budgetUsd * 0.25, spendComplete: true, engagementSpentUsd: SPEC.budgetUsd * 0.25, ts: at, seq: 6 },
 ];
 
@@ -550,7 +556,7 @@ test('F102 — a FRESH --decide over a HELD one is refused at the runner, naming
 
 test('F103 — a held RERUN opens on the full signed wall: the preview says so, and the wall gate does not refuse it', () => {
   const wallMin = SPEC.maxWallMs / 60_000;
-  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const t = (/** @type {number} */ m) => new Date(Date.parse(`${D0}T10:00:00.000Z`) + m * 60_000).toISOString();
   const burnt = spineFile(heldSpine({ at: t(wallMin + 5) }));
   const pre = preview(['--resume', burnt]);
   assert.match(pre.out, /FRESH ENGAGEMENT/, 'the operator is told which clock this leg gets');
@@ -566,7 +572,7 @@ test('F103 — a held RERUN opens on the full signed wall: the preview says so, 
 
 test('F103 — an ordinary resume with no decision still meets the exhausted wall (W-2 untouched)', () => {
   const wallMin = SPEC.maxWallMs / 60_000;
-  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const t = (/** @type {number} */ m) => new Date(Date.parse(`${D0}T10:00:00.000Z`) + m * 60_000).toISOString();
   // same burnt spine, no held decision on it at all
   const plain = heldSpine({ at: t(wallMin + 5) }).filter((e) => e.type !== 'human-decision');
   const { code, out } = preview(['--resume', spineFile(plain), '--approve', jobSpecHash(SPEC)]);
@@ -579,7 +585,7 @@ test('ruling 5 — the PAUSE door is answered even below the wall-exhausted gate
   // state, including below the wall-exhausted gate*. A raise-and-re-sign changes what
   // a rerun can BUY; it was never what a pause COSTS.
   const wallMin = SPEC.maxWallMs / 60_000;
-  const t = (/** @type {number} */ m) => new Date(Date.parse('2026-08-04T10:00:00.000Z') + m * 60_000).toISOString();
+  const t = (/** @type {number} */ m) => new Date(Date.parse(`${D0}T10:00:00.000Z`) + m * 60_000).toISOString();
   const burnt = pausedSpine({ at: t(wallMin + 5) });
   const { code, out } = preview(['--resume', spineFile(burnt), '--decide', 'pause', '--approve', jobSpecHash(SPEC)]);
   assert.equal(code, 0, out);

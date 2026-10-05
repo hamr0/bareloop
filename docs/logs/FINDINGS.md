@@ -9841,6 +9841,18 @@ to hamr, not silently landing it.
 
 Nothing built by this entry. Full ruling text: `docs/logs/G2-SCOPING.md`.
 
+**2026-10-05 addendum — the 2A trigger fired; half (b) built.** The second `truncated:max_tokens`
+(and a third) landed on DeepSeek (deepseek-flash): runs `muuvmmul` (seq 66) and `muux1x96`
+(seq 99), both exactly 32,000 output tokens after median ~440-870-token rounds — runaway
+generation, not a low ceiling — both escalated `provider-red` ("worker loop: truncated:max_tokens").
+Base rate: 2 of 173 archived DeepSeek runs, 2 of 1,819 rounds. hamr ruled half (b) "A" on
+2026-10-05: a STEP worker round cut at max_tokens is a failed worker attempt (booked, output
+discarded, `attempt-bounded` reason `output cut at the token limit (max_tokens)`, strike ladder
+unchanged), not provider-red; real transport throws and non-step phases (scout/fix/drafter) are
+unchanged. Half (a) (`effort:'low'`) is sonnet-only and n/a to DeepSeek; `maxTokens` stays 32,000.
+
+2026-10-05 (later): hamr ruling A extended half (b) to the close-fix loop — a fix-phase worker round cut at max_tokens is now one failed fix round (booked, discarded, `attempt-bounded`, next fix prompt carries the cut-off note; same caps and fix governor), not provider-red; muux1x96 was cut in phase `fix`. Scout, drafter and replan keep provider-red.
+
 ## F123 — PRD item 24 lever (a) DROPPED: gate-red recovery is ~3% of spend (~6% on testgen),
 below the already-minor read-hygiene lever, no evidence the register changes behaviour
 
@@ -13993,3 +14005,55 @@ ceiling. The halt block's lever list for a bundle still says "top up budgetUsd",
 says a bundle's spec cannot be edited (`src/planrun.js`).
 **2026-09-30 — follow-on now fixed at the commit that follows `e630265` (one-runner branch):** a bundle's money-halt resume line prints `--budget <more than $<spent>, at most $<signed budgetUsd>>` for the person to fill in (no exhausted value echoed; other halts keep the tightened flags), and the bundle lever list says to choose a larger `--budget` up to the signed amount. Still open, reported not fixed: after a WALL halt the same carried `--wall` leaves no time (the wall is folded across a resume, `src/userrun.js` RESUME_WALL_MS).
 **2026-09-30 (sha, branch review):** the follow-on above landed as `00b2b75`.
+
+## F209 — the split-run resume shape was inherited from the reuse-path resume, never ruled; found only by rendering it in the panel (2026-10-02; fixed on `feat/panel-import-run` as P5-R: a resumed run is the same run)
+
+**Grounded in:** `git show 3155a16:src/userrun.js` — `:1491` `const runid = ctx.bundle?.runid ?? Date.now().toString(36);` and `:1492` `const spineFile = … join(spineDir, `u-${runid}.jsonl`)` ran on EVERY leg, resume included; `:1534` ("`runid` is fresh for THIS leg (cold start or resumed leg both mint one here)") and `:1306` ("This runner writes one spine file per LEG") state it as a given, never a ruling. `git show 3155a16:src/bundlerun.js:120` minted `now().toString(36)` for a bundle resume too and recorded `resumedFrom` (`:192`, `:249`). The mechanism copied was the reuse loop's resume, where one logical run really does span processes and `scripts/run-reuse.mjs:469,549` + `src/spine.js:14-22` (`makeSpine(file, {startSeq})`) APPEND to the dead run's own log; the direct runner took the reader (`readResume`) and not the append. Found 2026-10-02 by looking at paid run `mup3h70u` in the panel: a stopped-and-resumed run listed as two cards, two Audit views, two maps, with leg 2's `job-end.spentUsd` carrying leg 1 again (a chain total) beside leg 1's own spend.
+
+**What was wrong.** Nothing in the PRD or a ruling said a resume is a new run. Every reader that grew up on it (`summarizeRow`, `replayRun`, the monthly limit's rows, `deathAtOf`, `bundlerun`'s history) was then written to join the legs back together with a declared fold (`priorSpentUsd`/`priorWallMs`) — one place (`replayRun`'s `thisFileSpend`/`spendMismatch`, `src/replay.js`) carried a whole explanation of why two figures for one run disagree. The shape had been paid for in bookkeeping in at least fourteen reader groups; none of them could show "one run, resumed" because the file never said so.
+
+**The ruling (hamr 2026-10-02, "one run, one id, one file ... shows on map card, on audit, it's the same, never two").** A resume appends to the SAME spine file under the SAME runid behind a `leg-resume` marker; `legsOf` (`src/legs.js`) is the one owner of leg boundaries; money is ONE basis per reader (each leg's own rounds, summed; never rounds plus a declared prior), time is the legs' working windows with the gap excluded, the outcome is the last leg's; the run list keeps one row with a `leg-start` per resume; a torn tail is never edited (one `\n`, then the marker). Detail: `docs/product/PANEL-BUILD.md` P5-R, `bareloop.context.md` ("A resume is the SAME run").
+
+**Old split runs on disk are not rewritten** and read exactly as before (a regression test per reader). The door `rerun` still mints a new runid (not covered by the ruling).
+
+**Proven where:** `tests/legs.test.js`, `tests/p5r-resume.test.js` (writer: same file, marker first, seq continues, a real child killed mid-append), `tests/p5r-runlist.test.js`, `tests/p5r-resume-reader.test.js`, `tests/p5r-replay.test.js`, `tests/p5r-panel.test.js` — each fail-first against a mutated source. NOT proven live: no paid run yet (hamr's word, after P5 phase 2); the panel screens are screenshot-checked by the orchestrator.
+
+## F210 — CLI-started green runs show [Reuse workflow] but the button refuses: only a panel-started run saves its signed job where Reuse reads it (found in hamr's live reuse test, 2026-10-04; open, hamr decides)
+
+**Grounded in:** `src/panel/server.js` `getStartFrom` → `signedSpecForRun` (`:2171`) → `sourceNearSpine` (`:1608`): the signed job is read ONLY from `<out>/resolved-spec.json` (or `resolved-spec-rN.json`) beside a `source-*` tree, matched by `jobSpecHash` to the run's `job-start`. `src/panel/authorsession.js` `finish()` writes that file (and `card.json`) — a panel session is the only writer. The refusal text is `"this run's signed job is not on disk — nothing to reuse (change the job with + New)"`.
+
+**What was wrong.** A run started from the CLI (`run-u` / `bareloop run`, e.g. the green runs `muo0txge` and `muo1jah4`) ends green and the Run tab offers `[Reuse workflow]` (green rule), but clicking it answers 409 with the line above: no CLI path saves `resolved-spec.json`/`card.json` beside the run. The button's visibility rule (outcome green) and its precondition (a saved signed job) are two different facts.
+
+**Not fixed here.** Two shapes, hamr decides: (1) hide the button for runs whose signed job is not on disk (the Ended block already knows `getStartFrom`'s answer cheaply); or (2) save the resolved spec at CLI run time so every green run is reusable (touches the run engine's write set, not arbiter territory, but a new writer beside the run). Until then the refusal is honest and the dead button is the defect.
+
+## F211 — the secret front door refuses most of hamr's own repos as a panel source, while the CLI path ran the same repos green (found in hamr's live reuse test and an orchestrator $0 scan, 2026-10-04; parked for hamr's ruling, the scan is NOT loosened)
+
+**Grounded in:** the REAL `prepareSource` scan (`src/source.js`, `source-carries-secret`, hard line #3) run at $0 by the orchestrator on 2026-10-04 over the bare-suite patient repos; `bareguard-u-p5a` refused with `3 file(s) carry a known secret shape … test/integration.test.js (sk- prefixed API key); test/seam-contract.test.js (sk- prefixed API key); test/secrets-redaction.test.js (sk- prefixed API key)` (reproduced again in this session's `prepareSource` call). The `sk-…` strings are fake fixtures in tests that exercise bareguard's own redaction.
+
+**What was wrong.** A repo whose tests carry fake secret-shaped fixtures can never be a panel (repo-source) job: the front door refuses it before anything is copied. The refusal is correct by the hard line (an append-only log that captures a key captures it forever) and cannot tell a fixture from a key. Measured over the repos tried: **refused** — `bareguard-u` (3 files, `test/*`), `bareguard-u-p5a` (3, same files), `aurora-u` and `aurora-u-fire2` at seed `d661e50` (3: `packages/cli/src/aurora_cli/errors.py`, `packages/cli/tests/unit/test_errors_unit.py`, `packages/examples/smoke_test_cli.py`), `bareagent-u` (3, `poc/ba1-audit-leak-…`), `litectx-u` (1, `poc/write-gate-emit…`), `litectx-types` (1), `litectx-jsdoc` (1); **passing** — `baremobile-u`, `pulselog-panel-live`. So a panel job cannot run on most of hamr's own repos, while the CLI `run-u` path ran them green (it never goes through `prepareSource`).
+
+**Not fixed here.** Parked for hamr's ruling; the scan is arbiter-adjacent (hard line #3) and is not loosened, narrowed or given an allow-list in this branch. Options belong to hamr (a named-file allowance he signs per source, a CLI-only path for fixture-bearing repos, or leaving it); none is built.
+
+## F212 — `tree-changed` was blind on a single-FILE writeScope: `snapshotScope` readdir'd a file, threw ENOTDIR, and read an empty tree before and after (live run muv50wb2, 2026-10-05; fixed on `feat/panel-import-run`, hamr ruling "A")
+
+**Grounded in:** run `muv50wb2` (deepseek-flash, panel job `pulselog-digest-strict`), spine `u-muv50wb2.jsonl` exit-eval events; `src/plan.js:103` `legalScopes` turns the file `src/digest.js` into the scope `src/digest.js/**`; `src/exits.js` `snapshotScope` did `readdir(join(dir, prefix), {recursive:true})`, which throws ENOTDIR on a file and was caught as "missing scope dir".
+
+**What was wrong.** Every iteration read "0 files changed under src/digest.js/** — the tree is byte-identical to the step start" although the gate audit showed 9 allowed edits, `git diff --stat` in the patient showed 30+/6-, and `check-passes` was TRUE at iteration 1. The strike ladder struck the step out into step-red. An instrument that cannot see the variable made the exit unreadable; the worker did the work and the exit could never say so.
+
+**The fix (hamr ruling A: fix the instrument at its source).** `snapshotScope` stats the scope prefix; a regular file snapshots as that one file (key = the prefix, value = sha256). A missing path stays an empty Map; a directory is unchanged. `legalScopes`, the fence, validation, the ladder and verdict routing are untouched. The `tree-changed` evaluator already accepted `p === prefix`, so deleting the file counts as a change.
+
+**Other readers audited.** `src/planrun.js` scope-menu discovery (`readdirSync` on each writeScope prefix) also throws on a file, but is best-effort by design and falls back to the signed entries (which include the file scope), so it is not a tree-changed instrument and was not changed. The only caller feeding tree-changed is `planrun.js` `executeStep` (`snapshotScope` per exit scope), which gets the fix.
+
+**Proven where:** `tests/exits.test.js` (three file-scope tests: edit passes, identical re-write fails, delete counts); fail-first against the old `src/exits.js`: the edit and delete tests failed. Not yet re-run live.
+
+## F213 — drafting spend of a panel session that never became a run lived only in memory: the monthly limit and the Money tab never counted it (self-review 2026-10-05; fixed on `feat/panel-import-run`, hamr ruling "A")
+
+**Grounded in:** `src/panel/authorsession.js` `onCall` set `state.draftSpentUsd` in memory only; it reached disk only through a signed run's `--draft-spent-usd` (`src/panel/authorroutes.js` `signRun`) into that run's spine. `src/monthly.js` `readLegs` (the one reader behind `monthSpend`, `spendSummary`, `checkMonthlyRoom`) reads run spines only.
+
+**What was wrong.** Abandon, a refusal/error, or a panel restart (sessions are in memory) dropped the figure: the month total, the monthly refusal and the Money tab never saw it, while Abandon's own wording says "money already spent stays booked".
+
+**The fix (hamr ruling A, the approved design).** `onCall` rewrites `<session dir>/draft-spend.json` after every metered call from the same `tallyCalls` figure (one owner, atomic tmp + rename; unpriced = `spendComplete:false`, never $0). `readLegs` adds each session folder with the file whose folder holds no run-list row's `spine`/`patient` (`src/draftspend.js`), as a leg flagged `draft` (no wall, not a run), so all three money readers agree through one helper. Month attribution is `startedAt` (the first call): it is fixed once written, so a session's figure never hops months as spend continues, as a run's leg is dated by its start. No new `runs.jsonl` rows, no job, no lock file; the Abandon message is unchanged and now true.
+
+**Edges.** A signed session whose run never appended its row (spawn failed, or a leg-1 claim released as refused) counts its draft. Signed AND listed = skipped. A session spanning a month boundary lands wholly in the month it began. The drafting judge calls are attributed to the worker's row. The panel's Money/monthly routes read `<home>/panel-sessions` (production's sessions root); a test that points `sessionsRoot` elsewhere passes it explicitly.
+
+**Proven where:** `tests/draft-spend.test.js` (real files in a scratch home; session driven through the real confirm turn and `onCall`); fail-first against the old `src/monthly.js` / `src/panel/authorsession.js`: all 7 failed. Not yet exercised live.

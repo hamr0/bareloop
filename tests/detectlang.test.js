@@ -20,6 +20,7 @@ import { assembleSpec, prepareSigning, GENRE } from '../src/authorjob.js';
 import { classGuards } from '../src/authoring.js';
 import { classifyIncidents } from '../src/ledger.js';
 import { prepareSource } from '../src/source.js';
+import { cleanEnv } from './helpers.js';
 
 const RUN_INTERVIEW = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
 const RUN_AUTHOR = new URL('../scripts/run-author.mjs', import.meta.url).pathname;
@@ -195,7 +196,7 @@ for (const [name, script, extraArgs] of [
 ]) {
   test(`${name} refuses --lang — the flag is gone, never silently ignored`, () => {
     const r = spawnSync(process.execPath, [script, ...extraArgs, '--lang', 'js'], {
-      encoding: 'utf8', timeout: 30_000, input: '',
+      encoding: 'utf8', timeout: 30_000, input: '', env: cleanEnv(),
     });
     assert.notEqual(r.status, 0, `${name} --lang exit: ${JSON.stringify({ code: r.status, out: r.stdout, err: r.stderr })}`);
     const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -234,7 +235,7 @@ test('run-interview.mjs reaches the interview from an interactively-typed Source
     RUN_INTERVIEW, '--verdict', 'green', '--provider', 'anthropic-api', '--out', out,
   ], {
     encoding: 'utf8', timeout: 30_000, input: `${patient}\n\n`, // Source, then end input — proves it got PAST arg parsing into the interview
-    env: { ...process.env, ANTHROPIC_API_KEY: '' },
+    env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   // it must have printed the detected language before stdin ran out — proof
@@ -256,7 +257,7 @@ test('run-author.mjs on a language-unsupported --source records job-red/request-
     '--answers', join(base, 'answers-never-read.json'),
     '--draft', join(base, 'draft-never-read.json'),
     '--verdict', 'green', '--out', out,
-  ], { encoding: 'utf8', timeout: 30_000 });
+  ], { encoding: 'utf8', timeout: 30_000, env: cleanEnv() });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.notEqual(r.status, 0, text);
   assert.match(text, /language-unsupported/, text);
@@ -299,7 +300,7 @@ test('run-author.mjs reaches the API-key check from a prepared --source alone �
     '--verdict', 'green', '--out', out,
   ], {
     encoding: 'utf8', timeout: 30_000,
-    env: { ...process.env, ANTHROPIC_API_KEY: '' },
+    env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   // dies at the (pre-existing) missing-key check — proof it got THAT far,

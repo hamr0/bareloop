@@ -332,3 +332,15 @@ test('panel page: the Providers tab prints one shell-only hint per name under th
   assert.ok(html.includes('id="pv-shell"'));
   assert.ok(html.includes('is set in your shell but not in ~/.config/bareloop/.env — add it there to use it here and in Chat.'));
 });
+
+test('panel page: [Reload keys] is always on the Providers tab (static markup, never in a conditional or hidden block) and the keys-file path is never hardcoded — only the server\'s path is shown', () => {
+  const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  const strip = html.slice(html.indexOf('<div class="keyfile-strip"'), html.indexOf('data-testid="provider-table-wrap"'));
+  assert.match(strip, /<button class="btn small" type="button" id="btn-reload-keys" data-testid="btn-reload-keys">Reload keys<\/button>/);
+  assert.doesNotMatch(strip.slice(0, strip.indexOf('id="btn-reload-keys"')), /hidden/, 'no hidden attribute on the strip or its button');
+  assert.ok(html.indexOf('id="btn-reload-keys"') < html.indexOf('id="pv-rows"'), 'it sits above the table, so an empty table cannot take it away');
+  // the markup carries no literal path; the page fills it from the server's keysFile.path (the HOME the server reads)
+  assert.doesNotMatch(strip, /\.config\/bareloop/);
+  assert.match(html, /getElementById\("pv-keyfile-path"\)\.textContent = kf\.path;/);
+  assert.match(html, /path unknown — could not read providers/, 'a failed load says the path is unknown rather than showing a guess');
+});

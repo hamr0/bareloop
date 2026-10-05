@@ -38,6 +38,7 @@ import { main as interviewMain } from '../src/interviewrun.js';
 import { PROVIDERS } from '../src/job.js';
 import { resolveProvider } from '../src/providers.js';
 import { SOURCE_FIELD, DESTINATION_FIELD_REPO, labelsFor } from '../src/authorflow.js';
+import { cleanEnv } from './helpers.js';
 
 // The fixture class for every wizard test below: the LONGEST question set the
 // menu still offers, so a test that walks every question walks the widest one.
@@ -110,7 +111,7 @@ const interview = ({
     // env, so a provider-swap scenario's "not set" reading can never depend on
     // whatever happens to be exported in the machine actually running the test.
     env: {
-      ...process.env, ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv(), ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   if (r.status === null) throw new Error(`run-interview.mjs never exited (${r.error?.code ?? r.signal ?? '?'}):\n${(r.stdout ?? '').slice(0, 400)}`);
@@ -135,7 +136,7 @@ const interviewInteractive = async ({
   const args = ['--verdict', verdict, '--out', out, '--budget', '2.50', '--provider', provider];
   const child = spawn(process.execPath, [SCRIPT, ...args], {
     env: {
-      ...process.env, ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv(), ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   let buf = '';
@@ -483,7 +484,7 @@ test('--patient is refused, loud — Source replaced it', () => {
   const args = ['--patient', repoBase, '--verdict', CLASS, '--provider', 'anthropic-api', '--out', out];
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf8', timeout: 30_000, input: 'n\n',
-    env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
+    env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
   });
   assert.equal(r.status, 2);
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -853,7 +854,7 @@ test('a yes at the offer starts the PACKAGED door — bin/bareloop.mjs author wi
     ['--verdict', CLASS, '--out', out, '--budget', '2.50', '--provider', 'anthropic-api'],
     {
       stdin: Readable.from([`${session(CLASS, { run: 'y' }).join('\n')}\n`]), stdout: so, stderr: se,
-      env: { ...process.env, ANTHROPIC_API_KEY: 'sk-test-not-a-real-key', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
+      env: { ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-test-not-a-real-key', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
       spawnSync: (...a) => { spawned.push(a); return { status: 0 }; },
     },
   );

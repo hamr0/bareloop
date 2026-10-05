@@ -16,6 +16,8 @@
 // leads; the leg is what this process actually bought, and dropping it would trade
 // one blindness for the other.
 
+import { legsOf } from './legs.js';
+
 /** minutes, at the precision the readout has ever claimed (~90%, hamr's ruling) */
 const min = (/** @type {number} */ ms) => (ms / 60_000).toFixed(1);
 
@@ -336,10 +338,16 @@ export function doorLines({ rerun, accept, pause }) {
  */
 export function deathAtOf({ watchdogAt, events } = {}) {
   const list = Array.isArray(events) ? events : [];
+  // P5-R: a resumed run is one spine of several legs. "Did this run end itself" is a question about its
+  // LATEST leg: an earlier leg's job-end says nothing about how the leg now being read stopped, and a
+  // watchdog note dated before this leg began is a different leg's note.
+  const last = legsOf(list).at(-1) ?? null;
+  const scope = last ? last.records : list;
   // a landed terminal is the run dating its own stop — nothing outside it is better
   // evidence about a run that was never killed
-  if (list.some((e) => e !== null && typeof e === 'object' && /** @type {any} */ (e).type === 'job-end')) return null;
+  if (scope.some((e) => e !== null && typeof e === 'object' && /** @type {any} */ (e).type === 'job-end')) return null;
   const at = typeof watchdogAt === 'string' ? Date.parse(watchdogAt) : NaN;
+  if (last && last.leg > 1 && last.startMs !== null && Number.isFinite(at) && at < last.startMs) return null;
   // an unreadable stamp is UNKNOWN, never a NaN handed to a fold (F6): the caller's
   // own default is the honest fallback
   return Number.isFinite(at) ? at : null;

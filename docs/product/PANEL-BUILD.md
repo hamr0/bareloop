@@ -393,7 +393,7 @@ re-sign are deferred).
 
 ### Flow on the page (Chat tab)
 
-1. **+ New** opens an empty job card (field order: Check type, Model, Job name, Goal, Source,
+1. The Chat tab always shows an empty job card (the old **+ New** is removed, 2026-10-05) (field order: Check type, Model, Job name, Goal, Source,
    Destination, Success, Guardrails, Judge examples (rubric only), plus a required **Drafting
    $ cap** field with no default — the Start button stays disabled until it is a positive
    number).
@@ -656,3 +656,222 @@ supersede it:
 - Also built: POST body cap (1 MiB, `413`), the `jobsDir` seam server-side only, `replay-live --live-audit`.
 - `bareloop run <bundle>` is a door to the same engine, so the monthly limit applies to it too (one
   run-start seam, no second one).
+
+## Addendum 2026-10-02 — P5 — Ended, Resume, Start from this, Import (read only), Stop, run-card fixes (signed by hamr 2026-10-02)
+
+Rulings: memory `ui-part-p5-rulings` + this session (1A reuse-by-record, 2 card saved, 3 Stop = "stopped" resumable, A track record from runs).
+
+Build order = item order. One sonnet builder, sequential, one commit per item, fail-first test per item.
+
+---
+
+### 1. Ended block
+
+**Screen.** Audit tab, first block, every run (green too):
+```
+ENDED   Money cap reached ($8.00 of $8.00).
+NEXT    Raise the cap, then Resume.            [Resume]
+```
+Run card: one short line under the job name, e.g. `money cap — resume`.
+
+**Owner.** One code-owned function `endedFor(summary, death)` in `src/panel/server.js` (fixed sentences, never model text — ui-verdict-words). Feeds BOTH `getRunDetail` (field `ended: {reason, next, actions:[...]}`) and `summarizeRow` (field `endedLine`). Today the card has only a glyph and the detail only a `stopReason` string.
+
+**Table (outcome → reason / next / button):**
+
+| outcome | reason | next | button |
+|---|---|---|---|
+| green, already-green | Goal met. | Nothing to do. | Start from this |
+| green + destination-refused | Goal met, but the output could not be delivered (detail). | Fix the destination, then Start from this. | Start from this |
+| cap-halt | Money cap reached ($X of $Y). | Raise the cap, then Resume. | Resume |
+| wall-halt | Time cap reached. | Raise the time, then Resume. | Resume |
+| provider-red | The model provider failed (detail). | Resume. | Resume |
+| step-stalled | A step stopped making progress. | Resume, or Start from this and change the job. | Resume, Start from this |
+| stopped (new, item 5) | You stopped it. | Resume. | Resume |
+| plan-red, check-red, step-red, escalated | Goal not met — the checks said no (last gap). | Start from this and change the job. | Start from this |
+| close-red | The check itself broke (instrument fault), not your goal. | Start from this; check the success rule. | Start from this |
+| pricing-red, unapproved-spec, job-red, branch-red, interpreter-red, recipe-stale, close-unsupported, smoke-red, runner-drained | Stopped before or outside the work (outcome + detail). | Start from this. | Start from this |
+| died (no job-end, runner gone) | Stopped with no ending recorded (last thing it did). | Resume, or Start from this. | Resume, Start from this |
+| live | — (no Ended block while running) | | Stop |
+
+Resume button shows only when the engine would accept it (same gates as item 2) — never a button that refuses on click by design.
+
+---
+
+### 2. Resume
+
+**Screen.** Resume button (Ended block + action bar). Click opens a small confirm:
+```
+Resume run mup3h70u
+  money cap  [ 8.00 ]   spent so far $8.00
+  time cap   [ 60   ] min
+                                  [Sign & resume]
+```
+Caps prefilled with the signed ones. Raising one changes the job hash → the click is the signature (human click only, like Sign & run). The engine already allows a resume under a re-signed hash (prints a NOTE, `src/userrun.js` ~1132); prior spend stays folded, so the ceiling never silently widens.
+
+**Caller.** New `POST /api/runs/:runid/resume` in a new `src/panel/runroutes.js` (same `checkHumanGuard` as `/api/author/*`). Spec from `resolveSpecForRow` (server.js:1172). If caps changed: write `resolved-spec-r<k>.json` beside the original (never overwrite the signed one). Re-check monthly room. Spawn exactly like `signRun` (authorroutes.js:325) plus `--resume <runid> --approve <hash>`. A refusal from the engine shows its own text in the panel.
+
+---
+
+### 3. Start from this
+
+**Screen.** Button on every run and every imported job. Opens the Chat tab's New job card, every box filled:
+```
+Start from: fix-types (run mup3h70u)
+  Same job — 4 green · 1 not green · about $3.10 a run
+  [card boxes, all editable]
+                        [Sign & run]  (no drafting: same job)
+```
+Edit any box except Source → line turns to `Changed — new job, starts clean` and the button becomes the normal `Start drafting`.
+
+**Rules (code-owned):**
+- Only Source changed (or nothing) → SAME job: copy the origin's signed spec into the new session, skip drafting ($0 draft), same hash, Sign & run.
+- Anything else changed (goal, success, guardrails, judge examples, model, caps, destination — destination is the write fence, so it is in the hash) → normal drafting, new hash.
+- "Same job" track record: every listed run whose `job-start.specHash` equals this hash — greens, not-greens, average spend of finished runs. Read from the runs the panel already lists; no reuse store, no registry (ruling A). Plan handover stays parked.
+
+**Card text saved from now on.** `src/panel/authorsession.js` writes `card.json` (the form text, verbatim) beside `resolved-spec.json` at sign-prepare. Prefill order: `card.json` → for older runs, fields recoverable from the spec (`getRunJob`, server.js:1545) with a note "filled from the signed job — success/guardrails/judge examples were not saved for this run" → for an imported bundle, its `spec.json`. "Changed" is judged against what was prefilled.
+
+---
+
+### 4. Import (read only)
+
+**Screen.** Runs tab, Workflows view toolbar: `[Import]`. Opens:
+```
+Import a job folder
+  path [ /home/hamr/jobs/fix-types.bareloop      ]  [Open]
+  /home/hamr/jobs/
+    ▸ fix-types.bareloop      (bundle)
+    ▸ other-folder
+                                       [Import]
+```
+Folder browser lists folders only (names, plus a "bundle" tag where `manifest.json` exists), starts at your home folder; paste box works too.
+
+Imported row: `fix-types  imported · view only` (mockup's own tag). Right pane: goal, success checks, guardrails, caps, model, its exported history (greens/reds), approved-or-not on this machine. Only button: **Start from this**. No Run.
+
+**Caller.** New `GET /api/fs/list?path=` and `POST /api/imports` in `src/panel/runroutes.js`, both behind `checkHumanGuard` (token + own address) — a folder listing is new disk exposure, so it gets the strict guard, not just the Host guard. `readBundle` (bundle.js:511) on import and again on every view (a changed folder shows `changed since import` red). Imported list: `~/.config/bareloop/imports.jsonl` `{at, dir, job, bundleHash}`.
+
+---
+
+### 5. Stop
+
+**Screen.** Action bar while a run is live: `[Stop]`. After click: `stopping after this step…` until the run ends. Ended block then reads "You stopped it. → Resume."
+
+**Engine.** Today there is no clean stop (no signal handler in the run engine; a kill leaves no job-end → shows died). New:
+- Stop request = a file `<spine>.stop` written by `POST /api/runs/:runid/stop` (`checkHumanGuard`; refuses if the run is not live).
+- The run checks for it at the SAME point it checks the money cap between rounds, emits `stop-requested`, then ends with job-end outcome **`stopped`**.
+- `stopped` joins `CHECKPOINT_OUTCOMES` (`src/reuse.js:142`) → resumable; Resume continues at the next step exactly like after a cap-halt. **Arbiter-adjacent: hamr ruled it 2026-10-02.**
+- Engine half is library code, so CLI gets it too (`bareloop run-u` / `bareloop run` runs honour the file); no new CLI command.
+
+---
+
+### 6. Run-card fixes
+
+- **starting…** — `summarizeRow`/`getRunDetail` (server.js:285, :381): spine missing AND `runIsAlive(row)` → `starting:true`; card and right pane say `starting…`, not `file missing` / `unknown`.
+- **Live money/time on the card** — `summarizeRow` uses the same `deriveDeath` floors the right pane uses (server.js:248, `floorsFromRecords`), so card and pane show the same numbers while live.
+
+---
+
+### Mockup diff (design/panel-mockup.html)
+
+| Mockup control | This part |
+|---|---|
+| `#btn-rerun` Rerun | becomes **Start from this** |
+| `#btn-pause` Pause | becomes **Stop** (clean stop, resumable) |
+| `#wf-import` Import + `imported · view only` row | **built** (read only) |
+| Resume | **added** (not in mockup) |
+| Ended block | **added** (ruled 2026-09-30) |
+| `#btn-accept` Accept (review door) | **not in this part** |
+| `#btn-replay` / row "Replay $0" | **not in this part** |
+| per-row Edit | covered by Start from this |
+| per-row Export | stays CLI (`bareloop export`) |
+
+### Proof
+
+- Every item: a test that fails without it (fail-first), real seams, scratch home.
+- Orchestrator screenshots of every new screen (desktop + phone width) before "done".
+- One paid run at the end, **DeepSeek**, on hamr's word only: Stop mid-run → Resume → green; then Start from this (source only) → same job, no drafting. A $0 archive read first: the track-record numbers against archived runs.
+
+### Docs
+
+`PANEL-BUILD.md` dated P5 addendum; one PRD tick line; `bareloop.context.md` (new routes, `stopped` outcome, `card.json`, `imports.jsonl`); CHANGELOG at release.
+
+---
+
+## P5-R — one run, one id, one file (resume continues the SAME run; ruled by hamr 2026-10-02)
+
+Comes before P5 phase 2. Supersedes items 2 (Resume) wording where it says a resume starts a new run.
+
+Ruled by hamr 2026-10-02 (go given). Branch `feat/panel-import-run`. Comes BEFORE P5 phase 2.
+
+hamr's words: "one run, one id, one file ... shows on map card, on audit, it's the same, never two."
+"same run for stopped, cap/time halt, no new card, no new job, dotted line at map, clear audit mention resume."
+Decisions: torn tail = 1A (keep the bytes, start on a fresh line; never edit the record). Time between legs = 2A (not counted; only working time charges the wall).
+
+Grounding: the $0 reader inventory (2026-10-02) — 14 reader groups NEED CHANGE, precedent for append + startSeq in `scripts/run-reuse.mjs` (lines ~458-470, 549) and `makeSpine(file, {startSeq})` in `src/spine.js`.
+
+### Step 1 — engine
+
+1. **Writer.** `--resume <runid>` (run-u and `bareloop run <bundle> --resume`) keeps the SAME runid and appends to the SAME spine file (`u-<runid>.jsonl`, or `<bundleDir>/runs/<runid>/spine.jsonl`).
+   - If the file does not end with `\n`, write one `\n` first (the torn bytes stay, isolated on their own line).
+   - `startSeq` = max `seq` over parseable lines.
+   - First record of the leg: `leg-resume {leg: N, after: <previous leg's outcome or "died">, at}` — emitted BEFORE the watchdog is spawned (the watchdog reads mtime; a cold file would be killed as stale).
+   - Then the leg's own `job-start` (keeping today's declared fold fields — the budget ceiling still folds prior spend).
+2. **One owner: `legsOf(events)`** (new, in the spine-reading layer, e.g. `src/legs.js`), returning ordered legs `{leg, start, end, records, outcome, after}`. Tolerates exactly one corrupt line immediately before a `leg-resume` marker (and the existing last-two-lines tail rule). Every reader below uses it — no reader re-derives legs on its own.
+3. **Money:** run total = sum over legs of that leg's own rounds (`SPEND_RECORD_TYPES` / `ACCOUNTED_ROUND_TYPES` as today — echoes excluded). Exactly one basis per reader; never rounds + declared prior.
+   **Time:** run wall = sum of each leg's own start→end (gap excluded).
+   **Outcome:** the LAST leg's. A run is live iff its last leg has no `job-end` and its runner is alive.
+4. **Readers to change (inventory list):** userrun resume reader + torn tolerance (~userrun.js:676-723, door reader ~807); `readResume` (reuse.js:817 — window at the last leg, use its declared fold; grade/decision window readers checked, reuse.js:570-715); userrun end-of-run readout (~1927-2080: this leg only, last leg's halts only, watchdog note per leg); `replayRun` (replay.js:425-620 — `resumed`, spend, wall, auditWindow, resumeSeed); panel `summarizeRow`/`getRunDetail`/`deriveDeath`/`resumePlanFor` (resume #2 offered under the LATEST signed caps)/audit window + sidecar (server.js); `monthly.js` `legSpend`/`legWall`/`readLegs`/`claimRun`/`settleDeadClaims`; `runlist.js` `appendRun`/`readRunList`/`runIsAlive`; `ledger.js` `floorsFromRecords` wall; `u-watchdog.mjs` ordering; `deathAtOf` (u-readout.js:337); `bundlerun.js` history row/`run.json` (one row per leg, `leg: N`, no self-`resumedFrom`).
+5. **Run list:** ONE row per run. Each resume appends `{type:'leg-start', runid, leg, pid, capUsd, at}`. `readRunList` folds it: the row's live pid/cap = latest leg's. `settled`/`released` are per leg; a later leg's `released` never removes the run. The monthly hold is taken per leg.
+6. **Side files:** gate audit — leg 2+ appends to the run's existing `u-<runid>-gate-audit.jsonl` (never rename-overwrite). Watchdog note — per leg (`<spine>.leg<N>.watchdog.json`, or a leg stamp that readers check). `.lag.jsonl` accumulates (fine).
+7. **Refusals stay:** resume of a run whose last leg is live → refused (pid from the latest `leg-start`); of a green run → refused; of a non-resumable terminal → refused. Double-resume is gone by construction (one run, one latest leg).
+8. **Old split runs** (already on disk) are not rewritten and keep reading as today.
+9. **Start from this** is a NEW run by design (new job). The review-door `rerun` keeps minting a new runid (not covered by this ruling; named, unchanged).
+
+### Step 2 — panel
+
+1. **One card** per run: latest leg's glyph/status, total money/time, `resumed ×N` small tag.
+2. **Audit:** legs in order with a divider line between them:
+   `── stopped: money cap reached ($8.00) · resumed 2026-10-03 14:10 ──` (code-owned text; `after` = stopped / money cap / time cap / provider failed / step stalled / died).
+3. **Map:** a dotted connector from the step where a leg ended to the step the next leg picked up.
+4. **Resume UX (hamr 2026-10-02):** the Resume button (run card + Ended block) opens the run's own page on its **Job** tab. There, ONLY the money cap and the time cap are editable; every other job field is shown read-only. Button `[Sign & resume]` (human click = the signature when a cap changed). This replaces phase 1's small confirm form. Refusals from item 5 of phase 1 (cap ≤ spent, time ≤ used) stay.
+5. Remove phase 1's "a resume is a new run" copy (index.html ~1944 "The new run is starting; it appears in the list").
+
+### Proof
+
+- Fail-first tests per step; real seams; a real killed child process mid-append for the torn-tail case; a two-leg spine fixture through every changed reader (money once, time without gap).
+- `npm test` + typecheck + build:types green; orchestrator screenshots (card, Audit divider, dotted line, Job-tab resume).
+- Live: one paid DeepSeek run on hamr's word only, after P5 phase 2 (Stop exists): start → Stop → Resume → green; hamr clicks through.
+
+### Docs
+
+PANEL-BUILD.md P5 addendum gets this as "P5-R"; PRD v1.87 gets one tick ("a resumed run is the same run: one id, one file"); `bareloop.context.md` (spine leg marker, `legsOf`, run-list `leg-start`, resume keeps the runid); FINDINGS entry: the split-run shape was inherited from the reuse-path resume, never ruled, found only by rendering it.
+
+## Addendum 2026-10-03 — Reuse workflow replaces P5 item 3 "Start from this" (signed by hamr 2026-10-03)
+
+Supersedes P5 item 3 above (its prose is left as written). hamr's click-through of "Start from this" showed it opening inside the Run tab and able to re-draft a changed job; the ruling is that a reuse is the SAME signed job on a new source, never a draft.
+
+**Rulings.**
+- The button is **Reuse workflow**, replacing "Start from this" everywhere on the page. It shows on **green runs only** (green, softgreen, green + destination refused) and on every **imported** job. Never on red, stopped, capped or died rows; a red row's Ended block says "Change the job: + New." Stopped/capped/died rows offer `[Resume]` only.
+- The Run tab's action row: `[Stop]` if live · `[Resume]` if resumable · `[Reuse workflow]` if green. An imported job has the same row with `[Reuse workflow]`.
+- Click opens the **Chat tab** (left), the New job card, filled from the signed job. **Only four boxes are editable: Source, Destination, $ cap, Time cap.** Every other box (check type, model, job name, goal, success, guardrails, judge examples) is shown greyed. No drafting, $0, `[Sign & run]`. To change any locked box: `+ New` (drafts). The server refuses a reuse start whose locked boxes differ from the origin's, by name.
+- Destination is open on **both** folder and repo jobs (hamr, Q-A: b). An imported reuse is re-signed locally by hamr at `[Sign & run]` (Q-B: yes).
+- The step plan is made fresh each run (no plan copying: parked, F55/F73/F88). Nothing about the job is rendered inside the Run tab; the job lives in the Job tab.
+
+**Identity, two keys.** `jobSpecHash` is unchanged (it covers the caps and the write fence: what gets signed). New `workflowKey(spec)` (`src/job.js`) hashes the signed spec WITHOUT source, destination/writeScope, budgetUsd and maxWallMs. A reuse copies the origin's signed spec, sets those fields, and signs under a new `jobSpecHash` with the same `workflowKey`. `isSameJob` and the "Changed - new job" mode are removed (the locked boxes make it unreachable).
+
+**Estimate line** above the card: `Same job — G green · N not green · about $X and M min a run`, from every listed run with the same `workflowKey` (finished runs for the averages; working time excludes resume gaps). Unknown is said, never `$0` or `0 min`. No registry (ruling A stands).
+
+**Imported jobs.** Reuse re-reads the bundle at that moment: `readBundle` (the bundle hash covers every close script), `checkBundleDeps`, and each close stage's signed sha256 against the bytes on disk over the spec with `$BARELOOP_BUNDLE` resolved. The close scripts stay in the verified folder (the engine re-verifies them at run start and before every close run). A command close has no declaration for `prepareSigning` (it refuses one by design: signed as written), so that session's gate is the byte check and the person signs the spec's own hash. The imported job opens in the same Run / Audit / Job tabs (460cc39 kept); Audit says "no log — this job ran on another machine"; `[Reuse workflow]` is in the top action row.
+
+**Not changed:** the session-in-the-Run-tab move (`aa4092d`) is reverted; the Stop, Resume and Ended rules of P5 items 1, 2, 5 stand except where the table above narrows which rows offer a button.
+
+**2026-10-04 — an imported job's Run tab is a normal run page (hamr's click-through; mockup signed).** Top action row `[Reuse workflow]`, then an `IMPORTED` box (runs here, exported history with its recent runs, this machine, which run is shown, and the changed-folder line when changed), then the latest GREEN run in the bundle through the same SUMMARY and MAP code a run uses. Source, in order: `<bundle>/runs/<runid>/spine.jsonl` (newest that ended green; read through the ordinary `/api/runs/<importId>~<runid>` routes, so its Audit is a normal Audit and the tool log is the `gate-audit.jsonl` beside the spine) → else the bridge's newest green version (plan steps, cost, wall time, tools used, close stage names; every field the bridge lacks reads "not recorded", no per-step cards) → else "no green run in this bundle". Latest green only, no picker. Read only: bundle files are untrusted (bounded reads, run names checked, no link followed, a parse failure reads as "not recorded"), and nothing is written into the folder.
+
+**2026-10-04 — click-through rulings A1–A4, B5, C6–C9 (signed by hamr's "go").** A1: a refused path in the Import browser clears the list and the "showing" line; only the error remains. A2: the path box uses the normal input background (reads as editable). A3: re-importing a folder updates its one `imports.jsonl` row (one row per real path; old duplicates list once, newest wins) and the job just imported is opened and scrolled into view. A4: the Import browser remembers its last folder in `localStorage` (per-viewer convenience, home as fallback). B5: `[Stop]`, `[Resume]` and `[Reuse workflow]` live only in the Run tab's top action row; the Audit tab's Ended/Next block is text only. C6: ONE code-owned sign → word table (`src/panel/status.js`): `[▶] running · [·] waiting · [✓] passed · [✗] failed · [✗] capped · [✗] stopped · [?] died`. C7: run cards read `[sign] job (runid)` / `**word** — reason` / facts; expanded per-run rows read `[sign] **word** — reason   runid · $ · date`. C8: the right-side header reads `[sign] job (runid) │ **word** — reason · ended <local date, time>` (live: `· started <time>`), in lowercase as written; an imported job wears the word of its shown green plus "imported · view only". C9: the MAP legend line is removed; each step card carries its own sign and the existing step-state word in bold.
+
+**2026-10-04 — follow-up rulings (hamr, after C6-C9):** the SUMMARY headline reads `[sign] **word** · check type · $ · time` (same word as card and header, runs and imported jobs); the MAP gets back one small line-style key `⤾ dashed = retry · dotted = resumed` (no sign legend); the Audit tab's grouped step rows use the same sign + bold word as the Run tab step cards (one `stepStateHTML`); step cards render step names as written, lowercase.
+
+**2026-10-04 — one progress list in the left Chat panel (hamr: "agreed on new progress, one place showing all").** Every pipeline step of every session (a new job drafting AND a reuse) is one line in ONE list that updates in place: `copying source ✓`, `checking source ✗ <reason>`; while running the line reads `checking source…` with animated dots (CSS; a static ellipsis under `prefers-reduced-motion`), then becomes ✓ or ✗ with the code-owned reason on the same line, and the next step appears below. One code-owned table (`STEP_LABELS` in `src/panel/authorsession.js`; library `onPhase` names map to a step id by `PHASE_STEP`): checking setup · copying source · checking source · waiting on install · reusing signed workflow · reading repo · scouting repo · listing files · confirming plan · drafting · calibrating · checking signing gates. A refusal fails exactly one step (a source-door scan/freeze refusal is `checking source` after a done `copying source`); the thread carries chat turns only (person and model text), never a pipeline line, so a refusal is shown once. A pending ask for the person replaces the running label with what is waited on, never an animation. No new tabs or views; the list wraps at phone width.
+
+**2026-10-04 — Model is unlocked on Reuse (hamr): the Model box is the fifth open field** (a Name from Settings > Providers; provider and baseUrl come with the chosen row). The server refuses any other locked change as before. `workflowKey` now ALSO ignores `provider`, `baseUrl` and `model` (`WORKFLOW_KEY_IDENTITY_FIELDS`); `jobSpecHash` is unchanged and still covers them. The reuse spec sets provider/baseUrl/model from the chosen row the way normal authoring spells them (baseUrl when the row has one; model only when the Name is not the provider's default tier). RUBRIC (soft-green) jobs: the judge never changes with the worker — a spec with no explicit `judge` is pinned to the ORIGIN's resolved judge identity (`resolveJobJudge`) before the swap; an explicit judge is kept; deterministic jobs have none. The estimate line counts only runs with the same workflowKey AND the same worker (provider + baseUrl + model) as the card's current choice and recomputes when the Model box changes; no such run reads "no runs yet on this model". Imported reuse no longer forces the bundle's provider (the chosen row is used; no matching row is no longer a refusal, the card opens with no Name picked); close-byte re-verification is unchanged.
+
+**2026-10-05 — live reuse click-through rulings (hamr, real panel).** (1) The progress list draws each step's detail on its OWN line under the step prefixed `> ` (a failed step keeps ✗ and its reason on that line); two new server-owned steps close the one list, `generating hash` (detail `spec hash <full hash>`, at sign-prepare) and `signed hash` (when the person's sign is accepted); the "SIGNING PREPARED" and "signed — … run starting detached" thread bubbles are no longer posted (the thread is chat turns only). (2) `Check again` moves into the `.actions-row` beside Sign & run (same show/hide rule). (3) Runs list order: runs/workflows first, imported jobs below. (4) Drafting spend shows as the "signed hash" detail (`drafting spent [at least ]$X (folds out of the run's own cap)`; nothing on a Reuse or $0 drafting). (5) MAP: the word "resumed" beside the dotted connector is removed (cramped; the legend "··· dotted = resumed" stays; the `resumed ×N` row tag stays). (6) The Reuse card origin line "Reuse: <job> (run <id>)" is bold and sits FIRST in the card, above the "Job card — draft" title. (7) Chat card, hamr's live click-through 2026-10-05 ("+ New" disappears once a card is filled; no way to start over): the Chat tab always opens on an empty job card; **+ New is removed**; a button at the card's TOP RIGHT, on the "Job card — draft" title line, empties every box (check type deterministic, Model default, origin/estimate/notes hidden, progress list and thread cleared) and the card is ready to fill again; a Reuse still fills the card as before. Ruling (e), verbatim: "clear is abandon when one is running, if one is running and drafting (not yet on workflows) after it started running and moves to workflows it changes to clear because user can stop it from workflows". So ONE button, two states: while an authoring session is live and unsigned (drafting / waiting on install / waiting for confirm) it reads **Abandon** and calls the new `POST /api/author/:id/abandon` (phase `abandoned`, lock released, spend stays booked, no new model call), then the card empties; once signed and started, terminal, or nothing started it reads **Clear** and only empties the card — it never stops a run (Stop lives on the Run tab). User-facing "+ New" wording (Ended next line, locked-box refusal) now says "Clear the card". (8) The separate "spec hash:" line under Sign & run is removed; the hash shows once, as the "> spec hash …" detail of "generating hash". (9) "signed hash" showing no check: NOT reproduced — the server state (real reuse session through `signRun`) and the page render (headless chromium, stubbed API) both end the list with `signed hash ✓`; locked by tests, cause still open (a copy/selection artifact is the only unproven candidate). (10) Check again sits immediately before Sign & run in one non-splitting group (390px and 1280px checked). (8) ONE wide button below the message box replaces the card start, Send, Check again, Revise and the sign pair; its wording is one pure function `mainButtonFor(state, textEmpty, reuse)`: Start drafting / Sign & run (reuse) / Check again (install wait) / Send (typed text; at the plan menu it is a revise, allowed while changes are left, hint "N changes left") / Sign & run (plan ready, box empty; the two-step "Sign <hash8> & run" kept) / disabled otherwise. (9) The chat message box has a white background (dark: the theme input background) and a constant solid border. (10) The Reuse origin line reserves the Clear/Abandon button's width and wraps instead of running under it. (11) Chat tab only, hamr verbatim: "ask place and any non dimmed should get the standard white (less bright than ask) in the background of bareloop, … and dimmed should remain current color". The ask box keeps `--field-bg` (#ffffff light); every other enabled, non-readonly Chat-card input/select/textarea gets the new `--field-soft-bg` (#f7f7f9 light; dark = the theme input background); disabled/readonly (locked Reuse, dimmed) fields keep their current colour; nothing outside the Chat tab changes. (12) Chat card, hamr verbatim: "when it moves to run, chat should clear to avoid rerunning the same, as it still shows as such". The moment the page sees phase `signed` (the poll branch that switches to the Run tab) the Chat card resets to the empty card through the same `resetCard()` Clear uses; the run is untouched (Stop lives on the Run tab). (13) Progress list order, hamr verbatim: "drafting should be mentioned again, this is a chronological order". The list is a time-ordered log of segments: starting a different step closes the running line; a step that already has a line and starts again after other steps appends a NEW line at the end (the earlier line keeps its ✓ and detail; lines are never moved or reordered); a failed step still shows ✗ with its reason; id lookups (detail) target the latest line of that id (`advanceSteps`/`latestStep` in `src/panel/authorsession.js`). (14) The ask box `#chat-msg` is a `<textarea>` that wraps long text (grows to a few rows, then scrolls inside; vertical resize), not a sideways-scrolling input; keeps the white background, constant border and placeholder; Enter sends through the one main button (a no-session Enter never starts a draft), Shift+Enter is a newline; `mainButtonFor` still reads typed-text-empty from it. (15) The card's free-text boxes (Goal, Source, Destination, Success, Guardrails, Judge examples) wrap on multiple lines like the ask box: wrapping `<textarea>`s sharing the ask box's one `fitBox` (grow, then scroll inside, vertical resize), Enter is a newline; Job name stays a one-line input; ids, placeholders, prefill, reuse lock and the soft-white/locked colours unchanged. (16) The ask box `#chat-msg` is dimmed (disabled, emptied) whenever there is nothing to reply to — no session, no pending ask, or waiting on an install — and opens only while a pending ask takes typed text (the plan menu -> a change request, or any question); `askBoxOpenFor` is the one rule, `mainButtonFor` still reads typed-text-empty (true when disabled). (17) Chat-card field colours: editable (non-dimmed) fields = soft white with the ordinary 1px border, no added grey/thick border; dimmed/locked/disabled = grey; the focused field = blue (accent) border; only the ask box keeps its own constant border.

@@ -38,6 +38,7 @@ import { classifyIncidents } from '../src/ledger.js';
 import { runJob } from '../src/run.js';
 import { scriptedProvider, initPatientRepo } from './helpers.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
+import { cleanEnv } from './helpers.js';
 
 const base = mkdtempSync(join(tmpdir(), 'reuse-test-'));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -1202,7 +1203,7 @@ test('REAL runJob: an unsigned per-try spec is refused by the approval gate — 
  * every case here stops at the approval gate or at the missing-key refusal right after it
  * @param {string[]} args @param {Record<string,string>} [env] */
 const runner = (args, env = {}) => {
-  const { ANTHROPIC_API_KEY: _drop, ...clean } = process.env;
+  const clean = cleanEnv();
   return spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/run-reuse.mjs', import.meta.url)), ...args], {
     encoding: 'utf8', env: { ...clean, ...env },
   });

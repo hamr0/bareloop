@@ -35,6 +35,7 @@ import {
 } from '../src/authorjob.js';
 import { LOCKED_VERDICTS, VERDICT_TYPES } from '../src/job.js';
 import { classGuards } from '../src/authoring.js';
+import { cleanEnv } from './helpers.js';
 
 const SCRIPT = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
 
@@ -127,7 +128,7 @@ test('run-interview.mjs refuses an unlisted class BEFORE asking a single questio
   const out = mkdtempSync(join(tmpdir(), 'unlisted-'));
   try {
     const r = spawnSync(process.execPath, [SCRIPT, '--verdict', 'hitl', '--provider', 'anthropic-api', '--out', join(out, 'o')], {
-      encoding: 'utf8', input: '', env: { ...process.env, ANTHROPIC_API_KEY: '' },
+      encoding: 'utf8', input: '', env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
     });
     assert.equal(r.status, 1, 'an off-menu pick is a non-zero exit — the wizard wrote nothing');
     assert.match(r.stdout, /REFUSED \(request-red\)/, 'and it comes back on the counted path');
@@ -143,7 +144,7 @@ test('run-interview.mjs refuses an unlisted class BEFORE asking a single questio
 });
 
 test('the wizard usage line offers the MENU, never a class it will refuse', () => {
-  const r = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8', env: cleanEnv() });
   assert.notEqual(r.status, 0);
   const said = `${r.stdout}${r.stderr}`;
   assert.match(said, /--verdict <green\|soft-green>/, 'the usage line is built from MENU_CLASSES');

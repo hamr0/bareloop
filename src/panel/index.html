@@ -23,6 +23,7 @@
     --magenta:#bb9af7;
     --accent:#7aa2f7;
     --btn-bg:#1f2335; --btn-text:#c0caf5;
+    --field-bg:var(--bg); --field-soft-bg:var(--bg); --field-border:var(--text-dim);
     --primary-bg:#7aa2f7; --primary-text:#1a1b26; --primary-border:#7aa2f7;
     font: 14px/1.5 "Courier Prime", "Courier New", Courier, ui-monospace, monospace;
   }
@@ -68,6 +69,7 @@
       --magenta:#9854f1;
       --accent:#2668c2;
       --btn-bg:#e9e9ed; --btn-text:#3760bf;
+      --field-bg:#ffffff; --field-soft-bg:#f7f7f9;
       --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
     }
   }
@@ -82,6 +84,7 @@
     --magenta:#9854f1;
     --accent:#2668c2;
     --btn-bg:#e9e9ed; --btn-text:#3760bf;
+    --field-bg:#ffffff; --field-soft-bg:#f7f7f9;
     --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
   }
   .theme-toggle{padding:4px 9px;min-height:32px;border:1px solid var(--border-strong);background:var(--btn-bg);color:var(--text);}
@@ -171,6 +174,14 @@
      glyph and its own color (magenta), never red or amber. */
   .dot.magenta::before{content:"[?]";color:var(--magenta);}
 
+  .rp-header-title h2{text-transform:none;letter-spacing:0;}
+  .rp-status{font-size:13px;color:var(--text-dim);min-width:0;overflow-wrap:anywhere;}
+  .rp-sep{color:var(--text-faint);margin-right:6px;}
+  .st-word{font-weight:700;color:var(--text);}
+  .wf-ended-inline{flex:1 1 auto;white-space:normal;}
+  .wf-compact{flex-wrap:wrap;}
+  .wf-rowmeta{margin-left:auto;}
+  .step-state{display:inline-flex;align-items:center;gap:2px;font-size:12px;}
   .badge{display:inline-block;font-size:11px;padding:1px 4px;color:var(--text-dim);background:none;font-weight:700;}
   .badge::before{content:"[";color:var(--text-faint);}
   .badge::after{content:"]";color:var(--text-faint);}
@@ -207,6 +218,7 @@
      than wrapping onto a 3rd/4th line. */
   .wf-meta-line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
   .wf-meta{font-size:12px;color:var(--text-dim);}
+  .wf-ended{display:block;font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
   .wf-meta + .wf-meta::before{content:" · ";color:var(--text-faint);}
   .wf-row.selected,.hist-row.selected{border:2px solid var(--accent);border-radius:4px;}
   /* item 2 (2026-09-26 merge): a Workflows-view job row expands inline to
@@ -220,8 +232,6 @@
 
   .rp-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);flex-wrap:wrap;gap:8px;}
   .rp-header h2{margin:0;font-size:15px;}
-  .rp-header h2::before{content:"┤ ";color:var(--text-faint);}
-  .rp-header h2::after{content:" ├";color:var(--text-faint);}
   .rp-header-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   /* item 4: phone-only jump-back link — hidden on desktop (the two panes
      are already both on screen there, nothing to jump back to). */
@@ -237,6 +247,47 @@
   .counters b,.counters span{color:var(--accent);}
 
   .summary-box{position:relative;border:1px solid var(--border-strong);padding:16px 12px 12px;margin-top:16px;background:var(--panel2);font-size:12px;}
+  .ended-block{position:relative;border:1px solid var(--border-strong);padding:14px 12px 12px;margin-bottom:14px;background:var(--panel2);font-size:13px;}
+  .ended-block.magenta{border-color:var(--magenta);}
+  .ended-block.red{border-color:var(--red);}
+  .ended-block.green{border-color:var(--green);}
+  .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
+  .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
+  .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
+  .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+  /* P5 item 4: Import (read only) — the folder browser, the imported rows, the view */
+  .import-box{border:1px dashed var(--border-strong);padding:10px;margin-bottom:10px;display:grid;gap:8px;}
+  .import-pathrow{display:flex;gap:8px;flex-wrap:wrap;}
+  .import-pathrow input{flex:1 1 180px;min-width:0;min-height:36px;background:var(--bg);color:var(--text);border:1px solid var(--border-strong);padding:4px 8px;font:inherit;}
+  .import-entries{display:grid;gap:2px;max-height:240px;overflow-y:auto;overflow-x:hidden;padding:2px;}
+  .import-entry{display:flex;gap:8px;align-items:baseline;text-align:left;background:none;border:1px solid transparent;color:var(--text);padding:3px 2px;min-height:32px;cursor:pointer;font:inherit;overflow-wrap:anywhere;}
+  .import-entry:hover{background:var(--panel);}
+  .import-up{font-weight:700;}
+  .import-entry.selected{background:var(--panel);border-color:var(--accent);}
+  .import-entry .tag{color:var(--accent);font-size:11px;}
+  .import-view[hidden]{display:none;}
+  .imp-bad{color:var(--red);font-size:12px;font-weight:700;overflow-wrap:anywhere;}
+  .wf-imported{color:var(--accent);}
+  .import-view{display:grid;gap:10px;font-size:13px;}
+  .import-view .imp-row{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;}
+  .import-view .imp-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:84px;}
+  .import-view .imp-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
+  .startfrom-line{margin:2px 0 8px;font-size:12px;color:var(--accent);overflow-wrap:anywhere;}
+  .job-card .locked{opacity:.55;cursor:not-allowed;}
+  .job-card.reuse .radio-row label{opacity:.55;cursor:not-allowed;}
+  .startfrom-origin{font-size:12px;font-weight:600;color:var(--text-dim);margin:0 0 4px;padding-right:112px;overflow-wrap:anywhere;}
+  .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
+  .run-actions[hidden]{display:none;}
+  .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
+  .resume-err{color:var(--red);white-space:pre-wrap;overflow-wrap:anywhere;}
+  /* P5-R: a resumed run is ONE card; its legs are told apart by a divider line, a dotted map connector, a small tag */
+  .wf-resumed{color:var(--amber);}
+  .audit-leg-divider{text-align:center;color:var(--text-dim);font-size:12px;margin:10px 0;overflow-wrap:anywhere;}
+  .audit-leg-divider-row td{text-align:center;color:var(--text-dim);font-size:12px;background:var(--panel2);}
+  /* Resume opens the run's own Job tab: only the two caps turn into inputs, everything else stays read-only */
+  .resume-job{border:1px dashed var(--border-strong);margin-top:12px;padding:10px;display:grid;gap:8px;}
+  .resume-cap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .resume-cap input{width:7em;max-width:100%;min-height:36px;background:var(--panel);color:var(--text);border:1px solid var(--border-strong);padding:4px 8px;font:inherit;}
   .summary-box.red{border-color:var(--red);}
   .summary-box.amber{border-color:var(--amber);}
   .summary-box.magenta{border-color:var(--magenta);}
@@ -246,16 +297,20 @@
   .sum-label{flex:none;width:66px;color:var(--text-faint);}
   .sum-val{color:var(--text);}
   .summary-box .num{color:var(--accent);font-weight:700;}
+  .summary-box.imported-box::before{content:"┤ IMPORTED ├";}
+  .imported-box .sum-label{width:104px;}
+  .imported-box .summary-row{flex-wrap:wrap;}
+  .imported-box .sum-val{flex:1 1 180px;min-width:0;overflow-wrap:anywhere;}
 
   .map-box{border:1px solid var(--border-strong);padding:10px;overflow-x:auto;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
   .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
   .map-box svg{display:block;max-width:100%;height:auto;}
-  .map-legend{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px;flex-wrap:wrap;}
+  .map-key{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px;flex-wrap:wrap;}
 
   .step-card{position:relative;border:1px solid var(--border);padding:10px;margin-bottom:8px;background:var(--panel2);}
   .step-card.running{border:1px double var(--amber);}
   .step-card .step-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
-  .step-card h4{margin:0;font-size:13px;}
+  .step-card h4{margin:0;font-size:13px;text-transform:none;letter-spacing:0;}
   .step-meta{font-size:12px;color:var(--text-dim);margin-top:4px;}
   /* build item C: Audit tab attempt/rounds detail (reused by audit-part-toggle expansion) */
   .attempts-list{margin-top:8px;border-top:1px dotted var(--border-strong);padding-top:8px;}
@@ -307,6 +362,7 @@
 
   .job-card{position:relative;border:1px solid var(--border-strong);padding:14px 10px 10px;background:var(--panel2);margin-top:10px;margin-bottom:10px;}
   .job-card h4{margin:0 0 8px;font-size:13px;position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;}
+  .job-card .card-clear{position:absolute;top:-13px;right:10px;padding:1px 8px;font-size:11px;line-height:1.4;background:var(--panel2);}
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
@@ -326,8 +382,6 @@
   .job-card.compact label{margin-bottom:1px;font-size:11px;}
   .job-card.compact input,
   .job-card.compact select{padding:5px 7px;}
-  .expand-field{text-overflow:ellipsis;transition:height 0.12s ease;}
-  .expand-field:focus{height:52px;white-space:normal;}
   .radio-row{display:flex;gap:14px;align-items:center;margin-bottom:10px;}
   .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;text-transform:none;}
   .cap-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:6px;}
@@ -343,15 +397,23 @@
   .btn.primary:disabled{background:var(--btn-bg);color:var(--text-faint);border-color:var(--border);}
   .btn.primary:disabled::before,.btn.primary:disabled::after{color:var(--text-faint);opacity:0.4;}
 
-  /* P3 build item 3 — the single live progress line: an amber cycling
-     [progress.]/[progress..]/[progress...] glyph while a phase is running,
-     [done] in green once it finishes, [stopped] in red on a refusal. A
-     static [progress...] under prefers-reduced-motion (no animation). */
-  .chat-progress-row{display:flex;align-items:center;gap:8px;margin:2px 0 10px;font-size:12px;}
-  .chat-progress-glyph{font-weight:700;color:var(--amber);}
-  .chat-progress-glyph.done{color:var(--green);}
-  .chat-progress-glyph.stopped{color:var(--red);}
-  .chat-progress-label{color:var(--text-faint);}
+  /* the ONE progress list: a step per line — label, then dots while running / check / cross, then its reason */
+  .chat-steps{list-style:none;margin:2px 0 10px;padding:0;font-size:12px;}
+  .chat-steps .step{padding:1px 0;}
+  .chat-steps .step-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;}
+  .chat-steps .step-label{color:var(--text);min-width:11em;}
+  .chat-steps .step-sign{font-weight:700;}
+  .chat-steps .step.run .step-sign{color:var(--amber);}
+  .chat-steps .step.ok .step-sign{color:var(--green);}
+  .chat-steps .step.bad .step-sign{color:var(--red);}
+  .chat-steps .step.wait .step-label{color:var(--amber);}
+  .chat-steps .step-detail{display:block;flex-basis:100%;min-width:0;padding-left:1.2em;color:var(--text-faint);word-break:break-word;white-space:pre-wrap;}
+  .chat-steps .step.bad .step-detail{color:var(--red);}
+  .chat-steps .step.run .step-sign::after{content:"\2026";}
+  @keyframes step-dots{0%{content:"";}25%{content:".";}50%{content:"..";}75%{content:"...";}}
+  @media (prefers-reduced-motion: no-preference){
+    .chat-steps .step.run .step-sign::after{content:"";animation:step-dots 1.2s steps(1,end) infinite;}
+  }
   /* build item 7 — the two $0 readiness lines under the Model field. */
   .jf-readiness{font-size:11px;margin-top:2px;}
   .jf-readiness.ok{color:var(--green);}
@@ -368,12 +430,24 @@
   .msg .who{font-size:11px;color:var(--text-faint);margin-bottom:3px;text-transform:none;font-weight:400;}
   .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
   .chat-input-row input{width:100%;box-sizing:border-box;}
+  /* the ask box wraps long text (textarea, hamr 2026-10-05): grows a few rows (fitBox), then scrolls inside; Enter sends, Shift+Enter is a newline */
+  textarea[data-testid="chat-msg"]{width:100%;box-sizing:border-box;font:inherit;color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
+  /* hamr 2026-10-05: the card's free-text boxes wrap like the ask box (one shared fitBox); a few rows, then they scroll inside */
+  /* same look as the card's one-line inputs (white when editable, ordinary 1px border) — a textarea has its own browser border otherwise */
+  .job-card textarea.jf-wrap{width:100%;box-sizing:border-box;font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
+  /* hamr 2026-10-05: the focused/selected Chat-card field gets a blue border (the accent), no outline ring */
+  #panel-chat :is(input,select,textarea):focus{border-color:var(--accent);outline:none;}
+  /* hamr 2026-10-05: the ask box is dimmed until something asks for a reply (placeholder stays readable) */
+  #chat-msg:disabled{background:var(--bg);opacity:.55;cursor:not-allowed;}
   /* chat message box reads as an unmistakable text box: ~2x the default
      input height, thicker 2px border (ported verbatim from the mockup). */
-  #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--border-strong);}
-  .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
-  .actions-row > .btn{flex:1 1 auto;}
-
+  #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--field-border);background:var(--field-bg);}
+  /* hamr 2026-10-05: editable Chat-card fields get the standard soft white (a step below the ask box); disabled/readonly (dimmed) keep the base colour */
+  #panel-chat input:not(:disabled):not([readonly]):not(#chat-msg):not([type="radio"]):not([type="checkbox"]),
+  #panel-chat select:not(:disabled),
+  #panel-chat textarea:not(:disabled):not([readonly]):not(#chat-msg){background:var(--field-soft-bg);}
+  /* ONE wide button below the message box (hamr 2026-10-05); its wording comes from mainButtonFor */
+  .btn.wide{width:100%;margin-top:10px;white-space:normal;}
   /* Settings view (P4a) — same tokens as the rest of the page; the mockup's settings styles */
   .settings-view{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;}
   .settings-header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);}
@@ -441,10 +515,14 @@
       <div class="pane-body" id="left-pane-body">
 
         <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
-          <button class="btn" type="button" id="chat-new-btn" data-testid="chat-new">+ New</button>
-
-          <div class="job-card compact" id="job-card" data-testid="job-card" hidden>
+          <!-- hamr 2026-10-05: the empty card is ALWAYS there when Chat opens (no + New). The top-right button reads
+               "Abandon" while a session is live and unsigned, else "Clear"; both leave an empty card. -->
+          <div class="job-card compact" id="job-card" data-testid="job-card">
+            <div class="startfrom-origin" id="chat-startfrom-origin" data-testid="startfrom-origin" hidden></div>
             <h4 id="job-card-title">Job card — draft</h4>
+            <button class="btn card-clear" type="button" id="chat-clear-btn" data-testid="chat-clear">Clear</button>
+            <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
+            <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
 
             <div class="field">
               <label id="jf-verdict-label">Check type</label>
@@ -466,27 +544,27 @@
             </div>
             <div class="field">
               <label for="jf-goal">Goal</label>
-              <input class="expand-field" id="jf-goal" type="text">
+              <textarea class="jf-wrap" id="jf-goal" rows="2"></textarea>
             </div>
             <div class="field">
               <label for="jf-source">Source</label>
-              <input id="jf-source" type="text" placeholder="absolute path to a local repo">
+              <textarea class="jf-wrap" id="jf-source" rows="1" placeholder="absolute path to a local repo"></textarea>
             </div>
             <div class="field">
               <label for="jf-dest">Destination</label>
-              <input id="jf-dest" type="text" placeholder="the write fence — where in the repo this run may change files">
+              <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
             </div>
             <div class="field">
               <label for="jf-success">Success</label>
-              <input class="expand-field" id="jf-success" type="text">
+              <textarea class="jf-wrap" id="jf-success" rows="2"></textarea>
             </div>
             <div class="field">
               <label for="jf-guardrails">Guardrails</label>
-              <input id="jf-guardrails" type="text">
+              <textarea class="jf-wrap" id="jf-guardrails" rows="2"></textarea>
             </div>
             <div class="field">
               <label for="jf-judge">Judge examples <span class="hint" style="display:inline">(rubric only)</span></label>
-              <input class="expand-field" id="jf-judge" type="text" disabled>
+              <textarea class="jf-wrap" id="jf-judge" rows="2" disabled></textarea>
             </div>
 
             <div class="cap-row" data-testid="cap-row">
@@ -500,20 +578,14 @@
                 <input id="jf-cap-time" type="text" placeholder="or blank = no wall">
               </div>
             </div>
-            <button class="btn primary" type="button" id="chat-start-btn" data-testid="chat-start" disabled>Start drafting</button>
             <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
-            <div class="hint" id="chat-hash-line" data-testid="chat-hash-line" hidden></div>
-          </div>
-
-          <!-- build item 3 — the label comes FIRST, then the animated
-               indicator, so the cycling dots ([progress.] .. [progress....])
-               never push the label around. -->
-          <div class="chat-progress-row" id="chat-progress-row" data-testid="chat-progress-row" hidden>
-            <span class="chat-progress-label" id="chat-progress-label" data-testid="chat-progress-label"></span>
-            <span class="chat-progress-glyph" id="chat-progress-glyph" data-testid="chat-progress-glyph"></span>
           </div>
 
           <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
+
+          <!-- ONE progress list (hamr 2026-10-04): every pipeline step is one line that updates in place, running with
+               animated dots, then a check or a cross with its code-owned reason; chat turns stay in the thread above it, right over the ask box. -->
+          <ol class="chat-steps" id="chat-progress-row" data-testid="chat-steps" aria-live="polite" hidden></ol>
 
           <!-- build item 1 — a failed/rejected send, revise, sign-prepare,
                sign or check-deps POST shows here and STAYS shown: it is set
@@ -525,15 +597,10 @@
 
           <div class="chat-input-row">
             <label for="chat-msg" style="display:none">Message</label>
-            <input id="chat-msg" type="text" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg">
+            <textarea id="chat-msg" rows="2" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg"></textarea>
           </div>
-          <button class="btn" type="button" id="chat-check-deps-btn" data-testid="chat-check-deps" hidden>Check again</button>
-
-          <div class="actions-row">
-            <button class="btn" type="button" id="chat-send-btn" data-testid="chat-send" disabled>Send</button>
-            <button class="btn primary" type="button" id="chat-sign-btn" data-testid="btn-sign-run" disabled>Sign &amp; run</button>
-            <button class="btn" type="button" id="chat-revise-btn" data-testid="btn-revise" disabled>Revise (2 left)</button>
-          </div>
+          <button class="btn primary wide" type="button" id="chat-main-btn" data-testid="chat-main" disabled>Start drafting</button>
+          <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
           <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
@@ -541,9 +608,25 @@
           <div class="chips" role="group" aria-label="Runs view" style="margin-bottom:8px;">
             <button class="chip" type="button" aria-pressed="true" data-runs-view="workflows" data-testid="runs-view-workflows">Workflows</button>
             <button class="chip" type="button" aria-pressed="false" data-runs-view="history" data-testid="runs-view-history">History</button>
+            <button class="btn small" type="button" id="wf-import" data-testid="wf-import" title="look at an exported job folder (read only)">Import</button>
+          </div>
+          <div class="import-box" id="import-box" data-testid="import-box" hidden>
+            <label for="import-path">Import a job folder</label>
+            <div class="import-pathrow">
+              <input id="import-path" data-testid="import-path" type="text" placeholder="/path/to/job.bareloop — or pick below" autocomplete="off">
+              <button class="btn small" type="button" id="import-open" data-testid="import-open">Go</button>
+            </div>
+            <div class="resume-err" id="import-err" data-testid="import-err" hidden></div>
+            <div class="hint" id="import-resolved" data-testid="import-resolved"></div>
+            <div class="import-entries" id="import-entries" data-testid="import-entries"></div>
+            <div class="ended-actions">
+              <button class="btn primary" type="button" id="import-go" data-testid="import-go">Import</button>
+              <button class="btn" type="button" id="import-cancel" data-testid="import-cancel">Cancel</button>
+            </div>
           </div>
           <div id="runs-filterbar-anchor"></div>
           <div id="wf-list" data-testid="wf-list"></div>
+          <div id="import-list" data-testid="import-list"></div>
           <div id="history-list" data-testid="history-list" hidden></div>
         </section>
 
@@ -556,8 +639,7 @@
         <div class="rp-header-title">
           <span class="dot grey" id="active-wf-dot"></span>
           <h2 id="active-wf-name">(none selected)</h2>
-          <span class="badge" id="active-wf-verdict">—</span>
-          <span class="badge" id="active-wf-date">—</span>
+          <span class="rp-status" id="active-wf-verdict" data-testid="active-wf-verdict"></span>
         </div>
       </div>
 
@@ -570,8 +652,10 @@
       <div class="pane-body" id="right-pane-body">
 
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
+          <div class="import-view" id="import-view" data-testid="import-view" hidden></div>
           <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
           <div id="run-content" hidden>
+            <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
             <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div></div>
@@ -582,6 +666,7 @@
         <section id="panel-audit" class="tabpanel" role="tabpanel" aria-labelledby="tab-audit" hidden>
           <div id="audit-select-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
           <div id="audit-body" hidden>
+            <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
             <div class="audit-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
               <div class="chips" role="group" aria-label="Filter audit rows" style="margin-bottom:0;">
                 <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
@@ -619,8 +704,8 @@
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
             <div class="field-row">
-              <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
-              <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
+              <div class="field"><label id="details-cap-money-label">$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
+              <div class="field"><label id="details-cap-time-label">Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
             </div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>Goal</label><div class="ro-value scroll" id="details-goal">—</div></div>
@@ -630,6 +715,7 @@
             <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
             <div class="field"><label>Tools</label><div class="ro-value" id="details-tools">—</div></div>
             <div class="hint" id="job-note"></div>
+            <div id="resume-job" class="resume-job" data-testid="resume-job" hidden></div>
           </div>
         </section>
 
@@ -656,7 +742,7 @@
       <section id="panel-providers" class="tabpanel active" role="tabpanel" aria-labelledby="tab-providers">
         <div class="keyfile-strip" data-testid="keyfile-box">
           <div class="keyfile-strip-main">
-            <span>Put <code>NAME=key</code> lines in <code id="pv-keyfile-path">~/.config/bareloop/.env</code>, then Reload keys — every key that has a value gets a row. Only names are listed; keys never reach this page.</span>
+            <span>Put <code>NAME=key</code> lines in <code id="pv-keyfile-path" data-testid="keyfile-path">the keys file (path loading…)</code>, then Reload keys — every key that has a value gets a row. Only names are listed; keys never reach this page.</span>
             <span class="hint" id="pv-keyfile-note" data-testid="keyfile-warning"></span>
           </div>
           <div class="keyfile-strip-actions">
@@ -720,15 +806,28 @@
   var TOKEN = "__BARELOOP_PANEL_TOKEN__";
   document.getElementById("host-line").textContent = "127.0.0.1:" + PORT;
 
+  // After a panel restart this page's token is dead: the server refuses EVERY call with 403 and the exact reason
+  // below (checkHumanGuard, src/panel/authorroutes.js). The ONE place the page makes calls swaps that raw text for
+  // one clear line and tells the Chat poll to stop (staleTokenHook, set by the Chat code). No auto-reload.
+  var STALE_TOKEN_REFUSAL = "refused \u2014 missing or wrong token";
+  var STALE_TOKEN_LINE = "The panel was restarted \u2014 reload this page. A drafting session that was open is gone (nothing more is spent).";
+  var staleTokenHook = function(){};
+  function staleTokenCheck(j, status){
+    if(j && j.ok === false && j.error === STALE_TOKEN_REFUSAL && (status === undefined || status === 403)){
+      j.error = STALE_TOKEN_LINE;
+      staleTokenHook();
+    }
+    return j;
+  }
   function authorPost(path, body){
     return fetch(path, {
       method: "POST",
       headers: {"content-type": "application/json", "x-bareloop-token": TOKEN},
       body: JSON.stringify(body || {}),
-    }).then(function(r){ return r.json().then(function(j){ return {status: r.status, body: j}; }); });
+    }).then(function(r){ return r.json().then(function(j){ return {status: r.status, body: staleTokenCheck(j, r.status)}; }); });
   }
   function authorGet(path){
-    return fetch(path, {headers: {"x-bareloop-token": TOKEN}}).then(function(r){ return r.json(); });
+    return fetch(path, {headers: {"x-bareloop-token": TOKEN}}).then(function(r){ return r.json().then(function(j){ return staleTokenCheck(j, r.status); }); });
   }
 
   function wireTabs(tabButtons){
@@ -832,6 +931,8 @@
     var n = 0;
     return steps.map(function(s){
       if(s.noNumber) return -1;
+      // P5-R: a step continuing from the leg before is the SAME step — it keeps its number
+      if(s.continued && n > 0) return n - 1;
       n++;
       return n - 1;
     });
@@ -847,6 +948,8 @@
   function partBoxState(part, isLastLivePart){
     if(part.outcome === "green" || part.outcome === "satisfied" || part.outcome === "already-green") return "done";
     if(typeof part.outcome === "string") return "stopped";
+    // P5-R: its leg's halt cut this part off — the map's existing "stopped" state, never "done"
+    if(part.stopReason) return "stopped";
     if(isLastLivePart) return "running";
     return "done"; // scout/plan/replan/judge: no per-part verdict, but the part itself already happened
   }
@@ -875,7 +978,9 @@
     var list = Array.isArray(parts) ? parts : [];
     return list.map(function(part, idx){
       var isLastLivePart = !!isLive && idx === list.length - 1;
-      var occSuffix = part.kind === "step" && part.occurrence > 1 ? " (try " + part.occurrence + ")" : "";
+      // "(try N)" is for real in-leg retries only; a step re-entered across a leg boundary is the same step continuing
+      var tryN = typeof part.tryNumber === "number" ? part.tryNumber : part.occurrence;
+      var occSuffix = part.kind === "step" && part.continued ? " (continued)" : (part.kind === "step" && tryN > 1 ? " (try " + tryN + ")" : "");
       return {
         kind: part.kind,
         partIndex: idx,
@@ -888,6 +993,9 @@
         // Audit tab's expand-to-rounds, read off `box.part.attempts` directly).
         attempts: partHasNoVerdict(part) ? [] : (Array.isArray(part.attempts) ? part.attempts : []),
         blocked: typeof part.blocked === "number" ? part.blocked : 0,
+        // P5-R: the leg that ran this part ENDED here and the next part is where the next leg picked up
+        resumedNext: part.resumedNext === true,
+        continued: part.continued === true,
         part: part,
       };
     });
@@ -1031,34 +1139,35 @@
           '" text-anchor="middle" font-size="10" fill="var(--text-faint)">try ' + retryTry + '</text>';
       }
       if(idx < n - 1){
+        // P5-R: where a leg ended and the next leg picked up, the connector is DOTTED (and says so) —
+        // one run, one map; the dotted line is the only mark of the resume.
+        var dash = s.resumedNext ? ' stroke-dasharray="2,4" data-resumed="1"' : '';
         if(nextRow === row){
           var midY = y + boxH / 2;
           if(!rtl){
             var nx = x + boxW + gap;
             body += '<line x1="' + (x + boxW) + '" y1="' + midY + '" x2="' + (nx - 2) + '" y2="' + midY +
-              '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+              '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
           } else {
             var px = x - gap - boxW;
             body += '<line x1="' + x + '" y1="' + midY + '" x2="' + (px + boxW + 2) + '" y2="' + midY +
-              '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+              '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
           }
         } else {
           var cx = x + boxW / 2;
           body += '<line x1="' + cx + '" y1="' + (y + boxH) + '" x2="' + cx + '" y2="' + (y + rowH - 2) +
-            '" stroke="var(--text-dim)" stroke-width="2" marker-end="url(#' + uid + '-arrow)"></line>';
+            '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
         }
       }
     });
     return '<svg width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" role="img" aria-label="step map">' + body + '</svg>';
   }
-  function stepMapLegendHTML(){
-    return '<div class="map-legend">' +
-      '<span><span class="dot green"></span>done</span>' +
-      '<span><span class="dot amber"></span>running</span>' +
-      '<span><span class="dot red"></span>stopped</span>' +
-      '<span><span class="dot grey"></span>waiting</span>' +
-      '<span><span class="dot magenta"></span>died</span>' +
+  // the line-style key under the MAP (hamr 2026-10-04): only the two line styles, never a sign legend
+  function stepMapKeyHTML(steps){
+    var resumed = (steps || []).some(function(b){ return b.resumedNext; });
+    return '<div class="map-key" data-testid="map-key">' +
       '<span>⤾ dashed = retry</span>' +
+      (resumed ? '<span>&middot;&middot;&middot; dotted = resumed</span>' : '') +
       '</div>';
   }
   var lastSteps = null;
@@ -1081,7 +1190,7 @@
     wrapper.hidden = false;
     var w = mapAvailWidth(wrapper);
     lastWidth = w;
-    mount.innerHTML = buildStepMapSVG(steps, w) + stepMapLegendHTML();
+    mount.innerHTML = buildStepMapSVG(steps, w) + stepMapKeyHTML(steps);
     // build item B: a map box click jumps to the Audit tab, that same part
     // expanded and scrolled into view — same click-through as the card list,
     // sharing partIndex so the two can never disagree about which row a box
@@ -1101,7 +1210,7 @@
     var w = mapAvailWidth(wrapper);
     if(w === null || w === lastWidth) return;
     lastWidth = w;
-    document.getElementById("map-mount").innerHTML = buildStepMapSVG(lastSteps, w) + stepMapLegendHTML();
+    document.getElementById("map-mount").innerHTML = buildStepMapSVG(lastSteps, w) + stepMapKeyHTML(lastSteps);
   }
   if(typeof ResizeObserver !== "undefined"){
     var ro = new ResizeObserver(function(){ reflowMap(); });
@@ -1126,11 +1235,51 @@
     if(g === "?") return "magenta";
     return "grey";
   }
+  // ONE spelling of "**word** — reason": the sign and the word come from the server's status table
+  // (src/panel/status.js) — the page never maps an outcome to a word itself. No status = nothing to say.
+  function statusWordHtml(status, reason){
+    if(!status || !status.word) return "";
+    return '<b class="st-word">' + escapeXml(status.word) + '</b>' + (reason ? " \u2014 " + escapeXml(reason) : "");
+  }
+  // local date + time as the header shows it: "10/4/2026, 6:01 PM" ("unknown" when the spine carried no time)
+  function fmtLocalDateTime(iso){
+    var d = iso ? new Date(iso) : null;
+    if(!d || isNaN(d.getTime())) return "unknown";
+    return d.toLocaleString("en-US", {year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit"});
+  }
+  // the right-side header: `[sign] job (runid) │ **word** — reason · ended 10/4/2026, 6:01 PM` (no capitals: the job
+  // name is shown as written). `bodyHtml` is already escaped.
+  function setRunHeader(sign, nameText, bodyHtml){
+    document.getElementById("active-wf-name").textContent = nameText;
+    document.getElementById("active-wf-dot").className = "dot " + glyphClass(sign);
+    var st = document.getElementById("active-wf-verdict");
+    st.innerHTML = bodyHtml ? '<span class="rp-sep">\u2502</span>' + bodyHtml : "";
+    st.removeAttribute("title");
+  }
+  // "step 2 of 3" for a live run: the step it is on (first one not yet done) of the real steps
+  function liveStepText(detail){
+    var rs = realSteps(detail.steps || []);
+    if(rs.length === 0) return "";
+    var done = rs.filter(function(s){ return s.state === "done"; }).length;
+    return "step " + Math.min(done + 1, rs.length) + " of " + rs.length;
+  }
+  function runHeaderBody(detail){
+    var live = detail.status && detail.status.word === "running";
+    var reason = detail.ended ? detail.ended.line : (live ? liveStepText(detail) : "");
+    var when = detail.endedAt ? ("ended " + fmtLocalDateTime(detail.endedAt)) : ("started " + fmtLocalDateTime(detail.startedAt || detail.at));
+    return statusWordHtml(detail.status, reason) + " \u00B7 " + escapeXml(when);
+  }
+
+  // P5-R: a resumed run is the SAME run — one card, never two. This is only a small tag on it.
+  function resumedTagHtml(count, testid){
+    return (typeof count === "number" && count > 0)
+      ? '<span class="wf-meta wf-resumed" data-testid="' + escapeXml(testid) + '">resumed &times;' + count + '</span>' : '';
+  }
 
   // ---- Runs tab: ONE run-row builder shared by History (flat) and the
   // Workflows view's per-job expansion (item 2, 2026-09-26 merge) — the two
   // never drift on how a run row reads.
-  function buildRunRowEl(r){
+  function buildRunRowEl(r, compact){
     var row = document.createElement("div");
     // build item (2026-09-26 fix): compute selected state here, off the
     // module's own `currentRunid`, so a row freshly built by a RE-RENDER
@@ -1146,7 +1295,15 @@
     row.setAttribute("role", "button");
     row.setAttribute("aria-pressed", selected ? "true" : "false");
     var histFullName = r.job + ' (' + r.runid + ')';
-    if(r.fileMissing){
+    if(r.starting){
+      row.innerHTML =
+        '<span class="wf-line1"><span class="dot amber"></span>' +
+        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
+        '<span class="wf-meta-line">' +
+        '<span class="wf-meta" data-testid="hist-starting-' + escapeXml(r.runid) + '">starting…</span>' +
+        '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
+        '</span>';
+    } else if(r.fileMissing){
       row.innerHTML =
         '<span class="wf-line1"><span class="dot grey"></span>' +
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
@@ -1154,15 +1311,25 @@
         '<span class="wf-meta">file missing</span>' +
         '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
         '</span>';
+    } else if(compact){
+      // an EXPANDED per-run row under a workflow: `[sign] **word** — reason   runid · $ · date`
+      row.innerHTML =
+        '<span class="wf-line1 wf-compact"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
+        '<span class="wf-ended wf-ended-inline" title="' + escapeXml(histFullName) + '" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' +
+        '<span class="wf-meta wf-rowmeta">' + escapeXml(r.runid) + ' \u00B7 ' + escapeXml(rowSpendText(r)) + ' \u00B7 ' + escapeXml(r.date || "unknown") + '</span>' +
+        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) + '</span>';
     } else {
+      // History card: line 1 sign + job (runid); line 2 **word** — reason; line 3 the facts
       row.innerHTML =
         '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
+        (r.status ? '<span class="wf-ended" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' : '') +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(rowSpendText(r)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(r.wall) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(rowWallText(r)) + '</span>' +
         '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
+        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) +
         '</span>';
     }
     row.addEventListener("click", function(){ selectRun(r.runid, row, ".hist-row"); document.getElementById("tab-run").click(); scrollRunIntoViewMobile(); });
@@ -1205,10 +1372,13 @@
         lastRunid: last.runid,
         lastAt: last.at,
         lastGlyph: last.glyph || "▶",
+        lastStatus: last.status || null,
+        lastEndedLine: last.endedLine || null,
+        lastResumedCount: last.resumedCount || 0,
         lastCheckType: last.checkType || "unknown",
         lastModel: last.model || null,
         lastSpend: rowSpendText(last),
-        lastWall: last.wall || "unknown",
+        lastWall: rowWallText(last) || "unknown",
         lastDate: last.date,
       };
     });
@@ -1337,11 +1507,13 @@
       row.innerHTML =
         '<span class="wf-line1"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
+        (g.lastStatus ? '<span class="wf-ended" data-testid="wf-ended-' + escapeXml(g.job) + '">' + statusWordHtml(g.lastStatus, g.lastEndedLine) + '</span>' : '') +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastSpend) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastWall) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastDate || "unknown") + '</span>' +
+        resumedTagHtml(g.lastResumedCount, "wf-resumed-" + g.job) +
         '<span class="wf-meta">' + g.runCount + ' run' + (g.runCount === 1 ? '' : 's') + '</span>' +
         '</span>';
       row.addEventListener("click", function(){
@@ -1368,7 +1540,7 @@
       if(expanded){
         var runsWrap = document.createElement("div");
         runsWrap.className = "wf-runs";
-        childRuns.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r)); });
+        childRuns.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r, true)); });
         wrap.appendChild(runsWrap);
       }
       el.appendChild(wrap);
@@ -1585,6 +1757,10 @@
     });
     document.getElementById("wf-list").hidden = runsViewMode !== "workflows";
     document.getElementById("history-list").hidden = runsViewMode !== "history";
+    // P5 item 4: Import lives on the Workflows view only
+    document.getElementById("wf-import").hidden = runsViewMode !== "workflows";
+    document.getElementById("import-list").hidden = runsViewMode !== "workflows";
+    if(runsViewMode !== "workflows") document.getElementById("import-box").hidden = true;
   }
   document.querySelectorAll('.chip[data-runs-view]').forEach(function(chip){
     chip.addEventListener("click", function(){
@@ -1621,6 +1797,264 @@
   function clearSelection(selector){
     document.querySelectorAll(".wf-row, .hist-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
   }
+
+  // ---- P5 item 4: IMPORT (read only) — the folder browser, the imported rows, the view ----
+  // The folder listing, the import and every re-read are SERVER routes behind the human guard
+  // (src/panel/importroutes.js): the page only asks and paints. An imported job has ONE button: Reuse workflow.
+  var currentImportId = null;
+  var importBox = document.getElementById("import-box");
+  var importPathEl = document.getElementById("import-path");
+  var importErrEl = document.getElementById("import-err");
+  function importShowErr(msg){ importErrEl.textContent = msg; importErrEl.hidden = !msg; }
+  // the last folder the browser showed — per-viewer convenience only (try/catch, the browser works without it)
+  var IMPORT_DIR_KEY = "bareloop.importDir";
+  function rememberImportDir(path){
+    try{ localStorage.setItem(IMPORT_DIR_KEY, path); }catch(e){ /* best-effort only */ }
+  }
+  function recallImportDir(){
+    try{ var v = localStorage.getItem(IMPORT_DIR_KEY); if(typeof v === "string") return v; }catch(e){ /* per-viewer convenience only */ }
+    return "";
+  }
+  // one directory: its folders (names + a "bundle" tag), a way up, and which folder the server actually chose
+  function importLoadDir(path){
+    importShowErr("");
+    return authorGet("/api/fs/list?path=" + encodeURIComponent(path || "")).then(function(r){
+      if(!r || !r.ok){
+        // a refused path leaves ONLY the error: no stale "showing <folder>" line, no stale list
+        document.getElementById("import-resolved").textContent = "";
+        document.getElementById("import-entries").innerHTML = "";
+        importShowErr((r && r.error) || "could not open that folder");
+        return false;
+      }
+      rememberImportDir(r.path);
+      importPathEl.value = r.path;
+      document.getElementById("import-resolved").textContent = "showing " + r.path + (r.requested !== r.path ? " (you asked for " + r.requested + ")" : "") + (r.bundle ? " — this folder is an exported job" : "");
+      var el = document.getElementById("import-entries");
+      el.innerHTML = "";
+      if(r.parent){
+        var up = document.createElement("button");
+        up.type = "button"; up.className = "import-entry import-up"; up.setAttribute("data-testid", "import-up");
+        up.setAttribute("aria-label", "up one folder"); up.setAttribute("title", "up one folder");
+        up.textContent = "..";
+        up.addEventListener("click", function(){ importLoadDir(r.parent); });
+        el.appendChild(up);
+      }
+      r.entries.forEach(function(e){
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "import-entry"; b.setAttribute("data-testid", "import-entry-" + e.name);
+        b.setAttribute("aria-pressed", "false");
+        b.innerHTML = escapeXml(e.name) + ' <span class="tag">(bundle)</span>';
+        b.addEventListener("click", function(){
+          el.querySelectorAll(".import-entry").forEach(function(x){ x.classList.remove("selected"); x.setAttribute("aria-pressed", "false"); });
+          b.classList.add("selected"); b.setAttribute("aria-pressed", "true");
+          importPathEl.value = e.path; importShowErr("");
+        });
+        el.appendChild(b);
+      });
+      if(!r.entries.length) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-empty">no job bundles here (searched ' + r.depth + ' folders deep)</div>');
+      if(r.stopped) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-capped">stopped after ' + r.visited + ' folders \u2014 go into a narrower folder</div>');
+      else if(r.truncated) el.insertAdjacentHTML("beforeend", '<div class="hint" data-testid="import-capped">stopped after ' + r.entries.length + ' job bundles \u2014 go into a narrower folder</div>');
+      return true;
+    }).catch(function(x){ importShowErr("could not reach the panel: " + x.message); });
+  }
+  document.getElementById("wf-import").addEventListener("click", function(){
+    importBox.hidden = !importBox.hidden;
+    if(importBox.hidden) return;
+    var want = importPathEl.value || recallImportDir();
+    importLoadDir(want).then(function(ok){ if(ok === false && want && !importPathEl.value) { importShowErr(""); return importLoadDir(""); } });
+  });
+  document.getElementById("import-open").addEventListener("click", function(){ importLoadDir(importPathEl.value); });
+  importPathEl.addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); importLoadDir(importPathEl.value); } });
+  document.getElementById("import-cancel").addEventListener("click", function(){ importBox.hidden = true; importShowErr(""); });
+  document.getElementById("import-go").addEventListener("click", function(){
+    importShowErr("");
+    authorPost("/api/imports", {path: importPathEl.value}).then(function(res){
+      if(!res.body || !res.body.ok){ importShowErr((res.body && res.body.error) || ("refused (" + res.status + ")")); return; }
+      importBox.hidden = true;
+      return loadImports().then(function(){ return selectImport(res.body.id); }).then(function(){ revealImportRow(res.body.id); scrollRunIntoViewMobile(); });
+    }).catch(function(x){ importShowErr("could not reach the panel: " + x.message); });
+  });
+
+  // after [Import] the box above the list closes and the left pane shrinks: bring the job just opened into view
+  function revealImportRow(id){
+    var row = document.querySelector('[data-testid="import-row-' + id + '"]');
+    if(row && row.scrollIntoView) row.scrollIntoView({block: "nearest"});
+  }
+
+  // the imported rows (Workflows view): every bundle is re-read by the server each time this list is fetched
+  function loadImports(){
+    return authorGet("/api/imports").then(function(r){ renderImports((r && r.imports) || []); }).catch(function(){ /* keep what is shown */ });
+  }
+  function renderImports(list){
+    var el = document.getElementById("import-list");
+    el.innerHTML = "";
+    list.forEach(function(imp){
+      var row = document.createElement("div");
+      row.className = "wf-row" + (imp.id === currentImportId ? " selected" : "");
+      row.setAttribute("data-testid", "import-row-" + imp.id);
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-pressed", imp.id === currentImportId ? "true" : "false");
+      row.innerHTML =
+        '<span class="wf-line1"><span class="wf-caret"></span><span class="dot ' + (imp.runStatus ? glyphClass(imp.runStatus.sign) : "grey") + '"></span>' +
+        '<span class="wf-name" title="' + escapeXml(imp.dir) + '">' + escapeXml(imp.job) + '</span></span>' +
+        (imp.runStatus ? '<span class="wf-ended" data-testid="import-ended-' + escapeXml(imp.id) + '">' + statusWordHtml(imp.runStatus, imp.runReason) + '</span>' : '') +
+        '<span class="wf-meta-line"><span class="wf-meta wf-imported" data-testid="import-tag-' + escapeXml(imp.id) + '">imported · view only</span></span>' +
+        (imp.status !== "ok" ? '<span class="imp-bad" data-testid="import-changed-' + escapeXml(imp.id) + '">' + escapeXml(imp.statusText || "changed since import") + '</span>' : "");
+      row.addEventListener("click", function(){ selectImport(imp.id); scrollRunIntoViewMobile(); });
+      row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
+      el.appendChild(row);
+    });
+  }
+  function hideImportView(){
+    currentImportId = null;
+    document.getElementById("import-view").hidden = true;
+    document.getElementById("run-counters").hidden = false;
+    document.getElementById("run-empty").textContent = "select a run from Workflows or History";
+    document.getElementById("audit-select-empty").textContent = "select a run first";
+    document.querySelectorAll("#import-list .wf-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed", "false"); });
+  }
+  function selectImport(id){
+    clearSelection();
+    currentRunid = null;
+    runIsLive = false;
+    resumeMode = null;
+    currentImportId = id;
+    document.querySelectorAll("#import-list .wf-row").forEach(function(r){
+      var on = r.getAttribute("data-testid") === "import-row-" + id;
+      r.classList.toggle("selected", on); r.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    return authorGet("/api/imports/" + encodeURIComponent(id)).then(function(v){
+      if(currentImportId !== id) return;
+      renderImportView(v);
+    }).catch(function(x){ if(currentImportId === id) renderImportView({ok: false, error: x.message}); });
+  }
+  // An imported job reads like a normal run page: the SAME Run / Audit / Job tabs. [Reuse workflow] sits in the top
+  // action row, then the IMPORTED box (what the folder says about itself), then the latest GREEN run in the bundle
+  // painted by the very same renderRun a run uses — its SUMMARY and MAP, and its Audit when the bundle carries the
+  // run's log; a bundle with only a bridge paints the bridge's numbers through that same renderer ("not recorded"
+  // where the bridge is silent); a bundle with no green says so. The Job tab carries the spec. Nothing here writes.
+  function importedHeader(v){
+    var tag = "imported \u00B7 view only";
+    if(v.runStatus) setRunHeader(v.runStatus.sign, v.job, statusWordHtml(v.runStatus, v.runReason) + " \u00B7 " + tag);
+    else setRunHeader("\u00B7", v.job, tag);
+  }
+  function importedNoLog(){
+    document.getElementById("audit-body").hidden = true;
+    var auditEmpty = document.getElementById("audit-select-empty");
+    auditEmpty.hidden = false;
+    auditEmpty.textContent = "no log — this job ran on another machine";
+  }
+  // the green run below the IMPORTED box: spine (read through the ordinary run routes), bridge, or nothing
+  function paintImportedRun(v){
+    var run = v.run || {kind: "none"};
+    var content = document.getElementById("run-content");
+    var guard = function(){ return currentImportId === v.id; };
+    document.getElementById("step-list").innerHTML = "";
+    if(run.kind === "spine"){
+      currentRunid = run.id;
+      getJSON("/api/runs/" + encodeURIComponent(run.id)).then(function(d){
+        if(!guard()) return;
+        d.ended = null; d.resume = null; d.live = false; d.stopping = false;
+        renderRun(d);
+        importedHeader(v);
+        document.getElementById("run-actions").hidden = true;
+        document.getElementById("run-counters").hidden = true; // the SUMMARY headline already says it
+        content.hidden = false;
+      }).catch(function(e){ if(guard()) paintImportedRunPlain(v, "could not read this run: " + e.message); });
+      getJSON("/api/runs/" + encodeURIComponent(run.id) + "/audit").then(function(result){
+        if(guard()) renderAudit(result);
+      }).catch(function(){ if(guard()) renderAudit(null); });
+      return;
+    }
+    importedNoLog();
+    if(run.kind === "bridge" && run.detail){
+      renderRun(run.detail);
+      importedHeader(v);
+      importedNoLog();
+      document.getElementById("run-actions").hidden = true;
+      document.getElementById("run-counters").hidden = true;
+      document.getElementById("step-list").innerHTML = "";
+      if(!run.detail.parts || run.detail.parts.length === 0){
+        document.getElementById("map-box").hidden = false;
+        document.getElementById("map-mount").innerHTML = '<div class="hint" data-testid="import-no-steps">no steps recorded</div>';
+      }
+      content.hidden = false;
+      return;
+    }
+    paintImportedRunPlain(v, "no green run in this bundle");
+  }
+  // a plain sentence in the SUMMARY box and nothing else (no counters, no map, no cards)
+  function paintImportedRunPlain(v, text){
+    var box = document.getElementById("run-summary");
+    box.className = "summary-box";
+    box.innerHTML = '<div class="summary-row"><span class="sum-val" data-testid="import-no-green">' + escapeXml(text) + '</span></div>';
+    document.getElementById("run-counters").hidden = true;
+    document.getElementById("map-box").hidden = true;
+    document.getElementById("step-list").innerHTML = "";
+    document.getElementById("run-actions").hidden = true;
+    importedNoLog();
+    document.getElementById("run-content").hidden = false;
+  }
+  function renderImportView(v){
+    var el = document.getElementById("import-view");
+    el.hidden = false;
+    document.getElementById("run-empty").hidden = true;
+    document.getElementById("run-content").hidden = true;
+    importedNoLog();
+    if(!v || !v.ok){
+      setRunHeader("\u00B7", "imported job", "imported \u00B7 view only");
+      el.innerHTML = '<div class="imp-bad">' + escapeXml((v && v.error) || "could not read this imported job") + '</div>';
+      renderJob(null);
+      return;
+    }
+    importedHeader(v);
+    var h = v.history || {greens: 0, reds: 0, total: 0, recent: []};
+    var row = function(label, text, testid){
+      return '<div class="summary-row"><span class="sum-label">' + label + '</span><span class="sum-val" data-testid="' + testid + '">' + escapeXml(text) + '</span></div>';
+    };
+    var recent = (h.recent || []).map(function(r){
+      var line = (r.at || "").slice(0, 10) || "—";
+      line += " · " + (r.outcome || "?") + (typeof r.costUsd === "number" ? " · " + panelMoney(r.costUsd) : "") + (r.runid ? " · run " + r.runid : "");
+      return '<div class="summary-row"><span class="sum-label"></span><span class="sum-val">' + escapeXml(line) + '</span></div>';
+    }).join("");
+    var run = v.run || {kind: "none"};
+    var runsHere = typeof v.runsHere === "number" ? v.runsHere : 0;
+    var shown = run.kind === "spine" ? ("latest green run here, " + (run.runid || "")) :
+      (run.kind === "bridge" ? ("the exported green run" + (run.runid ? " " + run.runid : "") + (run.at ? ", " + run.at.slice(0, 10) : "")) : "no green run");
+    el.innerHTML =
+      '<div class="run-actions" data-testid="run-actions-import"><button class="btn" type="button" data-testid="btn-reuse-import">Reuse workflow</button></div>' +
+      '<div class="summary-box imported-box" data-testid="import-box">' +
+        (v.status !== "ok" ? '<div class="imp-bad" data-testid="import-view-changed">' + escapeXml(v.changedLine || v.statusText || "changed since import") + '</div>' : "") +
+        row("runs here:", runsHere === 0 ? "none yet" : (runsHere + (runsHere === 1 ? " run" : " runs")), "import-no-runs") +
+        row("exported:", h.greens + " green · " + h.reds + " not green", "import-history") +
+        recent +
+        row("this machine:", v.approvedText || "unknown", "import-approved") +
+        row("shown below:", shown, "import-shown") +
+      '</div>';
+    el.querySelector('[data-testid="btn-reuse-import"]').addEventListener("click", function(){ reuseImportedWorkflow(v.id); });
+    var nr = "not recorded";
+    renderJob({
+      job: v.job, resolved: false, checkType: v.checkType || nr, model: v.model || nr,
+      goal: v.goal || nr, success: v.success || nr, guardrails: v.guardrails || nr,
+      source: nr, destination: nr, tools: nr,
+      budgetUsd: (typeof v.budgetUsd === "number") ? v.budgetUsd : null,
+      maxWallMs: (typeof v.maxWallMs === "number") ? v.maxWallMs : null,
+      note: "imported · view only — the exported job's own spec",
+    });
+    paintImportedRun(v);
+    document.getElementById("tab-run").click();
+  }
+  // Reuse workflow, on an IMPORTED job: the server reads the bundle again now and prefills from its signed spec.
+  function reuseImportedWorkflow(id){
+    authorGet("/api/author/start-from?import=" + encodeURIComponent(id)).then(function(r){
+      if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: null, importId: id, prefill: r}}));
+    }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
+  }
+  loadImports();
+  document.getElementById("tab-runs").addEventListener("click", function(){ loadImports(); });
 
   // ---- Run tab ----
   // panelMoney — hamr's ruling 2026-09-28 ("panel money 2-decimals"): every
@@ -1679,6 +2113,17 @@
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
     return core + draftPart + capPart;
   }
+  // P5 item 6: a LIVE row (no job-end yet, runner alive) reads the same running floors the
+  // right pane reads — `liveSpendText`/`liveWallPhrase` are the one spelling — and a row whose
+  // spine is not written yet reads "starting…", never "file missing" or "unknown".
+  function rowIsLive(r){
+    return r.glyph === "▶" && !r.died && !r.starting && (r.spentUsd === null || r.spentUsd === undefined);
+  }
+  function rowWallText(r){
+    if(r.starting) return "just started";
+    if(rowIsLive(r)) return liveWallPhrase(r.wallFloorMs);
+    return r.wall;
+  }
   /**
    * The Runs list row / Workflows grouping's own spend text — off the
    * numeric fields `/api/runs`' row now carries (never `r.spend`, which is
@@ -1690,6 +2135,8 @@
    * @param {any} r a `/api/runs` row (or a Workflows group's `last` row)
    */
   function rowSpendText(r){
+    if(r.starting) return "starting…";
+    if(rowIsLive(r)) return liveSpendText(r.spendFloorUsd, r.draftSpentUsd, r.draftSpendComplete);
     var draftIncomplete = typeof r.draftSpentUsd === "number" && r.draftSpentUsd !== null && r.draftSpendComplete === false;
     var coreVal = r.died ? r.spendFloorUsd : r.spentUsd;
     var coreFloor = !!r.died || draftIncomplete;
@@ -1807,6 +2254,11 @@
     if(!detail.model) return "not recorded";
     return detail.provider ? (detail.model + " (" + detail.provider + ")") : detail.model;
   }
+  // an imported job's bridge names the tools its green run used, with no counts
+  function bridgeToolsLine(list){
+    if(!Array.isArray(list) || list.length === 0) return "not recorded";
+    return list.map(function(k){ return toolDisplayLabel(k); }).join(" \u00b7 ");
+  }
   function toolsLine(behaviour){
     if(!behaviour) return "unknown (no log saved)";
     if(behaviour.totalCalls === 0) return "0 calls";
@@ -1858,36 +2310,199 @@
     else { row.hidden = true; val.textContent = ""; }
   }
 
-  function renderRun(detail){
-    var name = document.getElementById("active-wf-name");
-    var dot = document.getElementById("active-wf-dot");
-    var verdict = document.getElementById("active-wf-verdict");
-    var date = document.getElementById("active-wf-date");
+  // ---- P5: the ENDED block (Audit tab, first block, every finished run) and Resume ----
+  // The sentences are CODE-OWNED on the server (`endedFor`, src/panel/server.js) — this only
+  // paints them. `detail.ended` is null while a run is live (no block while running).
+  var lastEndedSig = null;
+  // P5-R (hamr 2026-10-02): Resume opens the run's OWN Job tab. There ONLY the money cap and the time cap are
+  // editable; every other field is the signed job, shown read-only exactly as the tab already shows it. The click
+  // on [Sign & resume] is the signature when a cap changed. A resume is the SAME run: no new card, no new job.
+  var resumeMode = null;
+  var lastJobShown = null;
+  function renderEnded(detail){
+    var box = document.getElementById("ended-block");
+    var e = detail.ended;
+    if(!e){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
+    // rebuilt only when what it shows changed
+    var sig2 = detail.runid + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume);
+    if(sig2 === lastEndedSig) return;
+    lastEndedSig = sig2;
+    box.hidden = false;
+    box.className = "ended-block " + (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"));
+    // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
+    box.innerHTML =
+      '<div class="ended-row"><span class="ended-label">ENDED</span><span class="ended-text" data-testid="ended-reason">' + escapeXml(e.reason) + '</span></div>' +
+      '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + escapeXml(e.next) + '</span></div>';
+  }
+  // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
+  // it ended in a way the engine would accept (the SAME button as the Ended block's, same Job-tab resume mode).
+  // The Ended block (Audit tab) is text only and carries no buttons.
+  var stopAsked = {};
+  // Reuse workflow (replaces P5 item 3's Start from this) — ask the server for the prefill (the signed job), then
+  // hand it to the Chat tab's New job card. The page decides nothing: the server owns what is locked and what is open.
+  function reuseWorkflow(runid){
+    authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid)).then(function(r){
+      if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
+    }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
+  }
+  function renderRunActions(detail){
+    var bar = document.getElementById("run-actions");
+    var html = "";
+    var live = !!detail.live && !detail.died && !detail.ended;
+    if(live){
+      if(detail.stopping || stopAsked[detail.runid]){
+        html = '<span class="stopping" data-testid="stopping-note">stopping after this turn…</span>';
+      } else {
+        html = '<button class="btn" type="button" data-testid="btn-stop">Stop</button>';
+      }
+    } else {
+      delete stopAsked[detail.runid];
+      var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
+      if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
+    }
+    // Reuse workflow: on a GREEN run only (the server's Ended block says so) — a new run of the same signed job
+    if(!live && !detail.died && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
+      html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
+    }
+    bar.innerHTML = html;
+    bar.hidden = html === "";
+    var reuseBtn = bar.querySelector('[data-testid="btn-reuse"]');
+    if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid); });
+    var stopBtn = bar.querySelector('[data-testid="btn-stop"]');
+    if(stopBtn){
+      stopBtn.addEventListener("click", function(){
+        stopBtn.disabled = true;
+        authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/stop", {}).then(function(res){
+          if(res.body && res.body.ok){ stopAsked[detail.runid] = true; renderRunActions(detail); }
+          else { stopBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="stop-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>'); }
+        }).catch(function(x){ stopBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="stop-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
+      });
+    }
+    var resBtn = bar.querySelector('[data-testid="btn-resume-run"]');
+    if(resBtn) resBtn.addEventListener("click", function(){ openResumeOnJobTab(detail); });
+  }
+  function openResumeOnJobTab(detail){
+    var r = detail.resume || {};
+    resumeMode = {
+      runid: detail.runid, spentUsd: r.spentUsd, spendComplete: r.spendComplete,
+      wallUsedMs: r.wallUsedMs,
+      budget: (r.budgetUsd === null || r.budgetUsd === undefined) ? "" : String(r.budgetUsd),
+      wall: typeof r.maxWallMin === "number" ? String(r.maxWallMin) : null,
+      painted: false,
+    };
+    document.getElementById("tab-details").click();
+    paintResumeMode();
+  }
+  // Turns the Job tab's two cap values into inputs (and shows the Sign box) while a resume is open on this run;
+  // called again after every Job re-render so a re-render never drops the typed numbers.
+  function paintResumeMode(){
+    var box = document.getElementById("resume-job");
+    var moneyLabel = document.getElementById("details-cap-money-label");
+    var timeLabel = document.getElementById("details-cap-time-label");
+    if(!resumeMode || resumeMode.runid !== currentRunid){
+      box.hidden = true; box.innerHTML = "";
+      moneyLabel.textContent = "$ cap"; timeLabel.textContent = "Time cap";
+      return;
+    }
+    var m = resumeMode;
+    // the unit lives in the caption, never as loose text around the input
+    moneyLabel.textContent = "Money cap ($)";
+    timeLabel.textContent = "Time cap (min)";
+    document.getElementById("details-cap-money").innerHTML =
+      '<span class="resume-cap"><input type="number" min="0" step="0.01" id="resume-budget" data-testid="resume-budget" value="' + escapeXml(m.budget) + '"></span>';
+    if(m.wall !== null){
+      document.getElementById("details-cap-time").innerHTML =
+        '<span class="resume-cap"><input type="number" min="1" step="1" id="resume-wall" data-testid="resume-wall" value="' + escapeXml(m.wall) + '"></span>';
+    }
+    var budgetEl = document.getElementById("resume-budget");
+    budgetEl.addEventListener("input", function(){ m.budget = budgetEl.value; });
+    var wallEl = document.getElementById("resume-wall");
+    if(wallEl) wallEl.addEventListener("input", function(){ m.wall = wallEl.value; });
+    box.hidden = false;
+    if(m.painted) return;
+    m.painted = true;
+    var spent = (m.spentUsd === null || m.spentUsd === undefined) ? "unknown" : ((m.spendComplete ? "" : "at least ") + panelMoney(m.spentUsd));
+    box.innerHTML =
+      '<div data-testid="resume-intro">Resume run ' + escapeXml(m.runid) + ' &mdash; the same run, not a new one. Only the money cap and the time cap can change; everything else is the signed job.</div>' +
+      '<div class="hint" data-testid="resume-spent">spent so far ' + escapeXml(spent) +
+        (typeof m.wallUsedMs === "number" && isFinite(m.wallUsedMs) ? ' &middot; time used so far ' + Math.ceil(m.wallUsedMs / 60000) + ' min' : '') + '</div>' +
+      '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-sign-resume">Sign &amp; resume</button> ' +
+      '<button class="btn" type="button" data-testid="btn-resume-cancel">Cancel</button></div>' +
+      '<div class="resume-err" id="resume-err" data-testid="resume-err" hidden></div>';
+    var resumeSignBtn = box.querySelector('[data-testid="btn-sign-resume"]');
+    box.querySelector('[data-testid="btn-resume-cancel"]').addEventListener("click", function(){
+      resumeMode = null;
+      renderJob(lastJobShown);
+    });
+    resumeSignBtn.addEventListener("click", function(){
+      var err = document.getElementById("resume-err");
+      err.hidden = true;
+      resumeSignBtn.disabled = true;
+      var body = {budgetUsd: document.getElementById("resume-budget").value};
+      var wall = document.getElementById("resume-wall");
+      if(wall){ body.maxWallMin = wall.value; }
+      return authorPost("/api/runs/" + encodeURIComponent(m.runid) + "/resume", body).then(function(res){
+        if(res.body && res.body.ok){
+          // the SAME run goes on: back to its Run tab, which follows it until it is live again
+          resumeMode = null;
+          renderJob(lastJobShown);
+          document.getElementById("tab-run").click();
+          afterResumeRefresh(m.runid, 8);
+        } else {
+          resumeSignBtn.disabled = false;
+          err.textContent = (res.body && res.body.error) || ("refused (" + res.status + ")");
+          err.hidden = false;
+        }
+      }).catch(function(x){ resumeSignBtn.disabled = false; err.textContent = "could not reach the panel: " + x.message; err.hidden = false; });
+    });
+  }
+  // After a resume starts, the open run's own page follows it: re-select once the run reads live again (the spine's
+  // new leg appears a moment after the engine starts), a few tries, never forever.
+  function afterResumeRefresh(runid, tries){
+    refreshRunsList(true);
+    setTimeout(function(){
+      if(currentRunid !== runid) return;
+      getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(d){
+        if(currentRunid !== runid) return;
+        if(d.glyph === "▶" && !d.died){ selectRun(runid, null, ".hist-row"); return; }
+        if(tries > 0) afterResumeRefresh(runid, tries - 1);
+      }).catch(function(){ if(tries > 0) afterResumeRefresh(runid, tries - 1); });
+    }, 1500);
+  }
 
+  function renderRun(detail){
     if(detail.fileMissing){
-      name.textContent = detail.job + " (" + detail.runid + ")";
-      dot.className = "dot grey";
-      verdict.textContent = "unknown";
-      date.textContent = "file missing";
+      setRunHeader("\u00B7", detail.job + " (" + detail.runid + ")", "file missing");
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "spine file no longer on disk";
       document.getElementById("run-content").hidden = true;
       document.getElementById("audit-select-empty").hidden = false;
+      document.getElementById("audit-select-empty").textContent = "select a run first";
       document.getElementById("audit-body").hidden = true;
       return;
     }
 
+    if(detail.starting){
+      setRunHeader("\u25B6", detail.job + " (" + detail.runid + ")", statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
+      document.getElementById("run-empty").hidden = false;
+      document.getElementById("run-empty").textContent = "starting… the run has not written its log yet";
+      document.getElementById("run-content").hidden = true;
+      document.getElementById("audit-select-empty").hidden = false;
+      document.getElementById("audit-select-empty").textContent = "starting… the run has not written its log yet";
+      document.getElementById("audit-body").hidden = true;
+      return;
+    }
     document.getElementById("audit-select-empty").hidden = true;
     document.getElementById("audit-body").hidden = false;
+    renderEnded(detail);
 
-    name.textContent = detail.job + " (" + detail.runid + ")";
-    dot.className = "dot " + glyphClass(detail.glyph);
-    verdict.textContent = detail.checkType;
-    if(detail.checkTypeTitle){ verdict.title = detail.checkTypeTitle; } else { verdict.removeAttribute("title"); }
-    date.textContent = detail.date || "unknown";
+    setRunHeader(detail.glyph, detail.job + " (" + detail.runid + ")", runHeaderBody(detail));
 
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = false;
+    renderRunActions(detail);
 
     // died: the two REAL figures the panel has (spentUsd/wallMs, both null —
     // no job-end means no final totals were ever recorded) are replaced with
@@ -1904,11 +2519,12 @@
     // false and spentUsd is still null) shows the RUNNING floor instead of
     // "unknown" — the server now derives the same spendFloorUsd/wallFloorMs
     // for a still-running spine that it already derived for a died one.
-    var isLiveNoEnd = !detail.died && detail.spentUsd === null;
-    var spendText, wallPhrase;
+    var isLiveNoEnd = !detail.died && detail.spentUsd === null && detail.fromBridge !== true;
+    var spendText, wallPhrase, wallText;
     if(isLiveNoEnd){
       spendText = liveSpendText(detail.spendFloorUsd, detail.draftSpentUsd, detail.draftSpendComplete);
       wallPhrase = liveWallPhrase(detail.wallFloorMs);
+      wallText = wallPhrase; // the summary headline reads wallText in BOTH branches
     } else {
       var draftIncomplete = typeof detail.draftSpentUsd === "number" && detail.draftSpentUsd !== null && detail.draftSpendComplete === false;
       var spendCoreVal = detail.died ? detail.spendFloorUsd : detail.spentUsd;
@@ -1921,10 +2537,16 @@
       // still in progress: a live [▶] run (glyph "▶" and not died).
       var isLive = detail.glyph === "▶" && !detail.died;
       wallPhrase = isLive ? (wallText + " elapsed") : ("took " + wallText);
+      // an imported job's green run read from its bridge: only what the bridge carries; the rest says so
+      if(detail.fromBridge === true){
+        spendText = typeof detail.spentUsd === "number" ? ((detail.spendComplete === false ? "at least " : "") + panelMoney(detail.spentUsd)) : "not recorded";
+        wallText = typeof detail.wallMs === "number" ? duration(detail.wallMs) : "not recorded";
+        wallPhrase = typeof detail.wallMs === "number" ? ("took " + wallText) : "time not recorded";
+      }
     }
 
     document.getElementById("run-counters").innerHTML =
-      spendText + " of " + panelMoney(detail.budgetUsd) +
+      spendText + ((detail.fromBridge === true && typeof detail.budgetUsd !== "number") ? "" : (" of " + panelMoney(detail.budgetUsd))) +
       " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
@@ -1935,9 +2557,9 @@
     // "0 of 1 done".
     var rSteps = realSteps(detail.steps);
     var stepsDone = rSteps.filter(function(s){ return s.state === "done"; }).length;
-    var stepsText = rSteps.length === 0 ? "none started" : ('<span class="num">' + stepsDone + '</span> of <span class="num">' + rSteps.length + '</span> done');
+    var stepsText = rSteps.length === 0 ? (detail.fromBridge === true ? "not recorded" : "none started") : ('<span class="num">' + stepsDone + '</span> of <span class="num">' + rSteps.length + '</span> done');
     box.innerHTML =
-      '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span><b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
+      '<div class="summary-headline"><span class="dot ' + glyphClass(detail.glyph) + '"></span>' + (detail.status && detail.status.word ? '<b class="st-word" data-testid="summary-status">' + escapeXml(detail.status.word) + '</b> &middot; ' : '') + '<b>' + escapeXml(detail.checkType) + '</b> &middot; ' +
         '<span class="num">' + spendText + '</span> &middot; <span class="num">' + wallText + '</span></div>' +
       '<div class="summary-row" data-testid="summary-model"><span class="sum-label">model:</span><span class="sum-val">' + escapeXml(modelLine(detail)) + '</span></div>' +
       (detail.judgeModel ? '<div class="summary-row" data-testid="summary-judge"><span class="sum-label">judge:</span><span class="sum-val">' + escapeXml(detail.judgeModel) + '</span></div>' : '') +
@@ -1945,7 +2567,7 @@
         (detail.replans ? ' &middot; ' + detail.replans + ' replan' + (detail.replans === 1 ? '' : 's') : '') + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">close:</span><span class="sum-val">' + escapeXml(detail.close && detail.close.verdict ? detail.close.verdict : "none — the run ended before any close ran") + '</span></div>' +
-      '<div class="summary-row" data-testid="summary-tools"><span class="sum-label">tools:</span><span class="sum-val">' + escapeXml(toolsLine(detail.behaviour)) + '</span></div>' +
+      '<div class="summary-row" data-testid="summary-tools"><span class="sum-label">tools:</span><span class="sum-val">' + escapeXml(detail.fromBridge === true ? bridgeToolsLine(detail.toolsUsed) : toolsLine(detail.behaviour)) + '</span></div>' +
       '<div class="summary-row" data-testid="summary-offered" id="summary-offered-row" hidden><span class="sum-label">offered:</span><span class="sum-val" id="summary-offered-val"></span></div>' +
       '<div class="summary-row" data-testid="summary-cache"><span class="sum-label">cache:</span><span class="sum-val">' + escapeXml(cacheLine(detail.memoryCache)) + '</span></div>';
 
@@ -1968,7 +2590,6 @@
     listEl.innerHTML = "";
     orderedBoxes.forEach(function(box, idx){
       var part = box.part;
-      var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
       var titleText = box.kind === "step" ? ((cardStepNumbers[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
       var resultGlyph = partResultGlyph(part, box);
       // build item 4: ONE owner (partLine1Text, shared with the Audit tab's
@@ -1983,7 +2604,7 @@
       card.setAttribute("role", "button");
       card.innerHTML =
         '<div class="step-head"><h4>' + titleText + '</h4>' +
-          '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span>' +
+          stepStateHTML(box, 'part-state-' + idx) +
           (box.blocked > 0 ? '<span class="badge red" data-testid="part-blocked-badge">' + box.blocked + ' blocked</span>' : '') +
         '</div>' +
         '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +
@@ -2002,9 +2623,15 @@
     // for the map+cards, never a second independently-fetched data source
     // (the flat one-row-per-call table still comes from its own `/audit`
     // fetch, wired separately in selectRun below).
+    lastLegDividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];
     renderAuditGroups(detail);
   }
 
+  // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
+  function stepStateHTML(box, testid){
+    var cls = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(box.state) + '</b></span>';
+  }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
   function buildAttemptsList(container, partIndex, attempts, boxIsLive){
@@ -2189,6 +2816,8 @@
     var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
     var headline = latestAttempt ? attemptChecksLine(latestAttempt) : "";
     if(headline) bits.push(headline);
+    // P5-R: a part its leg's halt cut off says why, in words
+    if(part && part.stopReason) bits.push("stopped &mdash; " + escapeXml(part.stopReason));
     return bits.join(" &middot; ");
   }
   /**
@@ -2355,10 +2984,12 @@
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var boxes = buildOrderedBoxes(parts, isLiveRun);
     var numberMap = stepNumberIndices(boxes);
+    // P5-R: a resumed run is ONE run — its legs are told apart by a divider line (code-owned text from the server)
+    var dividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];
     boxes.forEach(function(box, idx){
+      dividers.forEach(function(dv){ if(dv.beforePart === idx) container.appendChild(legDividerEl(dv)); });
       var part = box.part;
       var titleText = box.kind === "step" ? ((numberMap[idx] + 1) + ' &middot; ' + escapeXml(box.title)) : escapeXml(box.title);
-      var badgeClass = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
       var rowWrap = document.createElement("div");
       rowWrap.className = "audit-part";
       rowWrap.setAttribute("data-testid", "audit-part-" + idx);
@@ -2372,7 +3003,7 @@
       headBtn.setAttribute("data-testid", "audit-part-toggle-" + idx);
       var groupResultGlyph = partResultGlyph(part, box);
       headBtn.innerHTML =
-        '<span class="badge ' + badgeClass + '">' + escapeXml(box.state) + '</span> ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
+        stepStateHTML(box, 'audit-part-state-' + idx) + ' ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
         (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
         (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '');
       var body = document.createElement("div");
@@ -2415,7 +3046,16 @@
       container.appendChild(rowWrap);
       if(startExpanded && !built) buildBody(); // a live run's currently-running part opens by default
     });
+    // a leg that has not started a part yet (or died before one) closes the list
+    dividers.forEach(function(dv){ if(dv.beforePart >= boxes.length) container.appendChild(legDividerEl(dv)); });
     applyAuditFilter(currentAuditFilter);
+  }
+  function legDividerEl(dv){
+    var d = document.createElement("div");
+    d.className = "audit-leg-divider";
+    d.setAttribute("data-testid", "audit-leg-divider-" + dv.leg);
+    d.textContent = "\u2500\u2500 " + dv.text + " \u2500\u2500";
+    return d;
   }
   // build item B: a Run-tab card (or map box) click switches to the Audit
   // tab, that same part's row expanded and scrolled into view — sharing
@@ -2439,6 +3079,9 @@
 
   // ---- Audit tab: FLAT view (the old one-row-per-call time-ordered table) ----
   var auditRowEls = [];
+  // the open run's leg dividers (set by renderRun); the flat table places them by time
+  var lastLegDividers = [];
+  function dividerAtMs(dv){ var t = Date.parse(dv.at); return Number.isFinite(t) ? t : Infinity; }
   function renderAudit(result){
     var empty = document.getElementById("audit-empty");
     var content = document.getElementById("audit-content");
@@ -2455,7 +3098,18 @@
     content.hidden = false;
     var tbody = document.getElementById("audit-tbody");
     tbody.innerHTML = "";
+    // P5-R: the flat table carries the same leg dividers, placed by time (a divider sits before the first call
+    // made at or after the moment that leg picked up; any that remain close the table)
+    var pendingDividers = Array.isArray(lastLegDividers) ? lastLegDividers.slice() : [];
+    function flatDividerRow(dv){
+      var dividerRow = document.createElement("tr");
+      dividerRow.className = "audit-leg-divider-row";
+      dividerRow.setAttribute("data-testid", "audit-leg-divider-row-" + dv.leg);
+      dividerRow.innerHTML = '<td colspan="6">\u2500\u2500 ' + escapeXml(dv.text) + ' \u2500\u2500</td>';
+      return dividerRow;
+    }
     result.rows.forEach(function(r){
+      while(pendingDividers.length && dividerAtMs(pendingDividers[0]) <= Date.parse(r.time)){ tbody.appendChild(flatDividerRow(pendingDividers.shift())); }
       var tr = document.createElement("tr");
       var rowCls = auditRowClassName(r);
       if(rowCls) tr.className = rowCls;
@@ -2486,8 +3140,9 @@
         "<td>" + auditTimeCellHtml(r) + "</td>";
       tbody.appendChild(tr);
     });
+    pendingDividers.forEach(function(dv){ tbody.appendChild(flatDividerRow(dv)); });
     document.getElementById("audit-rawlog").textContent = result.raw || "";
-    auditRowEls = Array.prototype.slice.call(tbody.querySelectorAll("tr"));
+    auditRowEls = Array.prototype.slice.call(tbody.querySelectorAll("tr:not(.audit-leg-divider-row)"));
     // Scoped to [data-filter] — the audit tab's OWN chips (chip-all/writes/
     // blocked). A bare ".chip" here also matched the History filter bar's
     // chips (same class, different data- attributes), binding a second
@@ -2517,6 +3172,7 @@
   function renderJob(job){
     var empty = document.getElementById("job-empty");
     var card = document.getElementById("job-card-readonly");
+    lastJobShown = job;
     if(!job){ empty.hidden = false; card.hidden = true; return; }
     empty.hidden = true;
     card.hidden = false;
@@ -2539,6 +3195,7 @@
     document.getElementById("job-note").textContent = job.note || "";
     lastJobToolsList = Array.isArray(job.toolsList) ? job.toolsList : null;
     paintOfferedRow();
+    paintResumeMode();
   }
 
   // ---- selection + loading ----
@@ -2553,10 +3210,13 @@
   // uses for `isLive` — never re-derived a second way).
   var runIsLive = false;
   function selectRun(runid, rowEl, siblingSelector){
+    hideImportView();
     clearSelection();
     document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
     if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
     currentRunid = runid;
+    resumeMode = null;
+    lastLegDividers = [];
     lastJobToolsList = null;
     lastRunDetailSig = null;
     runIsLive = false;
@@ -2818,7 +3478,7 @@
     }
     function loadProviders(){
       authorGet("/api/settings/providers").then(function(r){
-        if(!r || !r.ok){ pvNote.textContent = "could not read providers"; return; }
+        if(!r || !r.ok){ pvNote.textContent = "could not read providers"; document.getElementById("pv-keyfile-path").textContent = "the keys file (path unknown — could not read providers)"; return; }
         var kf = r.keysFile;
         document.getElementById("pv-keyfile-path").textContent = kf.path;
         document.getElementById("pv-keyfile-note").textContent = kf.warning ? ("⚠ " + kf.warning) : "";
@@ -2910,24 +3570,21 @@
 
   // ---- Chat tab: job-card authoring (PANEL-BUILD.md P3) ----
   (function(){
-    var newBtn = document.getElementById("chat-new-btn");
+    var clearBtn = document.getElementById("chat-clear-btn");
     var card = document.getElementById("job-card");
     var thread = document.getElementById("chat-thread");
     var msgInput = document.getElementById("chat-msg");
-    var sendBtn = document.getElementById("chat-send-btn");
-    var signBtn = document.getElementById("chat-sign-btn");
-    var reviseBtn = document.getElementById("chat-revise-btn");
-    var startBtn = document.getElementById("chat-start-btn");
-    var checkDepsBtn = document.getElementById("chat-check-deps-btn");
+    var mainBtn = document.getElementById("chat-main-btn");
+    var mainHint = document.getElementById("chat-main-hint");
+    var mainAction = "none";
+    var lastState = null;
+    var startOk = false;
     var errEl = document.getElementById("chat-card-error");
     var actionErrEl = document.getElementById("chat-action-error");
-    var hashLine = document.getElementById("chat-hash-line");
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
     var modelStatusEl = document.getElementById("jf-model-status");
     var progressRow = document.getElementById("chat-progress-row");
-    var progressGlyph = document.getElementById("chat-progress-glyph");
-    var progressLabelEl = document.getElementById("chat-progress-label");
 
     var sessionId = null;
     var pollTimer = null;
@@ -2939,26 +3596,98 @@
     // src/panel/authorroutes.js, mirrored here so Start never even offers a
     // click the server would 409 anyway).
     var CLIENT_TERMINAL_PHASES = ["refused", "abandoned", "error", "signed", "signing-failed"];
-    var DONE_PHASES = ["prepared", "signed"];
     var sessionLive = false;
     // build item 7 — Start also stays disabled while the chosen model's key
     // isn't usable; updated by refreshModelStatus() below.
     var keyOk = false;
 
-    newBtn.addEventListener("click", function(){
+    // Reuse workflow — set when the card was opened by [Reuse workflow]: the run (or imported job) it came from.
+    // Only Source, Destination and the two caps are open on that card; the SERVER refuses any other change.
+    var startFrom = null;
+    var reuseSession = false;
+    var autoSigned = false;
+    var sfOrigin = document.getElementById("chat-startfrom-origin");
+    var sfLine = document.getElementById("chat-startfrom-line");
+    var sfNote = document.getElementById("chat-startfrom-note");
+    // the locked boxes of a reuse card: the signed workflow, greyed and not editable (the server refuses a change anyway)
+    var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];
+    // hamr 2026-10-05: while a drafting session is live NOTHING on the card is editable (the session was started from
+    // these values). The reuse rule (only Source/Destination/caps open) applies before the start. ONE function owns it.
+    var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"];
+    var reuseOn = false;
+    function syncCardLock(){
+      var live = sessionLive;
+      var setLock = function(id, on){ var el = document.getElementById(id); el.readOnly = on; el.classList.toggle("locked", on); };
+      LOCKED_IDS.forEach(function(id){ setLock(id, reuseOn || live); });
+      OPEN_IDS.forEach(function(id){ setLock(id, live); });
+      document.getElementById("jf-model").disabled = live;
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = reuseOn || live; });
+      document.getElementById("job-card").classList.toggle("reuse", reuseOn);
+      if(!reuseOn && !live){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
+    }
+    function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
+    function clearStartFrom(){
+      // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes
+      if(startFrom){
+        ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
+        document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
+      }
+      startFrom = null; reuseSession = false; autoSigned = false;
+      sfOrigin.hidden = true; sfLine.hidden = true; sfNote.hidden = true;
+      setReuseLocked(false);
+      renderMain();
+    }
+    function openNewCard(){
       card.hidden = false;
-      newBtn.hidden = true;
       thread.innerHTML = "";
       errEl.textContent = "";
       actionErrEl.textContent = "";
       sessionId = null;
       sessionLive = false;
       signClickedOnce = false;
+      reuseSession = false;
+      autoSigned = false;
       if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
-      stopProgressDots();
       progressRow.hidden = true;
-      checkDepsBtn.hidden = true;
+      progressRow.innerHTML = "";
+      lastState = null;
       refreshStartEnabled();
+    }
+    // hamr's ruling 2026-10-05: ONE button, two states. A live, unsigned session -> "Abandon" (the server ends it and
+    // releases the one-at-a-time lock; money already spent stays booked). Anything else (signed and running, terminal,
+    // nothing started) -> "Clear", which empties the card only and never stops a run (Stop lives on the Run tab).
+    function clearButtonFor(live, hasId){
+      return live ? {text: "Abandon", disabled: !hasId} : {text: "Clear", disabled: false};
+    }
+    function refreshClearBtn(){
+      var b = clearButtonFor(sessionLive, !!sessionId);
+      clearBtn.textContent = b.text;
+      clearBtn.disabled = b.disabled;
+    }
+    // back to a fresh empty card: every box, check type deterministic, the default (first) Model, origin/estimate/notes
+    // hidden, progress list and thread cleared, reuse lock lifted
+    function resetCard(){
+      ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
+      document.getElementById("jf-judge").disabled = true;
+      modelSelect.selectedIndex = 0;
+      msgInput.value = "";
+      document.getElementById("jf-cap-note").textContent = "";
+      lastPhase = null;
+      clearStartFrom();
+      openNewCard();
+      refreshModelStatus();
+    }
+    clearBtn.addEventListener("click", function(){
+      if(clearBtn.textContent === "Abandon" && sessionId){
+        authorPost("/api/author/" + sessionId + "/abandon", {}).then(function(r){
+          var o = chatPostOutcome(r);
+          if(!o.ok){ chatActionFailed(o.error); return; }
+          resetCard();
+        }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not abandoned"); });
+        return;
+      }
+      resetCard();
     });
 
     function currentCard(){
@@ -2989,7 +3718,10 @@
     function refreshStartEnabled(){
       var v = Number(moneyCapInput.value);
       var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
-      startBtn.disabled = !capOk || sessionLive || !keyOk;
+      startOk = capOk && !sessionLive && keyOk;
+      syncCardLock();
+      renderMain();
+      refreshClearBtn();
     }
     moneyCapInput.addEventListener("input", refreshStartEnabled);
     // P4a — the monthly-limit note sits right under the cap, as the person types.
@@ -3080,6 +3812,16 @@
       });
     }
     modelSelect.addEventListener("change", refreshModelStatus);
+    // Model is open on a reuse card: the estimate line counts only runs on the worker the box names right now
+    function refreshReuseLine(){
+      if(!startFrom) return;
+      var q = (startFrom.importId ? "import=" + encodeURIComponent(startFrom.importId) : "runid=" + encodeURIComponent(startFrom.runid)) +
+        "&model=" + encodeURIComponent(modelSelect.value);
+      authorGet("/api/author/start-from?" + q).then(function(r){
+        if(startFrom && r && r.ok){ sfLine.textContent = r.line || ""; }
+      }).catch(function(){ /* the line keeps what it had */ });
+    }
+    modelSelect.addEventListener("change", refreshReuseLine);
     // P4b — the Model menu IS the Settings rows: every Name, in keys-file order (a blank Name
     // is never offered). Re-read whenever Settings loads or saves, keeping the pick if it survives.
     function loadModels(){
@@ -3119,25 +3861,6 @@
       thread.scrollTop = thread.scrollHeight;
     }
 
-    // build item 3 — the single live progress line: the LABEL sits first in
-    // the markup, then the animated indicator (never the other way — the
-    // dots must not push the label around as they cycle 1..4).
-    var progressDotTimer = null;
-    var progressDotCount = 1;
-    var reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-    function stopProgressDots(){
-      if(progressDotTimer){ clearInterval(progressDotTimer); progressDotTimer = null; }
-    }
-    function startProgressDots(){
-      if(reducedMotion){ progressGlyph.textContent = "[progress....]"; return; }
-      if(progressDotTimer) return;
-      progressDotCount = 1;
-      progressGlyph.textContent = "[progress.]";
-      progressDotTimer = setInterval(function(){
-        progressDotCount = (progressDotCount % 4) + 1;
-        progressGlyph.textContent = "[progress" + new Array(progressDotCount + 1).join(".") + "]";
-      }, 500);
-    }
     // build item 3 — pure: what the label must say for a given state. A
     // person waiting on their OWN next action (an ask is pending) must never
     // see a stale machine step name (observed: "checking prior behaviour"
@@ -3150,75 +3873,148 @@
       if(pending) return "waiting for your answer";
       return (state && state.progressLabel) || "working";
     }
+    // the ONE progress list: a step per line, in the server's order (STEP_LABELS in src/panel/authorsession.js owns
+    // the ids and words). While a step runs its dots are CSS (still under prefers-reduced-motion); it ends as a check
+    // or a cross, a cross carrying the code-owned reason on the same line. A pending ask for the person replaces the
+    // running step's label with what is being waited on, never an animation.
+    // Returns true when the list's content actually changed (a new line, or the latest line changed) so the caller can
+    // scroll only then; an identical 2s poll tick returns false and leaves the person's scroll position alone.
     function renderProgress(state){
-      progressRow.hidden = false;
-      if(DONE_PHASES.indexOf(state.phase) !== -1){
-        stopProgressDots();
-        progressGlyph.className = "chat-progress-glyph done";
-        progressGlyph.textContent = "[done]";
-        progressLabelEl.textContent = "";
-      } else if(CLIENT_TERMINAL_PHASES.indexOf(state.phase) !== -1){
-        stopProgressDots();
-        progressGlyph.className = "chat-progress-glyph stopped";
-        progressGlyph.textContent = "[stopped]";
-        progressLabelEl.textContent = state.error || "";
-      } else {
-        progressGlyph.className = "chat-progress-glyph";
-        progressLabelEl.textContent = progressLabelFor(state);
-        startProgressDots();
-      }
+      var steps = (state && state.steps) || [];
+      var before = progressRow.innerHTML;
+      progressRow.hidden = steps.length === 0;
+      progressRow.innerHTML = steps.map(function(st, i){
+        var waiting = st.status === "running" && i === steps.length - 1 && state.pendingAsk;
+        var cls = waiting ? "wait" : (st.status === "running" ? "run" : (st.status === "failed" ? "bad" : "ok"));
+        var sign = cls === "ok" ? "\u2713" : (cls === "bad" ? "\u2717" : "");
+        var label = waiting ? progressLabelFor(state) : st.label;
+        return '<li class="step ' + cls + '" data-step="' + escapeXml(st.id) + '"><div class="step-line"><span class="step-label">' + escapeXml(label) + '</span>' +
+          '<span class="step-sign">' + sign + '</span></div>' +
+          (st.detail ? '<div class="step-detail">' + escapeXml("> " + st.detail) + '</div>' : "") + '</li>';
+      }).join("");
+      return progressRow.innerHTML !== before;
     }
 
+    // hamr's ruling 2026-10-05: ONE wide button below the message box. Its wording, action and enabled state are ONE
+    // pure function of (state, typed-text-empty, reuse); state = {session, startOk, phase, pendingAsk, revisesLeft,
+    // signClicked, specHash}. Actions: start | check-deps | send | revise | sign-prepare | sign | none.
+    function mainButtonFor(st, textEmpty, reuse){
+      var ask = st.pendingAsk;
+      var atMenu = !!ask && ask.kind === "menu";
+      var left = st.revisesLeft || 0;
+      var hint = atMenu ? left + (left === 1 ? " change left" : " changes left") : "";
+      if(!st.session){
+        return {text: reuse ? "Sign & run" : "Start drafting", action: "start", disabled: !st.startOk, hint: ""};
+      }
+      if(ask && ask.kind === "install-needed"){
+        return {text: "Check again", action: "check-deps", disabled: false, hint: ""};
+      }
+      if(ask && !textEmpty){
+        return atMenu
+          ? {text: "Send", action: "revise", disabled: left <= 0, hint: hint}
+          : {text: "Send", action: "send", disabled: false, hint: ""};
+      }
+      if(ask && !atMenu){
+        return {text: "Send", action: "send", disabled: true, hint: ""};
+      }
+      if(atMenu || st.phase === "prepared"){
+        if(st.phase === "prepared" && st.signClicked){
+          return {text: "Sign " + (st.specHash || "").slice(0, 8) + " & run", action: "sign", disabled: false, hint: hint};
+        }
+        return {text: "Sign & run", action: "sign-prepare", disabled: false, hint: hint};
+      }
+      return {text: "Sign & run", action: "none", disabled: true, hint: ""};
+    }
+    // pure: the ask box takes typed text only when the session has a pending ask that accepts it (the plan menu -> a
+    // change request, or any question); not with no session, no ask, or while waiting on an install
+    function askBoxOpenFor(st){
+      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind !== "install-needed";
+    }
+    function renderMain(){
+      var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce};
+      if(sessionLive && lastState){
+        st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
+        st.revisesLeft = lastState.revisesLeft; st.specHash = lastState.specHash;
+      }
+      // hamr 2026-10-05: the ask box is open only while something asks for a reply; otherwise dimmed and emptied
+      var open = askBoxOpenFor(st);
+      msgInput.disabled = !open;
+      if(!open) msgInput.value = "";
+      var b = mainButtonFor(st, !msgInput.value.trim(), !!startFrom);
+      mainBtn.textContent = b.text;
+      mainBtn.disabled = b.disabled;
+      mainAction = b.action;
+      mainHint.textContent = b.hint;
+      fitBox(msgInput);
+      fitCardBoxes();
+    }
+    msgInput.addEventListener("input", renderMain);
+    // grow a text box with its text (a few rows, then it scrolls inside); ONE function for the ask box and the card boxes.
+    // A box that is hidden (or not laid out) measures 0 and gets no inline height.
+    function fitBox(el){
+      el.style.height = "auto";
+      if(!el.scrollHeight){ el.style.height = ""; return; }
+      var border = el.offsetHeight - el.clientHeight;
+      el.style.height = Math.min(el.scrollHeight + border, 200) + "px";
+    }
+    function fitCardBoxes(){
+      ["jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge"].forEach(function(id){ fitBox(document.getElementById(id)); });
+    }
+    window.addEventListener("resize", function(){ fitCardBoxes(); fitBox(msgInput); });
+    document.getElementById("tab-chat").addEventListener("click", function(){ fitCardBoxes(); fitBox(msgInput); });
+    // Enter sends through the one main button; Shift+Enter (or IME composition) keeps its newline
+    msgInput.addEventListener("keydown", function(e){
+      if(e.key === "Enter" && !e.shiftKey && !e.isComposing){
+        e.preventDefault();
+        if(mainAction !== "start") mainBtn.click(); // never starts a (paid) draft from a stray Enter
+      }
+    });
+
     function renderActions(state){
-      var pending = state.pendingAsk;
-      var atMenu = !!pending && pending.kind === "menu";
-      var atDepsWait = !!pending && pending.kind === "install-needed";
-      sendBtn.disabled = !pending || atMenu || atDepsWait;
-      reviseBtn.disabled = !atMenu || state.revisesLeft <= 0;
-      reviseBtn.textContent = "Revise (" + state.revisesLeft + " left)";
-      checkDepsBtn.hidden = !atDepsWait;
-      checkDepsBtn.disabled = !atDepsWait;
-      if(state.phase === "prepared" && !signClickedOnce){
-        signBtn.disabled = false;
-        signBtn.textContent = "Sign & run";
-      } else if(state.phase === "prepared" && signClickedOnce){
-        signBtn.disabled = false;
-        signBtn.textContent = "Sign " + (state.specHash || "").slice(0, 8) + " & run";
-      } else {
-        signBtn.disabled = !atMenu;
-        signBtn.textContent = "Sign & run";
-      }
-      if(state.specHash){
-        hashLine.hidden = false;
-        hashLine.textContent = "spec hash: " + state.specHash;
-      }
-      if(state.phase === "refused" || state.phase === "error" || state.phase === "abandoned"){
-        errEl.textContent = state.error || ("stopped: " + state.phase);
-      } else {
-        errEl.textContent = "";
-      }
-      renderProgress(state);
+      lastState = state;
+      // a session's stop is shown ONCE, in the progress line (renderProgress); #chat-card-error carries only a
+      // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
+      errEl.textContent = "";
+      var progressChanged = renderProgress(state);
       // build item 4 — re-enable Start only once the session has settled
       // into a terminal phase (a fresh Start becomes possible again).
       sessionLive = CLIENT_TERMINAL_PHASES.indexOf(state.phase) === -1;
       refreshStartEnabled();
+      // hamr 2026-10-05: while the session is live and the list changed, bring the newest progress line into view.
+      // Never moves keyboard focus, and an unchanged poll tick never scrolls.
+      if(progressChanged && sessionLive && progressRow.lastElementChild){
+        progressRow.lastElementChild.scrollIntoView({block: "nearest"});
+      }
     }
 
     function poll(){
       if(!sessionId) return;
+      var polledId = sessionId;
       authorGet("/api/author/" + sessionId).then(function(j){
-        if(!j || !j.state) return;
+        if(!j || !j.state || polledId !== sessionId) return;
         renderMessages(j.state);
         renderActions(j.state);
+        if(reuseSession && !autoSigned && j.state.phase === "prepared" && j.state.specHash){
+          autoSigned = true;
+          authorPost("/api/author/" + sessionId + "/sign", {specHash: j.state.specHash}).then(function(r){
+            var o = chatPostOutcome(r);
+            if(o.ok){ chatActionOk(); } else { autoSigned = false; chatActionFailed(o.error); }
+            poll();
+          }).catch(function(){ autoSigned = false; chatActionFailed("network error — could not reach the panel server, not signed"); });
+        }
         if(j.state.phase === "signed"){
           clearInterval(pollTimer);
           document.getElementById("tab-runs").click();
+          // hamr's ruling 2026-10-05: the run has started, so the Chat card goes back to the empty card (the one reset
+          // Clear uses) — it must not keep showing a signed job that invites a rerun. The run itself is untouched.
+          resetCard();
+          return;
         }
         lastPhase = j.state.phase;
       }).catch(function(){ /* transient — next poll tries again */ });
     }
 
-    startBtn.addEventListener("click", function(){
+    function doStart(){
       errEl.textContent = "";
       actionErrEl.textContent = "";
       // build item 4 — disable the moment it's clicked, not just once the
@@ -3226,6 +4022,7 @@
       sessionLive = true;
       refreshStartEnabled();
       var body = currentCard();
+      if(startFrom) body.startFrom = startFrom.importId ? {importId: startFrom.importId} : startFrom.runid;
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
           errEl.textContent = (r.body && r.body.error) || "refused";
@@ -3234,12 +4031,88 @@
           return;
         }
         sessionId = r.body.sessionId;
-        signClickedOnce = false;
+        // a same-job session has no confirm turn: it goes straight to `prepared`, and THIS click (Sign & run) is the
+        // signature — the page signs the hash the server prepared as soon as it is ready (the server re-checks it)
+        reuseSession = r.body.reuse === true;
+        autoSigned = false;
+        signClickedOnce = reuseSession;
         renderMessages(r.body.state);
         renderActions(r.body.state);
         if(pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(poll, 2000);
       });
+    }
+
+    // Re-attach after a page load/refresh: the server holds the one live (non-terminal) authoring session, so ask it.
+    // If one exists, this tab takes it over exactly as if it had started it: the card filled from the session's own
+    // copy, the poll loop, progress list, thread, ask box, main button and Abandon. A signed session is terminal, so it
+    // never comes back (the card stays empty). Nothing is stored page-side.
+    function attachSession(j){
+      var st = j.state, c = st.card || {};
+      openNewCard();
+      sessionId = j.sessionId;
+      sessionLive = true;
+      reuseSession = st.reuse === true;
+      autoSigned = false;
+      signClickedOnce = reuseSession;
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === (c.checkType === "rubric" ? "rubric" : "deterministic")); });
+      if(c.model){
+        if(!Array.prototype.some.call(modelSelect.options, function(o){ return o.value === c.model; })){
+          modelSelect.insertAdjacentHTML("beforeend", '<option value="' + escapeXml(c.model) + '">' + escapeXml(c.model) + "</option>");
+        }
+        modelSelect.value = c.model;
+      }
+      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
+      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
+      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
+      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      if(reuseSession) setReuseLocked(true);
+      renderMessages(st);
+      renderActions(st);
+      if(pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(poll, 2000);
+      poll();
+    }
+    function reattachLive(){
+      if(sessionId || sessionLive) return;
+      authorGet("/api/author/live").then(function(j){
+        if(sessionId || sessionLive || !j || !j.ok || !j.sessionId || !j.state) return;
+        attachSession(j);
+      }).catch(function(){ /* nothing to attach to — the empty card stays */ });
+    }
+    document.getElementById("tab-chat").addEventListener("click", reattachLive);
+    reattachLive();
+
+    // ---- Reuse workflow — the card opens filled from the SIGNED job: four open boxes, the rest greyed ----
+    function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
+    document.addEventListener("bareloop-reuse", function(e){
+      var d = e.detail || {};
+      var pre = d.prefill || {};
+      var c = pre.card || {};
+      clearStartFrom();
+      openNewCard();
+      startFrom = d.importId ? {importId: d.importId} : {runid: d.runid};
+      var radios = document.querySelectorAll('input[name="jf-verdict"]');
+      radios.forEach(function(r){ r.checked = (r.value === (c.checkType === "rubric" ? "rubric" : "deterministic")); });
+      if(c.model){ modelSelect.value = c.model; }
+      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
+      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
+      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
+      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      setReuseLocked(true);
+      sfOrigin.hidden = false;
+      sfOrigin.textContent = "Reuse: " + ((pre.origin && pre.origin.job) || "job") + (d.runid ? " (run " + d.runid + ")" : " (imported)");
+      sfLine.hidden = false;
+      sfLine.textContent = pre.line || "";
+      sfLine.className = "startfrom-line";
+      sfNote.hidden = !pre.note;
+      sfNote.textContent = pre.note || "";
+      refreshModelStatus();
+      refreshReuseLine();
+      refreshCapNote();
+      refreshStartEnabled();
     });
 
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
@@ -3275,18 +4148,23 @@
     function chatActionOk(){
       actionErrEl.textContent = "";
     }
+    // a dead token (panel restarted): show the one line where Chat actions show errors and stop polling
+    staleTokenHook = function(){
+      actionErrEl.textContent = STALE_TOKEN_LINE;
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+    };
 
-    checkDepsBtn.addEventListener("click", function(){
+    function doCheckDeps(){
       if(!sessionId) return;
-      checkDepsBtn.disabled = true;
+      mainBtn.disabled = true;
       authorPost("/api/author/" + sessionId + "/check-deps", {}).then(function(r){
         var o = chatPostOutcome(r);
         if(o.ok) chatActionOk(); else chatActionFailed(o.error);
         poll();
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, nothing was sent"); });
-    });
+    }
 
-    sendBtn.addEventListener("click", function(){
+    function doSend(){
       if(!sessionId) return;
       var text = msgInput.value;
       if(!text.trim()) return;
@@ -3302,9 +4180,9 @@
         }
         poll();
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
-    });
+    }
 
-    reviseBtn.addEventListener("click", function(){
+    function doRevise(){
       if(!sessionId) return;
       var text = msgInput.value;
       authorPost("/api/author/" + sessionId + "/revise", {text: text}).then(function(r){
@@ -3317,9 +4195,9 @@
         }
         poll();
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
-    });
+    }
 
-    signBtn.addEventListener("click", function(){
+    function doSign(){
       if(!sessionId) return;
       if(!signClickedOnce){
         // click 1 — the confirm turn's own "confirm" pick. Never signs.
@@ -3342,6 +4220,15 @@
           poll();
         }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not signed"); });
       });
+    }
+
+    mainBtn.addEventListener("click", function(){
+      if(mainBtn.disabled) return;
+      if(mainAction === "start") doStart();
+      else if(mainAction === "check-deps") doCheckDeps();
+      else if(mainAction === "send") doSend();
+      else if(mainAction === "revise") doRevise();
+      else if(mainAction === "sign-prepare" || mainAction === "sign") doSign();
     });
 
     refreshStartEnabled();
