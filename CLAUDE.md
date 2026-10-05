@@ -32,8 +32,8 @@ contrast that attributed it.
 - The agent authors its workflow; it NEVER authors its arbiter. Budgets, caps, verdicts,
   merge/publish live outside the emergent part, permanently.
 - Merge stays human forever. No self-adjusted budgets — ever.
-- Secrets load from the environment; they never enter the tree, the spine, the configs, or
-  the ledger (an append-only log that captures a key captures it forever).
+- Secrets load from the environment; bareloop never puts one into the tree, the spine, the configs, or
+  the ledger. A secret already in the person's own repo is masked wherever bareloop records it (an append-only log that captures a key captures it forever).
 - Build ladder discipline: a rung that cannot meet its exit stops the ladder; the stop is a
   result. Hard cap per run, cap-not-estimate.
 
