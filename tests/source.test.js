@@ -19,7 +19,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync, readFileSync, chmodSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -1263,7 +1263,7 @@ test('missingDependencies: deps present, no node_modules, package-lock.json pres
   writeFileSync(join(tree, 'package.json'), JSON.stringify({ name: 'x', dependencies: { left: '1.0.0' } }));
   writeFileSync(join(tree, 'package-lock.json'), '{}');
   const r = missingDependencies(tree);
-  assert.deepEqual(r, { manager: 'npm', command: 'npm ci', reason: 'package.json lists dependencies but the copy has no node_modules' });
+  assert.deepEqual(r, { dir: resolve(tree), lockFile: 'package-lock.json', manager: 'npm', command: 'npm ci', reason: 'package.json lists dependencies but the copy has no node_modules' });
 });
 
 test('missingDependencies: devDependencies alone still count as dependencies to install', () => {
@@ -1331,6 +1331,8 @@ test('missingDependencies: subfolder job — package.json at the subfolder, deps
   writeFileSync(join(tree, 'packages', 'api', 'package-lock.json'), '{}');
   const r = missingDependencies(tree, 'packages/api');
   assert.deepEqual(r, {
+    dir: resolve(tree, 'packages', 'api'),
+    lockFile: 'package-lock.json',
     manager: 'npm',
     command: 'cd packages/api && npm ci',
     reason: 'packages/api/package.json lists dependencies but the copy has no node_modules',
