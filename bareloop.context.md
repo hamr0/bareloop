@@ -3895,6 +3895,21 @@ const prepared = await prepareSource({
 Or the CLI: `node scripts/prep-source.mjs --source <path-or-url> --into <dir> [--destination
 <absolute-directory>]` — prints the tree path, the seed, and the exact next command.
 
+**A REPO source on a worktree (P6 item 1, the panel's repo jobs).** Pass `worktree: '<repo>/.bareloop/wt/<id>'` to
+`prepareSource` and a repo source is NOT copied: its tree is a detached `git worktree` of the person's own repo at their current
+commit (`src/worktree.js`, the one spelling the bundle door shares). `prepared.tree` is that worktree; `into` holds only
+`source.json`, which records `worktree`, `repo` and `seed` (= the repo's HEAD — no seed commit is made, no `output/` scaffold
+is written). Uncommitted edits in the person's repo are not in it (the panel says so at drafting start: "N uncommitted
+change(s) in your repo are not in this job — it starts from commit <sha>"). `.bareloop/` is hidden from the person's own
+`git status` through the repo's private `<common-git-dir>/info/exclude`, never their tracked `.gitignore`. The signed run
+(`run-u --spec`) reads `worktree` from that manifest; its spine and books stay in the session directory beside `source.json`,
+never inside the person's repo. At the end: GREEN commits the run's work on its `bareloop-<job>` work branch (authored by
+`bareloop`, hooks off, arbiter books and `node_modules` left out) and removes the worktree folder — the branch stays and the
+merge stays the person's (`git merge <branch>` / `git branch -D <branch>` are shown as text). Any other ending (stopped,
+capped, died, red) leaves the folder so Resume can re-enter it; a drafting session that ends without ever running (refused,
+abandoned) removes its worktree. A panel restart mid-drafting loses the in-memory session and leaves its worktree behind
+(`git worktree list` shows it; `git worktree remove --force <folder>` clears it).
+
 > **If your source is a folder, read this first (hamr's ruling):** make a new folder, put
 > only the file(s) this job needs in it, point bareloop at that — never your original
 > folder. Everything in the folder you name is frozen, read, and paid for. `prep-source`
