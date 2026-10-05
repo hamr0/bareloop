@@ -1311,3 +1311,12 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Reuse workflow is the same signed job on a new source: green runs and imported jobs only, five open boxes (Source, Destination, Model, $ cap, Time cap — Model opened 2026-10-04), the rest locked and refused by the server, never drafted.
 - Same-job identity is `workflowKey` (the signed spec without source, fence, caps and the worker's provider/baseUrl/model); the signature hash is unchanged (it still covers all of them) and the person signs the new one.
 - Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-03 and the 2026-10-04 Model ruling.
+
+### Panel P6: repo jobs on a worktree, bareloop installs, link login, Settings price (v1.89 — 2026-10-05)
+
+- A panel repo job runs on a worktree in the person's own repo (`.bareloop/wt/<runid>`), made at drafting start from the current commit; uncommitted edits are named, never included. Green leaves a branch to merge by hand.
+- Secrets already in the person's repo are masked wherever bareloop records them, never a reason to refuse the repo (hard line #3 reworded).
+- bareloop runs `npm ci --ignore-scripts` itself before any token; the agent never installs.
+- The panel opens from a link the CLI prints (cookie login); the token is no longer in the page.
+- Settings: price in / price out per key row (per 1M tokens), and an Open keys folder button in place of the path.
+- Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-05 P6.
