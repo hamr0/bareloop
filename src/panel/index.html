@@ -382,8 +382,6 @@
   .job-card.compact label{margin-bottom:1px;font-size:11px;}
   .job-card.compact input,
   .job-card.compact select{padding:5px 7px;}
-  .expand-field{text-overflow:ellipsis;transition:height 0.12s ease;}
-  .expand-field:focus{height:52px;white-space:normal;}
   .radio-row{display:flex;gap:14px;align-items:center;margin-bottom:10px;}
   .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;text-transform:none;}
   .cap-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:6px;}
@@ -432,8 +430,11 @@
   .msg .who{font-size:11px;color:var(--text-faint);margin-bottom:3px;text-transform:none;font-weight:400;}
   .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
   .chat-input-row input{width:100%;box-sizing:border-box;}
-  /* the ask box wraps long text (textarea, hamr 2026-10-05): grows a few rows (fitMsg), then scrolls inside; Enter sends, Shift+Enter is a newline */
+  /* the ask box wraps long text (textarea, hamr 2026-10-05): grows a few rows (fitBox), then scrolls inside; Enter sends, Shift+Enter is a newline */
   textarea[data-testid="chat-msg"]{width:100%;box-sizing:border-box;font:inherit;color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
+  /* hamr 2026-10-05: the card's free-text boxes wrap like the ask box (one shared fitBox); a few rows, then they scroll inside */
+  /* same look as the card's one-line inputs (white when editable, ordinary 1px border) — a textarea has its own browser border otherwise */
+  .job-card textarea.jf-wrap{width:100%;box-sizing:border-box;font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
   /* chat message box reads as an unmistakable text box: ~2x the default
      input height, thicker 2px border (ported verbatim from the mockup). */
   #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--field-border);background:var(--field-bg);}
@@ -539,27 +540,27 @@
             </div>
             <div class="field">
               <label for="jf-goal">Goal</label>
-              <input class="expand-field" id="jf-goal" type="text">
+              <textarea class="jf-wrap" id="jf-goal" rows="1"></textarea>
             </div>
             <div class="field">
               <label for="jf-source">Source</label>
-              <input id="jf-source" type="text" placeholder="absolute path to a local repo">
+              <textarea class="jf-wrap" id="jf-source" rows="1" placeholder="absolute path to a local repo"></textarea>
             </div>
             <div class="field">
               <label for="jf-dest">Destination</label>
-              <input id="jf-dest" type="text" placeholder="the write fence — where in the repo this run may change files">
+              <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
             </div>
             <div class="field">
               <label for="jf-success">Success</label>
-              <input class="expand-field" id="jf-success" type="text">
+              <textarea class="jf-wrap" id="jf-success" rows="1"></textarea>
             </div>
             <div class="field">
               <label for="jf-guardrails">Guardrails</label>
-              <input id="jf-guardrails" type="text">
+              <textarea class="jf-wrap" id="jf-guardrails" rows="1"></textarea>
             </div>
             <div class="field">
               <label for="jf-judge">Judge examples <span class="hint" style="display:inline">(rubric only)</span></label>
-              <input class="expand-field" id="jf-judge" type="text" disabled>
+              <textarea class="jf-wrap" id="jf-judge" rows="1" disabled></textarea>
             </div>
 
             <div class="cap-row" data-testid="cap-row">
@@ -3907,15 +3908,23 @@
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
       mainHint.textContent = b.hint;
-      fitMsg();
+      fitBox(msgInput);
+      fitCardBoxes();
     }
     msgInput.addEventListener("input", renderMain);
-    // grow the ask box with its text (a few rows, then it scrolls inside); reset when cleared
-    function fitMsg(){
-      msgInput.style.height = "auto";
-      var h = Math.min(msgInput.scrollHeight + 4, 200);
-      if(h > 64) msgInput.style.height = h + "px"; else msgInput.style.height = "";
+    // grow a text box with its text (a few rows, then it scrolls inside); ONE function for the ask box and the card boxes.
+    // A box that is hidden (or not laid out) measures 0 and gets no inline height.
+    function fitBox(el){
+      el.style.height = "auto";
+      if(!el.scrollHeight){ el.style.height = ""; return; }
+      var border = el.offsetHeight - el.clientHeight;
+      el.style.height = Math.min(el.scrollHeight + border, 200) + "px";
     }
+    function fitCardBoxes(){
+      ["jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge"].forEach(function(id){ fitBox(document.getElementById(id)); });
+    }
+    window.addEventListener("resize", function(){ fitCardBoxes(); fitBox(msgInput); });
+    document.getElementById("tab-chat").addEventListener("click", function(){ fitCardBoxes(); fitBox(msgInput); });
     // Enter sends through the one main button; Shift+Enter (or IME composition) keeps its newline
     msgInput.addEventListener("keydown", function(e){
       if(e.key === "Enter" && !e.shiftKey && !e.isComposing){

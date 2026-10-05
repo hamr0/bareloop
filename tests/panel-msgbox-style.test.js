@@ -29,5 +29,5 @@ test('#chat-msg is a wrapping <textarea> (hamr 2026-10-05: long ask text must wr
   // the soft-white Chat-card rule must not out-rank the ask box's own background
   assert.match(PAGE, /#panel-chat textarea:not\(:disabled\):not\(\[readonly\]\):not\(#chat-msg\)\{/);
   assert.match(PAGE, /msgInput\.addEventListener\("keydown", function\(e\)\{\s*if\(e\.key === "Enter" && !e\.shiftKey && !e\.isComposing\)\{\s*e\.preventDefault\(\);\s*if\(mainAction !== "start"\) mainBtn\.click\(\);/);
-  assert.match(PAGE, /function fitMsg\(\)/);
+  assert.match(PAGE, /function fitBox\(el\)/); // generalized from fitMsg (card boxes share it)
 });

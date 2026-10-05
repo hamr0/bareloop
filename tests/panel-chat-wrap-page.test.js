@@ -1,0 +1,55 @@
+// hamr's live click-through 2026-10-05: (1) the job card's free-text boxes wrap like the ask box; (2) the ask box is
+// dimmed until something asks for a reply. Same posture as p5-startfrom-page.test.js (page functions extracted, fake DOM).
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
+function fnSrc(name) {
+  const start = PAGE.indexOf(`function ${name}(`);
+  assert.ok(start !== -1, `expected function ${name} in the page`);
+  let depth = 0;
+  let i = PAGE.indexOf('{', start);
+  for (; i < PAGE.length; i += 1) {
+    if (PAGE[i] === '{') depth += 1;
+    else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; }
+  }
+  return PAGE.slice(start, i + 1);
+}
+
+const WRAP_IDS = ['jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge'];
+
+test('the six free-text card boxes are wrapping <textarea>s; Job name stays a one-line input; ids and placeholders kept', () => {
+  for (const id of WRAP_IDS) {
+    assert.match(PAGE, new RegExp(`<textarea[^>]*id="${id}"[^>]*></textarea>`), `${id} is a textarea`);
+    assert.doesNotMatch(PAGE, new RegExp(`<input[^>]*id="${id}"`), `${id} is no longer an input`);
+  }
+  assert.match(PAGE, /<input id="jf-name" type="text" placeholder="kebab-case, unique">/);
+  assert.match(PAGE, /<textarea[^>]*id="jf-source"[^>]*placeholder="absolute path to a local repo"/);
+  assert.match(PAGE, /<textarea[^>]*id="jf-dest"[^>]*placeholder="the write fence/);
+  assert.match(PAGE, /<textarea[^>]*id="jf-judge"[^>]*disabled/);
+  // no Enter handler on them: Enter is a newline
+  assert.doesNotMatch(PAGE, /getElementById\("jf-(goal|source|dest|success|guardrails|judge)"\)\.addEventListener\("keydown"/);
+  const rule = PAGE.match(/\.job-card textarea\.jf-wrap\{([^}]*)\}/)[1];
+  assert.match(rule, /resize:vertical/);
+  assert.match(rule, /overflow-y:auto/);
+  assert.match(rule, /max-height:200px/);
+});
+
+test('ONE fit function serves the ask box and the card boxes (no copy-paste, fitMsg generalized)', () => {
+  assert.doesNotMatch(PAGE, /function fitMsg\(/);
+  assert.equal((PAGE.match(/style\.height = Math\.min\(/g) || []).length, 1, 'no second copy of the fit logic');
+  assert.equal((PAGE.match(/function fit\w+\(/g) || []).length, 2, 'fitBox + the card-box loop that calls it');
+  assert.match(fnSrc('fitCardBoxes'), /fitBox\(document\.getElementById\(id\)\)/);
+  // eslint-disable-next-line no-new-func
+  const fitBox = new Function(`${fnSrc('fitBox')}\nreturn fitBox;`)();
+  const mk = (scroll) => ({ scrollHeight: scroll, offsetHeight: 0, clientHeight: 0, style: {} });
+  const one = mk(20); fitBox(one);
+  assert.ok(parseFloat(one.style.height) <= 40, 'one line stays small');
+  const many = mk(900); fitBox(many);
+  assert.equal(many.style.height, '200px', 'capped, then scrolls inside');
+  const hidden = mk(0); fitBox(hidden);
+  assert.equal(hidden.style.height, '', 'a hidden box measures 0 and gets no height');
+});
+
