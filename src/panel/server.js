@@ -321,6 +321,9 @@ export function resumePlanFor(row, records) {
   if (!age.ok) return { ok: false, why: String(age.detail ?? 'its checkpoint has expired') };
   const near = sourceNearSpine(row.spine);
   if (!near.specPath) return { ok: false, why: 'the signed job file is not beside this run' };
+  // P6 item 1: a worktree run resumes IN its worktree — a folder that is gone is a resume the engine would refuse
+  const wt = worktreeOfRun(row, records);
+  if (wt && !wt.exists) return { ok: false, why: `its worktree folder ${wt.folder} is gone` };
   const dir = dirname(near.specPath);
   /** @type {string[]} */
   let names = [];
@@ -407,10 +410,29 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * (replaces P5 item 3, 2026-10-03) is offered on green rows only, and starts a NEW run.
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
- * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean}} [o]
+ * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean,
+ *   worktree?: {folder: string, repo: string, branch: string|null, exists: boolean}|null}} [o]
+ *   `worktree` (P6 item 1): the run's worktree in the person's repo, from {@link worktreeOfRun}; absent for every other run
  * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
+  const base = endedBase(summary, death, o);
+  const wt = o.worktree;
+  if (!base || !wt) return base;
+  // P6 item 1 — the run worked on a worktree in the person's own repo. GREEN: the branch carries the work (the folder is
+  // removed by the engine) and the merge stays the person's — the two commands are shown as TEXT, never run by a button.
+  // Any other ending: the worktree folder stays (Resume needs it), so the block names it.
+  const green = !death.died && (summary.outcome === 'green' || summary.outcome === 'already-green' || summary.outcome === 'satisfied');
+  if (green) {
+    if (!wt.branch) return base;
+    const kept = wt.exists ? ` The worktree folder ${wt.folder} is still there.` : '';
+    return { ...base, next: `In ${wt.repo}: git merge ${wt.branch} — or throw the work away: git branch -D ${wt.branch}.${kept}` };
+  }
+  return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
+}
+
+/** @param {any} summary @param {any} death @param {any} o */
+function endedBase(summary, death, o) {
   const resumeOk = !!(o.resume && o.resume.ok);
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
@@ -572,7 +594,7 @@ function lastJobEndTs(/** @type {any[]} */ records) {
   return null;
 }
 
-function endedForRow(row, records, summary, death) {
+function endedForRow(row, records, summary, death, withWorktree = false) {
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
   const resume = maybeResumable ? resumePlanFor(row, records) : null;
@@ -581,6 +603,7 @@ function endedForRow(row, records, summary, death) {
     resume,
     moneyHalt: records.some((r) => r && r.type === 'money-halt'),
     destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
+    worktree: withWorktree ? worktreeOfRun(row, records) : null,
   });
   const esc = summary.lastEscalation;
   const status = statusFor({
@@ -811,7 +834,7 @@ export function getRunDetail(runid, opts = {}) {
   const summary = replayOne(row.spine, { auditPathOverride: auditPaths.length > 0 ? auditPaths : null });
   const timelineKind = summary.timelineKind;
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
-  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death);
+  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
   // close's own paid judge seam, distinct from the worker `model` above.
@@ -1614,6 +1637,25 @@ function sourceNearSpine(spinePath) {
     specPath: existsSync(specPath) ? specPath : null,
     sourceJsonPath: existsSync(sourceJsonPath) ? sourceJsonPath : null,
   };
+}
+
+/**
+ * P6 item 1 — the worktree a run worked on in the person's own repo, read off the run's own `source.json` (the manifest
+ * the source door wrote: `worktree` + `repo`) and its spine's `work-branch` record. `null` for every run that has none
+ * (a copied-tree run, a bundle run, an import). `exists` is whether the folder is still on disk: a green run's folder is
+ * removed by the engine, any other ending leaves it.
+ * @param {{ spine: string }} row
+ * @param {any[]} records the run's raw spine records
+ * @returns {{folder: string, repo: string, branch: string|null, exists: boolean}|null}
+ */
+function worktreeOfRun(row, records) {
+  const near = sourceNearSpine(row.spine);
+  if (!near.sourceJsonPath) return null;
+  let m;
+  try { m = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { return null; }
+  if (typeof m?.worktree !== 'string' || m.worktree === '' || typeof m?.repo !== 'string') return null;
+  const wb = records.findLast((r) => r && r.type === 'work-branch' && typeof r.branch === 'string') ?? null;
+  return { folder: m.worktree, repo: m.repo, branch: wb ? wb.branch : null, exists: existsSync(m.worktree) };
 }
 
 /**
