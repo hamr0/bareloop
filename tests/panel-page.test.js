@@ -2223,15 +2223,10 @@ test('Chat tab CSS: #chat-msg is the ~2x-height, 2px-border text box from the mo
   assert.match(html, /#chat-msg\{min-height:64px;padding:8px 12px;border:2px solid var\(--border-strong\);\}/);
 });
 
-test('Chat tab markup: Sign & run, Send, Revise and Start drafting all start disabled in the served HTML (before any session/phase exists, click 1 must not be clickable)', () => {
+test('Chat tab markup: the ONE main button starts disabled in the served HTML (before any session/phase exists, it must not be clickable)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const startTag = html.match(/<button class="btn primary" type="button" id="chat-start-btn"[^>]*>/)[0];
-  const signTag = html.match(/<button class="btn primary" type="button" id="chat-sign-btn"[^>]*>/)[0];
-  const sendTag = html.match(/<button class="btn" type="button" id="chat-send-btn"[^>]*>/)[0];
-  const reviseTag = html.match(/<button class="btn" type="button" id="chat-revise-btn"[^>]*>/)[0];
-  for (const [name, tag] of [['chat-start-btn', startTag], ['chat-sign-btn', signTag], ['chat-send-btn', sendTag], ['chat-revise-btn', reviseTag]]) {
-    assert.match(tag, /\bdisabled\b/, `expected ${name} to render disabled by default`);
-  }
+  const mainTag = html.match(/<button class="btn primary wide" type="button" id="chat-main-btn"[^>]*>/)[0];
+  assert.match(mainTag, /\bdisabled\b/, 'expected chat-main-btn to render disabled by default');
 });
 
 test('Chat tab CSS: a disabled .btn.primary is visibly different from the enabled primary fill (not just opacity on the same blue), so Sign & run / Start drafting do not look clickable while disabled', () => {
@@ -2249,7 +2244,7 @@ test('Chat tab CSS: a disabled .btn.primary is visibly different from the enable
 test('Job card cap row: $ cap | Time cap only (P4b: no Token price field anywhere); there is no separate Drafting $ cap field', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const capRowStart = html.indexOf('<div class="cap-row"');
-  const block = html.slice(capRowStart, html.indexOf('<button class="btn primary" type="button" id="chat-start-btn"'));
+  const block = html.slice(capRowStart, html.indexOf('<div class="hint" id="chat-card-error"'));
   const moneyIdx = block.indexOf('jf-cap-money');
   const timeIdx = block.indexOf('jf-cap-time');
   assert.ok(moneyIdx !== -1 && timeIdx !== -1, 'expected both cap fields present');
@@ -2323,8 +2318,8 @@ test('build item 2 (2026-09-28): the rendered "who" label for a system/bot messa
 
 test('build item 4 (2026-09-28): Start drafting disables immediately on click (before the network response), and is re-enabled only on a terminal phase', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('startBtn.addEventListener("click", function(){');
-  const end = html.indexOf('checkDepsBtn.addEventListener', start);
+  const start = html.indexOf('function doStart(){');
+  const end = html.indexOf('function doCheckDeps', start);
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected the Start click handler to be present');
   const body = html.slice(start, end);
   const sessionLiveIdx = body.indexOf('sessionLive = true;');
@@ -2354,7 +2349,7 @@ test('build item 5 (2026-09-28): ONE $0 readiness line renders under the Model f
   assert.doesNotMatch(modelField, /id="jf-key-status"/, 'the old two-element split must be gone');
   assert.doesNotMatch(modelField, /id="jf-reach-status"/);
   assert.match(html, /var keyOk = false;/);
-  assert.match(html, /startBtn\.disabled = !capOk \|\| sessionLive \|\| !keyOk;/);
+  assert.match(html, /startOk = capOk && !sessionLive && keyOk;/);
 });
 
 // ---------------------------------------------------------------------------
@@ -2520,8 +2515,8 @@ test('build item 1: chatPostOutcome — RED-PROOF against the pre-fix decision r
 
 test('build item 1: sendBtn/reviseBtn only clear msgInput inside the o.ok branch — a failed POST must never wipe the typed answer', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const sendSrc = html.slice(html.indexOf('sendBtn.addEventListener("click"'), html.indexOf('reviseBtn.addEventListener("click"'));
-  const reviseSrc = html.slice(html.indexOf('reviseBtn.addEventListener("click"'), html.indexOf('signBtn.addEventListener("click"'));
+  const sendSrc = html.slice(html.indexOf('function doSend('), html.indexOf('function doRevise('));
+  const reviseSrc = html.slice(html.indexOf('function doRevise('), html.indexOf('function doSign('));
   for (const [name, src] of [['send', sendSrc], ['revise', reviseSrc]]) {
     assert.match(src, /if\(o\.ok\)\{\s*chatActionOk\(\);\s*msgInput\.value = "";/, `${name}: msgInput.value = "" must sit inside the o.ok branch`);
     // the ONLY place msgInput.value is assigned in this handler is that one
@@ -2533,7 +2528,7 @@ test('build item 1: sendBtn/reviseBtn only clear msgInput inside the o.ok branch
 
 test('build item 1: every chat POST site (send, revise, sign-prepare, sign, check-deps) has a .catch so a rejected fetch (network drop, server restart) surfaces, never silently no-ops', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const chatBlock = html.slice(html.indexOf('checkDepsBtn.addEventListener("click"'), html.indexOf('refreshStartEnabled();\n  })();'));
+  const chatBlock = html.slice(html.indexOf('function doCheckDeps('), html.indexOf('refreshStartEnabled();\n  })();'));
   const catches = chatBlock.match(/\}\)\.catch\(function\(\)\{ chatActionFailed\(/g) || [];
   assert.equal(catches.length, 5, `expected 5 .catch(...chatActionFailed...) call sites (check-deps, send, revise, sign-prepare, sign), found ${catches.length}`);
 });
@@ -2657,11 +2652,10 @@ test('progress list (hamr 2026-10-05): a step\'s detail is its OWN line under th
   assert.match(css, /flex-basis:100%|flex:1 1 100%|display:block/, 'the detail takes a full line of its own');
 });
 
-test('Check again sits INSIDE .actions-row beside Sign & run (hamr 2026-10-05, option A)', () => {
+test('Check again is the ONE main button\'s wording while waiting on an install (hamr 2026-10-05, supersedes option A)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const row = html.match(/<div class="actions-row">[^]*?<\/div>/)[0];
-  assert.match(row, /id="chat-check-deps-btn"/);
-  assert.match(row, /id="chat-sign-btn"/);
+  assert.match(html, /text: "Check again", action: "check-deps"/);
+  assert.doesNotMatch(html, /id="chat-check-deps-btn"/);
 });
 
 test('Runs list order (hamr 2026-10-05): the runs/workflows list comes first, imported jobs below it', () => {

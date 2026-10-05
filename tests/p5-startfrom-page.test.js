@@ -49,7 +49,7 @@ test('page: Reuse workflow is in the action row only, where the server offers it
 test('page: the reuse card opens filled from the server\'s prefill, shows the server\'s estimate line, locks every box but the four open ones, and Start is "Sign & run"', () => {
   assert.match(PAGE, /document\.addEventListener\("bareloop-reuse"/);
   assert.doesNotMatch(PAGE, /start-from-check|sfRefreshLine|startfrom-line" \+ \(/, 'no "changed — new job" re-check: the locked boxes make it unreachable');
-  assert.match(PAGE, /startBtn\.textContent = "Sign & run";/);
+  assert.match(fnSrc('mainButtonFor'), /reuse \? "Sign & run" : "Start drafting"/);
   assert.match(PAGE, /sfLine\.textContent = pre\.line \|\| "";/, 'the line is the server\'s text, never built on the page');
   assert.match(PAGE, /if\(startFrom\) body\.startFrom = startFrom\.importId \? \{importId: startFrom\.importId\} : startFrom\.runid;/, 'the start request names the origin; the server refuses a changed locked box');
   assert.match(PAGE, /data-testid="startfrom-line"/);

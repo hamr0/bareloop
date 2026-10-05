@@ -57,22 +57,18 @@ test('page: resetCard empties every box, check type back to deterministic, Model
   const calls = [];
   const modelSelect = { selectedIndex: 3 };
   const msgInput = { value: 'typed' };
-  const signBtn = { disabled: false, textContent: 'Sign abc & run' };
-  const sendBtn = { disabled: false };
-  const reviseBtn = { disabled: false, textContent: 'Revise (1 left)' };
   const doc = { getElementById: (id) => els[id], querySelectorAll: () => ({ forEach: (fn) => radios.forEach(fn) }) };
   let lastPhase = 'prepared';
   // eslint-disable-next-line no-new-func
-  const run = new Function('document', 'modelSelect', 'msgInput', 'signBtn', 'sendBtn', 'reviseBtn', 'clearStartFrom', 'openNewCard', 'refreshModelStatus',
+  const run = new Function('document', 'modelSelect', 'msgInput', 'clearStartFrom', 'openNewCard', 'refreshModelStatus',
     `var lastPhase = "prepared";\n${fnSrc('resetCard')}\nresetCard();\nreturn lastPhase;`);
-  lastPhase = run(doc, modelSelect, msgInput, signBtn, sendBtn, reviseBtn, () => calls.push('clearStartFrom'), () => calls.push('openNewCard'), () => calls.push('refreshModelStatus'));
+  lastPhase = run(doc, modelSelect, msgInput, () => calls.push('clearStartFrom'), () => calls.push('openNewCard'), () => calls.push('refreshModelStatus'));
   for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time']) assert.equal(els[id].value, '', id);
   assert.equal(els['jf-judge'].disabled, true, 'rubric-only box off, as for deterministic');
   assert.deepEqual(radios.map((r) => r.checked), [true, false], 'deterministic');
   assert.equal(modelSelect.selectedIndex, 0);
   assert.equal(msgInput.value, '');
   assert.equal(els['jf-cap-note'].textContent, '');
-  assert.equal(signBtn.disabled, true);
   assert.equal(lastPhase, null);
   // origin/estimate/notes hidden and the reuse lock lifted by clearStartFrom; thread + progress cleared by openNewCard
   assert.deepEqual(calls, ['clearStartFrom', 'openNewCard', 'refreshModelStatus']);
@@ -92,8 +88,7 @@ test('page: no separate "spec hash:" line under Sign & run — the hash shows on
   assert.doesNotMatch(PAGE, /chat-hash-line|hashLine/);
 });
 
-test('page: Check again sits immediately before Sign & run in one non-splitting group, so wrapping never separates them (hamr 2026-10-05)', () => {
-  const row = PAGE.slice(PAGE.indexOf('<div class="actions-row">'), PAGE.indexOf('Only your click signs'));
-  assert.match(row, /<span class="sign-pair">\s*<button[^>]*id="chat-check-deps-btn"[^>]*>Check again<\/button>\s*<button[^>]*id="chat-sign-btn"[^>]*>Sign &amp; run<\/button>\s*<\/span>/);
-  assert.match(PAGE, /\.actions-row \.sign-pair\{[^}]*display:inline-flex[^}]*flex-wrap:nowrap/);
+test('page: one main button replaces the sign pair — no Check again / Sign & run group (hamr 2026-10-05)', () => {
+  assert.doesNotMatch(PAGE, /sign-pair|chat-check-deps-btn|chat-sign-btn/);
 });
+

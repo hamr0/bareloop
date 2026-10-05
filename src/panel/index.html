@@ -432,12 +432,8 @@
   /* chat message box reads as an unmistakable text box: ~2x the default
      input height, thicker 2px border (ported verbatim from the mockup). */
   #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--border-strong);}
-  .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
-  .actions-row > .btn{flex:1 1 auto;}
-  /* Check again + Sign & run never split across lines when the row wraps (hamr 2026-10-05) */
-  .actions-row .sign-pair{display:inline-flex;flex-wrap:nowrap;gap:8px;flex:2 1 auto;}
-  .actions-row .sign-pair > .btn{flex:1 1 auto;}
-
+  /* ONE wide button below the message box (hamr 2026-10-05); its wording comes from mainButtonFor */
+  .btn.wide{width:100%;margin-top:10px;white-space:normal;}
   /* Settings view (P4a) — same tokens as the rest of the page; the mockup's settings styles */
   .settings-view{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;}
   .settings-header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);}
@@ -568,7 +564,6 @@
                 <input id="jf-cap-time" type="text" placeholder="or blank = no wall">
               </div>
             </div>
-            <button class="btn primary" type="button" id="chat-start-btn" data-testid="chat-start" disabled>Start drafting</button>
             <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
           </div>
 
@@ -590,14 +585,8 @@
             <label for="chat-msg" style="display:none">Message</label>
             <input id="chat-msg" type="text" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg">
           </div>
-          <div class="actions-row">
-            <button class="btn" type="button" id="chat-send-btn" data-testid="chat-send" disabled>Send</button>
-            <span class="sign-pair">
-              <button class="btn" type="button" id="chat-check-deps-btn" data-testid="chat-check-deps" hidden>Check again</button>
-              <button class="btn primary" type="button" id="chat-sign-btn" data-testid="btn-sign-run" disabled>Sign &amp; run</button>
-            </span>
-            <button class="btn" type="button" id="chat-revise-btn" data-testid="btn-revise" disabled>Revise (2 left)</button>
-          </div>
+          <button class="btn primary wide" type="button" id="chat-main-btn" data-testid="chat-main" disabled>Start drafting</button>
+          <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
           <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
@@ -3558,11 +3547,11 @@
     var card = document.getElementById("job-card");
     var thread = document.getElementById("chat-thread");
     var msgInput = document.getElementById("chat-msg");
-    var sendBtn = document.getElementById("chat-send-btn");
-    var signBtn = document.getElementById("chat-sign-btn");
-    var reviseBtn = document.getElementById("chat-revise-btn");
-    var startBtn = document.getElementById("chat-start-btn");
-    var checkDepsBtn = document.getElementById("chat-check-deps-btn");
+    var mainBtn = document.getElementById("chat-main-btn");
+    var mainHint = document.getElementById("chat-main-hint");
+    var mainAction = "none";
+    var lastState = null;
+    var startOk = false;
     var errEl = document.getElementById("chat-card-error");
     var actionErrEl = document.getElementById("chat-action-error");
     var moneyCapInput = document.getElementById("jf-cap-money");
@@ -3613,7 +3602,7 @@
       startFrom = null; reuseSession = false; autoSigned = false;
       sfOrigin.hidden = true; sfLine.hidden = true; sfNote.hidden = true;
       setReuseLocked(false);
-      startBtn.textContent = "Start drafting";
+      renderMain();
     }
     function openNewCard(){
       card.hidden = false;
@@ -3628,7 +3617,7 @@
       if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
       progressRow.hidden = true;
       progressRow.innerHTML = "";
-      checkDepsBtn.hidden = true;
+      lastState = null;
       refreshStartEnabled();
     }
     // hamr's ruling 2026-10-05: ONE button, two states. A live, unsigned session -> "Abandon" (the server ends it and
@@ -3651,9 +3640,6 @@
       modelSelect.selectedIndex = 0;
       msgInput.value = "";
       document.getElementById("jf-cap-note").textContent = "";
-      signBtn.disabled = true; signBtn.textContent = "Sign & run";
-      sendBtn.disabled = true;
-      reviseBtn.disabled = true; reviseBtn.textContent = "Revise (2 left)";
       lastPhase = null;
       clearStartFrom();
       openNewCard();
@@ -3699,7 +3685,8 @@
     function refreshStartEnabled(){
       var v = Number(moneyCapInput.value);
       var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
-      startBtn.disabled = !capOk || sessionLive || !keyOk;
+      startOk = capOk && !sessionLive && keyOk;
+      renderMain();
       refreshClearBtn();
     }
     moneyCapInput.addEventListener("input", refreshStartEnabled);
@@ -3870,25 +3857,52 @@
       }).join("");
     }
 
-    function renderActions(state){
-      var pending = state.pendingAsk;
-      var atMenu = !!pending && pending.kind === "menu";
-      var atDepsWait = !!pending && pending.kind === "install-needed";
-      sendBtn.disabled = !pending || atMenu || atDepsWait;
-      reviseBtn.disabled = !atMenu || state.revisesLeft <= 0;
-      reviseBtn.textContent = "Revise (" + state.revisesLeft + " left)";
-      checkDepsBtn.hidden = !atDepsWait;
-      checkDepsBtn.disabled = !atDepsWait;
-      if(state.phase === "prepared" && !signClickedOnce){
-        signBtn.disabled = false;
-        signBtn.textContent = "Sign & run";
-      } else if(state.phase === "prepared" && signClickedOnce){
-        signBtn.disabled = false;
-        signBtn.textContent = "Sign " + (state.specHash || "").slice(0, 8) + " & run";
-      } else {
-        signBtn.disabled = !atMenu;
-        signBtn.textContent = "Sign & run";
+    // hamr's ruling 2026-10-05: ONE wide button below the message box. Its wording, action and enabled state are ONE
+    // pure function of (state, typed-text-empty, reuse); state = {session, startOk, phase, pendingAsk, revisesLeft,
+    // signClicked, specHash}. Actions: start | check-deps | send | revise | sign-prepare | sign | none.
+    function mainButtonFor(st, textEmpty, reuse){
+      var ask = st.pendingAsk;
+      var atMenu = !!ask && ask.kind === "menu";
+      var left = st.revisesLeft || 0;
+      var hint = atMenu ? left + (left === 1 ? " change left" : " changes left") : "";
+      if(!st.session){
+        return {text: reuse ? "Sign & run" : "Start drafting", action: "start", disabled: !st.startOk, hint: ""};
       }
+      if(ask && ask.kind === "install-needed"){
+        return {text: "Check again", action: "check-deps", disabled: false, hint: ""};
+      }
+      if(ask && !textEmpty){
+        return atMenu
+          ? {text: "Send", action: "revise", disabled: left <= 0, hint: hint}
+          : {text: "Send", action: "send", disabled: false, hint: ""};
+      }
+      if(ask && !atMenu){
+        return {text: "Send", action: "send", disabled: true, hint: ""};
+      }
+      if(atMenu || st.phase === "prepared"){
+        if(st.phase === "prepared" && st.signClicked){
+          return {text: "Sign " + (st.specHash || "").slice(0, 8) + " & run", action: "sign", disabled: false, hint: hint};
+        }
+        return {text: "Sign & run", action: "sign-prepare", disabled: false, hint: hint};
+      }
+      return {text: "Sign & run", action: "none", disabled: true, hint: ""};
+    }
+    function renderMain(){
+      var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce};
+      if(sessionLive && lastState){
+        st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
+        st.revisesLeft = lastState.revisesLeft; st.specHash = lastState.specHash;
+      }
+      var b = mainButtonFor(st, !msgInput.value.trim(), !!startFrom);
+      mainBtn.textContent = b.text;
+      mainBtn.disabled = b.disabled;
+      mainAction = b.action;
+      mainHint.textContent = b.hint;
+    }
+    msgInput.addEventListener("input", renderMain);
+
+    function renderActions(state){
+      lastState = state;
       // a session's stop is shown ONCE, in the progress line below (renderProgress); #chat-card-error carries only a
       // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
       errEl.textContent = "";
@@ -3922,7 +3936,7 @@
       }).catch(function(){ /* transient — next poll tries again */ });
     }
 
-    startBtn.addEventListener("click", function(){
+    function doStart(){
       errEl.textContent = "";
       actionErrEl.textContent = "";
       // build item 4 — disable the moment it's clicked, not just once the
@@ -3949,7 +3963,7 @@
         if(pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(poll, 2000);
       });
-    });
+    }
 
     // ---- Reuse workflow — the card opens filled from the SIGNED job: four open boxes, the rest greyed ----
     function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
@@ -3976,7 +3990,6 @@
       sfLine.className = "startfrom-line";
       sfNote.hidden = !pre.note;
       sfNote.textContent = pre.note || "";
-      startBtn.textContent = "Sign & run";
       refreshModelStatus();
       refreshReuseLine();
       refreshCapNote();
@@ -4017,17 +4030,17 @@
       actionErrEl.textContent = "";
     }
 
-    checkDepsBtn.addEventListener("click", function(){
+    function doCheckDeps(){
       if(!sessionId) return;
-      checkDepsBtn.disabled = true;
+      mainBtn.disabled = true;
       authorPost("/api/author/" + sessionId + "/check-deps", {}).then(function(r){
         var o = chatPostOutcome(r);
         if(o.ok) chatActionOk(); else chatActionFailed(o.error);
         poll();
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, nothing was sent"); });
-    });
+    }
 
-    sendBtn.addEventListener("click", function(){
+    function doSend(){
       if(!sessionId) return;
       var text = msgInput.value;
       if(!text.trim()) return;
@@ -4043,9 +4056,9 @@
         }
         poll();
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
-    });
+    }
 
-    reviseBtn.addEventListener("click", function(){
+    function doRevise(){
       if(!sessionId) return;
       var text = msgInput.value;
       authorPost("/api/author/" + sessionId + "/revise", {text: text}).then(function(r){
@@ -4058,9 +4071,9 @@
         }
         poll();
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
-    });
+    }
 
-    signBtn.addEventListener("click", function(){
+    function doSign(){
       if(!sessionId) return;
       if(!signClickedOnce){
         // click 1 — the confirm turn's own "confirm" pick. Never signs.
@@ -4083,6 +4096,15 @@
           poll();
         }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not signed"); });
       });
+    }
+
+    mainBtn.addEventListener("click", function(){
+      if(mainBtn.disabled) return;
+      if(mainAction === "start") doStart();
+      else if(mainAction === "check-deps") doCheckDeps();
+      else if(mainAction === "send") doSend();
+      else if(mainAction === "revise") doRevise();
+      else if(mainAction === "sign-prepare" || mainAction === "sign") doSign();
     });
 
     refreshStartEnabled();
