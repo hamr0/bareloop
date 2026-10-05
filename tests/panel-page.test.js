@@ -2657,6 +2657,13 @@ test('progress list (hamr 2026-10-05): a step\'s detail is its OWN line under th
   assert.match(css, /flex-basis:100%|flex:1 1 100%|display:block/, 'the detail takes a full line of its own');
 });
 
+test('Check again sits INSIDE .actions-row beside Sign & run (hamr 2026-10-05, option A)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const row = html.match(/<div class="actions-row">[^]*?<\/div>/)[0];
+  assert.match(row, /id="chat-check-deps-btn"/);
+  assert.match(row, /id="chat-sign-btn"/);
+});
+
 // ---------------------------------------------------------------------------
 // build item 4 (2026-09-28, session mul5fofw): chat messages are one short
 // plain line per step, no "bareloop" who-label on SYSTEM lines (they are
