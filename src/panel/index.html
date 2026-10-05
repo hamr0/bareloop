@@ -432,13 +432,15 @@
   .msg .who{font-size:11px;color:var(--text-faint);margin-bottom:3px;text-transform:none;font-weight:400;}
   .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
   .chat-input-row input{width:100%;box-sizing:border-box;}
+  /* the ask box wraps long text (textarea, hamr 2026-10-05): grows a few rows (fitMsg), then scrolls inside; Enter sends, Shift+Enter is a newline */
+  textarea[data-testid="chat-msg"]{width:100%;box-sizing:border-box;font:inherit;color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
   /* chat message box reads as an unmistakable text box: ~2x the default
      input height, thicker 2px border (ported verbatim from the mockup). */
   #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--field-border);background:var(--field-bg);}
   /* hamr 2026-10-05: editable Chat-card fields get the standard soft white (a step below the ask box); disabled/readonly (dimmed) keep the base colour */
   #panel-chat input:not(:disabled):not([readonly]):not(#chat-msg):not([type="radio"]):not([type="checkbox"]),
   #panel-chat select:not(:disabled),
-  #panel-chat textarea:not(:disabled):not([readonly]){background:var(--field-soft-bg);}
+  #panel-chat textarea:not(:disabled):not([readonly]):not(#chat-msg){background:var(--field-soft-bg);}
   /* ONE wide button below the message box (hamr 2026-10-05); its wording comes from mainButtonFor */
   .btn.wide{width:100%;margin-top:10px;white-space:normal;}
   /* Settings view (P4a) — same tokens as the rest of the page; the mockup's settings styles */
@@ -590,7 +592,7 @@
 
           <div class="chat-input-row">
             <label for="chat-msg" style="display:none">Message</label>
-            <input id="chat-msg" type="text" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg">
+            <textarea id="chat-msg" rows="2" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg"></textarea>
           </div>
           <button class="btn primary wide" type="button" id="chat-main-btn" data-testid="chat-main" disabled>Start drafting</button>
           <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
@@ -3905,8 +3907,22 @@
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
       mainHint.textContent = b.hint;
+      fitMsg();
     }
     msgInput.addEventListener("input", renderMain);
+    // grow the ask box with its text (a few rows, then it scrolls inside); reset when cleared
+    function fitMsg(){
+      msgInput.style.height = "auto";
+      var h = Math.min(msgInput.scrollHeight + 4, 200);
+      if(h > 64) msgInput.style.height = h + "px"; else msgInput.style.height = "";
+    }
+    // Enter sends through the one main button; Shift+Enter (or IME composition) keeps its newline
+    msgInput.addEventListener("keydown", function(e){
+      if(e.key === "Enter" && !e.shiftKey && !e.isComposing){
+        e.preventDefault();
+        if(mainAction !== "start") mainBtn.click(); // never starts a (paid) draft from a stray Enter
+      }
+    });
 
     function renderActions(state){
       lastState = state;

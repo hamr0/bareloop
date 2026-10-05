@@ -18,3 +18,16 @@ test('#chat-msg: white in light mode, the theme input background in dark, one co
   // no other input rule was touched
   assert.match(PAGE, /input,select\{font:inherit;padding:6px 8px;border:1px solid var\(--border-strong\);border-radius:0;background:var\(--bg\);color:var\(--text\);\}/);
 });
+
+test('#chat-msg is a wrapping <textarea> (hamr 2026-10-05: long ask text must wrap, not scroll sideways), Enter sends, Shift+Enter is a newline', () => {
+  assert.match(PAGE, /<textarea id="chat-msg"[^>]*rows="2"[^>]*placeholder="Ask for a change, or reply to the plan…"[^>]*data-testid="chat-msg"[^>]*><\/textarea>/);
+  assert.doesNotMatch(PAGE, /<input id="chat-msg"/);
+  const rule = PAGE.match(/textarea\[data-testid="chat-msg"\]\{([^}]*)\}/)[1];
+  assert.match(rule, /width:100%/);
+  assert.match(rule, /box-sizing:border-box/);
+  assert.match(rule, /resize:vertical/);
+  // the soft-white Chat-card rule must not out-rank the ask box's own background
+  assert.match(PAGE, /#panel-chat textarea:not\(:disabled\):not\(\[readonly\]\):not\(#chat-msg\)\{/);
+  assert.match(PAGE, /msgInput\.addEventListener\("keydown", function\(e\)\{\s*if\(e\.key === "Enter" && !e\.shiftKey && !e\.isComposing\)\{\s*e\.preventDefault\(\);\s*if\(mainAction !== "start"\) mainBtn\.click\(\);/);
+  assert.match(PAGE, /function fitMsg\(\)/);
+});
