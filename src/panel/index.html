@@ -3598,15 +3598,21 @@
     var sfNote = document.getElementById("chat-startfrom-note");
     // the locked boxes of a reuse card: the signed workflow, greyed and not editable (the server refuses a change anyway)
     var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];
-    function setReuseLocked(on){
-      LOCKED_IDS.forEach(function(id){
-        var el = document.getElementById(id);
-        el.readOnly = on; el.classList.toggle("locked", on);
-      });
-      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = on; });
-      document.getElementById("job-card").classList.toggle("reuse", on);
-      if(!on){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
+    // hamr 2026-10-05: while a drafting session is live NOTHING on the card is editable (the session was started from
+    // these values). The reuse rule (only Source/Destination/caps open) applies before the start. ONE function owns it.
+    var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"];
+    var reuseOn = false;
+    function syncCardLock(){
+      var live = sessionLive;
+      var setLock = function(id, on){ var el = document.getElementById(id); el.readOnly = on; el.classList.toggle("locked", on); };
+      LOCKED_IDS.forEach(function(id){ setLock(id, reuseOn || live); });
+      OPEN_IDS.forEach(function(id){ setLock(id, live); });
+      document.getElementById("jf-model").disabled = live;
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = reuseOn || live; });
+      document.getElementById("job-card").classList.toggle("reuse", reuseOn);
+      if(!reuseOn && !live){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
     }
+    function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
     function clearStartFrom(){
       // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes
       if(startFrom){
@@ -3700,6 +3706,7 @@
       var v = Number(moneyCapInput.value);
       var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
       startOk = capOk && !sessionLive && keyOk;
+      syncCardLock();
       renderMain();
       refreshClearBtn();
     }

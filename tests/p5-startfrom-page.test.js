@@ -61,16 +61,16 @@ test('page: the reuse card opens filled from the server\'s prefill, shows the se
 test('page: setReuseLocked greys Name, Goal, Success, Guardrails, Judge examples and Check type — and never Source, Destination, Model or the caps', () => {
   const els = {};
   const mk = (id) => { els[id] = { id, readOnly: false, disabled: false, classes: new Set(), classList: { toggle(c, on) { if (on) els[id].classes.add(c); else els[id].classes.delete(c); } } }; return els[id]; };
-  for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time', 'job-card']) mk(id);
+  for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time', 'job-card', 'jf-model']) mk(id);
   const radios = [{ value: 'deterministic', disabled: false, checked: true }, { value: 'rubric', disabled: false, checked: false }];
   const doc = {
     getElementById: (id) => els[id],
     querySelectorAll: () => ({ forEach: (fn) => radios.forEach(fn) }),
     querySelector: () => radios.find((r) => r.checked) ?? null,
   };
-  const modelSelect = mk('model');
+  const modelSelect = els['jf-model'];
   // eslint-disable-next-line no-new-func
-  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
+  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"]; var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false;\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
   f(true);
   for (const id of ['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails', 'jf-judge']) {
     assert.equal(els[id].readOnly, true, `${id} is read only`);
