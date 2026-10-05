@@ -3938,6 +3938,10 @@
         if(j.state.phase === "signed"){
           clearInterval(pollTimer);
           document.getElementById("tab-runs").click();
+          // hamr's ruling 2026-10-05: the run has started, so the Chat card goes back to the empty card (the one reset
+          // Clear uses) — it must not keep showing a signed job that invites a rerun. The run itself is untouched.
+          resetCard();
+          return;
         }
         lastPhase = j.state.phase;
       }).catch(function(){ /* transient — next poll tries again */ });

@@ -92,3 +92,25 @@ test('page: one main button replaces the sign pair — no Check again / Sign & r
   assert.doesNotMatch(PAGE, /sign-pair|chat-check-deps-btn|chat-sign-btn/);
 });
 
+
+test('page: when a polled session reaches signed (the run starts) the page goes to the run AND the Chat card resets to the empty card (hamr 2026-10-05)', async () => {
+  const calls = [];
+  const els = { 'tab-runs': { click: () => calls.push('tab-runs') } };
+  const state = { phase: 'signed' };
+  const run = new Function('document', 'authorGet', 'renderMessages', 'renderActions', 'clearInterval', 'resetCard',
+    `var sessionId = "s1", pollTimer = 1, lastPhase = null, reuseSession = false, autoSigned = false;\n${fnSrc('poll')}\nreturn poll();`);
+  await run({ getElementById: (id) => els[id] }, () => Promise.resolve({ state }), () => {}, () => {}, () => calls.push('clearInterval'), () => calls.push('resetCard'));
+  await new Promise((r) => setImmediate(r));
+  assert.ok(calls.includes('resetCard'), 'signed resets the card');
+  assert.ok(calls.includes('tab-runs'), 'the switch to the run is kept');
+  assert.ok(calls.indexOf('resetCard') > calls.indexOf('tab-runs'), 'reset after the switch');
+  // the reset leaves an empty card, so the main button offers a fresh draft, not the signed job
+  const mainButtonFor = new Function(`${fnSrc('mainButtonFor')}\nreturn mainButtonFor;`)();
+  assert.equal(mainButtonFor({ startOk: true }, true, false).text, 'Start drafting');
+  // a non-signed phase must not reset
+  state.phase = 'drafting';
+  calls.length = 0;
+  await run({ getElementById: (id) => els[id] }, () => Promise.resolve({ state }), () => {}, () => {}, () => calls.push('clearInterval'), () => calls.push('resetCard'));
+  await new Promise((r) => setImmediate(r));
+  assert.ok(!calls.includes('resetCard'));
+});
