@@ -806,15 +806,28 @@
   var TOKEN = "__BARELOOP_PANEL_TOKEN__";
   document.getElementById("host-line").textContent = "127.0.0.1:" + PORT;
 
+  // After a panel restart this page's token is dead: the server refuses EVERY call with 403 and the exact reason
+  // below (checkHumanGuard, src/panel/authorroutes.js). The ONE place the page makes calls swaps that raw text for
+  // one clear line and tells the Chat poll to stop (staleTokenHook, set by the Chat code). No auto-reload.
+  var STALE_TOKEN_REFUSAL = "refused \u2014 missing or wrong token";
+  var STALE_TOKEN_LINE = "The panel was restarted \u2014 reload this page. A drafting session that was open is gone (nothing more is spent).";
+  var staleTokenHook = function(){};
+  function staleTokenCheck(j, status){
+    if(j && j.ok === false && j.error === STALE_TOKEN_REFUSAL && (status === undefined || status === 403)){
+      j.error = STALE_TOKEN_LINE;
+      staleTokenHook();
+    }
+    return j;
+  }
   function authorPost(path, body){
     return fetch(path, {
       method: "POST",
       headers: {"content-type": "application/json", "x-bareloop-token": TOKEN},
       body: JSON.stringify(body || {}),
-    }).then(function(r){ return r.json().then(function(j){ return {status: r.status, body: j}; }); });
+    }).then(function(r){ return r.json().then(function(j){ return {status: r.status, body: staleTokenCheck(j, r.status)}; }); });
   }
   function authorGet(path){
-    return fetch(path, {headers: {"x-bareloop-token": TOKEN}}).then(function(r){ return r.json(); });
+    return fetch(path, {headers: {"x-bareloop-token": TOKEN}}).then(function(r){ return r.json().then(function(j){ return staleTokenCheck(j, r.status); }); });
   }
 
   function wireTabs(tabButtons){
@@ -4135,6 +4148,11 @@
     function chatActionOk(){
       actionErrEl.textContent = "";
     }
+    // a dead token (panel restarted): show the one line where Chat actions show errors and stop polling
+    staleTokenHook = function(){
+      actionErrEl.textContent = STALE_TOKEN_LINE;
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+    };
 
     function doCheckDeps(){
       if(!sessionId) return;

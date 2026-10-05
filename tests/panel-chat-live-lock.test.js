@@ -69,3 +69,32 @@ test('page wiring: the lock is synced wherever sessionLive changes (refreshStart
   assert.match(fnSrc('openNewCard'), /sessionLive = false;[\s\S]*refreshStartEnabled\(\)/, 'reset/abandon unlocks');
 });
 
+// ---- item 2 ----
+const LINE = 'The panel was restarted — reload this page. A drafting session that was open is gone (nothing more is spent).';
+function stale() {
+  let hooked = 0;
+  const src = `var STALE_TOKEN_REFUSAL = ${JSON.stringify('refused — missing or wrong token')}; var STALE_TOKEN_LINE = ${JSON.stringify(LINE)}; var staleTokenHook = function(){ hook(); };
+${fnSrc('staleTokenCheck')}
+return staleTokenCheck;`;
+  // eslint-disable-next-line no-new-func
+  const f = new Function('hook', src)(() => { hooked += 1; });
+  return { f, hooked: () => hooked };
+}
+
+test('token refusal (403, the server\'s own reason) becomes the one reload line and fires the hook; other refusals keep their text', () => {
+  const { f, hooked } = stale();
+  const j = f({ ok: false, error: 'refused — missing or wrong token' }, 403);
+  assert.equal(j.error, LINE);
+  assert.equal(hooked(), 1);
+  assert.equal(f({ ok: false, error: 'refused — cap must be positive' }, 400).error, 'refused — cap must be positive');
+  assert.equal(f({ ok: false, error: 'refused — Origin/Host not allowed' }, 403).error, 'refused — Origin/Host not allowed');
+  assert.equal(f({ ok: true }, 200).ok, true);
+  assert.equal(hooked(), 1, 'nothing else fires it');
+});
+
+test('page wiring: both call helpers run every response through staleTokenCheck; the Chat hook shows the line in #chat-action-error and stops the poll timer', () => {
+  assert.match(fnSrc('authorPost'), /staleTokenCheck\(j, r\.status\)/);
+  assert.match(fnSrc('authorGet'), /staleTokenCheck\(j, r\.status\)/);
+  assert.match(PAGE, /staleTokenHook = function\(\)\{\s*actionErrEl\.textContent = STALE_TOKEN_LINE;\s*if\(pollTimer\)\{ clearInterval\(pollTimer\); pollTimer = null; \}/);
+  assert.doesNotMatch(PAGE, /location\.reload/, 'no auto-reload');
+});
