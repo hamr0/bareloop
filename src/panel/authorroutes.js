@@ -235,7 +235,7 @@ export function createAuthorRoutes(opts) {
         if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to reuse' }); return true; }
         if (!pre.ok) { send(409, pre); return true; }
         const locked = lockedFieldChanged(card, pre.card);
-        if (locked !== null) { send(400, { ok: false, error: `${locked} is locked on a reused workflow — use + New to change it` }); return true; }
+        if (locked !== null) { send(400, { ok: false, error: `${locked} is locked on a reused workflow — Clear the card to change it` }); return true; }
         const rv = validateReuseCard(card, { rows });
         if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
         const spec = buildReuseSpec(pre.spec, card, rows);

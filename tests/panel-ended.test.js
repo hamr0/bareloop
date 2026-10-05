@@ -123,7 +123,7 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   // Reuse workflow (2026-10-03): the button is for GREEN rows only; every red row says where to change the job
   const stalled = live('step-stalled', { o: { resume: ok } });
   assert.deepEqual(stalled.actions, [{ id: 'resume', label: 'Resume' }], 'stalled: Resume only');
-  assert.match(stalled.next, /change the job: \+ New/);
+  assert.match(stalled.next, /change the job: Clear the card and draft a new one/);
   assert.deepEqual(live('green', { o: { destinationRefused: 'folder is read only' } }).actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'green + destination refused keeps Reuse workflow');
   assert.match(live('green', { o: { destinationRefused: 'x' } }).next, /Reuse workflow/);
   for (const o of ['cap-halt', 'wall-halt', 'stopped', 'provider-red']) {
@@ -133,14 +133,14 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   for (const cat of ['wall-halt', 'provider-red']) {
     const e = endedFor({ outcome: 'escalated', stopReason: null, spentUsd: 1, budgetUsd: 8, lastEscalation: { category: cat } }, { died: false, lastThing: null }, {});
     assert.deepEqual(e.actions, [], `escalated ${cat}: no button`);
-    assert.equal(e.next, 'Change the job: + New.');
+    assert.equal(e.next, 'Change the job: Clear the card and draft a new one.');
   }
 
   for (const o of ['plan-red', 'check-red', 'step-red', 'escalated']) {
     const r = live(o, { stopReason: 'tests failing' });
     assert.match(r.reason, /^Goal not met — the checks said no \(tests failing\)\.$/, o);
-    assert.deepEqual(r.actions, [], `${o} offers no button — a red row says: Change the job: + New`);
-    assert.equal(r.next, 'Change the job: + New.', o);
+    assert.deepEqual(r.actions, [], `${o} offers no button — a red row says: Change the job: Clear the card and draft a new one`);
+    assert.equal(r.next, 'Change the job: Clear the card and draft a new one.', o);
   }
   assert.match(live('close-red').reason, /^The check itself broke \(instrument fault\), not your goal\.$/);
   for (const o of ['pricing-red', 'unapproved-spec', 'job-red', 'branch-red', 'interpreter-red', 'recipe-stale', 'close-unsupported', 'smoke-red', 'runner-drained']) {
@@ -176,7 +176,7 @@ test('ITEM 1: an escalated run whose escalation is the STRIKE governor (category
   makeRun(home, { runid: 'strike1', outcome: 'escalated', spent: 0.28, spec: { ...SPEC, budgetUsd: 1.5 }, extra: [MUP3H70U_ESCALATION] });
   const d = getRunDetail('strike1', { home });
   assert.equal(d.ended.reason, 'The fix loop stopped improving (2 of 2 tries, no check got better).');
-  assert.equal(d.ended.next, 'Change the job: + New.');
+  assert.equal(d.ended.next, 'Change the job: Clear the card and draft a new one.');
   assert.deepEqual(d.ended.actions, []);
   assert.doesNotMatch(d.ended.reason, /Money cap/);
   assert.equal(listRuns({ home }).find((r) => r.runid === 'strike1').endedLine, 'stopped improving');

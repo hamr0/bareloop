@@ -3602,7 +3602,7 @@
       if(!on){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
     }
     function clearStartFrom(){
-      // + New after a reuse starts a genuinely new job: the reused values do not linger in the boxes
+      // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes
       if(startFrom){
         ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });

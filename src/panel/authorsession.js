@@ -155,7 +155,7 @@ export function cardFields(card) {
  * REUSE WORKFLOW (hamr 2026-10-03, replaces P5 item 3's same-job rule; Model opened 2026-10-04): a reuse card has exactly
  * FIVE open boxes — Source, Destination, Model, $ cap, Time cap — and every other box is the signed workflow, shown greyed and never
  * editable. The page greys them; THIS is what refuses (the server never trusts the page). Changing any locked box
- * is a different job: `+ New`, which drafts.
+ * is a different job: Clear the card, which drafts.
  */
 export const REUSE_OPEN_FIELDS = Object.freeze(['source', 'destination', 'model', 'capUsd', 'maxWallMs']);
 /** every card field that is NOT open on a reuse card, in card order */

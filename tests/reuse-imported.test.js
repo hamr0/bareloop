@@ -112,7 +112,7 @@ test('routes: the imported reuse refuses a changed locked box by name and accept
 
   const bad = await post('/api/author/start', { ...pre.card, source: '/x', goal: 'smuggled', startFrom: { importId: id } });
   assert.equal(bad.status, 400);
-  assert.equal((await bad.json()).error, 'Goal is locked on a reused workflow — use + New to change it');
+  assert.equal((await bad.json()).error, 'Goal is locked on a reused workflow — Clear the card to change it');
   const noSource = await post('/api/author/start', { ...pre.card, startFrom: { importId: id } });
   assert.equal(noSource.status, 400);
   assert.equal((await noSource.json()).error, 'Source is required');

@@ -182,7 +182,7 @@ test('prefill: a run whose signed job is not on disk is refused in words — not
   makeRun(home, { runid: 'stale', spec, hash: 'not-the-hash-it-ran-under' });
   const r = getStartFrom('stale', { home });
   assert.equal(r.ok, false);
-  assert.match(r.error, /signed job is not on disk .* \+ New/);
+  assert.match(r.error, /signed job is not on disk .* Clear the card/);
 });
 
 test('lockedFieldChanged: only the four open boxes may differ; every other box is refused BY NAME', () => {
@@ -328,7 +328,7 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
     // eslint-disable-next-line no-await-in-loop
     const j = await r.json();
     assert.equal(r.status, 400, field);
-    assert.equal(j.error, `${label} is locked on a reused workflow — use + New to change it`, field);
+    assert.equal(j.error, `${label} is locked on a reused workflow — Clear the card to change it`, field);
   }
 
   const ok = await (await post('/api/author/start', { ...pre.card, source: '/some/other/source', destination: 'lib/', capUsd: 3, maxWallMs: 120000, startFrom: 'origin1' })).json();

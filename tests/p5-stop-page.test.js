@@ -47,7 +47,7 @@ test('page: the run card carries [Resume] only when the engine would accept it; 
   render({ runid: 'r3', live: false, died: false, ended: { reason: 'Goal met.', next: 'Nothing to do.', actions: [{ id: 'reuse', label: 'Reuse workflow' }] }, resume: null });
   assert.doesNotMatch(bar.innerHTML, /btn-resume-run|btn-stop"/, 'no Resume and no Stop on a green run');
   assert.match(bar.innerHTML, /btn-reuse">Reuse workflow</, 'a green run has Reuse workflow');
-  render({ runid: 'r4', live: false, died: false, ended: { reason: 'Goal not met', next: 'Change the job: + New.', actions: [] }, resume: null });
+  render({ runid: 'r4', live: false, died: false, ended: { reason: 'Goal not met', next: 'Change the job: Clear the card and draft a new one.', actions: [] }, resume: null });
   assert.doesNotMatch(bar.innerHTML, /btn-reuse|Start from this/, 'a red run has no button at all');
   assert.equal(bar.hidden, true, 'an empty action row is not shown');
   render({ runid: 'r5', live: true, died: false, ended: null, resume: null });

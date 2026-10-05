@@ -415,9 +415,9 @@ export function endedFor(summary, death, o = {}) {
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
   /** Reuse workflow (replaces P5 item 3's Start from this, hamr 2026-10-03): the same signed job on a new source — a NEW
-   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: + New" instead. */
+   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: Clear the card and draft a new one" instead. */
   const REUSE = [{ id: 'reuse', label: 'Reuse workflow' }];
-  const CHANGE = 'Change the job: + New.';
+  const CHANGE = 'Change the job: Clear the card and draft a new one.';
   const detailOf = (/** @type {string|null} */ s) => {
     if (typeof s !== 'string' || s.length === 0) return '';
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
@@ -522,7 +522,7 @@ export function endedFor(summary, death, o = {}) {
   if (outcome === 'step-stalled') {
     return {
       reason: 'A step stopped making progress.',
-      next: resumeOr('Resume, or change the job: + New.'),
+      next: resumeOr('Resume, or change the job: Clear the card and draft a new one.'),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
       actions: resumeOk ? RESUME : [],
     };
@@ -2158,7 +2158,7 @@ export function getRunJob(runid, opts = {}) {
 // REUSE WORKFLOW (hamr 2026-10-03; replaces P5 item 3's "Start from this"). A GREEN run — or an imported job — can be
 // run again as the SAME signed workflow on a new source. This section is the ONE owner of (a) the prefill, (b) which
 // boxes are locked, (c) the track record. The page asks; it never decides. A reuse is a NEW run (a new runid).
-// Nothing here drafts: changing the goal, checks, guardrails, judge examples or model is `+ New`.
+// Nothing here drafts: changing the goal, checks, guardrails, judge examples or model is Clear (then draft).
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -2289,7 +2289,7 @@ export function reuseLine(record) {
  * boxes are locked and which are open, and the track record. Locked boxes carry the signed values, read by the
  * SAME readers the Job tab uses (`successFromSpec`/`guardrailsFromSpec`); the open four — Source, Destination, the
  * $ cap and the Time cap — start at what the run had. `ok:false` when the run's signed job is not on disk (nothing
- * to copy: change the job with + New). `null` when the runid is not listed.
+ * to copy: change the job: Clear the card). `null` when the runid is not listed.
  * @param {string} runid
  * @param {{ home?: string, model?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
  * @returns {{ok: true, origin: {runid: string, job: string}, card: Record<string, any>, from: 'signed job',
@@ -2304,7 +2304,7 @@ export function getStartFrom(runid, opts = {}) {
   if (!existsSync(row.spine)) return { ok: false, error: 'this run has no log on disk — nothing to reuse' };
   const records = parseJsonl(row.spine).records;
   const signed = signedSpecForRun(row, records);
-  if (!signed) return { ok: false, error: "this run's signed job is not on disk — nothing to reuse (change the job with + New)" };
+  if (!signed) return { ok: false, error: "this run's signed job is not on disk — nothing to reuse (change the job: Clear the card and draft a new one)" };
   const near = sourceNearSpine(row.spine);
   const spec = signed.spec;
   /** @type {Record<string, any>} */
