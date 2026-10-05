@@ -2664,6 +2664,11 @@ test('Check again sits INSIDE .actions-row beside Sign & run (hamr 2026-10-05, o
   assert.match(row, /id="chat-sign-btn"/);
 });
 
+test('Runs list order (hamr 2026-10-05): the runs/workflows list comes first, imported jobs below it', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.ok(html.indexOf('id="wf-list"') < html.indexOf('id="import-list"'), 'wf-list is before import-list');
+});
+
 // ---------------------------------------------------------------------------
 // build item 4 (2026-09-28, session mul5fofw): chat messages are one short
 // plain line per step, no "bareloop" who-label on SYSTEM lines (they are
