@@ -359,6 +359,7 @@
 
   .job-card{position:relative;border:1px solid var(--border-strong);padding:14px 10px 10px;background:var(--panel2);margin-top:10px;margin-bottom:10px;}
   .job-card h4{margin:0 0 8px;font-size:13px;position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;}
+  .job-card .card-clear{position:absolute;top:-13px;right:10px;padding:1px 8px;font-size:11px;line-height:1.4;background:var(--panel2);}
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
@@ -501,11 +502,12 @@
       <div class="pane-body" id="left-pane-body">
 
         <section id="panel-chat" class="tabpanel active" role="tabpanel" aria-labelledby="tab-chat">
-          <button class="btn" type="button" id="chat-new-btn" data-testid="chat-new">+ New</button>
-
-          <div class="job-card compact" id="job-card" data-testid="job-card" hidden>
+          <!-- hamr 2026-10-05: the empty card is ALWAYS there when Chat opens (no + New). The top-right button reads
+               "Abandon" while a session is live and unsigned, else "Clear"; both leave an empty card. -->
+          <div class="job-card compact" id="job-card" data-testid="job-card">
             <div class="startfrom-origin" id="chat-startfrom-origin" data-testid="startfrom-origin" hidden></div>
             <h4 id="job-card-title">Job card — draft</h4>
+            <button class="btn card-clear" type="button" id="chat-clear-btn" data-testid="chat-clear">Clear</button>
             <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
             <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
 
@@ -3548,7 +3550,7 @@
 
   // ---- Chat tab: job-card authoring (PANEL-BUILD.md P3) ----
   (function(){
-    var newBtn = document.getElementById("chat-new-btn");
+    var clearBtn = document.getElementById("chat-clear-btn");
     var card = document.getElementById("job-card");
     var thread = document.getElementById("chat-thread");
     var msgInput = document.getElementById("chat-msg");
@@ -3612,7 +3614,6 @@
     }
     function openNewCard(){
       card.hidden = false;
-      newBtn.hidden = true;
       thread.innerHTML = "";
       errEl.textContent = "";
       actionErrEl.textContent = "";
@@ -3627,7 +3628,46 @@
       checkDepsBtn.hidden = true;
       refreshStartEnabled();
     }
-    newBtn.addEventListener("click", function(){ clearStartFrom(); openNewCard(); });
+    // hamr's ruling 2026-10-05: ONE button, two states. A live, unsigned session -> "Abandon" (the server ends it and
+    // releases the one-at-a-time lock; money already spent stays booked). Anything else (signed and running, terminal,
+    // nothing started) -> "Clear", which empties the card only and never stops a run (Stop lives on the Run tab).
+    function clearButtonFor(live, hasId){
+      return live ? {text: "Abandon", disabled: !hasId} : {text: "Clear", disabled: false};
+    }
+    function refreshClearBtn(){
+      var b = clearButtonFor(sessionLive, !!sessionId);
+      clearBtn.textContent = b.text;
+      clearBtn.disabled = b.disabled;
+    }
+    // back to a fresh empty card: every box, check type deterministic, the default (first) Model, origin/estimate/notes
+    // hidden, progress list and thread cleared, reuse lock lifted
+    function resetCard(){
+      ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
+      document.getElementById("jf-judge").disabled = true;
+      modelSelect.selectedIndex = 0;
+      msgInput.value = "";
+      hashLine.hidden = true; hashLine.textContent = "";
+      document.getElementById("jf-cap-note").textContent = "";
+      signBtn.disabled = true; signBtn.textContent = "Sign & run";
+      sendBtn.disabled = true;
+      reviseBtn.disabled = true; reviseBtn.textContent = "Revise (2 left)";
+      lastPhase = null;
+      clearStartFrom();
+      openNewCard();
+      refreshModelStatus();
+    }
+    clearBtn.addEventListener("click", function(){
+      if(clearBtn.textContent === "Abandon" && sessionId){
+        authorPost("/api/author/" + sessionId + "/abandon", {}).then(function(r){
+          var o = chatPostOutcome(r);
+          if(!o.ok){ chatActionFailed(o.error); return; }
+          resetCard();
+        }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not abandoned"); });
+        return;
+      }
+      resetCard();
+    });
 
     function currentCard(){
       var moneyCap = Number(document.getElementById("jf-cap-money").value);
@@ -3658,6 +3698,7 @@
       var v = Number(moneyCapInput.value);
       var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
       startBtn.disabled = !capOk || sessionLive || !keyOk;
+      refreshClearBtn();
     }
     moneyCapInput.addEventListener("input", refreshStartEnabled);
     // P4a — the monthly-limit note sits right under the cap, as the person types.
@@ -3862,8 +3903,9 @@
 
     function poll(){
       if(!sessionId) return;
+      var polledId = sessionId;
       authorGet("/api/author/" + sessionId).then(function(j){
-        if(!j || !j.state) return;
+        if(!j || !j.state || polledId !== sessionId) return;
         renderMessages(j.state);
         renderActions(j.state);
         if(reuseSession && !autoSigned && j.state.phase === "prepared" && j.state.specHash){

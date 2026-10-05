@@ -2550,8 +2550,8 @@ test('build item 1: #chat-action-error exists in the markup, distinct from #chat
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /id="chat-action-error"/);
   assert.match(html, /var actionErrEl = document\.getElementById\("chat-action-error"\);/);
-  // P5 item 3: the + New handler now calls openNewCard() (shared with Start from this); the clear lives there
-  assert.match(html, /newBtn\.addEventListener\("click", function\(\)\{ clearStartFrom\(\); openNewCard\(\); \}\);/);
+  // 2026-10-05: + New is gone; Clear/Abandon (resetCard) and Reuse both go through openNewCard(), where the clear lives
+  assert.match(extractFnSource(html, 'resetCard'), /clearStartFrom\(\);\s*openNewCard\(\);/);
   const newSrc = extractFnSource(html, 'openNewCard');
   assert.match(newSrc, /actionErrEl\.textContent = "";/);
 });
@@ -2991,7 +2991,7 @@ test('bug fix: no duplicate HTML "id" attributes in the panel page — a repeate
 
 test('bug fix: the Details/Job tabpanel\'s readonly job card has its own unique id, and renderJob() targets that id (not the Chat tab\'s draft job-card, which sits earlier in the DOM and would otherwise win any getElementById lookup)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /<div class="job-card compact" id="job-card" data-testid="job-card" hidden>/);
+  assert.match(html, /<div class="job-card compact" id="job-card" data-testid="job-card">/);
   assert.match(html, /<div class="job-card" id="job-card-readonly" hidden data-testid="job-card-readonly">/);
   const renderJobStart = html.indexOf('function renderJob(job){');
   const renderJobEnd = html.indexOf('\n  }', renderJobStart);

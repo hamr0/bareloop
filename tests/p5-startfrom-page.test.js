@@ -53,8 +53,8 @@ test('page: the reuse card opens filled from the server\'s prefill, shows the se
   assert.match(PAGE, /sfLine\.textContent = pre\.line \|\| "";/, 'the line is the server\'s text, never built on the page');
   assert.match(PAGE, /if\(startFrom\) body\.startFrom = startFrom\.importId \? \{importId: startFrom\.importId\} : startFrom\.runid;/, 'the start request names the origin; the server refuses a changed locked box');
   assert.match(PAGE, /data-testid="startfrom-line"/);
-  // + New clears the reuse state (and unlocks), so a plain New job card never carries a stale origin or greyed boxes
-  assert.match(PAGE, /newBtn\.addEventListener\("click", function\(\)\{ clearStartFrom\(\); openNewCard\(\); \}\);/);
+  // Clear clears the reuse state (and unlocks), so an empty card never carries a stale origin or greyed boxes
+  assert.match(fnSrc('resetCard'), /clearStartFrom\(\);\s*openNewCard\(\);/);
   assert.match(fnSrc('clearStartFrom'), /setReuseLocked\(false\)/);
 });
 
@@ -84,7 +84,7 @@ test('page: setReuseLocked greys Name, Goal, Success, Guardrails, Judge examples
   assert.equal(modelSelect.disabled, false, 'Model is open on a reuse (hamr 2026-10-04)');
   assert.equal(modelSelect.classes.has('locked'), false);
   f(false);
-  assert.ok(['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails'].every((id) => !els[id].readOnly), 'unlocked again for + New');
+  assert.ok(['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails'].every((id) => !els[id].readOnly), 'unlocked again for Clear');
   assert.ok(radios.every((r) => !r.disabled) && !modelSelect.disabled);
   assert.equal(els['jf-judge'].disabled, true, 'deterministic: the rubric-only box is disabled as before');
 });
