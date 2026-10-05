@@ -62,3 +62,17 @@ test('card fields (hamr 2026-10-05): editable = soft white + the ordinary 1px bo
   // only the ask box carries --field-border (its own constant border, asked for earlier)
   assert.deepEqual([...PAGE.matchAll(/^\s*([^{\n]*)\{[^}]*var\(--field-border\)[^}]*\}/gm)].map((m) => m[1].trim()), ['#chat-msg']);
 });
+
+test('card box default heights (hamr 2026-10-05): goal/success/guardrails/judge start at 2 rows, source/dest at 1; fitBox only sets height from auto, so rows is the floor', () => {
+  const rowsOf = (id) => Number(PAGE.match(new RegExp(`<textarea[^>]*id="${id}"[^>]*rows="(\\d+)"`))[1]);
+  for (const id of ['jf-goal', 'jf-success', 'jf-guardrails', 'jf-judge']) assert.equal(rowsOf(id), 2, `${id} defaults to 2 lines`);
+  for (const id of ['jf-source', 'jf-dest']) assert.equal(rowsOf(id), 1, `${id} stays 1 line`);
+  // fitBox resets to "auto" (the rows attribute then sizes the box) and measures scrollHeight, which the browser never
+  // reports below the rows-sized client height; a hidden box clears the inline height so rows rule again.
+  assert.match(fnSrc('fitBox'), /style\.height = "auto"/);
+  // eslint-disable-next-line no-new-func
+  const fitBox = new Function(`${fnSrc('fitBox')}\nreturn fitBox;`)();
+  const el = { scrollHeight: 40, offsetHeight: 0, clientHeight: 0, style: { height: '999px' } }; // empty 2-row box measures its rows height
+  fitBox(el);
+  assert.equal(el.style.height, '40px', 'an empty 2-row box keeps its 2-row height');
+});
