@@ -314,6 +314,9 @@ export function createSession(card, deps = {}) {
   /** @type {any} */
   const state = {
     id,
+    // the form as submitted + whether it is a reuse session: a refreshed page re-attaches to a live session from these
+    card: cardFields(card),
+    reuse: deps.reuse !== undefined,
     messages: /** @type {{role: string, text: string}[]} */ ([]),
     pendingAsk: /** @type {any} */ (null),
     cost: /** @type {any} */ (null),

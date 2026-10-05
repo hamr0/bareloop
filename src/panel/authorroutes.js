@@ -217,6 +217,15 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
+    // A refreshed page re-attaches to the one live (non-terminal) session: its id and state (card, messages, steps),
+    // or `null`. The server's session map is the only truth; nothing is stored page-side.
+    if (pathname === '/api/author/live') {
+      if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      const live = [...sessions.values()].find((s) => !TERMINAL_PHASES.has(s.state.phase));
+      send(200, { ok: true, sessionId: live ? live.state.id : null, state: live ? live.state : null });
+      return true;
+    }
+
     if (pathname === '/api/author/start') {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }

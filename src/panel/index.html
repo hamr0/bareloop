@@ -4023,6 +4023,47 @@
       });
     }
 
+    // Re-attach after a page load/refresh: the server holds the one live (non-terminal) authoring session, so ask it.
+    // If one exists, this tab takes it over exactly as if it had started it: the card filled from the session's own
+    // copy, the poll loop, progress list, thread, ask box, main button and Abandon. A signed session is terminal, so it
+    // never comes back (the card stays empty). Nothing is stored page-side.
+    function attachSession(j){
+      var st = j.state, c = st.card || {};
+      openNewCard();
+      sessionId = j.sessionId;
+      sessionLive = true;
+      reuseSession = st.reuse === true;
+      autoSigned = false;
+      signClickedOnce = reuseSession;
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === (c.checkType === "rubric" ? "rubric" : "deterministic")); });
+      if(c.model){
+        if(!Array.prototype.some.call(modelSelect.options, function(o){ return o.value === c.model; })){
+          modelSelect.insertAdjacentHTML("beforeend", '<option value="' + escapeXml(c.model) + '">' + escapeXml(c.model) + "</option>");
+        }
+        modelSelect.value = c.model;
+      }
+      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
+      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
+      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
+      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      if(reuseSession) setReuseLocked(true);
+      renderMessages(st);
+      renderActions(st);
+      if(pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(poll, 2000);
+      poll();
+    }
+    function reattachLive(){
+      if(sessionId || sessionLive) return;
+      authorGet("/api/author/live").then(function(j){
+        if(sessionId || sessionLive || !j || !j.ok || !j.sessionId || !j.state) return;
+        attachSession(j);
+      }).catch(function(){ /* nothing to attach to — the empty card stays */ });
+    }
+    document.getElementById("tab-chat").addEventListener("click", reattachLive);
+    reattachLive();
+
     // ---- Reuse workflow — the card opens filled from the SIGNED job: four open boxes, the rest greyed ----
     function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
     document.addEventListener("bareloop-reuse", function(e){
