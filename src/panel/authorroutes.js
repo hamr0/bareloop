@@ -255,7 +255,7 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
-    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|revise|sign-prepare|sign|check-deps))?$/.exec(pathname);
+    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|revise|sign-prepare|sign|check-deps|abandon))?$/.exec(pathname);
     if (!m) { send(404, { ok: false, error: 'not found' }); return true; }
     const session = sessions.get(m[1]);
     if (!session) { send(404, { ok: false, error: 'no such session' }); return true; }
@@ -275,6 +275,11 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'revise') {
       session.revise(String(body?.text ?? '')).then((r) => send(r.ok ? 200 : 400, { ...r, state: session.state }));
+      return true;
+    }
+    if (sub === 'abandon') {
+      const r = session.abandon();
+      send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
     }
     if (sub === 'check-deps') {

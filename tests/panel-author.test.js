@@ -913,3 +913,81 @@ test('createSession: a bad price (one field only, or negative) refuses at $0 wit
     assert.equal(r.session.state.draftSpentUsd, 0, why);
   }
 });
+
+// ---------------------------------------------------------------------------
+// ABANDON (hamr's ruling 2026-10-05): the Chat card's top-right button reads "Abandon" while a session is live and
+// unsigned. POST /api/author/:id/abandon ends it (phase 'abandoned', a TERMINAL phase, so the one-at-a-time lock
+// releases); money already spent stays booked; no NEW model call starts afterwards.
+// ---------------------------------------------------------------------------
+
+async function waitForPhase(base, token, id, want, ms = 4000) {
+  const start = Date.now();
+  let s = null;
+  while (Date.now() - start < ms) {
+    // eslint-disable-next-line no-await-in-loop
+    s = (await (await fetch(`${base}/api/author/${id}`, { headers: { 'x-bareloop-token': token } })).json()).state;
+    if (s.phase === want) return s;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 20); });
+  }
+  return s;
+}
+
+test('POST /api/author/:id/abandon: ends a live session, releases the one-at-a-time lock (a following Start is not 409); no token 403, unknown id 404', async (t) => {
+  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' } });
+  const repo = makeRepoWithDeps();
+  const post = (path, body, headers = { 'x-bareloop-token': token }) => fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body ?? {}) });
+  const started = await (await post('/api/author/start', baseCard({ source: repo }))).json();
+  const waiting = await waitForPhase(base, token, started.sessionId, 'install-needed');
+  assert.equal(waiting.phase, 'install-needed');
+  assert.equal((await post('/api/author/start', baseCard({ source: repo, jobName: 'panel-author-abandon-2' }))).status, 409, 'live: the lock holds');
+
+  assert.equal((await post(`/api/author/${started.sessionId}/abandon`, {}, {})).status, 403, 'the human-click guard applies');
+  assert.equal((await post('/api/author/nosuchid/abandon')).status, 404);
+  const res = await post(`/api/author/${started.sessionId}/abandon`);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).state.phase, 'abandoned');
+  const after = await waitForPhase(base, token, started.sessionId, 'abandoned');
+  assert.equal(after.phase, 'abandoned');
+
+  const next = await post('/api/author/start', baseCard({ source: repo, jobName: 'panel-author-abandon-2' }));
+  assert.notEqual(next.status, 409, 'the lock is released');
+  // a session that is already terminal has nothing to abandon
+  assert.equal((await post(`/api/author/${started.sessionId}/abandon`)).status, 400);
+});
+
+test('abandon: spend already booked stays booked; a call in flight still books after the abandon; no NEW model call starts', async (t) => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  let lateGenerate = null;
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-abandon-spend' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-abandon-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => ({ text: 'x', error: null, cost: 0.1 }),
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: ['c'], questions: [], notChecked: [] }]),
+    authorFn: async ({ onCall, generate }) => {
+      onCall({ label: 'draft', costUsd: 0.5, unpricedRounds: 0 });
+      await gate; // abandon happens while this call is "in flight"
+      onCall({ label: 'draft-late', costUsd: 0.25, unpricedRounds: 0 });
+      try { await generate([{ role: 'user', content: 'again' }], []); lateGenerate = 'ran'; } catch (e) { lateGenerate = `refused: ${e.message}`; }
+      return { ok: false, stop: 'x', reds: [], cost: { costUsd: null, knownUsd: 0.75, spendComplete: true, calls: [], unpricedRounds: 0 } };
+    },
+  });
+  const start = Date.now();
+  while (session.state.draftSpentUsd < 0.5 && Date.now() - start < 5000) {
+    if (session.state.pendingAsk?.kind === 'menu') session.signPrepare();
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+  const booked = session.state.draftSpentUsd; // 0.5 plus the confirm turn's own fake round
+  assert.ok(booked >= 0.5);
+  assert.equal(session.abandon().ok, true);
+  assert.equal(session.state.phase, 'abandoned');
+  assert.equal(session.state.draftSpentUsd, booked, 'booked spend is never zeroed');
+  release();
+  await new Promise((r) => { setTimeout(r, 100); });
+  assert.ok(Math.abs(session.state.draftSpentUsd - (booked + 0.25)) < 1e-9, 'the in-flight call still books its usage');
+  assert.equal(session.state.phase, 'abandoned', 'whatever run() does afterwards never un-abandons');
+  assert.match(String(lateGenerate), /refused: abandoned/, 'no NEW model call after abandon');
+  assert.equal(session.abandon().ok, false, 'second abandon: not live');
+});

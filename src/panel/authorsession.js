@@ -292,7 +292,6 @@ export function createSession(card, deps = {}) {
   /** @type {any} */
   const state = {
     id,
-    phase: 'starting',
     messages: /** @type {{role: string, text: string}[]} */ ([]),
     pendingAsk: /** @type {any} */ (null),
     cost: /** @type {any} */ (null),
@@ -422,6 +421,15 @@ export function createSession(card, deps = {}) {
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name]);
   };
   /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
+  // ABANDON (hamr's ruling 2026-10-05): once abandoned the phase is frozen at 'abandoned' — whatever the in-flight
+  // run() does afterwards (a late refuse, a phase write) never overwrites it, so the one-at-a-time lock stays released.
+  let abandoned = false;
+  let phaseValue = 'starting';
+  Object.defineProperty(state, 'phase', {
+    enumerable: true,
+    get: () => phaseValue,
+    set: (v) => { if (!abandoned) phaseValue = v; },
+  });
   const metered = [];
   const onCall = (call) => {
     metered.push({ label: call.label, costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0 });
@@ -441,6 +449,7 @@ export function createSession(card, deps = {}) {
   // one progress line, so a thread copy was the same refusal a second and third time (hamr's live reuse test 2026-10-04).
   /** @param {string} message @param {string} [phase] */
   const refuse = (message, phase = 'refused') => {
+    if (abandoned) return;
     state.phase = phase;
     state.error = message;
     stepFail(message);
@@ -550,6 +559,7 @@ export function createSession(card, deps = {}) {
      * @param {any} spec @param {string|null} seedRef
      */
     const finish = async (spec, seedRef) => {
+      if (abandoned) return;
       const specFile = join(outDir, 'resolved-spec.json');
       writeFileSync(specFile, `${JSON.stringify(spec, null, 2)}\n`);
       state.resolvedSpecPath = specFile;
@@ -696,8 +706,10 @@ export function createSession(card, deps = {}) {
     // `provider` for the model boundary) and/or `scout` (bypassing the real
     // paid scout) so it can drive the REAL confirm turn/ask()/revise/hash
     // machinery below with a deterministic fake, never a live provider call.
-    const generate = deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null });
-    const confirmGenerate = deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null });
+    // no NEW model call starts after an abandon; a call already in flight books its usage via onCall and is discarded
+    const noCallAfterAbandon = (fn) => (...a) => { if (abandoned) throw new Error('abandoned — no new model call'); return fn(...a); };
+    const generate = noCallAfterAbandon(deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null }));
+    const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null }));
 
     state.phase = 'drafting';
     stepStart('draft', `${card.model}, $${card.capUsd.toFixed(2)} cap`);
@@ -744,6 +756,19 @@ export function createSession(card, deps = {}) {
       if (state.pendingAsk.kind === 'install-needed') return { ok: false, error: 'install the packages, then click Check again — nothing to send here' };
       say('you', text);
       answer(text);
+      return { ok: true };
+    },
+    /** The Abandon button (hamr's ruling 2026-10-05): ends a LIVE, unsigned session. Spend already booked stays booked
+     * (`draftSpentUsd`/`cost` are never touched); the phase freezes at 'abandoned' (a TERMINAL phase, so the
+     * one-at-a-time lock releases); a parked ask or install wait is released so the run unwinds. */
+    abandon: () => {
+      if (['refused', 'abandoned', 'error', 'signed', 'signing-failed'].includes(state.phase)) return { ok: false, error: 'this session is not live — nothing to abandon' };
+      abandoned = true;
+      phaseValue = 'abandoned';
+      state.error = 'Abandoned by you — money already spent stays booked.';
+      state.pendingAsk = null;
+      if (resolvePending) { const r = resolvePending; resolvePending = null; r(null); }
+      if (resolveDepsCheck) { const r = resolveDepsCheck; resolveDepsCheck = null; r(); }
       return { ok: true };
     },
     /** the [Check again] button — re-runs the SAME `missingDependencies`
