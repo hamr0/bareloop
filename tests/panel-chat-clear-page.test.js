@@ -91,3 +91,9 @@ test('page: a poll answer for a session the card has already left is dropped', (
 test('page: no separate "spec hash:" line under Sign & run — the hash shows once, as the "generating hash" step detail (hamr 2026-10-05)', () => {
   assert.doesNotMatch(PAGE, /chat-hash-line|hashLine/);
 });
+
+test('page: Check again sits immediately before Sign & run in one non-splitting group, so wrapping never separates them (hamr 2026-10-05)', () => {
+  const row = PAGE.slice(PAGE.indexOf('<div class="actions-row">'), PAGE.indexOf('Only your click signs'));
+  assert.match(row, /<span class="sign-pair">\s*<button[^>]*id="chat-check-deps-btn"[^>]*>Check again<\/button>\s*<button[^>]*id="chat-sign-btn"[^>]*>Sign &amp; run<\/button>\s*<\/span>/);
+  assert.match(PAGE, /\.actions-row \.sign-pair\{[^}]*display:inline-flex[^}]*flex-wrap:nowrap/);
+});

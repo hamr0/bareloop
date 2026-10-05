@@ -434,6 +434,9 @@
   #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--border-strong);}
   .actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:stretch;}
   .actions-row > .btn{flex:1 1 auto;}
+  /* Check again + Sign & run never split across lines when the row wraps (hamr 2026-10-05) */
+  .actions-row .sign-pair{display:inline-flex;flex-wrap:nowrap;gap:8px;flex:2 1 auto;}
+  .actions-row .sign-pair > .btn{flex:1 1 auto;}
 
   /* Settings view (P4a) — same tokens as the rest of the page; the mockup's settings styles */
   .settings-view{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;}
@@ -589,8 +592,10 @@
           </div>
           <div class="actions-row">
             <button class="btn" type="button" id="chat-send-btn" data-testid="chat-send" disabled>Send</button>
-            <button class="btn" type="button" id="chat-check-deps-btn" data-testid="chat-check-deps" hidden>Check again</button>
-            <button class="btn primary" type="button" id="chat-sign-btn" data-testid="btn-sign-run" disabled>Sign &amp; run</button>
+            <span class="sign-pair">
+              <button class="btn" type="button" id="chat-check-deps-btn" data-testid="chat-check-deps" hidden>Check again</button>
+              <button class="btn primary" type="button" id="chat-sign-btn" data-testid="btn-sign-run" disabled>Sign &amp; run</button>
+            </span>
             <button class="btn" type="button" id="chat-revise-btn" data-testid="btn-revise" disabled>Revise (2 left)</button>
           </div>
           <div class="hint">Only your click signs. The chat can't.</div>
