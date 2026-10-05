@@ -14045,3 +14045,15 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 **Other readers audited.** `src/planrun.js` scope-menu discovery (`readdirSync` on each writeScope prefix) also throws on a file, but is best-effort by design and falls back to the signed entries (which include the file scope), so it is not a tree-changed instrument and was not changed. The only caller feeding tree-changed is `planrun.js` `executeStep` (`snapshotScope` per exit scope), which gets the fix.
 
 **Proven where:** `tests/exits.test.js` (three file-scope tests: edit passes, identical re-write fails, delete counts); fail-first against the old `src/exits.js`: the edit and delete tests failed. Not yet re-run live.
+
+## F213 — drafting spend of a panel session that never became a run lived only in memory: the monthly limit and the Money tab never counted it (self-review 2026-10-05; fixed on `feat/panel-import-run`, hamr ruling "A")
+
+**Grounded in:** `src/panel/authorsession.js` `onCall` set `state.draftSpentUsd` in memory only; it reached disk only through a signed run's `--draft-spent-usd` (`src/panel/authorroutes.js` `signRun`) into that run's spine. `src/monthly.js` `readLegs` (the one reader behind `monthSpend`, `spendSummary`, `checkMonthlyRoom`) reads run spines only.
+
+**What was wrong.** Abandon, a refusal/error, or a panel restart (sessions are in memory) dropped the figure: the month total, the monthly refusal and the Money tab never saw it, while Abandon's own wording says "money already spent stays booked".
+
+**The fix (hamr ruling A, the approved design).** `onCall` rewrites `<session dir>/draft-spend.json` after every metered call from the same `tallyCalls` figure (one owner, atomic tmp + rename; unpriced = `spendComplete:false`, never $0). `readLegs` adds each session folder with the file whose folder holds no run-list row's `spine`/`patient` (`src/draftspend.js`), as a leg flagged `draft` (no wall, not a run), so all three money readers agree through one helper. Month attribution is `startedAt` (the first call): it is fixed once written, so a session's figure never hops months as spend continues, as a run's leg is dated by its start. No new `runs.jsonl` rows, no job, no lock file; the Abandon message is unchanged and now true.
+
+**Edges.** A signed session whose run never appended its row (spawn failed, or a leg-1 claim released as refused) counts its draft. Signed AND listed = skipped. A session spanning a month boundary lands wholly in the month it began. The drafting judge calls are attributed to the worker's row. The panel's Money/monthly routes read `<home>/panel-sessions` (production's sessions root); a test that points `sessionsRoot` elsewhere passes it explicitly.
+
+**Proven where:** `tests/draft-spend.test.js` (real files in a scratch home; session driven through the real confirm turn and `onCall`); fail-first against the old `src/monthly.js` / `src/panel/authorsession.js`: all 7 failed. Not yet exercised live.

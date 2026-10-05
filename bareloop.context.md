@@ -3789,6 +3789,15 @@ spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`sig
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
 calendar month; a died or incomplete-spend run makes the total an "at least" figure.
 
+*Drafting spend that never became a run* (2026-10-05, F213). A panel authoring session writes
+`<session dir>/draft-spend.json` (`{ sessionId, spentUsd, spendComplete, provider, baseUrl, model,
+startedAt, updatedAt }`, atomic) after every metered call, so an abandoned, refused or restarted session's
+drafting money is not lost. `readLegs` (hence `monthSpend`, `spendSummary`, `checkMonthlyRoom` and the Money
+tab) adds every `<home>/panel-sessions/<id>/` that has one and whose folder holds no listed run's `spine` or
+`patient` (a signed run already carries its drafting spend via `--draft-spent-usd`; no double count). It lands in
+the month of `startedAt` (the first call), under the provider row it was drafted on; `spendComplete: false` or an
+unreadable file makes the figure an "at least". It is not a run: no wall, not in the `runs` count.
+
 *Hold until done.* A run CLAIMS the limit when it starts and holds it until it is done — no lock file,
 records only. `claimRun` (`src/monthly.js`) writes the run's row FIRST (it carries its `pid` and
 `capUsd`), then reads `runs.jsonl`: earlier claims come first, and only the claims ABOVE its own row count
