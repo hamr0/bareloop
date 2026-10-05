@@ -39,7 +39,7 @@ function plantDraft(home, id, over = {}) {
 }
 
 /** drive a REAL session whose authorFn books `calls` through the session's own onCall, then refuses */
-async function draftSession(t, calls) {
+async function draftSession(t, calls, gapMs = 0) {
   const home = tmp(t);
   writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
   const repo = tmp(t);
@@ -66,6 +66,7 @@ async function draftSession(t, calls) {
     },
     authorFn: async (o) => {
       for (const c of calls) {
+        if (gapMs > 0) await new Promise((r) => { setTimeout(r, gapMs); });
         o.onCall(c);
         seen.push(JSON.parse(readFileSync(join(sessionDir, 'draft-spend.json'), 'utf8')));
       }
@@ -96,6 +97,19 @@ test('onCall writes draft-spend.json with the running total after EVERY call; an
   // (0.0005 = the real confirm-turn call the session booked before the authoring calls)
   assert.equal(session.state.draftSpentUsd, 0.7505, 'one owner: the file carries the same figure state does');
   assert.equal(existsSync(join(sessionDir, 'draft-spend.json.tmp')), false, 'the write is tmp + rename');
+});
+
+test('startedAt keeps the FIRST metered call\'s timestamp across later calls (not re-dated to the last)', async (t) => {
+  // calls are spaced apart so each reads a distinct real-clock ISO; same-millisecond calls cannot tell `??=` from `=`
+  const { seen } = await draftSession(t, [
+    { label: 'survey', costUsd: 0.1, unpricedRounds: 0 },
+    { label: 'declare', costUsd: 0.1, unpricedRounds: 0 },
+    { label: 'confirm', costUsd: 0.1, unpricedRounds: 0 },
+  ], 15);
+  assert.equal(seen.length, 3);
+  assert.notEqual(seen[2].updatedAt, seen[0].updatedAt, 'the calls really read different clocks');
+  assert.equal(seen[1].startedAt, seen[0].startedAt, 'startedAt is the first call\'s, kept by the second');
+  assert.equal(seen[2].startedAt, seen[0].startedAt, 'startedAt is the first call\'s, kept by the third');
 });
 
 test('monthSpend counts an abandoned/refused session\'s draft spend; a restart (file, no live session) counts too', async (t) => {

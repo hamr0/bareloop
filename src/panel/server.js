@@ -2526,7 +2526,7 @@ export function handleRequest(req, res, opts) {
       });
       return;
     }
-    sendText(res, 405, 'method not allowed — this panel is read-only outside /api/author and /api/settings (GET/HEAD only)');
+    sendText(res, 405, 'method not allowed — this route does not accept this method (GET/HEAD only)');
     return;
   }
   const getRoutes = routesFor(opts, pathname);
