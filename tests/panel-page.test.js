@@ -2623,6 +2623,18 @@ test('progress list: renderProgress draws one line per step (running = dots, don
   bound({ steps: [{ id: 'confirm', label: 'confirming plan', status: 'running', detail: '' }], pendingAsk: { kind: 'menu' } });
   assert.match(row.innerHTML, /waiting for your OK/);
   assert.doesNotMatch(row.innerHTML, /step run"/, 'waiting on the person is not an animation');
+  for (const kind of ['menu', 'install-needed', 'other']) {
+    bound({ steps: [
+      { id: 'copy', label: 'copying source', status: 'done', detail: '' },
+      { id: 'deps', label: 'checking packages', status: 'running', detail: 'Packages missing in the copy. Run: npm ci' },
+    ], pendingAsk: { kind } });
+    const waitLi = row.innerHTML.match(/<li class="step wait"[^]*?<\/li>/);
+    assert.ok(waitLi, `${kind}: a waiting step has its own class`);
+    assert.doesNotMatch(waitLi[0], /\u2713|\u2717/, `${kind}: a waiting step carries no check and no cross`);
+    assert.match(waitLi[0], /Packages missing in the copy/, `${kind}: its detail stays`);
+    assert.doesNotMatch(row.innerHTML, /step run"/, `${kind}: no animation`);
+    assert.match(row.innerHTML, /step ok" data-step="copy"[^]*\u2713/, 'a done step still shows the check');
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -403,6 +403,7 @@
   .chat-steps .step.run .step-sign{color:var(--amber);}
   .chat-steps .step.ok .step-sign{color:var(--green);}
   .chat-steps .step.bad .step-sign{color:var(--red);}
+  .chat-steps .step.wait .step-label{color:var(--amber);}
   .chat-steps .step-detail{flex:1 1 14em;min-width:0;color:var(--text-faint);word-break:break-word;white-space:pre-wrap;}
   .chat-steps .step.bad .step-detail{color:var(--red);}
   .chat-steps .step.run .step-sign::after{content:"\2026";}
@@ -3820,7 +3821,7 @@
       progressRow.hidden = steps.length === 0;
       progressRow.innerHTML = steps.map(function(st, i){
         var waiting = st.status === "running" && i === steps.length - 1 && state.pendingAsk;
-        var cls = st.status === "running" && !waiting ? "run" : (st.status === "failed" ? "bad" : "ok");
+        var cls = waiting ? "wait" : (st.status === "running" ? "run" : (st.status === "failed" ? "bad" : "ok"));
         var sign = cls === "ok" ? "\u2713" : (cls === "bad" ? "\u2717" : "");
         var label = waiting ? progressLabelFor(state) : st.label;
         return '<li class="step ' + cls + '" data-step="' + escapeXml(st.id) + '"><span class="step-label">' + escapeXml(label) + '</span>' +
