@@ -57,22 +57,20 @@ test('page: resetCard empties every box, check type back to deterministic, Model
   const calls = [];
   const modelSelect = { selectedIndex: 3 };
   const msgInput = { value: 'typed' };
-  const hashLine = { hidden: false, textContent: 'spec hash: abc' };
   const signBtn = { disabled: false, textContent: 'Sign abc & run' };
   const sendBtn = { disabled: false };
   const reviseBtn = { disabled: false, textContent: 'Revise (1 left)' };
   const doc = { getElementById: (id) => els[id], querySelectorAll: () => ({ forEach: (fn) => radios.forEach(fn) }) };
   let lastPhase = 'prepared';
   // eslint-disable-next-line no-new-func
-  const run = new Function('document', 'modelSelect', 'msgInput', 'hashLine', 'signBtn', 'sendBtn', 'reviseBtn', 'clearStartFrom', 'openNewCard', 'refreshModelStatus',
+  const run = new Function('document', 'modelSelect', 'msgInput', 'signBtn', 'sendBtn', 'reviseBtn', 'clearStartFrom', 'openNewCard', 'refreshModelStatus',
     `var lastPhase = "prepared";\n${fnSrc('resetCard')}\nresetCard();\nreturn lastPhase;`);
-  lastPhase = run(doc, modelSelect, msgInput, hashLine, signBtn, sendBtn, reviseBtn, () => calls.push('clearStartFrom'), () => calls.push('openNewCard'), () => calls.push('refreshModelStatus'));
+  lastPhase = run(doc, modelSelect, msgInput, signBtn, sendBtn, reviseBtn, () => calls.push('clearStartFrom'), () => calls.push('openNewCard'), () => calls.push('refreshModelStatus'));
   for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time']) assert.equal(els[id].value, '', id);
   assert.equal(els['jf-judge'].disabled, true, 'rubric-only box off, as for deterministic');
   assert.deepEqual(radios.map((r) => r.checked), [true, false], 'deterministic');
   assert.equal(modelSelect.selectedIndex, 0);
   assert.equal(msgInput.value, '');
-  assert.equal(hashLine.hidden, true);
   assert.equal(els['jf-cap-note'].textContent, '');
   assert.equal(signBtn.disabled, true);
   assert.equal(lastPhase, null);
@@ -88,4 +86,8 @@ test('page: resetCard empties every box, check type back to deterministic, Model
 test('page: a poll answer for a session the card has already left is dropped', () => {
   assert.match(fnSrc('poll'), /var polledId = sessionId;/);
   assert.match(fnSrc('poll'), /polledId !== sessionId\) return;/);
+});
+
+test('page: no separate "spec hash:" line under Sign & run — the hash shows once, as the "generating hash" step detail (hamr 2026-10-05)', () => {
+  assert.doesNotMatch(PAGE, /chat-hash-line|hashLine/);
 });

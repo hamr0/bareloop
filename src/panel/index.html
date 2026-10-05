@@ -567,7 +567,6 @@
             </div>
             <button class="btn primary" type="button" id="chat-start-btn" data-testid="chat-start" disabled>Start drafting</button>
             <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
-            <div class="hint" id="chat-hash-line" data-testid="chat-hash-line" hidden></div>
           </div>
 
           <!-- ONE progress list (hamr 2026-10-04): every pipeline step is one line that updates in place, running with
@@ -3561,7 +3560,6 @@
     var checkDepsBtn = document.getElementById("chat-check-deps-btn");
     var errEl = document.getElementById("chat-card-error");
     var actionErrEl = document.getElementById("chat-action-error");
-    var hashLine = document.getElementById("chat-hash-line");
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
     var modelStatusEl = document.getElementById("jf-model-status");
@@ -3647,7 +3645,6 @@
       document.getElementById("jf-judge").disabled = true;
       modelSelect.selectedIndex = 0;
       msgInput.value = "";
-      hashLine.hidden = true; hashLine.textContent = "";
       document.getElementById("jf-cap-note").textContent = "";
       signBtn.disabled = true; signBtn.textContent = "Sign & run";
       sendBtn.disabled = true;
@@ -3886,10 +3883,6 @@
       } else {
         signBtn.disabled = !atMenu;
         signBtn.textContent = "Sign & run";
-      }
-      if(state.specHash){
-        hashLine.hidden = false;
-        hashLine.textContent = "spec hash: " + state.specHash;
       }
       // a session's stop is shown ONCE, in the progress line below (renderProgress); #chat-card-error carries only a
       // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
