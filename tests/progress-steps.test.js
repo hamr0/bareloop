@@ -54,11 +54,12 @@ function start(source, { home, pre }, key = 'fake-not-a-real-key') {
 }
 const settled = (s) => ['prepared', 'refused', 'error'].includes(s.state.phase);
 
-test('a reuse that reaches prepared lists setup, copy, check, reuse — every line done, in that order, labels from the one table', async () => {
+test('a reuse that reaches prepared lists setup, copy, check, reuse, hash — every line done, in that order, labels from the one table', async () => {
   const s = start(makeRepo(), setup());
   assert.ok(await until(() => settled(s)));
   assert.equal(s.state.phase, 'prepared', String(s.state.error));
-  assert.deepEqual(s.state.steps.map((x) => x.id), ['setup', 'copy', 'check', 'reuse']);
+  assert.deepEqual(s.state.steps.map((x) => x.id), ['setup', 'copy', 'check', 'reuse', 'hash']);
+  assert.equal(s.state.steps.at(-1).detail, `spec hash ${s.state.specHash}`, 'generating hash carries the full hash as its detail');
   assert.ok(s.state.steps.every((x) => x.status === 'done'));
   assert.ok(s.state.steps.every((x) => x.label === STEP_LABELS[x.id]));
   assert.equal(s.state.messages.filter((m) => m.role === 'system').length, 0, 'no pipeline line goes into the thread');

@@ -397,14 +397,15 @@
 
   /* the ONE progress list: a step per line — label, then dots while running / check / cross, then its reason */
   .chat-steps{list-style:none;margin:2px 0 10px;padding:0;font-size:12px;}
-  .chat-steps .step{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;padding:1px 0;}
+  .chat-steps .step{padding:1px 0;}
+  .chat-steps .step-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;}
   .chat-steps .step-label{color:var(--text);min-width:11em;}
   .chat-steps .step-sign{font-weight:700;}
   .chat-steps .step.run .step-sign{color:var(--amber);}
   .chat-steps .step.ok .step-sign{color:var(--green);}
   .chat-steps .step.bad .step-sign{color:var(--red);}
   .chat-steps .step.wait .step-label{color:var(--amber);}
-  .chat-steps .step-detail{flex:1 1 14em;min-width:0;color:var(--text-faint);word-break:break-word;white-space:pre-wrap;}
+  .chat-steps .step-detail{display:block;flex-basis:100%;min-width:0;padding-left:1.2em;color:var(--text-faint);word-break:break-word;white-space:pre-wrap;}
   .chat-steps .step.bad .step-detail{color:var(--red);}
   .chat-steps .step.run .step-sign::after{content:"\2026";}
   @keyframes step-dots{0%{content:"";}25%{content:".";}50%{content:"..";}75%{content:"...";}}
@@ -3824,9 +3825,9 @@
         var cls = waiting ? "wait" : (st.status === "running" ? "run" : (st.status === "failed" ? "bad" : "ok"));
         var sign = cls === "ok" ? "\u2713" : (cls === "bad" ? "\u2717" : "");
         var label = waiting ? progressLabelFor(state) : st.label;
-        return '<li class="step ' + cls + '" data-step="' + escapeXml(st.id) + '"><span class="step-label">' + escapeXml(label) + '</span>' +
-          '<span class="step-sign">' + sign + '</span>' +
-          (st.detail ? '<span class="step-detail">' + escapeXml(st.detail) + '</span>' : "") + '</li>';
+        return '<li class="step ' + cls + '" data-step="' + escapeXml(st.id) + '"><div class="step-line"><span class="step-label">' + escapeXml(label) + '</span>' +
+          '<span class="step-sign">' + sign + '</span></div>' +
+          (st.detail ? '<div class="step-detail">' + escapeXml("> " + st.detail) + '</div>' : "") + '</li>';
       }).join("");
     }
 

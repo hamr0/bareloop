@@ -22,7 +22,7 @@ import { spawn as realSpawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields } from './authorsession.js';
+import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, STEP_LABELS } from './authorsession.js';
 import { validateJob } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
@@ -384,9 +384,7 @@ export function signRun(session, claimedHash, o) {
   });
   if (typeof child?.unref === 'function') child.unref();
   session.state.phase = 'signed';
-  const draftLine = draftSpentUsd !== null
-    ? ` — drafting spent ${draftIncomplete ? 'at least ' : ''}${panelMoney2(draftSpentUsd)} (folds out of the run's own cap)`
-    : '';
-  session.state.messages.push({ role: 'system', text: `signed — spec hash ${session.state.specHash}${draftLine} — run starting detached, own log at ${logFile}` });
+  // hamr 2026-10-05: the sign shows as the last step of the one progress list, never as a thread bubble
+  if (Array.isArray(session.state.steps)) session.state.steps.push({ id: 'signed', label: STEP_LABELS.signed, status: 'done', detail: '' });
   return { ok: true, job: session.state.resolvedSpecPath };
 }

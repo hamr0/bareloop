@@ -211,6 +211,17 @@ test('signRun RED-PROOF: refuses when not prepared, and when the hash does not m
   assert.equal(prepared.state.phase, 'signed');
 });
 
+test('signRun (hamr 2026-10-05): an accepted sign finishes the "signed hash" step and posts NO thread bubble', () => {
+  const outDir = tmp('panel-author-signrun-step-');
+  const specPath = join(outDir, 'resolved-spec.json');
+  writeFileSync(specPath, '{}');
+  const session = fakeSession({ phase: 'prepared', specHash: 'abc123', resolvedSpecPath: specPath, outDir, messages: [], steps: [{ id: 'hash', label: 'generating hash', status: 'done', detail: 'spec hash abc123' }] });
+  const r = signRun(session, 'abc123', { env: {}, spawnFn: () => ({ unref: () => {} }), bareloopBin: '/x/bin/bareloop.mjs' });
+  assert.equal(r.ok, true);
+  assert.deepEqual(session.state.steps.at(-1), { id: 'signed', label: 'signed hash', status: 'done', detail: '' });
+  assert.equal(session.state.messages.length, 0, 'the thread carries chat turns only');
+});
+
 test('signRun: exact argv, including "--approve <hash>" as a literal array element, never a shell string', () => {
   let captured = null;
   const spawnFn = (cmd, args, opts) => { captured = { cmd, args, opts }; return { unref: () => {} }; };
@@ -249,18 +260,13 @@ test('signRun: a session that spent $0.81 drafting passes --draft-spent-usd 0.81
   const flagIdx = captured.args.indexOf('--draft-spent-usd');
   assert.ok(flagIdx !== -1, '--draft-spent-usd must be a literal argv element when the session spent > 0 drafting');
   assert.equal(captured.args[flagIdx + 1], '0.81');
-  // hamr's ruling 2026-09-28 ("panel money 2-decimals") — the chat line
-  // renders through the panel's own 2-decimal `panelMoney2`, never the
-  // 4-decimal library money().
-  assert.match(session.state.messages.at(-1).text, /drafting spent \$0\.81 /);
-  assert.doesNotMatch(session.state.messages.at(-1).text, /at least/, 'a complete drafting fold must never read as a floor');
 });
 
 // hamr's ruling 2026-09-28 (2nd addendum, "drafting completeness travels
 // with draftSpentUsd") — an INCOMPLETE session floor (draftSpendComplete:
 // false) must pass --draft-spend-incomplete to run-u and read as a floor in
 // the chat line, never as an exact figure.
-test('signRun: an INCOMPLETE session floor (draftSpendComplete:false) passes --draft-spend-incomplete and reads "at least" in the chat line', () => {
+test('signRun: an INCOMPLETE session floor (draftSpendComplete:false) passes --draft-spend-incomplete and posts no thread bubble', () => {
   let captured = null;
   const spawnFn = (cmd, args, opts) => { captured = { cmd, args, opts }; return { unref: () => {} }; };
   const outDir = tmp('panel-author-signrun-draftincomplete-');
@@ -272,7 +278,7 @@ test('signRun: an INCOMPLETE session floor (draftSpendComplete:false) passes --d
   const r = signRun(session, 'deadbeef03', { env: {}, spawnFn, bareloopBin: '/repo/bin/bareloop.mjs' });
   assert.equal(r.ok, true);
   assert.ok(captured.args.includes('--draft-spend-incomplete'), '--draft-spend-incomplete must be a literal argv element when the session\'s own floor was not exact');
-  assert.match(session.state.messages.at(-1).text, /drafting spent at least \$0\.81 /);
+  assert.equal(session.state.messages.length, 0, "no thread bubble: the floor still rides in argv, the chat cost readout owns the figure");
 });
 
 // a COMPLETE session (draftSpendComplete left at its default true) must

@@ -68,6 +68,8 @@ export const STEP_LABELS = Object.freeze({
   draft: 'drafting',
   calibrate: 'calibrating',
   gates: 'checking signing gates',
+  hash: 'generating hash',
+  signed: 'signed hash',
 });
 
 /**
@@ -575,8 +577,8 @@ export function createSession(card, deps = {}) {
         state.specHash = hash;
         writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
         state.phase = 'prepared';
+        stepStart('hash', `spec hash ${hash}`);
         stepDone();
-        say('bot', `SIGNING PREPARED — spec hash ${hash}`);
         return;
       }
 
@@ -626,8 +628,8 @@ export function createSession(card, deps = {}) {
       // Written at sign-prepare (the session reached `prepared`), only by sessions created from now on.
       writeFileSync(join(outDir, 'card.json'), `${JSON.stringify(cardFields(card), null, 2)}\n`);
       state.phase = 'prepared';
+      stepStart('hash', `spec hash ${signing.specHash}`);
       stepDone();
-      say('bot', `SIGNING PREPARED — spec hash ${signing.specHash}`);
     };
     // REUSE WORKFLOW: the route hands in a COPY of the origin's signed spec with only the four open boxes set (see
     // `buildReuseSpec`). No scout, no draft, no confirm turn: $0 of drafting. The signing gates still run against THIS

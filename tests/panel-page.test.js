@@ -2637,6 +2637,26 @@ test('progress list: renderProgress draws one line per step (running = dots, don
   }
 });
 
+test('progress list (hamr 2026-10-05): a step\'s detail is its OWN line under the step, prefixed "> "; a failed step keeps the cross and its reason on that line', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const row = { hidden: true, innerHTML: '' };
+  const src = ['renderProgress', 'progressLabelFor', 'escapeXml'].map((n) => extractFnSource(html, n)).join('\n');
+  // eslint-disable-next-line no-new-func
+  const bound = new Function('progressRow', `${src}\nreturn renderProgress;`)(row);
+  bound({ steps: [
+    { id: 'reuse', label: 'reusing signed workflow', status: 'done', detail: 'drafting skipped ($0)' },
+    { id: 'check', label: 'checking source', status: 'failed', detail: '3 files look like secrets' },
+  ] });
+  const lis = row.innerHTML.match(/<li [^]*?<\/li>/g);
+  assert.equal(lis.length, 2);
+  assert.match(lis[0], /<(div|span) class="step-detail">&gt; drafting skipped \(\$0\)<\/(div|span)>/, 'detail carries the "> " prefix');
+  assert.ok(lis[0].indexOf('step-sign') < lis[0].indexOf('step-detail'), 'sign is on the step line, detail after it');
+  assert.match(lis[0], /step-line/, 'the step has its own line element separate from the detail');
+  assert.match(lis[1], /\u2717[^]*&gt; 3 files look like secrets/);
+  const css = html.match(/\.chat-steps \.step-detail\{[^}]*\}/)[0];
+  assert.match(css, /flex-basis:100%|flex:1 1 100%|display:block/, 'the detail takes a full line of its own');
+});
+
 // ---------------------------------------------------------------------------
 // build item 4 (2026-09-28, session mul5fofw): chat messages are one short
 // plain line per step, no "bareloop" who-label on SYSTEM lines (they are
