@@ -23,6 +23,7 @@
     --magenta:#bb9af7;
     --accent:#7aa2f7;
     --btn-bg:#1f2335; --btn-text:#c0caf5;
+    --field-bg:var(--bg); --field-border:var(--text-dim);
     --primary-bg:#7aa2f7; --primary-text:#1a1b26; --primary-border:#7aa2f7;
     font: 14px/1.5 "Courier Prime", "Courier New", Courier, ui-monospace, monospace;
   }
@@ -68,6 +69,7 @@
       --magenta:#9854f1;
       --accent:#2668c2;
       --btn-bg:#e9e9ed; --btn-text:#3760bf;
+      --field-bg:#ffffff;
       --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
     }
   }
@@ -82,6 +84,7 @@
     --magenta:#9854f1;
     --accent:#2668c2;
     --btn-bg:#e9e9ed; --btn-text:#3760bf;
+    --field-bg:#ffffff;
     --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
   }
   .theme-toggle{padding:4px 9px;min-height:32px;border:1px solid var(--border-strong);background:var(--btn-bg);color:var(--text);}
@@ -431,7 +434,7 @@
   .chat-input-row input{width:100%;box-sizing:border-box;}
   /* chat message box reads as an unmistakable text box: ~2x the default
      input height, thicker 2px border (ported verbatim from the mockup). */
-  #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--border-strong);}
+  #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--field-border);background:var(--field-bg);}
   /* ONE wide button below the message box (hamr 2026-10-05); its wording comes from mainButtonFor */
   .btn.wide{width:100%;margin-top:10px;white-space:normal;}
   /* Settings view (P4a) — same tokens as the rest of the page; the mockup's settings styles */

@@ -2220,7 +2220,7 @@ test('Chat tab CSS: .field inputs/selects are full width (mockup .field input,.f
 
 test('Chat tab CSS: #chat-msg is the ~2x-height, 2px-border text box from the mockup', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /#chat-msg\{min-height:64px;padding:8px 12px;border:2px solid var\(--border-strong\);\}/);
+  assert.match(html, /#chat-msg\{min-height:64px;padding:8px 12px;border:2px solid var\(--field-border\);background:var\(--field-bg\);\}/);
 });
 
 test('Chat tab markup: the ONE main button starts disabled in the served HTML (before any session/phase exists, it must not be clickable)', () => {
