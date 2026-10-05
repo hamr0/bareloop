@@ -2285,11 +2285,36 @@ test('build item 5 RED-PROOF (2026-09-28): the initial /api/runs load no longer 
   assert.match(block, /tab-run"\)\.click\(\)/, 'the right-pane Run details tab still loads the newest run, ready for when the person switches to Runs themselves');
 });
 
-test('progress list (2026-10-04): ONE list element sits ahead of the chat thread, hidden until a session has steps', () => {
+test('progress list (2026-10-05 placement): ONE list element sits under the chat thread, directly above the ask box, hidden until a session has steps', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /<ol class="chat-steps" id="chat-progress-row"[^>]*hidden><\/ol>/);
-  assert.ok(html.indexOf('id="chat-progress-row"') < html.indexOf('id="chat-thread"'), 'the progress list must render ahead of the chat thread');
+  const at = (id) => html.indexOf(`id="${id}"`);
+  assert.ok(at('job-card') < at('chat-thread') && at('chat-thread') < at('chat-progress-row'), 'job card, then thread, then the progress list');
+  assert.ok(at('chat-progress-row') < at('chat-action-error') && at('chat-action-error') < html.indexOf('<textarea id="chat-msg"') && html.indexOf('<textarea id="chat-msg"') < at('chat-main-btn'), 'progress list, action error, ask box, main button');
   assert.doesNotMatch(html, /chat-progress-glyph|chat-progress-label|\[progress\./, 'the old glyph+label row is gone');
+});
+
+test('progress list (2026-10-05): renderProgress reports a change only when the content changed; renderActions scrolls the newest line into view only then, only while live, and never focuses', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const row = { hidden: true, innerHTML: '', lastElementChild: null };
+  const rp = ['renderProgress', 'progressLabelFor', 'escapeXml'].map((n) => extractFnSource(html, n)).join('\n');
+  const ra = extractFnSource(html, 'renderActions');
+  let scrolls = 0; let lastArg = null;
+  const li = { scrollIntoView: (o) => { scrolls += 1; lastArg = o; } };
+  // eslint-disable-next-line no-new-func
+  const renderActions = new Function('progressRow', 'errEl', 'CLIENT_TERMINAL_PHASES', 'refreshStartEnabled', `var lastState, sessionLive;\n${rp}\n${ra}\nreturn renderActions;`)(
+    row, { textContent: '' }, ['refused', 'abandoned', 'error', 'signed', 'signing-failed'], () => {});
+  const a = { phase: 'drafting', steps: [{ id: 'copy', label: 'copying source', status: 'running', detail: '' }] };
+  row.lastElementChild = li;
+  renderActions(a); assert.equal(scrolls, 1, 'a new line scrolls');
+  renderActions(JSON.parse(JSON.stringify(a))); assert.equal(scrolls, 1, 'an identical poll tick does not scroll');
+  renderActions({ phase: 'drafting', steps: [{ id: 'copy', label: 'copying source', status: 'done', detail: '' }, { id: 'draft', label: 'drafting', status: 'running', detail: '' }] });
+  assert.equal(scrolls, 2, 'a new/changed line scrolls');
+  assert.deepEqual(lastArg, { block: 'nearest' });
+  renderActions({ phase: 'signed', steps: [{ id: 'signed', label: 'signed hash', status: 'done', detail: '' }] });
+  assert.equal(scrolls, 2, 'a terminal phase never scrolls');
+  const progressPath = rp + ra;
+  assert.doesNotMatch(progressPath, /\.focus\(/, 'the progress render path never moves keyboard focus');
 });
 
 test('progress list: the running dots are CSS and stop under prefers-reduced-motion (a static ellipsis)', () => {

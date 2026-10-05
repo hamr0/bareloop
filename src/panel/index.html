@@ -581,11 +581,11 @@
             <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
           </div>
 
-          <!-- ONE progress list (hamr 2026-10-04): every pipeline step is one line that updates in place, running with
-               animated dots, then a check or a cross with its code-owned reason; chat turns stay in the thread below. -->
-          <ol class="chat-steps" id="chat-progress-row" data-testid="chat-steps" aria-live="polite" hidden></ol>
-
           <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
+
+          <!-- ONE progress list (hamr 2026-10-04): every pipeline step is one line that updates in place, running with
+               animated dots, then a check or a cross with its code-owned reason; chat turns stay in the thread above it, right over the ask box. -->
+          <ol class="chat-steps" id="chat-progress-row" data-testid="chat-steps" aria-live="polite" hidden></ol>
 
           <!-- build item 1 — a failed/rejected send, revise, sign-prepare,
                sign or check-deps POST shows here and STAYS shown: it is set
@@ -3857,8 +3857,11 @@
     // the ids and words). While a step runs its dots are CSS (still under prefers-reduced-motion); it ends as a check
     // or a cross, a cross carrying the code-owned reason on the same line. A pending ask for the person replaces the
     // running step's label with what is being waited on, never an animation.
+    // Returns true when the list's content actually changed (a new line, or the latest line changed) so the caller can
+    // scroll only then; an identical 2s poll tick returns false and leaves the person's scroll position alone.
     function renderProgress(state){
       var steps = (state && state.steps) || [];
+      var before = progressRow.innerHTML;
       progressRow.hidden = steps.length === 0;
       progressRow.innerHTML = steps.map(function(st, i){
         var waiting = st.status === "running" && i === steps.length - 1 && state.pendingAsk;
@@ -3869,6 +3872,7 @@
           '<span class="step-sign">' + sign + '</span></div>' +
           (st.detail ? '<div class="step-detail">' + escapeXml("> " + st.detail) + '</div>' : "") + '</li>';
       }).join("");
+      return progressRow.innerHTML !== before;
     }
 
     // hamr's ruling 2026-10-05: ONE wide button below the message box. Its wording, action and enabled state are ONE
@@ -3948,14 +3952,19 @@
 
     function renderActions(state){
       lastState = state;
-      // a session's stop is shown ONCE, in the progress line below (renderProgress); #chat-card-error carries only a
+      // a session's stop is shown ONCE, in the progress line (renderProgress); #chat-card-error carries only a
       // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
       errEl.textContent = "";
-      renderProgress(state);
+      var progressChanged = renderProgress(state);
       // build item 4 — re-enable Start only once the session has settled
       // into a terminal phase (a fresh Start becomes possible again).
       sessionLive = CLIENT_TERMINAL_PHASES.indexOf(state.phase) === -1;
       refreshStartEnabled();
+      // hamr 2026-10-05: while the session is live and the list changed, bring the newest progress line into view.
+      // Never moves keyboard focus, and an unchanged poll tick never scrolls.
+      if(progressChanged && sessionLive && progressRow.lastElementChild){
+        progressRow.lastElementChild.scrollIntoView({block: "nearest"});
+      }
     }
 
     function poll(){
