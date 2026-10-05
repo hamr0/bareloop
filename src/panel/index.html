@@ -435,6 +435,8 @@
   /* hamr 2026-10-05: the card's free-text boxes wrap like the ask box (one shared fitBox); a few rows, then they scroll inside */
   /* same look as the card's one-line inputs (white when editable, ordinary 1px border) — a textarea has its own browser border otherwise */
   .job-card textarea.jf-wrap{width:100%;box-sizing:border-box;font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
+  /* hamr 2026-10-05: the ask box is dimmed until something asks for a reply (placeholder stays readable) */
+  #chat-msg:disabled{background:var(--bg);opacity:.55;cursor:not-allowed;}
   /* chat message box reads as an unmistakable text box: ~2x the default
      input height, thicker 2px border (ported verbatim from the mockup). */
   #chat-msg{min-height:64px;padding:8px 12px;border:2px solid var(--field-border);background:var(--field-bg);}
@@ -3897,12 +3899,21 @@
       }
       return {text: "Sign & run", action: "none", disabled: true, hint: ""};
     }
+    // pure: the ask box takes typed text only when the session has a pending ask that accepts it (the plan menu -> a
+    // change request, or any question); not with no session, no ask, or while waiting on an install
+    function askBoxOpenFor(st){
+      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind !== "install-needed";
+    }
     function renderMain(){
       var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce};
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
         st.revisesLeft = lastState.revisesLeft; st.specHash = lastState.specHash;
       }
+      // hamr 2026-10-05: the ask box is open only while something asks for a reply; otherwise dimmed and emptied
+      var open = askBoxOpenFor(st);
+      msgInput.disabled = !open;
+      if(!open) msgInput.value = "";
       var b = mainButtonFor(st, !msgInput.value.trim(), !!startFrom);
       mainBtn.textContent = b.text;
       mainBtn.disabled = b.disabled;
