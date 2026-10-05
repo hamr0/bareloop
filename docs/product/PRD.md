@@ -1308,6 +1308,6 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 
 ### Panel: Reuse workflow replaces "Start from this" (v1.88 — 2026-10-03)
 
-- Reuse workflow is the same signed job on a new source: green runs and imported jobs only, four open boxes (Source, Destination, $ cap, Time cap), the rest locked and refused by the server, never drafted.
-- Same-job identity is `workflowKey` (the signed spec without source, fence and caps); the signature hash is unchanged and the person signs the new one.
-- Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-03.
+- Reuse workflow is the same signed job on a new source: green runs and imported jobs only, five open boxes (Source, Destination, Model, $ cap, Time cap — Model opened 2026-10-04), the rest locked and refused by the server, never drafted.
+- Same-job identity is `workflowKey` (the signed spec without source, fence, caps and the worker's provider/baseUrl/model); the signature hash is unchanged (it still covers all of them) and the person signs the new one.
+- Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-03 and the 2026-10-04 Model ruling.

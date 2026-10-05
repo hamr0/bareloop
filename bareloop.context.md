@@ -1112,7 +1112,9 @@ from ralph's shipped `runClose` because one runs a DECLARATION and the other an 
 
 The shell's own fixed code for the closed exit menu — nothing here executes
 agent-authored text. `snapshotScope` hashes every file under a scope prefix (the
-"before" side of `tree-changed`; a missing dir snapshots empty). `evalExits` is AND-only
+"before" side of `tree-changed`; a missing dir snapshots empty; a scope whose prefix names a single
+regular FILE — a file-valued `writeScope` becomes `src/x.js/**` — snapshots that one file, keyed by the
+prefix, F212: a readdir on a file used to read as an empty tree forever). `evalExits` is AND-only
 and never short-circuits — the result names EVERY failing wall (`{ pass, results }`,
 each result `{ type, pass, detail?, fault? }`). `tree-changed` reads OUTCOME (bytes vs
 the snapshot): an identical re-write is NOT a change (F43) and git status is never
@@ -3438,7 +3440,11 @@ key you want first (the panel picks the row by the Model menu).
   LIVE, unsigned session: phase becomes the terminal `abandoned` (releasing the one-at-a-time lock), money already booked
   stays booked (`draftSpentUsd` is never zeroed; a call in flight still books its usage), no NEW model call starts;
   `400` on a session that is not live, `404` unknown id, same guard as the other author routes. After `signed` the card's
-  button reads **Clear** and only empties the card (a run is stopped from the Run tab). `GET /api/author/:id` polls the session's state
+  button reads **Clear** and only empties the card (a run is stopped from the Run tab). `GET /api/author/live` →
+  `{ok, sessionId, state}` of the ONE live (non-terminal) session, or `{sessionId:null, state:null}`: a refreshed page
+  re-attaches to it from the server's session map (nothing is stored page-side). A panel restart mints a new token and
+  loses the in-memory sessions: the page then shows one "reload this page" line and stops the Chat poll (no auto-reload;
+  drafting money already spent stays booked via `draft-spend.json`, below). `GET /api/author/:id` polls the session's state
   (phase, chat messages, cost, `revisesLeft`, `specHash` once prepared). `POST /api/author/
   :id/send {text}` answers whatever the confirm turn is currently asking (the `language` pick or a plan's
   own follow-up question — the old `worseThanBefore` ask is retired, 2026-09-28) — refused outright when the pending ask is the
@@ -3510,7 +3516,8 @@ key you want first (the panel picks the row by the Model menu).
   ride along from the run's `job-start`, so the one cap still covers drafting). `--wait` hands back
   the engine's own exit code: an exit inside the settle window (6s) is the engine's own refusal and
   the log tail is returned as `error` verbatim; otherwise `{ok:true, runid, specHash, capsChanged,
-  log}`. The new run appears in the list under its own runid. The page's Resume button opens the
+  log}`. The run keeps its runid and its one list row: the resumed leg appends to the same spine (P5-R,
+  `leg-start` in the run list), it never appears as a new run. The page's Resume button opens the
   caps form (prefilled, "spent so far") and `Sign & resume` is the human click.
   **Stop (item 5)** → `POST /api/runs/:runid/stop` (`src/panel/runroutes.js`, `checkHumanGuard`, no body).
   It writes the run's STOP REQUEST, a file `<spine>.stop` (`stopFilePath(spine)`, `src/legs.js` — the one
@@ -3529,7 +3536,10 @@ key you want first (the panel picks the row by the Model menu).
   disk and the leg is live); Ended row `stopped` = "You stopped it." / "Resume." / `[Resume]`, card line
   `stopped — resume`, Audit divider `stopped: you stopped it · resumed <when>`. The page shows `[Stop]`
   in the Run tab's action area while live, "stopping after this turn…" after the click, and the same
-  `[Resume]` there once the engine would accept one.
+  `[Resume]` there once the engine would accept one. The seam reads the file in STEP workers only
+  (`phase` `step:<id>`): the scout, plan and close-fix rounds never read it, so a Stop clicked while the run
+  is in one of those phases is not honoured until a step round runs again, and is otherwise cleared when
+  the leg ends — the money and time caps still bind throughout.
   **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on GREEN runs only (the Run tab's
   action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on green and
   green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: Clear the card and draft a new one.", and
@@ -3574,7 +3584,12 @@ key you want first (the panel picks the row by the Model menu).
   `STEP_LABELS`, `src/panel/authorsession.js`); `progressLabel` is the running step's label. A refusal sets
   `state.error` and fails exactly one step with the same text as its `detail`; pipeline text is never a chat message
   (`messages` holds person/model turns only). Two last steps, `hash` ("generating hash", detail `spec hash <full hash>`, done at sign-prepare) and `signed` ("signed hash", pushed by `signRun` when the sign is accepted); the old "SIGNING PREPARED" / "signed — … run starting detached" thread bubbles are gone. The page draws each step's `detail` on its own `> ` line under the step. Destination follows the Source: for a repo source it is the write
-  fence (relative `writeScope` globs, never proven as a directory); for a folder source an absolute directory.
+  fence (relative `writeScope` globs, never proven as a directory); for a folder source an absolute directory. Both
+  are refused at $0, before any model call (the same rule on a fresh and a Reuse card): an ABSOLUTE
+  Destination on a repo source → `Destination must be a path inside the repo, like src/digest.js` (before the
+  copy); a source that is not a git repo → a plain refusal worded by the kind the source door recorded (a single
+  file: "Source must be the repo folder — put the file in Destination"; a plain folder or a URL: "not a code
+  project (no git repo found)").
   **Import, read only (item 4)** — `src/panel/importroutes.js`. The Workflows toolbar's `[Import]` opens a folder
   browser plus a paste box; an imported job is an exported bundle folder the person can LOOK at: nothing runs,
   nothing is signed, the folder is never written. Routes, all behind `checkHumanGuard` (token + own address —
