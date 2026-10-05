@@ -640,6 +640,9 @@ export async function prepareSource({ source, into, destination, worktree, fetch
     const buf = f.buf ?? (f.symlinkTarget !== undefined ? Buffer.from(f.symlinkTarget, 'utf8') : await readFile(/** @type {string} */ (f.abs)));
     fileMeta.push({ path: f.rel, bytes: buf.length, sha256: sha256Hex(buf) });
     const isBinary = f.symlinkTarget === undefined && hasNulByte(buf.subarray(0, 8192));
+    // P6 item 2 (hamr 2026-10-05 Q2=A): a repo going onto a WORKTREE is the person's OWN repo, left in place — a secret
+    // already in it is MASKED wherever bareloop records it (`redactSecrets`), not a refusal. Every other kind keeps the scan.
+    if (worktree !== undefined && frozen.kind === 'repo') continue;
     const names = secretPatternNames(buf.toString(isBinary ? 'latin1' : 'utf8'));
     if (names.length) secretHits.push({ rel: f.rel, names });
   }
