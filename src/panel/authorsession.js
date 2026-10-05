@@ -254,6 +254,18 @@ export function validateReuseCard(card, opts = {}) {
 const isAbsoluteDestination = (destination) => /^(\/|[a-zA-Z]:[\\/])/.test(destination);
 
 /**
+ * The $0 refusal for a non-repo source, worded by the kind the source door recorded (`prep.manifest.kind`) — a single
+ * file is not a "folder", and Source must be the repo folder with the file named in Destination (hamr 2026-10-05).
+ * @param {string} kind `prep.manifest.kind`: 'file' | 'folder' | 'url' (a 'repo' never reaches this)
+ * @returns {string}
+ */
+export function nonRepoSourceMessage(kind) {
+  if (kind === 'file') return 'Source is a single file. Source must be the repo folder — put the file in Destination, like src/digest.js. Nothing spent.';
+  if (kind === 'folder') return "Source is a plain folder, not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
+  return "Source is not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
+}
+
+/**
  * The ONE Destination rule for a REPO source (fresh card and Reuse card alike): there Destination is the write fence,
  * relative to the repo, so an absolute path is refused — at $0, before any copy or model call. A FOLDER source (or a
  * source that does not peek as a repo) keeps today's behaviour: its Destination is an absolute output directory.
@@ -589,7 +601,7 @@ export function createSession(card, deps = {}) {
       }
     }
     if (!IS_REPO_SOURCE) {
-      refuse("Plain folder, not a code project — bareloop can't check this kind of job yet. Nothing spent.");
+      refuse(nonRepoSourceMessage(prep.manifest.kind));
       return;
     }
 

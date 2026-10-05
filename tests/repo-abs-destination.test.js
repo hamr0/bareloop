@@ -115,3 +115,28 @@ test('Reuse card: an absolute Destination on a REPO source is refused with the s
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(ok.state.phase)));
   assert.notEqual(ok.state.error, MSG, String(ok.state.error));
 });
+
+const FILE_MSG = 'Source is a single file. Source must be the repo folder — put the file in Destination, like src/digest.js. Nothing spent.';
+const FOLDER_MSG = "Source is a plain folder, not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
+
+test('non-repo source: a single FILE is refused at $0 with the file message (not "Plain folder"); no model call', async () => {
+  const dir = tmp('nonrepo-file-'); const file = join(dir, 'digest.js'); writeFileSync(file, 'export const x = 1;\n');
+  const calls = { n: 0 };
+  const s = fresh({ source: file, destination: 'src/digest.js' }, calls);
+  assert.ok(await until(() => s.state.phase === 'refused' || settled(s)));
+  assert.equal(s.state.phase, 'refused', String(s.state.error));
+  assert.equal(s.state.error, FILE_MSG);
+  assert.equal(calls.n, 0, 'no model seam was reached');
+  assert.ok(!(s.state.draftSpentUsd > 0), 'nothing spent');
+});
+
+test('non-repo source: a plain FOLDER is refused at $0 with the folder message; no model call', async () => {
+  const folder = tmp('nonrepo-folder-'); writeFileSync(join(folder, 'a.txt'), 'x\n');
+  const calls = { n: 0 };
+  const s = fresh({ source: folder, destination: tmp('nonrepo-out-') }, calls);
+  assert.ok(await until(() => s.state.phase === 'refused' || settled(s)));
+  assert.equal(s.state.phase, 'refused', String(s.state.error));
+  assert.equal(s.state.error, FOLDER_MSG);
+  assert.equal(calls.n, 0, 'no model seam was reached');
+  assert.ok(!(s.state.draftSpentUsd > 0), 'nothing spent');
+});
