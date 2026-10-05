@@ -53,3 +53,12 @@ test('ONE fit function serves the ask box and the card boxes (no copy-paste, fit
   assert.equal(hidden.style.height, '', 'a hidden box measures 0 and gets no height');
 });
 
+test('card fields (hamr 2026-10-05): editable = soft white + the ordinary 1px border, no added thick/grey border; focused = blue border', () => {
+  const rule = PAGE.match(/\.job-card textarea\.jf-wrap\{([^}]*)\}/)[1];
+  assert.match(rule, /border:1px solid var\(--border-strong\)/, 'the same ordinary border as the one-line inputs');
+  assert.doesNotMatch(rule, /field-border|2px/);
+  assert.match(PAGE, /#panel-chat textarea:not\(:disabled\):not\(\[readonly\]\):not\(#chat-msg\)\{background:var\(--field-soft-bg\)\}|#panel-chat textarea:not\(:disabled\):not\(\[readonly\]\):not\(#chat-msg\)\{background:var\(--field-soft-bg\);\}/);
+  assert.match(PAGE, /#panel-chat :is\(input,select,textarea\):focus\{border-color:var\(--accent\);outline:none;\}/);
+  // only the ask box carries --field-border (its own constant border, asked for earlier)
+  assert.deepEqual([...PAGE.matchAll(/^\s*([^{\n]*)\{[^}]*var\(--field-border\)[^}]*\}/gm)].map((m) => m[1].trim()), ['#chat-msg']);
+});

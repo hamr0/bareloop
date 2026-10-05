@@ -435,6 +435,8 @@
   /* hamr 2026-10-05: the card's free-text boxes wrap like the ask box (one shared fitBox); a few rows, then they scroll inside */
   /* same look as the card's one-line inputs (white when editable, ordinary 1px border) — a textarea has its own browser border otherwise */
   .job-card textarea.jf-wrap{width:100%;box-sizing:border-box;font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
+  /* hamr 2026-10-05: the focused/selected Chat-card field gets a blue border (the accent), no outline ring */
+  #panel-chat :is(input,select,textarea):focus{border-color:var(--accent);outline:none;}
   /* hamr 2026-10-05: the ask box is dimmed until something asks for a reply (placeholder stays readable) */
   #chat-msg:disabled{background:var(--bg);opacity:.55;cursor:not-allowed;}
   /* chat message box reads as an unmistakable text box: ~2x the default
