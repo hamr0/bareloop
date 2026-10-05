@@ -3019,3 +3019,18 @@ test('Model is the fifth open box on a reuse card: setReuseLocked no longer lock
   assert.match(fn, /sfLine\.textContent = r\.line/);
   assert.match(html, /modelSelect\.addEventListener\("change", refreshReuseLine\)/);
 });
+
+test('progress list: a signed session ends "signed hash" with a check and its "> drafting spent" detail (hamr 2026-10-05)', () => {
+  const html = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
+  const src = ['renderProgress', 'progressLabelFor', 'escapeXml'].map((n) => extractFnSource(html, n)).join('\n');
+  const row = { hidden: true, innerHTML: '' };
+  const render = new Function('progressRow', `${src}\nreturn renderProgress;`)(row);
+  render({ phase: 'signed', pendingAsk: null, steps: [
+    { id: 'hash', label: 'generating hash', status: 'done', detail: 'spec hash abc' },
+    { id: 'signed', label: 'signed hash', status: 'done', detail: "drafting spent $0.12 (folds out of the run's own cap)" },
+  ] });
+  const last = row.innerHTML.slice(row.innerHTML.lastIndexOf('<li'));
+  assert.match(last, /class="step ok"[^>]*data-step="signed"/);
+  assert.match(last, /<span class="step-label">signed hash<\/span><span class="step-sign">✓<\/span>/);
+  assert.match(last, /&gt; drafting spent \$0\.12/);
+});

@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { getStartFromImport } from '../src/panel/server.js';
 import { importsPath, importId } from '../src/panel/importroutes.js';
 import { createSession, buildReuseSpec, STEP_LABELS } from '../src/panel/authorsession.js';
+import { signRun } from '../src/panel/authorroutes.js';
 import { exportFixtureBundle } from './bundle-fixture.js';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -87,4 +88,20 @@ test('a source that cannot be reached fails "copying source"; a bad key fails "c
   assert.ok(await until(() => settled(bad)));
   assert.deepEqual(bad.state.steps.map((x) => [x.id, x.status]), [['setup', 'failed']]);
   assert.match(bad.state.steps[0].detail, /tab/);
+});
+
+test('a signed reuse ends the list with "signed hash" DONE (never running/untouched) and it stays done once the session settles (hamr 2026-10-05: no check seen)', async () => {
+  const s = start(makeRepo(), setup());
+  assert.ok(await until(() => settled(s)));
+  const r = signRun(s, s.state.specHash, { env: {}, spawnFn: () => ({ unref() {} }), bareloopBin: '/x/bin/bareloop.mjs', home: tmp('steps-signhome-') });
+  assert.equal(r.ok, true);
+  const check = () => {
+    assert.equal(s.state.phase, 'signed');
+    assert.deepEqual(s.state.steps.at(-1), { id: 'signed', label: 'signed hash', status: 'done', detail: '' });
+    assert.ok(s.state.steps.every((x) => x.status === 'done'), 'every line, the last included, ends as a check');
+    assert.equal(s.state.pendingAsk, null);
+  };
+  check();
+  await new Promise((r2) => { setTimeout(r2, 300); });
+  check();
 });
