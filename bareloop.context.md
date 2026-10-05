@@ -3430,7 +3430,11 @@ key you want first (the panel picks the row by the Model menu).
   completion; the page sees the key's NAME and a status word, never the value). `POST
   /api/author/:id/check-deps` is the install-gap's "Check again" (`phase:'install-needed'`:
   the session waits on the person's own install, then re-runs `missingDependencies` on the
-  same copy — bareloop never installs). `GET /api/author/:id` polls the session's state
+  same copy — bareloop never installs). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
+  LIVE, unsigned session: phase becomes the terminal `abandoned` (releasing the one-at-a-time lock), money already booked
+  stays booked (`draftSpentUsd` is never zeroed; a call in flight still books its usage), no NEW model call starts;
+  `400` on a session that is not live, `404` unknown id, same guard as the other author routes. After `signed` the card's
+  button reads **Clear** and only empties the card (a run is stopped from the Run tab). `GET /api/author/:id` polls the session's state
   (phase, chat messages, cost, `revisesLeft`, `specHash` once prepared). `POST /api/author/
   :id/send {text}` answers whatever the confirm turn is currently asking (the `language` pick or a plan's
   own follow-up question — the old `worseThanBefore` ask is retired, 2026-09-28) — refused outright when the pending ask is the
@@ -3524,13 +3528,13 @@ key you want first (the panel picks the row by the Model menu).
   `[Resume]` there once the engine would accept one.
   **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on GREEN runs only (the Run tab's
   action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on green and
-  green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: + New.", and
+  green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: Clear the card and draft a new one.", and
   stopped/capped/died rows offer `resume` only) and on every imported job. It opens the Chat tab's New job card
   filled from the SIGNED job: a NEW run (new runid), never a rerun, nothing drafted ($0). **Only five boxes are
   open — Source, Destination, Model, $ cap, Time cap**; every other box (check type, model, job name, goal, success,
   guardrails, judge examples) is the signed workflow, greyed, and the SERVER refuses a start that changed one
-  (`400 "<Field> is locked on a reused workflow — use + New to change it"`; the page is never trusted).
-  Changing a locked box is `+ New`, which drafts. Routes, behind `checkHumanGuard`:
+  (`400 "<Field> is locked on a reused workflow — Clear the card to change it"`; the page is never trusted).
+  Changing a locked box is Clear (the Chat card's top-right button), which drafts. Routes, behind `checkHumanGuard`:
   `GET /api/author/start-from?runid=<id>` or `?import=<id>` → `{ok, origin, card, from:'signed job'|'imported job',
   note, locked:[…], open:['source','destination','model','capUsd','maxWallMs'], specHash, workflowKey, trackRecord:{runs,
   green, notGreen, live, finished, avgSpendUsd, avgWallMs}, line}` (`404` unknown, `409` with an `error` when
