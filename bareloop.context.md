@@ -3428,7 +3428,7 @@ key you want first (the panel picks the row by the Model menu).
   never a reimplementation of any gate. `GET /api/author/model-check?model=<id>` is the $0 readiness probe the job card runs
   before Start (`checkProviderReachable`, `src/providers.js` — a models-list GET only, never a
   completion; the page sees the key's NAME and a status word, never the value). `POST
-  /api/author/:id/check-deps` is the install-gap's "Check again" (`phase:'install-needed'`:
+  /api/author/:id/check-deps` is the install-gap's "Check again" (the main button's wording while waiting on an install) (`phase:'install-needed'`:
   the session waits on the person's own install, then re-runs `missingDependencies` on the
   same copy — bareloop never installs). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
   LIVE, unsigned session: phase becomes the terminal `abandoned` (releasing the one-at-a-time lock), money already booked
@@ -3562,7 +3562,7 @@ key you want first (the panel picks the row by the Model menu).
   the folder — then reused the same way; the close scripts stay in the verified folder (the engine re-verifies
   their bytes at run start and before every close run). An operator-written command close has no declaration for
   `prepareSigning` to ground (it refuses one by design), so that session's gate is the byte check, and the hash the
-  person signs at `[Sign & run]` is the spec's own. The card button is `Sign & run` (one click: the page signs the
+  person signs at `[Sign & run]` is the spec's own. The ONE wide card button (below the message box; wording from `mainButtonFor`: Start drafting / Sign & run / Check again / Send / disabled) reads `Sign & run` on a Reuse card (one click: the page signs the
   prepared hash as soon as the session reports `prepared`; the server re-checks it). `card.json` (the form text)
   is still written beside `resolved-spec.json` when a session reaches `prepared`.
   **The progress list (2026-10-04)** — `GET /api/author/:id` state carries `steps: [{id, label, status:
