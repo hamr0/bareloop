@@ -51,7 +51,7 @@ test('page map: the connector from the step a leg ENDED at to the step the next 
   const lines = svg.match(/<line [^>]*>/g) ?? [];
   assert.equal(lines.length, 2, 'two connectors between three boxes');
   assert.equal(lines.filter((l) => l.includes('stroke-dasharray="2,4"') && l.includes('data-resumed="1"')).length, 1, 'exactly the leg boundary is dotted');
-  assert.match(svg, />resumed</, 'and it is labelled');
+  assert.doesNotMatch(svg, />resumed</, 'no word drawn beside the connector (hamr 2026-10-05: cramped; the legend names it)');
   // a run nobody resumed draws no dotted line and no label
   const plain = buildStepMapSVG(buildOrderedBoxes([stepPart(1), stepPart(2)], false), 900);
   assert.doesNotMatch(plain, /data-resumed|>resumed</);
@@ -69,7 +69,17 @@ test('page map: the dotted connector survives the snake layout (a drop to the ne
 test('page: the sign legend is gone (the line-style key returned 2026-10-04); the dotted connector still names itself "resumed" inside the map', () => {
   assert.doesNotMatch(PAGE, /stepMapLegendHTML|map-legend/);
   assert.match(PAGE, /dotted = resumed/);
-  assert.match(PAGE, />resumed<\/text>|\+ '" font-size="9" fill="var\(--text-faint\)">resumed<\/text>/);
+  assert.doesNotMatch(PAGE, />resumed<\/text>/, 'no resumed label inside the map');
+});
+
+test('page: the Reuse origin line is bold and is the FIRST thing in the job card, above the title', () => {
+  const o = PAGE.indexOf('id="chat-startfrom-origin"');
+  const t = PAGE.indexOf('id="job-card-title"');
+  assert.ok(o !== -1 && t !== -1 && o < t, 'origin markup precedes the "Job card" title');
+  const rule = PAGE.match(/\.startfrom-origin\{([^}]*)\}/);
+  assert.ok(rule, 'origin css rule exists');
+  assert.match(rule[1], /font-weight:\s*(600|700|bold)/, 'bold');
+  assert.match(rule[1], /overflow-wrap:anywhere/, 'wraps at phone width, no horizontal overflow');
 });
 
 // ---------------------------------------------------------------- the Audit divider

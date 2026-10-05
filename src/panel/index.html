@@ -272,7 +272,7 @@
   .startfrom-line{margin:2px 0 8px;font-size:12px;color:var(--accent);overflow-wrap:anywhere;}
   .job-card .locked{opacity:.55;cursor:not-allowed;}
   .job-card.reuse .radio-row label{opacity:.55;cursor:not-allowed;}
-  .startfrom-origin{font-size:12px;color:var(--text-dim);margin:0 0 4px;overflow-wrap:anywhere;}
+  .startfrom-origin{font-size:12px;font-weight:600;color:var(--text-dim);margin:0 0 4px;overflow-wrap:anywhere;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
@@ -504,8 +504,8 @@
           <button class="btn" type="button" id="chat-new-btn" data-testid="chat-new">+ New</button>
 
           <div class="job-card compact" id="job-card" data-testid="job-card" hidden>
-            <h4 id="job-card-title">Job card — draft</h4>
             <div class="startfrom-origin" id="chat-startfrom-origin" data-testid="startfrom-origin" hidden></div>
+            <h4 id="job-card-title">Job card — draft</h4>
             <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
             <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
 
@@ -1126,18 +1126,15 @@
             var nx = x + boxW + gap;
             body += '<line x1="' + (x + boxW) + '" y1="' + midY + '" x2="' + (nx - 2) + '" y2="' + midY +
               '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
-            if(s.resumedNext) body += '<text x="' + (x + boxW + gap / 2) + '" y="' + (midY - 6) + '" text-anchor="middle" font-size="9" fill="var(--text-faint)">resumed</text>';
           } else {
             var px = x - gap - boxW;
             body += '<line x1="' + x + '" y1="' + midY + '" x2="' + (px + boxW + 2) + '" y2="' + midY +
               '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
-            if(s.resumedNext) body += '<text x="' + (x - gap / 2) + '" y="' + (midY - 6) + '" text-anchor="middle" font-size="9" fill="var(--text-faint)">resumed</text>';
           }
         } else {
           var cx = x + boxW / 2;
           body += '<line x1="' + cx + '" y1="' + (y + boxH) + '" x2="' + cx + '" y2="' + (y + rowH - 2) +
             '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
-          if(s.resumedNext) body += '<text x="' + (cx + 6) + '" y="' + (y + boxH + 14) + '" font-size="9" fill="var(--text-faint)">resumed</text>';
         }
       }
     });
