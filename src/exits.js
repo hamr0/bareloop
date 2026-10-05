@@ -23,7 +23,7 @@
 //     unrunnable check is a stop, never a silent pass).
 
 import { createHash } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { globToPrefix } from './validate.js';
 
@@ -62,6 +62,15 @@ export async function snapshotScope(dir, scope) {
   const prefix = globToPrefix(scope);
   /** @type {Map<string, string>} */
   const snap = new Map();
+  // A scope whose prefix names a single regular FILE (a file-valued writeScope
+  // becomes `src/x.js/**`) snapshots that one file, keyed by the prefix itself —
+  // readdir on a file throws ENOTDIR, which read as an empty tree forever (F212).
+  try {
+    if ((await stat(join(dir, prefix))).isFile()) {
+      snap.set(prefix, createHash('sha256').update(await readFile(join(dir, prefix))).digest('hex'));
+      return snap;
+    }
+  } catch { /* missing or unreadable: fall through to the directory path */ }
   /** @type {string[]} */
   let entries;
   try {
