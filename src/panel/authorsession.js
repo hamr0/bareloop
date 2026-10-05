@@ -250,6 +250,21 @@ export function validateReuseCard(card, opts = {}) {
   return { ok: true };
 }
 
+/** A Destination written as an absolute path (POSIX or a Windows drive path). @param {string} destination @returns {boolean} */
+const isAbsoluteDestination = (destination) => /^(\/|[a-zA-Z]:[\\/])/.test(destination);
+
+/**
+ * The ONE Destination rule for a REPO source (fresh card and Reuse card alike): there Destination is the write fence,
+ * relative to the repo, so an absolute path is refused — at $0, before any copy or model call. A FOLDER source (or a
+ * source that does not peek as a repo) keeps today's behaviour: its Destination is an absolute output directory.
+ * @param {string} destination
+ * @param {boolean} isRepoLike `looksLikeRepoSource(card.source)`
+ * @returns {string|null} the plain refusal, or null when the Destination is fine
+ */
+export function repoDestinationProblem(destination, isRepoLike) {
+  return isRepoLike && isAbsoluteDestination(destination) ? 'Destination must be a path inside the repo, like src/digest.js' : null;
+}
+
 /**
  * `$0` validation of the job card fields the server must check BEFORE it
  * creates a session or spends anything — never inside the async pipeline,
@@ -507,6 +522,9 @@ export function createSession(card, deps = {}) {
     const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
     const isRepoLike = looksLikeRepoSource(card.source);
+    // hamr's ruling B (2026-10-05): ONE rule for both a fresh card and a reuse card, at $0, before the copy and any model call
+    const destProblem = repoDestinationProblem(card.destination, isRepoLike);
+    if (destProblem !== null) { refuse(destProblem); return; }
 
     state.phase = 'preparing-source';
     stepStart('copy');
@@ -516,7 +534,7 @@ export function createSession(card, deps = {}) {
     // the source; a source that does not peek as a repo (missing path, typo, a linked worktree) would otherwise have its
     // fence read as a directory and refused as "not absolute" — hiding the real problem with the Source. A scope-shaped
     // (relative) Destination is therefore handed to the door only when the source is repo-like.
-    const destIsDir = /^(\/|[a-zA-Z]:[\\/])/.test(card.destination);
+    const destIsDir = isAbsoluteDestination(card.destination);
     const prep = await prepareSource({
       source: card.source, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
     });
