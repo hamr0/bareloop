@@ -109,16 +109,19 @@ test('a signed reuse ends the list with "signed hash" DONE (never running/untouc
 test('chronological log (hamr 2026-10-05): a step that restarts after others appends a NEW line; earlier lines keep status and detail; nothing moves', () => {
   /** @type {any[]} */ const steps = [];
   const go = (id, d) => advanceSteps(steps, id, d);
-  go('setup'); go('copy'); go('check'); go('install', 'Packages missing'); go('draft', 'deepseek-flash, $1.00 cap');
-  for (const ph of ['seed-read', 'scout', 'confirm', 'listing', 'author-call']) go(PHASE_STEP[ph]);
+  go('setup'); go('copy'); go('check'); go('install', 'Packages missing');
+  // the drafting line is started by the real author phase (after read/scout/confirm/listing), never early (2026-10-05)
+  for (const ph of ['seed-read', 'scout', 'confirm', 'listing']) go(PHASE_STEP[ph]);
+  go(PHASE_STEP['author-call'], 'deepseek-flash, $1.00 cap');
   assert.deepEqual(steps.map((x) => [x.label, x.status]), [
     ['checking setup', 'done'], ['copying source', 'done'], ['checking source', 'done'], ['waiting on install', 'done'],
-    ['drafting', 'done'], ['reading repo', 'done'], ['scouting repo', 'done'], ['confirming plan', 'done'], ['listing files', 'done'],
+    ['reading repo', 'done'], ['scouting repo', 'done'], ['confirming plan', 'done'], ['listing files', 'done'],
     ['drafting', 'running'],
   ]);
-  assert.equal(steps[4].detail, 'deepseek-flash, $1.00 cap', 'the first drafting line keeps its detail');
-  assert.equal(steps[9].detail, '');
-  assert.equal(latestStep(steps, 'draft'), steps[9], 'id lookups target the LATEST line');
-  // a repeated phase of the step already running stays one line
-  go('draft'); assert.equal(steps.length, 10);
+  assert.equal(steps[8].detail, 'deepseek-flash, $1.00 cap');
+  assert.equal(latestStep(steps, 'draft'), steps[8], 'id lookups target the LATEST line');
+  // a repeated phase of the step already running stays one line, and keeps its detail
+  go('draft'); assert.equal(steps.length, 9); assert.equal(steps[8].detail, 'deepseek-flash, $1.00 cap');
+  // a step that restarts after others (the log's own rule) still appends a NEW line
+  go('read'); go('draft'); assert.equal(steps.length, 11);
 });

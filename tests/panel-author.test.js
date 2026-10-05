@@ -587,6 +587,27 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
   assert.equal(captured.args[captured.args.indexOf('--approve') + 1], specHash);
 });
 
+test('progress list (hamr 2026-10-05): a normal session has ONE drafting line, started by the real author phase and carrying "model, $cap cap"', async () => {
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-one-draft', capUsd: 1 }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
+    sessionsRoot: tmp('panel-author-sess-onedraft-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }]),
+    authorFn: fakeAuthorFn(),
+    prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  const until = async (fn) => { const t0 = Date.now(); while (Date.now() - t0 < 5000 && !fn()) { await new Promise((r) => { setTimeout(r, 10); }); } };
+  await until(() => session.state.pendingAsk?.kind === 'menu');
+  assert.equal(session.state.steps.some((x) => x.id === 'draft'), false, 'no drafting line before the author call (reading/scouting/confirming come first)');
+  assert.equal(session.signPrepare().ok, true);
+  await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  const drafts = session.state.steps.filter((x) => x.id === 'draft');
+  assert.equal(drafts.length, 1, `exactly one drafting line; got ${session.state.steps.map((x) => x.label).join(' / ')}`);
+  assert.equal(drafts[0].detail, `${baseCard().model}, $1.00 cap`);
+});
+
 // ---------------------------------------------------------------------------
 // Phone-width layout — static check (this harness has no browser/DOM driver
 // available to it; a live 390px screenshot is left for a visual check

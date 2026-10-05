@@ -2308,7 +2308,7 @@ test('build item 2 (2026-09-28): onPhase no longer posts a chat bubble — it on
   const body = src.slice(start, end);
   const codeOnly = body.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
   assert.doesNotMatch(codeOnly, /say\(/, 'onPhase must never post a chat message of its own');
-  assert.match(body, /stepStart\(PHASE_STEP\[name\]\)/);
+  assert.match(body, /stepStart\(PHASE_STEP\[name\]/);
 });
 
 test('build item 2 (2026-09-28): the rendered "who" label for a system/bot message is plain "bareloop", never the jargon "bareloop (progress)" suffix', () => {

@@ -437,7 +437,8 @@ export function createSession(card, deps = {}) {
     // `confirm-turn-done` in the very next line (build item 2's "the
     // refusal line appears twice"). The thread now carries only what a
     // person needs to read; the step-by-step detail lives in one line.
-    if (PHASE_STEP[name]) stepStart(PHASE_STEP[name]);
+    // ONE owner of the drafting line's detail (model + cap): the drafting line is started here, by the real author phase
+    if (PHASE_STEP[name]) stepStart(PHASE_STEP[name], PHASE_STEP[name] === 'draft' ? `${card.model}, $${card.capUsd.toFixed(2)} cap` : undefined);
   };
   // ABANDON (hamr's ruling 2026-10-05): once abandoned the phase is frozen at 'abandoned' — whatever the in-flight
   // run() does afterwards (a late refuse, a phase write) never overwrites it, so the one-at-a-time lock stays released.
@@ -731,7 +732,7 @@ export function createSession(card, deps = {}) {
     const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null }));
 
     state.phase = 'drafting';
-    stepStart('draft', `${card.model}, $${card.capUsd.toFixed(2)} cap`);
+    // no early "drafting" line: the real author phase (PHASE_STEP) starts it, carrying draftDetail (see onPhase)
     // build item 4 — the DISPLAY id (card.model, e.g. "deepseek-flash"), not
     // the internal resolved tier model string (MODEL) or the raw provider
     // name — the same id the Model field's own dropdown showed.
