@@ -2817,13 +2817,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason });
         return r;
       }
-      // F122 "2A" half (b), hamr 2026-10-05: a STEP worker round cut at max_tokens is a
-      // FAILED WORKER ATTEMPT, not transport. Same lane as the deny streak above: the cut
-      // round's output is discarded (bare-agent already dropped it), its spend is booked
+      // F122 "2A" half (b), hamr 2026-10-05: a STEP or FIX worker round cut at max_tokens
+      // is a FAILED WORKER ATTEMPT, not transport. Same lane as the deny streak above: the
+      // cut round's output is discarded (bare-agent already dropped it), its spend is booked
       // by the per-round meter, the tree is judged as it stands, and the step's strike
-      // ladder applies unchanged. Only step phases — scout/fix have no ladder and keep
-      // the transport route below.
-      if (r.error && r.error.startsWith('truncated:') && phase.startsWith('step:')) {
+      // ladder (or the fix governor) applies unchanged (hamr ruling A extended it to `fix`
+      // after run muux1x96). Scout, drafter, replan keep the transport route below.
+      if (r.error && r.error.startsWith('truncated:') && (phase.startsWith('step:') || phase === 'fix')) {
         attemptBounded = { iteration: roundIteration, cause: 'truncated', reason: TRUNCATED_REASON };
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason: TRUNCATED_REASON, stopReason: r.stopReason ?? null });
         return r;
@@ -4083,6 +4083,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         .filter((s) => s.values.length > 0)
         .map((s) => `${s.stage} ${s.values.join(' → ')}`);
       const factsLine = [checksFact, ...stageFacts].filter(Boolean).join(' · ');
+      // same iteration numbering as the step loop: `w.setIteration(iteration)` above
+      // stamps the bound, so "the attempt just before this one" is `iteration - 1`
+      const bound = w.wasBounded();
       await w.ask([
         'The job\'s final verification is failing. Fix the repository so it passes.',
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
@@ -4090,6 +4093,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         !gap && post.gap && `The verification's output on the tree as it stands (not an attempt of yours):\n${post.gap}`,
         gap && `Previous attempt failed the verification:\n${gap}`,
         factsLine && `The close's own numbers so far, oldest first (facts only — no advice):\n${factsLine}`,
+        bound?.iteration === iteration - 1 && boundedNote(bound, maxStepRounds),
         rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
     };

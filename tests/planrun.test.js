@@ -2154,6 +2154,62 @@ test('WORKER truncation (F122 2A b): truncated on EVERY attempt stops by the str
   assert.ok(roundCost(events) >= 0.08 - 1e-9, 'every cut round is in the books');
 });
 
+/** a close stricter than the step's check: the step greens, the close reds once, the fix loop opens @param {string} wd */
+const strictCloseFixture = (wd) => writeFileSync(join(wd, 'close.mjs'), `import { existsSync, readFileSync } from 'node:fs';
+const p = new URL('./tests/test_x.mjs', import.meta.url).pathname;
+const t = existsSync(p) ? readFileSync(p, 'utf8') : '';
+if (t.includes('ok') && t.includes('import')) process.exit(0);
+console.log('FAILED close: the test never imports the module'); process.exit(1);\n`);
+
+test('FIX truncation (F122 2A b, hamr ruling A): a fix-loop round cut at max_tokens is a FAILED fix round, never provider-red — the loop continues and can go green', async (t) => {
+  const wd = makePatient(t);
+  strictCloseFixture(wd);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },                                          // step greens; close reds
+    { text: 'half a fix', stopReason: 'max_tokens', costUsd: 0.05 }, // fix iteration 1: cut round
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: "import { x } from '../src/mod.mjs'; // ok\n" })] }, // fix iteration 2
+    { text: 'added the import' },
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'green', 'the cut fix round cost one fix iteration, not the run');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'provider-red').length, 0);
+  const b = events.filter((e) => e.type === 'attempt-bounded' && e.phase === 'fix');
+  assert.equal(b.length, 1);
+  assert.equal(b[0].reason, 'output cut at the token limit (max_tokens)', 'the spine says WHY');
+  assert.ok(events.some((e) => e.type === 'worker-round' && e.costUsd === 0.05), 'the cut round is booked, never forgiven');
+});
+
+test('FIX truncation (F122 2A b): the NEXT fix prompt carries the cut-off note', async (t) => {
+  const wd = makePatient(t);
+  strictCloseFixture(wd);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN(wd) },
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok but no module use\n' })] },
+    { text: 'wrote it' },
+    { text: 'half a fix', stopReason: 'max_tokens' },
+    { toolCalls: [tcall('t2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: "import { x } from '../src/mod.mjs'; // ok\n" })] },
+    { text: 'added the import' },
+  ]);
+  await go(wd, provider);
+  const noted = provider.calls.filter((c) => c.includes('CUT OFF: output cut at the token limit (max_tokens)'));
+  assert.equal(noted.length, 1, 'exactly the next fix attempt is told what fired');
+  assert.match(noted[0], /final verification is failing/, 'and it is the fix prompt');
+});
+
+test('SCOUT truncation (F122 2A b stays step+fix only): a scout round cut at max_tokens is still provider-red', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'half a scout', stopReason: 'max_tokens' },
+  ]);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red');
+  assert.equal(events.filter((e) => e.type === 'attempt-bounded').length, 0, 'no bounded attempt outside step/fix');
+});
+
 test('WORKER transport throw mid-step is STILL provider-red (F122 2A b touches truncation only)', async (t) => {
   const wd = makePatient(t);
   const provider = dyingAt([{ text: 'scout notes' }, { text: PLAN(wd) }], 2);
