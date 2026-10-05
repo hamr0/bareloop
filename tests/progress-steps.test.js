@@ -75,7 +75,7 @@ test('a repo carrying a secret-shaped key is NOT refused (P6 item 2, hamr 2026-1
   assert.equal(s.state.steps.filter((x) => x.detail.includes('secret shape')).length, 0);
 });
 
-test('a source that cannot be reached fails "copying source"; a bad key fails "checking setup" before anything is copied', async () => {
+test('a source that cannot be reached fails "making worktree"; a bad key fails "checking setup" before anything is copied', async () => {
   const ctx = setup();
   const missing = start(join(tmpdir(), 'steps-no-such-dir-xyz'), ctx);
   assert.ok(await until(() => settled(missing)));
@@ -110,7 +110,7 @@ test('chronological log (hamr 2026-10-05): a step that restarts after others app
   for (const ph of ['seed-read', 'scout', 'confirm', 'listing']) go(PHASE_STEP[ph]);
   go(PHASE_STEP['author-call'], 'deepseek-flash, $1.00 cap');
   assert.deepEqual(steps.map((x) => [x.label, x.status]), [
-    ['checking setup', 'done'], ['copying source', 'done'], ['checking source', 'done'], ['waiting on install', 'done'],
+    ['checking setup', 'done'], ['making worktree', 'done'], ['checking source', 'done'], ['waiting on install', 'done'],
     ['reading repo', 'done'], ['scouting repo', 'done'], ['confirming plan', 'done'], ['listing files', 'done'],
     ['drafting', 'running'],
   ]);

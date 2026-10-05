@@ -2304,11 +2304,11 @@ test('progress list (2026-10-05): renderProgress reports a change only when the 
   // eslint-disable-next-line no-new-func
   const renderActions = new Function('progressRow', 'errEl', 'CLIENT_TERMINAL_PHASES', 'refreshStartEnabled', `var lastState, sessionLive;\n${rp}\n${ra}\nreturn renderActions;`)(
     row, { textContent: '' }, ['refused', 'abandoned', 'error', 'signed', 'signing-failed'], () => {});
-  const a = { phase: 'drafting', steps: [{ id: 'copy', label: 'copying source', status: 'running', detail: '' }] };
+  const a = { phase: 'drafting', steps: [{ id: 'copy', label: 'making worktree', status: 'running', detail: '' }] };
   row.lastElementChild = li;
   renderActions(a); assert.equal(scrolls, 1, 'a new line scrolls');
   renderActions(JSON.parse(JSON.stringify(a))); assert.equal(scrolls, 1, 'an identical poll tick does not scroll');
-  renderActions({ phase: 'drafting', steps: [{ id: 'copy', label: 'copying source', status: 'done', detail: '' }, { id: 'draft', label: 'drafting', status: 'running', detail: '' }] });
+  renderActions({ phase: 'drafting', steps: [{ id: 'copy', label: 'making worktree', status: 'done', detail: '' }, { id: 'draft', label: 'drafting', status: 'running', detail: '' }] });
   assert.equal(scrolls, 2, 'a new/changed line scrolls');
   assert.deepEqual(lastArg, { block: 'nearest' });
   renderActions({ phase: 'signed', steps: [{ id: 'signed', label: 'signed hash', status: 'done', detail: '' }] });
@@ -2630,7 +2630,7 @@ test('progress list: renderProgress draws one line per step (running = dots, don
   bound({ steps: [] });
   assert.equal(row.hidden, true);
   bound({ steps: [
-    { id: 'copy', label: 'copying source', status: 'done', detail: '' },
+    { id: 'copy', label: 'making worktree', status: 'done', detail: '' },
     { id: 'check', label: 'checking source', status: 'failed', detail: '3 files look like secrets: a.js, b.js' },
   ] });
   assert.equal(row.hidden, false);
@@ -2638,14 +2638,14 @@ test('progress list: renderProgress draws one line per step (running = dots, don
   assert.match(row.innerHTML, /step ok" data-step="copy"[^]*\u2713/);
   assert.match(row.innerHTML, /step bad" data-step="check"[^]*\u2717[^]*3 files look like secrets: a\.js, b\.js/);
   assert.equal((row.innerHTML.match(/3 files look like secrets/g) || []).length, 1, 'the reason appears once');
-  bound({ steps: [{ id: 'copy', label: 'copying source', status: 'running', detail: '' }] });
+  bound({ steps: [{ id: 'copy', label: 'making worktree', status: 'running', detail: '' }] });
   assert.match(row.innerHTML, /step run"/);
   bound({ steps: [{ id: 'confirm', label: 'confirming plan', status: 'running', detail: '' }], pendingAsk: { kind: 'menu' } });
   assert.match(row.innerHTML, /waiting for your OK/);
   assert.doesNotMatch(row.innerHTML, /step run"/, 'waiting on the person is not an animation');
   for (const kind of ['menu', 'install-needed', 'other']) {
     bound({ steps: [
-      { id: 'copy', label: 'copying source', status: 'done', detail: '' },
+      { id: 'copy', label: 'making worktree', status: 'done', detail: '' },
       { id: 'deps', label: 'checking packages', status: 'running', detail: 'Packages missing in the copy. Run: npm ci' },
     ], pendingAsk: { kind } });
     const waitLi = row.innerHTML.match(/<li class="step wait"[^]*?<\/li>/);

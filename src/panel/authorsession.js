@@ -61,7 +61,7 @@ import { writeDraftSpend } from '../draftspend.js';
  */
 export const STEP_LABELS = Object.freeze({
   setup: 'checking setup',
-  copy: 'copying source',
+  copy: 'making worktree',
   check: 'checking source',
   install: 'waiting on install',
   reuse: 'reusing signed workflow',
