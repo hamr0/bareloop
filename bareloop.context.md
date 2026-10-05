@@ -3901,7 +3901,7 @@ commit (`src/worktree.js`, the one spelling the bundle door shares). `prepared.t
 `source.json`, which records `worktree`, `repo` and `seed` (= the repo's HEAD — no seed commit is made, no `output/` scaffold
 is written). Uncommitted edits in the person's repo are not in it (the panel says so at drafting start: "N uncommitted
 change(s) in your repo are not in this job — it starts from commit <sha>"). `.bareloop/` and `node_modules/` (any depth, so packages installed in the worktree never read as worker writes) are hidden from the person's own
-`git status` through the repo's private `<common-git-dir>/info/exclude`, never their tracked `.gitignore`. The signed run
+`git status` through the repo's private `<common-git-dir>/info/exclude`, never their tracked `.gitignore`. The person's git hooks never run when bareloop makes the worktree (either door). The signed run
 (`run-u --spec`) reads `worktree` from that manifest; its spine and books stay in the session directory beside `source.json`,
 never inside the person's repo. At the end: GREEN commits the run's work on its `bareloop-<job>` work branch (authored by
 `bareloop`, hooks off, arbiter books and `node_modules` left out) and removes the worktree folder — the branch stays and the

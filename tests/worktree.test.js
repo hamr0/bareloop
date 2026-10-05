@@ -133,3 +133,18 @@ test('hideBareloopDir: node_modules/ is hidden too (any depth) with no node_modu
   assert.equal(lines.filter((l) => l === EXCLUDE_LINE).length, 1);
   assert.equal(lines.filter((l) => l === NODE_MODULES_LINE).length, 1);
 });
+
+test('addWorktree: the person\'s git hooks never run (post-checkout writes a marker; it must not exist)', () => {
+  const repo = makeRepo();
+  const marker = join(repo, 'hook-ran.marker');
+  const hook = join(repo, '.git', 'hooks', 'post-checkout');
+  mkdirSync(join(repo, '.git', 'hooks'), { recursive: true });
+  writeFileSync(hook, `#!/bin/sh\necho ran > '${marker}'\n`, { mode: 0o755 });
+  // the instrument can fail: plain git does run this hook on `worktree add`
+  git(repo, ['worktree', 'add', '-q', '--detach', join(repo, '..', `${repo.split('/').pop()}-probe`), 'HEAD']);
+  tmpDirs.push(join(repo, '..', `${repo.split('/').pop()}-probe`));
+  assert.equal(existsSync(marker), true, 'control: the hook is live under plain git');
+  rmSync(marker);
+  addWorktree(repo, worktreePath(repo, 'r7'));
+  assert.equal(existsSync(marker), false, 'bareloop\'s worktree add runs none of the person\'s hooks');
+});

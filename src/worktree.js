@@ -18,20 +18,23 @@ export const EXCLUDE_LINE = '/.bareloop/';
 /** the line that hides installed packages at any depth */
 export const NODE_MODULES_LINE = 'node_modules/';
 
+/** the person's git hooks never run for anything bareloop does in their repo: one spelling, used by `addWorktree` and `commitWork` */
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null/bareloop-no-hooks'];
+
 /** where a run's worktree lives in the person's repo @param {string} repo @param {string} id */
 export function worktreePath(repo, id) {
   return join(repo, '.bareloop', 'wt', id);
 }
 
 /**
- * `git worktree add --detach <dir> HEAD` in `repo`, creating `dir`'s parent first. Throws
+ * `git worktree add --detach <dir> HEAD` in `repo` (none of the person's hooks run), creating `dir`'s parent first. Throws
  * `Error('git worktree add failed: …')` — a caller decides whether that is a stop or a refusal.
  * @param {string} repo @param {string} dir
  */
 export function addWorktree(repo, dir) {
   mkdirSync(dirname(dir), { recursive: true });
   try {
-    execFileSync('git', ['-C', repo, 'worktree', 'add', '--detach', dir, 'HEAD'], { encoding: 'utf8' });
+    execFileSync('git', [...NO_HOOKS, '-C', repo, 'worktree', 'add', '--detach', dir, 'HEAD'], { encoding: 'utf8' });
   } catch (e) {
     throw new Error(`git worktree add failed: ${/** @type {Error} */ (e).message}`);
   }
@@ -94,7 +97,7 @@ export function removeWorktree(repo, dir) {
 /** a commit bareloop makes in the person's repo is authored by bareloop (never their global config), signs nothing, runs none of their hooks */
 const COMMIT_CONFIG = [
   '-c', 'user.name=bareloop', '-c', 'user.email=bareloop@localhost', '-c', 'commit.gpgsign=false',
-  '-c', 'core.hooksPath=/dev/null/bareloop-no-hooks',
+  ...NO_HOOKS,
 ];
 
 /** what never goes into the work commit: the arbiter's own books and installed packages */
