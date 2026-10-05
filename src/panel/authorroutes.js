@@ -385,6 +385,10 @@ export function signRun(session, claimedHash, o) {
   if (typeof child?.unref === 'function') child.unref();
   session.state.phase = 'signed';
   // hamr 2026-10-05: the sign shows as the last step of the one progress list, never as a thread bubble
-  if (Array.isArray(session.state.steps)) session.state.steps.push({ id: 'signed', label: STEP_LABELS.signed, status: 'done', detail: '' });
+  // hamr 2026-10-05 (option A): the drafting-spend line is that step's detail — nothing when there was no drafting spend (a Reuse)
+  const draftLine = draftSpentUsd !== null
+    ? `drafting spent ${draftIncomplete ? 'at least ' : ''}${panelMoney2(draftSpentUsd)} (folds out of the run's own cap)`
+    : '';
+  if (Array.isArray(session.state.steps)) session.state.steps.push({ id: 'signed', label: STEP_LABELS.signed, status: 'done', detail: draftLine });
   return { ok: true, job: session.state.resolvedSpecPath };
 }
