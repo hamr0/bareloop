@@ -846,7 +846,7 @@ const LOCKFILE_COMMANDS = Object.freeze([
  *   manifest)
  * @param {string} [sourceSubdir] the manifest's own `sourceSubdir` ('' or
  *   undefined when Source IS the repo root)
- * @returns {{manager: string, command: string, reason: string}|null} `null`
+ * @returns {{dir: string, lockFile: string|null, manager: string, command: string, reason: string}|null} `null`
  *   when there is nothing to report: no JS/TS manifest found walking up from
  *   `sourceSubdir` to `treeDir`, the nearest one found has no dependencies,
  *   `node_modules` is already there, or the manifest cannot even be read as
@@ -883,6 +883,8 @@ export function missingDependencies(treeDir, sourceSubdir = '') {
     const installCmd = lock ? lock.command : 'npm install';
     const rel = relative(root, d).split(sep).join('/');
     return {
+      dir: d,
+      lockFile: lock ? lock.file : null,
       manager: installCmd.split(' ')[0],
       command: rel === '' ? installCmd : `cd ${rel} && ${installCmd}`,
       reason: `${rel === '' ? 'package.json' : `${rel}/package.json`} lists dependencies but the copy has no node_modules`,

@@ -52,6 +52,7 @@ import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend } from '../draftspend.js';
+import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 
 /**
  * THE PROGRESS LIST's one table (hamr 2026-10-04, "one place showing all"): every pipeline step the left Chat panel
@@ -318,7 +319,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -621,11 +622,27 @@ export function createSession(card, deps = {}) {
       // class of bug one layer up. bareloop still never runs an install
       // itself — this only re-checks the SAME worktree on demand, via the
       // "Check again" button (`checkDeps()`, below), instead of ending the
-      // session. (P6 item 3 later has bareloop run `npm ci` here itself.)
+      // session. (P6 item 3: for an npm lock file bareloop runs `npm ci` itself first, above.)
       let depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
+      // P6 item 3: a committed npm lock file -> bareloop runs `npm ci --ignore-scripts` itself, $0, before
+      // any model call. Any failure (or another lock file) falls through to the wait below, unchanged.
+      /** @type {string|null} */
+      let installFailed = null;
+      if (depsGap && depsGap.lockFile && NPM_CI_LOCKS.includes(depsGap.lockFile)) {
+        stepStart('install', 'Installing packages (npm ci)…');
+        state.progressLabel = 'installing packages';
+        const ci = await (deps.npmCiFn ?? runNpmCi)(depsGap.dir, {});
+        if (ci.ok) {
+          depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
+          if (!depsGap) {
+            stepDone('install');
+            stepStart('check');
+          } else installFailed = 'it ran but node_modules is still missing';
+        } else installFailed = ci.reason;
+      }
       if (depsGap) {
         state.phase = 'install-needed';
-        stepStart('install', `Packages missing in the job's worktree. Run: cd ${prep.tree} && ${depsGap.command}`);
+        stepStart('install', `${installFailed ? `Installing packages (npm ci) failed: ${redactSecrets(installFailed)}. ` : ''}Packages missing in the job's worktree. Run: cd ${prep.tree} && ${depsGap.command}`);
         for (;;) {
           state.pendingAsk = { kind: 'install-needed', tree: prep.tree, command: depsGap.command, reason: depsGap.reason };
           // eslint-disable-next-line no-await-in-loop
