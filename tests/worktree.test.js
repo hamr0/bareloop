@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  addWorktree, hideBareloopDir, uncommittedCount, removeWorktree, worktreePath, shortHead, EXCLUDE_LINE,
+  addWorktree, hideBareloopDir, uncommittedCount, removeWorktree, worktreePath, shortHead, EXCLUDE_LINE, NODE_MODULES_LINE,
 } from '../src/worktree.js';
 
 /** @type {string[]} */
@@ -71,7 +71,7 @@ test('hideBareloopDir: keeps what the exclude file already held (no trailing new
   mkdirSync(join(repo, '.git', 'info'), { recursive: true });
   writeFileSync(f, '*.log');
   hideBareloopDir(repo);
-  assert.equal(readFileSync(f, 'utf8'), `*.log\n${EXCLUDE_LINE}\n`);
+  assert.equal(readFileSync(f, 'utf8'), `*.log\n${EXCLUDE_LINE}\n${NODE_MODULES_LINE}\n`);
 });
 
 test('hideBareloopDir: a repo that is itself a linked worktree writes the COMMON dir\'s exclude', () => {
@@ -111,4 +111,25 @@ test('removeWorktree: the folder is gone, even with untracked scratch in it; the
   assert.equal(existsSync(wt), false);
   assert.equal(git(repo, ['show', 'bareloop-x:a.txt']), 'edited\n', 'the branch stays');
   assert.doesNotMatch(git(repo, ['worktree', 'list']), /r5/);
+});
+
+test('hideBareloopDir: node_modules/ is hidden too (any depth) with no node_modules in the tracked .gitignore; each line checked separately', () => {
+  const repo = makeRepo();
+  const wt = worktreePath(repo, 'r6');
+  assert.equal(hideBareloopDir(repo), true);
+  addWorktree(repo, wt);
+  mkdirSync(join(wt, 'node_modules', 'p'), { recursive: true });
+  writeFileSync(join(wt, 'node_modules', 'p', 'i.js'), 'x');
+  mkdirSync(join(wt, 'sub', 'node_modules'), { recursive: true });
+  writeFileSync(join(wt, 'sub', 'node_modules', 'j.js'), 'x');
+  assert.equal(git(wt, ['status', '--porcelain']).trim(), '', 'installed packages never read as worker writes');
+  assert.equal(existsSync(join(repo, '.gitignore')), false, 'the tracked .gitignore is never touched');
+  // idempotent per line: a file holding only the first line gets only the missing one
+  const f = join(repo, '.git', 'info', 'exclude');
+  writeFileSync(f, `${EXCLUDE_LINE}\n`);
+  assert.equal(hideBareloopDir(repo), true);
+  assert.equal(hideBareloopDir(repo), false);
+  const lines = readFileSync(f, 'utf8').split('\n');
+  assert.equal(lines.filter((l) => l === EXCLUDE_LINE).length, 1);
+  assert.equal(lines.filter((l) => l === NODE_MODULES_LINE).length, 1);
 });

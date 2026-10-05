@@ -3900,7 +3900,7 @@ Or the CLI: `node scripts/prep-source.mjs --source <path-or-url> --into <dir> [-
 commit (`src/worktree.js`, the one spelling the bundle door shares). `prepared.tree` is that worktree; `into` holds only
 `source.json`, which records `worktree`, `repo` and `seed` (= the repo's HEAD — no seed commit is made, no `output/` scaffold
 is written). Uncommitted edits in the person's repo are not in it (the panel says so at drafting start: "N uncommitted
-change(s) in your repo are not in this job — it starts from commit <sha>"). `.bareloop/` is hidden from the person's own
+change(s) in your repo are not in this job — it starts from commit <sha>"). `.bareloop/` and `node_modules/` (any depth, so packages installed in the worktree never read as worker writes) are hidden from the person's own
 `git status` through the repo's private `<common-git-dir>/info/exclude`, never their tracked `.gitignore`. The signed run
 (`run-u --spec`) reads `worktree` from that manifest; its spine and books stay in the session directory beside `source.json`,
 never inside the person's repo. At the end: GREEN commits the run's work on its `bareloop-<job>` work branch (authored by

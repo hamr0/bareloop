@@ -15,6 +15,9 @@ import { dirname, join, resolve } from 'node:path';
 /** the line that hides bareloop's own folder from the person's `git status` (anchored at the repo root) */
 export const EXCLUDE_LINE = '/.bareloop/';
 
+/** the line that hides installed packages at any depth */
+export const NODE_MODULES_LINE = 'node_modules/';
+
 /** where a run's worktree lives in the person's repo @param {string} repo @param {string} id */
 export function worktreePath(repo, id) {
   return join(repo, '.bareloop', 'wt', id);
@@ -54,10 +57,10 @@ export function shortHead(repo) {
 }
 
 /**
- * Hide `.bareloop/` from the person's own `git status` through the repo's PRIVATE exclude file
+ * Hide `.bareloop/` and `node_modules/` (packages installed in a worktree must not read as worker writes) from the person's own `git status` through the repo's PRIVATE exclude file
  * (`<common-git-dir>/info/exclude`), never their tracked `.gitignore`. The common dir, not `.git`: in a linked
  * worktree `.git` is a file and the shared `info/exclude` lives in the main repository's git dir. Idempotent —
- * the line is never written twice.
+ * each line is checked separately and never written twice.
  * @param {string} repo
  * @returns {boolean} true when the line was added now
  */
@@ -66,9 +69,12 @@ export function hideBareloopDir(repo) {
   const exclude = join(resolve(repo, common), 'info', 'exclude');
   mkdirSync(dirname(exclude), { recursive: true });
   const text = existsSync(exclude) ? readFileSync(exclude, 'utf8') : '';
-  if (text.split('\n').some((l) => l.trim() === EXCLUDE_LINE)) return false;
-  if (text === '') writeFileSync(exclude, `${EXCLUDE_LINE}\n`);
-  else appendFileSync(exclude, `${text.endsWith('\n') ? '' : '\n'}${EXCLUDE_LINE}\n`);
+  const have = new Set(text.split('\n').map((l) => l.trim()));
+  const missing = [EXCLUDE_LINE, NODE_MODULES_LINE].filter((l) => !have.has(l));
+  if (missing.length === 0) return false;
+  const add = `${missing.join('\n')}\n`;
+  if (text === '') writeFileSync(exclude, add);
+  else appendFileSync(exclude, `${text.endsWith('\n') ? '' : '\n'}${add}`);
   return true;
 }
 
