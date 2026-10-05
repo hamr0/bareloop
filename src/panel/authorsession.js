@@ -77,7 +77,7 @@ export const STEP_LABELS = Object.freeze({
  * A phase with no entry leaves the current step as it was.
  * @type {Readonly<Record<string, keyof typeof STEP_LABELS>>}
  */
-const PHASE_STEP = Object.freeze({
+export const PHASE_STEP = Object.freeze({
   'confirm-language-pick': 'confirm',
   'confirm-round': 'confirm',
   'confirm-done': 'confirm',
@@ -98,6 +98,28 @@ const PHASE_STEP = Object.freeze({
   'rubric-done': 'calibrate',
   'rubric-scrubbed': 'calibrate',
 });
+
+/** @typedef {{id: string, label: string, status: 'running'|'done'|'failed', detail: string}} StepLine */
+
+/** @param {StepLine[]} steps @param {string} id the LATEST line carrying this id (the list is a time-ordered log; an id can repeat) */
+export function latestStep(steps, id) {
+  for (let i = steps.length - 1; i >= 0; i -= 1) if (steps[i].id === id) return steps[i];
+  return undefined;
+}
+
+/**
+ * The progress list is a chronological log of segments (hamr 2026-10-05): starting a different step closes the running
+ * line; a step that already has a line and starts again AFTER other steps gets a NEW line appended at the end (the
+ * earlier line keeps its status and detail). Existing lines are never moved. Re-starting the step that is still the
+ * LAST line just resumes that line.
+ * @param {StepLine[]} steps @param {string} id @param {string} [detail] (absent = keep what the line has)
+ */
+export function advanceSteps(steps, id, detail) {
+  for (const x of steps) if (x.status === 'running' && x.id !== id) x.status = 'done';
+  const last = steps.at(-1);
+  if (last && last.id === id) { last.status = 'running'; if (detail !== undefined) last.detail = detail; return; }
+  steps.push({ id, label: STEP_LABELS[id] ?? id, status: 'running', detail: detail ?? '' });
+}
 
 /** source-door refusals that come from CHECKING the copied source (the scan/freeze), not from reaching it */
 const SOURCE_CHECK_CODES = new Set([
@@ -327,15 +349,12 @@ export function createSession(card, deps = {}) {
 
   /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
   const stepStart = (id, detail) => {
-    for (const x of state.steps) if (x.status === 'running' && x.id !== id) x.status = 'done';
-    const label = STEP_LABELS[id] ?? id;
-    const cur = state.steps.find((/** @type {any} */ x) => x.id === id);
-    if (cur) { cur.status = 'running'; if (detail !== undefined) cur.detail = detail; } else state.steps.push({ id, label, status: 'running', detail: detail ?? '' });
-    state.progressLabel = label;
+    advanceSteps(state.steps, id, detail);
+    state.progressLabel = STEP_LABELS[id] ?? id;
   };
-  /** @param {string} id @param {string} detail set a step's detail without changing its status */
-  const stepDetail = (id, detail) => { const x = state.steps.find((/** @type {any} */ y) => y.id === id); if (x) x.detail = detail; };
-  /** finish the running step as done (or every running step, when `id` is omitted) */
+  /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
+  const stepDetail = (id, detail) => { const x = latestStep(state.steps, id); if (x) x.detail = detail; };
+  /** finish the running step as done (or the latest line of `id`, when given) */
   const stepDone = (id) => { for (const x of state.steps) if (x.status === 'running' && (id === undefined || x.id === id)) x.status = 'done'; };
   /** @param {string} reason the running step (else the last one) fails with the code-owned reason on its own line */
   const stepFail = (reason) => {

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { getStartFromImport } from '../src/panel/server.js';
 import { importsPath, importId } from '../src/panel/importroutes.js';
-import { createSession, buildReuseSpec, STEP_LABELS } from '../src/panel/authorsession.js';
+import { createSession, buildReuseSpec, STEP_LABELS, PHASE_STEP, advanceSteps, latestStep } from '../src/panel/authorsession.js';
 import { signRun } from '../src/panel/authorroutes.js';
 import { exportFixtureBundle } from './bundle-fixture.js';
 
@@ -104,4 +104,21 @@ test('a signed reuse ends the list with "signed hash" DONE (never running/untouc
   check();
   await new Promise((r2) => { setTimeout(r2, 300); });
   check();
+});
+
+test('chronological log (hamr 2026-10-05): a step that restarts after others appends a NEW line; earlier lines keep status and detail; nothing moves', () => {
+  /** @type {any[]} */ const steps = [];
+  const go = (id, d) => advanceSteps(steps, id, d);
+  go('setup'); go('copy'); go('check'); go('install', 'Packages missing'); go('draft', 'deepseek-flash, $1.00 cap');
+  for (const ph of ['seed-read', 'scout', 'confirm', 'listing', 'author-call']) go(PHASE_STEP[ph]);
+  assert.deepEqual(steps.map((x) => [x.label, x.status]), [
+    ['checking setup', 'done'], ['copying source', 'done'], ['checking source', 'done'], ['waiting on install', 'done'],
+    ['drafting', 'done'], ['reading repo', 'done'], ['scouting repo', 'done'], ['confirming plan', 'done'], ['listing files', 'done'],
+    ['drafting', 'running'],
+  ]);
+  assert.equal(steps[4].detail, 'deepseek-flash, $1.00 cap', 'the first drafting line keeps its detail');
+  assert.equal(steps[9].detail, '');
+  assert.equal(latestStep(steps, 'draft'), steps[9], 'id lookups target the LATEST line');
+  // a repeated phase of the step already running stays one line
+  go('draft'); assert.equal(steps.length, 10);
 });
