@@ -9841,6 +9841,16 @@ to hamr, not silently landing it.
 
 Nothing built by this entry. Full ruling text: `docs/logs/G2-SCOPING.md`.
 
+**2026-10-05 addendum — the 2A trigger fired; half (b) built.** The second `truncated:max_tokens`
+(and a third) landed on DeepSeek (deepseek-flash): runs `muuvmmul` (seq 66) and `muux1x96`
+(seq 99), both exactly 32,000 output tokens after median ~440-870-token rounds — runaway
+generation, not a low ceiling — both escalated `provider-red` ("worker loop: truncated:max_tokens").
+Base rate: 2 of 173 archived DeepSeek runs, 2 of 1,819 rounds. hamr ruled half (b) "A" on
+2026-10-05: a STEP worker round cut at max_tokens is a failed worker attempt (booked, output
+discarded, `attempt-bounded` reason `output cut at the token limit (max_tokens)`, strike ladder
+unchanged), not provider-red; real transport throws and non-step phases (scout/fix/drafter) are
+unchanged. Half (a) (`effort:'low'`) is sonnet-only and n/a to DeepSeek; `maxTokens` stays 32,000.
+
 ## F123 — PRD item 24 lever (a) DROPPED: gate-red recovery is ~3% of spend (~6% on testgen),
 below the already-minor read-hygiene lever, no evidence the register changes behaviour
 
