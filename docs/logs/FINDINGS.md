@@ -9851,6 +9851,8 @@ discarded, `attempt-bounded` reason `output cut at the token limit (max_tokens)`
 unchanged), not provider-red; real transport throws and non-step phases (scout/fix/drafter) are
 unchanged. Half (a) (`effort:'low'`) is sonnet-only and n/a to DeepSeek; `maxTokens` stays 32,000.
 
+2026-10-05 (later): hamr ruling A extended half (b) to the close-fix loop — a fix-phase worker round cut at max_tokens is now one failed fix round (booked, discarded, `attempt-bounded`, next fix prompt carries the cut-off note; same caps and fix governor), not provider-red; muux1x96 was cut in phase `fix`. Scout, drafter and replan keep provider-red.
+
 ## F123 — PRD item 24 lever (a) DROPPED: gate-red recovery is ~3% of spend (~6% on testgen),
 below the already-minor read-hygiene lever, no evidence the register changes behaviour
 

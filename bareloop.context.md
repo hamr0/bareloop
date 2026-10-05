@@ -1380,13 +1380,13 @@ ambiguity, not a merge. `resolveHumanRuling(fresh, held)` is the exported seam t
 `branch-red` is the WORK BRANCH refusing (below): the patient is not a git checkout, its
 branch namespace has no free name, or a resume's recorded branch is gone. Zero tokens, and
 never a fallback to working on the branch the run was handed. `provider-red` is a
-transport throw, or a scout/fix-loop/drafter round the API cut off mid-generation
+transport throw, or a scout/drafter/replan round the API cut off mid-generation
 (`truncated:max_tokens`, BA-6 — before which it laundered into a clean finish, F25): no
-verdict exists and the failed round's spend is only partly known (F6). A STEP worker round
-cut at `max_tokens` is NOT provider-red (F122 "2A" half b, hamr 2026-10-05): it is a failed
-attempt — the round is booked, its output discarded, an `attempt-bounded` record carries the
-reason `output cut at the token limit (max_tokens)`, and the step's strike ladder applies as
-for any failed attempt. `cap-halt` is the wallet; `wall-halt` is the clock
+verdict exists and the failed round's spend is only partly known (F6). A STEP or FIX-loop
+worker round cut at `max_tokens` is NOT provider-red (F122 "2A" half b, hamr 2026-10-05, fix
+phase added by ruling A): it is a failed attempt — the round is booked, its output discarded,
+an `attempt-bounded` record carries the reason `output cut at the token limit (max_tokens)`,
+and the step's strike ladder (or the fix governor) applies as for any failed attempt. `cap-halt` is the wallet; `wall-halt` is the clock
 (F64 — a timeout derived from the run's own deadline is a governance stop, never a transport
 casualty). **`cap-halt` reaches you from the close-fix loop too, not only from a step:** the
 shell spells exhaustion (strikes on a step, and — since v1.46 — strikes in the fix loop as
