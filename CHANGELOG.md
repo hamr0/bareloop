@@ -5,6 +5,37 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.35.0] - 2026-10-05
+
+### Added
+
+- **One run = one id (resume).** A resume now continues the SAME run: one runid, one spine file, a `leg-resume` marker opens each new leg (`legsOf` is the one owner of leg boundaries). Outcome is the last leg's, money is each leg's own spend summed once, wall is the sum of leg windows with the gap between legs excluded. The run list keeps one row; the panel shows one card (`resumed xN`), an Audit leg divider, and a dotted map connector. Resume readers (`readResume`, pause age gate, `deathAtOf`) read the latest leg.
+- **Panel Stop.** `POST /api/runs/:runid/stop` writes a stop request that is read at the round boundary where the money cap binds (not between steps), so a one-step run can be stopped. The leg ends as the resumable outcome `stopped` (`stopped` joins the checkpoint outcomes); resume re-enters the cut step. The page says "stopping after this turn...".
+- **Panel Resume.** `POST /api/runs/:runid/resume`, a Resume mode on the run's Job tab where only the money and time caps are inputs ("Money cap ($)", "Time cap (min)", Sign & resume). Changed caps write `resolved-spec-r<k>.json` beside the original. A cap at or below what is already spent or used is refused at $0.
+- **Ended block.** Every finished run carries one code-owned reason / next line (`ended` on the run detail, `endedLine` on the run list), shown on the Audit tab and under the job name on the card. Resume is listed only when the engine would accept it; a strike-governor cap-halt is no longer read as the money cap.
+- **Reuse workflow.** Green runs (and imported jobs) offer [Reuse workflow] in the Run tab's top action row: the origin's signed spec is copied and only five boxes are open (Source, Destination, money cap, time cap, Model; the server refuses any other change). `workflowKey(spec)` identifies "the same job" (signed spec without source, destination, budget, wall, provider/model; `jobSpecHash` untouched). The estimate line reads "Same job - G green - N not green - about $X and M min a run", with unknown said, never rendered as $0. Red rows say "Change the job: + New."
+- **Read-only Import.** A guarded folder browser (`GET /api/fs/list`, folders only, no symlinks, depth-3 search for job bundles, remembers the last folder), `POST /api/imports`, `GET /api/imports[/:id]`, rows in `<home>/imports.jsonl`, re-read on every view ("changed since import", "folder not found"). An imported job opens in the normal Run / Audit / Job tabs: an IMPORTED box, then the SUMMARY and MAP of its latest green run (from the bundle's spine, else its bridge, else "no green run in this bundle"). Reuse re-verifies the bundle and every close stage's signed bytes at the moment of reuse; the person signs it here. Re-importing a folder updates its one row.
+- **Runs list.** Runs/workflows first, imported jobs below; one code-owned status table (sign to word) read by run cards, expanded rows, the header, imported rows and MAP step cards; step names as written; Audit step rows wear the Run tab's sign and word.
+- **Monthly claims.** Settled per leg: a resumed run stays one listed row and only the leg's claim is released.
+- **Chat panel rework.** One chronological progress list (every pipeline step is one line that updates in place; a resumed step appends a new line; detail on its own line; one drafting line carrying model and cap), sitting under the thread above the ask box and auto-scrolling when it changes while live. One wide main button whose wording follows the moment (Start drafting / Sign & run / Check again / Send / Sign & run). The Chat tab always opens on an empty job card with Clear (or Abandon while a session is live and unsigned) on the card; `+ New` is gone. Ask box is a wrapping textarea (Enter sends, Shift+Enter is a newline) dimmed until there is something to reply to; job-card free-text boxes wrap and auto-grow; focused field gets the accent border. The card is fully locked while a drafting session is live.
+- **`POST /api/author/:id/abandon`** ends a live authoring session: terminal phase `abandoned`, releases the one-at-a-time lock, keeps booked drafting spend, books an in-flight call's usage, starts no new model call.
+- **`GET /api/author/live`**: a refreshed Chat page re-attaches to the one live authoring session (reuse included), card refilled from the session's own copy.
+- **Run summary** counts steps, not parts (a stopped-then-continued step is one step); a halted step's time stops at its leg's end.
+
+### Fixed
+
+- **F122 2A (b):** a step worker round cut at `max_tokens` (`truncated:max_tokens`) is now a failed attempt on the strike ladder, not provider-red; the same holds for the close-fix loop (the cut round is discarded, its spend stays booked, the next fix prompt carries a cut-off note). Scout, drafter and replan keep provider-red.
+- **F212:** a single-file `writeScope` is now seen by the tree snapshot, so `tree-changed` no longer reads 0 files changed when the worker edited that file.
+- **F213:** drafting spend of an authoring session that never became a run is booked (`draft-spend.json` written after every metered call, counted by the monthly and Money readers, attributed by start time).
+- Authoring refusals at $0: a repo source's absolute Destination is refused before any model call (one rule for the fresh and Reuse card; a repo Destination is the write fence); the non-repo refusal names what the door found (single file / plain folder / other); the reuse refusal names the provider in plain words.
+- A dead panel token (server restarted) shows one reload line and stops the Chat poll; a session's refusal is recorded once, in the progress line only.
+- Panel: a live run headline no longer reads `undefined` for wall time; a run with no spine yet reads "starting..."; live cards carry the same money/time floors as the right pane; Ended reasons are plain words with no raw engine detail; the IMPORTED box names the run behind each exported-history price; Providers keys-file path is never a hardcoded guess.
+
+### Changed
+
+- Tests that spawn a real runner take HOME and keys from a scratch dir (`cleanEnv()`), and pause/checkpoint fixtures are relative to today (the 60-day pause TTL expired a literal 2026-08-04 date). Test-only.
+- Small refactors: one spelling of the panel bind address in the Host and Origin guards; judge-round `rateSource` uses the one `rateSourceFields` helper; `monthly.js` header describes the held-money refusal form.
+
 ## [0.34.0] - 2026-10-01
 
 ### Fixed
