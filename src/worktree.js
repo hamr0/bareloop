@@ -84,3 +84,28 @@ export function removeWorktree(repo, dir) {
   } catch { /* fall through: report what is on disk */ }
   return !existsSync(dir);
 }
+
+/** a commit bareloop makes in the person's repo is authored by bareloop (never their global config), signs nothing, runs none of their hooks */
+const COMMIT_CONFIG = [
+  '-c', 'user.name=bareloop', '-c', 'user.email=bareloop@localhost', '-c', 'commit.gpgsign=false',
+  '-c', 'core.hooksPath=/dev/null/bareloop-no-hooks',
+];
+
+/** what never goes into the work commit: the arbiter's own books and installed packages */
+const NOT_WORK = [':(exclude).smoke', ':(exclude).litectx', ':(exclude)gate-audit.jsonl', ':(exclude,glob)**/node_modules/**'];
+
+/**
+ * The run's final commit, on whatever branch the worktree stands on: everything the run changed except the
+ * arbiter's books and `node_modules`. Nothing changed = no commit (a green with nothing to commit is still a green).
+ * Throws on a git failure — the caller must not remove a worktree whose work is not safely on the branch.
+ * @param {string} dir the worktree
+ * @param {string} message
+ * @returns {{committed: boolean, sha: string}}
+ */
+export function commitWork(dir, message) {
+  const run = (/** @type {string[]} */ args) => execFileSync('git', ['-C', dir, ...COMMIT_CONFIG, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  run(['add', '-A', '--', '.', ...NOT_WORK]);
+  const staged = run(['diff', '--cached', '--name-only']).trim();
+  if (staged !== '') run(['commit', '-q', '-m', message]);
+  return { committed: staged !== '', sha: run(['rev-parse', '--short', 'HEAD']).trim() };
+}

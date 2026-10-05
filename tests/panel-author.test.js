@@ -657,7 +657,8 @@ test('createSession: a repo with a dependency and no node_modules WAITS (install
   assert.equal(session.state.phase, 'install-needed', `expected install-needed, got ${session.state.phase} / ${session.state.error}`);
   assert.equal(session.state.pendingAsk?.kind, 'install-needed');
   assert.match(session.state.pendingAsk.command, /npm (ci|install)/);
-  assert.ok(session.state.pendingAsk.tree.includes('source-seed'), 'must point at THIS session\'s own copy, never the original repo');
+  assert.ok(session.state.pendingAsk.tree.includes(join('.bareloop', 'wt')), 'must point at THIS session\'s own worktree (P6 item 1), never the repo\'s own checkout');
+  assert.ok(session.state.pendingAsk.tree.startsWith(repo), 'the worktree lives INSIDE the person\'s repo');
   // build item 4 (mirrored server-side): a waiting session is still LIVE —
   // TERMINAL_PHASES (authorroutes.js) does not include install-needed.
   assert.notEqual(session.state.error, 'refused', 'install-needed must not be reported as a refusal');

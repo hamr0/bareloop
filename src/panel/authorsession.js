@@ -27,8 +27,11 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, missingDependencies, looksLikeRepoSource,
+  prepareSource, proveDestination, missingDependencies, looksLikeRepoSource, nearestGitAncestor,
 } from '../source.js';
+import {
+  worktreePath, uncommittedCount, shortHead, removeWorktree,
+} from '../worktree.js';
 import { detectLanguage } from '../detectlang.js';
 import {
   validateJob, jobSpecHash, workflowKey, resolveWorkerModel,
@@ -507,6 +510,15 @@ export function createSession(card, deps = {}) {
   };
   /** @type {string|null} */
   let draftStartedAt = null;
+  /** P6 item 1: the worktree this session made in the person's repo (null until made, and again once removed) @type {{repo: string, dir: string}|null} */
+  let madeWorktree = null;
+  /** a session that ends WITHOUT ever running (refused, errored, abandoned) takes its worktree with it; a signed one keeps it for the run */
+  const dropWorktree = () => {
+    if (madeWorktree === null) return;
+    const w = madeWorktree;
+    madeWorktree = null;
+    removeWorktree(w.repo, w.dir);
+  };
   /** @type {{provider: string, baseUrl: string|null, model: string}|null} the worker the drafting calls ran on, set once the Model Name resolves */
   let draftIdentity = null;
 
@@ -515,6 +527,7 @@ export function createSession(card, deps = {}) {
   /** @param {string} message @param {string} [phase] */
   const refuse = (message, phase = 'refused') => {
     if (abandoned) return;
+    dropWorktree();
     state.phase = phase;
     state.error = message;
     stepFail(message);
@@ -556,6 +569,16 @@ export function createSession(card, deps = {}) {
 
     state.phase = 'preparing-source';
     stepStart('copy');
+    // P6 item 1 (hamr 2026-10-05, Q1 = A / Q3 = A): a REPO source gets a worktree in the person's own repo, made now at
+    // drafting start — `.bareloop/wt/<session id>` at their current commit. Edits they have not committed are not in it,
+    // and the progress line says so (a notice, never a refusal).
+    const repoRoot = isRepoLike ? nearestGitAncestor(resolve(card.source))?.dir ?? null : null;
+    if (repoRoot !== null) {
+      const dirty = uncommittedCount(repoRoot);
+      if (dirty > 0) {
+        stepDetail('copy', `${dirty} uncommitted change(s) in your repo are not in this job — it starts from commit ${shortHead(repoRoot) ?? 'HEAD'}.`);
+      }
+    }
     // ONE rule for Destination (the same for a fresh card and a reuse card): for a REPO source it is the write fence
     // (writeScope globs, relative to the repo — set into the spec below, never proven as a directory); for a FOLDER source
     // it is an absolute output directory, proven by `prepareSource` -> `proveDestination`. The door routes on a peek at
@@ -565,7 +588,10 @@ export function createSession(card, deps = {}) {
     const destIsDir = isAbsoluteDestination(card.destination);
     const prep = await prepareSource({
       source: card.source, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
+      ...(repoRoot === null ? {} : { worktree: worktreePath(repoRoot, id) }),
     });
+    if (repoRoot !== null && prep.stop === null && /** @type {any} */ (prep).manifest?.worktree) madeWorktree = { repo: repoRoot, dir: /** @type {any} */ (prep).manifest.worktree };
+    if (abandoned) dropWorktree();
     if (prep.stop !== null) {
       // reaching the source and checking it are two lines: a scan/freeze refusal means the copy itself worked
       if (SOURCE_CHECK_CODES.has(/** @type {any} */ (prep).code)) stepStart('check');
@@ -587,21 +613,19 @@ export function createSession(card, deps = {}) {
       LANG = langResult.kind === 'resolved' ? langResult.lang : (langResult.kind === 'ambiguous' ? langResult.candidates[0] : 'none-detected');
 
       // ── the install gap, WAITED FOR, never a dead end (build item 1,
-      // mirroring F182's fix in `src/interviewrun.js`) ── the copy this
-      // session works from (`prep.tree`) is `prepareSource`'s own hidden
-      // seed, tracked-files-only, so a JS/TS repo's copy never carries
-      // `node_modules`. Refusing outright here was ITSELF the F182 class of
-      // bug one layer up: a person who ran the printed command and then
-      // reloaded the page got a BRAND NEW seed with no `node_modules`
-      // either, so the refusal could never be satisfied. bareloop still
-      // never runs an install itself — this only re-checks the SAME copy
-      // (`missingDependencies` over `prep.tree`, the identical rule
-      // `src/interviewrun.js` uses) on demand, via the "Check again" button
-      // (`checkDeps()`, below), instead of ending the session.
+      // mirroring F182's fix in `src/interviewrun.js`) ── the tree this
+      // session works from (`prep.tree`) is the job's own WORKTREE (P6 item 1:
+      // a detached checkout of the person's current commit, inside their
+      // repo), so a JS/TS repo's tree never carries `node_modules` until
+      // someone installs there. Refusing outright here was ITSELF the F182
+      // class of bug one layer up. bareloop still never runs an install
+      // itself — this only re-checks the SAME worktree on demand, via the
+      // "Check again" button (`checkDeps()`, below), instead of ending the
+      // session. (P6 item 3 later has bareloop run `npm ci` here itself.)
       let depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
       if (depsGap) {
         state.phase = 'install-needed';
-        stepStart('install', `Packages missing in the copy. Run: cd ${prep.tree} && ${depsGap.command}`);
+        stepStart('install', `Packages missing in the job's worktree. Run: cd ${prep.tree} && ${depsGap.command}`);
         for (;;) {
           state.pendingAsk = { kind: 'install-needed', tree: prep.tree, command: depsGap.command, reason: depsGap.reason };
           // eslint-disable-next-line no-await-in-loop
@@ -834,6 +858,7 @@ export function createSession(card, deps = {}) {
       if (['refused', 'abandoned', 'error', 'signed', 'signing-failed'].includes(state.phase)) return { ok: false, error: 'this session is not live — nothing to abandon' };
       abandoned = true;
       phaseValue = 'abandoned';
+      dropWorktree();
       state.error = 'Abandoned by you — money already spent stays booked.';
       state.pendingAsk = null;
       if (resolvePending) { const r = resolvePending; resolvePending = null; r(null); }

@@ -27,6 +27,7 @@ import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
+import { addWorktree, hideBareloopDir } from './worktree.js';
 import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
 import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.js';
@@ -440,7 +441,12 @@ async function fetchOnce(url, timeoutMs) {
  * as declared, unvalidated by `proveDestination`, and `frontDoorFromManifest`
  * never hands a repo source's destination to `copyOut` — wiring it into
  * `writeScope` is M3/M4's job, not this one.
- * @param {{source: string, into: string, destination?: string,
+ * `worktree` (P6 item 1, repo sources ONLY — ignored for every other kind): instead of COPYING the repo, make the
+ * run's tree a detached git worktree of the person's own repo at that directory (the shared
+ * `src/worktree.js`, the bundle door's own spelling), hide `.bareloop/` from their `git status`, and record the
+ * worktree and the repo root in the manifest. `into` then holds only `source.json`; the tree is `worktree`, at the
+ * repo's current commit (uncommitted edits are NOT in it). No seed commit is made — the seed IS the repo's HEAD.
+ * @param {{source: string, into: string, destination?: string, worktree?: string,
  *   fetchTimeoutMs?: number, afterScan?: () => (void|Promise<void>)}} args
  *   `fetchTimeoutMs` is test-only — production callers omit it and get
  *   `PROVIDER_TIMEOUT_MS`. `afterScan` is a test seam too: called exactly once,
@@ -449,7 +455,7 @@ async function fetchOnce(url, timeoutMs) {
  *   deterministically. Production never sets it; absent, behaviour is unchanged.
  * @returns {Promise<{stop: null, into: string, tree: string, manifestPath: string, manifest: object}|SourceRefusal>}
  */
-export async function prepareSource({ source, into, destination, fetchTimeoutMs = PROVIDER_TIMEOUT_MS, afterScan }) {
+export async function prepareSource({ source, into, destination, worktree, fetchTimeoutMs = PROVIDER_TIMEOUT_MS, afterScan }) {
   const intoAbs = resolve(into);
   if (existsSync(intoAbs)) {
     return refuse('into-exists', `${intoAbs} already exists — a source door writes a FRESH tree, never reuses one (the export worktree rule)`);
@@ -640,6 +646,34 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
   if (secretHits.length) {
     const detail = secretHits.map((h) => `${h.rel} (${h.names.join(', ')})`).join('; ');
     return refuse('source-carries-secret', `${secretHits.length} file(s) carry a known secret shape — refused before anything was written (hard line #3, secrets never enter the tree): ${detail}`);
+  }
+
+  if (worktree !== undefined && frozen.kind === 'repo') {
+    const repoRoot = /** @type {string} */ (frozen.root);
+    const wt = resolve(worktree);
+    try {
+      hideBareloopDir(repoRoot);
+      addWorktree(repoRoot, wt);
+    } catch (e) {
+      return refuse('source-worktree-failed', `could not make the job's worktree in ${repoRoot}: ${/** @type {Error} */ (e).message} (the repo needs at least one commit)`);
+    }
+    const headAt = await git(wt, ['rev-parse', 'HEAD']);
+    if (!headAt.ok) return refuse('source-git-failed', `git rev-parse HEAD failed in ${wt}: ${headAt.err}`);
+    const wtManifest = {
+      kind: 'repo',
+      source,
+      ...(frozen.sourceSubdir === undefined ? {} : { sourceSubdir: frozen.sourceSubdir }),
+      fetchedAt: new Date().toISOString(),
+      files: fileMeta,
+      seed: headAt.out.trim(),
+      destination: destination ?? null,
+      worktree: wt,
+      repo: repoRoot,
+    };
+    await mkdir(intoAbs, { recursive: true });
+    const wtManifestPath = join(intoAbs, 'source.json');
+    await writeFile(wtManifestPath, `${JSON.stringify(wtManifest, null, 2)}\n`);
+    return { stop: null, into: intoAbs, tree: wt, manifestPath: wtManifestPath, manifest: wtManifest };
   }
 
   const treeDir = join(intoAbs, 'tree');
