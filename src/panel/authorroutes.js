@@ -188,7 +188,7 @@ export function createAuthorRoutes(opts) {
       const cap = Number(q.get('cap'));
       if (!Number.isFinite(cap) || cap <= 0) { send(200, { ok: true, refusal: null }); return true; }
       try {
-        const room = checkMonthlyRoom({ capUsd: cap, home: opts.home });
+        const room = checkMonthlyRoom({ capUsd: cap, home: opts.home, sessionsRoot: opts.sessionsRoot });
         send(200, { ok: true, refusal: monthlyRefusalText(room), leftUsd: room.leftUsd, atLeast: room.atLeast });
       } catch (e) {
         if (!(e instanceof ConfigError)) throw e;
@@ -358,7 +358,7 @@ export function signRun(session, claimedHash, o) {
   // lower nothing (the cap is signed in) but may raise the limit in Settings and sign again.
   try {
     const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-    const refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: Number(spec.budgetUsd), home: o.home }));
+    const refusal = monthlyRefusalText(checkMonthlyRoom({ capUsd: Number(spec.budgetUsd), home: o.home, sessionsRoot: o.sessionsRoot }));
     if (refusal !== null) return { ok: false, error: refusal };
   } catch (e) {
     if (e instanceof ConfigError) return { ok: false, error: `${e.message} — refusing rather than guess the monthly limit` };

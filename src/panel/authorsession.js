@@ -48,6 +48,7 @@ import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
+import { writeDraftSpend } from '../draftspend.js';
 
 /**
  * THE PROGRESS LIST's one table (hamr 2026-10-04, "one place showing all"): every pipeline step the left Chat panel
@@ -493,7 +494,21 @@ export function createSession(card, deps = {}) {
     state.cost = t.spendComplete ? `$${t.knownUsd.toFixed(4)}` : `≥$${t.knownUsd.toFixed(4)} (unpriced calls present)`;
     state.draftSpentUsd = t.knownUsd;
     state.draftSpendComplete = t.spendComplete;
+    // self-review 2026-10-05 (hamr's ruling A): the figure reaches DISK after every metered call, from this same
+    // tally, so an abandoned / refused / restarted session's drafting spend still counts (src/draftspend.js)
+    const nowIso = new Date().toISOString();
+    draftStartedAt ??= nowIso;
+    try {
+      writeDraftSpend(outDir, {
+        sessionId: id, spentUsd: t.knownUsd, spendComplete: t.spendComplete, provider: draftIdentity?.provider ?? null,
+        baseUrl: draftIdentity?.baseUrl ?? null, model: draftIdentity?.model ?? null, startedAt: draftStartedAt, updatedAt: nowIso,
+      });
+    } catch { /* money already spent stays in memory for a signed run; a disk fault never stops the draft */ }
   };
+  /** @type {string|null} */
+  let draftStartedAt = null;
+  /** @type {{provider: string, baseUrl: string|null, model: string}|null} the worker the drafting calls ran on, set once the Model Name resolves */
+  let draftIdentity = null;
 
   // A terminal stop is recorded ONCE, on `state` (phase + error) — never also as a chat bubble: the page shows it in the
   // one progress line, so a thread copy was the same refusal a second and third time (hamr's live reuse test 2026-10-04).
@@ -511,6 +526,7 @@ export function createSession(card, deps = {}) {
     const keyRows = rowsForHome(configHome);
     const modelChoice = modelChoiceFor(keyRows, card.model);
     if (!modelChoice) { refuse(`Model "${card.model}" is not a Name in Settings > Providers. Stopped — nothing spent.`); return; }
+    draftIdentity = { provider: modelChoice.provider, baseUrl: modelChoice.baseUrl ?? null, model: modelChoice.name };
     let providerEntry;
     try { providerEntry = resolveProvider(modelChoice.provider); } catch (e) { refuse(/** @type {Error} */ (e).message); return; }
     // P4a item 4 — the key variable the person picked in Settings stands in for the built-in one
