@@ -2113,27 +2113,53 @@ const dyingAt = (script, n, thrower = () => Object.assign(new Error('ECONNRESET 
   };
 };
 
-test('WORKER truncation: a step round cut off at the output cap rides out as provider-red — a returned truncated:max_tokens is the SAME casualty class as a thrown socket, never interpreter-red', async (t) => {
+const roundCost = (events) => events.filter((e) => e.type === 'worker-round').reduce((n, e) => n + (e.costUsd ?? 0), 0);
+
+test('WORKER truncation (F122 2A b): a step round cut at max_tokens is a FAILED ATTEMPT, never provider-red — the step continues and can go green', async (t) => {
   const wd = makePatient(t);
-  // The truncation seam is a RETURNED error, not a throw: the real Loop maps
-  // stopReason max_tokens to `error: 'truncated:max_tokens'` (bare-agent
-  // loop.js), and planrun's `ask` routes that string. So the fixture drives the
-  // REAL mechanism (a provider stop reason) rather than a hand-made error object
-  // — and the router's default `interpreter-red` leg sits one line below the one
-  // under test, so a mis-wired router lands there and this test reads it.
   const provider = scriptedProvider([
     { text: 'scout notes' },
     { text: PLAN(wd) },
-    { text: 'half a thou', stopReason: 'max_tokens' },   // the step worker's first round
+    { text: 'half a thou', stopReason: 'max_tokens', costUsd: 0.05 },   // attempt 1: cut round
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok — asserts x\n' })] },  // attempt 2
+    { text: 'wrote it' },
   ]);
   const { outcome, events } = await go(wd, provider);
-  assert.equal(outcome, 'provider-red', 'an API-truncated worker round is transport, never capability tier data');
-  assert.ok(!outcome.startsWith('step-red'), 'never laundered into the outcome the driver reads as a capability read');
-  const esc = events.filter((e) => e.type === 'escalation').at(-1);
-  assert.equal(esc.category, 'provider-red', 'the outcome and the spine escalation name the SAME category (F11)');
-  assert.match(esc.detail ?? '', /truncated:max_tokens/, 'the casualty is named by its own shape — a human reading the spine can tell truncation from a dead socket');
-  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'interpreter-red').length, 0,
-    'a truncated round is NOT a broken interpreter — that routing would blame the harness for the provider');
+  assert.equal(outcome, 'green', 'the cut round cost an attempt, not the run');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'provider-red').length, 0);
+  const b = events.filter((e) => e.type === 'attempt-bounded');
+  assert.equal(b.length, 1);
+  assert.equal(b[0].reason, 'output cut at the token limit (max_tokens)', 'the spine says WHY');
+  assert.ok(events.some((e) => e.type === 'worker-round' && e.costUsd === 0.05), 'the cut round is booked, never forgiven');
+  assert.ok(roundCost(events) >= 0.05);
+  assert.match(provider.calls.find((c) => c.includes('CUT OFF: output cut')) ?? '', /output cut at the token limit \(max_tokens\)/, 'the next attempt is told what fired');
+});
+
+test('WORKER truncation (F122 2A b): truncated on EVERY attempt stops by the strike ladder (step-red / strike cap-halt), never provider-red', async (t) => {
+  const wd = makePatient(t);
+  const cut = { text: 'cut', stopReason: 'max_tokens', costUsd: 0.02 };
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    cut, cut,                                  // two strikes end the step
+    { text: PLAN(wd, [{ id: 'second-go', action: 'Write tests/test_x.mjs.', tools: ['write'], rounds: 6, target: 'tests/test_x.mjs', exit: [{ type: 'tree-changed', scope: 'tests/**' }, { type: 'check-passes', name: 'clean-run' }] }]) },
+    cut, cut,
+  ]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 4 });
+  assert.match(outcome, /^step-red:/, 'the ladder ended it');
+  assert.notEqual(outcome, 'provider-red');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'provider-red').length, 0);
+  assert.equal(events.filter((e) => e.type === 'attempt-bounded' && /max_tokens/.test(e.reason ?? '')).length >= 2, true);
+  assert.ok(events.filter((e) => e.type === 'ladder').some((e) => e.strike === true), 'the cut attempts consumed strikes');
+  assert.ok(roundCost(events) >= 0.08 - 1e-9, 'every cut round is in the books');
+});
+
+test('WORKER transport throw mid-step is STILL provider-red (F122 2A b touches truncation only)', async (t) => {
+  const wd = makePatient(t);
+  const provider = dyingAt([{ text: 'scout notes' }, { text: PLAN(wd) }], 2);
+  const { outcome, events } = await go(wd, provider);
+  assert.equal(outcome, 'provider-red');
+  assert.equal(events.filter((e) => e.type === 'escalation').at(-1).category, 'provider-red');
 });
 
 test('DRAFTER truncation: a plan-draft call cut off at the output cap is provider-red, never plan-red — a truncated draft is a casualty, and there is no redraft on truncation', async (t) => {

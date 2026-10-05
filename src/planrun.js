@@ -537,6 +537,9 @@ export const FORBIDDEN_WRITE_SEGMENT_PATTERN = /"path":"(?:(?:[^"\\]|\\.)*\/)?(?
  */
 export const BOUND_REASON_MAX = 200;
 
+/** the recorded reason for a step attempt whose round was cut at the output cap (F122 2A b) */
+export const TRUNCATED_REASON = 'output cut at the token limit (max_tokens)';
+
 /**
  * What the NEXT attempt is told about the bound that cut the previous one.
  *
@@ -570,6 +573,9 @@ export const BOUND_REASON_MAX = 200;
  */
 export function boundedNote(bounded, rounds) {
   if (!bounded) return null;
+  if (bounded.cause === 'truncated') {
+    return `Your previous attempt was CUT OFF: ${TRUNCATED_REASON}. That response was discarded.`;
+  }
   if (bounded.cause !== 'denied') {
     return `Your previous attempt was CUT OFF after ${rounds} tool rounds. `
       + 'Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.';
@@ -2421,7 +2427,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      * `iteration` mirrors `roundIteration` exactly, undefined included: the bound
      * cannot know a label the run never set, and inventing one here would be the
      * only place in this file that claims to.
-     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied', reason: string|null}|undefined}
+     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied'|'truncated', reason: string|null}|undefined}
      */
     let attemptBounded;
     /**
@@ -2809,6 +2815,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         const reason = scrub(r.error);
         attemptBounded = { iteration: roundIteration, cause: 'denied', reason };
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason });
+        return r;
+      }
+      // F122 "2A" half (b), hamr 2026-10-05: a STEP worker round cut at max_tokens is a
+      // FAILED WORKER ATTEMPT, not transport. Same lane as the deny streak above: the cut
+      // round's output is discarded (bare-agent already dropped it), its spend is booked
+      // by the per-round meter, the tree is judged as it stands, and the step's strike
+      // ladder applies unchanged. Only step phases — scout/fix have no ladder and keep
+      // the transport route below.
+      if (r.error && r.error.startsWith('truncated:') && phase.startsWith('step:')) {
+        attemptBounded = { iteration: roundIteration, cause: 'truncated', reason: TRUNCATED_REASON };
+        emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason: TRUNCATED_REASON, stopReason: r.stopReason ?? null });
         return r;
       }
       // the remaining error-return taxonomy (one map, same doctrine as native's):
