@@ -597,7 +597,7 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
 test('Chat tab CSS: the P3 job-card/cap-row/chat-thread rules use fluid widths (100%/flex/grid), never a fixed px width that would force horizontal scroll at 390px', () => {
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
   const start = html.indexOf('.job-card.compact{');
-  const end = html.indexOf('.actions-row > .btn{');
+  const end = html.indexOf('.btn.wide{');
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected the P3 CSS block to be present');
   const block = html.slice(start, end);
   // `max-width`/`min-width` are the media-query/responsive-hint properties
