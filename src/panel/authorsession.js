@@ -51,7 +51,7 @@ import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
-import { writeDraftSpend } from '../draftspend.js';
+import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 
 /**
@@ -382,17 +382,31 @@ export function createSession(card, deps = {}) {
     steps: /** @type {{id: string, label: string, status: 'running'|'done'|'failed', detail: string}[]} */ ([]),
   };
 
+  // The drafting LOG's step events (src/draftspend.js, DRAFT_LOG_FILE): after every progress-list change, diff the list
+  // against what was already logged and append the start / end / re-open of each line — the ONE writer of step times.
+  /** @type {('running'|'ended')[]} */
+  const loggedSteps = [];
+  const logSteps = () => {
+    const at = new Date().toISOString();
+    state.steps.forEach((/** @type {any} */ x, no) => {
+      if (loggedSteps[no] === undefined) { appendDraftLog(outDir, { kind: 'step-start', no, id: x.id, label: x.label, at }); loggedSteps[no] = 'running'; }
+      if (x.status === 'running' && loggedSteps[no] === 'ended') { appendDraftLog(outDir, { kind: 'step-reopen', no, at }); loggedSteps[no] = 'running'; }
+      if (x.status !== 'running' && loggedSteps[no] === 'running') { appendDraftLog(outDir, { kind: 'step-end', no, status: x.status, label: x.label, at }); loggedSteps[no] = 'ended'; }
+    });
+  };
+
   /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
   const stepStart = (id, detail) => {
     advanceSteps(state.steps, id, detail);
     state.progressLabel = STEP_LABELS[id] ?? id;
+    logSteps();
   };
   /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
   const stepDetail = (id, detail) => { const x = latestStep(state.steps, id); if (x) x.detail = detail; };
   /** @param {string} id @param {string} label the latest line of `id` reads `label` instead of its table label (the install step: bareloop installing vs the person) */
   const stepLabel = (id, label) => { const x = latestStep(state.steps, id); if (x) x.label = label; };
   /** finish the running step as done (or the latest line of `id`, when given) */
-  const stepDone = (id) => { for (const x of state.steps) if (x.status === 'running' && (id === undefined || x.id === id)) x.status = 'done'; };
+  const stepDone = (id) => { for (const x of state.steps) if (x.status === 'running' && (id === undefined || x.id === id)) x.status = 'done'; logSteps(); };
   /** @param {string} reason the running step (else the last one) fails with the code-owned reason on its own line */
   const stepFail = (reason) => {
     let x = state.steps.find((/** @type {any} */ y) => y.status === 'running');
@@ -402,6 +416,7 @@ export function createSession(card, deps = {}) {
     }
     x.status = 'failed';
     x.detail = reason;
+    logSteps();
   };
 
   /** @param {'bot'|'you'|'system'} role @param {string} text */
@@ -504,6 +519,14 @@ export function createSession(card, deps = {}) {
     // tally, so an abandoned / refused / restarted session's drafting spend still counts (src/draftspend.js)
     const nowIso = new Date().toISOString();
     draftStartedAt ??= nowIso;
+    // the same call, one line in the drafting LOG (the part a run's views show first): the step running right now,
+    // the call's label, the drafting model, its cost (null stays null: unpriced is never $0). One owner: this onCall.
+    const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+    const callNo = runningNo === -1 ? state.steps.length - 1 : runningNo;
+    appendDraftLog(outDir, {
+      kind: 'call', no: callNo, step: state.steps[callNo]?.id ?? null, label: call.label, model: draftIdentity?.model ?? null,
+      costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0, at: nowIso,
+    });
     try {
       writeDraftSpend(outDir, {
         sessionId: id, spentUsd: t.knownUsd, spendComplete: t.spendComplete, provider: draftIdentity?.provider ?? null,
