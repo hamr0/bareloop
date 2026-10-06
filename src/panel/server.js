@@ -2669,7 +2669,15 @@ export function handleRequest(req, res, opts) {
         /** @type {any} */
         let body = null;
         if (raw.length > 0) { try { body = JSON.parse(raw); } catch { body = null; } }
-        routes.handle(req, res, pathname, body);
+        // this callback runs OUTSIDE createServer's try/catch (which covers only the synchronous GET path), so a
+        // synchronous throw in a route handler (a full disk, a permission fault) would be an uncaught exception that
+        // takes the whole panel down: answer 500 JSON instead and keep serving
+        try {
+          routes.handle(req, res, pathname, body);
+        } catch (e) {
+          if (res.headersSent) { res.end(); return; }
+          sendJson(res, 500, { ok: false, error: `internal error: ${/** @type {Error} */ (e)?.message ?? String(e)}` });
+        }
       });
       return;
     }
