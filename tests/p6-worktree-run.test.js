@@ -17,7 +17,9 @@ import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { prepareSource } from '../src/source.js';
 import { main } from '../src/userrun.js';
-import { scriptedProvider } from './helpers.js';
+import { readRunList } from '../src/runlist.js';
+import { stopFilePath } from '../src/legs.js';
+import { scriptedProvider, reply } from './helpers.js';
 
 /** @param {import('node:test').TestContext} t @param {string} prefix @param {string} [base] */
 const tmp = (t, prefix, base = tmpdir()) => {
@@ -334,4 +336,46 @@ test('run-u --spec on a worktree: an ALREADY-GREEN run removes its folder, makes
   assert.doesNotMatch(git(f.repo, ['worktree', 'list']), /sess1/);
   assert.equal(git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*']), '', 'no work branch');
   assert.match(out.text(), /WORKTREE\s+nothing was changed \(the close already passed\); the worktree folder is removed/);
+});
+
+// C7 (fix-ledger): the RESUMED already-green path. Leg 1 is stopped by the person during the plan phase (the leg ends
+// `stopped`, the worktree folder stays); then the person's own edit lands in that worktree, so on resume the close
+// already passes: an already-green leg whose worktree holds UNCOMMITTED edits. The work must land on the run's work
+// branch (the resumed leg returns to / makes it), never on a detached HEAD, and the folder is removed.
+test('run-u --spec on a worktree: a RESUMED already-green leg commits the worktree\'s uncommitted edits ON the work branch, then removes the folder', async (t) => {
+  const f = await session(t);
+  const home = tmp(t, 'p6-home-');
+  /** @type {string|null} */ let spine = null;
+  let calls = 0;
+  const leg1Provider = {
+    name: 'queue',
+    async generate() {
+      calls += 1;
+      if (calls === 2) { spine = readRunList({ home }).rows[0].spine; writeFileSync(stopFilePath(spine), ''); }
+      return reply(calls === 1 ? { text: 'scout: nothing' } : { text: planFor() });
+    },
+  };
+  const out1 = sink(); const err1 = sink();
+  await main(['--spec', f.specPath, '--approve', jobSpecHash(f.spec)], {
+    provider: leg1Provider, env: {}, out: out1.push, err: err1.push, runlistHome: home,
+  });
+  assert.match(out1.text(), /outcome\s+stopped/, `${out1.text()}\n${err1.text()}`);
+  assert.equal(existsSync(join(f.worktree, '.git')), true, 'a stopped leg keeps the folder');
+  assert.ok(spine);
+
+  // the person's own edit, uncommitted, makes the close pass
+  writeFileSync(join(f.worktree, 'src', 'mod.mjs'), 'export const x = 1;\nMARKER_OK\n');
+
+  const out = sink(); const err = sink();
+  const rc = await main(['--spec', f.specPath, '--approve', jobSpecHash(f.spec), '--resume', spine], {
+    provider: scriptedProvider([{ text: 'never reached' }]), env: {}, out: out.push, err: err.push, runlistHome: home,
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(out.text(), /outcome\s+already-green/);
+  const branch = git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*', '--format=%(refname:short)']);
+  assert.match(branch, /^bareloop-p6-worktree-job/, 'the resumed leg works on the run\'s own work branch');
+  assert.match(git(f.repo, ['show', `${branch}:src/mod.mjs`]), /MARKER_OK/, 'the uncommitted edit landed ON the branch, not on a detached HEAD');
+  assert.equal(existsSync(f.worktree), false, 'the folder is removed');
+  assert.doesNotMatch(git(f.repo, ['worktree', 'list']), /sess1/);
+  assert.match(out.text(), new RegExp(`WORKTREE\\s+final commit [0-9a-f]+ on ${branch}; the worktree folder is removed`), 'the Ended text for this path, pinned');
 });
