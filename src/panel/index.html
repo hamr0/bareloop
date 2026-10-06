@@ -3529,6 +3529,16 @@
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
       }).catch(function(){ pvNote.textContent = "could not read providers"; });
     }
+    // The row's POST body. A price is both boxes or neither (the server refuses a half-set one), so while exactly one
+    // is filled — the normal middle of typing a price — the price fields are LEFT OUT (the server keeps what is saved)
+    // and the other boxes still save; the price posts once both are filled, or both are cleared.
+    function pvRowBody(env, v){
+      var pin = String(v.priceIn).trim();
+      var pout = String(v.priceOut).trim();
+      var body = { envName: env, name: v.name, shape: v.shape, baseUrl: v.baseUrl };
+      if((pin === "") === (pout === "")){ body.priceInPerM = pin; body.priceOutPerM = pout; }
+      return body;
+    }
     pvRows.addEventListener("change", function(e){
       var t = e.target;
       var tr = t.closest("tr");
@@ -3541,14 +3551,13 @@
       }
       if(!(t.classList.contains("pv-name") || t.classList.contains("pv-shape") || t.classList.contains("pv-url") || t.classList.contains("pv-price-in") || t.classList.contains("pv-price-out"))) return;
       var env = tr.getAttribute("data-env");
-      authorPost("/api/settings/providers/row", {
-        envName: env,
+      authorPost("/api/settings/providers/row", pvRowBody(env, {
         name: tr.querySelector(".pv-name").value,
         shape: tr.querySelector(".pv-shape").value,
         baseUrl: tr.querySelector(".pv-url").value,
-        priceInPerM: tr.querySelector(".pv-price-in").value.trim(),
-        priceOutPerM: tr.querySelector(".pv-price-out").value.trim(),
-      }).then(function(r){
+        priceIn: tr.querySelector(".pv-price-in").value,
+        priceOut: tr.querySelector(".pv-price-out").value,
+      })).then(function(r){
         pvNote.textContent = r.body && r.body.ok ? ("Saved — " + env + ".") : ((r.body && r.body.error) || "could not save");
         // no re-render: it would steal focus mid-edit; Chat's Model menu just re-reads
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));

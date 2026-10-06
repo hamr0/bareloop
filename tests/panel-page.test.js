@@ -3071,3 +3071,27 @@ test('progress list: a signed session ends "signed hash" with a check and its ">
   assert.match(last, /<span class="step-label">signed hash<\/span><span class="step-sign">✓<\/span>/);
   assert.match(last, /&gt; drafting spent \$0\.12/);
 });
+
+test('providers row POST: while exactly one price box is filled the price fields are left out (no half-set error flash); both-filled and both-empty still post them', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function pvRowBody(');
+  assert.ok(start > 0, 'pvRowBody exists in the page');
+  const braceStart = html.indexOf('{', start);
+  let depth = 0;
+  let i = braceStart;
+  for (; i < html.length; i += 1) {
+    if (html[i] === '{') depth += 1;
+    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
+  }
+  // eslint-disable-next-line no-new-func
+  const pvRowBody = new Function(`${html.slice(start, i + 1)}\nreturn pvRowBody;`)();
+  const base = { name: 'n', shape: 'openai-compat', baseUrl: '' };
+  const half = pvRowBody('K', { ...base, priceIn: '0.27', priceOut: ' ' });
+  assert.equal(Object.hasOwn(half, 'priceInPerM'), false);
+  assert.equal(Object.hasOwn(half, 'priceOutPerM'), false);
+  assert.equal(half.name, 'n', 'the other boxes still save');
+  const other = pvRowBody('K', { ...base, priceIn: '', priceOut: '1.1' });
+  assert.equal(Object.hasOwn(other, 'priceInPerM'), false);
+  assert.deepEqual(pvRowBody('K', { ...base, priceIn: ' 0.27 ', priceOut: '1.1' }), { envName: 'K', ...base, priceInPerM: '0.27', priceOutPerM: '1.1' });
+  assert.deepEqual(pvRowBody('K', { ...base, priceIn: '', priceOut: '' }), { envName: 'K', ...base, priceInPerM: '', priceOutPerM: '' });
+});
