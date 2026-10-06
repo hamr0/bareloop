@@ -31,6 +31,7 @@ import {
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRunList, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
+import { draftingPartFor } from '../draftspend.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
@@ -814,6 +815,24 @@ export function listRuns(opts = {}) {
 }
 
 /**
+ * The run's DRAFTING PART (hamr 2026-10-06, option A), or null: it exists only when the run came out of a panel
+ * session whose drafting log carries a metered call (src/draftspend.js, `draftingPartFor`) and the spine carries the
+ * drafting figure. It is the FIRST element of `detail.parts`, so EVERY index a reader is handed — `detail.parts`,
+ * `legDividers.beforePart`, the flat Audit rows' `partIndex`, the rounds endpoint's `part` — lives in ONE index space
+ * (the shown list), shifted by {@link draftingShift} in exactly those four places and nowhere else.
+ * @param {any} row @param {any} summary a `replayOne` summary of the row's spine @param {{ home?: string }} opts
+ * @returns {any|null}
+ */
+function draftingFor(row, summary, opts) {
+  return draftingPartFor(row, { draftSpentUsd: summary.draftSpentUsd, draftSpendComplete: summary.draftSpendComplete }, opts);
+}
+
+/** @param {any} row @param {any} summary @param {{ home?: string }} opts @returns {0|1} how far the drafting part pushes every other part's index */
+function draftingShift(row, summary, opts) {
+  return draftingFor(row, summary, opts) ? 1 : 0;
+}
+
+/**
  * The run-list row of a run, for the readers below. An IMPORTED run (`<importId>~<runid>`, see importrun.js) is not in
  * the run list: its row is built from the imports file and a checked path inside that bundle's own `runs/` folder
  * (read only, no pid — never live, never resumable from here). `undefined` when no such run.
@@ -876,6 +895,10 @@ function getRunDetailBody(runid, opts) {
   const auditPaths = resolveAuditPathsForRow(row, rawSpineRecords);
   const summary = replayOne(row.spine, { auditPathOverride: auditPaths.length > 0 ? auditPaths : null });
   const timelineKind = summary.timelineKind;
+  // the drafting part (see draftingFor) heads the parts list; the enrichment below touches the spine's own parts only
+  const draftingPartHere = draftingFor(row, summary, opts);
+  const draftingShiftHere = draftingPartHere ? 1 : 0;
+  const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row)));
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
   const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
@@ -1046,7 +1069,8 @@ function getRunDetailBody(runid, opts) {
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,
-    legDividers: legDividersFor(rawSpineRecords, summary.parts),
+    // drafting belongs to leg 1: a divider's `beforePart` moves with the parts list it indexes
+    legDividers: legDividersFor(rawSpineRecords, summary.parts).map((d) => ({ ...d, beforePart: d.beforePart + draftingShiftHere })),
     resumedCount: Math.max(0, summary.legs.length - 1),
     resume: resume && resume.ok ? {
       budgetUsd: resume.budgetUsd, maxWallMin: resume.maxWallMin, spentUsd: resume.spentUsd, spendComplete: resume.spendComplete,
@@ -1093,7 +1117,7 @@ function getRunDetailBody(runid, opts) {
     // {@link enrichPartsWithStageKind}. `kindMeta` is `null` (every stage
     // passes through unchanged) whenever no spec resolves at all, so the two
     // tabs still never disagree about order/counts/blocked-call figures.
-    parts: enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row))),
+    parts: draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts,
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -1445,6 +1469,7 @@ export function getRunAudit(runid, opts = {}) {
     skipAudit: true,
   });
   const partOf = makePartLookup(summary);
+  const shift = draftingShift(row, summary, opts); // the drafting part heads the shown list: every index moves with it
 
   const { records } = { records: auditPaths.flatMap((ap) => parseJsonl(ap).records) };
   const windowed = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
@@ -1485,7 +1510,7 @@ export function getRunAudit(runid, opts = {}) {
       path,
       pathShort: shortenPath(path, treeRoot),
       decision: typeof r.decision === 'string' ? r.decision : null,
-      partIndex,
+      partIndex: partIndex === null ? null : partIndex + shift,
       partLabel,
       attemptN,
       reason,
@@ -1554,7 +1579,11 @@ export function getRunRounds(runid, query = {}, opts = {}) {
     ? Math.min(query.limit, ROUNDS_PAGE_MAX) : ROUNDS_PAGE_DEFAULT;
 
   const summary = replayOne(row.spine);
-  const part = Array.isArray(summary.parts) ? summary.parts[partIndex] : null;
+  // `part` is an index into the SHOWN list (`detail.parts`): when the drafting part heads it, index 0 is the drafting
+  // part (it has no rounds table) and the spine's own part k is shown at k + 1
+  const shift = draftingShift(row, summary, opts);
+  if (shift && partIndex === 0) return null;
+  const part = Array.isArray(summary.parts) ? summary.parts[partIndex - shift] : null;
   if (!part) return null;
   const a = Array.isArray(part.attempts) ? part.attempts[attempt - 1] : null;
   if (!a) return null;
