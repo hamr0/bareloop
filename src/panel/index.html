@@ -950,6 +950,8 @@
   // jump straight to that SAME part's Audit-tab row (build item B's
   // click-through), with no re-lookup needed.
   function partBoxState(part, isLastLivePart){
+    // the drafting part happened before the run existed: it is always done
+    if(part.kind === "drafting") return "done";
     if(part.outcome === "green" || part.outcome === "satisfied" || part.outcome === "already-green") return "done";
     if(typeof part.outcome === "string") return "stopped";
     // P5-R: its leg's halt cut this part off — the map's existing "stopped" state, never "done"
@@ -972,6 +974,7 @@
   // (a single-attempt step, or the whole "run" box on an old-shape spine)
   // reads the part's own outcome.
   function partResultGlyph(part, box){
+    if(part.kind === "drafting") return glyphSpan(attemptGlyph("green", false)); // [✓]: drafting is done once the run exists
     if(partHasNoVerdict(part)) return null;
     var boxIsLive = box.state === "running";
     if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(attemptGlyph(a.outcome, boxIsLive)); }).join("");
@@ -2620,7 +2623,7 @@
           (box.blocked > 0 ? '<span class="badge red" data-testid="part-blocked-badge">' + box.blocked + ' blocked</span>' : '') +
         '</div>' +
         '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +
-        '<div class="step-meta">' + escapeXml(toolBreakdownLine(box.part.byTool)) + '</div>';
+        '<div class="step-meta">' + escapeXml(partLine2Text(box.part)) + '</div>';
       listEl.appendChild(card);
       var jumpToAudit = function(){
         document.getElementById("tab-audit").click();
@@ -2781,6 +2784,46 @@
   // shows — expand -> attempts (parts with >1, e.g. a multi-attempt step or
   // the fix loop) or straight to a rounds table (every other part kind,
   // which carries exactly one synthetic whole-part attempt).
+  // The DRAFTING part (a panel-authored run's first part; src/draftspend.js `draftingPartFor`): ONE owner of its
+  // money wording, line 1, line 2 and its Audit table. Money is the spine's own drafting figure ("at least" when it
+  // is a floor); a call with no price reads "unknown", never $0.
+  function draftingMoneyText(part){
+    return (part.spendComplete === false ? "at least " : "") + panelMoney(part.spentUsd);
+  }
+  function draftingLine1Text(part){
+    var n = typeof part.rounds === "number" ? part.rounds : 0;
+    return (part.wallMs === null || part.wallMs === undefined ? "–" : duration(part.wallMs)) + " &middot; " + draftingMoneyText(part) + " &middot; " + n + " call" + (n === 1 ? "" : "s");
+  }
+  // line 2 of a part's card / Audit body: the drafting step names, or a worker part's tool breakdown
+  function partLine2Text(part){
+    if(part && part.kind === "drafting") return (part.draftSteps || []).map(function(x){ return x.label; }).join(" · ");
+    return toolBreakdownLine(part.byTool);
+  }
+  function draftingCallCost(c){
+    if(c.costUsd === null || c.costUsd === undefined) return "unknown";
+    if(c.unpricedRounds > 0) return "unknown (" + c.unpricedRounds + " unpriced round" + (c.unpricedRounds === 1 ? "" : "s") + ")";
+    return panelMoney(c.costUsd);
+  }
+  // one row per drafting step ("–" where it made no call); a step's further calls get their own row named by the
+  // call's own label (confirm#2, revise-1…); the last row is the total, equal to the header's money
+  function draftingTableHtml(part){
+    var rows = "";
+    (part.draftSteps || []).forEach(function(st){
+      var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
+      var calls = Array.isArray(st.calls) ? st.calls : [];
+      var first = calls[0];
+      rows += "<tr><td>" + escapeXml(st.label) + "</td><td>" + wall + "</td><td>" + (first ? "1" : "–") + "</td><td>" +
+        (first && first.model ? escapeXml(first.model) : "–") + "</td><td>" + (first ? draftingCallCost(first) : "–") + "</td></tr>";
+      calls.slice(1).forEach(function(c){
+        rows += "<tr><td>" + escapeXml(st.label) + " (" + escapeXml(c.label) + ")</td><td>–</td><td>1</td><td>" +
+          (c.model ? escapeXml(c.model) : "–") + "</td><td>" + draftingCallCost(c) + "</td></tr>";
+      });
+    });
+    rows += '<tr class="drafting-total"><td><b>total</b></td><td>' + (part.wallMs === null || part.wallMs === undefined ? "–" : duration(part.wallMs)) +
+      "</td><td>" + (typeof part.rounds === "number" ? part.rounds : 0) + "</td><td>–</td><td>" + draftingMoneyText(part) + "</td></tr>";
+    return '<div class="audit-table-scroll"><table class="rounds-table drafting-table" data-testid="drafting-table">' +
+      "<thead><tr><th>Step</th><th>Time</th><th>Calls</th><th>Model</th><th>Cost</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+  }
   function partHasWrites(part){
     var bt = part.byTool;
     if(!bt) return false;
@@ -2810,6 +2853,7 @@
    * @returns {string}
    */
   function partLine1Text(part, detail){
+    if(part && part.kind === "drafting") return draftingLine1Text(part);
     var isLiveRunPart = part && part.kind === "run" && detail && !detail.died && detail.spentUsd === null;
     var wallText = (isLiveRunPart && part.wallMs === null) ? liveWallPhrase(detail.wallFloorMs) : duration(part.wallMs);
     var spendText = (isLiveRunPart && part.spentUsd === null)
@@ -3028,9 +3072,15 @@
         built = true;
         var toolsHeader = document.createElement("div");
         toolsHeader.className = "hint";
-        toolsHeader.textContent = toolBreakdownLine(part.byTool);
+        toolsHeader.textContent = partLine2Text(part);
         body.appendChild(toolsHeader);
-        if(attempts.length > 1){
+        if(part.kind === "drafting"){
+          // no tool calls and no rounds: one row per drafting step instead (the drafting part is index 0 of the
+          // shown list; the rounds endpoint has nothing to serve for it)
+          var draftingEl = document.createElement("div");
+          draftingEl.innerHTML = draftingTableHtml(part);
+          body.appendChild(draftingEl);
+        } else if(attempts.length > 1){
           // parts WITH an attempt sub-loop (a multi-attempt step, or the fix
           // loop) expand to attempt rows first — each attempt expands to its
           // own rounds table on its own click, same as the Run tab used to.
