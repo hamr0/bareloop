@@ -481,6 +481,13 @@ export function createSession(card, deps = {}) {
     // person needs to read; the step-by-step detail lives in one line.
     // ONE owner of the drafting line's detail (model + cap): the drafting line is started here, by the real author phase
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name], PHASE_STEP[name] === 'draft' ? `${card.model}, $${card.capUsd.toFixed(2)} cap` : undefined);
+    // a drafting call after the first (`author-call` i >= 1, of up to `of + 1`) is a RETRY: the line says so in plain words, so a
+    // long silence on call 2 of 3 does not read as a hang. The same one line, relabelled — never a second line.
+    if (name === 'author-call' && Number.isInteger(data.i) && data.i >= 1 && Number.isInteger(data.of)) {
+      const label = `${STEP_LABELS.draft} (retry ${data.i + 1} of ${data.of + 1})`;
+      stepLabel('draft', label);
+      state.progressLabel = label;
+    }
   };
   // ABANDON (hamr's ruling 2026-10-05): once abandoned the phase is frozen at 'abandoned' — whatever the in-flight
   // run() does afterwards (a late refuse, a phase write) never overwrites it, so the one-at-a-time lock stays released.
