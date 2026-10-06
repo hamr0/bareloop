@@ -28,9 +28,9 @@ const tmp = (t, prefix, base = tmpdir()) => {
 const ID = ['-c', 'user.name=p6-test', '-c', 'user.email=p6@test', '-c', 'commit.gpgsign=false'];
 const git = (/** @type {string} */ cwd, /** @type {string[]} */ args) => execFileSync('git', [...ID, '-C', cwd, ...args], { encoding: 'utf8' }).trim();
 
-function initRepo(/** @type {string} */ dir) {
+function initRepo(/** @type {string} */ dir, /** @type {boolean} */ marked = false) {
   mkdirSync(join(dir, 'src'), { recursive: true });
-  writeFileSync(join(dir, 'src', 'mod.mjs'), 'export const x = 1;\n');
+  writeFileSync(join(dir, 'src', 'mod.mjs'), `export const x = 1;\n${marked ? 'MARKER_OK\n' : ''}`);
   git(dir, ['init', '-q', '-b', 'main']);
   git(dir, ['add', '.']);
   git(dir, ['commit', '-q', '-m', 'seed']);
@@ -55,11 +55,11 @@ const tcall = (/** @type {string} */ id, /** @type {string} */ name, /** @type {
 
 /**
  * One session laid out like the panel's: the spec, and the REAL source door (worktree mode) over a fresh repo.
- * @param {import('node:test').TestContext} t @param {{budgetUsd?: number, repoBase?: string}} [o]
+ * @param {import('node:test').TestContext} t @param {{budgetUsd?: number, repoBase?: string, marked?: boolean}} [o]
  */
 async function session(t, o = {}) {
   const repo = tmp(t, 'p6-repo-', o.repoBase);
-  initRepo(repo);
+  initRepo(repo, o.marked);
   const dir = tmp(t, 'p6-session-');
   const closeScript = join(dir, 'close.mjs');
   writeFileSync(closeScript, CLOSE_SOURCE);
@@ -318,4 +318,20 @@ test('run-u --spec on a worktree: a GREEN with a spine leak still commits on the
   const branch = git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*', '--format=%(refname:short)']);
   assert.match(git(f.repo, ['show', `${branch}:src/mod.mjs`]), /MARKER_OK/, 'the branch holds the work');
   assert.equal(existsSync(f.worktree), false, 'no door: the folder is removed');
+});
+
+// the close already passes before any work (a cold already-green): no work branch was made and nothing changed, so the
+// folder must not be left behind, and the readout must not claim a branch.
+test('run-u --spec on a worktree: an ALREADY-GREEN run removes its folder, makes no branch, and says nothing was changed', async (t) => {
+  const f = await session(t, { marked: true });
+  const out = sink(); const err = sink();
+  const rc = await main(['--spec', f.specPath, '--approve', jobSpecHash(f.spec)], {
+    provider: scriptedProvider([{ text: 'never reached' }]), env: {}, out: out.push, err: err.push, runlistHome: tmp(t, 'p6-home-'),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(out.text(), /outcome\s+already-green/);
+  assert.equal(existsSync(f.worktree), false, 'the worktree folder is removed');
+  assert.doesNotMatch(git(f.repo, ['worktree', 'list']), /sess1/);
+  assert.equal(git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*']), '', 'no work branch');
+  assert.match(out.text(), /WORKTREE\s+nothing was changed \(the close already passed\); the worktree folder is removed/);
 });

@@ -2040,7 +2040,7 @@ async function execute(ctx) {
     } else moveFile(auditSrc, auditFile);
   }
   // ── P6 item 1: a repo job on a WORKTREE in the person's own repo. GREEN: the run's work is committed on its work
-  // branch and the worktree folder removed — the branch stays, and the merge stays the person's. Anything else
+  // branch and the worktree folder removed (an already-green is a green: a cold one has nothing to commit, a resumed one may hold uncommitted work) — the branch stays, and the merge stays the person's. Anything else
   // (stopped, capped, died, red): the folder stays so Resume works, and the Ended block names it. A green that opened a
   // review door is committed too (the branch always holds the work) but keeps its folder: an accept at the door re-runs
   // the mechanical stages against that tree.
@@ -2050,17 +2050,18 @@ async function execute(ctx) {
   let worktreeLine = null;
   const wtManifest = sourceManifest.present ? sourceManifest.manifest : null;
   if (typeof wtManifest?.worktree === 'string' && typeof wtManifest?.repo === 'string') {
-    if (outcome === 'green') {
+    if (outcome === 'green' || outcome === 'already-green') {
       const wb = events.findLast((e) => e.type === 'work-branch' && typeof e.branch === 'string') ?? null;
       try {
         // the branch ALWAYS holds a green's work (the panel tells the person to merge it); only the FOLDER waits on a door
         const fin = commitWork(wd, `bareloop: ${spec.job} (run ${runid})`);
-        const done = fin.committed ? `final commit ${fin.sha}` : 'nothing left to commit';
+        // an already-green COLD run never made a work branch (the close passed before any work): nothing to name
+        const done = fin.committed ? `final commit ${fin.sha}` : (wb ? 'nothing left to commit' : 'nothing was changed (the close already passed)');
         const onBranch = wb?.branch ?? 'the work branch';
-        if (doorHere) worktreeLine = `\nWORKTREE  ${done} on ${onBranch}; the worktree folder is KEPT for the review door — ${wd}`;
+        if (doorHere) worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; the worktree folder is KEPT for the review door — ${wd}`;
         else {
           const gone = removeWorktree(wtManifest.repo, wd);
-          worktreeLine = `\nWORKTREE  ${done} on ${onBranch}; ${gone ? 'the worktree folder is removed' : `the worktree folder could not be removed — ${wd}`}`;
+          worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; ${gone ? 'the worktree folder is removed' : `the worktree folder could not be removed — ${wd}`}`;
         }
       } catch (e) {
         worktreeLine = `\nWORKTREE  the final commit failed, so the folder is KEPT: ${wd} (${redactSecrets(String(/** @type {Error} */ (e).message).split('\n')[0])})`;
