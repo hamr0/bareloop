@@ -123,11 +123,32 @@ test('C7: a History card is line 1 sign + job (run-N), line 2 **word** — reaso
   assert.match(html, /class="dot red"/);
 });
 
-test('C7: an EXPANDED per-run row reads `[sign] **word** — reason   run-N · $ · date`', () => {
-  const row = rowHarness()(RUN, true);
+test('C7: an EXPANDED per-run row (sub-card) is 2 left-aligned lines: `[sign] (run-N) **word** — reason` / `$ · wall · date`', () => {
+  const row = rowHarness()({ ...RUN, wall: '30m00s', draftSpentUsd: 0.08, draftSpendComplete: true }, true);
   const html = row.innerHTML;
-  assert.match(html, /class="dot red"[^]*<b class="st-word">failed<\/b> — checks said no[^]*demod3 · \$3\.50 · 2026-10-04/);
-  assert.doesNotMatch(html, /wf-name/, 'the compact row does not repeat the job name');
+  assert.match(html, /class="dot red"[^]*class="wf-name wf-runno"[^>]*>\(demod3\)<\/span>[^]*<b class="st-word">failed<\/b> — checks said no[^]*wf-meta-line[^]*\$3\.50 \(\$0\.08\)<\/span><span class="wf-meta">30m00s<\/span><span class="wf-meta">2026-10-04</,
+    'line 2 is money (drafting share without the word) · wall · date');
+  assert.doesNotMatch(html, /drafting/, 'the list cards drop the word "drafting"');
+  assert.doesNotMatch(html, /wf-rowmeta/, 'nothing is pushed right');
+  assert.equal((html.match(/wf-line1|wf-meta-line/g) || []).length, 2, 'exactly 2 lines');
+});
+
+test('C7: the workflow card is 2 lines: `▶ [sign] job (run-N) **word** — reason` / `check · $ ($) · wall · date`, no runs count, no resumed tag', () => {
+  const g = {
+    job: 'job1', runs: [{ runid: 'r1' }, { runid: 'r0' }], runCount: 2, lastRunid: 'r1', lastRunNo: 1, lastGlyph: '✓', lastStatus: { sign: '✓', word: 'passed' },
+    lastEndedLine: 'goal met', lastResumedCount: 2, lastCheckType: 'deterministic', lastSpend: '$5.00 ($0.08)', lastWall: '30m00s', lastDate: '2026-10-06',
+  };
+  const els = [];
+  const mkEl = () => { const e = { innerHTML: '', className: '', attrs: {}, children: [], setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, appendChild(c) { this.children.push(c); } }; els.push(e); return e; };
+  // eslint-disable-next-line no-new-func
+  const render = new Function('document', 'selectRun', 'scrollRunIntoViewMobile', 'currentRunsFilters', 'filtersActive', 'filterRuns', 'autoExpandJob', `
+    var currentRunid = null; var wfExpanded = {};
+    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'activeOlderRun', 'representedRun', 'renderWorkflows'].map(fnSrc).join('\n')}
+    return renderWorkflows;`)({ createElement: mkEl, getElementById: mkEl }, () => {}, () => {}, () => ({}), () => false, (r) => r, () => false);
+  render([g]);
+  const html = els.find((e) => e.attrs['data-testid'] === 'wf-row-job1').innerHTML;
+  assert.match(html, /▶<\/span><span class="dot green"><\/span><span class="wf-name"[^>]*>job1 \(run-1\)<\/span><span class="wf-ended wf-ended-inline"[^>]*><b class="st-word">passed<\/b> — goal met<\/span><\/span><span class="wf-meta-line"><span class="wf-meta">deterministic<\/span><span class="wf-meta">\$5\.00 \(\$0\.08\)<\/span><span class="wf-meta">30m00s<\/span><span class="wf-meta">2026-10-06<\/span><\/span>$/);
+  assert.doesNotMatch(html, /runs<|resumed|drafting/);
 });
 
 test('C7: a live run card reads **running** with no reason, never a stale ended line', () => {

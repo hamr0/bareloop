@@ -20,14 +20,14 @@ function fnSrc(name) {
 }
 
 // ---------------------------------------------------------------- the card
-test('page: a resumed run is ONE card with a small "resumed ×N" tag — on the history row and on the workflow row', () => {
+test('page: a resumed run is ONE card with a small "resumed ×N" tag — on the history row and the sub-card (not the workflow card)', () => {
   // eslint-disable-next-line no-new-func
   const { resumedTagHtml } = new Function(`${fnSrc('escapeXml')}\n${fnSrc('resumedTagHtml')}\nreturn { resumedTagHtml: resumedTagHtml };`)();
   assert.equal(resumedTagHtml(0, 'x'), '', 'a run nobody resumed carries no tag');
   assert.equal(resumedTagHtml(undefined, 'x'), '');
   assert.match(resumedTagHtml(2, 'hist-resumed-r1'), /data-testid="hist-resumed-r1">resumed &times;2</);
   assert.match(fnSrc('buildRunRowEl'), /resumedTagHtml\(r\.resumedCount, "hist-resumed-" \+ r\.runid\)/, 'the history row builds the tag off the run\'s own count');
-  assert.match(fnSrc('renderWorkflows'), /resumedTagHtml\(g\.lastResumedCount, "wf-resumed-" \+ g\.job\)/, 'and so does the workflow row');
+  assert.doesNotMatch(fnSrc('renderWorkflows'), /resumedTagHtml/, 'the workflow card drops the tag (hamr 2026-10-06 layout); the history row and the sub-card keep it');
   assert.match(fnSrc('groupRunsByJob'), /lastResumedCount: last\.resumedCount \|\| 0/);
 });
 

@@ -37,7 +37,8 @@ test('run names: the History card and an expanded row read run-N, never the run 
   assert.match(card, /my-job \(run-3\)/);
   assert.doesNotMatch(card.replace(/data-testid="[^"]*"/g, ''), /mujjtrvd/);
   const compact = rowBuilder()(RUN, true).innerHTML;
-  assert.match(compact, /run-3 · \$3\.50/);
+  assert.match(compact, /\(run-3\)<\/span>/);
+  assert.match(compact, /\$3\.50<\/span>/);
   assert.doesNotMatch(compact.replace(/data-testid="[^"]*"/g, ''), /mujjtrvd/);
 });
 

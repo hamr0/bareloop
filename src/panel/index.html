@@ -180,7 +180,7 @@
   .st-word{font-weight:700;color:var(--text);}
   .wf-ended-inline{flex:1 1 auto;white-space:normal;}
   .wf-compact{flex-wrap:wrap;}
-  .wf-rowmeta{margin-left:auto;}
+  .wf-runno{color:var(--accent);flex:none;}
   .step-state{display:inline-flex;align-items:center;gap:2px;font-size:12px;}
   .badge{display:inline-block;font-size:11px;padding:1px 4px;color:var(--text-dim);background:none;font-weight:700;}
   .badge::before{content:"[";color:var(--text-faint);}
@@ -1323,12 +1323,18 @@
         '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
         '</span>';
     } else if(compact){
-      // an EXPANDED per-run row under a workflow: `[sign] **word** — reason   run-N · $ · date`
+      // an EXPANDED per-run row under a workflow (hamr 2026-10-06), 2 lines, left-aligned:
+      //   `[sign] (run-N)  **word** — reason` / `$ ($drafting) · wall · date`
       row.innerHTML =
         '<span class="wf-line1 wf-compact"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
-        '<span class="wf-ended wf-ended-inline" title="' + escapeXml(histFullName) + '" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' +
-        '<span class="wf-meta wf-rowmeta">' + escapeXml(runLabel(r.runNo, r.runid)) + ' \u00B7 ' + escapeXml(rowSpendText(r)) + ' \u00B7 ' + escapeXml(r.date || "unknown") + '</span>' +
-        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) + '</span>';
+        '<span class="wf-name wf-runno" title="' + escapeXml(histFullName) + '" data-testid="hist-runno-' + escapeXml(r.runid) + '">(' + escapeXml(runLabel(r.runNo, r.runid)) + ')</span>' +
+        '<span class="wf-ended wf-ended-inline" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span></span>' +
+        '<span class="wf-meta-line">' +
+        '<span class="wf-meta">' + escapeXml(rowSpendText(r, true)) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(rowWallText(r)) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
+        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) +
+        '</span>';
     } else {
       // History card: line 1 sign + job (run-N); line 2 **word** — reason; line 3 the facts
       row.innerHTML =
@@ -1389,7 +1395,7 @@
         lastResumedCount: last.resumedCount || 0,
         lastCheckType: last.checkType || "unknown",
         lastModel: last.model || null,
-        lastSpend: rowSpendText(last),
+        lastSpend: rowSpendText(last, true),
         lastWall: rowWallText(last) || "unknown",
         lastDate: last.date,
       };
@@ -1517,16 +1523,14 @@
       row.setAttribute("aria-pressed", isSelected ? "true" : "false");
       var wfFullName = runName(g.job, g.lastRunNo, g.lastRunid);
       row.innerHTML =
-        '<span class="wf-line1"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
-        '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
-        (g.lastStatus ? '<span class="wf-ended" data-testid="wf-ended-' + escapeXml(g.job) + '">' + statusWordHtml(g.lastStatus, g.lastEndedLine) + '</span>' : '') +
+        '<span class="wf-line1 wf-compact"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
+        '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span>' +
+        (g.lastStatus ? '<span class="wf-ended wf-ended-inline" data-testid="wf-ended-' + escapeXml(g.job) + '">' + statusWordHtml(g.lastStatus, g.lastEndedLine) + '</span>' : '') + '</span>' +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastSpend) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastWall) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastDate || "unknown") + '</span>' +
-        resumedTagHtml(g.lastResumedCount, "wf-resumed-" + g.job) +
-        '<span class="wf-meta">' + g.runCount + ' run' + (g.runCount === 1 ? '' : 's') + '</span>' +
         '</span>';
       row.addEventListener("click", function(){
         // a single-run job has nothing to expand — the click still opens
@@ -2116,15 +2120,16 @@
    * complete run whose drafting share is itself incomplete — hamr's ruling:
    * a reader summing the two must never read the leading number as exact
    * when the bracket next to it isn't). `draftSpendComplete === false` marks
-   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX".
+   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX". `shortForm` drops the word
+   * "drafting" (the Runs list cards only — "$5.00 ($0.08)").
    */
-  function panelMoneyWithDraft(spendCoreVal, spendCoreFloor, draftSpentUsd, draftSpendComplete, budgetUsd){
+  function panelMoneyWithDraft(spendCoreVal, spendCoreFloor, draftSpentUsd, draftSpendComplete, budgetUsd, shortForm){
     var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
     var draftFloor = hasDraft && draftSpendComplete === false;
     var core = (spendCoreVal === null || spendCoreVal === undefined)
       ? "unknown"
       : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
-    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting)" : "";
+    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
     return core + draftPart + capPart;
   }
@@ -2149,13 +2154,13 @@
    * is a floor only when its own drafting share is incomplete.
    * @param {any} r a `/api/runs` row (or a Workflows group's `last` row)
    */
-  function rowSpendText(r){
+  function rowSpendText(r, shortForm){
     if(r.starting) return "starting…";
-    if(rowIsLive(r)) return liveSpendText(r.spendFloorUsd, r.draftSpentUsd, r.draftSpendComplete);
+    if(rowIsLive(r)) return liveSpendText(r.spendFloorUsd, r.draftSpentUsd, r.draftSpendComplete, shortForm);
     var draftIncomplete = typeof r.draftSpentUsd === "number" && r.draftSpentUsd !== null && r.draftSpendComplete === false;
     var coreVal = r.died ? r.spendFloorUsd : r.spentUsd;
     var coreFloor = !!r.died || draftIncomplete;
-    return panelMoneyWithDraft(coreVal, coreFloor, r.draftSpentUsd, r.draftSpendComplete);
+    return panelMoneyWithDraft(coreVal, coreFloor, r.draftSpentUsd, r.draftSpendComplete, undefined, shortForm);
   }
   function duration(ms){
     if(ms === null || ms === undefined) return "unknown";
@@ -2178,11 +2183,11 @@
    * @param {number|null} spendFloorUsd @param {number|null} draftSpentUsd
    * @param {boolean|null} draftSpendComplete @returns {string}
    */
-  function liveSpendText(spendFloorUsd, draftSpentUsd, draftSpendComplete){
+  function liveSpendText(spendFloorUsd, draftSpentUsd, draftSpendComplete, shortForm){
     if(spendFloorUsd === null || spendFloorUsd === undefined) return "unknown";
     var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
     var draftFloor = hasDraft && draftSpendComplete === false;
-    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting)" : "";
+    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     return panelMoney(spendFloorUsd) + " so far" + draftPart;
   }
   /** build item 6 — the matching wall-clock phrase: "running <duration>",
