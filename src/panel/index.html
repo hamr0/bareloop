@@ -1247,8 +1247,12 @@
     if(!d || isNaN(d.getTime())) return "unknown";
     return d.toLocaleString("en-US", {year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit"});
   }
-  // the right-side header: `[sign] job (runid) │ **word** — reason · ended 10/4/2026, 6:01 PM` (no capitals: the job
+  // the right-side header: `[sign] job (run-N) │ **word** — reason · ended 10/4/2026, 6:01 PM` (no capitals: the job
   // name is shown as written). `bodyHtml` is already escaped.
+  // a run's NAME for a person (P6 item 7): `job (run-N)`, N from the server (`runNo`, one owner) — the page never counts.
+  // A run with no number (an imported bundle's run is not in the run list) falls back to its id.
+  function runLabel(runNo, runid){ return typeof runNo === "number" ? "run-" + runNo : String(runid || ""); }
+  function runName(job, runNo, runid){ return job + " (" + runLabel(runNo, runid) + ")"; }
   function setRunHeader(sign, nameText, bodyHtml){
     document.getElementById("active-wf-name").textContent = nameText;
     document.getElementById("active-wf-dot").className = "dot " + glyphClass(sign);
@@ -1294,7 +1298,7 @@
     row.setAttribute("tabindex", "0");
     row.setAttribute("role", "button");
     row.setAttribute("aria-pressed", selected ? "true" : "false");
-    var histFullName = r.job + ' (' + r.runid + ')';
+    var histFullName = runName(r.job, r.runNo, r.runid);
     if(r.starting){
       row.innerHTML =
         '<span class="wf-line1"><span class="dot amber"></span>' +
@@ -1312,14 +1316,14 @@
         '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
         '</span>';
     } else if(compact){
-      // an EXPANDED per-run row under a workflow: `[sign] **word** — reason   runid · $ · date`
+      // an EXPANDED per-run row under a workflow: `[sign] **word** — reason   run-N · $ · date`
       row.innerHTML =
         '<span class="wf-line1 wf-compact"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
         '<span class="wf-ended wf-ended-inline" title="' + escapeXml(histFullName) + '" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' +
-        '<span class="wf-meta wf-rowmeta">' + escapeXml(r.runid) + ' \u00B7 ' + escapeXml(rowSpendText(r)) + ' \u00B7 ' + escapeXml(r.date || "unknown") + '</span>' +
+        '<span class="wf-meta wf-rowmeta">' + escapeXml(runLabel(r.runNo, r.runid)) + ' \u00B7 ' + escapeXml(rowSpendText(r)) + ' \u00B7 ' + escapeXml(r.date || "unknown") + '</span>' +
         resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) + '</span>';
     } else {
-      // History card: line 1 sign + job (runid); line 2 **word** — reason; line 3 the facts
+      // History card: line 1 sign + job (run-N); line 2 **word** — reason; line 3 the facts
       row.innerHTML =
         '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
@@ -1370,6 +1374,7 @@
         runs: jobRuns,
         runCount: jobRuns.length,
         lastRunid: last.runid,
+        lastRunNo: last.runNo,
         lastAt: last.at,
         lastGlyph: last.glyph || "▶",
         lastStatus: last.status || null,
@@ -1503,7 +1508,7 @@
       row.setAttribute("role", "button");
       row.setAttribute("aria-expanded", expanded ? "true" : "false");
       row.setAttribute("aria-pressed", isSelected ? "true" : "false");
-      var wfFullName = g.job + ' (' + g.lastRunid + ')';
+      var wfFullName = runName(g.job, g.lastRunNo, g.lastRunid);
       row.innerHTML =
         '<span class="wf-line1"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
@@ -2474,7 +2479,7 @@
 
   function renderRun(detail){
     if(detail.fileMissing){
-      setRunHeader("\u00B7", detail.job + " (" + detail.runid + ")", "file missing");
+      setRunHeader("\u00B7", runName(detail.job, detail.runNo, detail.runid), "file missing");
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "spine file no longer on disk";
       document.getElementById("run-content").hidden = true;
@@ -2485,7 +2490,7 @@
     }
 
     if(detail.starting){
-      setRunHeader("\u25B6", detail.job + " (" + detail.runid + ")", statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
+      setRunHeader("\u25B6", runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "starting… the run has not written its log yet";
       document.getElementById("run-content").hidden = true;
@@ -2498,7 +2503,7 @@
     document.getElementById("audit-body").hidden = false;
     renderEnded(detail);
 
-    setRunHeader(detail.glyph, detail.job + " (" + detail.runid + ")", runHeaderBody(detail));
+    setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), runHeaderBody(detail));
 
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = false;

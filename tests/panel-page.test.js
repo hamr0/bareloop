@@ -1456,6 +1456,8 @@ function makeWorkflowsPage() {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const src = [
     extractFnSource(html, 'escapeXml'),
+    extractFnSource(html, 'runLabel'),
+    extractFnSource(html, 'runName'),
     extractFnSource(html, 'glyphClass'),
     extractFnSource(html, 'statusWordHtml'),
     extractFnSource(html, 'groupRunsByJob'),

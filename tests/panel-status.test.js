@@ -103,7 +103,7 @@ function fnSrc(name) {
 const fake = () => ({ innerHTML: '', className: '', textContent: '', attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute() {}, addEventListener() {}, children: [], appendChild(c) { this.children.push(c); } });
 
 function rowHarness() {
-  const names = ['escapeXml', 'glyphClass', 'statusWordHtml', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'resumedTagHtml', 'buildRunRowEl'];
+  const names = ['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'resumedTagHtml', 'buildRunRowEl'];
   // eslint-disable-next-line no-new-func
   return new Function('document', 'selectRun', 'scrollRunIntoViewMobile', `var currentRunid = null;\n${names.map(fnSrc).join('\n')}\nreturn buildRunRowEl;`)(
     { createElement: fake, getElementById: fake }, () => {}, () => {});
@@ -113,7 +113,7 @@ const RUN = {
   spentUsd: 3.5, spendComplete: true, wallMs: 600000, date: '2026-10-04', resumedCount: 0, died: false,
 };
 
-test('C7: a History card is line 1 sign + job (runid), line 2 **word** — reason, line 3 the facts', () => {
+test('C7: a History card is line 1 sign + job (run-N), line 2 **word** — reason, line 3 the facts', () => {
   const row = rowHarness()(RUN);
   const html = row.innerHTML;
   const i1 = html.indexOf('demo-plain-green (demod3)');
@@ -123,7 +123,7 @@ test('C7: a History card is line 1 sign + job (runid), line 2 **word** — reaso
   assert.match(html, /class="dot red"/);
 });
 
-test('C7: an EXPANDED per-run row reads `[sign] **word** — reason   runid · $ · date`', () => {
+test('C7: an EXPANDED per-run row reads `[sign] **word** — reason   run-N · $ · date`', () => {
   const row = rowHarness()(RUN, true);
   const html = row.innerHTML;
   assert.match(html, /class="dot red"[^]*<b class="st-word">failed<\/b> — checks said no[^]*demod3 · \$3\.50 · 2026-10-04/);
@@ -139,11 +139,11 @@ function headerHarness() {
   const els = {};
   const get = (id) => els[id] ?? (els[id] = fake());
   // eslint-disable-next-line no-new-func
-  const api = new Function('document', `${['escapeXml', 'glyphClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'realSteps'].map(fnSrc).join('\n')}\nreturn {setRunHeader, runHeaderBody};`)({ getElementById: get });
+  const api = new Function('document', `${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'realSteps'].map(fnSrc).join('\n')}\nreturn {setRunHeader, runHeaderBody};`)({ getElementById: get });
   return { els, ...api };
 }
 
-test('C8: the right-side header reads `[sign] job (runid) │ **word** — reason · ended <local date, time>`', () => {
+test('C8: the right-side header reads `[sign] job (run-N) │ **word** — reason · ended <local date, time>`', () => {
   const h = headerHarness();
   const detail = { status: { sign: '✗', word: 'failed' }, ended: { line: 'checks said no' }, endedAt: '2026-10-04T16:01:00.000Z', startedAt: '2026-10-04T15:00:00.000Z', steps: [] };
   h.setRunHeader('✗', 'demo-plain-green (demod3)', h.runHeaderBody(detail));
@@ -164,7 +164,7 @@ test('C8: NO capitals in the header — the job name is shown as written (the h2
 });
 
 test('C8: an imported header wears the word of its shown green + the imported tag; with no green, only the tag', () => {
-  const names = ['escapeXml', 'glyphClass', 'statusWordHtml', 'setRunHeader', 'importedHeader'];
+  const names = ['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'setRunHeader', 'importedHeader'];
   const els = {};
   const get = (id) => els[id] ?? (els[id] = fake());
   // eslint-disable-next-line no-new-func
@@ -211,7 +211,7 @@ test('C8: the header name carries no ┤ ├ frame (it would read "┤ name ├ 
 
 test('item 3: the Audit tab\'s grouped rows wear the SAME sign + bold word as the Run tab step cards (one stepStateHTML), no bracket badge', () => {
   // eslint-disable-next-line no-new-func
-  const f = new Function(`${['escapeXml', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
+  const f = new Function(`${['escapeXml', 'runLabel', 'runName', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
   assert.equal(f({ state: 'done' }, 't'), '<span class="step-state" data-testid="t"><span class="dot green"></span><b class="st-word">done</b></span>');
   assert.match(f({ state: 'stopped' }, 't'), /dot red"><\/span><b class="st-word">stopped</);
   assert.match(f({ state: 'died' }, 't'), /dot magenta/);
