@@ -467,7 +467,7 @@
   .pv-table td,.pv-table th{white-space:nowrap;vertical-align:top;}
   .pv-table select,.pv-table input{min-height:32px;max-width:190px;box-sizing:border-box;}
   .pv-table .hint{display:block;margin-top:3px;}
-  .pv-table td.pv-price-cell input{width:90px;margin-left:4px;}
+  .pv-table td.pv-price-cell input{width:90px;}
   /* the Test cell keeps ONE width whatever the result says ("testing…", "OK · 312 ms", a long failure note) */
   .pv-table td.pv-test-cell{width:180px;min-width:180px;max-width:180px;}
   .pv-table .pv-test-result{white-space:normal;overflow-wrap:anywhere;}
@@ -755,7 +755,7 @@
         <div class="table-wrap" data-testid="provider-table-wrap">
           <table class="pv-table" data-testid="provider-table">
             <thead>
-              <tr><th>Key</th><th>Name</th><th>API shape</th><th>Base URL</th><th>Price</th><th>Test</th><th>Tokens used</th><th>Balance</th></tr>
+              <tr><th>Key</th><th>Name</th><th>API shape</th><th>Base URL</th><th>Test</th><th>Tokens used</th><th>Balance</th><th>In $/1M</th><th>Out $/1M</th></tr>
             </thead>
             <tbody id="pv-rows"></tbody>
           </table>
@@ -3505,14 +3505,14 @@
             + '<td><input type="text" class="pv-name" data-testid="pv-name-' + e + '" placeholder="model id" value="' + escapeXml(row.name) + '"></td>'
             + '<td><select class="pv-shape" data-testid="pv-shape-' + e + '">' + shapeOpts + "</select></td>"
             + '<td><input type="text" class="pv-url" data-testid="pv-url-' + e + '" placeholder="' + escapeXml(row.placeholder || "the shape\'s own host") + '" value="' + escapeXml(row.baseUrl) + '"></td>'
-            + '<td class="pv-price-cell"><label class="hint">In $/1M <input type="text" inputmode="decimal" class="pv-price-in" data-testid="pv-price-in-' + e + '" placeholder="not set" value="' + (row.priceInPerM === null ? "" : escapeXml(String(row.priceInPerM))) + '"></label>'
-              + '<label class="hint">Out $/1M <input type="text" inputmode="decimal" class="pv-price-out" data-testid="pv-price-out-' + e + '" placeholder="not set" value="' + (row.priceOutPerM === null ? "" : escapeXml(String(row.priceOutPerM))) + '"></label></td>'
             + '<td class="pv-test-cell">' + (row.canTest
               ? '<button class="btn small pv-test" type="button" data-testid="test-connection-' + e + '">Test</button><div class="hint pv-test-result" data-testid="test-result-' + e + '"></div>'
               : '<span class="hint">not available</span>') + "</td>"
             + '<td data-testid="pv-tokens-' + e + '">' + escapeXml(tokensText(row.tokens)) + "</td>"
-            + "<td>" + bal + "</td></tr>";
-        }).join("") : '<tr><td colspan="8" class="hint" data-testid="pv-empty">no keys with a value yet — add NAME=key to the keys file, then Reload keys</td></tr>';
+            + "<td>" + bal + "</td>"
+            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-in" data-testid="pv-price-in-' + e + '" placeholder="not set" value="' + (row.priceInPerM === null ? "" : escapeXml(String(row.priceInPerM))) + '"></td>'
+            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-out" data-testid="pv-price-out-' + e + '" placeholder="not set" value="' + (row.priceOutPerM === null ? "" : escapeXml(String(row.priceOutPerM))) + '"></td>';
+        }).join("") : '<tr><td colspan="9" class="hint" data-testid="pv-empty">no keys with a value yet — add NAME=key to the keys file, then Reload keys</td></tr>';
         pvRows.querySelectorAll(".pv-balance-fetch").forEach(function(fetchEl){
           authorGet("/api/settings/providers/balance?env=" + encodeURIComponent(fetchEl.getAttribute("data-env"))).then(function(b){
             fetchEl.textContent = b && b.text ? b.text : ("— " + ((b && b.note) || "unavailable"));
