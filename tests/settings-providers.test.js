@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync, statSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readConfig, configPath, updateConfig } from '../src/config.js';
-import { applyConfiguredKey, keyNameFor, keyRows, findRow, modelChoiceFor, chatModels, defaultsFor, PRESET_KEY_NAMES, NO_KEY_PLACEHOLDER } from '../src/providerrows.js';
+import { ratesFor, applyConfiguredKey, keyNameFor, keyRows, findRow, modelChoiceFor, chatModels, defaultsFor, PRESET_KEY_NAMES, NO_KEY_PLACEHOLDER } from '../src/providerrows.js';
 import { apiKeyProblem } from '../src/providers.js';
 import { Loop } from 'bare-agent';
 import { rateProvenance } from '../src/ledger.js';
@@ -108,7 +108,7 @@ test('/api/settings/providers: needs the token; a missing keys file is created; 
   assert.deepEqual([by.MY_OTHER.name, by.MY_OTHER.shape, by.MY_OTHER.baseUrl], ['', 'openai-api', '']);
   assert.equal(by.MY_OTHER.keyStatus, 'found');
   assert.deepEqual(r.shapes.map((x) => x.label), ['Anthropic', 'OpenAI-compatible', 'Gemini']);
-  assert.equal('price' in by.MY_OTHER, false, 'no price anywhere');
+  assert.deepEqual([by.MY_OTHER.priceInPerM, by.MY_OTHER.priceOutPerM], [null, null], 'no price set = null, never 0');
   assert.equal(by.DEEPSEEK_API_KEY.balance.kind, 'fetch');
   // Reload keys = the same GET: an edited file is re-read
   keysFile(home, `MY_OTHER=${SECRET_B}\n`);
@@ -138,6 +138,46 @@ test('row edit: Name / API shape / Base URL save to config.json `keys`; a bad va
   assert.equal((await post('/api/settings/providers/row', { ...body, baseUrl: 'https://proxy.example/v1///' })).status, 200);
   assert.equal(readConfig({ home }).config.keys.MY_OTHER.baseUrl, 'https://proxy.example/v1');
   assert.equal(readFileSync(configPath(home), 'utf8').includes(SECRET_B), false, 'config.json holds no value');
+});
+
+test('row price: In / Out save to config.json priceInPerM / priceOutPerM with the row; blank removes the field (never 0); half-set, negative, non-number or no token saves nothing; ratesFor reads what was saved', async (t) => {
+  const home = tmp(t);
+  keysFile(home, `MY_OTHER=${SECRET_B}\n`);
+  const { get, post, token } = await panel(t, home, async () => { throw new Error('no network'); });
+  const body = { envName: 'MY_OTHER', name: 'my-model', shape: 'openai-api', baseUrl: '' };
+  const cfg = () => readConfig({ home }).config;
+  assert.equal((await post('/api/settings/providers/row', { ...body, priceInPerM: '1', priceOutPerM: '2' }, { 'content-type': 'application/json' })).status, 403, 'no token');
+  for (const bad of [
+    { priceInPerM: '1', priceOutPerM: '' },
+    { priceInPerM: '', priceOutPerM: '2' },
+    { priceInPerM: '-1', priceOutPerM: '2' },
+    { priceInPerM: 'abc', priceOutPerM: '2' },
+    { priceInPerM: '1', priceOutPerM: 'Infinity' },
+    { priceInPerM: '1', priceOutPerM: '0x10' },
+    { priceInPerM: true, priceOutPerM: 2 },
+    { priceInPerM: -0.5, priceOutPerM: 2 },
+  ]) {
+    const r = await post('/api/settings/providers/row', { ...body, ...bad });
+    assert.equal(r.status, 400, JSON.stringify(bad));
+    assert.equal(typeof (await r.json()).error, 'string');
+  }
+  assert.equal('keys' in cfg(), false, 'nothing saved by any refusal');
+  assert.equal((await post('/api/settings/providers/row', { ...body, priceInPerM: '0.5', priceOutPerM: 2 })).status, 200);
+  assert.deepEqual(cfg().keys.MY_OTHER, { name: 'my-model', shape: 'openai-api', baseUrl: '', priceInPerM: 0.5, priceOutPerM: 2 });
+  const row = (await get('/api/settings/providers')).rows[0];
+  assert.deepEqual([row.priceInPerM, row.priceOutPerM], [0.5, 2]);
+  const priced = ratesFor('openai-api', undefined, keyRows({ filled: ['MY_OTHER'], config: cfg() }), 'my-model');
+  assert.deepEqual([priced.inPerM, priced.outPerM], [0.5, 2]);
+  // a body without the price fields leaves the saved price alone; 0 is a real price
+  assert.equal((await post('/api/settings/providers/row', body)).status, 200);
+  assert.deepEqual([cfg().keys.MY_OTHER.priceInPerM, cfg().keys.MY_OTHER.priceOutPerM], [0.5, 2]);
+  assert.equal((await post('/api/settings/providers/row', { ...body, priceInPerM: '0', priceOutPerM: '0' })).status, 200);
+  assert.deepEqual([cfg().keys.MY_OTHER.priceInPerM, cfg().keys.MY_OTHER.priceOutPerM], [0, 0]);
+  // blank both = not set: the fields are gone, not 0
+  assert.equal((await post('/api/settings/providers/row', { ...body, priceInPerM: '', priceOutPerM: null })).status, 200);
+  assert.equal('priceInPerM' in cfg().keys.MY_OTHER || 'priceOutPerM' in cfg().keys.MY_OTHER, false);
+  assert.equal(ratesFor('openai-api', undefined, keyRows({ filled: ['MY_OTHER'], config: cfg() }), 'my-model'), null, 'no price = estimated, as today');
+  assert.equal(readFileSync(configPath(home), 'utf8').includes(SECRET_B), false);
 });
 
 test('Test button: no key = no network call; with a key = ONE GET of the models list at THAT row\'s shape + URL, key only in a header; the response never carries the key', async (t) => {
@@ -259,7 +299,7 @@ test('balance: DeepSeek fetched server-side (key only in a header) for the row o
   assert.equal(readConfig({ home }).config.anthropicBalanceNote, 12.5);
 });
 
-test('panel page: Providers tab has Name / API shape / Base URL / Test / Tokens used, saves through the row route; no Price, no key dropdown, no add / remove; Chat has no token price', () => {
+test('panel page: Providers tab has Name / API shape / Base URL / Test / Tokens used, saves through the row route; Price is two boxes (In / Out), no key dropdown, no add / remove; Chat has no token price', () => {
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
   for (const id of ['tab-providers', 'panel-providers', 'pv-rows', 'btn-reload-keys', 'pv-keyfile-path']) {
     assert.ok(html.includes(`id="${id}"`), id);
@@ -270,7 +310,12 @@ test('panel page: Providers tab has Name / API shape / Base URL / Test / Tokens 
   assert.match(html, /pv-url/);
   assert.match(html, /\/api\/settings\/providers\/row/);
   assert.match(html, /\/api\/author\/models/);
-  assert.doesNotMatch(html, /<th>Price<\/th>|pv-key\b|providers\/key|jf-price|Token price/);
+  assert.match(html, /<th>Price<\/th>/);
+  assert.match(html, /In \$\/1M/);
+  assert.match(html, /Out \$\/1M/);
+  assert.match(html, /priceInPerM: tr\.querySelector\("\.pv-price-in"\)\.value\.trim\(\),\s*priceOutPerM: tr\.querySelector\("\.pv-price-out"\)\.value\.trim\(\)/, 'the row Save carries both prices');
+  assert.ok(html.includes('If your vendor lists two prices, enter the higher one.'));
+  assert.doesNotMatch(html, /pv-key\b|providers\/key|jf-price|Token price/);
   assert.doesNotMatch(html, /btn-add-provider|edit-provider-|remove-provider-/);
 });
 
