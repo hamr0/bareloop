@@ -2460,6 +2460,39 @@ export function getStartFrom(runid, opts = {}) {
 }
 
 /**
+ * The Reuse workflow picker's list: one entry per JOB (same-job identity = `workflowKey`, the one `getStartFrom` uses)
+ * that has at least one GREEN local run, newest green first. `runid` = that job's newest green run, so the page hands
+ * it to the existing start-from flow unchanged; `line` is `getStartFrom`'s own estimate line (never a second
+ * spelling). Local runs only — an imported job keeps its Reuse button in the Import view. $0, read-only.
+ * @param {{ home?: string, model?: string }} [opts] `model` passes through to the estimate line, as start-from's does
+ * @returns {{job: string, runid: string, checkType: 'deterministic'|'rubric', line: string}[]}
+ */
+export function listReuseJobs(opts = {}) {
+  const { rows } = readRunList(opts);
+  const seen = new Set();
+  /** @type {{job: string, runid: string, checkType: 'deterministic'|'rubric', line: string}[]} */
+  const jobs = [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const row = rows[i];
+    if (!row || !existsSync(row.spine)) continue;
+    let records;
+    try { records = parseJsonl(row.spine).records; } catch { continue; }
+    const outcome = legsOf(records).at(-1)?.outcome ?? null;
+    // the same endings the Run tab's own Reuse button is offered on (`endedBase`)
+    if (outcome !== 'green' && outcome !== 'already-green' && outcome !== 'satisfied') continue;
+    const signed = signedSpecForRun(row, records);
+    if (!signed) continue;
+    const key = workflowKey(signed.spec);
+    if (seen.has(key)) continue;
+    const pre = getStartFrom(row.runid, opts);
+    if (!pre || !pre.ok) continue;
+    seen.add(key);
+    jobs.push({ job: pre.card.jobName, runid: row.runid, checkType: pre.card.checkType === 'rubric' ? 'rubric' : 'deterministic', line: pre.line });
+  }
+  return jobs;
+}
+
+/**
  * The reuse card for a signed spec: locked boxes from the spec through the Job tab's own readers, open boxes from
  * the spec's own fence and caps (Source and the saved text from the caller — a spec carries neither).
  * @param {any} spec
@@ -2801,6 +2834,7 @@ export function createPanelServer(opts = {}) {
         startFrom: {
           get: (runid, o = {}) => getStartFrom(runid, { home, ...o }),
           getImport: (id, o = {}) => getStartFromImport(id, { home, ...o }),
+          listJobs: (o = {}) => listReuseJobs({ home, ...o }),
         },
       });
       settingsRoutes = createSettingsRoutes({

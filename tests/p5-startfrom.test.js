@@ -12,7 +12,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
-import { createPanelServer, getStartFrom, trackRecordFor, reuseLine } from '../src/panel/server.js';
+import { createPanelServer, getStartFrom, trackRecordFor, reuseLine, listReuseJobs } from '../src/panel/server.js';
+import { createAuthorRoutes } from '../src/panel/authorroutes.js';
 import {
   createSession, cardFields, CARD_FIELDS, validateReuseCard, lockedFieldChanged, buildReuseSpec, REUSE_OPEN_FIELDS, REUSE_LOCKED_FIELDS,
 } from '../src/panel/authorsession.js';
@@ -439,4 +440,50 @@ test('Model open, routes: the Model box is accepted on a reuse start (any other 
   const ok = await (await post('/api/author/start', { ...pre.card, model: 'deepseek-flash', source: makeRepo(), startFrom: 'o1' })).json();
   assert.equal(ok.ok, true, JSON.stringify(ok));
   assert.equal(ok.reuse, true);
+});
+
+// ── the Reuse workflow picker's list: GET /api/author/reuse-jobs ──────────────────────────────────────────────
+test('reuse-jobs: one entry per JOB with a green run — newest green\'s runid, newest-green-first, never a red/live-only job, line identical to start-from\'s; guarded, GET only, 404 with no startFrom', async (t) => {
+  const spec = await realSpec();
+  const home = homeWithTwoRows();
+  const other = { ...spec, job: 'p5-other-job', goal: 'a different goal entirely' };
+  const redOnly = { ...spec, job: 'p5-red-only', goal: 'never green' };
+  // file order = newest last: a1 (green) · r1 (red-only job) · a2 (green, SAME job, new caps) · c1 (green, other job) · a3 (same job as a1, red — must not displace a2)
+  makeRun(home, { runid: 'a1', spec, outcome: 'green' });
+  makeRun(home, { runid: 'r1', spec: redOnly, outcome: 'escalated' });
+  makeRun(home, { runid: 'a2', spec: { ...spec, budgetUsd: 3, writeScope: ['lib/'] }, outcome: 'green' });
+  makeRun(home, { runid: 'c1', spec: other, outcome: 'green' });
+  makeRun(home, { runid: 'a3', spec, outcome: 'cap-halt' });
+  const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, sessionsRoot: tmp('p5-sf-sess-') });
+  t.after(() => close());
+  const base = `http://127.0.0.1:${port}`;
+  const get = (p, withToken = true) => fetch(`${base}${p}`, { headers: withToken ? { 'x-bareloop-token': token } : {} });
+  assert.equal((await get('/api/author/reuse-jobs', false)).status, 403, 'guarded like every author route');
+  assert.equal((await fetch(`${base}/api/author/reuse-jobs`, { method: 'POST', headers: { 'x-bareloop-token': token, 'content-type': 'application/json' }, body: '{}' })).status, 405);
+  const r = await (await get('/api/author/reuse-jobs')).json();
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.jobs.map((j) => [j.job, j.runid, j.checkType]), [['p5-other-job', 'c1', 'deterministic'], [spec.job, 'a2', 'deterministic']],
+    'one entry per job, its newest GREEN run, newest green first; the red-only job is absent');
+  for (const j of r.jobs) {
+    // eslint-disable-next-line no-await-in-loop
+    const pre = await (await get(`/api/author/start-from?runid=${j.runid}`)).json();
+    assert.equal(j.line, pre.line, `${j.job}: the ONE estimate line, not a second spelling`);
+  }
+  assert.match(r.jobs[1].line, /^Same job — 2 green · 1 not green/, 'the line counts the whole job, not just the listed run');
+  // ?model= passes through exactly as start-from's does
+  const m = await (await get('/api/author/reuse-jobs?model=deepseek-flash')).json();
+  assert.equal(m.jobs[0].line, 'Same job — no runs yet on this model');
+  const none = await (await get('/api/author/reuse-jobs?model=deepseek-flash')).json();
+  assert.equal(none.jobs.length, 2);
+
+  // no startFrom wired -> 404 (same pattern as start-from)
+  const bare = createAuthorRoutes({ port: 1, token: 'tok' });
+  let status = 0;
+  bare.handle({ method: 'GET', url: '/api/author/reuse-jobs', headers: { 'x-bareloop-token': 'tok', host: '127.0.0.1:1' } }, { writeHead(c) { status = c; }, end() {} }, '/api/author/reuse-jobs', null);
+  assert.equal(status, 404);
+});
+
+test('reuse-jobs: no green run at all -> an empty list, not an error', async () => {
+  const home = tmp('p5-sf-h-');
+  assert.deepEqual(listReuseJobs({ home }), []);
 });

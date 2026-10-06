@@ -3561,7 +3561,10 @@ key you want first (the panel picks the row by the Model menu).
   there is nothing to copy: no log, the run's signed job is not on disk, or an imported job that changed, lost its
   dependency or no longer matches its signed bytes); `POST /api/author/start` accepts `startFrom: <runid>` or
   `startFrom: {importId}` beside the card and answers `{ok, sessionId, reuse, state}`. The old
-  `POST /api/author/start-from-check` and the "Changed — new job" mode are gone. **Identity, two keys:** the
+  `POST /api/author/start-from-check` and the "Changed — new job" mode are gone. `GET /api/author/reuse-jobs[?model=<Name>]` →
+  `{ok, jobs:[{job, runid, checkType:'deterministic'|'rubric', line}]}` is the Chat card's Reuse workflow picker list: one entry per
+  job (same `workflowKey`) with at least one GREEN local run, `runid` = its newest green run (hand it to `start-from`), `line` =
+  start-from's own estimate line, newest green first; imported jobs are not listed. **Identity, two keys:** the
   signature hash `jobSpecHash` is unchanged (it covers the caps and the write fence — what the person signs);
   `workflowKey(spec)` (`src/job.js`, not exported from the package root) is a sha256 over the signed spec WITHOUT
   `source`, `destination`, `writeScope`, `budgetUsd` and `maxWallMs` (`REUSE_OPEN_SPEC_FIELDS`) AND without `provider`,
