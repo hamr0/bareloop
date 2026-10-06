@@ -5,6 +5,33 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.36.0] - 2026-10-06
+
+### Added
+
+- **Repo jobs run in a git worktree in the person's own repo.** A panel drafting session makes `<repo>/.bareloop/wt/<session>` (detached at HEAD, hidden through the repo's private exclude, with a notice for uncommitted changes) instead of copying the source. `git worktree add` and the green-end commit run none of the person's git hooks. `node_modules/` is hidden the same way as `/.bareloop/`, so installed packages never read as worker writes. A GREEN run commits its work to the work branch and removes the folder (kept only while a review door is open); any other end keeps it. The Ended block gives the `git merge` / `git branch -D` text on green and names the folder otherwise; Resume is withdrawn once the folder is gone. The bundle door shares the one worktree-making module.
+- **bareloop installs npm dependencies itself.** For an npm lock file, bareloop runs `npm ci --ignore-scripts` at $0, before any token, with a secret-stripped environment. Any failure, or another lock file (yarn, pnpm), falls back to the install-needed wait. `missingDependencies` now carries `dir` and `lockFile`. The panel step reads "installing packages" while it runs and "Installed packages (npm ci)." on success.
+- **Run names `job (run-N)`.** Runs are numbered per job, oldest first (`runNo` in the run list and run detail); rows, cards, the workflow row and the header use the name. The real run id stays in the Resume and Reuse texts. Runs search also finds `run-N` and `job (run-N)`.
+- **Settings: price per key row.** The Providers table takes In $/1M and Out $/1M per key (blank = not set; a half-set price is refused; the price posts once both boxes are filled or both are empty). Columns are Key, Name, API shape, Base URL, Test, Tokens used, Balance, In $/1M, Out $/1M.
+- **Settings: Open keys folder button** (`POST /api/settings/open-keys-folder`) replaces the keys path text; the path shows only when the folder cannot be opened.
+- **Drafting part.** A panel-authored run serves its drafting as the first part on the Run map, its card and the Audit grouped view, with a per-step table (time, calls, model, cost, total) read from a per-session `draft-log.jsonl`.
+- **Runs list cards are two lines**: workflow card `job (run-N) word / check, cost, wall, date`; sub-card `(run-N) word / cost, wall, date`.
+
+### Fixed
+
+- A gate-audit move across devices no longer crashes a worktree run: `moveFile` falls back to copy and unlink on `EXDEV` (the workdir can sit on another drive than the spine dir).
+- A green worktree run always commits its work to the branch, including door-open and leak greens, and does so right after the gate-audit move, before any later readout step can throw.
+- An already-green worktree run removes its folder (and commits a resumed leg's uncommitted work) instead of leaving it behind.
+- Panel: a price box typed alone no longer flashes the half-set error; card textareas auto-grow as you type.
+- Tests no longer write settled rows into the real run list (`cli.test.js` passes `keysHome` with `runlistHome`). Test-only.
+
+### Changed
+
+- A secret already in the person's own repo no longer refuses a worktree repo source: it is masked wherever bareloop records it. A `.env` file by name is still refused.
+- The link-login item is dropped; the panel's token-in-page model is unchanged.
+- The progress step label "copying source" reads "making worktree".
+- `prepareSource`'s manifest type is `Record<string, any>` (types only).
+
 ## [0.35.0] - 2026-10-05
 
 ### Added
