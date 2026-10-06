@@ -983,3 +983,6 @@ Call sites: src/panel/settingsroutes.js (new POST /api/settings/open-keys-folder
 - The real run id stays in the Audit tab and in every command line (`--resume <id>`, `git merge …`).
 - One owner: the server computes the number once; every view reads it. The page never counts on its own.
 - Proof: tests, the orchestrator's screenshot, then hamr clicks through.
+
+### 4. Link login — DROPPED (hamr 2026-10-06)
+- Dropped by hamr's word. The token-in-page exposure only matters to a program already running as the person on their own machine, and that program can already read `~/.config/bareloop/.env` or run `bareloop` itself (the local-trust model, not a sandbox). Websites cannot read the page cross-origin, and the panel answers only on 127.0.0.1 behind its Host guard. The only gain, a tab that survives a panel restart, does not pay for opening a special link. The token stays in the page as today.
