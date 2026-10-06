@@ -136,8 +136,6 @@ export function readDraftSteps(dir) {
   try { text = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8'); } catch { return []; }
   /** @type {Map<number, any>} */
   const byNo = new Map();
-  /** @type {any[]} */
-  const orphanCalls = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let ev;
@@ -156,7 +154,7 @@ export function readDraftSteps(dir) {
       x.endedAt = null;
     } else if (ev.kind === 'call') {
       const c = { label: String(ev.label), model: typeof ev.model === 'string' ? ev.model : null, costUsd: typeof ev.costUsd === 'number' ? ev.costUsd : null, unpricedRounds: Number(ev.unpricedRounds) || 0, at: String(ev.at) };
-      (byNo.get(ev.no)?.calls ?? orphanCalls).push(c);
+      byNo.get(ev.no)?.calls.push(c);
     }
   }
   const steps = [...byNo.values()].sort((a, b) => a.no - b.no);
