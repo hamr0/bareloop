@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, missingDependencies, looksLikeRepoSource, nearestGitAncestor,
+  prepareSource, proveDestination, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
 } from '../source.js';
 import {
   worktreePath, uncommittedCount, shortHead, removeWorktree,
@@ -258,17 +258,7 @@ export function validateReuseCard(card, opts = {}) {
 /** A Destination written as an absolute path (POSIX or a Windows drive path). @param {string} destination @returns {boolean} */
 const isAbsoluteDestination = (destination) => /^(\/|[a-zA-Z]:[\\/])/.test(destination);
 
-/**
- * The $0 refusal for a non-repo source, worded by the kind the source door recorded (`prep.manifest.kind`) — a single
- * file is not a "folder", and Source must be the repo folder with the file named in Destination (hamr 2026-10-05).
- * @param {string} kind `prep.manifest.kind`: 'file' | 'folder' | 'url' (a 'repo' never reaches this)
- * @returns {string}
- */
-export function nonRepoSourceMessage(kind) {
-  if (kind === 'file') return 'Source is a single file. Source must be the repo folder — put the file in Destination, like src/digest.js. Nothing spent.';
-  if (kind === 'folder') return "Source is a plain folder, not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
-  return "Source is not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
-}
+export { nonRepoSourceMessage };
 
 /**
  * The ONE Destination rule for a REPO source (fresh card and Reuse card alike): there Destination is the write fence,
