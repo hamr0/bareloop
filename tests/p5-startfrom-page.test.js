@@ -50,7 +50,7 @@ test('page: the reuse card opens filled from the server\'s prefill, shows the se
   assert.match(PAGE, /document\.addEventListener\("bareloop-reuse"/);
   assert.doesNotMatch(PAGE, /start-from-check|sfRefreshLine|startfrom-line" \+ \(/, 'no "changed — new job" re-check: the locked boxes make it unreachable');
   assert.match(fnSrc('mainButtonFor'), /reuse \? "Sign & run" : "Start drafting"/);
-  assert.match(PAGE, /sfLine\.textContent = pre\.line \|\| "";/, 'the line is the server\'s text, never built on the page');
+  assert.match(PAGE, /sfLine\.textContent = pre\.line \? rwMeta\(\{checkType: reuseCheckType, line: pre\.line\}\) : "";/, 'the line is the server\'s text (check type prefixed, as in the picker list), never built on the page');
   assert.match(PAGE, /if\(startFrom\) body\.startFrom = startFrom\.importId \? \{importId: startFrom\.importId\} : startFrom\.runid;/, 'the start request names the origin; the server refuses a changed locked box');
   assert.match(PAGE, /data-testid="startfrom-line"/);
   // Clear clears the reuse state (and unlocks), so an empty card never carries a stale origin or greyed boxes
@@ -58,7 +58,7 @@ test('page: the reuse card opens filled from the server\'s prefill, shows the se
   assert.match(fnSrc('clearStartFrom'), /setReuseLocked\(false\)/);
 });
 
-test('page: setReuseLocked greys Name, Goal, Success, Guardrails, Judge examples and Check type — and never Source, Destination, Model or the caps', () => {
+test('page: setReuseLocked greys Name, Goal, Success, Guardrails and Judge examples — and never Source, Destination, Model, the caps or (hamr 2026-10-06) the Check type radios, which stay clickable until a session is live', () => {
   const els = {};
   const mk = (id) => { els[id] = { id, readOnly: false, disabled: false, classes: new Set(), classList: { toggle(c, on) { if (on) els[id].classes.add(c); else els[id].classes.delete(c); } } }; return els[id]; };
   for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time', 'job-card', 'jf-model']) mk(id);
@@ -80,9 +80,13 @@ test('page: setReuseLocked greys Name, Goal, Success, Guardrails, Judge examples
     assert.equal(els[id].readOnly, false, `${id} stays editable`);
     assert.equal(els[id].classes.has('locked'), false);
   }
-  assert.ok(radios.every((r) => r.disabled), 'Check type is locked');
+  assert.ok(radios.every((r) => !r.disabled), 'Check type stays clickable on a reuse card: Deterministic / Rubric = leave reuse');
   assert.equal(modelSelect.disabled, false, 'Model is open on a reuse (hamr 2026-10-04)');
   assert.equal(modelSelect.classes.has('locked'), false);
+  // a live session freezes the radios, reuse or not
+  const live = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name"]; var OPEN_IDS = ["jf-source"]; var reuseOn = true; var sessionLive = true;\n${fnSrc('syncCardLock')}\nreturn syncCardLock;`)(doc, modelSelect);
+  live();
+  assert.ok(radios.every((r) => r.disabled), 'a live session freezes the Check type radios');
   f(false);
   assert.ok(['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails'].every((id) => !els[id].readOnly), 'unlocked again for Clear');
   assert.ok(radios.every((r) => !r.disabled) && !modelSelect.disabled);

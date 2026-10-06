@@ -72,14 +72,9 @@ test('page: the sign legend is gone (the line-style key returned 2026-10-04); th
   assert.doesNotMatch(PAGE, />resumed<\/text>/, 'no resumed label inside the map');
 });
 
-test('page: the Reuse origin line is bold and is the FIRST thing in the job card, above the title', () => {
-  const o = PAGE.indexOf('id="chat-startfrom-origin"');
-  const t = PAGE.indexOf('id="job-card-title"');
-  assert.ok(o !== -1 && t !== -1 && o < t, 'origin markup precedes the "Job card" title');
-  const rule = PAGE.match(/\.startfrom-origin\{([^}]*)\}/);
-  assert.ok(rule, 'origin css rule exists');
-  assert.match(rule[1], /font-weight:\s*(600|700|bold)/, 'bold');
-  assert.match(rule[1], /overflow-wrap:anywhere/, 'wraps at phone width, no horizontal overflow');
+test('page: the "Reuse: job (run …)" origin line is gone — the Reuse workflow radio + the picked box say it once (hamr 2026-10-06)', () => {
+  assert.doesNotMatch(PAGE, /chat-startfrom-origin|startfrom-origin|sfOrigin/, 'no second statement of the reuse origin above the card title');
+  assert.ok(PAGE.indexOf('id="rw-picked"') > PAGE.indexOf('id="job-card-title"'), 'the picked box sits under Check type, inside the card');
 });
 
 // ---------------------------------------------------------------- the Audit divider

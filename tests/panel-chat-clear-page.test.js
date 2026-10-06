@@ -60,9 +60,9 @@ test('page: resetCard empties every box, check type back to deterministic, Model
   const doc = { getElementById: (id) => els[id], querySelectorAll: () => ({ forEach: (fn) => radios.forEach(fn) }) };
   let lastPhase = 'prepared';
   // eslint-disable-next-line no-new-func
-  const run = new Function('document', 'modelSelect', 'msgInput', 'clearStartFrom', 'openNewCard', 'refreshModelStatus',
-    `var lastPhase = "prepared";\n${fnSrc('resetCard')}\nresetCard();\nreturn lastPhase;`);
-  lastPhase = run(doc, modelSelect, msgInput, () => calls.push('clearStartFrom'), () => calls.push('openNewCard'), () => calls.push('refreshModelStatus'));
+  const run = new Function('document', 'modelSelect', 'msgInput', 'clearStartFrom', 'openNewCard', 'refreshModelStatus', 'rwQ',
+    `var lastPhase = "prepared"; var CARD_BOX_IDS = ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"];\n${fnSrc('clearCardBoxes')}\n${fnSrc('setVerdict')}\n${fnSrc('resetCard')}\nresetCard();\nreturn lastPhase;`);
+  lastPhase = run(doc, modelSelect, msgInput, () => calls.push('clearStartFrom'), () => calls.push('openNewCard'), () => calls.push('refreshModelStatus'), { value: 'q' });
   for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time']) assert.equal(els[id].value, '', id);
   assert.equal(els['jf-judge'].disabled, true, 'rubric-only box off, as for deterministic');
   assert.deepEqual(radios.map((r) => r.checked), [true, false], 'deterministic');
@@ -72,7 +72,7 @@ test('page: resetCard empties every box, check type back to deterministic, Model
   assert.equal(lastPhase, null);
   // origin/estimate/notes hidden and the reuse lock lifted by clearStartFrom; thread + progress cleared by openNewCard
   assert.deepEqual(calls, ['clearStartFrom', 'openNewCard', 'refreshModelStatus']);
-  assert.match(fnSrc('clearStartFrom'), /sfOrigin\.hidden = true; sfLine\.hidden = true; sfNote\.hidden = true;/);
+  assert.match(fnSrc('clearStartFrom'), /sfLine\.hidden = true; sfNote\.hidden = true;/);
   assert.match(fnSrc('clearStartFrom'), /setReuseLocked\(false\)/);
   assert.match(fnSrc('openNewCard'), /thread\.innerHTML = "";/);
   assert.match(fnSrc('openNewCard'), /progressRow\.innerHTML = "";/);
