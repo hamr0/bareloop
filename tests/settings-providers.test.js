@@ -384,8 +384,59 @@ test('panel page: [Reload keys] is always on the Providers tab (static markup, n
   assert.match(strip, /<button class="btn small" type="button" id="btn-reload-keys" data-testid="btn-reload-keys">Reload keys<\/button>/);
   assert.doesNotMatch(strip.slice(0, strip.indexOf('id="btn-reload-keys"')), /hidden/, 'no hidden attribute on the strip or its button');
   assert.ok(html.indexOf('id="btn-reload-keys"') < html.indexOf('id="pv-rows"'), 'it sits above the table, so an empty table cannot take it away');
-  // the markup carries no literal path; the page fills it from the server's keysFile.path (the HOME the server reads)
+  // the markup carries no literal path; the keys folder opens through the server (Open keys folder), and the
+  // path shows as text only when the server could not open it (the server's own path, the HOME it reads)
   assert.doesNotMatch(strip, /\.config\/bareloop/);
-  assert.match(html, /getElementById\("pv-keyfile-path"\)\.textContent = kf\.path;/);
+  assert.match(strip, /id="btn-open-keys-folder"[^>]*>Open keys folder<\/button>/);
+  assert.doesNotMatch(strip, /Copy path/);
+  assert.match(html, /\/api\/settings\/open-keys-folder/);
+  assert.match(html, /Could not open it here\. Your keys folder: " \+ \(b\.path/);
   assert.match(html, /path unknown — could not read providers/, 'a failed load says the path is unknown rather than showing a guess');
+});
+
+test('Open keys folder: linux = xdg-open <folder>, darwin = open <folder> (argv, detached, no shell, never the file); win32 / a spawn error / a throw = "could not open" + the path; no token = refused, nothing spawned', async (t) => {
+  const { EventEmitter } = await import('node:events');
+  const home = tmp(t);
+  /** @param {string} platform @param {'spawn'|'error'|'throw'} how */
+  const run = async (platform, how) => {
+    const calls = [];
+    const openFolderSpawn = (cmd, args, o) => {
+      calls.push({ cmd, args, o });
+      if (how === 'throw') throw new Error('EACCES');
+      const ee = new EventEmitter();
+      ee.unref = () => { ee.unrefd = true; };
+      process.nextTick(() => ee.emit(how === 'error' ? 'error' : 'spawn', ...(how === 'error' ? [new Error('ENOENT')] : [])));
+      calls.child = ee;
+      return ee;
+    };
+    const { createPanelServer: mk } = await import('../src/panel/server.js');
+    const { port, token, close } = await mk({ port: 0, home, env: {}, sessionsRoot: tmp(t), openFolderSpawn, platform });
+    t.after(() => close());
+    const url = `http://127.0.0.1:${port}/api/settings/open-keys-folder`;
+    const H = { 'x-bareloop-token': token, 'content-type': 'application/json' };
+    const noTok = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const callsAfterRefusal = calls.length;
+    const r = await fetch(url, { method: 'POST', headers: H, body: '{}' });
+    return { calls, noTokStatus: noTok.status, callsAfterRefusal, status: r.status, body: await r.json() };
+  };
+  const lin = await run('linux', 'spawn');
+  assert.equal(lin.noTokStatus, 403);
+  assert.equal(lin.callsAfterRefusal, 0, 'refused without the token: nothing spawned');
+  assert.equal(lin.calls.length, 1);
+  assert.deepEqual([lin.calls[0].cmd, lin.calls[0].args], ['xdg-open', [home]], 'the folder, never the .env file');
+  assert.equal(lin.calls[0].o.detached, true);
+  assert.equal(lin.calls[0].o.stdio, 'ignore');
+  assert.equal(lin.calls[0].o.shell, undefined, 'no shell');
+  assert.equal(lin.calls.child.unrefd, true);
+  assert.deepEqual(lin.body, { ok: true, opened: true, path: home });
+  const mac = await run('darwin', 'spawn');
+  assert.deepEqual([mac.calls[0].cmd, mac.calls[0].args], ['open', [home]]);
+  assert.equal(mac.body.opened, true);
+  const win = await run('win32', 'spawn');
+  assert.equal(win.calls.length, 0, 'another OS never spawns');
+  assert.deepEqual(win.body, { ok: true, opened: false, path: home });
+  const err = await run('linux', 'error');
+  assert.deepEqual(err.body, { ok: true, opened: false, path: home });
+  const thr = await run('linux', 'throw');
+  assert.deepEqual(thr.body, { ok: true, opened: false, path: home });
 });

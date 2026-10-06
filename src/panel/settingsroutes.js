@@ -14,7 +14,8 @@
 import { checkHumanGuard } from './authorroutes.js';
 import { readConfig, updateConfig, ConfigError } from '../config.js';
 import { spendSummary, monthlyLimitOf } from '../monthly.js';
-import { loadKeysEnv, keysFilePath, filledKeyNames, ensureKeysFile } from '../keysfile.js';
+import { spawn as realSpawn } from 'node:child_process';
+import { loadKeysEnv, keysFilePath, keysHome, filledKeyNames, ensureKeysFile } from '../keysfile.js';
 import { SHAPES, PRESET_KEY_NAMES, keyRows, endpointOf, defaultUrlOf, usableKey } from '../providerrows.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
@@ -22,8 +23,11 @@ import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 const DEEPSEEK_BALANCE_URL = 'https://api.deepseek.com/user/balance';
 
 /**
+ * `openFolderSpawn` / `platform` are test seams for the Open keys folder button (a real caller passes
+ * neither: `child_process.spawn` and `process.platform`).
  * @param {{ port: number, token: string, home?: string, env?: Record<string,string|undefined>,
- *   fetchImpl?: typeof fetch, now?: () => number }} opts
+ *   fetchImpl?: typeof fetch, now?: () => number, openFolderSpawn?: (cmd: string, args: string[], o: object) => any,
+ *   platform?: string }} opts
  */
 export function createSettingsRoutes(opts) {
   const fetchImpl = opts.fetchImpl ?? fetch;
@@ -184,6 +188,29 @@ export function createSettingsRoutes(opts) {
         return true;
       }
       send(200, { ok: true, envName: row.envName, ...patch });
+      return true;
+    }
+
+    if (pathname === '/api/settings/open-keys-folder' && req.method === 'POST') {
+      // opens the FOLDER (never the file, never an editor) in the file manager; argv array, no shell, detached.
+      // Another OS, or a failed spawn: say so and hand back the path, which the page then shows as text.
+      const dir = keysHome(opts.home);
+      const platform = opts.platform ?? process.platform;
+      const cmd = platform === 'linux' ? 'xdg-open' : (platform === 'darwin' ? 'open' : null);
+      const cannot = () => send(200, { ok: true, opened: false, path: dir });
+      if (!cmd) { cannot(); return true; }
+      let child;
+      try {
+        child = (opts.openFolderSpawn ?? realSpawn)(cmd, [dir], { detached: true, stdio: 'ignore' });
+      } catch { cannot(); return true; }
+      let settled = false;
+      child.once('error', () => { if (!settled) { settled = true; cannot(); } });
+      child.once('spawn', () => {
+        if (settled) return;
+        settled = true;
+        if (typeof child.unref === 'function') child.unref();
+        send(200, { ok: true, opened: true, path: dir });
+      });
       return true;
     }
 

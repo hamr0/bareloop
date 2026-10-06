@@ -2720,7 +2720,8 @@ export function handleRequest(req, res, opts) {
  * this package's own `bin/bareloop.mjs`).
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
- *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string }} [opts]
+ *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string,
+ *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
@@ -2775,6 +2776,7 @@ export function createPanelServer(opts = {}) {
       });
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
+        openFolderSpawn: opts.openFolderSpawn, platform: opts.platform,
       });
       runRoutes = createRunRoutes({
         port: boundPort,
