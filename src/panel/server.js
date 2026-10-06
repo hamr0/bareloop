@@ -755,6 +755,40 @@ export function getStopContext(runid, opts = {}) {
 }
 
 /**
+ * @param {any} r
+ * @returns {number}
+ */
+function atMs(r) {
+  const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * The ONE owner of run names (P6 item 7): runs of the same job (`row.job`) are numbered oldest `at` first, 1-based
+ * (ties keep file order). A resume is one row, so it counts once; died and stopped runs are rows too. Every view
+ * reads this number — the page never counts on its own.
+ * @param {any[]} rows
+ * @returns {Map<string, number>} runid → N
+ */
+function runNumbers(rows) {
+  /** @type {Map<string, any[]>} */
+  const byJob = new Map();
+  rows.forEach((row, index) => {
+    if (!row || typeof row.runid !== 'string') return;
+    const g = byJob.get(row.job) || [];
+    g.push({ row, index });
+    byJob.set(row.job, g);
+  });
+  /** @type {Map<string, number>} */
+  const out = new Map();
+  for (const g of byJob.values()) {
+    g.sort((a, b) => (atMs(a.row) - atMs(b.row)) || (a.index - b.index));
+    g.forEach(({ row }, i) => out.set(row.runid, i + 1));
+  }
+  return out;
+}
+
+/**
  * `GET /api/runs` — every listed run, NEWEST FIRST BY `at` (never by file/
  * append order — a backfill scan appends rows in sorted-PATH order, which
  * does not track chronological `at` order; a plain `.reverse()` here once
@@ -772,14 +806,11 @@ export function getStopContext(runid, opts = {}) {
  */
 export function listRuns(opts = {}) {
   const { rows } = readRunList(opts);
-  const atMs = (r) => {
-    const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
-    return Number.isFinite(t) ? t : 0;
-  };
+  const nos = runNumbers(rows);
   return rows
     .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
     .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
-    .map(({ row }) => summarizeRow(row));
+    .map(({ row }) => ({ ...summarizeRow(row), runNo: nos.get(row.runid) }));
 }
 
 /**
@@ -812,6 +843,18 @@ function findRunRow(runid, opts) {
  * @returns {any|null}
  */
 export function getRunDetail(runid, opts = {}) {
+  const d = getRunDetailBody(runid, opts);
+  if (!d) return d;
+  const runNo = runNumbers(readRunList(opts).rows).get(runid);
+  return runNo === undefined ? d : { ...d, runNo };
+}
+
+/**
+ * @param {string} runid
+ * @param {{ home?: string }} opts
+ * @returns {any|null}
+ */
+function getRunDetailBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
