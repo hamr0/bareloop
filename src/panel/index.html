@@ -3603,15 +3603,15 @@
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
       }).catch(function(){ pvNote.textContent = "could not read providers"; });
     }
-    // The row's POST body. A price is both boxes or neither (the server refuses a half-set one), so while exactly one
-    // is filled — the normal middle of typing a price — the price fields are LEFT OUT (the server keeps what is saved)
-    // and the other boxes still save; the price posts once both are filled, or both are cleared.
+    // The row's POST body, or null when exactly ONE price box is filled: a price is both boxes or neither (the server
+    // refuses a half-set one), so nothing in that row saves. This runs only when a save would happen (the row's
+    // change event), so typing the first box never flashes the message; it shows when the person leaves that box.
+    var PV_HALF_PRICE = "Fill both price boxes or clear both.";
     function pvRowBody(env, v){
       var pin = String(v.priceIn).trim();
       var pout = String(v.priceOut).trim();
-      var body = { envName: env, name: v.name, shape: v.shape, baseUrl: v.baseUrl };
-      if((pin === "") === (pout === "")){ body.priceInPerM = pin; body.priceOutPerM = pout; }
-      return body;
+      if((pin === "") !== (pout === "")) return null;
+      return { envName: env, name: v.name, shape: v.shape, baseUrl: v.baseUrl, priceInPerM: pin, priceOutPerM: pout };
     }
     pvRows.addEventListener("change", function(e){
       var t = e.target;
@@ -3625,13 +3625,15 @@
       }
       if(!(t.classList.contains("pv-name") || t.classList.contains("pv-shape") || t.classList.contains("pv-url") || t.classList.contains("pv-price-in") || t.classList.contains("pv-price-out"))) return;
       var env = tr.getAttribute("data-env");
-      authorPost("/api/settings/providers/row", pvRowBody(env, {
+      var rowBody = pvRowBody(env, {
         name: tr.querySelector(".pv-name").value,
         shape: tr.querySelector(".pv-shape").value,
         baseUrl: tr.querySelector(".pv-url").value,
         priceIn: tr.querySelector(".pv-price-in").value,
         priceOut: tr.querySelector(".pv-price-out").value,
-      })).then(function(r){
+      });
+      if(!rowBody){ pvNote.textContent = PV_HALF_PRICE; return; }
+      authorPost("/api/settings/providers/row", rowBody).then(function(r){
         pvNote.textContent = r.body && r.body.ok ? ("Saved — " + env + ".") : ((r.body && r.body.error) || "could not save");
         // no re-render: it would steal focus mid-edit; Chat's Model menu just re-reads
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));

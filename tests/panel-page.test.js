@@ -3072,7 +3072,7 @@ test('progress list: a signed session ends "signed hash" with a check and its ">
   assert.match(last, /&gt; drafting spent \$0\.12/);
 });
 
-test('providers row POST: while exactly one price box is filled the price fields are left out (no half-set error flash); both-filled and both-empty still post them', () => {
+test('providers row POST: exactly one price box filled saves nothing (body null, message shown at the change event only); both-filled and both-empty still post', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function pvRowBody(');
   assert.ok(start > 0, 'pvRowBody exists in the page');
@@ -3086,12 +3086,13 @@ test('providers row POST: while exactly one price box is filled the price fields
   // eslint-disable-next-line no-new-func
   const pvRowBody = new Function(`${html.slice(start, i + 1)}\nreturn pvRowBody;`)();
   const base = { name: 'n', shape: 'openai-compat', baseUrl: '' };
-  const half = pvRowBody('K', { ...base, priceIn: '0.27', priceOut: ' ' });
-  assert.equal(Object.hasOwn(half, 'priceInPerM'), false);
-  assert.equal(Object.hasOwn(half, 'priceOutPerM'), false);
-  assert.equal(half.name, 'n', 'the other boxes still save');
-  const other = pvRowBody('K', { ...base, priceIn: '', priceOut: '1.1' });
-  assert.equal(Object.hasOwn(other, 'priceInPerM'), false);
+  assert.equal(pvRowBody('K', { ...base, priceIn: '0.27', priceOut: ' ' }), null, 'only In filled: no row POST');
+  assert.equal(pvRowBody('K', { ...base, priceIn: '', priceOut: '1.1' }), null, 'only Out filled: no row POST');
+  assert.match(html, /var PV_HALF_PRICE = "Fill both price boxes or clear both\.";/);
+  const handler = html.slice(html.indexOf('pvRows.addEventListener("change"'), html.indexOf('pvRows.addEventListener("click"'));
+  assert.match(handler, /if\(!rowBody\)\{ pvNote\.textContent = PV_HALF_PRICE; return; \}\s*authorPost\("\/api\/settings\/providers\/row", rowBody\)/, 'the message shows inside the change handler, before and instead of the POST');
+  assert.equal(html.split('pvNote.textContent = PV_HALF_PRICE').length - 1, 1, 'the message is set in exactly one place (the change handler)');
+  assert.doesNotMatch(handler, /oninput|addEventListener\("input"/, 'no input-event path: typing the first box never flashes it');
   assert.deepEqual(pvRowBody('K', { ...base, priceIn: ' 0.27 ', priceOut: '1.1' }), { envName: 'K', ...base, priceInPerM: '0.27', priceOutPerM: '1.1' });
   assert.deepEqual(pvRowBody('K', { ...base, priceIn: '', priceOut: '' }), { envName: 'K', ...base, priceInPerM: '', priceOutPerM: '' });
 });
