@@ -264,3 +264,58 @@ test('run-u --spec on a worktree: a readout step that throws AFTER the green (ma
   assert.match(git(f.repo, ['show', `${branch}:src/mod.mjs`]), /MARKER_OK/, 'the green work is committed despite the later throw');
   assert.equal(existsSync(f.worktree), false, 'the worktree folder is removed despite the later throw');
 });
+
+// hamr's ruling: the branch ALWAYS holds a green's work. A door-open green still commits (the panel says `git merge <branch>`)
+// but keeps its folder — an accept at the door re-runs the mechanical stages against it.
+test('run-u --spec on a worktree: a GREEN that opens a review door commits on the branch AND keeps the folder', async (t) => {
+  const f = await session(t);
+  const marker = join(f.worktree, 'src', 'mod.mjs');
+  const provider = scriptedProvider([
+    { text: 'scout: src/mod.mjs has no MARKER_OK yet' },
+    { text: planFor() },
+    { toolCalls: [tcall('t1', 'shell_write', { path: marker, content: 'export const x = 1;\nMARKER_OK\n' })] },
+    { text: 'wrote the marker' },
+  ]);
+  const out = sink(); const err = sink();
+  const rc = await main(['--spec', f.specPath, '--approve', jobSpecHash(f.spec), '--review-door'], {
+    provider, env: {}, out: out.push, err: err.push, runlistHome: tmp(t, 'p6-home-'),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(out.text(), /review door/i, 'the run really opened a door');
+  const branch = git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*', '--format=%(refname:short)']);
+  assert.match(git(f.repo, ['show', `${branch}:src/mod.mjs`]), /MARKER_OK/, 'the branch holds the work');
+  assert.equal(existsSync(f.worktree), true, 'the folder is KEPT for the door');
+  assert.match(out.text(), /WORKTREE\s+final commit [0-9a-f]+ on bareloop-p6-worktree-job.*KEPT for the review door/);
+});
+
+test('run-u --spec on a worktree: a GREEN with a spine leak still commits on the branch and removes the folder', async (t) => {
+  const f = await session(t);
+  const marker = join(f.worktree, 'src', 'mod.mjs');
+  const provider = scriptedProvider([
+    { text: 'scout: src/mod.mjs has no MARKER_OK yet' },
+    { text: planFor() },
+    { toolCalls: [tcall('t1', 'shell_write', { path: marker, content: 'export const x = 1;\nMARKER_OK\n' })] },
+    { text: 'wrote the marker' },
+  ]);
+  const out = sink(); const err = sink();
+  // the spine is scrubbed at capture, so a leak can only be a raw secret-shaped string the readout finds in it: serve one
+  // on the spine's own whole-file read (the one the leak scan takes), never on a line-by-line reader
+  const realRead = fs.readFileSync;
+  const isSpine = (/** @type {any} */ p) => /[\\/]u-[^\\/]*\.jsonl$/.test(String(p)) && !String(p).endsWith('gate-audit.jsonl');
+  fs.readFileSync = /** @type {typeof fs.readFileSync} */ (/** @type {any} */ ((p, ...rest) => {
+    const v = realRead(p, ...rest);
+    return isSpine(p) && typeof v === 'string' ? `${v.trimEnd()}\n{"type":"note","text":"sk-ant-abcdefghijklmnopqrstuvwx"}\n` : v;
+  }));
+  syncBuiltinESMExports();
+  const restore = () => { fs.readFileSync = realRead; syncBuiltinESMExports(); };
+  t.after(restore);
+  try {
+    await main(['--spec', f.specPath, '--approve', jobSpecHash(f.spec)], {
+      provider, env: {}, out: out.push, err: err.push, runlistHome: tmp(t, 'p6-home-'),
+    });
+  } finally { restore(); }
+  assert.match(out.text(), /SPINE LEAK/, `${out.text()}\n${err.text()}`);
+  const branch = git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*', '--format=%(refname:short)']);
+  assert.match(git(f.repo, ['show', `${branch}:src/mod.mjs`]), /MARKER_OK/, 'the branch holds the work');
+  assert.equal(existsSync(f.worktree), false, 'no door: the folder is removed');
+});
