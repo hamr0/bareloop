@@ -779,7 +779,7 @@ test('item 1: the search input exists in the shared filter bar for both scopes, 
 
 test('item C: search placeholder mentions job, run id AND model', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /placeholder="search job, run id or model…"/);
+  assert.match(html, /placeholder="search job, run-N, run id or model…"/);
 });
 
 test('item 1: search state persists via the same localStorage key as the chip filters', () => {
