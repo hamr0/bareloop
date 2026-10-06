@@ -970,10 +970,10 @@ ${scoutBlob || '(no scout notes)'}`;
  *   the resume-plan-red option, the fix-loop terminal) say "resume is `run-u`-only
  *   in v1" instead of naming a flag that would fail if typed.
  * @param {string|null} [opts.stopFile=null] P5 item 5 — the run's STOP REQUEST file
- *   (`stopFilePath(spine)`, src/legs.js). Read at ONE seam, the round boundary of a step worker
- *   (the `metered` callback, where the money cap binds): present = emit `stop-requested`, consume
+ *   (`stopFilePath(spine)`, src/legs.js). Read at ONE seam, the round boundary of EVERY worker
+ *   (scout, plan/replan drafter, step, close-fix: the `metered` callback, where the money cap binds): present = emit `stop-requested`, consume
  *   the file, end the Loop after that round, and end the leg `stopped` (a checkpoint outcome, filed
- *   the way a mid-step cap-halt is; resume re-enters that step). Nothing is in flight at that
+ *   the way a mid-step cap-halt is; resume re-enters that step, or continues the phase). Nothing is in flight at that
  *   point, so the spend is exact. `null` = no stop surface (the default).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
@@ -2745,11 +2745,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           // (nothing in flight, the round just metered). It is the ONE owner of the stop request. The file is
           // consumed here; `self.stop()` ends the Loop after this round exactly as a bound does; `ask`/`askFrom`
           // then throw category `stopped`, which the step loop files as the checkpoint outcome `stopped` the way a
-          // mid-step cap-halt is filed. Step workers only (scout/plan/fix never read it).
-          if (stopFile !== null && !stopHit && phase.startsWith('step:') && existsSync(stopFile)) {
+          // mid-step cap-halt is filed. EVERY phase that runs rounds reads it here (scout, plan/replan drafter, step,
+          // close-fix) — the one seam the money cap binds at; `relay` files the non-ralph phases' throw as `stopped`.
+          if (stopFile !== null && !stopHit && existsSync(stopFile)) {
             try { unlinkSync(stopFile); } catch { /* already consumed */ }
             stopHit = true;
-            emit('stop-requested', { phase, step: phase.slice('step:'.length), iteration: roundIteration, round: roundsThisAttempt, meaning: 'the person asked to stop; the leg ends after this round and a resume re-enters this step' });
+            emit('stop-requested', { phase, ...(phase.startsWith('step:') ? { step: phase.slice('step:'.length) } : {}), iteration: roundIteration, round: roundsThisAttempt, meaning: 'the person asked to stop; the leg ends after this round and a resume continues the run' });
             self.stop();
           } else if (clock.expired()) {
             attemptBounded = { iteration: roundIteration, cause: 'wall', reason: null };
@@ -2903,6 +2904,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // instead and every such fault came back `provider-red` — a broken runner
       // reported as the provider's fault, and an upstream ask aimed at a library
       // for our own missing wiring (the step-stalled lesson).
+      // P5 item 5 — the PERSON's stop, honoured at a round boundary outside a step (scout, plan drafting, replan): nothing failed
+      'stopped': [`You stopped the run during ${phase}. Nothing is discarded: the work on disk stands, and a resume continues the run.`, ['resume (the same run continues)', 'abandon the task']],
       'interpreter-red': [`The ${phase} phase could not be set up — the runner or a primitive it was handed is not correctly bound.`, ['fix the wiring the detail names', 'retry the run', 'abandon the run']],
     };
     const [decision, options] = (Object.hasOwn(DECIDE, category) ? DECIDE[category] : undefined)
@@ -2914,7 +2917,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // `step-stalled` rides out as ITSELF, not as provider-red. Naming the
     // escalation while returning a casualty label would launder a governance stop
     // into transport noise at exactly the layer the readout reads.
-    return category === 'cap-halt' || category === 'wall-halt' || category === 'step-stalled' || category === 'interpreter-red'
+    return category === 'cap-halt' || category === 'wall-halt' || category === 'step-stalled' || category === 'interpreter-red' || category === 'stopped'
       ? category : 'provider-red';
   };
 
