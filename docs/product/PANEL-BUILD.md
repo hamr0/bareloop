@@ -976,3 +976,10 @@ Call sites: src/panel/settingsroutes.js (new POST /api/settings/open-keys-folder
 - CLAUDE.md hard line #3 rewording (item 2).
 - bareloop.context.md: worktree layout, install step, link login.
 - CHANGELOG at release.
+
+### 7. Run names: `run-N` instead of the run id (signed by hamr 2026-10-06)
+- Runs of the same workflow (the same group in the Runs list) are numbered oldest first: `run-1`, `run-2`, … A resume is not a new run and keeps its number. A run that died or was stopped still gets a number.
+- `run-N` shows wherever a run is named for a person: the Runs list rows and cards, the workflow row, and the right-side header (`[✓] my-job (run-3) │ passed …`).
+- The real run id stays in the Audit tab and in every command line (`--resume <id>`, `git merge …`).
+- One owner: the server computes the number once; every view reads it. The page never counts on its own.
+- Proof: tests, the orchestrator's screenshot, then hamr clicks through.
