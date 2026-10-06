@@ -2392,7 +2392,7 @@ test('build item 5 (2026-09-28): ONE $0 readiness line renders under the Model f
   assert.doesNotMatch(modelField, /id="jf-key-status"/, 'the old two-element split must be gone');
   assert.doesNotMatch(modelField, /id="jf-reach-status"/);
   assert.match(html, /var keyOk = false;/);
-  assert.match(html, /startOk = capOk && !sessionLive && keyOk;/);
+  assert.match(html, /startOk = capOk && !sessionLive && keyOk && \(verdictValue\(\) !== "reuse" \|\| startFrom !== null\);/, 'Start is still gated on the key (and, on Reuse workflow, on a pick)');
 });
 
 // ---------------------------------------------------------------------------
