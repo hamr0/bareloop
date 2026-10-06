@@ -3588,7 +3588,7 @@
             + '<td data-testid="pv-tokens-' + e + '">' + escapeXml(tokensText(row.tokens)) + "</td>"
             + "<td>" + bal + "</td>"
             + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-in" data-testid="pv-price-in-' + e + '" placeholder="not set" value="' + (row.priceInPerM === null ? "" : escapeXml(String(row.priceInPerM))) + '"></td>'
-            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-out" data-testid="pv-price-out-' + e + '" placeholder="not set" value="' + (row.priceOutPerM === null ? "" : escapeXml(String(row.priceOutPerM))) + '"></td>';
+            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-out" data-testid="pv-price-out-' + e + '" placeholder="not set" value="' + (row.priceOutPerM === null ? "" : escapeXml(String(row.priceOutPerM))) + '"></td></tr>';
         }).join("") : '<tr><td colspan="9" class="hint" data-testid="pv-empty">no keys with a value yet — add NAME=key to the keys file, then Reload keys</td></tr>';
         pvRows.querySelectorAll(".pv-balance-fetch").forEach(function(fetchEl){
           authorGet("/api/settings/providers/balance?env=" + encodeURIComponent(fetchEl.getAttribute("data-env"))).then(function(b){
