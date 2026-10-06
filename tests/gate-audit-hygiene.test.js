@@ -84,7 +84,7 @@ test('a run\'s OWN audit, written AFTER moveStaleGateAudit ran, is excluded from
 test('run-author.mjs defines an idempotent archiveGateAudit() that renames the tree\'s audit into OUT, named after this run', () => {
   assert.match(RUN_AUTHOR_SRC, /const archiveGateAudit = \(\) => \{/, 'the helper exists');
   assert.match(RUN_AUTHOR_SRC, /if \(gateAuditArchived\) return;/, 'idempotent — safe to call from more than one exit path');
-  assert.match(RUN_AUTHOR_SRC, /renameSync\(treeAudit, archived\)/, 'it actually moves the file, not copies it');
+  assert.match(RUN_AUTHOR_SRC, /moveFile\(treeAudit, archived\)/, 'it actually moves the file (rename, EXDEV-safe via moveFile), not copies it');
   assert.match(RUN_AUTHOR_SRC, /`author-\$\{runid\}-\$\{GATE_AUDIT_FILE\}`/, 'archived under THIS run\'s own id, in OUT — never left ambiguous between runs');
 });
 
