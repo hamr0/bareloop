@@ -239,3 +239,28 @@ test('run-u --spec on a worktree: REAL cross-device (repo on /dev/shm, session d
   const f = await session(t, { repoBase: shm });
   assertGreenCommitted(f, await greenRun(t, f));
 });
+
+// A later readout step must never skip the green commit: the watchdog note is parsed long after the gate-audit move, and a
+// malformed one throws there. The work is already committed and the folder already removed by then.
+test('run-u --spec on a worktree: a readout step that throws AFTER the green (malformed watchdog note) still commits and removes the folder', async (t) => {
+  const f = await session(t);
+  const realExists = fs.existsSync;
+  const realRead = fs.readFileSync;
+  const isNote = (/** @type {any} */ p) => String(p).endsWith('.watchdog.json');
+  fs.existsSync = /** @type {typeof fs.existsSync} */ ((p) => isNote(p) || realExists(p));
+  fs.readFileSync = /** @type {typeof fs.readFileSync} */ (/** @type {any} */ ((p, ...rest) => (isNote(p) ? 'not json {' : realRead(p, ...rest))));
+  syncBuiltinESMExports();
+  const restore = () => { fs.existsSync = realExists; fs.readFileSync = realRead; syncBuiltinESMExports(); };
+  t.after(restore);
+  /** @type {{rc: number, out: string, err: string} | null} */
+  let r = null;
+  /** @type {any} */
+  let threw = null;
+  try { r = await greenRun(t, f); } catch (e) { threw = e; }
+  restore();
+  assert.ok(threw !== null || (r !== null && r.rc !== 0), 'the malformed note really made the readout fail');
+  const branch = git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*', '--format=%(refname:short)']);
+  assert.match(branch, /^bareloop-p6-worktree-job/);
+  assert.match(git(f.repo, ['show', `${branch}:src/mod.mjs`]), /MARKER_OK/, 'the green work is committed despite the later throw');
+  assert.equal(existsSync(f.worktree), false, 'the worktree folder is removed despite the later throw');
+});

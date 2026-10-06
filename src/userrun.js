@@ -2039,6 +2039,27 @@ async function execute(ctx) {
       unlinkSync(auditSrc);
     } else moveFile(auditSrc, auditFile);
   }
+  // ── P6 item 1: a repo job on a WORKTREE in the person's own repo. GREEN: the run's work is committed on its work
+  // branch and the worktree folder removed — the branch stays, and the merge stays the person's. Anything else
+  // (stopped, capped, died, red): the folder stays so Resume works, and the Ended block names it. A green that opened a
+  // review door keeps its folder too: an accept at the door re-runs the mechanical stages against that tree.
+  // It runs HERE, right after the gate-audit move, so a later readout step that throws can never skip the commit.
+  const doorHere = events.findLast((e) => e.type === 'review-door') ?? null;
+  /** @type {string | null} */
+  let worktreeLine = null;
+  const wtManifest = sourceManifest.present ? sourceManifest.manifest : null;
+  if (typeof wtManifest?.worktree === 'string' && typeof wtManifest?.repo === 'string') {
+    if (outcome === 'green' && !doorHere && !leaks.length) {
+      const wb = events.findLast((e) => e.type === 'work-branch' && typeof e.branch === 'string') ?? null;
+      try {
+        const fin = commitWork(wd, `bareloop: ${spec.job} (run ${runid})`);
+        const gone = removeWorktree(wtManifest.repo, wd);
+        worktreeLine = `\nWORKTREE  ${fin.committed ? `final commit ${fin.sha}` : 'nothing left to commit'} on ${wb?.branch ?? 'the work branch'}; ${gone ? 'the worktree folder is removed' : `the worktree folder could not be removed — ${wd}`}`;
+      } catch (e) {
+        worktreeLine = `\nWORKTREE  the final commit failed, so the folder is KEPT: ${wd} (${redactSecrets(String(/** @type {Error} */ (e).message).split('\n')[0])})`;
+      }
+    }
+  }
   const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type === 'write' || e.action?.type === 'edit'));
 
   out(`\noutcome   ${outcome}`);
@@ -2273,7 +2294,6 @@ async function execute(ctx) {
   // ENDED and its verdict is minted — this readout offers the three doors over it and
   // changes nothing about the outcome printed above. Read off the run's own record
   // (never off a flag), so a green that opened no door prints exactly what it always did.
-  const doorHere = events.findLast((e) => e.type === 'review-door') ?? null;
   if (doorHere) {
     out('');
     for (const l of reviewDoorPackage({
@@ -2373,23 +2393,7 @@ async function execute(ctx) {
       out('MEMORY-CACHE  no record (run ended before its summary)');
     }
   }
-  // ── P6 item 1: a repo job on a WORKTREE in the person's own repo. GREEN: the run's work is committed on its work
-  // branch and the worktree folder removed — the branch stays, and the merge stays the person's. Anything else
-  // (stopped, capped, died, red): the folder stays so Resume works, and the Ended block names it. A green that opened a
-  // review door keeps its folder too: an accept at the door re-runs the mechanical stages against that tree.
-  const wtManifest = sourceManifest.present ? sourceManifest.manifest : null;
-  if (typeof wtManifest?.worktree === 'string' && typeof wtManifest?.repo === 'string') {
-    if (outcome === 'green' && !doorHere && !leaks.length) {
-      const wb = events.findLast((e) => e.type === 'work-branch' && typeof e.branch === 'string') ?? null;
-      try {
-        const fin = commitWork(wd, `bareloop: ${spec.job} (run ${runid})`);
-        const gone = removeWorktree(wtManifest.repo, wd);
-        out(`\nWORKTREE  ${fin.committed ? `final commit ${fin.sha}` : 'nothing left to commit'} on ${wb?.branch ?? 'the work branch'}; ${gone ? 'the worktree folder is removed' : `the worktree folder could not be removed — ${wd}`}`);
-      } catch (e) {
-        out(`\nWORKTREE  the final commit failed, so the folder is KEPT: ${wd} (${redactSecrets(String(/** @type {Error} */ (e).message).split('\n')[0])})`);
-      }
-    }
-  }
+  if (worktreeLine !== null) out(worktreeLine);
   out(`\nspine     ${spineFile}`);
   out(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);
 
