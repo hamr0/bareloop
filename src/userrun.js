@@ -24,12 +24,13 @@
 // green ONE job end to end. That green GRADUATES the bridge: the plan the agent
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, rmSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import { commitWork, removeWorktree } from './worktree.js';
+import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
 import { jobSpecHash, resolveWorkerModel, validateJob } from './job.js';
@@ -2036,7 +2037,7 @@ async function execute(ctx) {
       const prior = readFileSync(auditFile, 'utf8');
       appendFileSync(auditFile, `${prior.length > 0 && !prior.endsWith('\n') ? '\n' : ''}${legAuditText}`);
       unlinkSync(auditSrc);
-    } else renameSync(auditSrc, auditFile);
+    } else moveFile(auditSrc, auditFile);
   }
   const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type === 'write' || e.action?.type === 'edit'));
 

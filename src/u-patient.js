@@ -16,9 +16,10 @@
 // mechanical preparation of a tree, and both callers print what it did.
 import { execFileSync } from 'node:child_process';
 import {
-  rmSync, existsSync, renameSync,
+  rmSync, existsSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { moveFile } from './movefile.js';
 
 /**
  * Reset a patient to its frozen seed and drop its `.litectx` store.
@@ -68,6 +69,6 @@ export function moveStaleGateAudit(wd, spineDir, runid) {
   const staleAudit = join(wd, 'gate-audit.jsonl');
   if (!existsSync(staleAudit)) return null;
   const preFile = join(spineDir, `pre-${runid}-gate-audit.jsonl`);
-  renameSync(staleAudit, preFile);
+  moveFile(staleAudit, preFile);
   return preFile;
 }

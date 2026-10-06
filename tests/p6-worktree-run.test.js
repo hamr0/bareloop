@@ -4,6 +4,8 @@
 // session out: `<session>/resolved-spec.json`, `<session>/source-seed/source.json`, spine in `<session>/source-seed/<job>-bareloop/`.
 
 import { test } from 'node:test';
+import fs, { statSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
@@ -17,9 +19,9 @@ import { prepareSource } from '../src/source.js';
 import { main } from '../src/userrun.js';
 import { scriptedProvider } from './helpers.js';
 
-/** @param {import('node:test').TestContext} t @param {string} prefix */
-const tmp = (t, prefix) => {
-  const d = mkdtempSync(join(tmpdir(), prefix));
+/** @param {import('node:test').TestContext} t @param {string} prefix @param {string} [base] */
+const tmp = (t, prefix, base = tmpdir()) => {
+  const d = mkdtempSync(join(base, prefix));
   t.after(() => rmSync(d, { recursive: true, force: true }));
   return d;
 };
@@ -53,10 +55,10 @@ const tcall = (/** @type {string} */ id, /** @type {string} */ name, /** @type {
 
 /**
  * One session laid out like the panel's: the spec, and the REAL source door (worktree mode) over a fresh repo.
- * @param {import('node:test').TestContext} t @param {{budgetUsd?: number}} [o]
+ * @param {import('node:test').TestContext} t @param {{budgetUsd?: number, repoBase?: string}} [o]
  */
 async function session(t, o = {}) {
-  const repo = tmp(t, 'p6-repo-');
+  const repo = tmp(t, 'p6-repo-', o.repoBase);
   initRepo(repo);
   const dir = tmp(t, 'p6-session-');
   const closeScript = join(dir, 'close.mjs');
@@ -184,4 +186,56 @@ test('run-u --spec: a worktree that is gone is a named $0 stop, never a silent f
   });
   assert.equal(rc, 2);
   assert.match(err.text(), /the job's worktree is gone/);
+});
+
+// EXDEV: the worktree sits in the person's repo, which can be on another filesystem than the session dir. The green
+// end moves the run's gate audit from the tree into the spine dir; renameSync cannot cross a device.
+/** @param {import('node:test').TestContext} t @param {Awaited<ReturnType<typeof session>>} f */
+async function greenRun(t, f) {
+  const marker = join(f.worktree, 'src', 'mod.mjs');
+  const provider = scriptedProvider([
+    { text: 'scout: src/mod.mjs has no MARKER_OK yet' },
+    { text: planFor() },
+    { toolCalls: [tcall('t1', 'shell_write', { path: marker, content: 'export const x = 1;\nMARKER_OK\n' })] },
+    { text: 'wrote the marker' },
+  ]);
+  const out = sink(); const err = sink();
+  const rc = await main(['--spec', f.specPath, '--approve', jobSpecHash(f.spec)], {
+    provider, env: {}, out: out.push, err: err.push, runlistHome: tmp(t, 'p6-home-'),
+  });
+  return { rc, out: out.text(), err: err.text() };
+}
+
+function assertGreenCommitted(/** @type {any} */ f, /** @type {{rc: number, out: string, err: string}} */ r) {
+  assert.equal(r.rc, 0, `${r.out}\n${r.err}`);
+  const branch = git(f.repo, ['branch', '--list', 'bareloop-p6-worktree-job*', '--format=%(refname:short)']);
+  assert.match(git(f.repo, ['show', `${branch}:src/mod.mjs`]), /MARKER_OK/, 'the green-end commit happened');
+  assert.equal(existsSync(f.worktree), false, 'the worktree folder is removed');
+  const spineDir = join(f.into, 'p6-worktree-job-bareloop');
+  const audit = readdirSync(spineDir).find((n) => /^u-.*-gate-audit\.jsonl$/.test(n));
+  assert.ok(audit, 'the gate audit reached the spine dir');
+  assert.ok(readFileSync(join(spineDir, audit), 'utf8').length > 0);
+}
+
+test('run-u --spec on a worktree: rename forced to EXDEV for the gate audit — the run still completes and commits', async (t) => {
+  const f = await session(t);
+  const realRename = fs.renameSync;
+  let forced = 0;
+  fs.renameSync = /** @type {typeof fs.renameSync} */ ((a, b) => {
+    if (String(a).endsWith('gate-audit.jsonl')) { forced++; throw Object.assign(new Error(`EXDEV: cross-device link not permitted, rename '${a}' -> '${b}'`), { code: 'EXDEV' }); }
+    return realRename(a, b);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { fs.renameSync = realRename; syncBuiltinESMExports(); });
+  const r = await greenRun(t, f);
+  fs.renameSync = realRename; syncBuiltinESMExports();
+  assert.ok(forced >= 1, 'the audit move really hit the forced EXDEV');
+  assertGreenCommitted(f, r);
+});
+
+const shm = '/dev/shm';
+const crossDev = (() => { try { return statSync(shm).dev !== statSync(tmpdir()).dev; } catch { return false; } })();
+test('run-u --spec on a worktree: REAL cross-device (repo on /dev/shm, session dir on tmpdir) completes and commits', { skip: crossDev ? false : '/dev/shm is on the same device as tmpdir' }, async (t) => {
+  const f = await session(t, { repoBase: shm });
+  assertGreenCommitted(f, await greenRun(t, f));
 });
