@@ -389,6 +389,8 @@ export function createSession(card, deps = {}) {
   };
   /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
   const stepDetail = (id, detail) => { const x = latestStep(state.steps, id); if (x) x.detail = detail; };
+  /** @param {string} id @param {string} label the latest line of `id` reads `label` instead of its table label (the install step: bareloop installing vs the person) */
+  const stepLabel = (id, label) => { const x = latestStep(state.steps, id); if (x) x.label = label; };
   /** finish the running step as done (or the latest line of `id`, when given) */
   const stepDone = (id) => { for (const x of state.steps) if (x.status === 'running' && (id === undefined || x.id === id)) x.status = 'done'; };
   /** @param {string} reason the running step (else the last one) fails with the code-owned reason on its own line */
@@ -630,11 +632,13 @@ export function createSession(card, deps = {}) {
       let installFailed = null;
       if (depsGap && depsGap.lockFile && NPM_CI_LOCKS.includes(depsGap.lockFile)) {
         stepStart('install', 'Installing packages (npm ci)…');
+        stepLabel('install', 'installing packages');
         state.progressLabel = 'installing packages';
         const ci = await (deps.npmCiFn ?? runNpmCi)(depsGap.dir, {});
         if (ci.ok) {
           depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
           if (!depsGap) {
+            stepDetail('install', 'Installed packages (npm ci).');
             stepDone('install');
             stepStart('check');
           } else installFailed = 'it ran but node_modules is still missing';
@@ -642,6 +646,7 @@ export function createSession(card, deps = {}) {
       }
       if (depsGap) {
         state.phase = 'install-needed';
+        stepLabel('install', STEP_LABELS.install); // the person is the one installing now
         stepStart('install', `${installFailed ? `Installing packages (npm ci) failed: ${redactSecrets(installFailed)}. ` : ''}Packages missing in the job's worktree. Run: cd ${prep.tree} && ${depsGap.command}`);
         for (;;) {
           state.pendingAsk = { kind: 'install-needed', tree: prep.tree, command: depsGap.command, reason: depsGap.reason };

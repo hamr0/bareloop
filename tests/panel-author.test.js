@@ -1057,8 +1057,10 @@ function lockSession(repo, name, npmCiFn) {
 test('P6 item 3: an npm lock file -> bareloop runs npm ci itself, the install step is done, and drafting continues with no install-needed wait', async () => {
   const repo = makeRepoWithLock('package-lock.json');
   const calls = [];
+  let liveStep = null;
   const session = lockSession(repo, 'panel-author-npm-ci-ok', async (dir, o) => {
     calls.push({ dir, o });
+    liveStep = { ...session.state.steps.find((x) => x.id === 'install') }; // what the person sees WHILE bareloop installs
     mkdirSync(join(dir, 'node_modules'), { recursive: true }); // what a successful npm ci leaves
     return { ok: true };
   });
@@ -1069,7 +1071,9 @@ test('P6 item 3: an npm lock file -> bareloop runs npm ci itself, the install st
   assert.equal(session.state.pendingAsk?.kind, 'menu', `pipeline continued to the menu ask; phase=${session.state.phase} error=${session.state.error}`);
   const step = session.state.steps.find((x) => x.id === 'install');
   assert.equal(step.status, 'done');
-  assert.match(step.detail, /Installing packages \(npm ci\)/);
+  assert.equal(liveStep.label, 'installing packages', 'bareloop is the one installing: the step must not read "waiting on install"');
+  assert.equal(liveStep.detail, 'Installing packages (npm ci)…');
+  assert.equal(step.detail, 'Installed packages (npm ci).', 'on success the detail is past tense');
 });
 
 test('P6 item 3: npm shrinkwrap counts as an npm lock file', async () => {
@@ -1090,6 +1094,8 @@ test('P6 item 3: npm ci FAILS -> today\'s install-needed wait + real command, th
   assert.match(session.state.pendingAsk.command, /npm ci/);
   const step = session.state.steps.find((x) => x.id === 'install');
   assert.match(step.detail, /npm ci\) failed: ERESOLVE/);
+  assert.equal(step.label, 'waiting on install', 'the person is installing now: the label goes back');
+  assert.equal(session.state.progressLabel, 'waiting on install');
   assert.match(step.detail, /Run: cd .* && npm ci/);
   assert.ok(!/sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789/.test(step.detail), 'the failure reason goes through the one redactor');
   assert.equal(session.checkDeps().ok, true, 'Check again still works');
@@ -1105,6 +1111,7 @@ test('P6 item 3: a yarn lock file -> no npm call at all, today\'s wait with the 
   assert.match(session.state.pendingAsk.command, /yarn install --frozen-lockfile/);
   const step = session.state.steps.find((x) => x.id === 'install');
   assert.ok(!/failed/.test(step.detail), 'nothing failed — it was never tried');
+  assert.equal(step.label, 'waiting on install');
 });
 
 test('P6 item 3: npm ci "succeeds" but node_modules is still missing -> falls back to the wait', async () => {
