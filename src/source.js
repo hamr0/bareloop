@@ -453,7 +453,7 @@ async function fetchOnce(url, timeoutMs) {
  *   after the secret scan finished and before the freeze loop re-reads any
  *   file's bytes, so a test can swap a file inside that window
  *   deterministically. Production never sets it; absent, behaviour is unchanged.
- * @returns {Promise<{stop: null, into: string, tree: string, manifestPath: string, manifest: object}|SourceRefusal>}
+ * @returns {Promise<{stop: null, into: string, tree: string, manifestPath: string, manifest: Record<string, any>}|SourceRefusal>}
  */
 export async function prepareSource({ source, into, destination, worktree, fetchTimeoutMs = PROVIDER_TIMEOUT_MS, afterScan }) {
   const intoAbs = resolve(into);

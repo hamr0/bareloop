@@ -593,7 +593,7 @@ export function createSession(card, deps = {}) {
       source: card.source, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
       ...(repoRoot === null ? {} : { worktree: worktreePath(repoRoot, id) }),
     });
-    if (repoRoot !== null && prep.stop === null && /** @type {any} */ (prep).manifest?.worktree) madeWorktree = { repo: repoRoot, dir: /** @type {any} */ (prep).manifest.worktree };
+    if (repoRoot !== null && prep.stop === null && prep.manifest?.worktree) madeWorktree = { repo: repoRoot, dir: prep.manifest.worktree };
     if (abandoned) dropWorktree();
     if (prep.stop !== null) {
       // reaching the source and checking it are two lines: a scan/freeze refusal means the copy itself worked
