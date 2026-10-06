@@ -3981,6 +3981,11 @@
     function fitCardBoxes(){
       ["jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge"].forEach(function(id){ fitBox(document.getElementById(id)); });
     }
+    // live growth: each card box re-fits on its own input (typing and Enter), through the same fitBox
+    ["jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge"].forEach(function(id){
+      var box = document.getElementById(id);
+      box.addEventListener("input", function(){ fitBox(box); });
+    });
     window.addEventListener("resize", function(){ fitCardBoxes(); fitBox(msgInput); });
     document.getElementById("tab-chat").addEventListener("click", function(){ fitCardBoxes(); fitBox(msgInput); });
     // Enter sends through the one main button; Shift+Enter (or IME composition) keeps its newline
@@ -4089,6 +4094,7 @@
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
       document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
       if(reuseSession) setReuseLocked(true);
+      fitCardBoxes();
       renderMessages(st);
       renderActions(st);
       if(pollTimer) clearInterval(pollTimer);
