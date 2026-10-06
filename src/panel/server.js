@@ -897,7 +897,7 @@ function getRunDetailBody(runid, opts) {
   const timelineKind = summary.timelineKind;
   // the drafting part (see draftingFor) heads the parts list; the enrichment below touches the spine's own parts only
   const draftingPartHere = draftingFor(row, summary, opts);
-  const draftingShiftHere = draftingPartHere ? 1 : 0;
+  const draftingShiftHere = draftingShift(row, summary, opts);
   const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row)));
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
   const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true);
