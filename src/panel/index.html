@@ -1597,15 +1597,18 @@
   // means "no search filter" — everything passes it, same posture as an
   // empty chip group). item C (2026-09-26): also matches the run's model
   // name (e.g. "deepseek", "sonnet") — `model` is `null`/absent on an older
-  // archived run, same posture as a missing job/runid.
-  function matchesSearch(job, runid, model, query){
+  // archived run, same posture as a missing job/runid. Also the run's shown
+  // name: `run-N` and `job (run-N)` (N is the server's `runNo`, never counted here).
+  function matchesSearch(job, runid, model, query, runNo){
     if(!query) return true;
     var q = String(query).trim().toLowerCase();
     if(!q) return true;
     var j = String(job || "").toLowerCase();
     var r = String(runid || "").toLowerCase();
     var m = String(model || "").toLowerCase();
-    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1 || m.indexOf(q) !== -1;
+    var label = typeof runNo === "number" ? "run-" + runNo : "";
+    var shown = label ? j + " (" + label + ")" : "";
+    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1 || m.indexOf(q) !== -1 || (label !== "" && (label.indexOf(q) !== -1 || shown.indexOf(q) !== -1));
   }
   function filterRuns(runs, filters, nowMs){
     nowMs = (typeof nowMs === "number") ? nowMs : Date.now();
@@ -1616,7 +1619,7 @@
     return (runs || []).filter(function(r){
       if(ct.length && ct.indexOf(r.checkType) === -1) return false;
       if(rs.length && rs.indexOf(r.glyph) === -1) return false;
-      if(!matchesSearch(r.job, r.runid, r.model, q)) return false;
+      if(!matchesSearch(r.job, r.runid, r.model, q, r.runNo)) return false;
       if(time !== "all"){
         var days = time === "7d" ? 7 : 30;
         var t = typeof r.at === "string" ? Date.parse(r.at) : NaN;

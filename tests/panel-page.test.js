@@ -692,6 +692,22 @@ test('item C: matchesSearch — also matches the model field (case-insensitive s
   assert.equal(matchesSearch('pulselog-person', 'mu2p83go', undefined, ''), true);
 });
 
+test('matchesSearch — also finds the shown run name: `run-N` and `job (run-N)`, N from the row\'s runNo; no runNo never false-matches', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function matchesSearch(');
+  const end = html.indexOf('function filterRuns(');
+  // eslint-disable-next-line no-new-func
+  const matchesSearch = new Function(`${html.slice(start, end)}\nreturn matchesSearch;`)();
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-2', 2), true);
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'RUN-2', 2), true);
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'pulselog (run-2)', 2), true);
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-3', 2), false);
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-2', undefined), false);
+  const filterRuns = loadFilterRunsWithSearch(html);
+  const runs = [{ job: 'a', runid: 'x1', runNo: 1 }, { job: 'a', runid: 'x2', runNo: 2 }];
+  assert.deepEqual(filterRuns(runs, { search: 'run-2' }).map((r) => r.runid), ['x2']);
+});
+
 test('item 1: filterRuns — search is AND with the chip groups, matches job or runid', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const filterRuns = loadFilterRunsWithSearch(html);
