@@ -145,6 +145,9 @@ async function evalOne(e, { dir, snapshot, runCheck }) {
     if (changed === 0) {
       return { type: e.type, pass: false, detail: `0 files changed under ${e.scope} — the tree is byte-identical to the step start (an identical re-write is not a change)` };
     }
+    // a file-valued writeScope (`src/x.js/**`) snapshots that one file keyed by the prefix itself: name the file,
+    // never the glob path that does not exist on disk
+    if (snapshot.has(prefix) || now.has(prefix)) return { type: e.type, pass: true, detail: `${prefix} changed` };
     return { type: e.type, pass: true, detail: `${changed} file(s) changed under ${e.scope}` };
   }
 
