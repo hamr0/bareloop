@@ -16,12 +16,13 @@
 import { hostname } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import {
   readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from './bundle.js';
 import { jobSpecHash } from './job.js';
+import { addWorktree, worktreePath } from './worktree.js';
 import { parseJsonl } from './replayio.js';
 import { legsOf } from './legs.js';
 import { startRun, resumeRun } from './userrun.js';
@@ -165,7 +166,7 @@ export async function bundleMain(args, {
       err(`--repo ${repoArg} must be a git repository with at least one commit: ${/** @type {Error} */ (e).message}`);
       return 1;
     }
-    worktree = join(repo, '.bareloop', 'wt', runid);
+    worktree = worktreePath(repo, runid);
     if (existsSync(worktree)) { err(`worktree already exists: ${worktree}`); return 1; }
   }
 
@@ -186,12 +187,7 @@ export async function bundleMain(args, {
   // at job-end (a killed run has none) and the run list is machine-global.
   const prepareTree = () => {
     if (deadSpine === null) {
-      mkdirSync(dirname(worktree), { recursive: true });
-      try {
-        execFileSync('git', ['-C', repo, 'worktree', 'add', '--detach', worktree, 'HEAD'], { encoding: 'utf8' });
-      } catch (e) {
-        throw new Error(`git worktree add failed: ${/** @type {Error} */ (e).message}`);
-      }
+      addWorktree(repo, worktree);
     }
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, 'run.json'), `${JSON.stringify({

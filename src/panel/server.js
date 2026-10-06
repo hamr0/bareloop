@@ -31,6 +31,7 @@ import {
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRunList, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
+import { draftingPartFor } from '../draftspend.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
@@ -321,6 +322,9 @@ export function resumePlanFor(row, records) {
   if (!age.ok) return { ok: false, why: String(age.detail ?? 'its checkpoint has expired') };
   const near = sourceNearSpine(row.spine);
   if (!near.specPath) return { ok: false, why: 'the signed job file is not beside this run' };
+  // P6 item 1: a worktree run resumes IN its worktree — a folder that is gone is a resume the engine would refuse
+  const wt = worktreeOfRun(row, records);
+  if (wt && !wt.exists) return { ok: false, why: `its worktree folder ${wt.folder} is gone` };
   const dir = dirname(near.specPath);
   /** @type {string[]} */
   let names = [];
@@ -407,10 +411,29 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * (replaces P5 item 3, 2026-10-03) is offered on green rows only, and starts a NEW run.
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
- * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean}} [o]
+ * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean,
+ *   worktree?: {folder: string, repo: string, branch: string|null, exists: boolean}|null}} [o]
+ *   `worktree` (P6 item 1): the run's worktree in the person's repo, from {@link worktreeOfRun}; absent for every other run
  * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
+  const base = endedBase(summary, death, o);
+  const wt = o.worktree;
+  if (!base || !wt) return base;
+  // P6 item 1 — the run worked on a worktree in the person's own repo. GREEN: the branch carries the work (the folder is
+  // removed by the engine) and the merge stays the person's — the two commands are shown as TEXT, never run by a button.
+  // Any other ending: the worktree folder stays (Resume needs it), so the block names it.
+  const green = !death.died && (summary.outcome === 'green' || summary.outcome === 'already-green' || summary.outcome === 'satisfied');
+  if (green) {
+    if (!wt.branch) return base;
+    const kept = wt.exists ? ` The worktree folder ${wt.folder} is still there.` : '';
+    return { ...base, next: `In ${wt.repo}: git merge ${wt.branch} — or throw the work away: git branch -D ${wt.branch}.${kept}` };
+  }
+  return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
+}
+
+/** @param {any} summary @param {any} death @param {any} o */
+function endedBase(summary, death, o) {
   const resumeOk = !!(o.resume && o.resume.ok);
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
@@ -572,7 +595,7 @@ function lastJobEndTs(/** @type {any[]} */ records) {
   return null;
 }
 
-function endedForRow(row, records, summary, death) {
+function endedForRow(row, records, summary, death, withWorktree = false) {
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
   const resume = maybeResumable ? resumePlanFor(row, records) : null;
@@ -581,6 +604,7 @@ function endedForRow(row, records, summary, death) {
     resume,
     moneyHalt: records.some((r) => r && r.type === 'money-halt'),
     destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
+    worktree: withWorktree ? worktreeOfRun(row, records) : null,
   });
   const esc = summary.lastEscalation;
   const status = statusFor({
@@ -732,6 +756,40 @@ export function getStopContext(runid, opts = {}) {
 }
 
 /**
+ * @param {any} r
+ * @returns {number}
+ */
+function atMs(r) {
+  const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * The ONE owner of run names (P6 item 7): runs of the same job (`row.job`) are numbered oldest `at` first, 1-based
+ * (ties keep file order). A resume is one row, so it counts once; died and stopped runs are rows too. Every view
+ * reads this number — the page never counts on its own.
+ * @param {any[]} rows
+ * @returns {Map<string, number>} runid → N
+ */
+function runNumbers(rows) {
+  /** @type {Map<string, any[]>} */
+  const byJob = new Map();
+  rows.forEach((row, index) => {
+    if (!row || typeof row.runid !== 'string') return;
+    const g = byJob.get(row.job) || [];
+    g.push({ row, index });
+    byJob.set(row.job, g);
+  });
+  /** @type {Map<string, number>} */
+  const out = new Map();
+  for (const g of byJob.values()) {
+    g.sort((a, b) => (atMs(a.row) - atMs(b.row)) || (a.index - b.index));
+    g.forEach(({ row }, i) => out.set(row.runid, i + 1));
+  }
+  return out;
+}
+
+/**
  * `GET /api/runs` — every listed run, NEWEST FIRST BY `at` (never by file/
  * append order — a backfill scan appends rows in sorted-PATH order, which
  * does not track chronological `at` order; a plain `.reverse()` here once
@@ -749,14 +807,29 @@ export function getStopContext(runid, opts = {}) {
  */
 export function listRuns(opts = {}) {
   const { rows } = readRunList(opts);
-  const atMs = (r) => {
-    const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
-    return Number.isFinite(t) ? t : 0;
-  };
+  const nos = runNumbers(rows);
   return rows
     .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
     .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
-    .map(({ row }) => summarizeRow(row));
+    .map(({ row }) => ({ ...summarizeRow(row), runNo: nos.get(row.runid) }));
+}
+
+/**
+ * The run's DRAFTING PART (hamr 2026-10-06, option A), or null: it exists only when the run came out of a panel
+ * session whose drafting log carries a metered call (src/draftspend.js, `draftingPartFor`) and the spine carries the
+ * drafting figure. It is the FIRST element of `detail.parts`, so EVERY index a reader is handed — `detail.parts`,
+ * `legDividers.beforePart`, the flat Audit rows' `partIndex`, the rounds endpoint's `part` — lives in ONE index space
+ * (the shown list), shifted by {@link draftingShift} in exactly those four places and nowhere else.
+ * @param {any} row @param {any} summary a `replayOne` summary of the row's spine @param {{ home?: string }} opts
+ * @returns {any|null}
+ */
+function draftingFor(row, summary, opts) {
+  return draftingPartFor(row, { draftSpentUsd: summary.draftSpentUsd, draftSpendComplete: summary.draftSpendComplete }, opts);
+}
+
+/** @param {any} row @param {any} summary @param {{ home?: string }} opts @returns {0|1} how far the drafting part pushes every other part's index */
+function draftingShift(row, summary, opts) {
+  return draftingFor(row, summary, opts) ? 1 : 0;
 }
 
 /**
@@ -789,6 +862,18 @@ function findRunRow(runid, opts) {
  * @returns {any|null}
  */
 export function getRunDetail(runid, opts = {}) {
+  const d = getRunDetailBody(runid, opts);
+  if (!d) return d;
+  const runNo = runNumbers(readRunList(opts).rows).get(runid);
+  return runNo === undefined ? d : { ...d, runNo };
+}
+
+/**
+ * @param {string} runid
+ * @param {{ home?: string }} opts
+ * @returns {any|null}
+ */
+function getRunDetailBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
@@ -810,8 +895,12 @@ export function getRunDetail(runid, opts = {}) {
   const auditPaths = resolveAuditPathsForRow(row, rawSpineRecords);
   const summary = replayOne(row.spine, { auditPathOverride: auditPaths.length > 0 ? auditPaths : null });
   const timelineKind = summary.timelineKind;
+  // the drafting part (see draftingFor) heads the parts list; the enrichment below touches the spine's own parts only
+  const draftingPartHere = draftingFor(row, summary, opts);
+  const draftingShiftHere = draftingPartHere ? 1 : 0;
+  const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row)));
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
-  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death);
+  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
   // close's own paid judge seam, distinct from the worker `model` above.
@@ -980,7 +1069,8 @@ export function getRunDetail(runid, opts = {}) {
     // P5-R: the run's legs in order (`after` = how the leg before ended) and the resume count — the Audit tab's
     // dividers and the map's connectors read these; never a second derivation of where a leg starts
     legs: summary.legs,
-    legDividers: legDividersFor(rawSpineRecords, summary.parts),
+    // drafting belongs to leg 1: a divider's `beforePart` moves with the parts list it indexes
+    legDividers: legDividersFor(rawSpineRecords, summary.parts).map((d) => ({ ...d, beforePart: d.beforePart + draftingShiftHere })),
     resumedCount: Math.max(0, summary.legs.length - 1),
     resume: resume && resume.ok ? {
       budgetUsd: resume.budgetUsd, maxWallMin: resume.maxWallMin, spentUsd: resume.spentUsd, spendComplete: resume.spendComplete,
@@ -1027,7 +1117,7 @@ export function getRunDetail(runid, opts = {}) {
     // {@link enrichPartsWithStageKind}. `kindMeta` is `null` (every stage
     // passes through unchanged) whenever no spec resolves at all, so the two
     // tabs still never disagree about order/counts/blocked-call figures.
-    parts: enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row))),
+    parts: draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts,
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -1379,6 +1469,7 @@ export function getRunAudit(runid, opts = {}) {
     skipAudit: true,
   });
   const partOf = makePartLookup(summary);
+  const shift = draftingShift(row, summary, opts); // the drafting part heads the shown list: every index moves with it
 
   const { records } = { records: auditPaths.flatMap((ap) => parseJsonl(ap).records) };
   const windowed = records.filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
@@ -1419,7 +1510,7 @@ export function getRunAudit(runid, opts = {}) {
       path,
       pathShort: shortenPath(path, treeRoot),
       decision: typeof r.decision === 'string' ? r.decision : null,
-      partIndex,
+      partIndex: partIndex === null ? null : partIndex + shift,
       partLabel,
       attemptN,
       reason,
@@ -1488,7 +1579,11 @@ export function getRunRounds(runid, query = {}, opts = {}) {
     ? Math.min(query.limit, ROUNDS_PAGE_MAX) : ROUNDS_PAGE_DEFAULT;
 
   const summary = replayOne(row.spine);
-  const part = Array.isArray(summary.parts) ? summary.parts[partIndex] : null;
+  // `part` is an index into the SHOWN list (`detail.parts`): when the drafting part heads it, index 0 is the drafting
+  // part (it has no rounds table) and the spine's own part k is shown at k + 1
+  const shift = draftingShift(row, summary, opts);
+  if (shift && partIndex === 0) return null;
+  const part = Array.isArray(summary.parts) ? summary.parts[partIndex - shift] : null;
   if (!part) return null;
   const a = Array.isArray(part.attempts) ? part.attempts[attempt - 1] : null;
   if (!a) return null;
@@ -1614,6 +1709,25 @@ function sourceNearSpine(spinePath) {
     specPath: existsSync(specPath) ? specPath : null,
     sourceJsonPath: existsSync(sourceJsonPath) ? sourceJsonPath : null,
   };
+}
+
+/**
+ * P6 item 1 — the worktree a run worked on in the person's own repo, read off the run's own `source.json` (the manifest
+ * the source door wrote: `worktree` + `repo`) and its spine's `work-branch` record. `null` for every run that has none
+ * (a copied-tree run, a bundle run, an import). `exists` is whether the folder is still on disk: a green run's folder is
+ * removed by the engine, any other ending leaves it.
+ * @param {{ spine: string }} row
+ * @param {any[]} records the run's raw spine records
+ * @returns {{folder: string, repo: string, branch: string|null, exists: boolean}|null}
+ */
+function worktreeOfRun(row, records) {
+  const near = sourceNearSpine(row.spine);
+  if (!near.sourceJsonPath) return null;
+  let m;
+  try { m = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { return null; }
+  if (typeof m?.worktree !== 'string' || m.worktree === '' || typeof m?.repo !== 'string') return null;
+  const wb = records.findLast((r) => r && r.type === 'work-branch' && typeof r.branch === 'string') ?? null;
+  return { folder: m.worktree, repo: m.repo, branch: wb ? wb.branch : null, exists: existsSync(m.worktree) };
 }
 
 /**
@@ -2526,7 +2640,7 @@ export function handleRequest(req, res, opts) {
       });
       return;
     }
-    sendText(res, 405, 'method not allowed — this panel is read-only outside /api/author and /api/settings (GET/HEAD only)');
+    sendText(res, 405, 'method not allowed — this route does not accept this method (GET/HEAD only)');
     return;
   }
   const getRoutes = routesFor(opts, pathname);
@@ -2635,7 +2749,8 @@ export function handleRequest(req, res, opts) {
  * this package's own `bin/bareloop.mjs`).
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
- *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string }} [opts]
+ *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string,
+ *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
@@ -2690,6 +2805,7 @@ export function createPanelServer(opts = {}) {
       });
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
+        openFolderSpawn: opts.openFolderSpawn, platform: opts.platform,
       });
       runRoutes = createRunRoutes({
         port: boundPort,

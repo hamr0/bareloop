@@ -875,3 +875,114 @@ Supersedes P5 item 3 above (its prose is left as written). hamr's click-through 
 **2026-10-04 — Model is unlocked on Reuse (hamr): the Model box is the fifth open field** (a Name from Settings > Providers; provider and baseUrl come with the chosen row). The server refuses any other locked change as before. `workflowKey` now ALSO ignores `provider`, `baseUrl` and `model` (`WORKFLOW_KEY_IDENTITY_FIELDS`); `jobSpecHash` is unchanged and still covers them. The reuse spec sets provider/baseUrl/model from the chosen row the way normal authoring spells them (baseUrl when the row has one; model only when the Name is not the provider's default tier). RUBRIC (soft-green) jobs: the judge never changes with the worker — a spec with no explicit `judge` is pinned to the ORIGIN's resolved judge identity (`resolveJobJudge`) before the swap; an explicit judge is kept; deterministic jobs have none. The estimate line counts only runs with the same workflowKey AND the same worker (provider + baseUrl + model) as the card's current choice and recomputes when the Model box changes; no such run reads "no runs yet on this model". Imported reuse no longer forces the bundle's provider (the chosen row is used; no matching row is no longer a refusal, the card opens with no Name picked); close-byte re-verification is unchanged.
 
 **2026-10-05 — live reuse click-through rulings (hamr, real panel).** (1) The progress list draws each step's detail on its OWN line under the step prefixed `> ` (a failed step keeps ✗ and its reason on that line); two new server-owned steps close the one list, `generating hash` (detail `spec hash <full hash>`, at sign-prepare) and `signed hash` (when the person's sign is accepted); the "SIGNING PREPARED" and "signed — … run starting detached" thread bubbles are no longer posted (the thread is chat turns only). (2) `Check again` moves into the `.actions-row` beside Sign & run (same show/hide rule). (3) Runs list order: runs/workflows first, imported jobs below. (4) Drafting spend shows as the "signed hash" detail (`drafting spent [at least ]$X (folds out of the run's own cap)`; nothing on a Reuse or $0 drafting). (5) MAP: the word "resumed" beside the dotted connector is removed (cramped; the legend "··· dotted = resumed" stays; the `resumed ×N` row tag stays). (6) The Reuse card origin line "Reuse: <job> (run <id>)" is bold and sits FIRST in the card, above the "Job card — draft" title. (7) Chat card, hamr's live click-through 2026-10-05 ("+ New" disappears once a card is filled; no way to start over): the Chat tab always opens on an empty job card; **+ New is removed**; a button at the card's TOP RIGHT, on the "Job card — draft" title line, empties every box (check type deterministic, Model default, origin/estimate/notes hidden, progress list and thread cleared) and the card is ready to fill again; a Reuse still fills the card as before. Ruling (e), verbatim: "clear is abandon when one is running, if one is running and drafting (not yet on workflows) after it started running and moves to workflows it changes to clear because user can stop it from workflows". So ONE button, two states: while an authoring session is live and unsigned (drafting / waiting on install / waiting for confirm) it reads **Abandon** and calls the new `POST /api/author/:id/abandon` (phase `abandoned`, lock released, spend stays booked, no new model call), then the card empties; once signed and started, terminal, or nothing started it reads **Clear** and only empties the card — it never stops a run (Stop lives on the Run tab). User-facing "+ New" wording (Ended next line, locked-box refusal) now says "Clear the card". (8) The separate "spec hash:" line under Sign & run is removed; the hash shows once, as the "> spec hash …" detail of "generating hash". (9) "signed hash" showing no check: NOT reproduced — the server state (real reuse session through `signRun`) and the page render (headless chromium, stubbed API) both end the list with `signed hash ✓`; locked by tests, cause still open (a copy/selection artifact is the only unproven candidate). (10) Check again sits immediately before Sign & run in one non-splitting group (390px and 1280px checked). (8) ONE wide button below the message box replaces the card start, Send, Check again, Revise and the sign pair; its wording is one pure function `mainButtonFor(state, textEmpty, reuse)`: Start drafting / Sign & run (reuse) / Check again (install wait) / Send (typed text; at the plan menu it is a revise, allowed while changes are left, hint "N changes left") / Sign & run (plan ready, box empty; the two-step "Sign <hash8> & run" kept) / disabled otherwise. (9) The chat message box has a white background (dark: the theme input background) and a constant solid border. (10) The Reuse origin line reserves the Clear/Abandon button's width and wraps instead of running under it. (11) Chat tab only, hamr verbatim: "ask place and any non dimmed should get the standard white (less bright than ask) in the background of bareloop, … and dimmed should remain current color". The ask box keeps `--field-bg` (#ffffff light); every other enabled, non-readonly Chat-card input/select/textarea gets the new `--field-soft-bg` (#f7f7f9 light; dark = the theme input background); disabled/readonly (locked Reuse, dimmed) fields keep their current colour; nothing outside the Chat tab changes. (12) Chat card, hamr verbatim: "when it moves to run, chat should clear to avoid rerunning the same, as it still shows as such". The moment the page sees phase `signed` (the poll branch that switches to the Run tab) the Chat card resets to the empty card through the same `resetCard()` Clear uses; the run is untouched (Stop lives on the Run tab). (13) Progress list order, hamr verbatim: "drafting should be mentioned again, this is a chronological order". The list is a time-ordered log of segments: starting a different step closes the running line; a step that already has a line and starts again after other steps appends a NEW line at the end (the earlier line keeps its ✓ and detail; lines are never moved or reordered); a failed step still shows ✗ with its reason; id lookups (detail) target the latest line of that id (`advanceSteps`/`latestStep` in `src/panel/authorsession.js`). (14) The ask box `#chat-msg` is a `<textarea>` that wraps long text (grows to a few rows, then scrolls inside; vertical resize), not a sideways-scrolling input; keeps the white background, constant border and placeholder; Enter sends through the one main button (a no-session Enter never starts a draft), Shift+Enter is a newline; `mainButtonFor` still reads typed-text-empty from it. (15) The card's free-text boxes (Goal, Source, Destination, Success, Guardrails, Judge examples) wrap on multiple lines like the ask box: wrapping `<textarea>`s sharing the ask box's one `fitBox` (grow, then scroll inside, vertical resize), Enter is a newline; Job name stays a one-line input; ids, placeholders, prefill, reuse lock and the soft-white/locked colours unchanged. (16) The ask box `#chat-msg` is dimmed (disabled, emptied) whenever there is nothing to reply to — no session, no pending ask, or waiting on an install — and opens only while a pending ask takes typed text (the plan menu -> a change request, or any question); `askBoxOpenFor` is the one rule, `mainButtonFor` still reads typed-text-empty (true when disabled). (17) Chat-card field colours: editable (non-dimmed) fields = soft white with the ordinary 1px border, no added grey/thick border; dimmed/locked/disabled = grey; the focused field = blue (accent) border; only the ask box keeps its own constant border.
+
+
+## Addendum 2026-10-05 — P6 — repo jobs on a worktree, bareloop installs, link login, Settings price + open folder (signed by hamr 2026-10-05)
+
+Branch: chore/fix-ledger (hamr 2026-10-05: "we cont on this branch"). Build order = item order. Each item
+works alone, gets its own commit and its own tests, and the gate stays green between items.
+
+### Rulings carried in (hamr's words / picks)
+- 2026-10-04: panel REPO jobs run on a worktree branch INSIDE the person's repo, `.bareloop/wt/<runid>` —
+  one engine, many doors (the bundle door already does this, src/bundlerun.js:168-195).
+- 2026-10-05 Q1 = A: the worktree starts from where you are (your current commit). Uncommitted edits
+  are not in it, and the page says so.
+- 2026-10-05 Q2 = A: secrets already in the person's repo are masked where bareloop records them,
+  like the CLI. The panel no longer refuses a repo for a fake `sk-` fixture. Hard line #3 gets reworded (item 2).
+- 2026-10-05 Q3 = A: the worktree is made when DRAFTING starts. Drafting checks the job on it, and
+  Sign & run runs in that same worktree. One tree, one install.
+- 2026-10-05: BARELOOP installs packages before the agent starts — never the agent. `run` stays locked.
+- 2026-10-04 "b": link login (cookie), next part.
+- 2026-09-30: Settings — price in / price out per key row (per 1M tokens, advise the higher bracket);
+  a button that OPENS the keys folder instead of the path as text.
+
+### 1. Repo job = worktree in your repo (replaces the hidden copy for repos)
+Call site: src/panel/authorsession.js:550-620 (today: `prepareSource` into `<session>/source-seed`,
+then `prep.tree` everywhere, incl. `workdir: prep.tree` at :692).
+- At drafting start, for a repo source: `git -C <repo> worktree add --detach .bareloop/wt/<runid> HEAD`.
+  The session's tree IS that worktree. Same shape as the bundle door. Reuse its code; never write a second spelling.
+- Before the worktree is made: if `git status --porcelain` in the repo is not empty, a progress line says
+  "N uncommitted change(s) in your repo are not in this job — it starts from commit <short-sha>."
+  This is a notice, not a refusal.
+- `.bareloop/` is hidden from the person's own `git status` via the repo's private exclude
+  (`.git/info/exclude`), never their tracked `.gitignore`. Same rule as node_modules today.
+- The work branch: the engine's existing work-branch rule (`bareloop-<job>-N`, never main/master,
+  commit per step) — nothing new.
+- At the end of the run:
+  - GREEN: final commit, then `git worktree remove`. The branch stays. The Ended block shows
+    `git merge <branch>` and `git branch -D <branch>` (text — merge stays human).
+  - stopped / capped / died: the worktree folder stays, so Resume works. The Ended block names the folder.
+  - A drafting session closed without ever running: its worktree is removed (detached, so no branch).
+- Destination for a repo stays the path inside the repo (ruling B, 2026-10-05), unchanged.
+- Plain folders: the panel refuses them today (`nonRepoSourceMessage`), so nothing changes there.
+- Open, to rule at build if it shows up: a worktree left behind when the panel restarts mid-drafting.
+  Today the session is lost in that case anyway.
+
+### 2. Secrets in the person's repo: mask, don't refuse
+- The repo door no longer runs `prepareSource`'s secret-content refusal (src/source.js ~:613-640)
+  on a worktree repo. The `.env`-by-name refusal stays. Symlink, nested `.git` and the size rule: the
+  builder lists each front-door rule and says which ones still apply to a worktree. hamr rules any that are unclear.
+- Everything bareloop RECORDS from the worktree goes through the one redactor (`redactSecrets`,
+  src/validate.js): spine, gate audit, draft readout, run list. The builder proves this with a test repo
+  holding a fake `sk-` key that a worker reads: the key text appears in none of those files.
+- CLAUDE.md hard line #3, proposed wording:
+  "Secrets load from the environment; bareloop never puts one into the tree, the spine, the configs,
+  or the ledger. A secret already in the person's own repo is masked wherever bareloop records it
+  (an append-only log that captures a key captures it forever)."
+
+### 3. bareloop installs packages (npm), $0, before any token
+Call site: src/panel/authorsession.js:601-620 (today: `missingDependencies` → install-needed wait + Check again).
+- If the worktree has `package-lock.json` / `npm-shrinkwrap.json` and no node_modules:
+  bareloop runs `npm ci --ignore-scripts` in the worktree. Progress line: "Installing packages (npm ci)…".
+- If it fails, or the project uses another lock file (yarn/pnpm), fall back to today's message +
+  Check again, with the real command.
+- The agent never gets an install verb.
+- Other languages: later (M3b).
+
+### 4. Link login (cookie)
+Call sites: src/panel/server.js:2558-2562 (token injected into the HTML), :2644 (`mintToken`),
+src/panel/index.html:803-830 (`TOKEN`, `x-bareloop-token` header), `bareloop panel` startup print.
+- `bareloop panel` prints `http://127.0.0.1:<port>/?t=<64-hex>`.
+- `/?t=<token>` → sets an HttpOnly, SameSite=Strict cookie → 302 to `/`.
+- Every request needs the cookie. Without it you get a plain 403 page: "Open the link printed in the terminal."
+- The token is no longer inside the page. The page's JS sends no token header; the cookie rides along.
+- The token survives panel restarts: a 0600 file in a 0700 dir under ~/.config/bareloop.
+  The stale-token reload line stays for a token that really changed.
+- Host guard (127.0.0.1 only) unchanged.
+
+### 5. Settings → Providers: price in / out per row
+Call sites: src/panel/settingsroutes.js:147-160 (POST /api/settings/providers/row), src/panel/index.html
+Providers table (~:3469-3520). Config fields already exist: `keys.<ENV>.priceInPerM` / `priceOutPerM`.
+- Each row's Price cell becomes two boxes: "In $/1M" and "Out $/1M". They save with the row's existing Save.
+- Hint under the table: "If your vendor lists two prices, enter the higher one."
+- Empty = not set. Runs on that row show "estimated", as today. Only a number ≥ 0 saves; anything else is refused with a reason.
+- Mockup diff: the mockup has ONE Price column ("no price set"). This is two boxes — hamr's 2026-09-30 ask.
+
+### 6. Settings → Providers: Open keys folder
+Call sites: src/panel/settingsroutes.js (new POST /api/settings/open-keys-folder), index.html keyfile strip.
+- A button "Open keys folder" opens `~/.config/bareloop` in the file manager (`xdg-open` on Linux,
+  `open` on macOS). It never opens the file in an editor and never reads it.
+- Replaces the path shown as text. Mockup diff: the mockup has "Copy path". hamr asked for open (2026-09-30).
+- On another OS, or if the open fails: show the path as text, like today.
+
+### Proof (before any "done")
+- The full gate on the last commit: typecheck, build:types, npm test — each exit code and the last line quoted.
+- The orchestrator's own screenshots of every changed screen.
+- hamr clicks through it himself.
+- A paid run only on hamr's word (DeepSeek deepseek-flash).
+
+### Docs
+- One PRD line (v1.89) pointing here.
+- CLAUDE.md hard line #3 rewording (item 2).
+- bareloop.context.md: worktree layout, install step, link login.
+- CHANGELOG at release.
+
+### 7. Run names: `run-N` instead of the run id (signed by hamr 2026-10-06)
+- Runs of the same workflow (the same group in the Runs list) are numbered oldest first: `run-1`, `run-2`, … A resume is not a new run and keeps its number. A run that died or was stopped still gets a number.
+- `run-N` shows wherever a run is named for a person: the Runs list rows and cards, the workflow row, and the right-side header (`[✓] my-job (run-3) │ passed …`).
+- The real run id stays in the Audit tab and in every command line (`--resume <id>`, `git merge …`).
+- One owner: the server computes the number once; every view reads it. The page never counts on its own.
+- Proof: tests, the orchestrator's screenshot, then hamr clicks through.
+
+### 4. Link login — DROPPED (hamr 2026-10-06)
+- Dropped by hamr's word. The token-in-page exposure only matters to a program already running as the person on their own machine, and that program can already read `~/.config/bareloop/.env` or run `bareloop` itself (the local-trust model, not a sandbox). Websites cannot read the page cross-origin, and the panel answers only on 127.0.0.1 behind its Host guard. The only gain, a tab that survives a panel restart, does not pay for opening a special link. The token stays in the page as today.

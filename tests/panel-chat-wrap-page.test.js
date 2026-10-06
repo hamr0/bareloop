@@ -76,3 +76,23 @@ test('card box default heights (hamr 2026-10-05): goal/success/guardrails/judge 
   fitBox(el);
   assert.equal(el.style.height, '40px', 'an empty 2-row box keeps its 2-row height');
 });
+
+test('live growth (hamr 2026-10-06): an input event on each card textarea calls fitBox on THAT box', () => {
+  const m = PAGE.match(/\/\/ live growth:[^\n]*\n([\s\S]*?)window\.addEventListener\("resize"/);
+  assert.ok(m, 'a per-box input wiring sits before the resize handler');
+  const calls = [];
+  const boxes = {};
+  for (const id of WRAP_IDS) {
+    boxes[id] = { id, handlers: {}, addEventListener(t, f) { this.handlers[t] = f; } };
+  }
+  const document = { getElementById: (id) => boxes[id] };
+  const fitBox = (el) => calls.push(el.id);
+  // eslint-disable-next-line no-new-func
+  new Function('document', 'fitBox', m[1])(document, fitBox);
+  for (const id of WRAP_IDS) {
+    assert.equal(typeof boxes[id].handlers.input, 'function', `${id} listens for input`);
+    calls.length = 0;
+    boxes[id].handlers.input();
+    assert.deepEqual(calls, [id], `${id}: input fits that box`);
+  }
+});

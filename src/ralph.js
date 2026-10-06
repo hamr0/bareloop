@@ -49,7 +49,7 @@ const CLOSE_KILL_GRACE_MS = 2000;
  * @param {{env: NodeJS.ProcessEnv, cwd?: string, timeoutMs?: number}} o
  * @returns {Promise<{error: (Error & {code?: string})|null, status: number|null, signal: string|null, stdout: string, stderr: string}>}
  */
-function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
+export function spawnClose(cmd, args, { env, cwd, timeoutMs }) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { env, cwd });
     /** @type {Buffer[]} */ const outChunks = [];

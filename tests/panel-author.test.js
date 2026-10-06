@@ -638,9 +638,9 @@ test('Chat tab CSS: the P3 job-card/cap-row/chat-thread rules use fluid widths (
 // and "Check again" must re-check the SAME copy, never a new one.
 // ---------------------------------------------------------------------------
 
-test('bareloop never runs an install itself: authorsession.js spawns/execs nothing at all (no child_process import)', () => {
+test('the session door spawns nothing itself: authorsession.js has no child_process import (the npm ci runner is src/npminstall.js, injected as deps.npmCiFn)', () => {
   const src = readFileSync(new URL('../src/panel/authorsession.js', import.meta.url), 'utf8');
-  assert.ok(!/child_process/.test(src), 'authorsession.js must never import node:child_process — it only NAMES the install command, never runs it');
+  assert.ok(!/child_process/.test(src), 'authorsession.js must never import node:child_process — the install runs only through src/npminstall.js');
 });
 
 test('createSession: a repo with a dependency and no node_modules WAITS (install-needed), never refuses outright', async (t) => {
@@ -657,7 +657,8 @@ test('createSession: a repo with a dependency and no node_modules WAITS (install
   assert.equal(session.state.phase, 'install-needed', `expected install-needed, got ${session.state.phase} / ${session.state.error}`);
   assert.equal(session.state.pendingAsk?.kind, 'install-needed');
   assert.match(session.state.pendingAsk.command, /npm (ci|install)/);
-  assert.ok(session.state.pendingAsk.tree.includes('source-seed'), 'must point at THIS session\'s own copy, never the original repo');
+  assert.ok(session.state.pendingAsk.tree.includes(join('.bareloop', 'wt')), 'must point at THIS session\'s own worktree (P6 item 1), never the repo\'s own checkout');
+  assert.ok(session.state.pendingAsk.tree.startsWith(repo), 'the worktree lives INSIDE the person\'s repo');
   // build item 4 (mirrored server-side): a waiting session is still LIVE —
   // TERMINAL_PHASES (authorroutes.js) does not include install-needed.
   assert.notEqual(session.state.error, 'refused', 'install-needed must not be reported as a refusal');
@@ -1011,4 +1012,111 @@ test('abandon: spend already booked stays booked; a call in flight still books a
   assert.equal(session.state.phase, 'abandoned', 'whatever run() does afterwards never un-abandons');
   assert.match(String(lateGenerate), /refused: abandoned/, 'no NEW model call after abandon');
   assert.equal(session.abandon().ok, false, 'second abandon: not live');
+});
+
+// ---------------------------------------------------------------------------
+// P6 item 3: bareloop runs `npm ci --ignore-scripts` itself for an npm lock file, $0, before any token.
+// The runner is an injected seam (deps.npmCiFn) so no test touches the network.
+// ---------------------------------------------------------------------------
+
+/** a repo declaring a dependency with a committed lock file (any name) and no node_modules */
+function makeRepoWithLock(lockFile) {
+  const dir = tmp('panel-author-repo-lock-');
+  git(dir, ['init', '-q', '-b', 'main']);
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0', dependencies: { lodash: '^4.0.0' } }));
+  writeFileSync(join(dir, lockFile), '{}\n');
+  mkdirSync(join(dir, 'src'));
+  writeFileSync(join(dir, 'src', 'mod.js'), '// nothing yet\n');
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-q', '-m', 'seed']);
+  return dir;
+}
+
+async function untilPhaseOrAsk(session, ms = 4000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (session.state.phase === 'install-needed' || session.state.pendingAsk?.kind === 'menu' || ['refused', 'error'].includes(session.state.phase)) return;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+}
+
+function lockSession(repo, name, npmCiFn) {
+  return createSession(baseCard({ source: repo, jobName: name }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
+    sessionsRoot: tmp('panel-author-sess-lock-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('generate must not be called in this test'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }]),
+    authorFn: fakeAuthorFn(),
+    prepareSigningFn: fakePrepareSigningFn('deadlock00112233'),
+    npmCiFn,
+  });
+}
+
+test('P6 item 3: an npm lock file -> bareloop runs npm ci itself, the install step is done, and drafting continues with no install-needed wait', async () => {
+  const repo = makeRepoWithLock('package-lock.json');
+  const calls = [];
+  let liveStep = null;
+  const session = lockSession(repo, 'panel-author-npm-ci-ok', async (dir, o) => {
+    calls.push({ dir, o });
+    liveStep = { ...session.state.steps.find((x) => x.id === 'install') }; // what the person sees WHILE bareloop installs
+    mkdirSync(join(dir, 'node_modules'), { recursive: true }); // what a successful npm ci leaves
+    return { ok: true };
+  });
+  await untilPhaseOrAsk(session);
+  assert.equal(calls.length, 1, 'npm ci ran exactly once');
+  assert.ok(calls[0].dir.includes(join('.bareloop', 'wt')), 'in the job\'s worktree, never the person\'s checkout');
+  assert.notEqual(session.state.phase, 'install-needed', 'a successful install never waits');
+  assert.equal(session.state.pendingAsk?.kind, 'menu', `pipeline continued to the menu ask; phase=${session.state.phase} error=${session.state.error}`);
+  const step = session.state.steps.find((x) => x.id === 'install');
+  assert.equal(step.status, 'done');
+  assert.equal(liveStep.label, 'installing packages', 'bareloop is the one installing: the step must not read "waiting on install"');
+  assert.equal(liveStep.detail, 'Installing packages (npm ci)…');
+  assert.equal(step.detail, 'Installed packages (npm ci).', 'on success the detail is past tense');
+});
+
+test('P6 item 3: npm shrinkwrap counts as an npm lock file', async () => {
+  const repo = makeRepoWithLock('npm-shrinkwrap.json');
+  let n = 0;
+  const session = lockSession(repo, 'panel-author-npm-ci-shrinkwrap', async (dir) => { n += 1; mkdirSync(join(dir, 'node_modules')); return { ok: true }; });
+  await untilPhaseOrAsk(session);
+  assert.equal(n, 1);
+  assert.equal(session.state.pendingAsk?.kind, 'menu');
+});
+
+test('P6 item 3: npm ci FAILS -> today\'s install-needed wait + real command, the line says it failed and why (redacted)', async () => {
+  const repo = makeRepoWithLock('package-lock.json');
+  const session = lockSession(repo, 'panel-author-npm-ci-fail', async () => ({ ok: false, reason: 'ERESOLVE could not resolve token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789' }));
+  await untilPhaseOrAsk(session);
+  assert.equal(session.state.phase, 'install-needed');
+  assert.equal(session.state.pendingAsk.kind, 'install-needed');
+  assert.match(session.state.pendingAsk.command, /npm ci/);
+  const step = session.state.steps.find((x) => x.id === 'install');
+  assert.match(step.detail, /npm ci\) failed: ERESOLVE/);
+  assert.equal(step.label, 'waiting on install', 'the person is installing now: the label goes back');
+  assert.equal(session.state.progressLabel, 'waiting on install');
+  assert.match(step.detail, /Run: cd .* && npm ci/);
+  assert.ok(!/sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789/.test(step.detail), 'the failure reason goes through the one redactor');
+  assert.equal(session.checkDeps().ok, true, 'Check again still works');
+});
+
+test('P6 item 3: a yarn lock file -> no npm call at all, today\'s wait with the real yarn command', async () => {
+  const repo = makeRepoWithLock('yarn.lock');
+  let n = 0;
+  const session = lockSession(repo, 'panel-author-yarn', async () => { n += 1; return { ok: true }; });
+  await untilPhaseOrAsk(session);
+  assert.equal(n, 0, 'npm is never called for another lock file');
+  assert.equal(session.state.phase, 'install-needed');
+  assert.match(session.state.pendingAsk.command, /yarn install --frozen-lockfile/);
+  const step = session.state.steps.find((x) => x.id === 'install');
+  assert.ok(!/failed/.test(step.detail), 'nothing failed — it was never tried');
+  assert.equal(step.label, 'waiting on install');
+});
+
+test('P6 item 3: npm ci "succeeds" but node_modules is still missing -> falls back to the wait', async () => {
+  const repo = makeRepoWithLock('package-lock.json');
+  const session = lockSession(repo, 'panel-author-npm-ci-lies', async () => ({ ok: true }));
+  await untilPhaseOrAsk(session);
+  assert.equal(session.state.phase, 'install-needed');
 });

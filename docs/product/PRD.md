@@ -1001,6 +1001,41 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     turn drafts the signed goal from Goal + What success looks like, and the person signs
     after the 2-round conversation — docs/product/ITEM33-BUILD.md M3.
 
+    **2026-10-06 — rubric job shape. DRAFT: not ruled, not signed** (hamr + session tree-ab,
+    fwd consulted). A list of rough recommendations to pick up when the rubric (soft-green)
+    work starts, to be tuned with hamr first. The reasoning, worked examples and doubts are in
+    `docs/logs/RUBRIC-LEARNINGS.md` (cited below as RL with line ranges). Where a point would
+    change an item 33 ruling above, it says so; the ruling stands until hamr rules otherwise.
+
+    | # | Draft spec | Changes | Why (RL) |
+    |---|---|---|---|
+    | R0 | **Scope.** Rubric is for research and search jobs (web fetch, local sources), not code jobs. A judge checks each step; one human accepts or reruns at the end. A human needed mid-flow → fwdloop. | narrows item 33's "repo OR plain folder" for soft-green; the doc-comment rules stay, but unused | L114–144, L145–168 |
+    | R1 | **Happened check, built in, before any judge**: output exists, not empty, not cut off. A failed step never reaches the judge. | extends base rule 1 (output) from the destination to every step | L145–168 |
+    | R2 | **Cited check, built in, universal**: no verbatim quote, no fact; no fact, red. `unquoted()` becomes a stage-level check, not a per-rule helper. | = base rule 2 (citation), made per step | L20–32 |
+    | R3 | **Frozen check, built in**: every source and every fetched page is frozen with a sha256 at the moment it is read; the judge quotes only the frozen copy, never worker-written text. | matches the ruled "web-search evidence is the arbiter's own record"; adds the per-fetch hash | L145–168, L169–200 |
+    | R4 | **Clean check, built in**: crash, unparseable and unpriced judge calls are red, never green. | mostly built (`artifact-red`, `pricing-red`); write down in one place | L145–168 |
+    | R5 | **Calibration by mutation**: one deterministic edit of a real artifact per `~` line, the expected answer known by construction. Model-drafted cases at most as extras. Size 10 and the 5 injection styles stay. | changes "the AI generates the cases" (Calibration, RULED) | L33–87 |
+    | R6 | **Repetition.** At calibration: grade each case N times, all must be right. On live runs: read twice; disagreement → unsure → red (the agreement check). Never opens a mid-run question. | new | L88–101 |
+    | R7 | **Human at the end only**: the existing review door (accept / rerun). Accept binds the output's hash, as fwdloop's does. No asks in a rubric job. | none, consistent with the bareloop/fwdloop line | L145–168 |
+    | R8 | **A miss is fixed by a new `~` line + a mutation case + a re-sign**, never a smarter judge. | none (existing doctrine) | L20–32 |
+    | R9 | **Intake: the rubric radio changes the form** to **Job › Source › Destination › Guardrails**. No Success field: every step carries its own checks, and job-wide checks go on the last step's `~` or are built in. | changes the ruled intake form (Goal, What success looks like); see open Q1 on Judge examples | L169–200 |
+    | R10 | **Job editor**: steps and `~` lines strictly alternate, 1 › ~ › 2 › ~. Numbers and `~` sit in a gutter outside the text box and appear on their own (as fwdloop's do); the person types words only. A step is one continuous line until Enter; Enter → `~`; Enter → next number. One `~` line per step, holding comma-separated checks. Every step needs a `~`: an empty `~` turns red and drafting is refused with an error; a step with no check is merged into its neighbour. | new | L169–200 |
+    | R11 | **Each `~` part is sorted at authoring**: countable (code checks it — word, section, row counts) or cited (the judge quotes, code checks). A part that is neither is red. A card that contradicts itself (e.g. 600 words vs 3 × 250) is caught before signing. | builds on the ruled non-code check catalogue (H3) | L169–200 |
+    | R12 | **Source: several, named**, one per gutter-numbered line, `name: value`. A value is a local file, a fixed URL (only that page), or `search` (the worker may search and follow results; Guardrails can limit domains). Steps refer to sources by name; a step naming a source that does not exist is flagged. `.docx` reads through fwdloop's `src/docx.js`, reused. | changes "one URL"; uses H6 (barebrowse search, in scope); re-opens H7 / L11 (Word input) because a real job needs it | L169–200 |
+    | R13 | **Where checks show**: a locked legend under the Job box; chips per step in the Run tab — `(happened) (cited) (frozen) (clean) (agreement)` + the `~` checks, green/red, legend at the top of the step list; the proof in Audit / logs — each judge call as a row with quote, source and the source's sha (from the existing `judge-round` records). | new (panel) | L201–220 |
+    | R14 | **Promote it as "research you don't have to fact-check"**, strongest as recurring watch jobs on the existing `cadence` field — silent until something matches. | positioning | L114–144 |
+
+    **Open questions for the tuning session:**
+    1. Judge examples (the ruled softgreen field): kept beside the `~` lines, or replaced by them
+       plus mutation of the real source?
+    2. Repetition: N at calibration (3?), and its cost ceiling as a share of the job budget.
+    3. Which judge rule comes first — a general "a quoted value meets a condition" rule, or one
+       per job kind?
+    4. fwd's "a correct red on a clean input counts as a catch, not a miss" — what it means for
+       scoring calibration (RL L145–168).
+    5. Does the worker report a typed `done` boolean per step (fwdloop has one), or does the
+       happened check rest on the output alone?
+
 34. **Item 34 — loose ends housed** (hamr, 2026-09-13: every open end gets fix / keep /
     backlog / remove).
 
@@ -1311,3 +1346,13 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Reuse workflow is the same signed job on a new source: green runs and imported jobs only, five open boxes (Source, Destination, Model, $ cap, Time cap — Model opened 2026-10-04), the rest locked and refused by the server, never drafted.
 - Same-job identity is `workflowKey` (the signed spec without source, fence, caps and the worker's provider/baseUrl/model); the signature hash is unchanged (it still covers all of them) and the person signs the new one.
 - Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-03 and the 2026-10-04 Model ruling.
+
+### Panel P6: repo jobs on a worktree, bareloop installs, Settings price, run names (v1.89 — 2026-10-05)
+
+- A panel repo job runs on a worktree in the person's own repo (`.bareloop/wt/<runid>`), made at drafting start from the current commit; uncommitted edits are named, never included. Green leaves a branch to merge by hand.
+- Secrets already in the person's repo are masked wherever bareloop records them, never a reason to refuse the repo (hard line #3 reworded).
+- bareloop runs `npm ci --ignore-scripts` itself before any token; the agent never installs.
+- Link login (cookie) was DROPPED by hamr 2026-10-06: the token stays in the page, as before.
+- Settings: price in / price out per key row (per 1M tokens), and an Open keys folder button in place of the path.
+- Runs of one job are named `run-N` (oldest first, one server-owned number); a panel-authored run shows its drafting as the first part of its views.
+- Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-05 P6.

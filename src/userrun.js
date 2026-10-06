@@ -24,11 +24,13 @@
 // green ONE job end to end. That green GRADUATES the bridge: the plan the agent
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, rmSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
+import { commitWork, removeWorktree } from './worktree.js';
+import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
 import { jobSpecHash, resolveWorkerModel, validateJob } from './job.js';
@@ -268,6 +270,9 @@ class ExitSignal extends Error {
  * @property {string} [workdir] the patient's tree
  * @property {string} [seed] the patient's frozen seed commit
  * @property {string} [spineName] the spine directory name, beside `workdir`
+ * @property {string} [into] the source door's own directory (`source.json`, and the spine directory beside it).
+ *   Default `dirname(workdir)` — the copied-tree layout, where the tree is `<into>/tree`. A repo job on a WORKTREE
+ *   (P6 item 1) has its tree inside the person's repo, so its `into` is passed explicitly.
  * @property {string|null} [model] the raw `--model` tier name (`sonnet`/`haiku`), or null for the default
  * @property {string|null} [readShim] the raw `--read-shim` arm name, or null for the default
  * @property {string|null} [scout] the raw `--scout` value (`on`/`off`), or null for the default
@@ -299,6 +304,7 @@ class ExitSignal extends Error {
  * @property {string} workdir
  * @property {string} seed
  * @property {string} spineName
+ * @property {string} [into] see `RunOpts.into`
  * @property {string|null} model
  * @property {string|null} readShim
  * @property {string|null} scout
@@ -660,7 +666,10 @@ async function execute(ctx) {
    * both the RESUME reader below and the live run further down need them. Two spellings of
    * one path is how `--resume` comes to read a different directory than the run writes. */
   const wd = resolve(WORKDIR);
-  const spineDir = ctx.bundle ? ctx.bundle.runDir : join(wd, '..', target.spine);
+  /** the source door's own directory: where `source.json` sits and the spine directory goes. The copied-tree layout
+   * has the tree at `<into>/tree`, so `dirname(wd)`; a worktree run passes it (its tree is inside the person's repo). */
+  const into = ctx.into !== undefined ? resolve(ctx.into) : dirname(wd);
+  const spineDir = ctx.bundle ? ctx.bundle.runDir : join(into, target.spine);
   /** `--resume` takes the runid (the conventional `<spine dir>/u-<runid>.jsonl`) or an
    * explicit path — the path form is what makes these gates testable without touching
    * an operator's real spine directory. */
@@ -1767,7 +1776,7 @@ async function execute(ctx) {
   // manifest — that absence IS "repo jobs untouched", never an invented
   // destination for a job that declared none. A manifest that EXISTS but
   // cannot be read or parsed is a named $0 stop, never a silent skip.
-  const sourceManifest = await readSourceManifest(dirname(wd));
+  const sourceManifest = await readSourceManifest(into);
   if (sourceManifest.stop !== null) {
     emit('destination-refused', { code: sourceManifest.code, detail: sourceManifest.stop });
     emit('run-end', { outcome: 'escalated' });
@@ -1786,7 +1795,7 @@ async function execute(ctx) {
     // against `wd` alone let a destination at `<into>/profile.md` (inside the
     // run's own scratch area, outside the frozen tree, but still bareloop's
     // own scratch plumbing no destination should land in) slip through clean.
-    const dp = await proveDestination(frontDoor.destination, { into: dirname(wd) });
+    const dp = await proveDestination(frontDoor.destination, { into });
     if (dp.stop !== null) {
       emit('destination-refused', { code: dp.code, detail: dp.stop });
       emit('run-end', { outcome: 'escalated' });
@@ -2028,7 +2037,36 @@ async function execute(ctx) {
       const prior = readFileSync(auditFile, 'utf8');
       appendFileSync(auditFile, `${prior.length > 0 && !prior.endsWith('\n') ? '\n' : ''}${legAuditText}`);
       unlinkSync(auditSrc);
-    } else renameSync(auditSrc, auditFile);
+    } else moveFile(auditSrc, auditFile);
+  }
+  // ── P6 item 1: a repo job on a WORKTREE in the person's own repo. GREEN: the run's work is committed on its work
+  // branch and the worktree folder removed (an already-green is a green: a cold one has nothing to commit, a resumed one may hold uncommitted work) — the branch stays, and the merge stays the person's. Anything else
+  // (stopped, capped, died, red): the folder stays so Resume works, and the Ended block names it. A green that opened a
+  // review door is committed too (the branch always holds the work) but keeps its folder: an accept at the door re-runs
+  // the mechanical stages against that tree.
+  // It runs HERE, right after the gate-audit move, so a later readout step that throws can never skip the commit.
+  const doorHere = events.findLast((e) => e.type === 'review-door') ?? null;
+  /** @type {string | null} */
+  let worktreeLine = null;
+  const wtManifest = sourceManifest.present ? sourceManifest.manifest : null;
+  if (typeof wtManifest?.worktree === 'string' && typeof wtManifest?.repo === 'string') {
+    if (outcome === 'green' || outcome === 'already-green') {
+      const wb = events.findLast((e) => e.type === 'work-branch' && typeof e.branch === 'string') ?? null;
+      try {
+        // the branch ALWAYS holds a green's work (the panel tells the person to merge it); only the FOLDER waits on a door
+        const fin = commitWork(wd, `bareloop: ${spec.job} (run ${runid})`);
+        // an already-green COLD run never made a work branch (the close passed before any work): nothing to name
+        const done = fin.committed ? `final commit ${fin.sha}` : (wb ? 'nothing left to commit' : 'nothing was changed (the close already passed)');
+        const onBranch = wb?.branch ?? 'the work branch';
+        if (doorHere) worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; the worktree folder is KEPT for the review door — ${wd}`;
+        else {
+          const gone = removeWorktree(wtManifest.repo, wd);
+          worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; ${gone ? 'the worktree folder is removed' : `the worktree folder could not be removed — ${wd}`}`;
+        }
+      } catch (e) {
+        worktreeLine = `\nWORKTREE  the final commit failed, so the folder is KEPT: ${wd} (${redactSecrets(String(/** @type {Error} */ (e).message).split('\n')[0])})`;
+      }
+    }
   }
   const writes = audit.filter((e) => e.decision === 'allow' && (e.action?.type === 'write' || e.action?.type === 'edit'));
 
@@ -2178,7 +2216,7 @@ async function execute(ctx) {
     // as "contained". D3 rework: `destination` is a DIRECTORY now, and a job
     // may produce more than one file — `copyOut` delivers every non-empty file
     // under `output/`, each under its own dated name, and returns the list.
-    const co = await copyOut({ tree: wd, into: dirname(wd), destination: frontDoor.destination });
+    const co = await copyOut({ tree: wd, into, destination: frontDoor.destination });
     if (co.stop === null) {
       // `f.path`, never `frontDoor.destination` — each file lands under its
       // OWN dated name (M2b fix 4: `profile-2026-09-12.md`, `-2` the same
@@ -2264,7 +2302,6 @@ async function execute(ctx) {
   // ENDED and its verdict is minted — this readout offers the three doors over it and
   // changes nothing about the outcome printed above. Read off the run's own record
   // (never off a flag), so a green that opened no door prints exactly what it always did.
-  const doorHere = events.findLast((e) => e.type === 'review-door') ?? null;
   if (doorHere) {
     out('');
     for (const l of reviewDoorPackage({
@@ -2364,6 +2401,7 @@ async function execute(ctx) {
       out('MEMORY-CACHE  no record (run ended before its summary)');
     }
   }
+  if (worktreeLine !== null) out(worktreeLine);
   out(`\nspine     ${spineFile}`);
   out(`patient   left AS THE RUN LEFT IT (read it before the next run resets to the seed)`);
 
@@ -2393,6 +2431,7 @@ function buildCtx(mode, opts) {
     workdir: /** @type {string} */ (opts.workdir),
     seed: /** @type {string} */ (opts.seed),
     spineName: /** @type {string} */ (opts.spineName),
+    ...(opts.into === undefined ? {} : { into: opts.into }),
     model: opts.model ?? null,
     readShim: opts.readShim ?? null,
     scout: opts.scout ?? null,
@@ -2489,7 +2528,7 @@ export async function main(argv, deps = {}) {
       die(`give one of --job <key> (one of: ${Object.keys(JOBS).join(', ')}) or --spec <path to resolved-spec.json> `
         + '— a run has to name a job one of the two ways.');
     }
-    /** @type {{spec: string, workdir: string, spine: string, seed: string}} */
+    /** @type {{spec: string, workdir: string, spine: string, seed: string, into?: string}} */
     let target;
     /** the spec's own path, wherever it was found — a `jobs/` file for `--job`,
      * an arbitrary `resolved-spec.json` for `--spec`. */
@@ -2588,9 +2627,14 @@ export async function main(argv, deps = {}) {
       if (typeof seed !== 'string' || !seed) {
         die(`--spec ${specPath}: ${into}/source.json carries no seed commit — not a prepared copy this runner can trust`);
       }
-      const specWorkdir = join(into, 'tree');
+      // P6 item 1: a repo job's tree is a WORKTREE in the person's own repo, recorded in the manifest; every other prepared
+      // copy keeps its tree at `<into>/tree`
+      const worktreeRun = typeof manifestRead.manifest.worktree === 'string' && manifestRead.manifest.worktree !== '';
+      const specWorkdir = worktreeRun ? manifestRead.manifest.worktree : join(into, 'tree');
       if (!existsSync(specWorkdir) || !existsSync(join(specWorkdir, '.git'))) {
-        die(`--spec ${specPath}: the prepared copy's tree is gone (${specWorkdir} has no .git) — nothing to run against; re-prepare the source`);
+        die(worktreeRun
+          ? `--spec ${specPath}: the job's worktree is gone (${specWorkdir} has no .git) — nothing to run against; start the job again from the page`
+          : `--spec ${specPath}: the prepared copy's tree is gone (${specWorkdir} has no .git) — nothing to run against; re-prepare the source`);
       }
       target = {
         // display-only in --spec mode (SPEC_DESC below is what actually prints)
@@ -2601,6 +2645,7 @@ export async function main(argv, deps = {}) {
         // is, just computed instead of typed by a developer.
         spine: `${spec.job}-bareloop`,
         seed,
+        into,
       };
       SELECTOR = `--spec ${specPath}`;
       SPEC_DESC = specPath;
@@ -2614,6 +2659,7 @@ export async function main(argv, deps = {}) {
       workdir: target.workdir,
       seed: target.seed,
       spineName: target.spine,
+      ...(target.into === undefined ? {} : { into: target.into }),
       model: argFlag('model'),
       readShim: argFlag('read-shim'),
       scout: argFlag('scout'),

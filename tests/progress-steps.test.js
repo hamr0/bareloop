@@ -66,20 +66,16 @@ test('a reuse that reaches prepared lists setup, copy, check, reuse, hash — ev
   assert.equal(s.state.messages.filter((m) => m.role === 'system').length, 0, 'no pipeline line goes into the thread');
 });
 
-test('the secret front door refusing a repo is ONE failed "checking source" line after a done "copying source", the reason once', async () => {
+test('a repo carrying a secret-shaped key is NOT refused (P6 item 2, hamr 2026-10-05 Q2=A): every step done, no "secret shape" line', async () => {
   const fake = `const k = "${'sk-'}${'a'.repeat(40)}";\n`;
   const s = start(makeRepo({ 'test/a.test.js': fake, 'test/b.test.js': fake }), setup());
   assert.ok(await until(() => settled(s)));
-  assert.equal(s.state.phase, 'refused');
-  assert.deepEqual(s.state.steps.map((x) => [x.id, x.status]), [['setup', 'done'], ['copy', 'done'], ['check', 'failed']]);
-  const failed = s.state.steps.at(-1);
-  assert.equal(failed.detail, s.state.error);
-  assert.match(failed.detail, /2 file\(s\) carry a known secret shape/);
-  assert.equal(s.state.steps.filter((x) => x.detail.includes('secret shape')).length, 1);
-  assert.equal(s.state.messages.length, 0);
+  assert.equal(s.state.phase, 'prepared', String(s.state.error));
+  assert.ok(s.state.steps.every((x) => x.status === 'done'));
+  assert.equal(s.state.steps.filter((x) => x.detail.includes('secret shape')).length, 0);
 });
 
-test('a source that cannot be reached fails "copying source"; a bad key fails "checking setup" before anything is copied', async () => {
+test('a source that cannot be reached fails "making worktree"; a bad key fails "checking setup" before anything is copied', async () => {
   const ctx = setup();
   const missing = start(join(tmpdir(), 'steps-no-such-dir-xyz'), ctx);
   assert.ok(await until(() => settled(missing)));
@@ -114,7 +110,7 @@ test('chronological log (hamr 2026-10-05): a step that restarts after others app
   for (const ph of ['seed-read', 'scout', 'confirm', 'listing']) go(PHASE_STEP[ph]);
   go(PHASE_STEP['author-call'], 'deepseek-flash, $1.00 cap');
   assert.deepEqual(steps.map((x) => [x.label, x.status]), [
-    ['checking setup', 'done'], ['copying source', 'done'], ['checking source', 'done'], ['waiting on install', 'done'],
+    ['checking setup', 'done'], ['making worktree', 'done'], ['checking source', 'done'], ['waiting on install', 'done'],
     ['reading repo', 'done'], ['scouting repo', 'done'], ['confirming plan', 'done'], ['listing files', 'done'],
     ['drafting', 'running'],
   ]);

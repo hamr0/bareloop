@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync, statSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readConfig, configPath, updateConfig } from '../src/config.js';
-import { applyConfiguredKey, keyNameFor, keyRows, findRow, modelChoiceFor, chatModels, defaultsFor, PRESET_KEY_NAMES, NO_KEY_PLACEHOLDER } from '../src/providerrows.js';
+import { ratesFor, applyConfiguredKey, keyNameFor, keyRows, findRow, modelChoiceFor, chatModels, defaultsFor, PRESET_KEY_NAMES, NO_KEY_PLACEHOLDER } from '../src/providerrows.js';
 import { apiKeyProblem } from '../src/providers.js';
 import { Loop } from 'bare-agent';
 import { rateProvenance } from '../src/ledger.js';
@@ -108,7 +108,7 @@ test('/api/settings/providers: needs the token; a missing keys file is created; 
   assert.deepEqual([by.MY_OTHER.name, by.MY_OTHER.shape, by.MY_OTHER.baseUrl], ['', 'openai-api', '']);
   assert.equal(by.MY_OTHER.keyStatus, 'found');
   assert.deepEqual(r.shapes.map((x) => x.label), ['Anthropic', 'OpenAI-compatible', 'Gemini']);
-  assert.equal('price' in by.MY_OTHER, false, 'no price anywhere');
+  assert.deepEqual([by.MY_OTHER.priceInPerM, by.MY_OTHER.priceOutPerM], [null, null], 'no price set = null, never 0');
   assert.equal(by.DEEPSEEK_API_KEY.balance.kind, 'fetch');
   // Reload keys = the same GET: an edited file is re-read
   keysFile(home, `MY_OTHER=${SECRET_B}\n`);
@@ -138,6 +138,46 @@ test('row edit: Name / API shape / Base URL save to config.json `keys`; a bad va
   assert.equal((await post('/api/settings/providers/row', { ...body, baseUrl: 'https://proxy.example/v1///' })).status, 200);
   assert.equal(readConfig({ home }).config.keys.MY_OTHER.baseUrl, 'https://proxy.example/v1');
   assert.equal(readFileSync(configPath(home), 'utf8').includes(SECRET_B), false, 'config.json holds no value');
+});
+
+test('row price: In / Out save to config.json priceInPerM / priceOutPerM with the row; blank removes the field (never 0); half-set, negative, non-number or no token saves nothing; ratesFor reads what was saved', async (t) => {
+  const home = tmp(t);
+  keysFile(home, `MY_OTHER=${SECRET_B}\n`);
+  const { get, post, token } = await panel(t, home, async () => { throw new Error('no network'); });
+  const body = { envName: 'MY_OTHER', name: 'my-model', shape: 'openai-api', baseUrl: '' };
+  const cfg = () => readConfig({ home }).config;
+  assert.equal((await post('/api/settings/providers/row', { ...body, priceInPerM: '1', priceOutPerM: '2' }, { 'content-type': 'application/json' })).status, 403, 'no token');
+  for (const bad of [
+    { priceInPerM: '1', priceOutPerM: '' },
+    { priceInPerM: '', priceOutPerM: '2' },
+    { priceInPerM: '-1', priceOutPerM: '2' },
+    { priceInPerM: 'abc', priceOutPerM: '2' },
+    { priceInPerM: '1', priceOutPerM: 'Infinity' },
+    { priceInPerM: '1', priceOutPerM: '0x10' },
+    { priceInPerM: true, priceOutPerM: 2 },
+    { priceInPerM: -0.5, priceOutPerM: 2 },
+  ]) {
+    const r = await post('/api/settings/providers/row', { ...body, ...bad });
+    assert.equal(r.status, 400, JSON.stringify(bad));
+    assert.equal(typeof (await r.json()).error, 'string');
+  }
+  assert.equal('keys' in cfg(), false, 'nothing saved by any refusal');
+  assert.equal((await post('/api/settings/providers/row', { ...body, priceInPerM: '0.5', priceOutPerM: 2 })).status, 200);
+  assert.deepEqual(cfg().keys.MY_OTHER, { name: 'my-model', shape: 'openai-api', baseUrl: '', priceInPerM: 0.5, priceOutPerM: 2 });
+  const row = (await get('/api/settings/providers')).rows[0];
+  assert.deepEqual([row.priceInPerM, row.priceOutPerM], [0.5, 2]);
+  const priced = ratesFor('openai-api', undefined, keyRows({ filled: ['MY_OTHER'], config: cfg() }), 'my-model');
+  assert.deepEqual([priced.inPerM, priced.outPerM], [0.5, 2]);
+  // a body without the price fields leaves the saved price alone; 0 is a real price
+  assert.equal((await post('/api/settings/providers/row', body)).status, 200);
+  assert.deepEqual([cfg().keys.MY_OTHER.priceInPerM, cfg().keys.MY_OTHER.priceOutPerM], [0.5, 2]);
+  assert.equal((await post('/api/settings/providers/row', { ...body, priceInPerM: '0', priceOutPerM: '0' })).status, 200);
+  assert.deepEqual([cfg().keys.MY_OTHER.priceInPerM, cfg().keys.MY_OTHER.priceOutPerM], [0, 0]);
+  // blank both = not set: the fields are gone, not 0
+  assert.equal((await post('/api/settings/providers/row', { ...body, priceInPerM: '', priceOutPerM: null })).status, 200);
+  assert.equal('priceInPerM' in cfg().keys.MY_OTHER || 'priceOutPerM' in cfg().keys.MY_OTHER, false);
+  assert.equal(ratesFor('openai-api', undefined, keyRows({ filled: ['MY_OTHER'], config: cfg() }), 'my-model'), null, 'no price = estimated, as today');
+  assert.equal(readFileSync(configPath(home), 'utf8').includes(SECRET_B), false);
 });
 
 test('Test button: no key = no network call; with a key = ONE GET of the models list at THAT row\'s shape + URL, key only in a header; the response never carries the key', async (t) => {
@@ -259,7 +299,7 @@ test('balance: DeepSeek fetched server-side (key only in a header) for the row o
   assert.equal(readConfig({ home }).config.anthropicBalanceNote, 12.5);
 });
 
-test('panel page: Providers tab has Name / API shape / Base URL / Test / Tokens used, saves through the row route; no Price, no key dropdown, no add / remove; Chat has no token price', () => {
+test('panel page: Providers tab has Name / API shape / Base URL / Test / Tokens used, saves through the row route; Price is two boxes (In / Out), no key dropdown, no add / remove; Chat has no token price', () => {
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
   for (const id of ['tab-providers', 'panel-providers', 'pv-rows', 'btn-reload-keys', 'pv-keyfile-path']) {
     assert.ok(html.includes(`id="${id}"`), id);
@@ -270,7 +310,15 @@ test('panel page: Providers tab has Name / API shape / Base URL / Test / Tokens 
   assert.match(html, /pv-url/);
   assert.match(html, /\/api\/settings\/providers\/row/);
   assert.match(html, /\/api\/author\/models/);
-  assert.doesNotMatch(html, /<th>Price<\/th>|pv-key\b|providers\/key|jf-price|Token price/);
+  const head = html.match(/<table class="pv-table" data-testid="provider-table">\s*<thead>\s*<tr>(.*?)<\/tr>/s)[1];
+  assert.deepEqual([...head.matchAll(/<th>(.*?)<\/th>/g)].map((m) => m[1]),
+    ['Key', 'Name', 'API shape', 'Base URL', 'Test', 'Tokens used', 'Balance', 'In $/1M', 'Out $/1M'], 'Providers columns, in order');
+  assert.doesNotMatch(html, /<th>Price<\/th>|<label class="hint">(In|Out) \$\/1M/, 'no single Price column, no in-cell label');
+  assert.match(html, /<td colspan="9" class="hint" data-testid="pv-empty">/, 'empty row spans all nine columns');
+  assert.match(html, /priceIn: tr\.querySelector\("\.pv-price-in"\)\.value,\s*priceOut: tr\.querySelector\("\.pv-price-out"\)\.value/, 'the row Save reads both price boxes');
+  assert.match(html, /body\.priceInPerM = pin; body\.priceOutPerM = pout;/, 'and carries both prices (when both or neither are filled)');
+  assert.ok(html.includes('If your vendor lists two prices, enter the higher one.'));
+  assert.doesNotMatch(html, /pv-key\b|providers\/key|jf-price|Token price/);
   assert.doesNotMatch(html, /btn-add-provider|edit-provider-|remove-provider-/);
 });
 
@@ -339,8 +387,59 @@ test('panel page: [Reload keys] is always on the Providers tab (static markup, n
   assert.match(strip, /<button class="btn small" type="button" id="btn-reload-keys" data-testid="btn-reload-keys">Reload keys<\/button>/);
   assert.doesNotMatch(strip.slice(0, strip.indexOf('id="btn-reload-keys"')), /hidden/, 'no hidden attribute on the strip or its button');
   assert.ok(html.indexOf('id="btn-reload-keys"') < html.indexOf('id="pv-rows"'), 'it sits above the table, so an empty table cannot take it away');
-  // the markup carries no literal path; the page fills it from the server's keysFile.path (the HOME the server reads)
+  // the markup carries no literal path; the keys folder opens through the server (Open keys folder), and the
+  // path shows as text only when the server could not open it (the server's own path, the HOME it reads)
   assert.doesNotMatch(strip, /\.config\/bareloop/);
-  assert.match(html, /getElementById\("pv-keyfile-path"\)\.textContent = kf\.path;/);
+  assert.match(strip, /id="btn-open-keys-folder"[^>]*>Open keys folder<\/button>/);
+  assert.doesNotMatch(strip, /Copy path/);
+  assert.match(html, /\/api\/settings\/open-keys-folder/);
+  assert.match(html, /Could not open it here\. Your keys folder: " \+ \(b\.path/);
   assert.match(html, /path unknown — could not read providers/, 'a failed load says the path is unknown rather than showing a guess');
+});
+
+test('Open keys folder: linux = xdg-open <folder>, darwin = open <folder> (argv, detached, no shell, never the file); win32 / a spawn error / a throw = "could not open" + the path; no token = refused, nothing spawned', async (t) => {
+  const { EventEmitter } = await import('node:events');
+  const home = tmp(t);
+  /** @param {string} platform @param {'spawn'|'error'|'throw'} how */
+  const run = async (platform, how) => {
+    const calls = [];
+    const openFolderSpawn = (cmd, args, o) => {
+      calls.push({ cmd, args, o });
+      if (how === 'throw') throw new Error('EACCES');
+      const ee = new EventEmitter();
+      ee.unref = () => { ee.unrefd = true; };
+      process.nextTick(() => ee.emit(how === 'error' ? 'error' : 'spawn', ...(how === 'error' ? [new Error('ENOENT')] : [])));
+      calls.child = ee;
+      return ee;
+    };
+    const { createPanelServer: mk } = await import('../src/panel/server.js');
+    const { port, token, close } = await mk({ port: 0, home, env: {}, sessionsRoot: tmp(t), openFolderSpawn, platform });
+    t.after(() => close());
+    const url = `http://127.0.0.1:${port}/api/settings/open-keys-folder`;
+    const H = { 'x-bareloop-token': token, 'content-type': 'application/json' };
+    const noTok = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const callsAfterRefusal = calls.length;
+    const r = await fetch(url, { method: 'POST', headers: H, body: '{}' });
+    return { calls, noTokStatus: noTok.status, callsAfterRefusal, status: r.status, body: await r.json() };
+  };
+  const lin = await run('linux', 'spawn');
+  assert.equal(lin.noTokStatus, 403);
+  assert.equal(lin.callsAfterRefusal, 0, 'refused without the token: nothing spawned');
+  assert.equal(lin.calls.length, 1);
+  assert.deepEqual([lin.calls[0].cmd, lin.calls[0].args], ['xdg-open', [home]], 'the folder, never the .env file');
+  assert.equal(lin.calls[0].o.detached, true);
+  assert.equal(lin.calls[0].o.stdio, 'ignore');
+  assert.equal(lin.calls[0].o.shell, undefined, 'no shell');
+  assert.equal(lin.calls.child.unrefd, true);
+  assert.deepEqual(lin.body, { ok: true, opened: true, path: home });
+  const mac = await run('darwin', 'spawn');
+  assert.deepEqual([mac.calls[0].cmd, mac.calls[0].args], ['open', [home]]);
+  assert.equal(mac.body.opened, true);
+  const win = await run('win32', 'spawn');
+  assert.equal(win.calls.length, 0, 'another OS never spawns');
+  assert.deepEqual(win.body, { ok: true, opened: false, path: home });
+  const err = await run('linux', 'error');
+  assert.deepEqual(err.body, { ok: true, opened: false, path: home });
+  const thr = await run('linux', 'throw');
+  assert.deepEqual(thr.body, { ok: true, opened: false, path: home });
 });

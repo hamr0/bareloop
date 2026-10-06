@@ -3363,7 +3363,12 @@ key you want first (the panel picks the row by the Model menu).
   list by job for the left pane's "Workflows" view and renders it flat for "History", both
   behind one `Runs` tab toggle; there is no separate `/api/workflows` endpoint, deleted in
   the P1 Runs-tab merge); `GET /api/runs/:runid` (the full replay — parts/steps, counters,
-  summary, model/provider/judge); `GET /api/runs/:runid/audit` (the gate-audit sidecar rows,
+  summary, model/provider/judge). Every `GET /api/runs` row and the detail carry `runNo` (P6 item 7): runs of one job are numbered
+  oldest `at` first by ONE server function (`runNumbers`), and the page names a run `job (run-N)`; the run id stays in the Audit
+  tab and every command line. A run that came out of a panel drafting session also carries the DRAFTING part as the FIRST element of
+  `detail.parts` (`kind:'drafting'`, built from the session's `draft-log.jsonl`, `src/draftspend.js`): every other index a reader
+  is handed (`legDividers.beforePart`, the flat Audit rows' `partIndex`, the rounds endpoint's `part`) lives in that one shifted
+  index space, and the drafting part has no rounds table (`rounds?part=0` is a 404). `GET /api/runs/:runid/audit` (the gate-audit sidecar rows,
   ts-windowed to this run alone even when the sidecar file is shared with other runs, plus
   the matching raw-log text windowed the same way — when one resolves); `GET
   /api/runs/:runid/rounds?part=&attempt=&offset=&limit=` (one attempt's rounds, lazily
@@ -3436,7 +3441,8 @@ key you want first (the panel picks the row by the Model menu).
   completion; the page sees the key's NAME and a status word, never the value). `POST
   /api/author/:id/check-deps` is the install-gap's "Check again" (the main button's wording while waiting on an install) (`phase:'install-needed'`:
   the session waits on the person's own install, then re-runs `missingDependencies` on the
-  same copy — bareloop never installs). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
+  same worktree — the AGENT never installs; for a committed npm lock file the panel door first runs `npm ci --ignore-scripts` itself,
+  $0, before any token (`src/npminstall.js`, credential env stripped), and only a failure, a timeout or another lock file lands here). `POST /api/author/:id/abandon` (the Chat card's **Abandon** button, 2026-10-05) ends a
   LIVE, unsigned session: phase becomes the terminal `abandoned` (releasing the one-at-a-time lock), money already booked
   stays booked (`draftSpentUsd` is never zeroed; a call in flight still books its usage), no NEW model call starts;
   `400` on a session that is not live, `404` unknown id, same guard as the other author routes. After `signed` the card's
@@ -3850,12 +3856,16 @@ placeholder `no-key-needed`, never the word `null`). Each row: the env NAME (rea
 **Name** (the model id Chat uses), **API shape** (Anthropic / OpenAI-compatible / Gemini), **Base
 URL** (blank = the shape's own host), **Test**, **Tokens used** (total, display only), and Balance
 (DeepSeek fetched, Anthropic a typed note). Saves on change to `config.json`
-`keys.<ENV NAME> = { name, shape, baseUrl }`. Defaults for a key with no saved entry:
+`keys.<ENV NAME> = { name, shape, baseUrl, priceInPerM?, priceOutPerM? }`. The last two columns are the customer's own price
+(**In $/1M**, **Out $/1M**, plain boxes; blank = not set, a number >= 0 otherwise; the server refuses a half-set pair with a plain
+error and saves nothing, and the page leaves a half-typed pair out of the save until both boxes are filled or both cleared).
+**Open keys folder** (`POST /api/settings/open-keys-folder`) opens `~/.config/bareloop` in the file manager (`xdg-open` / `open`,
+argv array, never the file itself); where it cannot, the page shows the path as text. Defaults for a key with no saved entry:
 `ANTHROPIC_API_KEY` claude-sonnet-5 / Anthropic; `DEEPSEEK_API_KEY` deepseek-flash /
 OpenAI-compatible / `https://api.deepseek.com/v1`; `OPENAI_API_KEY` OpenAI-compatible;
 `GEMINI_API_KEY` Gemini; `LOCAL_API_KEY` OpenAI-compatible / `http://127.0.0.1:11434/v1` (Ollama, LM
-Studio, llama.cpp: change the URL); any other name OpenAI-compatible; Name blank until typed. **No
-price is shown anywhere** (display only — cost recording, the estimated provenance, spend sums, caps
+Studio, llama.cpp: change the URL); any other name OpenAI-compatible; Name blank until typed. **The
+only price shown is the customer's own, typed in the two price boxes** (cost recording, the estimated provenance, spend sums, caps
 and the monthly limit are unchanged; a local model has no known rate, so its rounds come out as a
 non-zero loud guess, never a real $0).
 
@@ -3894,6 +3904,23 @@ const prepared = await prepareSource({
 
 Or the CLI: `node scripts/prep-source.mjs --source <path-or-url> --into <dir> [--destination
 <absolute-directory>]` — prints the tree path, the seed, and the exact next command.
+
+**A REPO source on a worktree (P6 item 1, the panel's repo jobs).** Pass `worktree: '<repo>/.bareloop/wt/<id>'` to
+`prepareSource` and a repo source is NOT copied: its tree is a detached `git worktree` of the person's own repo at their current
+commit (`src/worktree.js`, the one spelling the bundle door shares). `prepared.tree` is that worktree; `into` holds only
+`source.json`, which records `worktree`, `repo` and `seed` (= the repo's HEAD — no seed commit is made, no `output/` scaffold
+is written). Uncommitted edits in the person's repo are not in it (the panel says so at drafting start: "N uncommitted
+change(s) in your repo are not in this job — it starts from commit <sha>"). `.bareloop/` and `node_modules/` (any depth, so packages installed in the worktree never read as worker writes) are hidden from the person's own
+`git status` through the repo's private `<common-git-dir>/info/exclude`, never their tracked `.gitignore`. The person's git hooks never run when bareloop makes the worktree (either door). The signed run
+(`run-u --spec`) reads `worktree` from that manifest; its spine and books stay in the session directory beside `source.json`,
+never inside the person's repo. At the end: GREEN (an already-green run too, which has nothing to commit unless it is a resumed
+leg) ALWAYS commits the run's work on its `bareloop-<job>` work branch (authored by `bareloop`, hooks off, arbiter books and
+`node_modules` left out) — including a green that opened a review door or whose spine leaked — and removes the worktree folder,
+except while a review door is open: that folder is KEPT (a door accept re-runs the mechanical stages against it). The branch stays and the
+merge stays the person's (`git merge <branch>` / `git branch -D <branch>` are shown as text). Any other ending (stopped,
+capped, died, red) leaves the folder so Resume can re-enter it; a drafting session that ends without ever running (refused,
+abandoned) removes its worktree. A panel restart mid-drafting loses the in-memory session and leaves its worktree behind
+(`git worktree list` shows it; `git worktree remove --force <folder>` clears it).
 
 > **If your source is a folder, read this first (hamr's ruling):** make a new folder, put
 > only the file(s) this job needs in it, point bareloop at that — never your original
@@ -3996,13 +4023,14 @@ the run's own scratch tree.
 **`prepareSource` copies ONLY git-tracked files** (hamr's ruling, unchanged) — a JS/TS repo's
 prepared copy therefore never carries `node_modules`, and every close stage that needs a tool
 (`tsc`, a test runner) would instrument-stop with nothing telling the person why. bareloop
-NEVER runs an install itself — it only ever touches gated primitives, never a shell-out to
-`npm`/`pnpm`/`yarn`/`bun` on the person's behalf. `missingDependencies` is exported ($0,
+NEVER runs an install itself for the agent or the CLI doors — the agent only touches gated primitives, never a shell-out to
+`npm`/`pnpm`/`yarn`/`bun` on the person's behalf (the one exception is the panel door's own pre-token `npm ci --ignore-scripts` for an
+npm lock file, P6 item 3, `src/npminstall.js`; it is never a verb the agent holds). `missingDependencies` is exported ($0,
 JS/TS only for now — other languages return `null`, M3b's job): it takes `(treeDir,
 sourceSubdir?)` and walks from `sourceSubdir` up to `treeDir` (the same nearest-manifest rule
 `detectLanguage` uses, done independently to avoid a `source.js` ⇄ `detectlang.js` import
 cycle), and when the nearest `package.json` names a non-empty `dependencies`/`devDependencies`
-with no sibling `node_modules`, it returns `{manager, command, reason}` — the exact install
+with no sibling `node_modules`, it returns `{dir, lockFile, manager, command, reason}` (`dir` = the folder holding the manifest, `lockFile` = the committed lock file or `null`) — the exact install
 line (`npm ci`/`pnpm install --frozen-lockfile`/`yarn install --frozen-lockfile`/`bun install
 --frozen-lockfile` by lockfile, else `npm install`), `cd`-prefixed for a subfolder job. An
 invalid `package.json`, no manifest found, or `node_modules` already present all return `null`

@@ -27,6 +27,7 @@ import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep, basename } from 'node:path';
 import { git } from './kinds.js';
+import { addWorktree, hideBareloopDir } from './worktree.js';
 import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
 import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.js';
@@ -440,16 +441,21 @@ async function fetchOnce(url, timeoutMs) {
  * as declared, unvalidated by `proveDestination`, and `frontDoorFromManifest`
  * never hands a repo source's destination to `copyOut` — wiring it into
  * `writeScope` is M3/M4's job, not this one.
- * @param {{source: string, into: string, destination?: string,
+ * `worktree` (P6 item 1, repo sources ONLY — ignored for every other kind): instead of COPYING the repo, make the
+ * run's tree a detached git worktree of the person's own repo at that directory (the shared
+ * `src/worktree.js`, the bundle door's own spelling), hide `.bareloop/` from their `git status`, and record the
+ * worktree and the repo root in the manifest. `into` then holds only `source.json`; the tree is `worktree`, at the
+ * repo's current commit (uncommitted edits are NOT in it). No seed commit is made — the seed IS the repo's HEAD.
+ * @param {{source: string, into: string, destination?: string, worktree?: string,
  *   fetchTimeoutMs?: number, afterScan?: () => (void|Promise<void>)}} args
  *   `fetchTimeoutMs` is test-only — production callers omit it and get
  *   `PROVIDER_TIMEOUT_MS`. `afterScan` is a test seam too: called exactly once,
  *   after the secret scan finished and before the freeze loop re-reads any
  *   file's bytes, so a test can swap a file inside that window
  *   deterministically. Production never sets it; absent, behaviour is unchanged.
- * @returns {Promise<{stop: null, into: string, tree: string, manifestPath: string, manifest: object}|SourceRefusal>}
+ * @returns {Promise<{stop: null, into: string, tree: string, manifestPath: string, manifest: Record<string, any>}|SourceRefusal>}
  */
-export async function prepareSource({ source, into, destination, fetchTimeoutMs = PROVIDER_TIMEOUT_MS, afterScan }) {
+export async function prepareSource({ source, into, destination, worktree, fetchTimeoutMs = PROVIDER_TIMEOUT_MS, afterScan }) {
   const intoAbs = resolve(into);
   if (existsSync(intoAbs)) {
     return refuse('into-exists', `${intoAbs} already exists — a source door writes a FRESH tree, never reuses one (the export worktree rule)`);
@@ -634,12 +640,43 @@ export async function prepareSource({ source, into, destination, fetchTimeoutMs 
     const buf = f.buf ?? (f.symlinkTarget !== undefined ? Buffer.from(f.symlinkTarget, 'utf8') : await readFile(/** @type {string} */ (f.abs)));
     fileMeta.push({ path: f.rel, bytes: buf.length, sha256: sha256Hex(buf) });
     const isBinary = f.symlinkTarget === undefined && hasNulByte(buf.subarray(0, 8192));
+    // P6 item 2 (hamr 2026-10-05 Q2=A): a repo going onto a WORKTREE is the person's OWN repo, left in place — a secret
+    // already in it is MASKED wherever bareloop records it (`redactSecrets`), not a refusal. Every other kind keeps the scan.
+    if (worktree !== undefined && frozen.kind === 'repo') continue;
     const names = secretPatternNames(buf.toString(isBinary ? 'latin1' : 'utf8'));
     if (names.length) secretHits.push({ rel: f.rel, names });
   }
   if (secretHits.length) {
     const detail = secretHits.map((h) => `${h.rel} (${h.names.join(', ')})`).join('; ');
     return refuse('source-carries-secret', `${secretHits.length} file(s) carry a known secret shape — refused before anything was written (hard line #3, secrets never enter the tree): ${detail}`);
+  }
+
+  if (worktree !== undefined && frozen.kind === 'repo') {
+    const repoRoot = /** @type {string} */ (frozen.root);
+    const wt = resolve(worktree);
+    try {
+      hideBareloopDir(repoRoot);
+      addWorktree(repoRoot, wt);
+    } catch (e) {
+      return refuse('source-worktree-failed', `could not make the job's worktree in ${repoRoot}: ${/** @type {Error} */ (e).message} (the repo needs at least one commit)`);
+    }
+    const headAt = await git(wt, ['rev-parse', 'HEAD']);
+    if (!headAt.ok) return refuse('source-git-failed', `git rev-parse HEAD failed in ${wt}: ${headAt.err}`);
+    const wtManifest = {
+      kind: 'repo',
+      source,
+      ...(frozen.sourceSubdir === undefined ? {} : { sourceSubdir: frozen.sourceSubdir }),
+      fetchedAt: new Date().toISOString(),
+      files: fileMeta,
+      seed: headAt.out.trim(),
+      destination: destination ?? null,
+      worktree: wt,
+      repo: repoRoot,
+    };
+    await mkdir(intoAbs, { recursive: true });
+    const wtManifestPath = join(intoAbs, 'source.json');
+    await writeFile(wtManifestPath, `${JSON.stringify(wtManifest, null, 2)}\n`);
+    return { stop: null, into: intoAbs, tree: wt, manifestPath: wtManifestPath, manifest: wtManifest };
   }
 
   const treeDir = join(intoAbs, 'tree');
@@ -809,7 +846,7 @@ const LOCKFILE_COMMANDS = Object.freeze([
  *   manifest)
  * @param {string} [sourceSubdir] the manifest's own `sourceSubdir` ('' or
  *   undefined when Source IS the repo root)
- * @returns {{manager: string, command: string, reason: string}|null} `null`
+ * @returns {{dir: string, lockFile: string|null, manager: string, command: string, reason: string}|null} `null`
  *   when there is nothing to report: no JS/TS manifest found walking up from
  *   `sourceSubdir` to `treeDir`, the nearest one found has no dependencies,
  *   `node_modules` is already there, or the manifest cannot even be read as
@@ -846,6 +883,8 @@ export function missingDependencies(treeDir, sourceSubdir = '') {
     const installCmd = lock ? lock.command : 'npm install';
     const rel = relative(root, d).split(sep).join('/');
     return {
+      dir: d,
+      lockFile: lock ? lock.file : null,
       manager: installCmd.split(' ')[0],
       command: rel === '' ? installCmd : `cd ${rel} && ${installCmd}`,
       reason: `${rel === '' ? 'package.json' : `${rel}/package.json`} lists dependencies but the copy has no node_modules`,

@@ -27,8 +27,11 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, missingDependencies, looksLikeRepoSource,
+  prepareSource, proveDestination, missingDependencies, looksLikeRepoSource, nearestGitAncestor,
 } from '../source.js';
+import {
+  worktreePath, uncommittedCount, shortHead, removeWorktree,
+} from '../worktree.js';
 import { detectLanguage } from '../detectlang.js';
 import {
   validateJob, jobSpecHash, workflowKey, resolveWorkerModel,
@@ -48,7 +51,8 @@ import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
-import { writeDraftSpend } from '../draftspend.js';
+import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
+import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 
 /**
  * THE PROGRESS LIST's one table (hamr 2026-10-04, "one place showing all"): every pipeline step the left Chat panel
@@ -58,7 +62,7 @@ import { writeDraftSpend } from '../draftspend.js';
  */
 export const STEP_LABELS = Object.freeze({
   setup: 'checking setup',
-  copy: 'copying source',
+  copy: 'making worktree',
   check: 'checking source',
   install: 'waiting on install',
   reuse: 'reusing signed workflow',
@@ -315,7 +319,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -378,15 +382,31 @@ export function createSession(card, deps = {}) {
     steps: /** @type {{id: string, label: string, status: 'running'|'done'|'failed', detail: string}[]} */ ([]),
   };
 
+  // The drafting LOG's step events (src/draftspend.js, DRAFT_LOG_FILE): after every progress-list change, diff the list
+  // against what was already logged and append the start / end / re-open of each line — the ONE writer of step times.
+  /** @type {('running'|'ended')[]} */
+  const loggedSteps = [];
+  const logSteps = () => {
+    const at = new Date().toISOString();
+    state.steps.forEach((/** @type {any} */ x, no) => {
+      if (loggedSteps[no] === undefined) { appendDraftLog(outDir, { kind: 'step-start', no, id: x.id, label: x.label, at }); loggedSteps[no] = 'running'; }
+      if (x.status === 'running' && loggedSteps[no] === 'ended') { appendDraftLog(outDir, { kind: 'step-reopen', no, at }); loggedSteps[no] = 'running'; }
+      if (x.status !== 'running' && loggedSteps[no] === 'running') { appendDraftLog(outDir, { kind: 'step-end', no, status: x.status, label: x.label, at }); loggedSteps[no] = 'ended'; }
+    });
+  };
+
   /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
   const stepStart = (id, detail) => {
     advanceSteps(state.steps, id, detail);
     state.progressLabel = STEP_LABELS[id] ?? id;
+    logSteps();
   };
   /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
   const stepDetail = (id, detail) => { const x = latestStep(state.steps, id); if (x) x.detail = detail; };
+  /** @param {string} id @param {string} label the latest line of `id` reads `label` instead of its table label (the install step: bareloop installing vs the person) */
+  const stepLabel = (id, label) => { const x = latestStep(state.steps, id); if (x) x.label = label; };
   /** finish the running step as done (or the latest line of `id`, when given) */
-  const stepDone = (id) => { for (const x of state.steps) if (x.status === 'running' && (id === undefined || x.id === id)) x.status = 'done'; };
+  const stepDone = (id) => { for (const x of state.steps) if (x.status === 'running' && (id === undefined || x.id === id)) x.status = 'done'; logSteps(); };
   /** @param {string} reason the running step (else the last one) fails with the code-owned reason on its own line */
   const stepFail = (reason) => {
     let x = state.steps.find((/** @type {any} */ y) => y.status === 'running');
@@ -396,6 +416,7 @@ export function createSession(card, deps = {}) {
     }
     x.status = 'failed';
     x.detail = reason;
+    logSteps();
   };
 
   /** @param {'bot'|'you'|'system'} role @param {string} text */
@@ -498,6 +519,14 @@ export function createSession(card, deps = {}) {
     // tally, so an abandoned / refused / restarted session's drafting spend still counts (src/draftspend.js)
     const nowIso = new Date().toISOString();
     draftStartedAt ??= nowIso;
+    // the same call, one line in the drafting LOG (the part a run's views show first): the step running right now,
+    // the call's label, the drafting model, its cost (null stays null: unpriced is never $0). One owner: this onCall.
+    const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+    const callNo = runningNo === -1 ? state.steps.length - 1 : runningNo;
+    appendDraftLog(outDir, {
+      kind: 'call', no: callNo, step: state.steps[callNo]?.id ?? null, label: call.label, model: draftIdentity?.model ?? null,
+      costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0, at: nowIso,
+    });
     try {
       writeDraftSpend(outDir, {
         sessionId: id, spentUsd: t.knownUsd, spendComplete: t.spendComplete, provider: draftIdentity?.provider ?? null,
@@ -507,6 +536,15 @@ export function createSession(card, deps = {}) {
   };
   /** @type {string|null} */
   let draftStartedAt = null;
+  /** P6 item 1: the worktree this session made in the person's repo (null until made, and again once removed) @type {{repo: string, dir: string}|null} */
+  let madeWorktree = null;
+  /** a session that ends WITHOUT ever running (refused, errored, abandoned) takes its worktree with it; a signed one keeps it for the run */
+  const dropWorktree = () => {
+    if (madeWorktree === null) return;
+    const w = madeWorktree;
+    madeWorktree = null;
+    removeWorktree(w.repo, w.dir);
+  };
   /** @type {{provider: string, baseUrl: string|null, model: string}|null} the worker the drafting calls ran on, set once the Model Name resolves */
   let draftIdentity = null;
 
@@ -515,6 +553,7 @@ export function createSession(card, deps = {}) {
   /** @param {string} message @param {string} [phase] */
   const refuse = (message, phase = 'refused') => {
     if (abandoned) return;
+    dropWorktree();
     state.phase = phase;
     state.error = message;
     stepFail(message);
@@ -556,6 +595,16 @@ export function createSession(card, deps = {}) {
 
     state.phase = 'preparing-source';
     stepStart('copy');
+    // P6 item 1 (hamr 2026-10-05, Q1 = A / Q3 = A): a REPO source gets a worktree in the person's own repo, made now at
+    // drafting start — `.bareloop/wt/<session id>` at their current commit. Edits they have not committed are not in it,
+    // and the progress line says so (a notice, never a refusal).
+    const repoRoot = isRepoLike ? nearestGitAncestor(resolve(card.source))?.dir ?? null : null;
+    if (repoRoot !== null) {
+      const dirty = uncommittedCount(repoRoot);
+      if (dirty > 0) {
+        stepDetail('copy', `${dirty} uncommitted change(s) in your repo are not in this job — it starts from commit ${shortHead(repoRoot) ?? 'HEAD'}.`);
+      }
+    }
     // ONE rule for Destination (the same for a fresh card and a reuse card): for a REPO source it is the write fence
     // (writeScope globs, relative to the repo — set into the spec below, never proven as a directory); for a FOLDER source
     // it is an absolute output directory, proven by `prepareSource` -> `proveDestination`. The door routes on a peek at
@@ -565,7 +614,10 @@ export function createSession(card, deps = {}) {
     const destIsDir = isAbsoluteDestination(card.destination);
     const prep = await prepareSource({
       source: card.source, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
+      ...(repoRoot === null ? {} : { worktree: worktreePath(repoRoot, id) }),
     });
+    if (repoRoot !== null && prep.stop === null && prep.manifest?.worktree) madeWorktree = { repo: repoRoot, dir: prep.manifest.worktree };
+    if (abandoned) dropWorktree();
     if (prep.stop !== null) {
       // reaching the source and checking it are two lines: a scan/freeze refusal means the copy itself worked
       if (SOURCE_CHECK_CODES.has(/** @type {any} */ (prep).code)) stepStart('check');
@@ -587,21 +639,38 @@ export function createSession(card, deps = {}) {
       LANG = langResult.kind === 'resolved' ? langResult.lang : (langResult.kind === 'ambiguous' ? langResult.candidates[0] : 'none-detected');
 
       // ── the install gap, WAITED FOR, never a dead end (build item 1,
-      // mirroring F182's fix in `src/interviewrun.js`) ── the copy this
-      // session works from (`prep.tree`) is `prepareSource`'s own hidden
-      // seed, tracked-files-only, so a JS/TS repo's copy never carries
-      // `node_modules`. Refusing outright here was ITSELF the F182 class of
-      // bug one layer up: a person who ran the printed command and then
-      // reloaded the page got a BRAND NEW seed with no `node_modules`
-      // either, so the refusal could never be satisfied. bareloop still
-      // never runs an install itself — this only re-checks the SAME copy
-      // (`missingDependencies` over `prep.tree`, the identical rule
-      // `src/interviewrun.js` uses) on demand, via the "Check again" button
-      // (`checkDeps()`, below), instead of ending the session.
+      // mirroring F182's fix in `src/interviewrun.js`) ── the tree this
+      // session works from (`prep.tree`) is the job's own WORKTREE (P6 item 1:
+      // a detached checkout of the person's current commit, inside their
+      // repo), so a JS/TS repo's tree never carries `node_modules` until
+      // someone installs there. Refusing outright here was ITSELF the F182
+      // class of bug one layer up. bareloop still never runs an install
+      // itself — this only re-checks the SAME worktree on demand, via the
+      // "Check again" button (`checkDeps()`, below), instead of ending the
+      // session. (P6 item 3: for an npm lock file bareloop runs `npm ci` itself first, above.)
       let depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
+      // P6 item 3: a committed npm lock file -> bareloop runs `npm ci --ignore-scripts` itself, $0, before
+      // any model call. Any failure (or another lock file) falls through to the wait below, unchanged.
+      /** @type {string|null} */
+      let installFailed = null;
+      if (depsGap && depsGap.lockFile && NPM_CI_LOCKS.includes(depsGap.lockFile)) {
+        stepStart('install', 'Installing packages (npm ci)…');
+        stepLabel('install', 'installing packages');
+        state.progressLabel = 'installing packages';
+        const ci = await (deps.npmCiFn ?? runNpmCi)(depsGap.dir, {});
+        if (ci.ok) {
+          depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
+          if (!depsGap) {
+            stepDetail('install', 'Installed packages (npm ci).');
+            stepDone('install');
+            stepStart('check');
+          } else installFailed = 'it ran but node_modules is still missing';
+        } else installFailed = ci.reason;
+      }
       if (depsGap) {
         state.phase = 'install-needed';
-        stepStart('install', `Packages missing in the copy. Run: cd ${prep.tree} && ${depsGap.command}`);
+        stepLabel('install', STEP_LABELS.install); // the person is the one installing now
+        stepStart('install', `${installFailed ? `Installing packages (npm ci) failed: ${redactSecrets(installFailed)}. ` : ''}Packages missing in the job's worktree. Run: cd ${prep.tree} && ${depsGap.command}`);
         for (;;) {
           state.pendingAsk = { kind: 'install-needed', tree: prep.tree, command: depsGap.command, reason: depsGap.reason };
           // eslint-disable-next-line no-await-in-loop
@@ -834,6 +903,7 @@ export function createSession(card, deps = {}) {
       if (['refused', 'abandoned', 'error', 'signed', 'signing-failed'].includes(state.phase)) return { ok: false, error: 'this session is not live — nothing to abandon' };
       abandoned = true;
       phaseValue = 'abandoned';
+      dropWorktree();
       state.error = 'Abandoned by you — money already spent stays booked.';
       state.pendingAsk = null;
       if (resolvePending) { const r = resolvePending; resolvePending = null; r(null); }

@@ -39,7 +39,7 @@ function plantDraft(home, id, over = {}) {
 }
 
 /** drive a REAL session whose authorFn books `calls` through the session's own onCall, then refuses */
-async function draftSession(t, calls) {
+async function draftSession(t, calls, gapMs = 0) {
   const home = tmp(t);
   writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
   const repo = tmp(t);
@@ -66,6 +66,7 @@ async function draftSession(t, calls) {
     },
     authorFn: async (o) => {
       for (const c of calls) {
+        if (gapMs > 0) await new Promise((r) => { setTimeout(r, gapMs); });
         o.onCall(c);
         seen.push(JSON.parse(readFileSync(join(sessionDir, 'draft-spend.json'), 'utf8')));
       }
@@ -96,6 +97,19 @@ test('onCall writes draft-spend.json with the running total after EVERY call; an
   // (0.0005 = the real confirm-turn call the session booked before the authoring calls)
   assert.equal(session.state.draftSpentUsd, 0.7505, 'one owner: the file carries the same figure state does');
   assert.equal(existsSync(join(sessionDir, 'draft-spend.json.tmp')), false, 'the write is tmp + rename');
+});
+
+test('startedAt keeps the FIRST metered call\'s timestamp across later calls (not re-dated to the last)', async (t) => {
+  // calls are spaced apart so each reads a distinct real-clock ISO; same-millisecond calls cannot tell `??=` from `=`
+  const { seen } = await draftSession(t, [
+    { label: 'survey', costUsd: 0.1, unpricedRounds: 0 },
+    { label: 'declare', costUsd: 0.1, unpricedRounds: 0 },
+    { label: 'confirm', costUsd: 0.1, unpricedRounds: 0 },
+  ], 15);
+  assert.equal(seen.length, 3);
+  assert.notEqual(seen[2].updatedAt, seen[0].updatedAt, 'the calls really read different clocks');
+  assert.equal(seen[1].startedAt, seen[0].startedAt, 'startedAt is the first call\'s, kept by the second');
+  assert.equal(seen[2].startedAt, seen[0].startedAt, 'startedAt is the first call\'s, kept by the third');
 });
 
 test('monthSpend counts an abandoned/refused session\'s draft spend; a restart (file, no live session) counts too', async (t) => {
@@ -170,4 +184,51 @@ test('an unreadable draft-spend.json is unknown spend ("at least"), never silent
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'draft-spend.json'), '{not json');
   assert.equal(monthSpend({ home, now: NOW }).atLeast, true);
+});
+
+// ---- hamr 2026-10-06 (option A): the drafting LOG a run's first part is built from --------------------------------------
+import { DRAFT_LOG_FILE, readDraftSteps } from '../src/draftspend.js';
+
+/** @param {string} dir @returns {any[]} */
+const readLog = (dir) => readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+test('onCall appends ONE draft-log.jsonl line per metered call: the step running now, label, model, cost (null stays null), unpricedRounds', async (t) => {
+  const { sessionDir } = await draftSession(t, [
+    { label: 'author', costUsd: 0.25, unpricedRounds: 0 },
+    { label: 'revise-1', costUsd: null, unpricedRounds: 0 },
+    { label: 'judge:c1', costUsd: 0.1, unpricedRounds: 2 },
+  ]);
+  const calls = readLog(sessionDir).filter((e) => e.kind === 'call');
+  // the session's own confirm-turn call (booked by the real confirm seam) comes first, then the three scripted ones
+  assert.deepEqual(calls.map((c) => c.label).slice(-3), ['author', 'revise-1', 'judge:c1']);
+  const mine = calls.slice(-3);
+  assert.deepEqual(mine.map((c) => c.costUsd), [0.25, null, 0.1], 'unpriced stays null, never $0');
+  assert.deepEqual(mine.map((c) => c.unpricedRounds), [0, 0, 2]);
+  assert.ok(mine.every((c) => c.model === 'claude-sonnet-5' && c.step === 'draft'), 'the drafting model and the step running at call time');
+  assert.ok(mine.every((c) => Number.isFinite(Date.parse(c.at))));
+  assert.ok(calls.every((c) => Number.isInteger(c.no)));
+  assert.equal(calls.length, 4, 'exactly one line per metered call (no second writer)');
+});
+
+test('the log carries each step\'s start and end time; readDraftSteps folds them with their calls', async (t) => {
+  const { sessionDir, session } = await draftSession(t, [{ label: 'author', costUsd: 0.2, unpricedRounds: 0 }], 15);
+  const steps = readDraftSteps(sessionDir);
+  assert.deepEqual(steps.map((x) => x.id), session.state.steps.map((x) => x.id), 'one record per progress-list line, same order');
+  const draft = steps.find((x) => x.id === 'draft');
+  assert.ok(draft && draft.calls.length === 1 && draft.calls[0].label === 'author');
+  const confirm = steps.find((x) => x.id === 'confirm');
+  assert.equal(confirm?.calls.length, 1, 'the confirm turn\'s call sits under the confirm step');
+  for (const x of steps.filter((y) => y.status === 'done')) {
+    assert.ok(Number.isFinite(Date.parse(x.startedAt)) && x.endedAt !== null && x.wallMs !== null && x.wallMs >= 0, `${x.id} has start+end`);
+  }
+  assert.equal(steps.at(-1)?.status, 'failed', 'the refused session\'s last line failed, with its end time');
+  assert.ok(draft.wallMs >= 15, 'the draft step spans the 15 ms gap the scripted call waited');
+});
+
+test('a disk fault on the drafting log never stops the draft (best-effort like draft-spend.json)', async (t) => {
+  const home = tmp(t);
+  const dir = join(home, 'no-such-session');
+  const { appendDraftLog } = await import('../src/draftspend.js');
+  assert.doesNotThrow(() => appendDraftLog(dir, { kind: 'call', no: 0, at: 'x' }));
+  assert.equal(existsSync(dir), false);
 });

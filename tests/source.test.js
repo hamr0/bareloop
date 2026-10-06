@@ -19,7 +19,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync, readFileSync, chmodSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -1228,19 +1228,26 @@ test('run-u.mjs wiring: both front-door call sites are wired to the real functio
   const src = readFileSync(new URL('../src/userrun.js', import.meta.url), 'utf8');
   assert.match(src, /import\s*\{\s*readSourceManifest,\s*frontDoorFromManifest,\s*proveDestination,\s*copyOut\s*\}\s*from\s*'\.\/source\.js'/);
 
-  const manifestCall = src.match(/const (\w+) = await readSourceManifest\(dirname\((\w+)\)\);/);
-  assert.ok(manifestCall, 'the manifest must be read from the tree\'s own parent, before any token spends');
-  const [, manifestVar, wdVar] = manifestCall;
+  // P6 item 1: the source door's directory is now ONE variable (`into`) — `dirname(wd)` for the copied-tree layout
+  // (tree at `<into>/tree`), passed explicitly for a worktree run (tree inside the person's repo). The three call sites
+  // below all read that one variable, so the manifest read, the destination proof and the copy-out can never disagree.
+  const intoDecl = src.match(/const (\w+) = ctx\.into !== undefined \? resolve\(ctx\.into\) : dirname\((\w+)\);/);
+  assert.ok(intoDecl, 'the source door\'s own directory defaults to the tree\'s parent (`dirname(wd)`), and only an explicit `ctx.into` overrides it');
+  const [, intoVar, wdVar] = intoDecl;
+
+  const manifestCall = src.match(new RegExp(`const (\\w+) = await readSourceManifest\\(${intoVar}\\);`));
+  assert.ok(manifestCall, 'the manifest must be read from the source door\'s own directory, before any token spends');
+  const [, manifestVar] = manifestCall;
 
   const frontDoorCall = src.match(new RegExp(`const (\\w+) = frontDoorFromManifest\\(${manifestVar}\\);`));
   assert.ok(frontDoorCall, 'the front door is derived from that same manifest read');
   const [, frontDoorVar] = frontDoorCall;
 
-  assert.match(src, new RegExp(`const \\w+ = await proveDestination\\(${frontDoorVar}\\.destination, \\{ into: dirname\\(${wdVar}\\) \\}\\);`),
+  assert.match(src, new RegExp(`const \\w+ = await proveDestination\\(${frontDoorVar}\\.destination, \\{ into: ${intoVar} \\}\\);|const \\w+ = await proveDestination\\(${frontDoorVar}\\.destination, \\{ ${intoVar} \\}\\);`),
     'the $0 preflight stop, proven against the SCRATCH ROOT, not just the tree');
   assert.match(src, new RegExp(`if \\(outcome === 'green' && ${frontDoorVar}\\)`),
     'the copy-out gate fires on the ONE outcome string a graded close mints');
-  assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into: dirname\\(${wdVar}\\), destination: ${frontDoorVar}\\.destination \\}\\);`),
+  assert.match(src, new RegExp(`const \\w+ = await copyOut\\(\\{ tree: ${wdVar}, into(: ${intoVar})?, destination: ${frontDoorVar}\\.destination \\}\\);`),
     'the copy-out call site, same scratch-root containment proof');
   assert.match(src, /emit\('destination-written', \{ path: f\.path/, 'the spine must record the REAL delivered (dated) path, never the declared one, for EVERY file copyOut returns');
   assert.match(src, /emit\('destination-refused'/);
@@ -1256,7 +1263,7 @@ test('missingDependencies: deps present, no node_modules, package-lock.json pres
   writeFileSync(join(tree, 'package.json'), JSON.stringify({ name: 'x', dependencies: { left: '1.0.0' } }));
   writeFileSync(join(tree, 'package-lock.json'), '{}');
   const r = missingDependencies(tree);
-  assert.deepEqual(r, { manager: 'npm', command: 'npm ci', reason: 'package.json lists dependencies but the copy has no node_modules' });
+  assert.deepEqual(r, { dir: resolve(tree), lockFile: 'package-lock.json', manager: 'npm', command: 'npm ci', reason: 'package.json lists dependencies but the copy has no node_modules' });
 });
 
 test('missingDependencies: devDependencies alone still count as dependencies to install', () => {
@@ -1324,6 +1331,8 @@ test('missingDependencies: subfolder job — package.json at the subfolder, deps
   writeFileSync(join(tree, 'packages', 'api', 'package-lock.json'), '{}');
   const r = missingDependencies(tree, 'packages/api');
   assert.deepEqual(r, {
+    dir: resolve(tree, 'packages', 'api'),
+    lockFile: 'package-lock.json',
     manager: 'npm',
     command: 'cd packages/api && npm ci',
     reason: 'packages/api/package.json lists dependencies but the copy has no node_modules',

@@ -14,7 +14,8 @@
 import { checkHumanGuard } from './authorroutes.js';
 import { readConfig, updateConfig, ConfigError } from '../config.js';
 import { spendSummary, monthlyLimitOf } from '../monthly.js';
-import { loadKeysEnv, keysFilePath, filledKeyNames, ensureKeysFile } from '../keysfile.js';
+import { spawn as realSpawn } from 'node:child_process';
+import { loadKeysEnv, keysFilePath, keysHome, filledKeyNames, ensureKeysFile } from '../keysfile.js';
 import { SHAPES, PRESET_KEY_NAMES, keyRows, endpointOf, defaultUrlOf, usableKey } from '../providerrows.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
@@ -22,8 +23,11 @@ import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 const DEEPSEEK_BALANCE_URL = 'https://api.deepseek.com/user/balance';
 
 /**
+ * `openFolderSpawn` / `platform` are test seams for the Open keys folder button (a real caller passes
+ * neither: `child_process.spawn` and `process.platform`).
  * @param {{ port: number, token: string, home?: string, env?: Record<string,string|undefined>,
- *   fetchImpl?: typeof fetch, now?: () => number }} opts
+ *   fetchImpl?: typeof fetch, now?: () => number, openFolderSpawn?: (cmd: string, args: string[], o: object) => any,
+ *   platform?: string }} opts
  */
 export function createSettingsRoutes(opts) {
   const fetchImpl = opts.fetchImpl ?? fetch;
@@ -134,6 +138,8 @@ export function createSettingsRoutes(opts) {
             placeholder: defaultUrlOf(r.provider),
             keyStatus: !raw ? 'not set' : (raw === 'null' ? 'no key needed' : (problem ? `bad shape (${problem})` : 'found')),
             canTest: r.provider !== 'gemini-api',
+            priceInPerM: typeof r.priceInPerM === 'number' ? r.priceInPerM : null,
+            priceOutPerM: typeof r.priceOutPerM === 'number' ? r.priceOutPerM : null,
             tokens: s.tokensByRow[r.envName] ?? 0,
             balance: r.provider === 'anthropic-api'
               ? { kind: 'note', usd: typeof note === 'number' && Number.isFinite(note) ? note : null }
@@ -148,11 +154,32 @@ export function createSettingsRoutes(opts) {
       const row = currentRows(readConfig({ home: opts.home }).config).find((r) => r.envName === body?.envName);
       if (!row) { send(400, { ok: false, error: 'unknown key — add NAME=key to your keys file and reload keys' }); return true; }
       // only the three settings a row has; each is optional in the body, the whole triple is stored
+      /** @type {Record<string, string|number|null>} */
       const patch = {
         name: typeof body?.name === 'string' ? body.name.trim() : row.name,
         shape: typeof body?.shape === 'string' ? body.shape : row.provider,
         baseUrl: typeof body?.baseUrl === 'string' ? body.baseUrl.trim().replace(/\/+$/, '') : row.baseUrl,
       };
+      // the two prices (USD per 1M tokens): absent = unchanged; blank / null = not set (the field is removed,
+      // never written as 0); otherwise a finite number >= 0 — anything else is refused and nothing is saved
+      for (const f of /** @type {const} */ (['priceInPerM', 'priceOutPerM'])) {
+        if (!Object.hasOwn(body ?? {}, f)) continue;
+        const v = body[f];
+        const label = f === 'priceInPerM' ? 'In' : 'Out';
+        if (v === null || (typeof v === 'string' && v.trim() === '')) { patch[f] = null; continue; }
+        const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v.trim()) ? Number(v.trim()) : NaN);
+        if (!(Number.isFinite(n) && n >= 0)) {
+          send(400, { ok: false, error: `the ${label} price must be a number, 0 or more (USD per 1M tokens), or blank for not set` });
+          return true;
+        }
+        patch[f] = n;
+      }
+      // a price is both fields or neither — ratesFor refuses a half-set one at run time, so never save half
+      const after = (/** @type {'priceInPerM'|'priceOutPerM'} */ f) => (Object.hasOwn(patch, f) ? patch[f] !== null : row[f] !== undefined);
+      if (after('priceInPerM') !== after('priceOutPerM')) {
+        send(400, { ok: false, error: 'set both prices (In and Out, USD per 1M tokens) or neither — a half-set price is refused' });
+        return true;
+      }
       try {
         updateConfig({ keys: { [row.envName]: patch } }, { home: opts.home });
       } catch (e) {
@@ -161,6 +188,29 @@ export function createSettingsRoutes(opts) {
         return true;
       }
       send(200, { ok: true, envName: row.envName, ...patch });
+      return true;
+    }
+
+    if (pathname === '/api/settings/open-keys-folder' && req.method === 'POST') {
+      // opens the FOLDER (never the file, never an editor) in the file manager; argv array, no shell, detached.
+      // Another OS, or a failed spawn: say so and hand back the path, which the page then shows as text.
+      const dir = keysHome(opts.home);
+      const platform = opts.platform ?? process.platform;
+      const cmd = platform === 'linux' ? 'xdg-open' : (platform === 'darwin' ? 'open' : null);
+      const cannot = () => send(200, { ok: true, opened: false, path: dir });
+      if (!cmd) { cannot(); return true; }
+      let child;
+      try {
+        child = (opts.openFolderSpawn ?? realSpawn)(cmd, [dir], { detached: true, stdio: 'ignore' });
+      } catch { cannot(); return true; }
+      let settled = false;
+      child.once('error', () => { if (!settled) { settled = true; cannot(); } });
+      child.once('spawn', () => {
+        if (settled) return;
+        settled = true;
+        if (typeof child.unref === 'function') child.unref();
+        send(200, { ok: true, opened: true, path: dir });
+      });
       return true;
     }
 

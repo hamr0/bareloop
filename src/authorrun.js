@@ -104,7 +104,7 @@ import { keysForDoor } from './keysfile.js';
 import { applyConfiguredKey, judgeRatesFor, keyNameFor, ratesFor, rowsForHome } from './providerrows.js';
 import { ConfigError } from './config.js';
 import {
-  readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, renameSync, statSync,
+  readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -120,6 +120,7 @@ import { defaultJudgeLoop, resolveJobJudge } from './judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from './job.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
+import { moveFile } from './movefile.js';
 import { closeJudges, GATE_AUDIT_FILE } from './kinds.js';
 import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
 import { commandFor } from './invoke.js';
@@ -288,7 +289,7 @@ export async function main(argv, deps = {}) {
     if (!existsSync(treeAudit)) return;
     const archived = join(OUT, `author-${runid}-${GATE_AUDIT_FILE}`);
     try {
-      renameSync(treeAudit, archived);
+      moveFile(treeAudit, archived);
       out(`gate audit ${archived} (moved out of the patient tree — F186)`);
     } catch (e) {
       err(`gate audit could not be archived out of the patient tree: ${/** @type {NodeJS.ErrnoException} */ (e)?.message ?? e}`);

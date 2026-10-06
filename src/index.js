@@ -153,9 +153,9 @@ export { answerReviewDoor } from './reviewdoor.js';
 // but no longer read by any grading path), the rulebook a card SELECTS from,
 // the card gate, and the two halves themselves so a calibration harness can
 // grade the whole pipe without running a close.
-// `defaultJudgeLoop` is the one spelling of how this repo drives a judge; the
-// runner reaches it through `runPlan`'s `judgeProvider`, and it is exported so a
-// caller building its own harness does not spell a second one.
+// `defaultJudgeLoop` (src/judged.js) is the one spelling of how this repo drives a
+// judge; the runner reaches it through `runPlan`'s `judgeProvider`. It is internal:
+// the package root does not export it.
 export {
   JUDGE_MODEL, resolveJudge, JUDGE_RULES, JUDGE_RULE_IDS,
   runLocate, decide,

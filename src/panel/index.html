@@ -180,7 +180,7 @@
   .st-word{font-weight:700;color:var(--text);}
   .wf-ended-inline{flex:1 1 auto;white-space:normal;}
   .wf-compact{flex-wrap:wrap;}
-  .wf-rowmeta{margin-left:auto;}
+  .wf-runno{color:var(--accent);flex:none;}
   .step-state{display:inline-flex;align-items:center;gap:2px;font-size:12px;}
   .badge{display:inline-block;font-size:11px;padding:1px 4px;color:var(--text-dim);background:none;font-weight:700;}
   .badge::before{content:"[";color:var(--text-faint);}
@@ -467,6 +467,7 @@
   .pv-table td,.pv-table th{white-space:nowrap;vertical-align:top;}
   .pv-table select,.pv-table input{min-height:32px;max-width:190px;box-sizing:border-box;}
   .pv-table .hint{display:block;margin-top:3px;}
+  .pv-table td.pv-price-cell input{width:90px;}
   /* the Test cell keeps ONE width whatever the result says ("testing…", "OK · 312 ms", a long failure note) */
   .pv-table td.pv-test-cell{width:180px;min-width:180px;max-width:180px;}
   .pv-table .pv-test-result{white-space:normal;overflow-wrap:anywhere;}
@@ -742,21 +743,24 @@
       <section id="panel-providers" class="tabpanel active" role="tabpanel" aria-labelledby="tab-providers">
         <div class="keyfile-strip" data-testid="keyfile-box">
           <div class="keyfile-strip-main">
-            <span>Put <code>NAME=key</code> lines in <code id="pv-keyfile-path" data-testid="keyfile-path">the keys file (path loading…)</code>, then Reload keys — every key that has a value gets a row. Only names are listed; keys never reach this page.</span>
+            <span>Put <code>NAME=key</code> lines in your keys file (Open keys folder), then Reload keys — every key that has a value gets a row. Only names are listed; keys never reach this page.</span>
+            <span class="hint" id="pv-keyfile-path" data-testid="keyfile-path"></span>
             <span class="hint" id="pv-keyfile-note" data-testid="keyfile-warning"></span>
           </div>
           <div class="keyfile-strip-actions">
+            <button class="btn small" type="button" id="btn-open-keys-folder" data-testid="btn-open-keys-folder">Open keys folder</button>
             <button class="btn small" type="button" id="btn-reload-keys" data-testid="btn-reload-keys">Reload keys</button>
           </div>
         </div>
         <div class="table-wrap" data-testid="provider-table-wrap">
           <table class="pv-table" data-testid="provider-table">
             <thead>
-              <tr><th>Key</th><th>Name</th><th>API shape</th><th>Base URL</th><th>Test</th><th>Tokens used</th><th>Balance</th></tr>
+              <tr><th>Key</th><th>Name</th><th>API shape</th><th>Base URL</th><th>Test</th><th>Tokens used</th><th>Balance</th><th>In $/1M</th><th>Out $/1M</th></tr>
             </thead>
             <tbody id="pv-rows"></tbody>
           </table>
         </div>
+        <div class="hint" id="pv-price-hint" data-testid="pv-price-hint">If your vendor lists two prices, enter the higher one.</div>
         <div id="pv-shell" data-testid="pv-shell"></div>
         <div class="hint" id="pv-note" data-testid="pv-note" style="margin-top:6px;">Name is the model id Chat uses. Base URL blank = the API shape's own host. Test asks the provider for its model list — it costs nothing.</div>
       </section>
@@ -946,6 +950,8 @@
   // jump straight to that SAME part's Audit-tab row (build item B's
   // click-through), with no re-lookup needed.
   function partBoxState(part, isLastLivePart){
+    // the drafting part happened before the run existed: it is always done
+    if(part.kind === "drafting") return "done";
     if(part.outcome === "green" || part.outcome === "satisfied" || part.outcome === "already-green") return "done";
     if(typeof part.outcome === "string") return "stopped";
     // P5-R: its leg's halt cut this part off — the map's existing "stopped" state, never "done"
@@ -968,6 +974,7 @@
   // (a single-attempt step, or the whole "run" box on an old-shape spine)
   // reads the part's own outcome.
   function partResultGlyph(part, box){
+    if(part.kind === "drafting") return glyphSpan(attemptGlyph("green", false)); // [✓]: drafting is done once the run exists
     if(partHasNoVerdict(part)) return null;
     var boxIsLive = box.state === "running";
     if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(attemptGlyph(a.outcome, boxIsLive)); }).join("");
@@ -1247,8 +1254,12 @@
     if(!d || isNaN(d.getTime())) return "unknown";
     return d.toLocaleString("en-US", {year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit"});
   }
-  // the right-side header: `[sign] job (runid) │ **word** — reason · ended 10/4/2026, 6:01 PM` (no capitals: the job
+  // the right-side header: `[sign] job (run-N) │ **word** — reason · ended 10/4/2026, 6:01 PM` (no capitals: the job
   // name is shown as written). `bodyHtml` is already escaped.
+  // a run's NAME for a person (P6 item 7): `job (run-N)`, N from the server (`runNo`, one owner) — the page never counts.
+  // A run with no number (an imported bundle's run is not in the run list) falls back to its id.
+  function runLabel(runNo, runid){ return typeof runNo === "number" ? "run-" + runNo : String(runid || ""); }
+  function runName(job, runNo, runid){ return job + " (" + runLabel(runNo, runid) + ")"; }
   function setRunHeader(sign, nameText, bodyHtml){
     document.getElementById("active-wf-name").textContent = nameText;
     document.getElementById("active-wf-dot").className = "dot " + glyphClass(sign);
@@ -1294,7 +1305,7 @@
     row.setAttribute("tabindex", "0");
     row.setAttribute("role", "button");
     row.setAttribute("aria-pressed", selected ? "true" : "false");
-    var histFullName = r.job + ' (' + r.runid + ')';
+    var histFullName = runName(r.job, r.runNo, r.runid);
     if(r.starting){
       row.innerHTML =
         '<span class="wf-line1"><span class="dot amber"></span>' +
@@ -1312,14 +1323,20 @@
         '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
         '</span>';
     } else if(compact){
-      // an EXPANDED per-run row under a workflow: `[sign] **word** — reason   runid · $ · date`
+      // an EXPANDED per-run row under a workflow (hamr 2026-10-06), 2 lines, left-aligned:
+      //   `[sign] (run-N)  **word** — reason` / `$ ($drafting) · wall · date`
       row.innerHTML =
         '<span class="wf-line1 wf-compact"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
-        '<span class="wf-ended wf-ended-inline" title="' + escapeXml(histFullName) + '" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' +
-        '<span class="wf-meta wf-rowmeta">' + escapeXml(r.runid) + ' \u00B7 ' + escapeXml(rowSpendText(r)) + ' \u00B7 ' + escapeXml(r.date || "unknown") + '</span>' +
-        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) + '</span>';
+        '<span class="wf-name wf-runno" title="' + escapeXml(histFullName) + '" data-testid="hist-runno-' + escapeXml(r.runid) + '">(' + escapeXml(runLabel(r.runNo, r.runid)) + ')</span>' +
+        '<span class="wf-ended wf-ended-inline" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span></span>' +
+        '<span class="wf-meta-line">' +
+        '<span class="wf-meta">' + escapeXml(rowSpendText(r, true)) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(rowWallText(r)) + '</span>' +
+        '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
+        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) +
+        '</span>';
     } else {
-      // History card: line 1 sign + job (runid); line 2 **word** — reason; line 3 the facts
+      // History card: line 1 sign + job (run-N); line 2 **word** — reason; line 3 the facts
       row.innerHTML =
         '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
         '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
@@ -1370,6 +1387,7 @@
         runs: jobRuns,
         runCount: jobRuns.length,
         lastRunid: last.runid,
+        lastRunNo: last.runNo,
         lastAt: last.at,
         lastGlyph: last.glyph || "▶",
         lastStatus: last.status || null,
@@ -1377,7 +1395,7 @@
         lastResumedCount: last.resumedCount || 0,
         lastCheckType: last.checkType || "unknown",
         lastModel: last.model || null,
-        lastSpend: rowSpendText(last),
+        lastSpend: rowSpendText(last, true),
         lastWall: rowWallText(last) || "unknown",
         lastDate: last.date,
       };
@@ -1503,18 +1521,16 @@
       row.setAttribute("role", "button");
       row.setAttribute("aria-expanded", expanded ? "true" : "false");
       row.setAttribute("aria-pressed", isSelected ? "true" : "false");
-      var wfFullName = g.job + ' (' + g.lastRunid + ')';
+      var wfFullName = runName(g.job, g.lastRunNo, g.lastRunid);
       row.innerHTML =
-        '<span class="wf-line1"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
-        '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span></span>' +
-        (g.lastStatus ? '<span class="wf-ended" data-testid="wf-ended-' + escapeXml(g.job) + '">' + statusWordHtml(g.lastStatus, g.lastEndedLine) + '</span>' : '') +
+        '<span class="wf-line1 wf-compact"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
+        '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span>' +
+        (g.lastStatus ? '<span class="wf-ended wf-ended-inline" data-testid="wf-ended-' + escapeXml(g.job) + '">' + statusWordHtml(g.lastStatus, g.lastEndedLine) + '</span>' : '') + '</span>' +
         '<span class="wf-meta-line">' +
         '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastSpend) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastWall) + '</span>' +
         '<span class="wf-meta">' + escapeXml(g.lastDate || "unknown") + '</span>' +
-        resumedTagHtml(g.lastResumedCount, "wf-resumed-" + g.job) +
-        '<span class="wf-meta">' + g.runCount + ' run' + (g.runCount === 1 ? '' : 's') + '</span>' +
         '</span>';
       row.addEventListener("click", function(){
         // a single-run job has nothing to expand — the click still opens
@@ -1559,7 +1575,7 @@
   function filterBarHTML(scope){
     return (
       '<div class="filterbar" data-scope="' + scope + '" data-testid="' + scope + '-filters">' +
-        '<input type="text" class="search-input" placeholder="search job, run id or model…" ' +
+        '<input type="text" class="search-input" placeholder="search job, run-N, run id or model…" ' +
           'id="' + scope + '-filter-search" data-testid="' + scope + '-filter-search" autocomplete="off">' +
         '<div class="chips" role="group" aria-label="Filter">' +
           '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="deterministic" title="deterministic" data-testid="chip-' + scope + '-ct-deterministic">D</button>' +
@@ -1588,15 +1604,18 @@
   // means "no search filter" — everything passes it, same posture as an
   // empty chip group). item C (2026-09-26): also matches the run's model
   // name (e.g. "deepseek", "sonnet") — `model` is `null`/absent on an older
-  // archived run, same posture as a missing job/runid.
-  function matchesSearch(job, runid, model, query){
+  // archived run, same posture as a missing job/runid. Also the run's shown
+  // name: `run-N` and `job (run-N)` (N is the server's `runNo`, never counted here).
+  function matchesSearch(job, runid, model, query, runNo){
     if(!query) return true;
     var q = String(query).trim().toLowerCase();
     if(!q) return true;
     var j = String(job || "").toLowerCase();
     var r = String(runid || "").toLowerCase();
     var m = String(model || "").toLowerCase();
-    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1 || m.indexOf(q) !== -1;
+    var label = typeof runNo === "number" ? "run-" + runNo : "";
+    var shown = label ? j + " (" + label + ")" : "";
+    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1 || m.indexOf(q) !== -1 || (label !== "" && (label.indexOf(q) !== -1 || shown.indexOf(q) !== -1));
   }
   function filterRuns(runs, filters, nowMs){
     nowMs = (typeof nowMs === "number") ? nowMs : Date.now();
@@ -1607,7 +1626,7 @@
     return (runs || []).filter(function(r){
       if(ct.length && ct.indexOf(r.checkType) === -1) return false;
       if(rs.length && rs.indexOf(r.glyph) === -1) return false;
-      if(!matchesSearch(r.job, r.runid, r.model, q)) return false;
+      if(!matchesSearch(r.job, r.runid, r.model, q, r.runNo)) return false;
       if(time !== "all"){
         var days = time === "7d" ? 7 : 30;
         var t = typeof r.at === "string" ? Date.parse(r.at) : NaN;
@@ -2101,15 +2120,16 @@
    * complete run whose drafting share is itself incomplete — hamr's ruling:
    * a reader summing the two must never read the leading number as exact
    * when the bracket next to it isn't). `draftSpendComplete === false` marks
-   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX".
+   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX". `shortForm` drops the word
+   * "drafting" (the Runs list cards only — "$5.00 ($0.08)").
    */
-  function panelMoneyWithDraft(spendCoreVal, spendCoreFloor, draftSpentUsd, draftSpendComplete, budgetUsd){
+  function panelMoneyWithDraft(spendCoreVal, spendCoreFloor, draftSpentUsd, draftSpendComplete, budgetUsd, shortForm){
     var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
     var draftFloor = hasDraft && draftSpendComplete === false;
     var core = (spendCoreVal === null || spendCoreVal === undefined)
       ? "unknown"
       : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
-    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting)" : "";
+    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
     return core + draftPart + capPart;
   }
@@ -2134,13 +2154,13 @@
    * is a floor only when its own drafting share is incomplete.
    * @param {any} r a `/api/runs` row (or a Workflows group's `last` row)
    */
-  function rowSpendText(r){
+  function rowSpendText(r, shortForm){
     if(r.starting) return "starting…";
-    if(rowIsLive(r)) return liveSpendText(r.spendFloorUsd, r.draftSpentUsd, r.draftSpendComplete);
+    if(rowIsLive(r)) return liveSpendText(r.spendFloorUsd, r.draftSpentUsd, r.draftSpendComplete, shortForm);
     var draftIncomplete = typeof r.draftSpentUsd === "number" && r.draftSpentUsd !== null && r.draftSpendComplete === false;
     var coreVal = r.died ? r.spendFloorUsd : r.spentUsd;
     var coreFloor = !!r.died || draftIncomplete;
-    return panelMoneyWithDraft(coreVal, coreFloor, r.draftSpentUsd, r.draftSpendComplete);
+    return panelMoneyWithDraft(coreVal, coreFloor, r.draftSpentUsd, r.draftSpendComplete, undefined, shortForm);
   }
   function duration(ms){
     if(ms === null || ms === undefined) return "unknown";
@@ -2163,11 +2183,11 @@
    * @param {number|null} spendFloorUsd @param {number|null} draftSpentUsd
    * @param {boolean|null} draftSpendComplete @returns {string}
    */
-  function liveSpendText(spendFloorUsd, draftSpentUsd, draftSpendComplete){
+  function liveSpendText(spendFloorUsd, draftSpentUsd, draftSpendComplete, shortForm){
     if(spendFloorUsd === null || spendFloorUsd === undefined) return "unknown";
     var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
     var draftFloor = hasDraft && draftSpendComplete === false;
-    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting)" : "";
+    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     return panelMoney(spendFloorUsd) + " so far" + draftPart;
   }
   /** build item 6 — the matching wall-clock phrase: "running <duration>",
@@ -2474,7 +2494,7 @@
 
   function renderRun(detail){
     if(detail.fileMissing){
-      setRunHeader("\u00B7", detail.job + " (" + detail.runid + ")", "file missing");
+      setRunHeader("\u00B7", runName(detail.job, detail.runNo, detail.runid), "file missing");
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "spine file no longer on disk";
       document.getElementById("run-content").hidden = true;
@@ -2485,7 +2505,7 @@
     }
 
     if(detail.starting){
-      setRunHeader("\u25B6", detail.job + " (" + detail.runid + ")", statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
+      setRunHeader("\u25B6", runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "starting… the run has not written its log yet";
       document.getElementById("run-content").hidden = true;
@@ -2498,7 +2518,7 @@
     document.getElementById("audit-body").hidden = false;
     renderEnded(detail);
 
-    setRunHeader(detail.glyph, detail.job + " (" + detail.runid + ")", runHeaderBody(detail));
+    setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), runHeaderBody(detail));
 
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = false;
@@ -2608,7 +2628,7 @@
           (box.blocked > 0 ? '<span class="badge red" data-testid="part-blocked-badge">' + box.blocked + ' blocked</span>' : '') +
         '</div>' +
         '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +
-        '<div class="step-meta">' + escapeXml(toolBreakdownLine(box.part.byTool)) + '</div>';
+        '<div class="step-meta">' + escapeXml(partLine2Text(box.part)) + '</div>';
       listEl.appendChild(card);
       var jumpToAudit = function(){
         document.getElementById("tab-audit").click();
@@ -2769,6 +2789,46 @@
   // shows — expand -> attempts (parts with >1, e.g. a multi-attempt step or
   // the fix loop) or straight to a rounds table (every other part kind,
   // which carries exactly one synthetic whole-part attempt).
+  // The DRAFTING part (a panel-authored run's first part; src/draftspend.js `draftingPartFor`): ONE owner of its
+  // money wording, line 1, line 2 and its Audit table. Money is the spine's own drafting figure ("at least" when it
+  // is a floor); a call with no price reads "unknown", never $0.
+  function draftingMoneyText(part){
+    return (part.spendComplete === false ? "at least " : "") + panelMoney(part.spentUsd);
+  }
+  function draftingLine1Text(part){
+    var n = typeof part.rounds === "number" ? part.rounds : 0;
+    return (part.wallMs === null || part.wallMs === undefined ? "–" : duration(part.wallMs)) + " &middot; " + draftingMoneyText(part) + " &middot; " + n + " call" + (n === 1 ? "" : "s");
+  }
+  // line 2 of a part's card / Audit body: the drafting step names, or a worker part's tool breakdown
+  function partLine2Text(part){
+    if(part && part.kind === "drafting") return (part.draftSteps || []).map(function(x){ return x.label; }).join(" · ");
+    return toolBreakdownLine(part.byTool);
+  }
+  function draftingCallCost(c){
+    if(c.costUsd === null || c.costUsd === undefined) return "unknown";
+    if(c.unpricedRounds > 0) return "unknown (" + c.unpricedRounds + " unpriced round" + (c.unpricedRounds === 1 ? "" : "s") + ")";
+    return panelMoney(c.costUsd);
+  }
+  // one row per drafting step ("–" where it made no call); a step's further calls get their own row named by the
+  // call's own label (confirm#2, revise-1…); the last row is the total, equal to the header's money
+  function draftingTableHtml(part){
+    var rows = "";
+    (part.draftSteps || []).forEach(function(st){
+      var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
+      var calls = Array.isArray(st.calls) ? st.calls : [];
+      var first = calls[0];
+      rows += "<tr><td>" + escapeXml(st.label) + "</td><td>" + wall + "</td><td>" + (first ? "1" : "–") + "</td><td>" +
+        (first && first.model ? escapeXml(first.model) : "–") + "</td><td>" + (first ? draftingCallCost(first) : "–") + "</td></tr>";
+      calls.slice(1).forEach(function(c){
+        rows += "<tr><td>" + escapeXml(st.label) + " (" + escapeXml(c.label) + ")</td><td>–</td><td>1</td><td>" +
+          (c.model ? escapeXml(c.model) : "–") + "</td><td>" + draftingCallCost(c) + "</td></tr>";
+      });
+    });
+    rows += '<tr class="drafting-total"><td><b>total</b></td><td>' + (part.wallMs === null || part.wallMs === undefined ? "–" : duration(part.wallMs)) +
+      "</td><td>" + (typeof part.rounds === "number" ? part.rounds : 0) + "</td><td>–</td><td>" + draftingMoneyText(part) + "</td></tr>";
+    return '<div class="audit-table-scroll"><table class="rounds-table drafting-table" data-testid="drafting-table">' +
+      "<thead><tr><th>Step</th><th>Time</th><th>Calls</th><th>Model</th><th>Cost</th></tr></thead><tbody>" + rows + "</tbody></table></div>";
+  }
   function partHasWrites(part){
     var bt = part.byTool;
     if(!bt) return false;
@@ -2798,6 +2858,7 @@
    * @returns {string}
    */
   function partLine1Text(part, detail){
+    if(part && part.kind === "drafting") return draftingLine1Text(part);
     var isLiveRunPart = part && part.kind === "run" && detail && !detail.died && detail.spentUsd === null;
     var wallText = (isLiveRunPart && part.wallMs === null) ? liveWallPhrase(detail.wallFloorMs) : duration(part.wallMs);
     var spendText = (isLiveRunPart && part.spentUsd === null)
@@ -3016,9 +3077,15 @@
         built = true;
         var toolsHeader = document.createElement("div");
         toolsHeader.className = "hint";
-        toolsHeader.textContent = toolBreakdownLine(part.byTool);
+        toolsHeader.textContent = partLine2Text(part);
         body.appendChild(toolsHeader);
-        if(attempts.length > 1){
+        if(part.kind === "drafting"){
+          // no tool calls and no rounds: one row per drafting step instead (the drafting part is index 0 of the
+          // shown list; the rounds endpoint has nothing to serve for it)
+          var draftingEl = document.createElement("div");
+          draftingEl.innerHTML = draftingTableHtml(part);
+          body.appendChild(draftingEl);
+        } else if(attempts.length > 1){
           // parts WITH an attempt sub-loop (a multi-attempt step, or the fix
           // loop) expand to attempt rows first — each attempt expands to its
           // own rounds table on its own click, same as the Run tab used to.
@@ -3480,7 +3547,7 @@
       authorGet("/api/settings/providers").then(function(r){
         if(!r || !r.ok){ pvNote.textContent = "could not read providers"; document.getElementById("pv-keyfile-path").textContent = "the keys file (path unknown — could not read providers)"; return; }
         var kf = r.keysFile;
-        document.getElementById("pv-keyfile-path").textContent = kf.path;
+        document.getElementById("pv-keyfile-path").textContent = "";
         document.getElementById("pv-keyfile-note").textContent = kf.warning ? ("⚠ " + kf.warning) : "";
         pvRows.innerHTML = r.rows.length ? r.rows.map(function(row){
           var e = escapeXml(row.envName);
@@ -3500,8 +3567,10 @@
               ? '<button class="btn small pv-test" type="button" data-testid="test-connection-' + e + '">Test</button><div class="hint pv-test-result" data-testid="test-result-' + e + '"></div>'
               : '<span class="hint">not available</span>') + "</td>"
             + '<td data-testid="pv-tokens-' + e + '">' + escapeXml(tokensText(row.tokens)) + "</td>"
-            + "<td>" + bal + "</td></tr>";
-        }).join("") : '<tr><td colspan="7" class="hint" data-testid="pv-empty">no keys with a value yet — add NAME=key to the keys file, then Reload keys</td></tr>';
+            + "<td>" + bal + "</td>"
+            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-in" data-testid="pv-price-in-' + e + '" placeholder="not set" value="' + (row.priceInPerM === null ? "" : escapeXml(String(row.priceInPerM))) + '"></td>'
+            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-out" data-testid="pv-price-out-' + e + '" placeholder="not set" value="' + (row.priceOutPerM === null ? "" : escapeXml(String(row.priceOutPerM))) + '"></td>';
+        }).join("") : '<tr><td colspan="9" class="hint" data-testid="pv-empty">no keys with a value yet — add NAME=key to the keys file, then Reload keys</td></tr>';
         pvRows.querySelectorAll(".pv-balance-fetch").forEach(function(fetchEl){
           authorGet("/api/settings/providers/balance?env=" + encodeURIComponent(fetchEl.getAttribute("data-env"))).then(function(b){
             fetchEl.textContent = b && b.text ? b.text : ("— " + ((b && b.note) || "unavailable"));
@@ -3515,6 +3584,16 @@
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
       }).catch(function(){ pvNote.textContent = "could not read providers"; });
     }
+    // The row's POST body. A price is both boxes or neither (the server refuses a half-set one), so while exactly one
+    // is filled — the normal middle of typing a price — the price fields are LEFT OUT (the server keeps what is saved)
+    // and the other boxes still save; the price posts once both are filled, or both are cleared.
+    function pvRowBody(env, v){
+      var pin = String(v.priceIn).trim();
+      var pout = String(v.priceOut).trim();
+      var body = { envName: env, name: v.name, shape: v.shape, baseUrl: v.baseUrl };
+      if((pin === "") === (pout === "")){ body.priceInPerM = pin; body.priceOutPerM = pout; }
+      return body;
+    }
     pvRows.addEventListener("change", function(e){
       var t = e.target;
       var tr = t.closest("tr");
@@ -3525,14 +3604,15 @@
         }).catch(function(){ pvNote.textContent = "could not save"; });
         return;
       }
-      if(!(t.classList.contains("pv-name") || t.classList.contains("pv-shape") || t.classList.contains("pv-url"))) return;
+      if(!(t.classList.contains("pv-name") || t.classList.contains("pv-shape") || t.classList.contains("pv-url") || t.classList.contains("pv-price-in") || t.classList.contains("pv-price-out"))) return;
       var env = tr.getAttribute("data-env");
-      authorPost("/api/settings/providers/row", {
-        envName: env,
+      authorPost("/api/settings/providers/row", pvRowBody(env, {
         name: tr.querySelector(".pv-name").value,
         shape: tr.querySelector(".pv-shape").value,
         baseUrl: tr.querySelector(".pv-url").value,
-      }).then(function(r){
+        priceIn: tr.querySelector(".pv-price-in").value,
+        priceOut: tr.querySelector(".pv-price-out").value,
+      })).then(function(r){
         pvNote.textContent = r.body && r.body.ok ? ("Saved — " + env + ".") : ((r.body && r.body.error) || "could not save");
         // no re-render: it would steal focus mid-edit; Chat's Model menu just re-reads
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
@@ -3549,6 +3629,14 @@
       }).catch(function(){ out.textContent = "failed — no answer"; }).then(function(){ t.disabled = false; });
     });
     document.getElementById("btn-reload-keys").addEventListener("click", loadProviders);
+    // Open keys folder: the server opens the FOLDER in the file manager; if it cannot, the path shows as text
+    document.getElementById("btn-open-keys-folder").addEventListener("click", function(){
+      var out = document.getElementById("pv-keyfile-path");
+      authorPost("/api/settings/open-keys-folder", {}).then(function(r){
+        var b = r.body || {};
+        out.textContent = b.ok && b.opened ? "" : ("Could not open it here. Your keys folder: " + (b.path || "(unknown)"));
+      }).catch(function(){ out.textContent = "Could not open it here — the keys folder is ~/.config/bareloop"; });
+    });
     wireTabs([document.getElementById("tab-providers"), document.getElementById("tab-money")]);
     document.getElementById("tab-providers").addEventListener("click", loadProviders);
     // Auto-save on a human edit (change = blur or Enter): POST carries the per-start token; the chat has no route here
@@ -3960,6 +4048,11 @@
     function fitCardBoxes(){
       ["jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge"].forEach(function(id){ fitBox(document.getElementById(id)); });
     }
+    // live growth: each card box re-fits on its own input (typing and Enter), through the same fitBox
+    ["jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge"].forEach(function(id){
+      var box = document.getElementById(id);
+      box.addEventListener("input", function(){ fitBox(box); });
+    });
     window.addEventListener("resize", function(){ fitCardBoxes(); fitBox(msgInput); });
     document.getElementById("tab-chat").addEventListener("click", function(){ fitCardBoxes(); fitBox(msgInput); });
     // Enter sends through the one main button; Shift+Enter (or IME composition) keeps its newline
@@ -4068,6 +4161,7 @@
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
       document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
       if(reuseSession) setReuseLocked(true);
+      fitCardBoxes();
       renderMessages(st);
       renderActions(st);
       if(pollTimer) clearInterval(pollTimer);

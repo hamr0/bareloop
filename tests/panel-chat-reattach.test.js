@@ -135,16 +135,16 @@ test('page: attachSession runs against a fake DOM and wires the live session (fa
   const src = `${fnSrc('attachSession')}\nreturn attachSession;`;
   // sessionId/sessionLive are page-level vars; run the body with them as closure vars via a wrapper
   const body = src.replace('return attachSession;', 'return {attachSession, get: () => ({sessionId, sessionLive, reuseSession, signClickedOnce})};');
-  const g = new Function('document', 'modelSelect', 'openNewCard', 'setVal', 'renderMessages', 'renderActions', 'setReuseLocked', 'poll', 'escapeXml', 'setInterval', 'clearInterval',
+  const g = new Function('document', 'modelSelect', 'openNewCard', 'setVal', 'renderMessages', 'renderActions', 'setReuseLocked', 'poll', 'escapeXml', 'setInterval', 'clearInterval', 'fitCardBoxes',
     `var sessionId = null, sessionLive = false, reuseSession = false, autoSigned = false, signClickedOnce = false, pollTimer = null;\n${body}`);
   const doc = { getElementById: el, querySelectorAll: () => ({ forEach: (fn) => radios.forEach(fn) }) };
   const out = g(doc, modelSelect, () => calls.push('openNewCard'), (id, v) => { el(id).value = v; }, () => calls.push('messages'), () => calls.push('actions'),
-    (on) => calls.push(`lock:${on}`), () => calls.push('poll'), (x) => x, (fn, ms) => { calls.push(`interval:${ms}`); return 7; }, () => {});
+    (on) => calls.push(`lock:${on}`), () => calls.push('poll'), (x) => x, (fn, ms) => { calls.push(`interval:${ms}`); return 7; }, () => {}, () => calls.push('fit'));
   out.attachSession({ sessionId: 's1', state: { reuse: false, card: { checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'j', goal: 'g', capUsd: 3, maxWallMs: 120000 } } });
   assert.deepEqual(out.get(), { sessionId: 's1', sessionLive: true, reuseSession: false, signClickedOnce: false });
   assert.equal(el('jf-goal').value, 'g');
   assert.equal(el('jf-cap-money').value, 3);
   assert.equal(el('jf-cap-time').value, 2);
   assert.equal(radios.find((r) => r.checked).value, 'rubric');
-  assert.deepEqual(calls.filter((c) => c !== 'lock:false'), ['openNewCard', 'messages', 'actions', 'interval:2000', 'poll']);
+  assert.deepEqual(calls.filter((c) => c !== 'lock:false'), ['openNewCard', 'fit', 'messages', 'actions', 'interval:2000', 'poll']);
 });

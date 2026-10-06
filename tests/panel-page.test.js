@@ -692,6 +692,22 @@ test('item C: matchesSearch — also matches the model field (case-insensitive s
   assert.equal(matchesSearch('pulselog-person', 'mu2p83go', undefined, ''), true);
 });
 
+test('matchesSearch — also finds the shown run name: `run-N` and `job (run-N)`, N from the row\'s runNo; no runNo never false-matches', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function matchesSearch(');
+  const end = html.indexOf('function filterRuns(');
+  // eslint-disable-next-line no-new-func
+  const matchesSearch = new Function(`${html.slice(start, end)}\nreturn matchesSearch;`)();
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-2', 2), true);
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'RUN-2', 2), true);
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'pulselog (run-2)', 2), true);
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-3', 2), false);
+  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-2', undefined), false);
+  const filterRuns = loadFilterRunsWithSearch(html);
+  const runs = [{ job: 'a', runid: 'x1', runNo: 1 }, { job: 'a', runid: 'x2', runNo: 2 }];
+  assert.deepEqual(filterRuns(runs, { search: 'run-2' }).map((r) => r.runid), ['x2']);
+});
+
 test('item 1: filterRuns — search is AND with the chip groups, matches job or runid', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const filterRuns = loadFilterRunsWithSearch(html);
@@ -763,7 +779,7 @@ test('item 1: the search input exists in the shared filter bar for both scopes, 
 
 test('item C: search placeholder mentions job, run id AND model', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /placeholder="search job, run id or model…"/);
+  assert.match(html, /placeholder="search job, run-N, run id or model…"/);
 });
 
 test('item 1: search state persists via the same localStorage key as the chip filters', () => {
@@ -1456,6 +1472,8 @@ function makeWorkflowsPage() {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const src = [
     extractFnSource(html, 'escapeXml'),
+    extractFnSource(html, 'runLabel'),
+    extractFnSource(html, 'runName'),
     extractFnSource(html, 'glyphClass'),
     extractFnSource(html, 'statusWordHtml'),
     extractFnSource(html, 'groupRunsByJob'),
@@ -2304,11 +2322,11 @@ test('progress list (2026-10-05): renderProgress reports a change only when the 
   // eslint-disable-next-line no-new-func
   const renderActions = new Function('progressRow', 'errEl', 'CLIENT_TERMINAL_PHASES', 'refreshStartEnabled', `var lastState, sessionLive;\n${rp}\n${ra}\nreturn renderActions;`)(
     row, { textContent: '' }, ['refused', 'abandoned', 'error', 'signed', 'signing-failed'], () => {});
-  const a = { phase: 'drafting', steps: [{ id: 'copy', label: 'copying source', status: 'running', detail: '' }] };
+  const a = { phase: 'drafting', steps: [{ id: 'copy', label: 'making worktree', status: 'running', detail: '' }] };
   row.lastElementChild = li;
   renderActions(a); assert.equal(scrolls, 1, 'a new line scrolls');
   renderActions(JSON.parse(JSON.stringify(a))); assert.equal(scrolls, 1, 'an identical poll tick does not scroll');
-  renderActions({ phase: 'drafting', steps: [{ id: 'copy', label: 'copying source', status: 'done', detail: '' }, { id: 'draft', label: 'drafting', status: 'running', detail: '' }] });
+  renderActions({ phase: 'drafting', steps: [{ id: 'copy', label: 'making worktree', status: 'done', detail: '' }, { id: 'draft', label: 'drafting', status: 'running', detail: '' }] });
   assert.equal(scrolls, 2, 'a new/changed line scrolls');
   assert.deepEqual(lastArg, { block: 'nearest' });
   renderActions({ phase: 'signed', steps: [{ id: 'signed', label: 'signed hash', status: 'done', detail: '' }] });
@@ -2630,7 +2648,7 @@ test('progress list: renderProgress draws one line per step (running = dots, don
   bound({ steps: [] });
   assert.equal(row.hidden, true);
   bound({ steps: [
-    { id: 'copy', label: 'copying source', status: 'done', detail: '' },
+    { id: 'copy', label: 'making worktree', status: 'done', detail: '' },
     { id: 'check', label: 'checking source', status: 'failed', detail: '3 files look like secrets: a.js, b.js' },
   ] });
   assert.equal(row.hidden, false);
@@ -2638,14 +2656,14 @@ test('progress list: renderProgress draws one line per step (running = dots, don
   assert.match(row.innerHTML, /step ok" data-step="copy"[^]*\u2713/);
   assert.match(row.innerHTML, /step bad" data-step="check"[^]*\u2717[^]*3 files look like secrets: a\.js, b\.js/);
   assert.equal((row.innerHTML.match(/3 files look like secrets/g) || []).length, 1, 'the reason appears once');
-  bound({ steps: [{ id: 'copy', label: 'copying source', status: 'running', detail: '' }] });
+  bound({ steps: [{ id: 'copy', label: 'making worktree', status: 'running', detail: '' }] });
   assert.match(row.innerHTML, /step run"/);
   bound({ steps: [{ id: 'confirm', label: 'confirming plan', status: 'running', detail: '' }], pendingAsk: { kind: 'menu' } });
   assert.match(row.innerHTML, /waiting for your OK/);
   assert.doesNotMatch(row.innerHTML, /step run"/, 'waiting on the person is not an animation');
   for (const kind of ['menu', 'install-needed', 'other']) {
     bound({ steps: [
-      { id: 'copy', label: 'copying source', status: 'done', detail: '' },
+      { id: 'copy', label: 'making worktree', status: 'done', detail: '' },
       { id: 'deps', label: 'checking packages', status: 'running', detail: 'Packages missing in the copy. Run: npm ci' },
     ], pendingAsk: { kind } });
     const waitLi = row.innerHTML.match(/<li class="step wait"[^]*?<\/li>/);
@@ -3052,4 +3070,28 @@ test('progress list: a signed session ends "signed hash" with a check and its ">
   assert.match(last, /class="step ok"[^>]*data-step="signed"/);
   assert.match(last, /<span class="step-label">signed hash<\/span><span class="step-sign">✓<\/span>/);
   assert.match(last, /&gt; drafting spent \$0\.12/);
+});
+
+test('providers row POST: while exactly one price box is filled the price fields are left out (no half-set error flash); both-filled and both-empty still post them', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const start = html.indexOf('function pvRowBody(');
+  assert.ok(start > 0, 'pvRowBody exists in the page');
+  const braceStart = html.indexOf('{', start);
+  let depth = 0;
+  let i = braceStart;
+  for (; i < html.length; i += 1) {
+    if (html[i] === '{') depth += 1;
+    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
+  }
+  // eslint-disable-next-line no-new-func
+  const pvRowBody = new Function(`${html.slice(start, i + 1)}\nreturn pvRowBody;`)();
+  const base = { name: 'n', shape: 'openai-compat', baseUrl: '' };
+  const half = pvRowBody('K', { ...base, priceIn: '0.27', priceOut: ' ' });
+  assert.equal(Object.hasOwn(half, 'priceInPerM'), false);
+  assert.equal(Object.hasOwn(half, 'priceOutPerM'), false);
+  assert.equal(half.name, 'n', 'the other boxes still save');
+  const other = pvRowBody('K', { ...base, priceIn: '', priceOut: '1.1' });
+  assert.equal(Object.hasOwn(other, 'priceInPerM'), false);
+  assert.deepEqual(pvRowBody('K', { ...base, priceIn: ' 0.27 ', priceOut: '1.1' }), { envName: 'K', ...base, priceInPerM: '0.27', priceOutPerM: '1.1' });
+  assert.deepEqual(pvRowBody('K', { ...base, priceIn: '', priceOut: '' }), { envName: 'K', ...base, priceInPerM: '', priceOutPerM: '' });
 });
