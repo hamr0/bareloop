@@ -417,7 +417,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
-  const base = endedBase(summary, death, o);
+  const base = withEditAction(endedBase(summary, death, o));
   const wt = o.worktree;
   if (!base || !wt) return base;
   // P6 item 1 — the run worked on a worktree in the person's own repo. GREEN: the branch carries the work (the folder is
@@ -430,6 +430,16 @@ export function endedFor(summary, death, o = {}) {
     return { ...base, next: `In ${wt.repo}: git merge ${wt.branch} — or throw the work away: git branch -D ${wt.branch}.${kept}` };
   }
   return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
+}
+
+/**
+ * "Edit in chat" (hamr 2026-10-07): offered on EVERY non-green ending (failed, capped, stopped, died, every other red),
+ * after Resume when both show; a green ending keeps Reuse workflow only. ONE place, so no ending branch can forget it.
+ * @param {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null} ended
+ */
+function withEditAction(ended) {
+  if (!ended || ended.actions.some((a) => a.id === 'reuse')) return ended;
+  return { ...ended, actions: [...ended.actions, { id: 'edit', label: 'Edit in chat' }] };
 }
 
 /** @param {any} summary @param {any} death @param {any} o */

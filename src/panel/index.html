@@ -374,6 +374,7 @@
   .job-card{position:relative;border:1px solid var(--border-strong);padding:14px 10px 10px;background:var(--panel2);margin-top:10px;margin-bottom:10px;}
   .job-card h4{margin:0 0 8px;font-size:13px;position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;}
   .job-card .card-clear{position:absolute;top:-13px;right:10px;padding:1px 8px;font-size:11px;line-height:1.4;background:var(--panel2);}
+  .job-card .origin-line{font-size:12px;padding:6px 8px;border-left:3px solid var(--amber);background:var(--panel);color:var(--text-dim);margin-bottom:6px;overflow-wrap:anywhere;}
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
@@ -533,6 +534,7 @@
             <h4 id="job-card-title">Job card — draft</h4>
             <button class="btn card-clear" type="button" id="chat-clear-btn" data-testid="chat-clear">Clear</button>
             <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
+            <div class="origin-line" id="chat-origin-line" data-testid="origin-line" hidden></div>
 
             <div class="field">
               <label id="jf-verdict-label">Check type</label>
@@ -2397,6 +2399,21 @@
       document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
   }
+  // Edit in chat (hamr 2026-10-07, option A) — the same prefill door as Reuse workflow (`start-from`, the ONE reader of a
+  // run's signed job), but the Chat card opens with EVERY box open and the normal [Start drafting] path: it drafts a new job.
+  // The origin line is code-owned fixed text; run name and status word come from the same helpers the run header uses.
+  function editInChat(detail){
+    var origin = "Copied from " + detail.job + " (" + runLabel(detail.runNo, detail.runid) + ") \u2014 " +
+      ((detail.status && detail.status.word) || "ended") +
+      ". Every box is open. Change anything and it drafts as a new job; change nothing and it is another run of the same job.";
+    authorGet("/api/author/start-from?runid=" + encodeURIComponent(detail.runid)).then(function(r){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: (r && r.ok) ? {runid: detail.runid, prefill: r, origin: origin} : {error: (r && r.error) || "nothing to copy"}}));
+    }).catch(function(x){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: {error: "could not reach the panel: " + x.message}}));
+    });
+  }
   function renderRunActions(detail){
     var bar = document.getElementById("run-actions");
     var html = "";
@@ -2412,6 +2429,10 @@
       var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
       if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
     }
+    // Edit in chat: every non-green ending (the server's Ended block says so) — a died run included
+    if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "edit"; })){
+      html += '<button class="btn" type="button" data-testid="btn-edit-chat">Edit in chat</button>';
+    }
     // Reuse workflow: on a GREEN run only (the server's Ended block says so) — a new run of the same signed job
     if(!live && !detail.died && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
       html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
@@ -2420,6 +2441,8 @@
     bar.hidden = html === "";
     var reuseBtn = bar.querySelector('[data-testid="btn-reuse"]');
     if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid); });
+    var editBtn = bar.querySelector('[data-testid="btn-edit-chat"]');
+    if(editBtn) editBtn.addEventListener("click", function(){ editInChat(detail); });
     var stopBtn = bar.querySelector('[data-testid="btn-stop"]');
     if(stopBtn){
       stopBtn.addEventListener("click", function(){
@@ -3731,6 +3754,7 @@
     var autoSigned = false;
     var sfLine = document.getElementById("chat-startfrom-line");
     var sfNote = document.getElementById("chat-startfrom-note");
+    var originLine = document.getElementById("chat-origin-line");
     // the locked boxes of a reuse card: the signed workflow, greyed and not editable (the server refuses a change anyway)
     var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];
     // hamr 2026-10-05: while a drafting session is live NOTHING on the card is editable (the session was started from
@@ -3756,7 +3780,7 @@
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
       startFrom = null; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
-      sfLine.hidden = true; sfNote.hidden = true;
+      sfLine.hidden = true; sfNote.hidden = true; originLine.hidden = true;
       setReuseLocked(false);
       renderPicker();
       renderMain();
@@ -3856,6 +3880,7 @@
     document.getElementById("rw-change").addEventListener("click", unpickReuse);
     function openNewCard(){
       card.hidden = false;
+      originLine.hidden = true;
       thread.innerHTML = "";
       errEl.textContent = "";
       actionErrEl.textContent = "";
@@ -4355,6 +4380,30 @@
       refreshStartEnabled();
     }
     document.addEventListener("bareloop-reuse", function(e){ applyReuse(e.detail || {}); });
+
+    // Edit in chat — the card opens filled from the SIGNED job with EVERY box open; the button stays the normal
+    // [Start drafting] (startFrom / reuse state are never set: no borrowed track record). A live drafting session is
+    // handled exactly as applyReuse does (clearStartFrom + openNewCard). A refused prefill opens nothing, error only.
+    function applyEdit(d){
+      if(d.error){ errEl.textContent = d.error; return; }
+      var c = (d.prefill || {}).card || {};
+      clearStartFrom();
+      openNewCard();
+      setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
+      if(c.model){ modelSelect.value = c.model; }
+      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
+      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
+      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
+      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      originLine.textContent = d.origin || "";
+      originLine.hidden = !d.origin;
+      renderPicker();
+      refreshModelStatus();
+      refreshCapNote();
+      refreshStartEnabled();
+    }
+    document.addEventListener("bareloop-edit", function(e){ applyEdit(e.detail || {}); });
 
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
     // (fed by the every-2s `poll()`) unconditionally overwrites
