@@ -973,6 +973,7 @@
     if(part.outcome === "green" || part.outcome === "satisfied" || part.outcome === "already-green") return "done";
     if(typeof part.outcome === "string") return "stopped";
     // P5-R: its leg's halt cut this part off — the map's existing "stopped" state, never "done"
+    if(part.status && part.status.key === "died") return "died";
     if(part.stopReason) return "stopped";
     if(isLastLivePart) return "running";
     return "done"; // scout/plan/replan/judge: no per-part verdict, but the part itself already happened

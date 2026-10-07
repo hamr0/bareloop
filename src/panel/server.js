@@ -1117,7 +1117,9 @@ function getRunDetailBody(runid, opts) {
     // {@link enrichPartsWithStageKind}. `kindMeta` is `null` (every stage
     // passes through unchanged) whenever no spec resolves at all, so the two
     // tabs still never disagree about order/counts/blocked-call figures.
-    parts: (draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts)?.map((p) => ({ ...p, status: partStatusFor(p) })),
+    // a run that DIED (no job-end, runner gone — `death`, decided once above) leaves its last part in flight: that part reads
+    // `died`, never the "happened, so passed" default. Replay alone cannot tell died from still running, so the verdict lives here.
+    parts: (draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...p, status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : p) })),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
