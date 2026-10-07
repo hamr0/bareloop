@@ -316,7 +316,7 @@ test('panel page: Providers tab has Name / API shape / Base URL / Test / Tokens 
   assert.doesNotMatch(html, /<th>Price<\/th>|<label class="hint">(In|Out) \$\/1M/, 'no single Price column, no in-cell label');
   assert.match(html, /<td colspan="9" class="hint" data-testid="pv-empty">/, 'empty row spans all nine columns');
   assert.match(html, /priceIn: tr\.querySelector\("\.pv-price-in"\)\.value,\s*priceOut: tr\.querySelector\("\.pv-price-out"\)\.value/, 'the row Save reads both price boxes');
-  assert.match(html, /body\.priceInPerM = pin; body\.priceOutPerM = pout;/, 'and carries both prices (when both or neither are filled)');
+  assert.match(html, /priceInPerM: pin, priceOutPerM: pout/, 'and carries both prices (the body is built only when both or neither are filled)');
   assert.ok(html.includes('If your vendor lists two prices, enter the higher one.'));
   assert.doesNotMatch(html, /pv-key\b|providers\/key|jf-price|Token price/);
   assert.doesNotMatch(html, /btn-add-provider|edit-provider-|remove-provider-/);

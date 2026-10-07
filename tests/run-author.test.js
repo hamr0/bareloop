@@ -934,7 +934,7 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.equal(r.status, 1, text);
-  assert.match(text, /This is a plain folder, not a code project\. bareloop can't check this kind of job yet\. Nothing was spent\. Your source was not changed\./);
+  assert.match(text, /Source is a plain folder, not a code project \(no git repo found\)\. bareloop can't check this kind of job yet\. Nothing spent\./);
   const spineFiles = readdirSync(out).filter((f) => f.startsWith('author-') && f.endsWith('.jsonl'));
   assert.equal(spineFiles.length, 1);
   const events = readFileSync(join(out, spineFiles[0]), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -949,6 +949,33 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
   assert.equal(authored.cost, null, 'not metered — this path never reached a model call');
   const spineLines = (text.match(/^spine {6}/gm) ?? []).length;
   assert.equal(spineLines, 1, `the tail print (~line 1181) must be the only "spine      " line — a duplicate branch-local print regressed this (saw ${spineLines})\n${text}`);
+});
+
+test('C1: a single-FILE source gets the file wording on the CLI (the one message owner), never "plain folder"', async () => {
+  const folder = mkdtempSync(join(runBase, 'plain-file-'));
+  writeFileSync(join(folder, 'a.txt'), 'hello');
+  const prep = await prepareSource({ source: join(folder, 'a.txt'), into: join(runBase, `plain-into-${n += 1}`) });
+  assert.equal(prep.stop, null, prep.stop ?? undefined);
+  const dir = mkdtempSync(join(runBase, `cli-${n += 1}-`));
+  const answersFile = join(dir, 'answers.json');
+  const draftFile = join(dir, 'specdraft.json');
+  writeFileSync(answersFile, '{}');
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  const out = join(dir, 'out');
+  const r = spawnSync(process.execPath, [
+    SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
+    '--verdict', 'green', '--out', out,
+  ], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: {
+      ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+    },
+  });
+  const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.equal(r.status, 1, text);
+  assert.match(text, /Source is a single file\. Source must be the repo folder — put the file in Destination, like src\/digest\.js\. Nothing spent\./);
+  assert.doesNotMatch(text, /plain folder/);
 });
 
 // F191, item 4 (/debrief fix-all-4) — a REAL throw inside the previously-uncovered
@@ -1045,9 +1072,8 @@ test('the plain-folder "no checks yet" stop is still named request-red/non-code-
   assert.ok(PLAIN_FOLDER_BLOCK);
   assert.match(PLAIN_FOLDER_BLOCK, /code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',/);
   assert.match(PLAIN_FOLDER_BLOCK, /outcome: 'not-authored', stop: 'non-code-source'/);
-  assert.match(PLAIN_FOLDER_BLOCK, /This is a plain folder, not a code project\. bareloop can't check this kind of /,
-    'the exact person-facing text F191 specifies');
-  assert.match(PLAIN_FOLDER_BLOCK, /Nothing was spent\. Your source was not changed\./);
+  assert.match(PLAIN_FOLDER_BLOCK, /nonRepoSourceMessage\(manifestRead\.manifest\.kind\)/,
+    'the person-facing text has ONE owner (src/source.js nonRepoSourceMessage), shared with the panel');
 });
 
 // ── PRD item 33 M3 piece 4, step S4 — run-author.mjs becomes INTERACTIVE ────

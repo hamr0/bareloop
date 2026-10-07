@@ -49,3 +49,25 @@ export function statusFor(o) {
   else if (out === 'escalated' && ((o.category === 'cap-halt' && o.moneyHalt) || o.category === 'wall-halt')) key = 'capped';
   return { key, ...STATUS[key] };
 }
+
+/**
+ * The word one PART of a run wears on the step map, the step cards and the Audit rows (hamr 2026-10-07: `[✓] passed` /
+ * `[✗] failed`, never "done"). Reads the same table; `running` is the page's call (it knows which part is live), so a
+ * part with no verdict and no cut-off is `passed` here.
+ *   drafting, green/satisfied/already-green outcome, or a part that simply happened (scout/plan/replan/judge) -> passed
+ *   a red outcome -> its run-outcome word (failed; a cap/stop outcome keeps capped/stopped)
+ *   a part its leg's halt cut off (`stopReason`): 'money cap' / 'time cap' -> capped, 'you stopped it' -> stopped,
+ *     'died' -> died, anything else (provider failed, step stalled, a raw outcome) -> failed
+ * @param {{kind?: string, outcome?: string|null, stopReason?: string|null}} part
+ * @returns {{key: StatusKey, sign: string, word: string}}
+ */
+export function partStatusFor(part) {
+  if (part.kind === 'drafting') return statusFor({ outcome: 'green' });
+  if (typeof part.outcome === 'string') return statusFor({ outcome: part.outcome });
+  const why = part.stopReason;
+  if (why) {
+    const key = why === 'money cap' || why === 'time cap' ? 'capped' : why === 'you stopped it' ? 'stopped' : why === 'died' ? 'died' : 'failed';
+    return { key, ...STATUS[key] };
+  }
+  return statusFor({ outcome: 'green' });
+}

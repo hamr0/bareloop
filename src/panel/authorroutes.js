@@ -91,7 +91,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
- *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any} }} opts
+ *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any, listJobs?: (o?: {model?: string}) => any[]} }} opts
  */
 export function createAuthorRoutes(opts) {
   // the RAW env with the keys file re-merged on every use, so an edited file takes effect
@@ -214,6 +214,17 @@ export function createAuthorRoutes(opts) {
         locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
         line: pre.line,
       });
+      return true;
+    }
+
+    // The Reuse workflow picker's list: one entry per job with a green local run (newest green's runid + the SAME
+    // estimate line start-from returns). $0, read-only; `?model=` passes through exactly as start-from's does.
+    if (pathname === '/api/author/reuse-jobs') {
+      if (!opts.startFrom || !opts.startFrom.listJobs) { send(404, { ok: false, error: 'not found' }); return true; }
+      if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
+      const asModel = sp.has('model') ? { model: sp.get('model') ?? '' } : {};
+      send(200, { ok: true, jobs: opts.startFrom.listJobs(asModel) });
       return true;
     }
 

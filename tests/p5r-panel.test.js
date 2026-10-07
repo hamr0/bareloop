@@ -225,6 +225,8 @@ test('P5-R panel summary counts STEPS, not parts: a step cut off by its leg and 
   assert.equal(d.parts.filter((p) => p.kind === 'step').length, 2, 'two PARTS (the stopped one and its continuation)');
   assert.equal(d.steps.length, 1, 'but ONE step');
   assert.equal(d.steps[0].state, 'done');
+  // 2026-10-07: every part carries its word from the ONE table (the cut-off leg-1 part is capped, its continuation passed)
+  assert.deepEqual(d.parts.filter((p) => p.kind === 'step').map((p) => p.status.word), ['capped', 'passed']);
   assert.equal(d.steps[0].outcome, 'green');
   assert.equal(d.steps[0].spentUsd, 5, 'both parts\' spend added up ($3 + $2)');
   assert.equal(d.steps[0].wallMs, 17 * MIN + 6 * MIN);

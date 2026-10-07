@@ -55,7 +55,7 @@ test('reuse card: pre-start rule unchanged, fully locked while live, back to the
   assert.ok(lockedAll(els));
   api.setLive(false);
   assert.ok(!els['jf-source'].readOnly && !els['jf-dest'].readOnly && !els['jf-model'].disabled, 'refused start: reuse boxes open again');
-  assert.ok(els['jf-goal'].readOnly && radios.every((r) => r.disabled), 'the reuse locks stay');
+  assert.ok(els['jf-goal'].readOnly && radios.every((r) => !r.disabled), 'the reuse locks stay; the Check type radios stay clickable (hamr 2026-10-06)');
 });
 
 test('page wiring: the lock is synced wherever sessionLive changes (refreshStartEnabled), and attachSession goes live before it renders', () => {

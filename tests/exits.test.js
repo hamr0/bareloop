@@ -312,14 +312,22 @@ function fileScopeDir(t) {
   return dir;
 }
 
-test('tree-changed on a FILE scope: editing the file passes with "1 file(s) changed"', async (t) => {
+test('tree-changed on a FILE scope: editing the file passes naming the file ("src/x.js changed"), never the nonexistent glob path', async (t) => {
   const dir = fileScopeDir(t);
   const snap = await snapshotScope(dir, 'src/x.js/**');
   assert.deepEqual([...snap.keys()], ['src/x.js']);
   writeFileSync(join(dir, 'src/x.js'), 'two\n');
   const r = await evalExits([{ type: 'tree-changed', scope: 'src/x.js/**' }], { dir, snapshot: snap });
   assert.equal(r.pass, true);
-  assert.match(r.results[0].detail ?? '', /1 file\(s\) changed/);
+  assert.equal(r.results[0].detail, 'src/x.js changed');
+});
+
+test('tree-changed on a FOLDER scope keeps "N file(s) changed under <scope>"', async (t) => {
+  const dir = fileScopeDir(t);
+  const snap = await snapshotScope(dir, 'src/**');
+  writeFileSync(join(dir, 'src/x.js'), 'two\n');
+  const r = await evalExits([{ type: 'tree-changed', scope: 'src/**' }], { dir, snapshot: snap });
+  assert.equal(r.results[0].detail, '1 file(s) changed under src/**');
 });
 
 test('tree-changed on a FILE scope: an identical re-write still fails (outcome, not intent)', async (t) => {
@@ -337,6 +345,6 @@ test('tree-changed on a FILE scope: deleting the file counts as a change; a miss
   rmSync(join(dir, 'src/x.js'));
   const r = await evalExits([{ type: 'tree-changed', scope: 'src/x.js/**' }], { dir, snapshot: snap });
   assert.equal(r.pass, true);
-  assert.match(r.results[0].detail ?? '', /1 file\(s\) changed/);
+  assert.equal(r.results[0].detail, 'src/x.js changed');
   assert.equal((await snapshotScope(dir, 'src/gone.js/**')).size, 0);
 });

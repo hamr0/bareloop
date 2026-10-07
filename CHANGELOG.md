@@ -4,6 +4,29 @@ All notable changes to bareloop are documented here. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
+## [0.37.0] - 2026-10-07
+
+### Added
+
+- **Reuse workflow picker.** The panel's Check type is one radio group of three, the third being Reuse workflow: a search list of jobs that have a green local run. Picking one goes through the existing reuse door (change and leave-reuse included); the Start button is gated on a pick. The origin line is retired. Backed by `GET /api/author/reuse-jobs`, one entry per job with its newest green run id and the same estimate line "Start from this" shows.
+
+### Fixed
+
+- **Stop is honoured at every round seam.** The stop request was read only in step rounds; the scout, plan and close-fix rounds ignored it while the page said "stopping". It is now read at each of them (found on run mup3h70u).
+- A throwing panel POST handler answers a 500 JSON error instead of killing the panel.
+- Settings: a price row with exactly one of the two boxes filled saves nothing in that row and says "Fill both price boxes or clear both."
+- A died run's in-flight part on the Run map reads `[?] died`, not passed.
+- Panel status wording comes from the one status table: a step box reads `[sign] word` (passed / failed / capped / stopped / died), never "done"; step cards and Audit rows show the word only (the attempt glyph is their sign).
+- The drafting progress line reads "drafting (retry N of M)" on a drafting call after the first.
+- The CLI `run-author` non-repo refusal uses the same message as the panel (`nonRepoSourceMessage`, now in `src/source.js`).
+- A `tree-changed` close detail on a single-file write scope names the file, not the glob path.
+- The Providers table row's closing `</tr>` is no longer missing.
+
+### Changed
+
+- Refactors with unchanged output: `getRunDetailBody` takes its drafting shift from `draftingShift` (one owner); the dead `orphanCalls` accumulator in `readDraftSteps` is dropped.
+- Tests: page-extraction pins follow the picker; the drafting part is pinned on a running panel-authored run; the resumed already-green worktree path is pinned (it held, no fix needed). Docs: PRD addenda pointer to v1.89; `bareloop.context.md` and docs sweeps.
+
 
 ## [0.36.0] - 2026-10-06
 

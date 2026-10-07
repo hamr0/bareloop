@@ -124,7 +124,7 @@ import { moveFile } from './movefile.js';
 import { closeJudges, GATE_AUDIT_FILE } from './kinds.js';
 import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
 import { commandFor } from './invoke.js';
-import { readSourceManifest, missingDependencies } from './source.js';
+import { readSourceManifest, missingDependencies, nonRepoSourceMessage } from './source.js';
 import { tallyCalls } from './text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
@@ -836,8 +836,7 @@ export async function main(argv, deps = {}) {
   // confirm turn, no model call — a plain folder's spine is exactly
   // `author-start` → `author-end{outcome:'not-authored', stop:'non-code-source'}`.
   if (!IS_REPO_SOURCE) {
-    const message = "This is a plain folder, not a code project. bareloop can't check this kind of "
-      + 'job yet. Nothing was spent. Your source was not changed.';
+    const message = nonRepoSourceMessage(manifestRead.manifest.kind);
     out(`\n${message}`);
     const red = {
       code: 'request-red', path: 'source', verb: 'non-code-source', lib: 'bareloop',

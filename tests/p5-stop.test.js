@@ -189,3 +189,42 @@ test('item 5 (the money-cap seam): a ONE-step run is stopped MID-STEP between ro
   assert.equal(legs[1].outcome, 'green');
   assert.equal(readRunList({ home }).rows.length, 1);
 });
+
+// C3 (fix-ledger, hamr 2026-10-06): the Stop request is read at EVERY round seam — scout, plan drafting and the
+// close-fix loop too, not step workers only. Each test clicks Stop while that phase's round is in flight and
+// asserts the leg ends `stopped`, with NO further model call bought and exact spend.
+for (const [phase, clickAt, queue] of /** @type {[string, number, (f:any)=>any[]][]} */ ([
+  ['scout', 1, () => [{ text: 'scout: nothing' }, { text: 'never reached' }]],
+  ['plan', 2, () => [{ text: 'scout: nothing' }, { text: JSON.stringify(PLAN_ONE) }, { text: 'never reached' }]],
+  ['fix', 5, (f) => [
+    { text: 'scout: nothing' }, { text: JSON.stringify(PLAN_ONE) },
+    { toolCalls: [tcall('w1', 'shell_write', { path: join(f.workdir, 'src', 'a2.mjs'), content: 'export const a = 1;\n' })] },
+    { text: 'step done' },
+    { text: 'fix round (the close is still red)' },
+    { text: 'never reached' },
+  ]],
+])) {
+  test(`C3: a stop request during the ${phase} phase ends the leg \`stopped\` at that round's boundary — no further round is bought`, async (t) => {
+    const home = tmp(t);
+    const f = fixture(t); // the close wants src/c.mjs, which no plan step writes: the close stays red, so the fix loop runs
+    /** @type {string|null} */ let spine = null;
+    const provider = queueProvider({
+      queue: queue(f),
+      onCall: (n) => { if (n === clickAt) { spine = readRunList({ home }).rows[0].spine; writeFileSync(stopFilePath(spine), ''); } },
+    });
+    let calls = 0;
+    const counted = { ...provider, async generate(/** @type {any[]} */ ...a) { calls += 1; return provider.generate(...a); } };
+    await leg1(f, counted, home);
+    assert.ok(spine, 'the run was listed while it ran');
+    const recs = parseSpineText(readFileSync(spine, 'utf8')).records;
+    const sr = recs.find((r) => r.type === 'stop-requested');
+    assert.ok(sr, `stop-requested is recorded — ${recs.map((r) => r.type).join(',')}`);
+    assert.equal(sr.phase, phase);
+    const end = recs.findLast((r) => r.type === 'job-end');
+    assert.equal(end.outcome, 'stopped', 'resumable outcome `stopped`, whatever phase the click landed in');
+    assert.equal(end.spendComplete, true, 'cut between rounds with nothing in flight: exact');
+    assert.equal(calls, clickAt, 'no model round was bought after the request');
+    assert.equal(existsSync(stopFilePath(spine)), false, 'consumed');
+    assert.ok(CHECKPOINT_OUTCOMES.includes('stopped'));
+  });
+}

@@ -272,10 +272,21 @@
   .import-view .imp-row{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;}
   .import-view .imp-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:84px;}
   .import-view .imp-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
-  .startfrom-line{margin:2px 0 8px;font-size:12px;color:var(--accent);overflow-wrap:anywhere;}
+  .startfrom-line{margin:4px 0 0;font-size:11px;color:var(--text-dim);overflow-wrap:anywhere;}
   .job-card .locked{opacity:.55;cursor:not-allowed;}
-  .job-card.reuse .radio-row label{opacity:.55;cursor:not-allowed;}
-  .startfrom-origin{font-size:12px;font-weight:600;color:var(--text-dim);margin:0 0 4px;padding-right:112px;overflow-wrap:anywhere;}
+  /* Reuse workflow picker (hamr 2026-10-06): the third Check type radio; search box + list, then the picked box */
+  .radio-row label{white-space:nowrap;}
+  .rw-box{position:relative;margin-top:6px;}
+  .rw-box input{width:100%;box-sizing:border-box;}
+  .rw-list{list-style:none;margin:0;padding:0;border:1px solid var(--border-strong);border-top:none;background:var(--bg);max-height:220px;overflow:auto;}
+  .rw-list li{padding:7px 8px;border-bottom:1px dotted var(--border);cursor:pointer;}
+  .rw-list li:hover,.rw-list li.hl{background:var(--panel2);}
+  .rw-name{font-weight:700;overflow-wrap:anywhere;} .rw-name mark{background:none;color:var(--accent);text-decoration:underline;}
+  .rw-meta{font-size:11px;color:var(--text-dim);margin-top:2px;overflow-wrap:anywhere;}
+  .rw-empty{padding:7px 8px;font-size:12px;color:var(--text-dim);}
+  .rw-picked{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;border:1px solid var(--accent);}
+  .rw-picked span{overflow-wrap:anywhere;}
+  .rw-picked a{font-size:12px;cursor:pointer;flex:none;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
@@ -519,10 +530,8 @@
           <!-- hamr 2026-10-05: the empty card is ALWAYS there when Chat opens (no + New). The top-right button reads
                "Abandon" while a session is live and unsigned, else "Clear"; both leave an empty card. -->
           <div class="job-card compact" id="job-card" data-testid="job-card">
-            <div class="startfrom-origin" id="chat-startfrom-origin" data-testid="startfrom-origin" hidden></div>
             <h4 id="job-card-title">Job card — draft</h4>
             <button class="btn card-clear" type="button" id="chat-clear-btn" data-testid="chat-clear">Clear</button>
-            <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
             <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
 
             <div class="field">
@@ -530,6 +539,15 @@
               <div class="radio-row" role="radiogroup" aria-labelledby="jf-verdict-label">
                 <label><input type="radio" name="jf-verdict" value="deterministic" checked> Deterministic</label>
                 <label><input type="radio" name="jf-verdict" value="rubric"> Rubric</label>
+                <label><input type="radio" name="jf-verdict" value="reuse" data-testid="jf-verdict-reuse"> Reuse workflow</label>
+              </div>
+              <div id="rw" data-testid="rw" hidden>
+                <div class="rw-box" id="rw-search" data-testid="rw-search">
+                  <input id="rw-q" data-testid="rw-q" type="text" placeholder="type a job name…" autocomplete="off">
+                  <ul class="rw-list" id="rw-list" data-testid="rw-list"></ul>
+                </div>
+                <div class="rw-picked" id="rw-picked" data-testid="rw-picked" hidden><span id="rw-picked-txt" data-testid="rw-picked-txt"></span><a id="rw-change" data-testid="rw-change" role="button" tabindex="0">change</a></div>
+                <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
               </div>
             </div>
             <div class="field">
@@ -955,6 +973,7 @@
     if(part.outcome === "green" || part.outcome === "satisfied" || part.outcome === "already-green") return "done";
     if(typeof part.outcome === "string") return "stopped";
     // P5-R: its leg's halt cut this part off — the map's existing "stopped" state, never "done"
+    if(part.status && part.status.key === "died") return "died";
     if(part.stopReason) return "stopped";
     if(isLastLivePart) return "running";
     return "done"; // scout/plan/replan/judge: no per-part verdict, but the part itself already happened
@@ -993,6 +1012,8 @@
         partIndex: idx,
         title: part.label + occSuffix,
         state: partBoxState(part, isLastLivePart),
+        // the word this box wears: the server's table entry for the part (src/panel/status.js partStatusFor), except the live part, which is running
+        status: isLastLivePart && partBoxState(part, true) === "running" ? {sign:"\u25B6", word:"running"} : (part.status || null),
         noNumber: part.kind !== "step",
         // display-only attempts (map inline text + card/audit result glyph
         // fallback) — [] for a no-verdict part kind even though `part.attempts`
@@ -1006,6 +1027,14 @@
         part: part,
       };
     });
+  }
+  // ONE spelling of a part's shown state: `[sign] word` from the server's table; the raw state only when no table entry came
+  function boxStatusWord(box){
+    return box.status && box.status.word ? box.status.word : String(box.state);
+  }
+  // the map box adds the sign; step cards and Audit rows show the word only (an attempt glyph already sits beside them)
+  function boxStatusText(box){
+    return box.status && box.status.word ? "[" + box.status.sign + "] " + boxStatusWord(box) : boxStatusWord(box);
   }
   function naturalBoxWidth(steps){
     var numIdx = stepNumberIndices(steps);
@@ -1107,7 +1136,7 @@
           '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[1]) + '</text>';
       }
       body += '<text x="' + (x + boxW / 2) + '" y="' + stateY +
-        '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(s.state) + '</text>';
+        '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(boxStatusText(s)) + '</text>';
       // P2 (2026-09-27 ruling): a running box gets the mockup's pulsing
       // amber dot (design/panel-mockup.html ~line 1648) — same fixed color
       // and animation, never re-derived from the state's own stroke color.
@@ -2360,8 +2389,9 @@
   var stopAsked = {};
   // Reuse workflow (replaces P5 item 3's Start from this) — ask the server for the prefill (the signed job), then
   // hand it to the Chat tab's New job card. The page decides nothing: the server owns what is locked and what is open.
-  function reuseWorkflow(runid){
-    authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid)).then(function(r){
+  // `model` (optional) = the Chat card's Model box, when the picker asks: the estimate line then counts only that worker's runs.
+  function reuseWorkflow(runid, model){
+    authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid) + (model ? "&model=" + encodeURIComponent(model) : "")).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
       document.getElementById("tab-chat").click();
       document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
@@ -2650,7 +2680,7 @@
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
     var cls = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
-    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(box.state) + '</b></span>';
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
@@ -3569,7 +3599,7 @@
             + '<td data-testid="pv-tokens-' + e + '">' + escapeXml(tokensText(row.tokens)) + "</td>"
             + "<td>" + bal + "</td>"
             + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-in" data-testid="pv-price-in-' + e + '" placeholder="not set" value="' + (row.priceInPerM === null ? "" : escapeXml(String(row.priceInPerM))) + '"></td>'
-            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-out" data-testid="pv-price-out-' + e + '" placeholder="not set" value="' + (row.priceOutPerM === null ? "" : escapeXml(String(row.priceOutPerM))) + '"></td>';
+            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-out" data-testid="pv-price-out-' + e + '" placeholder="not set" value="' + (row.priceOutPerM === null ? "" : escapeXml(String(row.priceOutPerM))) + '"></td></tr>';
         }).join("") : '<tr><td colspan="9" class="hint" data-testid="pv-empty">no keys with a value yet — add NAME=key to the keys file, then Reload keys</td></tr>';
         pvRows.querySelectorAll(".pv-balance-fetch").forEach(function(fetchEl){
           authorGet("/api/settings/providers/balance?env=" + encodeURIComponent(fetchEl.getAttribute("data-env"))).then(function(b){
@@ -3584,15 +3614,15 @@
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
       }).catch(function(){ pvNote.textContent = "could not read providers"; });
     }
-    // The row's POST body. A price is both boxes or neither (the server refuses a half-set one), so while exactly one
-    // is filled — the normal middle of typing a price — the price fields are LEFT OUT (the server keeps what is saved)
-    // and the other boxes still save; the price posts once both are filled, or both are cleared.
+    // The row's POST body, or null when exactly ONE price box is filled: a price is both boxes or neither (the server
+    // refuses a half-set one), so nothing in that row saves. This runs only when a save would happen (the row's
+    // change event), so typing the first box never flashes the message; it shows when the person leaves that box.
+    var PV_HALF_PRICE = "Fill both price boxes or clear both.";
     function pvRowBody(env, v){
       var pin = String(v.priceIn).trim();
       var pout = String(v.priceOut).trim();
-      var body = { envName: env, name: v.name, shape: v.shape, baseUrl: v.baseUrl };
-      if((pin === "") === (pout === "")){ body.priceInPerM = pin; body.priceOutPerM = pout; }
-      return body;
+      if((pin === "") !== (pout === "")) return null;
+      return { envName: env, name: v.name, shape: v.shape, baseUrl: v.baseUrl, priceInPerM: pin, priceOutPerM: pout };
     }
     pvRows.addEventListener("change", function(e){
       var t = e.target;
@@ -3606,13 +3636,15 @@
       }
       if(!(t.classList.contains("pv-name") || t.classList.contains("pv-shape") || t.classList.contains("pv-url") || t.classList.contains("pv-price-in") || t.classList.contains("pv-price-out"))) return;
       var env = tr.getAttribute("data-env");
-      authorPost("/api/settings/providers/row", pvRowBody(env, {
+      var rowBody = pvRowBody(env, {
         name: tr.querySelector(".pv-name").value,
         shape: tr.querySelector(".pv-shape").value,
         baseUrl: tr.querySelector(".pv-url").value,
         priceIn: tr.querySelector(".pv-price-in").value,
         priceOut: tr.querySelector(".pv-price-out").value,
-      })).then(function(r){
+      });
+      if(!rowBody){ pvNote.textContent = PV_HALF_PRICE; return; }
+      authorPost("/api/settings/providers/row", rowBody).then(function(r){
         pvNote.textContent = r.body && r.body.ok ? ("Saved — " + env + ".") : ((r.body && r.body.error) || "could not save");
         // no re-render: it would steal focus mid-edit; Chat's Model menu just re-reads
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
@@ -3692,9 +3724,11 @@
     // Reuse workflow — set when the card was opened by [Reuse workflow]: the run (or imported job) it came from.
     // Only Source, Destination and the two caps are open on that card; the SERVER refuses any other change.
     var startFrom = null;
+    // the picked job's OWN check type: with the Check type radio on "Reuse workflow" the card's checkType comes from here, never from the radio
+    var reuseCheckType = "deterministic";
+    var reusePickedName = "";
     var reuseSession = false;
     var autoSigned = false;
-    var sfOrigin = document.getElementById("chat-startfrom-origin");
     var sfLine = document.getElementById("chat-startfrom-line");
     var sfNote = document.getElementById("chat-startfrom-note");
     // the locked boxes of a reuse card: the signed workflow, greyed and not editable (the server refuses a change anyway)
@@ -3709,7 +3743,8 @@
       LOCKED_IDS.forEach(function(id){ setLock(id, reuseOn || live); });
       OPEN_IDS.forEach(function(id){ setLock(id, live); });
       document.getElementById("jf-model").disabled = live;
-      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = reuseOn || live; });
+      // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); only a live session freezes them
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
       if(!reuseOn && !live){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
     }
@@ -3720,11 +3755,105 @@
         ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
-      startFrom = null; reuseSession = false; autoSigned = false;
-      sfOrigin.hidden = true; sfLine.hidden = true; sfNote.hidden = true;
+      startFrom = null; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
+      sfLine.hidden = true; sfNote.hidden = true;
       setReuseLocked(false);
+      renderPicker();
       renderMain();
     }
+    // ---- Reuse workflow picker (hamr 2026-10-06): Check type is ONE radio group of three; "Reuse workflow" shows a search
+    // box over the jobs that have a green local run (GET /api/author/reuse-jobs), a pick fills the card through the SAME
+    // path the Run tab's button uses (reuseWorkflow -> bareloop-reuse -> applyReuse), then a picked box with `change`.
+    var CARD_BOX_IDS = ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"];
+    var rwBox = document.getElementById("rw");
+    var rwSearch = document.getElementById("rw-search");
+    var rwQ = document.getElementById("rw-q");
+    var rwList = document.getElementById("rw-list");
+    var rwPicked = document.getElementById("rw-picked");
+    var rwPickedTxt = document.getElementById("rw-picked-txt");
+    var rwJobs = null;
+    var rwFailed = false;
+    var rwShown = [];
+    var rwHl = 0;
+    function verdictValue(){
+      var ck = document.querySelector('input[name="jf-verdict"]:checked');
+      return ck ? ck.value : "deterministic";
+    }
+    function setVerdict(v){
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === v); });
+    }
+    function clearCardBoxes(){
+      CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
+      document.getElementById("jf-cap-note").textContent = "";
+    }
+    // ONE function shows/hides the picker: visible only while the radio is on Reuse workflow; the search box before a
+    // pick, the picked box (+ the estimate line under it) after. A re-attached reuse session shows as picked too.
+    function renderPicker(){
+      var on = verdictValue() === "reuse";
+      var picked = on && (startFrom !== null || reuseSession);
+      rwBox.hidden = !on;
+      rwSearch.hidden = picked;
+      rwPicked.hidden = !picked;
+      rwPickedTxt.innerHTML = picked ? "<b>" + escapeXml(reusePickedName) + "</b>" : "";
+      if(!picked) sfLine.hidden = true;
+    }
+    function rwMark(name, q){
+      var i = q ? name.toLowerCase().indexOf(q.toLowerCase()) : -1;
+      if(i < 0) return escapeXml(name);
+      return escapeXml(name.slice(0, i)) + "<mark>" + escapeXml(name.slice(i, i + q.length)) + "</mark>" + escapeXml(name.slice(i + q.length));
+    }
+    // the server's estimate line, prefixed with the job's check type (the line itself does not carry it)
+    function rwMeta(j){ return j.checkType + " · " + String(j.line || "").replace(/^Same job — /, ""); }
+    function renderReuseList(){
+      var q = rwQ.value.trim();
+      var all = rwJobs || [];
+      rwShown = all.filter(function(j){ return j.job.toLowerCase().indexOf(q.toLowerCase()) !== -1; });
+      if(rwHl >= rwShown.length) rwHl = 0;
+      if(rwShown.length){
+        rwList.innerHTML = rwShown.map(function(j, i){
+          return '<li data-i="' + i + '" data-testid="rw-item" class="' + (i === rwHl ? "hl" : "") + '"><div class="rw-name">' + rwMark(j.job, q) + '</div><div class="rw-meta">' + escapeXml(rwMeta(j)) + "</div></li>";
+        }).join("");
+      } else {
+        rwList.innerHTML = '<div class="rw-empty" data-testid="rw-empty">' + (rwFailed ? "Could not load the job list."
+          : (all.length === 0 ? "No green jobs yet." : 'No green job matches "' + escapeXml(q) + '".')) + "</div>";
+      }
+    }
+    function loadReuseJobs(){
+      authorGet("/api/author/reuse-jobs" + (modelSelect.value ? "?model=" + encodeURIComponent(modelSelect.value) : "")).then(function(r){
+        rwFailed = !(r && r.ok);
+        rwJobs = rwFailed ? null : r.jobs;
+        renderReuseList();
+      }).catch(function(){ rwFailed = true; rwJobs = null; renderReuseList(); });
+    }
+    // the empty search state: card emptied, nothing picked, Sign & run disabled until a job is picked
+    function openPicker(){
+      clearCardBoxes();
+      rwQ.value = ""; rwHl = 0;
+      document.getElementById("jf-judge").disabled = true;
+      renderPicker();
+      renderReuseList();
+      loadReuseJobs();
+      refreshStartEnabled();
+      rwQ.focus();
+    }
+    function pickReuseJob(j){ if(j) reuseWorkflow(j.runid, modelSelect.value); }
+    rwQ.addEventListener("input", function(){ rwHl = 0; renderReuseList(); });
+    rwQ.addEventListener("keydown", function(e){
+      if(e.key === "ArrowDown"){ rwHl = Math.min(rwHl + 1, rwShown.length - 1); renderReuseList(); e.preventDefault(); }
+      else if(e.key === "ArrowUp"){ rwHl = Math.max(rwHl - 1, 0); renderReuseList(); e.preventDefault(); }
+      else if(e.key === "Enter" && rwShown[rwHl]){ e.preventDefault(); pickReuseJob(rwShown[rwHl]); }
+    });
+    rwList.addEventListener("click", function(e){
+      var li = e.target.closest ? e.target.closest("li") : null;
+      if(li) pickReuseJob(rwShown[Number(li.getAttribute("data-i"))]);
+    });
+    // `change` = back to the empty search state; the radio stays on Reuse workflow
+    function unpickReuse(){
+      clearStartFrom();
+      setVerdict("reuse");
+      openPicker();
+    }
+    document.getElementById("rw-change").addEventListener("click", unpickReuse);
     function openNewCard(){
       card.hidden = false;
       thread.innerHTML = "";
@@ -3755,12 +3884,12 @@
     // back to a fresh empty card: every box, check type deterministic, the default (first) Model, origin/estimate/notes
     // hidden, progress list and thread cleared, reuse lock lifted
     function resetCard(){
-      ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
-      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
+      clearCardBoxes();
+      setVerdict("deterministic");
       document.getElementById("jf-judge").disabled = true;
       modelSelect.selectedIndex = 0;
       msgInput.value = "";
-      document.getElementById("jf-cap-note").textContent = "";
+      rwQ.value = "";
       lastPhase = null;
       clearStartFrom();
       openNewCard();
@@ -3782,7 +3911,8 @@
       var moneyCap = Number(document.getElementById("jf-cap-money").value);
       var timeCapMin = document.getElementById("jf-cap-time").value.trim();
       return {
-        checkType: document.querySelector('input[name="jf-verdict"]:checked').value === "rubric" ? "rubric" : "deterministic",
+        // on "Reuse workflow" the type is the picked job's own, never the radio's
+        checkType: (verdictValue() === "reuse" ? reuseCheckType : verdictValue()) === "rubric" ? "rubric" : "deterministic",
         model: document.getElementById("jf-model").value,
         jobName: document.getElementById("jf-name").value.trim(),
         goal: document.getElementById("jf-goal").value.trim(),
@@ -3806,7 +3936,8 @@
     function refreshStartEnabled(){
       var v = Number(moneyCapInput.value);
       var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
-      startOk = capOk && !sessionLive && keyOk;
+      // on Reuse workflow nothing starts before a job is picked
+      startOk = capOk && !sessionLive && keyOk && (verdictValue() !== "reuse" || startFrom !== null);
       syncCardLock();
       renderMain();
       refreshClearBtn();
@@ -3829,11 +3960,21 @@
     });
     // the limit changed in Settings: re-read the note for whatever cap is typed
     document.addEventListener("bareloop-limit-changed", refreshCapNote);
+    // Check type: Deterministic / Rubric / Reuse workflow. Reuse opens the picker on an empty card; Deterministic or
+    // Rubric while the picker is showing (picked or not) LEAVES reuse — the empty card on that type (clearStartFrom).
+    function onVerdictChange(v){
+      if(v === "reuse"){ if(rwBox.hidden) openPicker(); return; }
+      if(!rwBox.hidden){
+        clearStartFrom();
+        clearCardBoxes();
+        setVerdict(v);
+        renderPicker();
+      }
+      document.getElementById("jf-judge").disabled = v !== "rubric";
+      refreshStartEnabled();
+    }
     document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
-      r.addEventListener("change", function(){
-        var isRubric = document.querySelector('input[name="jf-verdict"]:checked').value === "rubric";
-        document.getElementById("jf-judge").disabled = !isRubric;
-      });
+      r.addEventListener("change", function(){ onVerdictChange(r.value); });
     });
 
     // build item 7 / build item 5 (2026-09-28) — key + reachability, $0,
@@ -3906,10 +4047,11 @@
       var q = (startFrom.importId ? "import=" + encodeURIComponent(startFrom.importId) : "runid=" + encodeURIComponent(startFrom.runid)) +
         "&model=" + encodeURIComponent(modelSelect.value);
       authorGet("/api/author/start-from?" + q).then(function(r){
-        if(startFrom && r && r.ok){ sfLine.textContent = r.line || ""; }
+        if(startFrom && r && r.ok){ sfLine.textContent = r.line ? rwMeta({checkType: reuseCheckType, line: r.line}) : ""; }
       }).catch(function(){ /* the line keeps what it had */ });
     }
     modelSelect.addEventListener("change", refreshReuseLine);
+    modelSelect.addEventListener("change", function(){ if(!rwBox.hidden && startFrom === null && !reuseSession) loadReuseJobs(); });
     // P4b — the Model menu IS the Settings rows: every Name, in keys-file order (a blank Name
     // is never offered). Re-read whenever Settings loads or saves, keeping the pick if it survives.
     function loadModels(){
@@ -4028,7 +4170,7 @@
       var open = askBoxOpenFor(st);
       msgInput.disabled = !open;
       if(!open) msgInput.value = "";
-      var b = mainButtonFor(st, !msgInput.value.trim(), !!startFrom);
+      var b = mainButtonFor(st, !msgInput.value.trim(), !!startFrom || verdictValue() === "reuse");
       mainBtn.textContent = b.text;
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
@@ -4148,7 +4290,9 @@
       reuseSession = st.reuse === true;
       autoSigned = false;
       signClickedOnce = reuseSession;
-      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === (c.checkType === "rubric" ? "rubric" : "deterministic")); });
+      reuseCheckType = c.checkType === "rubric" ? "rubric" : "deterministic";
+      reusePickedName = c.jobName || "job";
+      setVerdict(reuseSession ? "reuse" : reuseCheckType);
       if(c.model){
         if(!Array.prototype.some.call(modelSelect.options, function(o){ return o.value === c.model; })){
           modelSelect.insertAdjacentHTML("beforeend", '<option value="' + escapeXml(c.model) + '">' + escapeXml(c.model) + "</option>");
@@ -4161,6 +4305,7 @@
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
       document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
       if(reuseSession) setReuseLocked(true);
+      renderPicker();
       fitCardBoxes();
       renderMessages(st);
       renderActions(st);
@@ -4180,15 +4325,17 @@
 
     // ---- Reuse workflow — the card opens filled from the SIGNED job: four open boxes, the rest greyed ----
     function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
-    document.addEventListener("bareloop-reuse", function(e){
-      var d = e.detail || {};
+    // ONE owner of the reuse fill: the Run tab's / Import view's button and the picker both arrive here (the
+    // `bareloop-reuse` event), so the card ends up in the same picked state whichever door was used.
+    function applyReuse(d){
       var pre = d.prefill || {};
       var c = pre.card || {};
       clearStartFrom();
       openNewCard();
       startFrom = d.importId ? {importId: d.importId} : {runid: d.runid};
-      var radios = document.querySelectorAll('input[name="jf-verdict"]');
-      radios.forEach(function(r){ r.checked = (r.value === (c.checkType === "rubric" ? "rubric" : "deterministic")); });
+      reuseCheckType = c.checkType === "rubric" ? "rubric" : "deterministic";
+      reusePickedName = c.jobName || (pre.origin && pre.origin.job) || "job";
+      setVerdict("reuse");
       if(c.model){ modelSelect.value = c.model; }
       setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
       setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
@@ -4196,10 +4343,9 @@
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
       document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
       setReuseLocked(true);
-      sfOrigin.hidden = false;
-      sfOrigin.textContent = "Reuse: " + ((pre.origin && pre.origin.job) || "job") + (d.runid ? " (run " + d.runid + ")" : " (imported)");
+      renderPicker();
       sfLine.hidden = false;
-      sfLine.textContent = pre.line || "";
+      sfLine.textContent = pre.line ? rwMeta({checkType: reuseCheckType, line: pre.line}) : "";
       sfLine.className = "startfrom-line";
       sfNote.hidden = !pre.note;
       sfNote.textContent = pre.note || "";
@@ -4207,7 +4353,8 @@
       refreshReuseLine();
       refreshCapNote();
       refreshStartEnabled();
-    });
+    }
+    document.addEventListener("bareloop-reuse", function(e){ applyReuse(e.detail || {}); });
 
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
     // (fed by the every-2s `poll()`) unconditionally overwrites
