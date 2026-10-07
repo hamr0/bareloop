@@ -1028,8 +1028,12 @@
     });
   }
   // ONE spelling of a part's shown state: `[sign] word` from the server's table; the raw state only when no table entry came
+  function boxStatusWord(box){
+    return box.status && box.status.word ? box.status.word : String(box.state);
+  }
+  // the map box adds the sign; step cards and Audit rows show the word only (an attempt glyph already sits beside them)
   function boxStatusText(box){
-    return box.status && box.status.word ? "[" + box.status.sign + "] " + box.status.word : String(box.state);
+    return box.status && box.status.word ? "[" + box.status.sign + "] " + boxStatusWord(box) : boxStatusWord(box);
   }
   function naturalBoxWidth(steps){
     var numIdx = stepNumberIndices(steps);
@@ -2675,7 +2679,7 @@
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
     var cls = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
-    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(boxStatusText(box)) + '</b></span>';
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
