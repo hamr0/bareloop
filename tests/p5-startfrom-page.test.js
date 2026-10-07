@@ -70,7 +70,7 @@ test('page: setReuseLocked greys Name, Goal, Success, Guardrails and Judge examp
   };
   const modelSelect = els['jf-model'];
   // eslint-disable-next-line no-new-func
-  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"]; var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false;\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
+  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"]; var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
   f(true);
   for (const id of ['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails', 'jf-judge']) {
     assert.equal(els[id].readOnly, true, `${id} is read only`);
@@ -84,7 +84,7 @@ test('page: setReuseLocked greys Name, Goal, Success, Guardrails and Judge examp
   assert.equal(modelSelect.disabled, false, 'Model is open on a reuse (hamr 2026-10-04)');
   assert.equal(modelSelect.classes.has('locked'), false);
   // a live session freezes the radios, reuse or not
-  const live = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name"]; var OPEN_IDS = ["jf-source"]; var reuseOn = true; var sessionLive = true;\n${fnSrc('syncCardLock')}\nreturn syncCardLock;`)(doc, modelSelect);
+  const live = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name"]; var OPEN_IDS = ["jf-source"]; var reuseOn = true; var sessionLive = true; var resumeRun = null; var CAP_IDS = [];\n${fnSrc('syncCardLock')}\nreturn syncCardLock;`)(doc, modelSelect);
   live();
   assert.ok(radios.every((r) => r.disabled), 'a live session freezes the Check type radios');
   f(false);

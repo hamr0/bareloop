@@ -107,7 +107,7 @@ function fnSrc(name) {
 
 test('page: on load and on opening the Chat tab (no session attached) it asks /api/author/live and attaches; no localStorage', () => {
   const r = fnSrc('reattachLive');
-  assert.match(r, /if\(sessionId \|\| sessionLive\) return;/, 'never when this tab already holds a session');
+  assert.match(r, /if\(sessionId \|\| sessionLive \|\| resumeRun !== null\) return;/, 'never when this tab already holds a session (or a resume card)');
   assert.match(r, /authorGet\("\/api\/author\/live"\)/);
   assert.match(r, /attachSession\(j\)/);
   assert.match(PAGE, /getElementById\("tab-chat"\)\.addEventListener\("click", reattachLive\);\s*reattachLive\(\);/, 'wired on tab open AND once at load');

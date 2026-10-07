@@ -174,7 +174,7 @@ test('leaving reuse: Deterministic or Rubric while the picker shows (picked or n
 
 test('radios stay CLICKABLE during reuse (only a live session freezes them); the reuse lock never greys the Check type', () => {
   const src = fnSrc('syncCardLock');
-  assert.match(src, /r\.disabled = live;/);
+  assert.match(src, /r\.disabled = live \|\| resuming;/);
   assert.doesNotMatch(src, /r\.disabled = reuseOn/);
   assert.doesNotMatch(PAGE, /\.job-card\.reuse \.radio-row label\{/, 'no dimmed/not-allowed radio labels on a reuse card');
 });
