@@ -3513,7 +3513,10 @@ key you want first (the panel picks the row by the Model menu).
   Every PART of a run detail (`parts[]`) also carries its own `status` `{key, sign, word}` from the same table
   (`partStatusFor`, `src/panel/status.js`): drafting, a green outcome and a part with no verdict and no cut-off → passed; a red
   outcome → its run-outcome word; a part its leg's halt cut off → capped (money cap / time cap), stopped (you stopped it),
-  died, else failed. The page's map box reads `[sign] word` (the live part reads `[▶] running`); the step cards and Audit rows
+  died, else failed. A run that DIED (no `job-end`, runner gone) leaves its last part in flight: when that part has no outcome
+  and no cut-off, the server marks it `died` (`[?] died`), never the "happened, so passed" default — replay alone cannot tell
+  died from still running, so `getRunDetail` decides it from the same `death` verdict as the run's status. A live run's open
+  part stays running; a part that finished before the death keeps its own status. The page's map box reads `[sign] word` (the live part reads `[▶] running`); the step cards and Audit rows
   show the word only; no surface says "done".
   **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
   `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?}`
