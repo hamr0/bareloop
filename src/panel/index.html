@@ -140,6 +140,8 @@
   .dot::before{content:"[·]";color:var(--grey-dot);}
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
+  /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, same red as [✗] */
+  .dot.stopped::before{content:"[■]";color:var(--red);}
   /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
      step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
      their result glyph as PLAIN inline text inside a larger string (never
@@ -1271,6 +1273,7 @@
   function glyphClass(g){
     if(g === "✓") return "green";
     if(g === "✗") return "red";
+    if(g === "■") return "stopped";
     if(g === "▶") return "amber";
     if(g === "?") return "magenta";
     return "grey";
@@ -1658,7 +1661,8 @@
     var q = (filters && filters.search) || "";
     return (runs || []).filter(function(r){
       if(ct.length && ct.indexOf(r.checkType) === -1) return false;
-      if(rs.length && rs.indexOf(r.glyph) === -1) return false;
+      // a stopped run ([■]) was a [✗] before hamr's 2026-10-07 sign ruling — the fail chip still finds it
+      if(rs.length && rs.indexOf(r.glyph) === -1 && !(r.glyph === "\u25A0" && rs.indexOf("\u2717") !== -1)) return false;
       if(!matchesSearch(r.job, r.runid, r.model, q, r.runNo)) return false;
       if(time !== "all"){
         var days = time === "7d" ? 7 : 30;
@@ -2559,7 +2563,7 @@
       " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
-    box.className = "summary-box " + (detail.died ? "magenta" : (detail.glyph === "✗" ? "red" : (detail.glyph === "▶" ? "amber" : "")));
+    box.className = "summary-box " + (detail.died ? "magenta" : ((detail.glyph === "✗" || detail.glyph === "■") ? "red" : (detail.glyph === "▶" ? "amber" : "")));
     // F196: a synthetic placeholder box (e.g. "died during planning") is a
     // LABEL, not a real step — excluded from this count so a run that died
     // before any step started reads "0 of 0 done" / "none started", never
@@ -2638,7 +2642,7 @@
 
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
-    var cls = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
+    var cls = box.state === "done" ? "green" : (box.state === "stopped" ? (box.status && box.status.sign === "\u25A0" ? "stopped" : "red") : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
     return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,

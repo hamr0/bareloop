@@ -74,7 +74,7 @@ export const RUNID_RE = /^[A-Za-z0-9._~-]+$/;
 export const DEFAULT_PORT = 4700;
 
 /**
- * `[✓]`/`[✗]`/`[▶]` — the ONLY vocabulary a result is ever rendered in
+ * `[✓]`/`[✗]`/`[■]`/`[▶]` — the ONLY vocabulary a result is ever rendered in
  * (auto-memory `ui-verdict-words.md`: never the words green/red/soft-green
  * anywhere in the page). `null` (no `job-end` reached — a killed-mid-run or
  * still-running spine) reads `▶` — the same "in progress / unresolved" glyph
@@ -82,10 +82,10 @@ export const DEFAULT_PORT = 4700;
  * running attempt and an archived spine that never reached its own end are
  * the same fact from this read-only side: no verdict has been recorded yet.
  * @param {string|null} outcome
- * @returns {'✓'|'✗'|'▶'}
+ * @returns {'✓'|'✗'|'■'|'▶'}
  */
 export function glyphForOutcome(outcome) {
-  return /** @type {'✓'|'✗'|'▶'} */ (statusFor({ outcome }).sign);
+  return /** @type {'✓'|'✗'|'■'|'▶'} */ (statusFor({ outcome }).sign);
 }
 
 /**
