@@ -3559,7 +3559,7 @@ key you want first (the panel picks the row by the Model menu).
   step workers only).
   **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on GREEN runs only (the Run tab's
   action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on green and
-  green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: Clear the card and draft a new one.", and
+  green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: press Edit in chat.", and
   stopped/capped/died rows offer `resume` only) and on every imported job; the Chat card's Check type is one radio group of three
   (Deterministic · Rubric · Reuse workflow), and the third opens a search picker over `GET /api/author/reuse-jobs` (below) that
   fills the card through this same path (a pick, then `change` returns to the empty search; Deterministic or Rubric leaves reuse).

@@ -448,15 +448,15 @@ function endedBase(summary, death, o) {
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
   /** Reuse workflow (replaces P5 item 3's Start from this, hamr 2026-10-03): the same signed job on a new source — a NEW
-   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: Clear the card and draft a new one" instead. */
+   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: press Edit in chat" instead. */
   const REUSE = [{ id: 'reuse', label: 'Reuse workflow' }];
-  const CHANGE = 'Change the job: Clear the card and draft a new one.';
+  const CHANGE = 'Change the job: press Edit in chat.';
   const detailOf = (/** @type {string|null} */ s) => {
     if (typeof s !== 'string' || s.length === 0) return '';
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
   };
   /** a resumable ending whose Resume the engine would refuse: say so, never offer the button */
-  const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}.`);
+  const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}. ${CHANGE}`);
 
   if (death.died) {
     return {
@@ -555,7 +555,7 @@ function endedBase(summary, death, o) {
   if (outcome === 'step-stalled') {
     return {
       reason: 'A step stopped making progress.',
-      next: resumeOr('Resume, or change the job: Clear the card and draft a new one.'),
+      next: resumeOr('Resume, or change the job: press Edit in chat.'),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
       actions: resumeOk ? RESUME : [],
     };
