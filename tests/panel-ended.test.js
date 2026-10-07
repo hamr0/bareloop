@@ -446,16 +446,12 @@ function makePage({ currentRunid = 'run1' } = {}) {
     ${fnSrc('escapeXml')}
     ${fnSrc('panelMoney')}
     var lastEndedSig = null;
-    var resumeMode = null;
-    var lastJobShown = null;
     var stopAsked = {};
     function reuseWorkflow() {}
     ${fnSrc('renderEnded')}
     ${fnSrc('renderRunActions')}
-    ${fnSrc('openResumeOnJobTab')}
-    ${fnSrc('paintResumeMode')}
     ${fnSrc('afterResumeRefresh')}
-    return { renderEnded: renderEnded, renderRunActions: renderRunActions, setCurrent: function(v){ currentRunid = v; }, paintResumeMode: paintResumeMode, resumeMode: function(){ return resumeMode; }, setLastJob: function(j){ lastJobShown = j; } };
+    return { renderEnded: renderEnded, renderRunActions: renderRunActions, setCurrent: function(v){ currentRunid = v; } };
   `);
   const page = factory(document, authorPost, (f) => refreshed.push(f), (fn, ms) => { timers.push(ms); fn(); }, (j) => rendered.push(j), (...a) => selected.push(a),
     () => Promise.resolve(detailAfter), currentRunid);

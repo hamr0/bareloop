@@ -177,3 +177,15 @@ test('wiring: Cancel empties the card (resetCard), openNewCard leaves resume mod
   assert.match(fnSrc('openNewCard'), /exitResumeMode\(\)/);
   assert.match(fnSrc('reattachLive'), /resumeRun !== null/);
 });
+
+test('Job tab: read-only on every run — no input, button, select or textarea in its markup or in anything renderJob paints; the old resume mode is gone', () => {
+  const tab = PAGE.slice(PAGE.indexOf('<section id="panel-details"'), PAGE.indexOf('</section>', PAGE.indexOf('<section id="panel-details"')));
+  assert.ok(tab.includes('id="job-card-readonly"'));
+  assert.doesNotMatch(tab, /<(input|button|select|textarea)\b/i, 'the Job tab markup has no control');
+  assert.doesNotMatch(fnSrc('renderJob'), /<(input|button|select|textarea)\b|innerHTML/i, 'renderJob paints values with textContent only');
+  assert.match(tab, /<label>\$ cap<\/label>/);
+  assert.match(tab, /<label>Time cap<\/label>/, 'the caption never swaps to "Money cap ($)" / "Time cap (min)"');
+  for (const gone of ['openResumeOnJobTab', 'paintResumeMode', 'resumeMode', 'resume-job', 'resume-cap', 'details-cap-money-label', 'details-cap-time-label']) {
+    assert.ok(!PAGE.includes(gone), `${gone} is deleted`);
+  }
+});

@@ -64,7 +64,7 @@ test('run tab: the Edit in chat button shows only when the server offers `edit` 
   const bar = { innerHTML: '', hidden: true, q: {}, querySelector(sel) { const k = /"(.+)"/.exec(sel)[1]; return this.q[k] ?? null; } };
   const doc = { getElementById: () => bar };
   const mount = (detail) => {
-    const { renderRunActions } = build(['renderRunActions'], { document: doc, escapeXml, editInChat: (d) => calls.push(d.runid), reuseWorkflow() {}, openResumeOnJobTab() {} }, 'var stopAsked = {};');
+    const { renderRunActions } = build(['renderRunActions'], { document: doc, escapeXml, editInChat: (d) => calls.push(d.runid), reuseWorkflow() {}, resumeInChat() {} }, 'var stopAsked = {};');
     // the fake bar cannot parse html: probe the markup, then expose a fake button for the click wiring
     bar.q = { 'btn-edit-chat': { addEventListener(_e, fn) { bar.q['btn-edit-chat'].fn = fn; } } };
     renderRunActions(detail);
