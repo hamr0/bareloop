@@ -375,6 +375,8 @@
   .job-card h4{margin:0 0 8px;font-size:13px;position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;}
   .job-card .card-clear{position:absolute;top:-13px;right:10px;padding:1px 8px;font-size:11px;line-height:1.4;background:var(--panel2);}
   .job-card .origin-line{font-size:12px;padding:6px 8px;border-left:3px solid var(--amber);background:var(--panel);color:var(--text-dim);margin-bottom:6px;overflow-wrap:anywhere;}
+  .job-card .origin-line.res{border-color:var(--accent, var(--text));}
+  .job-card .chat-resume-box{display:grid;gap:8px;margin-top:10px;}
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
@@ -600,6 +602,11 @@
               </div>
             </div>
             <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
+            <div id="chat-resume-box" class="chat-resume-box" data-testid="resume-box" hidden>
+              <div class="hint" id="chat-resume-spent" data-testid="resume-spent"></div>
+              <div class="ended-actions"><button class="btn primary" type="button" id="chat-resume-sign" data-testid="btn-sign-resume">Sign &amp; resume</button> <button class="btn" type="button" id="chat-resume-cancel" data-testid="btn-resume-cancel">Cancel</button></div>
+              <div class="resume-err" id="chat-resume-err" data-testid="resume-err" hidden></div>
+            </div>
           </div>
 
           <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
@@ -2414,6 +2421,18 @@
       document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: {error: "could not reach the panel: " + x.message}}));
     });
   }
+  // Resume (hamr 2026-10-07, option B — moved from the run's Job tab): the Chat card opens in RESUME mode, filled from the
+  // SAME prefill (`start-from`), everything locked but the two caps. The card posts /api/runs/<id>/resume; a resume never
+  // drafts and never makes a new card, job or run id (one run = one id).
+  function resumeInChat(detail){
+    authorGet("/api/author/start-from?runid=" + encodeURIComponent(detail.runid)).then(function(r){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-resume", {detail: (r && r.ok) ? {runid: detail.runid, prefill: r, resume: detail.resume || {}, title: detail.job + " (" + runLabel(detail.runNo, detail.runid) + ")"} : {error: (r && r.error) || "nothing to resume"}}));
+    }).catch(function(x){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-resume", {detail: {error: "could not reach the panel: " + x.message}}));
+    });
+  }
   function renderRunActions(detail){
     var bar = document.getElementById("run-actions");
     var html = "";
@@ -2454,7 +2473,7 @@
       });
     }
     var resBtn = bar.querySelector('[data-testid="btn-resume-run"]');
-    if(resBtn) resBtn.addEventListener("click", function(){ openResumeOnJobTab(detail); });
+    if(resBtn) resBtn.addEventListener("click", function(){ resumeInChat(detail); });
   }
   function openResumeOnJobTab(detail){
     var r = detail.resume || {};
@@ -3761,16 +3780,21 @@
     // these values). The reuse rule (only Source/Destination/caps open) applies before the start. ONE function owns it.
     var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"];
     var reuseOn = false;
+    // Resume mode (hamr 2026-10-07): the card shows the signed job of one run, every box locked except the two caps.
+    // `resumeRun` = {runid, noTime} while it is on, else null. Never set together with a drafting session or a reuse pick.
+    var resumeRun = null;
+    var CAP_IDS = ["jf-cap-money", "jf-cap-time"];
     function syncCardLock(){
       var live = sessionLive;
+      var resuming = resumeRun !== null;
       var setLock = function(id, on){ var el = document.getElementById(id); el.readOnly = on; el.classList.toggle("locked", on); };
-      LOCKED_IDS.forEach(function(id){ setLock(id, reuseOn || live); });
-      OPEN_IDS.forEach(function(id){ setLock(id, live); });
-      document.getElementById("jf-model").disabled = live;
-      // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); only a live session freezes them
-      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live; });
+      LOCKED_IDS.forEach(function(id){ setLock(id, reuseOn || live || resuming); });
+      OPEN_IDS.forEach(function(id){ setLock(id, live || (resuming && CAP_IDS.indexOf(id) === -1)); });
+      document.getElementById("jf-model").disabled = live || resuming;
+      // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
-      if(!reuseOn && !live){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
+      if(!reuseOn && !live && !resuming){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
     }
     function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
     function clearStartFrom(){
@@ -3878,9 +3902,22 @@
       openPicker();
     }
     document.getElementById("rw-change").addEventListener("click", unpickReuse);
+    // leaving resume mode: the title, the hidden drafting chrome, the time box and the resume box all come back
+    function exitResumeMode(){
+      resumeRun = null;
+      originLine.classList.remove("res");
+      document.getElementById("job-card-title").textContent = "Job card \u2014 draft";
+      document.getElementById("chat-resume-box").hidden = true;
+      document.getElementById("chat-resume-err").hidden = true;
+      document.getElementById("jf-cap-time").parentNode.hidden = false;
+      document.getElementById("chat-clear-btn").hidden = false;
+      ["chat-main-btn", "chat-main-hint"].forEach(function(id){ document.getElementById(id).hidden = false; });
+      document.querySelector(".chat-input-row").hidden = false;
+    }
     function openNewCard(){
       card.hidden = false;
       originLine.hidden = true;
+      exitResumeMode();
       thread.innerHTML = "";
       errEl.textContent = "";
       actionErrEl.textContent = "";
@@ -4339,7 +4376,7 @@
       poll();
     }
     function reattachLive(){
-      if(sessionId || sessionLive) return;
+      if(sessionId || sessionLive || resumeRun !== null) return;
       authorGet("/api/author/live").then(function(j){
         if(sessionId || sessionLive || !j || !j.ok || !j.sessionId || !j.state) return;
         attachSession(j);
@@ -4404,6 +4441,66 @@
       refreshStartEnabled();
     }
     document.addEventListener("bareloop-edit", function(e){ applyEdit(e.detail || {}); });
+
+    // Resume — the card in RESUME mode: the signed job filled and locked, only Cap $ and Time cap open (prefilled from the
+    // engine's own resume plan, the values the Job tab used to show). A live drafting session is handled exactly as
+    // applyReuse does. A refused prefill opens nothing, error only.
+    function applyResume(d){
+      if(d.error){ errEl.textContent = d.error; return; }
+      var c = (d.prefill || {}).card || {};
+      var r = d.resume || {};
+      clearStartFrom();
+      openNewCard();
+      resumeRun = {runid: d.runid, noTime: typeof r.maxWallMin !== "number"};
+      document.getElementById("job-card-title").textContent = "RESUME " + (d.title || d.runid);
+      setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
+      if(c.model){ modelSelect.value = c.model; }
+      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
+      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
+      setVal("jf-judge", c.judgeExamples);
+      setVal("jf-cap-money", r.budgetUsd);
+      setVal("jf-cap-time", resumeRun.noTime ? "" : r.maxWallMin);
+      document.getElementById("jf-cap-time").parentNode.hidden = resumeRun.noTime;
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      originLine.textContent = "The same run goes on, not a new one. Only the money cap and the time cap can change; everything else is the signed job.";
+      originLine.classList.add("res");
+      originLine.hidden = false;
+      var spent = (r.spentUsd === null || r.spentUsd === undefined) ? "unknown" : ((r.spendComplete ? "" : "at least ") + panelMoney(r.spentUsd));
+      document.getElementById("chat-resume-spent").textContent = "spent so far " + spent +
+        (typeof r.wallUsedMs === "number" && isFinite(r.wallUsedMs) ? " \u00B7 time used so far " + Math.ceil(r.wallUsedMs / 60000) + " min" : "");
+      document.getElementById("chat-resume-box").hidden = false;
+      document.getElementById("chat-clear-btn").hidden = true;
+      ["chat-main-btn", "chat-main-hint"].forEach(function(id){ document.getElementById(id).hidden = true; });
+      document.querySelector(".chat-input-row").hidden = true;
+      renderPicker();
+      refreshModelStatus();
+      refreshStartEnabled();
+    }
+    document.addEventListener("bareloop-resume", function(e){ applyResume(e.detail || {}); });
+    document.getElementById("chat-resume-cancel").addEventListener("click", function(){ resetCard(); });
+    var resumeSignBtn = document.getElementById("chat-resume-sign");
+    function signResume(){
+      var run = resumeRun;
+      if(run === null) return;
+      var err = document.getElementById("chat-resume-err");
+      err.hidden = true;
+      resumeSignBtn.disabled = true;
+      var body = {budgetUsd: document.getElementById("jf-cap-money").value};
+      if(!run.noTime){ body.maxWallMin = document.getElementById("jf-cap-time").value; }
+      return authorPost("/api/runs/" + encodeURIComponent(run.runid) + "/resume", body).then(function(res){
+        resumeSignBtn.disabled = false;
+        if(res.body && res.body.ok){
+          // the SAME run goes on: the card goes back to empty, the right side to its Run tab, which follows it until it is live again
+          resetCard();
+          document.getElementById("tab-run").click();
+          afterResumeRefresh(run.runid, 8);
+        } else {
+          err.textContent = (res.body && res.body.error) || ("refused (" + res.status + ")");
+          err.hidden = false;
+        }
+      }).catch(function(x){ resumeSignBtn.disabled = false; err.textContent = "could not reach the panel: " + x.message; err.hidden = false; });
+    }
+    resumeSignBtn.addEventListener("click", signResume);
 
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
     // (fed by the every-2s `poll()`) unconditionally overwrites
