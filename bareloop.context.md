@@ -1118,7 +1118,8 @@ prefix, F212: a readdir on a file used to read as an empty tree forever). `evalE
 and never short-circuits — the result names EVERY failing wall (`{ pass, results }`,
 each result `{ type, pass, detail?, fault? }`). `tree-changed` reads OUTCOME (bytes vs
 the snapshot): an identical re-write is NOT a change (F43) and git status is never
-consulted (F45). `artifact-written` rejects zero-byte files. `check-passes` delegates
+consulted (F45). A single-file scope's pass detail names the file (`src/x.js changed`); a folder scope keeps
+`N file(s) changed under <scope>`. `artifact-written` rejects zero-byte files. `check-passes` delegates
 through the `runCheck` seam (the runner wires runClose); an unwired or crashed seam
 fails CLOSED with `fault` carrying a runClose verdict name — an instrument fault
 escalates through `CLOSE_FAULTS`, never masquerades as worker feedback. Failing details are
@@ -3386,7 +3387,8 @@ key you want first (the panel picks the row by the Model menu).
   GET/HEAD answers only when its `Host` header is the panel's own `127.0.0.1:<port>` (`checkHostGuard`,
   `src/panel/authorroutes.js`; any other Host is `403`, no token needed to read). Every
   P1 endpoint is GET/HEAD only (anything else — including every write verb — is `405`, outside the
-  two human-click-guarded write families `/api/author/*` and `/api/settings/*` below); a URL
+  two human-click-guarded write families `/api/author/*` and `/api/settings/*` below; a POST handler that throws answers `500
+  {ok:false,error}` and the panel keeps serving); a URL
   never joins a path segment into a filesystem read — a runid is looked up in the run list
   first (`RUNID_RE`, `src/panel/server.js` — accepts a `~2`-style backfill-disambiguated
   suffix too, and every endpoint echoes back the LISTED runid, never a filename-derived one
@@ -3508,6 +3510,11 @@ key you want first (the panel picks the row by the Model menu).
   `job-end` timestamp, null while live or died). `GET /api/imports` rows and `GET /api/imports/:id` carry `runStatus`
   (passed, or null when the bundle shows no green) and `runReason` (`goal met`). The Ended block's lines for died and
   stopped runs are `no ending recorded` and `you pressed Stop` (each `— resume` when Resume is offered).
+  Every PART of a run detail (`parts[]`) also carries its own `status` `{key, sign, word}` from the same table
+  (`partStatusFor`, `src/panel/status.js`): drafting, a green outcome and a part with no verdict and no cut-off → passed; a red
+  outcome → its run-outcome word; a part its leg's halt cut off → capped (money cap / time cap), stopped (you stopped it),
+  died, else failed. The page's map box reads `[sign] word` (the live part reads `[▶] running`); the step cards and Audit rows
+  show the word only; no surface says "done".
   **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
   `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?}`
   (blank = the signed caps). `404` unknown run; `409` when `resumePlanFor` says the engine would
@@ -3530,26 +3537,30 @@ key you want first (the panel picks the row by the Model menu).
   spelling), and signals nothing. `404` unknown run; `409` when the run's LATEST leg is not live
   (`runIsAlive`) or its spine does not exist yet (still starting). The ENGINE half is library code, so
   CLI runs honour the file too (no new CLI command): `runJob`/`runPlan` take `stopFile`, and `run-u`/the
-  panel's spawn pass `<spine>.stop`. The seam is the ROUND BOUNDARY of a step worker — where the money cap binds
+  panel's spawn pass `<spine>.stop`. The seam is the ROUND BOUNDARY of EVERY worker (scout, plan/replan drafter, step,
+  close-fix) — where the money cap binds
   (`src/planrun.js`, the `metered` round callback): file present = delete it, emit `stop-requested
-  {phase, step, iteration, round}`, end the Loop after that round; `ask` then throws category `stopped`
-  and the step loop files it as job-end outcome `stopped` the way a mid-step cap-halt is filed
+  {phase, step?, iteration, round}` (`step` only on a step phase), end the Loop after that round; `ask` then throws category `stopped`
+  and the step loop files it as job-end outcome `stopped` the way a mid-step cap-halt is filed (the scout, plan, replan and
+  close-fix phases file it through `relay`, which returns `stopped` as itself, never `provider-red`)
   (`spendComplete` exact — nothing is in flight at a round boundary). One owner, one check: a one-step run
-  and a long step both stop within one turn. Resume re-enters that step. The request file is cleared three times: when honoured, when the
+  and a long step both stop within one turn. Resume re-enters that step, or continues the phase. The request file is cleared three times: when honoured, when the
   leg ends (`finally`), and at the start of the next leg (a click that raced a leg's end never stops a
   resume). `stopped` is in `CHECKPOINT_OUTCOMES`: resumable like a `cap-halt`, the same run continues as a
   new leg at the next step. `GET /api/runs/:runid` carries `live` and `stopping` (a stop request is on
   disk and the leg is live); Ended row `stopped` = "You stopped it." / "Resume." / `[Resume]`, card line
   `stopped — resume`, Audit divider `stopped: you stopped it · resumed <when>`. The page shows `[Stop]`
   in the Run tab's action area while live, "stopping after this turn…" after the click, and the same
-  `[Resume]` there once the engine would accept one. The seam reads the file in STEP workers only
-  (`phase` `step:<id>`): the scout, plan and close-fix rounds never read it, so a Stop clicked while the run
-  is in one of those phases is not honoured until a step round runs again, and is otherwise cleared when
-  the leg ends — the money and time caps still bind throughout.
+  `[Resume]` there once the engine would accept one. A Stop clicked while the run is in the
+  scout, plan or close-fix phase is honoured at that phase's next round boundary, the same as in a step (it used to be read in
+  step workers only).
   **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on GREEN runs only (the Run tab's
   action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on green and
   green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: Clear the card and draft a new one.", and
-  stopped/capped/died rows offer `resume` only) and on every imported job. It opens the Chat tab's New job card
+  stopped/capped/died rows offer `resume` only) and on every imported job; the Chat card's Check type is one radio group of three
+  (Deterministic · Rubric · Reuse workflow), and the third opens a search picker over `GET /api/author/reuse-jobs` (below) that
+  fills the card through this same path (a pick, then `change` returns to the empty search; Deterministic or Rubric leaves reuse).
+  It opens the Chat tab's New job card
   filled from the SIGNED job: a NEW run (new runid), never a rerun, nothing drafted ($0). **Only five boxes are
   open — Source, Destination, Model, $ cap, Time cap**; every other box (check type, model, job name, goal, success,
   guardrails, judge examples) is the signed workflow, greyed, and the SERVER refuses a start that changed one
@@ -3590,7 +3601,8 @@ key you want first (the panel picks the row by the Model menu).
   is still written beside `resolved-spec.json` when a session reaches `prepared`.
   **The progress list (2026-10-04)** — `GET /api/author/:id` state carries `steps: [{id, label, status:
   'running'|'done'|'failed', detail}]`, one entry per pipeline step in first-seen order, updated in place (ids/labels:
-  `STEP_LABELS`, `src/panel/authorsession.js`); `progressLabel` is the running step's label. A refusal sets
+  `STEP_LABELS`, `src/panel/authorsession.js`); `progressLabel` is the running step's label. A drafting call after the first
+  relabels the ONE drafting line `drafting (retry N of M)` (same line, never a second one). A refusal sets
   `state.error` and fails exactly one step with the same text as its `detail`; pipeline text is never a chat message
   (`messages` holds person/model turns only). Two last steps, `hash` ("generating hash", detail `spec hash <full hash>`, done at sign-prepare) and `signed` ("signed hash", pushed by `signRun` when the sign is accepted); the old "SIGNING PREPARED" / "signed — … run starting detached" thread bubbles are gone. The page draws each step's `detail` on its own `> ` line under the step. Destination follows the Source: for a repo source it is the write
   fence (relative `writeScope` globs, never proven as a directory); for a folder source an absolute directory. Both
@@ -3598,7 +3610,7 @@ key you want first (the panel picks the row by the Model menu).
   Destination on a repo source → `Destination must be a path inside the repo, like src/digest.js` (before the
   copy); a source that is not a git repo → a plain refusal worded by the kind the source door recorded (a single
   file: "Source must be the repo folder — put the file in Destination"; a plain folder or a URL: "not a code
-  project (no git repo found)").
+  project (no git repo found)") — `nonRepoSourceMessage` (`src/source.js`), the one spelling the CLI `run-author` uses too.
   **Import, read only (item 4)** — `src/panel/importroutes.js`. The Workflows toolbar's `[Import]` opens a folder
   browser plus a paste box; an imported job is an exported bundle folder the person can LOOK at: nothing runs,
   nothing is signed, the folder is never written. Routes, all behind `checkHumanGuard` (token + own address —
@@ -3861,7 +3873,8 @@ URL** (blank = the shape's own host), **Test**, **Tokens used** (total, display 
 (DeepSeek fetched, Anthropic a typed note). Saves on change to `config.json`
 `keys.<ENV NAME> = { name, shape, baseUrl, priceInPerM?, priceOutPerM? }`. The last two columns are the customer's own price
 (**In $/1M**, **Out $/1M**, plain boxes; blank = not set, a number >= 0 otherwise; the server refuses a half-set pair with a plain
-error and saves nothing, and the page leaves a half-typed pair out of the save until both boxes are filled or both cleared).
+error and saves nothing, and the page saves NOTHING in a row with exactly one price box filled, showing "Fill both price boxes
+or clear both." when the person leaves that box, until both boxes are filled or both cleared).
 **Open keys folder** (`POST /api/settings/open-keys-folder`) opens `~/.config/bareloop` in the file manager (`xdg-open` / `open`,
 argv array, never the file itself); where it cannot, the page shows the path as text. Defaults for a key with no saved entry:
 `ANTHROPIC_API_KEY` claude-sonnet-5 / Anthropic; `DEEPSEEK_API_KEY` deepseek-flash /
