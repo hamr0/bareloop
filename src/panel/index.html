@@ -1011,6 +1011,8 @@
         partIndex: idx,
         title: part.label + occSuffix,
         state: partBoxState(part, isLastLivePart),
+        // the word this box wears: the server's table entry for the part (src/panel/status.js partStatusFor), except the live part, which is running
+        status: isLastLivePart && partBoxState(part, true) === "running" ? {sign:"\u25B6", word:"running"} : (part.status || null),
         noNumber: part.kind !== "step",
         // display-only attempts (map inline text + card/audit result glyph
         // fallback) — [] for a no-verdict part kind even though `part.attempts`
@@ -1024,6 +1026,10 @@
         part: part,
       };
     });
+  }
+  // ONE spelling of a part's shown state: `[sign] word` from the server's table; the raw state only when no table entry came
+  function boxStatusText(box){
+    return box.status && box.status.word ? "[" + box.status.sign + "] " + box.status.word : String(box.state);
   }
   function naturalBoxWidth(steps){
     var numIdx = stepNumberIndices(steps);
@@ -1125,7 +1131,7 @@
           '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[1]) + '</text>';
       }
       body += '<text x="' + (x + boxW / 2) + '" y="' + stateY +
-        '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(s.state) + '</text>';
+        '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(boxStatusText(s)) + '</text>';
       // P2 (2026-09-27 ruling): a running box gets the mockup's pulsing
       // amber dot (design/panel-mockup.html ~line 1648) — same fixed color
       // and animation, never re-derived from the state's own stroke color.
@@ -2669,7 +2675,7 @@
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
     var cls = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
-    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(box.state) + '</b></span>';
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(boxStatusText(box)) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).

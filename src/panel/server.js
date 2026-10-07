@@ -53,7 +53,7 @@ import { rowsForHome, findRow, modelChoiceFor } from '../providerrows.js';
 import { resolveProvider } from '../providers.js';
 import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
-import { statusFor, GOAL_MET_LINE } from './status.js';
+import { statusFor, partStatusFor, GOAL_MET_LINE } from './status.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1117,7 +1117,7 @@ function getRunDetailBody(runid, opts) {
     // {@link enrichPartsWithStageKind}. `kindMeta` is `null` (every stage
     // passes through unchanged) whenever no spec resolves at all, so the two
     // tabs still never disagree about order/counts/blocked-call figures.
-    parts: draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts,
+    parts: (draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts)?.map((p) => ({ ...p, status: partStatusFor(p) })),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
