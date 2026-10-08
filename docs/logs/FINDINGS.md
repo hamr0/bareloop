@@ -13398,6 +13398,55 @@ calibration as a whole rather than patching one more rule in isolation.
 
 **Status: OPEN, parked by ruling, not built.**
 
+**Addendum 2026-10-08 — the probe, hamr's ruling A, the fix (not yet re-proven live).**
+
+*Probe.* One paid run of the archived `mub2nboo` calibration set (10 cases plus the 5 injection
+styles) against `deepseek-flash` as judge, with the per-case `diag` record on (the two
+2026-10-08 commits `0e4c0fc`, `7f55006`): 16 calls, $0.013, spend complete. The raw result sat in
+a scratch directory, not in the repo — do not cite its path as permanent. Calibration graded 1 of
+10 (the 10 cases were the same ones that graded 4 of 10 live on 2026-09-21). Injection: 5 of 5
+styles resisted.
+
+*Which cause.* Of the `has-doc` reds: (a) `docQuote` null, 6, all correct (those functions really
+are undocumented); (b) `docQuote` lacks `/**`, 7, **all 7 false**; (c) quote not found in the
+artifact, 0. So the live failure was (b): asked for "the first line of the JSDoc block", the judge
+quoted the first WORDED line (e.g. ` * Formats a byte count as a human-readable string...`), not
+the bare `/**` opener line, and the rule reddened any quote without `/**`.
+
+*Ruling A (hamr, 2026-10-08): code does the check, the judge only points.* The `ask` text is
+unchanged. In `JUDGE_RULES['has-doc'].check` (`src/judged.js`) the `/**` test on the quote is
+replaced by a check against the artifact: find the declaration line (exactly one trimmed-line
+match, else red), take the comment block that ends on the nearest non-blank line above it, require
+that block's opener to be `/**` (a plain `/*` block is not JSDoc), and pass the quote only when
+every non-empty line of it is a line inside that block. Null `docQuote` still reds; an invented
+quote still reds through the existing quote check; a block above a different function, a body
+line, a plain `/*` block, and a missing or duplicated declaration all red. Every real caller
+passes the artifact (`pipeOnce` in `src/calibrate.js`, `runJudgedFloor` in `src/kinds.js`); when
+`decide()` is called without one (tests only) the old `/**` substring test applies, nothing
+looser. Params, returns, attempts, floors and verdict routing untouched. No rulebook version or
+hash exists: `setHash` (`src/calibrate.js`) folds only card, cases and judge model, so this change
+does not invalidate any stamp, and nothing marks a set as certified under the old rule (none ever
+cleared).
+
+*$0 replay* of the new `decide()` over the probe's saved raw locate facts for the 10 cases (same
+judge answers, same card): old 1 of 10, new **6 of 10** graded as signed. Fixed: `full-contract-pass`,
+`clamp-contract-pass`, `two-functions-pass`, `omitted-param-red`, `missing-returns-red`
+(and `undocumented-function-red`, already right). Still wrong, for other reasons:
+`name-echo-denies-purpose` and `name-echo-and-no-returns` (signed to red on `has-doc` because the
+doc only echoes the function name; the rulebook cannot express "doc says nothing", so `has-doc`
+passes, and a `returns` red appears instead because the judge's `returnsTagQuote` dropped the
+leading `* `), `phantom-param-red` and `phantom-param-and-no-returns` (the judge reported the
+phantom `overwrite` tag correctly in `paramTagNames`, but the `params` rule only reds a param
+MISSING a tag, never an extra tag — also inexpressible; the second case then still has its `returns`
+red but not the signed `params` one).
+
+*Still open.* (1) The name-echo cases cannot be expressed by the current rules; either those cases
+or the rulebook change — a ruling for hamr (the `returns` quote prefix miss, item 3, also feeds them). (2) The phantom-param cases are the same kind: the `params`
+rule has no extra-tag check, so either those cases or the rule change — also a ruling for hamr. (3) The `returns` quote sometimes drops its
+leading `* ` prefix; a candidate bareguard-side `quoteIn` match, per hamr's rule "use bareguard,
+validate it, ask it to change" — not filed. (4) The fix is test-proven and replay-proven only: no
+live calibration has run since. The F192 status stays OPEN.
+
 ## F193 — the prompt-commit rule assumed every prompt-register-file change came from a run failure; a type-only edit could not satisfy it honestly (fixed)
 
 Found 2026-09-23 on `feat/panel-n6`. Commit `565fb99` widened one JSDoc `@param` type annotation in
