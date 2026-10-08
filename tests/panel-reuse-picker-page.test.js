@@ -145,19 +145,37 @@ test('change: back to the EMPTY search state — clear the reuse, radio stays on
   }, 'var rwHl = 3;');
   openPicker();
   assert.equal(q.value, '');
-  assert.deepEqual(log2, ['boxes', 'picker', 'list', 'load', 'start', 'focus']);
+  assert.deepEqual(log2, ['picker', 'list', 'load', 'start', 'focus'], 'opening the picker (the Reuse radio click) never blanks the boxes');
+});
+
+test('openPicker: a fresh open resets rwJobs/rwFailed so the list reads "Loading…" (no stale list flash) until the fetch lands', () => {
+  const list = { innerHTML: '' };
+  const q = { value: '', focus() {} };
+  const api = build(['rwMark', 'rwMeta', 'renderReuseList', 'openPicker'], {
+    rwQ: q, rwList: list, escapeXml, document: { getElementById: () => ({ disabled: false }) }, renderPicker() {}, loadReuseJobs() {}, refreshStartEnabled() {},
+  }, `var rwJobs = ${JSON.stringify(JOBS)}; var rwFailed = true; var rwShown = []; var rwHl = 0;`);
+  api.openPicker();
+  assert.match(list.innerHTML, /Loading\u2026/);
+  assert.doesNotMatch(list.innerHTML, /No green jobs yet|Could not load|fix-failing/);
+});
+
+test('list: not yet arrived (rwJobs null, not failed) reads Loading…, not "No green jobs yet."', () => {
+  const list = { innerHTML: '' };
+  build(['rwMark', 'rwMeta', 'renderReuseList'], { rwQ: { value: '' }, rwList: list, escapeXml }, 'var rwJobs = null; var rwFailed = false; var rwShown = []; var rwHl = 0;').renderReuseList();
+  assert.match(list.innerHTML, /Loading\u2026/);
+  assert.doesNotMatch(list.innerHTML, /No green jobs yet/);
 });
 
 test('leaving reuse: Deterministic or Rubric while the picker shows (picked or not) = clearStartFrom + empty card on that type; outside reuse they only toggle the judge box; Reuse opens the picker once', () => {
   const log = [];
   const judge = { disabled: true };
   const mk = (hidden) => build(['onVerdictChange'], {
-    rwBox: { hidden }, openPicker: () => log.push('openPicker'), clearStartFrom: () => log.push('clearStartFrom'), clearCardBoxes: () => log.push('boxes'),
+    rwBox: { hidden }, openPicker: () => log.push('openPicker'), clearStartFrom: (keep) => log.push(keep ? 'clearStartFrom(keep)' : 'clearStartFrom'), clearCardBoxes: () => log.push('boxes'),
     setVerdict: (v) => log.push(`verdict:${v}`), renderPicker: () => log.push('picker'), refreshStartEnabled: () => log.push('start'),
     document: { getElementById: () => judge },
   }).onVerdictChange;
   mk(false)('rubric');
-  assert.deepEqual(log.splice(0), ['clearStartFrom', 'boxes', 'verdict:rubric', 'picker', 'start']);
+  assert.deepEqual(log.splice(0), ['clearStartFrom(keep)', 'verdict:rubric', 'picker', 'start']);
   assert.equal(judge.disabled, false, 'rubric opens the judge box');
   mk(false)('deterministic');
   assert.equal(judge.disabled, true);
@@ -200,4 +218,20 @@ test('Sign & run: disabled before a pick (startOk needs startFrom while the radi
   assert.equal(run('reuse', { runid: 'r1' }), true);
   assert.equal(run('deterministic', null), true, 'plain cards unchanged');
   assert.match(fnSrc('renderMain'), /mainButtonFor\(st, !msgInput\.value\.trim\(\), !!startFrom \|\| verdictValue\(\) === "reuse"\)/);
+});
+
+test('clearStartFrom(true) (a radio click leaving reuse) keeps the box values; plain clearStartFrom() still empties a picked job\'s values', () => {
+  const mk = () => {
+    const els = {};
+    for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time']) els[id] = { value: 'typed' };
+    const sf = { hidden: false };
+    const api = build(['clearStartFrom'], {
+      document: { getElementById: (id) => els[id], querySelectorAll: () => [] }, sfLine: sf, sfNote: sf, originLine: sf, setReuseLocked() {}, renderPicker() {}, renderMain() {},
+    }, 'var startFrom = {runid: "r1"}, reuseSession = false, autoSigned = false, reuseCheckType = "rubric";');
+    return { api, els };
+  };
+  const a = mk(); a.api.clearStartFrom(true);
+  assert.equal(a.els['jf-goal'].value, 'typed');
+  const b = mk(); b.api.clearStartFrom();
+  assert.equal(b.els['jf-goal'].value, '');
 });

@@ -3715,9 +3715,10 @@
       if(!reuseOn && !live && !resuming){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
     }
     function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
-    function clearStartFrom(){
-      // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes
-      if(startFrom){
+    function clearStartFrom(keepBoxes){
+      // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes — except when a Check type
+      // radio click leaves reuse (keepBoxes): a radio never blanks what the person has on the card
+      if(startFrom && !keepBoxes){
         ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
@@ -3773,6 +3774,7 @@
     function renderReuseList(){
       var q = rwQ.value.trim();
       var all = rwJobs || [];
+      var loading = rwJobs === null && !rwFailed;
       rwShown = all.filter(function(j){ return j.job.toLowerCase().indexOf(q.toLowerCase()) !== -1; });
       if(rwHl >= rwShown.length) rwHl = 0;
       if(rwShown.length){
@@ -3781,7 +3783,7 @@
         }).join("");
       } else {
         rwList.innerHTML = '<div class="rw-empty" data-testid="rw-empty">' + (rwFailed ? "Could not load the job list."
-          : (all.length === 0 ? "No green jobs yet." : 'No green job matches "' + escapeXml(q) + '".')) + "</div>";
+          : loading ? "Loading\u2026" : (all.length === 0 ? "No green jobs yet." : 'No green job matches "' + escapeXml(q) + '".')) + "</div>";
       }
     }
     function loadReuseJobs(){
@@ -3792,9 +3794,10 @@
       }).catch(function(){ rwFailed = true; rwJobs = null; renderReuseList(); });
     }
     // the empty search state: card emptied, nothing picked, Sign & run disabled until a job is picked
+    // (the boxes are NOT cleared here: clicking the Reuse radio never blanks typing; only a pick fills the card)
     function openPicker(){
-      clearCardBoxes();
       rwQ.value = ""; rwHl = 0;
+      rwJobs = null; rwFailed = false; // a fresh open shows "Loading…", never the previous list
       document.getElementById("jf-judge").disabled = true;
       renderPicker();
       renderReuseList();
@@ -3941,12 +3944,11 @@
     // the limit changed in Settings: re-read the note for whatever cap is typed
     document.addEventListener("bareloop-limit-changed", refreshCapNote);
     // Check type: Deterministic / Rubric / Reuse workflow. Reuse opens the picker on an empty card; Deterministic or
-    // Rubric while the picker is showing (picked or not) LEAVES reuse — the empty card on that type (clearStartFrom).
+    // Rubric while the picker is showing (picked or not) LEAVES reuse — boxes untouched (clearStartFrom(true)).
     function onVerdictChange(v){
       if(v === "reuse"){ if(rwBox.hidden) openPicker(); return; }
       if(!rwBox.hidden){
-        clearStartFrom();
-        clearCardBoxes();
+        clearStartFrom(true);
         setVerdict(v);
         renderPicker();
       }
