@@ -63,6 +63,7 @@
 // persisted raw goes through the ONE `scrubRaw` inventory here, and the CALLER
 // redacts at its emission boundary, the same split `src/kinds.js` documents.
 
+import { quoteIn } from 'bareguard';
 import { createRequire } from 'node:module';
 import { extractArtifact, priceOf, scrubRaw, rateSourceFields } from './text.js';
 import { resolveProvider } from './providers.js';
@@ -257,16 +258,20 @@ export const LOCATE_AXES = Object.freeze({
 const quoteOf = (/** @type {unknown} */ v) => (typeof v === 'string' && v.trim() !== '' ? v : null);
 
 /**
- * Every trimmed, non-empty line of `quote` must appear as a trimmed line of the
- * artifact. Line-wise and trimmed rather than substring-wise, because a model
- * re-indents and a strict byte compare would red honest facts; and every line
- * rather than any line, because a half-invented quote is an invented quote.
- * @param {string} quote @param {Set<string>|null} lines
+ * The quote must be a contiguous run of whole lines of the artifact, in order —
+ * bareguard's `quoteIn(.., {wholeLines:true})` (asked by bareloop, F192; shipped in
+ * bareguard 0.21.0), the one owner of line matching. Whole lines rather than
+ * substring, so a bare `return` cannot pass by hiding inside a longer line; one
+ * leading JSDoc/comment decoration is forgiven, because the judge routinely drops
+ * the leading star-space of a JSDoc tag line. A quote that is ALL decoration
+ * (`/**` alone) proves nothing about location: `has-doc` keeps `docBlockAbove` as
+ * the authority on where the block sits.
+ * @param {string} quote @param {string|null} text
  * @returns {boolean} true when the artifact is in hand AND the quote is not in it
  */
-function unquoted(quote, lines) {
-  if (!lines) return false; // no artifact in hand: decide() says nothing it cannot know
-  return quote.split('\n').map((l) => l.trim()).filter(Boolean).some((l) => !lines.has(l));
+function unquoted(quote, text) {
+  if (text === null) return false; // no artifact in hand: decide() says nothing it cannot know
+  return !quoteIn(quote, text, { wholeLines: true }).ok;
 }
 
 /**
@@ -274,16 +279,16 @@ function unquoted(quote, lines) {
  * Scoped per rule rather than globally so a fabricated `@returns` line reds the
  * returns item and not the whole card — an itemized red that names the wrong
  * item is a calibration signal pointing at the wrong card line.
- * @param {any} fn @param {string[]} fields @param {Set<string>|null} lines
+ * @param {any} fn @param {string[]} fields @param {string|null} text
  * @returns {RuleRed[]}
  */
-function quoteReds(fn, fields, lines) {
+function quoteReds(fn, fields, text) {
   /** @type {RuleRed[]} */
   const reds = [];
   const name = String(fn?.name ?? '(unnamed)');
   for (const f of fields) {
     const q = quoteOf(fn?.[f]);
-    if (q && unquoted(q, lines)) {
+    if (q && unquoted(q, text)) {
       reds.push({ fn: name, why: `\`${f}\` is not in the artifact — locate quoted a line nobody can find, and unsure is red`, quote: q });
     }
   }
@@ -338,19 +343,19 @@ function hasDocBlockDirectlyAbove(text, fn) {
 /**
  * THE OWNED RULE TABLE. Frozen: the rulebook is the arbiter's, and a caller that
  * could add a rule at runtime would be authoring the arbiter.
- * @type {Readonly<Record<string, {id: string, ask: string, check: (fn: any, lines: Set<string>|null, text?: string|null) => RuleRed[]}>>}
+ * @type {Readonly<Record<string, {id: string, ask: string, check: (fn: any, text: string|null) => RuleRed[]}>>}
  */
 export const JUDGE_RULES = Object.freeze({
   'has-doc': Object.freeze({
     id: 'has-doc',
     ask: '  "docQuote": the first line of the JSDoc block (a /** ... */ comment) IMMEDIATELY above the '
       + 'declaration, VERBATIM, or null if there is no such block',
-    check(fn, lines, text) {
+    check(fn, text) {
       const name = String(fn?.name ?? '(unnamed)');
       const decl = quoteOf(fn?.declarationQuote);
       const doc = quoteOf(fn?.docQuote);
       if (!doc) return [{ fn: name, why: `no JSDoc block above the declaration`, quote: decl }];
-      const q = quoteReds(fn, ['docQuote', 'declarationQuote'], lines);
+      const q = quoteReds(fn, ['docQuote', 'declarationQuote'], text);
       if (q.length) return q;
       // CODE DOES THE CHECK, THE JUDGE ONLY POINTS (hamr ruling A, F192). The
       // judge was asked for the opener line and routinely quotes the first
@@ -380,7 +385,7 @@ export const JUDGE_RULES = Object.freeze({
       + '  "paramIsPattern": one true/false per entry of paramNames, true when that entry is a destructuring '
       + 'pattern rather than a plain name\n'
       + '  "paramTagNames": the names appearing in @param tags of that JSDoc block (empty array if none)',
-    check(fn, lines) {
+    check(fn, text) {
       const name = String(fn?.name ?? '(unnamed)');
       const decl = quoteOf(fn?.declarationQuote);
       const params = Array.isArray(fn?.paramNames) ? fn.paramNames.map(String) : null;
@@ -388,7 +393,7 @@ export const JUDGE_RULES = Object.freeze({
       if (params === null || tags === null) {
         return [{ fn: name, why: 'locate gave no param facts — unsure, and unsure is red', quote: decl }];
       }
-      const q = quoteReds(fn, ['declarationQuote'], lines);
+      const q = quoteReds(fn, ['declarationQuote'], text);
       if (q.length) return q;
 
       // DERIVED-FACT HARDENING (the POC measured `paramNames` drifting between
@@ -449,9 +454,9 @@ export const JUDGE_RULES = Object.freeze({
     ask: '  "returnsTagQuote": the @returns/@return tag line VERBATIM, or null if absent\n'
       + '  "returnsValueQuote": a VERBATIM `return <something>` line from the function body, or null if the '
       + 'function never returns a value',
-    check(fn, lines) {
+    check(fn, text) {
       const name = String(fn?.name ?? '(unnamed)');
-      const q = quoteReds(fn, ['returnsTagQuote', 'returnsValueQuote'], lines);
+      const q = quoteReds(fn, ['returnsTagQuote', 'returnsValueQuote'], text);
       if (q.length) return q;
       const value = quoteOf(fn?.returnsValueQuote);
       const tag = quoteOf(fn?.returnsTagQuote);
@@ -1079,15 +1084,13 @@ export function decide(facts, card, { artifactText = null } = {}) {
     }
   }
 
-  const lines = typeof artifactText === 'string'
-    ? new Set(artifactText.split('\n').map((l) => l.trim()).filter(Boolean))
-    : null;
+  const text = typeof artifactText === 'string' ? artifactText : null;
 
   const graded = items.map((it) => {
     const rule = JUDGE_RULES[it.rule];
     /** @type {RuleRed[]} */
     const reds = [];
-    for (const fn of fns) reds.push(...rule.check(fn, lines, artifactText));
+    for (const fn of fns) reds.push(...rule.check(fn, text));
     return { rule: it.rule, text: it.text, ok: reds.length === 0, reds };
   });
 

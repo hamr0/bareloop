@@ -766,3 +766,34 @@ test('F192 item 3A: a has-doc red on a genuinely undocumented function stays leg
   const v = validateCalibrationSet(setWith([caseOf('undocumented-function-red', F192P['undocumented-function-red'])]), { card: CARD });
   assert.deepEqual(v.reds, []);
 });
+
+// ── quote matching is bareguard's quoteIn({wholeLines:true}) (F192, item 3) ──
+//
+// REAL data: the archived mub2nboo `name-echo-denies-purpose` artifact and the
+// judge's actual `returnsTagQuote`, which dropped the leading `* ` of its line.
+
+const NE = F192P['name-echo-denies-purpose'];
+const RETURNS_ONLY = { items: [CARD.items.find((/** @type {any} */ i) => i.rule === 'returns')] };
+const returnsReds = (/** @type {any} */ patch) =>
+  decide({ functions: [{ ...NE.facts.functions[0], ...patch }] }, RETURNS_ONLY, { artifactText: NE.artifact })
+    .items[0].reds.map((/** @type {any} */ r) => r.why);
+
+test('F192 item 3: the real @returns quote that dropped its leading "* " is found, not reddened', () => {
+  assert.equal(NE.facts.functions[0].returnsTagQuote, '@returns {Date} the parsed date, in the local time zone.');
+  assert.deepEqual(returnsReds({}), []);
+});
+
+test('F192 item 3: a fragment of a line, a changed word and reordered lines still red', () => {
+  assert.match(returnsReds({ returnsValueQuote: 'return' })[0], /returnsValueQuote.*not in the artifact/);
+  assert.match(returnsReds({ returnsTagQuote: '@returns {Date} the parsed date, in UTC.' })[0], /returnsTagQuote/);
+  assert.match(returnsReds({ returnsValueQuote: "return new Date(y, m - 1, d);\nfunction parseDate(value, pattern) {" })[0], /returnsValueQuote/);
+});
+
+test('F192 item 3: has-doc keeps docBlockAbove as the authority when the quote is the bare opener', () => {
+  // "/**" alone matches any source holding that line (quoteIn proves nothing about location);
+  // the block-above check must still decide. A function whose block sits ABOVE ANOTHER function reds.
+  const art = '/**\n * Doc of a.\n */\nfunction a() {}\n\nfunction b() {}\n';
+  const fn = (/** @type {string} */ n) => ({ name: n, declarationQuote: `function ${n}() {}`, docQuote: '/**' });
+  assert.equal(decide({ functions: [fn('a'), fn('b')] }, HAS_DOC, { artifactText: art }).verdict, 'red');
+  assert.equal(decide({ functions: [fn('a')] }, HAS_DOC, { artifactText: art.replace('function b() {}\n', '') }).verdict, 'pass');
+});
