@@ -955,11 +955,13 @@ test('diag: a NULL docQuote is diagnosable as reason (a)', async () => {
   assert.equal(r.graded.find((x) => x.id === 'pass-1').diag.facts.functions[0].docQuote, null);
 });
 
-test('diag: a docQuote with no /** opener is diagnosable as reason (b)', async () => {
-  const j = judgeWith((f) => { f.functions[0].docQuote = '* @param {number} a @param {number} b */'; return f; });
+test('diag: a docQuote that is in the artifact but not in the JSDoc block above is diagnosable as reason (b)', async () => {
+  // F192 ruling A: (b) is now a mechanical check against the artifact — a real line
+  // from the function body is found, and is not inside the block directly above
+  const j = judgeWith((f) => { f.functions[0].docQuote = '  return a + b;'; return f; });
   const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
   const red = r.graded.find((x) => x.id === 'pass-1').diag.reds.find((x) => x.rule === 'has-doc');
-  assert.match(red.why, /not a JSDoc opener/);
+  assert.match(red.why, /not inside a JSDoc block/);
 });
 
 test('diag: a locate call that fails on EVERY attempt carries each attempt\'s axis and cause', async () => {
