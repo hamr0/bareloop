@@ -34,14 +34,16 @@ YOU SIGN  (the hash covers the job, the check and the caps; any change = sign ag
   ▼
 THE RUN, on a copy: a worktree in your repo, or a hidden-git copy of a plain folder
   scout → plan (steps) → each step is a wheel: try → check → gap → retry
-     two strikes on a step → replan · the agent never sees money or time
+     two strikes on a step → replan · the worker never sees money or time
   → THE CLOSE: the signed check, run by bareloop, never by the agent
   │
   ▼
 ENDED:  passed · failed · capped · stopped · died
-  passed  → your branch has the work (you merge, always) · Reuse workflow
-  failed  → Edit in chat (fix the job, sign again)
+  passed           → your branch has the work (you merge, always) · Reuse workflow
+                     (a plain folder gets a dated file in its destination instead)
+  not passed       → Edit in chat (fix the job, sign again)
   capped / stopped → Resume (only the $ and time caps can change)
+  died             → Resume, if it can
   │
   ▼
 NEXT TIME: Reuse workflow runs the same plan again · Export runs it anywhere
