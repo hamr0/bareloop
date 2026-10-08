@@ -13447,6 +13447,21 @@ leading `* ` prefix; a candidate bareguard-side `quoteIn` match, per hamr's rule
 validate it, ask it to change" — not filed. (4) The fix is test-proven and replay-proven only: no
 live calibration has run since. The F192 status stays OPEN.
 
+*Items 1 and 3A built (2026-10-08, commits `eeaab46`, `c1224d6`; hamr's rulings).* (1) `params` now also
+reds an EXTRA `@param`: a documented tag whose name matches no declared parameter ("@param overwrite names
+no parameter of copyFile"). Dotted sub-params (`opts.a`) are never extra; each destructured parameter slot
+absorbs one unmatched root tag, so a documented root (`@param [opts]` for `{ a } = {}`) is never reddened
+(conservative: a phantom sitting beside a pattern can be missed). (3A) `validateCalibrationSet` — the one
+validator behind the authoring revise loop (`cardauthor.js` `validateJudgedArtifacts`), the declared-close
+gate and `runCalibration`'s $0 legality check — now refuses a case expecting a `has-doc` red on a function
+that has a JSDoc block directly above it (read off the artifact with `docBlockAbove`), before any locate
+call. The archived mub2nboo set is therefore refused at $0 (`name-echo-denies-purpose`,
+`name-echo-and-no-returns`); expected and correct. Suggestion only, not changed: the case-proposal prompt
+could tell the model that has-doc only checks a block exists. $0 replay over the 8 legal archived cases
+with the probe's real facts: 8/8 graded correctly (the 3 passes, both phantom-param cases, omitted-param,
+missing-returns, undocumented). The `returns` quote `* ` prefix miss did not show in that replay; it stays an
+open separate item (bareguard `quoteIn`, awaiting hamr). Not re-proven live.
+
 ## F193 — the prompt-commit rule assumed every prompt-register-file change came from a run failure; a type-only edit could not satisfy it honestly (fixed)
 
 Found 2026-09-23 on `feat/panel-n6`. Commit `565fb99` widened one JSDoc `@param` type annotation in
