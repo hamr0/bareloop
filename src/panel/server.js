@@ -514,6 +514,10 @@ function endedBase(summary, death, o) {
         actions: REUSE,
       };
     }
+    // hamr 2026-10-08: already-green (the check passed before any work) is not a reusable job — only a run that
+    // earned its green offers Reuse workflow; the rest take Edit in chat (withEditAction adds it). `satisfied` is a
+    // close VERDICT, never a run outcome (ralph and the job-end emitters write `green`), so it rides with already-green.
+    if (outcome !== 'green') return { reason: 'Goal met.', next: CHANGE, line: GOAL_MET_LINE, actions: [] };
     return { reason: 'Goal met.', next: 'Nothing to do.', line: GOAL_MET_LINE, actions: REUSE };
   }
   if (outcome === 'cap-halt') {

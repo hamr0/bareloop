@@ -52,8 +52,11 @@ test('endedFor: Edit in chat is on EVERY non-green ending (after Resume when bot
   assert.deepEqual(endedFor(base, dead, { resume: ok }).actions, [RESUME, EDIT], 'died + resumable: Resume then Edit');
   assert.deepEqual(endedFor(base, dead, { resume: no }).actions, [EDIT], 'died, not resumable: Edit only');
   assert.deepEqual(endedFor(base, dead, {}).actions, [EDIT], 'died, no plan at all: Edit only');
-  for (const o of ['green', 'already-green', 'satisfied']) {
-    assert.deepEqual(ended(o, null).actions, [REUSE], `${o}: Reuse only`);
+  assert.deepEqual(ended('green', null).actions, [REUSE], 'green: Reuse only');
+  for (const o of ['already-green', 'satisfied']) {
+    // hamr 2026-10-08: the check passed before any work — not a reusable job
+    assert.deepEqual(ended(o, null).actions, [EDIT], `${o}: Edit in chat, never Reuse`);
+    assert.equal(ended(o, null).next, 'Change the job: press Edit in chat.');
   }
   assert.deepEqual(ended('green', null, {}).actions.filter((a) => a.id === 'edit'), []);
   assert.equal(endedFor({ outcome: null, stopReason: null, spentUsd: null, budgetUsd: 2 }, alive, {}), null, 'live: no block');

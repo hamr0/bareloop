@@ -102,6 +102,7 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   assert.equal(live(null), null, 'no Ended block while a run is live');
   assert.deepEqual(live('green'), { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: [{ id: 'reuse', label: 'Reuse workflow' }] });
   assert.equal(live('already-green').reason, 'Goal met.');
+  assert.deepEqual(live('already-green').actions, [{ id: 'edit', label: 'Edit in chat' }], 'already-green is not a reuse source');
   assert.equal(live('green', { o: { destinationRefused: 'folder is read only' } }).reason, 'Goal met, but the output could not be delivered.');
 
   const cap = live('cap-halt', { o: { resume: ok } });
