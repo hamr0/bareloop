@@ -404,6 +404,25 @@ export const JUDGE_RULES = Object.freeze({
       } else if (params.length > tags.length) {
         reds.push({ fn: name, why: `${params.length} param(s) but only ${tags.length} @param tag(s)`, quote: decl });
       }
+      // THE EXTRA TAG (F192 probe: a documented `@param overwrite` on
+      // copyFile(src, dest) was reported by locate and never reddened). A tag is
+      // extra when its name matches no declared parameter. Tag spellings are
+      // normalised first: `[opts]` / `[opts=1]` -> `opts`. A dotted tag
+      // (`opts.a`) documents a member of another param and is never extra.
+      // A DESTRUCTURED slot has no name to match, so the documented root of such
+      // a slot (`@param opts` for `{ a } = {}`) cannot be told from a phantom by
+      // name: each pattern slot absorbs ONE unmatched tag, and only the tags
+      // beyond that budget are extra. Conservative on purpose — it can miss a
+      // phantom sitting beside a pattern, it never reds a documented root.
+      const roots = tags
+        .map((t) => t.trim().replace(/^\[/, '').replace(/\]$/, '').replace(/=.*$/, '').trim())
+        .filter((t) => t && !/[.[]/.test(t));
+      const unmatched = roots.filter((t) => !named.includes(t));
+      const slack = pattern.filter(Boolean).length;
+      if (unmatched.length > slack) {
+        const extra = unmatched.slice(slack);
+        reds.push({ fn: name, why: `@param ${extra.join(', ')} names no parameter of ${name}`, quote: decl });
+      }
       return reds;
     },
   }),

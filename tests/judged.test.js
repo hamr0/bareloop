@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   JUDGE_MODEL, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES,
-  validateCard, validateFacts, locatePrompt, runLocate, decide,
+  validateCard, validateFacts, locatePrompt, runLocate, decide, validateCalibrationSet, CALIBRATION_SIZE,
 } from '../src/judged.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -693,4 +693,50 @@ test('F192: an unfindable or duplicated declaration line is unsure, and unsure i
   assert.equal(hasDoc({ ...fn, declarationQuote: 'function nope() {' }, c.artifact).verdict, 'red');
   const twice = `${c.artifact}\n/**\n * again\n */\nfunction formatBytes(bytes, decimals = 1) {\n}\n`;
   assert.equal(hasDoc(fn, twice).verdict, 'red');
+});
+
+// ── params: an EXTRA @param tag reds (F192, item 1) ──────────────────────────
+//
+// REAL data: tests/fixtures/f192-params-real.json — the archived mub2nboo cases
+// and deepseek-flash's actual facts from the 2026-10-08 probe.
+
+const F192P = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-params-real.json'), 'utf8'));
+const PARAMS_ONLY = { items: [CARD.items[1]] };
+/** params reds (rule-level why strings) for one function's facts */
+const paramReds = (/** @type {any} */ fn) => {
+  const d = decide({ functions: [fn] }, PARAMS_ONLY, { artifactText: null });
+  return d.items[0].reds.map((/** @type {any} */ r) => r.why);
+};
+/** a synthetic fn whose declaration quote carries every name */
+const synth = (/** @type {string[]} */ names, /** @type {string[]} */ tags, /** @type {boolean[]} */ pat = names.map(() => false)) => ({
+  name: 'f', declarationQuote: `function f(${names.join(', ')}) {`, paramNames: names, paramIsPattern: pat, paramTagNames: tags,
+});
+
+test('F192 item 1: the real phantom @param cases red, with a plain why', () => {
+  const a = F192P['phantom-param-red'].facts.functions[0];
+  assert.deepEqual(paramReds(a), ['@param overwrite names no parameter of copyFile']);
+  const b = F192P['phantom-param-and-no-returns'].facts.functions[0];
+  assert.deepEqual(paramReds(b), ['@param admin names no parameter of createUser']);
+});
+
+test('F192 item 1: the existing missing-param red is unchanged, and a fully matching doc stays green', () => {
+  const m = F192P['omitted-param-red'].facts.functions[0];
+  assert.deepEqual(paramReds(m), ['@param missing for cc']);
+  assert.deepEqual(paramReds(F192['full-contract-pass'].facts.functions[0]), []);
+  assert.deepEqual(paramReds(F192['clamp-contract-pass'].facts.functions[0]), []);
+});
+
+test('F192 item 1: dotted sub-params are not extra', () => {
+  assert.deepEqual(paramReds(synth(['opts'], ['opts', 'opts.a', 'opts.b'])), []);
+  assert.deepEqual(paramReds(synth(['opts', 'n'], ['opts', 'n', 'opts.a'])), []);
+});
+
+test('F192 item 1: a destructured slot absorbs ONE unmatched root tag, and only that', () => {
+  const pat = '{ a = 1 } = {}';
+  // `@param [opts]` documents the pattern: no red (the real makeSpine shape)
+  assert.deepEqual(paramReds(synth([pat], ['[opts]', 'opts.a'], [true])), []);
+  // a named param plus a pattern, root documented: no red
+  assert.deepEqual(paramReds(synth(['x', pat], ['x', 'opts'], [false, true])), []);
+  // one root for the pattern AND a second unmatched tag: the second is extra
+  assert.deepEqual(paramReds(synth(['x', pat], ['x', 'opts', 'ghost'], [false, true])), ['@param ghost names no parameter of f']);
 });

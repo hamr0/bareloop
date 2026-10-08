@@ -1,0 +1,229 @@
+{
+ "phantom-param-red": {
+  "artifact": "/**\n * Copies a file from one path to another.\n *\n * @param {string} src - absolute path of the file to read.\n * @param {string} dest - absolute path of the file to write.\n * @param {boolean} overwrite - whether to replace dest when it already exists.\n * @returns {Promise<void>} resolves once the bytes have been flushed to disk.\n */\nasync function copyFile(src, dest) {\n  await fs.promises.copyFile(src, dest);\n}",
+  "expect": {
+   "verdict": "red",
+   "reds": [
+    {
+     "rule": "params",
+     "fn": "copyFile"
+    }
+   ]
+  },
+  "facts": {
+   "functions": [
+    {
+     "name": "copyFile",
+     "declarationQuote": "async function copyFile(src, dest) {",
+     "docQuote": " * Copies a file from one path to another.",
+     "paramNames": [
+      "src",
+      "dest"
+     ],
+     "paramIsPattern": [
+      false,
+      false
+     ],
+     "paramTagNames": [
+      "src",
+      "dest",
+      "overwrite"
+     ],
+     "returnsTagQuote": " * @returns {Promise<void>} resolves once the bytes have been flushed to disk.",
+     "returnsValueQuote": null
+    }
+   ]
+  }
+ },
+ "phantom-param-and-no-returns": {
+  "artifact": "/**\n * Creates a user record and writes it to the database.\n *\n * @param {string} email - the user's email address; must be unique.\n * @param {string} password - the plaintext password, hashed before storage.\n * @param {boolean} admin - whether the account is granted admin rights.\n */\nasync function createUser(email, password) {\n  const hash = await bcrypt.hash(password, 10);\n  return db.insert('users', { email, hash });\n}",
+  "expect": {
+   "verdict": "red",
+   "reds": [
+    {
+     "rule": "params",
+     "fn": "createUser"
+    },
+    {
+     "rule": "returns",
+     "fn": "createUser"
+    }
+   ]
+  },
+  "facts": {
+   "functions": [
+    {
+     "name": "createUser",
+     "declarationQuote": "async function createUser(email, password) {",
+     "docQuote": "/**",
+     "paramNames": [
+      "email",
+      "password"
+     ],
+     "paramIsPattern": [
+      false,
+      false
+     ],
+     "paramTagNames": [
+      "email",
+      "password",
+      "admin"
+     ],
+     "returnsTagQuote": null,
+     "returnsValueQuote": "return db.insert('users', { email, hash });"
+    }
+   ]
+  }
+ },
+ "omitted-param-red": {
+  "artifact": "/**\n * Queues a transactional email for delivery.\n *\n * @param {string} to - the recipient's email address.\n * @param {string} subject - the subject line as it will appear in the inbox.\n * @param {string} body - the plain-text body of the message.\n * @returns {Promise<string>} the id of the queued message.\n */\nasync function sendEmail(to, subject, body, cc) {\n  return queue.push({ to, subject, body, cc });\n}",
+  "expect": {
+   "verdict": "red",
+   "reds": [
+    {
+     "rule": "params",
+     "fn": "sendEmail"
+    }
+   ]
+  },
+  "facts": {
+   "functions": [
+    {
+     "name": "sendEmail",
+     "declarationQuote": "async function sendEmail(to, subject, body, cc) {",
+     "docQuote": " * Queues a transactional email for delivery.",
+     "paramNames": [
+      "to",
+      "subject",
+      "body",
+      "cc"
+     ],
+     "paramIsPattern": [
+      false,
+      false,
+      false,
+      false
+     ],
+     "paramTagNames": [
+      "to",
+      "subject",
+      "body"
+     ],
+     "returnsTagQuote": " * @returns {Promise<string>} the id of the queued message.",
+     "returnsValueQuote": "  return queue.push({ to, subject, body, cc });"
+    }
+   ]
+  }
+ },
+ "name-echo-denies-purpose": {
+  "artifact": "/**\n * parseDate\n *\n * @param {string} value - the date string to read, for example \"2024-01-05\".\n * @param {string} pattern - the strptime-style pattern that describes value.\n * @returns {Date} the parsed date, in the local time zone.\n */\nfunction parseDate(value, pattern) {\n  const [y, m, d] = value.split('-').map(Number);\n  return new Date(y, m - 1, d);\n}",
+  "expect": {
+   "verdict": "red",
+   "reds": [
+    {
+     "rule": "has-doc",
+     "fn": "parseDate"
+    }
+   ]
+  },
+  "facts": {
+   "functions": [
+    {
+     "name": "parseDate",
+     "declarationQuote": "function parseDate(value, pattern) {",
+     "docQuote": "/**",
+     "paramNames": [
+      "value",
+      "pattern"
+     ],
+     "paramIsPattern": [
+      false,
+      false
+     ],
+     "paramTagNames": [
+      "value",
+      "pattern"
+     ],
+     "returnsTagQuote": "@returns {Date} the parsed date, in the local time zone.",
+     "returnsValueQuote": "return new Date(y, m - 1, d);"
+    }
+   ]
+  }
+ },
+ "name-echo-and-no-returns": {
+  "artifact": "/**\n * slugify\n *\n * @param {string} text - the heading text to convert into a slug.\n */\nfunction slugify(text) {\n  return text\n    .toLowerCase()\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-|-$/g, '');\n}",
+  "expect": {
+   "verdict": "red",
+   "reds": [
+    {
+     "rule": "has-doc",
+     "fn": "slugify"
+    },
+    {
+     "rule": "returns",
+     "fn": "slugify"
+    }
+   ]
+  },
+  "facts": {
+   "functions": [
+    {
+     "name": "slugify",
+     "declarationQuote": "function slugify(text) {",
+     "docQuote": "/**",
+     "paramNames": [
+      "text"
+     ],
+     "paramIsPattern": [
+      false
+     ],
+     "paramTagNames": [
+      "text"
+     ],
+     "returnsTagQuote": null,
+     "returnsValueQuote": "return text"
+    }
+   ]
+  }
+ },
+ "undocumented-function-red": {
+  "artifact": "function debounce(fn, wait) {\n  let timer = null;\n  return function (...args) {\n    clearTimeout(timer);\n    timer = setTimeout(() => fn.apply(this, args), wait);\n  };\n}\n\nmodule.exports = debounce;",
+  "expect": {
+   "verdict": "red",
+   "reds": [
+    {
+     "rule": "has-doc",
+     "fn": "debounce"
+    },
+    {
+     "rule": "params",
+     "fn": "debounce"
+    },
+    {
+     "rule": "returns",
+     "fn": "debounce"
+    }
+   ]
+  },
+  "facts": {
+   "functions": [
+    {
+     "name": "debounce",
+     "declarationQuote": "function debounce(fn, wait) {",
+     "docQuote": null,
+     "paramNames": [
+      "fn",
+      "wait"
+     ],
+     "paramIsPattern": [
+      false,
+      false
+     ],
+     "paramTagNames": [],
+     "returnsTagQuote": null,
+     "returnsValueQuote": "return function (...args) {"
+    }
+   ]
+  }
+ }
+}
