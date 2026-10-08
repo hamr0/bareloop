@@ -562,9 +562,13 @@ export const CLOSE_FAULTS = Object.freeze({
  *   (PRD item 27/M3 Part B), forwarded to the raw `close` path's `runClose`
  *   call unchanged; a caller supplying `judge` instead already closed over
  *   its own `closeDir` and this param does nothing for it.
+ * @param {string} [opts.phase] the phase this loop runs in, when it is not the step loop
+ *   (the fix loop passes `'fix'`): the person's-stop text then names it ("during the fix
+ *   phase") instead of saying a resume re-enters "this step", which only the step loop has.
+ *   Text only — it changes no category, outcome or option.
  * @returns {Promise<'green'|'escalated'>}
  */
-export async function ralph({ middle, close, judge, capRuns, ladder, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites, closeDir }) {
+export async function ralph({ middle, close, judge, capRuns, ladder, emit, redact, closeTimeoutMs, cwd, expect, judged, gapKeep, workerWrites, closeDir, phase }) {
   // PARAM GUARD (the BA-4 class — a caller's malformed argument, which is the one
   // thing this shell throws for; a WORKER's bad reach comes back as a refusal
   // RESULT instead, and that rule is about feedback, not about the API contract).
@@ -654,7 +658,9 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
             'revise the goal/spec so the work fits the time (same re-approval)',
             'abandon the task']],
         // P5 item 5 — the PERSON asked to stop at a round boundary: nothing failed, nothing is discarded.
-        'stopped': ['You stopped the run. Nothing is discarded: the work on disk stands, and a resume re-enters this step.',
+        'stopped': [phase
+          ? `You stopped the run during the ${phase} phase. Nothing is discarded: the work on disk stands, and a resume continues the run.`
+          : 'You stopped the run. Nothing is discarded: the work on disk stands, and a resume re-enters this step.',
           ['resume (the same run continues)', 'abandon the task']],
         // F66 — the STALL WATCHDOG gave up: no round completed for the stall window,
         // three times over, and reissuing the call did not recover it. It borrows both
