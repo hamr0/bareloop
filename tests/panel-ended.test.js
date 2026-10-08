@@ -102,12 +102,20 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   assert.equal(live(null), null, 'no Ended block while a run is live');
   assert.deepEqual(live('green'), { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: [{ id: 'reuse', label: 'Reuse workflow' }] });
   assert.equal(live('already-green').reason, 'Goal met.');
+  assert.deepEqual(live('already-green').actions, [{ id: 'edit', label: 'Edit in chat' }], 'already-green is not a reuse source');
   assert.equal(live('green', { o: { destinationRefused: 'folder is read only' } }).reason, 'Goal met, but the output could not be delivered.');
+  // item 3 (hamr 2026-10-08): the delivery-refused ending follows the same reuse rule — only a green that earned it offers Reuse workflow
+  assert.deepEqual(live('green', { o: { destinationRefused: 'folder is read only' } }).actions, [{ id: 'reuse', label: 'Reuse workflow' }]);
+  for (const out of ['already-green', 'satisfied']) {
+    const r = live(out, { o: { destinationRefused: 'folder is read only' } });
+    assert.equal(r.reason, 'Goal met, but the output could not be delivered.', out);
+    assert.deepEqual(r.actions, [{ id: 'edit', label: 'Edit in chat' }], `${out}: Edit in chat, no Reuse`);
+  }
 
   const cap = live('cap-halt', { o: { resume: ok } });
   assert.equal(cap.reason, 'Money cap reached ($8.00 of $8.00).');
   assert.equal(cap.next, 'Raise the cap, then Resume.');
-  assert.deepEqual(cap.actions, [{ id: 'resume', label: 'Resume' }]);
+  assert.deepEqual(cap.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }], 'Resume then Edit in chat');
   assert.equal(cap.line, 'money cap — resume');
 
   const wall = live('wall-halt', { o: { resume: ok } });
@@ -122,8 +130,8 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
 
   // Reuse workflow (2026-10-03): the button is for GREEN rows only; every red row says where to change the job
   const stalled = live('step-stalled', { o: { resume: ok } });
-  assert.deepEqual(stalled.actions, [{ id: 'resume', label: 'Resume' }], 'stalled: Resume only');
-  assert.match(stalled.next, /change the job: Clear the card and draft a new one/);
+  assert.deepEqual(stalled.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }], 'stalled: Resume, Edit in chat');
+  assert.match(stalled.next, /^Resume, or change the job: press Edit in chat\.$/);
   assert.deepEqual(live('green', { o: { destinationRefused: 'folder is read only' } }).actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'green + destination refused keeps Reuse workflow');
   assert.match(live('green', { o: { destinationRefused: 'x' } }).next, /Reuse workflow/);
   for (const o of ['cap-halt', 'wall-halt', 'stopped', 'provider-red']) {
@@ -132,15 +140,15 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   }
   for (const cat of ['wall-halt', 'provider-red']) {
     const e = endedFor({ outcome: 'escalated', stopReason: null, spentUsd: 1, budgetUsd: 8, lastEscalation: { category: cat } }, { died: false, lastThing: null }, {});
-    assert.deepEqual(e.actions, [], `escalated ${cat}: no button`);
-    assert.equal(e.next, 'Change the job: Clear the card and draft a new one.');
+    assert.deepEqual(e.actions, [ { id: 'edit', label: 'Edit in chat' }], `escalated ${cat}: Edit in chat only`);
+    assert.equal(e.next, 'Change the job: press Edit in chat.');
   }
 
   for (const o of ['plan-red', 'check-red', 'step-red', 'escalated']) {
     const r = live(o, { stopReason: 'tests failing' });
     assert.match(r.reason, /^Goal not met — the checks said no \(tests failing\)\.$/, o);
-    assert.deepEqual(r.actions, [], `${o} offers no button — a red row says: Change the job: Clear the card and draft a new one`);
-    assert.equal(r.next, 'Change the job: Clear the card and draft a new one.', o);
+    assert.deepEqual(r.actions, [ { id: 'edit', label: 'Edit in chat' }], `${o} offers Edit in chat only`);
+    assert.equal(r.next, 'Change the job: press Edit in chat.', o);
   }
   assert.match(live('close-red').reason, /^The check itself broke \(instrument fault\), not your goal\.$/);
   for (const o of ['pricing-red', 'unapproved-spec', 'job-red', 'branch-red', 'interpreter-red', 'recipe-stale', 'close-unsupported', 'smoke-red', 'runner-drained']) {
@@ -149,12 +157,12 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
 
   const died = endedFor({ outcome: null, stopReason: null, spentUsd: null, budgetUsd: 8 }, { died: true, lastThing: 'a scout model call at 2026-10-01 10:02' }, { resume: ok });
   assert.match(died.reason, /^Stopped with no ending recorded \(last thing it did: a scout model call at 2026-10-01 10:02\)\.$/);
-  assert.deepEqual(died.actions, [{ id: 'resume', label: 'Resume' }], 'died: Resume only (Reuse workflow is for green rows)');
+  assert.deepEqual(died.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }], 'died: Resume, Edit in chat (Reuse workflow is for green rows)');
 
   // never a button the engine would refuse
   const refused = live('cap-halt', { o: { resume: no } });
-  assert.deepEqual(refused.actions, []);
-  assert.match(refused.next, /^Resume is not available for this run \(it is still running\)\.$/);
+  assert.deepEqual(refused.actions, [ { id: 'edit', label: 'Edit in chat' }], 'a refused Resume is never offered; Edit in chat still is');
+  assert.match(refused.next, /^Resume is not available for this run \(it is still running\)\. Change the job: press Edit in chat\.$/);
 });
 
 // the REAL escalation record of run mup3h70u (the strike governor filed under category cap-halt),
@@ -176,8 +184,8 @@ test('ITEM 1: an escalated run whose escalation is the STRIKE governor (category
   makeRun(home, { runid: 'strike1', outcome: 'escalated', spent: 0.28, spec: { ...SPEC, budgetUsd: 1.5 }, extra: [MUP3H70U_ESCALATION] });
   const d = getRunDetail('strike1', { home });
   assert.equal(d.ended.reason, 'The fix loop stopped improving (2 of 2 tries, no check got better).');
-  assert.equal(d.ended.next, 'Change the job: Clear the card and draft a new one.');
-  assert.deepEqual(d.ended.actions, []);
+  assert.equal(d.ended.next, 'Change the job: press Edit in chat.');
+  assert.deepEqual(d.ended.actions, [{ id: 'edit', label: 'Edit in chat' }]);
   assert.doesNotMatch(d.ended.reason, /Money cap/);
   assert.equal(listRuns({ home }).find((r) => r.runid === 'strike1').endedLine, 'stopped improving');
 });
@@ -197,7 +205,7 @@ test('ITEM 2: a terminal outcome never says "Resume is not available" or leaks e
   assert.doesNotMatch(d.ended.next, /Resume is not available|answer, not a stop/);
   // a resumable class with no signed spec says so in plain words
   makeRun(home, { runid: 'cap2', hashOverride: 'nope' });
-  assert.match(getRunDetail('cap2', { home }).ended.next, /^Resume is not available for this run \(no signed job file beside this run matches the hash it ran under\)\.$/);
+  assert.match(getRunDetail('cap2', { home }).ended.next, /^Resume is not available for this run \(no signed job file beside this run matches the hash it ran under\)\. Change the job: press Edit in chat\.$/);
 });
 
 test('ITEM 3: "stopped before or outside the work" shows the code only — raw engine detail (e.g. a retired hitl stage) never reaches the page', () => {
@@ -213,7 +221,7 @@ test('getRunDetail + listRuns: a cap-halt run carries the Ended block, the Resum
   makeRun(home, { runid: 'cap1' });
   const d = getRunDetail('cap1', { home });
   assert.equal(d.ended.reason, 'Money cap reached ($8.00 of $8.00).');
-  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }]);
+  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }]);
   assert.equal(d.resume.budgetUsd, 8);
   assert.equal(d.resume.maxWallMin, 60);
   assert.equal(d.resume.spentUsd, 8);
@@ -236,7 +244,7 @@ test('getRunDetail: a green run reads "Goal met." with no Resume; a died run rea
   const d = getRunDetail('died1', { home });
   assert.equal(d.glyph, '?', 'died is never [✗]');
   assert.match(d.ended.reason, /^Stopped with no ending recorded \(last thing it did: .+\)\.$/);
-  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }]);
+  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }]);
 });
 
 test('getRunDetail: a destination-refused record on a green names the delivery failure', () => {
@@ -248,11 +256,11 @@ test('getRunDetail: a destination-refused record on a green names the delivery f
 test('getRunDetail: a run with a job-end the engine would refuse to resume (plan-red) shows no Resume, and a missing signed spec hides it', () => {
   const home = tmp();
   makeRun(home, { runid: 'red1', outcome: 'plan-red' });
-  assert.deepEqual(getRunDetail('red1', { home }).ended.actions, [], 'a red run has no Reuse workflow');
+  assert.deepEqual(getRunDetail('red1', { home }).ended.actions, [{ id: 'edit', label: 'Edit in chat' }], 'a red run has no Reuse workflow, only Edit in chat');
   // cap-halt but the spec beside it is not the one the run was signed under
   makeRun(home, { runid: 'stale1', hashOverride: 'not-the-hash' });
   const s = getRunDetail('stale1', { home });
-  assert.deepEqual(s.ended.actions, [], 'cap-halt with no usable signed spec: Resume is hidden, and Reuse workflow is not on the cap-halt row');
+  assert.deepEqual(s.ended.actions, [{ id: 'edit', label: 'Edit in chat' }], 'cap-halt with no usable signed spec: Resume is hidden, and Reuse workflow is not on the cap-halt row');
   assert.match(s.ended.next, /no signed job file beside this run matches the hash/);
 });
 
@@ -446,16 +454,12 @@ function makePage({ currentRunid = 'run1' } = {}) {
     ${fnSrc('escapeXml')}
     ${fnSrc('panelMoney')}
     var lastEndedSig = null;
-    var resumeMode = null;
-    var lastJobShown = null;
     var stopAsked = {};
     function reuseWorkflow() {}
     ${fnSrc('renderEnded')}
     ${fnSrc('renderRunActions')}
-    ${fnSrc('openResumeOnJobTab')}
-    ${fnSrc('paintResumeMode')}
     ${fnSrc('afterResumeRefresh')}
-    return { renderEnded: renderEnded, renderRunActions: renderRunActions, setCurrent: function(v){ currentRunid = v; }, paintResumeMode: paintResumeMode, resumeMode: function(){ return resumeMode; }, setLastJob: function(j){ lastJobShown = j; } };
+    return { renderEnded: renderEnded, renderRunActions: renderRunActions, setCurrent: function(v){ currentRunid = v; } };
   `);
   const page = factory(document, authorPost, (f) => refreshed.push(f), (fn, ms) => { timers.push(ms); fn(); }, (j) => rendered.push(j), (...a) => selected.push(a),
     () => Promise.resolve(detailAfter), currentRunid);
@@ -495,89 +499,6 @@ test('page: renderEnded paints ENDED and NEXT as text only (Resume lives in the 
 
   pg2.renderEnded({ ...DETAIL, ended: null });
   assert.equal(pg2.document.getElementById('ended-block').hidden, true, 'no Ended block while a run is live');
-});
-
-test('page: Resume opens the run\'s own Job tab — ONLY the money cap and the time cap become inputs, and [Sign & resume] posts them', async () => {
-  const pg = makePage();
-  pg.renderRunActions(DETAIL);
-  pg.document.getElementById('run-actions').querySelector('[data-testid="btn-resume-run"]').handlers.click();
-  assert.deepEqual(pg.clicks, ['tab-details'], 'it opens the Job tab (the run\'s own page), not an inline form on the Ended block');
-  const money = pg.document.getElementById('details-cap-money');
-  const time = pg.document.getElementById('details-cap-time');
-  assert.match(money.innerHTML, /id="resume-budget"/);
-  assert.match(money.innerHTML, /value="8"/, 'prefilled with the signed money cap');
-  assert.match(time.innerHTML, /id="resume-wall"/);
-  assert.match(time.innerHTML, /value="60"/, 'prefilled with the signed time cap');
-  // the unit is in the caption, never loose text above/below the input
-  assert.equal(pg.document.getElementById('details-cap-money-label').textContent, 'Money cap ($)');
-  assert.equal(pg.document.getElementById('details-cap-time-label').textContent, 'Time cap (min)');
-  assert.doesNotMatch(money.innerHTML, /\$ <input|>\s*\$/, 'no loose "$" beside the money input');
-  assert.doesNotMatch(time.innerHTML, /> min</, 'no loose "min" beside the time input');
-  const box = pg.document.getElementById('resume-job');
-  assert.equal(box.hidden, false);
-  // [Sign & resume] and [Cancel] are the same button class (same height) — Cancel is no longer a .small one
-  assert.match(box.innerHTML, /<button class="btn primary" type="button" data-testid="btn-sign-resume">/);
-  assert.match(box.innerHTML, /<button class="btn" type="button" data-testid="btn-resume-cancel">/);
-  assert.match(box.innerHTML, /Resume run run1/);
-  assert.match(box.innerHTML, /the same run, not a new one/);
-  assert.match(box.innerHTML, /Only the money cap and the time cap can change/);
-  assert.match(box.innerHTML, /spent so far \$8\.00 &middot; time used so far 61 min/, 'the time already used, rounded UP like the route\'s own refusal text');
-  assert.match(box.innerHTML, /Sign &amp; resume/);
-  // nothing else on the Job tab was turned into an input: the page only ever touches the two cap cells and the Sign box
-  for (const id of ['details-goal', 'details-success', 'details-guardrails', 'details-source', 'details-dest', 'details-tools', 'details-model']) {
-    assert.equal(pg.els[id], undefined, `${id} is never touched by resume mode — it stays the read-only text`);
-  }
-  assert.doesNotMatch(pg.document.getElementById('ended-block').innerHTML, /resume-form/, 'the old inline confirm form is gone');
-
-  pg.document.getElementById('resume-budget').value = '12';
-  pg.document.getElementById('resume-wall').value = '90';
-  pg.setPostResult({ status: 409, body: { ok: false, error: '--resume: that run reached its own terminal' } });
-  await box.querySelector('[data-testid="btn-sign-resume"]').handlers.click();
-  await new Promise((r) => setImmediate(r));
-  assert.deepEqual(pg.posts, [{ path: '/api/runs/run1/resume', body: { budgetUsd: '12', maxWallMin: '90' } }]);
-  const err = pg.document.getElementById('resume-err');
-  assert.equal(err.textContent, '--resume: that run reached its own terminal');
-  assert.equal(err.hidden, false);
-  assert.equal(pg.resumeMode() !== null, true, 'a refusal leaves the Job tab in resume mode so the caps can be fixed');
-});
-
-test('page: a successful resume says nothing about a NEW run — the same run goes back to its Run tab and follows the engine until it reads live', async () => {
-  const pg = makePage();
-  pg.renderRunActions(DETAIL);
-  pg.document.getElementById('run-actions').querySelector('[data-testid="btn-resume-run"]').handlers.click();
-  pg.setPostResult({ status: 200, body: { ok: true, runid: 'run1' } });
-  pg.setDetailAfter({ glyph: '▶', died: false });
-  await pg.document.getElementById('resume-job').querySelector('[data-testid="btn-sign-resume"]').handlers.click();
-  await new Promise((r) => setImmediate(r));
-  await new Promise((r) => setImmediate(r));
-  assert.equal(pg.resumeMode(), null, 'resume mode is over');
-  assert.equal(pg.clicks.at(-1), 'tab-run', 'back to the run\'s own Run tab');
-  assert.equal(pg.rendered.length, 1, 'the Job tab is repainted read-only');
-  assert.deepEqual(pg.selected.map((a) => a[0]), ['run1'], 'the SAME runid is re-selected once it reads live');
-  assert.doesNotMatch(PAGE, /The new run is starting/, 'the copy that said a resume is a new run is gone');
-  assert.doesNotMatch(PAGE, /appears in the list in a moment/);
-});
-
-test('page: Cancel leaves resume mode and repaints the Job tab read-only', () => {
-  const pg = makePage();
-  pg.renderRunActions(DETAIL);
-  pg.document.getElementById('run-actions').querySelector('[data-testid="btn-resume-run"]').handlers.click();
-  pg.document.getElementById('resume-job').querySelector('[data-testid="btn-resume-cancel"]').handlers.click();
-  assert.equal(pg.resumeMode(), null);
-  assert.equal(pg.rendered.length, 1);
-  // the stub's renderJob does not repaint; the captions return to normal when the Job tab paints without resume mode
-  pg.paintResumeMode();
-  assert.equal(pg.document.getElementById('details-cap-money-label').textContent, '$ cap');
-  assert.equal(pg.document.getElementById('details-cap-time-label').textContent, 'Time cap');
-});
-
-test('page: resume mode belongs to ONE run — painting it while another run is open hides it', () => {
-  const pg = makePage();
-  pg.renderRunActions(DETAIL);
-  pg.document.getElementById('run-actions').querySelector('[data-testid="btn-resume-run"]').handlers.click();
-  pg.setCurrent('other');
-  pg.paintResumeMode();
-  assert.equal(pg.document.getElementById('resume-job').hidden, true);
 });
 
 test('page: renderRun calls renderEnded (an engine with a caller), and the run card carries the endedLine under the job name', () => {

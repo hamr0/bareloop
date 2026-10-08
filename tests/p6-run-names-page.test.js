@@ -68,7 +68,7 @@ test('run names: the right-side header reads job (run-N) on every branch of rend
 test('run names: the workflow row names its latest run run-N; Resume and Reuse texts keep the real id', () => {
   assert.match(PAGE, /var wfFullName = runName\(g\.job, g\.lastRunNo, g\.lastRunid\);/);
   assert.match(PAGE, /lastRunNo: last\.runNo,/);
-  assert.ok(PAGE.includes("Resume run ' + escapeXml(m.runid)"));
+  assert.ok(PAGE.includes('title: detail.job + " (" + runLabel(detail.runNo, detail.runid) + ")"'), 'the RESUME card title names the run run-N');
   assert.match(PAGE, /"latest green run here, " \+ \(run\.runid/);
   assert.match(PAGE, /" · run " \+ r\.runid/);
 });

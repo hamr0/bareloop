@@ -473,8 +473,10 @@ test('reuse-jobs: one entry per JOB with a green run — newest green\'s runid, 
   // ?model= passes through exactly as start-from's does
   const m = await (await get('/api/author/reuse-jobs?model=deepseek-flash')).json();
   assert.equal(m.jobs[0].line, 'Same job — no runs yet on this model');
-  const none = await (await get('/api/author/reuse-jobs?model=deepseek-flash')).json();
+  // no `model` param at all -> the estimate line is the every-model one, not the "no runs on this model" one
+  const none = await (await get('/api/author/reuse-jobs')).json();
   assert.equal(none.jobs.length, 2);
+  assert.notEqual(none.jobs[0].line, m.jobs[0].line);
 
   // no startFrom wired -> 404 (same pattern as start-from)
   const bare = createAuthorRoutes({ port: 1, token: 'tok' });
@@ -486,4 +488,45 @@ test('reuse-jobs: one entry per JOB with a green run — newest green\'s runid, 
 test('reuse-jobs: no green run at all -> an empty list, not an error', async () => {
   const home = tmp('p5-sf-h-');
   assert.deepEqual(listReuseJobs({ home }), []);
+});
+
+test('reuse-jobs: an already-green run is NOT a reuse source — a job whose only runs are already-green is absent; an older real green still lists the job (A1)', async () => {
+  const spec = await realSpec();
+  const home = homeWithTwoRows();
+  const onlyAlready = { ...spec, job: 'p5-already-only', goal: 'check predates the run' };
+  makeRun(home, { runid: 'g1', spec, outcome: 'green' });
+  makeRun(home, { runid: 'x1', spec: onlyAlready, outcome: 'already-green' });
+  makeRun(home, { runid: 'g2', spec, outcome: 'already-green' });
+  assert.deepEqual(listReuseJobs({ home }).map((j) => [j.job, j.runid]), [[spec.job, 'g1']]);
+});
+
+// hamr 2026-10-08: the server enforces "reuse needs a real green" — the pickers filter, but a hand-made POST must not.
+test('POST start with startFrom = an already-green / red / running run is refused at $0 and signs nothing; a green run works; GET start-from (Edit in chat / Resume prefill) still serves the red run', async (t) => {
+  const origin = await realSpec();
+  const home = homeWithTwoRows();
+  makeRun(home, { runid: 'g1', spec: origin, outcome: 'green' });
+  makeRun(home, { runid: 'ag1', spec: origin, outcome: 'already-green' });
+  makeRun(home, { runid: 'red1', spec: origin, outcome: 'step-red' });
+  makeRun(home, { runid: 'run1', spec: origin, outcome: null, pid: process.pid });
+  const { createPanelServer: mk } = await import('../src/panel/server.js');
+  const { close, port, token } = await mk({ port: 0, env: {}, home, sessionsRoot: tmp('p5-sf-sess-') });
+  t.after(() => close());
+  const base = `http://127.0.0.1:${port}`;
+  const get = (p) => fetch(`${base}${p}`, { headers: { 'x-bareloop-token': token } }).then((r) => r.json());
+  const post = (p, body) => fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
+  const pre = await get('/api/author/start-from?runid=g1');
+  for (const id of ['ag1', 'red1', 'run1']) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await post('/api/author/start', { ...pre.card, source: makeRepo(), startFrom: id });
+    // eslint-disable-next-line no-await-in-loop
+    const j = await r.json();
+    assert.equal(r.status, 409, id);
+    assert.equal(j.error, 'only a run that finished green can be reused — this one did not', id);
+  }
+  assert.equal((await get('/api/author/live')).sessionId, null, 'nothing was signed or started by the refusals');
+  const ok = await (await post('/api/author/start', { ...pre.card, source: makeRepo(), startFrom: 'g1' })).json();
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  assert.equal(ok.reuse, true);
+  const red = await get('/api/author/start-from?runid=red1');
+  assert.equal(red.ok, true, 'Edit in chat / Resume read the red run\'s prefill through GET — never blocked');
 });

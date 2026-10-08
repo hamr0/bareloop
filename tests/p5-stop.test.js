@@ -111,6 +111,9 @@ test('item 5: a stop request during step 1 of 3 ends the leg `stopped` at the ro
   assert.equal(end.outcome, 'stopped');
   assert.equal(end.spendComplete, true, 'cut at a round boundary with nothing in flight: the spend is exact');
   assert.ok(types.indexOf('stop-requested') < types.lastIndexOf('job-end'));
+  const stepEsc = recs1.findLast((r) => r.type === 'escalation' && r.category === 'stopped');
+  assert.ok(stepEsc, 'the step-loop stop files a `stopped` escalation');
+  assert.equal(stepEsc.decision, 'You stopped the run. Nothing is discarded: the work on disk stands, and a resume re-enters this step.', 'the step loop text is unchanged');
   assert.equal(recs1.filter((r) => r.type === 'step-start').length, 1, 'step two was never started');
   assert.notEqual(first.code, undefined);
   assert.equal(existsSync(stopFilePath(spine)), false, 'the stop file is consumed when the leg ends — a later leg must not stop at once');
@@ -226,5 +229,11 @@ for (const [phase, clickAt, queue] of /** @type {[string, number, (f:any)=>any[]
     assert.equal(calls, clickAt, 'no model round was bought after the request');
     assert.equal(existsSync(stopFilePath(spine)), false, 'consumed');
     assert.ok(CHECKPOINT_OUTCOMES.includes('stopped'));
+    if (phase === 'fix') {
+      const esc = recs.findLast((r) => r.type === 'escalation' && r.category === 'stopped');
+      assert.ok(esc, 'the fix-loop stop files a `stopped` escalation');
+      assert.equal(esc.decision, 'You stopped the run during the fix phase. Nothing is discarded: the work on disk stands, and a resume continues the run.');
+      assert.deepEqual(esc.options, ['resume (the same run continues)', 'abandon the task']);
+    }
   });
 }

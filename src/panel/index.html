@@ -140,6 +140,8 @@
   .dot::before{content:"[·]";color:var(--grey-dot);}
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
+  /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, same red as [✗] */
+  .dot.stopped::before{content:"[■]";color:var(--red);}
   /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
      step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
      their result glyph as PLAIN inline text inside a larger string (never
@@ -295,10 +297,6 @@
   .wf-resumed{color:var(--amber);}
   .audit-leg-divider{text-align:center;color:var(--text-dim);font-size:12px;margin:10px 0;overflow-wrap:anywhere;}
   .audit-leg-divider-row td{text-align:center;color:var(--text-dim);font-size:12px;background:var(--panel2);}
-  /* Resume opens the run's own Job tab: only the two caps turn into inputs, everything else stays read-only */
-  .resume-job{border:1px dashed var(--border-strong);margin-top:12px;padding:10px;display:grid;gap:8px;}
-  .resume-cap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
-  .resume-cap input{width:7em;max-width:100%;min-height:36px;background:var(--panel);color:var(--text);border:1px solid var(--border-strong);padding:4px 8px;font:inherit;}
   .summary-box.red{border-color:var(--red);}
   .summary-box.amber{border-color:var(--amber);}
   .summary-box.magenta{border-color:var(--magenta);}
@@ -374,6 +372,9 @@
   .job-card{position:relative;border:1px solid var(--border-strong);padding:14px 10px 10px;background:var(--panel2);margin-top:10px;margin-bottom:10px;}
   .job-card h4{margin:0 0 8px;font-size:13px;position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;}
   .job-card .card-clear{position:absolute;top:-13px;right:10px;padding:1px 8px;font-size:11px;line-height:1.4;background:var(--panel2);}
+  .job-card .origin-line{font-size:12px;padding:6px 8px;border-left:3px solid var(--amber);background:var(--panel);color:var(--text-dim);margin-bottom:6px;overflow-wrap:anywhere;}
+  .job-card .origin-line.res{border-color:var(--accent, var(--text));}
+  .job-card .chat-resume-box{display:grid;gap:8px;margin-top:10px;}
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
@@ -533,6 +534,7 @@
             <h4 id="job-card-title">Job card — draft</h4>
             <button class="btn card-clear" type="button" id="chat-clear-btn" data-testid="chat-clear">Clear</button>
             <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
+            <div class="origin-line" id="chat-origin-line" data-testid="origin-line" hidden></div>
 
             <div class="field">
               <label id="jf-verdict-label">Check type</label>
@@ -598,6 +600,11 @@
               </div>
             </div>
             <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
+            <div id="chat-resume-box" class="chat-resume-box" data-testid="resume-box" hidden>
+              <div class="hint" id="chat-resume-spent" data-testid="resume-spent"></div>
+              <div class="ended-actions"><button class="btn primary" type="button" id="chat-resume-sign" data-testid="btn-sign-resume">Sign &amp; resume</button> <button class="btn" type="button" id="chat-resume-cancel" data-testid="btn-resume-cancel">Cancel</button></div>
+              <div class="resume-err" id="chat-resume-err" data-testid="resume-err" hidden></div>
+            </div>
           </div>
 
           <div class="chat-thread" id="chat-thread" data-testid="chat-thread"></div>
@@ -723,8 +730,8 @@
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
             <div class="field-row">
-              <div class="field"><label id="details-cap-money-label">$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
-              <div class="field"><label id="details-cap-time-label">Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
+              <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
+              <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
             </div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>Goal</label><div class="ro-value scroll" id="details-goal">—</div></div>
@@ -734,7 +741,6 @@
             <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
             <div class="field"><label>Tools</label><div class="ro-value" id="details-tools">—</div></div>
             <div class="hint" id="job-note"></div>
-            <div id="resume-job" class="resume-job" data-testid="resume-job" hidden></div>
           </div>
         </section>
 
@@ -1267,6 +1273,7 @@
   function glyphClass(g){
     if(g === "✓") return "green";
     if(g === "✗") return "red";
+    if(g === "■") return "stopped";
     if(g === "▶") return "amber";
     if(g === "?") return "magenta";
     return "grey";
@@ -1499,6 +1506,17 @@
   // is a normal, expected action.
   var wfExpanded = {};
 
+  // hamr 2026-10-08 (display only, nothing deleted): with NO search/filter active an expanded job shows at most its
+  // latest WF_SUB_CAP other runs (g.runs is latest-first). A selected older run beyond the cap (picked from History) is
+  // appended after them rather than hidden. With search/filters active every matching sub-card shows.
+  var WF_SUB_CAP = 7;
+  function capSubRuns(childRuns, active, selectedRunid){
+    if(active || childRuns.length <= WF_SUB_CAP) return {shown: childRuns, more: false};
+    var shown = childRuns.slice(0, WF_SUB_CAP);
+    var sel = selectedRunid ? childRuns.slice(WF_SUB_CAP).filter(function(r){ return r.runid === selectedRunid; }) : [];
+    return {shown: shown.concat(sel), more: true};
+  }
+
   function renderWorkflows(jobs){
     var el = document.getElementById("wf-list");
     el.innerHTML = "";
@@ -1585,7 +1603,15 @@
       if(expanded){
         var runsWrap = document.createElement("div");
         runsWrap.className = "wf-runs";
-        childRuns.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r, true)); });
+        var capped = capSubRuns(childRuns, active, olderSelected);
+        capped.shown.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r, true)); });
+        if(capped.more){
+          var olderHint = document.createElement("div");
+          olderHint.className = "hint";
+          olderHint.setAttribute("data-testid", "wf-older-" + g.job);
+          olderHint.textContent = "older: use search.";
+          runsWrap.appendChild(olderHint);
+        }
         wrap.appendChild(runsWrap);
       }
       el.appendChild(wrap);
@@ -1654,7 +1680,8 @@
     var q = (filters && filters.search) || "";
     return (runs || []).filter(function(r){
       if(ct.length && ct.indexOf(r.checkType) === -1) return false;
-      if(rs.length && rs.indexOf(r.glyph) === -1) return false;
+      // a stopped run ([■]) was a [✗] before hamr's 2026-10-07 sign ruling — the fail chip still finds it
+      if(rs.length && rs.indexOf(r.glyph) === -1 && !(r.glyph === "\u25A0" && rs.indexOf("\u2717") !== -1)) return false;
       if(!matchesSearch(r.job, r.runid, r.model, q, r.runNo)) return false;
       if(time !== "all"){
         var days = time === "7d" ? 7 : 30;
@@ -1966,7 +1993,6 @@
     clearSelection();
     currentRunid = null;
     runIsLive = false;
-    resumeMode = null;
     currentImportId = id;
     document.querySelectorAll("#import-list .wf-row").forEach(function(r){
       var on = r.getAttribute("data-testid") === "import-row-" + id;
@@ -2363,11 +2389,9 @@
   // The sentences are CODE-OWNED on the server (`endedFor`, src/panel/server.js) — this only
   // paints them. `detail.ended` is null while a run is live (no block while running).
   var lastEndedSig = null;
-  // P5-R (hamr 2026-10-02): Resume opens the run's OWN Job tab. There ONLY the money cap and the time cap are
-  // editable; every other field is the signed job, shown read-only exactly as the tab already shows it. The click
-  // on [Sign & resume] is the signature when a cap changed. A resume is the SAME run: no new card, no new job.
-  var resumeMode = null;
-  var lastJobShown = null;
+  // Resume (P5-R, hamr 2026-10-02: opened the run's own Job tab) MOVED to the left Chat card (hamr 2026-10-07): the card
+  // in RESUME mode, only the money cap and the time cap open (applyResume / signResume). The Job tab is read-only on
+  // every run — values only, no inputs, no buttons. A resume is the SAME run: no new card, no new job.
   function renderEnded(detail){
     var box = document.getElementById("ended-block");
     var e = detail.ended;
@@ -2384,7 +2408,7 @@
       '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + escapeXml(e.next) + '</span></div>';
   }
   // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
-  // it ended in a way the engine would accept (the SAME button as the Ended block's, same Job-tab resume mode).
+  // it ended in a way the engine would accept (opens the Chat card's resume mode), Edit in chat on every non-green ending.
   // The Ended block (Audit tab) is text only and carries no buttons.
   var stopAsked = {};
   // Reuse workflow (replaces P5 item 3's Start from this) — ask the server for the prefill (the signed job), then
@@ -2396,6 +2420,33 @@
       document.getElementById("tab-chat").click();
       document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
+  }
+  // Edit in chat (hamr 2026-10-07, option A) — the same prefill door as Reuse workflow (`start-from`, the ONE reader of a
+  // run's signed job), but the Chat card opens with EVERY box open and the normal [Start drafting] path: it drafts a new job.
+  // The origin line is code-owned fixed text; run name and status word come from the same helpers the run header uses.
+  function editInChat(detail){
+    var origin = "Copied from " + detail.job + " (" + runLabel(detail.runNo, detail.runid) + ") \u2014 " +
+      ((detail.status && detail.status.word) || "ended") +
+      ". Every box is open. Change anything and it drafts as a new job; change nothing and it is another run of the same job.";
+    authorGet("/api/author/start-from?runid=" + encodeURIComponent(detail.runid)).then(function(r){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: (r && r.ok) ? {runid: detail.runid, prefill: r, origin: origin} : {error: (r && r.error) || "nothing to copy"}}));
+    }).catch(function(x){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: {error: "could not reach the panel: " + x.message}}));
+    });
+  }
+  // Resume (hamr 2026-10-07, option B — moved from the run's Job tab): the Chat card opens in RESUME mode, filled from the
+  // SAME prefill (`start-from`), everything locked but the two caps. The card posts /api/runs/<id>/resume; a resume never
+  // drafts and never makes a new card, job or run id (one run = one id).
+  function resumeInChat(detail){
+    authorGet("/api/author/start-from?runid=" + encodeURIComponent(detail.runid)).then(function(r){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-resume", {detail: (r && r.ok) ? {runid: detail.runid, prefill: r, resume: detail.resume || {}, title: detail.job + " (" + runLabel(detail.runNo, detail.runid) + ")"} : {error: (r && r.error) || "nothing to resume"}}));
+    }).catch(function(x){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-resume", {detail: {error: "could not reach the panel: " + x.message}}));
+    });
   }
   function renderRunActions(detail){
     var bar = document.getElementById("run-actions");
@@ -2412,6 +2463,10 @@
       var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
       if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
     }
+    // Edit in chat: every non-green ending (the server's Ended block says so) — a died run included
+    if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "edit"; })){
+      html += '<button class="btn" type="button" data-testid="btn-edit-chat">Edit in chat</button>';
+    }
     // Reuse workflow: on a GREEN run only (the server's Ended block says so) — a new run of the same signed job
     if(!live && !detail.died && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
       html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
@@ -2420,6 +2475,8 @@
     bar.hidden = html === "";
     var reuseBtn = bar.querySelector('[data-testid="btn-reuse"]');
     if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid); });
+    var editBtn = bar.querySelector('[data-testid="btn-edit-chat"]');
+    if(editBtn) editBtn.addEventListener("click", function(){ editInChat(detail); });
     var stopBtn = bar.querySelector('[data-testid="btn-stop"]');
     if(stopBtn){
       stopBtn.addEventListener("click", function(){
@@ -2431,82 +2488,7 @@
       });
     }
     var resBtn = bar.querySelector('[data-testid="btn-resume-run"]');
-    if(resBtn) resBtn.addEventListener("click", function(){ openResumeOnJobTab(detail); });
-  }
-  function openResumeOnJobTab(detail){
-    var r = detail.resume || {};
-    resumeMode = {
-      runid: detail.runid, spentUsd: r.spentUsd, spendComplete: r.spendComplete,
-      wallUsedMs: r.wallUsedMs,
-      budget: (r.budgetUsd === null || r.budgetUsd === undefined) ? "" : String(r.budgetUsd),
-      wall: typeof r.maxWallMin === "number" ? String(r.maxWallMin) : null,
-      painted: false,
-    };
-    document.getElementById("tab-details").click();
-    paintResumeMode();
-  }
-  // Turns the Job tab's two cap values into inputs (and shows the Sign box) while a resume is open on this run;
-  // called again after every Job re-render so a re-render never drops the typed numbers.
-  function paintResumeMode(){
-    var box = document.getElementById("resume-job");
-    var moneyLabel = document.getElementById("details-cap-money-label");
-    var timeLabel = document.getElementById("details-cap-time-label");
-    if(!resumeMode || resumeMode.runid !== currentRunid){
-      box.hidden = true; box.innerHTML = "";
-      moneyLabel.textContent = "$ cap"; timeLabel.textContent = "Time cap";
-      return;
-    }
-    var m = resumeMode;
-    // the unit lives in the caption, never as loose text around the input
-    moneyLabel.textContent = "Money cap ($)";
-    timeLabel.textContent = "Time cap (min)";
-    document.getElementById("details-cap-money").innerHTML =
-      '<span class="resume-cap"><input type="number" min="0" step="0.01" id="resume-budget" data-testid="resume-budget" value="' + escapeXml(m.budget) + '"></span>';
-    if(m.wall !== null){
-      document.getElementById("details-cap-time").innerHTML =
-        '<span class="resume-cap"><input type="number" min="1" step="1" id="resume-wall" data-testid="resume-wall" value="' + escapeXml(m.wall) + '"></span>';
-    }
-    var budgetEl = document.getElementById("resume-budget");
-    budgetEl.addEventListener("input", function(){ m.budget = budgetEl.value; });
-    var wallEl = document.getElementById("resume-wall");
-    if(wallEl) wallEl.addEventListener("input", function(){ m.wall = wallEl.value; });
-    box.hidden = false;
-    if(m.painted) return;
-    m.painted = true;
-    var spent = (m.spentUsd === null || m.spentUsd === undefined) ? "unknown" : ((m.spendComplete ? "" : "at least ") + panelMoney(m.spentUsd));
-    box.innerHTML =
-      '<div data-testid="resume-intro">Resume run ' + escapeXml(m.runid) + ' &mdash; the same run, not a new one. Only the money cap and the time cap can change; everything else is the signed job.</div>' +
-      '<div class="hint" data-testid="resume-spent">spent so far ' + escapeXml(spent) +
-        (typeof m.wallUsedMs === "number" && isFinite(m.wallUsedMs) ? ' &middot; time used so far ' + Math.ceil(m.wallUsedMs / 60000) + ' min' : '') + '</div>' +
-      '<div class="ended-actions"><button class="btn primary" type="button" data-testid="btn-sign-resume">Sign &amp; resume</button> ' +
-      '<button class="btn" type="button" data-testid="btn-resume-cancel">Cancel</button></div>' +
-      '<div class="resume-err" id="resume-err" data-testid="resume-err" hidden></div>';
-    var resumeSignBtn = box.querySelector('[data-testid="btn-sign-resume"]');
-    box.querySelector('[data-testid="btn-resume-cancel"]').addEventListener("click", function(){
-      resumeMode = null;
-      renderJob(lastJobShown);
-    });
-    resumeSignBtn.addEventListener("click", function(){
-      var err = document.getElementById("resume-err");
-      err.hidden = true;
-      resumeSignBtn.disabled = true;
-      var body = {budgetUsd: document.getElementById("resume-budget").value};
-      var wall = document.getElementById("resume-wall");
-      if(wall){ body.maxWallMin = wall.value; }
-      return authorPost("/api/runs/" + encodeURIComponent(m.runid) + "/resume", body).then(function(res){
-        if(res.body && res.body.ok){
-          // the SAME run goes on: back to its Run tab, which follows it until it is live again
-          resumeMode = null;
-          renderJob(lastJobShown);
-          document.getElementById("tab-run").click();
-          afterResumeRefresh(m.runid, 8);
-        } else {
-          resumeSignBtn.disabled = false;
-          err.textContent = (res.body && res.body.error) || ("refused (" + res.status + ")");
-          err.hidden = false;
-        }
-      }).catch(function(x){ resumeSignBtn.disabled = false; err.textContent = "could not reach the panel: " + x.message; err.hidden = false; });
-    });
+    if(resBtn) resBtn.addEventListener("click", function(){ resumeInChat(detail); });
   }
   // After a resume starts, the open run's own page follows it: re-select once the run reads live again (the spine's
   // new leg appears a moment after the engine starts), a few tries, never forever.
@@ -2600,7 +2582,7 @@
       " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
-    box.className = "summary-box " + (detail.died ? "magenta" : (detail.glyph === "✗" ? "red" : (detail.glyph === "▶" ? "amber" : "")));
+    box.className = "summary-box " + (detail.died ? "magenta" : ((detail.glyph === "✗" || detail.glyph === "■") ? "red" : (detail.glyph === "▶" ? "amber" : "")));
     // F196: a synthetic placeholder box (e.g. "died during planning") is a
     // LABEL, not a real step — excluded from this count so a run that died
     // before any step started reads "0 of 0 done" / "none started", never
@@ -2679,7 +2661,7 @@
 
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
-    var cls = box.state === "done" ? "green" : (box.state === "stopped" ? "red" : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
+    var cls = box.state === "done" ? "green" : (box.state === "stopped" ? (box.status && box.status.sign === "\u25A0" ? "stopped" : "red") : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
     return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,
@@ -3269,7 +3251,6 @@
   function renderJob(job){
     var empty = document.getElementById("job-empty");
     var card = document.getElementById("job-card-readonly");
-    lastJobShown = job;
     if(!job){ empty.hidden = false; card.hidden = true; return; }
     empty.hidden = true;
     card.hidden = false;
@@ -3292,7 +3273,6 @@
     document.getElementById("job-note").textContent = job.note || "";
     lastJobToolsList = Array.isArray(job.toolsList) ? job.toolsList : null;
     paintOfferedRow();
-    paintResumeMode();
   }
 
   // ---- selection + loading ----
@@ -3312,7 +3292,6 @@
     document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
     if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
     currentRunid = runid;
-    resumeMode = null;
     lastLegDividers = [];
     lastJobToolsList = null;
     lastRunDetailSig = null;
@@ -3731,32 +3710,39 @@
     var autoSigned = false;
     var sfLine = document.getElementById("chat-startfrom-line");
     var sfNote = document.getElementById("chat-startfrom-note");
+    var originLine = document.getElementById("chat-origin-line");
     // the locked boxes of a reuse card: the signed workflow, greyed and not editable (the server refuses a change anyway)
     var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];
     // hamr 2026-10-05: while a drafting session is live NOTHING on the card is editable (the session was started from
     // these values). The reuse rule (only Source/Destination/caps open) applies before the start. ONE function owns it.
     var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"];
     var reuseOn = false;
+    // Resume mode (hamr 2026-10-07): the card shows the signed job of one run, every box locked except the two caps.
+    // `resumeRun` = {runid, noTime} while it is on, else null. Never set together with a drafting session or a reuse pick.
+    var resumeRun = null;
+    var CAP_IDS = ["jf-cap-money", "jf-cap-time"];
     function syncCardLock(){
       var live = sessionLive;
+      var resuming = resumeRun !== null;
       var setLock = function(id, on){ var el = document.getElementById(id); el.readOnly = on; el.classList.toggle("locked", on); };
-      LOCKED_IDS.forEach(function(id){ setLock(id, reuseOn || live); });
-      OPEN_IDS.forEach(function(id){ setLock(id, live); });
-      document.getElementById("jf-model").disabled = live;
-      // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); only a live session freezes them
-      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live; });
+      LOCKED_IDS.forEach(function(id){ setLock(id, reuseOn || live || resuming); });
+      OPEN_IDS.forEach(function(id){ setLock(id, live || (resuming && CAP_IDS.indexOf(id) === -1)); });
+      document.getElementById("jf-model").disabled = live || resuming;
+      // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
+      document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
-      if(!reuseOn && !live){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
+      if(!reuseOn && !live && !resuming){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
     }
     function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
-    function clearStartFrom(){
-      // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes
-      if(startFrom){
+    function clearStartFrom(keepBoxes){
+      // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes — except when a Check type
+      // radio click leaves reuse (keepBoxes): a radio never blanks what the person has on the card
+      if(startFrom && !keepBoxes){
         ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
       startFrom = null; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
-      sfLine.hidden = true; sfNote.hidden = true;
+      sfLine.hidden = true; sfNote.hidden = true; originLine.hidden = true;
       setReuseLocked(false);
       renderPicker();
       renderMain();
@@ -3807,6 +3793,7 @@
     function renderReuseList(){
       var q = rwQ.value.trim();
       var all = rwJobs || [];
+      var loading = rwJobs === null && !rwFailed;
       rwShown = all.filter(function(j){ return j.job.toLowerCase().indexOf(q.toLowerCase()) !== -1; });
       if(rwHl >= rwShown.length) rwHl = 0;
       if(rwShown.length){
@@ -3815,7 +3802,7 @@
         }).join("");
       } else {
         rwList.innerHTML = '<div class="rw-empty" data-testid="rw-empty">' + (rwFailed ? "Could not load the job list."
-          : (all.length === 0 ? "No green jobs yet." : 'No green job matches "' + escapeXml(q) + '".')) + "</div>";
+          : loading ? "Loading\u2026" : (all.length === 0 ? "No green jobs yet." : 'No green job matches "' + escapeXml(q) + '".')) + "</div>";
       }
     }
     function loadReuseJobs(){
@@ -3826,9 +3813,10 @@
       }).catch(function(){ rwFailed = true; rwJobs = null; renderReuseList(); });
     }
     // the empty search state: card emptied, nothing picked, Sign & run disabled until a job is picked
+    // (the boxes are NOT cleared here: clicking the Reuse radio never blanks typing; only a pick fills the card)
     function openPicker(){
-      clearCardBoxes();
       rwQ.value = ""; rwHl = 0;
+      rwJobs = null; rwFailed = false; // a fresh open shows "Loading…", never the previous list
       document.getElementById("jf-judge").disabled = true;
       renderPicker();
       renderReuseList();
@@ -3854,8 +3842,22 @@
       openPicker();
     }
     document.getElementById("rw-change").addEventListener("click", unpickReuse);
+    // leaving resume mode: the title, the hidden drafting chrome, the time box and the resume box all come back
+    function exitResumeMode(){
+      resumeRun = null;
+      originLine.classList.remove("res");
+      document.getElementById("job-card-title").textContent = "Job card \u2014 draft";
+      document.getElementById("chat-resume-box").hidden = true;
+      document.getElementById("chat-resume-err").hidden = true;
+      document.getElementById("jf-cap-time").parentNode.hidden = false;
+      document.getElementById("chat-clear-btn").hidden = false;
+      ["chat-main-btn", "chat-main-hint"].forEach(function(id){ document.getElementById(id).hidden = false; });
+      document.querySelector(".chat-input-row").hidden = false;
+    }
     function openNewCard(){
       card.hidden = false;
+      originLine.hidden = true;
+      exitResumeMode();
       thread.innerHTML = "";
       errEl.textContent = "";
       actionErrEl.textContent = "";
@@ -3961,12 +3963,11 @@
     // the limit changed in Settings: re-read the note for whatever cap is typed
     document.addEventListener("bareloop-limit-changed", refreshCapNote);
     // Check type: Deterministic / Rubric / Reuse workflow. Reuse opens the picker on an empty card; Deterministic or
-    // Rubric while the picker is showing (picked or not) LEAVES reuse — the empty card on that type (clearStartFrom).
+    // Rubric while the picker is showing (picked or not) LEAVES reuse — boxes untouched (clearStartFrom(true)).
     function onVerdictChange(v){
       if(v === "reuse"){ if(rwBox.hidden) openPicker(); return; }
       if(!rwBox.hidden){
-        clearStartFrom();
-        clearCardBoxes();
+        clearStartFrom(true);
         setVerdict(v);
         renderPicker();
       }
@@ -4314,7 +4315,7 @@
       poll();
     }
     function reattachLive(){
-      if(sessionId || sessionLive) return;
+      if(sessionId || sessionLive || resumeRun !== null) return;
       authorGet("/api/author/live").then(function(j){
         if(sessionId || sessionLive || !j || !j.ok || !j.sessionId || !j.state) return;
         attachSession(j);
@@ -4355,6 +4356,90 @@
       refreshStartEnabled();
     }
     document.addEventListener("bareloop-reuse", function(e){ applyReuse(e.detail || {}); });
+
+    // Edit in chat — the card opens filled from the SIGNED job with EVERY box open; the button stays the normal
+    // [Start drafting] (startFrom / reuse state are never set: no borrowed track record). A live drafting session is
+    // handled exactly as applyReuse does (clearStartFrom + openNewCard). A refused prefill opens nothing, error only.
+    function applyEdit(d){
+      if(d.error){ errEl.textContent = d.error; return; }
+      var c = (d.prefill || {}).card || {};
+      clearStartFrom();
+      openNewCard();
+      setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
+      if(c.model){ modelSelect.value = c.model; }
+      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
+      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
+      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
+      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      originLine.textContent = d.origin || "";
+      originLine.hidden = !d.origin;
+      renderPicker();
+      refreshModelStatus();
+      refreshCapNote();
+      refreshStartEnabled();
+    }
+    document.addEventListener("bareloop-edit", function(e){ applyEdit(e.detail || {}); });
+
+    // Resume — the card in RESUME mode: the signed job filled and locked, only Cap $ and Time cap open (prefilled from the
+    // engine's own resume plan, the values the Job tab used to show). A live drafting session is handled exactly as
+    // applyReuse does. A refused prefill opens nothing, error only.
+    function applyResume(d){
+      if(d.error){ errEl.textContent = d.error; return; }
+      var c = (d.prefill || {}).card || {};
+      var r = d.resume || {};
+      clearStartFrom();
+      openNewCard();
+      resumeRun = {runid: d.runid, noTime: typeof r.maxWallMin !== "number"};
+      document.getElementById("job-card-title").textContent = "RESUME " + (d.title || d.runid);
+      setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
+      if(c.model){ modelSelect.value = c.model; }
+      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
+      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
+      setVal("jf-judge", c.judgeExamples);
+      setVal("jf-cap-money", r.budgetUsd);
+      setVal("jf-cap-time", resumeRun.noTime ? "" : r.maxWallMin);
+      document.getElementById("jf-cap-time").parentNode.hidden = resumeRun.noTime;
+      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      originLine.textContent = "The same run goes on, not a new one. Only the money cap and the time cap can change; everything else is the signed job.";
+      originLine.classList.add("res");
+      originLine.hidden = false;
+      var spent = (r.spentUsd === null || r.spentUsd === undefined) ? "unknown" : ((r.spendComplete ? "" : "at least ") + panelMoney(r.spentUsd));
+      document.getElementById("chat-resume-spent").textContent = "spent so far " + spent +
+        (typeof r.wallUsedMs === "number" && isFinite(r.wallUsedMs) ? " \u00B7 time used so far " + Math.ceil(r.wallUsedMs / 60000) + " min" : "");
+      document.getElementById("chat-resume-box").hidden = false;
+      document.getElementById("chat-clear-btn").hidden = true;
+      ["chat-main-btn", "chat-main-hint"].forEach(function(id){ document.getElementById(id).hidden = true; });
+      document.querySelector(".chat-input-row").hidden = true;
+      renderPicker();
+      refreshModelStatus();
+      refreshStartEnabled();
+    }
+    document.addEventListener("bareloop-resume", function(e){ applyResume(e.detail || {}); });
+    document.getElementById("chat-resume-cancel").addEventListener("click", function(){ resetCard(); });
+    var resumeSignBtn = document.getElementById("chat-resume-sign");
+    function signResume(){
+      var run = resumeRun;
+      if(run === null) return;
+      var err = document.getElementById("chat-resume-err");
+      err.hidden = true;
+      resumeSignBtn.disabled = true;
+      var body = {budgetUsd: document.getElementById("jf-cap-money").value};
+      if(!run.noTime){ body.maxWallMin = document.getElementById("jf-cap-time").value; }
+      return authorPost("/api/runs/" + encodeURIComponent(run.runid) + "/resume", body).then(function(res){
+        resumeSignBtn.disabled = false;
+        if(res.body && res.body.ok){
+          // the SAME run goes on: the card goes back to empty, the right side to its Run tab, which follows it until it is live again
+          resetCard();
+          document.getElementById("tab-run").click();
+          afterResumeRefresh(run.runid, 8);
+        } else {
+          err.textContent = (res.body && res.body.error) || ("refused (" + res.status + ")");
+          err.hidden = false;
+        }
+      }).catch(function(x){ resumeSignBtn.disabled = false; err.textContent = "could not reach the panel: " + x.message; err.hidden = false; });
+    }
+    resumeSignBtn.addEventListener("click", signResume);
 
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
     // (fed by the every-2s `poll()`) unconditionally overwrites

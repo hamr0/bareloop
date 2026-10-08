@@ -2,7 +2,7 @@
 // hamr's ruling 2026-10-04 (option A): every surface (run cards, expanded run rows, the right-side header, imported
 // rows) reads `status` from the server; the page never maps an outcome to a word itself.
 //
-//   [▶] running · [·] waiting · [✓] passed · [✗] failed · [✗] capped · [✗] stopped · [?] died
+//   [▶] running · [·] waiting · [✓] passed · [✗] failed · [✗] capped · [■] stopped · [?] died
 //
 // Outcome -> word (every outcome the panel knows; anything not listed is `failed`):
 //   green, already-green, satisfied                      -> passed
@@ -14,6 +14,8 @@
 //   plan-red, check-red, step-red, escalated (strikes / provider / other), close-red, provider-red, step-stalled,
 //   and every other outcome (refusals, instrument stops)  -> failed
 // `waiting` is the step-level sign for a step that has not started; no run outcome maps to it.
+
+import { capKindOf } from '../legs.js';
 
 /** the sentence a passed run carries as its reason (the Ended block's `line`) */
 export const GOAL_MET_LINE = 'goal met';
@@ -27,7 +29,7 @@ export const STATUS = Object.freeze({
   passed: Object.freeze({ sign: '✓', word: 'passed' }),
   failed: Object.freeze({ sign: '✗', word: 'failed' }),
   capped: Object.freeze({ sign: '✗', word: 'capped' }),
-  stopped: Object.freeze({ sign: '✗', word: 'stopped' }),
+  stopped: Object.freeze({ sign: '■', word: 'stopped' }),
   died: Object.freeze({ sign: '?', word: 'died' }),
 });
 
@@ -44,9 +46,8 @@ export function statusFor(o) {
   if (o.died) key = 'died';
   else if (out === null || out === undefined) key = 'running';
   else if (out === 'green' || out === 'already-green' || out === 'satisfied') key = 'passed';
-  else if (out === 'cap-halt' || out === 'wall-halt') key = 'capped';
+  else if (capKindOf(o) !== null) key = 'capped';
   else if (out === 'stopped') key = 'stopped';
-  else if (out === 'escalated' && ((o.category === 'cap-halt' && o.moneyHalt) || o.category === 'wall-halt')) key = 'capped';
   return { key, ...STATUS[key] };
 }
 

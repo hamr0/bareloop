@@ -93,6 +93,6 @@ test('getRunDetail: a capped worktree run whose folder exists names the folder; 
   const home2 = tmp();
   makeWorktreeRun(home2, { outcome: 'cap-halt', folderExists: false });
   const gone = getRunDetail('run1', { home: home2 });
-  assert.deepEqual(gone.ended.actions, [], 'no Resume button for a worktree the engine would refuse to re-enter');
+  assert.deepEqual(gone.ended.actions, [{ id: 'edit', label: 'Edit in chat' }], 'no Resume button for a worktree the engine would refuse to re-enter');
   assert.match(gone.ended.next, /its worktree folder .* is gone/);
 });

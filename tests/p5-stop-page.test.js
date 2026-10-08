@@ -22,7 +22,7 @@ function load() {
   const bar = { innerHTML: '', hidden: true, querySelector: () => null, insertAdjacentHTML() {} };
   const opened = [];
   // eslint-disable-next-line no-new-func
-  const f = new Function('document', 'authorPost', 'openResumeOnJobTab', `var stopAsked = {};\n${fnSrc('escapeXml')}\n${fnSrc('renderRunActions')}\nreturn renderRunActions;`)(
+  const f = new Function('document', 'authorPost', 'resumeInChat', `var stopAsked = {};\n${fnSrc('escapeXml')}\n${fnSrc('renderRunActions')}\nreturn renderRunActions;`)(
     { getElementById: (id) => { assert.equal(id, 'run-actions'); return bar; } }, () => Promise.resolve({ status: 200, body: { ok: true } }), (d) => opened.push(d),
   );
   return { render: f, bar, opened };
@@ -47,16 +47,16 @@ test('page: the run card carries [Resume] only when the engine would accept it; 
   render({ runid: 'r3', live: false, died: false, ended: { reason: 'Goal met.', next: 'Nothing to do.', actions: [{ id: 'reuse', label: 'Reuse workflow' }] }, resume: null });
   assert.doesNotMatch(bar.innerHTML, /btn-resume-run|btn-stop"/, 'no Resume and no Stop on a green run');
   assert.match(bar.innerHTML, /btn-reuse">Reuse workflow</, 'a green run has Reuse workflow');
-  render({ runid: 'r4', live: false, died: false, ended: { reason: 'Goal not met', next: 'Change the job: Clear the card and draft a new one.', actions: [] }, resume: null });
+  render({ runid: 'r4', live: false, died: false, ended: { reason: 'Goal not met', next: 'Change the job: press Edit in chat.', actions: [] }, resume: null });
   assert.doesNotMatch(bar.innerHTML, /btn-reuse|Start from this/, 'a red run has no button at all');
   assert.equal(bar.hidden, true, 'an empty action row is not shown');
   render({ runid: 'r5', live: true, died: false, ended: null, resume: null });
   assert.doesNotMatch(bar.innerHTML, /btn-reuse/, 'a live run has Stop, not Reuse workflow');
 });
 
-test('page: Stop is wired to the stop route and Resume to the Job-tab resume mode', () => {
+test('page: Stop is wired to the stop route and Resume to the Chat-card resume mode', () => {
   assert.match(fnSrc('renderRunActions'), /"\/api\/runs\/" \+ encodeURIComponent\(detail\.runid\) \+ "\/stop"/);
-  assert.match(fnSrc('renderRunActions'), /openResumeOnJobTab\(detail\)/);
+  assert.match(fnSrc('renderRunActions'), /resumeInChat\(detail\)/);
   assert.match(fnSrc('renderRun'), /renderRunActions\(detail\)/, 'renderRun paints the action area on every render');
 });
 

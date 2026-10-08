@@ -4,6 +4,27 @@ All notable changes to bareloop are documented here. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
+## [0.38.0] - 2026-10-08
+
+### Added
+
+- **Edit in chat on every run that did not finish green.** The Chat card opens filled from the run's signed job with every box open; Start drafting works as for any new job. The Ended block's NEXT line points at the button, and a refused Resume says so too.
+- **Resume moves to the left Chat card.** Resume mode locks the signed job and opens only the two caps (money and time); Sign & resume posts the same body as before.
+- **Expanded jobs show their latest 7 other runs;** older runs are reached by search.
+
+### Changed
+
+- The run page's Job tab is read-only on every run; the Job-tab resume mode is gone.
+- A stopped run wears `[■]` (red), not `[✗]`, on every surface.
+- Reuse workflow is offered only from a run that earned its green. The Reuse list shows only jobs with a real green run; an already-green run offers Edit in chat instead; `POST /api/author/start` refuses a reuse of any local run that did not finish green (the server owns the rule, not just the pickers); and a delivery-refused ending offers Reuse only on a run that earned its green.
+- The Reuse picker reads "Loading…" until its list arrives, and switching the Check type radios no longer blanks the New job boxes.
+
+### Fixed
+
+- A run cut by the money or wall cap reads `capped` on every surface: a leg that ended escalated on a money-halt or wall-halt, and a cap-cut open step on a single-leg run, no longer read as failed. One helper (`capKindOf`) owns the rule.
+- A Stop clicked in the fix loop reads "during the fix phase ... a resume continues the run" instead of the step text "a resume re-enters this step", which was wrong where no step exists (found on run muxwwrgs).
+- Small cleanups with unchanged behaviour: the `npm ci` comment matches the code, a dead pid above `pid_max` is handled, and tests follow the new panel behaviour.
+
 ## [0.37.0] - 2026-10-07
 
 ### Added

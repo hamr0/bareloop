@@ -59,9 +59,9 @@ test('endedFor: a `stopped` run reads "You stopped it." / "Resume." with a Resum
   assert.equal(e?.reason, 'You stopped it.');
   assert.equal(e?.next, 'Resume.');
   assert.equal(e?.line, 'you pressed Stop — resume');
-  assert.deepEqual(e?.actions, [{ id: 'resume', label: 'Resume' }]);
+  assert.deepEqual(e?.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }]);
   const no = endedFor({ outcome: 'stopped', stopReason: null, spentUsd: 1, budgetUsd: 4 }, { died: false, lastThing: null }, { resume: { ok: false, why: 'it is still running' } });
-  assert.deepEqual(no?.actions, [], 'never a button the engine would refuse');
+  assert.deepEqual(no?.actions, [{ id: 'edit', label: 'Edit in chat' }], 'never a Resume the engine would refuse (Edit in chat still shows)');
 });
 
 test('POST /api/runs/:runid/stop: human guard, 404, 409 when not live, 409 while starting; a LIVE run gets its stop file', async (t) => {
@@ -121,6 +121,6 @@ test('a stopped-and-resumable run (job-end `stopped`) carries the Ended block, t
   appendRun({ at: ts, runid: 'st1', job: 'p5-job', spine, patient: null, via: 'run-u' }, { home });
   const d = getRunDetail('st1', { home });
   assert.equal(d.ended.reason, 'You stopped it.');
-  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }], `resume offered (${JSON.stringify(d.resume)})`);
+  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }], `resume offered (${JSON.stringify(d.resume)})`);
   assert.equal(listRuns({ home }).find((r) => r.runid === 'st1').endedLine, 'you pressed Stop — resume');
 });

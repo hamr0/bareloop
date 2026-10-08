@@ -3503,16 +3503,16 @@ key you want first (the panel picks the row by the Model menu).
   result glyphs are unchanged. The reuse button is described under Reuse workflow, below.
   **Status words (click-through 2026-10-04)** → every run row, run detail and imported row carries `status`
   `{key, sign, word}` from ONE table (`src/panel/status.js`): `[▶] running · [·] waiting · [✓] passed · [✗] failed ·
-  [✗] capped · [✗] stopped · [?] died`; `glyph` is that sign. Mapping: green/already-green/satisfied → passed; no
+  [✗] capped · [■] stopped · [?] died`; `glyph` is that sign (the Runs `✗` filter chip also finds a `[■]` run). Mapping: green/already-green/satisfied → passed; no
   job-end + runner alive → running, gone → died; cap-halt, wall-halt, and an escalation that is a money-halt or wall-halt
-  → capped; `stopped` → stopped; every other outcome (plan-red, check-red, step-red, close-red, provider-red,
+  → capped (ONE rule, `capKindOf` in `src/legs.js`, shared by the run status, a leg's stop reason and the part cards); `stopped` → stopped; every other outcome (plan-red, check-red, step-red, close-red, provider-red,
   step-stalled, other escalations, refusals) → failed. The detail also carries `startedAt` and `endedAt` (the last
   `job-end` timestamp, null while live or died). `GET /api/imports` rows and `GET /api/imports/:id` carry `runStatus`
   (passed, or null when the bundle shows no green) and `runReason` (`goal met`). The Ended block's lines for died and
   stopped runs are `no ending recorded` and `you pressed Stop` (each `— resume` when Resume is offered).
   Every PART of a run detail (`parts[]`) also carries its own `status` `{key, sign, word}` from the same table
   (`partStatusFor`, `src/panel/status.js`): drafting, a green outcome and a part with no verdict and no cut-off → passed; a red
-  outcome → its run-outcome word; a part its leg's halt cut off → capped (money cap / time cap), stopped (you stopped it),
+  outcome → its run-outcome word; a part its leg's halt cut off → capped (money cap / time cap — also a leg that ended `escalated` on a money-halt or wall-halt, and the open step of a single-leg run that ended on a cap), stopped (you stopped it),
   died, else failed. A run that DIED (no `job-end`, runner gone) leaves its last part in flight: when that part has no outcome
   and no cut-off, the server marks it `died` (`[?] died`), never the "happened, so passed" default — replay alone cannot tell
   died from still running, so `getRunDetail` decides it from the same `death` verdict as the run's status. A live run's open
@@ -3534,7 +3534,9 @@ key you want first (the panel picks the row by the Model menu).
   the log tail is returned as `error` verbatim; otherwise `{ok:true, runid, specHash, capsChanged,
   log}`. The run keeps its runid and its one list row: the resumed leg appends to the same spine (P5-R,
   `leg-start` in the run list), it never appears as a new run. The page's Resume button opens the
-  caps form (prefilled, "spent so far") and `Sign & resume` is the human click.
+  Chat card in RESUME mode (title `RESUME <job> (run-N)`, filled from `GET /api/author/start-from`, every box locked
+  except the two caps, "spent so far" shown, Clear/Start drafting hidden) and `Sign & resume` on that card is the human
+  click, posting this same route; the run's Job tab is read-only on every run.
   **Stop (item 5)** → `POST /api/runs/:runid/stop` (`src/panel/runroutes.js`, `checkHumanGuard`, no body).
   It writes the run's STOP REQUEST, a file `<spine>.stop` (`stopFilePath(spine)`, `src/legs.js` — the one
   spelling), and signals nothing. `404` unknown run; `409` when the run's LATEST leg is not live
@@ -3556,11 +3558,18 @@ key you want first (the panel picks the row by the Model menu).
   in the Run tab's action area while live, "stopping after this turn…" after the click, and the same
   `[Resume]` there once the engine would accept one. A Stop clicked while the run is in the
   scout, plan or close-fix phase is honoured at that phase's next round boundary, the same as in a step (it used to be read in
-  step workers only).
-  **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on GREEN runs only (the Run tab's
-  action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on green and
-  green-with-destination-refused rows, and on no other: a red row's next line is "Change the job: Clear the card and draft a new one.", and
-  stopped/capped/died rows offer `resume` only) and on every imported job; the Chat card's Check type is one radio group of three
+  step workers only). A stop in the close-fix loop reads "You stopped the run during the fix phase … a resume continues the
+  run" (`ralph`'s `phase` option; the step loop keeps "a resume re-enters this step").
+  **Edit in chat (2026-10-08)** — `ended.actions` carries `{id:'edit', label:'Edit in chat'}` on EVERY ending that is not a
+  real green (failed, capped, stopped, died, every other red, and an already-green or delivery-refused already-green),
+  after `resume` when both show. The button reads `GET /api/author/start-from` and opens the Chat card filled from the
+  signed job with EVERY box open and the normal Start drafting path (no reuse state, no borrowed track record), under a
+  code-owned origin line ("Copied from <job> (run-N) — <status word>. …").
+  **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on runs that EARNED their green only
+  (the Run tab's action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on `green`
+  and green-with-destination-refused `green` rows, and on no other: an `already-green` run (the check passed before any
+  work) offers Edit in chat instead, and a red row's next line is "Change the job: press Edit in chat."; stopped/capped/died
+  rows offer `resume` and `edit`) and on every imported job; the Chat card's Check type is one radio group of three
   (Deterministic · Rubric · Reuse workflow), and the third opens a search picker over `GET /api/author/reuse-jobs` (below) that
   fills the card through this same path (a pick, then `change` returns to the empty search; Deterministic or Rubric leaves reuse).
   It opens the Chat tab's New job card
@@ -3574,10 +3583,12 @@ key you want first (the panel picks the row by the Model menu).
   green, notGreen, live, finished, avgSpendUsd, avgWallMs}, line}` (`404` unknown, `409` with an `error` when
   there is nothing to copy: no log, the run's signed job is not on disk, or an imported job that changed, lost its
   dependency or no longer matches its signed bytes); `POST /api/author/start` accepts `startFrom: <runid>` or
-  `startFrom: {importId}` beside the card and answers `{ok, sessionId, reuse, state}`. The old
+  `startFrom: {importId}` beside the card and answers `{ok, sessionId, reuse, state}`; a local `startFrom: <runid>` whose
+  latest outcome is not `green` (`start-from` carries that `outcome`) is refused `409 "only a run that finished green can
+  be reused — this one did not"` — the server owns the rule, not just the pickers. The old
   `POST /api/author/start-from-check` and the "Changed — new job" mode are gone. `GET /api/author/reuse-jobs[?model=<Name>]` →
   `{ok, jobs:[{job, runid, checkType:'deterministic'|'rubric', line}]}` is the Chat card's Reuse workflow picker list: one entry per
-  job (same `workflowKey`) with at least one GREEN local run, `runid` = its newest green run (hand it to `start-from`), `line` =
+  job (same `workflowKey`) with at least one real `green` local run (`already-green` is not a reuse source), `runid` = its newest green run (hand it to `start-from`), `line` =
   start-from's own estimate line, newest green first; imported jobs are not listed. **Identity, two keys:** the
   signature hash `jobSpecHash` is unchanged (it covers the caps and the write fence — what the person signs);
   `workflowKey(spec)` (`src/job.js`, not exported from the package root) is a sha256 over the signed spec WITHOUT

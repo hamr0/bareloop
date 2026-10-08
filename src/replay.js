@@ -104,7 +104,7 @@
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
-import { legsOf } from './legs.js';
+import { legsOf, capKindOf } from './legs.js';
 
 /**
  * @param {unknown} e
@@ -233,6 +233,16 @@ const ALL_REASON_MAX = 60;
  * (an older archive predating the field, or a run that died before the
  * record fired) — printed literally, never blank, never a fabricated 0. */
 const NONE_RECORDED = 'none recorded';
+
+/**
+ * Did this leg end on a cap? Reads the leg's own last escalation and `money-halt` record.
+ * @param {import('./legs.js').Leg} leg
+ * @returns {'money'|'time'|null}
+ */
+function legCapKind(leg) {
+  const esc = leg.outcome === 'escalated' ? leg.records.findLast((r) => r && r.type === 'escalation') : null;
+  return capKindOf({ outcome: leg.outcome, category: esc?.category ?? null, moneyHalt: leg.records.some((r) => r && r.type === 'money-halt') });
+}
 
 /**
  * `stopReason` for a non-green outcome: `category — decision — detail`, every
@@ -737,11 +747,21 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // why this leg stopped the step (code-owned words); null for a step that ended itself or is still running
     /** @type {string|null} */
     let stopReason = null;
+    // a single-leg run has no leg boundary to cut a step, but a cap still ends it: its open step reads capped too
+    // (hamr 2026-10-08), from the same rule (`capKindOf`) the run's own status word uses
+    if (!end && myLeg === null) {
+      const only = legs[0];
+      const capKind = only ? legCapKind(only) : null;
+      if (capKind !== null) stopReason = capKind === 'money' ? 'money cap' : 'time cap';
+    }
     if (!end && myLeg !== null) {
       const o = myLeg.outcome;
       const isLastLeg = myLegIdx === legs.length - 1;
       if (cutByLeg || (isLastLeg && o !== null && o !== 'green' && o !== 'already-green')) {
-        stopReason = o === 'cap-halt' ? 'money cap' : o === 'wall-halt' ? 'time cap' : o === 'provider-red' ? 'provider failed'
+        // hamr 2026-10-08: a leg that ended `escalated` on a money-halt / wall-halt reads as the cap, exactly as the
+        // run's own status word does (src/panel/status.js statusFor) — derived HERE so every surface follows
+        const capKind = legCapKind(myLeg);
+        stopReason = capKind === 'money' ? 'money cap' : capKind === 'time' ? 'time cap' : o === 'provider-red' ? 'provider failed'
           : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
       }
     }
@@ -832,7 +852,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     return {
       id,
       occurrence: idOccurrence.get(id),
-      ...(myLeg === null ? {} : { stopReason, continued, tryNumber }),
+      ...(myLeg === null && stopReason === null ? {} : { stopReason, continued, tryNumber }),
       outcome: end ? (end.outcome ?? null) : null,
       ...buildOccurrenceMetrics(startSeq, startTs, endSeq, endTs, roundsInWindow),
       checks: { passed, failed },

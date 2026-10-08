@@ -23,6 +23,9 @@ import { createPanelServer } from '../src/panel/server.js';
 import { signRun } from '../src/panel/authorroutes.js';
 import { scriptedProvider } from './helpers.js';
 
+// above Linux's hard pid ceiling (2^22): no process can ever hold it, so the runner reads as dead on any machine
+const DEAD_PID = 2 ** 22 + 1;
+
 /** @param {import('node:test').TestContext} t */
 const tmp = (t) => {
   const d = mkdtempSync(join(tmpdir(), 'monthly-test-'));
@@ -418,7 +421,7 @@ test('run-start seam: a claimed --resume refused at the patient (moved HEAD) is 
     { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
   ].map((e) => JSON.stringify(e)).join('\n') + '\n');
   // the halted run was listed when it began (a resume continues a listed run)
-  appendRun({ at, runid: 'dead1', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: 999999, capUsd: 2 }, { home });
+  appendRun({ at, runid: 'dead1', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: DEAD_PID, capUsd: 2 }, { home });
   writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
   git(first.workdir, ['add', '.']);
   git(first.workdir, ['commit', '-q', '-m', 'human']);
@@ -505,7 +508,7 @@ test('run-start seam, NO monthly limit: a --resume refused at the patient (moved
     { type: 'job-end', outcome: 'cap-halt', spentUsd: 0.5, spendComplete: true, ts: at, seq: 4 },
   ].map((e) => JSON.stringify(e)).join('\n') + '\n');
   // the halted run was listed when it began (a resume continues a listed run)
-  appendRun({ at, runid: 'dead2', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: 999999, capUsd: 2 }, { home });
+  appendRun({ at, runid: 'dead2', job: first.spec.job, spine: dead, patient: null, via: 'run-u', pid: DEAD_PID, capUsd: 2 }, { home });
   writeFileSync(join(first.workdir, 'human.txt'), 'x\n');
   git(first.workdir, ['add', '.']);
   git(first.workdir, ['commit', '-q', '-m', 'human']);

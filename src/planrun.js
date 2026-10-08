@@ -4108,7 +4108,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // is not passed — it survives only inside the governor, as the bound for the
       // case the trend instrument is blind.
       middle, judge: async () => judgeClose(), ladder: fixGovernor, emit: emitL, redact: scrub,
-      closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites, closeDir,
+      closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites, closeDir, phase: 'fix',
     });
   } catch (e) {
     planExecuted();

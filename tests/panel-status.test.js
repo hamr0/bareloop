@@ -17,7 +17,7 @@ const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'panel-status-')); tmps
 
 test('C6: the table is exactly the seven signs/words hamr ruled', () => {
   assert.deepEqual(Object.entries(STATUS).map(([k, v]) => `${k}:${v.sign}:${v.word}`), [
-    'running:▶:running', 'waiting:·:waiting', 'passed:✓:passed', 'failed:✗:failed', 'capped:✗:capped', 'stopped:✗:stopped', 'died:?:died',
+    'running:▶:running', 'waiting:·:waiting', 'passed:✓:passed', 'failed:✗:failed', 'capped:✗:capped', 'stopped:■:stopped', 'died:?:died',
   ]);
 });
 
@@ -142,8 +142,8 @@ test('C7: the workflow card is 2 lines: `▶ [sign] job (run-N) **word** — rea
   const mkEl = () => { const e = { innerHTML: '', className: '', attrs: {}, children: [], setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, appendChild(c) { this.children.push(c); } }; els.push(e); return e; };
   // eslint-disable-next-line no-new-func
   const render = new Function('document', 'selectRun', 'scrollRunIntoViewMobile', 'currentRunsFilters', 'filtersActive', 'filterRuns', 'autoExpandJob', `
-    var currentRunid = null; var wfExpanded = {};
-    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'activeOlderRun', 'representedRun', 'renderWorkflows'].map(fnSrc).join('\n')}
+    var currentRunid = null; var wfExpanded = {}; var WF_SUB_CAP = 7;
+    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'activeOlderRun', 'representedRun', 'capSubRuns', 'renderWorkflows'].map(fnSrc).join('\n')}
     return renderWorkflows;`)({ createElement: mkEl, getElementById: mkEl }, () => {}, () => {}, () => ({}), () => false, (r) => r, () => false);
   render([g]);
   const html = els.find((e) => e.attrs['data-testid'] === 'wf-row-job1').innerHTML;
@@ -172,6 +172,41 @@ test('C8: the right-side header reads `[sign] job (run-N) │ **word** — reaso
   assert.equal(h.els['active-wf-dot'].className, 'dot red');
   const html = h.els['active-wf-verdict'].innerHTML;
   assert.match(html, /^<span class="rp-sep">│<\/span><b class="st-word">failed<\/b> — checks said no · ended \d{1,2}\/\d{1,2}\/2026, \d{1,2}:\d{2} (AM|PM)$/);
+});
+
+test('2026-10-07: a STOPPED run wears [■] on the table, the card, the expanded row, the header, the summary box, the map and the step card — failed/capped keep [✗], died keeps [?]', () => {
+  assert.equal(statusFor({ outcome: 'stopped' }).sign, '■');
+  assert.equal(glyphForOutcome('stopped'), '■');
+  assert.equal(partStatusFor({ kind: 'step', outcome: null, stopReason: 'you stopped it' }).sign, '■');
+  assert.equal(statusFor({ outcome: 'plan-red' }).sign, '✗');
+  assert.equal(statusFor({ outcome: 'cap-halt' }).sign, '✗');
+  assert.equal(statusFor({ outcome: null, died: true }).sign, '?');
+  const S = { ...RUN, glyph: '■', status: { ...STATUS.stopped } };
+  assert.match(rowHarness()(S).innerHTML, /class="dot stopped"/); // card
+  assert.match(rowHarness()(S, true).innerHTML, /class="dot stopped"/); // expanded row
+  const h = headerHarness();
+  h.setRunHeader('■', 'j (run-1)', '');
+  assert.equal(h.els['active-wf-dot'].className, 'dot stopped'); // header
+  assert.match(PAGE, /\.dot\.stopped::before\{content:"\[■\]";color:var\(--red\);\}/); // the sign the class draws, still red
+  assert.match(fnSrc('renderRun'), /detail\.glyph === "■"/); // summary box keeps its red border
+  // step card + Audit row
+  // eslint-disable-next-line no-new-func
+  const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
+  assert.match(f({ state: 'stopped', status: { ...STATUS.stopped } }, 't'), /dot stopped"><\/span><b class="st-word">stopped</);
+  // map box text
+  const start = PAGE.indexOf('function stepMapColors');
+  const body = PAGE.slice(start, PAGE.indexOf('var lastSteps = null;'));
+  // eslint-disable-next-line no-new-func
+  const g = new Function(`${body}\nreturn { buildOrderedBoxes, buildStepMapSVG };`)();
+  const parts = [{ kind: 'step', label: 'a', occurrence: 1, outcome: null, stopReason: 'you stopped it', attempts: [], status: partStatusFor({ stopReason: 'you stopped it' }) }];
+  assert.match(g.buildStepMapSVG(g.buildOrderedBoxes(parts, false), 900), />\[■\] stopped</);
+});
+
+test('2026-10-07: the ✗ result chip still finds a stopped [■] run (it was a [✗] before the sign ruling)', () => {
+  // eslint-disable-next-line no-new-func
+  const filterRuns = new Function(`${['matchesSearch', 'filterRuns'].map(fnSrc).join('\n')}\nreturn filterRuns;`)();
+  const runs = [{ runid: 'a', glyph: '■', checkType: 'deterministic' }, { runid: 'b', glyph: '✓', checkType: 'deterministic' }];
+  assert.deepEqual(filterRuns(runs, { checkTypes: [], results: ['✗'], time: 'all', search: '' }).map((r) => r.runid), ['a']);
 });
 
 test('C8: a live run reads `**running** — step 2 of 3 · started <time>`', () => {

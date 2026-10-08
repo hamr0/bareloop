@@ -74,7 +74,7 @@ export const RUNID_RE = /^[A-Za-z0-9._~-]+$/;
 export const DEFAULT_PORT = 4700;
 
 /**
- * `[✓]`/`[✗]`/`[▶]` — the ONLY vocabulary a result is ever rendered in
+ * `[✓]`/`[✗]`/`[■]`/`[▶]` — the ONLY vocabulary a result is ever rendered in
  * (auto-memory `ui-verdict-words.md`: never the words green/red/soft-green
  * anywhere in the page). `null` (no `job-end` reached — a killed-mid-run or
  * still-running spine) reads `▶` — the same "in progress / unresolved" glyph
@@ -82,10 +82,10 @@ export const DEFAULT_PORT = 4700;
  * running attempt and an archived spine that never reached its own end are
  * the same fact from this read-only side: no verdict has been recorded yet.
  * @param {string|null} outcome
- * @returns {'✓'|'✗'|'▶'}
+ * @returns {'✓'|'✗'|'■'|'▶'}
  */
 export function glyphForOutcome(outcome) {
-  return /** @type {'✓'|'✗'|'▶'} */ (statusFor({ outcome }).sign);
+  return /** @type {'✓'|'✗'|'■'|'▶'} */ (statusFor({ outcome }).sign);
 }
 
 /**
@@ -417,7 +417,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
-  const base = endedBase(summary, death, o);
+  const base = withEditAction(endedBase(summary, death, o));
   const wt = o.worktree;
   if (!base || !wt) return base;
   // P6 item 1 — the run worked on a worktree in the person's own repo. GREEN: the branch carries the work (the folder is
@@ -432,21 +432,31 @@ export function endedFor(summary, death, o = {}) {
   return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
 }
 
+/**
+ * "Edit in chat" (hamr 2026-10-07): offered on EVERY non-green ending (failed, capped, stopped, died, every other red),
+ * after Resume when both show; a green ending keeps Reuse workflow only. ONE place, so no ending branch can forget it.
+ * @param {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null} ended
+ */
+function withEditAction(ended) {
+  if (!ended || ended.actions.some((a) => a.id === 'reuse')) return ended;
+  return { ...ended, actions: [...ended.actions, { id: 'edit', label: 'Edit in chat' }] };
+}
+
 /** @param {any} summary @param {any} death @param {any} o */
 function endedBase(summary, death, o) {
   const resumeOk = !!(o.resume && o.resume.ok);
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
   /** Reuse workflow (replaces P5 item 3's Start from this, hamr 2026-10-03): the same signed job on a new source — a NEW
-   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: Clear the card and draft a new one" instead. */
+   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: press Edit in chat" instead. */
   const REUSE = [{ id: 'reuse', label: 'Reuse workflow' }];
-  const CHANGE = 'Change the job: Clear the card and draft a new one.';
+  const CHANGE = 'Change the job: press Edit in chat.';
   const detailOf = (/** @type {string|null} */ s) => {
     if (typeof s !== 'string' || s.length === 0) return '';
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
   };
   /** a resumable ending whose Resume the engine would refuse: say so, never offer the button */
-  const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}.`);
+  const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}. ${CHANGE}`);
 
   if (death.died) {
     return {
@@ -497,13 +507,20 @@ function endedBase(summary, death, o) {
 
   if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
     if (o.destinationRefused) {
+      // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); the rest take Edit in chat
+      // (withEditAction adds it) and are told to change the job, not to reuse it
+      const earned = outcome === 'green';
       return {
         reason: 'Goal met, but the output could not be delivered.',
-        next: 'Fix the destination, then Reuse workflow.',
+        next: earned ? 'Fix the destination, then Reuse workflow.' : CHANGE,
         line: `${GOAL_MET_LINE} — not delivered`,
-        actions: REUSE,
+        actions: earned ? REUSE : [],
       };
     }
+    // hamr 2026-10-08: already-green (the check passed before any work) is not a reusable job — only a run that
+    // earned its green offers Reuse workflow; the rest take Edit in chat (withEditAction adds it). `satisfied` is a
+    // close VERDICT, never a run outcome (ralph and the job-end emitters write `green`), so it rides with already-green.
+    if (outcome !== 'green') return { reason: 'Goal met.', next: CHANGE, line: GOAL_MET_LINE, actions: [] };
     return { reason: 'Goal met.', next: 'Nothing to do.', line: GOAL_MET_LINE, actions: REUSE };
   }
   if (outcome === 'cap-halt') {
@@ -545,7 +562,7 @@ function endedBase(summary, death, o) {
   if (outcome === 'step-stalled') {
     return {
       reason: 'A step stopped making progress.',
-      next: resumeOr('Resume, or change the job: Clear the card and draft a new one.'),
+      next: resumeOr('Resume, or change the job: press Edit in chat.'),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
       actions: resumeOk ? RESUME : [],
     };
@@ -2408,7 +2425,7 @@ export function reuseLine(record) {
  * to copy: change the job: Clear the card). `null` when the runid is not listed.
  * @param {string} runid
  * @param {{ home?: string, model?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
- * @returns {{ok: true, origin: {runid: string, job: string}, card: Record<string, any>, from: 'signed job',
+ * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
  *   locked: readonly string[], open: readonly string[], note: string|null,
  *   specHash: string, workflowKey: string, spec: any, specPath: string,
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
@@ -2447,6 +2464,8 @@ export function getStartFrom(runid, opts = {}) {
   return {
     ok: true,
     origin: { runid, job: row.job },
+    // the run's terminal outcome — the Reuse start (POST /api/author/start) refuses anything but a real green
+    outcome: legsOf(records).at(-1)?.outcome ?? null,
     card,
     from: 'signed job',
     locked: REUSE_LOCKED_FIELDS,
@@ -2480,8 +2499,9 @@ export function listReuseJobs(opts = {}) {
     let records;
     try { records = parseJsonl(row.spine).records; } catch { continue; }
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
-    // the same endings the Run tab's own Reuse button is offered on (`endedBase`)
-    if (outcome !== 'green' && outcome !== 'already-green' && outcome !== 'satisfied') continue;
+    // only a REAL green (hamr 2026-10-08): `already-green` means the check passed before any work, so there is nothing to reuse
+    // (src/reuse.js 'green-predates-run'). Narrower than the Run tab's Reuse button on purpose.
+    if (outcome !== 'green') continue;
     const signed = signedSpecForRun(row, records);
     if (!signed) continue;
     const key = workflowKey(signed.spec);
