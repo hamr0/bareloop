@@ -2422,7 +2422,7 @@ export function reuseLine(record) {
  * to copy: change the job: Clear the card). `null` when the runid is not listed.
  * @param {string} runid
  * @param {{ home?: string, model?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
- * @returns {{ok: true, origin: {runid: string, job: string}, card: Record<string, any>, from: 'signed job',
+ * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
  *   locked: readonly string[], open: readonly string[], note: string|null,
  *   specHash: string, workflowKey: string, spec: any, specPath: string,
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
@@ -2461,6 +2461,8 @@ export function getStartFrom(runid, opts = {}) {
   return {
     ok: true,
     origin: { runid, job: row.job },
+    // the run's terminal outcome — the Reuse start (POST /api/author/start) refuses anything but a real green
+    outcome: legsOf(records).at(-1)?.outcome ?? null,
     card,
     from: 'signed job',
     locked: REUSE_LOCKED_FIELDS,

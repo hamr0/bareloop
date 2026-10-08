@@ -254,6 +254,13 @@ export function createAuthorRoutes(opts) {
         const pre = opts.startFrom ? (fromImport !== null ? opts.startFrom.getImport(fromImport) : opts.startFrom.get(fromRunid)) : null;
         if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to reuse' }); return true; }
         if (!pre.ok) { send(409, pre); return true; }
+        // only a run that earned a real green is a reuse source (hamr 2026-10-08) — the pickers already filter, but a
+        // hand-made POST must not sign a reuse of an already-green, red or still-running run. Imports are green by ruling;
+        // Edit in chat and Resume only READ start-from (GET) and never post a startFrom, so this gate never touches them.
+        if (fromImport === null && pre.outcome !== 'green') {
+          send(409, { ok: false, error: 'only a run that finished green can be reused — this one did not' });
+          return true;
+        }
         const locked = lockedFieldChanged(card, pre.card);
         if (locked !== null) { send(400, { ok: false, error: `${locked} is locked on a reused workflow — Clear the card to change it` }); return true; }
         const rv = validateReuseCard(card, { rows });
