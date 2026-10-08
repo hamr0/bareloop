@@ -619,3 +619,78 @@ test('the whole pipe grades the two real artifacts correctly, end to end, on fak
     assert.equal(decide(loc.facts, CARD, { artifactText: artifact }).verdict, expected);
   }
 });
+
+// ── has-doc: code reads the artifact, the judge only points (F192, ruling A) ──
+//
+// REAL data: the artifacts are the archived mub2nboo calibration cases and the
+// facts are deepseek-flash's actual answers from the 2026-10-08 probe — the judge
+// quoted the first WORDED JSDoc line, not the bare opener.
+
+const F192 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-has-doc-real.json'), 'utf8'));
+const HAS_DOC = { items: [CARD.items[0]] };
+/** has-doc verdict for `fn` facts over an artifact */
+const hasDoc = (/** @type {any} */ fn, /** @type {string} */ artifact) =>
+  decide({ functions: [fn] }, HAS_DOC, { artifactText: artifact });
+
+test('F192: the real worded-first-line docQuote no longer reds has-doc, on all three real cases', () => {
+  for (const [id, c] of Object.entries(F192)) {
+    const d = decide(c.facts, HAS_DOC, { artifactText: c.artifact });
+    assert.equal(d.verdict, 'pass', `${id}: ${JSON.stringify(d.items)}`);
+  }
+});
+
+test('F192: the bare opener quote still passes', () => {
+  const c = F192['full-contract-pass'];
+  const fn = { ...c.facts.functions[0], docQuote: '/**' };
+  assert.equal(hasDoc(fn, c.artifact).verdict, 'pass');
+});
+
+test('F192: a docQuote that is not inside the block directly above the declaration still reds', () => {
+  const c = F192['two-functions-pass'];
+  const [parse, build] = c.facts.functions;
+  const why = (/** @type {any} */ d) => d.items[0].reds.map((/** @type {any} */ r) => r.why).join(';');
+  // the completeness check wants BOTH functions reported; `patch` edits one of them
+  const both = (/** @type {number} */ i, /** @type {any} */ patch) => {
+    const fns = [{ ...parse }, { ...build }];
+    fns[i] = { ...fns[i], ...patch };
+    return decide({ functions: fns }, HAS_DOC, { artifactText: c.artifact });
+  };
+  // (a) null stays red, with its own why
+  const none = both(0, { docQuote: null });
+  assert.equal(none.verdict, 'red');
+  assert.match(why(none), /no JSDoc block/);
+  // the JSDoc block of a DIFFERENT function (parseQuery's) quoted for buildQuery
+  const other = both(1, { docQuote: ' * Turns an Express-style query string into a plain object.' });
+  assert.equal(other.verdict, 'red');
+  assert.match(why(other), /not inside a JSDoc block/);
+  // a line from the function body
+  const body = both(1, { docQuote: '    .join(\'&\');' });
+  assert.equal(body.verdict, 'red');
+  assert.match(why(body), /not inside a JSDoc block/);
+  // invented text: red through the quote-verification pass
+  const invented = both(1, { docQuote: ' * Builds a query string, honestly.' });
+  assert.equal(invented.verdict, 'red');
+  assert.match(why(invented), /not in the artifact/);
+});
+
+test('F192: a plain block comment above the declaration is not a JSDoc block', () => {
+  const art = '/*\n * Adds two numbers.\n */\nfunction add(a, b) {\n  return a + b;\n}\n';
+  const fn = { name: 'add', declarationQuote: 'function add(a, b) {', docQuote: ' * Adds two numbers.' };
+  assert.equal(hasDoc(fn, art).verdict, 'red');
+  const jsdoc = art.replace('/*\n', '/**\n');
+  assert.equal(hasDoc(fn, jsdoc).verdict, 'pass', 'the same lines under a double-star opener pass');
+});
+
+test('F192: a block separated from the declaration by code is not directly above it', () => {
+  const art = '/**\n * Old doc.\n */\nconst x = 1;\nfunction add(a, b) {\n  return a + b;\n}\n';
+  const fn = { name: 'add', declarationQuote: 'function add(a, b) {', docQuote: ' * Old doc.' };
+  assert.equal(hasDoc(fn, art).verdict, 'red');
+});
+
+test('F192: an unfindable or duplicated declaration line is unsure, and unsure is red', () => {
+  const c = F192['full-contract-pass'];
+  const fn = c.facts.functions[0];
+  assert.equal(hasDoc({ ...fn, declarationQuote: 'function nope() {' }, c.artifact).verdict, 'red');
+  const twice = `${c.artifact}\n/**\n * again\n */\nfunction formatBytes(bytes, decimals = 1) {\n}\n`;
+  assert.equal(hasDoc(fn, twice).verdict, 'red');
+});

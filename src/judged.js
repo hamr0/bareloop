@@ -291,26 +291,68 @@ function quoteReds(fn, fields, lines) {
 }
 
 /**
+ * The trimmed lines of the JSDoc block sitting directly above a declaration, read
+ * off the artifact itself. The declaration is its first non-empty quoted line,
+ * matched as a trimmed line; found zero or several times it is ambiguous, and
+ * unsure is null. "Directly above" is the nearest non-blank line: it must close
+ * a comment (`*/`), and the block's opener (the nearest `/*` at or above it) must
+ * be a double-star opener — a plain single-star block comment is not a JSDoc block.
+ * @param {string} text @param {string|null} declQuote
+ * @returns {Set<string>|null} the block's trimmed lines, opener..closer inclusive; null when unsure
+ */
+function docBlockAbove(text, declQuote) {
+  const decl = (declQuote ?? '').split('\n').map((l) => l.trim()).find(Boolean);
+  if (!decl) return null;
+  const all = text.split('\n').map((l) => l.trim());
+  const at = all.flatMap((l, i) => (l === decl ? [i] : []));
+  if (at.length !== 1) return null;
+  let end = at[0] - 1;
+  while (end >= 0 && all[end] === '') end--;
+  if (end < 0 || !all[end].endsWith('*/')) return null;
+  let start = end;
+  while (start >= 0 && !all[start].includes('/*')) {
+    if (start < end && all[start].includes('*/')) return null; // another comment closes first: no opener for this block
+    start--;
+  }
+  if (start < 0 || !all[start].includes('/**')) return null;
+  return new Set(all.slice(start, end + 1).filter(Boolean));
+}
+
+/**
  * THE OWNED RULE TABLE. Frozen: the rulebook is the arbiter's, and a caller that
  * could add a rule at runtime would be authoring the arbiter.
- * @type {Readonly<Record<string, {id: string, ask: string, check: (fn: any, lines: Set<string>|null) => RuleRed[]}>>}
+ * @type {Readonly<Record<string, {id: string, ask: string, check: (fn: any, lines: Set<string>|null, text?: string|null) => RuleRed[]}>>}
  */
 export const JUDGE_RULES = Object.freeze({
   'has-doc': Object.freeze({
     id: 'has-doc',
     ask: '  "docQuote": the first line of the JSDoc block (a /** ... */ comment) IMMEDIATELY above the '
       + 'declaration, VERBATIM, or null if there is no such block',
-    check(fn, lines) {
+    check(fn, lines, text) {
       const name = String(fn?.name ?? '(unnamed)');
       const decl = quoteOf(fn?.declarationQuote);
       const doc = quoteOf(fn?.docQuote);
       if (!doc) return [{ fn: name, why: `no JSDoc block above the declaration`, quote: decl }];
-      // quote-anchored, not derived: a "doc" line that is not a JSDoc opener is
-      // not a doc block, whatever the model called it.
-      if (!doc.includes('/**')) {
-        return [{ fn: name, why: 'the quoted line above the declaration is not a JSDoc opener (`/**`)', quote: doc }];
+      const q = quoteReds(fn, ['docQuote', 'declarationQuote'], lines);
+      if (q.length) return q;
+      // CODE DOES THE CHECK, THE JUDGE ONLY POINTS (hamr ruling A, F192). The
+      // judge was asked for the opener line and routinely quotes the first
+      // WORDED line instead; testing the quote for `/**` read that as no doc.
+      // Now the quote is only a pointer: the artifact itself says whether a
+      // JSDoc block sits directly above the declaration, and the quote passes
+      // iff every line of it is inside that block.
+      if (typeof text !== 'string') {
+        // no artifact in hand (no real caller reaches this): the old quote-anchored test, nothing looser
+        if (!doc.includes('/**')) {
+          return [{ fn: name, why: 'the quoted line above the declaration is not a JSDoc opener (`/**`)', quote: doc }];
+        }
+        return [];
       }
-      return quoteReds(fn, ['docQuote', 'declarationQuote'], lines);
+      const block = docBlockAbove(text, decl);
+      if (block === null || !doc.split('\n').map((l) => l.trim()).filter(Boolean).every((l) => block.has(l))) {
+        return [{ fn: name, why: 'the quoted doc line is not inside a JSDoc block (`/** ... */`) directly above the declaration', quote: doc }];
+      }
+      return [];
     },
   }),
 
@@ -994,7 +1036,7 @@ export function decide(facts, card, { artifactText = null } = {}) {
     const rule = JUDGE_RULES[it.rule];
     /** @type {RuleRed[]} */
     const reds = [];
-    for (const fn of fns) reds.push(...rule.check(fn, lines));
+    for (const fn of fns) reds.push(...rule.check(fn, lines, artifactText));
     return { rule: it.rule, text: it.text, ok: reds.length === 0, reds };
   });
 
