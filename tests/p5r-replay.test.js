@@ -66,3 +66,26 @@ test('P5-R replayRun: an old single-leg spine is unchanged — one leg, the term
   assert.equal(s.spentUsd, 5, 'the terminal\'s own chain total, as ever');
   assert.equal(s.wallMs, 10 * MIN);
 });
+
+// hamr 2026-10-08 (B): a leg that ended `escalated` on a money-halt / wall-halt reads CAPPED on every surface — fixed at
+// the one source (the step's stopReason), so the part cards follow the run card's word.
+test('B: a step cut off by a leg that ended `escalated` + money-halt / wall-halt carries stopReason money cap / time cap, and partStatusFor reads capped; a strikes-only escalation stays failed', async () => {
+  const { partStatusFor } = await import('../src/panel/status.js');
+  const legTwo = (end) => {
+    const ev = twoLeg({ leg2: 'died' });
+    ev.push({ type: 'step-start', step: 's2', ts: T(14, 6), seq: 12 });
+    ev.push(...end);
+    return ev;
+  };
+  const esc = (category) => ({ type: 'escalation', category, decisionReady: true, ts: T(14, 9), seq: 14 });
+  const jobEnd = { type: 'job-end', outcome: 'escalated', spentUsd: 5, engagementSpentUsd: 2, spendComplete: true, ts: T(14, 10), seq: 15 };
+  const reasonOf = (events) => {
+    const s = replayRun(events, [], { runId: 'r1' });
+    const step = s.steps.find((x) => x.id === 's2' || x.step === 's2' || x.label === 's2');
+    assert.ok(step, `step s2 in the report — ${JSON.stringify(s.steps.map((x) => Object.keys(x)))}`);
+    return { reason: step.stopReason, key: partStatusFor({ kind: 'step', outcome: null, stopReason: step.stopReason }).key };
+  };
+  assert.deepEqual(reasonOf(legTwo([{ type: 'money-halt', ts: T(14, 8), seq: 13 }, esc('cap-halt'), jobEnd])), { reason: 'money cap', key: 'capped' });
+  assert.deepEqual(reasonOf(legTwo([esc('wall-halt'), jobEnd])), { reason: 'time cap', key: 'capped' });
+  assert.equal(reasonOf(legTwo([esc('cap-halt'), jobEnd])).key, 'failed', 'a strike-ladder cap-halt (no money-halt record) is not the money cap');
+});

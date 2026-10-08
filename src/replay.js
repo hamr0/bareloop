@@ -741,7 +741,14 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       const o = myLeg.outcome;
       const isLastLeg = myLegIdx === legs.length - 1;
       if (cutByLeg || (isLastLeg && o !== null && o !== 'green' && o !== 'already-green')) {
-        stopReason = o === 'cap-halt' ? 'money cap' : o === 'wall-halt' ? 'time cap' : o === 'provider-red' ? 'provider failed'
+        // hamr 2026-10-08: a leg that ended `escalated` on a money-halt / wall-halt reads as the cap, exactly as the
+        // run's own status word does (src/panel/status.js statusFor) — derived HERE so every surface follows
+        const legEsc = o === 'escalated' ? myLeg.records.findLast((r) => r && r.type === 'escalation') : null;
+        const capKind = o === 'escalated'
+          ? (legEsc?.category === 'wall-halt' ? 'wall-halt'
+            : legEsc?.category === 'cap-halt' && myLeg.records.some((r) => r && r.type === 'money-halt') ? 'cap-halt' : null)
+          : null;
+        stopReason = o === 'cap-halt' || capKind === 'cap-halt' ? 'money cap' : o === 'wall-halt' || capKind === 'wall-halt' ? 'time cap' : o === 'provider-red' ? 'provider failed'
           : o === 'step-stalled' ? 'step stalled' : o === 'stopped' ? 'you stopped it' : o === null ? 'died' : o;
       }
     }
