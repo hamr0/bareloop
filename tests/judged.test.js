@@ -740,3 +740,29 @@ test('F192 item 1: a destructured slot absorbs ONE unmatched root tag, and only 
   // one root for the pattern AND a second unmatched tag: the second is extra
   assert.deepEqual(paramReds(synth(['x', pat], ['x', 'opts', 'ghost'], [false, true])), ['@param ghost names no parameter of f']);
 });
+
+// ── 3A: a case may not expect a has-doc red on a function that HAS a doc block ──
+
+const caseOf = (/** @type {string} */ id, /** @type {any} */ fx) => ({ id, artifact: fx.artifact, expect: fx.expect });
+const setWith = (/** @type {any[]} */ extra) => {
+  const filler = Array.from({ length: CALIBRATION_SIZE - extra.length }, (_, i) => ({
+    id: `filler-${i}`,
+    artifact: `/** doc ${i} */\nfunction g${i}(a) {\n  return a;\n}\n`,
+    expect: i === 0 ? { verdict: 'red', reds: [{ rule: 'params', fn: 'g0' }] } : { verdict: 'pass', reds: [] },
+  }));
+  return [...extra, ...filler];
+};
+
+test('F192 item 3A: the real name-echo cases are illegal, with the plain message', () => {
+  for (const [id, fn] of [['name-echo-denies-purpose', 'parseDate'], ['name-echo-and-no-returns', 'slugify']]) {
+    const v = validateCalibrationSet(setWith([caseOf(id, F192P[id])]), { card: CARD });
+    assert.equal(v.ok, false, id);
+    assert.ok(v.reds.some((r) => r.detail === `case ${id} expects has-doc red on ${fn}, but ${fn} has a JSDoc block directly above it `
+      + '— has-doc only checks that a block exists, so no judge answer can grade this case'), JSON.stringify(v.reds));
+  }
+});
+
+test('F192 item 3A: a has-doc red on a genuinely undocumented function stays legal', () => {
+  const v = validateCalibrationSet(setWith([caseOf('undocumented-function-red', F192P['undocumented-function-red'])]), { card: CARD });
+  assert.deepEqual(v.reds, []);
+});

@@ -319,6 +319,23 @@ function docBlockAbove(text, declQuote) {
 }
 
 /**
+ * Does the artifact mechanically show a JSDoc block directly above function `fn`'s
+ * declaration? The declaration line is found by name (function / const-assigned /
+ * method shapes); found zero or several times it is ambiguous, and unsure is false
+ * (a case is never refused on a guess). The block test is `docBlockAbove` — the
+ * one owner `has-doc` itself uses.
+ * @param {string} text @param {string} fn @returns {boolean}
+ */
+function hasDocBlockDirectlyAbove(text, fn) {
+  const n = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^(?:export\\s+)?(?:default\\s+)?(?:(?:async\\s+)?function\\s*\\*?\\s*${n}\\b`
+    + `|(?:const|let|var)\\s+${n}\\s*=|(?:static\\s+)?(?:async\\s+)?${n}\\s*\\()`);
+  const hits = text.split('\n').map((l) => l.trim()).filter((l) => re.test(l));
+  if (hits.length !== 1) return false;
+  return docBlockAbove(text, hits[0]) !== null;
+}
+
+/**
  * THE OWNED RULE TABLE. Frozen: the rulebook is the arbiter's, and a caller that
  * could add a rule at runtime would be authoring the arbiter.
  * @type {Readonly<Record<string, {id: string, ask: string, check: (fn: any, lines: Set<string>|null, text?: string|null) => RuleRed[]}>>}
@@ -603,6 +620,21 @@ export function validateCalibrationSet(cases, { card = null } = {}) {
       red('calibration-case', `${at}.artifact`, 'the same artifact is used twice — two identical cases are one case '
         + 'counted twice, and the floor is over distinct evidence');
     } else artifacts.add(String(c.artifact));
+
+    // A has-doc red the rulebook cannot raise (F192, ruling 3A): has-doc only
+    // checks that a JSDoc block sits directly above the declaration, so a case
+    // that expects it on a function that HAS one can never be graded by any
+    // judge answer. Read off the artifact by the same owner `has-doc` uses.
+    if (str(c.artifact) && obj(c.expect) && Array.isArray(c.expect.reds)) {
+      for (const r of c.expect.reds) {
+        if (!obj(r) || r.rule !== 'has-doc' || !str(r.fn)) continue;
+        if (hasDocBlockDirectlyAbove(String(c.artifact), String(r.fn))) {
+          red('calibration-case', `${at}.expect.reds`, `case ${str(c.id) ? c.id : `#${i}`} expects has-doc red on ${r.fn}, `
+            + `but ${r.fn} has a JSDoc block directly above it — has-doc only checks that a block exists, so no judge `
+            + 'answer can grade this case');
+        }
+      }
+    }
 
     const e = c.expect;
     if (!obj(e)) { red('calibration-case', `${at}.expect`, `{verdict: ${CASE_VERDICTS.join('|')}, reds: [...]}`); return; }

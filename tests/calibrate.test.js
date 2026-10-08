@@ -31,9 +31,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import {
   runCalibration, compareExpectation, factsResist, artifactHash,
@@ -591,7 +592,8 @@ test('a judged close with NO calibration set is refused — the gate is MANDATOR
 test('a judged close whose gate FAILS in this run is refused, naming the case', async (t) => {
   const p = makePatient(t);
   const cases = CASES();
-  cases[0].expect = { verdict: 'red', reds: [{ rule: 'has-doc', fn: 'add' }] };
+  // a legal-but-wrong expectation (a has-doc red on a documented fn is now refused at $0, F192 3A)
+  cases[0].expect = { verdict: 'red', reds: [{ rule: 'params', fn: 'add' }] };
   const r = await prepareSigning({
     spec: sgSpec({ cases }), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
   });
@@ -1014,4 +1016,22 @@ test('diag: grading, hashes and verdicts are the same with the field as the pipe
     assert.deepEqual(g.diag.reds.map((x) => ({ rule: x.rule, fn: x.fn })), got.reds);
   }
   assert.deepEqual(r.failures, ['pass-1']);
+});
+
+// ── F192 item 3A: an unwinnable case is refused at $0, before any locate call ──
+
+test('F192 3A: a case expecting has-doc red on a documented function is refused with ZERO judge calls', async () => {
+  const fx = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'f192-params-real.json'), 'utf8'));
+  const nameEcho = fx['name-echo-denies-purpose'];
+  const cases = CASES();
+  cases[5] = { id: 'name-echo-denies-purpose', artifact: nameEcho.artifact, expect: nameEcho.expect };
+  let calls = 0;
+  const loop = () => { calls += 1; throw new Error('a refused set must not reach the judge'); };
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases, card: CARD(), judgeLoop: loop });
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'invalid-set');
+  assert.equal(calls, 0);
+  assert.equal(r.costUsd, 0);
+  assert.match(r.reds.map((x) => x.detail).join('\n'),
+    /case name-echo-denies-purpose expects has-doc red on parseDate, but parseDate has a JSDoc block directly above it — has-doc only checks that a block exists, so no judge answer can grade this case/);
 });
