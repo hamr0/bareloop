@@ -64,7 +64,7 @@ import {
   runLocate, decide, expectedOf, validateCard, validateCalibrationSet,
 } from './judged.js';
 import { JUDGE_ATTEMPTS } from './kinds.js';
-import { tallyCalls } from './text.js';
+import { tallyCalls, scrubRaw } from './text.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
@@ -294,6 +294,69 @@ export function factsResist(facts, gold, artifactText) {
   return { ok: true, why: null };
 }
 
+// ── THE DIAGNOSTIC RECORD (F192) ────────────────────────────────────────────
+//
+// A refusal must be diagnosable from its OWN record. `expectedOf` drops `why` and
+// `quote` on purpose (a signer cannot predict the judge's wording, so grading must
+// not pin it), and the judge's raw locate facts used to be written nowhere — so a
+// `has-doc` red could not be told apart as "no docQuote", "not a /** opener" or
+// "a quoted line is not in the artifact". `diag` is a NEW field beside the graded
+// ones: nothing here is read by grading, the compare, the hashes or any verdict.
+// Every string passes through `scrubRaw` — the ONE secret inventory plus the one
+// announced bound — so a quote that carries a key is masked and a long one says
+// how much was withheld rather than silently clipping.
+
+/** the per-string cap on anything the diagnostic keeps (bytes, scrubbed) */
+export const DIAG_STRING_CAP = 400;
+/** the most elements of one array the diagnostic keeps before it says it stopped */
+const DIAG_ARRAY_CAP = 32;
+
+/** @param {unknown} v @returns {string} */
+const diagText = (v) => scrubRaw({ label: 'diag', attempt: 0, text: v, cap: DIAG_STRING_CAP }).text;
+
+/**
+ * A facts tree, deep-copied with every string scrubbed and bounded. Depth is
+ * bounded too: facts are a shallow list of functions, and anything deeper is not
+ * a shape this pipe reads.
+ * @param {any} v @param {number} [depth] @returns {any}
+ */
+function diagFacts(v, depth = 0) {
+  if (typeof v === 'string') return diagText(v);
+  if (v === null || typeof v !== 'object') return v;
+  if (depth >= 4) return diagText(JSON.stringify(v));
+  if (Array.isArray(v)) {
+    const kept = v.slice(0, DIAG_ARRAY_CAP).map((x) => diagFacts(x, depth + 1));
+    if (v.length > DIAG_ARRAY_CAP) kept.push(`[${v.length - DIAG_ARRAY_CAP} more element(s) withheld — the cap is ${DIAG_ARRAY_CAP} per array]`);
+    return kept;
+  }
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, diagFacts(x, depth + 1)]));
+}
+
+/**
+ * What one graded artifact's record KEEPS about how it was judged: every locate
+ * attempt's axis and cause, the judge's facts as returned, and the decision's
+ * full reds per rule.
+ * @param {{diagTries: any[], facts: any, decision: any}} r
+ */
+function diagOf({ diagTries, facts, decision }) {
+  /** @type {{rule: string, fn: string, why: string, quote: string|null}[]} */
+  const reds = [];
+  for (const item of decision?.items ?? []) {
+    for (const x of item?.reds ?? []) {
+      reds.push({
+        rule: String(item?.rule ?? ''), fn: String(x?.fn ?? ''), why: diagText(x?.why),
+        quote: typeof x?.quote === 'string' ? diagText(x.quote) : null,
+      });
+    }
+  }
+  return {
+    attempts: diagTries,
+    facts: facts === null || facts === undefined ? null : diagFacts(facts),
+    reds,
+    reason: typeof decision?.reason === 'string' ? diagText(decision.reason) : null,
+  };
+}
+
 // ── THE GATE ────────────────────────────────────────────────────────────────
 
 /**
@@ -320,6 +383,10 @@ async function pipeOnce({ artifactText, card, judgeLoop, judgeModel, attempts, m
   let last = null;
   /** @type {any[]} */
   const tries = [];
+  /** the diagnostic twin of `tries` (F192): the same attempts, with the cause text
+   * `tries` never carried. A separate array so `casualty.attempts` is unchanged.
+   * @type {any[]} */
+  const diagTries = [];
   // TIGHTEN-ONLY, FLOOR 1 — the same clamp shape every bound in this pipeline
   // carries. A caller may buy fewer retries than the ladder allows and never
   // more; ZERO is not a cheaper gate, it is a gate that grades nothing and has
@@ -327,7 +394,7 @@ async function pipeOnce({ artifactText, card, judgeLoop, judgeModel, attempts, m
   const bound = Math.max(1, Math.min(Math.trunc(Number(attempts)) || 0, JUDGE_ATTEMPTS));
   for (let attempt = 1; attempt <= bound; attempt += 1) {
     const halt = capStop();
-    if (halt) return { ok: false, budget: halt, tries, red: null, facts: null, decision: null };
+    if (halt) return { ok: false, budget: halt, tries, diagTries, red: null, facts: null, decision: null };
     last = await runLocate({
       artifactText,
       card,
@@ -348,11 +415,12 @@ async function pipeOnce({ artifactText, card, judgeLoop, judgeModel, attempts, m
       }),
     });
     tries.push({ attempt, ok: last.ok, axis: last.red?.axis ?? null, costUsd: last.costUsd });
+    diagTries.push({ attempt, ok: last.ok, axis: last.red?.axis ?? null, detail: last.red ? diagText(last.red.detail) : null });
     if (last.ok) break;
     if (last.red.axis === LOCATE_AXES.PRICING) break;
   }
-  if (!last.ok) return { ok: false, budget: null, tries, red: last.red, facts: null, decision: null };
-  return { ok: true, budget: null, tries, red: null, facts: last.facts, decision: decide(last.facts, card, { artifactText }) };
+  if (!last.ok) return { ok: false, budget: null, tries, diagTries, red: last.red, facts: null, decision: null };
+  return { ok: true, budget: null, tries, diagTries, red: null, facts: last.facts, decision: decide(last.facts, card, { artifactText }) };
 }
 
 /**
@@ -393,7 +461,7 @@ async function pipeOnce({ artifactText, card, judgeLoop, judgeModel, attempts, m
  *   onCost?: (c: any) => void, attempts?: number, battery?: any[], batteryCard?: any,
  *   capStop?: () => 'cap-halt'|'pricing-red'|null}} o
  * @returns {Promise<{ok: boolean, stop: string|null, casualty: any,
- *   graded: {id: string, ok: boolean, got: any, want: any, detail: string|null}[],
+ *   graded: {id: string, ok: boolean, got: any, want: any, detail: string|null, diag: any}[],
  *   injection: {styles: any[], allResisted: boolean, leaks: string[]},
  *   failures: string[], reds: Red[], judgeModel: string,
  *   cardHash: string|null, casesHash: string|null, setHash: string|null,
@@ -517,7 +585,7 @@ export async function runCalibration({
         ...stamped,
         stop: r.red.axis,
         graded,
-        casualty: { at: String(c.id), kind: 'case', axis: r.red.axis, detail: r.red.detail, attempts: r.tries },
+        casualty: { at: String(c.id), kind: 'case', axis: r.red.axis, detail: r.red.detail, attempts: r.tries, diag: diagOf(r) },
         reds: [{
           code: r.red.axis,
           path: `calibration.cases.${c.id}`,
@@ -535,6 +603,7 @@ export async function runCalibration({
       got,
       want: { verdict: c.expect.verdict, reds: (c.expect.reds ?? []).map((/** @type {any} */ x) => ({ rule: x.rule, fn: x.fn })) },
       attempts: r.tries,
+      diag: diagOf(r),
       detail: cmp.ok ? null : [
         cmp.verdictOk ? null : `verdict: signed "${c.expect.verdict}", the pipe rendered "${got.verdict}"`,
         cmp.missing.length ? `expected red(s) the pipe did not raise: ${cmp.missing.join('; ')}` : null,
@@ -562,7 +631,7 @@ export async function runCalibration({
         stop: r.red.axis,
         graded,
         injection: { styles, allResisted: false, leaks: [] },
-        casualty: { at: b.id, kind: 'injection', axis: r.red.axis, detail: r.red.detail, attempts: r.tries },
+        casualty: { at: b.id, kind: 'injection', axis: r.red.axis, detail: r.red.detail, attempts: r.tries, diag: diagOf(r) },
         reds: [{
           code: r.red.axis,
           path: `injection.${b.id}`,
@@ -581,6 +650,7 @@ export async function runCalibration({
       resisted: facts.ok && cmp.ok,
       factsOk: facts.ok,
       decisionOk: cmp.ok,
+      diag: diagOf(r),
       got,
       want: { verdict: b.expect.verdict, reds: b.expect.reds.map((/** @type {any} */ x) => ({ rule: x.rule, fn: x.fn })) },
       detail: facts.ok && cmp.ok ? null : (facts.why ?? `the decision moved: ${[

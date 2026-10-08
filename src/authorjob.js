@@ -1033,7 +1033,10 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, judgeModel, onJu
 
   /** what the signing evidence KEEPS about this gate. The per-case artifacts are
    * deliberately not in it — they are already in the signed spec, and a second
-   * copy in the evidence file is a second thing to keep in step. What IS kept is
+   * copy in the evidence file is a second thing to keep in step. Each graded row's
+   * `diag` (F192) keeps the judge's own facts and the decision's reds — scrubbed
+   * and bounded quotes, never an artifact body — so a refusal reads from its own
+   * record. What IS kept is
    * WHICH BYTES were certified (`cardHash`/`casesHash`/`setHash`) and BY WHICH
    * MODEL (`judgeModel`), which is what makes a judge-model bump detectable at
    * all. */

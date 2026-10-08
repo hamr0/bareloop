@@ -567,8 +567,12 @@ test('the signing record stores WHAT the gate certified — hashes and the judge
   assert.equal(c.setHash, artifactHash({ card: CARD(), cases: CASES(), judgeModel: JUDGE_MODEL }));
   assert.equal(c.graded.length, CALIBRATION_SIZE);
   assert.equal(c.injection.styles.length, 5);
-  // the ARTIFACTS are not copied into the evidence — they are already in the spec
-  assert.ok(!JSON.stringify(c).includes('export function add'));
+  // the ARTIFACTS are not copied into the evidence — they are already in the spec. F192:
+  // `diag` keeps the judge's QUOTED lines (that is its whole job), so the check is that
+  // no artifact BODY rides along, not that no line of one appears.
+  assert.ok(c.graded.every((g) => !('artifact' in g) && !('artifact' in g.diag)));
+  assert.ok(!JSON.stringify(c).includes(JSON.stringify(ARTIFACT_RED)), 'a whole artifact body is never copied');
+  assert.ok(!JSON.stringify(c).includes(JSON.stringify(ARTIFACT_PASS)), 'a whole artifact body is never copied');
 });
 
 test('a judged close with NO calibration set is refused — the gate is MANDATORY at signing', async (t) => {
@@ -909,4 +913,103 @@ test('runCalibration REFUSES without a judge identity — there is no library pi
       `${JSON.stringify(bad)} must be refused, not defaulted`,
     );
   }
+});
+
+// ── 9. THE DIAGNOSTIC RECORD (F192) ─────────────────────────────────────────
+//
+// A refusal must be diagnosable from its OWN record: the judge's facts as
+// returned, the decision's full reds per rule, and — when locate failed — every
+// attempt's axis and cause. `diag` is a NEW field; grading never reads it.
+
+/** an honest judge that answers `pass-1` with the facts `mutate` makes of the honest ones */
+const judgeWith = (/** @type {(f: any) => any} */ mutate, id = 'case 1') => fakeJudge((a) => {
+  const f = extract(a);
+  return a.includes(`// ${id}\n`) ? mutate(f) : f;
+});
+
+test('diag: a REFLOWED multi-line docQuote is diagnosable as reason (c), with the quote', async () => {
+  const j = judgeWith((f) => {
+    f.functions[0].docQuote = '/** add two numbers @param {number} a @param {number} b */';
+    return f;
+  });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const g = r.graded.find((x) => x.id === 'pass-1');
+  assert.equal(g.ok, false, 'the reflowed quote really does fail the case');
+  const red = g.diag.reds.find((x) => x.rule === 'has-doc');
+  assert.equal(red.fn, 'add');
+  assert.match(red.why, /`docQuote` is not in the artifact/);
+  assert.equal(red.quote, '/** add two numbers @param {number} a @param {number} b */');
+  assert.equal(g.diag.facts.functions[0].docQuote, red.quote, 'the raw facts ride beside the reds');
+  assert.deepEqual(g.diag.attempts, [{ attempt: 1, ok: true, axis: null, detail: null }]);
+  // an honest case carries a diag too, with no reds
+  assert.deepEqual(r.graded.find((x) => x.id === 'pass-2').diag.reds, []);
+  // …and the injection battery is covered the same way
+  assert.ok(r.injection.styles.every((s) => s.diag && s.diag.facts && Array.isArray(s.diag.reds)));
+});
+
+test('diag: a NULL docQuote is diagnosable as reason (a)', async () => {
+  const j = judgeWith((f) => { f.functions[0].docQuote = null; return f; });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const red = r.graded.find((x) => x.id === 'pass-1').diag.reds.find((x) => x.rule === 'has-doc');
+  assert.match(red.why, /no JSDoc block above the declaration/);
+  assert.equal(r.graded.find((x) => x.id === 'pass-1').diag.facts.functions[0].docQuote, null);
+});
+
+test('diag: a docQuote with no /** opener is diagnosable as reason (b)', async () => {
+  const j = judgeWith((f) => { f.functions[0].docQuote = '* @param {number} a @param {number} b */'; return f; });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const red = r.graded.find((x) => x.id === 'pass-1').diag.reds.find((x) => x.rule === 'has-doc');
+  assert.match(red.why, /not a JSDoc opener/);
+});
+
+test('diag: a locate call that fails on EVERY attempt carries each attempt\'s axis and cause', async () => {
+  const loop = () => ({ run: async () => { throw new Error('ECONNRESET at the judge'); } });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: loop });
+  assert.equal(r.stop, 'provider-red');
+  const d = r.casualty.diag;
+  assert.equal(d.attempts.length, r.casualty.attempts.length);
+  assert.ok(d.attempts.length >= 2);
+  for (const a of d.attempts) {
+    assert.equal(a.ok, false);
+    assert.equal(a.axis, 'provider-red');
+    assert.match(a.detail, /the locate call failed: ECONNRESET at the judge/);
+  }
+  assert.equal(d.facts, null);
+  assert.deepEqual(d.reds, []);
+  // the existing shape of the attempts is untouched
+  assert.deepEqual(Object.keys(r.casualty.attempts[0]).sort(), ['attempt', 'axis', 'costUsd', 'ok']);
+});
+
+test('diag: a secret-shaped string in a judge quote is MASKED, and a long quote is cut visibly', async () => {
+  const SECRET = 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4'.repeat(2);
+  const j = judgeWith((f) => {
+    f.functions[0].docQuote = `/** ${SECRET} ${'x'.repeat(2000)}`;
+    return f;
+  });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const g = r.graded.find((x) => x.id === 'pass-1');
+  const blob = JSON.stringify(g.diag);
+  assert.ok(!blob.includes(SECRET), 'the key must not reach the record');
+  assert.ok(!blob.includes('A1b2C3d4E5f6G7h8I9j0K1l2M3n4'), 'not even a fragment of it');
+  assert.match(g.diag.reds[0].quote, /raw trimmed:/, 'a cut is announced, never silent');
+  assert.ok(g.diag.reds[0].quote.length < 600);
+});
+
+test('diag: grading, hashes and verdicts are the same with the field as the pipe\'s own reading says', async () => {
+  const j = judgeWith((f) => { f.functions[0].docQuote = null; return f; });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  assert.equal(r.setHash, artifactHash({ card: CARD(), cases: CASES(), judgeModel: TEST_JUDGE }));
+  assert.equal(r.cardHash, artifactHash(CARD()));
+  assert.equal(r.casesHash, artifactHash(CASES()));
+  for (const c of CASES()) {
+    const g = r.graded.find((x) => x.id === c.id);
+    const facts = c.id === 'pass-1' ? (() => { const f = extract(c.artifact); f.functions[0].docQuote = null; return f; })() : extract(c.artifact);
+    const got = expectedOf(decide(facts, CARD(), { artifactText: c.artifact }));
+    assert.deepEqual(g.got, got);
+    assert.deepEqual(g.want.verdict, c.expect.verdict);
+    assert.equal(g.ok, compareExpectation(got, c.expect).ok);
+    // diag reds carry exactly the addresses `got` does — the new field adds prose, never addresses
+    assert.deepEqual(g.diag.reds.map((x) => ({ rule: x.rule, fn: x.fn })), got.reds);
+  }
+  assert.deepEqual(r.failures, ['pass-1']);
 });
