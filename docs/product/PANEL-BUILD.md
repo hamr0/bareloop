@@ -986,3 +986,15 @@ Call sites: src/panel/settingsroutes.js (new POST /api/settings/open-keys-folder
 
 ### 4. Link login — DROPPED (hamr 2026-10-06)
 - Dropped by hamr's word. The token-in-page exposure only matters to a program already running as the person on their own machine, and that program can already read `~/.config/bareloop/.env` or run `bareloop` itself (the local-trust model, not a sandbox). Websites cannot read the page cross-origin, and the panel answers only on 127.0.0.1 behind its Host guard. The only gain, a tab that survives a panel restart, does not pay for opening a special link. The token stays in the page as today.
+
+## Addendum 2026-10-08: the run page (Edit in chat, Resume on the Chat card, read-only Job tab)
+
+Rulings by hamr 2026-10-07/08, built on `feat/panel-run-page`.
+
+- **Edit in chat** on every non-green ending (`withEditAction`, `src/panel/server.js`): the page reads `GET /api/author/start-from`, opens the Chat card with every box open and the normal Start drafting; no reuse state. A code-owned origin line says where the card was copied from.
+- **Resume on the Chat card**: RESUME mode, signed job locked, only $ cap and Time cap open, `Sign & resume` posts the same `/api/runs/:id/resume`; the Job tab's resume mode is deleted and the tab is read-only everywhere.
+- **Signs and words**: stopped is `[■]` (red); the Ended block's NEXT line on a red run points at Edit in chat.
+- **Reuse is for earned greens only**: an `already-green` run takes Edit in chat; `listReuseJobs` offers real `green` only; `POST /api/author/start` answers 409 for a reuse of any other local run (start-from carries `outcome`); a delivery-refused ending offers Reuse only when the run earned its green.
+- **Capped on every surface**: `capKindOf` (`src/legs.js`) is the one cap rule for the run status, a leg's stop reason and the open step of a single-leg run. A stop in the close-fix loop reads "during the fix phase".
+- **Picker and list**: the Reuse picker reads Loading… until its list arrives and a Check type radio never blanks typed boxes; an expanded job shows its latest 7 other runs, older ones by search.
+- Not seen live yet: phone width, the fix-phase stop text, the already-green Edit in chat ending.
