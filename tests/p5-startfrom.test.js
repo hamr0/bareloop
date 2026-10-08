@@ -473,8 +473,10 @@ test('reuse-jobs: one entry per JOB with a green run — newest green\'s runid, 
   // ?model= passes through exactly as start-from's does
   const m = await (await get('/api/author/reuse-jobs?model=deepseek-flash')).json();
   assert.equal(m.jobs[0].line, 'Same job — no runs yet on this model');
-  const none = await (await get('/api/author/reuse-jobs?model=deepseek-flash')).json();
+  // no `model` param at all -> the estimate line is the every-model one, not the "no runs on this model" one
+  const none = await (await get('/api/author/reuse-jobs')).json();
   assert.equal(none.jobs.length, 2);
+  assert.notEqual(none.jobs[0].line, m.jobs[0].line);
 
   // no startFrom wired -> 404 (same pattern as start-from)
   const bare = createAuthorRoutes({ port: 1, token: 'tok' });

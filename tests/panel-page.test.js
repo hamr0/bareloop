@@ -1148,6 +1148,17 @@ test('build item (2026-09-27, panel P2 defect 2 + item 1): a live run\'s LAST pa
   assert.equal(partBoxState(fabricatedRedPart, true), 'stopped');
 });
 
+// A part its leg's halt cut off on a DIED run: replay stamps `status.key === 'died'` on it (outcome null), and its
+// box must read "died" — never fall through to the green "done" state (or "running", even as the last part).
+test('partBoxState: an open part whose status is died reads "died", whether or not it is the last live part', () => {
+  const { partBoxState } = loadStepMapGeometry();
+  const diedPart = {
+    kind: 'step', label: 'x', occurrence: 1, outcome: null, status: { key: 'died' }, attempts: [{ n: 1, outcome: null }],
+  };
+  assert.equal(partBoxState(diedPart, false), 'died');
+  assert.equal(partBoxState(diedPart, true), 'died');
+});
+
 // item 1 RED-PROOF, real fixture (mujjtrvd-midrun.jsonl via replayRun): the
 // SAME parts data read two ways — once as a genuinely live run (isLive
 // true, matching the run glyph "▶" and !died) and once as a died variant

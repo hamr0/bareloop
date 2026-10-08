@@ -641,10 +641,11 @@ export function createSession(card, deps = {}) {
       // a detached checkout of the person's current commit, inside their
       // repo), so a JS/TS repo's tree never carries `node_modules` until
       // someone installs there. Refusing outright here was ITSELF the F182
-      // class of bug one layer up. bareloop still never runs an install
-      // itself — this only re-checks the SAME worktree on demand, via the
-      // "Check again" button (`checkDeps()`, below), instead of ending the
-      // session. (P6 item 3: for an npm lock file bareloop runs `npm ci` itself first, above.)
+      // class of bug one layer up. For an npm lock file bareloop
+      // runs `npm ci --ignore-scripts` itself first (P6 item 3, below); any other
+      // gap (or a failed install) waits on the person: this re-checks the SAME
+      // worktree on demand, via the "Check again" button (`checkDeps()`, below),
+      // instead of ending the session.
       let depsGap = missingDependencies(prep.tree, prep.manifest.sourceSubdir ?? '');
       // P6 item 3: a committed npm lock file -> bareloop runs `npm ci --ignore-scripts` itself, $0, before
       // any model call. Any failure (or another lock file) falls through to the wait below, unchanged.
