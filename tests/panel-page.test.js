@@ -1506,6 +1506,8 @@ function makeWorkflowsPage() {
     // P5-R: both row builders paint the "resumed ×N" tag through this one helper
     extractFnSource(html, 'resumedTagHtml'),
     extractFnSource(html, 'buildRunRowEl'),
+    'var WF_SUB_CAP = 7;',
+    extractFnSource(html, 'capSubRuns'),
     extractFnSource(html, 'renderWorkflows'),
   ].join('\n');
 

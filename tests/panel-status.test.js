@@ -142,8 +142,8 @@ test('C7: the workflow card is 2 lines: `▶ [sign] job (run-N) **word** — rea
   const mkEl = () => { const e = { innerHTML: '', className: '', attrs: {}, children: [], setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, appendChild(c) { this.children.push(c); } }; els.push(e); return e; };
   // eslint-disable-next-line no-new-func
   const render = new Function('document', 'selectRun', 'scrollRunIntoViewMobile', 'currentRunsFilters', 'filtersActive', 'filterRuns', 'autoExpandJob', `
-    var currentRunid = null; var wfExpanded = {};
-    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'activeOlderRun', 'representedRun', 'renderWorkflows'].map(fnSrc).join('\n')}
+    var currentRunid = null; var wfExpanded = {}; var WF_SUB_CAP = 7;
+    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'activeOlderRun', 'representedRun', 'capSubRuns', 'renderWorkflows'].map(fnSrc).join('\n')}
     return renderWorkflows;`)({ createElement: mkEl, getElementById: mkEl }, () => {}, () => {}, () => ({}), () => false, (r) => r, () => false);
   render([g]);
   const html = els.find((e) => e.attrs['data-testid'] === 'wf-row-job1').innerHTML;
