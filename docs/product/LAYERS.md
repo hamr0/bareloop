@@ -1,115 +1,124 @@
 # bareloop — the layer map (plain language)
 
-> The PRD is the contract; this is the map. One page that states the overarching idea, the
-> flow a user experiences, the verbs, the verdicts, and the layers — in the product's own
-> words. **No package names in the body** (they blur primitive vs implementation); the one
-> place implementation names appear is the table at the very end.
-> Written 2026-07-15; pointed to by PRD addendum v1.13.
+> What this page is: one short map of the flow, the layers, and what happens when things go wrong. Rewritten 2026-10-08.
+> The PRD is the contract; this is the map. Status diaries live in the PRD and `docs/logs/FINDINGS.md`, not here.
 
 ---
 
-## The idea in one paragraph
+## The idea
 
-The user hands over a **job** and a **budget**: *"automate this — I don't know the best
-workflow."* The agent designs the workflow **while doing the work** — it builds the road
-underneath itself as it walks. An outer judge the agent can never touch decides what counts
-as done. A workflow that reaches green **survives to the next run**, with receipts for which
-part earned it; when the ground shifts (the repo changes, a verb stops being enough), the
-road **self-heals** — it requests more, or sheds what it no longer needs.
+You hand over a **job** and a **budget**: *"automate this — I don't know the best workflow."*
+The agent designs the workflow **while doing the work**, building the road as it walks it. An
+outer judge the agent can never touch decides what counts as done. A workflow that reaches
+green is **carried to the next run**, with receipts for which part earned it.
 
 ---
 
-## The flow (what the product feels like)
+## The flow
 
 ```
-USER: "I have a problem with X in this repo. Budget: $N. Go."
-        │
-        ▼
-AGENT drafts the road as it walks it:
-        │
-  ┌─ small loop: LOCATE ───── find the culprit ──────────────── settled? → next
-  ├─ small loop: UNDERSTAND ─ read what the code promises ───── settled? → next
-  ├─ small loop: WRITE ────── change it; judge reds; retry ──── settled? → next
-  └─ small loop: VERIFY ───── the OUTER judge: green / soft-green
-        │                      …then the REVIEW DOOR: the person accepts, reruns, or pauses
-        │                        (a disposition — it never changes the verdict)
-        │
-        ▼
-escalate ONLY what the agent truly cannot decide
-("I can't verify this", "budget half gone, here's where I am — top up or stop?")
-        │
-        ▼
-DELIVER (a proposed change for human merge — merge is human, forever).
-NEXT RUN: the road that greened is inherited, keeps improving, self-heals.
+YOU (panel, or the CLI)
+  │  describe the job in Chat; the drafter asks a few questions
+  ▼
+JOB CARD: goal · source · destination · check type · $ cap · time cap · model
+  │  check type = Deterministic (a command decides) / Rubric (a judge model reads,
+  │  code decides) / Reuse workflow (re-run a job that went green before)
+  ▼
+bareloop checks everything at $0, before any token:
+  source and destination are real · the check runs · rubric: the judge must pass its
+  10-case test (calibration) · secrets refused or masked · the monthly $ limit has room
+  │
+  ▼
+YOU SIGN  (the hash covers the job, the check and the caps; any change = sign again)
+  │
+  ▼
+THE RUN, on a copy: a worktree in your repo, or a hidden-git copy of a plain folder
+  scout → plan (steps) → each step is a wheel: try → check → gap → retry
+     two strikes on a step → replan · the agent never sees money or time
+  → THE CLOSE: the signed check, run by bareloop, never by the agent
+  │
+  ▼
+ENDED:  passed · failed · capped · stopped · died
+  passed  → your branch has the work (you merge, always) · Reuse workflow
+  failed  → Edit in chat (fix the job, sign again)
+  capped / stopped → Resume (only the $ and time caps can change)
+  │
+  ▼
+NEXT TIME: Reuse workflow runs the same plan again · Export runs it anywhere
 ```
 
 ---
 
-## The wheel — the one unit everything is made of
+## The architecture: a shell and four layers
 
-Every box above is the same machine, a **wheel** (internally: a *ralph*):
+### The shell (not a layer)
 
-```
-        ┌──────────── attempt (worker does work with its granted verbs)
-        │
-        ▼
-      judge  ──── green ──→ done, move on
-        │
-       red
-        │
-        ▼
-      gap (what failed, verbatim) ──→ fed to the next attempt ──→ retry
-        │
-      …until green, or the cap stops it (a stop at cap IS a result)
-```
+The fixed frame around every wheel: the **judge** (the close), the **gap** (the judge's failure
+text, fed to the next try), the **cap**, the **fence**, the **ledger**, and **escalation to the
+human**. The agent can never touch it. Every layer runs inside it.
 
-Four parts, and who owns them:
+### Layer 1 — one wheel (the Ralph loop)
 
-| part | what it is | owned by |
-|---|---|---|
-| **worker** | does the work using only the verbs it was granted | the agent (emergent) |
-| **judge** (the *close*) | a command whose exit code is the truth; the worker can never run it or author it | the operator / the spec (fixed) |
-| **gap** | the judge's failure output, fed back to the next attempt | the shell (fixed) |
-| **cap** | the budget; operator-set, the agent may only tighten it | the operator (fixed) |
+- **Built on:** the "Ralph Wiggum loop": attempt → judge → gap → retry until green or the cap.
+- **Does:** one try, one check, the failure fed back verbatim. The unit everything else is made of.
+- **Survives:** the gap text and the files on disk. Each attempt starts a fresh conversation.
+- **Status:** built, in use.
 
-That split — *the agent authors its workflow, never its judge* — is the product's one
-non-negotiable, at every scale.
+### Layer R — the root (the notebook)
+
+- **Built on:** the durable root of recursive-LM designs: one persistent state, throwaway sub-contexts.
+- **Does:** remembers inside one run what was tried and what it changed, so a try is not repeated.
+- **Survives:** the run only; never across runs.
+- **Status:** built, **off by default**. Repeating itself has not shown up on any job we measured, so it never won its own on/off test.
+
+### Layer 2 — the road (micro-wheels)
+
+- **Built on:** a depth-1 RLM (recursive language model shape). **Scout** = the root's bounded peek. **Plan** = the decomposition. Each **step** = a leaf call with fresh context, its own small wheel. **Replan** = bounded refinement.
+- **Does:** turns one big ask into small steps, each with only the verbs it needs and a mid-run check it can use.
+- **Survives:** within a run, each step's output feeds the next. Nothing across runs.
+- **The arbiter keeps the control flow:** leaves never spawn leaves, and step bounds and budgets are enforced by the validator, never by the agent.
+- **Status:** built and accepted.
+
+### Layer 3 — inheritance (reuse)
+
+- **Built on:** the green record. A road that went green is stored as it was executed, not as it was drafted.
+- **Does:** the next run starts from that road (Reuse workflow, or an exported bundle run elsewhere).
+- **Survives:** runs. Green only; a red run inherits nothing, and an already-green run mints nothing.
+- **Status:** built and proven safe. Whether reuse actually saves money or time is **not yet proven**.
+
+| layer | wheels | arranged by | survives attempts (within one run) | survives runs |
+|---|---|---|---|---|
+| **1** | one | human | the gap text + the files on disk | nothing |
+| **R** | one | human | + the root: what was tried, what it changed | nothing |
+| **2** | many small (the road) | the agent (validator-gated) | root + each step's output feeds the next | nothing |
+| **3** | many small | the agent | same as Layer 2 | the road that went green, with receipts |
+
+Layers are build stages, not modes. A user never picks one. The finished product composes all
+four inside the one shell.
 
 ---
 
-## The verbs (worker primitives)
+## When something goes wrong
 
-Granted **per job by the signed spec** — the agent never widens its own menu. If a locked
-verb blocks the work, the worker files a *request-red* and a human decides.
+| what happened | what bareloop does | what you see | who decides |
+|---|---|---|---|
+| a step's check is red | feeds the gap to the next try | running | nobody; the wheel turns |
+| two strikes on one step | replans once (a second only if the run is clearly converging) | running | the shell |
+| replan cannot help, or no more strikes | stops, keeps the work on disk | failed | you: Edit in chat, or Resume if offered |
+| the signed check is red at the end | a bounded fix loop against the real check | running, then passed or failed | the shell, then you |
+| the check itself cannot run (`close-red`) | stops; an instrument fault, not a verdict on the work | failed | you: fix the check, sign again |
+| the check ran and said no (`plan-red`) | a judged no from a working check | failed | you |
+| money cap | stops; spend so far stays visible | capped | you: Resume with a higher cap (re-sign) |
+| time cap | stops; keeps the grade already earned | capped | you: Resume with a higher cap (re-sign) |
+| you pressed Stop | stops at the next round boundary; nothing discarded | stopped | you: Resume |
+| provider failure, or the model stalls | retries once; a stall outside a step stops | failed | you: retry or Resume |
+| the worker crashes | before any write: stops. After writes: counts as a try, the loop goes on | running, or failed | the shell |
+| the process is gone | nothing to do | died | you: Resume if offered |
 
-> **Model tiers (v1.36, 2026-07-30; narrowed 2026-08-06):** the PLAN is authored at the
-> medium tier (sonnet) or above — a small-tier drafter died at the validation gate twice on
-> the same rejection (measured). Steps could once be tiered DOWN to the economy tier by the
-> planner (`model` field); since 2026-08-06 the agent-selectable menu is **`sonnet` only**
-> *(F87 — a reversible attribution probe, not a verdict on the small tier; see the Layer 2
-> inventory below)*. Running a whole job below the floor remains an explicit OPERATOR probe
-> (`--model haiku`), never a default and never the agent's to choose.
+When money and time both run out, the money cap wins. A resume appends to the same run; the
+gap between legs is not counted as time.
 
-| verb | what it does |
-|---|---|
-| `read` | open a file |
-| `grep` | search the tree for a string/pattern |
-| `write` | change a file (inside the fenced write-scope only) |
-| `recall` | ask the project's index "where does X live?" — returns **pointers**, not bodies |
-| `get` | trade one pointer for exactly one chunk of code (the function + its doc comment) |
-| `run` | **LOCKED, forever.** A worker that can run commands can run its own judge and grade its own exam |
-
-> **⚠ RESOLVED by move P (2026-07-28, F69): the menu is now the full four-component
-> catalog — 14 verbs (`read·grep·write·edit` / `recall·get·impact·related·recent` /
-> `compress·peek` / `stash·remember·forget`), all signed into both job specs. The table
-> above shows the original six for history.** Original note (F56, 2026-07-26): The agreed
-> vocabulary is four components — **write · select · compress · isolate** — each with its own
-> verb list, which the agent picks from as it sees fit. Those twelve verbs ship upstream today
-> and were bound by the PRD's primitive-menu section; they were lost as collateral when
-> config-v1 died (F22 measured them inert — on a loop that never greened and a store that was
-> empty, conditions that have since lifted). Restoring them is move **P** of the v1.27 course
-> correction. The hard line is unchanged either way: the agent may pick and tighten, never
-> widen; the menu is signed; `run` stays locked.
+**A red at the cap goes to the HUMAN, never "up a layer".**
 
 ---
 
@@ -117,842 +126,62 @@ verb blocks the work, the worker files a *request-red* and a human decides.
 
 | verdict | meaning |
 |---|---|
-| **green** | hard proof — the judge's exit code says pass; the only thing that mints learning |
-| **soft-green** | a rubric judged it acceptable — weaker credit, kept distinct. *Today: a user-pickable radio value, DECLARED-BUT-LOCKED (v1.57 §1) — picking it returns the counted request-red refusal. Since 2026-08-17 it is **the forward path for every job whose *done* is a judgement** (PRD v1.71 §5): a `judged-floor` stage on the LOCATE+DECIDE pattern — the judge only EXTRACTS facts with quotes from the real artifact, an arbiter-owned `decide()` renders pass/fail — behind a signed rubric card and a signed calibration set the whole pipe must grade correctly before the close is signable. Designed, **not built**, and no build is authorized* |
-| **hitl** | a human rendered the verdict. *~~declared-but-locked~~ → ~~ADMITTED as N4 slice 1~~ → **RETIRED as a verdict class, 2026-08-17** (PRD v1.71 §2; design record `docs/product/2026-08-17-softgreen-review-door-design.md`). The slice was BUILT and live-PROVEN first — the first hitl pause in programme history fired on `litectx-maintainer` (F105) — and hamr then retired the class for what it asks of a composer and of a person: the composer is forced to build a mechanical checker for jobs whose essence is subjective (F104), and a human as a mid-run checkpoint is chat. **The machinery is RE-HOMED, not deleted** — it becomes the review door below. On this branch the code still admits hitl; the class retires when the next rung lands* |
-| **red** | failed; the gap feeds the next attempt |
-| **already-green** | was green before any work happened — mints **nothing** (credit for work not done poisons inheritance) |
+| **green** | the signed check passed. The only thing that mints reuse. |
+| **soft-green** | a rubric job. The judge only extracts facts and quotes; code decides pass or fail. Unsure is red. Held out of reuse until you accept at the review door. |
+| **already-green** | passed before any work. Mints nothing and is not reusable. |
+| **red** | failed; the gap feeds the next try. |
 
-### The review door (designed 2026-08-17, not built)
-
-The person still decides — at the **END** of the run, not inside the close. Every run, green and
-soft-green alike, finishes at a **review door** carrying the evidence package and three answers:
-
-- **accept** — confirmation, and the gate that releases reuse / learning credit (on a
-  soft-green run, accept is what lifts the quarantine, and the signer's accepts double as the
-  judge's ongoing report card);
-- **rerun** — the person's text IS the gap, and the rerun is a **FRESH ENGAGEMENT** with its own
-  money and its own time, never the leftovers of the run it corrects;
-- **pause** — *not now.* Nothing runs and nothing is spent; the checkpoint keeps, the run
-  resumes from the start of its last step whenever the person comes back, and an unresumed
-  pause expires on its own under the 60-day TTL. (It replaced `cancel` on 2026-08-18 — hamr:
-  *"pause can resume — that would be more honest"* — and that expiry IS the old cancel case.)
-
-**The door NEVER changes the loop's own verdict** (hamr: *"it's important not to change the loop
-self verdict"*). The close mints the verdict; the door records what the person did about it. A
-green stays green in the ledger, forever.
+The review door at the end of a green run (accept, rerun, pause) never changes the verdict.
+`hitl` (a human as the verdict) was retired 2026-08-17.
 
 ---
 
-## The layers
-
-```
-Layer 3   INHERITANCE    the road survives runs, with receipts; self-heals    (machinery built; rung PARKED — F88)
-Layer 2   MICRO-WHEELS   the road itself: locate → understand → write → verify (built + ACCEPTED — F47, v0.5.0;
-                                                                                road finished by T·A·P·U, v1.35)
-Layer R   THE ROOT       memory that survives attempts inside one run          (built — armed-and-inert, F41)
-Layer 1   ONE WHEEL      a single loop over the whole task                     (built; fired — F38)
-```
-
-### Layer 1 — one wheel
-One loop over the entire job: attempt → judge → gap → retry, under one budget. This is the
-engine every higher layer is made of. **Status: built and FIRED.** The wheel turns
-mechanically (F32 rerun: gaps delivered across attempts), and CONVERSION — an attempt
-measurably better BECAUSE of the gap — was first observed on the TESTGEN battery (F38:
-ladder conversion 3/5, on gaps that name a wall). Delivery and conversion are separate
-axes (F32), and the split holds by gap GENRE: mechanical gaps convert, semantic ones
-stall (F38/F39) — which is what Layer 2's in-run checks exist to translate.
-
-### Layer R — the root (the ratchet)
-Today, each attempt starts as a **fresh conversation**; the only thing that crosses attempts
-is the last failure text. An attempt cannot tell the next one *"I already tried Y and it
-didn't move the reds — do not try Y again."* That is why a never-green run repeats itself
-(F21). The root fixes it: **one persistent state that survives attempts** — the plan, what
-was tried, what it changed, what greened — while worker conversations stay disposable. (This
-is the shape borrowed from recursive-LM designs: a durable root; cheap, throwaway
-sub-contexts.) Verdict-gated inheritance is untouched: the root is *within-run scratch*, a
-different scope from *across-run memory*, and only a green mints the latter.
-
-**Status: built 2026-07-19 (design record `docs/02-features/2026-07-19-layer-r-design.md`),
-armed-and-inert, default OFF.** The shell detects fixation from its own books (same-file
-rewrites with the kept-failure set unmoved) and injects escalating feedback — a capped
-summary, then the worker's own failed edits verbatim. Detector and note read separate
-axes: the detector keys off INTENT (what the worker reached for), the note off OUTCOME
-(what actually reached the file) — F43. But two frozen probes (F41, $10.12) found the
-disease in REMISSION: 0 fixated pairs in 14 across jobs #1/#2/#4, even against a
-three-plant tree the worker had to grind through in three judged attempts — F21's
-repetition was a broken-loop symptom, cured by the F20/F21/F30/BA-13 fixes.
-
-**Default OFF (decided 2026-07-21).** Because fixation is extinct on every current job,
-ON has never won its own A/B — so the ratchet ships armed and correct but NOT
-default-enabled (`layerRoot: false`; pass `true` for the ON/experimental arm). Its field
-read (repetition drop, ON vs OFF) DEFERS to the first run whose spine records
-`root-injected`.
-
-**Wired into the plan-v1 flow (2026-07-23, F50).** Until then the ratchet was wired only
-into the legacy `steps[]` path (`interpret.js`); the accepted plan flow silently ignored
-`layerRoot`, so it could never emit `root-injected`. Now `runPlan` engages one root per
-EXECUTE step (each micro-wheel is the Layer-1 atom; red-set = the exit evaluator's own gap,
-`gapKeep '\S'`, the whole normalized complaint — since a check's `^`-anchored gapKeep does
-not survive the exit wrapper `check "x" red: …`) AND one in the outer close-fix loop (red-set
-= the close's own `gapKeep`, the raw close output where the anchor works). The write-tee is
-wired so same-path target rewrites are visible to the detector (the cumulative audit dedups
-by path and cannot see them alone). Excluded on native/clipipe (no `onToolResult` seam; F48
-fallback surface, not the experiment surface).
-
-> **Layer R default — SETTLED OFF (2026-07-24).** The wiring EXISTS on the accepted surface
-> (F50), armed and correct; the default is `layerRoot: false` and is now **settled, not
-> provisional**. The old passive trigger ("the first plan-flow job that records
-> `root-injected` flips the default") was a **dead pointer**: Layer 2's narrow micro-wheel
-> steps were the exact predicted pressure point, and across ALL of Layer 2's accepted
-> acceptance runs (F47) natural fixation never appeared — fixation is extinct on every job
-> shape this repo owns (F41), and doctrine forbids default-enabling a lever that has never
-> won its own A/B. So the default does not wait on an event the evidence says won't occur
-> passively. **Reconsidering ON is now a DELIBERATE act, not a passive wait:** run a
-> manufactured-fixation probe (force a real worker to repeat, measure whether the note
-> breaks the loop) and read the pre-registered ON-vs-OFF result. Caveat F41 — strong models
-> resist fixating, so the probe may struggle to produce its own precondition honestly; that
-> difficulty is itself current evidence that OFF is correct. The pre-registered ON/OFF read
-> is not cancelled — it is simply no longer a passive dependency dangling into Layer 3.
-
-### Layer 2 — micro-wheels (the road)
-The workflow becomes a **sequence of small wheels**, each with one goal and only the verbs
-that goal needs (locate gets `grep`/`recall`; write gets `write`; nobody gets `run`). The
-agent drafts this road per job; a validator gates the draft before any tokens burn.
-
-**Status: built + ACCEPTED 2026-07-22 (F47), shipped v0.5.0.** The real plan flow
-(SCOUT → PLAN → per-step micro-loops judged by the exit evaluator → one replan → the
-operator's close) converts job #4 3/3 and clears the 45 bar 3/3 on the API surface; the
-in-run operator-signed check TRANSLATES the semantic ask into the mechanical genre (F46).
-Cross-surface (clipipe) reads OUT-as-peer (F48): only the API is a guaranteed surface. The
-follow-up F49 (bound the agent-authored exit regex) is RESOLVED — a static nested-quantifier
-reject at the validation gate, widened monotonically in v0.5.1.
-
-**The road is FINISHED (2026-07-30, PRD v1.35).** T·A·P·U landed on top of the accepted
-core: a wall clock and materials the planner is told as a balance (T), the variance replan
-axis (A, at 0.5 — inert across the archive, live since 2026-08-06), the 14-verb palette and
-the step vocabulary (P), and
-user-mode e2e as routine — both U jobs green end to end with bridges minted (F68, F69).
-The P read's load-bearing find became a validation law: a `check-passes` step must hold a
-write-class verb, so the mailbox-with-no-hands plan shape is now inexpressible. **Closed out
-2026-07-30** with a hardening pass (mailbox edges, the five-phase casualty grid, the
-cold-store guarantee) and a whole-branch review whose every validated finding is fixed —
-including F68's parked close runner, now async, so a running close no longer freezes the
-loop it reports to. The branch is release-ready.
-
-**Stage verdicts (decided 2026-07-15, hamr):** a micro-wheel validates against **its own
-eval** where one exists — a mechanical check the stage cannot game; where none exists, it
-**inherits judgment from its parent wheel's verdict chain** (green / soft-green / hitl).
-Either way, *learning credit mints only at an honest close* — a stage may declare itself
-settled to move on, but it cannot mint inheritance from its own say-so.
-
-### Layer 3 — inheritance (self-healing across runs)
-A road that greened is carried to the next run — **as executed, not as drafted** — and every
-inherited rule carries the green that minted it and the contrast that attributed it (the
-ledger). When the floor moves: a verb that keeps hitting locked doors becomes a standing
-request; a verb that never earns its keep is shed. Merge stays human; budgets never
-self-raise.
-
----
-
-## The close-authoring rung — the close becomes DECLARED, never written
-
-**Not a layer.** It changes who owns the **judge**, not who arranges the wheels. Until now the
-close — the definition of done — was hand-written JavaScript, one script per patient, written
-by the assistant. That is *"there shouldn't be user authoring anywhere"* broken from the one
-side nothing else broke it from: the check menu is derived, the plan is drafted, and the layer
-that decides green was the last place a human wrote code. This rung makes the close
-**declared**. Design record `docs/product/2026-08-07-close-authoring-design.md` (FROZEN
-2026-08-07).
-
-**Status: M1–M4 BUILT; the whole-branch review CLOSED (three shrinking rounds, 15 findings,
-all fixed — F91); the reworked interview and the fence/work-branch rules PAID-PROOFED live
-(2026-08-09, F92). "SIGNING PREPARED, NOT SIGNED" on the JS patient — twice, with a
-byte-identical hash across cold runs — and both of the python patient's refusals were honest
-ones. SHIPPED in v0.9.0 (2026-08-09).**
-
-**Status 2026-08-11 — the first authored-close GREEN (F99).** `jobs/pulselog-author-types`
-ran the whole chain: interview → scout → declaration → three gates → signature → run.
-`u-msoaovx9` cap-halted at $4.00 with the tree 2 errors and one cast from green; `u-msoc6t8v` resumed
-under a re-signed $5.50 and closed **green** in 2.5 minutes for **$0.06** — $4.06 for the
-chain, all seven stages `satisfied`, and every one of them independently re-verified at $0
-with instruments outside the close. Two things it proved that nothing before it could:
-
-- **A model-authored close caught the suppression genre.** The step passed its OWN in-run
-  check with 16 casts in the tree; only the close's `no-suppressions` stage saw them, listed
-  all 16 with file and line, and the worker undid them — typecheck came straight back to 16
-  errors, which is the arithmetic proof the undo was real. **A step's green is never a
-  verdict**, demonstrated for real money, against a close no operator wrote.
-- **The mechanical genre converts inside the authored executor too.** Every conversion was
-  driven by a gap that named an address: `67 → 8 → 1 → 0` on typecheck, `16 → 17 → 2 → 0` on
-  suppressions. The identical job the day before, with a count-only gap, stalled at 8 and
-  died (F98).
-
-**What it does NOT graduate:** one green, one patient, one genre, one wallet. It moves the
-machinery from *proven* to *has completed a job end to end* — not the bridge, not the genre,
-not the shape. And the structural gap it exposed stays open: a write step carries exactly ONE
-check (`MAX_EXITS_PER_STEP` minus the mandatory `tree-changed` pairing), so the in-run check
-is satisfiable by the very suppressions the close forbids. The close catches it every time;
-what it costs is a full extra fix cycle at the tail. ~~Raising that ceiling is arbiter
-territory — PARKED for hamr~~ — **RULED 2026-08-13 (PRD v1.63 §3): the ceiling STAYS at 2,
-and that is the design, not an interim value.** The extra cycle is the price of a step's
-green never being a verdict (F87), and widening the ceiling would move judgement into the
-emergent part. Raised only on a demonstrated starvation case, on the record, with the spine
-to show it — never to fix a wording problem.
-
-The flow, end to end:
-
-```
-the verdict CLASS's plain interview questions (no code, no paths typed by hand) — five for
-   green, six for hitl, and the COUNT is the library's to report (requiredAnswersFor), never
-   a number to memorise: every generalisation so far has DELETED a slot rather than reworded
-   one, and the set renumbers contiguously each time
- → a bounded READ-ONLY scout lists what is really in the repo (runner, flags, env, paths)
- → a model fills a TYPED FORM: a declaration over a fixed catalogue of stage KINDS whose
-   implementations bareloop owns — the schema is DERIVED from the catalogue and emitted as a
-   tool call, prose is never parsed, and a locked kind is INEXPRESSIBLE, not rejected late
- → validator + the CLASS's GUARD BATTERY (mandatory, un-removable — the stages no user would
-   think to ask for: "I'm also checking you didn't silence the type checker")
- → every declared stage runs ONCE against the untouched seed, proving each ruler measures
-   something real before anyone trusts it
- → the resolved spec + its hash land on the operator's desk for SIGNATURE.
-```
-
-Everything from the signature onward is untouched — **mom still signs, and mom never gives up
-the pen.** The agent that later drafts the plan never sees the close; it sees stage NAMES,
-through the derived check menu, one hop, one direction.
-
-> **⚠ REVIEW CLOSED — AND THE PAID PROOF NAMES WHAT IS LEFT (2026-08-09).** The six lenses'
-> **3 serious findings** all landed: model-declared `cmd`/`args` now sit on a command floor,
-> the python genre-env re-validation no longer rejects the arbiter's OWN injection, and a
-> worktree-cleanup throw can no longer discard an already-minted verdict — with the mediums
-> beside them (subprocess output scrubbed before it reaches the authoring model; a crashed
-> counter routed as an instrument stop instead of reading as zero, i.e. green), 15 findings
-> across three shrinking rounds (F91). Then ONE paid run proved the reworked surface live and
-> named the remaining miss (F92, $0.40): **the composition shape lottery**. Close COMPOSITION
-> rolls shapes exactly the way plan DRAFTING does — a declaration can be perfectly legal and
-> VACUOUS against a particular repo, and this one scoped an outside-the-target stage to a
-> population that repo does not have. The gates CAUGHT it, fail-safe and decision-ready, and
-> nothing green was minted; what is missing is the conversion, because the gate's own output
-> IS the mechanical gap and nothing feeds it back for a re-compose — the run simply ends.
-> **One bounded re-compose is PARKED as a named next build; hamr ruled it does not gate the
-> ship.**
-
-**verdictType is a USER CHOICE again (2026-08-08, hamr).** ~~D4 — derived from the answers,
-never picked~~ is **SUPERSEDED**. The green / soft-green / hitl radio of the 2026-07-21 Layer 2
-locked design returns as the user's own answer (~~v1 still admits only `green`~~ — since N4
-slice 1, 2026-08-15, it admits `green` and `hitl`; `soft-green` alone stays locked). The user is the
-one who knows whether their "done" is machine-checkable (green), needs judgment (soft-green),
-or needs a person (hitl) — and that choice DRIVES the close authoring rather than falling out
-of it.
-
-> **2026-08-17 — the radio loses its third value.** hitl is RETIRED as a verdict class (PRD
-> v1.71 §2, F104); the choice becomes **machine-checkable (green) or a judgement
-> (soft-green)**, and the person who needs to look at the result themselves does so at the
-> **review door** at the end of the run instead of inside the close. The softgreen question set
-> becomes **seven** — green's five byte for byte, plus Q6 (the rubric card) and Q7 (the
-> calibration examples). Designed, not built; the code on this branch still admits hitl.
-
-**The interview re-keys from GENRE to VERDICT CLASS (2026-08-08, hamr).** Three frozen question
-sets — green / soft-green / hitl — cover every job, instead of one set per genre. Genres are a
-fat long tail that cannot be enumerated (TYPES was the first specimen, not the pattern), so
-genre understanding moves into the LLM's COMPOSITION over the catalogue, where it already
-belongs. **That open design question is now ANSWERED and BUILT:** the mandatory guard battery
-re-homes to the verdict CLASS, which holds the structure, the un-removability and which slot
-is the model's, while the tool-specific contents — which suppression patterns, which
-extensions — resolve at COMPOSITION from the language the declaration names. The pick is also
-a PROMISE: a declaration may not demand a HIGHER class than the one the user chose, so nothing
-silently upgrades or downgrades a verdict; exceeding the pick is an honest red naming the kind
-that raised it.
-
-**A safety floor under declared commands (2026-08-08, hamr's ruling).** A declaration names
-commands, so a deny-floor of dangerous commands (the `rm -rf` class) is required: a straight
-block or a human gate, **never silently allowed**. Alongside it: a job edits on a **work
-branch by default, never main**. **Both are BUILT.** The floor is a MONOTONIC list of denied
-program names — shell interpreters (admit one and every other entry is decoration), the
-`rm -rf` and machine-level family, fetch-and-run, and the indirection verbs that would run a
-program the declaration never named — read off the BASENAME after the path is normalised, so
-`/usr/bin/rm` cannot dodge it, and widened only by ADDING names. The work branch is enforced
-STRUCTURALLY rather than by convention: the one seam that grants write verbs throws without a
-prepared branch, and `main`/`master` are inexpressible as the work branch. Neither is a
-sandbox and neither claims to be — the local-trust model stands, with its limits written out.
-
-**The timer rule (2026-08-08, hamr's ruling) — the money rule applied to time.** The operator's
-stage-timeout ceiling always wins; a model-declared `timeoutMs` may only TIGHTEN it, never
-widen it, exactly as the agent may only tighten `budgetUsd`. And a measuring command that
-CRASHES must fail **loudly, as could-not-run** — never as a zero, because a zero reads as green
-(F6's honest-null in the shape that matters most: an unrun ruler is not a passing one). **Both
-halves are BUILT** — the declared timeout clamps tighten-only against the operator's ceiling,
-and a crashed counter routes as an instrument stop rather than a number.
-
----
-
-## What lives where now (2026-08-06 flow update — second pass)
-
-The layers above are the map; this is the current inventory — every mechanic that has
-landed (or is in build) and which box it belongs to. Details and evidence live in the PRD
-addenda (v1.36–v1.50); this list is deliberately one line each.
-
-**The shell (judge + gap + cap — not a layer; governance lands here):**
-- **Money:** hard cap per run, metered per round. A money cap-halt is what W-2 made of a
-  time halt *(built, v1.46/v1.47)*: keep the last minted verdict, pause decision-ready with
-  an ACCURATE trend note — cut-while-converging / cut-while-flat / can't-tell, computed per
-  stage from the close's own graded numbers, never across STAGES, never model prose — and the
-  three levers: top up & resume (a re-sign) / revise / abandon. Both governance halts read
-  that ONE instrument *(v1.49; byte-motion survives only inside `can't-tell`, never promoted
-  to a direction)*, and a resumed leg's readout spans the CHAIN while the strike governor
-  stays leg-local — hamr's ruling, never mixed. **One population per stage** is the law for
-  close authors: every mixed `u-*` stage is now SPLIT *(v1.49 §4; six spec hashes re-signed,
-  two bridges expired by the load gate)* — the class survives only in `testgen-close`'s
-  `verdict` stage *(parked)* and in the frozen screen infra *(as-run)*.
-- **Time:** the wall cap (W-2: "when time is up, keep the grade we already have and stop";
-  the close is never bounded and never counts against the wall); the outside watchdog
-  whose kill requires deadline passed AND a flat spine (W-3 — never a silent kill); the
-  in-run stall fuse.
-- **The variance meter (A):** a step that has eaten ≥ 0.5 of the run's REMAINING money or
-  time — either axis — is pre-empted at the head of its next attempt so the planner
-  re-allocates. That share is the WHOLE trigger and stays it: the meter **reports**
-  progress and decides nothing on it *(F85)* — a progress term in the condition would let
-  a governance instrument over an operator-owned allowance judge capability. What it
-  reports is the same reading the two halts carry (`trend`/`motion`/`reading`/`series`),
-  read off the SAME `src/trend.js` instance they read, on the `variance` spine record and
-  in the escalation detail the replan brief quotes. **No longer inert:** it fires on real
-  runs, and its old fixed sentence — "with its exits unmoved", printed on every variance
-  stop whatever had happened — is DELETED; it was false the first time it was read.
-- **Resume:** step-level, "the stop is the checkpoint" — kill-resume exists, and money/wall
-  cap-halt resume on the user path is *built and LIVE-VALIDATED* (F83: a signed top-up
-  resumed bareagent-u's cap-halt at the close checkpoint and greened for $1.21/12.8min)
-  (`run-u --resume`: the patient is continued, spend and wall fold in as prior, the ceiling
-  never silently widens; the top-up itself is a spec re-sign). **`step-stalled` joined the
-  resumable set 2026-08-13** (hamr's *"go"*, PRD v1.64 §1) — a stall is a checkpoint, not a
-  verdict; the NAME stays because the F44 spend floor is keyed on it, and the floor rides
-  along as `≥$x`. A green and a red stay non-resumable.
-- **Signing:** the resolved spec hash pins the tool menu that was signed (MED-1); tries,
-  budgets, and reuse envelopes fold into the hash — any widening forces a re-sign.
-- **Close hygiene:** env-strip on the close's environment; the close runs async; the
-  arbiter's own books are never read by the worker and never red the close.
-- **Close AUTHORING** *(BUILT; review closed and paid-proofed live — 2026-08-09; see the rung
-  section above)*: the close stops being hand-written JavaScript and becomes a DECLARATION over
-  owned stage kinds — the verdict CLASS's interview questions (five for green, six for hitl;
-  `requiredAnswersFor` reports the set, nothing hardcodes a count) + a read-only scout (up
-  to 3 attempts, retried only when the emission itself was unreadable) + a typed form, through
-  that class's mandatory guard battery, every stage seed-verified, signed by the user as a
-  resolved hash. Governance is unchanged by construction (the signature and everything after it
-  is untouched). The two gaps it opened are CLOSED: declared commands sit on a monotonic deny
-  floor, and a declared `timeoutMs` may only TIGHTEN the operator's ceiling. **And the pipeline
-  itself now has a money ceiling** *(v0.10.0, PRD v1.62 §1)*: `--budget` / `ceilingUsd`, with
-  **NO DEFAULT** — omitting it runs unbounded and the runner says so out loud, a malformed
-  value is an ERROR at the library seam and never a silent unbounded *(v1.64 §3)*, one number
-  reaches both paid seams, and prior spend folds in so re-entering cannot widen it.
-  What is left is one
-  layer up — a legal declaration can be VACUOUS against a particular repo, the gates refuse it
-  honestly and decision-ready, and the bounded re-compose that would convert that refusal is
-  PARKED (F92).
-
-**Layer 1 — the wheel (the atom): unchanged.** attempt → judge → gap → retry; crash-by-cause
-routing (a crash after real writes feeds back, an instrument crash escalates); provider
-casualties are never evidence.
-
-**Layer R — the notebook: unchanged.** Continuity only, armed and OFF; under a staged close
-its red-set reads the stage that rendered the verdict and refuses to compare across a
-stage change.
-
-**Layer 2 — the road (where most of the recent work landed):**
-- **Draft-gate laws (losing shapes made inexpressible, never judged):** a `check-passes`
-  step must hold a write-class verb (the mailbox rule); a seed-red check may only gate the
-  FINAL write step (check-placement, Rule A-v2); a replan may not shed a predecessor's
-  check (check-shed, Rule B); nested-quantifier exit patterns are rejected statically.
-  Each law is also STATED in the drafting prompt from the same facts the validator judges.
-- **The exit-slot ceiling (a property of the gate, load-bearing and easy to miss):** a step
-  may carry at most **2** exits (`MAX_EXITS_PER_STEP`), ANDed, and a `check-passes` on a
-  write-granted step must be paired with a `tree-changed` exit — so **a step has exactly ONE
-  check slot and cannot carry two checks**. Stated plainly: a job whose close judges N stages
-  can have at most ONE of them enforced *during* a step; the other N−1 are enforced only at
-  the close, at the end of the run. That is a cost shape, not a hole — the close still refuses
-  a tree that fails any stage — but the run pays full price before it learns.
-- **Prompt laws:** a step carrying a check is free to edit every file that check can
-  report on (exit-freedom).
-- **The step ladder:** fixed attempt counts are gone — 2 strikes of no progress (per-stage
-  series, write-delta aware) force the replan, and the mechanism note goes to the
-  REPLANNER, the channel that converts.
-- **The replan ceiling:** one replan per run, on any of the three triggers (exhaustion,
-  variance, stall) — **plus exactly ONE more** when a SECOND `step-variance` stop finds the
-  run mechanically `converging` *(F85)*. The arbiter grants it off the same trend reader,
-  bounded by a latch and not by a counter compared against a limit, so the ceiling cannot
-  creep; `flat` and `unknown` stop as before, a third variance stop is the stop however
-  well it is going, and exhaustion or stall past the ceiling is unchanged. The agent never
-  asks for it, is never offered it, and has no channel to it.
-- **The replan brief (the only channel the redrafting planner adapts to):** the mechanism
-  that ended the step, the measured trend reading, what the stop left unspent — and the
-  **close's own last output, verbatim** *(F86)*, scrubbed through the one secret inventory
-  and bounded by the close path's own envelope, never a second truncation scheme. Handed
-  over as TEXT and never as a parsed file list: a summary line naming every file in scope
-  and a detail line naming the culprit are indistinguishable to a regex, and the parsed
-  `never wrote` advisory that used to sit beside it resolved to the already-clean file on
-  the run that killed it — deleted, sole caller and all. No gap → no block, byte-identical
-  to the brief before it.
-- **The close-fix loop:** its fixed iteration count retired for the SAME 2-strike
-  no-progress rule *(built, v1.46/v1.47)* — a run should die when it is out of ideas, not
-  out of money mid-convergence; the count survives only as the bound for a close that
-  reports no number at all; money and wall keep full authority.
-- **Materials:** money and time handed to the planner as balances; the scout is
-  load-bearing (measured, not assumed); the staged close derives the check menu; the
-  drafting floor is the medium tier.
-- **The per-step tier menu, narrowed to `sonnet` only** *(F87)* — the agent can no longer
-  tier a step down, and the `model` line is gone from the drafting prompt. A REVERSIBLE
-  ATTRIBUTION PROBE, not a verdict on the tier: the archive's tier column is confounded both
-  ways (the planner picks the cheap tier for steps it judges mechanical, and those steps sit
-  on runs already in trouble), so the tier comes off and the next failure attributes to agent
-  or harness instead. The field and its validator branch STAY — a one-entry menu still
-  validates `model: "sonnet"`, stored bridges still load, restoring the tier is one token.
-  **Only what the AGENT may express narrowed:** `--model haiku` is still the OPERATOR's probe
-  knob (PRD v1.36) and the runner's tier map is deliberately wider than the plan's menu.
-
-**Layer 3 — the recipe box (machinery built; the lift contrast RETIRED, the rung PARKED — F88 / PRD v1.52):**
-- A green run graduates its road (bridge) to CANDIDATE; demotion only on escalation —
-  a red never demotes, a casualty NEVER demotes; re-promotion is strict.
-- "Same job" means same SHAPE, never same instance (else the box is a lookup table).
-- One reuse green proves safe-and-legal, never beneficial — and the frozen ON-vs-cold lift
-  contrast was RETIRED unrun (F88): the shape-lottery gate rules (`28ee95f`) now hand every
-  cold run the winning plan shape for free (losing shape 10/14 → 0/10 across the archive),
-  so the contrast would have paid $15–25 to measure a difference a $0 validation rule
-  already erased. Selection/promotion/demotion are PARKED on `layer-3-reuse`; kept in the
-  critical path: storage + pin (the user re-runs a stored workflow by name).
-- The one reuse hypothesis still standing is TEMPLATE-ONLY reuse (strip the patient prose,
-  carry rounds/tools/scope/attempts/tier and the iterate sentence) — specified in v1.52 §4,
-  frozen, awaiting hamr. Next rung instead: close-authoring (the frozen 2026-08-07 design
-  record), then the verdict classes on that surface — ~~softgreen + hitl~~ **softgreen + the
-  review door** since 2026-08-17, hitl having been built, proven and then retired as a class.
-- A tightened reuse envelope changes the resolved hash → re-sign.
-
-**2026-08-15 — the industry converges on the ambition; the opening approach does not move.**
-An external fold of Anthropic's agentic-surfaces talk (context doc
-`docs/00-context/HARNESS-TALK-LEARNINGS.md`, PRD v1.69) records **"Dreaming"** — offline batch
-distillation of session logs into agent memory, reported as returning a "measurably smarter"
-agent. That is Layer 3's ambition said out loud by a team building it as product, which is
-worth knowing while the rung sits parked: the recipe box is not an idiosyncratic bet. It is
-also, on its own, worth **nothing as evidence** — no control is named, and CL-BENCH's read is
-still that memory systems LOSE to plain in-context learning once base capability is subtracted.
-So nothing here changes how this rung opens: the sub-dollar **pre-probe** still gates the
-machinery, the **three-arm control** (ON+lineage / ON-mechanical / OFF) still decides, and a
-learning claim still has to beat its own stateless control before it is anything but a
-capability claim in a memory costume.
-
----
-
-## The kid version (start here whenever the map stops making sense)
+## The kid version
 
 A kid builds a LEGO castle. Mom pays for the bricks and decides if it goes on the shelf.
-That part never changes — mom is the **shell** (judge + cap + merge).
+That never changes. Mom is the **shell**.
 
-- **Layer 1 — trying.** Kid builds, mom looks, says "the tower is crooked," kid tries
-  again. Try → check → hear what's wrong → try again. That's the wheel — the smallest
-  piece of the whole story.
-- **Layer R — the notebook.** Without it the kid has goldfish memory: each try, they only
-  remember mom's last "it's crooked," so they glue the same wrong piece three times. The
-  notebook says *"already tried the blue piece — didn't work."* It lasts one day, then
-  it's thrown away.
-- **Layer 2 — the plan.** Instead of one giant build, the kid writes steps first: find
-  pieces → sort → walls → tower. Each step is its own little try-check-retry loop. The
-  kid writes the plan; mom still does all the checking.
-- **Layer 3 — the recipe box.** A finished castle's plan goes in the box; tomorrow starts
-  from the recipe, not from zero. Failed plans never go in the box.
+- **Layer 1 — trying.** Kid builds, mom says "the tower is crooked," kid tries again.
+- **Layer R — the notebook.** *"Already tried the blue piece; didn't work."* It lasts one day.
+- **Layer 2 — the plan.** Find pieces, sort, walls, tower. Each step is its own try-check-retry. The kid writes the plan; mom does all the checking.
+- **Layer 3 — the recipe box.** A finished castle's plan goes in the box. Failed plans never do.
 
-**The ruler (what a *check* is, decided 2026-07-26 — PRD v1.28).** Mom inspects at the end,
-so the kid can build for hours before finding out a wall is crooked. A **check** is a ruler
-the kid may use on its own, mid-build, to test one wall before mom ever looks. It settles
-nothing — mom's inspection is still the only verdict — it just turns "make it sturdier" into
-"this wall is 2cm short", which is the kind of thing the kid can actually act on (F46: the
-failure that was fatal 3/3 converted 2/2 once the ruler was in the kid's hands; F47: the kid
-picked which ruler to use at which step, itself, 3/3).
+Two more characters. The **ruler** is a check the kid may use mid-build on one wall. It settles
+nothing; mom's inspection is still the only verdict. For rubric jobs, mom has a **reader** who
+only points at what the castle says and where, and mom's rulebook decides pass or fail.
 
-**Where the rulers come from: mom's own checklist, not carved by hand.** Mom's inspection is
-already a list of things she looks at. The kid borrows one item off THAT list — nobody carves
-a custom ruler per castle. Two consequences worth stating plainly:
-- **The kid knowing what's on mom's list is not cheating.** Passing every item IS a good
-  castle. What would be cheating is mom saying *"the third wall from the left is crooked"* —
-  that hands over the answer, and the rule against it (the close's output never names the
-  culprit) is unchanged.
-- **A hand-carved ruler is the more dangerous option.** A copy whittled beside the real
-  inspection can drift softer than mom's eye, so the kid passes the copy and fails her. Job
-  #5's three hand-written checks were re-implementations of three stages the close already
-  ran. Borrowing removes that whole class.
+The customer says what "done" means. A front-desk helper asks plain questions and fills mom's
+pre-printed checklist. Mom signs it. Nothing is built until she does.
 
-For mom to lend an item, she has to say her checklist out loud as numbered items instead of
-keeping it in her head — that is the one mechanical change (`close: [{name, cmd}, …]`). Items
-that cannot stand alone ("does the whole thing hold together") stay mom-only; a partial ruler
-menu is the expected case.
+---
 
-**And who says what "done" means at all?** The user — that is the ONE thing authored by hand.
-*"I don't know the best workflow"* is not *"I don't know what done looks like."* The user
-points at the far bank; the agent builds every pier.
+## Hard lines
 
-**The customer, and the front-desk helper (2026-08-08 — the close-authoring rung).** Still
-true that the user says what done means. No longer true that anyone writes it by hand. A new
-character walks in: the **customer** — a grown-up who wants a castle and cannot write mom's
-checklist, because writing checklists was never their job. So a **front-desk helper** asks them
-a short list of plain questions, goes and looks in the real toy box to see which bricks are
-actually in there, and then fills out **mom's pre-printed checklist form** — ticking boxes off
-a fixed menu, never writing instructions in its own handwriting. Some items go on the form
-whether the customer asked for them or not, because they are mom's house rules and a customer
-would not know to ask ("and no gluing the bricks together to make the tower stand"). Then every
-item on the checklist is tried once against the untouched castle, so nobody trusts a ruler
-before seeing it measure something. **Mom still signs the checklist, and nothing gets built
-until she does.** *(The customer also says up front which KIND of done they want — one mom can
-check with a ruler, one that needs someone's judgment, or one only a person can call. v1 builds
-the first; the other two get an honest "we can't do that yet" that is counted, never dropped.)*
-
-Nucleus to the outside — note the layers are numbered by build order, not by position:
-
-```
-EVERY DAY, FOREVER ──────────── keep recipes that worked        = Layer 3
- └─ TODAY (one run) ─────────── one notebook for the whole day  = Layer R
-     └─ the plan: step→step→step ─ order of work                = Layer 2
-         └─ each step: try→check→try again ─ THE ATOM           = Layer 1
-mom (checks everything, holds the money, owns the shelf)         = the shell
-```
-
-Each layer answers one kid-question: **How do I try?** (1) · **What do I remember
-today?** (R) · **What order do I work in?** (2) · **What do I keep for tomorrow?** (3).
-A notebook is useless if trying doesn't work; a plan is useless if you forget what you
-tried; a recipe box is useless if the plans in it never worked. That is the build order,
-and it is why everything currently waited on one question about the atom: **when mom says
-what's wrong, does the kid fix THAT THING — or just start over the same way?** (The
-battery. Delivery vs conversion, F32.)
-
-That question now has a measured answer (F38 + F39). When mom names a **thing** ("there
-are no tests", "that piece is banned"), the kid fixes THAT THING — every time it has
-tries left. When mom names a **quality** ("make it sturdier, these walls are weak"), the
-kid either freezes or runs at the right walls with braces that don't fit — because the
-kid is never allowed to push on a wall to test a brace before mom inspects (and mom's
-inspection ends the try). Even pinning the full note to the castle — score, target, every
-weak wall — didn't change that (the F39 probe). So: the notebook (R) keeps the kid from
-repeating itself; but turning "make it sturdier" into small walls the kid can push on
-itself before mom looks — that is Layer 2's job, and it is now **observed working**
-(F46 at POC tier, F47 at acceptance: the kid picks its own ruler, mid-build, and the
-failure that was fatal every time converts).
-
-## The shell vs the layers — who has what
-
-The **shell** is the fixed frame around every wheel: **judge + gap + cap** (plus the fence,
-the ledger, and escalation-to-human). It is not a layer. Every wheel at every layer runs
-inside it, and no layer ever changes it. **Layers are build stages of the product, not an
-escalation ladder inside a run and not a menu of modes** — a red at cap escalates to the
-HUMAN at every layer, never "up a layer," and users never pick a layer. The finished
-product is all four composed into one machine: a run inherits the last green road (3),
-walks it as small wheels (2), remembers what it tried as it goes (R), and every wheel is
-the same engine (1) — inside the same shell. The user hands a job and a budget; that is
-the whole interface. What each layer changes is only: who arranges the wheels, and what
-survives.
-
-| layer | wheels | arranged by | survives attempts (within one run) | survives runs |
-|---|---|---|---|---|
-| **1** | one | human | the gap text + the tree (files written stay on disk) | **nothing** |
-| **R** | one | human | + **the root**: the plan, what was tried, what it changed | nothing |
-| **2** | many small (the road) | **the agent** (validator-gated draft) | root + each step's artifact feeds the next | nothing yet |
-| **3** | many small | the agent | same as Layer 2 | **the road that greened**, with receipts |
-
-## Worked example — the same job at every layer
-
-Job: *"fix aurora — some tests fail."* Budget $N. What carries, layer by layer:
-
-**Layer 1 (today):**
-```
-attempt 1 → judge: 6 pass, 1 fail → red
-   what attempt 2 gets: the GAP (judge's failure text, verbatim)
-                        + the TREE (files attempt 1 wrote are still on disk)
-                        and NOTHING else — fresh conversation; it does not know
-                        what attempt 1 read, tried, or ruled out
-… retry until green or cap.
-red at cap → escalate to the human: top up or stop. Top-up resumes THIS run
-             (the stop is the checkpoint) — it does not change layers.
-green      → done; and the job is below the value line (one wheel sufficed).
-NEXT RUN: starts from zero either way.
-```
-
-**Layer R adds the root (fixes F21 — runs that repeat themselves):**
-```
-same one wheel, but a root survives attempts:
-attempt 2 also gets: "tried Y; the reds did not move — do not retry Y."
-NEXT RUN: still from zero. The root is within-run scratch, never across-run memory.
-```
-
-**Layer 2 adds the road (the agent designs, THEN walks — one replan allowed):**
-```
-scout (read-only, bounded) → agent DRAFTS the road: locate → understand → write → verify
-→ validator gates the draft BEFORE execution tokens burn
-→ walk it: one small wheel per step, each step's artifact feeds the next
-→ mid-run, at most ONE replan (unlimited replanning launders thrash as adaptation)
-red at cap → still escalates to the human.
-NEXT RUN: drafts a fresh road from zero.
-```
-
-**Layer 3 adds inheritance (the first thing that survives a run):**
-```
-the road that GREENED is carried to the next run — as executed, with receipts
-(which green minted each rule, which contrast attributed it).
-run 2 starts from run 1's road and improves it; a red run inherits nothing.
-```
-
-## Hard lines (unchanged, restated)
-
-- The agent authors its **workflow**, never its **judge** — at every layer.
-- **Merge is human, forever.** No self-adjusted budgets, ever.
-- **Secrets never enter the tree, the logs, or the memory** — an append-only log that
-  captures a key captures it forever.
+- The agent authors its **workflow**, never its **judge**, at every layer.
+- **Merge is human, forever.** No self-adjusted budgets, ever. A cap can only be tightened by the agent.
+- **Secrets never enter the tree, the logs, or the memory.**
 - **A stop at cap is a result**, never something to paper over.
+- `run` stays locked: a worker that can run commands can run its own check.
 
 ---
 
-## Where we are, and the build order
+## Pointers
 
-1. **Fire Layer 1 once, for real** — ✅ **FIRED 2026-07-16 (F38)**. Job #4 (TESTGEN:
-   write a killing test suite for an untested 2,455-line module; the judge is mutation
-   kill-rate) manufactured the guaranteed attempt-1 red (23/23 one-shots red, F37) after
-   jobs #2/#3 could not host the firing (discarded / saturated at attempt-1 greens, F34).
-   The battery read: **the wheel turns — ladder conversion 3/5 on mechanical gaps**
-   (counts and named walls convert every time attempts remain); **kill-rate conversion
-   0/5** — the semantic gap ("strengthen assertions on these functions") stalled. The
-   follow-up probe (F39) hand-delivered the notebook's content in the description and
-   measured the stall is NOT a memory problem: aim becomes perfect (14–18 of 18 named
-   functions targeted) but every acting row died at the clean wall, authoring tests it
-   cannot execute — and one row stalled anyway. No green at the 45% bar exists yet.
-2. **Build Layer R** — ✅ **BUILT 2026-07-19, armed-and-inert (F41), default OFF
-   (2026-07-21)**. The root's fixation detector + escalating rejected-edit feedback
-   landed (design record 2026-07-19); two frozen probes then found the disease it treats
-   in REMISSION — 0 fixated pairs in 14 across every job we own, including a three-plant
-   tree that forced three judged red rounds. F21's repetition was a broken-loop symptom,
-   already cured by the F20/F21/F30/BA-13 fixes. F43 split its two axes (detector reads
-   intent, note reads outcome). Because ON has never won its own A/B, it ships OFF by
-   default (`layerRoot: false`) — SETTLED OFF (2026-07-24), not provisional: revisiting ON
-   is a deliberate manufactured-fixation probe, never a passive wait on `root-injected`.
-   Role stays as F39 sharpened it: continuity, never the semantic-stall fix.
-3. **Build Layer 2** — the micro-wheel road (plan-v1), with the stage-verdict rule above.
-   Now carries a MEASURED requirement (F39): steps whose exits verify test correctness
-   in-run (e.g. "your new tests pass on untouched source" as a form-checkable exit),
-   converting the semantic ask into F38's convertible mechanical genre. **The premise is
-   POC-VALIDATED (F46, 2026-07-21): with an operator-signed in-run clean-run check as
-   the step exit, 3/3 rows cleared the wall F39's baseline died at 3/3 — two converted
-   the exact F39 death mid-run — and kill-rate rose 3/3 (no 45-green yet; that question
-   belongs to the build's battery). "Notes + self-check succeeds" is now observed at POC
-   tier; the build designs it properly (design record 2026-07-21).**
-   **Build core LANDED 2026-07-21 (branch `layer-2-plan-v1`, second interview locked
-   decisions 6–9):** the four-field job shape (goal/verdictType/close/checks[], exclusive
-   with `steps[]` under a staged sunset), the plan-v1 validator (`verb-escape` /
-   `exit-illegal` / `check-unknown`, F17 pairing law), the exit evaluator (outcome-reading
-   snapshots, fault propagation), ralph's judge seam, the plan executor (scout → validated
-   plan → micro-loops with check-gap feedback → one replan → close + one fix loop), and
-   the runJob dispatch — 503 tests, TDD, mutation-spot-checked. **The rung's acceptance
-   gate — the real-model battery (job #4, same close, same frozen 45 bar, read against
-   F39's baseline) — RAN and PASSED: 3/3 conversions, all 3 over the bar, every green
-   driven by the agent's own composed check exit (F47, accepted 2026-07-22, v0.5.0).**
-   **Also owns the Layer R default decision:** the first Layer 2 job that produces natural
-   fixation runs the ON-vs-OFF acceptance read, and that result flips `layerRoot` to `true`
-   (ON helps) or keeps it `false` (no lift) — see the Layer R ⚠ note above.
-   Also carries (F40 latent, PRD v1.18): **each step declares its own deliverable
-   target** — today one target path threads to every text-mode step (fine for
-   successive gates over one artifact, the only shape job-v1 can express; a clobber
-   the day two steps carry distinct deliverables).
-4. **COURSE CORRECTION — T · A · P · U** (PRD v1.27, 2026-07-26, hamr). Inserted ahead of
-   Layer 3 after job #5's realignment audit (F56) found the build had narrowed without a
-   decision: the agent's whole authorship surface is six fields, the four-component palette
-   was never re-expressed after config-v1 died, nothing in the system bounds TIME, and a
-   replan has fired ~~**zero times in the programme**~~ — **that fourth premise is FALSE and
-   is CORRECTED by F63: eight replans had already fired** (2026-07-22/23, four days before F56
-   was written), all on the exhaustion trigger. A's motivation is retired; the other three
-   divergences stand, and T is undamaged (it never depended on the replan premise).
-   - **T — time is a cap, like money. ✅ BUILT** (2026-07-26, `maxWallMs` + `src/clock.js` +
-     the materials block). A run-level wall-clock bound the agent is told at plan
-     time and plans against; operator-set, tighten-only, never self-raised. A run that cannot
-     fit is a stop (`wall-halt`; the stop is the checkpoint). The read it buys — given a time
-     budget, does the agent RUSH or build a bridge that carries it? — is **still unmade: no
-     real run has executed under a clock.** (Auto-sizing from complexity is later; v1 is
-     operator-set.) Time is handed over as a BALANCE, never a rate (PRD v1.29).
-   - **A — replan on TIME, not exhaustion only. ✅ BUILT; LIVE since 2026-08-06.** A step
-     burning a declared share of remaining money or time triggers the replan. **F63 replayed
-     it across 18 spines / 54 steps: it would have fired 0 times at hamr's 0.5** (near misses
-     0.35 · 0.35 · 0.40 · 0.45). Not lowered to fit those four points. **DECIDED 2026-07-26
-     (hamr, *"keep 0.5"*, PRD v1.31) with the inertness on the table** — a guard set above the
-     observed population.
-     **2026-08-06 — it fired, and the meter's NOTES were the defect (F85).** The threshold
-     was right: it stopped a step that was eating the run. What it then told the replanner
-     was a hardcoded *"with its exits unmoved"*, printed on every variance stop whatever had
-     happened — and on its first real firing it was flatly false (the close had gone
-     30 → 24 → 15 → 14 with the ladder recording zero strikes). Two instruments on one run
-     and only one of them right; the replanner, told it had achieved nothing, threw the
-     convergence away and re-targeted a file that was already clean. hamr's ruling, verbatim:
-     *"meter is right but missing a piece … it should give heads up on money/time + progress
-     for llm to judge."* Landed as three parts:
-     **(A) the meter REPORTS, it does not decide** — the firing condition is byte-identical
-     (`moneyShare`/`timeShare` ≥ 0.5, both axes, same threshold), because a progress term in
-     the TRIGGER would make a governance instrument over an operator's allowance judge
-     capability. The `variance` record and the escalation gain `trend`/`motion`/`reading`/
-     `series`, read off the SAME `src/trend.js` instance the money and wall halts read — no
-     second reader, since two readers of one question is the defect being fixed.
-     **(B) the false sentence is DELETED** and replaced by that measured reading; the
-     materials `progress` line keeps its structural half (steps done) and gains the close
-     trend. **(C) a SECOND variance stop earns ONE more replan** — see the ceiling entry in
-     the inventory above.
-     Prerequisite found en route: the trend reader was blind to step-level progress (fed only
-     the close precheck and the outer fix loop) and read the WRAPPED gap, whose
-     `check "x" red:` line carries no number — both folds corrected, plus a preflight seed so
-     the counter has a baseline.
-   - **P — restore the palette** (write · select · compress · isolate, per-step and
-     agent-selected, not shell hooks) and widen the step vocabulary past six fields
-     (model tier / effort, attempt cap, scope narrowing). The arbiter stays inexpressible.
-   - **U — one full-cycle e2e in USER MODE:** one sentence of problem, a budget, a time cap,
-     one close, no operator hand-solve or arms. This is v1.26's second-genre e2e with the
-     scaffolding stripped — the first run that tests the product rather than the atom.
-   - **Acceptance is redefined (hamr):** a workflow need not green everything — it must green
-     **ONE job end to end**, which graduates the bridge; the bridge is then reused on the next
-     job of the same shape and improves. This makes Layer 3's paired control fall out of normal
-     operation (reuse = the ON arm, from-scratch = the OFF arm) instead of needing a battery.
-   - Order: **T + A → the staged close (v1.28) → U → P**. P last so the widening has a
-     baseline to be attributed against. The **staged close** is the one build between A and U:
-     a close declared as an ordered list of NAMED STAGES, with the check menu DERIVED from
-     those stages, so U runs with **zero operator-authored checks** (hamr: *"there shouldn't be
-     user authoring anywhere, that defies the point of bareloop"*). Designed and signed in PRD
-     v1.28. **✅ BUILT 2026-07-26** (branch `staged-close-wip`): `close: [{name, cmd, expect,
-     judged?, gapKeep?, offer?, needs?}]` replaces the single close object for `verdictType:
-     green`; `checks[]` is retired outright (`checks-derived` red by name, not merely
-     discouraged); `checkMenu(close)` derives the offerable menu, with a hidden/non-borrowable
-     stage (`offer:false`) or a prerequisite chain (`needs`) both expressible. Two further
-     decisions landed the same build (hamr, 2026-07-26, PRD v1.33): Layer R's red-set under a
-     staged close reads the STAGE that actually rendered the verdict that attempt, and refuses
-     to compare across a stage change rather than risk a false fire; and the grading stage is
-     kept off the derived menu in all four shipped specs (`offer:false`, a per-spec convention
-     guarded by a test, not a schema rule). **Status 2026-07-30: T·A·P·U is COMPLETE (PRD v1.35).** T built and live in
-     every U run; A built-and-inert at 0.5 (the paying replans fire on exhaustion — *superseded
-     2026-08-06: A now fires, see the A bullet above*); the
-     staged close has run real-model many times over; U is routine (litectx-u and aurora-u
-     both green end-to-end, bridges minted, casualties routed per doctrine); P built and
-     read under signed hashes (F69: the widened palette went unselected on both TYPES jobs
-     while the step vocabulary — model tier, attempts, scope — was adopted immediately; the
-     load-bearing find was the mailbox-with-no-hands plan shape, now a validation law).
-     Both job specs are signed on the 14-verb menu.
-5. **Build Layer 3** — inheritance with ledger attribution (N3, kill-switch: rules must
-   transmit across non-identical runs). Carries three v1.21 requirements (external-review
-   fold, 2026-07-21): **(a) the drift detector** — arbiter-side trailing green-rate vs
-   mint-time baseline, named red `drift-red`, flag-not-rollback (rollback is merge-class,
-   human), must-fail fixtures before trust, threshold from measured base rate never
-   guessed; **(b) the N3 control gains a third arm** — inheritance-ON+agent-readable
-   lineage vs ON-mechanical vs OFF, gated by a sub-dollar pre-probe (identical plans
-   with/without lineage in hand kills the arm), default prediction NO lift (F39);
-   **(c) bound-pressure ledger fold** — "step X capped M of N runs" for the trust
-   surface; acceptance = it can surface the F37/16g rounds-vs-money bind from archived
-   spines.
-   ~~**This is the NEXT rung (2026-07-30).**~~ *(Superseded — the rung was PARKED 2026-08-05,
-   F88 / PRD v1.52: the shape-lottery gate rules erased the difference the lift contrast
-   would have paid to measure; see the Layer 3 section above. Close-authoring took its
-   place in the critical path.)* Layer 2's road is finished, hardened and
-   reviewed; the branch is release-ready. Layer 3 is the REUSE rung — the bridges the
-   U runs have already minted get reused instead of redrawn, which makes the paired
-   control fall out of normal operation (reuse = the ON arm, from-scratch = the OFF arm)
-   rather than needing a battery. **How it opens, in order:** interview hamr → freeze the
-   design → a sub-dollar PRE-PROBE before any inheritance machinery is built (requirement
-   (b)'s gate: identical plans with and without lineage in hand, and if lineage does not
-   move the outcome the arm is dead). That order is not ceremony — CL-BENCH's read is that
-   memory systems LOSE to plain in-context learning once base capability is subtracted, so
-   the cheap instrument runs before the expensive build.
-   **Status 2026-08-01: the opening interview is COMPLETE and the design is FROZEN** (hamr,
-   2026-07-31 → 2026-08-01, verbatim *"all agreed, lock in and we will validate with pocs
-   these assumptions and change as needed"*) — design record
-   `docs/product/2026-08-01-layer-3-reuse-design.md` (R1/R2/D1–D9, answering PRD v1.34's
-   inventory; PRD v1.42). **The pre-probe is pre-registered and gates the machinery:**
-   `experiments/REUSE-PREPROBE-PREREG.md` — draft-only, three arms, $1 hard cap, on
-   the cross-patient TYPES pair. Nothing is built before it reads.
-6. **Build CLOSE-AUTHORING — the close becomes declared** (design record 2026-08-07, FROZEN;
-   M1–M4 built 2026-08-08). **This is the rung in flight**, sequenced after Layer 3's park
-   (F88 / PRD v1.52) and BEFORE soft-green + hitl, which stand on it: a hitl close IS a
-   declaration, and there is no declaration surface until this exists. It also unblocks the
-   `litectx-maintainer` job, dark since `507adbb`. Gate 1 (the $0 expressiveness replay over
-   the six hand-written closes) read **PASS for the TYPES genre with four kind amendments,
-   FAIL as a general catalogue** — `harness-loop` (TESTGEN) recorded as known-missing rather
-   than discovered later; gate 2's POC closed 2026-08-08. **Status 2026-08-09: the review is
-   CLOSED (15 findings across three shrinking rounds, all fixed — F91) and the surface is
-   live-proven on BOTH genres:** the JS genre PREPARED twice with a byte-identical trial-gate
-   hash across cold runs; the python genre refused twice honestly — the second refusal was the
-   crash-stop preventing a live fake green (a symlink-blinded scope count reading 0 where 16
-   errors exist), fixed by physical-identity scope matching and converted to SIGNING PREPARED
-   for $0 on the same declaration. **The interview rework of the four 2026-08-08 rulings is
-   BUILT** (the `green | soft-green | hitl` radio with locked classes refusing as counted
-   demand; class-keyed question sets with the genre-confirm slot deleted and genre moved into
-   composition; the guard battery re-homed to the verdict class with fills at composition; the
-   class-vs-ceiling promise rule, inert in v1 by construction, mutation-proven).
-   **Status 2026-08-11: SHIPPED (v0.9.0, 2026-08-09) and the rung has its first authored-close
-   GREEN** — `pulselog-author-types`, $4.06 across a cap-halt and a re-signed resume, seven
-   stages satisfied, independently re-verified at $0 (F99; PRD v1.59). The two fixes that
-   bought it are doctrine now: a declared count stage carries the LINES it counted, and a
-   fence deny streak ends the ATTEMPT, never the run. **This is still the rung in flight** —
-   what remains is the composition shape lottery's bounded re-compose (parked, non-gating)
-   and the deny-streak reroute's still-owed LIVE firing — the one-check-per-write-step
-   ceiling is no longer among them: it was RULED to stay at 2 (PRD v1.63 §3), a decision
-   rather than a park. **Status 2026-08-13: shipped again as v0.10.0** — W-2 time governance
-   closed over every terminal, a money ceiling on the AUTHORING pipeline (`--budget`, no
-   default), the deny-streak bounded-attempt lane, the F87 signing pairing widened to both
-   spec forms, and two review rounds (10 findings, all fixed — F100). **soft-green + hitl
-   come next**, sequenced immediately after: a hitl close IS a declaration, and the
-   declaration surface now exists.
-   **Status 2026-08-15: N4 slice 1 — hitl — is BUILT on branch `n4-verdict-classes`, unmerged
-   and unreleased** (build plan `docs/02-features/2026-08-13-n4-verdict-classes-build.md`, with
-   hamr's rulings inline). hitl left the locked menu at all six coupled sites — `LOCKED_CLASSES`
-   is now `soft-green` alone — and `human-confirms` went live as the one kind that measures
-   NOTHING: its whole parameter surface is `ask`, it is `offer:false` BY LAW, at-most-once, must
-   be the LAST stage, and it SKIPS the seed-verdict read, with the skip recorded as a row
-   carrying `verdict: 'skipped'` rather than taken in silence. Three new terminals came with it:
-   `hitl-pause` — a decision-ready CHECKPOINT that carries the evidence package (every mechanical
-   stage's own result, the close's declared question, the files this run changed), sits on
-   `CHECKPOINT_OUTCOMES` and is age-gated at 60 days by the library's own `PAUSE_TTL_MS` —
-   plus `hitl-decision-red` (and, until the doors were re-cut on 2026-08-18, `hitl-cancel` —
-   deleted with the cancel door it belonged to; a pause the person never returns to is what it
-   used to be). The signer answers on the SAME command line and
-   under the SAME signature (`scripts/run-u.mjs --decide accept|rerun|pause`, `--text` on the
-   rerun door, all gated on `--approve <specHash>`), and the hitl guard battery INHERITS green's
-   mechanical guards verbatim (hamr's OPEN-1 ruling, 2026-08-13). **What has NOT happened, said
-   plainly rather than rounded up:** the live paid hitl loop has never fired — it waits on hamr's
-   blessing of the interview wording and on him driving it personally; `jobs/litectx-maintainer.json`,
-   the proving job, DOES NOT EXIST — `scripts/run-u.mjs` carries its row and REFUSES BY NAME until
-   the spec is authored and signed, because a row is the runner's half of a job and never the
-   signer's; and slice 2 (soft-green — `judged-floor` live, wired to a metered judge behind the
-   ruling-7 calibration floor) is NOT started, so soft-green stays declared-but-locked.
-   **Status 2026-08-17: the two "has NOT happened" items above are SPENT** — the spec was
-   authored and signed, and the live paid hitl loop fired (five runs, F102–F105) — **and the
-   class was then RETIRED**. Everything from *"soft-green + hitl come next"* upward is
-   superseded on the CLASS by item 7; the close-authoring surface itself is unchanged.
-7. **Build SOFTGREEN + THE REVIEW DOOR — the next rung** (design record
-   `docs/product/2026-08-17-softgreen-review-door-design.md`, PRD v1.71; **no build is
-   authorized — it waits on hamr's explicit go**). What happened first, said plainly: the hitl
-   slice FIRED live on `litectx-maintainer` and **worked** — the worker took litectx `src/` from
-   64 strict errors to 0, the authored `no-suppressions` stage caught the cheat genre twice and
-   the worker undid both honestly, all seven mechanical stages went satisfied, and the run
-   PAUSED decision-ready with its evidence package, three doors, stopped clock and 60-day
-   checkpoint (**F105** — the first hitl pause in programme history, $2.95). Two defects sat
-   under it: **F102**, a pending rerun decision does not survive a wall-halt → resume (the resume
-   re-asked the original question byte for byte, and the human paid the same decision twice), and
-   **F103**, the wall folds across legs so a decide-time rerun inherited 87 seconds. Rerun
-   DELIVERY is proven (nine worker rounds ran on the human's words); rerun CONVERSION is
-   **unproven-live** — zero writes landed before the wall — and is blocked on those two, not
-   refuted. **Then hamr retired hitl as a verdict class** (**F104**: a documentation job's close
-   could only be composed by measuring a typecheck PROXY, because no kind can count docs — the
-   harness revealing that its whole design is built around a verifiable gradient). The rung that
-   replaces it is ONE rung, not two: the **review door** at the end of every run (where
-   softgreen's learning credit is released) plus the **`judged-floor`** kind on the LOCATE+DECIDE
-   pattern, with the F102/F103 primitives — a checkpoint carrying the pending decision and
-   re-entering the FIX LOOP with it, and a rerun that authors its own money and time with
-   separate cumulative / this-engagement counters — shipping INSIDE it rather than behind it.
-   **Resume-genre jobs now wait on this floor, not on doc-genre mechanical kinds.**
-
----
-
-## Appendix — the ONE place implementation names appear
-
-| product word | implemented by |
+| for | read |
 |---|---|
-| the worker loop (wheel) | `bare-agent` |
-| the fence / gate / redaction | `bareguard` |
-| `read` / `grep` / `write` | `bare-agent` shell tools |
-| `recall` / `get` (the index) | `litectx` |
-| the judge (close) | an awaited `spawn` of the spec's argv — plain child process, exit code = truth (async since 2026-07-30, F68: a running close no longer freezes the host loop; every close semantic unchanged). **A DECLARED close (close-authoring, in build) spawns the same way but through bareloop's own kind executor instead of a per-patient script — same exit-code truth, and a SECOND gap renderer whose trim marker every reader must know about (F90)** |
+| the contract | `docs/product/PRD.md` |
+| how to use it | `bareloop.context.md` |
+| what we learned | `docs/logs/FINDINGS.md` |
+| why it is shaped this way | `docs/product/2026-07-10-agentic-automation-successor-design.md` |
+| the panel | `docs/product/PANEL-BUILD.md` |
 
-Everywhere else in this repo's docs, the product word is used. If a doc says `recall`, it
-means the verb; if it means the package, it says the package name.
+The one place implementation names appear:
+
+| layer or part | where it lives |
+|---|---|
+| the wheel (Layer 1) | `src/ralph.js`, `src/ladder.js` (strikes) |
+| the road (Layer 2) | `src/plan.js` (the plan's shape), `src/planrun.js` (scout, steps, replan, close) |
+| the root (Layer R) | `src/root.js` |
+| reuse (Layer 3) | `src/bridges.js`, `src/reuse.js`; export in `src/bundle.js` |
+| the worker loop, the gate (fence, budget) | `bare-agent`, `bareguard` |
+| `recall` / `get` | `litectx` |
