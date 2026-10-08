@@ -1506,6 +1506,17 @@
   // is a normal, expected action.
   var wfExpanded = {};
 
+  // hamr 2026-10-08 (display only, nothing deleted): with NO search/filter active an expanded job shows at most its
+  // latest WF_SUB_CAP other runs (g.runs is latest-first). A selected older run beyond the cap (picked from History) is
+  // appended after them rather than hidden. With search/filters active every matching sub-card shows.
+  var WF_SUB_CAP = 7;
+  function capSubRuns(childRuns, active, selectedRunid){
+    if(active || childRuns.length <= WF_SUB_CAP) return {shown: childRuns, more: false};
+    var shown = childRuns.slice(0, WF_SUB_CAP);
+    var sel = selectedRunid ? childRuns.slice(WF_SUB_CAP).filter(function(r){ return r.runid === selectedRunid; }) : [];
+    return {shown: shown.concat(sel), more: true};
+  }
+
   function renderWorkflows(jobs){
     var el = document.getElementById("wf-list");
     el.innerHTML = "";
@@ -1592,7 +1603,15 @@
       if(expanded){
         var runsWrap = document.createElement("div");
         runsWrap.className = "wf-runs";
-        childRuns.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r, true)); });
+        var capped = capSubRuns(childRuns, active, olderSelected);
+        capped.shown.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r, true)); });
+        if(capped.more){
+          var olderHint = document.createElement("div");
+          olderHint.className = "hint";
+          olderHint.setAttribute("data-testid", "wf-older-" + g.job);
+          olderHint.textContent = "older: use search.";
+          runsWrap.appendChild(olderHint);
+        }
         wrap.appendChild(runsWrap);
       }
       el.appendChild(wrap);
