@@ -142,6 +142,36 @@ export function answeredQuestionLines(confirmed) {
   return lines;
 }
 
+/** a quote for a human line: one line, cut at `max` with the cut VISIBLE
+ * @param {unknown} q @param {number} [max] @returns {string} */
+function shortQuote(q, max = 80) {
+  const one = String(q ?? '').replace(/\s+/g, ' ').trim();
+  return one.length > max ? `${one.slice(0, max)}…[truncated, ${one.length} chars]` : one;
+}
+
+/**
+ * ONE plain line saying WHY a graded case reds, read off its own `diag` (F192):
+ * the first red's rule, function, `why` and quoted text — and how many more the
+ * record holds. A case with no reds says why it has none (no facts: each
+ * attempt's axis and cause). Null when the row predates `diag`.
+ * @param {any} row a `graded` or `injection.styles` row
+ * @returns {string|null}
+ */
+function diagLine(row) {
+  const d = row?.diag;
+  if (!d) return null;
+  const first = d.reds?.[0];
+  if (first) {
+    const more = d.reds.length > 1 ? ` (+${d.reds.length - 1} more red(s) in signing.json)` : '';
+    return `          why: ${first.rule} · ${first.fn} — ${first.why}; quote: ${first.quote === null ? '(none)' : `"${shortQuote(first.quote)}"`}${more}`;
+  }
+  const failed = (d.attempts ?? []).filter((/** @type {any} */ a) => !a.ok);
+  if (failed.length) {
+    return `          why: no facts — ${failed.map((/** @type {any} */ a) => `attempt ${a.attempt} [${a.axis}] ${shortQuote(a.detail, 120)}`).join('; ')}`;
+  }
+  return d.reason ? `          why: ${shortQuote(d.reason, 120)}` : null;
+}
+
 /**
  * THE CALIBRATION GATE'S OWN READOUT — the one gate that spends money, and the
  * one whose rows a signer has to read case by case.
@@ -170,9 +200,19 @@ export function calibrationLines(calibration) {
   if (calibration.casualty) {
     lines.push(`      CASUALTY on ${calibration.casualty.kind} "${calibration.casualty.at}" [${calibration.casualty.axis}] `
       + '— a broken judge is no evidence about the set');
+    const cl = diagLine(calibration.casualty);
+    if (cl) lines.push(cl);
   }
-  for (const g of graded.filter((/** @type {any} */ x) => !x.ok)) lines.push(`      WRONG  ${g.id}: ${g.detail}`);
-  for (const s of styles.filter((/** @type {any} */ x) => !x.resisted)) lines.push(`      LEAK   ${s.style}: ${s.detail}`);
+  for (const g of graded.filter((/** @type {any} */ x) => !x.ok)) {
+    lines.push(`      WRONG  ${g.id}: ${g.detail}`);
+    const l = diagLine(g);
+    if (l) lines.push(l);
+  }
+  for (const s of styles.filter((/** @type {any} */ x) => !x.resisted)) {
+    lines.push(`      LEAK   ${s.style}: ${s.detail}`);
+    const l = diagLine(s);
+    if (l) lines.push(l);
+  }
   lines.push(`      certified  card ${String(calibration.cardHash ?? 'unknown').slice(0, 12)}  cases `
     + `${String(calibration.casesHash ?? 'unknown').slice(0, 12)}  set ${String(calibration.setHash ?? 'unknown').slice(0, 12)}`);
   return lines;

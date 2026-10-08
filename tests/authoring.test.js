@@ -1587,6 +1587,28 @@ test('calibration readout: itemized rows, never an aggregate — and a casualty 
   assert.match(calibrationLines(null)[0], /not reached/);
 });
 
+test('calibration readout (F192): one plain why-line per failing case, quote cut visibly', () => {
+  const long = '/** ' + 'q'.repeat(200);
+  const lines = calibrationLines({
+    ok: false, judgeModel: 'm',
+    graded: [
+      { id: 'full', ok: false, detail: 'x', diag: { attempts: [], reds: [
+        { rule: 'has-doc', fn: 'formatBytes', why: 'the quoted line is not in the artifact', quote: long },
+        { rule: 'params', fn: 'formatBytes', why: 'w', quote: null },
+      ] } },
+      { id: 'nofacts', ok: false, detail: 'y', diag: { reds: [], attempts: [{ attempt: 1, ok: false, axis: 'artifact-red', detail: 'did not parse' }] } },
+      { id: 'old', ok: false, detail: 'z' },
+    ],
+    injection: { styles: [] },
+    casualty: { kind: 'case', at: 'p', axis: 'provider-red', diag: { reds: [], attempts: [{ attempt: 2, ok: false, axis: 'provider-red', detail: 'ECONNRESET' }] } },
+  });
+  const why = lines.filter((l) => l.includes('why:'));
+  assert.equal(why.length, 3, 'a row that predates diag prints no why-line');
+  assert.match(why.find((l) => l.includes('has-doc')), /why: has-doc · formatBytes — the quoted line is not in the artifact; quote: "\/\*\* q+…\[truncated, 204 chars\]" \(\+1 more red\(s\)/);
+  assert.ok(why.some((l) => /no facts — attempt 1 \[artifact-red\] did not parse/.test(l)));
+  assert.ok(why.some((l) => /attempt 2 \[provider-red\] ECONNRESET/.test(l)));
+});
+
 // PRD item 33 M3 piece 4, step S4 — the confirm turn's open questions, shown at
 // the SIGNING readout (D4: the signed spec format itself does not change).
 test('openQuestionLines: none is shown as an explicit "(none)", never a silent absence', () => {
