@@ -89,3 +89,29 @@ test('B: a step cut off by a leg that ended `escalated` + money-halt / wall-halt
   assert.deepEqual(reasonOf(legTwo([esc('wall-halt'), jobEnd])), { reason: 'time cap', key: 'capped' });
   assert.equal(reasonOf(legTwo([esc('cap-halt'), jobEnd])).key, 'failed', 'a strike-ladder cap-halt (no money-halt record) is not the money cap');
 });
+
+// hamr 2026-10-08: the same rule on a SINGLE-leg run — a cap cuts its open step too (no step-end), and the part card
+// must read capped like the run card, not passed.
+test('B2: on a single-leg run an open step cut by a money cap / wall cap carries stopReason money cap / time cap and reads capped; strikes-only stays failed-less (no cap reason); a closed step is untouched', async () => {
+  const { partStatusFor, statusFor } = await import('../src/panel/status.js');
+  const base = () => [
+    { type: 'job-start', job: 'j', specHash: 'h1', budgetUsd: 8, shape: 'plan', goal: 'g', ts: T(10, 0), seq: 1 },
+    { type: 'plan-accepted', plan: { schema: 'plan-v1', steps: [{ id: 's1' }] }, ts: T(10, 1), seq: 2 },
+    { type: 'step-start', step: 's1', ts: T(10, 2), seq: 3 },
+  ];
+  const esc = (category) => ({ type: 'escalation', category, decisionReady: true, ts: T(10, 9), seq: 5 });
+  const jobEnd = (outcome) => ({ type: 'job-end', outcome, spentUsd: 5, spendComplete: true, ts: T(10, 10), seq: 6 });
+  const probe = (tail) => {
+    const s = replayRun([...base(), ...tail], [], { runId: 'r1' });
+    const step = s.steps.find((x) => x.id === 's1');
+    return { reason: step.stopReason, key: partStatusFor({ kind: 'step', outcome: null, stopReason: step.stopReason }).key, run: statusFor({ outcome: s.outcome, category: s.lastEscalation?.category, moneyHalt: tail.some((r) => r.type === 'money-halt') }).key };
+  };
+  assert.deepEqual(probe([{ type: 'money-halt', ts: T(10, 8), seq: 4 }, esc('cap-halt'), jobEnd('escalated')]), { reason: 'money cap', key: 'capped', run: 'capped' });
+  assert.deepEqual(probe([esc('wall-halt'), jobEnd('escalated')]), { reason: 'time cap', key: 'capped', run: 'capped' });
+  assert.equal(probe([jobEnd('cap-halt')]).reason, 'money cap');
+  assert.equal(probe([jobEnd('wall-halt')]).reason, 'time cap');
+  const strikes = probe([esc('cap-halt'), jobEnd('escalated')]);
+  assert.equal(strikes.reason, undefined, 'a strike-ladder cap-halt (no money-halt record) is not the money cap, and a single-leg step keeps its old shape');
+  const closed = replayRun([...base(), { type: 'step-end', step: 's1', outcome: 'green', ts: T(10, 5), seq: 4 }, jobEnd('cap-halt')], [], { runId: 'r1' });
+  assert.equal(closed.steps.find((x) => x.id === 's1').stopReason, undefined, 'a step that ended itself is not cut');
+});

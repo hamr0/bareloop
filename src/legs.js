@@ -169,3 +169,18 @@ export function watchdogNotePath(spineFile, leg) {
 export function stopFilePath(spineFile) {
   return `${spineFile}.stop`;
 }
+
+/**
+ * Did a run (or one leg) END on a cap? The ONE spelling of the rule every surface follows (hamr 2026-10-08): the
+ * outcome is `cap-halt` / `wall-halt`, or it is `escalated` and the last escalation's category names the cap —
+ * `wall-halt`, or `cap-halt` backed by a `money-halt` record (a strike-ladder `cap-halt` is not the money cap).
+ * @param {{outcome: string|null|undefined, category?: string|null, moneyHalt?: boolean}} o
+ * @returns {'money'|'time'|null}
+ */
+export function capKindOf(o) {
+  if (o.outcome === 'cap-halt') return 'money';
+  if (o.outcome === 'wall-halt') return 'time';
+  if (o.outcome !== 'escalated') return null;
+  if (o.category === 'wall-halt') return 'time';
+  return o.category === 'cap-halt' && o.moneyHalt ? 'money' : null;
+}

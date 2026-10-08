@@ -15,6 +15,8 @@
 //   and every other outcome (refusals, instrument stops)  -> failed
 // `waiting` is the step-level sign for a step that has not started; no run outcome maps to it.
 
+import { capKindOf } from '../legs.js';
+
 /** the sentence a passed run carries as its reason (the Ended block's `line`) */
 export const GOAL_MET_LINE = 'goal met';
 
@@ -44,9 +46,8 @@ export function statusFor(o) {
   if (o.died) key = 'died';
   else if (out === null || out === undefined) key = 'running';
   else if (out === 'green' || out === 'already-green' || out === 'satisfied') key = 'passed';
-  else if (out === 'cap-halt' || out === 'wall-halt') key = 'capped';
+  else if (capKindOf(o) !== null) key = 'capped';
   else if (out === 'stopped') key = 'stopped';
-  else if (out === 'escalated' && ((o.category === 'cap-halt' && o.moneyHalt) || o.category === 'wall-halt')) key = 'capped';
   return { key, ...STATUS[key] };
 }
 
