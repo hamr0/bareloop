@@ -2490,8 +2490,9 @@ export function listReuseJobs(opts = {}) {
     let records;
     try { records = parseJsonl(row.spine).records; } catch { continue; }
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
-    // the same endings the Run tab's own Reuse button is offered on (`endedBase`)
-    if (outcome !== 'green' && outcome !== 'already-green' && outcome !== 'satisfied') continue;
+    // only a REAL green (hamr 2026-10-08): `already-green` means the check passed before any work, so there is nothing to reuse
+    // (src/reuse.js 'green-predates-run'). Narrower than the Run tab's Reuse button on purpose.
+    if (outcome !== 'green') continue;
     const signed = signedSpecForRun(row, records);
     if (!signed) continue;
     const key = workflowKey(signed.spec);

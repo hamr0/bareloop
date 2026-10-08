@@ -489,3 +489,13 @@ test('reuse-jobs: no green run at all -> an empty list, not an error', async () 
   const home = tmp('p5-sf-h-');
   assert.deepEqual(listReuseJobs({ home }), []);
 });
+
+test('reuse-jobs: an already-green run is NOT a reuse source — a job whose only runs are already-green is absent; an older real green still lists the job (A1)', async () => {
+  const spec = await realSpec();
+  const home = homeWithTwoRows();
+  const onlyAlready = { ...spec, job: 'p5-already-only', goal: 'check predates the run' };
+  makeRun(home, { runid: 'g1', spec, outcome: 'green' });
+  makeRun(home, { runid: 'x1', spec: onlyAlready, outcome: 'already-green' });
+  makeRun(home, { runid: 'g2', spec, outcome: 'already-green' });
+  assert.deepEqual(listReuseJobs({ home }).map((j) => [j.job, j.runid]), [[spec.job, 'g1']]);
+});
