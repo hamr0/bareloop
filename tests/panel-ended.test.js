@@ -104,6 +104,13 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   assert.equal(live('already-green').reason, 'Goal met.');
   assert.deepEqual(live('already-green').actions, [{ id: 'edit', label: 'Edit in chat' }], 'already-green is not a reuse source');
   assert.equal(live('green', { o: { destinationRefused: 'folder is read only' } }).reason, 'Goal met, but the output could not be delivered.');
+  // item 3 (hamr 2026-10-08): the delivery-refused ending follows the same reuse rule — only a green that earned it offers Reuse workflow
+  assert.deepEqual(live('green', { o: { destinationRefused: 'folder is read only' } }).actions, [{ id: 'reuse', label: 'Reuse workflow' }]);
+  for (const out of ['already-green', 'satisfied']) {
+    const r = live(out, { o: { destinationRefused: 'folder is read only' } });
+    assert.equal(r.reason, 'Goal met, but the output could not be delivered.', out);
+    assert.deepEqual(r.actions, [{ id: 'edit', label: 'Edit in chat' }], `${out}: Edit in chat, no Reuse`);
+  }
 
   const cap = live('cap-halt', { o: { resume: ok } });
   assert.equal(cap.reason, 'Money cap reached ($8.00 of $8.00).');

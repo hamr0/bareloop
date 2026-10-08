@@ -507,11 +507,14 @@ function endedBase(summary, death, o) {
 
   if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
     if (o.destinationRefused) {
+      // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); the rest take Edit in chat
+      // (withEditAction adds it) and are told to change the job, not to reuse it
+      const earned = outcome === 'green';
       return {
         reason: 'Goal met, but the output could not be delivered.',
-        next: 'Fix the destination, then Reuse workflow.',
+        next: earned ? 'Fix the destination, then Reuse workflow.' : CHANGE,
         line: `${GOAL_MET_LINE} — not delivered`,
-        actions: REUSE,
+        actions: earned ? REUSE : [],
       };
     }
     // hamr 2026-10-08: already-green (the check passed before any work) is not a reusable job — only a run that
