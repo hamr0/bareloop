@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { validateJudgedArtifacts, validateCalibrationSet, CALIBRATION_SIZE } from '../src/judged.js';
 import { signJudgedArtifacts, PROPOSAL_TOOL_NAME } from '../src/cardauthor.js';
-import { plainReasons, plainKinds, proposalStopText, redsRecord, signingReasons, signingKinds, signingStopText, DECLARATION_CODES } from '../src/authorreadout.js';
+import { plainReasons, plainKinds, proposalStopText, redsRecord, signingReasons, signingKinds, signingStopText, DECLARATION_CODES, calibrationSummary } from '../src/authorreadout.js';
 import { createSession } from '../src/panel/authorsession.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -355,4 +355,83 @@ test('PANEL: a signing-gates refusal shows the plain message and writes the full
 test('CLI door: the run-author signing refusal prints the same function', () => {
   const src = readFileSync(join(HERE, '..', 'src', 'authorrun.js'), 'utf8');
   assert.match(src, /if \(!signing\.ok\) \{[\s\S]{0,200}signingStopText\(/);
+});
+
+// ── item 7: the calibrating step says its real result (hamr, 2026-10-09) ──
+
+const LIVE2 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0o4mex.json'), 'utf8'));
+/** the live record made into a PASS: every graded row right, every style resisted, ok true */
+const passingCalibration = () => ({
+  ...LIVE2.calibration, ok: true, stop: null,
+  graded: LIVE2.calibration.graded.map((/** @type {any} */ g) => ({ ...g, ok: true })),
+  injection: { ...LIVE2.calibration.injection, styles: LIVE2.calibration.injection.styles.map((/** @type {any} */ x) => ({ ...x, resisted: true })) },
+});
+
+test('calibrationSummary: the real smv0o4mex8ddj result reads 8 of 10 and 3 of 5 and fails; a passing record reads 10 of 10 and 5 of 5', () => {
+  const bad = calibrationSummary(LIVE2.calibration);
+  assert.ok(bad);
+  assert.equal(bad.ok, false);
+  assert.equal(bad.note, '8 of 10 practice cases graded right · 3 of 5 attack tests resisted');
+  const good = calibrationSummary(passingCalibration());
+  assert.ok(good);
+  assert.equal(good.ok, true);
+  assert.equal(good.note, '10 of 10 practice cases graded right · 5 of 5 attack tests resisted');
+  assert.equal(calibrationSummary(null), null);
+  // a gate that stopped part-way reads x of 10, not x of x
+  assert.match(calibrationSummary({ ok: false, graded: [{ ok: true }], injection: { styles: [] } })?.note ?? '', /^1 of 10 .* 0 of 5 /);
+});
+
+/** @param {any} calibration @param {import('node:test').TestContext} t */
+async function panelWithCalibration(calibration, t) {
+  const mk = () => { const d = mkdtempSync(join(tmpdir(), 'plaincal-')); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
+  const home = mk();
+  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  const repo = mk();
+  git(repo, ['init', '-q', '-b', 'main']);
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
+  mkdirSync(join(repo, 'src'));
+  writeFileSync(join(repo, 'src', 'mod.js'), '// nothing yet\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'seed']);
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-cal-job', goal: 'document things', source: repo,
+    destination: 'src/', success: 'docs', guardrails: 'none', judgeExamples: 'pass: documented. fail: undocumented.', capUsd: 2,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async (/** @type {any} */ _m, /** @type {any} */ tools) => {
+      await tools.find((/** @type {any} */ x) => x.name === PROPOSAL_TOOL_NAME).execute({ card: LIVE.card, cases: Object.entries(LIVE.cases).map(([id, c]) => ({ id, artifact: c.artifact, expect: c.expect })) });
+      return { text: '', error: null, msgs: [], metrics: { costUsd: 0.08, unpricedRounds: 0 } };
+    },
+    confirmGenerate: async (_c, tools) => {
+      const plan = { goal: 'document things', checks: ['docs'], questions: [], notChecked: [] };
+      if (tools && tools[0] && typeof tools[0].execute === 'function') await tools[0].execute(plan);
+      return { text: JSON.stringify(plan), error: null, cost: 0.0005 };
+    },
+    authorFn: async () => ({
+      ok: true, reds: [], stop: null, genreEnv: { applied: {} }, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [] },
+      declaration: { stages: LIVE.liveStages, notes: LIVE.liveNotes },
+    }),
+    prepareSigningFn: async () => ({ ok: false, specHash: null, seedRef: null, work: [], guards: [], stops: [], reds: LIVE.signingReds, refusal: LIVE.signingRefusal, gates: { calibration } }),
+  });
+  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.signPrepare().ok, true);
+  for (let i = 0; i < 500 && !['refused', 'abandoned'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.state.phase, 'refused', String(session.state.error));
+  return session;
+}
+
+test('PANEL: the calibrating line shows the gate\'s real result: x when it failed (8 of 10, 3 of 5), done when it passed', async (t) => {
+  const bad = await panelWithCalibration(LIVE2.calibration, t);
+  const cal = bad.state.steps.find((/** @type {any} */ x) => x.id === 'calibrate');
+  assert.ok(cal, 'the calibrating line exists');
+  assert.equal(cal.status, 'failed');
+  assert.equal(cal.detail, '8 of 10 practice cases graded right · 3 of 5 attack tests resisted');
+  const good = await panelWithCalibration(passingCalibration(), t);
+  const cal2 = good.state.steps.find((/** @type {any} */ x) => x.id === 'calibrate');
+  assert.ok(cal2);
+  assert.equal(cal2.status, 'done');
+  assert.equal(cal2.detail, '10 of 10 practice cases graded right · 5 of 5 attack tests resisted');
+  // the later gates line still fails on its own
+  assert.equal(good.state.steps.find((/** @type {any} */ x) => x.id === 'gates')?.status, 'failed');
 });

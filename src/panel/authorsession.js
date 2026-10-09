@@ -52,7 +52,7 @@ import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, redsRecord } from '../authorreadout.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, redsRecord, calibrationSummary } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 
 /**
@@ -755,6 +755,15 @@ export function createSession(card, deps = {}) {
       });
       const signingFile = join(outDir, 'signing.json');
       writeFileSync(signingFile, `${JSON.stringify(signing, null, 2)}\n`);
+      // The `calibrating` line is the rubric phase the person watched; its ✓ was set long before the gate graded
+      // anything. Once the gate has a result, the line says THAT, on its own line (hamr, 2026-10-09).
+      const calSum = calibrationSummary(signing.gates?.calibration);
+      const calStep = latestStep(state.steps, 'calibrate');
+      if (calSum && calStep) {
+        calStep.status = calSum.ok ? 'done' : 'failed';
+        calStep.detail = calSum.note;
+        logSteps();
+      }
 
       if (!signing.ok) {
         // plain words for the person (src/authorreadout.js, the one owner the CLI prints too); the full reds go into

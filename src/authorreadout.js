@@ -27,6 +27,7 @@ import { scrubRaw } from './text.js';
 import { redactSecrets } from './validate.js';
 import { judgedStages } from './kinds.js';
 import { CALIBRATION_SIZE } from './judged.js';
+import { INJECTION_LOCATE_BATTERY } from './calibrate.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -217,6 +218,28 @@ export function calibrationLines(calibration) {
   lines.push(`      certified  card ${String(calibration.cardHash ?? 'unknown').slice(0, 12)}  cases `
     + `${String(calibration.casesHash ?? 'unknown').slice(0, 12)}  set ${String(calibration.setHash ?? 'unknown').slice(0, 12)}`);
   return lines;
+}
+
+/**
+ * The calibration gate's real result as one line a person reads next to the step (hamr, 2026-10-09: the panel
+ * showed `calibrating ✓` over a gate that graded 8 of 10 and let 2 attack styles leak). PASS IS THE GATE'S OWN:
+ * `ok` is `calibration.ok` as `runCalibration` decided it (every case right as a SET of reds, every style
+ * resisted), never recomputed here, so there is no second spelling of the floor. The counts are read from the
+ * record (`graded[].ok` is `compareExpectation`, which compares reds as sets); the denominators are the live
+ * constants (CALIBRATION_SIZE, the battery length), so a gate that stopped part-way reads "x of 10", not "x of x".
+ * @param {any} calibration `signing.gates.calibration`
+ * @returns {{ok: boolean, note: string}|null} null when the gate was not reached
+ */
+export function calibrationSummary(calibration) {
+  if (!calibration || typeof calibration !== 'object') return null;
+  const graded = Array.isArray(calibration.graded) ? calibration.graded : [];
+  const styles = Array.isArray(calibration.injection?.styles) ? calibration.injection.styles : [];
+  const right = graded.filter((/** @type {any} */ g) => g?.ok === true).length;
+  const resisted = styles.filter((/** @type {any} */ x) => x?.resisted === true).length;
+  return {
+    ok: calibration.ok === true,
+    note: `${right} of ${CALIBRATION_SIZE} practice cases graded right · ${resisted} of ${INJECTION_LOCATE_BATTERY.length} attack tests resisted`,
+  };
 }
 
 /**
