@@ -1930,6 +1930,12 @@ async function runJudgedFloor(stage, ctx) {
       redItems: redItems.length,
       unsure,
       redFiles,
+      // WHAT failed, as a set of plain keys — the trend reader's only way to compare two numberless
+      // judged reds (run mv13ery3: four identical judged reds read comparable:false, so no strike).
+      redSet: [
+        ...redItems.flatMap((it) => (it.reds.length ? it.reds.map((r) => `${it.path}|${it.rule}|${r.fn}`) : [`${it.path}|${it.rule}`])),
+        ...unsure.map((u) => `${u.path}|unsure|${u.reason}`),
+      ],
     },
   });
 }

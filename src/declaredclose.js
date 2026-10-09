@@ -657,6 +657,8 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
           value: r.value ?? null,
           baseline: r.baseline ?? null,
           trendValue: trendValueOf(st, r),
+          // a judged stage's itemized red set — the numberless stage's only comparable (src/trend.js)
+          redSet: Array.isArray(r.detail?.redSet) ? r.detail.redSet : null,
           // the same header the command path writes, from the SAME function —
           // `src/trend.js` parses it to bucket the grade per stage
           ...(t.gap ? { gap: stageGap(/** @type {string} */ (st?.name), t.gap) } : {}),
@@ -701,9 +703,9 @@ function trendValueOf(stage, r) {
  * exactly as before. Passing `stage: null` instead would silently disable that
  * fallback — undefined and null are different answers here.
  * @param {any} v a `runClose`-shaped verdict
- * @returns {{gap?: string, stage?: string|null, value?: number|null}}
+ * @returns {{gap?: string, stage?: string|null, value?: number|null, reds?: string[]}}
  */
 export function closeGrade(v) {
   if (v?.declared !== true) return { gap: v?.gap };
-  return { gap: v.gap, stage: v.stage ?? null, value: v.trendValue ?? null };
+  return { gap: v.gap, stage: v.stage ?? null, value: v.trendValue ?? null, ...(Array.isArray(v.redSet) ? { reds: v.redSet } : {}) };
 }
