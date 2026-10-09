@@ -67,7 +67,7 @@ inherited rule carries the green that minted it and the contrast that attributed
   an unknown provider name THROWS there, it never falls back to a default. Per-model
   request-key gating lives in that table: `deepseek-flash` sets bare-agent's
   `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
-  output cap that does not bind is a money hazard. `provider: 'gemini-api'` (PRD item 31.3)
+  output cap that does not bind is a money hazard. The judge's calls additionally carry a per-model, judge-only `thinking:{type:'disabled'}` (allow-list `OPENAI_JUDGE_CALL_OPTIONS`, read through `judgeCallOptions`, applied by `defaultJudgeLoop`; F192) because deepseek-flash's default thinking ate the 4000-token locate budget; workers and the drafter are untouched. `provider: 'gemini-api'` (PRD item 31.3)
   takes the same `Loop` path, reads `GEMINI_API_KEY`, and maps two real tiers
   (`sonnet` → `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`). It is
   **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
@@ -1864,7 +1864,7 @@ hand them to the one `Loop` that drives worker, scout and planner rounds; the ru
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
 before. bareloop keeps no price list of its own, ever.
 
-**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.43.0`)
+**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.49.0`)
 carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
 `src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
 `pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
