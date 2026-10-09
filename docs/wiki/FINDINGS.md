@@ -13462,6 +13462,44 @@ with the probe's real facts: 8/8 graded correctly (the 3 passes, both phantom-pa
 missing-returns, undocumented). The `returns` quote `* ` prefix miss did not show in that replay; it stays an
 open separate item (bareguard `quoteIn`, awaiting hamr). Not re-proven live.
 
+**Addendum 2026-10-09 — hamr's ruling "A": a rule that can express "the doc only restates the function name" (built, not re-proven live).**
+
+*Live evidence.* The panel, 2026-10-09, DeepSeek `deepseek-flash`: the person's FAIL example said a doc comment that only
+restates the function name "teaches the reader nothing". The drafter wrote cases `doc-restates-function-name` (getTotal) and
+`name-restating-doc-and-unlisted-param` (validateForm) expecting a `has-doc` red on a documented function, and the item-3A
+check refused them at $0, because the rulebook could not express it. Same class as archived `mub2nboo`'s name-echo cases
+(`tests/fixtures/f192-params-real.json`). The plan's Checks list had even promised "not only a restatement of the function
+name", which nothing checked.
+
+*Built (`src/judged.js`).* A fourth rule, **`says-what`**. Its locate ask has the judge quote the doc block's DESCRIPTION (the
+prose before the first `@tag`) verbatim, or null. `decide()` then, with no judge verdict anywhere: finds the quote with
+bareguard `quoteIn(.., {wholeLines:true})` AND inside the block `docBlockAbove` returns (which stays the authority on
+location; comment decoration is stripped on both sides before the line match); splits the function name into words
+(camelCase / snake_case / kebab, lowercased) and tokenises the description the same way; drops a fixed stopword list
+(`SAYS_WHAT_STOPWORDS`: a an the of to for in on at by with from into and or as, function words only) and the name's own words
+with light inflections (s, es, ed, d, ing, silent-e + ing, y to ies). No words left, no description, or a quote that cannot be
+located reds. Unsure is red; with no artifact in hand it reds too.
+
+*The honest ceiling.* It catches a PURE name echo. A description that adds even one generic non-stopword passes: "Returns the
+total." for `getTotal` passes ("Gets the total." reds). A miss of that kind is a new card line and a re-sign, never a smarter
+judge. Stated in the code comment.
+
+*Case-proposal prompt.* Every rule now carries a plain-words `means`; `cardCasesPrompt` renders it as "what it can check" and
+tells the model that a function with any doc block above it never breaks `has-doc`, and that "the doc only restates the
+function name" is a `says-what` red. `has-doc` stays "a block exists"; the 3A refusal is unchanged. No new validator red
+code was added, so `plainReasons` needed no new mapping (the enumeration test stays complete).
+
+*$0 results on the real artifacts* (each description line read off the artifact the way an honest judge would quote it; the
+rule is new, so no archive holds a real `descriptionQuote`): `parseDate` ("parseDate") RED, `slugify` ("slugify") RED, the
+undocumented `debounce` RED; `formatBytes`, `clamp`, `parseQuery`, `buildQuery`, `copyFile`, `createUser`, `sendEmail` all
+pass. Fail-first: with the `said.length === 0` red disabled 4 tests fail; with the name-word filter removed 3 fail.
+
+*Open / not built.* (1) Not re-proven live: no paid calibration has run with the new rule. (2) A $0 legality check for a case
+that EXPECTS a `says-what` red on a function whose description does add words (the 3A analogue) is not built; the prompt
+steers the model instead, and the check would be a new validator red needing a ruling. (3) Noted while reading: the confirm
+turn's "Checks" and "Not checked" lines are written by the MODEL (`CONFIRM_SCHEMA` in `src/authorflow.js`), not by code; only
+the protections are code-owned. A plan can therefore promise a check no rule implements. Logged, not built.
+
 ## F193 — the prompt-commit rule assumed every prompt-register-file change came from a run failure; a type-only edit could not satisfy it honestly (fixed)
 
 Found 2026-09-23 on `feat/panel-n6`. Commit `565fb99` widened one JSDoc `@param` type annotation in
