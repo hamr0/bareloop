@@ -40,6 +40,8 @@ import { runDeclaredStages, declaredStages, DECLARED_GAP_PREFIX } from '../src/d
 import { KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, NEVER_OFFERED_KINDS } from '../src/authoring.js';
 import { ACCOUNTED_ROUND_TYPES } from '../src/run.js';
 import { readResume } from '../src/reuse.js';
+import { readGrade } from '../src/trend.js';
+import { closeGrade } from '../src/declaredclose.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const POC = join(HERE, '..', 'poc', 'softgreen-judge');
@@ -467,13 +469,47 @@ test('the bridge carries the judge seam and the meter into the stage, and transl
     { cwd: wd, seedRef: 'HEAD', judgeModel: JUDGE_MODEL, judgeLoop: j.loop },
   );
   assert.equal(red.verdict, 'needs_revision');
-  assert.equal(red.trendValue, new Set(red.detail?.redSet ?? []).size || red.trendValue, 'a judged stage donates its distinct red count');
   assert.ok(Number.isInteger(red.trendValue) && red.trendValue >= 1, 'the count is the stage\'s number (F192 e)');
   assert.match(red.gap, /close stage "reads-well" failed:/, 'the ONE gap header the trend reader parses');
   assert.match(red.gap, /\[scrubbed\]/, 'the caller redacts at the emission boundary');
 
   const unwired = await runDeclaredStages(stages, (s) => s, { cwd: wd, seedRef: 'HEAD' });
   assert.equal(unwired.verdict, STOP_FAULTS.FAILED, 'a wiring gap routes as a FAULT, never as a red');
+});
+
+/** one red run through BOTH doors: the stage (for its detail) and the declared bridge (for the verdict the runner sees) */
+async function redBoth() {
+  const wd = patient();
+  const decl = () => declaredStages({ stages: [stage({ card: CARD, paths: ['scripts/grade.mjs'] })] });
+  const ctx = (j) => ({ cwd: wd, seedRef: 'HEAD', judgeModel: JUDGE_MODEL, judgeLoop: j.loop });
+  const direct = await runStage(stage({ card: CARD, paths: ['scripts/grade.mjs'] }), CTX(wd, { judgeModel: JUDGE_MODEL, judgeLoop: fakeJudge([facts(RED_FACTS)]).loop }));
+  const v = await runDeclaredStages(decl(), (s) => s, ctx(fakeJudge([facts(RED_FACTS)])));
+  return { direct, v };
+}
+
+test('ONE red count: the gap headline readGrade scrapes IS the trend value, and counts failing functions (F192 e)', async () => {
+  const { direct, v } = await redBoth();
+  assert.equal(v.verdict, 'needs_revision');
+  const { redItems, redCount } = direct.detail;
+  assert.ok(redCount > redItems, `the fixture must separate the two scales: ${redItems} items vs ${redCount} failing functions`);
+  assert.match(v.gap, new RegExp(`the judged floor is not met — ${redCount} red\\(s\\) across 1 of 1 artifact\\(s\\)`));
+  assert.equal(readGrade(v.gap).value, closeGrade(v).value, 'the scraped headline and the live trend value are one number');
+  assert.equal(closeGrade(v).value, redCount);
+});
+
+test('ONE red count: a resume seeds a judged precheck gap on the same scale as the live close-trend value', async () => {
+  const { v } = await redBoth();
+  const ts = '2026-01-01T00:00:00.000Z';
+  const events = [
+    { type: 'job-start', job: 'j', specHash: 'h', budgetUsd: 5, ts, seq: 1 },
+    { type: 'try-start', n: 1, mode: 'cold', bridge: null, ts, seq: 2 },
+    { type: 'close-precheck', verdict: 'needs_revision', stage: v.stage, gap: v.gap, ts, seq: 3 },
+    { type: 'ladder', governor: 'close-trend', stage: v.stage, value: closeGrade(v).value, ts, seq: 4 },
+  ];
+  const r = readResume(events);
+  assert.ok(r.restart, 'the try is mid-flight');
+  assert.equal(r.restart.grades.length, 2);
+  assert.equal(r.restart.grades[0].value, r.restart.grades[1].value, 'precheck seed and live ladder value share one scale');
 });
 
 // ── the catalogue and the executor move together ─────────────────────────────

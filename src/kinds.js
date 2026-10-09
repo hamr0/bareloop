@@ -1897,6 +1897,14 @@ async function runJudgedFloor(stage, ctx) {
     }
   }
 
+  // WHAT failed, as a set of plain keys — one per failing function (a red that names no function
+  // keeps its item key), plus each unsure entry. Its SIZE is the ONE red count: the gap headline
+  // prints it, `trendValueOf` reads it, and `readGrade` scrapes the same number back (F192 e).
+  const redSet = [
+    ...redItems.flatMap((it) => (it.reds.length ? it.reds.map((r) => `${it.path}|${it.rule}|${r.fn}`) : [`${it.path}|${it.rule}`])),
+    ...unsure.map((u) => `${u.path}|unsure|${u.reason}`),
+  ];
+  const redCount = new Set(redSet).size;
   const red = redFiles > 0;
   if (red) {
     // FIRST-RED-WINS in the CARD's own signed order, across every artifact: the
@@ -1904,7 +1912,7 @@ async function runJudgedFloor(stage, ctx) {
     const order = p.card.items.map((/** @type {any} */ it) => it.rule);
     const firstRed = order.find((/** @type {string} */ r) => redItems.some((x) => x.rule === r))
       ?? (redItems[0]?.rule ?? 'unsure');
-    gap.push(`${stage.name}: the judged floor is not met — ${redItems.length} card item(s) red across ${redFiles} of `
+    gap.push(`${stage.name}: the judged floor is not met — ${redCount} red(s) across ${redFiles} of `
       + `${paths.length} artifact(s); first red: ${firstRed}`);
     for (const u of unsure) gap.push(`  ${u.path}: ${u.reason}`);
     for (const it of redItems) {
@@ -1930,12 +1938,10 @@ async function runJudgedFloor(stage, ctx) {
       redItems: redItems.length,
       unsure,
       redFiles,
-      // WHAT failed, as a set of plain keys — the trend reader's only way to compare two numberless
-      // judged reds (run mv13ery3: four identical judged reds read comparable:false, so no strike).
-      redSet: [
-        ...redItems.flatMap((it) => (it.reds.length ? it.reds.map((r) => `${it.path}|${it.rule}|${r.fn}`) : [`${it.path}|${it.rule}`])),
-        ...unsure.map((u) => `${u.path}|unsure|${u.reason}`),
-      ],
+      // the distinct red COUNT (the headline's number and the trend value) and the set it counts;
+      // the set also lets the trend reader compare two numberless judged reds (run mv13ery3)
+      redCount,
+      redSet,
     },
   });
 }

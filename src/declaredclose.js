@@ -690,7 +690,7 @@ function trendValueOf(stage, r) {
   if (typeof r?.value !== 'number' || !Number.isFinite(r.value)) {
     // a JUDGED stage has no measurement: its number is how many DISTINCT reds it itemizes
     // (F192 e), lower-is-better, compared to its best-so-far like any deterministic count
-    return Array.isArray(r?.detail?.redSet) ? new Set(r.detail.redSet).size : null;
+    return Number.isInteger(r?.detail?.redCount) ? r.detail.redCount : null;
   }
   return stage?.params?.direction === 'lower-is-better' ? r.value : null;
 }
