@@ -36,8 +36,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   JUDGE_MODEL, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES,
-  SAYS_WHAT_STOPWORDS, validateCard, validateFacts, locatePrompt, runLocate, decide, validateCalibrationSet, CALIBRATION_SIZE,
+  SAYS_WHAT_STOPWORDS, validateCard, validateFacts, locatePrompt, runLocate, decide, validateCalibrationSet, CALIBRATION_SIZE, expectedOf,
 } from '../src/judged.js';
+import { compareExpectation } from '../src/calibrate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const POC = join(HERE, '..', 'poc', 'softgreen-judge');
@@ -845,7 +846,12 @@ test('says-what: the real documented functions PASS (formatBytes, clamp, parseQu
 test('says-what: a function with no doc block, or a null / opener-only / invented / tag-only quote, is red (unsure is red)', () => {
   const c = F192P['undocumented-function-red'];
   const f = c.facts.functions[0];
-  assert.equal(decide(saysFacts(c.artifact, f, null), SAYS_ONLY, { artifactText: c.artifact }).verdict, 'red');
+  // no doc block at all: has-doc owns that red, says-what stays silent (F192 2026-10-09, one red per absence)
+  assert.equal(decide(saysFacts(c.artifact, f, null), SAYS_ONLY, { artifactText: c.artifact }).verdict, 'pass');
+  const both = { items: [{ rule: 'has-doc', text: 'has a doc block' }, { rule: 'says-what', text: 'says what' }] };
+  const dd = decide({ functions: [{ ...f, docQuote: null, descriptionQuote: null }] }, both, { artifactText: c.artifact });
+  assert.equal(dd.verdict, 'red');
+  assert.equal(dd.firstRed, 'has-doc');
   const ne = F192P['name-echo-denies-purpose'];
   const nf = ne.facts.functions[0];
   assert.equal(decide(saysFacts(ne.artifact, nf, '/**'), SAYS_ONLY, { artifactText: ne.artifact }).verdict, 'red');
@@ -889,4 +895,52 @@ test('says-what: name words (camel, snake, kebab), light inflections and the sto
 test('says-what: the locate prompt asks for descriptionQuote only when the card names the rule', () => {
   assert.match(locatePrompt(SAYS_ONLY), /descriptionQuote/);
   assert.doesNotMatch(locatePrompt({ items: [CARD.items[0]] }), /descriptionQuote/);
+});
+
+// ── F192, the 2026-10-09 live panel session smv0nrwe3l8y2 (deepseek-flash judge): REAL locate facts ──
+// A $0 replay of decide() over the ten live cases' real facts. Before the fixes below it graded 7 of 10
+// (no-doc-block-at-all double red, initCache echo missed, buildQuery signed wrong); after, 9 of 10 -- the
+// tenth is the CASE being wrong (a destructured parameter documented under any root name is not a params red).
+
+const LIVE = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0nrwe.json'), 'utf8'));
+const liveGot = (/** @type {string} */ id) =>
+  expectedOf(decide(LIVE.cases[id].facts, LIVE.card, { artifactText: LIVE.cases[id].artifact }));
+
+test('live replay: the ten real cases grade 9 of 10; the one miss is the case, not the rule', () => {
+  const wrong = Object.keys(LIVE.cases).filter((id) => !compareExpectation(liveGot(id), LIVE.cases[id].expect).ok);
+  assert.deepEqual(wrong, ['tag-names-wrong-parameter-on-destructured']);
+  // and the rule is right to pass it: a destructured parameter documented under a root name is normal JSDoc
+  assert.deepEqual(liveGot('tag-names-wrong-parameter-on-destructured').reds, []);
+});
+
+test('says-what: no doc block at all is has-doc\'s red alone (one red per absence)', () => {
+  const got = liveGot('no-doc-block-at-all');
+  assert.deepEqual(got.reds.map((r) => `${r.rule}·${r.fn}`), ['has-doc·resetCounters']);
+  // a block with NO prose still reds says-what, and an unfindable / duplicated declaration is unsure = red
+  const art = '/**\n * @returns {number} n\n */\nfunction f() { return 1; }\n';
+  assert.equal(saysReds(art, { name: 'f', declarationQuote: 'function f() { return 1; }' }, null).length, 1);
+  assert.equal(saysReds('const x = 1;\n', { name: 'g', declarationQuote: 'function g() {}' }, null).length, 1, 'declaration not in the artifact');
+  const dup = 'function h() {}\nfunction h() {}\n';
+  assert.equal(saysReds(dup, { name: 'h', declarationQuote: 'function h() {}' }, null).length, 1, 'duplicated declaration');
+  assert.equal(saysReds('', { name: 'h', declarationQuote: null }, null).length, 1, 'no declaration quote');
+});
+
+test('says-what: prefix matching, shorter word at least 4 letters (init/initialize, calc/calculate)', () => {
+  /** @param {string} name @param {string} line */
+  const reds = (name, line) => {
+    const art = `/**\n * ${line}\n */\nfunction ${name}() {}\n`;
+    return saysReds(art, { name, declarationQuote: `function ${name}() {}` }).length;
+  };
+  assert.equal(reds('initCache', 'Initialize the cache.'), 1, 'init / initialize (the live initCache)');
+  assert.equal(reds('initializeCache', 'Init the cache.'), 1, 'initialize / init, the other direction');
+  assert.equal(reds('calcTotal', 'Calculate the total.'), 1, 'calc / calculate');
+  assert.equal(reds('calculateTotal', 'Calc total'), 1, 'calculate / calc');
+  // a 3-letter name word never prefix-matches: those echoes pass (stated ceiling)
+  assert.equal(reds('add', 'Address'), 0, 'add vs address');
+  assert.equal(reds('get', 'Getter'), 0, 'get vs getter');
+  assert.equal(reds('addUser', 'Address user'), 0, 'add vs address inside a longer name');
+  // the stated false-red risk: a longer word that merely begins with a name word is an echo
+  assert.equal(reds('parseDate', 'Parser date'), 1, 'parse / parser is read as an echo');
+  // adding a real word still passes
+  assert.equal(reds('initCache', 'Initialize the cache with the default size.'), 0);
 });

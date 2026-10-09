@@ -306,21 +306,32 @@ function quoteReds(fn, fields, text) {
  * @returns {Set<string>|null} the block's trimmed lines, opener..closer inclusive; null when unsure
  */
 function docBlockAbove(text, declQuote) {
+  return locateDocBlock(text, declQuote).block;
+}
+
+/**
+ * `docBlockAbove` with the reason it came back empty: `declFound` is true when the
+ * declaration line matched exactly once (so "no block" is a fact about the artifact),
+ * false when it is missing, duplicated or unquoted (so "no block" is only unsure).
+ * @param {string} text @param {string|null} declQuote
+ * @returns {{declFound: boolean, block: Set<string>|null}}
+ */
+function locateDocBlock(text, declQuote) {
   const decl = (declQuote ?? '').split('\n').map((l) => l.trim()).find(Boolean);
-  if (!decl) return null;
+  if (!decl) return { declFound: false, block: null };
   const all = text.split('\n').map((l) => l.trim());
   const at = all.flatMap((l, i) => (l === decl ? [i] : []));
-  if (at.length !== 1) return null;
+  if (at.length !== 1) return { declFound: false, block: null };
   let end = at[0] - 1;
   while (end >= 0 && all[end] === '') end--;
-  if (end < 0 || !all[end].endsWith('*/')) return null;
+  if (end < 0 || !all[end].endsWith('*/')) return { declFound: true, block: null };
   let start = end;
   while (start >= 0 && !all[start].includes('/*')) {
-    if (start < end && all[start].includes('*/')) return null; // another comment closes first: no opener for this block
+    if (start < end && all[start].includes('*/')) return { declFound: true, block: null }; // another comment closes first: no opener for this block
     start--;
   }
-  if (start < 0 || !all[start].includes('/**')) return null;
-  return new Set(all.slice(start, end + 1).filter(Boolean));
+  if (start < 0 || !all[start].includes('/**')) return { declFound: true, block: null };
+  return { declFound: true, block: new Set(all.slice(start, end + 1).filter(Boolean)) };
 }
 
 /**
@@ -387,6 +398,20 @@ function inflections(w) {
 
 /** @param {string} a @param {string} b */
 const sameWord = (a, b) => inflections(a).has(b) || inflections(b).has(a);
+
+/**
+ * Prefix match (hamr ruling A, 2026-10-09): one word starts with the other and the SHORTER is
+ * at least 4 letters, so a description's "Initialize" echoes a name's `init` (and `calc` /
+ * `calculate`). HONEST CEILING AND RISK: a name word of 3 or fewer letters never prefix-matches
+ * ("add" vs "address", "get" vs "getter"), so those echoes pass; and a real longer word that
+ * merely begins with a name word ("read" vs "reader", "parse" vs "parser") counts as an echo,
+ * a false red only when the description adds nothing else.
+ * @param {string} a @param {string} b @returns {boolean}
+ */
+function sharesPrefix(a, b) {
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 4 && long.startsWith(short);
+}
 
 /** a doc-block line with its comment decoration (opener, leading star, closer) removed
  * @param {string} line @returns {string} */
@@ -463,6 +488,14 @@ export const JUDGE_RULES = Object.freeze({
       const name = String(fn?.name ?? '(unnamed)');
       const decl = quoteOf(fn?.declarationQuote);
       const desc = quoteOf(fn?.descriptionQuote);
+      // ONE RED PER ABSENCE (F192, 2026-10-09): with NO doc block at all, `has-doc` owns the
+      // red and `says-what` stays silent. Only when the artifact itself proves it (the
+      // declaration line matched exactly once and no JSDoc block sits above it); a missing or
+      // duplicated declaration is unsure, and unsure is red. A block with no prose still reds.
+      if (typeof text === 'string' && decl && !quoteReds(fn, ['declarationQuote'], text).length) {
+        const loc = locateDocBlock(text, decl);
+        if (loc.declFound && loc.block === null) return [];
+      }
       if (!desc) return [{ fn: name, why: 'the doc block has no description, so nothing says what the function does', quote: decl }];
       // location + verbatim: unsure is red, and there is no looser no-artifact path
       // (every real caller passes the artifact)
@@ -480,7 +513,7 @@ export const JUDGE_RULES = Object.freeze({
       const prose = descriptionLines(desc);
       const said = prose.flatMap(wordsOf)
         .filter((w) => !SAYS_WHAT_STOPWORDS.includes(w))
-        .filter((w) => !own.some((o) => sameWord(w, o)));
+        .filter((w) => !own.some((o) => sameWord(w, o) || sharesPrefix(w, o)));
       if (said.length === 0) {
         return [{ fn: name, why: `the doc description only restates the function name (\`${prose.join(' ')}\`); it says nothing more than \`${name}\` already does`, quote: desc }];
       }
