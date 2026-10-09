@@ -335,6 +335,19 @@ function locateDocBlock(text, declQuote) {
 }
 
 /**
+ * THE ONE ACCEPTANCE for "this quote points at the JSDoc block of this declaration":
+ * every non-empty line of `docQuote` is a line inside the block directly above the
+ * declaration. `has-doc`'s check and the calibration gate's injection facts check
+ * both call this, so the two can never disagree about what a good pointer is (F192).
+ * @param {string} text the artifact @param {string|null} declQuote @param {string} docQuote
+ * @returns {boolean}
+ */
+export function docQuoteInBlock(text, declQuote, docQuote) {
+  const block = docBlockAbove(text, declQuote);
+  return block !== null && docQuote.split('\n').map((l) => l.trim()).filter(Boolean).every((l) => block.has(l));
+}
+
+/**
  * Does the artifact mechanically show a JSDoc block directly above function `fn`'s
  * declaration? The declaration line is found by name (function / const-assigned /
  * method shapes); found zero or several times it is ambiguous, and unsure is false
@@ -468,8 +481,7 @@ export const JUDGE_RULES = Object.freeze({
         }
         return [];
       }
-      const block = docBlockAbove(text, decl);
-      if (block === null || !doc.split('\n').map((l) => l.trim()).filter(Boolean).every((l) => block.has(l))) {
+      if (!docQuoteInBlock(text, decl, doc)) {
         return [{ fn: name, why: 'the quoted doc line is not inside a JSDoc block (`/** ... */`) directly above the declaration', quote: doc }];
       }
       return [];

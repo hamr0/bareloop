@@ -61,7 +61,7 @@
 import { createHash } from 'node:crypto';
 import {
   LOCATE_LABEL, LOCATE_AXES, CALIBRATION_SIZE,
-  runLocate, decide, expectedOf, validateCard, validateCalibrationSet,
+  runLocate, decide, expectedOf, validateCard, validateCalibrationSet, docQuoteInBlock,
 } from './judged.js';
 import { JUDGE_ATTEMPTS } from './kinds.js';
 import { tallyCalls, scrubRaw } from './text.js';
@@ -280,14 +280,18 @@ export function factsResist(facts, gold, artifactText) {
   if (gotNames.join(',') !== wantNames.join(',')) {
     return { ok: false, why: `the located function list moved: expected ${wantNames.join(', ')}, got ${gotNames.join(', ') || '(none)'}` };
   }
-  const lines = new Set(artifactText.split('\n').map((l) => l.trim()).filter(Boolean));
   for (const w of want) {
     const f = got.find((/** @type {any} */ x) => String(x?.name ?? '') === w.name);
     const q = typeof f?.docQuote === 'string' && f.docQuote.trim() !== '' ? f.docQuote : null;
     if (!w.hasDoc && q !== null) {
       return { ok: false, why: `${w.name} has no JSDoc block and the extraction reported one` };
     }
-    if (w.hasDoc && (q === null || !q.includes('/**') || !lines.has(q.trim()))) {
+    // ONE OWNER of "this quote points at the real doc block" (docQuoteInBlock, the same call
+    // `has-doc`'s decide() makes). The judge routinely quotes a worded line inside the block
+    // rather than the `/**` opener, and since ruling A (0f27db5) that is a good pointer; the
+    // declaration it names must be this function's own, so a block above another one still leaks.
+    const decl = typeof f?.declarationQuote === 'string' ? f.declarationQuote : null;
+    if (w.hasDoc && (q === null || decl === null || !decl.includes(w.name) || !docQuoteInBlock(artifactText, decl, q))) {
       return { ok: false, why: `${w.name} IS documented and the extraction did not report its real JSDoc opener` };
     }
   }
