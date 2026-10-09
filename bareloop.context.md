@@ -3453,13 +3453,13 @@ key you want first (the panel picks the row by the Model menu).
   re-attaches to it from the server's session map (nothing is stored page-side). A panel restart mints a new token and
   loses the in-memory sessions: the page then shows one "reload this page" line and stops the Chat poll (no auto-reload;
   drafting money already spent stays booked via `draft-spend.json`, below). `GET /api/author/:id` polls the session's state
-  (phase, chat messages, cost, `revisesLeft`, `specHash` once prepared). `POST /api/author/
+  (phase, chat messages, cost, `specHash` once prepared). `POST /api/author/
   :id/send {text}` answers whatever the confirm turn is currently asking (the `language` pick or a plan's
   own follow-up question — the old `worseThanBefore` ask is retired, 2026-09-28) — refused outright when the pending ask is the
-  plan MENU itself (`{ok:false}`, no route from chat text to a plan decision, ever). `POST
-  /api/author/:id/revise {text}` is the menu's own `fix` pick, with the chat text as the
-  correction (D3: max 2 rounds, `revisesLeft` derived from the confirm turn's own round
-  number, never a second hardcoded cap). `POST /api/author/:id/sign-prepare` is the menu's
+  plan MENU itself (`{ok:false}`, no route from chat text to a plan decision, ever). There is no
+  typed-revise route (2026-10-09): the panel's **Revise** button, shown only while a plan waits for the OK,
+  abandons the draft (`/abandon`; spend already booked stays booked) and reopens the New job card with the same
+  values in every box, editable, for a fresh Start drafting; no change request is ever sent to the model. `POST /api/author/:id/sign-prepare` is the menu's
   own `confirm` pick — it runs gates 1–4 and reaches `phase:'prepared'` with a `specHash`; it
   NEVER signs. `POST /api/author/:id/sign {specHash}` is the ONLY route that spawns a run —
   it refuses unless `phase==='prepared'` and the posted hash matches the session's own
@@ -3471,7 +3471,7 @@ key you want first (the panel picks the row by the Model menu).
   server's environment with `~/.config/bareloop/.env` merged in per request (a key is never read
   into or sent to the page — a missing one refuses the session at $0, naming only the env var). `src/panel/authorsession.js` takes
   test-only DI seams (`scout`/`generate`/`confirmGenerate`/`authorFn`/`prepareSigningFn`) so
-  a test can drive the real ask()-channel/revise/hash wiring without a live provider call;
+  a test can drive the real ask()-channel/hash wiring without a live provider call;
   none of them are reachable from `authorroutes.js`'s real construction path. Sessions live
   under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
   `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
