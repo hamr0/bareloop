@@ -33,42 +33,41 @@ test('page: a resumed run is ONE card with a small "resumed ×N" tag — on the 
 
 // ---------------------------------------------------------------- the map
 function loadMap() {
-  const start = PAGE.indexOf('function stepMapColors');
-  const end = PAGE.indexOf('var lastSteps = null;');
+  const start = PAGE.indexOf('function escapeXml');
+  const end = PAGE.indexOf('function renderStepMap(');
   assert.ok(start !== -1 && end > start);
   // eslint-disable-next-line no-new-func
-  return new Function(`${PAGE.slice(start, end)}\nreturn { buildStepMapSVG: buildStepMapSVG, buildOrderedBoxes: buildOrderedBoxes, stepNumberIndices: stepNumberIndices, stepTitleText: stepTitleText };`)();
+  return new Function(`${PAGE.slice(start, end)}\nreturn { buildStepMapHTML: buildStepMapHTML, buildOrderedBoxes: buildOrderedBoxes, stepNumberIndices: stepNumberIndices, stepTitleText: stepTitleText };`)();
 }
 const stepPart = (n, extra = {}) => ({
   kind: 'step', id: `s${n}`, label: `s${n}`, occurrence: 1, outcome: 'green', blocked: 0, attempts: [{ n: 1, outcome: 'green' }], ...extra,
 });
 
 test('page map: the connector from the step a leg ENDED at to the step the next leg picked up is DOTTED and says "resumed"; the others stay solid', () => {
-  const { buildStepMapSVG, buildOrderedBoxes } = loadMap();
+  const { buildStepMapHTML, buildOrderedBoxes } = loadMap();
   const boxes = buildOrderedBoxes([stepPart(1), stepPart(2, { resumedNext: true }), stepPart(3)], false);
   assert.deepEqual(boxes.map((b) => b.resumedNext), [false, true, false]);
-  const svg = buildStepMapSVG(boxes, 900);
-  const lines = svg.match(/<line [^>]*>/g) ?? [];
-  assert.equal(lines.length, 2, 'two connectors between three boxes');
-  assert.equal(lines.filter((l) => l.includes('stroke-dasharray="2,4"') && l.includes('data-resumed="1"')).length, 1, 'exactly the leg boundary is dotted');
-  assert.doesNotMatch(svg, />resumed</, 'no word drawn beside the connector (hamr 2026-10-05: cramped; the legend names it)');
+  const svg = buildStepMapHTML(boxes, 900);
+  const chips = svg.match(/<button [^>]*>/g) ?? [];
+  assert.equal(chips.length, 3, 'one chip per step');
+  assert.equal(chips.filter((l) => l.includes('resumed-next') && l.includes('data-resumed="1"')).length, 1, 'exactly the leg boundary chip is marked (dotted right edge)');
+  assert.doesNotMatch(svg, />resumed</, 'no word drawn beside the chip (hamr 2026-10-05: cramped; the key names it)');
   // a run nobody resumed draws no dotted line and no label
-  const plain = buildStepMapSVG(buildOrderedBoxes([stepPart(1), stepPart(2)], false), 900);
+  const plain = buildStepMapHTML(buildOrderedBoxes([stepPart(1), stepPart(2)], false), 900);
   assert.doesNotMatch(plain, /data-resumed|>resumed</);
 });
 
-test('page map: the dotted connector survives the snake layout (a drop to the next row, and a right-to-left row)', () => {
-  const { buildStepMapSVG, buildOrderedBoxes } = loadMap();
+test('page map: the resumed mark survives wrapping — it is a property of the chip, not of where the line breaks', () => {
+  const { buildStepMapHTML, buildOrderedBoxes } = loadMap();
   const parts = [1, 2, 3, 4, 5, 6].map((n) => stepPart(n, n === 3 ? { resumedNext: true } : {}));
-  const narrow = buildStepMapSVG(buildOrderedBoxes(parts, false), 330);
+  const narrow = buildStepMapHTML(buildOrderedBoxes(parts, false));
   assert.equal((narrow.match(/data-resumed="1"/g) ?? []).length, 1);
-  const lines = narrow.match(/<line [^>]*>/g) ?? [];
-  assert.equal(lines.length, 5);
+  assert.equal((narrow.match(/<button /g) ?? []).length, 6);
 });
 
-test('page: the sign legend is gone (the line-style key returned 2026-10-04); the dotted connector still names itself "resumed" inside the map', () => {
+test('page: the sign legend is gone (the line-style key returned 2026-10-04); the dotted edge still names itself "resumed" inside the map', () => {
   assert.doesNotMatch(PAGE, /stepMapLegendHTML|map-legend/);
-  assert.match(PAGE, /dotted = resumed/);
+  assert.match(PAGE, /dotted edge = resumed after/);
   assert.doesNotMatch(PAGE, />resumed<\/text>/, 'no resumed label inside the map');
 });
 
