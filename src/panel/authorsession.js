@@ -52,7 +52,7 @@ import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, redsRecord } from '../authorreadout.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, redsRecord } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 
 /**
@@ -757,7 +757,17 @@ export function createSession(card, deps = {}) {
       writeFileSync(signingFile, `${JSON.stringify(signing, null, 2)}\n`);
 
       if (!signing.ok) {
-        refuse(`signing gates failed — ${signing.reds.map((r) => r.code).join(', ') || 'no work red at seed'}`);
+        // plain words for the person (src/authorreadout.js, the one owner the CLI prints too); the full reds go into
+        // the drafting log on the failed step, so the cause survives the session
+        const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+        appendDraftLog(outDir, {
+          kind: 'step-reds', no: runningNo === -1 ? state.steps.length - 1 : runningNo, stop: 'signing-gates-failed',
+          reds: redsRecord(signing.reds ?? [], { signing: true }), at: new Date().toISOString(),
+        });
+        refuse(signingStopText({
+          reds: signing.reds ?? [], refusal: signing.refusal,
+          spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
+        }));
         return;
       }
       state.specHash = signing.specHash;

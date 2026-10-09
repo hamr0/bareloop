@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { validateJudgedArtifacts, validateCalibrationSet, CALIBRATION_SIZE } from '../src/judged.js';
 import { signJudgedArtifacts, PROPOSAL_TOOL_NAME } from '../src/cardauthor.js';
-import { plainReasons, plainKinds, proposalStopText, redsRecord } from '../src/authorreadout.js';
+import { plainReasons, plainKinds, proposalStopText, redsRecord, signingReasons, signingKinds, signingStopText, DECLARATION_CODES } from '../src/authorreadout.js';
 import { createSession } from '../src/panel/authorsession.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -228,4 +228,131 @@ test('PANEL: a proposal-invalid stop shows the plain message under the failed st
 test('CLI door: the run-author path prints the same function', () => {
   const src = readFileSync(join(HERE, '..', 'src', 'authorrun.js'), 'utf8');
   assert.match(src, /PLAIN_PROPOSAL_STOPS\.includes\(String\(authored\.stop\)\)[\s\S]{0,200}proposalStopText\(/);
+});
+
+// ── the SIGNING gates' refusal (F192, 2026-10-09 live panel session smv0nrwe3l8y2) ──
+
+const LIVE = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0nrwe.json'), 'utf8'));
+
+test('SIGNING: the three real miswrites and the injection leak read in plain words, honest about whose fault', () => {
+  const text = signingStopText({ reds: LIVE.signingReds, spend: { knownUsd: 0.0912, spendComplete: true } });
+  assert.doesNotMatch(text, /calibration-miswrite|injection-leak/);
+  assert.match(text, /Spent so far: \$0\.09\./);
+  assert.match(text, /Case "no-doc-block-at-all" \(resetCounters\): the check says the doc only repeats the function's name, but the practice case did not expect that\./);
+  assert.match(text, /Case "name-echo-plus-untagged-param" \(initCache\): the practice case says the doc only repeats the function's name, but the check passed it\./);
+  assert.match(text, /Case "tag-names-wrong-parameter-on-destructured" \(buildQuery\): the practice case says a parameter is missing from the doc, or the doc names one that does not exist, but the check passed it\./);
+  assert.match(text, /A test file tried to trick the judge \("fake system marker"\)/);
+  assert.match(text, /The practice cases and the check disagree; either one can be the one that is wrong/);
+  assert.doesNotMatch(text, /model's mistake/);
+  assert.match(text, /What to do: draft again \(about \$0\.09 to reach here\)\./);
+  assert.match(signingStopText({ reds: LIVE.signingReds, spend: null }), /Spent so far: unknown\./);
+});
+
+test('SIGNING: no red at all (the close already passes at the seed) has its own sentence', () => {
+  assert.match(signingStopText({ reds: [], refusal: LIVE.signingRefusal }), /Nothing in the close fails on the repository as it is/);
+});
+
+test('SIGNING: every red code reachable at the refusal is mapped; an unknown one quotes its code', () => {
+  /** @type {Record<string, string>} code to the kind it must get */
+  const want = {
+    'calibration-miswrite': 'miswrite', 'injection-leak': 'injection-leak', 'calibration-missing': 'calibration-missing',
+    'no-judge-seam': 'no-judge', 'cap-halt': 'cap-halt', 'pricing-red': 'pricing-red', 'provider-red': 'provider-red',
+    'artifact-red': 'artifact-red', 'broken-close': 'broken-close', 'seed-unreadable': 'seed-unreadable',
+    'listing-unreadable': 'listing-unreadable',
+  };
+  for (const [code, kind] of Object.entries(want)) {
+    const [r] = signingReasons([{ code, path: 'closeDecl.stages.suite', detail: 'x', caseId: 'c1' }]);
+    assert.equal(r.kind, kind, code);
+    assert.ok(r.todo && r.sentence);
+  }
+  for (const code of DECLARATION_CODES) {
+    const [r] = signingReasons([{ code, path: 'closeDecl.x', detail: 'x' }]);
+    assert.equal(r.kind, 'declaration', code);
+    assert.match(r.sentence, new RegExp(`"${code}"`));
+  }
+  // invalid-set reds the proposal table already words (card path, calibration-*)
+  assert.notEqual(signingReasons([{ code: 'invalid-value', path: 'card', detail: 'the card must be an object' }])[0].kind, 'unmapped');
+  assert.notEqual(signingReasons([{ code: 'calibration-size', path: 'calibration.cases', detail: 'x', declared: 3 }])[0].kind, 'unmapped');
+  const [u] = signingReasons([{ code: 'brand-new-gate-red', path: 'somewhere', detail: 'x' }]);
+  assert.equal(u.kind, 'unmapped');
+  assert.match(u.sentence, /"brand-new-gate-red" at somewhere/);
+  assert.ok(signingKinds().includes('unmapped'));
+});
+
+test('TRIPWIRE: a new declaration red code fails here until it is mapped in DECLARATION_CODES', () => {
+  const found = new Set();
+  for (const f of ['declaredclose.js', 'validate.js', 'kinds.js', 'authoring.js', 'judged.js']) {
+    const src = readFileSync(join(HERE, '..', 'src', f), 'utf8');
+    for (const m of src.matchAll(/\bred\('([a-z]+(?:-[a-z]+)*)'/g)) found.add(m[1]);
+  }
+  for (const code of found) {
+    assert.ok(DECLARATION_CODES.includes(code) || code.startsWith('calibration-'), `red code "${code}" has no plain signing sentence`);
+  }
+  assert.ok(found.size >= 20, 'the scan found the red sites');
+});
+
+test('SIGNING redsRecord: the signing sentence rides beside every structured field', () => {
+  const rec = redsRecord(LIVE.signingReds, { signing: true });
+  assert.equal(rec.length, 4);
+  assert.equal(rec[1].code, 'calibration-miswrite');
+  assert.match(rec[1].plain, /initCache/);
+  assert.equal(rec[1].caseId, 'name-echo-plus-untagged-param');
+});
+
+test('PANEL: a signing-gates refusal shows the plain message and writes the full reds to draft-log.jsonl', async (t) => {
+  const mk = () => { const d = mkdtempSync(join(tmpdir(), 'plainsign-')); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
+  const home = mk();
+  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  const repo = mk();
+  git(repo, ['init', '-q', '-b', 'main']);
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
+  mkdirSync(join(repo, 'src'));
+  writeFileSync(join(repo, 'src', 'mod.js'), '// nothing yet\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'seed']);
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-sign-job', goal: 'document things', source: repo,
+    destination: 'src/', success: 'docs', guardrails: 'none', judgeExamples: 'pass: documented. fail: undocumented.', capUsd: 2,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async (/** @type {any} */ _m, /** @type {any} */ tools) => {
+      await tools.find((/** @type {any} */ x) => x.name === PROPOSAL_TOOL_NAME).execute({ card: LIVE.card, cases: Object.entries(LIVE.cases).map(([id, c]) => ({ id, artifact: c.artifact, expect: c.expect })) });
+      return { text: '', error: null, msgs: [], metrics: { costUsd: 0.08, unpricedRounds: 0 } };
+    },
+    confirmGenerate: async (_c, tools) => {
+      const plan = { goal: 'document things', checks: ['docs'], questions: [], notChecked: [] };
+      if (tools && tools[0] && typeof tools[0].execute === 'function') await tools[0].execute(plan);
+      return { text: JSON.stringify(plan), error: null, cost: 0.0005 };
+    },
+    authorFn: async () => ({
+      ok: true, reds: [], stop: null, genreEnv: { applied: {} }, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [] },
+      declaration: { stages: LIVE.liveStages, notes: LIVE.liveNotes },
+    }),
+    prepareSigningFn: async () => ({ ok: false, specHash: null, seedRef: null, work: [], guards: [], stops: [], reds: LIVE.signingReds, refusal: LIVE.signingRefusal, gates: {} }),
+  });
+  for (let i = 0; i < 500 && session.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.signPrepare().ok, true);
+  for (let i = 0; i < 500 && !['refused', 'abandoned'].includes(session.state.phase); i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(session.state.phase, 'refused', String(session.state.error));
+  const failed = session.state.steps.find((/** @type {any} */ x) => x.status === 'failed');
+  assert.ok(failed);
+  assert.doesNotMatch(failed.detail, /signing gates failed/);
+  assert.match(failed.detail, /Case "name-echo-plus-untagged-param" \(initCache\)/);
+  assert.equal(failed.detail, signingStopText({
+    reds: LIVE.signingReds, refusal: LIVE.signingRefusal, spend: { knownUsd: session.state.draftSpentUsd, spendComplete: session.state.draftSpendComplete },
+  }));
+  const log = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const rec = log.find((e) => e.kind === 'step-reds');
+  assert.ok(rec, 'the reds are in the record');
+  assert.equal(rec.stop, 'signing-gates-failed');
+  assert.equal(rec.reds.length, 4);
+  assert.equal(rec.reds[3].code, 'injection-leak');
+  const end = log.find((e) => e.kind === 'step-end' && e.status === 'failed');
+  assert.ok(end && rec.no === end.no, 'the reds sit on the same step that failed');
+});
+
+test('CLI door: the run-author signing refusal prints the same function', () => {
+  const src = readFileSync(join(HERE, '..', 'src', 'authorrun.js'), 'utf8');
+  assert.match(src, /if \(!signing\.ok\) \{[\s\S]{0,200}signingStopText\(/);
 });

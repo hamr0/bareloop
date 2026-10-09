@@ -128,7 +128,7 @@ import { readSourceManifest, missingDependencies, nonRepoSourceMessage } from '.
 import { tallyCalls } from './text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, answeredQuestionLines, fellBackLines, PLAIN_PROPOSAL_STOPS, proposalStopText,
+  openQuestionLines, answeredQuestionLines, fellBackLines, PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText,
 } from './authorreadout.js';
 
 /** Thrown to unwind `main` to an exit code without ever calling
@@ -1216,6 +1216,14 @@ export async function main(argv, deps = {}) {
         if ((signing.guards ?? []).length) { out('\nguard stages at the seed'); for (const r of signing.guards) row(r); }
         if ((signing.stops ?? []).length) { out('\nstages that could NOT RUN (a broken instrument is a casualty, never a verdict)'); for (const r of signing.stops) row(r); }
 
+        // a refused signing reads in plain words FIRST (the same text the panel shows), the technical reds after
+        if (!signing.ok) {
+          const t = costSoFar();
+          out(`\n${signingStopText({
+            reds: signing.reds ?? [], refusal: signing.refusal,
+            spend: { knownUsd: t.knownUsd ?? null, spendComplete: t.spendComplete ?? null },
+          })}`);
+        }
         if (signing.refusal) {
           const r = signing.refusal;
           out(`\nREFUSED (${r.kind})  verb=${r.verb ?? 'none'}  path=${r.path}`);
