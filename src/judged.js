@@ -66,7 +66,7 @@
 import { quoteIn } from 'bareguard';
 import { createRequire } from 'node:module';
 import { extractArtifact, priceOf, scrubRaw, rateSourceFields } from './text.js';
-import { resolveProvider } from './providers.js';
+import { resolveProvider, judgeCallOptions } from './providers.js';
 
 const require = createRequire(import.meta.url);
 
@@ -1107,7 +1107,7 @@ export const defaultJudgeLoop = ({ provider, system, rates = null }) => {
   return {
     run: async (/** @type {any[]} */ msgs, /** @type {any[]} */ tools, /** @type {any} */ opts) => {
       seen = null;
-      const res = await loop.run(msgs, tools, opts);
+      const res = await loop.run(msgs, tools, { ...judgeCallOptions(provider), ...opts });
       return res && typeof res === 'object' && seen ? { ...res, rateSource: /** @type {any} */ (seen).rateSource } : res;
     },
   };

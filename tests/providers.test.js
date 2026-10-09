@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   resolveProvider, makeProvider, buildRunnerProviders, ANTHROPIC_TIER_MODELS, OPENAI_TIER_MODELS,
-  GEMINI_TIER_MODELS, PROBE_STATUS, probeWarningLines, apiKeyProblem, checkProviderReachable,
+  GEMINI_TIER_MODELS, PROBE_STATUS, probeWarningLines, apiKeyProblem, checkProviderReachable, judgeCallOptions,
 } from '../src/providers.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
 
@@ -550,4 +550,62 @@ test('checkProviderReachable: RED-PROOF — the returned object never carries th
   const secret = 'sk-this-must-never-come-back-abc123';
   const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: secret, fetchImpl });
   assert.ok(!JSON.stringify(r).includes(secret));
+});
+
+// ── F192 (hamr ruling A, 2026-10-09): the rubric judge runs with thinking OFF ───
+//
+// run mv117wde: deepseek-flash's default thinking ate the judge's 4000-token output
+// budget (1835 of 2409 completion tokens were reasoning), so the locate truncated 4x.
+// These tests capture the request body at the provider's `_request` seam, driven
+// through bareloop's own code (runLocate -> defaultJudgeLoop -> bare-agent Loop ->
+// OpenAIProvider.generate) — nothing between bareloop and the wire is stubbed.
+
+import { runLocate, defaultJudgeLoop, JUDGE_MAX_TOKENS } from '../src/judged.js';
+import { makeLoopGenerate } from '../src/authorflow.js';
+
+const F192_CARD = { items: [{ rule: 'has-doc', text: 'Every top-level function has a JSDoc block directly above it.' }] };
+const F192_ARTIFACT = '/** doc */\nexport function a() {}\n';
+
+/** run one judge locate against a real provider whose `_request` captures the body */
+async function captureJudgeBody(/** @type {string} */ model) {
+  const provider = makeProvider('openai-api', { apiKey: 'test-key', model });
+  /** @type {any} */
+  let body = null;
+  /** @type {any} */ (provider)._request = async (/** @type {string} */ _path, /** @type {any} */ b) => {
+    body = JSON.parse(JSON.stringify(b));
+    throw new Error('captured');
+  };
+  await runLocate({ artifactText: F192_ARTIFACT, card: F192_CARD, loopFactory: ({ system }) => defaultJudgeLoop({ provider, system }) });
+  assert.ok(body, 'the locate request reached the provider seam');
+  return body;
+}
+
+test('F192: a deepseek-flash judge locate carries thinking:{type:"disabled"} and the unchanged 4000-token cap', async () => {
+  const body = await captureJudgeBody('deepseek-flash');
+  assert.deepEqual(body.thinking, { type: 'disabled' });
+  assert.equal(JUDGE_MAX_TOKENS, 4000);
+  assert.equal(body.max_tokens, 4000, 'deepseek-flash takes the legacy max_tokens key (F149) and the cap is untouched');
+});
+
+test('F192: a model NOT on the judge allow-list gets NO thinking field (OpenAI would reject or misread it)', async () => {
+  const body = await captureJudgeBody('gpt-5');
+  assert.equal('thinking' in body, false);
+});
+
+test('F192: a worker/author call on the SAME deepseek-flash provider instance carries NO thinking field — the scope is the judge only', async () => {
+  const provider = makeProvider('openai-api', { apiKey: 'test-key', model: 'deepseek-flash' });
+  /** @type {any} */
+  let body = null;
+  /** @type {any} */ (provider)._request = async (/** @type {string} */ _path, /** @type {any} */ b) => {
+    body = JSON.parse(JSON.stringify(b));
+    throw new Error('captured');
+  };
+  await makeLoopGenerate(provider)([{ role: 'user', content: 'hi' }], [], {}).catch(() => {});
+  assert.ok(body, 'the worker-path request reached the provider seam');
+  assert.equal('thinking' in body, false);
+});
+
+test('F192: judgeCallOptions is empty for a non-OpenAI provider even when the model id matches the allow-list', () => {
+  const p = makeProvider('anthropic-api', { apiKey: 'k', model: 'deepseek-flash' });
+  assert.deepEqual(judgeCallOptions(p), {});
 });

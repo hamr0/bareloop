@@ -116,6 +116,33 @@ const OPENAI_MODEL_OPTIONS = Object.freeze({
 });
 
 /**
+ * Per-MODEL JUDGE-ONLY request options (F192, hamr ruling A 2026-10-09). deepseek-flash
+ * thinks by default and bills the reasoning as output: run mv117wde's rubric judge locate
+ * truncated at JUDGE_MAX_TOKENS=4000 four times, and a probe measured 1835 of 2409
+ * completion tokens as reasoning. The judge extracts quotes and decides nothing, so it
+ * runs with thinking off. These are PER-CALL options (bare-agent >=0.49 forwards
+ * `thinking` verbatim to `body.thinking`), never constructor options: the judge may be
+ * the very same provider instance as the worker (`buildRunnerProviders` reuses it), and
+ * the worker is deliberately left as it was. A model with no entry gets nothing; the
+ * field is never sent to a model not listed here (OpenAI/Anthropic would reject or
+ * misread it). Read through `judgeCallOptions` only — one owner.
+ */
+const OPENAI_JUDGE_CALL_OPTIONS = Object.freeze({
+  'deepseek-flash': Object.freeze({ thinking: Object.freeze({ type: 'disabled' }) }),
+});
+
+/**
+ * The per-call options the rubric JUDGE's model calls carry for this provider
+ * instance, from the allow-list above. Empty for any provider/model not listed.
+ * @param {any} provider a constructed bare-agent provider
+ * @returns {Record<string, any>}
+ */
+export function judgeCallOptions(provider) {
+  if (!(provider instanceof OpenAIProvider)) return {};
+  return OPENAI_JUDGE_CALL_OPTIONS[/** @type {keyof typeof OPENAI_JUDGE_CALL_OPTIONS} */ (provider.model)] ?? {};
+}
+
+/**
  * @typedef {object} ProviderTableEntry
  * @property {new (options: any) => any} ctor the bare-agent provider class
  * @property {string} envKey the environment variable this provider reads its key from
