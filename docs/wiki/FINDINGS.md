@@ -13500,6 +13500,46 @@ steers the model instead, and the check would be a new validator red needing a r
 turn's "Checks" and "Not checked" lines are written by the MODEL (`CONFIRM_SCHEMA` in `src/authorflow.js`), not by code; only
 the protections are code-owned. A plan can therefore promise a check no rule implements. Logged, not built.
 
+**Addendum 2026-10-09 (b) — the second and third live panel sessions (`smv0nrwe3l8y2`, `smv0o4mex8ddj`, `deepseek-flash`): five fixes, a plain-words refusal, an honest calibrating line (built; not re-proven live).**
+
+*Live evidence.* Session `smv0nrwe3l8y2`: calibration graded 7 of 10, and signing refused with `calibration-miswrite` x3 plus
+`injection-leak`. Session `smv0o4mex8ddj`: 8 of 10, two miswrites and two injection leaks. Real locate facts, cards and cases
+are copied into `tests/fixtures/f192-live-smv0nrwe.json` and `f192-live-smv0o4mex.json` (no secrets). Whose fault each was:
+two were our rule, one the drafter's case, one our injection check, one a missing field rule.
+
+*Fixes (`src/judged.js`, `src/calibrate.js`).* (1) `says-what` no longer reds when the artifact itself proves there is NO doc
+block (declaration found exactly once, no JSDoc block above): `has-doc` alone owns absence, so `resetCounters`/`init` stop
+double-reddening. A block with no prose still reds; a missing or duplicated declaration is unsure, so red. (2) Prefix
+matching (hamr option A): a description word is a name word when one starts with the other and the shorter is at least 4
+letters (`init`/`initialize`, `calc`/`calculate`). Honest ceiling and risk: a name word of 3 or fewer letters never matches
+(`add`/`address`, `get`/`getter` pass), and a longer word that merely begins with a name word (`parse`/`parser`) reads as an
+echo, a false red only when the description adds nothing else. (3) The `params` rule is unchanged where the drafter was
+wrong (`buildQuery({ table, limit = 10 })` documented as `@param options` passes; a destructured parameter may be documented
+under any root name); the case-proposal prompt now says so (`params.means`). (4) The calibration gate's injection facts check
+(`factsResist`) now calls the SAME helper as `has-doc`'s decide (`docQuoteInBlock`), so a worded `docQuote` inside the real
+block (` * Add two numbers.`) is not a leak; a quote outside the block, an invented one, or one under another function's
+declaration still is. (6) `params` reads the fields of a simple destructured pattern off the declaration text (defaults and
+renames handled): when the doc names ANY field, bare (`@param x`) or dotted (`@param opts.x`, `param0.x`), EVERY field must be
+named (`@param missing for field y of renderPoint's destructured parameter`); `@param options` alone still passes. Honest
+ceiling: nested, array and rest patterns, and brackets in a default, are never reddened on fields.
+
+*$0 replays over the real facts.* `smv0nrwe3l8y2`: before 7 of 10 with a leaked style; after 9 of 10 (the tenth is the case
+itself being wrong: prompt fix only) and all 5 styles resist. `smv0o4mex8ddj`: 10 of 10 as SETS of reds and 5 of 5 styles.
+Fail-first mutations: absence rule off (3 tests fail), prefix off (2), injection check back to the opener test (1), field rule
+off (3), bare-field exemption off (1).
+
+*Plain words (`src/authorreadout.js`).* `signingStopText` replaces the bare `signing gates failed - <codes>` line in the panel
+and prints first on the CLI; the full reds go to `draft-log.jsonl` as a `step-reds` record. A miswrite names the case and
+function and says what the practice case expected against what the check found, and does NOT claim whose fault it is (the
+practice case and the check disagree). Every red code reachable at that line is mapped (declaration family, `broken-close`,
+seed/listing unreadable, the calibration codes and casualty axes, `injection-leak`) with a tripwire scanning the source red
+sites; an unknown code quotes itself. (7) The `calibrating` step is the rubric-compile phase and was marked done long before
+the gate ran; `calibrationSummary` now rewrites that line once the gate returns (`calibrating` x with "8 of 10 practice cases
+graded right - 3 of 5 attack tests resisted", or done with "10 of 10 ... 5 of 5"), pass being the gate's own `ok`.
+
+*Process note.* Edits to prompt-register files (`src/judged.js`, `src/cardauthor.js`) need a `Failure: run <8 chars>` line; a
+panel draft session id (13 chars) does not match, so those commits were held for hamr's ruling.
+
 ## F193 — the prompt-commit rule assumed every prompt-register-file change came from a run failure; a type-only edit could not satisfy it honestly (fixed)
 
 Found 2026-09-23 on `feat/panel-n6`. Commit `565fb99` widened one JSDoc `@param` type annotation in
