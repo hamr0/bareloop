@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createPanelServer } from '../src/panel/server.js';
 import { checkHumanGuard, signRun } from '../src/panel/authorroutes.js';
-import { createSession, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
+import { createSession, planText, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
 import { keyRows } from '../src/providerrows.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
@@ -550,6 +550,10 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
   // ask the confirm turn raises is the menu itself.
   assert.ok(await waitForAskKind('menu'), `expected a menu ask; got phase=${session.state.phase} error=${session.state.error}`);
   assert.equal(session.state.revisesLeft, 2, 'D3: 2 revises available before the first fix');
+  // hamr 2026-10-09: the plan reads as headed sections, a blank line between them (one owner: planText)
+  const shown = session.state.messages.filter((m) => m.role === 'bot').at(-1).text;
+  assert.equal(shown, '#PLAN:\n"fix things v1"\n\n#CHECKS:\ntsc clean\n\n'
+    + 'Sign & run to confirm this plan, or Revise to describe a change.');
 
   // Revise (N left): the confirm turn's own 'fix' pick, chat text as the
   // correction — never reachable through the generic send().
@@ -1147,4 +1151,18 @@ test('P6 item 3: npm ci "succeeds" but node_modules is still missing -> falls ba
   const session = lockSession(repo, 'panel-author-npm-ci-lies', async () => ({ ok: true }));
   await untilPhaseOrAsk(session);
   assert.equal(session.state.phase, 'install-needed');
+});
+
+test('planText: PLAN, CHECKS, NOT CHECKED (and QUESTIONS) are headed sections, a blank line apart; empty ones are left out', () => {
+  assert.equal(planText({
+    goal: 'Every exported function gets a doc comment that says what it does.',
+    checks: ['every exported function has a doc block', 'the doc is not only a restatement of the function name'],
+    notChecked: ['the doc is accurate', 'the doc is well written'],
+    questions: [],
+  }), '#PLAN:\n"Every exported function gets a doc comment that says what it does."\n\n'
+    + '#CHECKS:\nevery exported function has a doc block · the doc is not only a restatement of the function name\n\n'
+    + '#NOT CHECKED:\nthe doc is accurate · the doc is well written\n\n'
+    + 'Sign & run to confirm this plan, or Revise to describe a change.');
+  assert.equal(planText({ goal: 'g', checks: [], notChecked: [], questions: ['which folder?'] }),
+    '#PLAN:\n"g"\n\n#CHECKS:\n(none)\n\n#QUESTIONS:\nwhich folder?\n\nSign & run to confirm this plan, or Revise to describe a change.');
 });

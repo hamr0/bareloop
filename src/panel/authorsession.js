@@ -141,6 +141,25 @@ const SOURCE_CHECK_CODES = new Set([
  * this file's one place that would need editing if that cap ever changed. */
 const CONFIRM_ROUND_CAP = 2;
 
+/**
+ * The confirm turn's plan as the chat shows it: ONE owner of the text (hamr, 2026-10-09: the one-blob "Plan: ...
+ * Checks: ... Not checked: ..." was unreadable). Each section is a heading on its own line, its content on the next,
+ * and a blank line between sections. `#NOT CHECKED:` and `#QUESTIONS:` appear only when there is something to say.
+ * The CLI composes its own plan screen (src/authorrun.js) and shares no text with this one.
+ * @param {{goal?: string, checks?: string[], notChecked?: string[], questions?: string[]}} p
+ * @returns {string}
+ */
+export function planText(p) {
+  const sections = [
+    `#PLAN:\n${JSON.stringify(p.goal ?? '')}`,
+    `#CHECKS:\n${(p.checks ?? []).join(' · ') || '(none)'}`,
+  ];
+  if ((p.notChecked ?? []).length) sections.push(`#NOT CHECKED:\n${(p.notChecked ?? []).join(' · ')}`);
+  if ((p.questions ?? []).length) sections.push(`#QUESTIONS:\n${(p.questions ?? []).join(' · ')}`);
+  sections.push('Sign & run to confirm this plan, or Revise to describe a change.');
+  return sections.join('\n\n');
+}
+
 /** @param {string} name @returns {boolean} kebab-case slug, same rule `job.js`'s `SLUG_RE` enforces */
 function isSlug(name) {
   return typeof name === 'string' && /^[a-z][a-z0-9-]*$/.test(name);
@@ -437,12 +456,7 @@ export function createSession(card, deps = {}) {
     resolvePending = resolveFn;
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
-      const p = step.plan ?? {};
-      const lines = [`Plan: ${JSON.stringify(p.goal ?? '')}`, `Checks: ${(p.checks ?? []).join(' · ') || '(none)'}`];
-      if ((p.notChecked ?? []).length) lines.push(`Not checked: ${p.notChecked.join(' · ')}`);
-      if ((p.questions ?? []).length) lines.push(`Questions: ${p.questions.join(' · ')}`);
-      lines.push('Sign & run to confirm this plan, or Revise to describe a change.');
-      say('bot', lines.join('\n'));
+      say('bot', planText(step.plan ?? {}));
     } else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total}): ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
     else if (step.kind === 'fix') say('bot', 'What should change?');
