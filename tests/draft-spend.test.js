@@ -232,3 +232,39 @@ test('a disk fault on the drafting log never stops the draft (best-effort like d
   assert.doesNotThrow(() => appendDraftLog(dir, { kind: 'call', no: 0, at: 'x' }));
   assert.equal(existsSync(dir), false);
 });
+
+test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned draft keeps its booked spend on disk and in the month', async (t) => {
+  const { home, session } = await (async () => {
+    const h = tmp(t);
+    writeFileSync(join(h, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+    const repo = tmp(t);
+    git(repo, ['init', '-q', '-b', 'main']);
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
+    mkdirSync(join(repo, 'src'));
+    writeFileSync(join(repo, 'src', 'mod.js'), '// nothing yet\n');
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '-m', 'seed']);
+    const s = createSession({
+      checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'revise-spend-job', goal: 'fix things', source: repo,
+      destination: 'src/', success: 'tsc clean', guardrails: 'no new deps', judgeExamples: '', capUsd: 2,
+    }, {
+      env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: h, sessionsRoot: join(h, 'panel-sessions'),
+      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+      generate: async () => { throw new Error('unused'); },
+      confirmGenerate: async (_c, tools) => {
+        const plan = { goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] };
+        if (tools && tools[0] && typeof tools[0].execute === 'function') await tools[0].execute(plan);
+        return { text: JSON.stringify(plan), error: null, cost: 0.0005 };
+      },
+      authorFn: async () => { throw new Error('never reached: the person revised at the menu'); },
+    });
+    for (let i = 0; i < 500 && s.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+    return { home: h, session: s };
+  })();
+  assert.equal(session.state.pendingAsk?.kind, 'menu');
+  assert.equal(session.abandon().ok, true);
+  assert.equal(session.state.phase, 'abandoned');
+  const file = JSON.parse(readFileSync(join(session.state.outDir, 'draft-spend.json'), 'utf8'));
+  assert.equal(file.spentUsd, 0.0005, 'the confirm call booked before the revise is still booked after it');
+  assert.equal(monthSpend({ home }).usd, 0.0005, 'and the month counts it');
+});

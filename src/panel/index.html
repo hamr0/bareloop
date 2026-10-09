@@ -613,7 +613,7 @@
                animated dots, then a check or a cross with its code-owned reason; chat turns stay in the thread above it, right over the ask box. -->
           <ol class="chat-steps" id="chat-progress-row" data-testid="chat-steps" aria-live="polite" hidden></ol>
 
-          <!-- build item 1 — a failed/rejected send, revise, sign-prepare,
+          <!-- build item 1 — a failed/rejected send, revise (reopen), sign-prepare,
                sign or check-deps POST shows here and STAYS shown: it is set
                only by this tab's own action handlers below and is never
                touched by renderActions()/poll() (which own #chat-card-error
@@ -623,10 +623,12 @@
 
           <div class="chat-input-row">
             <label for="chat-msg" style="display:none">Message</label>
-            <textarea id="chat-msg" rows="2" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg"></textarea>
+            <textarea id="chat-msg" rows="2" placeholder="Answer here when the draft asks you a question…" data-testid="chat-msg"></textarea>
           </div>
           <button class="btn primary wide" type="button" id="chat-main-btn" data-testid="chat-main" disabled>Start drafting</button>
           <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
+          <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown only while a plan waits for the OK. -->
+          <button class="btn wide" type="button" id="chat-reopen-btn" data-testid="chat-reopen" hidden>Revise</button>
           <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
@@ -3675,6 +3677,7 @@
     var msgInput = document.getElementById("chat-msg");
     var mainBtn = document.getElementById("chat-main-btn");
     var mainHint = document.getElementById("chat-main-hint");
+    var reopenBtn = document.getElementById("chat-reopen-btn");
     var mainAction = "none";
     var lastState = null;
     var startOk = false;
@@ -4127,26 +4130,20 @@
     }
 
     // hamr's ruling 2026-10-05: ONE wide button below the message box. Its wording, action and enabled state are ONE
-    // pure function of (state, typed-text-empty, reuse); state = {session, startOk, phase, pendingAsk, revisesLeft,
-    // signClicked, specHash}. Actions: start | check-deps | send | revise | sign-prepare | sign | none.
+    // pure function of (state, typed-text-empty, reuse); state = {session, startOk, phase, pendingAsk,
+    // signClicked, specHash}. Actions: start | check-deps | send | sign-prepare | sign | none.
     function mainButtonFor(st, textEmpty, reuse){
       var ask = st.pendingAsk;
       var atMenu = !!ask && ask.kind === "menu";
-      var left = st.revisesLeft || 0;
-      var hint = atMenu ? left + (left === 1 ? " change left" : " changes left") : "";
+      var hint = "";
       if(!st.session){
         return {text: reuse ? "Sign & run" : "Start drafting", action: "start", disabled: !st.startOk, hint: ""};
       }
       if(ask && ask.kind === "install-needed"){
         return {text: "Check again", action: "check-deps", disabled: false, hint: ""};
       }
-      if(ask && !textEmpty){
-        return atMenu
-          ? {text: "Send", action: "revise", disabled: left <= 0, hint: hint}
-          : {text: "Send", action: "send", disabled: false, hint: ""};
-      }
       if(ask && !atMenu){
-        return {text: "Send", action: "send", disabled: true, hint: ""};
+        return {text: "Send", action: "send", disabled: textEmpty, hint: ""};
       }
       if(atMenu || st.phase === "prepared"){
         if(st.phase === "prepared" && st.signClicked){
@@ -4156,16 +4153,21 @@
       }
       return {text: "Sign & run", action: "none", disabled: true, hint: ""};
     }
-    // pure: the ask box takes typed text only when the session has a pending ask that accepts it (the plan menu -> a
-    // change request, or any question); not with no session, no ask, or while waiting on an install
+    // pure: the ask box takes typed text only when the session has a pending ask that accepts it (a question the plan
+    // raised); not with no session, no ask, while the plan waits for the OK (that is Sign & run or Revise, never typed
+    // text), or while waiting on an install
     function askBoxOpenFor(st){
-      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind !== "install-needed";
+      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind !== "install-needed" && st.pendingAsk.kind !== "menu";
+    }
+    // pure: Revise shows only while a plan waits for the OK
+    function reviseShownFor(st){
+      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind === "menu";
     }
     function renderMain(){
       var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce};
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
-        st.revisesLeft = lastState.revisesLeft; st.specHash = lastState.specHash;
+        st.specHash = lastState.specHash;
       }
       // hamr 2026-10-05: the ask box is open only while something asks for a reply; otherwise dimmed and emptied
       var open = askBoxOpenFor(st);
@@ -4176,6 +4178,7 @@
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
       mainHint.textContent = b.hint;
+      reopenBtn.hidden = !reviseShownFor(st);
       fitBox(msgInput);
       fitCardBoxes();
     }
@@ -4444,10 +4447,10 @@
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
     // (fed by the every-2s `poll()`) unconditionally overwrites
     // `#chat-card-error` on every tick (`errEl.textContent = state.error ||
-    // ""`), including the SAME tick the send/revise/sign handlers below
+    // ""`), including the SAME tick the send/sign handlers below
     // used to call `poll()` in their own `.then` — so a refused/failed POST's
     // error was wiped before a person could read it (often on the very next
-    // line of the same callback). Compounding it, `send`/`revise` cleared
+    // line of the same callback). Compounding it, `send` cleared
     // `msgInput.value` unconditionally, even on failure — so a rejected
     // answer vanished from the box with no trace at all. Fixed by: (1) a
     // dedicated `#chat-action-error` element only these handlers touch,
@@ -4508,20 +4511,20 @@
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
     }
 
-    function doRevise(){
+    // hamr 2026-10-09 (as fwdloop's Revise): the draft is ended and the New job card opens with the SAME values in every
+    // box, all editable; Start drafting then drafts fresh from whatever the boxes now say. No typed change request goes
+    // to the model. The ended draft is an Abandon: money already spent stays booked.
+    function doReopen(){
       if(!sessionId) return;
-      var text = msgInput.value;
-      authorPost("/api/author/" + sessionId + "/revise", {text: text}).then(function(r){
+      authorPost("/api/author/" + sessionId + "/abandon", {}).then(function(r){
         var o = chatPostOutcome(r);
-        if(o.ok){
-          chatActionOk();
-          msgInput.value = "";
-        } else {
-          chatActionFailed(o.error);
-        }
-        poll();
-      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
+        if(!o.ok){ chatActionFailed(o.error); return; }
+        openNewCard();
+        chatActionOk();
+        thread.innerHTML = '<div class="msg system">' + escapeXml("The boxes are open as you drafted them. Edit what you want, then Start drafting. The first draft's cost stays counted.") + "</div>";
+      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not revised"); });
     }
+    reopenBtn.addEventListener("click", doReopen);
 
     function doSign(){
       if(!sessionId) return;
@@ -4553,7 +4556,6 @@
       if(mainAction === "start") doStart();
       else if(mainAction === "check-deps") doCheckDeps();
       else if(mainAction === "send") doSend();
-      else if(mainAction === "revise") doRevise();
       else if(mainAction === "sign-prepare" || mainAction === "sign") doSign();
     });
 

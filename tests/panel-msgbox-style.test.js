@@ -20,7 +20,7 @@ test('#chat-msg: white in light mode, the theme input background in dark, one co
 });
 
 test('#chat-msg is a wrapping <textarea> (hamr 2026-10-05: long ask text must wrap, not scroll sideways), Enter sends, Shift+Enter is a newline', () => {
-  assert.match(PAGE, /<textarea id="chat-msg"[^>]*rows="2"[^>]*placeholder="Ask for a change, or reply to the plan…"[^>]*data-testid="chat-msg"[^>]*><\/textarea>/);
+  assert.match(PAGE, /<textarea id="chat-msg"[^>]*rows="2"[^>]*placeholder="Answer here when the draft asks you a question…"[^>]*data-testid="chat-msg"[^>]*><\/textarea>/);
   assert.doesNotMatch(PAGE, /<input id="chat-msg"/);
   const rule = PAGE.match(/textarea\[data-testid="chat-msg"\]\{([^}]*)\}/)[1];
   assert.match(rule, /width:100%/);

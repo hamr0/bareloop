@@ -426,14 +426,14 @@ test('one-session-at-a-time (build spec): a second Start is refused (409) while 
   assert.equal(second.status, 409);
 });
 
-test('no path from chat/send/revise to signing: /send and /revise refuse a "menu" pending ask (only sign-prepare/sign may act on it)', async (t) => {
+test('no path from chat/send to signing: /send refuses a "menu" pending ask (only sign-prepare/sign may act on it); /revise no longer exists', async (t) => {
   const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-a\tb\n') });
   const repo = makeRepo();
   const started = await (await fetch(`${base}/api/author/start`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(baseCard({ source: repo })),
   })).json();
   // this session refuses at the missing-key door before any ask ever opens,
-  // so send/revise have NOTHING pending — confirming they refuse with "no
+  // so send has NOTHING pending — confirming they refuse with "no
   // ask pending" rather than silently succeeding on a session with no plan.
   const sendRes = await fetch(`${base}/api/author/${started.sessionId}/send`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify({ text: 'hi' }),
@@ -443,8 +443,7 @@ test('no path from chat/send/revise to signing: /send and /revise refuse a "menu
   const reviseRes = await fetch(`${base}/api/author/${started.sessionId}/revise`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify({ text: 'hi' }),
   });
-  const reviseBody = await reviseRes.json();
-  assert.equal(reviseBody.ok, false);
+  assert.equal(reviseRes.status, 404, 'hamr 2026-10-09: no typed change request reaches the model; Revise reopens the boxes (abandon + a fresh Start)');
 });
 
 // ---------------------------------------------------------------------------
@@ -518,12 +517,11 @@ test('createSession: RED-PROOF — with NO scout/generate override, the real (ne
   assert.notEqual(session.state.phase, 'prepared', 'without the generate/scout override this must not reach prepared');
 });
 
-test('createSession end to end: draft -> 1 revise (Revise button semantics) -> prepared -> sign, driven by a fake generate', async (t) => {
+test('createSession end to end: draft -> plan menu -> prepared -> sign, driven by a fake generate', async (t) => {
   const repo = makeRepo();
   const specHash = 'cafef00dbeef0123';
   const plans = [
     { goal: 'fix things v1', checks: ['tsc clean'], questions: [], notChecked: [] },
-    { goal: 'fix things v2 (revised)', checks: ['tsc clean', 'no new deps'], questions: [], notChecked: [] },
   ];
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-e2e-1' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
@@ -549,21 +547,15 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
   // any more, so the first (and only, for a non-ambiguous-language repo)
   // ask the confirm turn raises is the menu itself.
   assert.ok(await waitForAskKind('menu'), `expected a menu ask; got phase=${session.state.phase} error=${session.state.error}`);
-  assert.equal(session.state.revisesLeft, 2, 'D3: 2 revises available before the first fix');
+  assert.equal('revisesLeft' in session.state, false, 'no typed-revise rounds exist any more');
+  assert.equal(typeof /** @type {any} */ (session).revise, 'undefined');
   // hamr 2026-10-09: the plan reads as headed sections, a blank line between them (one owner: planText)
   const shown = session.state.messages.filter((m) => m.role === 'bot').at(-1).text;
   assert.equal(shown, '#PLAN:\n"fix things v1"\n\n#CHECKS:\ntsc clean\n\n'
-    + 'Sign & run to confirm this plan, or Revise to describe a change.');
+    + 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
 
-  // Revise (N left): the confirm turn's own 'fix' pick, chat text as the
-  // correction — never reachable through the generic send().
   const badSend = session.send('this must be refused — menu picks never go through send');
   assert.equal(badSend.ok, false, 'RED-PROOF: send() must refuse a pending menu ask');
-  const revised = await session.revise('tighten the scope');
-  assert.equal(revised.ok, true);
-  assert.ok(await waitForAskKind('menu'), 'round 2 must produce another menu ask');
-  assert.equal(session.state.revisesLeft, 1, 'one revise was spent');
-  assert.ok(session.state.messages.some((m) => m.role === 'you' && m.text === 'tighten the scope'));
 
   // click 1 — Sign & run's confirm pick. Never signs on its own.
   const prepped = session.signPrepare();
@@ -578,7 +570,7 @@ test('createSession end to end: draft -> 1 revise (Revise button semantics) -> p
   assert.equal(session.state.specHash, specHash);
   assert.ok(existsSync(session.state.resolvedSpecPath));
   const resolved = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-  assert.equal(resolved.goal, 'fix things v2 (revised)', 'the goal comes from the SECOND (revised) accepted plan');
+  assert.equal(resolved.goal, 'fix things v1', 'the goal comes from the accepted plan');
 
   // now hand this real, driven-through-the-real-ask-channel session to
   // signRun — proving the two layers actually compose.
@@ -1162,7 +1154,7 @@ test('planText: PLAN, CHECKS, NOT CHECKED (and QUESTIONS) are headed sections, a
   }), '#PLAN:\n"Every exported function gets a doc comment that says what it does."\n\n'
     + '#CHECKS:\nevery exported function has a doc block · the doc is not only a restatement of the function name\n\n'
     + '#NOT CHECKED:\nthe doc is accurate · the doc is well written\n\n'
-    + 'Sign & run to confirm this plan, or Revise to describe a change.');
+    + 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
   assert.equal(planText({ goal: 'g', checks: [], notChecked: [], questions: ['which folder?'] }),
-    '#PLAN:\n"g"\n\n#CHECKS:\n(none)\n\n#QUESTIONS:\nwhich folder?\n\nSign & run to confirm this plan, or Revise to describe a change.');
+    '#PLAN:\n"g"\n\n#CHECKS:\n(none)\n\n#QUESTIONS:\nwhich folder?\n\nSign & run to confirm this plan, or Revise to edit the boxes and draft again.');
 });

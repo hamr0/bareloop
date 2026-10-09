@@ -31,10 +31,9 @@ test('mainButtonFor: the table (state, typed-text-empty, reuse) -> wording, acti
     [{ session: true, phase: 'install-needed', pendingAsk: ask('install-needed') }, false, false, { text: 'Check again', action: 'check-deps', disabled: false, hint: '' }],
     [{ session: true, phase: 'confirming', pendingAsk: ask('question') }, false, false, { text: 'Send', action: 'send', disabled: false, hint: '' }],
     [{ session: true, phase: 'confirming', pendingAsk: ask('question') }, true, false, { text: 'Send', action: 'send', disabled: true, hint: '' }],
-    [{ session: true, phase: 'confirming', pendingAsk: ask('menu'), revisesLeft: 2 }, false, false, { text: 'Send', action: 'revise', disabled: false, hint: '2 changes left' }],
-    [{ session: true, phase: 'confirming', pendingAsk: ask('menu'), revisesLeft: 1 }, false, false, { text: 'Send', action: 'revise', disabled: false, hint: '1 change left' }],
-    [{ session: true, phase: 'confirming', pendingAsk: ask('menu'), revisesLeft: 0 }, false, false, { text: 'Send', action: 'revise', disabled: true, hint: '0 changes left' }],
-    [{ session: true, phase: 'confirming', pendingAsk: ask('menu'), revisesLeft: 2 }, true, false, { text: 'Sign & run', action: 'sign-prepare', disabled: false, hint: '2 changes left' }],
+    // hamr 2026-10-09: at the plan menu there is no typed change request; the button is Sign & run whatever is typed
+    [{ session: true, phase: 'confirming', pendingAsk: ask('menu') }, false, false, { text: 'Sign & run', action: 'sign-prepare', disabled: false, hint: '' }],
+    [{ session: true, phase: 'confirming', pendingAsk: ask('menu') }, true, false, { text: 'Sign & run', action: 'sign-prepare', disabled: false, hint: '' }],
     [{ session: true, phase: 'prepared', signClicked: false }, true, false, { text: 'Sign & run', action: 'sign-prepare', disabled: false, hint: '' }],
     [{ session: true, phase: 'prepared', signClicked: true, specHash: 'abcdef0123456789' }, true, false, { text: 'Sign abcdef01 & run', action: 'sign', disabled: false, hint: '' }],
     [{ session: true, phase: 'prepared', signClicked: true, specHash: 'abcdef0123456789' }, true, true, { text: 'Sign abcdef01 & run', action: 'sign', disabled: false, hint: '' }],
@@ -55,6 +54,21 @@ test('page: ONE button below the message box; Send, Check again, Revise, the sig
   assert.match(PAGE, /id="chat-main-hint"/);
   assert.match(PAGE, /\.btn\.wide\{[^}]*width:100%/);
   assert.match(PAGE, /id="chat-main-btn"[^>]*class="btn primary wide"|class="btn primary wide"[^>]*id="chat-main-btn"/);
+});
+
+test('page: Revise is its own button, shown only while a plan waits for the OK, and it reopens the boxes (no typed change request, no /revise route)', () => {
+  const shown = new Function(`${fnSrc('reviseShownFor')}\nreturn reviseShownFor;`)();
+  assert.equal(shown({ session: true, pendingAsk: ask('menu') }), true);
+  assert.equal(shown({ session: true, pendingAsk: ask('question') }), false);
+  assert.equal(shown({ session: true, pendingAsk: null }), false);
+  assert.equal(shown({ session: false, pendingAsk: ask('menu') }), false);
+  assert.match(PAGE, /id="chat-reopen-btn"[^>]*hidden>Revise<\/button>/);
+  assert.match(fnSrc('renderMain'), /reopenBtn\.hidden = !reviseShownFor\(st\)/);
+  const reopen = fnSrc('doReopen');
+  assert.match(reopen, /\/abandon/);
+  assert.match(reopen, /openNewCard\(\)/);
+  assert.doesNotMatch(reopen, /resetCard|clearCardBoxes/, 'the boxes keep the values they were drafted with');
+  assert.doesNotMatch(PAGE, /\/revise"|doRevise/);
 });
 
 test('page: the button is dispatched from mainButtonFor and re-rendered on typing', () => {

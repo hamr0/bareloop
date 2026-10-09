@@ -2569,11 +2569,10 @@ test('build item 1: chatPostOutcome — RED-PROOF against the pre-fix decision r
   assert.equal(chatPostOutcome(null).ok, false);
 });
 
-test('build item 1: sendBtn/reviseBtn only clear msgInput inside the o.ok branch — a failed POST must never wipe the typed answer', () => {
+test('build item 1: sendBtn only clears msgInput inside the o.ok branch — a failed POST must never wipe the typed answer', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const sendSrc = html.slice(html.indexOf('function doSend('), html.indexOf('function doRevise('));
-  const reviseSrc = html.slice(html.indexOf('function doRevise('), html.indexOf('function doSign('));
-  for (const [name, src] of [['send', sendSrc], ['revise', reviseSrc]]) {
+  const sendSrc = html.slice(html.indexOf('function doSend('), html.indexOf('function doReopen('));
+  for (const [name, src] of [['send', sendSrc]]) {
     assert.match(src, /if\(o\.ok\)\{\s*chatActionOk\(\);\s*msgInput\.value = "";/, `${name}: msgInput.value = "" must sit inside the o.ok branch`);
     // the ONLY place msgInput.value is assigned in this handler is that one
     // success-branch line — never a second unconditional clear elsewhere.
