@@ -13540,6 +13540,18 @@ graded right - 3 of 5 attack tests resisted", or done with "10 of 10 ... 5 of 5"
 *Process note.* Edits to prompt-register files (`src/judged.js`, `src/cardauthor.js`) need a `Failure: run <8 chars>` line; a
 panel draft session id (13 chars) does not match, so those commits were held for hamr's ruling.
 
+**Addendum 2026-10-09 (c) — signing refused a MIXED rubric close after calibration PASSED (session `smv0tasvb0u89`, `deepseek-flash`): fixed (test-proven; not re-proven live).**
+
+Calibration passed live (10 of 10 practice cases, 5 of 5 attack styles). Signing then refused: `gates.seedVerdict = {ok:false, redAtSeed:["changed-from-seed"], workRed:[]}`, and the panel said "Nothing in the close fails on the repository as it is, so there is nothing for a run to do." The close was MIXED: guards, mechanical stages and a `judged-floor` stage (`jsdoc-contract-floor`), which ruling 8 skips at seed. The existing exemption (a passed calibration plays the seed-red role) was gated on `judgedStages.length > 0 && mechanicalWork.length === 0` in `prepareSigning`, so it reached only a pure-judged close; and `judgedStages` there is the imported FUNCTION, so `.length` was its arity (always 1), a latent always-true that only the second clause had been holding up. Every mixed rubric job refused here.
+
+*hamr's ruling (2026-10-09):* "a rubric job should check if judge can judge (calibration) and judge rules can apply properly to pass ... we can't close everything upfront", and "calibration passing yes". Rule: in ANY close carrying a judged stage, pure or mixed, a PASSED calibration gate satisfies the seed-red requirement. A close with NO judged stage keeps the old rule (some work stage must be red at seed). A failed or missing calibration never satisfies it.
+
+*Built:* one owner, `seedProofIsCalibration(judged, calibration)` in `src/authorjob.js` (judged stage present AND `calibration.ok === true`), consulted only after the calibration gate returned (a failed gate already returned its own reds and refusal, so a mixed close with failed calibration is refused naming calibration, never by "nothing fails"). When a mechanical work stage IS red at seed, it signs on that evidence and `satisfiedBy` is not set. Mechanical stages still run at seed and a guard red at seed (`changed-from-seed`) means what it did. The panel/CLI gate-3 line now says "carries a judged stage".
+
+*Run-time check (read, not run):* the close-first precheck (`planrun.js` `judgeClose`, 0a) runs the GRADING path (`runDeclaredClose`, `src/kinds.js`), which does not skip the judged stage; it is first-red-wins, so on this live close `changed-from-seed` (red on an untouched tree by design, the tree-changed pairing) ends the close before the judged stage and `already-green` is not detected on a repo that is already documented. That is the same for every mechanical close with a tree-changed stage today, not new with this change; a worker plan could be paid for on an already-done repo. Named, not fixed: arbiter territory, for hamr.
+
+Proven where: `tests/calibrate.test.js` (mixed signs, mixed with failed calibration refuses naming the practice case, no-judged-stage all-green still refuses, real fixture `tests/fixtures/f192-live-smv0tasvb.json`); fail-first with the helper forced false: 5 failed.
+
 ## F193 — the prompt-commit rule assumed every prompt-register-file change came from a run failure; a type-only edit could not satisfy it honestly (fixed)
 
 Found 2026-09-23 on `feat/panel-n6`. Commit `565fb99` widened one JSDoc `@param` type annotation in

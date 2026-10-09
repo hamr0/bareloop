@@ -745,12 +745,13 @@ signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (
 resolved judge identity), the graded rows and the battery — beside `judgeModel` itself.
 `runCalibration` takes `judgeModel` as a REQUIRED argument and throws without one.
 
-**D9.3 for a judged-ONLY close** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*).
-A judged stage skips the seed read (ruling 8), so a close whose only work stage is judged has no
-seed red and used to be unsignable — the one job shape softgreen exists for. For that shape only,
-a PASSED calibration gate plays the seed-red role (the polarity law makes *this close can fail* a
-demonstrated fact), and the record says so: `gates.seedVerdict.satisfiedBy === 'calibration'`. A
-close with any mechanical work stage is UNCHANGED and still needs its seed red.
+**D9.3 for a close with a judged stage** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*;
+widened 2026-10-09: *"a rubric job should check if judge can judge (calibration) ... we can't close
+everything upfront"*). A judged stage skips the seed read (ruling 8), so it can never be red at seed. For
+ANY close carrying a judged stage, pure or mixed with mechanical stages, a PASSED calibration gate plays the
+seed-red role (`seedProofIsCalibration`), and the record says so when no mechanical stage is red itself:
+`gates.seedVerdict.satisfiedBy === 'calibration'`. A failed or missing calibration never satisfies it. A close
+with NO judged stage is UNCHANGED and still needs a work stage red at the seed.
 
 **THE JUDGE TIER IS INSIDE THE SIGNATURE, and the stage refuses a mismatch.** *"A judge-model
 bump forces a full recalibration"* used to be an operator-side rule with nothing to fire on,
