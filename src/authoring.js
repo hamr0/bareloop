@@ -517,6 +517,32 @@ export const TYPES_GENRE_TEMPLATE = `1. The STRICT form of the language's type c
 export const GENRE_LANGUAGES = Object.freeze(['js', 'python']);
 
 /**
+ * The js `any` suppression pattern's regex, ONE spelling: the TYPES js battery
+ * below composes it into the signed guard, and `anySuppressionWarning` keys on
+ * it, so the warning and the guard cannot drift. The guard scans every ADDED
+ * line, comments included, so plain prose like ", any" trips it.
+ */
+const JS_ANY_REGEX = '(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]';
+
+/** The worker-facing line that rides with the js `any` guard (run mv13ery3). */
+export const ANY_SUPPRESSION_WARNING = '\nThe no-suppressions check also reads comments: never write the word any right after a comma, colon, bracket, brace, < or | '
+  + "(e.g. ', any', ': any', '(any'), even in plain English — write 'every', start the clause differently, or put it in backticks.";
+
+/**
+ * The warning line for a job whose ACTUAL stages carry the js `any` pattern, else
+ * ''. Derived from the stages' patterns (never goal prose), so a job without the
+ * guard is told nothing about it.
+ * @param {any[]|null|undefined} stages
+ * @returns {string}
+ */
+export function anySuppressionWarning(stages) {
+  const has = Array.isArray(stages) && stages.some((s) => isObj(s) && s.kind === 'pattern-absent-in-diff'
+    && isObj(s.params) && Array.isArray(s.params.patterns)
+    && s.params.patterns.some((/** @type {any} */ q) => isObj(q) && q.regex === JS_ANY_REGEX));
+  return has ? ANY_SUPPRESSION_WARNING : '';
+}
+
+/**
  * THE GENRE, as data. The suppression batteries are the hand-written closes'
  * own `SUPPRESSIONS` tables (`scripts/u-pulselog-close.mjs:35`,
  * `scripts/u-spawner-close.mjs:34`) — operator-owned genre knowledge, minted by
@@ -541,7 +567,7 @@ export const TYPES_GENRE = Object.freeze({
         Object.freeze({ id: 'ts-expect-error', regex: '@ts-expect-error' }),
         Object.freeze({ id: 'ts-nocheck', regex: '@ts-nocheck' }),
         Object.freeze({ id: 'eslint-disable', regex: 'eslint-disable' }),
-        Object.freeze({ id: 'any', regex: '(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]' }),
+        Object.freeze({ id: 'any', regex: JS_ANY_REGEX }),
         Object.freeze({ id: 'any-star', regex: '@\\w+\\s*\\{\\s*[*?]\\s*\\}' }),
         Object.freeze({ id: 'cast', regex: '@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\(' }),
       ]),

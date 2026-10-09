@@ -36,6 +36,7 @@ import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
+import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
@@ -2546,7 +2547,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const readLines = grantedNames.has(TOOL_BY_VERB.read)
       ? (native && !shimArm.cap ? NATIVE_READ_STRATEGY : '') + readShimStrategy(shimArm)
       : '';
-    const system = PERSONA_TOOLS + strategyFor(granted) + readLines;
+    const system = PERSONA_TOOLS + strategyFor(granted) + readLines + anySuppressionWarning(closeStagesOf(job));
     /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
     const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
 

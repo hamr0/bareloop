@@ -1825,3 +1825,25 @@ test('crashRecord: a non-Error throw is recorded honestly, never coerced into an
   assert.equal(crashRecord(null).raw.text, 'null');
   assert.equal(crashRecord(undefined).name, null);
 });
+
+// ── the `any` worker warning stays true to the guard (run mv13ery3) ──────────
+import { anySuppressionWarning, ANY_SUPPRESSION_WARNING as ANY_WARN } from '../src/authoring.js';
+
+test('anySuppressionWarning: examples in the line match the guard; safe spellings do not', () => {
+  const anyPat = TYPES_GENRE.languages.js.suppressions.find((p) => p.id === 'any');
+  const re = new RegExp(anyPat.regex);
+  for (const ex of ['x, any', 'x: any', '(any password']) assert.ok(re.test(ex), `${ex} trips the guard`);
+  for (const ex of ['every command', '`any` command', 'Any command']) assert.ok(!re.test(ex), `${ex} is clean`);
+  for (const ex of ["', any'", "': any'", "'(any'"]) assert.ok(ANY_WARN.includes(ex), `the line names ${ex}`);
+});
+
+test('anySuppressionWarning: keyed on the stages\' patterns, the signed guard bytes unchanged', () => {
+  const stagesFor = (lang) => classGuards({ verdictType: 'green', lang }).map((g) => ({ name: g.name, kind: g.kind, params: g.params }));
+  // composed guards are what get signed: snapshot proves the regex bytes did not move
+  const anyPat = TYPES_GENRE.languages.js.suppressions.find((p) => p.id === 'any');
+  assert.equal(anyPat.regex, '(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]');
+  assert.equal(anySuppressionWarning(stagesFor('js')), ANY_WARN);
+  assert.equal(anySuppressionWarning(stagesFor('python')), '');
+  assert.equal(anySuppressionWarning(null), '');
+  assert.equal(anySuppressionWarning([]), '');
+});
