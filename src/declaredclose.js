@@ -657,8 +657,6 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
           value: r.value ?? null,
           baseline: r.baseline ?? null,
           trendValue: trendValueOf(st, r),
-          // a judged stage's itemized red set — the numberless stage's only comparable (src/trend.js)
-          redSet: Array.isArray(r.detail?.redSet) ? r.detail.redSet : null,
           // the same header the command path writes, from the SAME function —
           // `src/trend.js` parses it to bucket the grade per stage
           ...(t.gap ? { gap: stageGap(/** @type {string} */ (st?.name), t.gap) } : {}),
@@ -681,14 +679,19 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
  *    recommend a top-up on a dying run — the one direction trend.js names as
  *    dangerous. F6's answer applies: unknown, never a number that means the
  *    opposite of what it says.
- *  - a stage with no measurement at all donates nothing, for the same reason.
+ *  - a JUDGED stage (no measurement) donates its distinct red COUNT, always 'down';
+ *  - any other stage with no measurement at all donates nothing, for the same reason.
  * The stage POSITION still travels either way, so "the run got further than it
  * ever had" is readable on every declared close.
  * @param {any} stage @param {any} r the M1 StageResult
  * @returns {number|null}
  */
 function trendValueOf(stage, r) {
-  if (typeof r?.value !== 'number' || !Number.isFinite(r.value)) return null;
+  if (typeof r?.value !== 'number' || !Number.isFinite(r.value)) {
+    // a JUDGED stage has no measurement: its number is how many DISTINCT reds it itemizes
+    // (F192 e), lower-is-better, compared to its best-so-far like any deterministic count
+    return Array.isArray(r?.detail?.redSet) ? new Set(r.detail.redSet).size : null;
+  }
   return stage?.params?.direction === 'lower-is-better' ? r.value : null;
 }
 
@@ -703,9 +706,9 @@ function trendValueOf(stage, r) {
  * exactly as before. Passing `stage: null` instead would silently disable that
  * fallback — undefined and null are different answers here.
  * @param {any} v a `runClose`-shaped verdict
- * @returns {{gap?: string, stage?: string|null, value?: number|null, reds?: string[]}}
+ * @returns {{gap?: string, stage?: string|null, value?: number|null}}
  */
 export function closeGrade(v) {
   if (v?.declared !== true) return { gap: v?.gap };
-  return { gap: v.gap, stage: v.stage ?? null, value: v.trendValue ?? null, ...(Array.isArray(v.redSet) ? { reds: v.redSet } : {}) };
+  return { gap: v.gap, stage: v.stage ?? null, value: v.trendValue ?? null };
 }

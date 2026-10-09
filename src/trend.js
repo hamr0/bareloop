@@ -249,8 +249,6 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
   /** the last two gaps RECORDED, for the motion fallback and for nothing else. In
    * memory only: never reported, never emitted, never returned (see MOTION above). */
   const lastGaps = [];
-  /** @type {Map<string, string>} stage → its previous itemized red set (numberless judged stages only) */
-  const lastReds = new Map();
 
   const idxOf = (/** @type {string} */ stage) => stageOrder.indexOf(stage);
 
@@ -271,15 +269,14 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
     /**
      * Read one RED close grade. A green never reaches here (both callers stop on
      * satisfied), so every reading is a failing grade by construction.
-     * @param {{gap?: string, stage?: string|null, value?: number|null, reds?: string[]}} o either a
+     * @param {{gap?: string, stage?: string|null, value?: number|null}} o either a
      *   raw gap (parsed here) or an already-read `{stage, value}` — never both
-     *   spellings of the same reading in one call. `reds` is a NUMBERLESS (judged) stage's itemized
-     *   red set: with no number to compare, WHAT failed is compared — the same set as this stage's
-     *   previous reading is no progress, a different one is progress. Ignored whenever a number exists.
+     *   spellings of the same reading in one call.
+     *   (A judged stage's value is its distinct red COUNT, supplied by the caller.)
      * @returns {{iteration: number, stage: string, value: number|null, improved: boolean,
      *   comparable: boolean, noProgress: number, limit: number, stageIndex: number}}
      */
-    record({ gap, stage, value, reds } = {}) {
+    record({ gap, stage, value } = {}) {
       const read = stage === undefined && value === undefined ? readGrade(gap) : { stage: stage ?? null, value: value ?? null };
       // the motion fallback's only input, held for one comparison (MOTION above)
       if (typeof gap === 'string') { lastGaps.push(gap); if (lastGaps.length > 2) lastGaps.shift(); }
@@ -296,14 +293,8 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
       const stageComparable = idx >= 0 && bestStageIdx !== null && idx !== bestStageIdx;
       const stageImproved = stageComparable && idx > /** @type {number} */ (bestStageIdx);
 
-      // a numberless stage that itemizes its reds compares them as a SET against its own previous reading
-      const redKey = v === null && Array.isArray(reds) ? [...new Set(reds)].sort().join('\n') : null;
-      const setComparable = redKey !== null && lastReds.has(st);
-      const setImproved = setComparable && lastReds.get(st) !== redKey;
-      if (redKey !== null) lastReds.set(st, redKey);
-
-      const comparable = countComparable || stageComparable || setComparable;
-      const improved = countImproved || stageImproved || setImproved;
+      const comparable = countComparable || stageComparable;
+      const improved = countImproved || stageImproved;
 
       // ── fold the reading in AFTER the comparison (a reading never beats itself) ──
       if (v !== null) {

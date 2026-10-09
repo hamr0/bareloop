@@ -32,40 +32,35 @@ test('mv13ery3 replay WITHOUT the red set: the governor never strikes (the live 
   assert.equal(t.struckOut(), false);
 });
 
-test('mv13ery3 replay WITH the identical red set: strikes after 2 no-progress iterations (iteration 4 of the real run, not the wall)', () => {
+test('mv13ery3 replay WITH the identical red set (1 distinct red = value 1): strikes after 2 no-progress iterations (iteration 4 of the real run, not the wall)', () => {
   const t = createTrend({ stageOrder: ORDER, limit: FIX_STRIKE_LIMIT });
   open(t);
-  const out = MV13.map(([, stage, value]) => t.record({ stage, value, ...(stage === 'docs-judged-floor' ? { reds: [UNSURE] } : {}) }));
+  const out = MV13.map(([, stage, value]) => t.record({ stage, value: stage === 'docs-judged-floor' ? 1 : value }));
   assert.deepEqual(out.map((o) => o.noProgress), [0, 0, 1, 2, 3]);
   assert.equal(out[2].comparable, true);
   assert.equal(out[2].improved, false);
-  // struck as soon as the second repeat is read — iteration 5 would never have been bought
   const t2 = createTrend({ stageOrder: ORDER, limit: FIX_STRIKE_LIMIT });
   open(t2);
   const struckAt = MV13.findIndex(([, stage, value]) => {
-    t2.record({ stage, value, ...(stage === 'docs-judged-floor' ? { reds: [UNSURE] } : {}) });
+    t2.record({ stage, value: stage === 'docs-judged-floor' ? 1 : value });
     return t2.struckOut();
   });
   assert.equal(MV13[struckAt][0], 4);
 });
 
-test('a judged stage whose reds SHRINK (or change) is progress and never strikes', () => {
+/** feed a judged stage's red COUNTS; returns per-reading {improved, comparable, noProgress} */
+const feed = (counts) => {
   const t = createTrend({ stageOrder: ORDER });
-  const a = 'src/a.js|has-doc|f1', b = 'src/a.js|params|f2', c = 'src/b.js|returns|f3';
-  t.record({ stage: 'docs-judged-floor', value: null, reds: [a, b, c] });
-  const r2 = t.record({ stage: 'docs-judged-floor', value: null, reds: [a, b] });
-  const r3 = t.record({ stage: 'docs-judged-floor', value: null, reds: [a] });
-  const r4 = t.record({ stage: 'docs-judged-floor', value: null, reds: [c] });
-  assert.deepEqual([r2.improved, r3.improved, r4.improved], [true, true, true]);
-  assert.equal(r4.noProgress, 0);
-  assert.equal(t.struckOut(), false);
+  return counts.map((value) => { const r = t.record({ stage: 'docs-judged-floor', value }); return [r.comparable, r.improved, r.noProgress]; });
+};
+
+test('judged red COUNT vs best-so-far: 5,3,4,3,2 = uncomparable, progress, strike, strike, progress (reset)', () => {
+  assert.deepEqual(feed([5, 3, 4, 3, 2]), [[false, false, 0], [true, true, 0], [true, false, 1], [true, false, 2], [true, true, 0]]);
 });
 
-test('the set is compared as a SET: order and duplicates do not make a different set', () => {
-  const t = createTrend({ stageOrder: ORDER });
-  t.record({ stage: 'docs-judged-floor', value: null, reds: ['x|a|f', 'y|b|g'] });
-  const r = t.record({ stage: 'docs-judged-floor', value: null, reds: ['y|b|g', 'x|a|f', 'x|a|f'] });
-  assert.equal(r.noProgress, 1);
+test('judged flip-flop A,B,A,B (1 red each) strikes; a GROWING set (1 then 3) strikes', () => {
+  assert.deepEqual(feed([1, 1, 1, 1]).map((r) => r[2]), [0, 1, 2, 3]);
+  assert.deepEqual(feed([1, 3]), [[false, false, 0], [true, false, 1]]);
 });
 
 test('numeric behaviour unchanged: mv117wde\'s real ladder (stage/value pairs) still reads noProgress 0,0,1,1,2', () => {
@@ -76,16 +71,7 @@ test('numeric behaviour unchanged: mv117wde\'s real ladder (stage/value pairs) s
   assert.equal(t.struckOut(), true);
 });
 
-test('a number wins: reds never override a stage that reported a value', () => {
-  const t = createTrend({ stageOrder: ORDER });
-  t.record({ stage: 'typecheck-src-errors', value: 5, reds: ['q'] });
-  const r = t.record({ stage: 'typecheck-src-errors', value: 5, reds: ['q'] });
-  assert.equal(r.noProgress, 1); // by the number (flat), exactly as before
-  const r2 = t.record({ stage: 'typecheck-src-errors', value: 3, reds: ['q'] });
-  assert.equal(r2.improved, true);
-});
-
-test('END TO END: a real judged stage that is unsure twice yields the same redSet through closeGrade, and strikes', async () => {
+test('END TO END: a real judged stage that is unsure twice yields the same redSet, a count of 1 through closeGrade, and strikes', async () => {
   const wd = mkdtempSync(join(tmpdir(), 'judgedstrike-'));
   mkdirSync(join(wd, 'bin'), { recursive: true });
   writeFileSync(join(wd, 'bin', 'pulselog.js'), '#!/usr/bin/env node\nconsole.log("hi");\n');
@@ -99,11 +85,10 @@ test('END TO END: a real judged stage that is unsure twice yields the same redSe
     assert.equal(r.verdict, 'red');
     assert.ok(Array.isArray(r.detail.redSet) && r.detail.redSet.length === 1, JSON.stringify(r.detail.redSet));
     seen.push(r.detail.redSet);
-    t.record({ stage: st.name, value: null, reds: r.detail.redSet });
+    t.record(closeGrade({ declared: true, gap: 'g', stage: st.name, trendValue: new Set(r.detail.redSet).size }));
   }
   assert.deepEqual(seen[0], seen[3]);
   assert.match(seen[0][0], /^bin\/pulselog\.js\|unsure\|/);
   assert.equal(t.struckOut(), true);
-  assert.deepEqual(closeGrade({ declared: true, gap: 'g', stage: 's', trendValue: null, redSet: ['a'] }), { gap: 'g', stage: 's', value: null, reds: ['a'] });
   assert.deepEqual(closeGrade({ declared: true, gap: 'g', stage: 's', trendValue: 3 }), { gap: 'g', stage: 's', value: 3 });
 });

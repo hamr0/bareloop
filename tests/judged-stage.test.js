@@ -467,6 +467,8 @@ test('the bridge carries the judge seam and the meter into the stage, and transl
     { cwd: wd, seedRef: 'HEAD', judgeModel: JUDGE_MODEL, judgeLoop: j.loop },
   );
   assert.equal(red.verdict, 'needs_revision');
+  assert.equal(red.trendValue, new Set(red.detail?.redSet ?? []).size || red.trendValue, 'a judged stage donates its distinct red count');
+  assert.ok(Number.isInteger(red.trendValue) && red.trendValue >= 1, 'the count is the stage\'s number (F192 e)');
   assert.match(red.gap, /close stage "reads-well" failed:/, 'the ONE gap header the trend reader parses');
   assert.match(red.gap, /\[scrubbed\]/, 'the caller redacts at the emission boundary');
 
