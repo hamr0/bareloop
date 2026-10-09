@@ -52,6 +52,7 @@ import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, redsRecord } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 
 /**
@@ -865,6 +866,23 @@ export function createSession(card, deps = {}) {
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });
 
+    if (!authored.ok && PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
+      // a refused rubric proposal: the person gets the reason in plain words (src/authorreadout.js, the one owner the
+      // CLI prints too), and the full reds go into the drafting log on the failed step so the cause survives the session
+      const cases = authored.judged?.signed?.cases ?? authored.judged?.proposal?.proposal?.cases ?? null;
+      const reds = authored.reds ?? [];
+      const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+      appendDraftLog(outDir, {
+        kind: 'step-reds', no: runningNo === -1 ? state.steps.length - 1 : runningNo, stop: authored.stop,
+        reds: redsRecord(reds, { cases }), at: new Date().toISOString(),
+      });
+      refuse(proposalStopText({
+        stop: String(authored.stop), reds, cases,
+        spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
+        source: authored.judged?.source === 'signer' ? 'signer' : 'proposal',
+      }));
+      return;
+    }
     if (!authored.ok) {
       refuse(`Stopped: ${authored.stop ?? 'authoring-failed'}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`, authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
       return;

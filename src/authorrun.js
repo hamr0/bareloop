@@ -128,7 +128,7 @@ import { readSourceManifest, missingDependencies, nonRepoSourceMessage } from '.
 import { tallyCalls } from './text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, answeredQuestionLines, fellBackLines,
+  openQuestionLines, answeredQuestionLines, fellBackLines, PLAIN_PROPOSAL_STOPS, proposalStopText,
 } from './authorreadout.js';
 
 /** Thrown to unwind `main` to an exit code without ever calling
@@ -977,6 +977,15 @@ export async function main(argv, deps = {}) {
         for (const o of r.options ?? []) out(`  · ${o}`);
         if (r.red) out(`  red: ${JSON.stringify(r.red)}`);
         for (const e of refusalEvents(r)) emit(e.type, e);
+      }
+      // a refused rubric proposal reads in plain words FIRST (the same text the panel shows), the technical reds after
+      if (PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
+        out(`\n${proposalStopText({
+          stop: String(authored.stop), reds: authored.reds ?? [],
+          cases: authored.judged?.signed?.cases ?? authored.judged?.proposal?.proposal?.cases ?? null,
+          spend: authored.cost ? { knownUsd: authored.cost.knownUsd ?? null, spendComplete: authored.cost.spendComplete ?? null } : null,
+          source: authored.judged?.source === 'signer' ? 'signer' : 'proposal',
+        })}`);
       }
       for (const red of authored.reds ?? []) {
         out(`\nRED ${red.code} at ${red.path}\n${red.detail}`);

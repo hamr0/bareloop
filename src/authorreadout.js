@@ -26,6 +26,7 @@
 import { scrubRaw } from './text.js';
 import { redactSecrets } from './validate.js';
 import { judgedStages } from './kinds.js';
+import { CALIBRATION_SIZE } from './judged.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -360,4 +361,211 @@ export function crashRecord(err) {
       reason: cause === undefined || cause === null ? null : String(cause?.message ?? cause),
     }),
   };
+}
+
+// ── THE PLAIN REASON FOR A REFUSED RUBRIC PROPOSAL ──────────────────────────
+//
+// A rubric draft that stopped at `proposal-invalid` / `rubric-invalid` used to
+// say only that code, and the technical reds behind it were lost to the person
+// (live, panel session smv0j8bp2pbyn, 2026-10-09; hamr: "A user should get a
+// reason that they can understand and do something about"). ONE owner: the
+// panel session and the CLI both print `proposalStopText`, so there is one
+// spelling and two doors. Every sentence is written HERE, by code — the model
+// never words a reason — and the structured red travels beside it so the record
+// loses nothing.
+
+/** the longest case name / quoted piece a plain sentence will carry */
+const PLAIN_QUOTE_MAX = 60;
+/** the most bullets a message lists before it says how many more there are */
+const PLAIN_MAX_BULLETS = 8;
+/** the most reds one drafting-log record carries, and the longest string in any of them */
+const RECORD_MAX_REDS = 40;
+const RECORD_STR_MAX = 600;
+
+/** model-derived text in a person-facing line: scrubbed, one line, bounded
+ * @param {unknown} s @returns {string} */
+function safeText(s) {
+  const one = redactSecrets(String(s ?? '')).replace(/\s+/g, ' ').trim();
+  return one.length > PLAIN_QUOTE_MAX ? `${one.slice(0, PLAIN_QUOTE_MAX)}…` : one;
+}
+
+/**
+ * @typedef {{code: string, path: string, detail: string, [k: string]: any}} PlainRed
+ * @typedef {{kind: string, sentence: string, red: PlainRed}} PlainReason
+ */
+
+/**
+ * The ONE table of plain kinds → sentence builders. A builder gets the red, the
+ * name of the case it lands on (when it lands on one) and the match of the
+ * regex that picked it. `unmapped` is the only kind the table does not list.
+ * Order matters: the first matching entry wins.
+ * @type {{kind: string, when: (r: PlainRed) => boolean, say: (r: PlainRed, c: string, m: RegExpMatchArray|null) => string}[]}
+ */
+const PLAIN_TABLE = [
+  // ── the rubric card (validateCard, surfaced as code invalid-value at path "card") ──
+  { kind: 'card-not-object', when: (r) => r.code === 'invalid-value' && /^the card must be an object/.test(r.detail),
+    say: () => 'The model did not hand back a rubric in the expected shape.' },
+  { kind: 'card-empty', when: (r) => r.code === 'invalid-value' && /^the card must carry a non-empty/.test(r.detail),
+    say: () => 'The model\'s rubric has no rules in it.' },
+  { kind: 'card-line-bad', when: (r) => r.code === 'invalid-value' && /^card item \d+: must be an object/.test(r.detail),
+    say: (r) => `Rubric line ${cardLineNo(r)} is not a proper line.` },
+  { kind: 'card-line-no-rule', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs a `rule`/.test(r.detail),
+    say: (r) => `Rubric line ${cardLineNo(r)} does not pick which rule it uses.` },
+  { kind: 'card-line-unknown-rule', when: (r) => r.code === 'invalid-value' && /^card item \d+: `.*` is not a rule this arbiter implements/.test(r.detail),
+    say: (r, _c, _m) => `Rubric line ${cardLineNo(r)} names a rule bareloop does not have (${safeText(/`(.*?)` is not a rule/.exec(r.detail)?.[1] ?? '')}).` },
+  { kind: 'card-line-repeat', when: (r) => r.code === 'invalid-value' && /^card item \d+: `.*` is named twice/.test(r.detail),
+    say: (r) => `Rubric line ${cardLineNo(r)} uses a rule that an earlier line already uses.` },
+  { kind: 'card-line-no-text', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs `text`/.test(r.detail),
+    say: (r) => `Rubric line ${cardLineNo(r)} has no wording.` },
+  { kind: 'proposal-not-object', when: (r) => r.code === 'invalid-value' && r.path === 'proposal',
+    say: () => 'The model\'s answer was not a rubric plus practice cases.' },
+  // ── the practice-case set as a whole ──
+  { kind: 'set-no-rules', when: (r) => r.code === 'calibration-cardless',
+    say: () => 'The rubric has no rules, so the practice cases had nothing to be checked against.' },
+  { kind: 'set-not-list', when: (r) => r.code === 'calibration-size' && !('declared' in r),
+    say: () => `The practice cases did not come back as a list of ${CALIBRATION_SIZE}.` },
+  { kind: 'set-size', when: (r) => r.code === 'calibration-size',
+    say: (r) => `The model gave ${r.declared} practice case${r.declared === 1 ? '' : 's'}; exactly ${r.required ?? CALIBRATION_SIZE} are needed.` },
+  { kind: 'set-one-sided', when: (r) => r.code === 'calibration-polarity',
+    say: (r) => `The practice cases were ${r.passes} pass and ${r.reds} fail; the set needs at least one of each, or it cannot tell a working judge from one that always gives the same answer.` },
+  // ── one practice case ──
+  { kind: 'case-not-object', when: (r) => r.code === 'calibration-case' && /^calibration\.cases\[\d+\]$/.test(r.path),
+    say: (_r, c) => `${c} is not a proper case.` },
+  { kind: 'case-name-repeat', when: (r) => r.code === 'calibration-case' && /\.id$/.test(r.path) && /declared twice/.test(r.detail),
+    say: (_r, c) => `Two practice cases share the name ${c}.` },
+  { kind: 'case-name-bad', when: (r) => r.code === 'calibration-case' && /\.id$/.test(r.path),
+    say: (_r, c) => `${c} has no usable name (a short name in lowercase letters, digits and hyphens is needed).` },
+  { kind: 'case-code-repeat', when: (r) => r.code === 'calibration-case' && /\.artifact$/.test(r.path) && /used twice/.test(r.detail),
+    say: (_r, c) => `${c} reuses the same sample code as another case.` },
+  { kind: 'case-code-missing', when: (r) => r.code === 'calibration-case' && /\.artifact$/.test(r.path),
+    say: (_r, c) => `${c} has no sample code to look at.` },
+  { kind: 'case-impossible-no-doc', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /expects has-doc red on/.test(r.detail),
+    say: (r, c) => {
+      const fn = safeText(/expects has-doc red on (\S+?),/.exec(r.detail)?.[1] ?? 'a function');
+      return `${c} says "fail: no doc comment" on ${fn}, but ${fn} has a doc comment right above it.`;
+    } },
+  { kind: 'case-pass-lists-fails', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /^a PASS case expects no reds/.test(r.detail),
+    say: (_r, c) => `${c} is marked as a pass but also lists things that fail.` },
+  { kind: 'case-fail-lists-nothing', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /^a RED case names WHICH/.test(r.detail),
+    say: (_r, c) => `${c} is marked as a fail but does not say which rule or function fails.` },
+  { kind: 'case-fails-not-list', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path),
+    say: (_r, c) => `${c} does not give its expected failures as a list.` },
+  { kind: 'case-no-expected', when: (r) => r.code === 'calibration-case' && /\.expect$/.test(r.path),
+    say: (_r, c) => `${c} has no expected result.` },
+  { kind: 'case-verdict-bad', when: (r) => r.code === 'calibration-case' && /\.expect\.verdict$/.test(r.path),
+    say: (_r, c) => `${c} expects a result that is neither pass nor fail.` },
+  { kind: 'case-fail-malformed', when: (r) => r.code === 'calibration-case' && /\.reds\[\d+\]$/.test(r.path) && /^an expected red is/.test(r.detail),
+    say: (_r, c) => `${c} has an expected failure that is not written as a rule and a function.` },
+  { kind: 'case-fail-repeat', when: (r) => r.code === 'calibration-case' && /\.reds\[\d+\]$/.test(r.path),
+    say: (_r, c) => `${c} lists the same failure twice.` },
+  { kind: 'case-fail-rule-foreign', when: (r) => r.code === 'calibration-case' && /\.rule$/.test(r.path) && typeof r.rule === 'string',
+    say: (r, c) => `${c} expects a failure from the rule "${safeText(r.rule)}", which this rubric does not use.` },
+  { kind: 'case-fail-rule-missing', when: (r) => r.code === 'calibration-case' && /\.rule$/.test(r.path),
+    say: (_r, c) => `${c} has an expected failure with no rule named.` },
+  { kind: 'case-fail-fn-missing', when: (r) => r.code === 'calibration-case' && /\.fn$/.test(r.path),
+    say: (_r, c) => `${c} has an expected failure with no function named.` },
+];
+
+/** @param {PlainRed} r the 1-based rubric line a card red lands on @returns {number} */
+function cardLineNo(r) {
+  return Number(/^card item (\d+):/.exec(r.detail)?.[1] ?? -1) + 1;
+}
+
+/**
+ * Every plain kind the table can emit — the list the test enumerates against.
+ * @returns {string[]}
+ */
+export function plainKinds() {
+  return PLAIN_TABLE.map((e) => e.kind);
+}
+
+/**
+ * Map the technical reds of a refused proposal to plain sentences, one per red.
+ * An unknown code is NEVER dropped: it becomes a generic sentence that still
+ * quotes the code and path, under the kind `unmapped`.
+ * @param {PlainRed[]} reds
+ * @param {{cases?: any}} [o] the proposed cases, to name a case by its own id
+ * @returns {PlainReason[]}
+ */
+export function plainReasons(reds, { cases = null } = {}) {
+  return (Array.isArray(reds) ? reds : []).map((red) => {
+    const r = /** @type {PlainRed} */ ({ ...red, code: String(red?.code ?? ''), path: String(red?.path ?? ''), detail: String(red?.detail ?? '') });
+    const idx = /^calibration\.cases\[(\d+)\]/.exec(r.path)?.[1];
+    const given = idx !== undefined && Array.isArray(cases) ? cases[Number(idx)]?.id : undefined;
+    const caseName = idx === undefined ? 'A case'
+      : typeof given === 'string' && given.trim() !== '' ? `Case "${safeText(given)}"` : `Case ${Number(idx) + 1}`;
+    const hit = PLAIN_TABLE.find((e) => e.when(r));
+    if (hit) return { kind: hit.kind, sentence: hit.say(r, caseName, null), red: r };
+    return {
+      kind: 'unmapped',
+      sentence: `The model's proposal failed a check that has no plain wording yet ("${safeText(r.code)}" at ${safeText(r.path)}).`,
+      red: r,
+    };
+  });
+}
+
+/** @param {number} n @returns {string} the panel's money spelling: 2 decimals, "<$0.01" under a cent */
+function moneyText(n) {
+  return n > 0 && n < 0.005 ? '<$0.01' : `$${n.toFixed(2)}`;
+}
+
+/**
+ * The money clause: the measured figure, "at least" when a call was unpriced,
+ * and `null` when there is no honest figure (the caller then says unknown or
+ * drops the clause — never a zero).
+ * @param {{knownUsd?: number|null, spendComplete?: boolean|null}|null|undefined} spend
+ * @returns {string|null}
+ */
+function spendText(spend) {
+  if (!spend || typeof spend.knownUsd !== 'number' || !Number.isFinite(spend.knownUsd)) return null;
+  return `${spend.spendComplete === false ? 'at least ' : ''}${moneyText(spend.knownUsd)}`;
+}
+
+/** the stops this module explains in plain words */
+export const PLAIN_PROPOSAL_STOPS = Object.freeze(['proposal-invalid', 'rubric-invalid']);
+
+/**
+ * THE MESSAGE a person reads when the rubric proposal was refused. Both doors
+ * (the panel's failed step and the CLI) print exactly this.
+ * @param {{stop: string, reds: PlainRed[], cases?: any, spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null,
+ *   source?: 'proposal'|'signer'}} o
+ * @returns {string}
+ */
+export function proposalStopText({ stop, reds, cases = null, spend = null, source = 'proposal' }) {
+  const reasons = plainReasons(reds, { cases });
+  const unique = [...new Set(reasons.map((x) => x.sentence))];
+  const shown = unique.slice(0, PLAIN_MAX_BULLETS);
+  const onlyCases = reasons.length > 0 && reasons.every((x) => x.kind.startsWith('case-') || x.kind.startsWith('set-'));
+  const spent = spendText(spend);
+  const head = stop === 'rubric-invalid'
+    ? 'The rubric and practice cases failed the last check before signing, so nothing was signed.'
+    : `The model's ${onlyCases ? 'practice cases for your rubric' : 'rubric and practice cases'} didn't hold up, so we stopped before grading anything.`;
+  const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`, 'What was wrong:'];
+  for (const s of shown) lines.push(` • ${s}`);
+  if (unique.length > shown.length) lines.push(` • …and ${unique.length - shown.length} more.`);
+  lines.push(source === 'signer' ? 'This one is from the edit made before signing.' : 'This is the model\'s mistake, not yours.');
+  lines.push(`What to do: draft again${spent ? ` (about ${spent} to reach here)` : ''}.`);
+  lines.push('If it fails the same way twice, make your PASS/FAIL examples more concrete.');
+  return lines.join('\n');
+}
+
+/**
+ * The reds as the drafting log keeps them: every structured field, the plain
+ * sentence beside it, every string secret-scrubbed and bounded, the list capped.
+ * @param {PlainRed[]} reds @param {{cases?: any}} [o]
+ * @returns {Record<string, any>[]}
+ */
+export function redsRecord(reds, { cases = null } = {}) {
+  /** @param {unknown} s */
+  const cut = (s) => { const t = redactSecrets(String(s ?? '')); return t.length > RECORD_STR_MAX ? `${t.slice(0, RECORD_STR_MAX)}…` : t; };
+  return plainReasons(reds, { cases }).slice(0, RECORD_MAX_REDS).map(({ kind, sentence, red }) => {
+    /** @type {Record<string, any>} */
+    const out = { kind, plain: sentence };
+    for (const [k, v] of Object.entries(red)) {
+      if (typeof v === 'string') out[k] = cut(v);
+      else if (typeof v === 'number' || typeof v === 'boolean' || v === null) out[k] = v;
+      else if (Array.isArray(v)) out[k] = v.slice(0, 10).map((x) => (typeof x === 'string' ? cut(x) : x));
+    }
+    return out;
+  });
 }
