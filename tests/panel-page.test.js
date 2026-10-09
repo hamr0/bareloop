@@ -1801,9 +1801,9 @@ test('MAP: no sign legend (hamr 2026-10-04); one small line-style key `dashed bo
   const src = html.slice(html.indexOf('function stepMapKeyHTML('), html.indexOf('function renderStepMap('));
   // eslint-disable-next-line no-new-func
   const key = new Function(src + '\nreturn stepMapKeyHTML;')();
-  assert.match(key([{}]), /dashed box = retry<\/span><\/div>$/);
+  assert.match(key([{}]), /↻N = took N tries \(dashed box\)<\/span><\/div>$/);
   assert.doesNotMatch(key([{}]), /dotted/);
-  assert.match(key([{}, { resumedNext: true }]), /dashed box = retry<\/span><span>dotted edge = resumed after<\/span>/);
+  assert.match(key([{}, { resumedNext: true }]), /↻N = took N tries \(dashed box\)<\/span><span>dotted edge = resumed after<\/span>/);
   assert.match(html, /buildStepMapHTML\(steps\) \+ stepMapKeyHTML\(steps\)/);
 });
 

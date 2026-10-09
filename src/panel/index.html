@@ -314,8 +314,15 @@
   .map-box{border:1px solid var(--border-strong);padding:10px;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
   .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
   /* ruling 1A: chips as wide as their own text, side by side, wrapping — a name is never truncated */
-  .map-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;}
-  .map-chip{display:inline-block;width:auto;max-width:100%;box-sizing:border-box;font:inherit;font-size:12px;line-height:1.4;text-align:left;padding:4px 8px;border:2px solid var(--border-strong);border-radius:0;background:var(--panel2);color:var(--text-faint);white-space:normal;overflow-wrap:anywhere;}
+  .map-chips{display:flex;flex-wrap:wrap;gap:8px 4px;align-items:flex-start;padding-left:1.4em;}
+  /* ruling A: a step + its trailing arrow are ONE unit (the arrow never wraps alone); the lead arrow of a wrapped line
+     hangs in the container's left padding (absolute, zero layout impact — toggling it can never move a chip) */
+  .map-item{position:relative;display:inline-flex;align-items:center;gap:4px;max-width:100%;}
+  .map-arrow{color:var(--text-dim);font-size:13px;flex:none;}
+  .map-lead{display:none;position:absolute;left:-1.3em;top:50%;transform:translateY(-50%);color:var(--text-dim);font-size:13px;}
+  .map-item.line-start .map-lead{display:block;}
+  .chip-retry{color:var(--text-dim);font-size:11px;}
+  .map-chip{display:inline-block;width:auto;max-width:100%;min-width:0;box-sizing:border-box;font:inherit;font-size:12px;line-height:1.4;text-align:left;padding:4px 8px;border:2px solid var(--border-strong);border-radius:0;background:var(--panel2);color:var(--text-faint);white-space:normal;overflow-wrap:anywhere;}
   button.map-chip{cursor:pointer;}
   .map-chip.s-done{border-color:var(--green);color:var(--text);} .map-chip.s-done .chip-sign{color:#2e7d32;}
   .map-chip.s-running{border-color:var(--amber);color:var(--text);} .map-chip.s-running .chip-sign{color:#b8860b;}
@@ -1047,19 +1054,36 @@
   // boxStatusText (src/panel/status.js's table) — the chip shows "[sign title]" and keeps the word in its tooltip.
   function buildStepMapHTML(steps){
     var numIdx = stepNumberIndices(steps);
+    var last = steps.length - 1;
     var body = steps.map(function(s, idx){
       var sign = s.status && s.status.sign ? s.status.sign : "";
+      var tries = boxRetryTry(s);
       var cls = "map-chip s-" + String(s.state).replace(/[^a-z-]/g, "") +
-        (boxRetryTry(s) ? " retry" : "") + (s.resumedNext ? " resumed-next" : "");
+        (tries ? " retry" : "") + (s.resumedNext ? " resumed-next" : "");
       var label = escapeXml(stepTitleText(numIdx[idx], s));
       var blocked = s.blocked > 0 ? ' <span class="chip-blocked">' + s.blocked + ' blocked</span>' : '';
-      var inner = '[<span class="chip-sign">' + escapeXml(sign) + '</span> ' + label + blocked + ']';
+      var retry = tries ? '<span class="chip-retry">\u21bb' + tries + '</span> ' : '';
+      var inner = '[' + retry + '<span class="chip-sign">' + escapeXml(sign) + '</span> ' + label + blocked + ']';
       var tip = ' title="' + escapeXml(boxStatusText(s)) + '"';
-      var attrs = ' class="' + cls + '"' + tip + (s.resumedNext ? ' data-resumed="1"' : '') + (boxRetryTry(s) ? ' data-retry="' + boxRetryTry(s) + '"' : '');
-      if(typeof s.partIndex === "number") return '<button type="button"' + attrs + ' data-part-index="' + s.partIndex + '">' + inner + '</button>';
-      return '<span' + attrs + '>' + inner + '</span>';
+      var attrs = ' class="' + cls + '"' + tip + (s.resumedNext ? ' data-resumed="1"' : '') + (tries ? ' data-retry="' + tries + '"' : '');
+      var chip = typeof s.partIndex === "number"
+        ? '<button type="button"' + attrs + ' data-part-index="' + s.partIndex + '">' + inner + '</button>'
+        : '<span' + attrs + '>' + inner + '</span>';
+      return '<span class="map-item" role="listitem">' +
+        (idx > 0 ? '<span class="map-lead" aria-hidden="true">\u2192</span>' : '') +
+        chip + (idx < last ? '<span class="map-arrow" aria-hidden="true">\u2192</span>' : '') + '</span>';
     }).join("");
     return '<div class="map-chips" role="list" aria-label="step map">' + body + '</div>';
+  }
+  // Ruling A: the first chip of each WRAPPED line shows a leading arrow. CSS cannot know which chip starts a line, so
+  // after render/resize this compares each item's offsetTop with the previous item's (same line = same top). The lead
+  // arrow is absolutely positioned (no layout impact), so toggling the class can never reflow a chip — no loop.
+  // Takes anything with offsetTop + classList (real elements, or stubs in tests).
+  function markLineStarts(items){
+    for(var i = 0; i < items.length; i++){
+      var starts = i > 0 && items[i].offsetTop > items[i - 1].offsetTop;
+      if(starts) items[i].classList.add("line-start"); else items[i].classList.remove("line-start");
+    }
   }
   // ONE shared rule for "does this box draw a retry mark, and what try number" — a multi-attempt
   // box (a re-run step, or the fix loop; `run` on an old-shape spine falls in here too, naturally,
@@ -1073,7 +1097,7 @@
   function stepMapKeyHTML(steps){
     var resumed = (steps || []).some(function(b){ return b.resumedNext; });
     return '<div class="map-key" data-testid="map-key">' +
-      '<span>dashed box = retry</span>' +
+      '<span>\u21bbN = took N tries (dashed box)</span>' +
       (resumed ? '<span>dotted edge = resumed after</span>' : '') +
       '</div>';
   }
@@ -1087,6 +1111,7 @@
     }
     wrapper.hidden = false;
     mount.innerHTML = buildStepMapHTML(steps) + stepMapKeyHTML(steps);
+    layoutMap();
     // build item B: a map chip click jumps to the Audit tab, that same part
     // expanded and scrolled into view — same click-through as the card list,
     // sharing partIndex so the two can never disagree about which row a chip
@@ -1099,6 +1124,23 @@
         openAuditPart(idx);
       });
     });
+  }
+  function layoutMap(){
+    var box = document.getElementById("map-box");
+    if(!box || box.hidden) return;
+    markLineStarts(Array.prototype.slice.call(box.querySelectorAll(".map-item")));
+  }
+  var layoutTimer = null;
+  function layoutMapSoon(){
+    if(layoutTimer) clearTimeout(layoutTimer);
+    layoutTimer = setTimeout(function(){ layoutTimer = null; layoutMap(); }, 60);
+  }
+  if(typeof ResizeObserver !== "undefined"){
+    var mapRo = new ResizeObserver(layoutMapSoon);
+    var mapBoxEl = document.getElementById("map-box");
+    if(mapBoxEl) mapRo.observe(mapBoxEl);
+  } else {
+    window.addEventListener("resize", layoutMapSoon);
   }
 
   // F196: a `synthetic` step (e.g. the "died during planning" placeholder
