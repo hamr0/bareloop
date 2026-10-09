@@ -50,7 +50,9 @@ import { JUDGE_MODEL, CALIBRATION_SIZE, expectedOf, decide } from '../src/judged
  * bottom of this file proves it by handing in a different one. */
 const TEST_JUDGE = JUDGE_MODEL;
 import { signJudgedArtifacts } from '../src/cardauthor.js';
-import { prepareSigning, assembleSpec, authorCloseForJob, GENRE } from '../src/authorjob.js';
+import { prepareSigning, assembleSpec, authorCloseForJob, GENRE, seedProofIsCalibration } from '../src/authorjob.js';
+import { judgedStages } from '../src/kinds.js';
+import { signingStopText } from '../src/authorreadout.js';
 import { classGuards } from '../src/authoring.js';
 
 // ── the artifacts, and an honest extractor over them ─────────────────────────
@@ -622,11 +624,49 @@ test('a gate CASUALTY refuses under the TRANSPORT\'s name — never as a verdict
   assert.ok(!r.reds.some((x) => x.code === 'calibration-miswrite'));
 });
 
-test('a MECHANICAL close is unchanged: it still needs a seed red, calibration or not', async (t) => {
+/** a MIXED close: guards + a mechanical work stage that is GREEN at seed + the judged stage */
+const mixedGreenSpec = (/** @type {any} */ cases = CASES()) => assembleSpec({ ...DRAFT }, {
+  closeDecl: {
+    genre: GENRE,
+    lang: 'js',
+    stages: [
+      ...sgGuards(),
+      { name: 'already-fine', kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } },
+      { name: 'docs-read-well', kind: 'judged-floor', params: { card: CARD(), paths: ['src/mod.js'] } },
+    ],
+    calibration: { cases, judgeModel: JUDGE_MODEL },
+  },
+  verdictType: 'soft-green',
+});
+
+test('F192 (hamr 2026-10-09): a MIXED close, mechanical stage green at seed, SIGNS once calibration passes', async (t) => {
   const p = makePatient(t);
-  // the mechanical work stage is GREEN at seed (`node -e ''` exits 0), so D9.3
-  // must still refuse — a passed calibration is NOT a licence for a close that
-  // has nothing to do
+  const r = await prepareSigning({
+    spec: mixedGreenSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
+  });
+  assert.equal(r.gates.calibration.ok, true, 'the ruler is fine');
+  assert.deepEqual(r.gates.seedVerdict.workRed, [], 'no mechanical stage is red at the seed');
+  assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
+  assert.equal(r.gates.seedVerdict.satisfiedBy, 'calibration');
+});
+
+test('F192: a MIXED close whose calibration FAILS is refused, naming calibration — never "nothing fails"', async (t) => {
+  const p = makePatient(t);
+  const cases = CASES();
+  cases[0].expect = { verdict: 'red', reds: [{ rule: 'params', fn: 'add' }] };
+  const r = await prepareSigning({
+    spec: mixedGreenSpec(cases), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
+  });
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'calibration-miswrite'));
+  assert.doesNotMatch(r.refusal.detail, /No work stage of this close is RED/);
+  assert.equal(r.gates.seedVerdict.satisfiedBy, undefined);
+  assert.match(signingStopText({ reds: r.reds, refusal: r.refusal }), /practice case/);
+  assert.doesNotMatch(signingStopText({ reds: r.reds, refusal: r.refusal }), /Nothing in the close fails/);
+});
+
+test('a close with NO judged stage is unchanged: all green at the seed still refuses', async (t) => {
+  const p = makePatient(t);
   const spec = assembleSpec({ ...DRAFT }, {
     closeDecl: {
       genre: GENRE,
@@ -634,19 +674,30 @@ test('a MECHANICAL close is unchanged: it still needs a seed red, calibration or
       stages: [
         ...sgGuards(),
         { name: 'already-fine', kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } },
-        { name: 'docs-read-well', kind: 'judged-floor', params: { card: CARD(), paths: ['src/mod.js'] } },
       ],
-      calibration: { cases: CASES(), judgeModel: JUDGE_MODEL },
     },
-    verdictType: 'soft-green',
+    verdictType: 'green',
   });
-  const r = await prepareSigning({
-    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
-  });
-  assert.equal(r.gates.calibration.ok, true, 'the ruler is fine');
-  assert.equal(r.ok, false, 'and the close still has nothing to do');
+  const r = await prepareSigning({ spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000 });
+  assert.equal(r.ok, false);
+  assert.equal(r.gates.calibration, null, 'no judged stage, no calibration gate');
   assert.equal(r.gates.seedVerdict.satisfiedBy, undefined);
   assert.match(r.refusal.detail, /No work stage of this close is RED at the seed/);
+});
+
+test('F192 live fixture (session smv0tasvb0u89): the real mixed close + passed calibration now clears the seed gate', () => {
+  const fx = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'f192-live-smv0tasvb.json'), 'utf8'));
+  const judged = judgedStages(fx.resolvedSpec.closeDecl);
+  assert.equal(judged.length, 1, 'the real close carries one judged stage');
+  assert.ok(fx.resolvedSpec.closeDecl.stages.length > judged.length, 'and it is MIXED');
+  const g = fx.signing.gates;
+  assert.equal(g.seedVerdict.ok, false, 'the live refusal: no work stage red at seed');
+  assert.deepEqual(g.seedVerdict.workRed, []);
+  assert.equal(g.calibration.ok, true, 'while calibration passed');
+  assert.equal(seedProofIsCalibration(judged, g.calibration), true, 'the rule now signs it');
+  assert.equal(seedProofIsCalibration(judged, { ...g.calibration, ok: false }), false, 'a failed calibration never satisfies it');
+  assert.equal(seedProofIsCalibration(judged, null), false, 'a missing one neither');
+  assert.equal(seedProofIsCalibration([], g.calibration), false, 'and a close with no judged stage never reaches it');
 });
 
 test('a mechanical work stage that IS red at seed signs on its own seed evidence', async (t) => {
@@ -656,7 +707,7 @@ test('a mechanical work stage that IS red at seed signs on its own seed evidence
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.deepEqual(r.gates.seedVerdict.workRed, ['checks-clean']);
-  assert.equal(r.gates.seedVerdict.satisfiedBy, undefined, 'the alternate route is for the judged-ONLY shape');
+  assert.equal(r.gates.seedVerdict.satisfiedBy, undefined, 'a work stage red at the seed signs on that evidence; calibration is not the proof then');
   assert.equal(r.gates.calibration.ok, true, 'and the gate is mandatory for it too');
 });
 

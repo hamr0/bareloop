@@ -1190,16 +1190,16 @@ export async function main(argv, deps = {}) {
           : (g.seedVerdict.ok
             ? `PASS — work red at seed: ${g.seedVerdict.workRed.join(', ')}`
             : (g.seedVerdict.satisfiedBy === 'calibration'
-              ? 'PASS via the CALIBRATION gate — this close\'s only work stage is judged'
+              ? 'PASS via the CALIBRATION gate — this close carries a judged stage'
               : 'FAIL — no work stage is red at the seed'))}`);
         if (g.seedVerdict) {
           out(`      red at seed:   ${g.seedVerdict.redAtSeed.join(', ') || '(none)'}`);
           out(`      green at seed: ${g.seedVerdict.greenAtSeed.join(', ') || '(none)'}`);
-          // ruling 3: a judged-ONLY close clears gate 3 on its calibration instead,
+          // ruling 3 (widened 2026-10-09): a close with a judged stage clears gate 3 on its calibration instead,
           // and the surface SAYS which proof carried it rather than leaving a reader
           // to wonder why an empty workRed list passed
           if (g.seedVerdict.satisfiedBy === 'calibration') {
-            out('      a judged stage skips the seed read (ruling 8), so this close\'s proof that it CAN fail is');
+            out('      a judged stage skips the seed read (ruling 8), so this close\'s proof that its judged stage CAN fail is');
             out('      the graded calibration set below — signed cases it must red as well as ones it must pass.');
           }
         }
