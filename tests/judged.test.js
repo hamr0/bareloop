@@ -953,6 +953,65 @@ test('the case-proposal prompt tells the model a destructured parameter may be d
   assert.deepEqual(liveGot('tag-names-wrong-parameter-on-destructured').reds, []);
 });
 
+// ── F192 item 6 (hamr ruling A, 2026-10-09): the fields of a destructured parameter, and the second live session ──
+// smv0o4mex8ddj: renderPoint({ x, y }) documented with `@param x` only was signed a params red and the old rule
+// passed it (the slot absorbed the tag). buildQuery documented as `@param options` (smv0nrwe3l8y2) must stay a pass.
+
+const LIVE2 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0o4mex.json'), 'utf8'));
+const redSet = (/** @type {any} */ g) => g.reds.map((/** @type {any} */ r) => `${r.rule}·${r.fn}`).sort().join(',');
+
+test('live replay 2: the ten smv0o4mex8ddj cases grade 10 of 10 as SETS, and every injection style resists', async () => {
+  const { factsResist, INJECTION_LOCATE_BATTERY, INJECTION_CARD } = await import('../src/calibrate.js');
+  for (const [id, c] of Object.entries(LIVE2.cases)) {
+    const got = expectedOf(decide(c.facts, LIVE2.card, { artifactText: c.artifact }));
+    assert.equal(redSet(got), redSet(c.expect), id);
+    assert.equal(got.verdict, c.expect.verdict, id);
+  }
+  for (const b of INJECTION_LOCATE_BATTERY) {
+    const f = LIVE2.injection[b.id].facts;
+    assert.equal(factsResist(f, b.expectFacts, b.artifact).ok, true, b.id);
+    assert.equal(compareExpectation(expectedOf(decide(f, INJECTION_CARD, { artifactText: b.artifact })), b.expect).ok, true, b.id);
+  }
+});
+
+/** the params rule alone, on a real artifact function */
+const paramsReds = (/** @type {string} */ art, /** @type {any} */ f) =>
+  JUDGE_RULES.params.check(f, art).map((/** @type {any} */ r) => r.why);
+
+test('params: the real renderPoint (`@param x` alone for { x, y }) reds on field y; the real buildQuery (`@param options`) passes', () => {
+  const rp = LIVE2.cases['red-destructured-param-untagged'];
+  assert.deepEqual(paramsReds(rp.artifact, rp.facts.functions[0]), ["@param missing for field y of renderPoint's destructured parameter"]);
+  const bq = LIVE.cases['tag-names-wrong-parameter-on-destructured'];
+  assert.deepEqual(paramsReds(bq.artifact, bq.facts.functions[0]), []);
+});
+
+test('params: destructured fields, bare or dotted, defaults and renames; nested / rest / array patterns never red', () => {
+  /** @param {string} pat @param {string[]} tags */
+  const run = (pat, tags) => {
+    const decl = `function f(${pat}) {`;
+    const art = `/**\n * Does a thing for you.\n */\n${decl}\n}\n`;
+    return paramsReds(art, { name: 'f', declarationQuote: decl, paramNames: [pat], paramIsPattern: [true], paramTagNames: tags });
+  };
+  assert.deepEqual(run('{ x, y }', ['x', 'y']), [], 'every field bare');
+  assert.deepEqual(run('{ x, y }', ['opts', 'opts.x', 'opts.y']), [], 'every field dotted');
+  assert.deepEqual(run('{ x, y }', ['param0.x', 'param0.y']), [], 'param0 spelling');
+  assert.equal(run('{ x, y }', ['opts', 'opts.x']).length, 1, 'dotted, one field missing');
+  assert.match(run('{ x, y }', ['opts.y'])[0], /field x/);
+  assert.match(run('{ x, y, z }', ['x', 'z'])[0], /field y/);
+  assert.deepEqual(run('{ table, limit = 10 }', ['options']), [], 'whole object under one root, no fields');
+  assert.deepEqual(run('{ limit = 10, x }', ['limit', 'x']), [], 'default is read');
+  assert.equal(run('{ limit = 10, x }', ['limit']).length, 1, 'default field, x missing');
+  assert.equal(run('{ a: b, c }', ['a']).length, 1, 'rename: the field is a, c is missing');
+  assert.deepEqual(run('{ a: b, c }', ['a', 'c']), [], 'rename: the field is a');
+  assert.deepEqual(run('{ a: { b }, c }', ['c']), [], 'nested: conservative, never red');
+  assert.deepEqual(run('{ a, ...rest }', ['a']), [], 'rest: conservative');
+  assert.deepEqual(run('{ a, b = [1, 2] }', ['a']), [], 'bracket default: conservative');
+  assert.deepEqual(run('{ x, y } = {}', ['x', 'y']), [], 'with a default object');
+  assert.equal(run('{ x, y } = {}', ['x']).length, 1);
+  // an extra bare tag beyond the pattern's fields is still extra
+  assert.match(run('{ x, y }', ['x', 'y', 'bogus', 'other'])[0], /names no parameter/);
+});
+
 test('the case-proposal prompt tells the model that naming SOME fields of a destructured parameter requires naming all', async () => {
   const { cardCasesPrompt } = await import('../src/cardauthor.js');
   assert.match(cardCasesPrompt({ answers: {}, questions: {} }), /EVERY field must be named/);

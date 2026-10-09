@@ -426,6 +426,28 @@ function sharesPrefix(a, b) {
   return short.length >= 4 && long.startsWith(short);
 }
 
+/**
+ * The field names a destructured parameter's pattern text declares, read mechanically:
+ * `{ x, y }` -> x, y; `{ table, limit = 10 } = {}` -> table, limit; a rename `{ a: b }` -> a (the field is
+ * `a`). HONEST CEILING: a nested pattern (`{ a: { b } }`), an array pattern, a rest element (`...rest`) or
+ * anything with brackets / parentheses in a default makes the field list unsure, and unsure here means NO
+ * fields: the params rule then never reds on fields (conservative, never a false red).
+ * @param {string} text @returns {string[]}
+ */
+function patternFields(text) {
+  const m = /^\s*\{([^{}[\]()]*)\}\s*(?:=\s*\{\s*\})?\s*$/.exec(text);
+  if (!m || m[1].includes('...')) return [];
+  /** @type {string[]} */
+  const out = [];
+  for (const part of m[1].split(',')) {
+    const field = /^\s*([A-Za-z_$][\w$]*)\s*(?::|=|$)/.exec(part)?.[1];
+    if (part.trim() === '') continue;
+    if (!field) return [];
+    out.push(field);
+  }
+  return out;
+}
+
 /** a doc-block line with its comment decoration (opener, leading star, closer) removed
  * @param {string} line @returns {string} */
 function undecorated(line) {
@@ -597,10 +619,24 @@ export const JUDGE_RULES = Object.freeze({
       // name: each pattern slot absorbs ONE unmatched tag, and only the tags
       // beyond that budget are extra. Conservative on purpose — it can miss a
       // phantom sitting beside a pattern, it never reds a documented root.
-      const roots = tags
-        .map((t) => t.trim().replace(/^\[/, '').replace(/\]$/, '').replace(/=.*$/, '').trim())
-        .filter((t) => t && !/[.[]/.test(t));
-      const unmatched = roots.filter((t) => !named.includes(t));
+      const norm = tags.map((t) => t.trim().replace(/^\[/, '').replace(/\]$/, '').replace(/=.*$/, '').trim()).filter(Boolean);
+      // THE FIELDS OF A DESTRUCTURED PARAMETER (hamr ruling A, 2026-10-09, live renderPoint): `@param x` alone for
+      // `{ x, y }` documents ONE field and leaves the other unnamed. Fields are read off the declared pattern
+      // text mechanically (see `patternFields`). When the doc names ANY field of a pattern, bare (`x`) or
+      // dotted (`opts.x`, `param0.x`), EVERY field must be named; a doc that names the whole object under one
+      // root and no fields (`@param options`) still passes. Bare field tags are the pattern's own, never "extra".
+      const fieldsOf = params.map((p, i) => (pattern[i] ? patternFields(p) : null));
+      const allFields = new Set(fieldsOf.flatMap((f) => f ?? []));
+      for (let i = 0; i < params.length; i += 1) {
+        const fields = fieldsOf[i];
+        if (!fields || fields.length === 0) continue;
+        const said = (/** @type {string} */ f) => norm.some((t) => t === f || t.endsWith(`.${f}`));
+        if (!fields.some(said)) continue;
+        const gap = fields.find((f) => !said(f));
+        if (gap !== undefined) reds.push({ fn: name, why: `@param missing for field ${gap} of ${name}'s destructured parameter`, quote: decl });
+      }
+      const roots = norm.filter((t) => !/[.[]/.test(t));
+      const unmatched = roots.filter((t) => !named.includes(t) && !allFields.has(t));
       const slack = pattern.filter(Boolean).length;
       if (unmatched.length > slack) {
         const extra = unmatched.slice(slack);
