@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   JUDGE_MODEL, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES,
-  validateCard, validateFacts, locatePrompt, runLocate, decide, validateCalibrationSet, CALIBRATION_SIZE,
+  SAYS_WHAT_STOPWORDS, validateCard, validateFacts, locatePrompt, runLocate, decide, validateCalibrationSet, CALIBRATION_SIZE,
 } from '../src/judged.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -796,4 +796,97 @@ test('F192 item 3: has-doc keeps docBlockAbove as the authority when the quote i
   const fn = (/** @type {string} */ n) => ({ name: n, declarationQuote: `function ${n}() {}`, docQuote: '/**' });
   assert.equal(decide({ functions: [fn('a'), fn('b')] }, HAS_DOC, { artifactText: art }).verdict, 'red');
   assert.equal(decide({ functions: [fn('a')] }, HAS_DOC, { artifactText: art.replace('function b() {}\n', '') }).verdict, 'pass');
+});
+
+// ── `says-what` (F192 addendum 2026-10-09, hamr ruling A): the doc is more than the name ──
+//
+// REAL artifacts: the archived mub2nboo name-echo cases (f192-params-real.json) must red; the real
+// documented passes (f192-has-doc-real.json, and the other f192-params-real documented functions) must
+// pass. The judge's `descriptionQuote` is the one thing no archive holds (the rule is new), so each is
+// the description line read OFF the real artifact the way an honest judge would quote it.
+
+const SAYS_ONLY = { items: [{ rule: 'says-what', text: 'The doc says what the function does, not just its name.' }] };
+/** the first prose line of the doc block above `fnName`, read off the artifact, as a judge would quote it */
+const honestDescription = (/** @type {string} */ art, /** @type {string} */ fnName) => {
+  const lines = art.split('\n');
+  const at = lines.findIndex((l) => new RegExp(`function\\s+${fnName}\\b`).test(l));
+  let i = at - 1;
+  while (i >= 0 && !lines[i].includes('/**')) i--;
+  return lines.slice(i + 1, at).find((l) => /^\s*\*\s+\S/.test(l) && !/^\s*\*\s+@/.test(l)) ?? null;
+};
+const saysFacts = (/** @type {string} */ art, /** @type {any} */ f, /** @type {string|null|undefined} */ quote) => ({
+  functions: [{ name: f.name, declarationQuote: f.declarationQuote, descriptionQuote: quote === undefined ? honestDescription(art, f.name) : quote }],
+});
+// (the rule's own check, one function at a time: decide() also demands every top-level function be reported)
+const saysReds = (/** @type {string} */ art, /** @type {any} */ f, /** @type {string|null|undefined} */ quote) =>
+  JUDGE_RULES['says-what'].check(saysFacts(art, f, quote).functions[0], art).map((/** @type {any} */ r) => r.why);
+
+test('says-what: the real mub2nboo name-echo artifacts RED (parseDate, slugify)', () => {
+  for (const id of ['name-echo-denies-purpose', 'name-echo-and-no-returns']) {
+    const c = F192P[id];
+    const f = c.facts.functions[0];
+    assert.equal(honestDescription(c.artifact, f.name)?.trim(), `* ${f.name}`, `${id}: the description line is the bare name`);
+    const d = decide(saysFacts(c.artifact, f), SAYS_ONLY, { artifactText: c.artifact });
+    assert.equal(d.verdict, 'red', id);
+    assert.equal(d.firstRed, 'says-what');
+    assert.match(d.items[0].reds[0].why, /only restates the function name/);
+  }
+});
+
+test('says-what: the real documented functions PASS (formatBytes, clamp, parseQuery, buildQuery, copyFile, createUser, sendEmail)', () => {
+  const real = [
+    ...Object.values(F192).flatMap((c) => c.facts.functions.map((f) => [c.artifact, f])),
+    ...['phantom-param-red', 'phantom-param-and-no-returns', 'omitted-param-red'].map((id) => [F192P[id].artifact, F192P[id].facts.functions[0]]),
+  ];
+  assert.ok(real.length >= 7);
+  for (const [art, f] of real) assert.deepEqual(saysReds(art, f), [], f.name);
+});
+
+test('says-what: a function with no doc block, or a null / opener-only / invented / tag-only quote, is red (unsure is red)', () => {
+  const c = F192P['undocumented-function-red'];
+  const f = c.facts.functions[0];
+  assert.equal(decide(saysFacts(c.artifact, f, null), SAYS_ONLY, { artifactText: c.artifact }).verdict, 'red');
+  const ne = F192P['name-echo-denies-purpose'];
+  const nf = ne.facts.functions[0];
+  assert.equal(decide(saysFacts(ne.artifact, nf, '/**'), SAYS_ONLY, { artifactText: ne.artifact }).verdict, 'red');
+  const fb = F192['full-contract-pass'];
+  const ff = fb.facts.functions[0];
+  assert.match(saysReds(fb.artifact, ff, ' * Formats every byte count into a tidy string.')[0], /not in the artifact/);
+  // a @param line is not a description: the prose before the first tag is empty
+  assert.match(saysReds(fb.artifact, ff, ' * @param {number} bytes - the number of bytes to format; must be zero or greater.')[0], /only restates/);
+  // no artifact in hand: no looser path
+  assert.equal(decide(saysFacts(fb.artifact, ff), SAYS_ONLY, { artifactText: null }).verdict, 'red');
+});
+
+test('says-what: the quote must sit inside the block directly above the declaration (docBlockAbove stays the authority)', () => {
+  const art = '/**\n * Computes the rolling median of a window.\n */\nfunction a() {}\n\n/**\n * b\n */\nfunction b() {}\n';
+  const fa = { name: 'a', declarationQuote: 'function a() {}' };
+  const fb = { name: 'b', declarationQuote: 'function b() {}' };
+  assert.deepEqual(saysReds(art, fa), []);
+  // b's description quoted from a's block: found in the file, not in b's block
+  assert.match(saysReds(art, fb, ' * Computes the rolling median of a window.')[0], /not inside the JSDoc block/);
+  assert.match(saysReds(art, fb)[0], /only restates/);
+});
+
+test('says-what: name words (camel, snake, kebab), light inflections and the stopword list', () => {
+  /** @param {string} name @param {string} line */
+  const verdictOf = (name, line) => {
+    const art = `/**\n * ${line}\n */\nfunction ${name}() {}\n`;
+    return saysReds(art, { name, declarationQuote: `function ${name}() {}` });
+  };
+  assert.equal(verdictOf('getTotal', 'Gets the total.').length, 1, 'inflected echo reds');
+  assert.equal(verdictOf('parse_date', 'Parses a date').length, 1, 'snake_case + s');
+  assert.equal(verdictOf('validate', 'Validating the').length, 1, 'ing with silent e');
+  assert.equal(verdictOf('parseDate', 'parseDate').length, 1, 'camel in the description too');
+  assert.equal(verdictOf('parseDate', 'Parse the date string').length, 0, 'adds "string"');
+  // THE STATED CEILING: generic words that are not stopwords pass
+  assert.equal(verdictOf('getTotal', 'Returns the total.').length, 0, 'ceiling: "Returns" is an added word');
+  assert.deepEqual([...SAYS_WHAT_STOPWORDS], ['a', 'an', 'the', 'of', 'to', 'for', 'in', 'on', 'at', 'by', 'with', 'from', 'into', 'and', 'or', 'as']);
+  const one = '/** Parse date. */\nfunction parseDate() {}\n';
+  assert.equal(saysReds(one, { name: 'parseDate', declarationQuote: 'function parseDate() {}' }, '/** Parse date. */').length, 1, 'one-line block');
+});
+
+test('says-what: the locate prompt asks for descriptionQuote only when the card names the rule', () => {
+  assert.match(locatePrompt(SAYS_ONLY), /descriptionQuote/);
+  assert.doesNotMatch(locatePrompt({ items: [CARD.items[0]] }), /descriptionQuote/);
 });

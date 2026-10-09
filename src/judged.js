@@ -340,14 +340,87 @@ function hasDocBlockDirectlyAbove(text, fn) {
   return docBlockAbove(text, hits[0]) !== null;
 }
 
+// ── `says-what`: the doc's description is more than the function's own name ──
+//
+// hamr ruling "A" (2026-10-09, F192 addendum): a person's FAIL example is "a doc
+// comment that only restates the function name ... teaches the reader nothing",
+// and `has-doc` cannot express it (a block exists, so it passes). Same shape as
+// every rule here: the judge only POINTS (quotes the description line(s) of the
+// block verbatim); code does the check; unsure is red; the judge never says
+// pass/fail.
+//
+// THE HONEST CEILING: this catches a PURE name echo (the description, minus a
+// small fixed list of function words, adds no word beyond the function name's
+// own words and their light inflections). It does NOT catch a description that
+// adds only generic words: "Returns the total." for `getTotal` passes. A miss
+// of that kind is a new card line and a re-sign, never a smarter judge.
+
+/**
+ * Function words ONLY: articles, prepositions, conjunctions. No judgement words
+ * ("returns", "gets", "function"): a description that adds one of those has added
+ * something, and deciding whether it is MEANINGFUL is exactly what this rule
+ * refuses to do.
+ */
+export const SAYS_WHAT_STOPWORDS = Object.freeze(
+  ['a', 'an', 'the', 'of', 'to', 'for', 'in', 'on', 'at', 'by', 'with', 'from', 'into', 'and', 'or', 'as'],
+);
+
+/** camelCase / snake_case / kebab-case / digits to lowercase words
+ * @param {string} s @returns {string[]} */
+function wordsOf(s) {
+  return s
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+}
+
+/** the light inflections of a word: s, es, ed, d, ing (silent e dropped), ies
+ * @param {string} w @returns {Set<string>} */
+function inflections(w) {
+  const f = new Set([w, `${w}s`, `${w}es`, `${w}ed`, `${w}d`, `${w}ing`]);
+  if (w.endsWith('e')) f.add(`${w.slice(0, -1)}ing`);
+  if (w.endsWith('y')) f.add(`${w.slice(0, -1)}ies`);
+  return f;
+}
+
+/** @param {string} a @param {string} b */
+const sameWord = (a, b) => inflections(a).has(b) || inflections(b).has(a);
+
+/** a doc-block line with its comment decoration (opener, leading star, closer) removed
+ * @param {string} line @returns {string} */
+function undecorated(line) {
+  return line.trim().replace(/^\/\*+/, '').replace(/\*+\/$/, '').replace(/^\*+/, '').trim();
+}
+
+/**
+ * The prose of a quoted description: its undecorated lines up to the first `@tag`.
+ * @param {string} quote @returns {string[]}
+ */
+function descriptionLines(quote) {
+  /** @type {string[]} */
+  const out = [];
+  for (const l of quote.split('\n').map(undecorated)) {
+    if (l === '') continue;
+    if (l.startsWith('@')) break;
+    out.push(l);
+  }
+  return out;
+}
+
 /**
  * THE OWNED RULE TABLE. Frozen: the rulebook is the arbiter's, and a caller that
  * could add a rule at runtime would be authoring the arbiter.
- * @type {Readonly<Record<string, {id: string, ask: string, check: (fn: any, text: string|null) => RuleRed[]}>>}
+ * `means` is the rule's plain-words reach: what it CAN check, and what it cannot. The case-proposal
+ * prompt renders it, so a proposed case never expects a red the rule cannot raise.
+ * @type {Readonly<Record<string, {id: string, means: string, ask: string, check: (fn: any, text: string|null) => RuleRed[]}>>}
  */
 export const JUDGE_RULES = Object.freeze({
   'has-doc': Object.freeze({
     id: 'has-doc',
+    means: 'checks only that a JSDoc block sits directly above the function; it cannot judge what the block says, '
+      + 'so a function with ANY doc block above it never breaks this rule',
     ask: '  "docQuote": the first line of the JSDoc block (a /** ... */ comment) IMMEDIATELY above the '
       + 'declaration, VERBATIM, or null if there is no such block',
     check(fn, text) {
@@ -378,8 +451,47 @@ export const JUDGE_RULES = Object.freeze({
     },
   }),
 
+  'says-what': Object.freeze({
+    id: 'says-what',
+    means: 'checks that the doc block\'s description says something beyond the function\'s own name: it reds when the '
+      + 'description only restates the name (e.g. `parseDate` documented as "Parse the date"). It catches a pure name '
+      + 'echo only; a description that adds even generic words ("Returns the total.") passes',
+    ask: '  "descriptionQuote": the DESCRIPTION of the JSDoc block IMMEDIATELY above the declaration (the prose '
+      + 'line(s) before the first @tag), VERBATIM, or null if the block has no prose before its first tag or there '
+      + 'is no block',
+    check(fn, text) {
+      const name = String(fn?.name ?? '(unnamed)');
+      const decl = quoteOf(fn?.declarationQuote);
+      const desc = quoteOf(fn?.descriptionQuote);
+      if (!desc) return [{ fn: name, why: 'the doc block has no description, so nothing says what the function does', quote: decl }];
+      // location + verbatim: unsure is red, and there is no looser no-artifact path
+      // (every real caller passes the artifact)
+      if (typeof text !== 'string') {
+        return [{ fn: name, why: 'no artifact to check the quoted description against: unsure, and unsure is red', quote: desc }];
+      }
+      const q = quoteReds(fn, ['descriptionQuote', 'declarationQuote'], text);
+      if (q.length) return q;
+      const block = decl ? docBlockAbove(text, decl) : null;
+      const inBlock = block === null ? null : new Set([...block].map(undecorated));
+      if (inBlock === null || !desc.split('\n').map(undecorated).filter(Boolean).every((l) => inBlock.has(l))) {
+        return [{ fn: name, why: 'the quoted description is not inside the JSDoc block directly above the declaration', quote: desc }];
+      }
+      const own = wordsOf(name);
+      const prose = descriptionLines(desc);
+      const said = prose.flatMap(wordsOf)
+        .filter((w) => !SAYS_WHAT_STOPWORDS.includes(w))
+        .filter((w) => !own.some((o) => sameWord(w, o)));
+      if (said.length === 0) {
+        return [{ fn: name, why: `the doc description only restates the function name (\`${prose.join(' ')}\`); it says nothing more than \`${name}\` already does`, quote: desc }];
+      }
+      return [];
+    },
+  }),
+
   params: Object.freeze({
     id: 'params',
+    means: 'checks that the @param tags match the declared parameters: a parameter with no tag, or a tag naming a '
+      + 'parameter the function does not have',
     ask: '  "paramNames": the parameter names in the declaration, in order. For a DESTRUCTURED parameter '
       + '(e.g. `{ a = 1 } = {}`) there is no name — use the literal text of the pattern.\n'
       + '  "paramIsPattern": one true/false per entry of paramNames, true when that entry is a destructuring '
@@ -451,6 +563,7 @@ export const JUDGE_RULES = Object.freeze({
 
   returns: Object.freeze({
     id: 'returns',
+    means: 'checks that a function whose body returns a value has an @returns tag',
     ask: '  "returnsTagQuote": the @returns/@return tag line VERBATIM, or null if absent\n'
       + '  "returnsValueQuote": a VERBATIM `return <something>` line from the function body, or null if the '
       + 'function never returns a value',

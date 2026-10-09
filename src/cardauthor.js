@@ -228,7 +228,7 @@ export const COMPILE_SYSTEM = 'You compile a person\'s own words into a rubric a
 export function cardCasesPrompt({ answers, questions = {} }) {
   const qKey = SOFTGREEN_JUDGE_EXAMPLES_KEY;
   const q = questions[qKey] ?? JUDGE_EXAMPLES_QUESTION;
-  const rules = JUDGE_RULE_IDS.map((id) => `- ${id}\n    the facts it reads: ${JUDGE_RULES[id].ask.trim().split('\n')[0].trim()}`);
+  const rules = JUDGE_RULE_IDS.map((id) => `- ${id}\n    what it can check: ${JUDGE_RULES[id].means}\n    the facts it reads: ${JUDGE_RULES[id].ask.trim().split('\n')[0].trim()}`);
 
   return `You are compiling ONE person's answers into the two artifacts a judged close is signed with.
 
@@ -266,6 +266,9 @@ at — plus what the arbiter must decide about it.
 
 AT LEAST ONE PASS AND AT LEAST ONE RED. A set that can only fail one way measures nothing.
 Every rule you name in a case must be a rule your card carries.
+A case may expect a red only where the rule's "what it can check" line says it can raise one on that artifact: a
+function with any doc block above it never breaks has-doc, and "the doc only restates the function name" is a
+says-what red, never a has-doc one.
 
 HOW TO ANSWER
 
