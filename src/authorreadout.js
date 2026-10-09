@@ -598,7 +598,7 @@ export function proposalStopText({ stop, reds, cases = null, spend = null, sourc
 export const DECLARATION_CODES = Object.freeze([
   'bounds', 'class-absent', 'class-battery-locked', 'class-ceiling', 'cmd-denied', 'duplicate-kind', 'duplicate-name',
   'env-ownership-absent', 'genre-env-missing', 'genre-env-ungrounded', 'genre-owned-env', 'guard-missing',
-  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'judged-stage-order',
+  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'judged-outside-write-scope', 'judged-stage-order',
   'listing-absent', 'listing-conflict', 'locked-kind', 'missing-field', 'missing-required', 'one-population',
   'path-not-in-listing', 'secret-literal', 'unknown-field', 'unknown-kind',
 ]);
@@ -675,9 +675,19 @@ const SIGNING_TABLE = [
     say: () => ['bareloop could not read the repository\'s starting commit.'], todo: 'check that the source is a git repository with at least one commit' },
   { kind: 'listing-unreadable', when: (r) => r.code === 'listing-unreadable',
     say: () => ['bareloop could not list the files of the repository\'s starting commit.'], todo: 'check that the source is a git repository with at least one commit' },
+  { kind: 'judged-outside-fence', when: (r) => r.code === 'judged-outside-write-scope',
+    say: (r) => [`The rubric check looks at ${listText(r.outside)}, but the job may only edit ${listText(r.fence)} — so the run could never fix what it finds.`],
+    todo: 'draft again' },
   { kind: 'declaration', when: (r) => DECLARATION_CODES.includes(r.code) && !(r.code === 'invalid-value' && r.path === 'card'),
     say: (r) => [`The close the model wrote was refused before anything ran ("${safeText(r.code)}" at ${safeText(r.path)}).`], todo: 'draft again' },
 ];
+
+/** a red's string list as plain text, each entry scrubbed and bounded
+ * @param {unknown} v @returns {string} */
+const listText = (v) => {
+  const items = (Array.isArray(v) ? v : []).filter((x) => typeof x === 'string' && x !== '').slice(0, 4).map((x) => safeText(x));
+  return items.length ? items.join(', ') : 'files outside the edit area';
+};
 
 /** the sentence when the gates refuse with no red at all (the close already passes on the untouched repository) */
 const SEED_GREEN_SENTENCE = 'Nothing in the close fails on the repository as it is, so there is nothing for a run to do.';

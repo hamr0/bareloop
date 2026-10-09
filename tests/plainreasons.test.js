@@ -266,6 +266,7 @@ test('SIGNING: every red code reachable at the refusal is mapped; an unknown one
     assert.ok(r.todo && r.sentence);
   }
   for (const code of DECLARATION_CODES) {
+    if (code === 'judged-outside-write-scope') continue; // worded in plain words of its own (tests/judgedfence.test.js)
     const [r] = signingReasons([{ code, path: 'closeDecl.x', detail: 'x' }]);
     assert.equal(r.kind, 'declaration', code);
     assert.match(r.sentence, new RegExp(`"${code}"`));

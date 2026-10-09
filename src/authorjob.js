@@ -1253,7 +1253,7 @@ export async function prepareSigning({
   }
   // the class rides from the SPEC (PRD v1.57 §2) — gate 1a already refused a spec
   // whose class is unknown or locked, so this is the class D5's battery hangs off
-  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType });
+  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope });
   // the grounded gate's reds quote BOTH untrusted sources — the declaration, and
   // the seed listing itself (the listing rule names what really sits beside an
   // invented path). The listing half is a channel gate 1a structurally cannot

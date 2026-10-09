@@ -384,7 +384,8 @@ export const CLASS_STATEMENTS = Object.freeze({
     + 'the result and deciding whether it is any good — and no command can render it. Compose the mechanical part '
     + 'first: everything about this repository a command can decide is still a mechanical stage, exactly as it would '
     + 'be for a green job. Then put ONE judged-floor stage AFTER them, carrying the few things the person said they '
-    + 'actually look for and the real files the work lands in. A judged stage decides only the lines its card names, '
+    + 'actually look for and the real files the work lands in (files the job may EDIT, inside the write fence, '
+    + 'because a finding on a file the run is fenced out of can never be fixed). A judged stage decides only the lines its card names, '
     + 'so name each thing they look for as its own line, and leave nothing to be inferred.',
   // N4 slice 1. The mechanical-first composition law is stated as an ORDER
   // because first-red-wins makes the order the mechanism: the cheap stages shield
@@ -2389,7 +2390,7 @@ export async function authorClose({
       }
       previous = ask.declaration;
 
-      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType });
+      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope });
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
       // channel they travel down. A validation red quotes what the model declared
