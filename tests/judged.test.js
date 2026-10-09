@@ -944,3 +944,16 @@ test('says-what: prefix matching, shorter word at least 4 letters (init/initiali
   // adding a real word still passes
   assert.equal(reds('initCache', 'Initialize the cache with the default size.'), 0);
 });
+
+test('the case-proposal prompt tells the model a destructured parameter may be documented under any name (F192, live buildQuery)', async () => {
+  const { cardCasesPrompt } = await import('../src/cardauthor.js');
+  const p = cardCasesPrompt({ answers: {}, questions: {} });
+  assert.match(p, /destructured parameter[^]*ANY root name[^]*never a\s+params red|destructured parameter[^]*ANY root name[^]*never a params red/);
+  // and the rule itself is untouched: `@param options` for `{ table, limit = 10 }` passes
+  assert.deepEqual(liveGot('tag-names-wrong-parameter-on-destructured').reds, []);
+});
+
+test('the case-proposal prompt tells the model that naming SOME fields of a destructured parameter requires naming all', async () => {
+  const { cardCasesPrompt } = await import('../src/cardauthor.js');
+  assert.match(cardCasesPrompt({ answers: {}, questions: {} }), /EVERY field must be named/);
+});

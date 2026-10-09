@@ -536,7 +536,11 @@ export const JUDGE_RULES = Object.freeze({
   params: Object.freeze({
     id: 'params',
     means: 'checks that the @param tags match the declared parameters: a parameter with no tag, or a tag naming a '
-      + 'parameter the function does not have',
+      + 'parameter the function does not have. A destructured parameter (e.g. `{ table, limit = 10 }`) has no name of '
+      + 'its own, so it may be documented under ANY root name (`@param options`) and that is normal JSDoc, never a '
+      + 'params red; do not propose a case expecting one. But when the doc names the fields of a simple destructured '
+      + 'parameter one by one (`@param x`, or `@param opts.x`), EVERY field must be named: `@param x` alone for '
+      + '`{ x, y }` is a params red. Nested, array and rest patterns are never reddened on fields',
     ask: '  "paramNames": the parameter names in the declaration, in order. For a DESTRUCTURED parameter '
       + '(e.g. `{ a = 1 } = {}`) there is no name — use the literal text of the pattern.\n'
       + '  "paramIsPattern": one true/false per entry of paramNames, true when that entry is a destructuring '
