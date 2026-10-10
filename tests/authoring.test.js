@@ -1853,8 +1853,8 @@ test('anySuppressionWarning: keyed on the stages\' patterns, the signed guard by
 /** goodDeclaration() with each non-guard stage tagged to a job line: typecheck->1, typecheck-outside->1, suite-green->2 */
 function taggedDeclaration() {
   const d = goodDeclaration();
-  const line = { typecheck: 1, 'typecheck-outside': 1, 'suite-green': 2 };
-  for (const s of d.stages) if (Object.hasOwn(line, s.name)) s.fromLine = line[s.name];
+  const line = { typecheck: 1, 'typecheck-outside': 1, 'suite-green': 2 };  // each value becomes a one-element fromLine array
+  for (const s of d.stages) if (Object.hasOwn(line, s.name)) s.fromLine = [line[s.name]];
   return d;
 }
 const JOB_LINES = [{ n: 1, text: 'Fix the type errors' }, { n: 2, text: 'Make npm test pass' }];
@@ -1884,13 +1884,13 @@ test('job lines: a refusal with a reason covers its line', () => {
 
 test('job lines: a fromLine naming no real line, an untagged non-guard stage and a tagged guard are each a red', () => {
   const d = taggedDeclaration();
-  d.stages.find((s) => s.name === 'suite-green').fromLine = 9;
-  assert.ok(at(run(d, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /fromLine 9/.test(r.detail)));
+  d.stages.find((s) => s.name === 'suite-green').fromLine = [9];
+  assert.ok(at(run(d, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /fromLine \[9\]/.test(r.detail)));
   const u = taggedDeclaration();
   delete u.stages.find((s) => s.name === 'typecheck').fromLine;
   assert.ok(at(run(u, { jobLines: JOB_LINES }), 'missing-field').some((r) => /typecheck/.test(r.detail)));
   const g = taggedDeclaration();
-  g.stages[0].fromLine = 1;
+  g.stages[0].fromLine = [1];
   assert.ok(at(run(g, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /mandatory guard/.test(r.detail)));
 });
 
@@ -1905,4 +1905,23 @@ test('job lines: without jobLines the coverage rule does not run (a spec that pr
   const res = run(goodDeclaration());
   assert.equal(res.ok, true, JSON.stringify(res.reds));
   assert.equal(at(res, 'job-line-uncovered').length, 0);
+});
+
+// ── P7 follow-up: ONE check may serve SEVERAL job lines (fromLine is an array) ──────────────────────────────
+
+test('job lines: a rubric declaration whose ONE judged stage serves lines 1-3 is green (single-int fromLine forced refusals)', () => {
+  const lines3 = [{ n: 1, text: 'a' }, { n: 2, text: 'b' }, { n: 3, text: 'c' }];
+  const decl = goodDeclaration();
+  decl.stages = [decl.stages[0], decl.stages.at(-1), { name: 'reads-well', fromLine: [1, 2, 3], kind: 'judged-floor', params: { card: { items: [{ rule: 'has-doc', text: 'documented' }] }, paths: ['src/email.js'] } }];
+  const res = run(decl, { verdictType: 'soft-green', jobLines: lines3 });
+  assert.equal(res.ok, true, JSON.stringify(res.reds));
+});
+
+test('job lines: fromLine must be a non-empty, duplicate-free array of real lines — empty, duplicate, bare integer and unknown numbers are each a red', () => {
+  const bad = (v) => { const d = taggedDeclaration(); d.stages.find((s) => s.name === 'suite-green').fromLine = v; return at(run(d, { jobLines: JOB_LINES }), 'invalid-value').filter((r) => String(r.path).endsWith('.fromLine')); };
+  assert.equal(bad([]).length, 1, 'empty');
+  assert.match(bad([2, 2])[0].detail, /twice/);
+  assert.equal(bad(2).length, 1, 'a bare integer is not an array');
+  assert.equal(bad([2, 9]).length, 1, 'line 9 does not exist');
+  assert.equal(bad([1, 2]).length, 0, 'serving two real lines is fine');
 });

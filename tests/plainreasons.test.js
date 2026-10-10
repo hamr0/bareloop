@@ -16,7 +16,7 @@ import { createSession } from '../src/panel/authorsession.js';
 
 /** P7: the recorded live stages predate fromLine — tag every non-guard stage to job line 1 (the fixture card has one line) */
 const GUARD_NAMES = new Set(['changed-from-seed', 'no-suppressions']);
-const tagLine1 = (/** @type {any[]} */ stages) => stages.map((x) => (GUARD_NAMES.has(x.name) ? x : { ...x, fromLine: 1 }));
+const tagLine1 = (/** @type {any[]} */ stages) => stages.map((x) => (GUARD_NAMES.has(x.name) ? x : { ...x, fromLine: [1] }));
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const F192P = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-params-real.json'), 'utf8'));

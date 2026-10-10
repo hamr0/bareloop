@@ -465,7 +465,7 @@ function fakeDeclaration() {
   }));
   return {
     // P7: the one non-guard stage serves job line 1; line 2 of baseCard()'s job block is refused with a reason
-    stages: [g[0], { name: 'verdict', fromLine: 1, kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[1]],
+    stages: [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[1]],
     refused: [{ line: 2, reason: 'no command in this fixture can check it' }],
     notes: [],
   };
@@ -526,7 +526,7 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   const repo = makeRepo();
   const specHash = 'cafef00dbeef0123';
   const plans = [
-    { goal: 'fix things v1', checks: [{ text: 'tsc clean', fromLine: 1 }], questions: [], notChecked: [] },
+    { goal: 'fix things v1', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] },
   ];
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-e2e-1' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
@@ -1157,7 +1157,7 @@ test('P6 item 3: npm ci "succeeds" but node_modules is still missing -> falls ba
 test('planMessage: a structured plan — lines with their checks, loose checks, Not checked, Always on, questions; footer in plain words', () => {
   const lines = [{ n: 1, text: 'Fix it', rule: "don't edit tests" }, { n: 2, text: 'Run npm test', rule: '' }];
   const m = planMessage({
-    goal: 'g', checks: ['a', 'b', 'c'], checkItems: [{ text: 'a', fromLine: 1 }, { text: 'b', fromLine: 2 }, { text: 'c', fromLine: null }],
+    goal: 'g', checks: ['a', 'b', 'c'], checkItems: [{ text: 'a', fromLine: [1] }, { text: 'b', fromLine: [2] }, { text: 'c', fromLine: null }],
     notChecked: ['the doc is accurate'], questions: ['which folder?'], protections: ['no-suppressions'],
   }, lines);
   assert.equal(m.kind, 'plan');

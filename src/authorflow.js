@@ -784,7 +784,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         type: 'object',
         properties: {
           name: { type: 'string', description: 'a unique lowercase-hyphenated slug saying what this stage asserts' },
-          fromLine: { type: 'integer', minimum: 1, description: 'the number of the ONE job line this stage checks (absent on a mandatory guard)' },
+          fromLine: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the numbers of the job line(s) this stage checks, e.g. [1] or [1, 3] (absent on a mandatory guard)' },
           kind: { const: kind },
           params: { type: 'object', properties, required: [...spec.required], additionalProperties: false },
         },
@@ -1016,7 +1016,7 @@ export function writeScopeBlock(writeScope) {
  * acceptance — BINDING, never re-decided by the composer, and a DIFFERENT
  * meaning from `openQuestions` (which means "could not resolve"): the two
  * never merge.
- * @param {{checks: string[], checkItems?: {text: string, fromLine: number|null}[], protections: string[], openQuestions?: string[], notChecked?: string[],
+ * @param {{checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[],
  *   answeredQuestions?: string[]}} confirmed
  */
 export function confirmedBlock(confirmed) {
@@ -1029,7 +1029,7 @@ export function confirmedBlock(confirmed) {
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
     + `${(confirmed.checkItems?.length
-      ? confirmed.checkItems.map((c) => `  - ${c.fromLine ? `[line ${c.fromLine}] ` : ''}${c.text}`)
+      ? confirmed.checkItems.map((c) => `  - ${c.fromLine && c.fromLine.length ? `[line ${c.fromLine.join(', ')}] ` : ''}${c.text}`)
       : checks.map((c) => `  - ${c}`)).join('\n') || '  (none)'}\n\n`
     + 'These protections are already always-on and unchanged by this plan — never compose one of these as a check:\n\n'
     + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n\n`
@@ -1054,7 +1054,7 @@ export function confirmedBlock(confirmed) {
 export function jobLineTagBlock(count) {
   return 'EVERY STAGE SERVES ONE JOB LINE\n\n'
     + `The person's job has ${count} numbered line${count === 1 ? '' : 's'} (the interview above). Tag every stage YOU write `
-    + 'with "fromLine": N — the number of the ONE job line that stage checks. A job line that no kind in the catalogue '
+    + 'with "fromLine": [N, ...] — the number(s) of the job line(s) that stage checks (one stage may serve several lines, e.g. a judged stage that reads lines 1-3). A job line that no kind in the catalogue '
     + 'can check is not left out silently: list it in "refused" as {"line": N, "reason": "..."}, with a reason in plain '
     + 'words the person can read. Every numbered line needs at least one stage or one refusal — a note in "notes" does '
     + 'NOT cover a line. The mandatory guards serve no job line and carry NO "fromLine".';
@@ -1083,7 +1083,7 @@ export function jobLineTagBlock(count) {
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
  *   writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
- *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
+ *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
@@ -1720,13 +1720,13 @@ const CONFIRM_SCHEMA = Object.freeze({
         type: 'object',
         properties: {
           text: { type: 'string', minLength: 1 },
-          fromLine: { type: 'integer', minimum: 1, description: 'the number of the ONE numbered job line this check is for' },
+          fromLine: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the numbered job line(s) this check is for, e.g. [1] or [1, 3]' },
         },
         required: ['text', 'fromLine'],
         additionalProperties: false,
       },
       description: 'the mechanical checks you plan to compose, each one traceable to the numbered job line it checks '
-        + '(fromLine) — never a check invented beyond what the job lines and their rules asked for',
+        + '(fromLine, an array: one check may serve several lines) — never a check invented beyond what the job lines and their rules asked for',
     },
     goal: {
       type: 'string',
@@ -1756,13 +1756,16 @@ const CONFIRM_SCHEMA = Object.freeze({
  * The confirm plan's checks as `{text, fromLine}` items. The schema asks for objects (P7: each check names the job line
  * it is for); a bare string (a text-mode reply, an older caller) reads as a check with no line.
  * @param {any} raw the plan's `checks`
- * @returns {{text: string, fromLine: number|null}[]}
+ * @returns {{text: string, fromLine: number[]|null}[]}
  */
 export function normalizeChecks(raw) {
+  /** a fromLine as a non-empty, duplicate-free array of line numbers, else null (never a guess)
+   * @param {any} v @returns {number[]|null} */
+  const normLines = (v) => (Array.isArray(v) && v.length > 0 && v.every((x) => Number.isInteger(x) && x >= 1) ? [...new Set(v)] : null);
   return (Array.isArray(raw) ? raw : []).flatMap((/** @type {any} */ c) => {
     if (typeof c === 'string') return c.trim() ? [{ text: c, fromLine: null }] : [];
     if (c && typeof c === 'object' && typeof c.text === 'string' && c.text.trim()) {
-      return [{ text: c.text, fromLine: Number.isInteger(c.fromLine) && c.fromLine >= 1 ? c.fromLine : null }];
+      return [{ text: c.text, fromLine: normLines(c.fromLine) }];
     }
     return [];
   });
@@ -1801,8 +1804,8 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
   + 'signed goal sentence. You never propose a check the numbered job lines (and the ~ rules written under them) did not ask for '
   + '— a genre never adds a check the goal did not ask for (run mtv8jihy drafted an unasked tsc --strict stage; '
-  + 'that is exactly the mistake this order exists to prevent). Tag each check with "fromLine", the number of the ONE '
-  + 'numbered job line it is for. The always-on guards (changed-from-seed, '
+  + 'that is exactly the mistake this order exists to prevent). Tag each check with "fromLine", an array of the number(s) of the '
+  + 'numbered job line(s) it is for. The always-on guards (changed-from-seed, '
   + 'no-suppressions, and every mandatory guard) and the write fence are shown to the person by the SYSTEM, never '
   + 'by you: you never claim, name, or list a protection or guard of your own — that is not your call to state, and '
   + 'a protection is never a check and never named in the goal sentence. The goal sentence names every check you '
@@ -1907,7 +1910,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  * @returns {Promise<{ok: boolean,
  *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
  *   rounds: number,
- *   accepted: {goal: string, checks: string[], checkItems: {text: string, fromLine: number|null}[], protections: string[], lang: string,
+ *   accepted: {goal: string, checks: string[], checkItems: {text: string, fromLine: number[]|null}[], protections: string[], lang: string,
  *     worseThanBefore: string, openQuestions: string[], notChecked: string[], answeredQuestions?: string[]}|null,
  *   reds: Red[], cost: any}>}
  */
@@ -2145,7 +2148,7 @@ export async function runConfirmTurn({
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
  *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
- *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
+ *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,

@@ -1453,7 +1453,7 @@ export function validateDeclaration(declaration, opts = {}) {
 }
 
 /**
- * P7 rules 1-3 of the job block, at $0, in the gate that can still revise: every `fromLine` names a real job line;
+ * P7 rules 1-3 of the job block, at $0, in the gate that can still revise: every `fromLine` is a non-empty, duplicate-free array of real job line numbers (one check may serve several lines);
  * every numbered job line has at least one stage OR a refusal reason in `refused` (a note in `notes` does NOT cover a
  * line); the mandatory guards serve no line and carry no `fromLine`. The SHAPE of `fromLine` / `refused` is checked
  * whenever they appear; the coverage half runs only when the person's `jobLines` were handed in.
@@ -1473,13 +1473,15 @@ function checkJobLines({ declaration, stages, jobLines, guards, red }) {
     if (Object.hasOwn(s, 'fromLine')) {
       if (guard) {
         red('invalid-value', at, `stage "${label}" is a mandatory guard and serves no job line — remove its fromLine`);
-      } else if (!Number.isInteger(s.fromLine) || s.fromLine < 1) {
-        red('invalid-value', at, `stage "${label}" has fromLine ${JSON.stringify(s.fromLine)} — a job line number (1, 2, 3...)`);
-      } else if (known !== null && !known.includes(s.fromLine)) {
-        red('invalid-value', at, `stage "${label}" has fromLine ${s.fromLine}, but the job has lines ${known.join(', ')} only`);
-      } else served.add(s.fromLine);
+      } else if (!Array.isArray(s.fromLine) || s.fromLine.length === 0 || !s.fromLine.every((/** @type {any} */ x) => Number.isInteger(x) && x >= 1)) {
+        red('invalid-value', at, `stage "${label}" has fromLine ${JSON.stringify(s.fromLine)} — a non-empty array of job line numbers, e.g. [1] or [1, 3]`);
+      } else if (new Set(s.fromLine).size !== s.fromLine.length) {
+        red('invalid-value', at, `stage "${label}" lists a job line twice in fromLine ${JSON.stringify(s.fromLine)}`);
+      } else if (known !== null && s.fromLine.some((/** @type {number} */ x) => !known.includes(x))) {
+        red('invalid-value', at, `stage "${label}" has fromLine ${JSON.stringify(s.fromLine)}, but the job has lines ${known.join(', ')} only`);
+      } else for (const x of s.fromLine) served.add(x);
     } else if (known !== null && !guard) {
-      red('missing-field', at, `stage "${label}" does not say which job line it serves — give it fromLine: N (${known.join(', ')}); `
+      red('missing-field', at, `stage "${label}" does not say which job lines it serves — give it fromLine: [N, ...] (${known.join(', ')}); `
         + 'only a mandatory guard carries none');
     }
   });
@@ -1502,7 +1504,7 @@ function checkJobLines({ declaration, stages, jobLines, guards, red }) {
   if (known !== null) {
     for (const n of known) {
       if (!served.has(n) && !refused.has(n)) {
-        red('job-line-uncovered', 'stages', `job line ${n} has no stage and no refusal. Give it a stage with fromLine: ${n}, or list `
+        red('job-line-uncovered', 'stages', `job line ${n} has no stage and no refusal. Give it a stage whose fromLine lists ${n}, or list `
           + `it in "refused" as {"line": ${n}, "reason": "..."} — a note does not cover a line`, { line: n });
       }
     }

@@ -56,7 +56,7 @@ function scriptAsk(script) {
 // — the schema has no such field — but a stub model in these tests can still
 // try to smuggle one in through the tool call, and that must be ignored
 // (never shown, never recorded). `notChecked` IS a real model field now.
-const PLAN_ONE = { checks: [{ text: 'tests stay green', fromLine: 1 }], goal: 'Keep the tests green.', questions: [], notChecked: [] };
+const PLAN_ONE = { checks: [{ text: 'tests stay green', fromLine: [1] }], goal: 'Keep the tests green.', questions: [], notChecked: [] };
 
 const baseArgs = (over = {}) => ({
   verdictType: 'green',
@@ -87,7 +87,7 @@ test('(a) confirm on round 1 costs exactly one model call', async () => {
   assert.equal(r.stop, null);
   assert.equal(r.rounds, 1);
   assert.deepEqual(r.accepted, {
-    goal: 'Keep the tests green.', checks: ['tests stay green'], checkItems: [{ text: 'tests stay green', fromLine: 1 }], protections: BASE_PROTECTIONS,
+    goal: 'Keep the tests green.', checks: ['tests stay green'], checkItems: [{ text: 'tests stay green', fromLine: [1] }], protections: BASE_PROTECTIONS,
     lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [], answeredQuestions: [],
   });
   assert.equal(seen[0].kind, 'menu');
@@ -490,7 +490,7 @@ test('runConfirmTurn (F179): a REAL OpenAIProvider malformed tool-call reply ret
   assert.equal(r.ok, true, 'the sound 2nd attempt is what the confirm turn accepts');
   assert.equal(r.rounds, 1, 'still one confirm round shown to the person — the retry is internal to askStructured');
   assert.deepEqual(r.accepted, {
-    goal: 'Keep the tests green.', checks: ['tests stay green'], checkItems: [{ text: 'tests stay green', fromLine: 1 }], protections: BASE_PROTECTIONS,
+    goal: 'Keep the tests green.', checks: ['tests stay green'], checkItems: [{ text: 'tests stay green', fromLine: [1] }], protections: BASE_PROTECTIONS,
     lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [], answeredQuestions: [],
   });
   const report = book.report();

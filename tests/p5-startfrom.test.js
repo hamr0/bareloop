@@ -54,7 +54,7 @@ function fakeDeclaration() {
   const g = classGuards({ verdictType: 'green', lang: 'js' }).map((x) => ({
     name: x.name, kind: x.kind, params: { ...x.params, ...(x.fill.includes('allowPrefixes') ? { allowPrefixes: ['src/'] } : {}) },
   }));
-  return { stages: [g[0], { name: 'verdict', fromLine: 1, kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[1]], refused: [{ line: 2, reason: 'fixture' }], notes: [] };
+  return { stages: [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[1]], refused: [{ line: 2, reason: 'fixture' }], notes: [] };
 }
 const fakeAuthorFn = () => async () => ({ ok: true, declaration: fakeDeclaration(), genreEnv: null, cost: { costUsd: 0.002, knownUsd: 0.002, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] });
 const fakePrepareSigningFn = (hash) => async () => ({

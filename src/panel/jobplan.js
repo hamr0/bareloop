@@ -30,7 +30,7 @@ export function checkClassOfKind(kind) {
 }
 
 /**
- * The plan of a SIGNED spec. With `jobLines`, each stage lands under the line its `fromLine` names (a stage with none is
+ * The plan of a SIGNED spec. With `jobLines`, each stage lands under EACH line its `fromLine` array names (a stage with none is
  * a mandatory guard: "Always on"), `closeDecl.refused` reasons land under their line, and `closeDecl.notes` are the
  * drafter's own "not checked" words. Without `jobLines` (a spec that predates the job block) the signed goal sentence is
  * line 1 and every stage name is a check under it — `older: true`.
@@ -38,11 +38,11 @@ export function checkClassOfKind(kind) {
  * @returns {JobPlan}
  */
 export function planFromSpec(spec) {
-  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number|null}[]} */
+  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null}[]} */
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
     stages = spec.closeDecl.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
-      .map((/** @type {any} */ s) => ({ name: s.name, cls: checkClassOfKind(s.kind), fromLine: Number.isInteger(s.fromLine) ? s.fromLine : null }));
+      .map((/** @type {any} */ s) => ({ name: s.name, cls: checkClassOfKind(s.kind), fromLine: Array.isArray(s.fromLine) && s.fromLine.length ? s.fromLine.filter(Number.isInteger) : null }));
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
       .map((/** @type {any} */ s) => ({ name: s.name, cls: /** @type {'machine check'} */ ('machine check'), fromLine: null }));
@@ -66,8 +66,10 @@ export function planFromSpec(spec) {
   const alwaysOn = [];
   for (const s of stages) {
     if (s.fromLine === null) { alwaysOn.push(s.name); continue; }
-    const line = lines.find((l) => l.n === s.fromLine);
-    if (line) line.checks.push({ name: s.name, cls: s.cls }); else loose.push({ name: s.name, cls: s.cls });
+    // a check that serves several job lines is shown under EACH line it serves (no new element: the same check line, repeated)
+    const served = lines.filter((l) => /** @type {number[]} */ (s.fromLine).includes(l.n));
+    for (const line of served) line.checks.push({ name: s.name, cls: s.cls });
+    if (served.length === 0) loose.push({ name: s.name, cls: s.cls });
   }
   const refused = Array.isArray(spec?.closeDecl?.refused) ? spec.closeDecl.refused : [];
   for (const r of refused) {
@@ -81,7 +83,7 @@ export function planFromSpec(spec) {
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
  * line each names, its own "not checked" words, and the real protections (code-owned) as "Always on".
  * @param {{n: number, text: string, rule: string}[]|null|undefined} jobLines
- * @param {{checkItems?: {text: string, fromLine: number|null}[], checks?: string[], notChecked?: string[], protections?: string[]}} plan
+ * @param {{checkItems?: {text: string, fromLine: number[]|null}[], checks?: string[], notChecked?: string[], protections?: string[]}} plan
  * @returns {JobPlan}
  */
 export function planFromConfirm(jobLines, plan) {
@@ -94,8 +96,9 @@ export function planFromConfirm(jobLines, plan) {
   /** @type {PlanCheck[]} */
   const loose = [];
   for (const c of items) {
-    const line = lines.find((l) => l.n === c.fromLine);
-    if (line) line.checks.push({ name: c.text, cls: null }); else loose.push({ name: c.text, cls: null });
+    const served = lines.filter((l) => Array.isArray(c.fromLine) && c.fromLine.includes(l.n));
+    for (const line of served) line.checks.push({ name: c.text, cls: null });
+    if (served.length === 0) loose.push({ name: c.text, cls: null });
   }
   return {
     lines, loose, notChecked: [...(plan?.notChecked ?? [])], alwaysOn: [...(plan?.protections ?? [])], older: false,

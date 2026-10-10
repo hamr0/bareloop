@@ -2489,16 +2489,20 @@ test('P7: with jobLines the author prompt orders fromLine tagging and carries th
   assert.match(tagged, /fromLine/);
   assert.match(tagged, /the person pointed at these inputs: 1 repo \/r · 2 spec docs\/spec\.md/);
   // the checks in the confirmed block carry their job line
-  const block = confirmedBlock({ checks: ['a', 'b'], checkItems: [{ text: 'a', fromLine: 1 }, { text: 'b', fromLine: null }], protections: [] });
+  const block = confirmedBlock({ checks: ['a', 'b'], checkItems: [{ text: 'a', fromLine: [1] }, { text: 'b', fromLine: null }], protections: [] });
   assert.match(block, /- \[line 1\] a\n/);
   assert.match(block, /- b\n/);
-  assert.deepEqual(normalizeChecks(['x', { text: 'y', fromLine: 2 }, { text: '  ' }, 5]), [{ text: 'x', fromLine: null }, { text: 'y', fromLine: 2 }]);
+  assert.deepEqual(normalizeChecks(['x', { text: 'y', fromLine: [2] }, { text: '  ' }, 5]), [{ text: 'x', fromLine: null }, { text: 'y', fromLine: [2] }]);
+  assert.deepEqual(normalizeChecks([{ text: 'm', fromLine: [1, 3, 1] }, { text: 'bare', fromLine: 2 }, { text: 'empty', fromLine: [] }]),
+    [{ text: 'm', fromLine: [1, 3] }, { text: 'bare', fromLine: null }, { text: 'empty', fromLine: null }], 'several lines kept, a bare integer or empty array is no line');
+  assert.match(confirmedBlock({ checks: ['m'], checkItems: [{ text: 'm', fromLine: [1, 3] }], protections: [] }), /- \[line 1, 3\] m\n/);
 });
 
 test('P7: the declaration schema lets a stage carry fromLine and the declaration carry refused[]', () => {
   const s = declarationSchema();
   assert.equal(s.properties.refused.items.required.join(), 'line,reason');
   const branch = s.properties.stages.items.oneOf[0];
-  assert.equal(branch.properties.fromLine.type, 'integer');
+  assert.equal(branch.properties.fromLine.type, 'array');
+  assert.equal(branch.properties.fromLine.items.type, 'integer');
   assert.equal(branch.required.includes('fromLine'), false, 'optional: a mandatory guard carries none');
 });

@@ -25,8 +25,8 @@ const NEW_SPEC = {
     genre: 'types', lang: 'js', notes: ['looks nice is not checked'],
     stages: [
       { name: 'changed-from-seed', kind: 'files-changed', params: {} },
-      { name: 'flights-found', fromLine: 1, kind: 'judged-floor', params: {} },
-      { name: 'sorted-by-price', fromLine: 2, kind: 'command-exit', params: {} },
+      { name: 'flights-found', fromLine: [1], kind: 'judged-floor', params: {} },
+      { name: 'sorted-by-price', fromLine: [2], kind: 'command-exit', params: {} },
     ],
     refused: [{ line: 3, reason: 'no command can check a table layout' }],
   },
@@ -61,7 +61,7 @@ test('planFromSpec: an OLDER spec shows the signed goal as line 1 and every stag
 test('planFromConfirm: the person\'s lines, the model\'s checks under the line each names (class not known yet), the real protections as Always on', () => {
   const p = planFromConfirm(
     [{ n: 1, text: 'Fix it', rule: '' }, { n: 2, text: 'Run tests', rule: 'quiet' }],
-    { checkItems: [{ text: 'tsc clean', fromLine: 1 }, { text: 'tests pass', fromLine: 2 }, { text: 'stray', fromLine: 9 }], notChecked: ['style'], protections: ['no-suppressions'] },
+    { checkItems: [{ text: 'tsc clean', fromLine: [1] }, { text: 'tests pass', fromLine: [2] }, { text: 'stray', fromLine: [9] }], notChecked: ['style'], protections: ['no-suppressions'] },
   );
   assert.deepEqual(p.lines.map((l) => l.checks), [[{ name: 'tsc clean', cls: null }], [{ name: 'tests pass', cls: null }]]);
   assert.deepEqual(p.loose, [{ name: 'stray', cls: null }]);
@@ -142,4 +142,13 @@ test('Start route: Inputs lines 2+ are proven at $0 before a session — a miss 
   assert.match((await search.json()).error, /Inputs, line 2: only files inside the repo for now/);
   const rel = await post({ ...card, inputs: 'repo: relative/path' });
   assert.match((await rel.json()).error, /Inputs, line 1: the repo must be an absolute path/);
+});
+
+test('a check that serves several job lines is shown under EACH line it serves (spec and confirm plan)', () => {
+  const spec = { ...NEW_SPEC, closeDecl: { ...NEW_SPEC.closeDecl, stages: [{ name: 'one-judge', fromLine: [1, 2, 3], kind: 'judged-floor', params: {} }], refused: undefined } };
+  const p = planFromSpec(spec);
+  assert.deepEqual(p.lines.map((l) => l.checks.map((c) => c.name)), [['one-judge'], ['one-judge'], ['one-judge']]);
+  const c = planFromConfirm([{ n: 1, text: 'a', rule: '' }, { n: 2, text: 'b', rule: '' }], { checkItems: [{ text: 'both', fromLine: [1, 2] }, { text: 'nowhere', fromLine: [7] }] });
+  assert.deepEqual(c.lines.map((l) => l.checks.map((x) => x.name)), [['both'], ['both']]);
+  assert.deepEqual(c.loose.map((x) => x.name), ['nowhere']);
 });
