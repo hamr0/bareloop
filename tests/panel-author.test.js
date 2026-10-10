@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createPanelServer } from '../src/panel/server.js';
 import { checkHumanGuard, signRun } from '../src/panel/authorroutes.js';
-import { createSession, planText, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
+import { createSession, planMessage, PLAN_FOOTER, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
 import { keyRows } from '../src/providerrows.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
@@ -98,16 +98,15 @@ function keysHomeWith(text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n') {
 const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: {} });
 const validateJobCard = (card, opts = {}) => rawValidateJobCard(card, { rows: ROWS, ...opts });
 
-const baseCard = (overrides = {}) => ({
+// P7: the card is { jobText, inputs, ... } — "The job" and "Inputs" are the two boxes. `source` is kept as a SHORTHAND for
+// Inputs line 1 (`repo: <source>`) so the many call sites that point a card at a fixture repo read as before.
+const baseCard = ({ source = '/tmp/does-not-matter-for-validateJobCard', ...overrides } = {}) => ({
   checkType: 'deterministic',
   model: 'claude-sonnet-5',
   jobName: 'panel-author-test-job',
-  goal: 'fix things',
-  source: '/tmp/does-not-matter-for-validateJobCard',
+  jobText: 'fix things\n~ no new deps\ntsc clean',
+  inputs: `repo: ${source}`,
   destination: 'src/',
-  success: 'tsc clean',
-  guardrails: 'no new deps',
-  judgeExamples: '',
   capUsd: 2,
   ...overrides,
 });
@@ -153,11 +152,15 @@ test('validateJobCard: a taken job name refuses (P3 is new jobs only, Q4=A) — 
 });
 
 test('validateJobCard: missing required fields refuse one at a time', () => {
-  for (const field of ['jobName', 'goal', 'source', 'destination', 'success', 'guardrails']) {
+  for (const field of ['jobName', 'jobText', 'inputs', 'destination']) {
     const r = validateJobCard(baseCard({ [field]: '' }));
     assert.equal(r.ok, false, `${field} empty must refuse`);
   }
-  assert.equal(validateJobCard(baseCard({ checkType: 'rubric', judgeExamples: '' })).ok, false, 'rubric with no judge examples must refuse');
+  assert.equal(validateJobCard(baseCard({ checkType: 'rubric' })).ok, false, 'rubric with no PASS:/FAIL: examples must refuse');
+  assert.equal(validateJobCard(baseCard({ checkType: 'rubric', jobText: 'Write it\n~ PASS: quoted\n~ FAIL: invented' })).ok, true, 'a rubric with examples is fine');
+  assert.match(validateJobCard(baseCard({ jobText: 'Fix it\n~ PASS: x' })).error, /examples are for a Rubric check/, 'a deterministic job has no judge to read them');
+  assert.match(validateJobCard(baseCard({ jobText: '~ nope\nFix it' })).error, /belongs to the numbered line above/);
+  assert.match(validateJobCard(baseCard({ inputs: 'just-a-path' })).error, /Inputs, line 1: write it as "label: value"/);
 });
 
 // ---------------------------------------------------------------------------
@@ -461,7 +464,9 @@ function fakeDeclaration() {
     name: x.name, kind: x.kind, params: { ...x.params, ...(x.fill.includes('allowPrefixes') ? { allowPrefixes: ['src/'] } : {}) },
   }));
   return {
-    stages: [g[0], { name: 'verdict', kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[1]],
+    // P7: the one non-guard stage serves job line 1; line 2 of baseCard()'s job block is refused with a reason
+    stages: [g[0], { name: 'verdict', fromLine: 1, kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[1]],
+    refused: [{ line: 2, reason: 'no command in this fixture can check it' }],
     notes: [],
   };
 }
@@ -521,7 +526,7 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   const repo = makeRepo();
   const specHash = 'cafef00dbeef0123';
   const plans = [
-    { goal: 'fix things v1', checks: ['tsc clean'], questions: [], notChecked: [] },
+    { goal: 'fix things v1', checks: [{ text: 'tsc clean', fromLine: 1 }], questions: [], notChecked: [] },
   ];
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-e2e-1' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
@@ -549,10 +554,14 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   assert.ok(await waitForAskKind('menu'), `expected a menu ask; got phase=${session.state.phase} error=${session.state.error}`);
   assert.equal('revisesLeft' in session.state, false, 'no typed-revise rounds exist any more');
   assert.equal(typeof /** @type {any} */ (session).revise, 'undefined');
-  // hamr 2026-10-09: the plan reads as headed sections, a blank line between them (one owner: planText)
-  const shown = session.state.messages.filter((m) => m.role === 'bot').at(-1).text;
-  assert.equal(shown, '#PLAN:\n"fix things v1"\n\n#CHECKS:\ntsc clean\n\n'
-    + 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+  // P7: the plan is a STRUCTURED message the page draws with the one renderer (one owner: planMessage) — each numbered
+  // job line, its rule, its drafted check; the always-on protections serve no line
+  const shown = session.state.messages.filter((m) => m.role === 'bot').at(-1);
+  assert.equal(shown.kind, 'plan');
+  assert.equal(shown.text, PLAN_FOOTER);
+  assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
+    [[1, 'fix things', 'no new deps', ['tsc clean']], [2, 'tsc clean', '', []]]);
+  assert.ok(shown.plan.alwaysOn.length > 0, 'the real protections are Always on');
 
   const badSend = session.send('this must be refused — menu picks never go through send');
   assert.equal(badSend.ok, false, 'RED-PROOF: send() must refuse a pending menu ask');
@@ -1145,16 +1154,19 @@ test('P6 item 3: npm ci "succeeds" but node_modules is still missing -> falls ba
   assert.equal(session.state.phase, 'install-needed');
 });
 
-test('planText: PLAN, CHECKS, NOT CHECKED (and QUESTIONS) are headed sections, a blank line apart; empty ones are left out', () => {
-  assert.equal(planText({
-    goal: 'Every exported function gets a doc comment that says what it does.',
-    checks: ['every exported function has a doc block', 'the doc is not only a restatement of the function name'],
-    notChecked: ['the doc is accurate', 'the doc is well written'],
-    questions: [],
-  }), '#PLAN:\n"Every exported function gets a doc comment that says what it does."\n\n'
-    + '#CHECKS:\nevery exported function has a doc block · the doc is not only a restatement of the function name\n\n'
-    + '#NOT CHECKED:\nthe doc is accurate · the doc is well written\n\n'
-    + 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
-  assert.equal(planText({ goal: 'g', checks: [], notChecked: [], questions: ['which folder?'] }),
-    '#PLAN:\n"g"\n\n#CHECKS:\n(none)\n\n#QUESTIONS:\nwhich folder?\n\nSign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+test('planMessage: a structured plan — lines with their checks, loose checks, Not checked, Always on, questions; footer in plain words', () => {
+  const lines = [{ n: 1, text: 'Fix it', rule: "don't edit tests" }, { n: 2, text: 'Run npm test', rule: '' }];
+  const m = planMessage({
+    goal: 'g', checks: ['a', 'b', 'c'], checkItems: [{ text: 'a', fromLine: 1 }, { text: 'b', fromLine: 2 }, { text: 'c', fromLine: null }],
+    notChecked: ['the doc is accurate'], questions: ['which folder?'], protections: ['no-suppressions'],
+  }, lines);
+  assert.equal(m.kind, 'plan');
+  assert.equal(m.role, 'bot');
+  assert.equal(m.text, 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+  assert.deepEqual(m.plan.lines.map((l) => l.checks.map((c) => c.name)), [['a'], ['b']]);
+  assert.deepEqual(m.plan.loose.map((c) => c.name), ['c']);
+  assert.deepEqual(m.plan.notChecked, ['the doc is accurate']);
+  assert.deepEqual(m.plan.alwaysOn, ['no-suppressions']);
+  assert.deepEqual(m.plan.questions, ['which folder?']);
+  assert.equal(m.plan.older, false);
 });

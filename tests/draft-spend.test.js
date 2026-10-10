@@ -53,8 +53,8 @@ async function draftSession(t, calls, gapMs = 0) {
   const seen = [];
   let sessionDir = '';
   const session = createSession({
-    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'draft-spend-job', goal: 'fix things', source: repo,
-    destination: 'src/', success: 'tsc clean', guardrails: 'no new deps', judgeExamples: '', capUsd: 2,
+    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'draft-spend-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`,
+    destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
@@ -245,8 +245,8 @@ test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned dr
     git(repo, ['add', '-A']);
     git(repo, ['commit', '-q', '-m', 'seed']);
     const s = createSession({
-      checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'revise-spend-job', goal: 'fix things', source: repo,
-      destination: 'src/', success: 'tsc clean', guardrails: 'no new deps', judgeExamples: '', capUsd: 2,
+      checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'revise-spend-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`,
+      destination: 'src/', capUsd: 2,
     }, {
       env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: h, sessionsRoot: join(h, 'panel-sessions'),
       scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },

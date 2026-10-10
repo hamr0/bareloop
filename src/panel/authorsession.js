@@ -42,7 +42,7 @@ import {
 import { prepareSigning } from '../authorjob.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import {
-  questionsFor, requiredAnswersFor, makeLoopGenerate, CONFIRM_SYSTEM,
+  questionsFor, requiredAnswersFor, makeLoopGenerate, CONFIRM_SYSTEM, SOFTGREEN_JUDGE_EXAMPLES_KEY,
 } from '../authorflow.js';
 import {
   resolveProvider, buildRunnerProviders, apiKeyProblem,
@@ -54,6 +54,10 @@ import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, redsRecord, calibrationSummary } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
+import {
+  parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines,
+} from '../jobblock.js';
+import { planFromConfirm } from './jobplan.js';
 
 /**
  * THE PROGRESS LIST's one table (hamr 2026-10-04, "one place showing all"): every pipeline step the left Chat panel
@@ -133,23 +137,22 @@ const SOURCE_CHECK_CODES = new Set([
   'source-file-oversize', 'source-changed-after-scan', 'source-untracked-in-repo',
 ]);
 
+/** the line under the plan bubble, in plain words (the bubble itself is drawn by the page's one `renderJobPlan`) */
+export const PLAN_FOOTER = 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.';
+
 /**
- * The confirm turn's plan as the chat shows it: ONE owner of the text (hamr, 2026-10-09: the one-blob "Plan: ...
- * Checks: ... Not checked: ..." was unreadable). Each section is a heading on its own line, its content on the next,
- * and a blank line between sections. `#NOT CHECKED:` and `#QUESTIONS:` appear only when there is something to say.
- * The CLI composes its own plan screen (src/authorrun.js) and shares no text with this one.
- * @param {{goal?: string, checks?: string[], notChecked?: string[], questions?: string[]}} p
- * @returns {string}
+ * The confirm turn's plan as a chat message (P7): a STRUCTURED `{role:'bot', kind:'plan', plan}` the page draws with the
+ * same renderer the Job tab uses — each numbered job line, its `~` rule, its drafted checks folded; the AI's own "not
+ * checked"; the always-on guards. `questions` (what the plan still asks) ride inside the plan. One owner of the shape.
+ * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number|null}[], notChecked?: string[], questions?: string[], protections?: string[]}} p the confirm turn's plan
+ * @param {{n: number, text: string, rule: string}[]|null} jobLines
+ * @returns {{role: 'bot', kind: 'plan', text: string, plan: ReturnType<typeof planFromConfirm> & {goal: string, questions: string[]}}}
  */
-export function planText(p) {
-  const sections = [
-    `#PLAN:\n${JSON.stringify(p.goal ?? '')}`,
-    `#CHECKS:\n${(p.checks ?? []).join(' · ') || '(none)'}`,
-  ];
-  if ((p.notChecked ?? []).length) sections.push(`#NOT CHECKED:\n${(p.notChecked ?? []).join(' · ')}`);
-  if ((p.questions ?? []).length) sections.push(`#QUESTIONS:\n${(p.questions ?? []).join(' · ')}`);
-  sections.push('Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
-  return sections.join('\n\n');
+export function planMessage(p, jobLines) {
+  return {
+    role: 'bot', kind: 'plan', text: PLAN_FOOTER,
+    plan: { ...planFromConfirm(jobLines, p), goal: String(p.goal ?? ''), questions: [...(p.questions ?? [])] },
+  };
 }
 
 /** @param {string} name @returns {boolean} kebab-case slug, same rule `job.js`'s `SLUG_RE` enforces */
@@ -176,7 +179,18 @@ export function jobNameTaken(name, opts = {}) {
 }
 
 /** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
-export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'model', 'goal', 'source', 'destination', 'success', 'guardrails', 'judgeExamples', 'capUsd', 'maxWallMs']);
+export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'model', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs']);
+
+/**
+ * The repo a card names: Inputs line 1 (P7 — the Source box is gone; the first input IS the repo). `''` when the Inputs
+ * box does not parse (the card validator refuses that before anything uses this).
+ * @param {any} card
+ * @returns {string}
+ */
+export function cardSource(card) {
+  const p = parseInputs(card?.inputs);
+  return p.ok ? p.inputs[0].value : '';
+}
 
 /**
  * Only the form's own fields, nothing else a request body might carry (`startFrom`, stray keys).
@@ -192,15 +206,15 @@ export function cardFields(card) {
 
 /**
  * REUSE WORKFLOW (hamr 2026-10-03, replaces P5 item 3's same-job rule; Model opened 2026-10-04): a reuse card has exactly
- * FIVE open boxes — Source, Destination, Model, $ cap, Time cap — and every other box is the signed workflow, shown greyed and never
+ * FIVE open boxes — Inputs, Destination, Model, $ cap, Time cap — and every other box is the signed workflow, shown greyed and never
  * editable. The page greys them; THIS is what refuses (the server never trusts the page). Changing any locked box
  * is a different job: Clear the card, which drafts.
  */
-export const REUSE_OPEN_FIELDS = Object.freeze(['source', 'destination', 'model', 'capUsd', 'maxWallMs']);
+export const REUSE_OPEN_FIELDS = Object.freeze(['inputs', 'destination', 'model', 'capUsd', 'maxWallMs']);
 /** every card field that is NOT open on a reuse card, in card order */
 export const REUSE_LOCKED_FIELDS = Object.freeze(CARD_FIELDS.filter((f) => !REUSE_OPEN_FIELDS.includes(f)));
 const REUSE_LABELS = Object.freeze(/** @type {Record<string, string>} */ ({
-  jobName: 'Job name', checkType: 'Check type', goal: 'Goal', success: 'Success', guardrails: 'Guardrails', judgeExamples: 'Judge examples',
+  jobName: 'Job name', checkType: 'Check type', jobText: 'The job',
 }));
 
 /**
@@ -219,12 +233,12 @@ export function lockedFieldChanged(card, origin) {
 
 /**
  * The spec a reuse signs: a COPY of the origin's signed spec with ONLY the open fields set from the card —
- * `writeScope` from Destination, `budgetUsd` from the $ cap, `maxWallMs` from the Time cap (absent when blank), and the
+ * `writeScope` from Destination, `inputs` from the Inputs box (P7), `budgetUsd` from the $ cap, `maxWallMs` from the Time cap (absent when blank), and the
  * worker (`provider`/`baseUrl`/`model`) from the Model Name chosen in Settings > Providers, spelled exactly as normal
  * authoring spells it (`baseUrl` only when the row has one; `model` only when the Name is not the provider's default
  * tier). A RUBRIC (soft-green) origin with no explicit `judge` first has its judge pinned to the ORIGIN's resolved judge
  * identity — the judge must not change because the worker did (`resolveJobJudge`, the one spelling); an explicit
- * `judge` is kept; a deterministic job has no judge to move. Source is not in a spec (it lives beside the run). The copy
+ * `judge` is kept; a deterministic job has no judge to move. The repo (Inputs line 1) is in a spec only as `inputs`. The copy
  * hashes to a NEW `jobSpecHash` and the SAME `workflowKey` — the caller checks the second after building.
  * @param {any} originSpec
  * @param {Record<string, any>} card
@@ -234,6 +248,8 @@ export function lockedFieldChanged(card, origin) {
 export function buildReuseSpec(originSpec, card, rows) {
   const spec = JSON.parse(JSON.stringify(originSpec));
   spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  const ip = parseInputs(card.inputs);
+  if (ip.ok) spec.inputs = ip.inputs; else delete spec.inputs;
   spec.budgetUsd = card.capUsd;
   if (typeof card.maxWallMs === 'number' && Number.isFinite(card.maxWallMs) && card.maxWallMs > 0) spec.maxWallMs = card.maxWallMs;
   else delete spec.maxWallMs;
@@ -250,7 +266,7 @@ export function buildReuseSpec(originSpec, card, rows) {
 
 /**
  * `$0` validation for a REUSE start: the signed job carries the goal, checks and guardrails, so those boxes are not
- * required here — only what the new session itself needs: a Source, a Destination, a Model that is a Settings Name,
+ * required here — only what the new session itself needs: Inputs, a Destination, a Model that is a Settings Name,
  * and the cap. (The spec built from the open boxes is validated by the route with `validateJob`.)
  * @param {any} card
  * @param {{rows?: readonly import('../providerrows.js').KeyRow[]}} [opts]
@@ -259,7 +275,8 @@ export function buildReuseSpec(originSpec, card, rows) {
 export function validateReuseCard(card, opts = {}) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
   if (!modelChoiceFor(opts.rows ?? [], card.model)) return { ok: false, error: 'Model must be one of the Names in Settings > Providers' };
-  if (typeof card.source !== 'string' || card.source.trim() === '') return { ok: false, error: 'Source is required' };
+  const ip = parseInputs(card.inputs);
+  if (!ip.ok) return { ok: false, error: ip.error };
   if (typeof card.destination !== 'string' || card.destination.trim() === '') return { ok: false, error: 'Destination is required' };
   if (typeof card.capUsd !== 'number' || !Number.isFinite(card.capUsd) || card.capUsd <= 0) {
     return { ok: false, error: '$ cap is required and must be a positive number' };
@@ -277,7 +294,7 @@ export { nonRepoSourceMessage };
  * relative to the repo, so an absolute path is refused — at $0, before any copy or model call. A FOLDER source (or a
  * source that does not peek as a repo) keeps today's behaviour: its Destination is an absolute output directory.
  * @param {string} destination
- * @param {boolean} isRepoLike `looksLikeRepoSource(card.source)`
+ * @param {boolean} isRepoLike `looksLikeRepoSource(cardSource(card))`
  * @returns {string|null} the plain refusal, or null when the Destination is fine
  */
 export function repoDestinationProblem(destination, isRepoLike) {
@@ -294,19 +311,20 @@ export function repoDestinationProblem(destination, isRepoLike) {
  */
 export function validateJobCard(card, opts = {}) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
-  const { jobName, checkType, model, goal, source, destination, success, guardrails, capUsd } = card;
+  const { jobName, checkType, model, destination, capUsd } = card;
   if (!isSlug(jobName)) return { ok: false, error: 'Job name must be a kebab-case slug (letters, digits, dashes)' };
   if (jobNameTaken(jobName, { jobsDir: opts.jobsDir })) {
     return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)` };
   }
   if (checkType !== 'deterministic' && checkType !== 'rubric') return { ok: false, error: 'Check type must be deterministic or rubric' };
   if (!modelChoiceFor(opts.rows ?? [], model)) return { ok: false, error: 'Model must be one of the Names in Settings > Providers' };
-  for (const [field, label] of [[goal, 'Goal'], [source, 'Source'], [destination, 'Destination'], [success, 'Success'], [guardrails, 'Guardrails']]) {
-    if (typeof field !== 'string' || field.trim() === '') return { ok: false, error: `${label} is required` };
-  }
-  if (checkType === 'rubric' && (typeof card.judgeExamples !== 'string' || card.judgeExamples.trim() === '')) {
-    return { ok: false, error: 'Judge examples is required for a rubric (soft-green) check type' };
-  }
+  const jb = parseJobBlock(card.jobText);
+  if (!jb.ok) return { ok: false, error: jb.error };
+  const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric');
+  if (misfit) return { ok: false, error: misfit };
+  const ib = parseInputs(card.inputs);
+  if (!ib.ok) return { ok: false, error: ib.error };
+  if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required' };
   if (typeof capUsd !== 'number' || !Number.isFinite(capUsd) || capUsd <= 0) {
     return { ok: false, error: '$ cap is required and must be a positive number' };
   }
@@ -328,6 +346,14 @@ export function validateJobCard(card, opts = {}) {
  */
 export function createSession(card, deps = {}) {
   const env = deps.env ?? process.env;
+  // P7: the person's own words, parsed ONCE by the one parser (src/jobblock.js). The card validator refused a malformed
+  // block before a session exists; a reuse card's job text is the origin's and is not drafted from.
+  const jobParsed = parseJobBlock(card.jobText);
+  const jobLines = jobParsed.ok ? jobParsed.lines : [];
+  const inputsParsed = parseInputs(card.inputs);
+  const INPUTS = inputsParsed.ok ? inputsParsed.inputs : [];
+  /** the repo — Inputs line 1 */
+  const SOURCE = INPUTS[0]?.value ?? '';
   const sessionsRoot = deps.sessionsRoot ?? join(process.env.HOME ?? '/tmp', '.config', 'bareloop', 'panel-sessions');
   // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
   const configHome = deps.home ?? dirname(sessionsRoot);
@@ -422,6 +448,8 @@ export function createSession(card, deps = {}) {
 
   /** @param {'bot'|'you'|'system'} role @param {string} text */
   const say = (role, text) => { state.messages.push({ role, text }); };
+  /** a structured message (the plan bubble): the page draws it, the thread keeps it as data */
+  const sayPlan = (/** @type {any} */ plan) => { state.messages.push(planMessage(plan, jobLines)); };
 
   /** @type {((value: string|null) => void)|null} */
   let resolvePending = null;
@@ -447,7 +475,7 @@ export function createSession(card, deps = {}) {
     resolvePending = resolveFn;
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
-      say('bot', planText(step.plan ?? {}));
+      sayPlan(step.plan ?? {});
     } else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total}): ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
@@ -576,7 +604,7 @@ export function createSession(card, deps = {}) {
 
     const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
-    const isRepoLike = looksLikeRepoSource(card.source);
+    const isRepoLike = looksLikeRepoSource(SOURCE);
     // hamr's ruling B (2026-10-05): ONE rule for both a fresh card and a reuse card, at $0, before the copy and any model call
     const destProblem = repoDestinationProblem(card.destination, isRepoLike);
     if (destProblem !== null) { refuse(destProblem); return; }
@@ -586,7 +614,7 @@ export function createSession(card, deps = {}) {
     // P6 item 1 (hamr 2026-10-05, Q1 = A / Q3 = A): a REPO source gets a worktree in the person's own repo, made now at
     // drafting start — `.bareloop/wt/<session id>` at their current commit. Edits they have not committed are not in it,
     // and the progress line says so (a notice, never a refusal).
-    const repoRoot = isRepoLike ? nearestGitAncestor(resolve(card.source))?.dir ?? null : null;
+    const repoRoot = isRepoLike ? nearestGitAncestor(resolve(SOURCE))?.dir ?? null : null;
     if (repoRoot !== null) {
       const dirty = uncommittedCount(repoRoot);
       if (dirty > 0) {
@@ -601,7 +629,7 @@ export function createSession(card, deps = {}) {
     // (relative) Destination is therefore handed to the door only when the source is repo-like.
     const destIsDir = isAbsoluteDestination(card.destination);
     const prep = await prepareSource({
-      source: card.source, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
+      source: SOURCE, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
       ...(repoRoot === null ? {} : { worktree: worktreePath(repoRoot, id) }),
     });
     if (repoRoot !== null && prep.stop === null && prep.manifest?.worktree) madeWorktree = { repo: repoRoot, dir: prep.manifest.worktree };
@@ -814,6 +842,9 @@ export function createSession(card, deps = {}) {
       schema: 'job-v1',
       job: card.jobName,
       description: `${card.jobName} — authored through the bareloop panel (${verdictType}, ${LANG})`,
+      // P7: the person's own words, signed beside the model's goal sentence
+      jobLines: signedJobLines(jobLines),
+      inputs: INPUTS,
       provider: modelChoice.provider,
       ...(modelChoice.baseUrl ? { baseUrl: modelChoice.baseUrl } : {}),
       // the Name is the model id: signed into the spec only when it is not the provider's own default
@@ -833,8 +864,8 @@ export function createSession(card, deps = {}) {
     }
 
     /** @type {Record<string, string>} */
-    const answers = { 1: card.goal, 2: card.success, 3: card.guardrails };
-    if (verdictType === 'soft-green') answers[4] = card.judgeExamples;
+    const answers = { 1: renderJobLines(jobLines) };
+    if (verdictType === 'soft-green') answers[SOFTGREEN_JUDGE_EXAMPLES_KEY] = renderExamples(jobLines);
     const required = requiredAnswersFor(verdictType);
     for (const n of required) {
       if (!answers[n]) { refuse(`the ${verdictType} check type needs ${required.length} answers and one is missing (key ${n})`); return; }
@@ -866,6 +897,7 @@ export function createSession(card, deps = {}) {
       judgeModel: draftJudge.model,
       answers, verdictType, repoPath: prep.tree, lang: LANG,
       questions: questionsFor(verdictType),
+      jobLines, inputs: INPUTS,
       writeScope, provider, generate,
       ceilingUsd: card.capUsd,
       rates: draftPrice?.rates ?? null,

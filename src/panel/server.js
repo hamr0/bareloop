@@ -55,6 +55,7 @@ import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { statusFor, partStatusFor, GOAL_MET_LINE } from './status.js';
 import { createSettingsRoutes } from './settingsroutes.js';
+import { planFromSpec } from './jobplan.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -2099,6 +2100,41 @@ function toolsFromSpec(spec) {
 }
 
 /**
+ * The Signed row of the Job tab: `YYYY-MM-DD HH:MM · <first 6 of specHash>`, the time being the run's FIRST `job-start`
+ * in local time (hamr, P7). `null` when either part is not on record — never a made-up stamp.
+ * @param {string|null|undefined} ts an ISO stamp @param {string|null|undefined} hash
+ * @returns {string|null}
+ */
+export function signedLine(ts, hash) {
+  const t = typeof ts === 'string' ? new Date(ts) : null;
+  if (!t || Number.isNaN(t.getTime()) || typeof hash !== 'string' || hash.length < 6) return null;
+  const p2 = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  return `${t.getFullYear()}-${p2(t.getMonth() + 1)}-${p2(t.getDate())} ${p2(t.getHours())}:${p2(t.getMinutes())} · ${hash.slice(0, 6)}`;
+}
+
+/**
+ * The Job box's text for a signed spec: the person's own numbered lines (a `~` line per piece of a line's rule), or — for
+ * an older job that saved no job lines — the signed goal sentence as the one line.
+ * @param {any} spec @returns {string}
+ */
+export function jobTextFromSpec(spec) {
+  if (Array.isArray(spec?.jobLines) && spec.jobLines.length) {
+    return spec.jobLines.map((/** @type {any} */ l) => [String(l.text), ...(l.rule ? String(l.rule).split('; ').map((r) => `~ ${r}`) : [])].join('\n')).join('\n');
+  }
+  return typeof spec?.goal === 'string' ? spec.goal : '';
+}
+
+/**
+ * The Inputs box's text for a signed spec: its numbered inputs, or — for an older job — `repo: <source>` from the
+ * caller's best knowledge of the source (or empty).
+ * @param {any} spec @param {string} source @returns {string}
+ */
+export function inputsTextFromSpec(spec, source) {
+  if (Array.isArray(spec?.inputs) && spec.inputs.length) return spec.inputs.map((/** @type {any} */ i) => `${i.label}: ${i.value}`).join('\n');
+  return source ? `repo: ${source}` : '';
+}
+
+/**
  * `<src/panel>/../../jobs` — the repo's `jobs/` directory of signed specs,
  * resolved from the bareloop PACKAGE ROOT (this module's own on-disk
  * location), never from `process.cwd()` — a panel launched from any working
@@ -2180,8 +2216,20 @@ export function getRunJob(runid, opts = {}) {
       : (typeof jobStart?.model === 'string' ? jobStart.model : null),
   );
 
+  // the Signed row: the run's FIRST job-start, local time (P7)
+  let firstStart = null;
+  if (existsSync(row.spine)) {
+    try { firstStart = parseJsonl(row.spine).records.find((r) => r && typeof r === 'object' && r.type === 'job-start') ?? null; } catch { firstStart = null; }
+  }
   /** @param {any} spec @param {boolean} resolved @param {string} resolvedFrom @param {string|null} note */
   const fromSpec = (spec, resolved, resolvedFrom, note) => ({
+    // P7: the same plan model the chat's plan bubble is drawn from (src/panel/jobplan.js), read from the SIGNED spec
+    plan: planFromSpec(spec),
+    jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null,
+    inputs: Array.isArray(spec.inputs) && spec.inputs.length ? spec.inputs : [{ n: 1, label: 'repo', value: sourceDisplay() }],
+    signedAt: typeof firstStart?.ts === 'string' ? firstStart.ts : null,
+    specHash: typeof jobStart?.specHash === 'string' ? jobStart.specHash : null,
+    signed: signedLine(firstStart?.ts, typeof jobStart?.specHash === 'string' ? jobStart.specHash : null),
     runid,
     job: typeof spec.job === 'string' ? spec.job : row.job,
     resolved,
@@ -2202,6 +2250,7 @@ export function getRunJob(runid, opts = {}) {
     note,
   });
   const none = () => ({
+    plan: null, jobLines: null, inputs: [{ n: 1, label: 'repo', value: sourceDisplay() }], signedAt: null, specHash: null, signed: null,
     runid,
     job: row.job,
     resolved: false,
@@ -2263,6 +2312,10 @@ export function getRunJob(runid, opts = {}) {
   // (d) the run's own job-start record — narrower, unsigned.
   if (jobStart) {
     return {
+      plan: null, jobLines: null, inputs: [{ n: 1, label: 'repo', value: sourceDisplay() }],
+      signedAt: typeof jobStart.ts === 'string' ? jobStart.ts : null,
+      specHash: typeof jobStart.specHash === 'string' ? jobStart.specHash : null,
+      signed: signedLine(jobStart.ts, jobStart.specHash),
       runid,
       job: typeof jobStart.job === 'string' ? jobStart.job : row.job,
       resolved: false,
@@ -2456,7 +2509,8 @@ export function getStartFrom(runid, opts = {}) {
       : (findRow(rowsForHome(keysHome(opts.home)), { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name
         ?? (typeof jobStart?.model === 'string' ? jobStart.model : '')),
     source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
-    judgeExamples: typeof saved.judgeExamples === 'string' ? saved.judgeExamples : '',
+    // a card saved by P7 or later keeps the Inputs text the person typed
+    inputs: typeof saved.inputs === 'string' && saved.inputs ? saved.inputs : '',
     jobName: row.job,
   });
   const key = workflowKey(spec);
@@ -2470,7 +2524,7 @@ export function getStartFrom(runid, opts = {}) {
     from: 'signed job',
     locked: REUSE_LOCKED_FIELDS,
     open: REUSE_OPEN_FIELDS,
-    note: card.checkType === 'rubric' && card.judgeExamples === '' ? 'judge examples were not saved for this run' : null,
+    note: Array.isArray(spec.jobLines) && spec.jobLines.length ? null : 'older job — numbered lines were not saved',
     specHash: signed.specHash,
     workflowKey: key,
     spec,
@@ -2518,7 +2572,7 @@ export function listReuseJobs(opts = {}) {
  * The reuse card for a signed spec: locked boxes from the spec through the Job tab's own readers, open boxes from
  * the spec's own fence and caps (Source and the saved text from the caller — a spec carries neither).
  * @param {any} spec
- * @param {{model: string, source: string, judgeExamples: string, jobName: string}} extra
+ * @param {{model: string, source: string, inputs?: string, jobName: string}} extra `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
  * @returns {Record<string, any>}
  */
 function reuseCardFromSpec(spec, extra) {
@@ -2527,12 +2581,9 @@ function reuseCardFromSpec(spec, extra) {
     jobName: typeof spec.job === 'string' && spec.job ? spec.job : extra.jobName,
     checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
     model: typeof spec.model === 'string' && spec.model && !extra.model ? spec.model : extra.model,
-    goal: typeof spec.goal === 'string' ? spec.goal : '',
-    source: extra.source,
+    jobText: jobTextFromSpec(spec),
+    inputs: extra.inputs || inputsTextFromSpec(spec, extra.source),
     destination: writeScope.join(', '),
-    success: successFromSpec(spec) ?? '',
-    guardrails: guardrailsFromSpec(spec) ?? '',
-    judgeExamples: extra.judgeExamples,
     capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
   };
@@ -2542,7 +2593,7 @@ function reuseCardFromSpec(spec, extra) {
  * P5 item 4 — the facts of a spec for an IMPORTED job's view, read by the SAME readers the Job tab uses for a run
  * (so an imported job and a run read alike): check type, goal, success checks, guardrails, model, caps.
  * @param {any} spec
- * @returns {{checkType: string, goal: string, success: string, guardrails: string, model: string, budgetUsd: number|null, maxWallMs: number|null}}
+ * @returns {{checkType: string, goal: string, success: string, guardrails: string, plan: ReturnType<typeof planFromSpec>, inputs: any[]|null, model: string, budgetUsd: number|null, maxWallMs: number|null}}
  */
 function describeSpec(spec) {
   const nr = (/** @type {string|null} */ v) => (typeof v === 'string' && v.length > 0 ? v : 'not recorded');
@@ -2551,6 +2602,8 @@ function describeSpec(spec) {
     goal: nr(typeof spec.goal === 'string' ? spec.goal : null),
     success: nr(successFromSpec(spec)),
     guardrails: nr(guardrailsFromSpec(spec)),
+    plan: planFromSpec(spec),
+    inputs: Array.isArray(spec.inputs) && spec.inputs.length ? spec.inputs : null,
     model: nr(typeof spec.model === 'string' ? spec.model : null),
     budgetUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : null,
@@ -2587,7 +2640,7 @@ export function getStartFromImport(id, opts = {}) {
   // The card opens on the row matching the bundle's own provider when there is one, else blank (the page's menu picks).
   const rows = rowsForHome(keysHome(opts.home));
   const named = findRow(rows, { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name ?? '';
-  const card = reuseCardFromSpec(spec, { model: named, source: '', judgeExamples: '', jobName: row.job });
+  const card = reuseCardFromSpec(spec, { model: named, source: '', jobName: row.job });
   const key = workflowKey(spec);
   const trackRecord = trackRecordFor(key, { ...opts, worker: workerOfChoice(opts.model ?? card.model, opts) });
   return {

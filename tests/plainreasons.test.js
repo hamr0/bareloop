@@ -14,6 +14,10 @@ import { signJudgedArtifacts, PROPOSAL_TOOL_NAME } from '../src/cardauthor.js';
 import { plainReasons, plainKinds, proposalStopText, redsRecord, signingReasons, signingKinds, signingStopText, DECLARATION_CODES, calibrationSummary } from '../src/authorreadout.js';
 import { createSession } from '../src/panel/authorsession.js';
 
+/** P7: the recorded live stages predate fromLine — tag every non-guard stage to job line 1 (the fixture card has one line) */
+const GUARD_NAMES = new Set(['changed-from-seed', 'no-suppressions']);
+const tagLine1 = (/** @type {any[]} */ stages) => stages.map((x) => (GUARD_NAMES.has(x.name) ? x : { ...x, fromLine: 1 }));
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const F192P = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-params-real.json'), 'utf8'));
 
@@ -177,8 +181,8 @@ test('PANEL: a proposal-invalid stop shows the plain message under the failed st
   const cases = mubSet();
   const reds = validateJudgedArtifacts({ card: CARD(), cases }).reds;
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-reasons-job', goal: 'document things', source: repo,
-    destination: 'src/', success: 'docs', guardrails: 'none', judgeExamples: 'pass: documented. fail: undocumented.', capUsd: 2,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-reasons-job', jobText: 'document things\n~ PASS: documented\n~ FAIL: undocumented', inputs: `repo: ${repo}`,
+    destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
@@ -312,8 +316,8 @@ test('PANEL: a signing-gates refusal shows the plain message and writes the full
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'seed']);
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-sign-job', goal: 'document things', source: repo,
-    destination: 'src/', success: 'docs', guardrails: 'none', judgeExamples: 'pass: documented. fail: undocumented.', capUsd: 2,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-sign-job', jobText: 'document things\n~ PASS: documented\n~ FAIL: undocumented', inputs: `repo: ${repo}`,
+    destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
@@ -328,7 +332,7 @@ test('PANEL: a signing-gates refusal shows the plain message and writes the full
     },
     authorFn: async () => ({
       ok: true, reds: [], stop: null, genreEnv: { applied: {} }, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [] },
-      declaration: { stages: LIVE.liveStages, notes: LIVE.liveNotes },
+      declaration: { stages: tagLine1(LIVE.liveStages), notes: LIVE.liveNotes },
     }),
     prepareSigningFn: async () => ({ ok: false, specHash: null, seedRef: null, work: [], guards: [], stops: [], reds: LIVE.signingReds, refusal: LIVE.signingRefusal, gates: {} }),
   });
@@ -395,8 +399,8 @@ async function panelWithCalibration(calibration, t) {
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'seed']);
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-cal-job', goal: 'document things', source: repo,
-    destination: 'src/', success: 'docs', guardrails: 'none', judgeExamples: 'pass: documented. fail: undocumented.', capUsd: 2,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-cal-job', jobText: 'document things\n~ PASS: documented\n~ FAIL: undocumented', inputs: `repo: ${repo}`,
+    destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
@@ -411,7 +415,7 @@ async function panelWithCalibration(calibration, t) {
     },
     authorFn: async () => ({
       ok: true, reds: [], stop: null, genreEnv: { applied: {} }, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [] },
-      declaration: { stages: LIVE.liveStages, notes: LIVE.liveNotes },
+      declaration: { stages: tagLine1(LIVE.liveStages), notes: LIVE.liveNotes },
     }),
     prepareSigningFn: async () => ({ ok: false, specHash: null, seedRef: null, work: [], guards: [], stops: [], reds: LIVE.signingReds, refusal: LIVE.signingRefusal, gates: { calibration } }),
   });
