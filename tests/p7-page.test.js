@@ -44,6 +44,7 @@ test('renderJobPlan: legend, numbered lines with their rule, checks as "check ·
 test('renderJobPlan: an older job says its numbered lines were not saved; empty folds are left out', () => {
   const h = renderJobPlan({ lines: [{ n: 1, text: 'old goal', rule: '', checks: [{ name: 'suite-green', cls: null }], refused: [] }], loose: [], notChecked: [], alwaysOn: [], older: true });
   assert.match(h, /older job — numbered lines were not saved/);
+  assert.ok(h.indexOf('plan-older') < h.indexOf('jp-legend') && h.indexOf('plan-older') < h.indexOf('plan-line'), 'the note is at the TOP, before the legend and line 1');
   assert.doesNotMatch(h, /<details/);
 });
 
@@ -153,4 +154,15 @@ test('the plan marker colour: --plan is defined for dark and both light theme bl
   assert.equal((PAGE.match(/--plan:#2668c2/g) || []).length, 2, 'light (media query + data-theme)');
   const uses = [...PAGE.matchAll(/^\s*([^{\n]*)\{[^}]*var\(--plan\)[^}]*\}/gm)].map((m) => m[1].trim());
   assert.deepEqual(uses, ['.jp-legend b,.jp .mk', '.jp details>summary::before']);
+});
+
+test('Job tab layout: The job flows at full height (no inner scroll), a wrapped line hangs under its text, and the rows run The job, Inputs, Destination, Tools, Cap, Signed', () => {
+  assert.doesNotMatch(PAGE, /class="ro-value scroll" id="details-plan"/, 'no inner scroll box on the plan');
+  const tab = PAGE.slice(PAGE.indexOf('id="job-card-readonly"'), PAGE.indexOf('</section>', PAGE.indexOf('id="job-card-readonly"')));
+  const order = ['id="details-plan"', 'id="details-inputs"', 'id="details-dest"', 'id="details-tools"', 'id="details-cap-money"', 'id="details-signed"'].map((k) => tab.indexOf(k));
+  assert.ok(order.every((i) => i !== -1) && order.every((v, i) => i === 0 || v > order[i - 1]), `row order: ${order}`);
+  const jl = PAGE.match(/\.jp \.jl\{([^}]*)\}/)[1];
+  assert.match(jl, /padding-left:30px/);
+  assert.match(jl, /text-indent:-30px/);
+  assert.match(PAGE, /\.jp \.jl \.sub,\.jp \.jl \.fold\{padding-left:0;text-indent:0;\}/, 'the rule and check lines under a job line do not inherit the hang');
 });
