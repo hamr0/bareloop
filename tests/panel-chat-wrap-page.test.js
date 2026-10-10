@@ -45,7 +45,7 @@ test('ONE fit function serves the ask box and the card boxes (no copy-paste, fit
   assert.equal((PAGE.match(/function fit\w+\(/g) || []).length, 2, 'fitBox + the card-box loop that calls it');
   assert.match(fnSrc('fitCardBoxes'), /fitBox\(document\.getElementById\(id\)\)/);
   // eslint-disable-next-line no-new-func
-  const fitBox = new Function(`${fnSrc('fitBox')}\nreturn fitBox;`)();
+  const fitBox = new Function('window', `${fnSrc('fitBox')}\nreturn fitBox;`)({ getComputedStyle: () => ({ maxHeight: '200px' }) });
   const mk = (scroll) => ({ scrollHeight: scroll, offsetHeight: 0, clientHeight: 0, style: {} });
   const one = mk(20); fitBox(one);
   assert.ok(parseFloat(one.style.height) <= 40, 'one line stays small');
@@ -53,6 +53,25 @@ test('ONE fit function serves the ask box and the card boxes (no copy-paste, fit
   assert.equal(many.style.height, '200px', 'capped, then scrolls inside');
   const hidden = mk(0); fitBox(hidden);
   assert.equal(hidden.style.height, '', 'a hidden box measures 0 and gets no height');
+});
+
+test('P7 numbered boxes: a 12-line job grows to the 8-line cap (read from the CSS max-height), then scrolls; the gutter scrolls with the text and never sizes the row', () => {
+  const rule = PAGE.match(/\.job-card \.nbox textarea\.jf-wrap\{([^}]*)\}/)[1];
+  assert.match(rule, /max-height:calc\(12em \+ 14px\)/, '8 lines x 1.5em + 2 x 6px padding + 2 x 1px border');
+  assert.match(rule, /line-height:1\.5/, 'the textarea and the gutter/mirror share one line height');
+  const gut = PAGE.match(/\.nbox \.gut\{([^}]*)\}/)[1];
+  assert.match(gut, /contain:size/);
+  assert.match(gut, /padding:7px 0/, 'top AND bottom, so both scroll the same distance');
+  // 13px font -> 8 lines = 156 + 14 = 170px; a 12-line job measures 12 x 19.5 + 12 = 246
+  const cap = 8 * 19.5 + 14;
+  // eslint-disable-next-line no-new-func
+  const fitBox = new Function('window', `${fnSrc('fitBox')}\nreturn fitBox;`)({ getComputedStyle: () => ({ maxHeight: `${cap}px` }) });
+  const twelve = { scrollHeight: 12 * 19.5 + 12, offsetHeight: 2, clientHeight: 0, style: {} };
+  fitBox(twelve);
+  assert.equal(twelve.style.height, `${cap}px`);
+  const five = { scrollHeight: 5 * 19.5 + 12, offsetHeight: 2, clientHeight: 0, style: {} };
+  fitBox(five);
+  assert.equal(parseFloat(five.style.height), 5 * 19.5 + 12 + 2, 'below 8 lines it grows with the content');
 });
 
 test('card fields (hamr 2026-10-05): editable = soft white + the ordinary 1px border, no added thick/grey border; focused = blue border', () => {
@@ -74,7 +93,7 @@ test('card box default heights (hamr 2026-10-05): The job at 3 rows, Inputs at 2
   // reports below the rows-sized client height; a hidden box clears the inline height so rows rule again.
   assert.match(fnSrc('fitBox'), /style\.height = "auto"/);
   // eslint-disable-next-line no-new-func
-  const fitBox = new Function(`${fnSrc('fitBox')}\nreturn fitBox;`)();
+  const fitBox = new Function('window', `${fnSrc('fitBox')}\nreturn fitBox;`)({ getComputedStyle: () => ({ maxHeight: '200px' }) });
   const el = { scrollHeight: 40, offsetHeight: 0, clientHeight: 0, style: { height: '999px' } }; // empty 2-row box measures its rows height
   fitBox(el);
   assert.equal(el.style.height, '40px', 'an empty 2-row box keeps its 2-row height');

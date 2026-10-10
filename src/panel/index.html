@@ -469,9 +469,13 @@
   /* P7 — numbered boxes (The job, Inputs): the number gutter sits OUTSIDE the box, left; a hidden mirror measures each
      logical line's wrapped height so a number stays level with its line (docs/product/PANEL-BUILD.md, signed mock) */
   .nbox{display:grid;grid-template-columns:22px minmax(0,1fr);column-gap:6px;align-items:stretch;}
-  .nbox .gut{color:var(--text-faint);text-align:right;padding-top:7px;overflow:hidden;font-size:inherit;line-height:1.5;}
+  /* contain:size keeps the gutter's own content out of the row height (the box alone decides it); its padding mirrors the
+     textarea's 6px + 1px border top AND bottom so both scroll the same distance and a number never drifts or falls out */
+  .nbox .gut{color:var(--text-faint);text-align:right;padding:7px 0;box-sizing:border-box;overflow:hidden;contain:size;font-size:inherit;line-height:1.5;}
   .nbox .gut div{min-height:1.5em;}
   .nbox-in{position:relative;min-width:0;}
+  /* the numbered boxes grow with their text up to 8 lines (8 x 1.5em + 6px padding x2 + 1px border x2), then scroll; fitBox reads this cap */
+  .job-card .nbox textarea.jf-wrap{display:block;line-height:1.5;max-height:calc(12em + 14px);}
   .nbox-mir{position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;box-sizing:border-box;padding:6px 8px;font:inherit;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;}
   .nbox-mir div{min-height:1.5em;}
   /* P7 — the ONE job plan drawing (chat plan bubble + Job tab): job lines numbered, rule under, checks folded; only the marker is blue */
@@ -4166,7 +4170,8 @@
       el.style.height = "auto";
       if(!el.scrollHeight){ el.style.height = ""; return; }
       var border = el.offsetHeight - el.clientHeight;
-      el.style.height = Math.min(el.scrollHeight + border, 200) + "px";
+      var cap = parseFloat(window.getComputedStyle(el).maxHeight);
+      el.style.height = Math.min(el.scrollHeight + border, cap > 0 ? cap : 200) + "px";
     }
     function fitCardBoxes(){
       FIT_IDS.forEach(function(id){ fitBox(document.getElementById(id)); });
