@@ -4,6 +4,38 @@ All notable changes to bareloop are documented here. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
+
+## [0.39.0] - 2026-10-10
+
+### Added
+
+- **Rubric judge rulebook (F192).** `says-what`: the doc description must say more than the function's own name; name words match by prefix (init/initialize; a shorter word of 4+ letters), and with no doc block `has-doc` alone owns the red. `params` also reds an extra `@param` that names no parameter, and a missing field of a destructured parameter once the doc names any field. `has-doc` checks the artifact itself: the judge only points at the declaration, code finds the `/**` block above it. Quote matching uses bareguard `quoteIn` with `wholeLines`, so a quote that dropped a leading `* ` still matches. The injection facts check shares `has-doc`'s acceptance, and every rule carries a plain-words `means` for the case-proposal prompt.
+- **A calibration case may not expect a red the rulebook cannot raise** (a `has-doc` red on a function that has a JSDoc block); it is refused before any locate call.
+- **Calibration record.** A per-case `diag` (locate facts, full reds, per-attempt cause) is recorded beside the graded rows, and each failing case gets one plain why-line. Grading, hashes and verdicts are untouched.
+- **Judged write fence.** A judged stage may only judge files inside the job's write fence; otherwise the red `judged-outside-write-scope` fires at draft time, before signing, on every door (authoring revise loop, signing, runner pre-flight, hand-written or reused specs).
+- **Worker warning.** When a job's close carries the js no-suppressions check, the worker is told up front that it reads comment lines too.
+- **Panel.**
+  - A refused rubric proposal and a refused signing each say why in plain words (panel and CLI share one owner); the full reds go to `draft-log.jsonl`.
+  - The calibrating line shows the gate's real score (8 of 10 / 3 of 5), not a stale check mark.
+  - The confirm plan reads as headed sections (#PLAN / #CHECKS / #NOT CHECKED, and #QUESTIONS when raised).
+  - The step map is fit-to-text chips with arrows, a line-start arrow on wrapped lines, and ↻N plus a dashed box for retries.
+
+### Changed
+
+- **Strike governor.** A judged stage's trend number is its distinct red count, compared to best-so-far; the gap headline reads "N red(s) across X of Y artifact(s)". Identical, flip-flopping or growing judged reds now strike (they read as not comparable before).
+- **Judge thinking is off** for the rubric judge on deepseek-flash, per call and allow-listed; workers and the drafter are unchanged and `JUDGE_MAX_TOKENS` stays 4000.
+- **Revise reopens the job's boxes**, filled as drafted; Start drafting then drafts fresh. The typed change request is gone: `POST /api/author/:id/revise`, `session.revise`, the "N changes left" hint and `revisesLeft` are removed. The CLI confirm turn is unchanged.
+- Dependencies: `bareguard` ^0.13.0 to ^0.21.0, `bare-agent` ^0.43.0 to ^0.49.0.
+
+### Fixed
+
+- **A passed calibration satisfies the seed-red gate for any close with a judged stage**, mixed or pure. The old test read a function's arity (always true), so signing refused a mixed rubric close after calibration passed 10/10 (live session smv0tasvb0u89).
+
+### Known limits
+
+- The judge's false-red classes seen on live run mv1j01sl are parked (FINDINGS F192 f), not fixed.
+- The step-map chips and the new panel text were not checked at phone width by a person.
+
 ## [0.38.0] - 2026-10-08
 
 ### Added
