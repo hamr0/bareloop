@@ -14265,3 +14265,17 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 
 **Proven where:** `tests/authoring.test.js` (the three coverage tests go red with `checkJobLines` disabled — fail-first — and green with it), `tests/jobblock.test.js`, `tests/job.test.js`, `tests/p7-jobplan.test.js`, `tests/p7-page.test.js`, `tests/run-interview.test.js`.
 
+
+## F215 — a drafter answer cut off at the output cap was labelled provider-red, and the panel gave no reason (live panel session smv2bzdqmp0f8, 2026-10-10; fixed on `feat/job-block`)
+
+**Grounded in:** `src/authorflow.js` `askStructured` (the `if (r?.error) return { providerError }` branch, ~1591/1598) and `authorClose`'s `provider-red` stop (~2458); bare-agent 0.49.0 `node_modules/bare-agent/src/loop.js` (BA-6/BA-13: a round whose neutral `stopReason` is `max_tokens` returns `error: 'truncated:max_tokens'`, and logs "[Loop] a round stopped at the output cap (stopReason='max_tokens') with no completed tool call"); `src/panel/authorsession.js` (`refuse('Stopped: <stop>')`)
+
+**What was wrong.** The author call hit `AUTHOR_MAX_TOKENS` (32000) and was billed $0.0384, exactly 32000 tokens x $1.2/M. `askStructured` treated any `r.error` as a transport casualty, so the model's own overlong answer became `provider-red` and the drafting loop stopped at once, with no retry. The panel's step then read the bare code `Stopped: provider-red`; the reds that carried the reason were never shown. Two things were wrong together: a failed try was labelled a provider fault (the F45 reading that a cut-off is "a casualty, never evidence" was written for a transport that failed, and a cut-off is the model's answer), and no drafting stop said why in words.
+
+**The change.** A cut-off round (`error === 'truncated:max_tokens'`, or any error carrying `stopReason: 'max_tokens'`; bare-agent's own signal, not a guessed field) is a failed try: it takes the same retry ladder as a malformed artifact, with the red reason "the AI's answer was cut off at the output limit" (`axis: 'output-truncated'`); the cut-off reply is not replayed into the retry (it would re-bill the whole cap as input). When every attempt is cut off the stop is `artifact-red`, never `provider-red`. `AUTHOR_MAX_TOKENS` is NOT raised (tighten-only). A real transport failure still returns `provider-red`. Every attempt stays booked (the spend of the cut-off calls is in the cost book). Separately, `draftStopText` (`src/authorreadout.js`) words EVERY drafting stop that has no wording of its own (provider-red, artifact-red, cap, max-revisions...) as what happened, what it cost and what to do, quoting the stop's own reds (scrubbed); the panel puts it on the failed step the card draws, and the structured reds go to the drafting log.
+
+**Not proven.** Test-proven against a REAL `OpenAIProvider` with its `_request` seam stubbed to a `finish_reason: 'length'` round; no live model has been cut off since the fix. A retry at the same cap can be cut off again (the ladder is bounded by `MAX_STRUCTURE_RETRIES`, each attempt another paid 32000 tokens at worst).
+
+**Reverses a pinned test.** `tests/authorflow.test.js` "a truncated authoring round routes as provider-red through the flow" pinned the old routing (and "does not burn the malformed-emission retries"); it now pins the new one.
+
+**Proven where:** `tests/authorflow.test.js` (the P7 item 6 tests and the rewritten truncation test go red with the cut-off detection disabled), `tests/panel-author.test.js` (the stop text).

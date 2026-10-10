@@ -1230,3 +1230,27 @@ test('P7 item 5: questions-open -> each question asked through the ordinary ask 
   const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8');
   assert.match(log, /questions-dropped/, 'a dropped question is logged');
 });
+
+test('P7 item 6: ANY drafting stop says why in plain words on the card — a provider-red names the provider fault, the spend and what to do (not the bare code)', async () => {
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-stopreason' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-stop-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
+    authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.0384, unpricedRounds: 0 }); return {
+      ok: false, stop: 'provider-red', declaration: null, reds: [{ code: 'provider-red', path: 'author', detail: 'socket hang up' }], iterations: [],
+      cost: { costUsd: 0.0384, knownUsd: 0.0384, spendComplete: true, calls: [], unpricedRounds: 0 }, raws: [],
+    }; },
+  });
+  await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+  session.signPrepare();
+  await untilTrue(() => session.state.phase === 'refused');
+  const shown = session.state.error;
+  assert.equal(session.state.phase, 'refused');
+  assert.doesNotMatch(shown, /^Stopped: provider-red$/);
+  assert.match(shown, /AI provider failed/);
+  assert.match(shown, /socket hang up/, 'the reason the stop carried is quoted');
+  assert.match(shown, /Spent so far: \$0\.04/);
+  assert.match(shown, /What to do: draft again/);
+  assert.equal(session.state.steps.at(-1).detail, shown, 'the same words are on the failed step the card draws');
+});

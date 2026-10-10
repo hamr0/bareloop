@@ -172,6 +172,10 @@ export function normalizeQuestions(raw, failedLines) {
   return { kept, dropped };
 }
 
+/** The honest truncation signal: bare-agent's Loop tags a round cut off at the output cap `error: 'truncated:max_tokens'`
+ * with the neutral `stopReason: 'max_tokens'` (node_modules/bare-agent/src/loop.js, BA-6/BA-13).
+ * @param {any} r */
+export const isOutputCutOff = (r) => r?.error === 'truncated:max_tokens' || (Boolean(r?.error) && r?.stopReason === 'max_tokens');
 
 /**
  * ONE red, scrubbed — the same spelling `prepareSigning` uses (src/authorjob.js),
@@ -1668,11 +1672,22 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r, attempts);
     const raw = redactSecrets(String(r?.text ?? ''));
 
-    if (r?.error) {
+    // ITEM 6 (P7, live session smv2bzdqmp0f8, 2026-10-10): a round cut off at the output cap is the MODEL's own overlong
+    // answer, not a transport fault — it is a failed try on the same ladder as a malformed artifact (the spend is already
+    // booked above). Only a real error (a throw, a provider/halt tag) stays provider-red.
+    const cutOff = isOutputCutOff(r);
+    if (r?.error && !cutOff) {
       return { artifact: null, attempts, convo, raw, providerError: String(r.error), red: null, budget: null };
     }
 
-    if (mode === 'tool') {
+    if (cutOff) {
+      red = {
+        code: 'artifact-red',
+        path: channel.name,
+        detail: "the AI's answer was cut off at the output limit",
+        axis: 'output-truncated',
+      };
+    } else if (mode === 'tool') {
       // F179 (2026-09-15 ruling) — retry, never repair. bare-agent 0.43.0
       // (BA-27) already priced this round on the real usage and returns it
       // with `toolCalls: []` plus its own `malformedToolCall` marker instead
@@ -1725,7 +1740,8 @@ export async function askStructured({ messages, generate, mode, retries, label, 
 
     if (attempt < retries) {
       const block = renderRejectBlock({ kind: 'artifact', reds: [/** @type {Red} */ (red).detail] });
-      convo.push({ role: 'assistant', content: raw.trim() || '(the reply carried no text)' });
+      // a cut-off reply is NOT replayed (it would re-bill the whole cap as input and teach nothing)
+      convo.push({ role: 'assistant', content: (cutOff ? '' : raw.trim()) || '(the reply carried no text)' });
       convo.push({ role: 'user', content: `${block}\n\n${mode === 'tool' ? channel.instruction : STRUCTURE_INSTRUCTION_TEXT}` });
     }
   }

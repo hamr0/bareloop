@@ -1706,18 +1706,19 @@ test('makeLoopGenerate: a HALF-WRITTEN declaration on a truncated round is never
   assert.equal(r.error, 'truncated:max_tokens');
 });
 
-test('makeLoopGenerate: a truncated authoring round routes as provider-red through the flow, not as a declaration defect', async () => {
-  // where the distinct outcome has to LAND: a casualty is never evidence about
-  // the model (F45), so it must not spend the structure-retry budget that exists
-  // for a malformed emission, and it must not read as an artifact-red.
+test('makeLoopGenerate: a truncated authoring round is a FAILED TRY through the flow (hamr 2026-10-10, F215: live session smv2bzdqmp0f8), not provider-red', async () => {
+  // SUPERSEDES the F45 pin that read a cut-off round as a transport casualty: the cut-off is the MODEL's own overlong
+  // answer, so it takes the same retry ladder as a malformed artifact and, when every attempt is cut off, stops
+  // artifact-red with the reason in words. A real transport failure stays provider-red (see the P7 item 6 tests below).
   const provider = countingProvider([{ text: '', stopReason: 'max_tokens' }]);
   const r = await authorClose({ ...baseArgs(), generate: makeLoopGenerate(provider), seedReadFn: scriptSeedRead().fn });
 
   assert.equal(r.ok, false);
-  assert.equal(r.stop, 'provider-red', 'a cut-off round is a transport casualty, never an artifact-red');
-  assert.equal(r.reds[0].code, 'provider-red');
-  assert.match(r.reds[0].detail, /truncated:max_tokens/);
-  assert.equal(r.iterations[0].attempts, 1, 'and it does not burn the malformed-emission retries on its way out');
+  assert.equal(r.stop, 'artifact-red', 'a cut-off round is a failed try, never provider-red');
+  assert.equal(r.reds[0].code, 'artifact-red');
+  assert.equal(r.reds[0].detail, "the AI's answer was cut off at the output limit");
+  assert.equal(r.iterations[0].attempts, 1 + MAX_STRUCTURE_RETRIES, 'it takes the same retry ladder as a malformed artifact');
+  assert.equal(r.iterations[0].providerError, null);
 });
 
 test('makeLoopGenerate: the whole authoring flow pays ONE provider round per call, every one of them cached and capped', async () => {
@@ -2602,4 +2603,71 @@ test('P7 item 5: the schema carries `questions` only when asked for, the propert
   assert.deepEqual(linesNamedByReds([reds[2]], decl, [1, 2, 3]), []);
   assert.deepEqual(normalizeQuestions('nope', [1]).dropped.map((d) => d.reason), ['questions is not a list']);
   assert.deepEqual(normalizeQuestions([{ question: 'no line' }, 'str'], [1]).kept, []);
+});
+
+// ── P7 batch 2 item 6: a drafter answer cut off at the output cap is a FAILED TRY, not provider-red ─────────────────
+
+const openaiCut = () => ({
+  choices: [{ message: { content: '', tool_calls: [] }, finish_reason: 'length' }],
+  usage: { prompt_tokens: 120, completion_tokens: 32000 },
+  model: 'deepseek-flash',
+});
+
+test('P7 item 6 (fail-first): a REAL OpenAIProvider round that stops at max_tokens, then a valid round — the cut-off is a failed try on the retry ladder (not provider-red), both rounds booked, the reject block says so', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const decl = goodDeclaration();
+  let call = 0;
+  provider._request = async () => { call += 1; return call === 1 ? openaiCut() : openaiChoice(DECLARATION_TOOL_NAME, JSON.stringify(decl)); };
+  const book = makeCostBook();
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'call declare_close exactly once', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate: makeLoopGenerate(provider), mode: 'tool', retries: 2, label: 'author', book, channel,
+  });
+  assert.equal(r.providerError, null, 'NOT provider-red');
+  assert.deepEqual(r.artifact, decl, 'the sound second round lands');
+  assert.equal(call, 2);
+  const report = book.report();
+  assert.equal(report.calls.length, 2);
+  assert.equal(typeof report.calls[0].costUsd, 'number', 'the cut-off round stays booked and priced');
+  assert.ok(report.calls[0].costUsd > 0);
+  const said = r.convo.filter((/** @type {any} */ m) => m.role === 'user').map((/** @type {any} */ m) => m.content).join('\n');
+  assert.match(said, /the AI's answer was cut off at the output limit/);
+});
+
+test('P7 item 6: EVERY attempt cut off — artifact-red with axis output-truncated and the plain reason, every attempt booked; max tokens is not raised', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const seenMax = [];
+  provider._request = async (/** @type {any} */ body) => { seenMax.push(body?.max_tokens); return openaiCut(); };
+  const book = makeCostBook();
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'x', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate: makeLoopGenerate(provider), mode: 'tool', retries: MAX_STRUCTURE_RETRIES, label: 'author', book, channel,
+  });
+  assert.equal(r.providerError, null);
+  assert.equal(r.artifact, null);
+  assert.equal(r.red?.axis, 'output-truncated');
+  assert.equal(r.red?.detail, "the AI's answer was cut off at the output limit");
+  assert.equal(book.report().calls.length, 1 + MAX_STRUCTURE_RETRIES);
+  assert.ok(seenMax.every((m) => m === AUTHOR_MAX_TOKENS || m === undefined), 'tighten-only: the cap is never raised to retry');
+});
+
+test('P7 item 6: a REAL transport failure stays provider-red (only the output cap is a failed try); and authorClose stops artifact-red with the reason, never provider-red, on a cut-off', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  provider._request = async () => { throw Object.assign(new Error('socket timed out'), { code: 'ETIMEDOUT' }); };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'x', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const down = await askStructured({
+    messages: [{ role: 'user', content: 'a' }], generate: makeLoopGenerate(provider), mode: 'tool', retries: 2, label: 'author', book: makeCostBook(), channel,
+  });
+  assert.match(String(down.providerError), /socket timed out/);
+  assert.equal(down.red, null);
+
+  provider._request = async () => openaiCut();
+  const r = await authorClose({ ...baseArgs(), generate: makeLoopGenerate(provider), seedReadFn: scriptSeedRead().fn });
+  assert.equal(r.stop, 'artifact-red');
+  assert.equal(r.reds[0].code, 'artifact-red');
+  assert.match(r.reds[0].detail, /cut off at the output limit/);
+  assert.ok(r.cost.knownUsd > 0, 'the spend of the cut-off calls stays booked');
 });

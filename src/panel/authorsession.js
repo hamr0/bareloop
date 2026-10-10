@@ -52,7 +52,7 @@ import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, redsRecord, calibrationSummary } from '../authorreadout.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, calibrationSummary } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines,
@@ -952,7 +952,19 @@ export function createSession(card, deps = {}) {
       return;
     }
     if (!authored.ok) {
-      refuse(`Stopped: ${authored.stop ?? 'authoring-failed'}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`, authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
+      // ITEM 6 (P7): every drafting stop says WHY in plain words (the reds travel into the drafting log beside it) — the bare
+      // "Stopped: provider-red" of live session smv2bzdqmp0f8 carried a code and no reason.
+      const stopReds = authored.reds ?? [];
+      if (stopReds.length) {
+        const no = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+        appendDraftLog(outDir, { kind: 'step-reds', no: no === -1 ? state.steps.length - 1 : no, stop: authored.stop ?? 'authoring-failed', reds: redsRecord(stopReds), at: new Date().toISOString() });
+      }
+      refuse(authored.stop === 'confirm-abandoned' || authored.stop === 'confirm-restart'
+        ? `Stopped: ${authored.stop}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`
+        : draftStopText({
+          stop: String(authored.stop ?? 'authoring-failed'), reds: stopReds, refusal: authored.refusal,
+          spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
+        }), authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
       return;
     }
 

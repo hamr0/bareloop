@@ -572,6 +572,43 @@ export function proposalStopText({ stop, reds, cases = null, spend = null, sourc
   return lines.join('\n');
 }
 
+// ── ANY DRAFTING STOP, in plain words (P7 item 6, live session smv2bzdqmp0f8, 2026-10-10) ───────────────────────────
+// A provider-red used to reach the panel as the bare line "Stopped: provider-red" — a code, no reason. Every stop of the
+// drafting loop that is not a rubric-proposal or signing refusal (those have their own wording above and below) now says
+// what happened, what it cost and what to do, in words. The stop's own reds are quoted (scrubbed, bounded), never dropped.
+
+/**
+ * @param {{stop: string, reds?: PlainRed[]|null, refusal?: {detail?: string}|null,
+ *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
+ * @returns {string}
+ */
+export function draftStopText({ stop, reds = null, refusal = null, spend = null }) {
+  const spent = spendText(spend);
+  /** @type {Record<string, string>} */
+  const heads = {
+    'provider-red': 'The AI provider failed before a usable plan came back — a connection or service fault, not a problem with your job.',
+    'artifact-red': 'The AI answered, but its answer could not be used as a plan.',
+    'cap-halt': 'Drafting stopped on your cost cap.',
+    'pricing-red': 'Drafting stopped: the cost of a call could not be priced, so the cap cannot be enforced.',
+    'max-revisions': 'The AI used all its tries without a plan that passed the checks.',
+    precheck: 'Drafting stopped before any call: something it needs was missing.',
+    unchanged: 'Drafting stopped: the AI sent the same plan twice.',
+    'scout-absent': 'Drafting stopped: the first look at your repo did not complete.',
+  };
+  const head = heads[stop] ?? `Drafting stopped (${safeText(stop)}).`;
+  /** @type {string[]} */
+  const said = [...new Set((Array.isArray(reds) ? reds : []).map((r) => safeText(r?.detail)).filter(Boolean))];
+  if (said.length === 0 && refusal?.detail) said.push(safeText(refusal.detail));
+  const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`];
+  if (said.length) {
+    lines.push('What it said:');
+    for (const x of said.slice(0, PLAIN_MAX_BULLETS)) lines.push(` • ${x}`);
+    if (said.length > PLAIN_MAX_BULLETS) lines.push(` • …and ${said.length - PLAIN_MAX_BULLETS} more.`);
+  }
+  lines.push(stop === 'cap-halt' || stop === 'pricing-red' ? 'What to do: raise the cap or fix the price in Settings, then draft again.' : 'What to do: draft again.');
+  return lines.join('\n');
+}
+
 // ── THE SIGNING GATES' REFUSAL, in plain words (hamr, 2026-10-09) ──────────────────────────
 //
 // `prepareSigning` (src/authorjob.js) can refuse with a list of reds from four gates. The panel used to say
