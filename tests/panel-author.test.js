@@ -1254,3 +1254,7 @@ test('P7 item 6: ANY drafting stop says why in plain words on the card — a pro
   assert.match(shown, /What to do: draft again/);
   assert.equal(session.state.steps.at(-1).detail, shown, 'the same words are on the failed step the card draws');
 });
+
+test('createSession: draftThinking is an enumerated operator option — a bad value throws before any session exists (hamr 2026-10-10)', () => {
+  assert.throws(() => createSession(baseCard({ jobName: 'draft-thinking-bad' }), { draftThinking: 'maybe', sessionsRoot: '/nonexistent/never-created' }), /draftThinking must be one of default \| off/);
+});

@@ -73,6 +73,7 @@
 // No spine emission here — M4 wires events.
 
 import { renderInputs } from './jobblock.js';
+import { draftCallOptions } from './providers.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
@@ -1596,10 +1597,13 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
  * `cacheMessages` (F18) and `maxTokens` (F30) are not optional on this stack.
  * `rates` is the customer's own price for this provider's key row (USD per 1K, `ratesFor`);
  * absent = bare-agent's built-in guess, exactly as before.
- * @param {any} provider @param {{system?: string, maxTokens?: number, rates?: {in: number, out: number}|null}} [o]
+ * `draftThinking` ('default' | 'off', operator knob) adds the drafter's per-call thinking option via `draftCallOptions`.
+ * @param {any} provider @param {{system?: string, maxTokens?: number, rates?: {in: number, out: number}|null, draftThinking?: string}} [o]
  * @returns {(messages: any[], tools: any[], opts?: any) => Promise<any>}
  */
-export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS, rates = null } = {}) {
+export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS, rates = null, draftThinking = 'default' } = {}) {
+  // the drafter's per-call options (src/providers.js `draftCallOptions`, one owner); a bad mode throws HERE, at construction
+  const callOptions = draftCallOptions(provider, draftThinking);
   return async (/** @type {any[]} */ messages, /** @type {any[]} */ tools, /** @type {any} */ opts = {}) => {
     const loop = new Loop({ provider, system, ...(rates ? { rates } : {}) });
     const wired = tools.map((t) => ({
@@ -1615,7 +1619,7 @@ export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens =
     // throws on a malformed tool-call arguments string (BA-27): it returns the
     // round priced with `toolCalls: []` plus its own `malformedToolCall` marker,
     // which `Loop.run` surfaces unchanged on its return. No local shim needed.
-    return loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...opts });
+    return loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...callOptions, ...opts });
   };
 }
 

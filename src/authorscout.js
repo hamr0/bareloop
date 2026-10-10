@@ -377,7 +377,7 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider,
  *   attempts?: number, ceilingUsd?: number|null, callTimeoutMs?: number,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any, rates?: {in: number, out: number}}) => any,
- *   rates?: {in: number, out: number}|null,
+ *   rates?: {in: number, out: number}|null, callOptions?: Record<string, any>,
  *   createSurveyor?: (o: {workdir: string, granted: readonly string[], ctx: boolean}) => Promise<any>}} o
  * @returns {Promise<Survey & {raw: string, raws: ReturnType<typeof scrubRaw>[],
  *   calls: {label: string, costUsd: number|null, unpricedRounds: number}[],
@@ -400,6 +400,8 @@ export async function runAuthorScout({
   onCall = () => {},
   createLoop = defaultLoop,
   rates = null,
+  // the drafter's per-call model options (`draftCallOptions`, src/providers.js; e.g. thinking off) — {} = nothing extra, byte-identical
+  callOptions = {},
   createSurveyor = defaultSurveyor,
 }) {
   const callTimeout = Number.isFinite(Number(callTimeoutMs)) && Number(callTimeoutMs) > 0
@@ -526,7 +528,7 @@ export async function runAuthorScout({
         loop = createLoop({ system, policy: surveyor.policy, onLlmResult: metered, provider, ...priced });
 
         const r = await settled(loop.run([{ role: 'user', content: scoutPrompt(workdir) }], surveyor.tools,
-          { cacheMessages: true, maxTokens, timeoutMs: callTimeout }));
+          { cacheMessages: true, maxTokens, timeoutMs: callTimeout, ...callOptions }));
         verdictAt = record(label, attempt, r);
         blob = redactSecrets(String(r?.text ?? '')).slice(0, blobMax);
         lastMsgs = Array.isArray(r?.msgs) && r.msgs.length ? r.msgs : null;
@@ -572,7 +574,7 @@ export async function runAuthorScout({
           // backends 400 on it. Strip the leading one before re-running.
           const rMsgs = r.msgs[0]?.role === 'system' ? r.msgs.slice(1) : r.msgs;
           s2 = await settled(recovery.run([...rMsgs, { role: 'user', content: SCOUT_RECOVERY_PROMPT }], [],
-            { cacheMessages: true, maxTokens, timeoutMs: callTimeout }));
+            { cacheMessages: true, maxTokens, timeoutMs: callTimeout, ...callOptions }));
           const recoveryAt = record('author-scout-recovery', attempt, s2);
           const t = redactSecrets(String(s2?.text ?? '')).slice(0, blobMax);
           // the verdict follows the blob that WON, never the call that came last
@@ -603,7 +605,7 @@ export async function runAuthorScout({
         const askMsgs = lastMsgs[0]?.role === 'system' ? lastMsgs.slice(1) : lastMsgs;
         const rr = await settled(reask.run(
           [...askMsgs, { role: 'user', content: scoutReaskTurn(/** @type {Survey} */ (survey).reason ?? '') }], [],
-          { cacheMessages: true, maxTokens, timeoutMs: callTimeout },
+          { cacheMessages: true, maxTokens, timeoutMs: callTimeout, ...callOptions },
         ));
         verdictAt = record(label, attempt, rr);
         blob = redactSecrets(String(rr?.text ?? '')).slice(0, blobMax);

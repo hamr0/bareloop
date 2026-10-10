@@ -647,6 +647,14 @@ plan with the first leg's spend carried as prior spend and `offerQuestions: fals
 plan's open questions) are a separate, unchanged mechanism: they are asked before drafting, about the plan; try-3 questions
 are asked after two failed drafts, about a job line.
 
+**Drafter thinking knob (hamr 2026-10-10; default UNCHANGED).** `draftThinking: 'default' | 'off'` (any other value throws, an operator
+param, never read from env inside the library, not in the panel UI) is owned by `draftCallOptions(provider, mode)` (`src/providers.js`).
+`'default'` sends nothing, byte-identical to before; `'off'` adds the per-CALL option `thinking: {type: 'disabled'}` for `deepseek-flash`
+only (an allow-list; any other model gets nothing), the same wire shape as the rubric judge's (F192). It is threaded explicitly:
+`makeLoopGenerate(provider, { draftThinking })` for the author, revise, structure-retry and confirm calls; `authorCloseForJob({ draftThinking })`
+for the scout (it hands `runAuthorScout` a `callOptions`); `createSession(card, { draftThinking })` in the panel does both. A paid ON/OFF
+contrast decides the default later.
+
 
 **D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT
 CLASS** (PRD v1.57 §2 — what a battery is FOR is the class of dishonesty that class of

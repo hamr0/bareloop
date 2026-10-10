@@ -143,6 +143,46 @@ export function judgeCallOptions(provider) {
 }
 
 /**
+ * The drafter's THINKING knob — an enumerated OPERATOR param, never model output and never read from env inside the library.
+ * `'default'` sends nothing (byte-identical to today); `'off'` sends the per-model options in {@link OPENAI_DRAFT_OFF_OPTIONS}.
+ * The default stays `'default'` until a paid ON/OFF contrast decides otherwise (hamr 2026-10-10).
+ */
+export const DRAFT_THINKING_MODES = Object.freeze(['default', 'off']);
+
+/**
+ * Per-MODEL options the DRAFTER's calls carry when thinking is `'off'` (hamr 2026-10-10; same wire shape and the same reasons as
+ * {@link OPENAI_JUDGE_CALL_OPTIONS}, F192): deepseek-flash thinks by default and bills the reasoning as output, and a drafter
+ * answer that runs to the 32000-token cap is a failed try. PER-CALL, never constructor options (the drafter's provider is the
+ * worker's instance). A model not listed gets nothing — the field is never sent to a model that would reject or misread it.
+ */
+const OPENAI_DRAFT_OFF_OPTIONS = Object.freeze({
+  'deepseek-flash': Object.freeze({ thinking: Object.freeze({ type: 'disabled' }) }),
+});
+
+/**
+ * Throw unless `mode` is one of {@link DRAFT_THINKING_MODES} — an operator-param guard, so a typo never silently means "default".
+ * @param {unknown} mode
+ * @returns {'default'|'off'}
+ */
+export function assertDraftThinking(mode) {
+  if (mode === 'default' || mode === 'off') return mode;
+  throw new Error(`[providers] draftThinking must be one of ${DRAFT_THINKING_MODES.join(' | ')}, got ${JSON.stringify(mode)}`);
+}
+
+/**
+ * The ONE owner of the per-call options every DRAFTING model call carries (scout, confirm, author, revise, structure retries).
+ * `'default'` -> `{}`. `'off'` -> the allow-listed per-model options, `{}` for any provider/model not on the list.
+ * @param {any} provider a constructed bare-agent provider
+ * @param {unknown} [mode] 'default' | 'off'
+ * @returns {Record<string, any>}
+ */
+export function draftCallOptions(provider, mode = 'default') {
+  if (assertDraftThinking(mode) === 'default') return {};
+  if (!(provider instanceof OpenAIProvider)) return {};
+  return OPENAI_DRAFT_OFF_OPTIONS[/** @type {keyof typeof OPENAI_DRAFT_OFF_OPTIONS} */ (provider.model)] ?? {};
+}
+
+/**
  * @typedef {object} ProviderTableEntry
  * @property {new (options: any) => any} ctor the bare-agent provider class
  * @property {string} envKey the environment variable this provider reads its key from

@@ -1427,3 +1427,24 @@ test('END TO END: an unrunnable declared stage escalates by its OWN fault row, w
   assert.equal(esc.category, 'close-timeout', 'NOT broken-close — "raise the timeout" and "fix the argv" are two decisions');
   assert.ok(esc.options.some((o) => /timeout/i.test(o)));
 });
+
+// ── hamr 2026-10-10: the drafter's thinking knob reaches the scout through authorCloseForJob, and a bad value throws ─────
+
+test('draftThinking: off hands the scout the deepseek-flash options; default hands it nothing; a bad value throws before any work', async (t) => {
+  const { makeProvider } = await import('../src/providers.js');
+  const p = makePatient(t);
+  const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
+  /** @type {any[]} */
+  const seen = [];
+  const go = (/** @type {any} */ extra) => authorCloseForJob({
+    verdictType: 'green', answers: ANSWERS, repoPath: p.dir, lang: 'js', seedRef: p.seed, provider: flash,
+    scoutFn: async (/** @type {any} */ o) => { seen.push(o); return { state: 'ABSENT', facts: null, reason: 'x', calls: [], raws: [] }; },
+    ...extra,
+  });
+  await go({ draftThinking: 'off' });
+  await go({});
+  assert.deepEqual(seen[0].callOptions, { thinking: { type: 'disabled' } });
+  assert.equal('callOptions' in seen[1], false, "'default' passes the scout exactly what it always got");
+  await assert.rejects(() => go({ draftThinking: 'maybe' }), /draftThinking must be one of/);
+  assert.equal(seen.length, 2, 'the bad value threw before the scout ran');
+});

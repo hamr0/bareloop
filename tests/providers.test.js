@@ -609,3 +609,64 @@ test('F192: judgeCallOptions is empty for a non-OpenAI provider even when the mo
   const p = makeProvider('anthropic-api', { apiKey: 'k', model: 'deepseek-flash' });
   assert.deepEqual(judgeCallOptions(p), {});
 });
+
+// ── hamr 2026-10-10: the DRAFTER's per-call "thinking off" knob (default unchanged) ─────────────────────────────────
+
+import { draftCallOptions, DRAFT_THINKING_MODES } from '../src/providers.js';
+import { runAuthorScout } from '../src/authorscout.js';
+
+/** every request body a real OpenAIProvider of `model` is asked to send while `fn(provider)` runs (the stub answers with a plain text round) */
+async function captureBodies(/** @type {string} */ model, /** @type {(p: any) => Promise<any>} */ fn) {
+  const provider = makeProvider('openai-api', { apiKey: 'test-key', model });
+  /** @type {any[]} */
+  const bodies = [];
+  /** @type {any} */ (provider)._request = async (/** @type {string} */ _path, /** @type {any} */ b) => {
+    bodies.push(JSON.parse(JSON.stringify(b)));
+    return { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5 }, model };
+  };
+  await fn(provider);
+  return bodies;
+}
+
+test('draftCallOptions: the knob is the enumerated pair; default sends nothing; off sends thinking disabled for deepseek-flash ONLY', () => {
+  assert.deepEqual([...DRAFT_THINKING_MODES], ['default', 'off']);
+  const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
+  assert.deepEqual(draftCallOptions(flash), {});
+  assert.deepEqual(draftCallOptions(flash, 'default'), {});
+  assert.deepEqual(draftCallOptions(flash, 'off'), { thinking: { type: 'disabled' } });
+  assert.deepEqual(draftCallOptions(makeProvider('openai-api', { apiKey: 'k', model: 'gpt-5' }), 'off'), {}, 'not on the allow-list');
+  assert.deepEqual(draftCallOptions(makeProvider('anthropic-api', { apiKey: 'k', model: 'deepseek-flash' }), 'off'), {}, 'not an OpenAI-shaped provider');
+});
+
+test('draftCallOptions: any other value throws as an operator-param guard (never a silent default)', () => {
+  const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
+  for (const bad of ['on', 'OFF', '', null, true, 0, {}]) {
+    assert.throws(() => draftCallOptions(flash, bad), /draftThinking must be one of default \| off/);
+  }
+  assert.throws(() => makeLoopGenerate(flash, { draftThinking: 'nope' }), /draftThinking must be one of/, 'and at the generate seam, at construction');
+});
+
+test('drafter generate (real OpenAIProvider, _request stubbed): off puts thinking on the request body for deepseek-flash only; default leaves the body unchanged', async () => {
+  const call = (/** @type {any} */ mode) => (/** @type {any} */ p) => makeLoopGenerate(p, { draftThinking: mode })([{ role: 'user', content: 'hi' }], [], {});
+  const [off] = await captureBodies('deepseek-flash', call('off'));
+  assert.deepEqual(off.thinking, { type: 'disabled' });
+  const [dflt] = await captureBodies('deepseek-flash', call('default'));
+  const [none] = await captureBodies('deepseek-flash', (p) => makeLoopGenerate(p)([{ role: 'user', content: 'hi' }], [], {}));
+  assert.equal('thinking' in dflt, false);
+  assert.deepEqual(dflt, none, "'default' is byte-identical to a generate built with no knob at all");
+  const [other] = await captureBodies('gpt-5', call('off'));
+  assert.equal('thinking' in other, false, 'a model not on the allow-list gets nothing');
+  // the drafter's own max_tokens cap rides along unchanged
+  assert.equal(off.max_tokens, dflt.max_tokens);
+});
+
+test('the scout (every call it makes) carries the drafter options through runAuthorScout({callOptions})', async () => {
+  const surveyor = async () => ({ tools: [{ name: 'shell_read', description: 'read', parameters: { type: 'object', properties: {} }, execute: async () => '' }], policy: null, onLlmResult: null, cleanup: async () => {} });
+  const run = (/** @type {any} */ callOptions) => (/** @type {any} */ p) => runAuthorScout({ workdir: '/w', provider: p, createSurveyor: surveyor, attempts: 1, ...(callOptions ? { callOptions } : {}) });
+  const off = await captureBodies('deepseek-flash', run({ thinking: { type: 'disabled' } }));
+  assert.ok(off.length >= 1);
+  assert.ok(off.every((b) => b.thinking && b.thinking.type === 'disabled'), 'survey, recovery and re-ask rounds alike');
+  const dflt = await captureBodies('deepseek-flash', run(null));
+  assert.ok(dflt.length >= 1);
+  assert.ok(dflt.every((b) => !('thinking' in b)));
+});

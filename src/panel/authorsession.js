@@ -45,7 +45,7 @@ import {
   questionsFor, requiredAnswersFor, makeLoopGenerate, CONFIRM_SYSTEM, SOFTGREEN_JUDGE_EXAMPLES_KEY,
 } from '../authorflow.js';
 import {
-  resolveProvider, buildRunnerProviders, apiKeyProblem,
+  resolveProvider, buildRunnerProviders, apiKeyProblem, assertDraftThinking,
 } from '../providers.js';
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { closeJudges } from '../kinds.js';
@@ -339,13 +339,16 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, draftThinking?: "default"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
  */
 export function createSession(card, deps = {}) {
   const env = deps.env ?? process.env;
+  // The drafter's THINKING knob ('default' | 'off'): an explicit operator option, never read from env and not in the panel UI. A bad
+  // value throws here, before a session exists. 'default' (today's behaviour) until a paid ON/OFF contrast decides otherwise.
+  const draftThinking = assertDraftThinking(deps.draftThinking ?? 'default');
   // P7: the person's own words, parsed ONCE by the one parser (src/jobblock.js). The card validator refused a malformed
   // block before a session exists; a reuse card's job text is the origin's and is not drafted from.
   const jobParsed = parseJobBlock(card.jobText);
@@ -885,8 +888,8 @@ export function createSession(card, deps = {}) {
     // machinery below with a deterministic fake, never a live provider call.
     // no NEW model call starts after an abandon; a call already in flight books its usage via onCall and is discarded
     const noCallAfterAbandon = (fn) => (...a) => { if (abandoned) throw new Error('abandoned — no new model call'); return fn(...a); };
-    const generate = noCallAfterAbandon(deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null }));
-    const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null }));
+    const generate = noCallAfterAbandon(deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null, draftThinking }));
+    const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking }));
 
     // P7 item 5 (fwdloop am24/25): the last drafting try, after two failed ones, may ask. Each question comes through the same
     // ask path as every other (the chat box + Send); the answer is REQUIRED (a blank one asks again, there is no skip) and is
@@ -928,6 +931,7 @@ export function createSession(card, deps = {}) {
       writeScope, provider, generate,
       ceilingUsd: card.capUsd,
       rates: draftPrice?.rates ?? null,
+      draftThinking,
       onPhase, onCall,
       ask, answerQuestions, confirmGenerate, isRepo: true, langResult,
       ...(deps.scout ? { scout: deps.scout } : {}),
