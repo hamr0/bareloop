@@ -1847,3 +1847,62 @@ test('anySuppressionWarning: keyed on the stages\' patterns, the signed guard by
   assert.equal(anySuppressionWarning(null), '');
   assert.equal(anySuppressionWarning([]), '');
 });
+
+// ── P7: the job-line coverage rules (docs/product/PANEL-BUILD.md, "Rules (code, never the model)" 1-3) ──────────
+
+/** goodDeclaration() with each non-guard stage tagged to a job line: typecheck->1, typecheck-outside->1, suite-green->2 */
+function taggedDeclaration() {
+  const d = goodDeclaration();
+  const line = { typecheck: 1, 'typecheck-outside': 1, 'suite-green': 2 };
+  for (const s of d.stages) if (Object.hasOwn(line, s.name)) s.fromLine = line[s.name];
+  return d;
+}
+const JOB_LINES = [{ n: 1, text: 'Fix the type errors' }, { n: 2, text: 'Make npm test pass' }];
+
+test('job lines: a fully tagged declaration passes; guards carry no fromLine', () => {
+  const res = run(taggedDeclaration(), { jobLines: JOB_LINES });
+  assert.equal(res.ok, true, JSON.stringify(res.reds));
+});
+
+test('job lines: a job line with no stage and no refusal is a red (a note does not cover it)', () => {
+  const d = taggedDeclaration();
+  d.stages = d.stages.filter((s) => s.name !== 'suite-green');
+  d.notes = ['line 2 (npm test) could not be checked'];
+  const res = run(d, { jobLines: JOB_LINES });
+  const miss = at(res, 'job-line-uncovered');
+  assert.equal(miss.length, 1, JSON.stringify(res.reds));
+  assert.equal(miss[0].line, 2);
+});
+
+test('job lines: a refusal with a reason covers its line', () => {
+  const d = taggedDeclaration();
+  d.stages = d.stages.filter((s) => s.name !== 'suite-green');
+  d.refused = [{ line: 2, reason: 'no command here can run npm test' }];
+  const res = run(d, { jobLines: JOB_LINES });
+  assert.equal(res.ok, true, JSON.stringify(res.reds));
+});
+
+test('job lines: a fromLine naming no real line, an untagged non-guard stage and a tagged guard are each a red', () => {
+  const d = taggedDeclaration();
+  d.stages.find((s) => s.name === 'suite-green').fromLine = 9;
+  assert.ok(at(run(d, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /fromLine 9/.test(r.detail)));
+  const u = taggedDeclaration();
+  delete u.stages.find((s) => s.name === 'typecheck').fromLine;
+  assert.ok(at(run(u, { jobLines: JOB_LINES }), 'missing-field').some((r) => /typecheck/.test(r.detail)));
+  const g = taggedDeclaration();
+  g.stages[0].fromLine = 1;
+  assert.ok(at(run(g, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /mandatory guard/.test(r.detail)));
+});
+
+test('job lines: a refusal naming a line the job does not have, or without a reason, is a red', () => {
+  const d = taggedDeclaration();
+  d.refused = [{ line: 7, reason: 'x' }, { line: 1 }];
+  const res = run(d, { jobLines: JOB_LINES });
+  assert.equal(at(res, 'invalid-value').filter((r) => String(r.path).startsWith('refused')).length, 2, JSON.stringify(res.reds));
+});
+
+test('job lines: without jobLines the coverage rule does not run (a spec that predates the job block)', () => {
+  const res = run(goodDeclaration());
+  assert.equal(res.ok, true, JSON.stringify(res.reds));
+  assert.equal(at(res, 'job-line-uncovered').length, 0);
+});

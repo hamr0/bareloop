@@ -187,7 +187,7 @@ test('question sets: the GREEN set asks nothing about a genre and nothing about 
   // leaving a hole. PRD item 33 M3 piece 3 shrank the set to THREE (Goal, Success,
   // Guardrails) — Source and Destination (the old "which files" half of Q2) are now
   // MECHANICAL fields proven against the machine, never a numbered free-text slot.
-  assert.deepEqual(numbers, [1, 2, 3]);
+  assert.deepEqual(numbers, [1]);
   assert.deepEqual(requiredAnswersFor('green'), numbers);
   const all = Object.values(GREEN_QUESTIONS).join(' ');
   assert.ok(!/type[- ]?fix|type checker|TYPES/i.test(all), `a genre-specific slot survives: ${all}`);
@@ -197,10 +197,9 @@ test('question sets: the GREEN set asks nothing about a genre and nothing about 
   // 1ac4d05, only reshaped the SET; this is the wording half). No trailing "?":
   // these are what the field HOLDS, read beside its label (FIELD_LABELS), not a
   // question typed at a person.
+  // P7 (2026-10-10): ONE answer — "The job", numbered lines with their ~ rules (src/jobblock.js)
   assert.deepEqual(GREEN_QUESTIONS, {
-    1: 'what you want to achieve',
-    2: 'checks a machine can count',
-    3: 'what must not happen or change',
+    1: 'the job, as numbered lines — each line may carry the rules (~) the person wrote under it',
   });
   assert.ok(!/worse than before/i.test(all), `the retired "worse than before" half survives: ${all}`);
 });
@@ -243,18 +242,14 @@ test('the interview block carries each field\'s LABEL beside its question, from 
     answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
     listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
   });
-  assert.match(p, /Q1 \(Goal\)\. what you want to achieve/);
-  assert.match(p, /Q2 \(What success looks like\)\. checks a machine can count/);
-  assert.match(p, /Q3 \(Guardrails\)\. what must not happen or change/);
+  assert.match(p, /Q1 \(The job\)\. the job, as numbered lines/);
 });
 
 test('labelsFor mirrors questionsFor: same admission rule, and soft-green\'s fourth label is "Judge examples"', () => {
-  assert.deepEqual(labelsFor('green'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
-  assert.deepEqual(labelsFor('soft-green'), {
-    1: 'Goal', 2: 'What success looks like', 3: 'Guardrails', 4: 'Judge examples',
-  });
-  // hitl's own fourth question has no row in the signed table — no fabricated label
-  assert.deepEqual(labelsFor('hitl'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
+  assert.deepEqual(labelsFor('green'), { 1: 'The job' });
+  assert.deepEqual(labelsFor('soft-green'), { 1: 'The job', 2: 'Judge examples' });
+  // hitl's own second question has no row in the signed table — no fabricated label
+  assert.deepEqual(labelsFor('hitl'), { 1: 'The job' });
   assert.throws(() => labelsFor('chartreuse'), /chartreuse/);
 });
 
@@ -2475,4 +2470,35 @@ test('makeLoopGenerate (F179): a VALID reply is untouched — no side-channel fi
   });
   assert.deepEqual(r.artifact, decl);
   assert.equal(book.report().calls.length, 1);
+});
+
+// ── P7: the job block reaches the drafter (docs/product/PANEL-BUILD.md) ─────
+
+test('P7: with jobLines the author prompt orders fromLine tagging and carries the inputs; without them it is byte-identical', async () => {
+  const { jobLineTagBlock, normalizeChecks, confirmedBlock } = await import('../src/authorflow.js');
+  const args = {
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  };
+  const plain = authorPrompt(args);
+  assert.ok(!/fromLine/.test(plain), 'a caller with no job lines sees no tagging order');
+  const tagged = authorPrompt({
+    ...args, jobLines: [{ n: 1 }, { n: 2 }], inputs: [{ n: 1, label: 'repo', value: '/r' }, { n: 2, label: 'spec', value: 'docs/spec.md' }],
+  });
+  assert.ok(tagged.includes(jobLineTagBlock(2)));
+  assert.match(tagged, /fromLine/);
+  assert.match(tagged, /the person pointed at these inputs: 1 repo \/r · 2 spec docs\/spec\.md/);
+  // the checks in the confirmed block carry their job line
+  const block = confirmedBlock({ checks: ['a', 'b'], checkItems: [{ text: 'a', fromLine: 1 }, { text: 'b', fromLine: null }], protections: [] });
+  assert.match(block, /- \[line 1\] a\n/);
+  assert.match(block, /- b\n/);
+  assert.deepEqual(normalizeChecks(['x', { text: 'y', fromLine: 2 }, { text: '  ' }, 5]), [{ text: 'x', fromLine: null }, { text: 'y', fromLine: 2 }]);
+});
+
+test('P7: the declaration schema lets a stage carry fromLine and the declaration carry refused[]', () => {
+  const s = declarationSchema();
+  assert.equal(s.properties.refused.items.required.join(), 'line,reason');
+  const branch = s.properties.stages.items.oneOf[0];
+  assert.equal(branch.properties.fromLine.type, 'integer');
+  assert.equal(branch.required.includes('fromLine'), false, 'optional: a mandatory guard carries none');
 });

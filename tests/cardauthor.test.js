@@ -89,11 +89,9 @@ const closeDecl = (/** @type {any} */ over = {}) => ({
 // soft-green quartet's own 4th key (`SOFTGREEN_JUDGE_EXAMPLES_KEY`) — the old
 // Q6+Q7 pair is now this ONE answer, Q7's wording, with the "why" half.
 const ANSWERS = () => ({
-  1: 'document every exported function',
-  2: 'I read the file',
-  3: 'the tests must not change, and nothing counts as worse if the docs are wrong',
-  4: 'I would pass a function with a full JSDoc block, every exported function has a doc block and every '
-    + 'parameter is described; I would fail one with no comment at all.',
+  1: '1. document every exported function\n   rule: the tests must not change',
+  2: 'line 1 PASS: a function with a full JSDoc block, every exported function has a doc block and every '
+    + 'parameter is described\nline 1 FAIL: a function with no comment at all.',
 });
 
 /** a scripted model boundary that delivers the proposal through the tool */
@@ -140,7 +138,7 @@ test('the schema pins the SIZE both ways — ten is hamr\'s number, not a sugges
 
 test('the compile prompt carries the Judge Examples answer VERBATIM, and the rulebook it must select from', () => {
   const p = cardCasesPrompt({ answers: ANSWERS() });
-  assert.ok(p.includes(ANSWERS()[4]), 'the Judge Examples answer reaches the compiler unedited');
+  assert.ok(p.includes(ANSWERS()[2]), 'the Judge Examples answer reaches the compiler unedited');
   for (const id of JUDGE_RULE_IDS) assert.ok(p.includes(id), `the rulebook names ${id}`);
 });
 

@@ -1,5 +1,5 @@
 // Reuse workflow (hamr 2026-10-03) — `workflowKey(spec)`: the identity of a WORKFLOW, one spelling in src/job.js.
-// It ignores exactly the fields a reuse may change (source, destination/writeScope, budgetUsd, maxWallMs) and nothing
+// It ignores exactly the fields a reuse may change (source, destination/writeScope, inputs, budgetUsd, maxWallMs) and nothing
 // else; the signature hash `jobSpecHash` is untouched (it still covers caps and the fence — what the person signs).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,10 +12,10 @@ const SPEC = {
 };
 
 test('workflowKey ignores exactly the open fields: source, destination, writeScope, budgetUsd, maxWallMs', () => {
-  assert.deepEqual([...REUSE_OPEN_SPEC_FIELDS].sort(), ['budgetUsd', 'destination', 'maxWallMs', 'source', 'writeScope']);
+  assert.deepEqual([...REUSE_OPEN_SPEC_FIELDS].sort(), ['budgetUsd', 'destination', 'inputs', 'maxWallMs', 'source', 'writeScope']);
   const k = workflowKey(SPEC);
   assert.match(k, /^[0-9a-f]{64}$/);
-  for (const change of [{ budgetUsd: 99 }, { maxWallMs: 1 }, { writeScope: ['lib/', 'docs/'] }, { source: '/x' }, { destination: 'out/' }]) {
+  for (const change of [{ budgetUsd: 99 }, { maxWallMs: 1 }, { writeScope: ['lib/', 'docs/'] }, { source: '/x' }, { destination: 'out/' }, { inputs: [{ n: 1, label: 'repo', value: '/x' }] }]) {
     assert.equal(workflowKey({ ...SPEC, ...change }), k, `${Object.keys(change)[0]} is open: same workflow`);
   }
   const { maxWallMs, ...noWall } = SPEC;

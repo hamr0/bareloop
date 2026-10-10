@@ -25,7 +25,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep, basename } from 'node:path';
+import { dirname, join, relative, resolve, sep, basename, isAbsolute } from 'node:path';
 import { git } from './kinds.js';
 import { addWorktree, hideBareloopDir } from './worktree.js';
 import { MAX_BUFFER } from './kinds.js';
@@ -1159,4 +1159,63 @@ export function nonRepoSourceMessage(kind) {
   if (kind === 'file') return 'Source is a single file. Source must be the repo folder — put the file in Destination, like src/digest.js. Nothing spent.';
   if (kind === 'folder') return "Source is a plain folder, not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
   return "Source is not a code project (no git repo found). bareloop can't check this kind of job yet. Nothing spent.";
+}
+
+/**
+ * P7 (docs/product/PANEL-BUILD.md, "Inputs"): prove the NUMBERED INPUTS at $0, before any token. Line 1 is the repo
+ * (an absolute path to an existing folder); lines 2+ are files or folders INSIDE that repo, repo-relative. A line
+ * that is not one of those is a named red naming its line number — never a throw, never a silent skip:
+ *   - a `search:` line or a URL, and a path that leaves the repo: "only files inside the repo for now" (search and
+ *     outside-the-repo inputs arrive with the plain-folder piece);
+ *   - a path that does not exist, or that git does not track (a repo job would not see it);
+ *   - the front door's own refusals for a file: an environment file by NAME, a symlink, a non-text file, an oversize
+ *     file, and a known secret shape in its content (the NAME of the pattern is reported, never the match).
+ * A folder value is checked for existence and tracking only (its files are the repo's own, which the worktree door
+ * already masks). Reads the tree; writes nothing.
+ * @param {{n: number, label: string, value: string}[]} inputs the parsed Inputs (`parseInputs`)
+ * @returns {Promise<{ok: true, repo: string, root: string|null}|{ok: false, error: string}>} `repo` = line 1's absolute path; `root` = the git root it sits in (null when line 1 alone was given and it is not in a git repo)
+ */
+export async function proveInputFiles(inputs) {
+  const first = inputs[0];
+  if (!first) return { ok: false, error: 'Inputs, line 1: the repo is required' };
+  /** @param {number} n @param {string} msg @returns {{ok: false, error: string}} */
+  const bad = (n, msg) => ({ ok: false, error: `Inputs, line ${n}: ${msg}` });
+  if (/^https?:\/\//i.test(first.value) || !isAbsolute(first.value)) return bad(1, 'the repo must be an absolute path, like /home/me/myrepo');
+  const repo = resolve(first.value);
+  let st;
+  try { st = lstatSync(repo); } catch { return bad(1, `${repo} does not exist`); }
+  // line 1 alone is the repo the job works on; whether it IS a code repo is the source door's own refusal (and
+  // `nonRepoSourceMessage`) downstream — only lines 2+ need a git tree to be proven against
+  const found = st.isDirectory() ? nearestGitAncestor(repo) : null;
+  if (inputs.length === 1) return { ok: true, repo, root: found && !found.isFile ? found.dir : null };
+  if (!st.isDirectory()) return bad(1, `${repo} is not a folder — line 1 is the repo`);
+  if (found === null || found.isFile) return bad(1, `${repo} is not inside a git repo, so the other inputs cannot be checked`);
+  const root = found.dir;
+  const rootReal = await realpath(root);
+  for (const inp of inputs.slice(1)) {
+    const { n, label, value } = inp;
+    if (/^search$/i.test(label) || /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return bad(n, 'only files inside the repo for now');
+    const abs = resolve(repo, value);
+    const outside = (/** @type {string} */ p) => !(p === rootReal || p.startsWith(`${rootReal}${sep}`));
+    if (outside(abs)) return bad(n, 'only files inside the repo for now');
+    let ls;
+    try { ls = await lstat(abs); } catch { return bad(n, `${value} does not exist in the repo`); }
+    if (ls.isSymbolicLink()) return bad(n, `${value} is a symlink — refused, never followed`);
+    let real;
+    try { real = await realpath(abs); } catch { return bad(n, `${value} does not exist in the repo`); }
+    if (outside(real)) return bad(n, 'only files inside the repo for now');
+    const rel = relative(root, abs).split(sep).join('/');
+    const tracked = await git(root, ['ls-files', '-z', '--', rel === '' ? '.' : rel]);
+    if (!tracked.ok || tracked.out.split('\0').filter(Boolean).length === 0) {
+      return bad(n, `${value} is not tracked by git — a repo job only sees tracked files; commit it first`);
+    }
+    if (ls.isDirectory()) continue;
+    if (ENV_FILE.test(basename(abs))) return bad(n, `${value} is an environment file — refused by NAME, whatever it contains (secrets never enter a job)`);
+    if (ls.size > MAX_BUFFER) return bad(n, `${value} is over the ${MAX_BUFFER}B per-file ceiling`);
+    const buf = await readFile(abs);
+    if (hasNulByte(buf.subarray(0, 8192))) return bad(n, `${value} is not a text file — text only for now`);
+    const names = secretPatternNames(buf.toString('utf8'));
+    if (names.length) return bad(n, `${value} carries a known secret shape (${names.join(', ')}) — refused (secrets never enter a job)`);
+  }
+  return { ok: true, repo, root };
 }

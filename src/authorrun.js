@@ -879,6 +879,9 @@ export async function main(argv, deps = {}) {
       // fence is not this script's business to invent one for, so an absent or
       // malformed field travels as `null` and `authorPrompt` simply states nothing.
       writeScope: Array.isArray(draft.writeScope) ? draft.writeScope : null,
+      // P7: the person's numbered job lines and inputs ride the draft; the drafter tags every stage with a line
+      jobLines: Array.isArray(draft.jobLines) ? draft.jobLines : null,
+      inputs: Array.isArray(draft.inputs) ? draft.inputs : null,
       provider,
       generate: makeLoopGenerate(provider, { rates: authorPrice?.rates ?? null }),
       rates: authorPrice?.rates ?? null,

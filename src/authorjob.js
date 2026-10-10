@@ -416,6 +416,7 @@ function composerRefusal(reds) {
  * one-genre-at-a-time law is untouched.
  *
  * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
+ *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
  *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
@@ -434,6 +435,9 @@ function composerRefusal(reds) {
  */
 export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
+  // P7: the person's numbered job lines and numbered inputs (src/jobblock.js). Absent = every caller that predates the
+  // job block (no line tagging, no coverage rule).
+  jobLines = null, inputs = null,
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
   rates = null,
@@ -627,7 +631,7 @@ export async function authorCloseForJob({
     onPhase('confirm', {});
     const confirm = await runConfirmTurn({
       verdictType: picked, answers: interview.answers, questions: questions ?? questionsFor(picked),
-      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore,
+      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore, inputs,
       generate: confirmGenerate, book: confirmBook, ask, onPhase,
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
@@ -675,7 +679,7 @@ export async function authorCloseForJob({
     workdir, seedRef: seed, lang, verdictType: picked,
     answers: interview.answers, questions: questions ?? questionsFor(picked),
     scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
-    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed,
+    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs,
     ...authorOpts,
   });
 
@@ -723,6 +727,11 @@ export async function authorCloseForJob({
     // case nothing, which is the fail-safe direction.
     ...(authored.declaration.notes?.length
       ? { notes: authored.declaration.notes.map((/** @type {any} */ n) => (typeof n === 'string' ? redactSecrets(n) : n)) }
+      : {}),
+    // P7: the job lines the drafter could not turn into a stage, each with its reason — the Job tab shows them. Free
+    // text the model wrote, so it rides the same redactor `notes` does.
+    ...(authored.declaration.refused?.length
+      ? { refused: authored.declaration.refused.map((/** @type {any} */ r) => ({ line: r.line, reason: redactSecrets(String(r.reason)) })) }
       : {}),
   };
 
@@ -1253,7 +1262,7 @@ export async function prepareSigning({
   }
   // the class rides from the SPEC (PRD v1.57 §2) — gate 1a already refused a spec
   // whose class is unknown or locked, so this is the class D5's battery hangs off
-  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope });
+  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null });
   // the grounded gate's reds quote BOTH untrusted sources — the declaration, and
   // the seed listing itself (the listing rule names what really sits beside an
   // invented path). The listing half is a channel gate 1a structurally cannot

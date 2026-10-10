@@ -167,7 +167,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
 /** the exact fields of a signed `judge` override — nested objects red unknown
  * keys too, because no smuggling level exists in a signed spec */
 const JUDGE_FIELDS = ['provider', 'model'];
@@ -717,6 +717,35 @@ function validateStagedClose(stages, red) {
  * @param {Red[]} reds direct access for structured request-reds
  */
 function validatePlanShape(spec, red, reds) {
+  // P7: the person's own words, signed beside the model's goal sentence. Exact fields (no smuggling level), numbered 1..n
+  // in order. Optional: a spec that predates the job block has neither and keeps its hash.
+  if (spec.jobLines !== undefined) {
+    if (!Array.isArray(spec.jobLines) || spec.jobLines.length === 0) red('invalid-value', 'jobLines', 'a non-empty array of {n, text, rule}');
+    else {
+      spec.jobLines.forEach((/** @type {any} */ l, /** @type {number} */ i) => {
+        const at = `jobLines[${i}]`;
+        if (!isObj(l)) { red('invalid-value', at, '{n, text, rule}'); return; }
+        for (const key of Object.keys(l)) if (!['n', 'text', 'rule'].includes(key)) red('unknown-field', `${at}.${key}`, 'job line fields: n, text, rule');
+        if (l.n !== i + 1) red('invalid-value', `${at}.n`, `lines are numbered 1, 2, 3 in order — expected ${i + 1}`);
+        if (!isNonEmptyString(l.text)) red('invalid-value', `${at}.text`, 'non-empty text');
+        if (typeof l.rule !== 'string') red('invalid-value', `${at}.rule`, 'a string ("" when the line has no ~ rule)');
+      });
+    }
+  }
+  if (spec.inputs !== undefined) {
+    if (!Array.isArray(spec.inputs) || spec.inputs.length === 0) red('invalid-value', 'inputs', 'a non-empty array of {n, label, value}');
+    else {
+      spec.inputs.forEach((/** @type {any} */ x, /** @type {number} */ i) => {
+        const at = `inputs[${i}]`;
+        if (!isObj(x)) { red('invalid-value', at, '{n, label, value}'); return; }
+        for (const key of Object.keys(x)) if (!['n', 'label', 'value'].includes(key)) red('unknown-field', `${at}.${key}`, 'input fields: n, label, value');
+        if (x.n !== i + 1) red('invalid-value', `${at}.n`, `inputs are numbered 1, 2, 3 in order — expected ${i + 1}`);
+        if (!isNonEmptyString(x.label)) red('invalid-value', `${at}.label`, 'non-empty text');
+        if (!isNonEmptyString(x.value)) red('invalid-value', `${at}.value`, 'non-empty text');
+      });
+    }
+  }
+
   if (spec.goal === undefined) red('missing-required', 'goal');
   else if (!isNonEmptyString(spec.goal)) red('invalid-value', 'goal', 'non-empty text — the goal is what the agent plans against');
 
@@ -757,7 +786,7 @@ function validatePlanShape(spec, red, reds) {
     // class the user picked (PRD v1.57 §2), so the gate cannot check D5 without
     // it. An unknown or locked class is refused there, on its own axis, beside
     // the counted `request-red` above.
-    const cd = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', deferListing: true, verdictType: spec.verdictType, writeScope: spec.writeScope });
+    const cd = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', deferListing: true, verdictType: spec.verdictType, writeScope: spec.writeScope, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null });
     for (const r of cd.reds) reds.push(r);
     if (demanded !== undefined && !CLASS_BY_CLOSE.declared.includes(demanded)) {
       // the same laundering guard as the close-type hierarchy, one level up: a
@@ -886,11 +915,11 @@ export function jobSpecHash(job) {
 
 /**
  * The fields a "Reuse workflow" run may change: where the work lands (the write fence, `writeScope`, and a
- * `destination`/`source` where a spec ever carries them) and the two ceilings. Everything else in a signed spec is
+ * `destination`/`source` where a spec ever carries them), the `inputs` the person pointed at (P7: Inputs is open on a reuse) and the two ceilings. Everything else in a signed spec is
  * the WORKFLOW — goal, checks, guardrails, close (the worker model is the third kind, {@link WORKFLOW_KEY_IDENTITY_FIELDS}). ONE list, shared by {@link workflowKey} and by the panel's
  * reuse (so what the key ignores is exactly what the person may edit, never two spellings).
  */
-export const REUSE_OPEN_SPEC_FIELDS = Object.freeze(['source', 'destination', 'writeScope', 'budgetUsd', 'maxWallMs']);
+export const REUSE_OPEN_SPEC_FIELDS = Object.freeze(['source', 'destination', 'writeScope', 'budgetUsd', 'maxWallMs', 'inputs']);
 
 /**
  * The worker-identity fields {@link workflowKey} ALSO ignores (hamr 2026-10-04: Model is open on a reuse; the Name

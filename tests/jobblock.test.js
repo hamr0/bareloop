@@ -1,7 +1,12 @@
 // P7: the job block's one parser (src/jobblock.js) — numbered lines, `~` rules, PASS/FAIL examples, numbered inputs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseJobBlock, parseInputs } from '../src/jobblock.js';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { parseJobBlock, parseInputs, renderJobLines, renderExamples, renderInputs } from '../src/jobblock.js';
+import { proveInputFiles } from '../src/source.js';
 
 test('plain lines are numbered 1, 2, 3 and empty lines are ignored', () => {
   const r = parseJobBlock('Fix the tests\n\n  Keep the API  \nMake npm test pass\n');
@@ -49,4 +54,57 @@ test('inputs: a line without label: value is a red naming its number', () => {
   assert.match(String((/** @type {any} */ (r)).error), /line 2/);
   assert.equal(parseInputs('repo:').ok, false);
   assert.equal(parseInputs('').ok, false);
+});
+
+test('renderers: numbered lines with rules, examples with their line number, inputs as the drafter is told', () => {
+  const r = parseJobBlock('Find flights\n~ PASS: price quoted\n~ FAIL: invented price\nSort them\n~ direct only');
+  assert.ok(r.ok);
+  assert.equal(renderJobLines(r.lines), '1. Find flights\n   rule: PASS: price quoted; FAIL: invented price\n2. Sort them\n   rule: direct only');
+  assert.equal(renderExamples(r.lines), 'line 1 PASS: price quoted\nline 1 FAIL: invented price');
+  assert.equal(renderInputs([{ n: 1, label: 'repo', value: '/r' }, { n: 2, label: 'spec', value: 'docs/spec.md' }]),
+    'the person pointed at these inputs: 1 repo /r · 2 spec docs/spec.md');
+});
+
+// ── $0 proving of the Inputs (src/source.js proveInputFiles) — real git, real filesystem ──
+const GIT_ID = ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false'];
+const gitIn = (cwd, args) => execFileSync('git', [...GIT_ID, ...args], { cwd, encoding: 'utf8' });
+
+test('proveInputFiles: line 1 the repo, lines 2+ tracked files inside it; each miss is a red naming its line', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobblock-'));
+  try {
+    const repo = join(dir, 'repo');
+    mkdirSync(join(repo, 'docs'), { recursive: true });
+    writeFileSync(join(repo, 'docs/spec.md'), '# spec\n');
+    writeFileSync(join(repo, 'docs/loose.md'), 'untracked\n');
+    writeFileSync(join(repo, '.env'), 'A=1\n');
+    writeFileSync(join(repo, 'docs/keys.md'), `key sk-ant-api03-${'B'.repeat(95)}\n`);
+    writeFileSync(join(repo, 'docs/bin.dat'), Buffer.from([1, 0, 2]));
+    writeFileSync(join(dir, 'outside.md'), 'x');
+    symlinkSync(join(repo, 'docs/spec.md'), join(repo, 'docs/link.md'));
+    gitIn(dir, ['init', '-q', 'repo']);
+    gitIn(repo, ['add', 'docs/spec.md', 'docs/keys.md', 'docs/bin.dat', 'docs/link.md', '.env']);
+    gitIn(repo, ['commit', '-q', '-m', 'init']);
+    const run = (/** @type {string} */ text) => {
+      const p = parseInputs(text);
+      assert.ok(p.ok, text);
+      return proveInputFiles(p.inputs);
+    };
+    const err = async (/** @type {string} */ t) => /** @type {any} */ (await run(t)).error;
+
+    const ok = await run(`repo: ${repo}\nspec: docs/spec.md\ndocs: docs`);
+    assert.equal(ok.ok, true);
+    assert.match(await err('repo: relative/path'), /line 1: the repo must be an absolute path/);
+    assert.match(await err(`repo: ${join(dir, 'nope')}`), /line 1: .* does not exist/);
+    assert.match(await err(`repo: ${repo}\nspec: docs/missing.md`), /line 2: docs\/missing\.md does not exist/);
+    assert.match(await err(`repo: ${repo}\nspec: docs/loose.md`), /line 2: .* not tracked/);
+    assert.match(await err(`repo: ${repo}\nspec: docs/spec.md\nx: ../outside.md`), /line 3: only files inside the repo for now/);
+    assert.match(await err(`repo: ${repo}\nsearch: flights to Lisbon`), /line 2: only files inside the repo for now/);
+    assert.match(await err(`repo: ${repo}\nu: https://example.com/a`), /line 2: only files inside the repo for now/);
+    assert.match(await err(`repo: ${repo}\nenv: .env`), /line 2: .* environment file/);
+    assert.match(await err(`repo: ${repo}\nl: docs/link.md`), /line 2: .* symlink/);
+    assert.match(await err(`repo: ${repo}\nb: docs/bin.dat`), /line 2: .* not a text file/);
+    const secret = await err(`repo: ${repo}\nk: docs/keys.md`);
+    assert.match(secret, /line 2: .* known secret shape/);
+    assert.ok(!secret.includes('sk-ant'), 'the match itself is never echoed');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

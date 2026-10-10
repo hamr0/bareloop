@@ -113,17 +113,15 @@ const SPEC_DRAFT = {
 // Source and Destination (the old Q2) are MECHANICAL fields, proven against
 // the machine, and never a numbered answer here.
 const ANSWERS = {
-  1: 'Make the type checker stop complaining about the mailer.',
-  2: 'I run the checker by hand and read the list of complaints.',
-  3: 'Please do not touch the tests, and it counts as worse if the complaints only went quiet because something '
-    + 'was told to look the other way.',
+  1: '1. Make the type checker stop complaining about the mailer.\n'
+    + '   rule: do not touch the tests; it counts as worse if the complaints only went quiet because something was told to look the other way.',
 };
 
 /** the same interview, for the class that buys a THIRD paid seam (the rubric and
  * calibration compile). Key 4 is soft-green's own Judge Examples question. */
 const JUDGED_ANSWERS = {
   ...ANSWERS,
-  4: 'I would pass a documented function and fail an undocumented one — whether every exported function reads '
+  2: 'line 1 PASS: a documented function\nline 1 FAIL: an undocumented function — whether every exported function reads '
     + 'like somebody meant it to be read.',
 };
 
@@ -184,17 +182,17 @@ test('a LOCKED class refuses at ADMISSION, BEFORE its questions run — counted 
 });
 
 test('the interview asks NOTHING about a genre and NOTHING about the repo — an unasked answer is not a slot', () => {
-  const { 3: _three, ...twoOfThree } = ANSWERS;
-  assert.ok(runInterview({ verdictType: 'green', answers: twoOfThree, repoPath: '/tmp/x' })
-    .reds.some((x) => x.path === 'answers.3'), 'every question in the set is required');
+  const { 1: _one, ...none } = ANSWERS;
+  assert.ok(runInterview({ verdictType: 'green', answers: none, repoPath: '/tmp/x' })
+    .reds.some((x) => x.path === 'answers.1'), 'every question in the set is required');
   // an answer to a question NOBODY ASKED is not read by anything — the genre confirm
   // is not a slot any more, and neither is the repo question hamr dropped (now
   // mechanical Source/Destination, not a numbered answer at all). "no" to either
   // cannot refuse a job, and neither can enter the record.
-  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 4: 'no', 5: 'no' }, repoPath: '/tmp/x' });
+  const r = runInterview({ verdictType: 'green', answers: { ...ANSWERS, 2: 'no', 5: 'no' }, repoPath: '/tmp/x' });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.equal(r.refusal, null);
-  assert.equal(Object.hasOwn(r.answers, '4'), false, 'an unasked answer never enters the record');
+  assert.equal(Object.hasOwn(r.answers, '2'), false, 'an unasked answer never enters the record');
   assert.equal(Object.hasOwn(r.answers, '5'), false);
   const asked = Object.values(questionsFor('green')).join(' ');
   assert.ok(!/type[- ]?fix|type checker/i.test(asked), asked);
@@ -202,11 +200,11 @@ test('the interview asks NOTHING about a genre and NOTHING about the repo — an
 });
 
 test('an unfinished interview is REDS, never demand — an incomplete form is not a user asking for a capability', () => {
-  const { 2: _dropped, ...partial } = ANSWERS;
+  const { 1: _dropped, ...partial } = ANSWERS;
   const r = runInterview({ verdictType: 'green', answers: partial, repoPath: '/tmp/x' });
   assert.equal(r.ok, false);
   assert.equal(r.refusal, null, 'a missing answer must not inflate the admission evidence');
-  assert.ok(r.reds.some((x) => x.path === 'answers.2'));
+  assert.ok(r.reds.some((x) => x.path === 'answers.1'));
 });
 
 test('D13: a job with NO repository is refused — all three validity gates rest on a git seed', () => {

@@ -598,7 +598,7 @@ export function proposalStopText({ stop, reds, cases = null, spend = null, sourc
 export const DECLARATION_CODES = Object.freeze([
   'bounds', 'class-absent', 'class-battery-locked', 'class-ceiling', 'cmd-denied', 'duplicate-kind', 'duplicate-name',
   'env-ownership-absent', 'genre-env-missing', 'genre-env-ungrounded', 'genre-owned-env', 'guard-missing',
-  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'judged-outside-write-scope', 'judged-stage-order',
+  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'job-line-uncovered', 'judged-outside-write-scope', 'judged-stage-order',
   'listing-absent', 'listing-conflict', 'locked-kind', 'missing-field', 'missing-required', 'one-population',
   'path-not-in-listing', 'secret-literal', 'unknown-field', 'unknown-kind',
 ]);

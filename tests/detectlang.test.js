@@ -234,7 +234,7 @@ test('run-interview.mjs reaches the interview from an interactively-typed Source
   const r = spawnSync(process.execPath, [
     RUN_INTERVIEW, '--verdict', 'green', '--provider', 'anthropic-api', '--out', out,
   ], {
-    encoding: 'utf8', timeout: 30_000, input: `${patient}\n\n`, // Source, then end input — proves it got PAST arg parsing into the interview
+    encoding: 'utf8', timeout: 30_000, input: `repo: ${patient}\n\n`, // Source, then end input — proves it got PAST arg parsing into the interview
     env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;

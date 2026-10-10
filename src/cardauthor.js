@@ -240,6 +240,9 @@ THEIR ANSWER — verbatim, and the only input you have
 Q${qKey}. ${q}
 A${qKey}. ${answers?.[qKey] ?? '(no answer given)'}
 
+Each example is kept with the number of the job line the person wrote it under. Never attach an example to a different
+line than the one it names (run mv1j01sl guessed which example belonged to which part of the goal).
+
 ---
 
 THE RULEBOOK — the only rules that exist. You SELECT from it; a rule that is not here cannot be asked for.

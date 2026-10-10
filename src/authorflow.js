@@ -72,6 +72,7 @@
 // F6 throughout: an unpriced call makes the TOTAL unknown, and unknown is null.
 // No spine emission here — M4 wires events.
 
+import { renderInputs } from './jobblock.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
@@ -205,6 +206,22 @@ export const SOURCE_FIELD = Object.freeze({
   prompt: 'A local folder, subfolder or file, or one URL the machine can reach (no login, no setup).',
 });
 
+/** P7: the Inputs box's wording (replaces Source). Line 1 is the repo; lines 2+ are tracked files inside it. */
+export const INPUTS_FIELD = Object.freeze({
+  id: 'inputs',
+  kind: 'mechanical',
+  label: 'Inputs',
+  prompt: 'What the job points at, one per line as `label: value`. Line 1 is the repo, as an absolute path\n'
+    + '(e.g. `repo: /home/me/myrepo`). Lines 2 and on are files or folders inside that repo, repo-relative\n'
+    + '(e.g. `spec: docs/spec.md`) — git must track them.',
+});
+
+/** P7: how to write "The job" (printed under its question by the CLI; the panel's box shows the same in its examples). */
+export const JOB_BLOCK_HELP = Object.freeze([
+  'One line per thing the job must do — each plain line gets a number. A line starting with `~` is a rule for the',
+  'numbered line above it. For a rubric check, a `~ PASS: ...` and a `~ FAIL: ...` line are your examples.',
+]);
+
 /** Destination's wording when Source resolved to a git repo: the answer IS the
  * signed `writeScope` fence (ITEM33-BUILD.md M3 ruling 2). */
 export const DESTINATION_FIELD_REPO = Object.freeze({
@@ -231,8 +248,11 @@ export const DESTINATION_FIELD_PLAIN = Object.freeze({
 export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_REPO : DESTINATION_FIELD_PLAIN; }
 
 /**
- * THE FREE-TEXT TRIO EVERY CLASS SHARES: Goal, What success looks like,
- * Guardrails — numbered contiguously from 1. This is what `answers[1..3]` are
+ * P7 (2026-10-10, docs/product/PANEL-BUILD.md): the old free-text trio (Goal, What success looks like, Guardrails) is ONE
+ * answer now — "The job", the person's numbered lines with their `~` rules (src/jobblock.js renders it). What follows
+ * is the history of the trio, kept because the numbering rule below still holds.
+ *
+ * THE FREE-TEXT SLOTS EVERY CLASS SHARES, numbered contiguously from 1. This is what `answers[1..3]` are
  * filed under for every class; soft-green appends a fourth
  * (`SOFTGREEN_QUESTIONS`) and hitl appends a different fourth
  * (`HITL_QUESTIONS`), each its own next number rather than a fixed one, so a
@@ -251,9 +271,7 @@ export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_
  * `authorPrompt`'s interview block and `scripts/run-interview.mjs`.
  */
 export const GREEN_QUESTIONS = Object.freeze({
-  1: 'what you want to achieve',
-  2: 'checks a machine can count',
-  3: 'what must not happen or change',
+  1: 'the job, as numbered lines — each line may carry the rules (~) the person wrote under it',
 });
 
 /**
@@ -268,13 +286,11 @@ export const GREEN_QUESTIONS = Object.freeze({
  * calls `questionsFor` — additive, nothing existing breaks.
  */
 export const FIELD_LABELS = Object.freeze({
-  1: 'Goal',
-  2: 'What success looks like',
-  3: 'Guardrails',
+  1: 'The job',
 });
 
-/** The key Guardrails' merged question and Judge Examples both prove out at:
- * green holds exactly 3 free-text slots, so 4 is the next number for both the
+/** The key Judge Examples and hitl's own question both prove out at: green holds
+ * exactly one free-text slot (P7), so 2 is the next number for both the
  * soft-green and hitl extensions below — computed, never hardcoded twice. */
 const NEXT_FREE_TEXT_KEY = Object.keys(GREEN_QUESTIONS).length + 1;
 
@@ -288,7 +304,7 @@ export const SOFTGREEN_JUDGE_EXAMPLES_KEY = NEXT_FREE_TEXT_KEY;
  * you'd pass and one you'd fail, and say why."). Exported so `cardauthor.js`'s
  * prompt and this module's own `SOFTGREEN_QUESTIONS` render the identical
  * string; its label ("Judge examples") lives in `SOFTGREEN_FIELD_LABELS`. */
-export const JUDGE_EXAMPLES_QUESTION = 'one pass, one fail, and why';
+export const JUDGE_EXAMPLES_QUESTION = 'the PASS: and FAIL: examples the person wrote under their job lines, each with its line number';
 
 /** {@link FIELD_LABELS} plus Judge Examples' own label, for the soft-green set. */
 export const SOFTGREEN_FIELD_LABELS = Object.freeze({
@@ -768,6 +784,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         type: 'object',
         properties: {
           name: { type: 'string', description: 'a unique lowercase-hyphenated slug saying what this stage asserts' },
+          fromLine: { type: 'integer', minimum: 1, description: 'the number of the ONE job line this stage checks (absent on a mandatory guard)' },
           kind: { const: kind },
           params: { type: 'object', properties, required: [...spec.required], additionalProperties: false },
         },
@@ -794,6 +811,19 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         // validator reds an empty note either way — this stops it being written.
         items: { type: 'string', minLength: 1 },
         description: 'anything you could not express, or any fact you needed and did not have',
+      },
+      refused: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            line: { type: 'integer', minimum: 1, description: 'the number of a job line no stage checks' },
+            reason: { type: 'string', minLength: 1, description: 'why, in plain words the person can read' },
+          },
+          required: ['line', 'reason'],
+          additionalProperties: false,
+        },
+        description: 'job lines you could not turn into a stage, each with a reason — a note does not cover a line',
       },
     },
     required: ['stages'],
@@ -986,7 +1016,7 @@ export function writeScopeBlock(writeScope) {
  * acceptance — BINDING, never re-decided by the composer, and a DIFFERENT
  * meaning from `openQuestions` (which means "could not resolve"): the two
  * never merge.
- * @param {{checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[],
+ * @param {{checks: string[], checkItems?: {text: string, fromLine: number|null}[], protections: string[], openQuestions?: string[], notChecked?: string[],
  *   answeredQuestions?: string[]}} confirmed
  */
 export function confirmedBlock(confirmed) {
@@ -998,7 +1028,9 @@ export function confirmedBlock(confirmed) {
   return 'THE CONFIRMED PLAN — the person already saw and confirmed this in the confirm turn\n\n'
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
-    + `${checks.map((c) => `  - ${c}`).join('\n') || '  (none)'}\n\n`
+    + `${(confirmed.checkItems?.length
+      ? confirmed.checkItems.map((c) => `  - ${c.fromLine ? `[line ${c.fromLine}] ` : ''}${c.text}`)
+      : checks.map((c) => `  - ${c}`)).join('\n') || '  (none)'}\n\n`
     + 'These protections are already always-on and unchanged by this plan — never compose one of these as a check:\n\n'
     + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n\n`
     + (notChecked.length
@@ -1011,6 +1043,21 @@ export function confirmedBlock(confirmed) {
     + (openQuestions.length
       ? `OPEN QUESTIONS the confirm turn could not resolve (state these in your notes, never decide them silently):\n\n${openQuestions.map((q) => `  - ${q}`).join('\n')}`
       : 'The confirm turn left no open questions.');
+}
+
+/**
+ * P7: the job-line tagging order (model-facing, registered). Rule 1 of the job block: every stage the drafter writes
+ * names the ONE numbered job line it serves, or the line is refused with a reason; the mandatory guards serve no line.
+ * The $0 validator (validateDeclaration, `jobLines`) enforces it and the revise loop feeds a miss back.
+ * @param {number} count how many numbered job lines the person wrote
+ */
+export function jobLineTagBlock(count) {
+  return 'EVERY STAGE SERVES ONE JOB LINE\n\n'
+    + `The person's job has ${count} numbered line${count === 1 ? '' : 's'} (the interview above). Tag every stage YOU write `
+    + 'with "fromLine": N — the number of the ONE job line that stage checks. A job line that no kind in the catalogue '
+    + 'can check is not left out silently: list it in "refused" as {"line": N, "reason": "..."}, with a reason in plain '
+    + 'words the person can read. Every numbered line needs at least one stage or one refusal — a note in "notes" does '
+    + 'NOT cover a line. The mandatory guards serve no job line and carry NO "fromLine".';
 }
 
 /**
@@ -1035,11 +1082,15 @@ export function confirmedBlock(confirmed) {
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
  *   writeScope?: string[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
+ *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
   ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null,
+  // P7: the person's numbered job lines and the inputs they pointed at. ABSENT = byte-identical prompt (every caller
+  // that predates the job block). Present: the drafter is told to tag every stage it writes with the line it serves.
+  jobLines = null, inputs = null,
   // PRD item 33 M3 piece 4: ABSENT for every caller that predates the confirm
   // turn (or ran without `ask`) — byte-identical prompt, nothing added. Present
   // only when a confirm turn actually ran and the person accepted a plan.
@@ -1115,7 +1166,9 @@ measure anything.`;
     // asks what KIND of job this is; the person answered what DONE means, and the
     // composer reads that plus the catalogue and works the rest out.
     `WHAT THE PERSON DECLARED "DONE" TO MEAN — their answer, not yours\n\n${statement}`,
-    `THE INTERVIEW — the person's own words\n\n${interview}`,
+    `THE INTERVIEW — the person's own words\n\n${interview}`
+      + (inputs && inputs.length ? `\n\n${renderInputs(inputs)}` : ''),
+    ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
     // Q2 IS GONE (PRD item 33 M3 piece 3) — what it used to carry (which files
     // change, which are read-only) is proven against the machine now, not typed,
     // and this is where that proof reaches the composer instead of vanishing.
@@ -1663,9 +1716,17 @@ const CONFIRM_SCHEMA = Object.freeze({
   properties: {
     checks: {
       type: 'array',
-      items: { type: 'string', minLength: 1 },
-      description: 'the mechanical checks you plan to compose, each one traceable to something the Goal or What '
-        + 'success looks like answers actually asked for — never a check invented beyond them',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', minLength: 1 },
+          fromLine: { type: 'integer', minimum: 1, description: 'the number of the ONE numbered job line this check is for' },
+        },
+        required: ['text', 'fromLine'],
+        additionalProperties: false,
+      },
+      description: 'the mechanical checks you plan to compose, each one traceable to the numbered job line it checks '
+        + '(fromLine) — never a check invented beyond what the job lines and their rules asked for',
     },
     goal: {
       type: 'string',
@@ -1676,7 +1737,7 @@ const CONFIRM_SCHEMA = Object.freeze({
     notChecked: {
       type: 'array',
       items: { type: 'string', minLength: 1 },
-      description: 'anything the person asked for (in the Goal, What success looks like, Guardrails, or '
+      description: 'anything the person asked for (in the job lines, the rules under them, or '
         + 'worse-than-before answers) that none of your listed checks can verify — named plainly in the person\'s '
         + 'own words; an empty list means every ask is covered by a listed check',
     },
@@ -1690,6 +1751,22 @@ const CONFIRM_SCHEMA = Object.freeze({
   required: ['checks', 'goal', 'notChecked', 'questions'],
   additionalProperties: false,
 });
+
+/**
+ * The confirm plan's checks as `{text, fromLine}` items. The schema asks for objects (P7: each check names the job line
+ * it is for); a bare string (a text-mode reply, an older caller) reads as a check with no line.
+ * @param {any} raw the plan's `checks`
+ * @returns {{text: string, fromLine: number|null}[]}
+ */
+export function normalizeChecks(raw) {
+  return (Array.isArray(raw) ? raw : []).flatMap((/** @type {any} */ c) => {
+    if (typeof c === 'string') return c.trim() ? [{ text: c, fromLine: null }] : [];
+    if (c && typeof c === 'object' && typeof c.text === 'string' && c.text.trim()) {
+      return [{ text: c.text, fromLine: Number.isInteger(c.fromLine) && c.fromLine >= 1 ? c.fromLine : null }];
+    }
+    return [];
+  });
+}
 
 /** The output channel. It records and acknowledges; it takes no action.
  * @param {{calls: any[]}} box */
@@ -1722,9 +1799,10 @@ const confirmChannel = () => ({
  */
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
-  + 'signed goal sentence. You never propose a check the Goal or What-success-looks-like answers did not ask for '
+  + 'signed goal sentence. You never propose a check the numbered job lines (and the ~ rules written under them) did not ask for '
   + '— a genre never adds a check the goal did not ask for (run mtv8jihy drafted an unasked tsc --strict stage; '
-  + 'that is exactly the mistake this order exists to prevent). The always-on guards (changed-from-seed, '
+  + 'that is exactly the mistake this order exists to prevent). Tag each check with "fromLine", the number of the ONE '
+  + 'numbered job line it is for. The always-on guards (changed-from-seed, '
   + 'no-suppressions, and every mandatory guard) and the write fence are shown to the person by the SYSTEM, never '
   + 'by you: you never claim, name, or list a protection or guard of your own — that is not your call to state, and '
   + 'a protection is never a check and never named in the goal sentence. The goal sentence names every check you '
@@ -1756,15 +1834,16 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
  * @param {{answers: Record<string|number, string>, questions: Record<string|number, string>,
  *   labels?: Record<string|number, string>, facts?: any, listing?: string|null,
  *   writeScope?: string[]|null, isRepo: boolean, lang: string, worseThanBefore?: string,
- *   fixText?: string|null, protections?: string[]}} o
+ *   fixText?: string|null, protections?: string[], inputs?: {n: number, label: string, value: string}[]|null}} o
  */
-export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [] }) {
+export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [], inputs = null }) {
   const lines = ['THE PERSON\'S OWN ANSWERS (a non-engineer; read exactly what they wrote, invent nothing beyond it):'];
   for (const k of Object.keys(questions)) {
     const label = labels[k] ? ` (${labels[k]})` : '';
     lines.push(`Q${k}${label}. ${questions[k]}`);
     lines.push(`A${k}. ${answers?.[k] ?? '(no answer)'}`);
   }
+  if (inputs && inputs.length) lines.push('', renderInputs(inputs));
   if (isRepo && worseThanBefore) {
     lines.push('', `WORSE THAN BEFORE (a constraint the person named, repo jobs only): ${worseThanBefore}`);
   }
@@ -1821,14 +1900,14 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   generate: Function, book: ReturnType<typeof makeCostBook>,
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
- *   worseThanBefore?: string}} o retired field (hamr's ruling 2026-09-28):
+ *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
  * @returns {Promise<{ok: boolean,
  *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
  *   rounds: number,
- *   accepted: {goal: string, checks: string[], protections: string[], lang: string,
+ *   accepted: {goal: string, checks: string[], checkItems: {text: string, fromLine: number|null}[], protections: string[], lang: string,
  *     worseThanBefore: string, openQuestions: string[], notChecked: string[], answeredQuestions?: string[]}|null,
  *   reds: Red[], cost: any}>}
  */
@@ -1841,6 +1920,8 @@ export async function runConfirmTurn({
   // still pass a resolved string through (kept as a plain pass-through, not
   // an ask trigger).
   worseThanBefore: presetWorseThanBefore = '',
+  // P7: the inputs the person pointed at; absent = the prompt is byte-identical
+  inputs = null,
 }) {
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
@@ -1911,14 +1992,14 @@ export async function runConfirmTurn({
   let convo = [{
     role: 'user',
     content: confirmPrompt({
-      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections,
+      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections, inputs,
     }),
   }];
 
   for (let round = 1; round <= 2; round += 1) {
     if (fixText) {
       convo = [...convo, { role: 'user', content: confirmPrompt({
-        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections,
+        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections, inputs,
       }) }];
     }
     onPhase('confirm-round', { round });
@@ -1947,6 +2028,8 @@ export async function runConfirmTurn({
     // shown at confirm-done and recorded on acceptance. `notChecked` is the
     // model's own honest gap list, carried through unchanged.
     const notChecked = [...(r.plan.notChecked ?? [])];
+    const checkItems = normalizeChecks(r.plan.checks);
+    r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     const plan = { ...r.plan, protections, notChecked };
     onPhase('confirm-done', { round, plan });
     const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan });
@@ -1959,7 +2042,7 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
           lang: resolvedLang, worseThanBefore,
           // every question forced above was answered in order, so what's left
           // unresolved is honestly empty — computed FROM questionsFromPlan
@@ -1980,7 +2063,7 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
           lang: resolvedLang, worseThanBefore,
           openQuestions: questionsFromPlan(r.plan).slice(answeredQuestions.length),
           notChecked: [...notChecked], answeredQuestions,
@@ -2002,7 +2085,7 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
           lang: resolvedLang, worseThanBefore, openQuestions: [...questionsFromPlan(r.plan), redactedFix], notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
@@ -2061,7 +2144,8 @@ export async function runConfirmTurn({
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
+ *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,
@@ -2084,6 +2168,9 @@ export async function authorClose({
   // straight into `authorPrompt`'s `confirmedBlock`. `null` is every caller
   // that ran no confirm turn — the prompt is then byte-identical to today.
   confirmed = null,
+  // P7: the person's numbered job lines and inputs (src/jobblock.js). ABSENT = every caller that predates the job block:
+  // no tagging order in the prompt, and no coverage rule in the validator.
+  jobLines = null, inputs = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
   // The two REPORTING seams, defaulted to nothing so every existing caller is
@@ -2257,7 +2344,7 @@ export async function authorClose({
   // ── the grounded loop ─────────────────────────────────────────────────────
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
-    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed,
+    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
@@ -2390,7 +2477,7 @@ export async function authorClose({
       }
       previous = ask.declaration;
 
-      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope });
+      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines });
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
       // channel they travel down. A validation red quotes what the model declared

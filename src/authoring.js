@@ -1199,7 +1199,10 @@ function readPath(p, dotted) {
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
  *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean,
- *   verdictType?: string|null, writeScope?: string[]|null}} [opts]
+ *   verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null}} [opts]
+ *   `jobLines` — the person's numbered job lines (P7). Present, every stage must name the line it serves and every
+ *     line needs a stage or a refusal ({@link checkJobLines}); absent (every spec that predates the job block), the
+ *     rule is not run.
  *   `writeScope` — the job's signed write fence. Every path a judged stage judges must sit inside it
  *     ({@link judgedOutsideFence}); absent, the rule is not run (the plain-folder deferral has no fence).
  *   `listing` — repo-relative paths at the seed (`git ls-tree -r --name-only`).
@@ -1218,7 +1221,7 @@ function readPath(p, dotted) {
 export function validateDeclaration(declaration, opts = {}) {
   const {
     catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null,
-    verdictType = null, writeScope = null,
+    verdictType = null, writeScope = null, jobLines = null,
   } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
@@ -1443,9 +1446,67 @@ export function validateDeclaration(declaration, opts = {}) {
   });
 
   if (haveGuards) checkGuards({ declaration, guards: /** @type {any[]} */ (guards), red });
+  checkJobLines({ declaration, stages, jobLines, guards: haveGuards ? /** @type {any[]} */ (guards) : [], red });
 
   const ok = reds.length === 0;
   return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, grounded: haveListing, scoped, ceiling };
+}
+
+/**
+ * P7 rules 1-3 of the job block, at $0, in the gate that can still revise: every `fromLine` names a real job line;
+ * every numbered job line has at least one stage OR a refusal reason in `refused` (a note in `notes` does NOT cover a
+ * line); the mandatory guards serve no line and carry no `fromLine`. The SHAPE of `fromLine` / `refused` is checked
+ * whenever they appear; the coverage half runs only when the person's `jobLines` were handed in.
+ * @param {{declaration: any, stages: any[], jobLines: {n: number}[]|null|undefined,
+ *   guards: {name: string}[], red: (c: string, p: string, d: string, e?: object) => void}} o
+ */
+function checkJobLines({ declaration, stages, jobLines, guards, red }) {
+  const known = Array.isArray(jobLines) && jobLines.length > 0 ? jobLines.map((l) => l.n) : null;
+  const guardNames = new Set(guards.map((g) => g.name));
+  /** @type {Set<number>} */
+  const served = new Set();
+  stages.forEach((/** @type {any} */ s, /** @type {number} */ i) => {
+    if (!isObj(s)) return;
+    const at = `stages[${i}].fromLine`;
+    const label = isNonEmptyString(s.name) ? s.name : `stages[${i}]`;
+    const guard = isNonEmptyString(s.name) && guardNames.has(s.name);
+    if (Object.hasOwn(s, 'fromLine')) {
+      if (guard) {
+        red('invalid-value', at, `stage "${label}" is a mandatory guard and serves no job line — remove its fromLine`);
+      } else if (!Number.isInteger(s.fromLine) || s.fromLine < 1) {
+        red('invalid-value', at, `stage "${label}" has fromLine ${JSON.stringify(s.fromLine)} — a job line number (1, 2, 3...)`);
+      } else if (known !== null && !known.includes(s.fromLine)) {
+        red('invalid-value', at, `stage "${label}" has fromLine ${s.fromLine}, but the job has lines ${known.join(', ')} only`);
+      } else served.add(s.fromLine);
+    } else if (known !== null && !guard) {
+      red('missing-field', at, `stage "${label}" does not say which job line it serves — give it fromLine: N (${known.join(', ')}); `
+        + 'only a mandatory guard carries none');
+    }
+  });
+  /** @type {Set<number>} */
+  const refused = new Set();
+  if (declaration.refused !== undefined) {
+    if (!Array.isArray(declaration.refused)) {
+      red('invalid-value', 'refused', 'an array of {line, reason} — the job lines no stage can check, each with a reason');
+    } else {
+      declaration.refused.forEach((/** @type {any} */ r, /** @type {number} */ j) => {
+        const at = `refused[${j}]`;
+        if (!isObj(r) || !Number.isInteger(r.line) || r.line < 1 || !isNonEmptyString(r.reason)) {
+          red('invalid-value', at, '{line, reason}: a job line number and a plain-words reason');
+        } else if (known !== null && !known.includes(r.line)) {
+          red('invalid-value', `${at}.line`, `refused line ${r.line}, but the job has lines ${known.join(', ')} only`);
+        } else refused.add(r.line);
+      });
+    }
+  }
+  if (known !== null) {
+    for (const n of known) {
+      if (!served.has(n) && !refused.has(n)) {
+        red('job-line-uncovered', 'stages', `job line ${n} has no stage and no refusal. Give it a stage with fromLine: ${n}, or list `
+          + `it in "refused" as {"line": ${n}, "reason": "..."} — a note does not cover a line`, { line: n });
+      }
+    }
+  }
 }
 
 /**

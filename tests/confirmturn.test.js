@@ -56,11 +56,11 @@ function scriptAsk(script) {
 // — the schema has no such field — but a stub model in these tests can still
 // try to smuggle one in through the tool call, and that must be ignored
 // (never shown, never recorded). `notChecked` IS a real model field now.
-const PLAN_ONE = { checks: ['tests stay green'], goal: 'Keep the tests green.', questions: [], notChecked: [] };
+const PLAN_ONE = { checks: [{ text: 'tests stay green', fromLine: 1 }], goal: 'Keep the tests green.', questions: [], notChecked: [] };
 
 const baseArgs = (over = {}) => ({
   verdictType: 'green',
-  answers: { 1: 'fix the bug', 2: 'tests pass', 3: 'do not touch the CLI' },
+  answers: { 1: '1. fix the bug\n   rule: do not touch the CLI\n2. tests pass' },
   questions: GREEN_QUESTIONS,
   labels: FIELD_LABELS,
   facts: { sourcePaths: ['src/'] },
@@ -87,7 +87,7 @@ test('(a) confirm on round 1 costs exactly one model call', async () => {
   assert.equal(r.stop, null);
   assert.equal(r.rounds, 1);
   assert.deepEqual(r.accepted, {
-    goal: 'Keep the tests green.', checks: ['tests stay green'], protections: BASE_PROTECTIONS,
+    goal: 'Keep the tests green.', checks: ['tests stay green'], checkItems: [{ text: 'tests stay green', fromLine: 1 }], protections: BASE_PROTECTIONS,
     lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [], answeredQuestions: [],
   });
   assert.equal(seen[0].kind, 'menu');
@@ -307,7 +307,7 @@ test('(j) "type the goal yourself" replaces the drafted goal, redacted, and keep
   const r = await runConfirmTurn({ ...baseArgs(), generate, book, ask });
   assert.equal(r.ok, true);
   assert.equal(r.accepted?.goal, 'My own goal sentence.');
-  assert.deepEqual(r.accepted?.checks, PLAN_ONE.checks);
+  assert.deepEqual(r.accepted?.checks, ['tests stay green']);
   assert.deepEqual(r.accepted?.protections, BASE_PROTECTIONS);
 });
 
@@ -407,7 +407,8 @@ test('a reply with no confirm-tool call is artifact-red', async () => {
 // by any historical run) ─────────────────────────────────────────────────────
 
 test('CONFIRM_SYSTEM states ruling 6 (no unasked check) and cites run mtv8jihy', () => {
-  assert.match(CONFIRM_SYSTEM, /never propose a check the goal.*did not ask for/i);
+  assert.match(CONFIRM_SYSTEM, /never propose a check the numbered job lines.*did not ask for/i);
+  assert.match(CONFIRM_SYSTEM, /fromLine/);
   assert.match(CONFIRM_SYSTEM, /mtv8jihy/);
   assert.match(CONFIRM_SYSTEM, /a protection is never a check and never named in the goal sentence/i);
 });
@@ -420,15 +421,15 @@ test('CONFIRM_SYSTEM (fix #1, run mu0voeo4) orders the model to never claim its 
 
 test('confirmPrompt shows each answer beside its label, and worse-than-before only when present', () => {
   const withWtb = confirmPrompt({
-    answers: { 1: 'a', 2: 'b', 3: 'c' }, questions: GREEN_QUESTIONS, labels: FIELD_LABELS,
+    answers: { 1: 'a' }, questions: GREEN_QUESTIONS, labels: FIELD_LABELS,
     isRepo: true, lang: 'js', worseThanBefore: 'do not slow the CLI',
   });
-  assert.match(withWtb, /Q1 \(Goal\)\. what you want to achieve/);
+  assert.match(withWtb, /Q1 \(The job\)\. the job, as numbered lines/);
   assert.match(withWtb, /A1\. a/);
   assert.match(withWtb, /WORSE THAN BEFORE.*do not slow the CLI/);
 
   const withoutWtb = confirmPrompt({
-    answers: { 1: 'a', 2: 'b', 3: 'c' }, questions: GREEN_QUESTIONS, labels: FIELD_LABELS,
+    answers: { 1: 'a' }, questions: GREEN_QUESTIONS, labels: FIELD_LABELS,
     isRepo: false, lang: 'js', worseThanBefore: '',
   });
   assert.ok(!/WORSE THAN BEFORE/.test(withoutWtb));
@@ -489,7 +490,7 @@ test('runConfirmTurn (F179): a REAL OpenAIProvider malformed tool-call reply ret
   assert.equal(r.ok, true, 'the sound 2nd attempt is what the confirm turn accepts');
   assert.equal(r.rounds, 1, 'still one confirm round shown to the person — the retry is internal to askStructured');
   assert.deepEqual(r.accepted, {
-    goal: 'Keep the tests green.', checks: ['tests stay green'], protections: BASE_PROTECTIONS,
+    goal: 'Keep the tests green.', checks: ['tests stay green'], checkItems: [{ text: 'tests stay green', fromLine: 1 }], protections: BASE_PROTECTIONS,
     lang: 'js', worseThanBefore: '', openQuestions: [], notChecked: [], answeredQuestions: [],
   });
   const report = book.report();

@@ -78,3 +78,62 @@ export function parseInputs(text) {
   if (inputs.length === 0) return { ok: false, error: 'Inputs is required' };
   return { ok: true, inputs };
 }
+
+/**
+ * The person's job lines as the drafter reads them (answer 1 of the interview): each numbered line, then its rule
+ * (the `~` lines joined) indented under it. One spelling, so the number the person typed beside a line is the number a
+ * stage's `fromLine` names.
+ * @param {JobLine[]} lines
+ * @returns {string}
+ */
+export function renderJobLines(lines) {
+  return lines.map((l) => `${l.n}. ${l.text}${l.rule ? `\n   rule: ${l.rule}` : ''}`).join('\n');
+}
+
+/**
+ * The PASS:/FAIL: examples the person wrote, each kept with its line number (answer 2 of a rubric interview — what the
+ * calibration compile reads). Empty string when there are none.
+ * @param {JobLine[]} lines
+ * @returns {string}
+ */
+export function renderExamples(lines) {
+  return lines.flatMap((l) => l.examples.map((e) => `line ${l.n} ${e.verdict}: ${e.text}`)).join('\n');
+}
+
+/**
+ * The inputs as the drafter is told about them: "the person pointed at these inputs: N label path".
+ * @param {JobInput[]} inputs
+ * @returns {string}
+ */
+export function renderInputs(inputs) {
+  return `the person pointed at these inputs: ${inputs.map((i) => `${i.n} ${i.label} ${i.value}`).join(' · ')}`;
+}
+
+/**
+ * The two cross-checks between a parsed job block and the Check type: a RUBRIC job needs at least one `PASS:` and one
+ * `FAIL:` example (the calibration compile reads them); a DETERMINISTIC job has no judge, so an example line would be
+ * silently dropped — a red instead.
+ * @param {JobLine[]} lines
+ * @param {boolean} rubric
+ * @returns {string|null} the plain red, or null when the block fits the Check type
+ */
+export function jobBlockFitsCheck(lines, rubric) {
+  const all = lines.flatMap((l) => l.examples.map((e) => ({ n: l.n, ...e })));
+  if (!rubric) {
+    return all.length ? `The job, line ${all[0].n}: PASS:/FAIL: examples are for a Rubric check — a Deterministic job has no judge to read them` : null;
+  }
+  if (!all.some((e) => e.verdict === 'PASS') || !all.some((e) => e.verdict === 'FAIL')) {
+    return 'The job: a Rubric check needs at least one "~ PASS:" line and one "~ FAIL:" line under a job line';
+  }
+  return null;
+}
+
+/**
+ * The signed `jobLines` field from parsed lines: the person's own words, `{n, text, rule}` (examples stay inside the
+ * rule text, where the person wrote them).
+ * @param {JobLine[]} lines
+ * @returns {{n: number, text: string, rule: string}[]}
+ */
+export function signedJobLines(lines) {
+  return lines.map((l) => ({ n: l.n, text: l.text, rule: l.rule }));
+}

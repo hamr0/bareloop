@@ -102,7 +102,7 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'genreEnv', 'calibration']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'genreEnv', 'calibration']);
 
 /** what a stored calibration set carries, ENUMERATED: the frozen cases and the judge
  * tier that graded them. Both are inside the spec, so `jobSpecHash` covers both — which
@@ -272,13 +272,13 @@ export function declaredStages(closeDecl) {
  *
  * @param {any} closeDecl
  * @param {{at?: string, listing?: string[]|null, deferListing?: boolean,
- *   catalogue?: Record<string, any>, verdictType?: string|null, writeScope?: string[]|null}} [opts]
+ *   catalogue?: Record<string, any>, verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null}} [opts]
  * @returns {{ok: boolean, reds: Red[], closeDecl: any, grounded: boolean,
  *   scoped: {scoped: boolean, via: string|null},
  *   ceiling: {class: string, kind: string, stage: string|null, locked: boolean}|null}}
  */
 export function validateCloseDecl(closeDecl, opts = {}) {
-  const { at = 'closeDecl', listing = null, catalogue, verdictType = null, writeScope = null } = opts;
+  const { at = 'closeDecl', listing = null, catalogue, verdictType = null, writeScope = null, jobLines = null } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
   const reds = [];
@@ -402,6 +402,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     guards: classGuards({ verdictType: picked, lang: closeDecl.lang }),
     verdictType: picked,
     writeScope,
+    jobLines,
     envOwned: owned,
     // POST-injection: an owned name is accepted only when its value is EXACTLY
     // the recorded one. `{}` (nothing recorded) keeps the pre-injection rule, so
