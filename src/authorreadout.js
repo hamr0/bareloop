@@ -577,6 +577,9 @@ export function proposalStopText({ stop, reds, cases = null, spend = null, sourc
 // drafting loop that is not a rubric-proposal or signing refusal (those have their own wording above and below) now says
 // what happened, what it cost and what to do, in words. The stop's own reds are quoted (scrubbed, bounded), never dropped.
 
+/** the reason inside a `scout-absent` red's detail: `the survey is ABSENT (<reason>) — an absent facts object ...` (src/authorflow.js) */
+const SCOUT_REASON_RE = /^the survey is [^(]*\((.*)\) — an absent facts/s;
+
 /**
  * @param {{stop: string, reds?: PlainRed[]|null, refusal?: {detail?: string}|null,
  *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
@@ -595,9 +598,17 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null 
     unchanged: 'Drafting stopped: the AI sent the same plan twice.',
     'scout-absent': 'Drafting stopped: the first look at your repo did not complete.',
   };
-  const head = heads[stop] ?? `Drafting stopped (${safeText(stop)}).`;
+  const redList = Array.isArray(reds) ? reds : [];
+  // F217: the first look at the repo failing (a dropped connection, a timeout) arrives as a `precheck` stop with a
+  // `scout-absent` red. That is NOT "something it needs was missing", and its reason sits past the 60-char quote bound
+  // behind a fixed lead-in, so the person saw neither. Word it as the scout's stop and quote the reason in full (scrubbed).
+  const scoutRed = stop === 'precheck' ? redList.find((r) => r?.code === 'scout-absent') : undefined;
+  const head = scoutRed ? heads['scout-absent'] : (heads[stop] ?? `Drafting stopped (${safeText(stop)}).`);
   /** @type {string[]} */
-  const said = [...new Set((Array.isArray(reds) ? reds : []).map((r) => safeText(r?.detail)).filter(Boolean))];
+  const said = scoutRed
+    ? [SCOUT_REASON_RE.exec(String(scoutRed.detail ?? ''))?.[1]
+      ?.replace(/\s+/g, ' ').trim().slice(0, 240) ?? safeText(scoutRed.detail)].map((x) => redactSecrets(x)).filter(Boolean)
+    : [...new Set(redList.map((r) => safeText(r?.detail)).filter(Boolean))];
   if (said.length === 0 && refusal?.detail) said.push(safeText(refusal.detail));
   const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`];
   if (said.length) {

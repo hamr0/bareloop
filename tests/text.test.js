@@ -256,3 +256,22 @@ test('callCasualty: null/undefined/non-error inputs never throw and are never ad
   assert.equal(callCasualty('a plain string'), null);
   assert.equal(callCasualty({}), null);
 });
+
+// ── F217: a dropped connection is a call casualty (REAL shapes off bare-agent 0.49.0's OpenAIProvider) ────
+
+test('callCasualty (F217): node\'s raw ECONNRESET "socket hang up" is admitted, in plain words', () => {
+  const err = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+  assert.equal(callCasualty(err), 'the connection to the provider dropped (socket hang up)');
+});
+
+test('callCasualty (F217): bare-agent\'s BA-25 body-cut ProviderError (context.bound transport) is admitted', async () => {
+  const { ProviderError } = await import('bare-agent');
+  const err = new ProviderError('[OpenAIProvider] response stream aborted before the body completed', { retryable: true, context: { bound: 'transport', event: 'aborted' } });
+  assert.match(String(callCasualty(err)), /^the connection to the provider dropped \(.*aborted before the body completed\)$/);
+});
+
+test('callCasualty (F217): an HTTP-status ProviderError and an unrelated raw code are NOT admitted', async () => {
+  const { ProviderError } = await import('bare-agent');
+  assert.equal(callCasualty(new ProviderError('[OpenAIProvider] bad key', { status: 401 })), null);
+  assert.equal(callCasualty(Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:1'), { code: 'ECONNREFUSED' })), null);
+});

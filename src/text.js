@@ -191,6 +191,19 @@ export function callCasualty(err) {
   if (err instanceof HaltError) return null;
   const e = /** @type {any} */ (err);
   if (e?.code === 'ETIMEDOUT' || e?.name === 'TimeoutError') return String(e?.message ?? e);
+  // F217 — a DROPPED CONNECTION is the same class as an idle timeout: a call that produced nothing usable. Two REAL
+  // shapes reach this seam out of bare-agent 0.49.0's OpenAIProvider (read in node_modules/bare-agent/src/provider-
+  // openai.js `_request` + provider-http.js), both thrown straight through `Loop.run` (loop.js rethrows non-Halt errors):
+  //   1. `req.on('error', reject)` passes node's RAW socket error unwrapped: `Error{code:'ECONNRESET', message:'socket
+  //      hang up'}` (the server closed before any response).
+  //   2. `guardResponseSettles` (BA-25), the connection cut after the headers: `ProviderError{code:'PROVIDER_ERROR',
+  //      retryable:true, context:{bound:'transport'}}`, message "response stream aborted/error/close before the body
+  //      completed". An HTTP-status ProviderError never carries `bound:'transport'`, so it is not admitted here.
+  // Other raw codes (ECONNREFUSED, ENOTFOUND, EPIPE...) reach the same raw path but name a wrong URL / no network, not a
+  // connection that DROPPED; they are deliberately not admitted (they re-raise loudly, as before).
+  if (e?.code === 'ECONNRESET' || e?.context?.bound === 'transport') {
+    return `the connection to the provider dropped (${String(e?.message ?? e)})`;
+  }
   return null;
 }
 

@@ -2721,3 +2721,25 @@ test('seedReadFailure: vacuous or instrument-stopped work stage fails; a red wor
   assert.deepEqual(seedReadFailure([row('w1', 'instrument-stop'), row('w2', 'red')], decl, [], [1, 2, 3]), { failed: true, lines: [1] }, 'the stopped stage names its line');
   assert.deepEqual(seedReadFailure([row('w1', 'green')], { stages: [{ name: 'w1' }] }, [], [1, 2]), { failed: true, lines: [1, 2] }, 'no mapping: every numbered line counts');
 });
+
+test('F217: a REAL OpenAIProvider whose socket is reset (ECONNRESET "socket hang up") is provider-red with the plain reason on the drafter path — not an uncaught throw', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  provider._request = async () => { throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }); };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'x', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const down = await askStructured({
+    messages: [{ role: 'user', content: 'a' }], generate: makeLoopGenerate(provider), mode: 'tool', retries: 2, label: 'author', book: makeCostBook(), channel,
+  });
+  assert.equal(down.providerError, 'the connection to the provider dropped (socket hang up)');
+  assert.equal(down.red, null);
+});
+
+test('F217: a scout killed by a reset connection reaches the person: authorClose precheck red -> draftStopText names the scout and the plain reason', async () => {
+  const { draftStopText } = await import('../src/authorreadout.js');
+  const reason = 'the survey call failed: the connection to the provider dropped (socket hang up)';
+  const r = await authorClose({ ...baseArgs(), generate: async () => { throw new Error('no token may be spent'); }, seedReadFn: scriptSeedRead().fn, scout: { state: 'ABSENT', facts: null, reason, calls: [] } });
+  assert.equal(r.stop, 'precheck');
+  const text = draftStopText({ stop: r.stop, reds: r.reds, spend: { knownUsd: 0, spendComplete: true } });
+  assert.match(text, /first look at your repo did not complete/);
+  assert.ok(text.includes('the connection to the provider dropped (socket hang up)'), text);
+});

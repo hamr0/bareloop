@@ -1054,3 +1054,15 @@ test('runAuthorScout (real Loop + real provider stub): the F59 recovery round se
   assert.equal(systemMessages.length, 1, `expected exactly one system message, got ${systemMessages.length}`);
   assert.equal(recoveryMessages[0].role, 'system', 'the single system message stays at index 0');
 });
+
+test('runAuthorScout (F217): a REAL OpenAIProvider whose socket is reset ("socket hang up", ECONNRESET) lands as call-failed with the plain reason, cost null — never an uncaught throw', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  provider._request = async () => { throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }); };
+  const { createSurveyor, seen } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', provider, attempts: 1, createSurveyor });
+  assert.equal(r.state, 'ABSENT');
+  assert.equal(r.cause, 'call-failed');
+  assert.match(r.reason, /the connection to the provider dropped \(socket hang up\)/);
+  assert.equal(seen.cleaned, 1);
+});
