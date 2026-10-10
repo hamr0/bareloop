@@ -2671,3 +2671,53 @@ test('P7 item 6: a REAL transport failure stays provider-red (only the output ca
   assert.match(r.reds[0].detail, /cut off at the output limit/);
   assert.ok(r.cost.knownUsd > 0, 'the spend of the cut-off calls stays booked');
 });
+
+// ── P7 item 5, hamr's ruling 2026-10-10: tries 1 and 2 may also have failed the SEED READ (a vacuous close) ─────────────
+
+/** a seed read whose verdicts come per CALL: `verdicts[k]` is the work stage's verdict on the k-th seed read (guards stay red like the default fixture) */
+const seedByCall = (/** @type {string[]} */ verdicts) => {
+  let k = 0;
+  return async (/** @type {any} */ declaration) => {
+    const v = verdicts[Math.min(k, verdicts.length - 1)]; k += 1;
+    return declaration.stages.map((/** @type {any} */ s) => ({
+      verdict: s.name === 'typecheck' ? v : 'green', exitCode: 0, value: null, baseline: null, baselineSource: null, gapLines: [], judged: true, stage: s.name, kind: s.kind, detail: {},
+    }));
+  };
+};
+
+test('P7 item 5 (hamr 2026-10-10, fail-first): tries 1 and 2 both VACUOUS at the seed read (nothing fails on the repo as it is) -> try 3 is offered the question, on the lines the vacuous stage serves', async () => {
+  const { generate, calls } = scriptGenerate([
+    { declaration: greenDecl('a') }, { declaration: greenDecl('b') },
+    { declaration: { ...greenDecl('c'), questions: [Q(2, 'what must fail first?'), Q(9, 'no such line')] } },
+  ]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: seedByCall(['green']), jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(calls), [false, false, true]);
+  assert.equal(r.stop, 'questions-open');
+  assert.deepEqual(r.questions, [Q(2, 'what must fail first?')]);
+  assert.equal(r.iterations[2].droppedQuestions.length, 1, 'the unreal line is dropped and logged');
+});
+
+test('P7 item 5 (hamr 2026-10-10): validation-red then vacuous (mixed) opens asking; a try that validates AND seeds red (try 1 or try 2) never does', async () => {
+  const mixed = scriptGenerate([{ declaration: redDecl('a') }, { declaration: greenDecl('b') }, { declaration: { ...greenDecl('c'), questions: [Q(1, 'q')] } }]);
+  const rm = await authorClose({ ...baseArgs(), generate: mixed.generate, seedReadFn: seedByCall(['green']), jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(mixed.calls), [false, false, true]);
+  assert.equal(rm.stop, 'questions-open');
+  // try 1 validates and seeds fine (a work stage is red) — a confident guess
+  const a = scriptGenerate([{ declaration: greenDecl('a') }, { declaration: greenDecl('b') }, { declaration: greenDecl('c') }]);
+  await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: seedByCall(['red', 'green', 'green']), jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(a.calls), [false, false, false], 'try 1 passed: no question');
+  // try 2 validates and seeds fine
+  const b = scriptGenerate([{ declaration: greenDecl('a') }, { declaration: greenDecl('b') }, { declaration: greenDecl('c') }]);
+  await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: seedByCall(['green', 'red', 'green']), jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(b.calls), [false, false, false], 'try 2 passed: no question');
+});
+
+test('seedReadFailure: vacuous or instrument-stopped work stage fails; a red work stage passes; guards never count; unmapped lines mean every line', async () => {
+  const { seedReadFailure } = await import('../src/authorflow.js');
+  const decl = { stages: [{ name: 'g' }, { name: 'w1', fromLine: [1] }, { name: 'w2', fromLine: [3] }] };
+  const row = (/** @type {string} */ stage, /** @type {string} */ verdict) => ({ stage, verdict });
+  assert.deepEqual(seedReadFailure([row('g', 'green'), row('w1', 'red'), row('w2', 'green')], decl, ['g'], [1, 2, 3]), { failed: false, lines: [] });
+  assert.deepEqual(seedReadFailure([row('g', 'red'), row('w1', 'green'), row('w2', 'green')], decl, ['g'], [1, 2, 3]), { failed: true, lines: [1, 3] }, 'only guards red = vacuous work');
+  assert.deepEqual(seedReadFailure([row('w1', 'instrument-stop'), row('w2', 'red')], decl, [], [1, 2, 3]), { failed: true, lines: [1] }, 'the stopped stage names its line');
+  assert.deepEqual(seedReadFailure([row('w1', 'green')], { stages: [{ name: 'w1' }] }, [], [1, 2]), { failed: true, lines: [1, 2] }, 'no mapping: every numbered line counts');
+});

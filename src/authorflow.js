@@ -172,6 +172,30 @@ export function normalizeQuestions(raw, failedLines) {
   return { kept, dropped };
 }
 
+/**
+ * Did this try FAIL THE SEED READ (hamr's ruling 2026-10-10, differing from fwdloop's validation-only rule)? It did when a work
+ * stage instrument-stopped, or when no work stage is red on the repo as it is — the vacuous close ("nothing in the close fails
+ * at all": it grades nothing). The mandatory guards (`guardNames`) are green at the seed by design and never count as work.
+ * The job lines it names are the `fromLine`s of the stages the seed read named (the instrument-stopped ones, else every work
+ * stage); if none of them maps to a real line, EVERY numbered job line counts.
+ * @param {any[]} rows @param {any} declaration @param {string[]} guardNames @param {number[]} lineNums
+ * @returns {{failed: boolean, lines: number[]}}
+ */
+export function seedReadFailure(rows, declaration, guardNames, lineNums) {
+  const work = (Array.isArray(rows) ? rows : []).filter((r) => !guardNames.includes(r?.stage));
+  const stopped = work.filter((r) => r?.verdict === 'instrument-stop');
+  const vacuous = !work.some((r) => r?.verdict === 'red');
+  if (stopped.length === 0 && !vacuous) return { failed: false, lines: [] };
+  const named = new Set((stopped.length ? stopped : work).map((r) => r?.stage));
+  /** @type {Set<number>} */
+  const found = new Set();
+  for (const st of Array.isArray(declaration?.stages) ? declaration.stages : []) {
+    if (named.has(st?.name) && Array.isArray(st.fromLine)) for (const n of st.fromLine) if (Number.isInteger(n)) found.add(n);
+  }
+  const lines = [...found].filter((n) => lineNums.includes(n)).sort((a, b) => a - b);
+  return { failed: true, lines: lines.length ? lines : [...lineNums] };
+}
+
 /** The honest truncation signal: bare-agent's Loop tags a round cut off at the output cap `error: 'truncated:max_tokens'`
  * with the neutral `stopReason: 'max_tokens'` (node_modules/bare-agent/src/loop.js, BA-6/BA-13).
  * @param {any} r */
@@ -2510,6 +2534,8 @@ export async function authorClose({
 
   /** the job lines the PREVIOUS try's validation reds named — set only when the next try may ask (null = it may not) @type {number[]|null} */
   let questionLines = null;
+  /** per try: null = it passed (validated AND was measured with a work stage red); else the job lines its failure named @type {({lines: number[]}|null)[]} */
+  const tryFails = [];
   /** @type {{line: number, question: string}[]} */
   let askedQuestions = [];
   const seedTrees = makeSeedTrees();
@@ -2522,7 +2548,7 @@ export async function authorClose({
       // instrument, and this file's own history is what that costs.
       onPhase('author-call', { call: label, i, of: revisionCap });
       // P7 item 5: a mechanism, never a wish. Only the last try of the full ladder carries the property, and only when the
-      // two before it both failed validation (`questionLines` is set at the end of the second one, below).
+      // two before it both failed (validation or the seed read; `questionLines` is set at the end of the second one, below).
       const askOpen = questionLines !== null && i === revisionCap;
       const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue, verdictType, questions: askOpen });
       messages = ask.convo;
@@ -2619,6 +2645,7 @@ export async function authorClose({
         // a validation red IS a measurement of the declaration, so it rides the
         // same channel and counts as a revision (addendum 5)
         measured = renderRejectBlock({ kind: 'validation', reds: vReds });
+        tryFails[i] = { lines: linesNamedByReds(vReds, ask.declaration, (jobLines ?? []).map((l) => l.n)) };
       } else {
         // what gets MEASURED is what will RUN: the resolved declaration with the
         // genre's environment already injected
@@ -2647,16 +2674,18 @@ export async function authorClose({
         finalFrom = label;
         measured = renderSeedReadBlock(rows);
         measuredIterations.push({ label, declaration: injected.declaration, seedRead: rows, droppedEnv: injected.dropped });
+        const sf = seedReadFailure(rows, injected.declaration, guards.map((/** @type {any} */ g) => g.name), (jobLines ?? []).map((l) => l.n));
+        tryFails[i] = sf.failed ? { lines: sf.lines } : null;
       }
 
       if (i === revisionCap) { stop = 'max-revisions'; break; }
 
-      // P7 item 5: the NEXT try is the last of a full ladder, and this one AND the first both failed validation — it may ask,
-      // about the lines THIS try's reds named. A try that validated (a confident guess) never opens asking.
+      // P7 item 5: the NEXT try is the last of a full ladder, and this one AND the first both FAILED — either failed validation
+      // or failed the seed read (a vacuous close; hamr's ruling 2026-10-10, differing from fwdloop's validation-only rule) — so
+      // it may ask, about the lines THIS try's failure named. A try that passed (a confident guess) never opens asking.
       if (offerQuestions && revisionCap === MAX_REVISIONS && i === revisionCap - 1 && Array.isArray(jobLines) && jobLines.length > 0
-          && !v.ok && iterations[0]?.validation?.ok === false) {
-        const named = linesNamedByReds(vReds, ask.declaration, jobLines.map((l) => l.n));
-        questionLines = named.length ? named : null;
+          && tryFails[0] && tryFails[1]) {
+        questionLines = tryFails[1].lines.length ? tryFails[1].lines : null;
       }
 
       const turn = buildReviseTurn(measured);
