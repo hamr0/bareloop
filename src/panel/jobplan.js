@@ -14,7 +14,7 @@ import { KIND_CATALOGUE } from '../authoring.js';
 
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, checks: PlanCheck[], refused: string[]}} PlanLine */
-/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], alwaysOn: string[], older: boolean}} JobPlan */
+/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], alwaysOn: string[], older: boolean, goal?: string}} JobPlan */
 
 /**
  * `machine check` for a kind a command decides, `judge` for one that needs judgement; `null` for a stage whose kind is
@@ -76,7 +76,8 @@ export function planFromSpec(spec) {
     const line = lines.find((l) => l.n === r?.line);
     if (line && typeof r.reason === 'string') line.refused.push(r.reason);
   }
-  return { lines, loose, notChecked: notes, alwaysOn, older: false };
+  // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
+  return { lines, loose, notChecked: notes, alwaysOn, older: false, ...(typeof spec?.goal === 'string' && spec.goal ? { goal: spec.goal } : {}) };
 }
 
 /**

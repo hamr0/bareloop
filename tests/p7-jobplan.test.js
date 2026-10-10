@@ -43,12 +43,14 @@ test('planFromSpec: each stage lands under the job line it names; stages with no
   assert.deepEqual(p.alwaysOn, ['changed-from-seed']);
   assert.deepEqual(p.notChecked, ['looks nice is not checked']);
   assert.deepEqual(p.loose, []);
+  assert.equal(p.goal, NEW_SPEC.goal, "the signed goal rides along for the AI's summary row");
 });
 
 test('planFromSpec: an OLDER spec shows the signed goal as line 1 and every stage name as a check, flagged older', () => {
   const { jobLines: _a, inputs: _b, ...older } = NEW_SPEC;
   const p = planFromSpec({ ...older, closeDecl: { ...older.closeDecl, stages: older.closeDecl.stages.map(({ fromLine: _f, ...s }) => s), refused: undefined } });
   assert.equal(p.older, true);
+  assert.equal(p.goal, undefined, 'an older job shows its goal as line 1, never twice');
   assert.equal(p.lines.length, 1);
   assert.equal(p.lines[0].text, 'flights sorted');
   assert.deepEqual(p.lines[0].checks.map((c) => c.name), ['changed-from-seed', 'flights-found', 'sorted-by-price']);
