@@ -14252,3 +14252,16 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 **Edges.** A signed session whose run never appended its row (spawn failed, or a leg-1 claim released as refused) counts its draft. Signed AND listed = skipped. A session spanning a month boundary lands wholly in the month it began. The drafting judge calls are attributed to the worker's row. The panel's Money/monthly routes read `<home>/panel-sessions` (production's sessions root); a test that points `sessionsRoot` elsewhere passes it explicitly.
 
 **Proven where:** `tests/draft-spend.test.js` (real files in a scratch home; session driven through the real confirm turn and `onCall`); fail-first against the old `src/monthly.js` / `src/panel/authorsession.js`: all 7 failed. Not yet exercised live.
+
+## F214 — the drafter guessed which judge example belonged to which part of the goal, because the form had no numbered lines to say (run mv1j01sl, 2026-10-09; fixed on `feat/job-block`, P7 signed by hamr 2026-10-10)
+
+**Grounded in:** `src/authorflow.js` `GREEN_QUESTIONS` / `SOFTGREEN_QUESTIONS` (three free-text answers plus a fourth, Judge Examples) and `src/cardauthor.js` `cardCasesPrompt` (read the one `answers[4]` blob); run `mv1j01sl`'s drafted card attached its examples to goal parts the person never paired them with.
+
+**What was wrong.** Goal, Success, Guardrails and Judge examples were four boxes with no shared addressing, so nothing tied a check, a guardrail or a judge example to the part of the job it was about; the drafter inferred it, and the Job tab could only show the model's goal sentence plus stage names (Reuse prefilled stage names into Success).
+
+**The change (P7, docs/product/PANEL-BUILD.md addendum 2026-10-10).** One box, "The job": numbered lines with `~` rules, `PASS:`/`FAIL:` `~` lines as the judge examples kept with their line number (`src/jobblock.js`); Inputs replaces Source (line 1 the repo, lines 2+ tracked files inside it, proven at $0 by `proveInputFiles`). The signed spec gains `jobLines` + `inputs` (new jobs only; old specs keep their hash and render through the "older job" fallback). Every drafted stage names `fromLine`, or its line is listed in `closeDecl.refused`; `validateDeclaration` enforces it at $0 (`job-line-uncovered`) and the revise loop feeds a miss back. The confirm plan became a structured message drawn by the same `renderJobPlan()` as the Job tab, which also shows the Signed row.
+
+**Not proven.** The `fromLine` tagging is test-proven against stubbed drafters only — no live model has been asked to tag stages yet (one paid DeepSeek drafting run is the next step, proposed separately). The confirm plan's checks show no machine/judge class (the stage kind exists only after drafting); the Job tab shows it. Search inputs, files outside the repo and plain-folder jobs are not in this piece.
+
+**Proven where:** `tests/authoring.test.js` (the three coverage tests go red with `checkJobLines` disabled — fail-first — and green with it), `tests/jobblock.test.js`, `tests/job.test.js`, `tests/p7-jobplan.test.js`, `tests/p7-page.test.js`, `tests/run-interview.test.js`.
+
