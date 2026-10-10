@@ -121,6 +121,9 @@
   [hidden]{display:none !important;}
   .main{display:flex;flex:1;min-height:0;}
   .left-pane{width:420px;flex:none;border-right:1px solid var(--border-strong);display:flex;flex-direction:column;background:var(--panel);}
+  /* hamr 2026-10-10: the left pane is 630px on wide screens only. 1200px is the floor: the right pane is then >=570px, never
+     narrower than the 480px it already had at 900px with the 420px pane (630 at 900 left it 270 and wrapped its tabs) */
+  @media (min-width: 1200px){ .left-pane{width:630px;} }
   .right-pane{flex:1;min-width:0;display:flex;flex-direction:column;}
 
   .tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:tabnum;}

@@ -174,3 +174,10 @@ test('Job tab layout: The job flows at full height (no inner scroll), a wrapped 
   assert.match(jl, /text-indent:-30px/);
   assert.match(PAGE, /\.jp \.jl \.sub,\.jp \.jl \.fold\{padding-left:0;text-indent:0;\}/, 'the rule and check lines under a job line do not inherit the hang');
 });
+
+test('left pane: 420px by default, 630px only from 1200px up; the stacked layout (max-width:899px) keeps its 100%', () => {
+  assert.match(PAGE, /\.left-pane\{width:420px;flex:none;/);
+  assert.match(PAGE, /@media \(min-width: 1200px\)\{ \.left-pane\{width:630px;\} \}/);
+  assert.match(PAGE, /@media \(max-width: 899px\)\{\s*\.main\{flex-direction:column;\}\s*\.left-pane\{width:100%;/);
+  assert.doesNotMatch(PAGE, /\.left-pane\{width:630px;flex/, 'the base rule never changes: 630 is wide-only');
+});
