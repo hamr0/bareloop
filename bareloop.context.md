@@ -634,7 +634,10 @@ booked, `AUTHOR_MAX_TOKENS` is never raised, and only a real transport failure s
 `authorClose({ offerQuestions })` (default `false`; the CLI never sets it) offers the optional `questions` property on the LAST
 try of the full ladder only, and only when the two tries before it both failed — validation OR the seed read (hamr ruled 2026-10-10; this DIFFERS
 from fwdloop's validation-only rule): a seed-read failure is a work stage that instrument-stopped or a close with no work stage
-red at the seed (vacuous), and its lines are the `fromLine`s of the stages named, else every job line (`seedReadFailure`);
+red at the seed (vacuous), and its lines are the `fromLine`s of the stages named, else every job line (`seedReadFailure`); a try
+whose EVERY structure attempt was cut off at the output cap also counts as failed (hamr ruled 2026-10-10; a cut-off names no line, so
+every job line counts), while a try cut off once but finished by a later attempt is judged by that finished attempt (the ladder carries
+on to try 3 after an all-cut-off try 2 only when that gate can open, i.e. try 1 failed too);
 the machine keeps at most
 `MAX_QUESTIONS` (2) — each on a job line the previous try's reds named — and logs the rest in `iterations[].droppedQuestions`;
 the drafter is never told a number. It then stops `questions-open` (`questions: [{line, question}]`, nothing validated).

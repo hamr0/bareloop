@@ -2712,6 +2712,43 @@ test('P7 item 5 (hamr 2026-10-10): validation-red then vacuous (mixed) opens ask
   assert.deepEqual(offeredAt(b.calls), [false, false, false], 'try 2 passed: no question');
 });
 
+// ── P7 item 5, hamr's ruling 2026-10-10 (live session smv2k6bczlvk3): a try CUT OFF at the output cap is a FAILED try ──────────
+
+const CUT = { error: 'truncated:max_tokens' };
+
+test('P7 item 5 (hamr 2026-10-10, fail-first): try 1 fails validation and EVERY attempt of try 2 is cut off -> try 3 is offered the question, on every numbered job line', async () => {
+  const { generate, calls } = scriptGenerate([
+    { declaration: redDecl('a') }, CUT, CUT, CUT,
+    { declaration: { ...redDecl('c'), questions: [Q(1, 'what does fix the types mean?'), Q(9, 'no such line')] } },
+  ]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(calls), [false, false, false, false, true], 'the three cut-off attempts of try 2 carry no question; try 3 does');
+  assert.equal(r.stop, 'questions-open');
+  assert.deepEqual(r.questions, [Q(1, 'what does fix the types mean?')], 'line 1 was not named by try 1\'s reds, yet a cut-off names no line: every job line counts');
+  assert.equal(r.iterations[1].cutOff, true);
+});
+
+test('P7 item 5 (hamr 2026-10-10): try 1 PASSES and try 2 is cut off -> no question (and the ladder stops artifact-red as before)', async () => {
+  const { generate, calls } = scriptGenerate([{ declaration: greenDecl('a') }, CUT, CUT, CUT, { declaration: { ...greenDecl('c'), questions: [Q(1, 'x')] } }]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.ok(offeredAt(calls).every((x) => x === false));
+  assert.equal(r.stop, 'artifact-red');
+  assert.notEqual(r.stop, 'questions-open');
+});
+
+test('P7 item 5 (hamr 2026-10-10): one attempt of try 2 cut off but a LATER attempt finished — the try is judged by that finished attempt', async () => {
+  // finished and red -> try 3 asks (on the lines that finished attempt\'s reds named)
+  const a = scriptGenerate([{ declaration: redDecl('a') }, CUT, { declaration: redDecl('b') }, { declaration: { ...redDecl('c'), questions: [Q(2, 'q')] } }]);
+  const ra = await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.equal(ra.stop, 'questions-open');
+  assert.deepEqual(ra.questions, [Q(2, 'q')]);
+  // finished and passing -> try 3 may not ask
+  const b = scriptGenerate([{ declaration: redDecl('a') }, CUT, { declaration: greenDecl('b') }, { declaration: { ...greenDecl('c'), questions: [Q(2, 'q')] } }]);
+  const rb = await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.ok(offeredAt(b.calls).every((x) => x === false), 'a finished passing attempt is not a failed try, whatever was cut off before it');
+  assert.notEqual(rb.stop, 'questions-open');
+});
+
 test('seedReadFailure: vacuous or instrument-stopped work stage fails; a red work stage passes; guards never count; unmapped lines mean every line', async () => {
   const { seedReadFailure } = await import('../src/authorflow.js');
   const decl = { stages: [{ name: 'g' }, { name: 'w1', fromLine: [1] }, { name: 'w2', fromLine: [3] }] };

@@ -1644,7 +1644,7 @@ function canonical(x) {
  *   label: string, book: ReturnType<typeof makeCostBook>,
  *   channel: {name: string, instruction: string, textPath?: string, tool: (box: {calls: any[]}) => any}}} o
  * @returns {Promise<{artifact: any, attempts: number, convo: any[], raw: string,
- *   providerError: string|null, red: Red|null, budget: 'cap-halt'|'pricing-red'|null}>}
+ *   providerError: string|null, red: Red|null, budget: 'cap-halt'|'pricing-red'|null, allCutOff?: boolean}>}
  */
 export async function askStructured({ messages, generate, mode, retries, label, book, channel }) {
   /** @type {any[]} */
@@ -1652,6 +1652,8 @@ export async function askStructured({ messages, generate, mode, retries, label, 
   let attempts = 0;
   /** @type {Red|null} */
   let red = null;
+  /** how many of this ask's attempts were cut off at the output cap (P7: all of them = a failed try for the question gate) */
+  let cutOffs = 0;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     // THE CEILING, immediately before the paid call and nowhere else. Sited HERE
@@ -1700,6 +1702,7 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     // answer, not a transport fault — it is a failed try on the same ladder as a malformed artifact (the spend is already
     // booked above). Only a real error (a throw, a provider/halt tag) stays provider-red.
     const cutOff = isOutputCutOff(r);
+    if (cutOff) cutOffs += 1;
     if (r?.error && !cutOff) {
       return { artifact: null, attempts, convo, raw, providerError: String(r.error), red: null, budget: null };
     }
@@ -1769,7 +1772,7 @@ export async function askStructured({ messages, generate, mode, retries, label, 
       convo.push({ role: 'user', content: `${block}\n\n${mode === 'tool' ? channel.instruction : STRUCTURE_INSTRUCTION_TEXT}` });
     }
   }
-  return { artifact: null, attempts, convo, raw: '', providerError: null, red, budget: null };
+  return { artifact: null, attempts, convo, raw: '', providerError: null, red, budget: null, allCutOff: attempts > 0 && cutOffs === attempts };
 }
 
 /** THE DECLARATION CHANNEL — the one this loop has always used. Its schema is
@@ -2538,6 +2541,9 @@ export async function authorClose({
   const tryFails = [];
   /** @type {{line: number, question: string}[]} */
   let askedQuestions = [];
+  /** P7 item 5: may the try AFTER try `i` ask? Only the last try of a full ladder, and only when try 1 and try `i` both failed. */
+  const nextTryMayAsk = (/** @type {number} */ i) => offerQuestions && revisionCap === MAX_REVISIONS && i === revisionCap - 1
+    && Array.isArray(jobLines) && jobLines.length > 0 && Boolean(tryFails[0]) && Boolean(tryFails[1]);
   const seedTrees = makeSeedTrees();
   try {
     for (let i = 0; i <= revisionCap; i += 1) {
@@ -2603,6 +2609,21 @@ export async function authorClose({
         break;
       }
       if (!ask.declaration) {
+        // hamr's ruling 2026-10-10 (live session smv2k6bczlvk3): a try whose EVERY structure attempt was cut off at the output cap
+        // is a FAILED try for the question gate. A cut-off names no line, so every numbered job line counts. The ladder goes on to
+        // try 3 only when that gate can open (try 1 failed too); anywhere else it stops artifact-red as it always did.
+        if (ask.allCutOff && i === revisionCap - 1) {
+          const allLines = (jobLines ?? []).map((l) => l.n);
+          tryFails[i] = { lines: allLines };
+          iter.cutOff = true;
+          if (nextTryMayAsk(i)) {
+            questionLines = allLines.length ? allLines : null;
+            const block = renderRejectBlock({ kind: 'artifact', reds: [/** @type {Red} */ (ask.red).detail] });
+            messages = [...ask.convo, { role: 'assistant', content: '(the reply carried no text)' },
+              { role: 'user', content: `${block}\n\n${structuredMode === 'tool' ? STRUCTURE_INSTRUCTION_TOOL : STRUCTURE_INSTRUCTION_TEXT}` }];
+            continue;
+          }
+        }
         fatal = [/** @type {Red} */ (ask.red)];
         stop = 'artifact-red';
         break;
@@ -2683,9 +2704,9 @@ export async function authorClose({
       // P7 item 5: the NEXT try is the last of a full ladder, and this one AND the first both FAILED — either failed validation
       // or failed the seed read (a vacuous close; hamr's ruling 2026-10-10, differing from fwdloop's validation-only rule) — so
       // it may ask, about the lines THIS try's failure named. A try that passed (a confident guess) never opens asking.
-      if (offerQuestions && revisionCap === MAX_REVISIONS && i === revisionCap - 1 && Array.isArray(jobLines) && jobLines.length > 0
-          && tryFails[0] && tryFails[1]) {
-        questionLines = tryFails[1].lines.length ? tryFails[1].lines : null;
+      if (nextTryMayAsk(i)) {
+        const second = tryFails[1];
+        questionLines = second && second.lines.length ? second.lines : null;
       }
 
       const turn = buildReviseTurn(measured);
