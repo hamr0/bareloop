@@ -43,7 +43,7 @@ function setup() {
 }
 async function until(fn, ms = 8000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => { setTimeout(r, 10); }); } return false; }
 function start(source, home, pre, key = 'fake-not-a-real-key') {
-  const card = { ...pre.card, source, destination: 'src/**', capUsd: 1 };
+  const card = { ...pre.card, inputs: `repo: ${source}`, destination: 'src/**', capUsd: 1 };
   return createSession(card, {
     env: { ANTHROPIC_API_KEY: key }, home, sessionsRoot: tmp('fence-sess-'),
     reuse: { spec: buildReuseSpec(pre.spec, card), workflowKey: pre.workflowKey },
