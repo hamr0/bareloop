@@ -1057,3 +1057,13 @@ Gate green on HEAD (typecheck, build:types, npm test — exit codes quoted), my 
 
 ### Not in this piece
 Search inputs, files outside the repo, plain-folder rubric jobs (piece #3, with the flight-search run). .docx/.xlsx readers (piece #2). PDF (off). Try-3 questions (later).
+
+### Batch 2 — signed by hamr 2026-10-10 ("yes to all"), built on `feat/job-block`
+
+Six items, one commit each:
+1. The plan bubble's loose `goal sentence:` line is a labelled **AI's summary** row in the shared `renderJobPlan` (the "Sign & run to confirm this plan…" footer stays a hint).
+2. The same row on the Job tab, from the signed spec's `goal` (`planFromSpec`); an older job shows its goal as line 1 only, never twice.
+3. The job and Inputs boxes grow with their text to 8 lines, then scroll; the gutter scrolls with the text (padding top and bottom match the textarea, `contain:size` keeps it out of the row height). A wrapped line counts by what is displayed; its number sits on the first row.
+4. Left pane 420px -> 630px **from 1200px up** (900-1199 stay at 420; max-width:899px unchanged). 630px at 900 left the right pane 270px and wrapped its tabs; at 1200 it is 570px, never narrower than the 480px it already had at 900.
+5. Try-3 questions per fwdloop's signed design (am24/25/26): only the last of the full ladder (author call + both revisions), and only after tries 1 and 2 both failed validation, may ask (<=2, each on a job line try 2's reds named; the machine keeps 2, drops and logs the rest; no number in the prompt). Answers are required (no Skip), added word for word as `~` rules on their line in the signed `jobLines`, the plan card and Job tab show them, then the draft runs once more with no asking. The confirm turn's own plan `questions` are unchanged.
+6. A drafter answer cut off at the output cap is a failed try (same ladder as a malformed artifact), not `provider-red` (F215); every drafting stop says why in plain words on the card.

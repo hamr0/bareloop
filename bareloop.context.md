@@ -626,6 +626,22 @@ a step, or test it without a provider.
 | assembly | `assembleSpec(specDraft, { closeDecl, verdictType })` | folds the authored half into the OPERATOR's half. Budgets, the fence, cadence, escalation and the provider are never authored by anything here. The GOAL is passed through, not generated. **A draft that ALREADY carries the authored half is REFUSED — it THROWS, never merges and never overwrites.** `AUTHORED_SPEC_FIELDS` (`close`, `closeDecl`, `verdictType`) names the fields this fold WRITES, as data, so the refusal and the fold cannot disagree about which half of the spec is which; the rule is `job.js`'s one step earlier (two closes are two arbiters, and picking one silently is how a signed artefact stops meaning what the signer read). `src/authorrun.js` (lifted out of `scripts/run-author.mjs` by PANEL-BUILD.md P0) asks the same question at **$0 BEFORE the scout**, so the answer never arrives after the model has been paid |
 | the three gates | `prepareSigning({ spec, workdir, seedRef? })` → `{ ok, specHash, gates, work, guards, refusal }` | D9, and it NEVER signs |
 
+**Drafting stops and try-3 questions (P7, F215).** (1) A drafter round cut off at the output cap (bare-agent tags it
+`error: 'truncated:max_tokens'`, neutral `stopReason: 'max_tokens'`) is a FAILED TRY on `askStructured`'s retry ladder with the
+reason "the AI's answer was cut off at the output limit" (`axis: 'output-truncated'`) — NOT `provider-red`; all attempts stay
+booked, `AUTHOR_MAX_TOKENS` is never raised, and only a real transport failure stays `provider-red`. `draftStopText`
+(`src/authorreadout.js`) words any drafting stop that has no wording of its own; the panel puts it on the failed step. (2)
+`authorClose({ offerQuestions })` (default `false`; the CLI never sets it) offers the optional `questions` property on the LAST
+try of the full ladder only, and only when the two tries before it both failed validation; the machine keeps at most
+`MAX_QUESTIONS` (2) — each on a job line the previous try's reds named — and logs the rest in `iterations[].droppedQuestions`;
+the drafter is never told a number. It then stops `questions-open` (`questions: [{line, question}]`, nothing validated).
+`authorCloseForJob({ answerQuestions })` is the seam that asks the person (required answer, no skip), takes back the job lines
+with each answer added word for word as a `~` rule, and runs the draft once more over the same survey, listing and confirmed
+plan with the first leg's spend carried as prior spend and `offerQuestions: false`. The confirm turn's own `questions` (the
+plan's open questions) are a separate, unchanged mechanism: they are asked before drafting, about the plan; try-3 questions
+are asked after two failed drafts, about a job line.
+
+
 **D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT
 CLASS** (PRD v1.57 §2 — what a battery is FOR is the class of dishonesty that class of
 verdict admits). `CLASS_BATTERIES` is the attachment point (structure, un-removability,
