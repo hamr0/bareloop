@@ -111,26 +111,22 @@ test('card: applyEdit fills EVERY box from the signed job, radio on the job\'s o
   const log = [];
   const originLine = { hidden: true, textContent: '' };
   const errEl = { textContent: '' };
-  const els = { 'jf-judge': { disabled: true } };
   const api = build(['applyEdit'], {
     clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect: { value: '' },
-    setVerdict: (v) => log.push(`verdict:${v}`), setVal: (id, v) => log.push(`val:${id}=${v}`), setReuseLocked: (on) => log.push(`lock:${on}`),
+    setVerdict: (v) => log.push(`verdict:${v}`), fillCard: (c) => { for (const [id, v] of [['jf-name', c.jobName], ['jf-job', c.jobText], ['jf-inputs', c.inputs], ['jf-dest', c.destination], ['jf-cap-money', c.capUsd], ['jf-cap-time', Math.round(c.maxWallMs / 60000)]]) log.push(`val:${id}=${v}`); }, setReuseLocked: (on) => log.push(`lock:${on}`),
     renderPicker() {}, originLine, errEl, refreshModelStatus() {}, refreshCapNote() {}, refreshStartEnabled() {},
-    document: { getElementById: (id) => els[id] },
   }, 'var startFrom = null, reuseCheckType = "deterministic", reuseSession = false;', '__s: () => ({startFrom, reuseCheckType, reuseSession})');
-  const card = { checkType: 'rubric', jobName: 'doc-weekly', model: '', goal: 'g', source: '/s', destination: 'out/', success: 'ok', guardrails: 'none', judgeExamples: 'Good: x', capUsd: 1, maxWallMs: 1200000 };
+  const card = { checkType: 'rubric', jobName: 'doc-weekly', model: '', jobText: 'g\n~ PASS: x\n~ FAIL: y', inputs: 'repo: /s', destination: 'out/', capUsd: 1, maxWallMs: 1200000 };
   api.applyEdit({ runid: 'r1', prefill: { card, line: 'Same job - 3 green', trackRecord: {} }, origin: 'Copied from doc-weekly (run-2) — failed.' });
   assert.deepEqual(api.__s(), { startFrom: null, reuseCheckType: 'deterministic', reuseSession: false }, 'no reuse state');
   assert.ok(!log.includes('lock:true') && !log.some((l) => l === 'verdict:reuse'), 'never locked, never on the Reuse radio');
   assert.ok(log.includes('verdict:rubric'));
-  for (const f of ['jf-name=doc-weekly', 'jf-goal=g', 'jf-source=/s', 'jf-dest=out/', 'jf-success=ok', 'jf-guardrails=none', 'jf-judge=Good: x', 'jf-cap-money=1', 'jf-cap-time=20']) assert.ok(log.includes(`val:${f}`), f);
-  assert.equal(els['jf-judge'].disabled, false, 'a rubric job opens the judge box');
+  for (const f of ['jf-name=doc-weekly', 'jf-job=g\n~ PASS: x\n~ FAIL: y', 'jf-inputs=repo: /s', 'jf-dest=out/', 'jf-cap-money=1', 'jf-cap-time=20']) assert.ok(log.includes(`val:${f}`), f);
   assert.equal(originLine.hidden, false);
   assert.equal(originLine.textContent, 'Copied from doc-weekly (run-2) — failed.');
   assert.ok(log.indexOf('clear') < log.indexOf('open'), 'a live session is handled exactly as applyReuse: clearStartFrom then openNewCard');
-  // a deterministic job keeps the judge box shut
   api.applyEdit({ runid: 'r1', prefill: { card: { ...card, checkType: 'deterministic' } }, origin: 'o' });
-  assert.equal(els['jf-judge'].disabled, true);
+  assert.ok(log.includes('verdict:deterministic'));
   // a refused prefill opens nothing
   log.length = 0;
   api.applyEdit({ error: 'nothing to copy' });
@@ -144,7 +140,7 @@ test('card: applyEdit fills EVERY box from the signed job, radio on the job\'s o
 
 test('job name: a panel job lives in its session folder, never repo jobs/ — so a second draft under the SAME name is not refused by validateJobCard (checked against the real repo jobs/ dir)', () => {
   const rows = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: {} });
-  const card = { jobName: 'pulselog-digest', checkType: 'deterministic', model: 'claude-sonnet-5', goal: 'g', source: '/s', destination: 'o', success: 's', guardrails: 'g', capUsd: 1 };
+  const card = { jobName: 'pulselog-digest', checkType: 'deterministic', model: 'claude-sonnet-5', jobText: 'g', inputs: 'repo: /s', destination: 'o', capUsd: 1 };
   assert.deepEqual(validateJobCard(card, { rows }), { ok: true }, 'drafting the same name again is accepted');
   assert.equal(validateJobCard({ ...card, jobName: 'pulselog-u-types' }, { rows }).ok, false, 'only a name that IS a repo jobs/*.json is refused');
 });

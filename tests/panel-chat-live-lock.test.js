@@ -14,7 +14,7 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 
-const ALL = ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time', 'jf-model'];
+const ALL = ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money', 'jf-cap-time', 'jf-model'];
 function harness() {
   const els = {};
   for (const id of [...ALL, 'job-card']) {
@@ -27,7 +27,7 @@ function harness() {
     querySelector: () => radios.find((r) => r.checked) ?? null,
   };
   const st = { live: false };
-  const src = `var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"]; var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];
+  const src = `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];
 ${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}
 return { setReuseLocked, setLive: function(v){ sessionLive = v; syncCardLock(); } };`;
   // eslint-disable-next-line no-new-func
@@ -50,12 +50,12 @@ test('live session: every card field, the check-type radios and the Model menu a
 test('reuse card: pre-start rule unchanged, fully locked while live, back to the reuse rule after a refusal', () => {
   const { els, radios, api } = harness();
   api.setReuseLocked(true);
-  assert.ok(!els['jf-source'].readOnly && !els['jf-cap-money'].readOnly && els['jf-goal'].readOnly);
+  assert.ok(!els['jf-inputs'].readOnly && !els['jf-cap-money'].readOnly && els['jf-job'].readOnly);
   api.setLive(true);
   assert.ok(lockedAll(els));
   api.setLive(false);
-  assert.ok(!els['jf-source'].readOnly && !els['jf-dest'].readOnly && !els['jf-model'].disabled, 'refused start: reuse boxes open again');
-  assert.ok(els['jf-goal'].readOnly && radios.every((r) => !r.disabled), 'the reuse locks stay; the Check type radios stay clickable (hamr 2026-10-06)');
+  assert.ok(!els['jf-inputs'].readOnly && !els['jf-dest'].readOnly && !els['jf-model'].disabled, 'refused start: reuse boxes open again');
+  assert.ok(els['jf-job'].readOnly && radios.every((r) => !r.disabled), 'the reuse locks stay; the Check type radios stay clickable (hamr 2026-10-06)');
 });
 
 test('page wiring: the lock is synced wherever sessionLive changes (refreshStartEnabled), and attachSession goes live before it renders', () => {

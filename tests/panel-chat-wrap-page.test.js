@@ -18,19 +18,21 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 
-const WRAP_IDS = ['jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge'];
+const WRAP_IDS = ['jf-job', 'jf-inputs', 'jf-dest'];
 
-test('the six free-text card boxes are wrapping <textarea>s; Job name stays a one-line input; ids and placeholders kept', () => {
+test('the three free-text card boxes (The job, Inputs, Destination) are wrapping <textarea>s; Job name stays a one-line input; ids and placeholders kept', () => {
   for (const id of WRAP_IDS) {
     assert.match(PAGE, new RegExp(`<textarea[^>]*id="${id}"[^>]*></textarea>`), `${id} is a textarea`);
     assert.doesNotMatch(PAGE, new RegExp(`<input[^>]*id="${id}"`), `${id} is no longer an input`);
   }
   assert.match(PAGE, /<input id="jf-name" type="text" placeholder="kebab-case, unique">/);
-  assert.match(PAGE, /<textarea[^>]*id="jf-source"[^>]*placeholder="absolute path to a local repo"/);
   assert.match(PAGE, /<textarea[^>]*id="jf-dest"[^>]*placeholder="the write fence/);
-  assert.match(PAGE, /<textarea[^>]*id="jf-judge"[^>]*disabled/);
+  // P7: the empty-box examples are set by the page and change with the Check type radio (setJobPlaceholders)
+  assert.match(PAGE, /deterministic: "Fix the failing date tests in src\/date\.js\\n~ don't edit any test file\\nMake npm test pass"/);
+  assert.match(PAGE, /rubric: "Write a one-page summary of docs\/plan\.md\\n~ PASS: every number is quoted from the file\\n~ FAIL: a number that is not in the file\\nKeep it under 300 words"/);
+  assert.match(PAGE, /INPUTS_PLACEHOLDER = "repo: \/home\/me\/myrepo\\nspec: docs\/spec\.md"/);
   // no Enter handler on them: Enter is a newline
-  assert.doesNotMatch(PAGE, /getElementById\("jf-(goal|source|dest|success|guardrails|judge)"\)\.addEventListener\("keydown"/);
+  assert.doesNotMatch(PAGE, /getElementById\("jf-(job|inputs|dest)"\)\.addEventListener\("keydown"/);
   const rule = PAGE.match(/\.job-card textarea\.jf-wrap\{([^}]*)\}/)[1];
   assert.match(rule, /resize:vertical/);
   assert.match(rule, /overflow-y:auto/);
@@ -63,10 +65,11 @@ test('card fields (hamr 2026-10-05): editable = soft white + the ordinary 1px bo
   assert.deepEqual([...PAGE.matchAll(/^\s*([^{\n]*)\{[^}]*var\(--field-border\)[^}]*\}/gm)].map((m) => m[1].trim()), ['#chat-msg']);
 });
 
-test('card box default heights (hamr 2026-10-05): goal/success/guardrails/judge start at 2 rows, source/dest at 1; fitBox only sets height from auto, so rows is the floor', () => {
+test('card box default heights (hamr 2026-10-05): The job at 3 rows, Inputs at 2, Destination at 1; fitBox only sets height from auto, so rows is the floor', () => {
   const rowsOf = (id) => Number(PAGE.match(new RegExp(`<textarea[^>]*id="${id}"[^>]*rows="(\\d+)"`))[1]);
-  for (const id of ['jf-goal', 'jf-success', 'jf-guardrails', 'jf-judge']) assert.equal(rowsOf(id), 2, `${id} defaults to 2 lines`);
-  for (const id of ['jf-source', 'jf-dest']) assert.equal(rowsOf(id), 1, `${id} stays 1 line`);
+  assert.equal(rowsOf('jf-job'), 3, 'The job defaults to 3 lines');
+  assert.equal(rowsOf('jf-inputs'), 2, 'Inputs defaults to 2 lines');
+  assert.equal(rowsOf('jf-dest'), 1, 'jf-dest stays 1 line');
   // fitBox resets to "auto" (the rows attribute then sizes the box) and measures scrollHeight, which the browser never
   // reports below the rows-sized client height; a hidden box clears the inline height so rows rule again.
   assert.match(fnSrc('fitBox'), /style\.height = "auto"/);
@@ -88,11 +91,14 @@ test('live growth (hamr 2026-10-06): an input event on each card textarea calls 
   const document = { getElementById: (id) => boxes[id] };
   const fitBox = (el) => calls.push(el.id);
   // eslint-disable-next-line no-new-func
-  new Function('document', 'fitBox', m[1])(document, fitBox);
+  const gutters = [];
+  new Function('document', 'fitBox', 'FIT_IDS', 'NUMBERED_IDS', 'gutterSync', m[1])(document, fitBox, WRAP_IDS, ['jf-job', 'jf-inputs'], (id) => gutters.push(id));
   for (const id of WRAP_IDS) {
     assert.equal(typeof boxes[id].handlers.input, 'function', `${id} listens for input`);
     calls.length = 0;
+    gutters.length = 0;
     boxes[id].handlers.input();
     assert.deepEqual(calls, [id], `${id}: input fits that box`);
+    assert.deepEqual(gutters, id === 'jf-dest' ? [] : [id], `${id}: a numbered box re-measures its gutter, Destination has none`);
   }
 });

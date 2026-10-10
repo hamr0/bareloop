@@ -52,7 +52,7 @@ test('page: Abandon posts to the abandon route and clears only once the server s
 test('page: resetCard empties every box, check type back to deterministic, Model to the default, hides origin/estimate/notes, clears progress and thread', () => {
   const els = {};
   const mk = (id, extra = {}) => { els[id] = { id, value: 'x', textContent: 'x', hidden: false, disabled: false, ...extra }; return els[id]; };
-  for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time', 'jf-cap-note']) mk(id);
+  for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money', 'jf-cap-time', 'jf-cap-note']) mk(id);
   const radios = [{ value: 'deterministic', checked: false }, { value: 'rubric', checked: true }];
   const calls = [];
   const modelSelect = { selectedIndex: 3 };
@@ -61,10 +61,9 @@ test('page: resetCard empties every box, check type back to deterministic, Model
   let lastPhase = 'prepared';
   // eslint-disable-next-line no-new-func
   const run = new Function('document', 'modelSelect', 'msgInput', 'clearStartFrom', 'openNewCard', 'refreshModelStatus', 'rwQ',
-    `var lastPhase = "prepared"; var CARD_BOX_IDS = ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"];\n${fnSrc('clearCardBoxes')}\n${fnSrc('setVerdict')}\n${fnSrc('resetCard')}\nresetCard();\nreturn lastPhase;`);
+    `var lastPhase = "prepared"; var CARD_BOX_IDS = ["jf-name", "jf-job", "jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"]; var NUMBERED_IDS = []; function gutterSync(){} function setJobPlaceholders(){}\n${fnSrc('clearCardBoxes')}\n${fnSrc('setVerdict')}\n${fnSrc('resetCard')}\nresetCard();\nreturn lastPhase;`);
   lastPhase = run(doc, modelSelect, msgInput, () => calls.push('clearStartFrom'), () => calls.push('openNewCard'), () => calls.push('refreshModelStatus'), { value: 'q' });
-  for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time']) assert.equal(els[id].value, '', id);
-  assert.equal(els['jf-judge'].disabled, true, 'rubric-only box off, as for deterministic');
+  for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money', 'jf-cap-time']) assert.equal(els[id].value, '', id);
   assert.deepEqual(radios.map((r) => r.checked), [true, false], 'deterministic');
   assert.equal(modelSelect.selectedIndex, 0);
   assert.equal(msgInput.value, '');

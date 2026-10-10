@@ -21,7 +21,7 @@
     --grey-dot:#878eac; --grey-bg:#20242f;
     --cyan:#7dcfff; --cyan-bg:#182634;
     --magenta:#bb9af7;
-    --accent:#7aa2f7;
+    --accent:#7aa2f7; --plan:#7aa2f7;
     --btn-bg:#1f2335; --btn-text:#c0caf5;
     --field-bg:var(--bg); --field-soft-bg:var(--bg); --field-border:var(--text-dim);
     --primary-bg:#7aa2f7; --primary-text:#1a1b26; --primary-border:#7aa2f7;
@@ -67,7 +67,7 @@
       --grey-dot:#626887; --grey-bg:#e2e2e8;
       --cyan:#007197; --cyan-bg:#d6ecf1;
       --magenta:#9854f1;
-      --accent:#2668c2;
+      --accent:#2668c2; --plan:#2668c2;
       --btn-bg:#e9e9ed; --btn-text:#3760bf;
       --field-bg:#ffffff; --field-soft-bg:#f7f7f9;
       --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
@@ -82,7 +82,7 @@
     --grey-dot:#626887; --grey-bg:#e2e2e8;
     --cyan:#007197; --cyan-bg:#d6ecf1;
     --magenta:#9854f1;
-    --accent:#2668c2;
+    --accent:#2668c2; --plan:#2668c2;
     --btn-bg:#e9e9ed; --btn-text:#3760bf;
     --field-bg:#ffffff; --field-soft-bg:#f7f7f9;
     --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
@@ -466,6 +466,30 @@
   /* hamr 2026-10-05: the card's free-text boxes wrap like the ask box (one shared fitBox); a few rows, then they scroll inside */
   /* same look as the card's one-line inputs (white when editable, ordinary 1px border) — a textarea has its own browser border otherwise */
   .job-card textarea.jf-wrap{width:100%;box-sizing:border-box;font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
+  /* P7 — numbered boxes (The job, Inputs): the number gutter sits OUTSIDE the box, left; a hidden mirror measures each
+     logical line's wrapped height so a number stays level with its line (docs/product/PANEL-BUILD.md, signed mock) */
+  .nbox{display:grid;grid-template-columns:22px minmax(0,1fr);column-gap:6px;align-items:stretch;}
+  .nbox .gut{color:var(--text-faint);text-align:right;padding-top:7px;overflow:hidden;font-size:inherit;line-height:1.5;}
+  .nbox .gut div{min-height:1.5em;}
+  .nbox-in{position:relative;min-width:0;}
+  .nbox-mir{position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;box-sizing:border-box;padding:6px 8px;font:inherit;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;}
+  .nbox-mir div{min-height:1.5em;}
+  /* P7 — the ONE job plan drawing (chat plan bubble + Job tab): job lines numbered, rule under, checks folded; only the marker is blue */
+  .jp{white-space:normal;font-size:13px;}
+  .jp-legend{font-size:12px;color:var(--text-faint);margin:0 0 8px;}
+  .jp-legend b,.jp .mk{color:var(--plan);font-weight:700;}
+  .jp .jl{margin-bottom:8px;overflow-wrap:anywhere;}
+  .jp .num{display:inline-block;width:22px;text-align:right;color:var(--text-faint);margin-right:8px;}
+  .jp .sub{color:var(--text-dim);padding-left:30px;}
+  .jp .fold{padding-left:30px;color:var(--text);}
+  .jp details.fold{padding-left:0;margin:6px 0;}
+  .jp details>summary{cursor:pointer;list-style:none;}
+  .jp details>summary::-webkit-details-marker{display:none;}
+  .jp details>summary::before{content:"\203A";color:var(--plan);font-weight:700;margin-right:6px;}
+  .jp details[open]>summary::before{content:"\2304";}
+  .jp details ul{margin:4px 0 0;padding-left:26px;color:var(--text-dim);}
+  .jp .older{font-size:12px;color:var(--text-faint);margin-top:6px;}
+  .jp-goal{font-size:12px;color:var(--text-faint);margin-top:8px;}
   /* hamr 2026-10-05: the focused/selected Chat-card field gets a blue border (the accent), no outline ring */
   #panel-chat :is(input,select,textarea):focus{border-color:var(--accent);outline:none;}
   /* hamr 2026-10-05: the ask box is dimmed until something asks for a reply (placeholder stays readable) */
@@ -583,28 +607,22 @@
               <input id="jf-name" type="text" placeholder="kebab-case, unique">
             </div>
             <div class="field">
-              <label for="jf-goal">Goal</label>
-              <textarea class="jf-wrap" id="jf-goal" rows="2"></textarea>
+              <label for="jf-job">The job</label>
+              <div class="nbox" data-testid="nbox-job">
+                <div class="gut" id="jf-job-gut" aria-hidden="true"></div>
+                <div class="nbox-in"><textarea class="jf-wrap" id="jf-job" rows="3" data-testid="jf-job" spellcheck="false"></textarea><div class="nbox-mir" id="jf-job-mir" aria-hidden="true"></div></div>
+              </div>
             </div>
             <div class="field">
-              <label for="jf-source">Source</label>
-              <textarea class="jf-wrap" id="jf-source" rows="1" placeholder="absolute path to a local repo"></textarea>
+              <label for="jf-inputs">Inputs</label>
+              <div class="nbox" data-testid="nbox-inputs">
+                <div class="gut" id="jf-inputs-gut" aria-hidden="true"></div>
+                <div class="nbox-in"><textarea class="jf-wrap" id="jf-inputs" rows="2" data-testid="jf-inputs" spellcheck="false"></textarea><div class="nbox-mir" id="jf-inputs-mir" aria-hidden="true"></div></div>
+              </div>
             </div>
             <div class="field">
               <label for="jf-dest">Destination</label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
-            </div>
-            <div class="field">
-              <label for="jf-success">Success</label>
-              <textarea class="jf-wrap" id="jf-success" rows="2"></textarea>
-            </div>
-            <div class="field">
-              <label for="jf-guardrails">Guardrails</label>
-              <textarea class="jf-wrap" id="jf-guardrails" rows="2"></textarea>
-            </div>
-            <div class="field">
-              <label for="jf-judge">Judge examples <span class="hint" style="display:inline">(rubric only)</span></label>
-              <textarea class="jf-wrap" id="jf-judge" rows="2" disabled></textarea>
             </div>
 
             <div class="cap-row" data-testid="cap-row">
@@ -750,17 +768,16 @@
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
+            <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
+            <div class="field"><label>The job</label><div class="ro-value scroll" id="details-plan" data-testid="details-plan">—</div></div>
+            <div class="field"><label>Inputs</label><div class="ro-value" id="details-inputs" data-testid="details-inputs">—</div></div>
+            <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
             <div class="field-row">
               <div class="field"><label>$ cap</label><div class="ro-value" id="details-cap-money">—</div></div>
               <div class="field"><label>Time cap</label><div class="ro-value" id="details-cap-time">—</div></div>
             </div>
-            <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
-            <div class="field"><label>Goal</label><div class="ro-value scroll" id="details-goal">—</div></div>
-            <div class="field"><label>Success</label><div class="ro-value" id="details-success">—</div></div>
-            <div class="field"><label>Guardrails</label><div class="ro-value" id="details-guardrails">—</div></div>
-            <div class="field"><label>Source</label><div class="ro-value" id="details-source">—</div></div>
-            <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
             <div class="field"><label>Tools</label><div class="ro-value" id="details-tools">—</div></div>
+            <div class="field"><label>Signed</label><div class="ro-value" id="details-signed" data-testid="details-signed">—</div></div>
             <div class="hint" id="job-note"></div>
           </div>
         </section>
@@ -1991,8 +2008,8 @@
     var nr = "not recorded";
     renderJob({
       job: v.job, resolved: false, checkType: v.checkType || nr, model: v.model || nr,
-      goal: v.goal || nr, success: v.success || nr, guardrails: v.guardrails || nr,
-      source: nr, destination: nr, tools: nr,
+      goal: v.goal || nr, plan: v.plan || null, inputs: v.inputs || null, signed: null,
+      destination: nr, tools: nr,
       budgetUsd: (typeof v.budgetUsd === "number") ? v.budgetUsd : null,
       maxWallMs: (typeof v.maxWallMs === "number") ? v.maxWallMs : null,
       note: "imported · view only — the exported job's own spec",
@@ -3128,6 +3145,35 @@
     });
   });
 
+  // ---- the ONE job plan drawing (P7): used by the chat's plan bubble AND the Job tab. `plan` is the server's model
+  // (src/panel/jobplan.js): numbered lines with their rule, the checks under the line each serves (folded), the AI's own
+  // "Not checked", the always-on guards. Only the marker is blue (--plan). Returns HTML (every text is escaped).
+  function renderJobPlan(plan){
+    var h = '<div class="jp" data-testid="job-plan"><div class="jp-legend"><b>\u203A</b> = the approved plan</div>';
+    var checkLine = function(c){
+      return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + "</div>";
+    };
+    (plan.lines || []).forEach(function(l){
+      h += '<div class="jl" data-testid="plan-line"><span class="num">' + escapeXml(String(l.n)) + "</span>" + escapeXml(l.text);
+      if(l.rule) h += '<div class="sub">~ ' + escapeXml(l.rule) + "</div>";
+      (l.checks || []).forEach(function(c){ h += checkLine(c); });
+      (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + "</div>"; });
+      h += "</div>";
+    });
+    if((plan.loose || []).length){
+      h += '<div class="jl"><span class="num"></span>other checks' + plan.loose.map(checkLine).join("") + "</div>";
+    }
+    var fold = function(title, items, testid){
+      if(!items || !items.length) return "";
+      return '<details class="fold" data-testid="' + testid + '"><summary>' + escapeXml(title) + " \u00B7 " + items.length + "</summary><ul>" +
+        items.map(function(x){ return "<li>" + escapeXml(x) + "</li>"; }).join("") + "</ul></details>";
+    };
+    h += fold("Not checked (the AI's own reading)", plan.notChecked, "plan-notchecked");
+    h += fold("Always on", plan.alwaysOn, "plan-alwayson");
+    if(plan.older) h += '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>';
+    return h + "</div>";
+  }
+
   // ---- Job tab ----
   function renderJob(job){
     var empty = document.getElementById("job-empty");
@@ -3143,10 +3189,14 @@
     var descField = document.getElementById("details-description-field");
     if(job.description){ descField.hidden = false; document.getElementById("details-description").textContent = job.description; }
     else { descField.hidden = true; }
-    document.getElementById("details-goal").textContent = job.goal;
-    document.getElementById("details-success").textContent = job.success;
-    document.getElementById("details-guardrails").textContent = job.guardrails;
-    document.getElementById("details-source").textContent = job.source;
+    // P7: the numbered job lines, their rules and checks — the SAME drawing the chat's plan bubble uses (renderJobPlan)
+    var plan = job.plan || {lines: [{n: 1, text: job.goal || "not recorded", rule: "", checks: [], refused: []}], loose: [], notChecked: [], alwaysOn: [], older: true};
+    document.getElementById("details-plan").innerHTML = renderJobPlan(plan);
+    var ins = Array.isArray(job.inputs) ? job.inputs : [];
+    document.getElementById("details-inputs").innerHTML = ins.length
+      ? ins.map(function(i){ return '<div><span class="num-in">' + escapeXml(String(i.n)) + "</span> " + escapeXml(i.label + ": " + i.value) + "</div>"; }).join("")
+      : "not recorded";
+    document.getElementById("details-signed").textContent = job.signed || "not recorded";
     document.getElementById("details-dest").textContent = job.destination;
     document.getElementById("details-tools").textContent = job.tools;
     document.getElementById("details-cap-money").textContent = panelMoney(job.budgetUsd);
@@ -3594,10 +3644,10 @@
     var sfNote = document.getElementById("chat-startfrom-note");
     var originLine = document.getElementById("chat-origin-line");
     // the locked boxes of a reuse card: the signed workflow, greyed and not editable (the server refuses a change anyway)
-    var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];
+    var LOCKED_IDS = ["jf-name", "jf-job"];
     // hamr 2026-10-05: while a drafting session is live NOTHING on the card is editable (the session was started from
     // these values). The reuse rule (only Source/Destination/caps open) applies before the start. ONE function owns it.
-    var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"];
+    var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"];
     var reuseOn = false;
     // Resume mode (hamr 2026-10-07): the card shows the signed job of one run, every box locked except the two caps.
     // `resumeRun` = {runid, noTime} while it is on, else null. Never set together with a drafting session or a reuse pick.
@@ -3613,14 +3663,14 @@
       // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
-      if(!reuseOn && !live && !resuming){ var ck = document.querySelector('input[name="jf-verdict"]:checked'); document.getElementById("jf-judge").disabled = !ck || ck.value !== "rubric"; }
     }
     function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
     function clearStartFrom(keepBoxes){
       // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes — except when a Check type
       // radio click leaves reuse (keepBoxes): a radio never blanks what the person has on the card
       if(startFrom && !keepBoxes){
-        ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"].forEach(function(id){ document.getElementById(id).value = ""; });
+        CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
+        NUMBERED_IDS.forEach(gutterSync);
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
       startFrom = null; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
@@ -3632,7 +3682,7 @@
     // ---- Reuse workflow picker (hamr 2026-10-06): Check type is ONE radio group of three; "Reuse workflow" shows a search
     // box over the jobs that have a green local run (GET /api/author/reuse-jobs), a pick fills the card through the SAME
     // path the Run tab's button uses (reuseWorkflow -> bareloop-reuse -> applyReuse), then a picked box with `change`.
-    var CARD_BOX_IDS = ["jf-name", "jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge", "jf-cap-money", "jf-cap-time"];
+    var CARD_BOX_IDS = ["jf-name", "jf-job", "jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"];
     var rwBox = document.getElementById("rw");
     var rwSearch = document.getElementById("rw-search");
     var rwQ = document.getElementById("rw-q");
@@ -3649,9 +3699,11 @@
     }
     function setVerdict(v){
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === v); });
+      setJobPlaceholders(v);
     }
     function clearCardBoxes(){
       CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
+      NUMBERED_IDS.forEach(gutterSync);
       document.getElementById("jf-cap-note").textContent = "";
     }
     // ONE function shows/hides the picker: visible only while the radio is on Reuse workflow; the search box before a
@@ -3699,7 +3751,6 @@
     function openPicker(){
       rwQ.value = ""; rwHl = 0;
       rwJobs = null; rwFailed = false; // a fresh open shows "Loading…", never the previous list
-      document.getElementById("jf-judge").disabled = true;
       renderPicker();
       renderReuseList();
       loadReuseJobs();
@@ -3740,7 +3791,7 @@
       card.hidden = false;
       originLine.hidden = true;
       exitResumeMode();
-      thread.innerHTML = "";
+      thread.innerHTML = ""; lastMsgSig = null;
       errEl.textContent = "";
       actionErrEl.textContent = "";
       sessionId = null;
@@ -3770,7 +3821,6 @@
     function resetCard(){
       clearCardBoxes();
       setVerdict("deterministic");
-      document.getElementById("jf-judge").disabled = true;
       modelSelect.selectedIndex = 0;
       msgInput.value = "";
       rwQ.value = "";
@@ -3799,12 +3849,9 @@
         checkType: (verdictValue() === "reuse" ? reuseCheckType : verdictValue()) === "rubric" ? "rubric" : "deterministic",
         model: document.getElementById("jf-model").value,
         jobName: document.getElementById("jf-name").value.trim(),
-        goal: document.getElementById("jf-goal").value.trim(),
-        source: document.getElementById("jf-source").value.trim(),
+        jobText: document.getElementById("jf-job").value.trim(),
+        inputs: document.getElementById("jf-inputs").value.trim(),
         destination: document.getElementById("jf-dest").value.trim(),
-        success: document.getElementById("jf-success").value.trim(),
-        guardrails: document.getElementById("jf-guardrails").value.trim(),
-        judgeExamples: document.getElementById("jf-judge").value.trim(),
         capUsd: moneyCap,
         maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
       };
@@ -3853,7 +3900,7 @@
         setVerdict(v);
         renderPicker();
       }
-      document.getElementById("jf-judge").disabled = v !== "rubric";
+      setJobPlaceholders(v);
       refreshStartEnabled();
     }
     document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
@@ -3964,11 +4011,23 @@
       if(role === "system") return "";
       return "bareloop";
     }
+    // the thread is redrawn only when its messages changed: a 2 s poll tick must not close a fold the person just opened
+    var lastMsgSig = null;
     function renderMessages(state){
+      var sig = JSON.stringify(state.messages);
+      if(sig === lastMsgSig) return;
+      lastMsgSig = sig;
       thread.innerHTML = state.messages.map(function(m){
         var cls = m.role === "you" ? "you" : (m.role === "system" ? "system" : "bot");
         var who = chatWhoLabel(m.role);
         var whoHtml = who ? ('<div class="who">' + escapeXml(who) + '</div>') : "";
+        if(m.kind === "plan" && m.plan){
+          // P7: the confirm turn's plan is drawn by the one job-plan renderer (the Job tab uses the same)
+          var qs = (m.plan.questions || []).length
+            ? '<div class="jp-goal" data-testid="plan-questions">questions: ' + escapeXml(m.plan.questions.join(" \u00B7 ")) + "</div>" : "";
+          var goal = m.plan.goal ? '<div class="jp-goal" data-testid="plan-goal">goal sentence: ' + escapeXml(m.plan.goal) + "</div>" : "";
+          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + renderJobPlan(m.plan) + goal + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
+        }
         return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
       }).join("");
       thread.scrollTop = thread.scrollHeight;
@@ -4062,6 +4121,42 @@
       fitCardBoxes();
     }
     msgInput.addEventListener("input", renderMain);
+    // P7 — the numbered boxes. A plain job line is numbered 1, 2, 3; a line starting `~` is a rule for the line above and has no
+    // number; Inputs numbers every line; empty lines have none. A hidden mirror (same font/width/padding) measures each logical
+    // line's wrapped height so every number stays level with its own line — the same rules src/jobblock.js parses by.
+    var NUMBERED_IDS = ["jf-job", "jf-inputs"];
+    var FIT_IDS = ["jf-job", "jf-inputs", "jf-dest"];
+    function gutterSync(id){
+      var ta = document.getElementById(id), gut = document.getElementById(id + "-gut"), mir = document.getElementById(id + "-mir");
+      if(!ta || !gut || !mir) return;
+      var lines = ta.value.split("\n");
+      var isJob = id === "jf-job";
+      var n = 0;
+      var nums = lines.map(function(l){
+        var t = l.trim();
+        if(t === "" || (isJob && t.charAt(0) === "~")) return "";
+        n += 1; return String(n);
+      });
+      mir.style.width = ta.clientWidth ? ta.clientWidth + "px" : "";
+      mir.innerHTML = lines.map(function(l){ return "<div>" + (l === "" ? "\u200b" : escapeXml(l)) + "</div>"; }).join("");
+      var rows = mir.children;
+      gut.innerHTML = nums.map(function(t, i){
+        var hgt = rows[i] ? rows[i].offsetHeight : 0;
+        return '<div' + (hgt ? ' style="height:' + hgt + 'px"' : "") + ">" + t + "</div>";
+      }).join("");
+      gut.scrollTop = ta.scrollTop;
+    }
+    // the empty-box examples (grey placeholders that vanish on typing) change with the Check type radio
+    var JOB_PLACEHOLDERS = {
+      deterministic: "Fix the failing date tests in src/date.js\n~ don't edit any test file\nMake npm test pass",
+      rubric: "Write a one-page summary of docs/plan.md\n~ PASS: every number is quoted from the file\n~ FAIL: a number that is not in the file\nKeep it under 300 words",
+    };
+    var INPUTS_PLACEHOLDER = "repo: /home/me/myrepo\nspec: docs/spec.md";
+    function setJobPlaceholders(v){
+      document.getElementById("jf-job").setAttribute("placeholder", JOB_PLACEHOLDERS[v === "rubric" ? "rubric" : "deterministic"]);
+      document.getElementById("jf-inputs").setAttribute("placeholder", INPUTS_PLACEHOLDER);
+    }
+    setJobPlaceholders("deterministic");
     // grow a text box with its text (a few rows, then it scrolls inside); ONE function for the ask box and the card boxes.
     // A box that is hidden (or not laid out) measures 0 and gets no inline height.
     function fitBox(el){
@@ -4071,13 +4166,15 @@
       el.style.height = Math.min(el.scrollHeight + border, 200) + "px";
     }
     function fitCardBoxes(){
-      ["jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge"].forEach(function(id){ fitBox(document.getElementById(id)); });
+      FIT_IDS.forEach(function(id){ fitBox(document.getElementById(id)); });
+      NUMBERED_IDS.forEach(gutterSync);
     }
     // live growth: each card box re-fits on its own input (typing and Enter), through the same fitBox
-    ["jf-goal", "jf-source", "jf-dest", "jf-success", "jf-guardrails", "jf-judge"].forEach(function(id){
+    FIT_IDS.forEach(function(id){
       var box = document.getElementById(id);
-      box.addEventListener("input", function(){ fitBox(box); });
+      box.addEventListener("input", function(){ fitBox(box); if(NUMBERED_IDS.indexOf(id) !== -1) gutterSync(id); });
     });
+    NUMBERED_IDS.forEach(function(id){ var box = document.getElementById(id); box.addEventListener("scroll", function(){ document.getElementById(id + "-gut").scrollTop = box.scrollTop; }); });
     window.addEventListener("resize", function(){ fitCardBoxes(); fitBox(msgInput); });
     document.getElementById("tab-chat").addEventListener("click", function(){ fitCardBoxes(); fitBox(msgInput); });
     // Enter sends through the one main button; Shift+Enter (or IME composition) keeps its newline
@@ -4182,11 +4279,8 @@
         }
         modelSelect.value = c.model;
       }
-      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
-      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
-      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
-      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
-      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      fillCard(c);
+
       if(reuseSession) setReuseLocked(true);
       renderPicker();
       fitCardBoxes();
@@ -4208,6 +4302,14 @@
 
     // ---- Reuse workflow — the card opens filled from the SIGNED job: four open boxes, the rest greyed ----
     function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
+    // ONE owner of filling the card from a prefill (a re-attached session, Reuse, Edit in chat, Resume): the six boxes P7 left
+    // (the old Goal/Source/Success/Guardrails/Judge boxes are gone), then every box re-fits and its number gutter re-measures.
+    function fillCard(c){
+      setVal("jf-name", c.jobName); setVal("jf-job", c.jobText); setVal("jf-inputs", c.inputs);
+      setVal("jf-dest", c.destination); setVal("jf-cap-money", c.capUsd);
+      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      fitCardBoxes();
+    }
     // ONE owner of the reuse fill: the Run tab's / Import view's button and the picker both arrive here (the
     // `bareloop-reuse` event), so the card ends up in the same picked state whichever door was used.
     function applyReuse(d){
@@ -4220,11 +4322,8 @@
       reusePickedName = c.jobName || (pre.origin && pre.origin.job) || "job";
       setVerdict("reuse");
       if(c.model){ modelSelect.value = c.model; }
-      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
-      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
-      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
-      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
-      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      fillCard(c);
+
       setReuseLocked(true);
       renderPicker();
       sfLine.hidden = false;
@@ -4249,11 +4348,8 @@
       openNewCard();
       setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
       if(c.model){ modelSelect.value = c.model; }
-      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
-      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
-      setVal("jf-judge", c.judgeExamples); setVal("jf-cap-money", c.capUsd);
-      setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
-      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
+      fillCard(c);
+
       originLine.textContent = d.origin || "";
       originLine.hidden = !d.origin;
       renderPicker();
@@ -4276,13 +4372,10 @@
       document.getElementById("job-card-title").textContent = "RESUME " + (d.title || d.runid);
       setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
       if(c.model){ modelSelect.value = c.model; }
-      setVal("jf-name", c.jobName); setVal("jf-goal", c.goal); setVal("jf-source", c.source);
-      setVal("jf-dest", c.destination); setVal("jf-success", c.success); setVal("jf-guardrails", c.guardrails);
-      setVal("jf-judge", c.judgeExamples);
+      fillCard(c);
       setVal("jf-cap-money", r.budgetUsd);
       setVal("jf-cap-time", resumeRun.noTime ? "" : r.maxWallMin);
       document.getElementById("jf-cap-time").parentNode.hidden = resumeRun.noTime;
-      document.getElementById("jf-judge").disabled = c.checkType !== "rubric";
       originLine.textContent = "The same run goes on, not a new one. Only the money cap and the time cap can change; everything else is the signed job.";
       originLine.classList.add("res");
       originLine.hidden = false;
@@ -4400,6 +4493,7 @@
         if(!o.ok){ chatActionFailed(o.error); return; }
         openNewCard();
         chatActionOk();
+        lastMsgSig = null;
         thread.innerHTML = '<div class="msg system">' + escapeXml("The boxes are open as you drafted them. Edit what you want, then Start drafting. The first draft's cost stays counted.") + "</div>";
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not revised"); });
     }

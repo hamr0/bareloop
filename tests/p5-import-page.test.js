@@ -83,7 +83,9 @@ test('page: an imported job opens in the SAME Run / Audit / Job tabs — ONE [Re
   // the Job tab is the same renderJob every run uses, fed the exported spec
   assert.equal(h.calls.jobs.length, 1);
   const j = h.calls.jobs[0];
-  assert.deepEqual([j.goal, j.checkType, j.success, j.guardrails, j.model, j.budgetUsd, j.maxWallMs], ['Make types clean', 'deterministic', 'a · b', 'write fence — src/**', 'deepseek-flash', 1.5, 1_800_000]);
+  assert.deepEqual([j.goal, j.checkType, j.model, j.budgetUsd, j.maxWallMs], ['Make types clean', 'deterministic', 'deepseek-flash', 1.5, 1_800_000]);
+  // P7: the plan and inputs come from the server's reading of the exported spec (null for an older one: the goal is line 1)
+  assert.deepEqual([j.plan, j.inputs, j.signed], [null, null, null]);
   // never job details in the Run tab
   assert.doesNotMatch(html, /Make types clean|write fence/);
 });
