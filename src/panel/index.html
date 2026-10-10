@@ -491,6 +491,8 @@
   .jp details[open]>summary::before{content:"\2304";}
   .jp details ul{margin:4px 0 0;padding-left:26px;color:var(--text-dim);}
   .jp .older{font-size:12px;color:var(--text-faint);margin:0 0 8px;}
+  .jp .jp-sum{margin:0 0 8px;overflow-wrap:anywhere;}
+  .jp .jp-sum .lbl{display:inline-block;color:var(--text-faint);margin-right:8px;}
   .jp-goal{font-size:12px;color:var(--text-faint);margin-top:8px;}
   /* hamr 2026-10-05: the focused/selected Chat-card field gets a blue border (the accent), no outline ring */
   #panel-chat :is(input,select,textarea):focus{border-color:var(--accent);outline:none;}
@@ -3151,7 +3153,8 @@
   // (src/panel/jobplan.js): numbered lines with their rule, the checks under the line each serves (folded), the AI's own
   // "Not checked", the always-on guards. Only the marker is blue (--plan). Returns HTML (every text is escaped).
   function renderJobPlan(plan){
-    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + '<div class="jp-legend"><b>\u203A</b> = the approved plan</div>';
+    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + '<div class="jp-legend"><b>\u203A</b> = the approved plan</div>' +
+      (plan.goal && !plan.older ? '<div class="jp-sum" data-testid="plan-goal"><span class="lbl">AI\'s summary</span>' + escapeXml(plan.goal) + "</div>" : "");
     var checkLine = function(c){
       return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + "</div>";
     };
@@ -4026,8 +4029,7 @@
           // P7: the confirm turn's plan is drawn by the one job-plan renderer (the Job tab uses the same)
           var qs = (m.plan.questions || []).length
             ? '<div class="jp-goal" data-testid="plan-questions">questions: ' + escapeXml(m.plan.questions.join(" \u00B7 ")) + "</div>" : "";
-          var goal = m.plan.goal ? '<div class="jp-goal" data-testid="plan-goal">goal sentence: ' + escapeXml(m.plan.goal) + "</div>" : "";
-          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + renderJobPlan(m.plan) + goal + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
+          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + renderJobPlan(m.plan) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
         }
         return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
       }).join("");

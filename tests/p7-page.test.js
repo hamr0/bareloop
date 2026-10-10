@@ -41,6 +41,14 @@ test('renderJobPlan: legend, numbered lines with their rule, checks as "check ·
   assert.doesNotMatch(h, /<script|<input|<button/i);
 });
 
+test("renderJobPlan: the AI's summary is a labelled row under the legend (escaped); an older job shows no summary row (its goal is line 1)", () => {
+  const h = renderJobPlan({ ...PLAN, goal: 'Fix <the> dates' });
+  assert.match(h, /data-testid="plan-goal"><span class="lbl">AI's summary<\/span>Fix &lt;the&gt; dates</);
+  assert.ok(h.indexOf('jp-legend') < h.indexOf('plan-goal') && h.indexOf('plan-goal') < h.indexOf('plan-line'));
+  assert.doesNotMatch(renderJobPlan(PLAN), /plan-goal/, 'no goal, no row');
+  assert.doesNotMatch(renderJobPlan({ ...PLAN, goal: 'x', older: true }), /plan-goal/);
+});
+
 test('renderJobPlan: an older job says its numbered lines were not saved; empty folds are left out', () => {
   const h = renderJobPlan({ lines: [{ n: 1, text: 'old goal', rule: '', checks: [{ name: 'suite-green', cls: null }], refused: [] }], loose: [], notChecked: [], alwaysOn: [], older: true });
   assert.match(h, /older job — numbered lines were not saved/);
@@ -63,7 +71,7 @@ test('renderMessages: a plan message is drawn as the plan bubble with the footer
   f(state);
   assert.match(thread.innerHTML, /data-testid="plan-bubble"/);
   assert.match(thread.innerHTML, /<PLAN\/>/);
-  assert.match(thread.innerHTML, /goal sentence: fix it/);
+  assert.doesNotMatch(thread.innerHTML, /goal sentence/, 'the goal is the AI\'s summary row inside renderJobPlan, not a loose extra line');
   assert.match(thread.innerHTML, /questions: which folder\?/);
   assert.match(thread.innerHTML, /Sign &amp; run to confirm/);
   thread.innerHTML = 'user opened a fold';
